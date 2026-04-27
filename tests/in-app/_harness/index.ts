@@ -2,11 +2,10 @@
  * index.ts — In-app test harness entry point.
  *
  * Exports `launchTugApp` (spawn + connect + handshake) and the `App`
- * class (thin wrappers over the RPC client's `call`). Parent plan
- * Step 7 lands the minimum surface; later parent plan steps extend
- * `App` with gesture / reset / seed wrappers.
+ * class (thin wrappers over the RPC client's `call`). The surface
+ * grows over time; this module tracks the current RPC + evalJS facade.
  *
- * Boot sequence (see `#boot-choreography` in the Swift-bridge tugplan):
+ * Boot sequence (Swift test harness / Tug.app):
  *   1. Generate `TUGAPP_TEST_SOCKET=$TMPDIR/tugapp-test-<uuid>.sock`.
  *   2. Spawn Tug.app via `Bun.spawn` with that env var set.
  *   3. Retry `Bun.connect({ unix: <path> })` on `ECONNREFUSED` until
@@ -65,9 +64,8 @@ import type {
   SelectionSnapshot,
 } from "./client";
 
-// Re-export the client-side helpers and matcher for test authors. The
-// pattern mirrors the parent plan's Spec [#s03-tug-surface] sketch —
-// tests import `{ launchTugApp, toContainOrderedSubset }` from
+// Re-export the client-side helpers and matcher for test authors.
+// Tests import `{ launchTugApp, toContainOrderedSubset }` from
 // `@/_harness` and use `app.<method>` for everything else.
 export {
   toContainOrderedSubset,
@@ -110,34 +108,24 @@ export type {
  * `surfaceVersion` constant in `tugapp/Sources/TestHarness/TestHarnessConnection.swift`
  * exactly (some harness tests assert exact equality, not major-only).
  *
- * `1.1.0` (Step 2, 2026-04-24): adds the Phase A native-gesture
- * and keyboard verb family (`nativeClick`, `nativeDoubleClick`,
- * `nativeRightClick`, `nativeDrag`, `nativeMouseDown`, `nativeMouseUp`,
- * `nativeKey`, `nativeType`, `holdModifier`). Additive change; major
- * stays `1`. Tugdeck-side `SURFACE_VERSION` (in
- * `tugdeck/src/test-surface.ts`) is bumped in Step 3 when the TS-side
- * `__tug.*` surface methods land.
+ * `1.1.0`: adds the Phase A native-gesture and keyboard verb family
+ * (`nativeClick`, `nativeDoubleClick`, `nativeRightClick`, `nativeDrag`,
+ * `nativeMouseDown`, `nativeMouseUp`, `nativeKey`, `nativeType`,
+ * `holdModifier`). Additive; major stays `1`. (Tugdeck `SURFACE_VERSION`
+ * tracks the page-side `__tug` methods separately.)
  *
- * `1.2.0` (Step 4, harness extensions): adds the four app-lifecycle
- * simulation verbs (`simulateAppResign`, `simulateAppBecomeActive`,
- * `simulateAppHide`, `simulateAppUnhide`). Additive; major stays `1`.
- * The tugdeck-side `__tug.*` surface gains no new methods at this
- * version — these are pure RPC verbs handled at the Swift bridge.
+ * `1.2.0`: adds the four app-lifecycle simulation verbs
+ * (`simulateAppResign`, `simulateAppBecomeActive`, `simulateAppHide`,
+ * `simulateAppUnhide`). Additive; major stays `1` — these are pure RPC
+ * verbs on the Swift bridge, not new `__tug` methods.
  *
- * `1.3.0` (Step 5, harness extensions): adds the harness-owned
- * tugcode subprocess lifecycle verbs (`startTugcode` /
- * `stopTugcode`). The Step 5 surface is spawn/kill only; Step 6
- * extends the start payload with `--stub-transcript=<fd>` and
- * adds transcript-seeding verbs. Additive; major stays `1`.
+ * `1.3.0`: adds `startTugcode` / `stopTugcode` (spawn/kill base).
  *
- * `1.4.0` (Step 6, harness extensions): `startTugcode`'s payload
- * gains an optional `transcript` field carrying the stub-replay
- * document. Swift writes it to a temp file under $TMPDIR and
- * passes `--stub-transcript=<path>` to tugcode, which routes
- * through its deterministic replay engine. Additive; major stays
- * `1`.
+ * `1.4.0`: `startTugcode` gains optional in-memory `transcript` for stub
+ * replay; Swift writes bytes to a temp file and passes
+ * `--stub-transcript=<path>`. Additive; major stays `1`.
  *
- * `1.5.0` (selection plan Step 25C.2 Layer 2): adds the
+ * `1.5.0`: adds the
  * `quitGracefully` verb. Schedules `NSApp.terminate(nil)` on
  * main so the full `applicationShouldTerminate` path runs —
  * including `window.tugdeck.saveState()` — before the OS exits
@@ -149,9 +137,8 @@ export const EXPECTED_SURFACE_VERSION = "1.5.0" as const;
 
 /**
  * Directory (relative to this file) where per-test subprocess logs
- * are captured when `testName` is set. Mirrors parent plan List
- * [#l03-lifecycle-behaviors]: "Tug.app stdout/stderr routes to
- * `tests/in-app/logs/<test>.log`".
+ * are captured when `testName` is set. Tug.app stdout/stderr routes
+ * to `tests/in-app/logs/<test>.log`.
  */
 const LOGS_DIR = pathResolve(import.meta.dir, "..", "logs");
 
@@ -233,7 +220,7 @@ export class App {
    *
    * Throws `TimeoutError` on budget exceeded. Prefer this over
    * `evalJS` + `setTimeout` — `setTimeout`-based waiting is banned in
-   * harness / test code (parent plan [D12]).
+   * harness / test code ([D12]).
    */
   waitForCondition<T = unknown>(
     script: string,
@@ -269,7 +256,7 @@ export class App {
   }
 
   // -------------------------------------------------------------------
-  // Typed wrappers (parent plan Spec [#s03-tug-surface])
+  // Typed wrappers (`TugTestSurface` / `client.ts`)
   //
   // Every method below is a thin delegate to `./client.ts`. The
   // wrapper logic — script serialization, `window.__tug` access
@@ -281,7 +268,7 @@ export class App {
    * Dispatch a full pointerdown → mousedown → pointerup → mouseup →
    * click sequence on the element matched by `selector`. Prefer this
    * over raw DOM clicks — production handlers condition on the whole
-   * sequence (see Spec [#s04-event-synthesis]).
+   * full synthetic click sequence.
    */
   click(selector: string, opts?: ClickOptions): Promise<void> {
     return client.click(this as HarnessCaller, selector, opts);
@@ -289,7 +276,7 @@ export class App {
 
   /**
    * Type `text` into an `<input>` / `<textarea>` using the
-   * native-setter pattern (Spec [#s04-event-synthesis]).
+   * native-setter pattern.
    */
   type(selector: string, text: string): Promise<void> {
     return client.type_(this as HarnessCaller, selector, text);
@@ -701,7 +688,7 @@ export class App {
   }
 
   // -------------------------------------------------------------------
-  // App-lifecycle simulation ([D07], Spec [#s01-hardware-rpc] / Step 4)
+  // App-lifecycle simulation ([D07])
   //
   // Each method invokes the matching `NSApp` primitive on Tug.app's
   // main thread and awaits the corresponding
@@ -819,9 +806,8 @@ export class App {
    * triage can distinguish "trigger never landed" (gen never
    * advanced) from "appReload completed but late" (timeout race).
    *
-   * @selector L23 — the reload trigger fires the existing
-   * `prepareForReload` path that drains every save callback and
-   * flushes synchronously to tugbank disk before the page navigates.
+   * The reload trigger uses the `prepareForReload` path: every save
+   * callback drains and flushes synchronously to tugbank before navigation.
    */
   async appReload(opts?: { timeoutMs?: number }): Promise<void> {
     const timeoutMs = opts?.timeoutMs ?? 8000;
@@ -870,11 +856,10 @@ export class App {
   }
 
   // -------------------------------------------------------------------
-  // Tugcode subprocess lifecycle ([D04], Spec [#s03-tugcode-lifecycle] / Step 5)
+  // Tugcode subprocess lifecycle ([D04])
   //
-  // Spawn and kill a harness-owned tugcode child. Step 5 exposes
-  // spawn/kill only; Step 6 will add `seedTugcodeTranscript` /
-  // `seedTugcodeError`. At most one tugcode child per harness
+  // Spawn and kill a harness-owned tugcode child. At most one tugcode
+  // child per harness
   // connection; a second `startTugcode` while one is running
   // throws `TugcodeLaunchError`.
   // -------------------------------------------------------------------
@@ -938,7 +923,7 @@ export class App {
    *       throw e;
    *     }
    *
-   * `lines` defaults to 50, matching List [#l03-lifecycle-behaviors].
+   * `lines` defaults to 50.
    * The file is read synchronously because this is a failure path —
    * we'd rather block the test teardown than lose output to a race.
    */
@@ -1081,8 +1066,7 @@ export async function launchTugApp(
 
   // Install SIGINT / SIGTERM / exit handlers so a Ctrl-C at the
   // runner or an unexpected exit cleans up the subprocess instead
-  // of leaving it orphaned. Mirrors parent plan List
-  // [#l03-lifecycle-behaviors]. `detachSignals` is called by
+  // of leaving it orphaned. `detachSignals` is called by
   // `App.close()` so these handlers do not accumulate across
   // sequential `launchTugApp` calls within one test file.
   const detachSignals = installSignalHandlers(subprocess);
@@ -1361,7 +1345,7 @@ async function pumpToLog(
  * Returns a detach function that removes these listeners — `App.close()`
  * calls it so handler counts do not grow across sequential launches.
  *
- * Contract (per parent plan List [#l03-lifecycle-behaviors]):
+ * Contract:
  *   - `SIGINT` / `SIGTERM`: kill the subprocess (SIGTERM; SIGKILL if
  *     it refuses to die after a short grace window), unlink the
  *     socket, then re-emit the signal via `process.exit(128 + sig)`.

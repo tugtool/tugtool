@@ -9,7 +9,7 @@
  * Both the derivation engine (auto-adjustment) and the contrast dashboard
  * (display) consume the same map.
  *
- * Role classification follows semantic text types (Table T02, perceptual contrast thresholds normative, WCAG informational):
+ * Role classification follows semantic text types (perceptual contrast thresholds normative, WCAG informational):
  *   "content"       — contrast 75 / 4.5:1 WCAG AA (prose, body text, descriptions)
  *   "control"       — contrast 60 / 3:1 WCAG AA (interactive element labels, icons, borders)
  *   "display"       — contrast 60 / 3:1 WCAG AA (titles, headers, emphasis)
@@ -1000,7 +1000,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   // Semantic tone — foreground text on tone backgrounds
   // tone-*-bg tokens have alpha 12-15%; parentSurface triggers alpha compositing
   // before contrast measurement so the measured contrast reflects actual rendering
-  // (the composited tone-*-bg over surface-default). Spec S02. [D04]
+  // (the composited tone-*-bg over surface-default).. [D04]
   // =========================================================================
   {
     element: "--tug7-element-tone-text-normal-success-rest",
@@ -1170,7 +1170,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   // =========================================================================
   // Selection text on selection background
   // selection-bg has alpha 40%; parentSurface composites it over surface-default
-  // before measuring contrast against the opaque selection-fg. Spec S02. [D04]
+  // before measuring contrast against the opaque selection-fg.. [D04]
   // =========================================================================
   {
     element: "--tug7-element-selection-text-normal-plain-rest",
@@ -1319,7 +1319,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
 
   // --- Badge Tinted fg on tinted bg ---
   // badge-tinted-*-bg has alpha 15%; parentSurface composites the bg over
-  // surface-default before measuring contrast against the opaque fg element. Spec S02. [D04]
+  // surface-default before measuring contrast against the opaque fg element.. [D04]
   {
     element: "--tug7-element-badge-text-tinted-accent-rest",
     surface: "--tug7-surface-badge-primary-tinted-accent-rest",
@@ -1365,7 +1365,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
 
   // --- Badge Tinted border on surface-default --- (Step 4)
   // badge-tinted-*-border has alpha 35%; the border element is composited over
-  // surface-default before measuring contrast against surface-default. Spec S02. [D04]
+  // surface-default before measuring contrast against surface-default.. [D04]
   // These pairs were deferred from Step 3 because they require compositing.
   {
     element: "--tug7-element-badge-border-tinted-accent-rest",

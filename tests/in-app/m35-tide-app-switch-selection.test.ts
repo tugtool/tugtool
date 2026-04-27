@@ -5,7 +5,7 @@
  *
  * ## Why a tide-specific variant
  *
- * The user-reported bug at the heart of selection plan Step 23G
+ * The user-reported bug at the heart of [M35]
  * reproduces ONLY with tide-card; gallery-prompt-entry doesn't
  * exhibit the intermittent collapse. Tide-card has TWO redundant
  * focus paths on activation — its own `useCardDelegate({

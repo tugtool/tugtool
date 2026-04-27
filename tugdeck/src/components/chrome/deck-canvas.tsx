@@ -1,59 +1,20 @@
 /**
- * DeckCanvas -- canvas shell with responder chain support and TugPane rendering
- * from DeckState (Phase 5).
+ * DeckCanvas — canvas shell with responder chain support and TugPane rendering
+ * from `DeckState`.
  *
- * Phase 3: Registers as root responder "deck-canvas" via useResponder.
- *          Handles canvas-level actions: cycleCard, resetLayout, showSettings,
- *          showComponentGallery. DeckCanvas auto-becomes the first responder when
- *          it registers as a root node (parentId null, per Spec S01 auto-first-
- *          responder behavior), so Ctrl+` works immediately after mount with no
- *          explicit makeFirstResponder call.
+ * Registers as root responder "deck-canvas" via `useResponder`. Handles
+ * canvas-level actions: `cycleCard`, `resetLayout`, `showSettings`,
+ * `showComponentGallery`. As a root node (`parentId` null) DeckCanvas is the
+ * default first responder so canvas shortcuts work right after mount.
  *
- * Phase 5 (Spec S06, Spec S07): Receives DeckState + stable callbacks from
- *          DeckManager via props. Maps deckState.panes to TugPane components.
- *          For each window, looks up the active card's registry entry for chrome metadata.
- *          Cards with unregistered componentIds are skipped (warning logged).
- *          Z-index by array position: first card = lowest, last card = highest.
- *          forwardRef / DeckCanvasHandle removed -- DeckManager drives via props.
+ * `DeckCanvas` receives `DeckState` and stable callbacks from `DeckManager`
+ * via the `DeckManagerContext` store (`useSyncExternalStore`, [D01], [D04]).
+ * Maps `deckState.panes` to `TugPane` components. Z-index follows stack
+ * order. `showComponentGallery` uses show-only semantics ([D05], [D06], [D07]).
  *
- * Phase 5a2 (Spec S04, [D01], [D04]):
- *          DeckCanvas reads deckState via useSyncExternalStore from the
- *          DeckManagerContext store. Props deckState / onCardMoved /
- *          onStackClosed / onStackActivated are removed. DeckCanvasProps now
- *          contains only `connection`. The store variable is named `store`
- *          (not `manager`) to avoid collision with the existing `manager`
- *          variable used for the ResponderChainManager via
- *          useRequiredResponderChain().
- *
- * Phase 5b3 (Step 6, [D05], [D06], [D07]):
- *          Floating ComponentGallery panel removed. showComponentGallery
- *          now walks the live snapshot for a `gallery-buttons` card, looks
- *          up its host stack, and activates it; if no gallery card exists,
- *          it creates one via `store.addCard("gallery-buttons")`. Show-only
- *          semantics: the gallery is never closed by showComponentGallery.
- *          The Mac menu show-component-gallery action dispatches through
- *          the responder chain manager.
- *
- * Hook order (rules-of-hooks compliant):
- *   useDeckManager -> useSyncExternalStore -> useState -> useRef ->
- *   useRequiredResponderChain -> useCallback -> useResponder ->
- *   useEffect (cardDragCoordinator init) -> useEffect (initial focused card restore) ->
- *   useLayoutEffect (startup overlay fade-out) ->
- *   useLayoutEffect (selection highlight sync)
- *
- * The canvas div with grid background is provided by #deck-container in
- * index.html and styled by globals.css. DeckCanvas renders inside it.
- *
- * Spec S03 (#s03-deckcanvas-shape), [D03] Keep disconnect banner
- * Spec S04 (#s04-canvas-props), Spec S04 (#s04-gallery-panel), Spec S05 (#s05-gallery-action)
- * Spec S06 (#deckcanvas-props), Spec S07 (#pane-visual-stack)
- * [D01] DeckManager is a subscribable store with one root.render() at mount
- * [D04] DeckCanvas reads state from store, not props
- * [D05] Focus logic in DeckCanvas
- * [D06] Remove floating panel infrastructure
- * [D07] Show-only semantics
- * [D07] ResponderChainProvider wraps DeckCanvas only
- * Table T01: cycleCard, resetLayout, showSettings, showComponentGallery
+ * The canvas div with grid background is provided by `#deck-container` in
+ * index.html. Deck actions include `cycleCard`, `resetLayout`, `showSettings`,
+ * and `showComponentGallery`.
  */
 
 import React, { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore, useLayoutEffect } from "react";
@@ -71,10 +32,10 @@ import { useDeckManager } from "@/deck-manager-context";
 import { cardDragCoordinator } from "@/card-drag-coordinator";
 import { selectionGuard } from "@/components/tugways/selection-guard";
 
-// ---- DeckCanvasProps (Spec S04) ----
+// ---- DeckCanvasProps ----
 
 /**
- * DeckCanvasProps after Phase 5a2 migration (Spec S04).
+ * Empty props: deck state is read from `DeckManagerContext`.
  *
  * deckState, onCardMoved, onStackClosed, and onStackActivated are removed --
  * DeckCanvas reads them from the DeckManagerContext store via
@@ -93,7 +54,7 @@ const CARD_ZINDEX_BASE = 1;
 // ---- DeckCanvas ----
 
 /**
- * DeckCanvas -- plain function component (Phase 5 removes forwardRef).
+ * DeckCanvas — plain function component (no `forwardRef`).
  *
  * Renders the responder-chain root and one TugPane per entry in deckState.panes.
  *
@@ -102,7 +63,7 @@ const CARD_ZINDEX_BASE = 1;
  * `manager` continues to hold the ResponderChainManager (unchanged).
  */
 export function DeckCanvas(_props: DeckCanvasProps) {
-  // ---- Store subscription ([D04], Spec S04) ----
+  // ---- Store subscription ([D04]) ----
   // Named `store` (not `manager`) to avoid collision with the ResponderChainManager
   // variable below.
   const store = useDeckManager();
@@ -176,7 +137,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
 
   /**
    * containerRef: ref to the positioning wrapper div that card frames and snap guides
-   * are rendered into. [D03, Spec S04]
+   * are rendered into. [D03]
    */
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -271,7 +232,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   });
 
   // Provide the coordinator with the store reference so it can call
-  // reorderTab / detachTab / mergeTab on drop. [D07, Spec S04]
+  // reorderTab / detachTab / mergeTab on drop. [D07]
   //
   // useEffect runs after the first render (after mount), which is always
   // before any user interaction, so the coordinator is ready before any
@@ -322,7 +283,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   //
   // The overlay is removed from the DOM after the TugAnimator animation completes.
   // The `if (!overlay) return` guard handles rapid HMR reloads where the overlay
-  // may already be absent. [D02, Spec S03, Phase 7c]
+  // may already be absent. [D02]
   // Startup overlay removed — the native window background (set from tugbank)
   // provides visual continuity while the WebView is hidden. The WebView is
   // revealed by frontendReady after the theme and layout are fully applied.

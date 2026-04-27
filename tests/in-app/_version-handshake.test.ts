@@ -1,6 +1,6 @@
 /**
  * _version-handshake.test.ts — Version-skew regression test for the
- * `version` RPC handshake. Covers parent plan step-9 test:
+ * `version` RPC handshake. Covers harness test:
  *
  *   "Version-skew test: harness with wrong expected version
  *    → throws VersionSkewError."

@@ -171,8 +171,7 @@ export interface TideCardContentProps {
  * `lib/prompt-history-store.ts`); per-session persistence via
  * `getPromptHistory` / `putPromptHistory` is already baked in and
  * runs on every `push()`. Cross-card-reuse of history for the same
- * project arrives once [4i](../../../../../roadmap/tugplan-tide-card.md#step-4i)
- * gives us a stable session id per workspace.
+ * project arrives once a stable per-workspace session id exists.
  */
 let _tidePromptHistoryStore: PromptHistoryStore | null = null;
 function getTidePromptHistoryStore(): PromptHistoryStore {
@@ -1017,7 +1016,7 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
     // `cardWillDeactivate` deliberately does NOT call
     // `entryDelegateRef.current?.blur()`. Calling .blur() on the
     // contenteditable here clears any non-collapsed selection the
-    // user has placed (Selection plan Step 23G): when the cascade
+    // user has placed. When the cascade
     // fires from `applicationWillResignActive` (cmd-tab away), the
     // OS already removes focus from the WKWebView; an additional
     // explicit blur destroys the selection BEFORE the

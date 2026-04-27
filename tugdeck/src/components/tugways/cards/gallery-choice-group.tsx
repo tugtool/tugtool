@@ -5,7 +5,7 @@
  * interactive sliding indicator demonstration, and animated vs. instant modes.
  *
  * NOT a tab bar — TugChoiceGroup is a value picker, not a view switcher.
- * See roadmap/group-family.md for the full distinction.
+ * See design doc for the full distinction.
  *
  * Rules of Tugways compliance:
  *   - No root.render() after initial mount [D40, D42]

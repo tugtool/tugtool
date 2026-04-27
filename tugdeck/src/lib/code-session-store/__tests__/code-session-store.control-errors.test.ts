@@ -1,7 +1,7 @@
 /**
  * T3.4.a.1 — CONTROL-error routing.
  *
- * Closes the gap between [§T3.4.a Spec S04](../../../../../roadmap/tide.md)
+ * Closes the gap between [§T3.4.a](../../../../../design doc)
  * promised `lastError.cause` union (five members) and the three-member
  * union T3.4.a shipped. Two new causes reach the store via the CONTROL
  * feed:
@@ -223,7 +223,7 @@ describe("CodeSessionStore — multi-card routing of unrouted CONTROL errors (T3
     // lastError preserved across retry.
     expect(store.getSnapshot().lastError).toBe(errAt);
 
-    // Successful turn clears lastError per Spec S04.
+    // Successful turn clears lastError per.
     conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
       type: "assistant_text",
       tug_session_id: TUG_A,
@@ -290,7 +290,7 @@ describe("CodeSessionStore — multi-card routing of unrouted CONTROL errors (T3
   });
 });
 
-describe("CodeSessionStore — resume_failed CODE_OUTPUT event (roadmap 4.5)", () => {
+describe("CodeSessionStore — resume_failed CODE_OUTPUT event", () => {
   it("populates lastError with cause=resume_failed without flipping phase to errored", () => {
     // tugcode emits this after a failed `--resume` spawn falls back to
     // fresh. The fallback produced a usable session, so the store stays

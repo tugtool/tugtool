@@ -93,7 +93,7 @@ describe("loadGoldenProbe — v2.1.105/test-07-multiple-tool-calls", () => {
     expect(probe.idMap.toolUseIds[1]).toBe(FIXTURE_IDS.TOOL_USE_ID_N(2));
   });
 
-  it("assigns overlapping tool_use_ids per Spec S06 grouping heuristics", () => {
+  it("assigns overlapping tool_use_ids per grouping heuristics", () => {
     // Event indices are computed from the fixture layout:
     //   0: session_init
     //   1: system_metadata

@@ -1,6 +1,6 @@
 /**
  * m06-cross-pane-drag.test.ts — Cross-pane card move via tab drag,
- * focus + form-control state preserved (parent plan #step-23c).
+ * focus + form-control state preserved ([M06]).
  *
  * Scenario:
  *
@@ -13,7 +13,7 @@
  *   is still "alpha", and focus has landed inside A's content.
  *
  * `_moveCardToPane` always activates the target pane on a cross-
- * pane move (selection plan #step-23c). The user's intent in
+ * pane move. The user's intent in
  * dragging a card to another pane is to follow the card —
  * attention moves with the gesture. The drag-start save
  * (`captureFocusForDragStart` via

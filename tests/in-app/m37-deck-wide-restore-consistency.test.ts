@@ -1,17 +1,16 @@
 /**
  * m37-deck-wide-restore-consistency.test.ts — multi-card restore
- * preserves the active/inactive selection invariants (selection
- * plan Step 25C.4 / [M37]).
+ * preserves the active/inactive selection invariants ([M37]).
  *
- * Renamed from `m26-*` during the Step 25L M-series audit; the
+ * Renamed from `m26-*`; the
  * original `m26` prefix collided with the M26 overlay-policy tag
  * (gated by `m26-overlay-persistence.test.ts`). M37 was assigned in
  * the canonical inventory at `tuglaws/m-series-inventory.md`.
  *
  * ## What this gates
  *
- * Step 25C.4 split the engine's paint API into active vs. inactive
- * paths and routed CardHost's `onRestore` by `isActive`. This test
+ * The engine paint API split into active vs. inactive paths and
+ * CardHost's `onRestore` routes by `isActive`. This test
  * verifies the result on multi-card decks:
  *
  *   1. Exactly one card holds document focus — the deck-level
@@ -45,7 +44,7 @@
  *   | L4 | 2 panes, 1 card each | gallery-prompt-input (in active pane) | tide (pane-active in non-active pane) |
  *
  * L4 is the load-bearing case for the "active = deck-level first
- * responder, NOT pane-active" precision (Step 25C.4 "Defining
+ * responder, NOT pane-active" precision ("Defining
  * 'active' precisely"). Tide is the active card of P2, but P2 is
  * not the active pane — so tide is NOT the deck-level first
  * responder, and its selection routes through

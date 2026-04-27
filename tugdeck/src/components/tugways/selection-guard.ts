@@ -64,7 +64,7 @@ export interface SavedSelection {
 }
 
 // ---------------------------------------------------------------------------
-// caretPositionFromPointCompat (Spec S04, Risk R01)
+// caretPositionFromPointCompat (Risk R01)
 // ---------------------------------------------------------------------------
 
 /**
@@ -244,7 +244,7 @@ const MAX_SCROLL_SPEED = 20;
  *
  * `saveSelection(cardId)` / `restoreSelection(cardId, saved)` are the
  * pre-publish serialization API. Production callers were stripped at
- * Step 1 of the selection plan; the methods remain here for test
+ * Legacy API; the methods remain here for test
  * compatibility and retire at Step 16 per the plan's `@internal` /
  * removal pass.
  *
@@ -417,12 +417,12 @@ class SelectionGuard {
 
   /**
    * Publish the latest DOM `Range` for a card. Called by the card's
-   * owning component at deactivation transitions (Step 25C.5 Layer 3
-   * dropped the per-keystroke relay; the engine now publishes once
+   * owning component at deactivation transitions (the per-keystroke relay
+   * was dropped; the engine now publishes once
    * via `paintMirrorAsInactive(publish)` in `onCardWillDeactivate`),
    * or on unmount to clear the entry by passing `null`. [D05], [Q06a].
    *
-   * This step only stores the Range. Step 5 adds the paint step that
+   * This step only stores the Range. The highlight path
    * renders stored Ranges into the `inactive-selection` CSS Custom
    * Highlight (for cards other than the focused one) and into
    * `window.getSelection()` (for the focused card). Separating
@@ -1073,7 +1073,7 @@ class SelectionGuard {
 
   /**
    * Clamp the current selection's focus to the nearest text position within
-   * the boundary rect. Uses `caretPositionFromPointCompat` (Spec S04, R01).
+   * the boundary rect. Uses `caretPositionFromPointCompat` (R01).
    */
   private clampSelectionToRect(rect: DOMRect, boundary: HTMLElement): void {
     const selection = window.getSelection();

@@ -1,7 +1,7 @@
 /**
  * m21-drag-aborted.test.ts — Drag aborted via Escape preserves
- * focus inside the source card (parent plan #step-23c, harness
- * extension #step-3c).
+ * focus inside the source card (harness
+ * extension).
  *
  * Scenario:
  *

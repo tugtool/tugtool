@@ -17,7 +17,7 @@
  *       eagerly in SelectionGuard constructor (before React mounts)
  * [D03] Four-stage key pipeline with global keydown listener
  * [D07] ResponderChainProvider wraps DeckCanvas only
- * Spec S03, Spec S08
+ *,
  */
 
 import React, { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";

@@ -1,7 +1,7 @@
 /**
  * Step 8 — errored phase triggers + recovery.
  *
- * Spec S04 describes two triggers for the `errored` phase:
+ * describes two triggers for the `errored` phase:
  *  - `SESSION_STATE { state: "errored", detail }` delivered through the
  *    filtered FeedStore subscription from Step 3.
  *  - `TugConnection.onClose` firing during an active turn.

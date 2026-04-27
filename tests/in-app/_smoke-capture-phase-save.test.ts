@@ -1,10 +1,10 @@
 /**
  * _smoke-capture-phase-save.test.ts — Layer 1 gate for selection
- * plan Step 25C.5.
+ * capture-phase save.
  *
  * ## What this gates
  *
- * Step 25C.5's premise is that `bag.*` is the single source of truth.
+ * Premise: `bag.*` is the single source of truth.
  * The contract requires that the deactivation save fires while focus
  * is still in the outgoing card — `document.activeElement` correctly
  * identifies the focused element AND `el.selectionStart`/`End` /

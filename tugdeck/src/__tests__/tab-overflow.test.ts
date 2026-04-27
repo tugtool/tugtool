@@ -21,8 +21,8 @@
  * may have fewer entries than the total number of inactive icon tabs.
  *
  * **Authoritative references:**
- * - Spec S01: computeOverflow function signature
- * - Spec S02: computeOverflow algorithm
+ * -: computeOverflow function signature
+ * -: computeOverflow algorithm
  * - [D01] DOM measurement for full widths, fixed constant for icon-only
  * - [D03] Pure computeOverflow function for testability
  */

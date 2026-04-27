@@ -4,7 +4,7 @@
  *
  * "Key card" is the nearest ancestor of `kind: "card"` reached by
  * walking up `parentId` from the current first responder. It is
- * derived, not stored — see `roadmap/key-card.md` Phase 1.
+ * derived, not stored — see design doc Phase 1.
  *
  * Both hooks subscribe to the manager via `useSyncExternalStore` ([L02]).
  * `manager.subscribe` already fires on every chain change that could

@@ -196,7 +196,7 @@ describe("TugPromptEntry — Step 2 scaffold", () => {
     // (role="radio") and the submit button (role="button", the default).
     // The submit button is the one whose parent is `.tug-prompt-entry-toolbar`
     // AND whose role defaults to "button" (not "radio"). Select by
-    // aria-label for unambiguous identification — see Spec S03's JSX.
+    // aria-label for unambiguous identification — see's JSX.
     const submitButton = container.querySelector<HTMLButtonElement>(
       'button[aria-label="Send prompt"]',
     );
@@ -234,7 +234,7 @@ describe("TugPromptEntry — Step 2 scaffold", () => {
   });
 
   it("omits the queue badge when snap.queuedSends === 0", () => {
-    // Conditional JSX render per Spec S03: the <span
+    // Conditional JSX render per: the <span
     // className="tug-prompt-entry-queue-badge"> element is only in
     // the DOM when `snap.queuedSends > 0`. Idle snapshot has
     // queuedSends === 0, so the badge must be absent.
@@ -254,7 +254,7 @@ describe("TugPromptEntry — Step 2 scaffold", () => {
 // implement `document.execCommand` or `HTMLCanvasElement.getContext("2d")`
 // in a way that is useful to the engine's route-detection and atom-
 // rendering paths, so we supply the same minimal shims used by the
-// TugPromptInput Spec S04 suite. Scoped to beforeEach/afterEach of the
+// TugPromptInput suite. Scoped to beforeEach/afterEach of the
 // Step 3 describe block.
 
 let originalExecCommand: Document["execCommand"] | undefined;

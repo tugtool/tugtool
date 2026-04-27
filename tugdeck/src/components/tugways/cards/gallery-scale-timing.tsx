@@ -61,7 +61,7 @@ function formatValue(v: number, decimals: number = 2): string {
  * The scale slider applies CSS zoom on pointer release (not continuously)
  * because zoom triggers a full layout recalculation.
  *
- * **Authoritative reference:** Spec S08 (#s08-gallery-tab)
+ * **Authoritative reference:** (#s08-gallery-tab)
  */
 export function GalleryScaleTiming() {
   const [scale, setScaleState] = useState(DEFAULT_SCALE);

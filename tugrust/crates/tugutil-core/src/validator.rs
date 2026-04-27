@@ -24,7 +24,7 @@ static PROSE_DEPENDENCY: LazyLock<Regex> =
 
 /// Regex for valid **References:** format - must contain [DNN] decision citations
 /// Valid: "[D01] Decision name, [D02] Another"
-/// Also valid: "Spec S01", "Table T01", "(#anchor)"
+/// Prose may also reference anchors as `(#anchor)`.
 static DECISION_CITATION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[D\d{2}\]").unwrap());
 
 /// Regex for extracting decision IDs from References lines (with capture group)

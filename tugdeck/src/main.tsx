@@ -60,7 +60,7 @@ declare global {
      * the source of state truth) but the `put*Guarded` wrappers
      * actually issue their tugbank writes instead of short-circuiting.
      *
-     * Used by cold-boot harness tests (selection plan Step 25C.2)
+     * Used by cold-boot harness tests ([M14] / focus round-trips)
      * that pair test-mode IPC with per-test `TUGBANK_PATH` isolation
      * — the temp DB makes the test-mode pollution prevention
      * redundant, and the writes are required for Phase A's "bag is
@@ -198,8 +198,7 @@ if (!container) {
   // production users never have the global set, since the
   // `WKUserScript` that injects it is `#if DEBUG`-gated in
   // `tugapp/Sources/TestHarness/TestHarnessUserScript.swift`.
-  // See `test-surface.ts` for the full surface contract
-  // (Spec [#s03-tug-surface]) and attach-site rationale ([D03]/[D08]).
+  // See `test-surface.ts` for the full surface and attach-site rationale ([D03]/[D08]).
   attachTugTestSurface(deck);
 
   // Wire the per-card services store to the deck-manager so it can

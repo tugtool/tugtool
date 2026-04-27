@@ -26,7 +26,7 @@ import { TugBox } from "@/components/tugways/tug-box";
 // Constants
 // ---------------------------------------------------------------------------
 
-/** All Table T01 emphasis x role combinations for the full matrix [D02, Table T01] */
+/** All emphasis x role combinations for the full matrix [D02, ] */
 export const ALL_COMBOS: Array<{ emphasis: TugButtonEmphasis; role: TugButtonRole }> = [
   // filled × all roles
   { emphasis: "filled",   role: "accent"  },

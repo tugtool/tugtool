@@ -8,7 +8,7 @@
  *
  * **Authoritative references:**
  * - [D02] Extract IDeckManagerStore interface to break circular imports
- * - Spec S01: IDeckManagerStore interface
+ * -: IDeckManagerStore interface
  */
 
 import type { DeckState, CardStateBag } from "./layout-tree";
@@ -182,7 +182,7 @@ export interface IDeckManagerStore {
     insertAtIndex: number,
   ) => void;
 
-  // ---- Phase 5f: Per-card state cache and focus persistence (Spec S03) ----
+  // ---- Phase 5f: Per-card state cache and focus persistence () ----
 
   /**
    * Read a per-card state bag from the in-memory cache. Returns
@@ -204,7 +204,7 @@ export interface IDeckManagerStore {
    */
   initialFocusedCardId?: string;
 
-  // ---- Phase 5f3: Save callbacks for close-time state flush (Spec S01, [D01]) ----
+  // ---- Phase 5f3: Save callbacks for close-time state flush ([D01]) ----
 
   /**
    * Register a save callback associated with the given ID (typically a
@@ -346,8 +346,7 @@ export interface IDeckManagerStore {
    * {@link registerActivationCallback}: fires when the card is about
    * to lose focus-destination status, so the consumer can hand its
    * selection over to the inactive-paint channel before the new
-   * active card claims focus + global Selection. Selection plan
-   * Step 25C.4 [L23] enforcement.
+   * active card claims focus + global Selection. [L23] enforcement.
    */
   registerDeactivationCallback: (
     cardId: string,
@@ -361,7 +360,7 @@ export interface IDeckManagerStore {
    * the previously-active card can route its selection to
    * `selectionGuard` (via `paintMirrorAsInactive`) before the new
    * active card's `setSelectedRange` runs `removeAllRanges()` on the
-   * global Selection. Selection plan Step 25C.4 [L23].
+   * global Selection. [L23].
    */
   invokeDeactivationCallback: (cardId: string, dispatchedFrom: string) => void;
 

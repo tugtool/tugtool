@@ -14,8 +14,8 @@
  * is read from CSS metadata token --tugx-host-canvas-color after the override
  * stylesheet is applied. [D08]
  *
- * Spec S01 (#settheme-flow), [D03] Direct load, [D04] Dual persistence,
- * Spec S03 (#s03-theme-provider), [D08] Production link swap
+ * (#settheme-flow), [D03] Direct load, [D04] Dual persistence,
+ * (#s03-theme-provider), [D08] Production link swap
  */
 
 import React, {
@@ -86,7 +86,7 @@ export function sendCanvasColor(hex: string): void {
  * - For non-base themes: sets href to `/assets/themes/<name>.css`, creating the
  *   element if it does not already exist.
  *
- * [D08] Production link swap, Spec S03 (#s03-production-link).
+ * [D08] Production link swap, (#s03-production-link).
  */
 export async function activateProductionTheme(themeName: string): Promise<string | null> {
   const LINK_ID = "tug-theme-override";

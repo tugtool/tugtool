@@ -9,8 +9,7 @@ import WebKit
 //
 // Matched with tugdeck's `main.tsx` which reads
 // `window.__tugTestMode` at module top level and passes
-// `testMode: true` to `DeckManager`. See Spec [#s05-wkuserscript-injection]
-// and [D04] (boot timing).
+// `testMode: true` to `DeckManager` ([D04] boot timing).
 //
 // This is a separate module from `MainWindow.swift` so MainWindow
 // only carries a single `#if DEBUG` call site; all the user-script
@@ -28,7 +27,7 @@ enum TestHarnessUserScript {
     /// go through to tugbank when both flags are true. The bypass
     /// itself stays in place for ordinary in-app tests so the
     /// developer's real `~/.tugbank.db` is never touched. See
-    /// selection plan Step 25C.2 Layer 3.
+    /// cold-boot harness docs ([M14]).
     static func install(into config: WKWebViewConfiguration) {
         var source = "window.__tugTestMode = true;"
         if ProcessInfo.processInfo.environment["TUGAPP_PERSIST_IN_TEST_MODE"] == "1" {

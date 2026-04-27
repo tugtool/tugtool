@@ -1,6 +1,6 @@
 /**
  * _log-capture.test.ts — Per-test subprocess log capture. Covers
- * parent plan step-9 test:
+ * harness test:
  *
  *   "Log-capture test: evalJS(\"console.log('test log')\") then close;
  *    verify the log file contains the line."

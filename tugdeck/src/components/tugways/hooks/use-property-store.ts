@@ -28,9 +28,8 @@
  *   [D01] Context callback registration for PropertyStore
  *   [D05] Per-path observe for useSyncExternalStore
  *
- * Spec S04, Spec S05
+ *,
  *
- * See also: tugplan-tugways-phase-5d4-observable-properties.md
  */
 
 import { createContext, useContext, useLayoutEffect, useRef } from "react";
@@ -38,14 +37,14 @@ import { PropertyStore } from "../property-store";
 import type { PropertyDescriptor } from "../property-store";
 
 // ---------------------------------------------------------------------------
-// CardPropertyContext (Spec S05)
+// CardPropertyContext ()
 // ---------------------------------------------------------------------------
 
 /**
  * Registration callback type. `CardHost` provides this callback so that card
  * content can register its PropertyStore.
  *
- * Spec S05 (#s05-pane-property-context)
+ * (#s05-pane-property-context)
  */
 export type PropertyStoreRegistrar = (store: PropertyStore) => void;
 
@@ -60,18 +59,18 @@ export type PropertyStoreRegistrar = (store: PropertyStore) => void;
  * throwing -- the registration call is simply skipped.
  *
  * [D01] Context callback registration for PropertyStore
- * Spec S05 (#s05-pane-property-context)
+ * (#s05-pane-property-context)
  */
 export const CardPropertyContext = createContext<PropertyStoreRegistrar | null>(null);
 
 // ---------------------------------------------------------------------------
-// usePropertyStore options (Spec S04)
+// usePropertyStore options ()
 // ---------------------------------------------------------------------------
 
 /**
  * Options for creating a PropertyStore via usePropertyStore.
  *
- * Spec S04 (#s04-use-property-store)
+ * (#s04-use-property-store)
  */
 export interface UsePropertyStoreOptions {
   /** Property descriptors defining the schema. */
@@ -91,7 +90,7 @@ export interface UsePropertyStoreOptions {
 }
 
 // ---------------------------------------------------------------------------
-// usePropertyStore hook (Spec S04)
+// usePropertyStore hook ()
 // ---------------------------------------------------------------------------
 
 /**
@@ -112,7 +111,7 @@ export interface UsePropertyStoreOptions {
  * ```
  *
  * [D01] Context callback registration for PropertyStore
- * Spec S04 (#s04-use-property-store)
+ * (#s04-use-property-store)
  */
 export function usePropertyStore(options: UsePropertyStoreOptions): PropertyStore {
   // Create the PropertyStore once on first render. The ref holds the stable

@@ -1,8 +1,8 @@
 /**
  * m01-tab-switch-fc.test.ts — Intra-pane tab switch, form-control caret
- * round-trip (parent plan #step-13, Phase 3 first test).
+ * round-trip ([M01] FC half).
  *
- * Scenario (parent plan #phase-3-tests):
+ * Scenario:
  *
  *   Seed a pane with two FC cards (A, B). Click into card A's form-
  *   control input and type "alpha", click tab B, verify B is the
@@ -11,7 +11,7 @@
  *
  *   The trace assertion asserts the "activate A → activate B → activate
  *   A again" ordered triple of (fr-flip, destination-flip → true,
- *   focus-call) groups (parent plan #step-13 task list).
+ *   focus-call) groups.
  *
  * Every user-gesture click is a trusted `nativeClickAtElement` —
  * `CGEvent.post`-backed `isTrusted: true` mousedown — so the browser's

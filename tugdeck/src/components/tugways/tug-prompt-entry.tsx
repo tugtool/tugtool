@@ -7,18 +7,15 @@
  * tokens [L20]. The entry reuses existing base-tier global/field/badge tokens
  * per [D11].
  *
- * Step 2 landed the scaffold (mount, store snapshot, responder scope, JSX
- * per Spec S03, no-op SUBMIT stub that keeps TugPushButton's chain-action
- * mode out of its aria-disabled fallback — Risk R04). Step 3 filled in the
- * input-delegate pass-throughs (`focus`, `clear`) and wired
- * `handleInputChange` to write `data-empty` directly to the root element
- * via `setAttribute`, bypassing React state on keystroke [L06][L22].
- * Step 4 wires the bidirectional route-indicator sync [D04]: typing a
- * prefix in the input fires `onRouteChange` → `setRouteState`;
- * selecting a segment dispatches SELECT_VALUE → `setRouteState` +
- * `setRoute` (which in turn fires `onRouteChange`, but React bails on
- * the equal setRouteState).
- * Step 5 fills in the SUBMIT handler per [D05]: branches on
+ * The scaffold covers mount, store snapshot, responder scope, JSX,
+ * and a no-op SUBMIT stub that keeps TugPushButton's chain-action mode
+ * out of its aria-disabled fallback (Risk R04). Input-delegate
+ * pass-throughs (`focus`, `clear`) and `handleInputChange` write
+ * `data-empty` via `setAttribute`, bypassing React state on keystroke
+ * [L06][L22]. Bidirectional route-indicator sync [D04]: typing a prefix
+ * fires `onRouteChange` → `setRouteState`; selecting a segment
+ * dispatches SELECT_VALUE → `setRouteState` + `setRoute`. SUBMIT
+ * handler per [D05]: branches on
  * `snapRef.current.canInterrupt` to route to `codeSessionStore.interrupt()`
  * vs `codeSessionStore.send(text, atoms)`, threading `localCommandHandler`
  * as an optional [D06] synchronous interceptor; clears the input and
@@ -368,8 +365,8 @@ export interface TugPromptEntryProps {
    * `{ toolsOpen }` is captured into `bag.components[persistKey]` at
    * every save trigger and reapplied on the next mount.
    *
-   * Step 25G scope: only `toolsOpen` (the tools popover open/closed
-   * flag) is persisted via this hook. The active route + per-route
+   * Only `toolsOpen` (the tools popover open/closed flag) is
+   * persisted via this hook. The active route + per-route
    * engine drafts continue to live in `bag.content` via the existing
    * `useCardPersistence` registration — they're semantically tied
    * (the route is the index into `perRoute`) and splitting them would
@@ -652,7 +649,7 @@ export const TugPromptEntry = React.forwardRef<
 
   // [L07] Register the responder node. Both handler bodies are now
   // real: SELECT_VALUE runs the defensive sender/value narrowing +
-  // `setRouteState` + `setRoute` round-trip per Spec S02 (Step 4);
+  // `setRouteState` + `setRoute` round-trip per (Step 4);
   // SUBMIT branches on `snapRef.current.canInterrupt` to route to
   // `interrupt()` vs `send()` per [D05] (Step 5).
   const { ResponderScope, responderRef } = useResponder({
@@ -791,7 +788,7 @@ export const TugPromptEntry = React.forwardRef<
 
   // Card id for diagnostic deck-trace events. Held in a ref so the
   // onRestore closure (registered through useCardPersistence) reads
-  // the current value at fire time. Selection plan Step 23F gap-1.
+  // the current value at fire time.
   const cardIdForTrace = useCardId();
   const cardIdForTraceRef = useRef(cardIdForTrace);
   cardIdForTraceRef.current = cardIdForTrace;
@@ -814,7 +811,7 @@ export const TugPromptEntry = React.forwardRef<
   // Helper: route the embedded input's mirror selection through
   // selectionGuard for the inactive-paint channel. The closure reads
   // `cardIdForTraceRef.current` at fire time per [L07] (mandatory
-  // cardIdRef pattern from Step 25C.4 — cross-pane moves preserve
+  // cardIdRef pattern — cross-pane moves preserve
   // cardId in practice but the ref keeps the contract safe under any
   // future identity-semantics change).
   const publishToSelectionGuard = (range: Range | null): void => {
@@ -831,7 +828,7 @@ export const TugPromptEntry = React.forwardRef<
       // via the imperative handle. The framework's own
       // `engine-activation-dispatched` deck-trace event is
       // recorded in `DeckManager.invokeActivationCallback` ahead
-      // of this call. Selection plan Step 25C.4: this is the
+      // of this call. This is the
       // single legitimate `focus()` claim per page; the
       // deactivation hook for the previously-active card has
       // already routed its selection into the inactive-paint
@@ -839,7 +836,7 @@ export const TugPromptEntry = React.forwardRef<
       promptInputRef.current?.focus();
     },
     onCardWillDeactivate: () => {
-      // Selection plan Step 25C.4 [L23] enforcement. Hand the
+      // [L23] enforcement. Hand the
       // input's selection over to selectionGuard via
       // `paintMirrorAsInactive(publish)` before the new active
       // card's `setSelectedRange` runs `removeAllRanges()` on the
@@ -892,15 +889,15 @@ export const TugPromptEntry = React.forwardRef<
         const saved = perRoute[currentRoute];
         if (saved) {
           // restoreState updates the engine's mirror but does NOT
-          // touch DOM Selection or focus (Step 25C.4 mirror-only
-          // restore). The paint method below — chosen by `isActive`
+          // touch DOM Selection or focus (mirror-only restore). The
+          // paint method below — chosen by `isActive`
           // — is what writes selection to the DOM. The active card
           // gets `paintMirrorAsActive` (focus + global Selection);
           // every inactive card gets `paintMirrorAsInactive(publish)`
           // (selectionGuard publish, no focus claim, no global
           // Selection mutation). [L23] enforcement.
           input.restoreState(saved);
-          // Step 25C.5 Layer 5: pass the just-loaded bag (`saved`) so
+          // Pass the just-loaded bag (`saved`) so
           // the engine reads selection + scrollTop from it directly.
           // Cold-boot restore trusts the bag verbatim; the in-memory
           // mirror is for cmd-tab return paths where the bag has not
@@ -911,7 +908,7 @@ export const TugPromptEntry = React.forwardRef<
             input.paintMirrorAsInactive(publishToSelectionGuard, saved);
           }
           // Diagnostic for the cold-boot selection-paint gap
-          // (selection plan Step 23F gap-1).
+          // (inactive-paint gap).
           if (cardIdForTraceRef.current !== null) {
             deckTrace.record({
               kind: "engine-restore-applied",
@@ -992,7 +989,7 @@ export const TugPromptEntry = React.forwardRef<
 
   // Component Persistence Protocol opt-in for the popover's open
   // state. Hook no-ops when `persistKey` is undefined or rendered
-  // outside a card. Step 25G / [A9] / closes [M31]'s toolsOpen axis.
+  // outside a card. [A9] / [M31] toolsOpen axis.
   // Route + per-route engine drafts ride `bag.content` via
   // `useCardPersistence` above; this hook only carries the popover
   // flag.

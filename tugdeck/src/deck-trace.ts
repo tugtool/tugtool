@@ -25,23 +25,22 @@
  * we can align events with React commit boundaries.
  *
  * See Design Decision [D06] ("Instrumentation covers the whole deck,
- * not just focus") and Spec [#s01-deck-trace-event] for the event
- * shape's authoritative definition.
+ * not just focus") for the instrumentation philosophy; the event union
+ * below is the contract for consumers.
  *
- * ## What this step ships
+ * ## API surface
  *
- * Phase 1 Step 1 lands the module seam only: the event union,
- * the ring buffer, and the `record` / `dump` / `dumpTable` / `enable`
- * / `mark` / `since` / `clear` API. No call sites are wired here;
- * that is Step 2's job. The `window.__deckTrace` global is bound so
- * a developer can drive the trace from the Safari Web Inspector
- * console, but only under `import.meta.env.DEV` so the release
- * bundle tree-shakes the binding.
+ * This module provides the event union, the ring buffer, and
+ * `record` / `dump` / `dumpTable` / `enable` / `mark` / `since` /
+ * `clear`. Call sites in the deck install separately. The
+ * `window.__deckTrace` global is bound so a developer can drive the
+ * trace from the Safari Web Inspector console, but only under
+ * `import.meta.env.DEV` so the release bundle tree-shakes the binding.
  *
  * ## Enable semantics
  *
- * Recording defaults to OFF. Callers opt in via `enable(true)`; the
- * bug-reproduction flow in Step 3 is `enable(true) → mark() →
+ * Recording defaults to OFF. Callers opt in via `enable(true)`; a
+ * typical flow is `enable(true) → mark() →
  * interact → dumpTable()`. While `enabled === false`, `record` is a
  * single bounds-check and return — callers may leave `record` calls
  * in hot paths without metering concerns. `mark`, `since`, `clear`,
@@ -77,10 +76,10 @@ import { getDeckStore } from "./lib/deck-store-registry";
 import { isFocusDestination } from "./deck-store-selectors";
 
 // ---------------------------------------------------------------------------
-// Event shape (Spec [#s01-deck-trace-event])
+// Event shape (`DeckTraceEvent` union)
 // ---------------------------------------------------------------------------
 
-/** Source tag on `save-callback` events — matches the plan's wiring list. */
+/** Source tag on `save-callback` events. */
 export type SaveCallbackSource =
   | "close-handoff"
   | "debounced"
@@ -213,9 +212,9 @@ export type DeckTraceEvent = {
       // Fired when an EM-engine factory's `onCardActivated` callback
       // runs as a result of an activation gesture. `dispatchedFrom`
       // names the trigger row from the activation taxonomy
-      // (selection plan #activation-trigger-taxonomy). Wired at each
-      // factory's onCardActivated registration in selection plan
-      // Step 23E; Pass 7C only defines the shape.
+      // activation-trigger trace sites. Wired at each
+      // factory's onCardActivated registration; event shape is
+      // defined here, per-card wiring is incremental.
       kind: "engine-activation-dispatched";
       cardId: string;
       engine: string;
@@ -229,7 +228,7 @@ export type DeckTraceEvent = {
       // whether `bag.content` is populated and, for EM cards using the
       // engine-state shape, whether a non-null selection range is
       // present in the saved snapshot. Diagnostic for the cold-boot
-      // selection-paint gap (selection plan Step 23F gap-1) — lets a
+      // selection-paint gap — lets a
       // trace dump show whether the save side captured a selection at
       // all before any restore work runs.
       kind: "cold-boot-restore-snapshot";
@@ -245,7 +244,7 @@ export type DeckTraceEvent = {
       // `engine.getSelectedRange()` against the live DOM. Side-by-side
       // these two fields say whether the engine's `setSelectedRange`
       // actually landed the selection in the document. Diagnostic for
-      // selection plan Step 23F gap-1.
+      // inactive-paint gap.
       kind: "engine-restore-applied";
       cardId: string;
       engine: string;
@@ -281,10 +280,8 @@ export type DeckTraceEventInput =
 // ---------------------------------------------------------------------------
 
 /**
- * Ring capacity. Fixed per Spec [#s01-deck-trace-event]. A 512-entry
- * ring holds roughly a few seconds of dense interaction; more than
- * enough to span any M-series reproduction window and short enough
- * that a dev reading `dumpTable()` is not overwhelmed.
+ * Ring capacity. Fixed at 512 entries — enough to span typical
+ * M-series reproductions while keeping `dumpTable()` output readable.
  */
 export const DECK_TRACE_CAPACITY = 512;
 
@@ -494,8 +491,8 @@ function readOrdered(): DeckTraceEvent[] {
 }
 
 /**
- * Public surface exposed to the wiring sites (Step 2) and to
- * developers via `window.__deckTrace` (dev builds only).
+ * Public surface exposed to deck wiring and to developers via
+ * `window.__deckTrace` (dev builds only).
  *
  * All methods are safe to call regardless of the enable flag — the
  * flag gates only whether {@link DeckTrace.record} writes new events.
@@ -539,8 +536,8 @@ export interface DeckTrace {
 }
 
 /**
- * The module's singleton trace instance. Imported by Step 2 wiring
- * sites as `import { deckTrace } from "./deck-trace"`.
+ * The module's singleton trace instance. Imported by deck wiring as
+ * `import { deckTrace } from "./deck-trace"`.
  */
 export const deckTrace: DeckTrace = {
   record(event) {
@@ -745,8 +742,8 @@ declare global {
 
 // Bind only under `import.meta.env.DEV` so Vite's release bundle
 // tree-shakes the binding entirely. The module's other exports
-// remain available to callers that import them directly (Step 2
-// wiring sites); only the global handle is dev-gated.
+// remain available to callers that import them directly; only the
+// global handle is dev-gated.
 if (import.meta.env?.DEV === true && typeof window !== "undefined") {
   window.__deckTrace = deckTrace;
 }

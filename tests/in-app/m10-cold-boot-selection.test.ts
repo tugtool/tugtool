@@ -24,7 +24,7 @@
  * the card boundary) reference DOM nodes that exist in both Phase
  * A and Phase B. The 50KB variant exercises the virtualization
  * path separately — content-relative selection encoding may be
- * needed there per the Step 25C.2 plan, scoped as a follow-up if
+ * needed there as a follow-up if
  * Phase B's 1KB variant passes after the Layer 4 fix.
  *
  * ## Why seedDeckState in Phase B

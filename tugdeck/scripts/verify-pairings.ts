@@ -27,7 +27,7 @@
  * Usage:
  *   bun run tugdeck/scripts/verify-pairings.ts
  *
- * References: [D02] Base-level pairings, [D03] CSS comment convention, Spec S02
+ * References: [D02] Base-level pairings, [D03] CSS comment convention,
  */
 
 import { readFileSync, readdirSync } from "fs";
@@ -86,7 +86,7 @@ function collectCssFiles(): string[] {
 // ---------------------------------------------------------------------------
 // Step 2: Parse @tug-pairings blocks
 //
-// Format (Spec S02):
+// Format ():
 //   /**
 //    * @tug-pairings
 //    * | Element | Surface | Role | Context |

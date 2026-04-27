@@ -1,5 +1,5 @@
 /**
- * TugPromptInput — `setRoute` coverage (plan Spec S04).
+ * TugPromptInput — `setRoute` coverage (plan).
  *
  * This suite is the Step 1 unit-test contract for the new
  * composition-layer imperative method `setRoute(char)` that widens
@@ -303,7 +303,7 @@ afterEach(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("TugPromptInput.setRoute — delegation (Spec S04)", () => {
+describe("TugPromptInput.setRoute — delegation ()", () => {
   it("setRoute('>') on an empty input calls engine.clear() then engine.insertText('>') in that order", () => {
     let delegate: TugPromptInputDelegate | null = null;
     renderHarness({
@@ -364,7 +364,7 @@ describe("TugPromptInput.setRoute — delegation (Spec S04)", () => {
   });
 });
 
-describe("TugPromptInput.setRoute — route detection integration (Spec S04)", () => {
+describe("TugPromptInput.setRoute — route detection integration ()", () => {
   it("setRoute('>') fires onRouteChange('>') exactly once via the engine's existing detection path", () => {
     const onRouteChange = mock<(route: string | null) => void>(() => {});
     let delegate: TugPromptInputDelegate | null = null;
@@ -411,7 +411,7 @@ describe("TugPromptInput.setRoute — route detection integration (Spec S04)", (
   });
 });
 
-describe("TugPromptInput.setRoute — type surface (Spec S04)", () => {
+describe("TugPromptInput.setRoute — type surface ()", () => {
   it("TugPromptInputDelegate exposes both inherited TugTextInputDelegate methods and setRoute", () => {
     // Compile-time assertion: the widened delegate must be assignable
     // to TugTextInputDelegate (supertype) and must have a `setRoute`

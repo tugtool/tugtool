@@ -32,8 +32,8 @@
  * Action-naming rollout: Both-category handlers use TUG_ACTIONS constants
  *   at the registerAction call site; close-active-card was renamed to
  *   `close` so its wire format matches the chain-action name.
- * Spec S04 (#s04-action-dispatch-shape), [D04] Gut action-dispatch
- * Spec S05 (#s05-gallery-action)
+ * (#s04-action-dispatch-shape), [D04] Gut action-dispatch
+ * (#s05-gallery-action)
  */
 
 import type { TugConnection } from "./connection";
@@ -325,7 +325,7 @@ export function initActionDispatch(
     deckManager.activateCard(pane.activeCardId);
   });
 
-  // show-card: Add a card by componentId (Spec S08)
+  // show-card: Add a card by componentId ()
   // The AppDelegate already sends show-card with component: "settings" and
   // component: "about" -- those will log a warning and return null from addCard
   // until Phase 9 registers those card types. This is correct behavior.
@@ -368,9 +368,9 @@ export function initActionDispatch(
     }
   });
 
-  // spawn_session_ok (W2 Step 7): the tugcast supervisor echoes the
+  // spawn_session_ok: the tugcast supervisor echoes the
   // canonical workspace_key back via this CONTROL ack after a successful
-  // spawn_session (Spec S03). The handler populates
+  // spawn_session (). The handler populates
   // `cardSessionBindingStore` so `useCardWorkspaceKey(cardId)` returns
   // the exact string tugcast splices into FILETREE/FILESYSTEM/GIT
   // frames, enabling the per-card value-check filter in `TugPane`.
@@ -428,8 +428,8 @@ export function initActionDispatch(
   // willResignActive|didResignActive|willHide|didHide|willUnhide|didUnhide>"`;
   // this handler dispatches to the matching `notifyApplication*` method.
   //
-  // This control-frame path replaces the pre-Step-5 ad-hoc window
-  // globals so the app lifecycle is a single unified pipe rather
+  // This control-frame path replaces earlier ad-hoc window globals so
+  // the app lifecycle is a single unified pipe rather
   // than a set of one-off RPC functions.
   registerAction("app-lifecycle", (payload) => {
     const event = payload.event;
@@ -483,7 +483,7 @@ export function initActionDispatch(
   // selection visibility and blurs the active input when the app
   // loses key status. A did-phase save would read a post-teardown
   // state and record `focus: none` with no selection. (See
-  // [Collision 3](#audit-collisions) in `roadmap/tugplan-selection.md`.)
+  // [Collision 3](#audit-collisions) in design doc.)
   //
   // The **did-phase** `didResignActive` subscriber stays as an
   // idempotent backstop: if a will-phase event never arrived (older
@@ -492,7 +492,7 @@ export function initActionDispatch(
   // harmless — `saveAndFlush` is debounce-free and idempotent.
   //
   // Selection repaint on the symmetric become-active / unhide events is
-  // owned by the selection-guard paint authority (see selection plan).
+  // owned by the selection-guard paint authority.
   //
   // `getAppLifecycle()` is guaranteed non-null here because
   // `DeckManager` registers the lifecycle before `initActionDispatch`

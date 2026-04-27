@@ -221,7 +221,7 @@ mod tests {
         let fixture = "15000/8000 tokens (45.2%)";
         let result = TokenUsageCollector::parse_token_usage(fixture).unwrap();
 
-        // Verify schema matches Spec S02
+        // Verify schema matches
         assert!(result.is_object());
         let obj = result.as_object().unwrap();
 

@@ -10,7 +10,7 @@
  *
  * [D01] Plain TypeScript class outside React state
  * [D05] Two-level action validation (canHandle + validateAction)
- * Spec S01, Spec S06, Spec S07
+ *,,
  */
 
 import { createContext } from "react";
@@ -30,7 +30,7 @@ export type { TugAction, GalleryAction } from "./action-vocabulary";
  * - `cancel`:   continuous interaction cancelled (no value change committed)
  *
  * [D01] ActionEvent is the sole dispatch currency
- * Spec S01 (#s01-action-event-type)
+ * (#s01-action-event-type)
  */
 export type ActionPhase = "discrete" | "begin" | "change" | "commit" | "cancel";
 
@@ -44,7 +44,7 @@ export type ActionPhase = "discrete" | "begin" | "change" | "commit" | "cancel";
  * Used by `getKeyResponderOfKind` to walk up the chain looking for the
  * nearest ancestor of a given tier — the mechanism that gives us a
  * stable "active card" identity without storing one. See
- * `roadmap/key-card.md` for the design.
+ * design doc for the design.
  *
  * Initial members:
  * - `"card"` — top-level card responders (TugCard).
@@ -64,7 +64,7 @@ export type ResponderKind = "card" | "card-content";
  *
  * [D01] ActionEvent is the sole dispatch currency
  * [D02] Handler signature is (event: ActionEvent) => void | (() => void)
- * Spec S01 (#s01-action-event-type)
+ * (#s01-action-event-type)
  */
 export interface ActionEvent<Extra extends string = never> {
   /**
@@ -130,7 +130,7 @@ export type ActionHandler<Extra extends string = never> = (
  * by dispatch().
  *
  * [D02] Handler signature is (event: ActionEvent) => void
- * Spec S04 (#s04-responder-node-actions)
+ * (#s04-responder-node-actions)
  */
 export interface ResponderNode<Extra extends string = never> {
   id: string;
@@ -411,7 +411,7 @@ export class ResponderChainManager {
    * responder and the next tagged ancestor.
    *
    * No state is stored — the value is recomputed on every call. See
-   * `roadmap/key-card.md` Phase 1 for the design and the rationale for
+   * design doc Phase 1 for the design and the rationale for
    * keeping this derived rather than stored.
    */
   getKeyResponderOfKind(kind: ResponderKind): string | null {
@@ -535,7 +535,7 @@ export class ResponderChainManager {
    *
    * [D01] ActionEvent is the sole dispatch currency
    * [D02] Handlers may return continuations for two-phase execution
-   * Spec S02 (#s02-dispatch-method)
+   * (#s02-dispatch-method)
    */
   sendToFirstResponderForContinuation<Extra extends string = never>(
     event: ActionEvent<Extra>,
@@ -554,7 +554,7 @@ export class ResponderChainManager {
    * sendToFirstResponderForContinuation for callers that don't need the continuation.
    *
    * [D01] ActionEvent is the sole dispatch currency
-   * Spec S02 (#s02-dispatch-method)
+   * (#s02-dispatch-method)
    */
   sendToFirstResponder<Extra extends string = never>(event: ActionEvent<Extra>): boolean {
     return this.sendToFirstResponderForContinuation(event).handled;
@@ -638,7 +638,7 @@ export class ResponderChainManager {
    * consulted during sendToTarget.
    *
    * [D03] sendToTarget throws on unregistered target
-   * Spec S03 (#s03-dispatch-to-method)
+   * (#s03-dispatch-to-method)
    */
   sendToTarget<Extra extends string = never>(
     targetId: string,
@@ -802,7 +802,7 @@ export class ResponderChainManager {
    * Returns false if the node is not registered.
    *
    * [D07] nodeCanHandle for per-node capability query
-   * Spec S07 (#s07-node-can-handle)
+   * (#s07-node-can-handle)
    */
   nodeCanHandle<Extra extends string = never>(
     nodeId: string,

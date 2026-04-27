@@ -1,11 +1,11 @@
-//! JSON output formatting per Spec S05
+//! JSON output formatting for `tug` CLI `--json` mode
 
 use serde::{Deserialize, Serialize};
 use tugutil_core::{Severity, ValidationIssue};
 
 const SCHEMA_VERSION: &str = "1";
 
-/// JSON response envelope per Spec S05
+/// JSON response envelope for `tug` CLI `--json` output
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonResponse<T> {
     /// Schema version for forward compatibility
@@ -55,7 +55,7 @@ impl<T> JsonResponse<T> {
     }
 }
 
-/// Issue object structure per Spec S05
+/// Issue object structure for `tug` JSON output
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonIssue {
     /// Error/warning code (e.g., "E001")
@@ -208,9 +208,9 @@ pub struct Progress {
     pub total: usize,
 }
 
-/// Data payload for log rotate command (Spec S01)
+/// Data payload for `tug log rotate --json`
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)] // Will be used in step-1 implementation
+#[allow(dead_code)]
 pub struct RotateData {
     /// Whether rotation occurred
     pub rotated: bool,
@@ -223,11 +223,11 @@ pub struct RotateData {
     /// Original byte count
     #[serde(skip_serializing_if = "Option::is_none")]
     pub original_bytes: Option<usize>,
-    /// Reason for rotation (Table T01)
+    /// Machine-readable reason for rotation
     pub reason: String,
 }
 
-/// Data payload for log prepend command (Spec S02)
+/// Data payload for `tug log prepend --json`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrependData {
     /// Whether entry was added
@@ -243,7 +243,7 @@ pub struct PrependData {
     pub timestamp: Option<String>,
 }
 
-/// Data payload for doctor command (Spec S03)
+/// Data payload for `tug doctor --json`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DoctorData {
     /// Individual health checks
@@ -290,7 +290,7 @@ pub enum StateFailureReason {
     DbError,
 }
 
-/// Data payload for commit command (Spec S01)
+/// Data payload for `tug commit --json`
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CommitData {
     /// Whether the git commit was created
@@ -316,7 +316,7 @@ pub struct CommitData {
     pub warnings: Vec<String>,
 }
 
-/// Data payload for open-pr command (Spec S02)
+/// Data payload for `tug open-pr --json`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenPrData {
     /// Whether both push and PR creation succeeded
@@ -336,7 +336,7 @@ pub struct OpenPrData {
     pub pr_number: Option<i64>,
 }
 
-/// Data payload for resolve command (Spec S02)
+/// Data payload for `tug resolve --json`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolveData {
     /// Resolved plan path (relative to project root), present on success

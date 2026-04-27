@@ -34,8 +34,7 @@
  *      pattern; doing the restore synchronously inside
  *      `registerPersistenceCallbacks` (called from a CHILD's effect,
  *      before the parent CardPortal can attach the slot) was the
- *      cold-boot selection-paint bug closed by selection plan Step
- *      23F gap-1. A `hasAppliedContentRestoreRef` guard keeps the
+ *      cold-boot selection-paint bug ([M10]). A `hasAppliedContentRestoreRef` guard keeps the
  *      restore one-shot so cross-pane moves (which re-fire the
  *      effect via `hostContentEl` change) don't clobber engine
  *      state the user may have edited since first mount. The
@@ -52,9 +51,9 @@
  *      elements restore when they appear.
  * Cross-pane-move focus restore is no longer a CardHost concern —
  * it lives in `focus-transfer.ts#transferFocusAfterMove`, called
- * from `deck-manager.ts#_detachCard` / `_moveCardToPane` (selection
- * plan #step-23c retired the `[hostStackId]`-keyed effect that
- * previously lived here). CardHost's mount-time restore (the
+ * from `deck-manager.ts#_detachCard` / `_moveCardToPane` (the
+ * `[hostStackId]`-keyed effect that
+ * previously lived here was removed). CardHost's mount-time restore (the
  * primary effect above) remains the cold-boot focus authority.
  *
  * Paint of the restored DOM selection is not CardHost's job — that's
@@ -289,8 +288,8 @@ const COMPONENT_OWNED_FOCUS_TARGETS: readonly string[] = [
  * Pure read; does not mutate focus, selection, or any DOM state.
  */
 export function captureFocus(cardRoot: HTMLElement): FocusSnapshot {
-  // Step 25C.5 Layer 4 dropped m36's `fallbackPersistKey` parameter.
-  // Layer 1's audit (verified by `_smoke-capture-phase-save.test.ts`)
+  // Dropped m36's `fallbackPersistKey` parameter.
+  // Audit (verified by `_smoke-capture-phase-save.test.ts`)
   // proved every activation-trigger source already saves in capture
   // phase — `document.activeElement` is correct at save time, no
   // fallback needed.
@@ -638,8 +637,8 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   const hostContentElRef = useRef<HTMLDivElement | null>(null);
   hostContentElRef.current = hostContentEl;
 
-  // (Step 25C.5 Layer 4 retired the `lastFocusedPersistKeyRef`
-  // fallback that m36 added to `captureFocus`. The fallback was a
+  // (Retired the `lastFocusedPersistKeyRef` fallback that m36 added to
+  // `captureFocus`. The fallback was a
   // workaround for the case where the deactivation save fired AFTER
   // focus moved to a sibling card. Layer 1's audit (verified by
   // `_smoke-capture-phase-save.test.ts`) proved every activation-
@@ -665,7 +664,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // `setSelectedRange`) while the engine root sits in a detached portal
   // slot — `.focus()` silently no-ops on disconnected nodes and the
   // subsequent `addRange` doesn't stick, costing the user their selection
-  // paint on cold-boot. Selection plan Step 23F gap-1.
+  // paint on cold-boot (inactive mirror path).
   //
   // L04 ready-callback pattern: defer the side-effecting restore to a
   // hook (CardHost's own layout effect) that fires AFTER all descendants'
@@ -754,7 +753,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     }
 
     // Diagnostic snapshot for the cold-boot / cross-pane-mount
-    // restore path. Selection plan Step 23F gap-1.
+    // restore path (ordering vs global Selection).
     let coldBootSelection: { start: number; end: number } | null = null;
     const content = bag.content as Record<string, unknown> | undefined;
     if (content !== undefined) {
@@ -794,7 +793,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
 
     callbacks.restorePendingRef.current = true;
     // Compute `isActive` from the deck-level first responder snapshot
-    // ([D10]). Per Step 25C.4 [L23], the consumer's onRestore branches
+    // ([D10]). Per [L23], the consumer's onRestore branches
     // on this flag: active cards run `paintMirrorAsActive` (focus +
     // global Selection); inactive cards run
     // `paintMirrorAsInactive(publish)` (selectionGuard publish, no
@@ -906,8 +905,8 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       });
     }
 
-    // Step 25C.5 Layer 4: form-control apply is a ONE-SHOT at mount.
-    // Pre-Layer-4 it lived inside the MutationObserver-driven
+    // Form-control apply is a ONE-SHOT at mount.
+    // Historically it lived inside the MutationObserver-driven
     // `apply()` loop, gated by a `WeakSet` to keep observer fires
     // from clobbering user typing. With activation-time re-apply
     // owned by `transferFocusForActivation` (m36's
@@ -949,15 +948,14 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     // attributeFilter: ["style"]` so the spacer-height mutations
     // fire `apply()`; without that, only `childList` mutations
     // would trigger re-application and the bake-in race would
-    // never resolve. See selection plan Step 25C.2 Layer 4.
+    // never resolve. See [M14] region-scroll persistence notes.
     const regionSettled = new Set<string>();
     const REGION_SCROLL_TOLERANCE_PX = 8;
 
     const apply = () => {
       const cardRoot = findCardRoot(hostContentEl, cardId);
       if (!cardRoot) return;
-      // Form-controls were applied one-shot above (Step 25C.5
-      // Layer 4); the observer-driven path here handles only
+      // Form-controls were applied one-shot above; the observer-driven path here handles only
       // region-scrolls, which need re-assertion until the
       // virtualized layout's `scrollHeight` catches up.
       if (regionSnapshot) {
@@ -1013,8 +1011,8 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // `_moveCardToPane` after their `notify()`. The legacy
   // `[hostStackId]`-keyed `useLayoutEffect` that lived here —
   // observing `hostStackId` transitions and re-applying
-  // `bag.focus` via `applyFocusSnapshot` — was retired in
-  // selection plan #step-23c. CardHost is no longer a focus
+  // `bag.focus` via `applyFocusSnapshot` — was retired.
+  // CardHost is no longer a focus
   // restorer for cross-pane moves; it remains the cold-boot
   // mount-restore path (the primary restore effect above) for
   // initial focus on first mount.
@@ -1026,7 +1024,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // `_closePane`). The legacy `[A3]` `useLayoutEffect` that lived
   // here — subscribing to `useFocusDestination` and re-applying
   // focus/selection/default-focus on every reactivation — was
-  // retired in selection plan #step-23b Pass 3 split (c). CardHost
+  // retired. CardHost
   // is now a registrar (it registers its root via
   // `store.registerCardHostRoot`) and a cold-boot/cross-pane
   // restorer; runtime activation transitions flow through the
@@ -1255,8 +1253,8 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     };
   }, [cardId, rootEl, store, hostStackId]);
 
-  // (Step 25C.5 Layer 4 retired the `lastFocusedPersistKeyRef`
-  // focusin listener that m36 added. Capture-phase deactivation save
+  // (Retired the `lastFocusedPersistKeyRef` focusin listener that m36
+  // added. Capture-phase deactivation save
   // is the canonical capture point; `document.activeElement` is
   // sufficient there. See `_smoke-capture-phase-save.test.ts`.)
 

@@ -183,7 +183,7 @@ final class NativeEventHandlers {
     /// `clickCount > 1` sets `.mouseEventClickState` on both the down
     /// and up events — lets WebKit recognize the event as part of a
     /// multi-click sequence without requiring the caller to post
-    /// multiple pairs (Step 3 uses `nativeDoubleClick` for that).
+    /// multiple pairs (double-click paths use `nativeDoubleClick` for that).
     ///
     /// `mouseDownDelayMs` sleeps the main thread between the down
     /// and up events; `mouseUpDelayMs` sleeps after the up. Both
@@ -353,7 +353,7 @@ final class NativeEventHandlers {
     ///     nativeMouseUp(somewhereFar)
     ///
     /// The drag coordinator's document-level keydown listener
-    /// (selection plan #step-23c) installs at `startDrag` (which
+    /// installs at `startDrag` (which
     /// fires once the trail crosses the 5px threshold) and is
     /// removed at `cleanup` (which the Escape branch invokes).
     /// Without this primitive the atomic `nativeDrag` always

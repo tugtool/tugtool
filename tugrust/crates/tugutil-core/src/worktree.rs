@@ -99,7 +99,7 @@ pub struct WorktreeConfig {
     pub repo_root: PathBuf,
 }
 
-/// Derive plan slug from plan path per Spec S05
+/// Derive plan slug from the plan file path
 ///
 /// Strips "tugplan-" prefix from filename (without extension).
 /// Examples:
@@ -196,7 +196,7 @@ fn format_compact_timestamp(iso8601: &str) -> Result<String, TugError> {
     ))
 }
 
-/// Generate UTC timestamp in YYYYMMDD-HHMMSS format per Spec S05
+/// Generate UTC timestamp in YYYYMMDD-HHMMSS format
 fn generate_timestamp_utc() -> Result<String, TugError> {
     let iso8601 = now_iso8601();
     format_compact_timestamp(&iso8601)
@@ -1129,7 +1129,7 @@ pub fn remove_worktree(worktree_path: &Path, repo_root: &Path) -> Result<(), Tug
 
 /// Clean up worktrees based on cleanup mode
 ///
-/// Implements comprehensive cleanup with drift detection per Table T01.
+/// Implements comprehensive cleanup with drift detection.
 /// Supports Merged, Orphaned, Stale, and All modes with InProgress protection.
 ///
 /// If dry_run is true, returns what would be removed without actually removing.

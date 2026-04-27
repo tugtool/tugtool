@@ -1,6 +1,6 @@
 /**
  * _smoke-app-reload.test.ts — Layer-1 gate for the soft-reload
- * harness primitive (selection plan Step 25C.3).
+ * harness primitive for reload paths.
  *
  * ## What this file pins
  *
@@ -20,7 +20,7 @@
  *
  * ## Why this exists as a smoke test, not an M-tag test
  *
- * Layer 2 of Step 25C.3 is `m24-prompt-state-roundtrip.test.ts`,
+ * See also: `m24-prompt-state-roundtrip.test.ts`,
  * which uses `app.appReload()` as one of its two reload triggers. If
  * `app.appReload()` itself is broken, the M-tag tests cannot
  * possibly pass — the failure attribution would conflate "the

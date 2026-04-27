@@ -1,4 +1,4 @@
-//! Implementation of the `tug list` command (Spec S03)
+//! Implementation of the `tug list` command ()
 
 use std::fs;
 use std::path::Path;

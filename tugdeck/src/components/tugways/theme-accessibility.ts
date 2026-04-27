@@ -7,12 +7,11 @@
  * using Machado et al. 2009 matrices.
  *
  * References:
- *   [D05] CVD simulation matrices (Machado et al. 2009), Table T02
- *   [D07] Contrast thresholds follow WCAG 2.x as normative, perceptual contrast as informational
+ *   [D05] CVD simulation matrices (Machado et al. 2009),  *   [D07] Contrast thresholds follow WCAG 2.x as normative, perceptual contrast as informational
  *   [D03] Authoritative fg/bg pairing map
  *   [D09] Dual output: string tokens + resolved OKLCH map
- *   Table T01: Contrast Threshold Matrix
- *   Spec S02: ThemeOutput / ResolvedColor interfaces
+ *   Contrast Threshold Matrix
+ *  : ThemeOutput / ResolvedColor interfaces
  *
  * @module components/tugways/theme-accessibility
  */
@@ -206,8 +205,8 @@ export const CONTRAST_MIN_DELTA = 0.03;
 /**
  * Compute the perceptual contrast for an element/surface pair.
  *
- * Implements the OKLab L-based metric (Spec S01):
- *   1. Convert each hex color to OKLab L via hexToOkLabL (Spec S02).
+ * Implements the OKLab L-based metric ():
+ *   1. Convert each hex color to OKLab L via hexToOkLabL ().
  *   2. Compute deltaL = surfaceL - elementL.
  *   3. If |deltaL| < CONTRAST_MIN_DELTA, return 0.
  *   4. Positive polarity (surface is lighter, dark element on light surface):
@@ -248,11 +247,10 @@ export function computePerceptualContrast(elementHex: string, surfaceHex: string
 }
 
 // ---------------------------------------------------------------------------
-// Contrast thresholds per Table T01
-// ---------------------------------------------------------------------------
+// Contrast thresholds per // ---------------------------------------------------------------------------
 
 /**
- * Minimum WCAG 2.x contrast ratio per contrast role (Table T02).
+ * Minimum WCAG 2.x contrast ratio per contrast role ().
  *
  *   content       → 4.5:1 (WCAG AA for 14px/400wt body text)
  *   control       → 3.0:1 (WCAG AA for 18px+ / 700wt interactive element labels)
@@ -303,7 +301,7 @@ export function validateThemeContrast(
     let bgHex: string;
 
     if (pairing.parentSurface) {
-      // Alpha-composite resolution (Spec S02): when parentSurface is specified,
+      // Alpha-composite resolution (): when parentSurface is specified,
       // composite any semi-transparent side over the parent before measuring contrast.
       const parentColor = resolved[pairing.parentSurface];
       if (!parentColor) {
@@ -521,7 +519,7 @@ function baseHueName(hueRef: string): string {
  *      cascade effects (adjusting token A may break token B) are caught immediately.
  *   5. Convergence: stop if no pairs improved during a pass (contrastPass count did not
  *      increase and no adjustments were applied).
- *   6. Oscillation detection per Spec S03: track per-token direction history.
+ *   6. Oscillation detection per: track per-token direction history.
  *      If a token's last three adjustments strictly alternate directions
  *      (+1,-1,+1 or -1,+1,-1), freeze it and add to unfixable.
  *   7. Safety cap at SAFETY_CAP = 20 iterations to prevent infinite loops.
@@ -529,7 +527,7 @@ function baseHueName(hueRef: string): string {
  * [D02] Cascade-aware auto-adjust
  * [D03] Any-token-type bumping (element token regardless of fg/bg/border role)
  * [D06] Perceptual contrast as normative threshold gate
- * Spec S03: Oscillation detection
+ *: Oscillation detection
  *
  * @param tokens - Token string map from deriveTheme() (--tug-color() strings)
  * @param resolved - Resolved OKLCH map from deriveTheme() [D09]
@@ -556,7 +554,7 @@ export function autoAdjustContrast(
   // Tone step per bump — 5 tone units, re-evaluated each iteration
   const TONE_STEP = 5;
 
-  // Per-token direction history for oscillation detection (Spec S03).
+  // Per-token direction history for oscillation detection ().
   // Tracks the sequence of +1 / -1 bump directions applied to each element token.
   const directionHistory = new Map<string, number[]>();
 
@@ -626,7 +624,7 @@ export function autoAdjustContrast(
         bumpDirection = worstContrastSigned >= 0 ? -1 : 1;
       }
 
-      // Oscillation detection (Spec S03): record this direction and check for alternation.
+      // Oscillation detection (): record this direction and check for alternation.
       const history = directionHistory.get(elementToken) ?? [];
       history.push(bumpDirection);
       directionHistory.set(elementToken, history);
@@ -713,7 +711,7 @@ export function _lToTone(L: number, hueName: string): number {
 export type CVDType = "protanopia" | "deuteranopia" | "tritanopia" | "achromatopsia";
 
 // ---------------------------------------------------------------------------
-// CVD simulation — Machado et al. 2009 matrices (Table T02)
+// CVD simulation — Machado et al. 2009 matrices ()
 // ---------------------------------------------------------------------------
 
 /**
@@ -733,7 +731,7 @@ type Matrix3x3 = [
  * simulated [R', G', B'] that approximates how a person with the given
  * deficiency would perceive the colour.
  *
- * Source: Table T02 in the plan / Machado, Oliveira & Fernandes (2009)
+ * Source: in the plan / Machado, Oliveira & Fernandes (2009)
  * "A Physiologically-based Model for Simulation of Color Vision Deficiency".
  */
 export const CVD_MATRICES: Record<CVDType, Matrix3x3> = {
@@ -843,7 +841,7 @@ function linearToSrgbGamma(c: number): number {
 }
 
 // ---------------------------------------------------------------------------
-// Alpha compositing — Spec S02
+// Alpha compositing —
 // ---------------------------------------------------------------------------
 
 /**
@@ -1047,7 +1045,7 @@ export { oklchToHex } from "./palette-engine";
 /**
  * Minimum perceptual contrast magnitude per role — normative gate [D06].
  *
- * Semantic text type thresholds (Table T02):
+ * Semantic text type thresholds ():
  *   content       → 75  (primary prose text — body, descriptions, paragraphs)
  *   control       → 60  (interactive element labels, icons, borders, focus indicators)
  *   display       → 60  (titles, headers, card titles, emphasis text)
@@ -1063,7 +1061,7 @@ export const CONTRAST_THRESHOLDS: Record<string, number> = {
 };
 
 /**
- * Near-pass band for marginal badge classification (fixed 5 units, per Spec S04).
+ * Near-pass band for marginal badge classification (fixed 5 units, per).
  * A result with magnitude >= (CONTRAST_THRESHOLDS[role] - CONTRAST_MARGINAL_DELTA) is classified as
  * "marginal" rather than "fail".
  */

@@ -1,16 +1,11 @@
 //! Shared probe table for the golden stream-json catalog.
 //!
-//! See `roadmap/tugplan-golden-stream-json-catalog.md` §[#deep-probe-table]
-//! for the structure and §[#ground-truth-policy] for the REQUIRED vs
-//! OPTIONAL classification policy.
-//!
 //! **Classification is tentative.** The `required_events` and
-//! `optional_events` arrays seed from the prose in
-//! `roadmap/transport-exploration.md` (captured against `claude 2.1.87`).
-//! Step 4 of the tugplan reconciles each probe against a live
-//! `claude 2.1.104` capture — prose-derived events that `2.1.104` does
-//! not emit get removed; `2.1.104` events the prose omits get added.
-//! Do not treat anything in this file as the ground truth on its own.
+//! `optional_events` arrays seed from transport exploration prose
+//! (captured against `claude 2.1.87`). Each probe is reconciled against
+//! live `claude 2.1.104` captures — events the live run does not emit
+//! get removed; events live runs add get folded in. Do not treat
+//! anything in this file as the ground truth on its own.
 //!
 //! The capture binary in `tests/capture_stream_json_catalog.rs` iterates
 //! `PROBES`, runs each one against a fresh `TestTugcast`, normalizes the
@@ -62,8 +57,7 @@ pub struct ProbeRecord {
 }
 
 /// One inbound message the capture binary sends to drive a probe.
-/// Each variant corresponds to a `TestWs::send_*` helper added in
-/// tugplan Step 2.
+/// Each variant corresponds to a `TestWs::send_*` helper.
 #[derive(Debug)]
 pub enum ProbeMsg {
     /// Plain `user_message` with text and no attachments.
@@ -160,13 +154,11 @@ pub enum ProbeStatus {
 // Probe table — 35 entries
 // -----------------------------------------------------------------------
 
-/// The full probe table. Order matches `roadmap/transport-exploration.md`
-/// Tests 1-35.
+/// The full probe table. Order matches `transport-exploration.md` tests 1–35.
 ///
-/// **Tentative classification.** Step 4 reconciles this against live
-/// `claude 2.1.104`. Until then, do not treat `required_events` as
-/// ground truth — the capture binary collects whatever claude actually
-/// emits and the Step 4 review is what decides which events are
+/// **Tentative classification.** Reconcile against live `claude 2.1.104`
+/// before treating `required_events` as ground truth — the capture
+/// binary collects whatever claude actually emits; review decides
 /// required vs optional.
 pub static PROBES: &[ProbeRecord] = &[
     // --- Test 1: Basic round-trip ---

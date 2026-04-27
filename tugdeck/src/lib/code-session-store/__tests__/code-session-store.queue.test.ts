@@ -1,7 +1,7 @@
 /**
  * Step 7 — queue flush on `turn_complete(success)`.
  *
- * The single-tick collapse (Spec S03) guarantees that a queued send
+ * The single-tick collapse () guarantees that a queued send
  * flushes in the same dispatch that commits the preceding turn, so
  * subscribers observe a final phase of `submitting`, not a transient
  * `idle`, and are notified exactly once per collapse.

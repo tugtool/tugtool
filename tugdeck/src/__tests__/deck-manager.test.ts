@@ -379,7 +379,7 @@ describe("DeckManager.handlePaneClosed", () => {
 
 // ---------------------------------------------------------------------------
 // Save-on-close: save callback runs before cardWillBeginDestruction.
-// ([L23], [Q05]; Step 14 of roadmap/tugplan-selection.md.)
+// ([L23].)
 // ---------------------------------------------------------------------------
 
 describe("DeckManager save-on-close", () => {
@@ -1012,7 +1012,7 @@ describe("DeckManager store API – subscriber callback timing", () => {
 });
 
 // ---------------------------------------------------------------------------
-// addCardToPane tests (Spec S03)
+// addCardToPane tests ()
 // ---------------------------------------------------------------------------
 
 describe("DeckManager.addCardToPane", () => {
@@ -1084,7 +1084,7 @@ describe("DeckManager.addCardToPane", () => {
 });
 
 // ---------------------------------------------------------------------------
-// removeCard tests (Spec S03)
+// removeCard tests ()
 // ---------------------------------------------------------------------------
 
 describe("DeckManager.removeCard", () => {
@@ -1363,7 +1363,7 @@ describe("DeckManager.setActiveCardInPane", () => {
 });
 
 // ---------------------------------------------------------------------------
-// reorderCardInPane tests (Spec S01 / Step 1)
+// reorderCardInPane tests (/ Step 1)
 // ---------------------------------------------------------------------------
 
 describe("DeckManager.reorderCardInPane", () => {
@@ -1433,7 +1433,7 @@ describe("DeckManager.reorderCardInPane", () => {
 });
 
 // ---------------------------------------------------------------------------
-// detachTab tests (Spec S02 / Step 1)
+// detachTab tests (/ Step 1)
 // ---------------------------------------------------------------------------
 
 describe("DeckManager.detachCard", () => {
@@ -1668,7 +1668,7 @@ describe("DeckManager.addCard – defaultCards registration", () => {
 });
 
 // ---------------------------------------------------------------------------
-// moveCardToPane tests (Spec S03 / Step 1)
+// moveCardToPane tests (/ Step 1)
 // ---------------------------------------------------------------------------
 
 describe("DeckManager.moveCardToPane", () => {
@@ -1864,7 +1864,7 @@ describe("DeckManager.moveCardToPane", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Phase 5f: Per-card state cache (Spec S03, Step 3)
+// Phase 5f: Per-card state cache (Step 3)
 // ---------------------------------------------------------------------------
 
 describe("DeckManager per-card state cache (Phase 5f Step 3)", () => {
@@ -2467,8 +2467,8 @@ describe("DeckManager first-responder transitions (11.6.1b)", () => {
 
   it("T-11-6-1b-07b: moveCardToPane into an inactive stack activates the target and flips FR to the moved card", () => {
     // Cross-pane move always activates the target pane (selection
-    // plan #step-23c). The user drags a card to another pane to
-    // follow it — attention moves with the gesture. Pre-#step-23c
+    // cross-pane move). The user drags a card to another pane to
+    // follow it — attention moves with the gesture. Previously
     // the FR stayed on the source's remaining card and the user
     // had to click back into the moved card; the new contract is
     // that the moved card becomes the new FR unconditionally.
@@ -2653,7 +2653,7 @@ describe("DeckManager ↔ lifecycle-cascade install/dispose (11.6.5 H7)", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Fresh-bag invariant (tugplan-tide-card-polish Step 5.5.b Fixup D)
+// Fresh-bag invariant ([L23] — save before cross-pane move)
 //
 // _detachCard and _moveCardToPane must flush the moving card's save
 // callback *before* mutating state so the per-card CardStateBag reflects
@@ -2845,14 +2845,13 @@ describe("DeckManager window focus/blur wiring", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Focus-transfer channels (Step 23A).
+// Focus-transfer channels.
 //
 // `DeckManager` owns two registries that the focus-transfer helper
 // reads and writes: the activation-callback channel (one closure per
 // cardId; last-registration wins) and the card-host-root channel
 // (one live `HTMLElement` per cardId). Tests here pin the contract
-// that `useCardPersistence` and `CardHost` rely on in Step 23A, and
-// that the helper will rely on in Step 23B / 23C.
+// `useCardPersistence` and `CardHost` rely on.
 // ---------------------------------------------------------------------------
 
 describe("DeckManager focus-transfer channels", () => {
@@ -2948,7 +2947,7 @@ describe("DeckManager focus-transfer channels", () => {
 // ---------------------------------------------------------------------------
 // Step 5: DeckManager.testMode + seedDeckState
 //
-// Pin the Spec [#s05-testmode-semantics] contract:
+// Pin the test-mode tugbank write contract:
 //   - Construction with `{ testMode: true }` skips tugbank reads and
 //     makes every tugbank write a no-op (guarded `putLayout`,
 //     `putCardState`, `putFocusedCardId`).

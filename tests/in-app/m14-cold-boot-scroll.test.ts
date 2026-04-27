@@ -41,7 +41,7 @@
  * Layer 4 (the `tug-region-scroll-set` event + SmartScroll
  * disengage-follow-bottom + MutationObserver `attributeFilter`
  * retry) flipped this from failing to passing. See
- * `roadmap/tugplan-selection.md` Step 25C.2.
+ * [M14] gating and scroll persistence contract.
  *
  * ## Closes
  *

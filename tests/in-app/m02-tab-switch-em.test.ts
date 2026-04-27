@@ -1,6 +1,6 @@
 /**
  * m02-tab-switch-em.test.ts — EM intra-pane tab switch (parent
- * plan #step-23e). The EM-half of the [M01]/[M02] pair: typing
+ * [M02]). The EM-half of the [M01]/[M02] pair: typing
  * inside an EM-flavored card survives a tab-away / tab-back
  * gesture, including the engine root reacquiring focus via the
  * registered `onCardActivated` callback (the framework records

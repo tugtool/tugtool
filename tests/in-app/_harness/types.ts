@@ -1,7 +1,7 @@
 /**
  * types.ts — RPC wire types for the in-app test harness.
  *
- * Mirrors Spec [#s01-rpc-protocol] from `roadmap/tugplan-in-app-bridge.md`.
+ * Mirrors the in-app bridge RPC protocol (handshake + NDJSON framing).
  * This file is types-only — no tugdeck runtime imports, no side effects.
  * The Swift side implements the same shape informally; drift is caught
  * at handshake via `VersionSkewError`.
@@ -412,7 +412,7 @@ export interface LaunchTugAppOptions {
   /**
    * Disable test-mode's persistence-bypass so tugbank writes from
    * `deck-manager`'s `put*Guarded` wrappers actually go through.
-   * Used by cold-boot harness tests (selection plan Step 25C.2)
+   * Used by cold-boot harness tests ([M14] scroll / focus round-trips)
    * paired with a per-test `TUGBANK_PATH` so pollution of the
    * developer's real `~/.tugbank.db` is impossible.
    *

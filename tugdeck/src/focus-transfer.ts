@@ -41,44 +41,18 @@
  * the target, gates through the focus-theft rules, and executes the
  * transfer. There is no RAF, no microtask hop, no React effect.
  *
- * ## What has shipped
+ * ## What ships in this module
  *
- * - **Step 23A** — module seam: types, store registrations, the
- *   `resolveActivationTarget` resolver. The three side-effecting
- *   entries were stubs that threw with step pointers.
- *
- * - **Step 23B** — `transferFocusForActivation`'s five-step body
- *   lands here, wired into all three row-1/2/3 gesture sources:
- *   `pane-focus-controller.ts` (split (a)),
- *   `tug-pane.tsx#performSelectCard` and
- *   `deck-manager.ts#_removeCard` / `_closePane` (split (b)). The
- *   legacy `[A3]` `useLayoutEffect` in `CardHost` retires in split
- *   (c); `resolveActivationTarget` grows a `default-focus` variant
- *   so cards with no usable bag.focus (m16's c1, fresh DOM-authority
- *   cards) still receive the caret via the
- *   {@link DEFAULT_FOCUS_SELECTORS} chain.
- *
- * - **Step 23C** — `captureFocusForDragStart` and
- *   `transferFocusAfterMove` ship. The drag-start save fires in
- *   capture phase from `tug-pane.tsx#handleDragStart` and
- *   `tug-tab-bar.tsx#handleTabPointerDown` (before the browser's
- *   mousedown default blurs the focused element). The drop hook
- *   fires from `deck-manager.ts#_detachCard` / `_moveCardToPane`
- *   after `notify()` so the helper sees the post-commit DOM. The
- *   drag coordinator's `onDragCancel` callback (Escape /
- *   pointercancel) routes through the same helper to refocus into
- *   the card's pre-drag DOM location. Step-11's cross-pane
- *   `[hostStackId]`-keyed `useLayoutEffect` retires in this step.
- *
- * - **Step 23D** — `reactivateCurrentFocusDestination` ships. The
- *   window-`focus` listener installed in `deck-manager.ts#installDeckStoreFocusListeners`
- *   calls it after `setHasFocus(true)` so the current first
- *   responder reacquires its caret + selection on cmd-tab return /
- *   click-back-from-Finder. The companion window-`blur` listener
- *   flushes the first responder's save callback before flipping
- *   `state.hasFocus = false`, so the bag the helper reads on
- *   re-focus reflects the pre-blur state regardless of debounce
- *   or `visibilitychange` timing.
+ * - Resolver plus store wiring (`resolveActivationTarget`, registrations).
+ * - `transferFocusForActivation` and gesture hooks from `pane-focus-controller`,
+ *   `tug-pane`, and `deck-manager` (`_removeCard` / `_closePane`); the
+ *   legacy `[A3]` `useLayoutEffect` in `CardHost` retires in favor of
+ *   this path. `default-focus` covers cards with no saved `bag.focus`.
+ * - Drag: `captureFocusForDragStart` / `transferFocusAfterMove` from
+ *   pane/tab drag handlers and `deck-manager` after cross-pane moves;
+ *   cancel path refocuses the pre-drag target.
+ * - App focus: `reactivateCurrentFocusDestination` on window `focus` after
+ *   `setHasFocus(true)`; `blur` flushes save before `hasFocus` clears.
  *
  * ## The activation target
  *
@@ -269,7 +243,7 @@ export type ActivationTarget =
  * Narrow subset of `IDeckManagerStore` that this module reads. Kept
  * narrow so tests (and future refactors) do not need to hand in the
  * full deck store — a handful of methods is enough. Downstream
- * side-effecting entries (Step 23B / 23C / 23D) will expand this list
+ * side-effecting entries will expand this list
  * as they wire in the mutation and dispatch paths.
  */
 export type FocusTransferStore = Pick<
@@ -381,8 +355,8 @@ export function resolveActivationTarget(
 /**
  * Options for {@link transferFocusForActivation}.
  *
- * This signature lands in Step 23B. Summarized here so callers that
- * wire in early see the full shape.
+ * Stabilized once `transferFocusForActivation` shipped. Summarized so
+ * early wire-in stays typed.
  */
 export interface TransferFocusForActivationOptions {
   /**
@@ -425,7 +399,7 @@ export interface TransferFocusForActivationOptions {
  * rules, and transfer focus / DOM selection.
  *
  * Implemented across Pass 3 of the
- * `#step-23-execution-strategy`: split (a) shipped the body and the
+ * Focus-transfer seam: one implementation shipped the body and the
  * `pane-focus-controller` wiring; split (b) wired
  * `tug-pane#performSelectCard` and `deck-manager#_removeCard` /
  * `_closePane`; split (c) retired the `[A3]` `useLayoutEffect` in
@@ -459,8 +433,7 @@ export function transferFocusForActivation(
   // before the incoming card's activation hook runs
   // `setSelectedRange` — which would otherwise call
   // `removeAllRanges()` on the global Selection and destroy the
-  // outgoing card's selection. Selection plan Step 25C.4 [L23]
-  // enforcement.
+  // outgoing card's selection. [L23] enforcement.
   if (
     outgoingCardId !== null &&
     outgoingCardId !== incomingCardId &&
@@ -598,8 +571,8 @@ export function transferFocusForActivation(
  * action will (a) focus the click target and (b) place a collapsed
  * caret at the click position — clobbering any saved selection on
  * the input. The mount-restore effect in `card-host.tsx` applies
- * form-control snapshots once at mount (Step 25C.5 Layer 4 — was
- * `WeakSet`-gated through a MutationObserver loop, now a one-shot),
+ * form-control snapshots once at mount (one-shot; historically
+ * `WeakSet`-gated through a MutationObserver loop),
  * so a card that was deactivated then re-activated WITHOUT remount
  * has no path that re-applies its saved selection. This helper is
  * the activation-time re-apply that closes that gap.
@@ -634,8 +607,6 @@ export function transferFocusForActivation(
  * `installPreventMousedown`. In practice, every activation
  * transition is click-driven, so the listener gets consumed by the
  * intended click. [L23]
- *
- * Selection plan Step 25C.3 follow-up (m36-inactive-card-app-switch).
  */
 function installFormControlReapplyOnNextMousedown(
   bag: CardStateBag,

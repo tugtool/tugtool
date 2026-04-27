@@ -1,4 +1,4 @@
-//! Implementation of the `tug init` command (Spec S01)
+//! Implementation of the `tug init` command
 
 use std::fs::{self, OpenOptions};
 use std::io::Write;

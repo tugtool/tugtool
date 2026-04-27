@@ -113,8 +113,7 @@ export interface ClaudeSpawnConfig {
 
 /**
  * Build the CLI argument array for spawning the claude process.
- * Exported for unit testing per Step 1 strategy.
- * Per Spec S01 (#s01-spawn-args).
+ * Exported for unit tests.
  */
 export function buildClaudeArgs(config: ClaudeSpawnConfig): string[] {
   // Validate session flag combinations per D10.
@@ -564,7 +563,6 @@ export function routeTopLevelEvent(
 /**
  * Map a single stream-json inner event (from stream_event wrapper) to IPC messages.
  * Exported for unit testing.
- * Per Table T01 (#t01-event-mapping).
  */
 export function mapStreamEvent(
   event: Record<string, unknown>,
@@ -734,7 +732,7 @@ export class SessionManager {
   }
 
   /**
-   * Spawn the claude CLI process with stream-json flags per Spec S01.
+   * Spawn the claude CLI process with stream-json flags.
    *
    * `mode` picks between `--session-id <id>` (for a fresh spawn that
    * claims a tugdeck-generated UUID as claude's own session id) and

@@ -1,7 +1,7 @@
 /**
  * m27-layout-state-persistence.test.ts — TugAccordion's open-section
  * value survives cmd-tab + reload via the Component Persistence
- * Protocol [A9] (selection plan Step 25D / [M27]).
+ * Protocol [A9] ([M27]).
  *
  * ## Why this exists
  *
@@ -11,7 +11,7 @@
  * an internal implementation operation (mount-time Radix init)
  * destroyed user-visible state.
  *
- * Step 25D adds `persistKey` + `useComponentPersistence` to
+ * Uses `persistKey` + `useComponentPersistence` to
  * TugAccordion. Uncontrolled accordions mirror Radix's value in a
  * `useState` so capture/restore can read/write it; controlled
  * accordions dispatch `toggleSection` through the responder chain

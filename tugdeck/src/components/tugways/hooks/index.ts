@@ -21,7 +21,7 @@
  * }
  * ```
  *
- * ## Table T02: Zone Classification Quick Reference
+ * ## Zone Classification Quick Reference
  *
  * Every UI mutation in tugways belongs to exactly one zone. The zone
  * determines the mechanism -- the choice is mechanical, not a judgment call.
@@ -32,7 +32,7 @@
  * | Local data | External mutable store + selective subscriptions | useSyncExternalStore, useState (local)              | Subscribing component only |
  * | Structure  | React state at the right ancestor level       | useState, useReducer, split contexts                  | The affected subtree    |
  *
- * ## Table T03: Five Structure-Zone Rules
+ * ## Five Structure-Zone Rules
  *
  * All new tugways code from Phase 4 forward must follow these rules.
  * Violations in older code are fixed when that code is next touched.

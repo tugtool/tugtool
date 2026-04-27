@@ -20,7 +20,6 @@
  *   #9  -- No React state changes during continuous preview gestures.
  *   #10 -- Controls emit actions; responders handle actions.
  *
- * See: tugplan-tugways-phase-5d3-mutation-transactions.md
  *
  * @module components/tugways/cards/gallery-mutation-tx
  */

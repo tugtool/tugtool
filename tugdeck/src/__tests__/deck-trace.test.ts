@@ -2,9 +2,9 @@
  * deck-trace.test.ts — pure-logic unit tests for the ring buffer
  * and public API surface of `deck-trace.ts`.
  *
- * These tests intentionally avoid DOM-level coverage: Step 1 of the
- * in-app-test-harness plan ships the seam only (no wired call
- * sites), and per Design Decision [D10] we do not pretend happy-dom
+ * These tests intentionally avoid DOM-level coverage: integration
+ * tests that wire the trace into real focus / observer behavior are
+ * separate, and per Design Decision [D10] we do not pretend happy-dom
  * can verify focus / DOM-observer behavior. The event-union shape,
  * the bounded ring's eviction policy, the `since(seq)` slice, the
  * enable-gate, and the `mark()` monotonic counter are all

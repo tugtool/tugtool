@@ -29,9 +29,8 @@
  *   #3  -- useLayoutEffect for registrations events depend on
  *   #4  -- Appearance changes through CSS/DOM, never React state
  *
- * Spec S01, Spec S06, Spec S07 (#s07-gallery-demo)
+ *,, (#s07-gallery-demo)
  *
- * See also: tugplan-tugways-phase-5d4-observable-properties.md
  *
  * @module components/tugways/cards/gallery-observable-props
  */
@@ -55,7 +54,7 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
  * Property schema for the Observable Props demo.
  * Three properties: color, number (with min/max), enum.
  *
- * Spec S07 (#s07-gallery-demo)
+ * (#s07-gallery-demo)
  */
 const DEMO_SCHEMA: PropertyDescriptor[] = [
   {
@@ -115,7 +114,7 @@ const FONT_FAMILY_OPTIONS = ["system-ui", "monospace", "serif"] as const;
  * source: 'inspector'. Content observers that see source === 'inspector'
  * skip re-dispatch to avoid circular notification loops. [D03]
  *
- * Spec S07 (#s07-gallery-demo)
+ * (#s07-gallery-demo)
  */
 export function GalleryObservableProps({ cardId }: { cardId: string }) {
   const manager = useRequiredResponderChain();

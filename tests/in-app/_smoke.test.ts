@@ -1,7 +1,7 @@
 /**
  * _smoke.test.ts — Minimal end-to-end smoke test for the bridge.
  *
- * Covers parent plan step-7 test requirement:
+ * Covers test requirement:
  *   launchTugApp → evalJS("1 + 1") → close → expect 2.
  *
  * Also asserts `app.version === "1.0.0"` to pin the handshake.

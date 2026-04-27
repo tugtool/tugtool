@@ -7,9 +7,8 @@
  * Format: { key: KeyboardEvent.code, ctrl?, meta?, shift?, alt?, action, preventDefaultOnMatch? }
  *
  * [D04] Minimal static keybinding map for Phase 3
- * [D06] preventDefaultOnMatch added in Phase 5a for Cmd+A scoping (Spec S03)
- * Spec S05, Table T02
- */
+ * [D06] preventDefaultOnMatch added in Phase 5a for Cmd+A scoping ()
+ *,  */
 
 import type { TugAction } from "./action-vocabulary";
 import { TUG_ACTIONS } from "./action-vocabulary";
@@ -96,8 +95,7 @@ export interface KeyBinding {
  * route through the chain so the keystroke has a single code path
  * from the moment the handler grows real behavior.
  *
- * Table T02:
- * | Ctrl+`           | cycle-card             | stage 1 (global shortcut)       |
+ *  * | Ctrl+`           | cycle-card             | stage 1 (global shortcut)       |
  * | Cmd+A            | select-all             | stage 1 + preventDefaultOnMatch |
  * | Cmd+X            | cut                    | stage 1 + preventDefaultOnMatch |
  * | Cmd+C            | copy                   | stage 1 + preventDefaultOnMatch |

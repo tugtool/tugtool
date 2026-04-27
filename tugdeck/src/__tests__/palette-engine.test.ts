@@ -584,7 +584,7 @@ describe("tug-palette.css — named gray ramp and anchors", () => {
     }
   });
 
-  it("named gray oklch values match Table T01 exactly", () => {
+  it("named gray oklch values match exactly", () => {
     const expected: Record<string, string> = {
       pitch:     "oklch(0.22 0 0)",
       ink:       "oklch(0.29 0 0)",

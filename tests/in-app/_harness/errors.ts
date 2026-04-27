@@ -1,7 +1,7 @@
 /**
  * errors.ts — Harness error classes.
  *
- * Mirrors Spec [#s02-error-classes] from `roadmap/tugplan-in-app-bridge.md`.
+ * Structured errors for the in-app harness RPC client.
  * Structured errors let test authors `catch (e) { if (e instanceof
  * TimeoutError) ... }` without string-matching on messages.
  *
@@ -79,7 +79,7 @@ export class VersionSkewError extends Error {
 /**
  * Thrown when a native gesture verb (nativeClick, nativeDrag, etc.)
  * resolves a viewport point that falls outside the WKWebView's
- * visible frame. Per Spec [#s01-hardware-rpc], the Swift side
+ * visible frame. The Swift side
  * reports this as `CoordinateOutOfBoundsError` and the harness
  * translates to this class.
  *
@@ -172,7 +172,7 @@ export class TugcodeLaunchError extends Error {
 /**
  * Thrown when a transcript's `tugcodeVersion` does not match the
  * binary version the harness expects. Reserved for the long-term
- * transcript-stability story per harness plan #step-6 [D06]; the
+ * transcript-stability story [D06]; the
  * runtime emit-and-throw path is not yet wired (deferred to a
  * follow-up). Class is defined here so test code can reference it
  * once the wiring lands.

@@ -67,8 +67,7 @@ pub type ClientId = u64;
 
 /// Lifecycle state of a session's backing subprocess.
 ///
-/// The allowed transitions follow the supervisor state machine in
-/// `tugplan-multi-session-router` (see `#supervisor-state-machine`).
+/// The allowed transitions follow the internal supervisor state machine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpawnState {
     /// Intent registered, no subprocess yet.
@@ -207,7 +206,7 @@ impl<T> Default for BoundedQueue<T> {
 
 /// Per-session ledger record, keyed by [`TugSessionId`] in the supervisor.
 ///
-/// Shape follows Spec S01 (`#s01-ledger-entry`). Notably, there is no
+/// Shape follows the supervisor ledger contract. Notably, there is no
 /// `ReplayBuffer` field — the CODE_OUTPUT replay buffer stays shared at the
 /// router level per [D06]; the supervisor only routes `system_metadata`
 /// per-session.
@@ -217,12 +216,12 @@ pub struct LedgerEntry {
     /// Populated once `session_init` arrives from the subprocess.
     pub claude_session_id: Option<String>,
     /// Canonical `WorkspaceKey` returned by `WorkspaceRegistry::get_or_create`.
-    /// Used by `do_close_session` to call `registry.release`. (W2 Step 6.)
+    /// Used by `do_close_session` to call `registry.release`.
     pub workspace_key: WorkspaceKey,
     /// Caller-supplied path (pre-canonicalization). Passed to
     /// `ChildSpawner::spawn_child` in `run_session_bridge` as the spawned
     /// Claude Code process's cwd, and retained for reset-session to
-    /// respawn without losing the binding. (W2 Step 6.)
+    /// respawn without losing the binding.
     pub project_dir: PathBuf,
     /// User's spawn-time new-vs-resume choice.
     /// Forwarded as `--session-mode new|resume` to the tugcode subprocess.
@@ -308,7 +307,7 @@ pub struct SessionKeysStoreError(pub String);
 ///
 /// - `tug_session_id`: the routing key; always populated.
 /// - `project_dir`: `Some` for post-W2 records; `None` for pre-W2 legacy blobs
-///   (dropped on rebind once Step 6 teaches rebind to bind workspaces).
+///   (dropped on rebind once rebind populates workspace paths).
 /// - `claude_session_id`: `None` until P14 starts populating it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SessionKeyRecord {
@@ -629,7 +628,7 @@ impl SessionsRecorder for TugbankSessionsRecorder {
 
 /// Runtime configuration for [`AgentSupervisor`].
 ///
-/// W2 Step 6 deleted `project_dir` — the supervisor no longer has a global
+/// Per-session `project_dir` — the supervisor no longer has a global
 /// workspace path ([D12]). Per-session paths come from the CONTROL
 /// `spawn_session` payload and live on `LedgerEntry.project_dir`.
 ///
@@ -697,7 +696,7 @@ pub enum ControlError {
     #[error("tugbank persistence failed: {0}")]
     PersistenceFailure(String),
     /// The payload's `project_dir` field is missing or fails validation.
-    /// `reason` is a compile-time string from the set defined in Spec S03:
+    /// `reason` is a compile-time string from the set defined in
     /// `"missing_project_dir"`, `"does_not_exist"`, `"permission_denied"`,
     /// `"not_a_directory"`, `"metadata_error"`.
     #[error("invalid project_dir: {reason}")]
@@ -754,7 +753,7 @@ pub struct AgentSupervisor {
     pub merger_register_tx: mpsc::Sender<MergerRegistration>,
     /// Runtime configuration.
     pub config: AgentSupervisorConfig,
-    /// Per-workspace feed registry (W2 Step 6). `do_spawn_session` calls
+    /// Per-workspace feed registry. `do_spawn_session` calls
     /// `registry.get_or_create`; `do_close_session` calls
     /// `registry.release`. Shared across the whole tugcast process.
     pub registry: Arc<WorkspaceRegistry>,
@@ -781,7 +780,7 @@ pub type MergerRegistration = (TugSessionId, mpsc::Receiver<Frame>);
 struct OwnedControlPayload {
     card_id: String,
     tug_session_id: TugSessionId,
-    /// W2 Step 6: per-session workspace path. `None` for close/reset
+    /// per-session workspace path. `None` for close/reset
     /// payloads (which don't need it); `Some` for spawn payloads and
     /// rejected with `InvalidProjectDir { reason: "missing_project_dir" }`
     /// if absent on the spawn path.
@@ -980,7 +979,7 @@ impl AgentSupervisor {
                 let parsed = parse_control_payload_owned(payload).inspect_err(|e| {
                     warn!(action, error = %e, "handle_control: rejected spawn_session");
                 })?;
-                // W2 Step 6: project_dir is required on spawn per Spec S03.
+                // project_dir is required on spawn per.
                 let project_dir_str =
                     parsed.project_dir.ok_or(ControlError::InvalidProjectDir {
                         reason: "missing_project_dir",
@@ -1038,7 +1037,7 @@ impl AgentSupervisor {
             session_mode = session_mode.as_wire_str(),
         );
 
-        // Phase 0 (W2 Step 6): validate + canonicalize + acquire workspace.
+        // Phase 0: validate + canonicalize + acquire workspace.
         // This must happen before we touch the ledger so validation errors
         // short-circuit with no ledger or client_sessions mutation. On
         // success the workspace refcount is bumped by 1; every error path
@@ -1278,7 +1277,7 @@ impl AgentSupervisor {
             self.spawn_session_worker(&tug_session_id).await;
         }
 
-        // Spec S03: the CONTROL success ack echoes the canonical
+        //
         // `workspace_key` so tugdeck can stamp it into the per-card binding
         // store without attempting client-side canonicalization (which
         // would miss macOS firmlinks). W1 had no explicit ack frame on this
@@ -1698,7 +1697,7 @@ impl AgentSupervisor {
     /// 2. Register the per-session output receiver with the merger.
     /// 3. *Only then* install `input_tx`.
     ///
-    /// Step 3 must not run before step 2: if the merger has died and the
+    /// Install `input_tx` only after merger registration: if the merger has died and the
     /// register send fails after `input_tx` is installed, the dispatcher
     /// would happily forward frames into a Sender whose Receiver is owned
     /// by nothing. Registering first means a dead merger is detected
@@ -1720,7 +1719,7 @@ impl AgentSupervisor {
         let (input_tx, input_rx) = mpsc::channel::<Frame>(256);
         let (merger_per_session_tx, merger_per_session_rx) = mpsc::channel::<Frame>(256);
 
-        // Step 2: register the per-session output receiver with the merger
+        // Register the per-session output receiver with the merger
         // BEFORE touching ledger state. A dead merger is detected here and
         // short-circuits the spawn with no ledger mutation — preventing
         // the B2-class bug where a failed register would leave `input_tx`
@@ -1751,7 +1750,7 @@ impl AgentSupervisor {
             return;
         }
 
-        // Step 3: install the dispatcher-side sender and clone the
+        // Install the dispatcher-side sender and clone the
         // cancellation token. Do **not** drain the queue or transition to
         // Live — that's the bridge's job on `session_init` (see above).
         let cancel_for_bridge = {
@@ -1907,8 +1906,7 @@ impl AgentSupervisor {
             // reuses the existing mode (since `or_insert_with` does not
             // fire for an existing key), so this `New` default is what
             // the rebound session will run with. `New` is the safe
-            // default — [4.6](../../../../roadmap/tugplan-tide-card.md#step-4-6)
-            // moves session metadata onto a purpose-built ledger and can
+            // default — future session-metadata ledger work can
             // preserve the user's recorded choice across restarts.
             let entry = LedgerEntry::new(
                 tug_session_id.clone(),
@@ -2341,7 +2339,7 @@ mod tests {
         sup: &AgentSupervisor,
         tug_session_id: &TugSessionId,
     ) -> Arc<Mutex<LedgerEntry>> {
-        // W2 Step 6: LedgerEntry gained workspace_key + project_dir.
+        // LedgerEntry gained workspace_key + project_dir.
         // Tests that build a bare ledger entry use a synthetic key and
         // the shared fixture path — they don't exercise workspace
         // lifecycle, just per-session bookkeeping.
@@ -2445,7 +2443,7 @@ mod tests {
         let entries = store.entries_snapshot();
         let rec = entries.get("card-1").expect("card-1 persisted");
         assert_eq!(rec.tug_session_id, "sess-1");
-        // W2 Step 6: project_dir is now populated on the record (Step 1
+        // project_dir is now populated on the record (Step 1
         // left it as `None` — that was the deferred state).
         assert_eq!(rec.project_dir.as_deref(), Some(test_project_dir()));
         assert_eq!(rec.claude_session_id, None);
@@ -3199,7 +3197,7 @@ mod tests {
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
             .unwrap();
-        // Drain the W2 Step 6 `spawn_session_ok` ack (Spec S03) before
+        // Drain the `spawn_session_ok` ack before
         // asserting there are no backpressure frames on the control feed.
         let _ = control_rx.try_recv();
 
@@ -3323,19 +3321,18 @@ mod tests {
 
     // ---- on_client_disconnect ----
 
-    // ---- W2 Step 4: default_spawner_factory does not close over project_dir ----
+    // ---- default_spawner_factory does not close over project_dir ----
 
     #[test]
     fn test_default_spawner_factory_does_not_close_over_project_dir() {
-        // Before W2 Step 4, `default_spawner_factory` captured both
+        // Historically, `default_spawner_factory` captured both
         // `tugcode_path` and `project_dir` from the supervisor config and
-        // baked them into each TugcodeSpawner instance. Step 4 made the
-        // spawner stateless with respect to `project_dir` — the field
-        // was deleted, `TugcodeSpawner::new` takes only `tugcode_path`,
-        // and `spawn_child` accepts `project_dir` per call.
-        //
-        // Step 6 went further: the `AgentSupervisorConfig::project_dir`
-        // field was deleted entirely ([D12]). This test now relies on
+        // baked them into each TugcodeSpawner instance. The spawner was
+        // then made stateless with respect to `project_dir` — the field
+        // was deleted from the spawner, `TugcodeSpawner::new` takes only
+        // `tugcode_path`, and `spawn_child` accepts `project_dir` per
+        // call. Later, `AgentSupervisorConfig::project_dir` was removed
+        // entirely ([D12]). This test now relies on
         // the structural absence — if someone re-introduced a global
         // workspace path on the config, this test would need updating.
         use super::super::agent_bridge::build_tugcode_command;
@@ -3364,7 +3361,7 @@ mod tests {
         );
     }
 
-    // ---- Step 8: rebind_from_tugbank ----
+    // ---- rebind_from_tugbank tests ----
 
     #[tokio::test]
     async fn test_main_rebinds_intent_records_on_startup() {
@@ -3376,7 +3373,7 @@ mod tests {
         // client id), and that the store was not re-written (the helper
         // only reads on startup).
         let store = Arc::new(InMemoryStore::default());
-        // W2 Step 6: rebind drops records with no `project_dir` ([D03]),
+        // rebind drops records with no `project_dir` ([D03]),
         // so tests that want a successful rebind must populate the
         // records with a valid path. Use the shared test fixture dir.
         store
@@ -3449,7 +3446,7 @@ mod tests {
         assert_eq!(store.entries_snapshot().len(), 1);
     }
 
-    // ---- Step 6: merger_task, per-session bridge, metadata routing ----
+    // ---- merger_task, per-session bridge, metadata routing ----
 
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
@@ -3956,7 +3953,7 @@ mod tests {
         b_handle.abort();
     }
 
-    // ---- W2 Step 1: SessionKeyRecord schema + dual-read migration ----
+    // ---- SessionKeyRecord schema + dual-read migration ----
 
     #[test]
     fn test_session_key_record_serde_roundtrip() {
@@ -4046,7 +4043,7 @@ mod tests {
     }
 
     // ================================================================
-    // W2 Step 6: supervisor lifecycle hooks against the registry
+    // supervisor lifecycle hooks against the registry
     // ================================================================
 
     /// Count the live entries in the supervisor's registry map. Private

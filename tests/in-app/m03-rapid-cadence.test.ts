@@ -2,9 +2,8 @@
  * m03-rapid-cadence.test.ts — Three rapid back-to-back pane-chrome
  * clicks preserve the same caret-restore behavior as the slow-cadence
  * `m03-pane-activation.test.ts`. Regression gate for the [A3]
- * sibling-effect ordering race that selection plan
- * #step-23-execution-strategy Pass 2 lifts from a manual ritual to
- * an automated check (#step-23b checkpoint).
+ * sibling-effect ordering race (behavior previously checked manually,
+ * now covered by this test).
  *
  * Scenario
  * --------
@@ -14,23 +13,17 @@
  * assert the final state: A1 focused, caret at offset 5, value still
  * "hello".
  *
- * Forward regression gate (pre-Step-23B baseline)
- * -----------------------------------------------
- * Plan Pass 2 was authored expecting this test to fail today
- * against the [A3] sibling-effect ordering race that cross-pane
- * activation was thought to be especially exposed to (every
- * trusted click on pane chrome triggers `store.activateCard`,
- * scheduling a fresh React commit). In practice it passes
- * deterministically across four back-to-back pane-title clicks —
- * Step 3b's `pane-focus-controller` mousedown preventDefault
- * appears to have already closed the user-visible symptom: WebKit
- * no longer blurs focus during pane-chrome clicks, so the [A3]
- * restore lands on a stable target across all four. The
- * architectural problem remains — DOM writes routed through
- * React's render cycle violate [L22] — and Step 23B still retires
- * the React effect on those grounds, but as cleanup, not a bug
- * fix. This file locks in current passing behavior so the helper
- * migration cannot reintroduce a regression at this cadence.
+ * Forward regression note
+ * -----------------------
+ * This was originally expected to fail on the [A3] race (cross-
+ * pane activation: every trusted click on pane chrome triggers
+ * `store.activateCard`, scheduling a fresh React commit). In practice
+ * it passes across four back-to-back pane-title clicks:
+ * `pane-focus-controller` mousedown `preventDefault` closed the
+ * user-visible symptom, so the [A3] restore lands on a stable target. The
+ * architectural problem remains — DOM writes through React's render
+ * cycle violate [L22] — and the effect may still be retired as
+ * cleanup. This file locks in current behavior.
  *
  * Probes and gating mirror `m03-pane-activation.test.ts`.
  */
@@ -115,9 +108,8 @@ describe.skipIf(!SHOULD_RUN)(
         await app.nativeClickAtElement(paneTitleSelectorFor("p2"));
         await app.nativeClickAtElement(paneTitleSelectorFor("p1"));
 
-        // Settle once at the end. After Step 23B this poll is a
-        // no-op; pre-Step-23B it gives React the chance to settle
-        // whichever sibling-effect order won.
+        // Settle once at the end: gives React a chance to finish the
+        // sibling-effect order before assertions.
         await app.expectFocusedCard("A1");
         expect(await app.getActiveCardId()).toBe("A1");
 
@@ -125,7 +117,7 @@ describe.skipIf(!SHOULD_RUN)(
         // "hello". This is the assertion that fails today
         // (sibling-effect race causes restore to abort or be
         // immediately blurred by WebKit's mousedown default — the
-        // same family of bug Step 3b uncovered for slow cadence).
+        // same family of bug the slow-cadence test covers).
         const caretA1Expected: CaretState = {
           kind: "input",
           selectionStart: 5,

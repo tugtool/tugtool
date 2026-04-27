@@ -11,7 +11,7 @@
 //! `get_or_create` calls from `AgentSupervisor::spawn_session_worker` and
 //! introduces `release()`.
 //!
-//! See `roadmap/tugplan-workspace-registry-w1.md` specs S01/S02.
+//! Multi-workspace registry: W1 bootstrap path, W2 per-session `get_or_create` + `release`.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -48,8 +48,8 @@ pub enum WorkspaceError {
     InvalidProjectDir { path: PathBuf, reason: &'static str },
 
     /// Returned from `WorkspaceRegistry::release` when the key is not
-    /// present in the map. Unused in production until Step 6 wires the
-    /// supervisor's close/reset handlers into `release`; exercised by
+    /// present in the map. Unused in production until the supervisor's
+    /// close/reset handlers are wired into `release`; exercised by
     /// `test_release_unknown_key_returns_error` in the meantime.
     #[allow(dead_code)]
     #[error("unknown workspace key: {0}")]
@@ -62,7 +62,7 @@ pub enum WorkspaceError {
 pub struct WorkspaceKey(Arc<str>);
 
 impl WorkspaceKey {
-    /// Obtain a cheap `Arc<str>` handle — used by feed constructors in #step-3.
+    /// Obtain a cheap `Arc<str>` handle — used by feed constructors that take `workspace_key`.
     pub fn arc(&self) -> Arc<str> {
         Arc::clone(&self.0)
     }
@@ -87,13 +87,13 @@ impl AsRef<str> for WorkspaceKey {
 ///
 /// Exposes the same surface `main.rs` wires into the router today:
 /// the three watch receivers, the FILETREE query sender, and the four spawned
-/// task handles. See Spec S01 for rationale.
+/// task handles; see module-level docs for the workspace bundle contract.
 pub struct WorkspaceEntry {
     /// Canonical key — also the map key in `WorkspaceRegistry`. Read by
     /// `AgentSupervisor::do_spawn_session` to build the `LedgerEntry`
     /// binding and by `do_close_session` / `rebind_from_tugbank` to call
-    /// `release`. W2 Step 6 started reading this field from production,
-    /// so the W1 `#[allow(dead_code)]` annotation has been removed.
+    /// `release`. Production now reads this field, so the W1
+    /// `#[allow(dead_code)]` annotation has been removed.
     pub workspace_key: WorkspaceKey,
     /// Original (pre-canonicalized) path input to `get_or_create`. The
     /// supervisor stores and reads the per-session path via
@@ -127,7 +127,7 @@ pub struct WorkspaceEntry {
     /// to fire without needing to reach into the tasks themselves.
     ///
     /// Read only by `WorkspaceRegistry::release` (and tests). Production
-    /// callers don't touch it until Step 6 wires the supervisor into
+    /// callers do not use it until the supervisor is wired into
     /// `release`, hence the allow.
     #[allow(dead_code)]
     pub cancel: CancellationToken,
@@ -145,12 +145,11 @@ impl WorkspaceEntry {
     /// tasks. Synchronous (does not `.await`), so it is safe to call while
     /// holding `WorkspaceRegistry::inner`'s std Mutex.
     ///
-    /// In #step-2 the feed constructors do not yet take `workspace_key`;
-    /// #step-3 adds that pass-through via `workspace_key.arc()`. Similarly,
-    /// the three watch channels are initialized with empty-payload frames,
-    /// matching today's `main.rs` bootstrap exactly — seeding is not needed
-    /// because the tugcast router strips empty-payload frames from the
-    /// LIVE-state initial snapshot send (see Spec S01 and router.rs).
+    /// Feed constructors take `workspace_key` via `workspace_key.arc()`. The
+    /// three watch channels are initialized with empty-payload frames,
+    /// matching `main.rs` bootstrap — seeding is not needed because the
+    /// tugcast router strips empty-payload frames from the LIVE-state
+    /// initial snapshot send (see `router.rs`).
     fn new(
         project_dir: PathBuf,
         workspace_key: WorkspaceKey,
@@ -161,7 +160,7 @@ impl WorkspaceEntry {
         // cancel still propagates into the child for orderly shutdown.
         // Without the child, `release` would fire the shared parent
         // token and cancel *every* workspace's tasks at once — which
-        // matters starting in W2 Step 6 when multiple workspaces coexist.
+        // matters when multiple workspaces coexist.
         let cancel = parent_cancel.child_token();
 
         let file_watcher = FileWatcher::new(project_dir.clone());
@@ -319,8 +318,8 @@ impl WorkspaceRegistry {
     /// the entry's cancel token, remove it from the map, and drop the
     /// `Arc<WorkspaceEntry>`. The spawned tasks (file watcher, filesystem,
     /// filetree, git) see the cancel and exit on their own; we don't
-    /// join them here — Step 5 scope is "refcount + teardown trigger,"
-    /// not explicit task lifetime management.
+    /// join them here — refcount and teardown trigger only, not explicit
+    /// task lifetime management.
     ///
     /// Returns [`WorkspaceError::UnknownKey`] if the key is not present
     /// in the map. Callers typically log and ignore this — it indicates
@@ -328,9 +327,8 @@ impl WorkspaceRegistry {
     /// `get_or_create`, both of which are logic errors in the caller,
     /// not error conditions to propagate.
     ///
-    /// Unused by production code until Step 6 wires the supervisor's
-    /// close/reset handlers into `release`; exercised by the Step 5
-    /// tests in the meantime.
+    /// Production callers for session teardown are still being wired; unit
+    /// tests exercise `release` in the meantime.
     #[allow(dead_code)]
     /// Crate-visible inspection handle for test assertions. The guard
     /// returned is a std::sync::MutexGuard, so `.len()` and other
@@ -450,7 +448,7 @@ mod tests {
         drain_and_drop(registry, cancel).await;
     }
 
-    // ---- W2 Step 5: refcount + release ----
+    // ---- Refcount + release ----
 
     #[tokio::test]
     async fn test_get_or_create_bumps_existing_refcount() {

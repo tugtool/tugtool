@@ -47,7 +47,7 @@ import tugColorCanonical from "../../../tug-color-canonical.json";
 
 /**
  * 48 hue family names mapped to OKLCH hue angles (degrees).
- * Angles from the 48-Color Hyphenated Palette proposal (Table T01).
+ * Angles from the 48-Color Hyphenated Palette proposal ().
  * garnet=2.5 through berry=355; all original 24 hues unchanged.
  */
 export const HUE_FAMILIES: Record<string, number> = {
@@ -287,7 +287,7 @@ export function isInP3Gamut(L: number, C: number, h: number, epsilon = 0.001): b
  * the minimum across all sample points, applies the 2% safety margin (inside
  * findMaxChroma), and optionally caps at maxCap.
  *
- * Per Spec S06:
+ * Per:
  * - sRGB derivation: _deriveChromaCaps(tugColorLSamples, isInSRGBGamut, DEFAULT_LC_PARAMS.cMax)
  * - P3 derivation:  _deriveChromaCaps(tugColorLSamples, isInP3Gamut) — no maxCap
  *
@@ -371,7 +371,7 @@ export function toneToL(tone: number, hueName?: string): number {
 /**
  * Five convenience presets per hue. Each preset maps a name to {intensity, tone}.
  * These are labeled reference points in the continuous 100×100 intensity/tone space.
- * Per Table T01 in the plan specification.
+ * Per in the plan specification.
  */
 export const TUG_COLOR_PRESETS: Record<string, { intensity: number; tone: number }> = {
   canonical: { intensity: 50, tone: 50 },

@@ -4,7 +4,7 @@
  * Scope of this module
  * --------------------
  * Pure helpers that serialize a call into the shape
- * `window.__tug.<method>(...)` (parent plan Spec [#s03-tug-surface])
+ * `window.__tug.<method>(...)`
  * and hand it to the transport. `App` (see `./index.ts`) delegates
  * its public methods here so the wire-format logic lives in one
  * testable place.
@@ -17,7 +17,7 @@
  *
  * Nothing in this file uses `setTimeout` / `setInterval` — every
  * wait-style assertion is expressed as a `waitForCondition` over a
- * pure boolean expression. Parent plan [D12] ban.
+ * pure boolean expression. [D12] ban.
  */
 
 import type {
@@ -39,11 +39,11 @@ import type {
 // `import type`-ing from the tugdeck source) so the `tests/in-app/`
 // tsc run does not have to type-check the full tugdeck React/DOM
 // graph. Drift is caught at handshake time via the surface-version
-// check (parent plan [D11]); the bridge's `SURFACE_VERSION` is the
+// check ([D11]); the bridge's `SURFACE_VERSION` is the
 // single source of truth for wire-compat.
 //
 // When tugdeck's `SURFACE_VERSION` bumps, the matching shapes here
-// must be hand-updated (parent plan follow-up for every bump).
+// must be hand-updated alongside the harness.
 // ---------------------------------------------------------------------------
 
 /** Mirrors `tugdeck/src/test-surface.ts` → `CaretState`. */
@@ -159,7 +159,7 @@ function lit(v: unknown): string {
 /**
  * Wrap a surface call in the standard access path. Throws a helpful
  * error if `window.__tug` is absent — that means the page is not in
- * test mode (see parent plan Spec [#s03-tug-surface] DEV gate).
+ * test mode (DEV + `__tugTestMode` gate on the page).
  *
  * The check is cheap on the page-side (`typeof window.__tug`) and
  * stabilizes the error message shape so harness code doesn't need to
@@ -177,7 +177,7 @@ function callSurface(script: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Gesture wrappers (Spec [#s04-event-synthesis])
+// Gesture wrappers (synthetic DOM sequences via `__tug`)
 // ---------------------------------------------------------------------------
 
 /**
@@ -200,7 +200,7 @@ export function click(
 
 /**
  * Type `text` into the input/textarea matched by `selector` using
- * the native-setter pattern (Spec [#s04-event-synthesis]). React
+ * the native-setter pattern. React
  * sees each character's InputEvent.
  */
 export function type_(
@@ -217,8 +217,8 @@ export function type_(
 
 /**
  * Directly `.focus()` the element matched by `selector`. Escape
- * hatch for the `isTrusted`-gated browser-default focus path (parent
- * plan [D09] fidelity limits).
+ * hatch for the `isTrusted`-gated browser-default focus path ([D09]
+ * fidelity limits).
  */
 export function focusElement(
   caller: HarnessCaller,
@@ -237,8 +237,7 @@ export function focusElement(
 
 /**
  * Granular reset per {@link ResetOptions}. Each axis defaults to
- * false; callers opt in exactly what a test case needs (parent plan
- * [D01]).
+ * false; callers opt in exactly what a test case needs ([D01]).
  */
 export function reset(
   caller: HarnessCaller,
@@ -382,7 +381,7 @@ export function clearDeckTrace(
 
 /**
  * Toggle trace recording. Disabled state is the no-op fast path
- * (see parent plan Spec [#s01-deck-trace-event]).
+ * (see `deck-trace.ts` enable contract).
  */
 export function enableDeckTrace(
   caller: HarnessCaller,
@@ -412,8 +411,8 @@ export async function expectFocusedCard(
   cardId: string,
   opts?: WaitForConditionOptions,
 ): Promise<void> {
-  // `window.__tug.getFocusedCardId() === cardId` is the contract the
-  // plan requires. We inline-serialize cardId so the Swift side
+  // `window.__tug.getFocusedCardId() === cardId` is the contract. We
+  // inline-serialize cardId so the Swift side
   // doesn't need to marshal any bindings — the script is a pure
   // expression.
   const script = `(typeof window.__tug !== "undefined") && (window.__tug.getFocusedCardId() === ${lit(cardId)})`;
@@ -622,8 +621,8 @@ export function unregisterSelectionBoundary(
 
 /**
  * Mirrors `tugdeck/src/test-surface.ts` → `EmCardState`. Stub
- * fields (`streamState`, `lastTurnSeq`) are present at Pass 7C
- * scope so test code shapes pin against the final layout, but
+ * fields (`streamState`, `lastTurnSeq`) are stubbed so test code
+ * can pin against the final layout, but
  * always carry placeholder values until tugcode integration
  * lands in a later pass.
  */
@@ -912,7 +911,7 @@ export async function nativeDragElement(
  *     await app.nativeMouseUp(somewhereFar);
  *
  * The cardDragCoordinator's document-level keydown listener
- * (selection plan #step-23c) installs at `startDrag` (which fires
+ * installs at `startDrag` (which fires
  * once the trail crosses the 5px threshold) and is removed at
  * `cleanup` (which the Escape branch invokes), so the Escape
  * keystroke must arrive AFTER the trail begins and BEFORE the
@@ -998,7 +997,7 @@ export function nativeType(
 }
 
 // ---------------------------------------------------------------------------
-// App-lifecycle simulation (Spec [#s01-hardware-rpc], Step 4)
+// App-lifecycle simulation (RPC verbs on the App handle)
 //
 // Each verb invokes the matching `NSApp` primitive on the Tug.app
 // main thread and waits up to 1000ms for the corresponding
@@ -1013,7 +1012,7 @@ export function nativeType(
 // frames) fire as a consequence.
 //
 // Common pattern: tests pair a resign/become-active or hide/unhide
-// to exercise the cascade selection plan #step-23d wires up. The
+// to exercise the app-lifecycle → deck cascade. The
 // optional `timeoutMs` is for deliberate-timeout test paths (e.g.
 // calling `simulateAppHide` while already hidden).
 // ---------------------------------------------------------------------------
@@ -1083,13 +1082,12 @@ export function simulateAppUnhide(
 }
 
 // ---------------------------------------------------------------------------
-// Tugcode subprocess lifecycle (Spec [#s03-tugcode-lifecycle], Step 5)
+// Tugcode subprocess lifecycle
 //
 // The harness spawns and tears down a tugcode subprocess that's
 // independent of production's tugcast → tugcode-per-AI-session
-// path. Step 5's API is spawn/kill only — Step 6 will extend the
-// payload with `--stub-transcript=<fd>` plumbing and add
-// `seedTugcodeTranscript` / `seedTugcodeError` for replay.
+// path. Spawn/kill is the base API; optional stub-transcript
+// wiring extends this over time.
 //
 // Errors translate to `TugcodeLaunchError` (missing binary,
 // already-running, spawn failure, log-file open failure).
@@ -1151,15 +1149,12 @@ export interface StartTugcodeOptions {
   /**
    * Stub-replay transcript. Required when `mode === "stub"`.
    *
-   * Author note: the harness plan originally proposed separate
-   * `seedTugcodeTranscript` / `seedTugcodeError` verbs invoked
-   * after `startTugcode`. Pass 7B folds them into `startTugcode`'s
-   * opts because the only known consumer (the stub-mode smoke
-   * tests) always knows the full transcript at launch time, and
-   * the seed-then-start ordering creates state-coupling without
-   * gain. To inject errors, build them as `error`-typed outputs
-   * inside the relevant `turn.outputs[]` array — that's how the
-   * tugcode replay engine emits them anyway.
+   * Stub transcript and error injection are supplied on `startTugcode`
+   * (a separate seed-then-start RPC was considered but folded into
+   * these opts because stub smoke tests know the full transcript at
+   * launch). To inject errors, build them as `error`-typed outputs
+   * inside the relevant `turn.outputs[]` array — the tugcode replay
+   * engine emits them the same way.
    */
   transcript?: TugcodeTranscript;
   /**
@@ -1354,10 +1349,10 @@ function isNativeVerbMethod(method: string): boolean {
 
 /**
  * The set of `TugTestSurface` methods this client has wrappers for.
- * Checked at plan-review time against `tugdeck/src/test-surface.ts`
- * — when a new surface method lands, add its name here AND a helper
+ * Checked when `tugdeck/src/test-surface.ts` changes — when a new
+ * surface method lands, add its name here AND a helper
  * above. The handshake's `SURFACE_VERSION` is the runtime gate
- * (parent plan [D11]); this union is the authoring-time reminder.
+ * ([D11]); this union is the authoring-time reminder.
  */
 export type ClientMethodNames =
   | "click"

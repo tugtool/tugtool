@@ -64,7 +64,7 @@ const COMPONENT_CSS_FILES = [
 ].map((f) => path.join(TUGWAYS, f));
 
 // ---------------------------------------------------------------------------
-// Token classification (Spec S01 from the plan)
+// Token classification (from the plan)
 // ---------------------------------------------------------------------------
 
 type TokenClass = "element" | "surface" | "non-color";
@@ -344,7 +344,7 @@ function parseRules(css: string): CssRule[] {
 /**
  * Parse @tug-renders-on annotations from raw CSS text (before comment stripping).
  *
- * Annotation format (Spec S01):
+ * Annotation format ():
  *   /* @tug-renders-on: --tug-surface-default *\/
  *   .selector { ... }
  *
@@ -1514,7 +1514,7 @@ function checkZeroUnresolved(
  * missing @tug-pairings blocks, and unresolved pairings.
  *
  * Exit code: 0 if zero violations; 1 if any violation found.
- * All violations are printed before exit. [D03] Lint hard gate, Spec S03.
+ * All violations are printed before exit. [D03] Lint hard gate,.
  */
 function cmdLint(): void {
   console.log(`\n=== Lint Token Annotations ===\n`);

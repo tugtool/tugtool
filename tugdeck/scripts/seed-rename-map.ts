@@ -437,7 +437,7 @@ export const SEED_RENAME_MAP: Record<string, string> = {
 
   // ---------------------------------------------------------------------------
   // FORMERLY CHROMATIC — 32 tokens (now seven-slot convention, identity mappings)
-  // All tokens from Table T01 in the plan are now at their final seven-slot names.
+  // All tokens from in the plan are now at their final seven-slot names.
   // ---------------------------------------------------------------------------
   "element-global-fill-normal-accent-rest": "element-global-fill-normal-accent-rest",
   "element-global-fill-normal-accentCool-rest": "element-global-fill-normal-accentCool-rest",

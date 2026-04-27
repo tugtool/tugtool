@@ -222,7 +222,7 @@ export interface TugPromptInputDelegate extends TugTextInputDelegate {
    * Paint the engine's `_browserMirror` to the DOM as an *active*
    * card — the deck-level first responder. Routes selection through
    * `setSelectedRange` (focus + global Selection) and writes
-   * scrollTop. Selection plan Step 25C.4. [L23], [D10].
+   * scrollTop. [L23], [D10].
    *
    * Called by wrapper compounds (e.g. `TugPromptEntry`) on
    * activation transitions and on cold-mount restore when the
@@ -234,7 +234,7 @@ export interface TugPromptInputDelegate extends TugTextInputDelegate {
    * reads selection + scrollTop from the bag directly. When omitted
    * (cmd-tab return path), the engine falls back to the in-memory
    * mirror. Both paths land identical writes; the parameter
-   * documents intent. Step 25C.5 Layer 5.
+   * documents intent.
    */
   paintMirrorAsActive(state?: TugTextEditingState): void;
   /**
@@ -246,12 +246,12 @@ export interface TugPromptInputDelegate extends TugTextInputDelegate {
    * which adds the Range to selectionGuard's `cardRanges` and
    * paints via the `inactive-selection` CSS Custom Highlight. NO
    * focus claim, NO `window.getSelection()` mutation. Writes
-   * scrollTop. Selection plan Step 25C.4. [L10], [L12], [L23].
+   * scrollTop. [L10], [L12], [L23].
    *
    * When `state` is supplied (cold-boot restore path), the engine
    * reads selection + scrollTop from the bag directly. When omitted
    * (cmd-tab return path), the engine falls back to the in-memory
-   * mirror. Step 25C.5 Layer 5.
+   * mirror.
    */
   paintMirrorAsInactive(
     publish: (range: Range | null) => void,
@@ -394,9 +394,9 @@ function TugPromptInputPersistence({
   const [, setRestoreCount] = useState(0);
   // Helper: route the engine's mirror selection through selectionGuard
   // for the inactive-paint channel. The closure reads `cardIdRef.current`
-  // at fire time per [L07] (mandatory cardIdRef pattern from Step 25C.4
-  // — cross-pane moves preserve cardId in practice but the ref keeps
-  // the contract safe under any future identity-semantics change).
+  // at fire time per [L07] (cardIdRef — cross-pane moves preserve
+  // cardId in practice but the ref keeps the contract safe under any
+  // future identity-semantics change).
   const publishToSelectionGuard = (range: Range | null): void => {
     const id = cardIdRef.current;
     if (id === null) return;
@@ -404,12 +404,12 @@ function TugPromptInputPersistence({
   };
   useCardPersistence<TugTextEditingState>({
     onCardActivated: () => {
-      // Row 6 — activation gesture lands on this EM card. Selection
-      // plan Step 25C.4: this is the only call site that legitimately
+      // Row 6 — activation gesture lands on this EM card. This is the
+      // only call site that legitimately
       // claims document focus + global Selection for this editor.
       // `paintMirrorAsActive` writes mirror.selection through
-      // `setSelectedRange` (WebKit-safe focus-then-select per [Step
-      // 23G]) and writes mirror.scrollTop. The deactivation hook
+      // `setSelectedRange` (WebKit-safe focus-then-select) and writes
+      // mirror.scrollTop. The deactivation hook
       // for the previously-active card has already routed its
       // selection into the inactive-paint channel — so this card's
       // `removeAllRanges()` has nothing else's state to destroy.
@@ -428,7 +428,7 @@ function TugPromptInputPersistence({
       engine.setSelectedRange(text.length, text.length);
     },
     onCardWillDeactivate: () => {
-      // Selection plan Step 25C.4 [L23] enforcement: hand the
+      // [L23] enforcement: hand the
       // selection over to the inactive-paint channel before the new
       // active card claims focus + global Selection.
       // `paintMirrorAsInactive` builds a Range from mirror.selection
@@ -448,7 +448,7 @@ function TugPromptInputPersistence({
       return engine.captureState();
     },
     onRestore: (state, { isActive }) => {
-      // Selection plan Step 25C.4 [L23] restore-ordering invariant:
+      // [L23] restore-ordering invariant:
       // CardHost fires onRestore for every card on cold-mount; this
       // consumer branches on `isActive` to choose the paint channel.
       // The active card (deck-level first responder) writes through
@@ -464,11 +464,11 @@ function TugPromptInputPersistence({
       // `useLayoutEffect` has attached the slot to the host element,
       // so the engine root is connected to the document when
       // `engine.restoreState` runs and the subsequent paint method
-      // can land on a live node. Selection plan Step 23F gap-1.
+      // can land on a live node.
       const engine = engineRef.current;
       if (engine) {
         engine.restoreState(state);
-        // Step 25C.5 Layer 5: pass `state` through so the engine reads
+        // Pass `state` through so the engine reads
         // selection + scrollTop from the just-loaded bag rather than
         // the in-memory mirror. Cold-boot restore can trust the bag
         // verbatim; the mirror is for cmd-tab return paths where the
@@ -544,7 +544,7 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
     // Carries both the editing state AND the `isActive` snapshot from
     // CardHost so the engine-creation effect can paint via the right
     // channel (paintMirrorAsActive vs paintMirrorAsInactive) when it
-    // replays the buffered restore. Selection plan Step 25C.4 [L23].
+    // replays the buffered restore. [L23].
     const pendingRestoreRef = useRef<
       { state: TugTextEditingState; isActive: boolean } | null
     >(null);
@@ -581,13 +581,13 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
         // activeElement is the contenteditable AND a visible caret
         // is placed inside it. The engine's mirror is the SOT for
         // selection; `paintMirrorAsActive` writes it through
-        // `setSelectedRange` (WebKit-safe focus-then-select per
-        // [Step 23G]) and writes mirror.scrollTop. When the mirror
+        // `setSelectedRange` (WebKit-safe focus-then-select) and writes
+        // mirror.scrollTop. When the mirror
         // has no selection (fresh mount), fall through to the
         // "place caret at end" default — also through
         // `setSelectedRange` for the same WebKit-safe path.
         //
-        // Selection plan Step 25C.4: this method is invoked by
+        // This method is invoked by
         // wrapper compounds (TugPromptEntry, tide-card via the
         // entry) on activation. CardHost / focus-transfer guarantees
         // any previously-active card's selection has been routed to
@@ -809,7 +809,7 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
         });
       }
 
-      // Selection plan Step 25C.5 Layer 3: the per-keystroke
+      // The per-keystroke
       // engine→selectionGuard relay is dropped. selectionGuard's
       // `cardRanges` is no longer the live mirror of every selection
       // movement — instead it is updated at deactivation transitions
@@ -834,11 +834,11 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
       // the same paint channel the persistence helper would have
       // chosen had the engine been ready. [L23] preservation. The
       // `cardIdRef.current` capture honors [L07]'s ref-not-direct
-      // pattern. Selection plan Step 25C.4.
+      // pattern. [L23].
       if (pendingRestoreRef.current) {
         const { state: buffered, isActive } = pendingRestoreRef.current;
         engine.restoreState(buffered);
-        // Step 25C.5 Layer 5: pass the buffered state through to the
+        // Pass the buffered state through to the
         // paint methods so they read selection + scrollTop from the
         // bag, matching the cold-boot path in the persistence helper.
         if (isActive) {

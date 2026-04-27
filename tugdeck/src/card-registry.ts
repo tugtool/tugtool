@@ -4,7 +4,7 @@
  * Single-call card registration API for the deck card system.
  *
  * **Authoritative reference:** design-system-concepts.md [D04] Single-call card
- * registration, Spec S02 CardRegistration interface, Spec S03 Registry API.
+ * registration, CardRegistration interface, Registry API.
  *
  * ## Usage
  *
@@ -35,8 +35,8 @@ import type { FeedStoreFilter } from "./lib/feed-store";
  * the host switches to an exact value-check predicate.
  *
  * Consumers: `CardHost` (via `useCardWorkspaceKey` in card-host.tsx) and
- * `GalleryPromptInput` (see gallery-prompt-input.tsx). See roadmap
- * tugplan-workspace-registry-w2.md Risk R04 (unbound window).
+ * `GalleryPromptInput` (see gallery-prompt-input.tsx). Accepts any
+ * present `workspace_key` until the card is fully bound.
  */
 export const presentWorkspaceKey: FeedStoreFilter = (_feedId, decoded) =>
   typeof decoded === "object" && decoded !== null && "workspace_key" in decoded;
@@ -66,7 +66,7 @@ export const DEFAULT_SIZE_POLICY: CardSizePolicy = {
 /**
  * Metadata describing a card's default appearance and behavior.
  *
- * **Authoritative reference:** Spec S01 CardMeta.
+ * **Authoritative reference:** CardMeta.
  */
 export interface CardMeta {
   title: string;
@@ -77,7 +77,7 @@ export interface CardMeta {
 /**
  * A single entry in the card registry.
  *
- * **Authoritative reference:** Spec S02 CardRegistration interface.
+ * **Authoritative reference:** CardRegistration interface.
  *
  * DeckCanvas renders `CardHost` for every card (single-tab and
  * multi-tab alike) and uses `contentFactory` to get card-specific content.
@@ -150,7 +150,7 @@ const registry = new Map<string, CardRegistration>();
  * Calling with a duplicate `componentId` logs a warning and overwrites the
  * existing registration.
  *
- * **Authoritative reference:** Spec S03 Registry API.
+ * **Authoritative reference:** Registry API.
  */
 export function registerCard(registration: CardRegistration): void {
   if (registry.has(registration.componentId)) {
@@ -166,7 +166,7 @@ export function registerCard(registration: CardRegistration): void {
  *
  * Returns `undefined` if no card is registered under that id.
  *
- * **Authoritative reference:** Spec S03 Registry API.
+ * **Authoritative reference:** Registry API.
  */
 export function getRegistration(componentId: string): CardRegistration | undefined {
   return registry.get(componentId);
@@ -175,7 +175,7 @@ export function getRegistration(componentId: string): CardRegistration | undefin
 /**
  * Return all registered cards.
  *
- * **Authoritative reference:** Spec S03 Registry API.
+ * **Authoritative reference:** Registry API.
  */
 export function getAllRegistrations(): Map<string, CardRegistration> {
   return registry;

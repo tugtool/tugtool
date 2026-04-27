@@ -1,12 +1,12 @@
 /**
  * m34-em-focus-after-move.test.ts — focus actually lands on the
  * engine's contenteditable after a cross-pane drag and a detach
- * (parent plan #step-23f gap 3).
+ * (focus-after-move, [M34]).
  *
  * ## Why this exists
  *
  * The dispatch-wiring contract for cross-pane move was closed in
- * Pass 8 / Step 23E: `engine-activation-dispatched` fires with
+ * `engine-activation-dispatched` fires with
  * `dispatchedFrom: "transfer-after-move"`, proving the framework
  * called `onCardActivated` on the moved card. But m06-em /
  * m07-em deliberately omit the focus-actually-landing assertion

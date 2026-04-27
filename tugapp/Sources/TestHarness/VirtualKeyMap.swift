@@ -167,7 +167,7 @@ enum VirtualKeyMap {
     // MARK: - Self-test cases
     //
     // Hand-rolled regression cases (no XCTest target yet — upgrade
-    // to XCTestCase when Step 2's NativeEventHandlers acquire a
+    // to XCTestCase when `NativeEventHandlers` acquires a
     // test target). Each case is a (name → expected mapping) pair;
     // runUnitTests() iterates and returns failures.
 

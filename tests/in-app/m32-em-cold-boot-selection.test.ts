@@ -1,7 +1,6 @@
 /**
  * m32-em-cold-boot-selection.test.ts — saved selection round-trips
- * through the cold-boot / mount-restore path (parent plan
- * #step-23f gap 1).
+ * through the cold-boot / mount-restore path ([M32]).
  *
  * ## Scenario
  *

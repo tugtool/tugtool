@@ -1,7 +1,7 @@
 /**
  * m05-app-hide-unhide.test.ts — App hide → unhide preserves focus
- * + selection on the current first-responder card (parent plan
- * #step-23d, parallel to m04).
+ * + selection on the current first-responder card (parallel to m04;
+ * [M05]).
  *
  * Scenario:
  *
@@ -12,7 +12,7 @@
  *   visible to off-screen, which fires JS `window.blur` AND
  *   `visibilitychange` (document.hidden flips true). Both saves
  *   fire — but only the window-`blur` source is the new wiring
- *   landed by parent plan #step-23d. We assert that source
+ *   We assert that source
  *   appears in the trace.
  *
  *   Then call `simulateAppUnhide`. The window comes back, JS

@@ -20,7 +20,7 @@
  * [D02] Nested context for parent discovery
  * [D03] useResponder uses useLayoutEffect for registration
  * [D41] Use useLayoutEffect for registrations that events depend on
- * Spec S02
+ *
  */
 
 import React, { useCallback, useContext, useLayoutEffect, useRef } from "react";
@@ -59,7 +59,7 @@ export interface UseResponderOptions<Extra extends string = never> {
    * inline; the deferred portion runs from the continuation.
    *
    * [D02] Handler signature is (event: ActionEvent) => void | (() => void)
-   * Spec S05 (#s05-use-responder-options)
+   * (#s05-use-responder-options)
    */
   actions?: Partial<Record<TugAction<Extra>, ActionHandler<Extra>>>;
   /**
@@ -84,7 +84,7 @@ export interface UseResponderOptions<Extra extends string = never> {
    * re-registration, which is fine because the tier of a responder is
    * a structural property of its identity, not a per-render toggle.
    *
-   * See `roadmap/key-card.md` for the design.
+   * See design doc for the design.
    */
   kind?: ResponderKind;
   /**

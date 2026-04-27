@@ -3,8 +3,7 @@
 //! Historically this module latched `system_metadata` frames from the shared
 //! CODE_OUTPUT broadcast onto a single `watch::channel<Frame>` owned by the
 //! router. Under the multi-session router, latching a single slot would
-//! clobber concurrent per-session metadata updates — see [D14] in
-//! `roadmap/tugplan-multi-session-router.md`. The supervisor now owns the
+//! clobber concurrent per-session metadata updates — see [D14]. The supervisor now owns the
 //! detection inline in its merger task and stores the frame on
 //! `LedgerEntry::latest_metadata` (per-session) AND publishes it on a
 //! dedicated SESSION_METADATA broadcast sender.

@@ -58,7 +58,7 @@
  *     `will*` method names describe observer ordering, not delegate
  *     timing — see the note on `TugCardDelegate` below.
  *
- * See roadmap/tugplan-tide-card-polish.md §Step 5.5 for the design.
+ * See design doc §Step 5.5 for the design.
  */
 
 import {

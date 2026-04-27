@@ -182,7 +182,7 @@ export interface CostUpdateEvent {
 /**
  * `error` — a wire-level error frame distinct from SESSION_STATE
  * errored and from transport close. Listed in the outbound event table
- * (roadmap/tide.md) but never captured in v2.1.105 fixtures, so tests
+ * (design doc) but never captured in v2.1.105 fixtures, so tests
  * exercise it via synthetic dispatch. Routes to the `errored` phase
  * with cause `wire_error`.
  */
@@ -209,7 +209,7 @@ export interface SessionStateErroredEvent {
 /**
  * Internal event injected when `TugConnection.onClose` fires. Not a
  * wire event — the store subscribes to the connection's close callback
- * at construction and dispatches this action per [Spec S04].
+ * at construction and dispatches this action per [].
  */
 export interface TransportCloseEvent {
   type: "transport_close";

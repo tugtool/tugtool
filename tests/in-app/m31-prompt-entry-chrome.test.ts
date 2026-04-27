@@ -1,7 +1,7 @@
 /**
  * m31-prompt-entry-chrome.test.ts — TugPromptEntry's tools popover
  * open/closed flag survives cmd-tab + reload via the Component
- * Persistence Protocol [A9] (selection plan Step 25G / [M31]).
+ * Persistence Protocol [A9] ([M31]).
  *
  * ## Why this exists (and what it does NOT cover)
  *
@@ -11,7 +11,7 @@
  * engine drafts already persisted via `bag.content`
  * (`{ currentRoute, perRoute, maximized }`) and are gated by [M24].
  *
- * Step 25G adds `useComponentPersistence` registered with
+ * Uses `useComponentPersistence` registered with
  * `persistKey="entry-chrome"` that captures `{ toolsOpen }` into
  * `bag.components[persistKey]`. The active route stays in
  * `bag.content.currentRoute` because it is the index into

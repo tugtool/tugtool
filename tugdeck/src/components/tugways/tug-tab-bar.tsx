@@ -397,7 +397,7 @@ function TabView({
   const handleTabPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
 
-    // Drag-start focus save (selection plan #step-23c). Fires
+    // Drag-start focus save. Fires
     // unconditionally — even sub-threshold clicks save, since saves
     // are cheap and the symmetric "save-at-gesture-start" contract
     // is what eliminates the cross-pane drag focus race. The

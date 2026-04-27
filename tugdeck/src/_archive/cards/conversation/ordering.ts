@@ -1,7 +1,7 @@
 /**
  * Message ordering buffer and deduplication
  *
- * Implements the message identity model from Spec S04:
+ * Implements the message identity model from:
  * - Ensures messages are delivered in seq order
  * - Deduplicates messages by (msg_id, seq) pairs
  * - Handles out-of-order delivery with buffer and timeout

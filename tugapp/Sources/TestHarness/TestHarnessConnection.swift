@@ -11,7 +11,7 @@ import WebKit
 // per line. Single-client model — the listener only ever hands us one
 // connection at a time.
 //
-// Dispatch table (Spec [#s01-rpc-protocol]):
+// Dispatch table (in-app bridge RPC):
 //   - `version` — respond `{ id, ok: true, value: "1.0.0" }`
 //   - `evalJS` — forward to `WKWebView.evaluateJavaScript`; hard
 //     server-side timeout (default 5000ms). Script throws serialize
@@ -27,7 +27,7 @@ final class TestHarnessConnection {
     /// Surface version reported by the `version` RPC. Must match
     /// `SURFACE_VERSION` in `tugdeck/src/test-surface.ts`.
     ///
-    /// `1.1.0` (Steps 2-3, 2026-04-24): adds native-gesture and
+    /// `1.1.0` (2026-04-24): adds native-gesture and
     /// keyboard verbs to the dispatch table (`nativeClick`,
     /// `nativeDoubleClick`, `nativeRightClick`, `nativeDrag`,
     /// `nativeMouseDown`, `nativeMouseUp`, `nativeKey`, `nativeType`,
@@ -41,7 +41,7 @@ final class TestHarnessConnection {
     /// `1.0.0` continue to handshake cleanly against `1.1.0` (minor
     /// version is additive).
     ///
-    /// `1.2.0` (Step 4, harness extensions): adds the four
+    /// `1.2.0` (harness extensions): adds the four
     /// app-lifecycle simulation verbs (`simulateAppResign`,
     /// `simulateAppBecomeActive`, `simulateAppHide`,
     /// `simulateAppUnhide`). Each invokes the matching `NSApp`
@@ -50,14 +50,13 @@ final class TestHarnessConnection {
     /// timeout surfaces as `AppLifecycleTimeoutError`. Additive;
     /// major stays `1`.
     ///
-    /// `1.3.0` (Step 5, harness extensions): adds the harness-owned
+    /// `1.3.0` (harness extensions): adds the harness-owned
     /// tugcode subprocess lifecycle verbs (`startTugcode` /
-    /// `stopTugcode`). The Step 5 surface is spawn/kill only; Step
-    /// 6 will extend `startTugcode`'s payload with the
+    /// `stopTugcode`). Later versions extend `startTugcode`'s payload with the
     /// `--stub-transcript=<fd>` branch and add transcript-seeding
     /// verbs. Additive; major stays `1`.
     ///
-    /// `1.4.0` (Step 6, harness extensions): `startTugcode`'s
+    /// `1.4.0` (harness extensions): `startTugcode`'s
     /// payload gains an optional `transcript` field carrying the
     /// stub-replay document. When present (and `mode == "stub"`),
     /// the Swift handler writes it to a temp file under $TMPDIR
@@ -65,10 +64,10 @@ final class TestHarnessConnection {
     /// routes through its deterministic replay engine. The plan's
     /// originally-separate `seedTugcodeTranscript` /
     /// `seedTugcodeError` verbs are folded into `startTugcode`'s
-    /// opts (see Author note in harness plan Step 6). Additive;
+    /// opts. Additive;
     /// major stays `1`.
     ///
-    /// `1.5.0` (selection plan Step 25C.2 Layer 2): adds the
+    /// `1.5.0`: adds the
     /// `quitGracefully` verb. Schedules `NSApp.terminate(nil)` on
     /// main, which fires the full `applicationShouldTerminate`
     /// path including `window.tugdeck.saveState()`. Distinct from
@@ -346,7 +345,7 @@ final class TestHarnessConnection {
         }
     }
 
-    // MARK: - Tugcode subprocess lifecycle verbs (Spec [#s03-tugcode-lifecycle], Step 5)
+    // MARK: - Tugcode subprocess lifecycle verbs
 
     /// Top-level dispatch for `startTugcode` / `stopTugcode`. The
     /// underlying `Process` API blocks briefly during `run()` /
@@ -441,7 +440,7 @@ final class TestHarnessConnection {
         }
     }
 
-    // MARK: - App-lifecycle verbs (Spec [#s01-hardware-rpc], Step 4)
+    // MARK: - App-lifecycle verbs
 
     /// Top-level dispatch for the `simulateApp*` verb family. Each
     /// verb invokes the matching `NSApp` primitive on main and waits
@@ -476,7 +475,7 @@ final class TestHarnessConnection {
         }
     }
 
-    // MARK: - Native verbs (Spec [#s01-hardware-rpc], Step 2)
+    // MARK: - Native verbs
 
     /// Top-level dispatch for the native-event verb family. Builds a
     /// `NativeEventHandlers` instance, runs the verb on the main

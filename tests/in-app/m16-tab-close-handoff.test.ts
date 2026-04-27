@@ -1,8 +1,8 @@
 /**
  * m16-tab-close-handoff.test.ts — Closing the active tab hands focus to
- * its successor (parent plan #step-15, Phase 3 third test).
+ * its successor (handoff, [M16]).
  *
- * Scenario (parent plan #phase-3-tests):
+ * Scenario:
  *
  *   Seed a pane with three FC cards [c1, c2, c3], activate c2, click
  *   c2's close button. Verify c1 (the previous-sibling handoff target
@@ -183,7 +183,7 @@ describe.skipIf(!SHOULD_RUN)("m16: closing active tab hands focus to successor w
       // -----------------------------------------------------------------
       // Trace assertions for the close → handoff transition.
       //
-      // Production emission order (post-#step-23b Pass 3 split (b),
+      // Production emission order (post-commit split,
       // 2026-04-24 — `_removeCard` routes the FR flip through
       // `transferFocusForActivation`, whose `flushSync` forces React
       // to commit the activation transition synchronously inside the

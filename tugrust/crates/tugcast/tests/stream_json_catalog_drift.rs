@@ -1,10 +1,6 @@
 //! Drift regression test + hand-rolled shape differ for the golden
 //! stream-json catalog.
 //!
-//! See `roadmap/tugplan-golden-stream-json-catalog.md` Step 6 for the
-//! full scope and Step 4 for the baseline fixtures that this test
-//! diffs against.
-//!
 //! # What this test does
 //!
 //! The `stream_json_catalog_drift_regression` test, when run against
@@ -45,7 +41,7 @@
 //! TUG_REAL_CLAUDE=1 cargo test --test stream_json_catalog_drift -- --ignored
 //! ```
 //!
-//! Per Step 6 [D13], the test fails hard if
+//! Per [D13], the test fails hard if
 //! `tests/fixtures/stream-json-catalog/v<version>/schema.json` does
 //! not exist for the running claude version — there is no version
 //! fallback. If you see "no golden schema for claude X.Y.Z", run the
@@ -283,7 +279,7 @@ fn format_kind(kind: &FailureKind) -> String {
 }
 
 // -----------------------------------------------------------------------
-// load_schema — parse schema.json per Spec S03
+// load_schema — parse schema.json per
 // -----------------------------------------------------------------------
 
 /// Parse a committed `schema.json` into a [`Schema`] struct. Fails

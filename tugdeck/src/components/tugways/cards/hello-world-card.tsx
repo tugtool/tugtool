@@ -2,7 +2,7 @@
  * Hello World card -- minimal reference card registration.
  *
  * **Authoritative references:**
- * - [D09] Hello World card, Spec S01 (card composition), Spec S02 CardRegistration
+ * - [D09] Hello World card, (card composition), CardRegistration
  * - [D04] Single-call registration
  *
  * @module components/tugways/cards/hello-world-card

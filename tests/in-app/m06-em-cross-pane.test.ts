@@ -1,7 +1,6 @@
 /**
  * m06-em-cross-pane.test.ts — EM-card cross-pane drag preserves
- * engine state + restores focus on drop (parent plan #step-23e
- * [M06] EM-half).
+ * engine state + restores focus on drop ([M06] EM-half).
  *
  * Mirrors `m06-cross-pane-drag.test.ts` (the FC-half) but with
  * EM cards. After drop, the cross-pane move triggers
@@ -133,7 +132,7 @@ async function runCrossPaneDrag(app: App, componentId: string): Promise<void> {
   expect(state!.engine).toBe(componentId);
 
   // Focus-actually-landing assertion intentionally omitted. The
-  // 23E deliverable is the dispatch wiring (verified above by the
+  // deliverable here is the dispatch wiring (verified above by the
   // `engine-activation-dispatched` trace event firing with
   // `transfer-after-move`). Whether the engine root actually
   // becomes activeElement after the cross-pane move depends on
@@ -141,10 +140,7 @@ async function runCrossPaneDrag(app: App, componentId: string): Promise<void> {
   // synchronously after `notify()` — empirically, `.focus()` on
   // the new contenteditable no-ops on re-mount, leaving focus on
   // body. Same root-cause family as the cold-boot selection gap
-  // and the fresh-EM-card-activation gap (both tracked in
-  // [Step 23F](../../roadmap/tugplan-selection.md#step-23f)).
-  // Tracking the EM-after-move focus issue as a related Step 23F
-  // gap-3.
+  // and the fresh-EM-card-activation gap ([M10], [M33]).
 }
 
 describe.skipIf(!SHOULD_RUN)("m06-em: EM cross-pane drag preserves engine state + restores focus", () => {

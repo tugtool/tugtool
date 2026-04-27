@@ -702,7 +702,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
   // Lexes only the updated region's text, then splices the resulting blocks into
   // the engine arrays. For the tail region the prefix of blocks is stable; for
   // non-tail regions shiftFrom() is used to shift surviving blocks in place.
-  // Implements Spec S01 (incrementalTailUpdate procedure) and Spec S02 (on-the-fly
+  // Implements (incrementalTailUpdate procedure) and (on-the-fly
   // byte offset computation).
   function incrementalTailUpdate(engine: MarkdownEngineState, key: string, _fullText: string) {
     const range = engine.regionBlockRanges.get(key);

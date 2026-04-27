@@ -1,4 +1,4 @@
-// Web frontend component data type scaffolding per Table T03 (#t03-web-components).
+// Web frontend component data type scaffolding (UI-facing records only).
 // These interfaces describe the data shapes consumed by web UI components.
 // Pure type definitions; no runtime logic.
 

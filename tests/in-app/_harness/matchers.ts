@@ -3,11 +3,11 @@
  *
  * Exports `toContainOrderedSubset`, which asserts that a sequence of
  * partial entries appears in-order (not necessarily contiguous) inside
- * a trace array. Parent plan Spec [#s01-deck-trace-event] documents
- * the DeckTraceEvent shape; in practice the matcher is type-agnostic
+ * a trace array. The `DeckTraceEvent` union in `deck-trace.ts` is the
+ * shape reference; in practice the matcher is type-agnostic
  * so tests can hand it any event-like array.
  *
- * Semantics (parent plan Step 10, task 3):
+ * Semantics:
  *   - "Ordered subset": the entries must appear in the given order,
  *     but additional entries may sit between them.
  *   - "Partial match": each `expected` entry's keys that ARE specified
@@ -56,7 +56,7 @@ export interface MatcherResult {
 export type ExpectedEntry = Record<string, unknown>;
 
 // ---------------------------------------------------------------------------
-// DeckTraceEvent shape mirror (Spec [#s01-deck-trace-event])
+// DeckTraceEvent shape mirror (see `tugdeck/src/deck-trace.ts`)
 // ---------------------------------------------------------------------------
 
 /**

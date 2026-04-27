@@ -264,7 +264,7 @@ export type SpawnSessionMode = "new" | "resume";
 /**
  * Build a `spawn_session` CONTROL frame for the supervisor.
  *
- * Payload shape per Spec S03 (extended with `session_mode`):
+ * Payload shape per (extended with `session_mode`):
  * ```json
  * {
  *   "action": "spawn_session",
@@ -288,7 +288,7 @@ export type SpawnSessionMode = "new" | "resume";
  * `projectDir` is the workspace path the tugcode subprocess will be given
  * as its cwd. The server canonicalizes it via `PathResolver::watch_path()`
  * and echoes the canonical form back in the `spawn_session_ok` CONTROL ack
- * as `workspace_key`. Per Spec S03, tugdeck reads that ack field directly
+ * as `workspace_key`. Per, tugdeck reads that ack field directly
  * into `cardSessionBindingStore` rather than attempting to canonicalize
  * client-side — JS path libraries don't match tugcast's firmlink handling,
  * so any client-side derivation would risk producing a string that does

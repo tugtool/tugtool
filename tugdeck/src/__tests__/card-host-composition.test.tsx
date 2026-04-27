@@ -433,7 +433,7 @@ describe("CardHost → TugPromptInput → selectionGuard wiring", () => {
   });
 
   it("paintMirrorAsInactive(publish) publishes a Range to selectionGuard.cardRanges under the enclosing cardId", () => {
-    // Selection plan Step 25C.5 Layer 3: the per-keystroke
+    // The per-keystroke
     // engine→selectionGuard relay is gone. `selectionGuard.cardRanges`
     // is now populated at deactivation transitions via
     // `paintMirrorAsInactive(publish)`, where the engine builds a

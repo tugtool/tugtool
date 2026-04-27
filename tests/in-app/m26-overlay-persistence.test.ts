@@ -1,18 +1,18 @@
 /**
  * m26-overlay-persistence.test.ts — TugSheet open state survives
  * appReload via the Component Persistence Protocol [A9] (selection
- * plan Step 25F / [M26] PERSISTENT classification).
+ * [M26] PERSISTENT classification).
  *
  * ## Why this exists
  *
- * Pre-25F, opening a `tug-sheet` (typically wrapping a settings form
+ * Previously, opening a `tug-sheet` (typically wrapping a settings form
  * or multi-step flow) and then reloading lost the open state — the
  * sheet closed silently, dropping the user's in-progress work
  * unless that work had its own persistence wiring. [L23] violation
  * for the open-flag axis: an internal implementation operation
  * (mount-time `useState(false)`) destroyed user-visible state.
  *
- * Step 25F adds `persistKey` + `useComponentPersistence` to
+ * Uses `persistKey` + `useComponentPersistence` to
  * `TugSheet`. The component is uncontrolled-only — open lives in
  * `useState` — so capture reads the live value, restore writes back
  * via `setOpen`. Per-surface payloads (form fields inside the
@@ -21,7 +21,7 @@
  *
  * ## Why TugAlert is NOT covered
  *
- * `tug-alert` was reclassified EPHEMERAL during 25F. It is
+ * `tug-alert` was reclassified EPHEMERAL. It is
  * imperative-promise-based: `await showAlert(...)` opens the dialog
  * and resolves on click; the resolver is held in a ref captured at
  * the call site. Persisting `open: true` would re-open the alert
@@ -29,7 +29,7 @@
  * vanished with its re-rendered component, and clicks would resolve
  * nothing. Persistence would actively break the Promise contract.
  * `tug-confirm-popover`, `tug-popover`, `tug-tooltip`, and
- * `tug-context-menu` are similarly EPHEMERAL — see plan-doc Step 25F
+ * `tug-context-menu` are similarly EPHEMERAL — see [M26]
  * for full rationale.
  *
  * ## Test matrix

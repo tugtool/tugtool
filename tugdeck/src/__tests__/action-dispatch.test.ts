@@ -629,7 +629,7 @@ describe("initActionDispatch: close (Both)", () => {
   });
 });
 
-// ---- initActionDispatch: spawn_session_ok (W2 Step 7) ----
+// ---- initActionDispatch: spawn_session_ok ----
 
 describe("initActionDispatch: spawn_session_ok", () => {
   beforeEach(() => {

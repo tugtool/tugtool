@@ -9,8 +9,8 @@
  * - [D08] Normal tabs: each section is a distinct componentId
  * - [D09] Every registration has a contentFactory
  * - [D06] Gallery palette tab follows existing gallery card pattern
- * - Spec S03: Gallery registrations
- * - Spec S04: Gallery default tabs
+ * -: Gallery registrations
+ * -: Gallery default tabs
  * - (#s03-gallery-registrations, #s04-gallery-default-tabs, #symbol-inventory)
  *
  * @module components/tugways/cards/gallery-registrations
@@ -246,7 +246,7 @@ const GALLERY_COMPLEX_SIZE: CardSizePolicy = {
  *    card from each of the first four `+` menu groups
  * - `defaultTitle: "Component Gallery"` -- card header prefix
  *
- * **Authoritative reference:** Spec S03 (#s03-gallery-registrations), [D06]
+ * **Authoritative reference:** (#s03-gallery-registrations), [D06]
  */
 /**
  * Category declarations for the [+] type picker. Each gallery card
@@ -381,7 +381,7 @@ export function registerGalleryCards(): void {
   });
 
   // Pre-baked variant: mounts with 50KB of static markdown loaded
-  // immediately. Used by selection plan [M14] / [M23] harness tests
+  // immediately. Used by [M14] / [M23] harness tests
   // for predictable scrollable content; useful as a manual
   // theme-debug fixture too. Same component code, distinct id.
   registerCard({
@@ -756,7 +756,7 @@ export function registerGalleryCards(): void {
 
   // The cardId is passed through to GalleryObservableProps so inspector
   // controls can direct setProperty actions to the correct TugPane responder
-  // node via sendToTarget. [D04] Spec S07 (#s07-gallery-demo)
+  // node via sendToTarget. [D04] (#s07-gallery-demo)
   registerCard({
     componentId: "gallery-observable-props",
     contentFactory: (cardId) => <GalleryObservableProps cardId={cardId} />,

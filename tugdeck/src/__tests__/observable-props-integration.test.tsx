@@ -1,8 +1,5 @@
 /**
- * Observable Props integration tests -- Step 5 (full round-trip verification).
- *
- * Covers every success criterion from #success-criteria and every verification
- * task from Step 5 of tugplan-tugways-phase-5d4-observable-properties.md.
+ * Observable props integration tests (full round-trip verification).
  *
  * Tasks verified:
  * - Task 1: Inspector reads match card state — controls display current values

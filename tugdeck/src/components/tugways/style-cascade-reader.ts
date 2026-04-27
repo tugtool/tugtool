@@ -9,9 +9,8 @@
  * Design decisions:
  *   [D03] StyleCascadeReader is a stateless utility
  *
- * Spec S03
  *
- * See also: tugplan-tugways-phase-5d3-mutation-transactions.md
+ *
  */
 
 import {
@@ -33,7 +32,7 @@ import {
  *   - `token`    -- custom property (--prefixed) inherited from document root
  *   - `class`    -- computed value from a class rule or element-scoped custom property
  *
- * Spec S03 (#s03-cascade-reader)
+ * (#s03-cascade-reader)
  */
 export interface StyleLayer {
   value: string;
@@ -64,7 +63,7 @@ export type GetComputedStyleFn = (elt: Element) => CSSStyleDeclaration;
  * testability.
  *
  * [D03] StyleCascadeReader is a stateless utility
- * Spec S03 (#s03-cascade-reader)
+ * (#s03-cascade-reader)
  */
 export class StyleCascadeReader {
   private _manager: MutationTransactionManager;
@@ -95,7 +94,7 @@ export class StyleCascadeReader {
   /**
    * Determine the declared source layer for a CSS property on an element.
    *
-   * Follows the Table T01 detection algorithm (highest priority first):
+   * Follows the detection algorithm (highest priority first):
    *
    * 1. **preview** -- `manager.isPreviewProperty(element, property)` is true.
    *    Value comes from `element.style.getPropertyValue(property)` (the
@@ -132,7 +131,7 @@ export class StyleCascadeReader {
    *     case; callers should treat `token` as "probably a token" rather than
    *     a guaranteed guarantee.
    *
-   * Spec S03 (#s03-cascade-reader), Table T01 (#t01-source-detection)
+   * (#s03-cascade-reader), (#t01-source-detection)
    */
   getDeclared(element: HTMLElement, property: string): StyleLayer | null {
     // Priority 1: active preview transaction
@@ -176,7 +175,7 @@ export class StyleCascadeReader {
    * A thin wrapper around `getComputedStyle(element).getPropertyValue(property)`.
    * Returns an empty string if the property has no computed value.
    *
-   * Spec S03 (#s03-cascade-reader)
+   * (#s03-cascade-reader)
    */
   getComputed(element: HTMLElement, property: string): string {
     return this._getComputedStyle(element).getPropertyValue(property);
@@ -189,7 +188,7 @@ export class StyleCascadeReader {
    * Reads from `getComputedStyle(document.documentElement)`. Returns an empty
    * string if the token is not defined.
    *
-   * Spec S03 (#s03-cascade-reader)
+   * (#s03-cascade-reader)
    */
   getTokenValue(tokenName: string): string {
     return this._getComputedStyle(document.documentElement).getPropertyValue(tokenName);
@@ -209,6 +208,6 @@ export class StyleCascadeReader {
  * `StyleCascadeReader` instance directly.
  *
  * [D03] StyleCascadeReader is a stateless utility
- * Spec S03 (#s03-cascade-reader)
+ * (#s03-cascade-reader)
  */
 export const styleCascadeReader = new StyleCascadeReader(mutationTransactionManager);

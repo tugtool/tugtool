@@ -1,7 +1,7 @@
 /**
  * _double-connect.test.ts — "Second connect gets ECONNREFUSED"
  * regression test for the Swift listener's single-client guarantee.
- * Covers parent plan step-9 test:
+ * Covers harness test:
  *
  *   "Double-connect test: second harness client hits ECONNREFUSED."
  *

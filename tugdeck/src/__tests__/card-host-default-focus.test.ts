@@ -7,8 +7,7 @@
  *
  * These tests pin the priority chain (focus-key="primary" →
  * any focus-key → persist-value → generic focusable) and the
- * respect-existing-focus contract. After selection plan #step-23b
- * Pass 3 split (c), the production caller is `focus-transfer.ts`'s
+ * respect-existing-focus contract. The production caller is `focus-transfer.ts`'s
  * "default-focus" target branch (site `"focus-transfer-default"`).
  */
 

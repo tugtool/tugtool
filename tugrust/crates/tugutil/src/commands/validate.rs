@@ -1,4 +1,4 @@
-//! Implementation of the `tug validate` command (Spec S02)
+//! Implementation of the `tug validate` command
 
 use std::fs;
 use std::path::{Path, PathBuf};

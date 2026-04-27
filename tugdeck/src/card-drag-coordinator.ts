@@ -17,10 +17,6 @@
  * - [D05] Single-tab card drop zone preview
  * - [D06] Last tab cannot be detached
  * - [D07] Coordinator is a module-scope singleton
- * - Spec S04: CardDragCoordinator API
- * - Spec S05: Ghost tab element
- * - Spec S06: Insertion indicator element
- * - Spec S07: Drop-target highlight
  */
 
 import type { IDeckManagerStore } from "./deck-manager-store";
@@ -34,7 +30,7 @@ import {
 /**
  * Z-index for the ghost tab element.
  * Above GALLERY_ZINDEX (1000), below DisconnectBanner (9999).
- * [D02, Spec S05]
+ * [D02]
  */
 export const GHOST_TAB_ZINDEX = 5000;
 
@@ -49,7 +45,7 @@ export const GHOST_TAB_ZINDEX = 5000;
  * When no tabs have `data-overflow="hidden"` (i.e., overflow is inactive),
  * this selector matches the same set as `.tug-tab`, so it is backward-compatible.
  *
- * [D07] CardDragCoordinator selectors exclude hidden overflow tabs, Risk R04
+ * [D07] CardDragCoordinator selectors exclude hidden overflow tabs
  */
 export const VISIBLE_TAB_SELECTOR = '.tug-tab:not([data-overflow="hidden"])';
 
@@ -173,7 +169,7 @@ class CardDragCoordinator {
    *
    * Used by the `useTabOverflow` hook to skip overflow recalculation while
    * a drag gesture is active, preventing DOM attribute mutations on elements
-   * the coordinator is actively manipulating. [Risk R03]
+   * the coordinator is actively manipulating.
    */
   get isDragging(): boolean {
     return this.dragActive;
@@ -199,7 +195,6 @@ class CardDragCoordinator {
    * import level — `cardDragCoordinator` is already its single
    * coordination dependency.
    *
-   * Selection plan #step-23c.
    */
   notifyPotentialDragStart(paneId: string): void {
     const store = this.store;
@@ -254,15 +249,15 @@ class CardDragCoordinator {
     const sourceBar = tabElement.closest(".tug-tab-bar") as HTMLElement | null;
     this.sourceBarRect = sourceBar?.getBoundingClientRect() ?? null;
 
-    // Compute grab offset: pointer position within the tab element at drag start. [Spec S05]
+    // Compute grab offset: pointer position within the tab element at drag start. []
     const tabRect = tabElement.getBoundingClientRect();
     this.grabOffsetX = event.clientX - tabRect.left;
     this.grabOffsetY = event.clientY - tabRect.top;
 
-    // Build two-tier hit-test cache. [Spec S04]
+    // Build two-tier hit-test cache. []
     this.buildHitTestCache(paneId);
 
-    // Create ghost element. [D02, Spec S05]
+    // Create ghost element. [D02]
     this.ghostElement = this.createGhost(tabElement, event.clientX, event.clientY);
     if (container && this.ghostElement) {
       container.appendChild(this.ghostElement);
@@ -279,7 +274,7 @@ class CardDragCoordinator {
     tabElement.addEventListener("pointerup", this.boundOnPointerUp);
     tabElement.addEventListener("pointercancel", this.boundOnPointerCancel);
 
-    // Document-level Escape listener (selection plan #step-23c).
+    // Document-level Escape listener (cancels drag; capture phase).
     // Capture phase so the cancel decision lands before any nested
     // dialog or popover keydown handler can consume the event. The
     // listener lives only for the drag's lifetime (cleanup removes
@@ -315,7 +310,7 @@ class CardDragCoordinator {
    *   The accessoryElement is the matching .tug-pane-accessory[data-pane-id]
    *   inside each such pane frame, used for drop-target visual feedback.
    *
-   * [Spec S04]
+   * []
    */
   private buildHitTestCache(sourcePaneId: string): void {
     // Tier 1: multi-card tab bars (excluding source pane).
@@ -377,7 +372,7 @@ class CardDragCoordinator {
     const cx = this.latestPointerX;
     const cy = this.latestPointerY;
 
-    // Update ghost position. [D02, Spec S05]
+    // Update ghost position. [D02]
     this.updateGhostPosition(cx, cy);
 
     // Determine drag mode from pointer position relative to cached rects.
@@ -410,7 +405,7 @@ class CardDragCoordinator {
     this.cleanup();
 
     // Refocus into the dragged card's pre-drag DOM location
-    // (selection plan #step-23c). The card never moved (no commit
+    // The card never moved (no commit
     // ran), so its CardHost is still mounted under the original
     // pane and the registered host root resolves correctly. The
     // drag-start save preserved bag.focus / bag.domSelection so
@@ -420,7 +415,7 @@ class CardDragCoordinator {
 
   /**
    * Document-level keydown handler installed for the drag's
-   * lifetime (selection plan #step-23c). On Escape, runs the same
+   * lifetime. On Escape, runs the same
    * cancel sequence as pointercancel: cleanup-without-commit, then
    * refocus into the original DOM location.
    *
@@ -505,7 +500,7 @@ class CardDragCoordinator {
         }
       }
     } else if (mode === "detach") {
-      // Convert viewport drop coordinates to container-relative position. [Spec S02]
+      // Convert viewport drop coordinates to container-relative position. []
       let x = dropX;
       let y = dropY;
       if (containerRect) {
@@ -621,9 +616,9 @@ class CardDragCoordinator {
    * at this X position.
    *
    * Uses VISIBLE_TAB_SELECTOR to exclude hidden overflow tabs, which have
-   * display:none and return zero-width bounding rects. [D07, Risk R04]
+   * display:none and return zero-width bounding rects. [D07]
    *
-   * [Spec S04, Spec S06]
+   * []
    */
   computeReorderIndex(barElement: HTMLElement, pointerX: number): number {
     const tabEls = barElement.querySelectorAll<HTMLElement>(VISIBLE_TAB_SELECTOR);
@@ -648,7 +643,7 @@ class CardDragCoordinator {
    * insertion index. The indicator's left position is computed from the left
    * edge of the tab at insertIndex (or right edge of the last tab if appending).
    *
-   * [Spec S06]
+   * []
    */
   private updateInsertionIndicator(barElement: HTMLElement, insertIndex: number): void {
     // If the indicator is in a different bar, remove it and recreate.
@@ -666,7 +661,7 @@ class CardDragCoordinator {
     }
 
     // Compute left position relative to the bar.
-    // Uses VISIBLE_TAB_SELECTOR to exclude hidden overflow tabs. [D07, Risk R04]
+    // Uses VISIBLE_TAB_SELECTOR to exclude hidden overflow tabs. [D07]
     const barRect = barElement.getBoundingClientRect();
     const tabEls = barElement.querySelectorAll<HTMLElement>(VISIBLE_TAB_SELECTOR);
     let leftPx = 0;
@@ -699,7 +694,7 @@ class CardDragCoordinator {
 
   /**
    * Create the ghost tab element and position it at the initial pointer position.
-   * [D02, Spec S05]
+   * [D02]
    */
   private createGhost(sourceTab: HTMLElement, clientX: number, clientY: number): HTMLDivElement {
     const ghost = document.createElement("div");
@@ -819,8 +814,7 @@ class CardDragCoordinator {
       this.sourceTabElement.removeAttribute("data-dragging");
     }
 
-    // Remove document-level Escape listener (selection plan
-    // #step-23c). Symmetrically paired with the addEventListener
+    // Remove document-level Escape listener. Symmetrically paired with the addEventListener
     // call in startDrag — capture-phase, true.
     document.removeEventListener("keydown", this.boundOnDocumentKeydown, true);
 

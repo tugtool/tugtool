@@ -1,8 +1,7 @@
 /**
  * m09-em-inactive-mount.test.ts — saved-state EM card mounted in
  * an inactive tab → activated via tab switch → engine focuses
- * correctly via the dispatch-activated path (parent plan
- * #step-23e [M09]).
+ * correctly via the dispatch-activated path ([M09]).
  *
  * ## Scenario
  *
@@ -29,7 +28,7 @@
  * raw TugTextEditingState bag) and `gallery-prompt-entry`
  * (TugPromptEntry wrapper, what tide-card uses internally).
  *
- * ## Out of scope at Pass 8
+ * ## Out of scope: fresh inactive-at-mount
  *
  * **Fresh inactive-at-mount** (no pre-seeded bag.content). For a
  * never-saved EM card, `resolveActivationTarget` falls through
@@ -40,7 +39,7 @@
  * (`button:not([disabled])` for `gallery-prompt-input`'s
  * toolbar buttons) wins first. That asymmetry is the same root
  * cause as the user-reported tide-card cold-boot selection gap;
- * both are addressed in [Step 23F](../../roadmap/tugplan-selection.md#step-23f).
+ * see [M10] and related in-app tests.
  *
  * ## Gating
  *

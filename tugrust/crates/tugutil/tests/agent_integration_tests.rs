@@ -489,7 +489,7 @@ fn test_critic_documents_new_output_contract() {
     let path = agents_dir().join("critic-agent.md");
     let content = fs::read_to_string(&path).expect("Failed to read critic-agent");
 
-    // Critic must document all new output contract fields (Spec S07)
+    // Critic must document all new output contract fields ()
     assert!(
         content.contains("findings"),
         "Critic must document findings field in output contract"

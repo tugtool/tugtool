@@ -2,9 +2,9 @@
  * m16-rapid-cadence.test.ts — Three rapid back-to-back tab-close
  * handoffs preserve the same focus-handoff behavior as the slow-
  * cadence `m16-tab-close-handoff.test.ts`. Regression gate for the
- * [A3] sibling-effect ordering race that selection plan
- * #step-23-execution-strategy Pass 2 lifts from a manual ritual to
- * an automated check (#step-23b checkpoint).
+ * [A3] sibling-effect ordering race; automation that
+ * lifts from a manual ritual to
+ * an automated check.
  *
  * Scenario
  * --------
@@ -24,23 +24,15 @@
  * Assert the final state — c4 focused and active, only [c4, c5]
  * remain in the pane.
  *
- * Forward regression gate (pre-Step-23B baseline)
- * -----------------------------------------------
- * Plan Pass 2 was authored expecting this test to fail today
- * against the [A3] sibling-effect race during the rapid-handoff
- * chain (each close → `_removeCard` → `_flipFirstResponder` →
- * useLayoutEffect on the new incoming card; the next close was
- * thought to land before the previous handoff's effect executed).
- * In practice it passes deterministically (2026-04-24). The
- * handoff-via-`_removeCard` path appears robust at this cadence
- * even with the [A3] React effect — each close synchronously
- * commits inside the click handler before the next click's
- * pointerdown lands. The architectural problem remains — DOM
- * writes routed through React's render cycle violate [L22] — and
- * Step 23B still retires the React effect on those grounds, but
- * as cleanup, not a bug fix. This file locks in current passing
- * behavior so the helper migration cannot reintroduce a
- * regression at this cadence.
+ * Forward regression note
+ * -----------------------
+ * This was originally expected to fail on the [A3] race during the
+ * rapid-handoff chain (each close → `_removeCard` →
+ * `_flipFirstResponder` → useLayoutEffect on the new incoming card).
+ * In practice it passes: each close commits inside the click handler
+ * before the next click's pointerdown. DOM writes through React's
+ * render cycle still violate [L22]; the effect may be retired as
+ * cleanup later. This file locks in current behavior.
  *
  * Probes and gating mirror `m16-tab-close-handoff.test.ts`. Cards
  * use `gallery-input`; close-button selectors are
@@ -105,15 +97,15 @@ describe.skipIf(!SHOULD_RUN)(
         // close c3 → close c2 → close c1. No mid-flight
         // `expectFocusedCard` polls; the only awaits are RPC
         // round-trips inside `nativeClickAtElement`. Wall time
-        // between clicks is well under the plan's <100ms gate.
+        // between clicks is well under the <100ms gate.
         await app.nativeClickAtElement(tabCloseSelectorFor("c3"));
         await app.nativeClickAtElement(tabCloseSelectorFor("c2"));
         await app.nativeClickAtElement(tabCloseSelectorFor("c1"));
 
         // Final state per `spliceCardFromStack` chain documented at
         // the top of this file: c4 focused. The handoff-to-c4
-        // assertion is the regression gate — pre-Step-23B the
-        // sibling-effect race surfaces here as either focused-card
+        // assertion is the regression gate — the sibling-effect race
+        // surfaces here as either focused-card
         // ≠ c4 or focused-card === c4 but `document.activeElement`
         // is on `body` (no caret).
         await app.expectFocusedCard("c4");

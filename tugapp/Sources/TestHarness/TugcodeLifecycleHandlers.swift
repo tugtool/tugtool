@@ -3,8 +3,8 @@ import Foundation
 
 // MARK: - TugcodeLifecycleHandlers
 //
-// DEBUG-only handlers for the harness-owned tugcode subprocess
-// (parent harness plan #step-5; selection plan Pass 7A). Spawns and
+// DEBUG-only handlers for the harness-owned tugcode subprocess.
+// Spawns and
 // terminates a single tugcode child process that the in-app test
 // harness controls directly — separate from production's
 // tugcast → tugcode-per-AI-session spawn path.
@@ -16,9 +16,9 @@ import Foundation
 // spawn point so they can:
 //
 //   1. Verify EM-card lifecycle paths run end-to-end against a real
-//      tugcode (Step 7's `_smoke-em.test.ts`).
-//   2. Drive the stream-json transcript via a controlled pipe (Step
-//      6's `--stub-transcript=<fd>` mode).
+//      tugcode (`_smoke-em.test.ts`).
+//   2. Drive the stream-json transcript via a controlled pipe
+//      (`--stub-transcript=<fd>` mode).
 //
 // Production tugcast continues to spawn tugcode on session-start as
 // today; the harness-owned process is independent of that path. The
@@ -42,15 +42,11 @@ import Foundation
 // `TestHarnessConnection.close()` call invokes `stop()` so a
 // disconnect (or Tug.app graceful quit) doesn't leak a zombie.
 //
-// ## Step 5 scope
+// ## Scope
 //
-// This file lands the spawn/kill plumbing only. The
-// `--stub-transcript=<fd>` flag and the harness-side
-// `seedTugcodeTranscript` fd write are Step 6 work; the wire
-// already accepts a `mode: "stub" | "live"` opt for forward
-// compatibility, but in Step 5 both modes spawn the same way (no
-// extra flags passed to tugcode). The Step 6 commit will add the
-// flag-construction branch on `mode`.
+// Spawn/kill plumbing; optional stub-transcript wiring is extended
+// as the harness gains transcript-seeding RPCs. The wire already
+// accepts a `mode: "stub" | "live"` opt for forward compatibility.
 
 // MARK: - Errors
 
@@ -92,7 +88,7 @@ enum TugcodeLifecycleError: Error, CustomStringConvertible {
 final class TugcodeLifecycleHandlers {
 
     /// Default grace window between SIGTERM and SIGKILL on `stop()`.
-    /// Mirrors the harness plan's `[D04]` teardown contract.
+    /// Mirrors `[D04]` teardown expectations.
     private static let terminateGraceMs: Int = 2000
 
     /// The currently-running tugcode subprocess, or nil when no

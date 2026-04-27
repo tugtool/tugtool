@@ -137,7 +137,7 @@ pub enum Commands {
     ///
     /// Uses the five-stage resolution cascade: exact path, bare filename, slug, prefix, auto-select.
     #[command(
-        long_about = "Resolve a plan identifier to a file path.\n\nResolution cascade (tried in order):\n  1. Exact path: Input starts with / or . and file exists\n  2. Bare filename: Input starts with tugplan- (joined with .tugtool/)\n  3. Slug: .tugtool/tugplan-{input}.md exists\n  4. Prefix: Unique slug starting with input\n  5. Auto-select: Exactly one plan exists\n\nReturns the resolved path, or an error with candidates if ambiguous.\nUse --json for machine-readable output (Spec S02)."
+        long_about = "Resolve a plan identifier to a file path.\n\nResolution cascade (tried in order):\n  1. Exact path: Input starts with / or . and file exists\n  2. Bare filename: Input starts with tugplan- (joined with .tugtool/)\n  3. Slug: .tugtool/tugplan-{input}.md exists\n  4. Prefix: Unique slug starting with input\n  5. Auto-select: Exactly one plan exists\n\nReturns the resolved path, or an error with candidates if ambiguous.\nUse --json for machine-readable output."
     )]
     Resolve {
         /// Plan identifier (path, filename, slug, prefix, or empty for auto-select)

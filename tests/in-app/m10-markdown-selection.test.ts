@@ -11,7 +11,7 @@
  * mutates their selection. Engine-managed cards (`tug-prompt-input`,
  * `tug-prompt-entry`) publish through `engine.onSelectionChanged`.
  * Markdown-view (no engine) publishes directly off
- * `document.selectionchange` once Step 25B's `persistKey` opt-in is
+ * `document.selectionchange` once `persistKey` opt-in is
  * wired.
  *
  * Without that publish, `selectionGuard.cardRanges` stays empty for

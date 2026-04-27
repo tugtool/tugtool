@@ -541,7 +541,7 @@ function parseNumericTokens(
 }
 
 // ---------------------------------------------------------------------------
-// Slot dispatch table (Spec S07)
+// Slot dispatch table
 // ---------------------------------------------------------------------------
 
 /**
@@ -732,7 +732,7 @@ export function parseTugColor(
   const resolvedAlpha = alpha ?? DEFAULTS.alpha;
   const resolvedColor = color!;
 
-  // Soft warnings — checked against final resolved values (Spec S04).
+  // Soft warnings — checked against final resolved values.
   // All warning spans cover the full input (pos=0, end=input.length) because
   // they concern the combined effect of multiple arguments, not a single token.
   const warnings: TugColorWarning[] = [];

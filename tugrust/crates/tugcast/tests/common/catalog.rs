@@ -1,6 +1,6 @@
 //! Shared catalog capture machinery: normalization, schema derivation,
-//! and per-probe execution. Used by both the Step 3/4 capture binary
-//! (`tests/capture_stream_json_catalog.rs`) and the Step 6 drift test
+//! and per-probe execution. Used by both the capture binary
+//! (`tests/capture_stream_json_catalog.rs`) and the drift test
 //! (`tests/stream_json_catalog_drift.rs`).
 //!
 //! Originally lived in the capture binary; extracted into `common/` so
@@ -10,8 +10,7 @@
 //! option — the `mod common;` pattern is the canonical share
 //! mechanism.
 //!
-//! See `roadmap/tugplan-golden-stream-json-catalog.md` for the full
-//! scope. This file is the source of truth for all normalization and
+//! This file is the source of truth for all normalization and
 //! schema semantics that the drift test needs to match bit-for-bit.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -258,7 +257,7 @@ fn normalize_inner(value: &mut Value, parent_key: Option<&str>, home: Option<&st
 }
 
 // -----------------------------------------------------------------------
-// Schema derivation — per Spec S03
+// Schema derivation — per
 // -----------------------------------------------------------------------
 
 /// Captured per-probe outcome: ordered event sequence.
@@ -271,7 +270,7 @@ pub struct CapturedProbe {
 }
 
 /// Shape schema derived from one full capture run. Serializes to
-/// `schema.json` per Spec S03.
+/// `schema.json` per.
 #[derive(Debug, Default, Clone)]
 pub struct Schema {
     pub claude_version: String,

@@ -4,7 +4,7 @@
  * Pure functions with no DOM or state dependencies.
  * Handles snap-during-move, snap-during-resize, and edge visibility.
  *
- * Spec S01: Canvas Data Model Types
+ *: Canvas Data Model Types
  * D01: Pure-function snap module
  */
 

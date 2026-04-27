@@ -1,7 +1,7 @@
 /**
  * m04-app-resign-return.test.ts — App resign → return-to-active
  * preserves focus + selection on the current first-responder card
- * (parent plan #step-23d).
+ * ([M04]).
  *
  * Scenario:
  *

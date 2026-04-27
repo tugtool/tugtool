@@ -284,7 +284,7 @@ describe("resolveActivationTarget", () => {
 });
 
 // `captureFocusForDragStart` and `transferFocusAfterMove` shipped
-// in selection plan #step-23c. The stub-assertion tests that
+// in focus-transfer. The stub-assertion tests that
 // previously lived here (asserting the throws) are gone — behavior
 // coverage for these helpers lives in the in-app drag harness
 // (m06-cross-pane-drag, m07-card-detach, m21-drag-aborted).

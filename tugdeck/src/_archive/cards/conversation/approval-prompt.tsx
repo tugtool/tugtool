@@ -14,8 +14,7 @@
  *
  * Vanilla `src/cards/conversation/approval-prompt.ts` is retained until Step 10.
  *
- * References: [D03] React content only, [D06] Replace tests, Table T03
- */
+ * References: [D03] React content only, [D06] Replace tests,  */
 
 import { useState, useRef } from "react";
 import { X, AlertTriangle } from "lucide-react";

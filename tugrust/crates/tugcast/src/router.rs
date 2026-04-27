@@ -1081,7 +1081,7 @@ mod tests {
         );
     }
 
-    // ---- Step 7: P5 relaxation ([D08], Spec S05) ----
+    // ---- Step 7: P5 relaxation ([D08],) ----
 
     #[test]
     fn test_p5_relaxation_distinct_sessions() {
@@ -1236,7 +1236,7 @@ mod tests {
             "action": "spawn_session",
             "card_id": card_id,
             "tug_session_id": tug_session_id,
-            // W2 Step 6: project_dir is required on the wire. Use the
+            // project_dir is required on the wire. Use the
             // crate manifest dir as a valid fixture path for router tests.
             "project_dir": env!("CARGO_MANIFEST_DIR"),
         }))
@@ -1301,12 +1301,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_control_frame_invalid_project_dir_sends_reason_detail() {
-        // W2 Step 6: the supervisor returns
+        // the supervisor returns
         // `ControlError::InvalidProjectDir { reason }` for spawn_session
         // payloads whose `project_dir` is missing, nonexistent, not a
         // directory, etc. `intercept_session_control` must map each
         // variant to a `HandledError` whose `detail` is the exact reason
-        // string so tugdeck can surface a precise error per Spec S03.
+        // string so tugdeck can surface a precise error per.
         let (sup, mut register_rx) = test_minimal_supervisor();
         tokio::spawn(async move { while register_rx.recv().await.is_some() {} });
 

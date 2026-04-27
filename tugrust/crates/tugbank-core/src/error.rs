@@ -29,7 +29,7 @@ pub enum Error {
 }
 
 impl Error {
-    /// Map this error to a CLI exit code per Table T01.
+    /// Map this error to a CLI exit code.
     ///
     /// | Code | Meaning |
     /// |------|---------|

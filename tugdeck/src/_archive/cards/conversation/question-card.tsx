@@ -15,8 +15,7 @@
  * Vanilla `src/cards/conversation/question-card.ts` is retained until Step 10.
  *
  * References: [D03] React content only, [D04] CustomEvents, [D06] Replace tests,
- *             Table T01, Table T03
- */
+ *              */
 
 import { useState, useRef, useCallback } from "react";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";

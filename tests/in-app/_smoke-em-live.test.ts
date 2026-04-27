@@ -1,6 +1,5 @@
 /**
- * _smoke-em-live.test.ts — live-mode tugcode smoke (parent harness
- * plan #step-8 / selection plan Pass 7D). NOT part of the default
+ * _smoke-em-live.test.ts — live-mode tugcode smoke (IME / live path). NOT part of the default
  * sweep — gated behind `TUGCODE_LIVE=1` because:
  *
  *   - it spawns a real tugcode process
@@ -17,8 +16,8 @@
  * The live-mode `startTugcode` path: spawn → protocol_init →
  * user_message → assistant_text + turn_complete on stdout.
  *
- * Unlike the stub-mode smoke (Pass 7B's `_smoke-tugcode-stub.test.ts`,
- * retired in 7C), live mode goes through the real claude pipeline,
+ * Unlike stub-mode smoke (`_smoke-tugcode-stub.test.ts`), live mode
+ * goes through the real claude pipeline,
  * so the response content is non-deterministic. We assert only on
  * the protocol shape:
  *
@@ -34,7 +33,7 @@
  * ## What this file does NOT cover
  *
  * The tugdeck-side observation surface — that path requires
- * tugcast-bypass plumbing (deferred from Pass 7C), so live
+ * tugcast-bypass plumbing, so live
  * tugcode's output isn't visible to tugdeck via
  * `app.getEmCardState`. Asserting through tugdeck is for a later
  * integration pass; this smoke is bare-tugcode-only.

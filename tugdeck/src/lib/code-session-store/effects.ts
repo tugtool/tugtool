@@ -1,5 +1,5 @@
 /**
- * Effect discriminated union per Spec S07.
+ * Effect discriminated union per.
  *
  * The reducer in `reducer.ts` is a pure `(state, event) => { state, effects }`
  * function; the class wrapper in `code-session-store.ts` processes the
@@ -13,7 +13,7 @@
 import type { InboundMessage } from "@/protocol";
 import type { TurnEntry } from "./types";
 
-/** Stable path keys for the in-flight streaming document (Spec S05). */
+/** Stable path keys for the in-flight streaming document (). */
 export type InflightPath =
   | "inflight.assistant"
   | "inflight.thinking"

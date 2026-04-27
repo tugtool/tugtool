@@ -10,7 +10,7 @@
  * glob in tsconfig.json.
  *
  * Authoritative references:
- *   - Phase 5f2 Step 2 [D03] CSS Custom Highlight API, Spec S02
+ *   - Phase 5f2 Step 2 [D03] CSS Custom Highlight API,
  *   - https://developer.mozilla.org/en-US/docs/Web/API/CSS_Custom_Highlight_API
  */
 

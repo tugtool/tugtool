@@ -1,7 +1,7 @@
 //! Capture binary for the golden stream-json catalog.
 //!
-//! See `roadmap/tugplan-golden-stream-json-catalog.md` Step 3 for the
-//! full scope and Step 4 for the baseline capture run procedure.
+//! Produces versioned fixtures under `tests/fixtures/stream-json-catalog/`.
+//! Run the real-claude capture with the feature flag when refreshing baselines.
 //!
 //! # What this binary does
 //!
@@ -95,7 +95,7 @@ fn status_reason(status: &ProbeStatus) -> Option<String> {
     }
 }
 
-/// Build `manifest.json` per Spec S02.
+/// Build `manifest.json` for a capture run.
 fn build_manifest(version: &str, stability: usize, captures: &[CapturedProbe]) -> Value {
     let probes: Vec<Value> = captures
         .iter()
@@ -124,7 +124,7 @@ fn build_manifest(version: &str, stability: usize, captures: &[CapturedProbe]) -
     })
 }
 
-/// Write a full capture run to disk per Spec S01. Creates the
+/// Write a full capture run to disk. Creates the
 /// `v<version>/` directory, writes JSONL for each probe, plus
 /// `manifest.json` and `schema.json`.
 #[cfg(feature = "real-claude-tests")]

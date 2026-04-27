@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * reapprove-transcript.ts — recompute the SHA-256 sidecar for a
- * tugcode transcript file (parent harness plan #step-6).
+ * tugcode transcript file.
  *
  * Usage:
  *
@@ -19,9 +19,8 @@
  * transcript whose hash drifts from the sidecar — the test
  * failure message points back here.
  *
- * Companion to `scripts/capture-tugcode-transcript.ts` (Pass 7C
- * deferred — drives a live tugcode session and writes the
- * captured transcript + initial sidecar).
+ * Companion to `scripts/capture-tugcode-transcript.ts` (drives a live
+ * tugcode session and writes the captured transcript + initial sidecar).
  */
 
 import { readFileSync, writeFileSync } from "node:fs";

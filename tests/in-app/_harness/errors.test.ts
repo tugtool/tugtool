@@ -1,6 +1,6 @@
 /**
  * errors.test.ts — Pure-logic unit tests for the harness error
- * classes. Mirrors Spec [#s02-error-classes].
+ * classes. Mirrors the Swift / TypeScript error mapping in `errors.ts`.
  */
 
 import { describe, expect, test } from "bun:test";

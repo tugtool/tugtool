@@ -334,7 +334,7 @@ function handleToolResult(
   state: CodeSessionState,
   event: ToolResultEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
-  // Plan's Spec S03 transition table only lists tool_result under the
+  // Plan's transition table only lists tool_result under the
   // `tool_work → streaming` row — there is no legitimate tool_result in
   // any other phase, so we drop anything else silently.
   if (state.phase !== "tool_work") {
@@ -446,7 +446,7 @@ function handleTurnComplete(
   const scratch = new Map(state.scratch);
   scratch.delete(msgId);
 
-  // Single-tick collapse per Spec S03: a queued send on a successful
+  // Single-tick collapse per: a queued send on a successful
   // turn flushes in the same dispatch as the commit, so observers see
   // the final phase as `submitting`, not a transient `idle`.
   if (isSuccess && state.queuedSends.length > 0) {
@@ -496,7 +496,7 @@ function handleTurnComplete(
       // Interrupt-driven paths already cleared the queue.
       queuedSends: isSuccess ? state.queuedSends : [],
       // A successful turn clears any lingering `lastError` from an
-      // earlier errored-phase recovery ([Spec S04]).
+      // earlier errored-phase recovery ([]).
       lastError: isSuccess ? null : state.lastError,
     },
     effects: [
@@ -651,7 +651,7 @@ function handleCostUpdate(
 }
 
 // ---------------------------------------------------------------------------
-// Errored triggers — Spec S04
+// Errored triggers —
 // ---------------------------------------------------------------------------
 
 function handleSessionStateErrored(

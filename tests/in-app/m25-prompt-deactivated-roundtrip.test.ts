@@ -1,7 +1,6 @@
 /**
  * m25-prompt-deactivated-roundtrip.test.ts — selection survives the
- * deactivation → reload/relaunch path (selection plan Step 25C.3
- * Layer 4 / [M25]).
+ * deactivation → reload/relaunch path ([M25] Layer 4).
  *
  * ## The user-reported regression this gates
  *

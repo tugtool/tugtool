@@ -8,10 +8,8 @@
  * calls `onSave` on tab deactivation and `onRestore` on tab activation, using
  * the DeckManager tab state cache as the durable backing store.
  *
- * **Authoritative references:** [D01] onContentReady callback, [D02] Persistence
- * hook, [D03] restorePendingRef, Spec S04, Spec S05, Rule 11, Rule 12
- * (#s04-persistence-context, #s05-persistence-hook, #d02-persistence-hook,
- * #d01-on-content-ready, #d03-restore-pending-ref)
+ * **Authoritative references:** [D01] onContentReady callback, [D02] persistence
+ * hook, [D03] restorePendingRef, Rule 11, Rule 12.
  */
 
 import React, { createContext, useContext, useLayoutEffect, useRef } from "react";
@@ -29,20 +27,19 @@ import { DeckManagerContext } from "../../deck-manager-context";
  * Internally stored as CardPersistenceCallbacks (erased to unknown)
  * so CardHost can treat the content payload as opaque JSON.
  *
- * Spec S05 ([D02])
+ * ([D02])
  */
 /**
  * Options accepted by `onRestore`, threaded by CardHost at restore time.
  *
  * `isActive` names the deck-level first responder: the card that holds
  * the document's focus authority for the entire page. CardHost computes
- * this as `deck.getFirstResponderCardId() === cardId` per Step 25C.4's
- * "Defining 'active' precisely" section. Pane-active cards in non-active
+ * this as `deck.getFirstResponderCardId() === cardId`. Pane-active cards in non-active
  * panes are NOT active by this definition; their persisted selections
  * route through the inactive-paint channel via
  * `engine.paintMirrorAsInactive(publish)`.
  *
- * Selection plan Step 25C.4. [L23], [D10].
+ * [L23], [D10].
  */
 export interface CardRestoreOptions {
   /** True iff this card is the deck-level first responder at the moment
@@ -60,7 +57,7 @@ export interface UseCardPersistenceOptions<T> {
    * consumer whether this card is the deck-level first responder —
    * the consumer routes selection paint through
    * `paintMirrorAsActive` (active) or `paintMirrorAsInactive(publish)`
-   * (inactive) accordingly. Selection plan Step 25C.4. [L23].
+   * (inactive) accordingly. [L23].
    */
   onRestore: (state: T, opts: CardRestoreOptions) => void;
   /**
@@ -74,13 +71,10 @@ export interface UseCardPersistenceOptions<T> {
    * }
    * ```
    *
-   * Registration happens in the hook's mount `useLayoutEffect`. Two
-   * channels carry the callback — the persistence callbacks record
-   * and, starting at Step 23A of the focus-transfer refactor, the
-   * deck store's `registerActivationCallback` channel. Dispatch
-   * source depends on the current refactor step; see
-   * {@link CardPersistenceCallbacks.onCardActivated} for the
-   * authoritative reader at each step.
+   * Registration happens in the hook's mount `useLayoutEffect`. The
+   * callback is registered on the persistence record and on the deck
+   * store's `registerActivationCallback` channel; see
+   * {@link CardPersistenceCallbacks.onCardActivated}.
    *
    * Optional. FC (DOM-authority) cards don't need this — `CardHost`
    * re-applies `bag.focus` + `bag.domSelection` directly for them.
@@ -96,7 +90,7 @@ export interface UseCardPersistenceOptions<T> {
    * `setSelectedRange` (which runs `removeAllRanges` on the global
    * Selection).
    *
-   * Selection plan Step 25C.4. [L23] enforcement.
+   * [L23] enforcement.
    *
    * Optional. FC (DOM-authority) cards don't need this.
    */
@@ -120,14 +114,14 @@ export interface UseCardPersistenceOptions<T> {
  *   set it to `true` before calling `onRestore`, signaling that a restore is in
  *   flight. The hook's no-deps `useLayoutEffect` reads this flag. ([D03])
  *
- * Spec S04 ([D02], [D01], [D03])
+ * ([D02], [D01], [D03])
  */
 export interface CardPersistenceCallbacks {
   onSave: () => unknown;
   /**
    * Called by CardHost on cold-mount restore (and on tab activation
    * for content-owning cards). `opts.isActive` is the deck-level
-   * first-responder snapshot — selection plan Step 25C.4 [L23].
+   * first-responder snapshot — [L23].
    */
   onRestore: (state: unknown, opts: CardRestoreOptions) => void;
   /**
@@ -147,20 +141,10 @@ export interface CardPersistenceCallbacks {
   /**
    * Called when this card becomes the focus destination.
    *
-   * **Dispatch channel.** Two channels carry this callback today, and
-   * the authoritative one depends on which step of the focus-transfer
-   * refactor is current:
-   *   - At Step 23A's commit, the Step-23 `[A3]` `useLayoutEffect` in
-   *     `CardHost` reads `persistenceCallbacksRef.current.onCardActivated`
-   *     and dispatches through this record field. The new
-   *     `store.registerActivationCallback` channel is populated in
-   *     parallel (by `useCardPersistence`) but is not yet the
-   *     dispatch source.
-   *   - At Step 23B's commit, the `[A3]` effect is retired and
-   *     dispatch routes exclusively through
-   *     `store.invokeActivationCallback(cardId)`. This field remains
-   *     declared (Step 22 contract stability) and is still populated
-   *     by the hook, but is never read at dispatch time.
+   * **Dispatch channel.** The deck store's `invokeActivationCallback` is
+   * the live dispatch path. This record field remains for compatibility
+   * and tests; production routing goes through
+   * `store.registerActivationCallback` / `invokeActivationCallback`.
    *
    * Optional. FC (DOM-authority) cards leave it unset; `CardHost`
    * handles their reactivation by re-applying `bag.focus` +
@@ -175,7 +159,7 @@ export interface CardPersistenceCallbacks {
    * (`paintMirrorAsInactive(publish)`) so the about-to-be-active
    * card's `removeAllRanges()` doesn't destroy this card's selection.
    *
-   * Selection plan Step 25C.4 [L23] enforcement.
+   * [L23] enforcement.
    *
    * Optional. FC (DOM-authority) cards leave it unset.
    */
@@ -212,7 +196,7 @@ export interface CardPersistenceContextValue {
  *
  * null when rendered outside CardHost (no-op in useCardPersistence).
  *
- * Spec S04 ([D02])
+ * ([D02])
  */
 export const CardPersistenceContext = createContext<
   CardPersistenceContextValue | null
@@ -252,7 +236,7 @@ export function useCardId(): string | null {
  * Returns cleanup that unregisters (sets persistence callbacks to null) when
  * the card content component unmounts.
  *
- * Spec S05 ([D02], [D01], [D02], [D03], #s05-persistence-hook)
+ * ([D02], [D01], [D02], [D03])
  */
 export function useCardPersistence<T>(options: UseCardPersistenceOptions<T>): void {
   // Read the registration function + cardId from context (null outside
@@ -266,7 +250,7 @@ export function useCardPersistence<T>(options: UseCardPersistenceOptions<T>): vo
   // DeckManagerContext is optional from this hook's perspective —
   // the hook is used in unit tests that render a card content
   // component without a deck store. When present, we register the
-  // activation callback on the store so Step 23B's helper can
+  // activation callback on the store so `focus-transfer` can
   // dispatch through `store.invokeActivationCallback`. When absent,
   // the store-channel registration is skipped; the record-channel
   // registration still happens below.
@@ -285,7 +269,7 @@ export function useCardPersistence<T>(options: UseCardPersistenceOptions<T>): vo
   onCardActivatedRef.current = options.onCardActivated;
   onCardWillDeactivateRef.current = options.onCardWillDeactivate;
 
-  // Ref-flag mechanism ([D02], [D03], Spec S02):
+  // Ref-flag mechanism ([D02], [D03],):
   // CardHost sets restorePendingRef.current = true before calling onRestore.
   // The no-deps useLayoutEffect below checks this flag on every commit and
   // fires onContentReady when set. This is the deterministic alternative to
@@ -338,11 +322,8 @@ export function useCardPersistence<T>(options: UseCardPersistenceOptions<T>): vo
 
   // Parallel registration on the deck store's activation-callback
   // channel. The stable ref-reading wrapper is the same one used for
-  // the callbacks-record; only the destination registry differs. At
-  // Step 23A's commit the Step-23 `[A3]` `useLayoutEffect` still
-  // reads the record field, so both channels are populated in
-  // parallel. Step 23B retires `[A3]` and switches dispatch onto the
-  // store channel; this registration becomes the sole authority.
+  // the callbacks record; the store channel is what `focus-transfer`
+  // invokes at activation time.
   //
   // Keyed on `[store, cardId]` so a move from one store to another
   // (tests that swap the provider) or a cardId change re-registers
@@ -363,7 +344,7 @@ export function useCardPersistence<T>(options: UseCardPersistenceOptions<T>): vo
   }, [store, cardId]);
 
   // Parallel registration on the deck store's deactivation-callback
-  // channel. Selection plan Step 25C.4 [L23]: lets the store dispatch
+  // channel. [L23]: lets the store dispatch
   // `onCardWillDeactivate` to this card before the new active card
   // claims focus + global Selection. Same ref-reading wrapper pattern
   // as activation; same Rule 3 / Rule 5 compliance.
@@ -378,7 +359,7 @@ export function useCardPersistence<T>(options: UseCardPersistenceOptions<T>): vo
   // No-deps useLayoutEffect: fires on every commit of this component.
   // When restorePendingRef is true (set by CardHost's Phase 1 effect before
   // calling onRestore), the child's setState has now committed to the DOM.
-  // Fire onContentReady and reset the flag. ([D01], [D02], Spec S02, Rule 11)
+  // Fire onContentReady and reset the flag. ([D01], [D02],, Rule 11)
   useLayoutEffect(() => {
     if (!restorePendingRef.current) return;
     restorePendingRef.current = false;

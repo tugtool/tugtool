@@ -10,7 +10,7 @@
  * Claude produced on capture.
  *
  * [D07] golden fixtures read in-place
- * Spec S06 (#s06-golden-loader)
+ * (#s06-golden-loader)
  */
 
 import { readFileSync } from "node:fs";

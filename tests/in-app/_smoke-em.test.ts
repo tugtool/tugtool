@@ -1,7 +1,6 @@
 /**
- * _smoke-em.test.ts — EM-card observation surface smoke (parent
- * harness plan #step-7 / selection plan Pass 7C). Permanent test
- * file (not scratch).
+ * _smoke-em.test.ts — EM-card observation surface smoke ([M10] area).
+ * Permanent test file (not scratch).
  *
  * ## What this file pins
  *
@@ -11,8 +10,7 @@
  *   1. **engine-ready trace event** — when an EM card mounts, its
  *      factory emits an `engine-ready` deck-trace event with the
  *      card id and engine name. Wired in
- *      `tug-prompt-input.tsx` for Pass 7C (other factories
- *      follow as they get wired).
+ *      `tug-prompt-input.tsx` first (other factories follow as wired).
  *
  *   2. **`__tug.getEmCardState(cardId)`** — returns
  *      `{ kind: "em", engine, text, engineSelection, streamState,
@@ -26,7 +24,7 @@
  *      same trace-ring scan, used to gate test assertions on
  *      engine init.
  *
- * ## Out of scope at Pass 7C
+ * ## Out of scope (streaming)
  *
  * Driving a real tugcode round-trip into the EM card (typing →
  * stream-json → assistant text → engine update). The harness's
@@ -176,7 +174,7 @@ describe.skipIf(!SHOULD_RUN)("EM-card observation surface", () => {
       expect(state!.kind).toBe("em");
       expect(state!.engine).toBe("gallery-prompt-input");
       expect(state!.text).toBe("hello em");
-      // Stub fields at Pass 7C scope; pinned so a regression in
+      // Stub fields until streaming is wired; pinned so a regression in
       // their default values surfaces here.
       expect(state!.streamState).toBe("idle");
       expect(state!.lastTurnSeq).toBe(0);

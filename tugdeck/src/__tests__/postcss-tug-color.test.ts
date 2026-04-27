@@ -543,7 +543,7 @@ describe("postcss-tug-color: named gray expansion", () => {
     }
   });
 
-  it("named gray L values match the expected fixed values from Table T01", () => {
+  it("named gray L values match the expected fixed values from ", () => {
     const expected: Record<string, number> = {
       pitch: 0.22, ink: 0.29, charcoal: 0.36, carbon: 0.43, graphite: 0.5,
       vellum: 0.592, parchment: 0.684, linen: 0.776, paper: 0.868,

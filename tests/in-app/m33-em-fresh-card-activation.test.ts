@@ -2,7 +2,7 @@
  * m33-em-fresh-card-activation.test.ts — fresh, never-saved EM
  * card mounted in an inactive tab → activated via tab click →
  * focus lands on the engine's contenteditable, NOT a sibling
- * toolbar button (parent plan #step-23f gap 2).
+ * toolbar button ([M33]).
  *
  * ## Why this exists
  *

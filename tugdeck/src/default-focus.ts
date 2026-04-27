@@ -26,7 +26,7 @@
  *
  * The historical home was `card-host.tsx`, where `[A3]`'s
  * `useLayoutEffect` was the sole consumer. After `[A3]` retires
- * (selection plan #step-23b Pass 3 split (c)), the helper's default-
+ * the helper's default-
  * focus path becomes the only production caller.
  *
  * ## Tuglaws

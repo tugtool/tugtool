@@ -3,8 +3,7 @@
  *
  * ## What this file pins
  *
- * The four `simulateApp*` RPC verbs added in harness extensions
- * Step 4 ([D07], Spec [#s01-hardware-rpc]). Each verb invokes the
+ * The four `simulateApp*` RPC verbs ([D07]). Each verb invokes the
  * matching `NSApp` primitive on Tug.app's main thread and waits up
  * to 1000ms for the corresponding
  * `NSApplication.did...Notification` to fire on the real
@@ -27,7 +26,7 @@
  *
  * ## Why this is a scratch test
  *
- * Per parent plan #step-4 artifacts, this file is "deleted after
+ * This file is "deleted after
  * Step 6" — its coverage is subsumed once M04/M05 land in the
  * permanent test set. Until then, this is the unit-level pin for
  * the bridge primitive.

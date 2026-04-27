@@ -3,27 +3,17 @@
  *
  * Scope of this module
  * --------------------
- * Exports {@link TugTestSurface} — the TypeScript interface the Phase 2
- * Swift bridge talks to via `evaluateJavaScript` — and
+ * Exports {@link TugTestSurface} — the TypeScript interface the Swift
+ * bridge talks to via `evaluateJavaScript` — and
  * {@link createTugTestSurface}, which binds that interface to a live
- * {@link DeckManager} instance. Also contains the DEV + `__tugTestMode`
+ * {@link DeckManager} instance. Also contains the `__tugTestMode`
  * guarded attach that installs `window.__tug` from `main.tsx`.
- *
- * This is a scaffold (parent plan Step 6): the surface is fully typed
- * and implemented here; the Swift side that drives it (RPC transport,
- * `evalJS` round-trip, `waitForCondition`, handshake) is not yet live
- * — those arrive in subsequent parent-plan steps, which continue to
- * reference Spec [#s03-tug-surface] and Spec [#s04-event-synthesis]
- * as the contract.
  *
  * Authoritative references
  * ------------------------
- * - Parent plan Spec [#s03-tug-surface]: the `TugTestSurface` shape.
- * - Parent plan Spec [#s04-event-synthesis]: event synthesis semantics.
- * - Parent plan [D01]: per-test isolation via granular `reset`.
- * - Parent plan [D03]: DEBUG-only / release-safe.
- * - Parent plan [D11]: surface is versioned; harness handshakes.
- * - Parent plan (#tug-surface), (#granular-reset): intent & tradeoffs.
+ * - [D01]: per-test isolation via granular `reset`.
+ * - [D03]: DEBUG-only / release-safe.
+ * - [D11]: surface is versioned; harness handshakes.
  *
  * DEV/test-mode gating
  * --------------------
@@ -41,8 +31,8 @@
  * {@link SURFACE_VERSION} is a semver string literal baked into the
  * surface. The harness reads it during the handshake ([D11]) and
  * rejects connections whose major version doesn't match. Bump the
- * major on breaking changes, the minor on additive changes, and file
- * a tugplan follow-up for every bump.
+ * major on breaking changes, the minor on additive changes, and
+ * coordinate with the in-app harness when the wire shape changes.
  */
 
 import type { DeckManager } from "./deck-manager";
@@ -53,7 +43,7 @@ import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { dispatchAction } from "./action-dispatch";
 
 // ---------------------------------------------------------------------------
-// Public types (Spec [#s03-tug-surface])
+// Public types (`TugTestSurface`)
 // ---------------------------------------------------------------------------
 
 /**
@@ -77,11 +67,10 @@ import { dispatchAction } from "./action-dispatch";
  * cannot post `CGEvent`s, so there is nothing for `__tug` to expose
  * for those verbs. Major stays `1`; additive.
  *
- * `1.2.0` (harness extensions Step 7 / Pass 7C): adds EM-card
+ * `1.2.0`: adds EM-card
  * observation surface — {@link TugTestSurface.getEmCardState} and
- * {@link TugTestSurface.awaitEngineReady}. The full plan also
- * lists `getEngineSelection` and `drainTugcodeTurn`, but those are
- * deferred (see harness plan Step 7 Author note): the former is
+ * {@link TugTestSurface.awaitEngineReady}. `getEngineSelection` and
+ * `drainTugcodeTurn` are not separate surface entry points: the former is
  * subsumed by `getEmCardState().engineSelection`, the latter
  * requires tugcast-bypass plumbing not yet in place. Tugcode
  * lifecycle delegates (`startTugcode` / `stopTugcode` / etc.)
@@ -90,7 +79,7 @@ import { dispatchAction } from "./action-dispatch";
  * violation (only Swift can spawn subprocesses). Major stays `1`;
  * additive.
  *
- * `1.3.0` (selection plan Step 25A audit sweep): adds
+ * `1.3.0`: adds
  * {@link TugTestSurface.getCardStateBag} (full bag introspection
  * for [M17] saveState-RPC-parity) and {@link TugTestSurface.closePane}
  * (whole-pane teardown for [M19] flush coverage). Markdown content
@@ -99,7 +88,7 @@ import { dispatchAction } from "./action-dispatch";
  * static content on mount — no test-specific surface needed.
  * Additive; major stays `1`.
  *
- * `1.4.0` (selection plan Step 25C.3 Layer 1): adds
+ * `1.4.0`: adds
  * {@link TugTestSurface.appReload} and
  * {@link TugTestSurface.getReadyGen}. `appReload` invokes the
  * same `dispatchAction({ action: "reload" })` path the
@@ -273,12 +262,12 @@ export interface ActiveElementInfo {
  * reads it back and tags it with the card's `componentId` so
  * tests can branch on engine flavor.
  *
- * `streamState` and `lastTurnSeq` are stub fields at Pass 7C
- * scope: the harness's tugcode is not (yet) wired into tugdeck's
- * production AI session path, so no streaming activity is
- * observable from this surface today. The fields are present so
- * test code can pin against them now without rewriting when 7D /
- * a later integration adds the real values.
+ * `streamState` and `lastTurnSeq` are stub fields while the
+ * harness's tugcode is not wired into tugdeck's production AI session
+ * path, so no streaming activity is observable from this surface
+ * today. The fields are present so test code can pin against them
+ * now without rewriting when a later integration adds the real
+ * values.
  */
 export interface EmCardState {
   kind: "em";
@@ -303,13 +292,13 @@ export interface EmCardState {
    */
   engineSelection: unknown;
   /**
-   * Streaming status. Stub at Pass 7C scope (always `"idle"`);
-   * wired to real tugcode integration in a later pass.
+   * Streaming status. Stub (always `"idle"`) until real tugcode
+   * integration is wired.
    */
   streamState: "idle" | "streaming" | "error";
   /**
-   * Last completed turn sequence number. Stub at Pass 7C scope
-   * (always `0`); wired in a later pass.
+   * Last completed turn sequence number. Stub (always `0`) until
+   * wired to the session pipeline.
    */
   lastTurnSeq: number;
 }
@@ -349,9 +338,8 @@ export type SelectionSnapshot =
  * synchronous or returns a JSON-serializable value so the Swift-side
  * `evalJS` round-trip never has to marshal custom types.
  *
- * See Spec [#s03-tug-surface] for the authoritative contract. Additive
- * changes bump {@link SURFACE_VERSION}'s minor; breaking changes bump
- * the major and require a tugplan follow-up.
+ * Additive changes bump {@link SURFACE_VERSION}'s minor; breaking
+ * changes bump the major and need coordinated app + harness updates.
  */
 export interface TugTestSurface {
   readonly version: typeof SURFACE_VERSION;
@@ -362,7 +350,7 @@ export interface TugTestSurface {
   // ---- Granular reset ([D01]) ----
   reset(opts: ResetOptions): void;
 
-  // ---- Gesture drivers (Spec [#s04-event-synthesis]) ----
+  // ---- Gesture drivers (synthetic DOM event sequences) ----
   click(selector: string, opts?: ClickOptions): void;
   type(selector: string, text: string): void;
   focusElement(selector: string): void;
@@ -406,7 +394,7 @@ export interface TugTestSurface {
   registerSelectionBoundary(cardId: string, selector: string): void;
   unregisterSelectionBoundary(cardId: string): void;
 
-  // ---- Reload primitives (SURFACE_VERSION 1.4.0, selection plan Step 25C.3 Layer 1) ----
+  // ---- Reload primitives (SURFACE_VERSION 1.4.0) ----
 
   /**
    * Trigger a soft reload via the same code path as the
@@ -453,7 +441,7 @@ export interface TugTestSurface {
    */
   getReadyGen(): number;
 
-  // ---- EM-card observation (SURFACE_VERSION 1.2.0, harness Step 7) ----
+  // ---- EM-card observation (SURFACE_VERSION 1.2.0) ----
 
   /**
    * Read an EM card's engine state. Returns `null` when the card
@@ -475,7 +463,7 @@ export interface TugTestSurface {
    * `engine-ready` event?" probe. Returns `true` when the deck-
    * trace ring contains an `engine-ready` event for the card,
    * `false` otherwise. The matching emit site lives at each EM-
-   * engine factory's mount-time engine init (Pass 7C wires
+   * engine factory's mount-time engine init (wired first in
    * `tug-prompt-input.tsx`; tide-card / gallery-prompt-entry
    * follow as they pick up their own sites).
    *
@@ -540,7 +528,7 @@ export interface TugTestSurface {
    * memory cache. Returns `null` when no bag exists. Does NOT
    * force a save first — callers wanting fresh state should call
    * `window.tugdeck.saveState()` (or trigger a will-phase save)
-   * first. Used by the selection plan [M17] saveState-RPC-parity
+   * first. Used by [M17] saveState-RPC-parity
    * audit for structural diffs of the bag across save paths.
    */
   getCardStateBag(cardId: string): CardStateBag | null;
@@ -548,7 +536,7 @@ export interface TugTestSurface {
   /**
    * Close an entire pane by id. Mirrors `deckManager.handlePaneClosed`,
    * the entry point a "close every card in this pane" UI affordance
-   * would call. Used by the selection plan [M19] pane-teardown-flush
+   * would call. Used by [M19] pane-teardown-flush
    * audit so a multi-card pane's `_closePane` flush loop can be
    * exercised directly rather than driven through the per-tab close
    * button (which routes through `_removeCard` and only delegates to
@@ -725,7 +713,7 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
     }
   };
 
-  // --- event synthesis (Spec [#s04-event-synthesis]) ---
+  // --- event synthesis ---
   const synthesizeClick = (el: HTMLElement, opts?: ClickOptions): void => {
     const { clientX, clientY } = opts?.clientX !== undefined && opts?.clientY !== undefined
       ? { clientX: opts.clientX, clientY: opts.clientY }
@@ -756,7 +744,7 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
     };
 
     // 1. pointerdown  2. mousedown  3. pointerup  4. mouseup  5. click.
-    //    Ordered per Spec [#s04-event-synthesis].
+    //    Natural DOM ordering for a full click.
     el.dispatchEvent(new PointerEvent("pointerdown", pressedInit));
     el.dispatchEvent(new MouseEvent("mousedown", pressedInit));
     el.dispatchEvent(new PointerEvent("pointerup", releasedInit));
@@ -845,7 +833,7 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
 
     focusElement(selector: string): void {
       const el = queryRequired(selector);
-      // Direct `.focus()` — the Spec [#s04-event-synthesis] fallback
+      // Direct `.focus()` — fallback
       // for paths where synthesized pointerdown cannot drive
       // browser-default focus. Matches [D09] fidelity limits.
       el.focus();
@@ -1349,7 +1337,7 @@ declare global {
  *
  * The attach is idempotent: calling it a second time overwrites the
  * previous `window.__tug` with a surface bound to the newly-supplied
- * deck. In practice the parent plan calls it exactly once per page
+ * deck. In practice the app calls it exactly once per page
  * load from `main.tsx`; the idempotence exists for hot-reload
  * scenarios where the DeckManager instance changes mid-session.
  */

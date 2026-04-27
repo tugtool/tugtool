@@ -16,8 +16,8 @@
  * **Authoritative references:**
  * - [D01] DOM measurement for full widths, fixed constant for icon-only
  * - [D03] Pure computeOverflow function for testability
- * - Spec S01: computeOverflow function signature
- * - Spec S02: computeOverflow algorithm
+ * -: computeOverflow function signature
+ * -: computeOverflow algorithm
  */
 
 // ---- Constants ----
@@ -43,7 +43,7 @@ export const ICON_ONLY_TAB_WIDTH = 30;
  */
 export const OVERFLOW_BUTTON_WIDTH = 40;
 
-// ---- Types (Spec S01) ----
+// ---- Types () ----
 
 /**
  * Per-tab measurements used as input to computeOverflow.
@@ -89,12 +89,12 @@ export interface OverflowResult {
   overflowIds: string[];
 }
 
-// ---- computeOverflow (Spec S02) ----
+// ---- computeOverflow () ----
 
 /**
  * Pure function computing tab overflow state given measured widths.
  *
- * Algorithm (Spec S02):
+ * Algorithm ():
  * 1. Reserve space for the [+] button (addButtonWidth).
  * 2. Try all tabs at full width. If they fit, return stage "none".
  * 3. Stage 1 collapse (minimal): keep active tab at full width; collapse

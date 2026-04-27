@@ -23,7 +23,7 @@
  *    - Clicking a child of a responder that itself has no registration
  *      promotes the nearest enclosing responder.
  *
- * See: roadmap/responder-chain-integration-audit.md Part 8 Phase A1
+ * See: design doc Part 8 Phase A1
  * item 3 ("R1 invariant test — fixes Hole 7").
  */
 

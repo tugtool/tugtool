@@ -10,7 +10,7 @@
  * This file is a test harness for iterating on TugSplitPane under HMR.
  * It is **not** a target environment. The `.cg-content` inline-style
  * override below is a gallery-demo concern — TugSplitPane itself
- * knows nothing about it. See roadmap/tug-split-pane.md
+ * knows nothing about it. See design doc
  * (Host-agnostic goal, §13).
  *
  * This file continues to evolve in each subsequent step.

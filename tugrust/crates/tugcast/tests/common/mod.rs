@@ -117,7 +117,7 @@ pub struct TestTugcast {
     pub port: u16,
     pub bank_path: PathBuf,
     /// Canonical project dir this tugcast was spawned with. Required field
-    /// on every `spawn_session` control frame since W2 Step 6 (commit
+    /// on every `spawn_session` control frame (commit
     /// b1ba1a97); exposed here so callers don't have to re-derive it.
     pub project_dir: PathBuf,
 }
@@ -317,8 +317,7 @@ pub struct DecodedFrame {
 /// within `HEARTBEAT_TIMEOUT` (45 s), the router calls
 /// `teardown_client` and drops the socket without a close frame —
 /// observable to a passive client as `Connection reset without closing
-/// handshake` at ~45 055 ms. See
-/// `roadmap/tide.md` §T0.5 P19 for the original bug report.
+/// handshake` at ~45 055 ms (P19 heartbeat regression).
 ///
 /// `TestWs::connect` spawns a background task that sends a heartbeat
 /// frame every [`TEST_HEARTBEAT_INTERVAL`] for the lifetime of the
@@ -449,7 +448,7 @@ impl TestWs {
         tug_session_id: &str,
         project_dir: &Path,
     ) {
-        // W2 Step 6 (commit b1ba1a97): project_dir is now a required field on
+        // project_dir is a required field on
         // the spawn_session control payload. Without it, the supervisor
         // rejects with `InvalidProjectDir { reason: "missing_project_dir" }`
         // before emitting the `pending` SESSION_STATE transition — which
@@ -529,13 +528,12 @@ impl TestWs {
     }
 
     // -----------------------------------------------------------------
-    // Control-flow CODE_INPUT helpers (tugplan Step 2)
+    // Control-flow CODE_INPUT helpers
     //
     // Each helper serializes a typed tugcode inbound message into a
     // CODE_INPUT frame. The router's `CODE_INPUT` path is opaque
-    // pass-through — see [Q01] resolution in
-    // `roadmap/tugplan-golden-stream-json-catalog.md` — so tugcast
-    // never inspects the payload beyond the `tug_session_id` field.
+    // pass-through ([Q01]) — tugcast never inspects the payload beyond
+    // the `tug_session_id` field.
     // Tugcode is the authority on message validation.
     // -----------------------------------------------------------------
 

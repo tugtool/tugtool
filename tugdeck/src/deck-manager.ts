@@ -14,8 +14,6 @@
  * - [D01] DeckManager is a subscribable store with one root.render() at mount
  * - [D02] Extract IDeckManagerStore interface to break circular imports
  * - [D04] Single-call registration, [D08] DeckManager stays a plain class
- * - Spec S03: DeckManager store API additions
- * - Spec S05: DeckManager new methods
  *
  * ## Design notes
  *
@@ -174,8 +172,8 @@ function spliceCardFromStack(
  * `__tugTestMode` is also `true`, the test-mode persistence bypass
  * in the `put*Guarded` wrappers is skipped — writes go through.
  * Used by cold-boot harness tests that pair test-mode IPC with
- * per-test `TUGBANK_PATH` isolation. See selection plan Step 25C.2
- * Layer 3 and `tugapp/Sources/TestHarness/TestHarnessUserScript.swift`.
+ * per-test `TUGBANK_PATH` isolation. See
+ * `tugapp/Sources/TestHarness/TestHarnessUserScript.swift`.
  */
 function shouldPersistInTestMode(): boolean {
   return typeof window !== "undefined" && window.__tugPersistInTestMode === true;
@@ -191,7 +189,7 @@ export class DeckManager implements IDeckManagerStore {
   /** Debounce timer for layout saves */
   private saveTimer: number | null = null;
 
-  // ---- Phase 5f: Per-card state cache (Spec S03, [D01], [D06]) ----
+  // ---- Per-card state cache ([D01], [D06]) ----
 
   /** In-memory cache of per-card state bags. Primary read source during a session. */
   private cardStateCache: Map<string, CardStateBag> = new Map();
@@ -202,7 +200,7 @@ export class DeckManager implements IDeckManagerStore {
   /** Set of card IDs with unsaved (dirty) state bags. Used for flush-on-destroy. */
   private dirtyCardIds: Set<string> = new Set();
 
-  // ---- Phase 5f3: Save callbacks for close-time state flush (Spec S01, [D01]) ----
+  // ---- Save callbacks for close-time state flush ([D01]) ----
 
   /**
    * Map of registered save callbacks keyed by card ID. Called on
@@ -269,7 +267,7 @@ export class DeckManager implements IDeckManagerStore {
     this.flushDirtyCardStates({ sync: true });
   };
 
-  // ---- Phase 5f: Initial focused card ID for reload restoration ([D03]) ----
+  // ---- Initial focused card ID for reload restoration ([D03]) ----
 
   public initialFocusedCardId: string | undefined;
 
@@ -402,7 +400,7 @@ export class DeckManager implements IDeckManagerStore {
 
   /**
    * When true, DeckManager starts with an empty in-memory DeckState and
-   * never issues tugbank reads or writes. See Spec [#s05-testmode-semantics]
+   * never issues tugbank reads or writes. See test-mode semantics
    * and design decision [D02]: every `putLayout` / `putCardState` /
    * `putFocusedCardId` call site is guarded with `if (this.testMode) return;`
    * so test-mode sessions never mutate the user's persisted deck.
@@ -612,7 +610,7 @@ export class DeckManager implements IDeckManagerStore {
     this.connection.sendControlFrame(action, params);
   }
 
-  // ---- Card / stack management (Spec S05) ----
+  // ---- Card / stack management () ----
 
   /**
    * Add a new card from the registry, wrapped in a new single-card stack at
@@ -725,7 +723,7 @@ export class DeckManager implements IDeckManagerStore {
     // closing stack.
     //
     // Routed through `transferFocusForActivation` on the active-pane
-    // branch (selection plan #step-23b, Pass 3 split (b)). The helper
+    // branch. The helper
     // is only called when there is a surviving pane to receive focus
     // (`newFR !== null`); when the deck becomes empty there is no
     // incoming card to focus and the raw `_flipFirstResponder` path
@@ -768,7 +766,7 @@ export class DeckManager implements IDeckManagerStore {
 
     // Phase 2: flush each card's save callback then fire destruction.
     // Save-on-close runs BEFORE destruction so the card's last bag
-    // lands before subscribers tear down dependent state. [L23], [Q05].
+    // lands before subscribers tear down dependent state. [L23].
     for (const cid of win.cardIds) {
       this.flushSaveCallbackBeforeDestruction(cid);
     }
@@ -848,7 +846,7 @@ export class DeckManager implements IDeckManagerStore {
     if (oldFR !== null) this.cardLifecycle.notifyCardDidDeactivate(oldFR);
     if (newFR !== null) this.cardLifecycle.notifyCardDidActivate(newFR);
     // Record after the composite bit has changed — matches Spec
-    // [#s01-deck-trace-event]'s ordering ("fr-flip after the composite
+    // `deck-trace` ordering ("fr-flip after the composite
     // bit changes"). See list [#l01-recording-sites].
     deckTrace.record({
       kind: "fr-flip",
@@ -1080,7 +1078,7 @@ export class DeckManager implements IDeckManagerStore {
     this.scheduleSave();
   }
 
-  // ---- Per-card state cache API (Spec S03, [D01], [D06]) ----
+  // ---- Per-card state cache API ([D01], [D06]) ----
 
   getCardState(cardId: string): CardStateBag | undefined {
     return this.cardStateCache.get(cardId);
@@ -1117,7 +1115,7 @@ export class DeckManager implements IDeckManagerStore {
     return Promise.all(promises).then(() => {});
   }
 
-  // ---- Save callback registration (Spec S01, [D01]) ----
+  // ---- Save callback registration ([D01]) ----
 
   registerSaveCallback(id: string, callback: () => void): void {
     this.saveCallbacks.set(id, callback);
@@ -1135,8 +1133,8 @@ export class DeckManager implements IDeckManagerStore {
    * the one-arg shape and still type-check); live callers always pass
    * an explicit tag so the trace preserves the triggering path.
    *
-   * See Spec [#s01-deck-trace-event] for the `save-callback` event
-   * shape and List [#l01-recording-sites] for the per-source wiring.
+   * See `deck-trace` for the `save-callback` event shape
+   * and the recording-sites list for per-source wiring.
    */
   invokeSaveCallback(id: string, source?: SaveCallbackSource): void {
     const tag: SaveCallbackSource = source ?? "manual";
@@ -1160,7 +1158,7 @@ export class DeckManager implements IDeckManagerStore {
 
   /**
    * Per-card deactivation callbacks (parallel to
-   * {@link activationCallbacks}). Selection plan Step 25C.4 [L23]:
+   * {@link activationCallbacks}). [L23]:
    * fires when a card is about to lose focus-destination status, so
    * the consumer can route its selection into the inactive-paint
    * channel via `paintMirrorAsInactive(publish)` before the new
@@ -1318,12 +1316,12 @@ export class DeckManager implements IDeckManagerStore {
    * runs. Called by close paths (`_removeCard`, `_closePane`) so the
    * card's last unsaved edits land in the bag before
    * `cardWillBeginDestruction` subscribers tear down dependent state
-   * (engine teardown, session release, etc.). Per [Q05] the save
+   * (engine teardown, session release, etc.). The save
    * runs BEFORE the destruction notification — the reverse order
    * would let a destruction subscriber invalidate the state the save
    * callback is trying to read.
    *
-   * The callback is wrapped in `try/catch` ([R06]) so a single
+   * The callback is wrapped in `try/catch` so a single
    * throwing save never blocks the destruction. In dev, a throw is
    * logged with enough context to find the offending card; in
    * production the failure is swallowed silently — the alternative
@@ -1374,7 +1372,7 @@ export class DeckManager implements IDeckManagerStore {
     this.reloadPending = true;
   }
 
-  // ---- Test-mode state seeding (Spec [#s05-testmode-semantics], [D02]) ----
+  // ---- Test-mode state seeding ([D02]) ----
 
   /**
    * Replace the current `DeckState` atomically, merge per-card state
@@ -1467,13 +1465,13 @@ export class DeckManager implements IDeckManagerStore {
     }
   }
 
-  // ---- Stack/card mutators (Spec S03) ----
+  // ---- Stack/card mutators () ----
 
   /**
    * Add a new card to an existing stack. Creates a fresh card, appends its id
    * to the stack's `cardIds`, and sets it as the stack's `activeCardId`.
    *
-   * Plan 11.6.1b transitions 5a/5b: when `paneId` is the deck's active
+   * When `paneId` is the deck's active
    * stack, the new card becomes first responder (full flip). When it is
    * not, the new card becomes the stack's active-in-stack but the deck's
    * composite first-responder bit is unchanged (no lifecycle events).
@@ -1542,13 +1540,13 @@ export class DeckManager implements IDeckManagerStore {
    * `_closePane`. Otherwise removes the card from `deckState.cards` and
    * from the stack's `cardIds`, reassigning `activeCardId` if needed.
    *
-   * **Save-on-close invariant ([L23], [Q05]):** the card's save
+   * **Save-on-close invariant ([L23]):** the card's save
    * callback fires BEFORE `notifyCardWillBeginDestruction`, so the
    * last unsaved bag (scroll, DOM-selection, focus, form-controls,
    * region-scroll, engine content) lands in tugbank before
    * destruction subscribers release any dependent state. A throwing
    * save callback is caught and dev-warned; destruction proceeds
-   * regardless per [R06].
+   * regardless.
    *
    * Transition 8a: when the removed card is the first responder, flip
    * the composite bit to the neighbor BEFORE firing
@@ -1574,12 +1572,11 @@ export class DeckManager implements IDeckManagerStore {
     // leaves `cardId` in `win.cardIds` — destruction in phase 2
     // removes it. Two commits, two notifies.
     //
-    // Routed through `transferFocusForActivation` (selection plan
-    // #step-23b, Pass 3 split (b)). The helper's `commitMutation`
+    // Routed through `transferFocusForActivation`. The helper's `commitMutation`
     // closure is the entire `_flipFirstResponder` call so the
     // existing will/commit/did ordering is preserved inside the
     // `flushSync` boundary, and the new FR's card host is mounted
-    // and visible by the time step 5 attempts focus transfer.
+    // and visible before focus transfer runs.
     //
     // `outgoingWillBeDestroyed: true` skips the helper's outgoing
     // save step — phase 2 below runs `flushSaveCallbackBeforeDestruction`
@@ -1617,7 +1614,7 @@ export class DeckManager implements IDeckManagerStore {
 
     // Phase 2: save, then destruction + removal. Save runs first so
     // the card's last bag is flushed before subscribers tear down
-    // dependent state. [L23], [Q05].
+    // dependent state. [L23].
     this.flushSaveCallbackBeforeDestruction(cardId);
     this.cardLifecycle.notifyCardWillBeginDestruction(cardId);
     const currentStack =
@@ -1802,7 +1799,7 @@ export class DeckManager implements IDeckManagerStore {
       "_detachCard",
     );
 
-    // Refocus after the move (selection plan #step-23c). The
+    // Refocus after the move. The
     // detached card's CardHost has just been re-parented under the
     // new pane via React's portal reconciliation; its registered
     // host root now points at the post-commit DOM. The drag-start
@@ -1859,7 +1856,7 @@ export class DeckManager implements IDeckManagerStore {
     // (the only production caller is `cardDragCoordinator.onPointerUp`
     // committing a "merge"-mode drop), and the user's intent in
     // dragging a card to another pane is to follow the card —
-    // attention moves with the gesture. Pre-#step-23c the target
+    // attention moves with the gesture. Previously the target
     // only became active when the source was destroyed, which left
     // the dragged card mounted but not focused; users had to click
     // back into it to resume work. Always activating the target
@@ -1877,7 +1874,7 @@ export class DeckManager implements IDeckManagerStore {
     // Transition 7: flip composite bit. Card identity is preserved
     // across the move, so no destruction event. Post-flip,
     // transferFocusAfterMove restores focus into the card's new DOM
-    // location (selection plan #step-23c).
+    // location.
     this._flipFirstResponder(
       newFR,
       () => {
@@ -1934,7 +1931,7 @@ export class DeckManager implements IDeckManagerStore {
       "_moveCardToPane",
     );
 
-    // Refocus after the move (selection plan #step-23c). See the
+    // Refocus after the move. See the
     // matching comment in _detachCard for the L23 / drag-start-save
     // contract.
     transferFocusAfterMove({ sourceCardId: cardId, store: this });
@@ -2001,16 +1998,15 @@ export class DeckManager implements IDeckManagerStore {
 
   /**
    * Fire-and-forget `putFocusedCardId` with a test-mode bypass. See
-   * Spec [#s05-testmode-semantics] and [D02]: every tugbank write is
+   * Test-mode tugbank write semantics and [D02]: every tugbank write is
    * wrapped so test-mode sessions never leak state into tugbank.
    *
    * Named wrapper (rather than a literal `if (this.testMode) return;
-   * putFocusedCardId(id);` at each call site) lets the Step 5
-   * checkpoint (`grep 'this.testMode' deck-manager.ts`) report exactly
-   * one occurrence per wrapped write family while still covering every
+   * putFocusedCardId(id);` at each call site) keeps a single
+   * implementation per wrapped write family while still covering every
    * live caller.
    *
-   * `__tugPersistInTestMode` (selection plan Step 25C.2 Layer 3)
+   * `__tugPersistInTestMode`
    * is the explicit escape hatch for cold-boot harness tests: when
    * true, the test-mode bypass is skipped and the write goes
    * through. Tests that opt in pair this with a per-test

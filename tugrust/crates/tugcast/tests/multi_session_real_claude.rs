@@ -669,20 +669,17 @@ async fn test_session_metadata_two_sessions_no_clobber_real_claude() {
 }
 
 // ---------------------------------------------------------------------------
-// Tugplan Step 2 — TestWs control helper round-trip tests
+// TestWs control helper round-trip tests
 //
-// Each test below proves one of the new `TestWs` inbound-message
-// helpers (`send_interrupt`, `send_tool_approval`,
-// `send_session_command`, `send_model_change`) reaches tugcode and
-// produces the wire effect transport-exploration.md documents. These
-// tests collectively pin the Step 1 audit finding that tugcast's
-// `CODE_INPUT` path is opaque pass-through (see
-// `roadmap/tugplan-golden-stream-json-catalog.md#q01-code-input-passthrough`).
+// Each test below proves one of the `TestWs` inbound-message helpers
+// (`send_interrupt`, `send_tool_approval`, `send_session_command`,
+// `send_model_change`) reaches tugcode and produces the wire effect
+// `transport-exploration.md` documents. These tests collectively
+// pin that tugcast's `CODE_INPUT` path is opaque pass-through ([Q01]).
 //
-// `test_send_question_answer_roundtrip` is deliberately deferred to
-// tugplan Step 6 — driving `AskUserQuestion` reliably from a live
-// claude is non-trivial and the capture binary has better machinery
-// for that scenario.
+// `test_send_question_answer_roundtrip` is deferred — driving
+// `AskUserQuestion` reliably from a live claude is non-trivial and
+// the capture binary has better machinery for that scenario.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -873,10 +870,9 @@ async fn test_send_session_command_new_respawns() {
 // never produces `turn_complete` within the wire timeout. The
 // `_new_respawns` test above already pins the `send_session_command`
 // helper end-to-end via the `new` command, so we log the finding as a
-// follow-up (see `roadmap/tide.md` §T0.5 P16) and leave the
+// follow-up (P16) and leave the
 // `continue` path for a dedicated bug-fix commit that can also extend
-// coverage in the Step 6 drift test once the supervisor behavior is
-// understood.
+// drift-test coverage once the supervisor behavior is understood.
 
 // ---------------------------------------------------------------------------
 // test_send_model_change_behavioral

@@ -2,9 +2,8 @@
  * m01-rapid-cadence.test.ts — Three rapid back-to-back tab switches
  * preserve the same caret-restore behavior as the slow-cadence
  * `m01-tab-switch-fc.test.ts`. Regression gate for the [A3]
- * sibling-effect ordering race that selection plan
- * #step-23-execution-strategy Pass 2 lifts from a manual ritual to
- * an automated check (#step-23b checkpoint).
+ * sibling-effect ordering race (behavior previously checked manually,
+ * now covered by this test).
  *
  * Scenario
  * --------
@@ -13,21 +12,19 @@
  * with NO inter-click waits — B → A → B → A — and assert the final
  * state: A focused, caret at offset 5, value still "alpha".
  *
- * Forward regression gate (pre-Step-23B baseline)
- * -----------------------------------------------
- * Plan Pass 2 was authored expecting this test to fail today
- * against the current [A3] `useLayoutEffect` in `CardHost`
- * (sibling-effect ordering race between two card-host instances
- * inside React's commit cycle). In practice it passes
- * deterministically — Step 3b's `pane-focus-controller` mousedown
- * preventDefault appears to have already closed the user-visible
- * symptom: WebKit no longer blurs focus during pane-chrome / tab
- * clicks, so the [A3] restore lands on a stable target. The
- * architectural problem remains — DOM writes routed through
- * React's render cycle violate [L22] — and Step 23B still retires
- * the React effect on those grounds, but as cleanup, not a bug
- * fix. This file locks in current passing behavior so the helper
- * migration cannot reintroduce a regression at this cadence.
+ * Forward regression note
+ * -----------------------
+ * This was originally expected to fail against the [A3]
+ * `useLayoutEffect` in `CardHost` (sibling-effect ordering race
+ * between two card-host instances inside React's commit cycle). In
+ * practice it passes deterministically: `pane-focus-controller`
+ * mousedown `preventDefault` closed the user-visible symptom (WebKit
+ * no longer blurs focus during pane-chrome / tab clicks), so the
+ * [A3] restore lands on a stable target. The architectural problem
+ * remains — DOM writes routed through React's render cycle violate
+ * [L22] — and the effect may still be retired as cleanup, not a bug
+ * fix. This file locks in current behavior so refactors cannot
+ * regress at this cadence.
  *
  * Probes and gating mirror `m01-tab-switch-fc.test.ts`.
  */
@@ -95,21 +92,19 @@ describe.skipIf(!SHOULD_RUN)(
         // Rapid four-click sequence: B → A → B → A. Inter-click wall
         // time is dominated by the RPC round-trip
         // (centerOfElement + nativeClick), well under the
-        // plan's <100ms gate. No `expectFocusedCard` /
+        // <100ms gate. No `expectFocusedCard` /
         // `getActiveCardId` polls between clicks — those would let
-        // each transition settle and defeat the cadence. After
-        // Step 23B, settling is synchronous inside the gesture
-        // handler, so polls between clicks are not load-bearing
-        // anyway; this version just asserts that.
+        // each transition settle and defeat the cadence. Settling is
+        // synchronous inside the gesture handler, so polls between
+        // clicks are not load-bearing; this version just asserts that.
         await app.nativeClickAtElement(tabSelectorFor("B"));
         await app.nativeClickAtElement(tabSelectorFor("A"));
         await app.nativeClickAtElement(tabSelectorFor("B"));
         await app.nativeClickAtElement(tabSelectorFor("A"));
 
-        // Settle once at the end. After Step 23B this poll is a
-        // no-op (the last gesture's handler already committed
-        // before the RPC returned); pre-Step-23B it gives React
-        // a chance to flush whichever effect order it chose.
+        // Settle once at the end (the last gesture's handler already
+        // committed before the RPC returned); gives React a chance to
+        // flush whichever effect order it chose.
         await app.expectFocusedCard("A");
         expect(await app.getActiveCardId()).toBe("A");
 

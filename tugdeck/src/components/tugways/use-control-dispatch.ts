@@ -19,7 +19,7 @@
  * Keyboard shortcuts and menu items use the nil-targeted form (manager.sendToFirstResponder)
  * which walks from the first responder. Controls must never use that form.
  *
- * See roadmap/targeted-dispatch.md for the full design rationale.
+ * See design doc for the full design rationale.
  */
 
 import { useCallback, useContext } from "react";

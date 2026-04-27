@@ -10,7 +10,7 @@
  * the TugMarkdownView render function) it cannot be imported directly. Instead,
  * these tests reproduce the key algorithmic pieces in isolation:
  *
- * 1. Byte offset translation with multi-byte UTF-8 (emoji, CJK) — Spec S02.
+ * 1. Byte offset translation with multi-byte UTF-8 (emoji, CJK) —.
  * 2. Region-scoped lex: prepend \n\n, subtract 2 from byte offsets, filter prefix
  *    blocks — D01.
  * 3. Splice correctness: block count increase, decrease, and stable case.
@@ -122,10 +122,10 @@ function translateOffsets(
 }
 
 // ---------------------------------------------------------------------------
-// Tests: Spec S02 — byte offset translation with multi-byte content
+// Tests: — byte offset translation with multi-byte content
 // ---------------------------------------------------------------------------
 
-describe("byte offset translation (Spec S02)", () => {
+describe("byte offset translation ()", () => {
   it("ASCII-only: byte offsets equal char offsets", () => {
     const text = "Hello world.";
     const blocks = lexRegion(text);

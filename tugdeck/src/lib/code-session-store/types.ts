@@ -1,6 +1,6 @@
 /**
  * Public types for `CodeSessionStore` — the per-Tide-card L02 store that
- * owns Claude Code turn state. See Spec S02 in tugplan-code-session-store.md.
+ * owns Claude Code turn state.
  *
  * [D03] three-identifier model
  * [D04] transcript + streaming

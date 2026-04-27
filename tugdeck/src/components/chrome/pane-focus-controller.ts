@@ -202,7 +202,7 @@ export function usePaneFocusController(
       if (!pane) return;
 
       // Route the activation through `transferFocusForActivation`
-      // (selection plan #step-23b, Pass 3 split (a)). The helper
+      // The helper
       // owns the save → commit → resolve → gate → focus sequence
       // for rows 1–3 of the activation trigger taxonomy; for this
       // call site (row 2, pane-chrome activation) the

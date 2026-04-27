@@ -156,7 +156,7 @@ export interface TugTextEditingState {
    * means "no asserted scroll position" — restore leaves the editor's
    * scroll at whatever bake-in default the new mount lands on. A number
    * means "set `root.scrollTop` to this value after the text + atoms +
-   * selection have been applied" ([L23], selection plan Step 25C.3).
+   * selection have been applied" ([L23]).
    *
    * Optional in the type so existing literal constructions (empty seeds,
    * legacy fixtures, on-disk payloads written before this field existed)
@@ -435,7 +435,7 @@ export class TugTextEngine {
   // Browser-mirrored state — the engine's save-resilience cache
   // -------------------------------------------------------------------
   //
-  // Per Step 25C.5 Layer 2 (abandoned) findings: this mirror is NOT a
+  // This mirror is NOT a
   // parallel source of truth competing with `bag.content`. It is the
   // engine's in-memory cache, faithful to `bag.content.{selection,
   // scrollTop}`, populated from live DOM events while focus is in-root,
@@ -580,8 +580,7 @@ export class TugTextEngine {
         // `repaintMirrorScroll` reasserts the user's scrollTop on
         // the now-correctly-sized DOM. **Selection** is NOT touched
         // here — that's the deck-layer's call (active vs inactive
-        // routing through component-side hooks). Selection plan
-        // Step 25C.4 [L10]: engine ResizeObserver does layout
+        // routing through component-side hooks). [L10]: engine ResizeObserver does layout
         // stabilization + scroll only, never selection.
         this.autoResize();
         this.repaintMirrorScroll();
@@ -1041,7 +1040,7 @@ export class TugTextEngine {
       // layer chooses the paint path (`paintMirrorAsActive` or
       // `paintMirrorAsInactive`) based on whether this card is the
       // deck-level first responder, and runs that paint after this
-      // method returns. Selection plan Step 25C.4 enforces the
+      // method returns. [L23] enforces the
       // restore-ordering invariant — every inactive card's onRestore
       // completes before the active card claims focus + global
       // Selection — by deferring the paint to the component layer.
@@ -1067,8 +1066,8 @@ export class TugTextEngine {
    * root and writes the global `window.getSelection()` via
    * `addRange`. Used by exactly *one* editor per page at a time —
    * the only call site that legitimately claims document focus and
-   * mutates the global Selection. Selection plan Step 25C.4's
-   * restore-ordering invariant guarantees this method runs *after*
+   * mutates the global Selection. The [L23] restore-ordering invariant
+   * guarantees this method runs *after*
    * every inactive card's paint, so the active card's
    * `removeAllRanges()` has nothing else's state to destroy.
    *
@@ -1079,7 +1078,7 @@ export class TugTextEngine {
    * layout observer below will catch up on the next layout
    * transition. [L23], [L10].
    *
-   * Source selection per Step 25C.5 Layer 5: when `state` is supplied
+   * Source selection: when `state` is supplied
    * (cold-boot restore path), read selection + scrollTop from the bag
    * directly. When omitted (cmd-tab return path), fall back to the
    * in-memory mirror. Both paths land identical writes; the parameter
@@ -1128,7 +1127,7 @@ export class TugTextEngine {
    * Skips silently when the engine root is detached. [L23], [L10],
    * [L12] (selectionGuard owns card-scoped selection state).
    *
-   * Source selection per Step 25C.5 Layer 5: when `state` is supplied
+   * Source selection: when `state` is supplied
    * (cold-boot restore path), read selection + scrollTop from the bag
    * directly. When omitted (cmd-tab return path), fall back to the
    * in-memory mirror. Both paths land identical writes; the parameter

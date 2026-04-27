@@ -6,7 +6,7 @@
  *
  * NOT a choice group — TugOptionGroup allows zero or more items active
  * simultaneously, while TugChoiceGroup enforces exactly one selection.
- * See roadmap/group-family.md for the full distinction.
+ * See design doc for the full distinction.
  *
  * Rules of Tugways compliance:
  *   - No root.render() after initial mount [D40, D42]

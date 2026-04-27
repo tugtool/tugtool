@@ -2,7 +2,7 @@
  * rpc.ts — Hand-written RPC client for the in-app test bridge.
  *
  * Wire format: newline-delimited JSON (NDJSON), one request or
- * response per line. See Spec [#s01-rpc-protocol]. Every request
+ * response per line. Every request
  * carries a unique numeric `id`; the response shares it. Requests
  * and responses may interleave on the wire — correlation is by id.
  *

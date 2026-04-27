@@ -167,7 +167,7 @@ mod tests {
         let collector = BuildStatusCollector::new(target_dir);
         let value = collector.collect();
 
-        // Verify schema matches Spec S02
+        // Verify schema matches
         assert!(value.is_object());
         let obj = value.as_object().unwrap();
 

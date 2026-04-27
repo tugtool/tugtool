@@ -1,7 +1,7 @@
 /**
  * m30-virtual-focus.test.ts — composite-component user-visible value
  * survives cmd-tab + reload via the Component Persistence Protocol
- * [A9] (selection plan Step 25E / [M30] / [M27] composite-components
+ * [A9] ([M30] / [M27] composite-components
  * subset).
  *
  * ## Why this exists
@@ -13,7 +13,7 @@
  * implementation operations (mount-time React state init) destroyed
  * user-visible state.
  *
- * Step 25E adds `persistKey` + `useComponentPersistence` to each
+ * Uses `persistKey` + `useComponentPersistence` to each
  * component. Two patterns coexist:
  *
  *   - **Uncontrolled-friendly** (`tug-switch`, `tug-radio-group`):
@@ -29,13 +29,12 @@
  *
  * ## Scope
  *
- * `tug-popup-button` and `tug-tab-bar` are intentionally not in 25E.
+ * `tug-popup-button` and `tug-tab-bar` are intentionally not in this matrix.
  * Popup-button is a command surface (each item dispatches a one-shot
  * action; no persistent value to capture). Tab-bar's "active tab" is
  * already the deck's `paneState.activeCardId` — adding a
  * `bag.components` axis would duplicate that state ([L23] violation).
- * Both are documented as deferred-indefinitely in the plan-doc
- * Step 25E entry.
+ * Both are documented as deferred.
  *
  * ## Test matrix
  *

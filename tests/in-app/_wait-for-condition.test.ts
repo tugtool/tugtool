@@ -1,6 +1,6 @@
 /**
  * _wait-for-condition.test.ts — In-app tests for the `waitForCondition`
- * primitive and structured error responses. Covers parent plan step-8
+ * primitive and structured error responses. Covers
  * test requirements:
  *
  *   1. `evalJS` that throws returns an error the client throws as an

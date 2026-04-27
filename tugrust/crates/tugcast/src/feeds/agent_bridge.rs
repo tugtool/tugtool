@@ -227,7 +227,7 @@ pub trait ChildSpawner: Send + Sync + 'static {
 /// Production spawner: launches `tugcode --dir <project_dir>` (or the bun
 /// fallback when the resolved path ends in `.ts`).
 ///
-/// Stateless with respect to `project_dir` per W2 Step 4 — the supervisor
+/// Stateless with respect to `project_dir` — the supervisor
 /// passes the target workspace to each `spawn_child` call. The only
 /// captured state is the path to the tugcode binary.
 pub struct TugcodeSpawner {

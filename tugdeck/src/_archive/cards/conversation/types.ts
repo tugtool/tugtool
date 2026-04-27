@@ -1,8 +1,8 @@
 /**
  * Conversation message types
  *
- * TypeScript mirrors of tugtalk's IPC message types (Spec S01/S02)
- * and message identity model (Spec S04).
+ * TypeScript mirrors of tugtalk's IPC message types (/S02)
+ * and message identity model ().
  */
 
 // Helper types
@@ -146,7 +146,7 @@ export type ConversationInput =
   | InterruptInput
   | PermissionModeInput;
 
-// Message identity model (Spec S04)
+// Message identity model ()
 
 export type ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock;
 

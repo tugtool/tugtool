@@ -10,7 +10,7 @@
  *
  * **Authoritative references:**
  * - [D02] Extract IDeckManagerStore interface to break circular imports
- * - Spec S02: DeckManagerContext and useDeckManager hook
+ * -: DeckManagerContext and useDeckManager hook
  */
 
 import { createContext, useContext } from "react";

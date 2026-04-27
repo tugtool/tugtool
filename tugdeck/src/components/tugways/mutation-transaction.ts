@@ -21,9 +21,8 @@
  *   [D01] MutationTransaction is a class with snapshot map
  *   [D02] MutationTransactionManager is a module-level singleton
  *
- * Spec S01, Spec S02
+ *,
  *
- * See also: tugplan-tugways-phase-5d3-mutation-transactions.md
  */
 
 // ---------------------------------------------------------------------------
@@ -45,7 +44,7 @@
  * Map. This ensures the manager's bookkeeping stays consistent.
  *
  * [D01] MutationTransaction is a class with snapshot map
- * Spec S01 (#s01-mutation-transaction)
+ * (#s01-mutation-transaction)
  */
 export class MutationTransaction {
   /** Unique transaction identifier (e.g., "tx-1"). */
@@ -87,7 +86,7 @@ export class MutationTransaction {
    * Callers must declare all properties they intend to preview upfront so the
    * snapshot is complete.
    *
-   * Spec S01 (#s01-mutation-transaction)
+   * (#s01-mutation-transaction)
    */
   begin(properties: string[]): void {
     this._snapshot.clear();
@@ -105,7 +104,7 @@ export class MutationTransaction {
    * must declare all properties upfront so the snapshot is complete and
    * `cancel()` can restore all mutations.
    *
-   * Spec S01 (#s01-mutation-transaction)
+   * (#s01-mutation-transaction)
    */
   preview(property: string, value: string): void {
     if (!this._snapshot.has(property)) {
@@ -125,7 +124,7 @@ export class MutationTransaction {
    * Sets `isActive` to false. The manager removes the transaction from its
    * Map after calling this.
    *
-   * Spec S01 (#s01-mutation-transaction)
+   * (#s01-mutation-transaction)
    */
   commit(): void {
     this._isActive = false;
@@ -140,7 +139,7 @@ export class MutationTransaction {
    * Sets `isActive` to false. The manager removes the transaction from its
    * Map after calling this.
    *
-   * Spec S01 (#s01-mutation-transaction)
+   * (#s01-mutation-transaction)
    */
   cancel(): void {
     for (const [prop, originalValue] of this._snapshot) {
@@ -172,7 +171,7 @@ export class MutationTransaction {
  * Export as a module-level singleton: `mutationTransactionManager`.
  *
  * [D02] MutationTransactionManager is a module-level singleton
- * Spec S02 (#s02-transaction-manager)
+ * (#s02-transaction-manager)
  */
 export class MutationTransactionManager {
   private _transactions: Map<HTMLElement, MutationTransaction> = new Map();
@@ -188,7 +187,7 @@ export class MutationTransactionManager {
    * Returns the new transaction object. Callers should use the manager's
    * commit/cancel methods rather than calling the transaction's methods directly.
    *
-   * Spec S02 (#s02-transaction-manager)
+   * (#s02-transaction-manager)
    */
   beginTransaction(
     target: HTMLElement,
@@ -215,7 +214,7 @@ export class MutationTransactionManager {
    * Delegates to `transaction.commit()` and removes the transaction from the
    * Map. No-op if no active transaction exists for `target`.
    *
-   * Spec S02 (#s02-transaction-manager)
+   * (#s02-transaction-manager)
    */
   commitTransaction(target: HTMLElement): void {
     const tx = this._transactions.get(target);
@@ -230,7 +229,7 @@ export class MutationTransactionManager {
    * Delegates to `transaction.cancel()` and removes the transaction from the
    * Map. No-op if no active transaction exists for `target`.
    *
-   * Spec S02 (#s02-transaction-manager)
+   * (#s02-transaction-manager)
    */
   cancelTransaction(target: HTMLElement): void {
     const tx = this._transactions.get(target);
@@ -242,7 +241,7 @@ export class MutationTransactionManager {
   /**
    * Return the active transaction for `target`, or `null` if none exists.
    *
-   * Spec S02 (#s02-transaction-manager)
+   * (#s02-transaction-manager)
    */
   getActiveTransaction(target: HTMLElement): MutationTransaction | null {
     return this._transactions.get(target) ?? null;
@@ -254,7 +253,7 @@ export class MutationTransactionManager {
    *
    * Used by `StyleCascadeReader` to identify the `preview` source layer.
    *
-   * Spec S02 (#s02-transaction-manager)
+   * (#s02-transaction-manager)
    */
   isPreviewProperty(element: HTMLElement, property: string): boolean {
     const tx = this._transactions.get(element);
@@ -268,7 +267,7 @@ export class MutationTransactionManager {
    * Each transaction is cancelled (restoring original values) and removed
    * from the Map.
    *
-   * Spec S02 (#s02-transaction-manager)
+   * (#s02-transaction-manager)
    */
   cancelAll(): void {
     for (const [element, tx] of this._transactions) {
@@ -286,7 +285,7 @@ export class MutationTransactionManager {
    *
    * For test cleanup only.
    *
-   * Spec S02 (#s02-transaction-manager)
+   * (#s02-transaction-manager)
    */
   reset(): void {
     for (const [, tx] of this._transactions) {
@@ -308,6 +307,6 @@ export class MutationTransactionManager {
  * transactions. Tests call `.reset()` between cases to clear state.
  *
  * [D02] MutationTransactionManager is a module-level singleton
- * Spec S02 (#s02-transaction-manager)
+ * (#s02-transaction-manager)
  */
 export const mutationTransactionManager = new MutationTransactionManager();

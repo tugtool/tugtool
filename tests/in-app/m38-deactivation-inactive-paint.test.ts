@@ -1,10 +1,9 @@
 /**
  * m38-deactivation-inactive-paint.test.ts — deactivation publishes
  * the user's selection to selectionGuard at the same DOM positions
- * the user actually selected (selection plan Step 25C.4 follow-up
- * regression gate / [M38]).
+ * the user actually selected ([M38] regression gate).
  *
- * Renamed from `m27-*` during the Step 25L M-series audit; the
+ * Renamed from `m27-*` during the M-series audit; the
  * original `m27` prefix collided with the M27 layout-state tag
  * (gated by `m27-layout-state-persistence.test.ts`). M38 was
  * assigned in the canonical inventory at `tuglaws/m-series-inventory.md`.
@@ -19,7 +18,7 @@
  * relative/visible position when scrolled, instead of at the user's
  * actual selection.
  *
- * Step 25C.4's `paintMirrorAsInactive(publish)` rebuilds a DOM
+ * `paintMirrorAsInactive(publish)` rebuilds a DOM
  * Range from `mirror.selection` flat offsets via `flatToDom`. If
  * either the mirror's offsets are stale or the rebuilt Range's
  * DOM positions differ from the user's original Range, the
@@ -470,7 +469,7 @@ async function runDeactivationScenario(
   );
 
   // Wait for the active card to land its selection in window.getSelection
-  // (Step 25C.4: paintMirrorAsActive runs from onRestore for active cards).
+  // (paintMirrorAsActive runs from onRestore for active cards).
   const expectedSelText = SEED_TEXT.slice(SEED_SELECTION.start, SEED_SELECTION.end).replace(
     /\n/g,
     "",

@@ -154,7 +154,7 @@ fn resolve_db_path(cli_path: Option<&str>) -> Result<PathBuf, String> {
     }
 }
 
-// ── JSON output helpers (Spec S01) ────────────────────────────────────────────
+// ── JSON output helpers () ────────────────────────────────────────────
 
 fn json_ok(data: &serde_json::Value, pretty: bool) {
     let envelope = serde_json::json!({"ok": true, "data": data});
@@ -206,7 +206,7 @@ fn value_type_name(v: &Value) -> &'static str {
     }
 }
 
-/// Format a single value for text output (Spec S04).
+/// Format a single value for text output ().
 /// When `pretty` is true, JSON-typed values are pretty-printed with indentation.
 fn value_to_text(v: &Value, pretty: bool) -> String {
     match v {
@@ -633,7 +633,7 @@ fn cmd_write(
             }
             process::exit(code as i32);
         }
-        // No output on success (Spec S04).
+        // No output on success ().
         broadcast_domain_changed(domain);
     }
 }

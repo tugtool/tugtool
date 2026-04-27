@@ -17,7 +17,7 @@ pub(crate) type EncodedValue = (
     Option<Vec<u8>>,
 );
 
-// value_kind discriminators (must match Table T01 in the plan)
+// value_kind discriminators (must stay in sync with the wire contract)
 const KIND_NULL: i32 = 0;
 const KIND_BOOL: i32 = 1;
 const KIND_I64: i32 = 2;
@@ -29,7 +29,7 @@ const KIND_JSON: i32 = 6;
 /// A typed value stored in a tugbank domain.
 ///
 /// Values are stored using typed SQL columns with a discriminator integer
-/// (`value_kind`). See Table T01 in the plan for the full mapping.
+/// (`value_kind`). See `tugbank` docs for the full mapping.
 ///
 /// # Variants and SQL encoding
 ///

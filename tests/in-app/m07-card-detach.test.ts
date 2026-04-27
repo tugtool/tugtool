@@ -1,7 +1,6 @@
 /**
  * m07-card-detach.test.ts — Card detach via tab drag to canvas
- * void, focus + form-control state preserved (parent plan
- * #step-23c).
+ * void, focus + form-control state preserved ([M07]).
  *
  * Scenario:
  *

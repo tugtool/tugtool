@@ -14,19 +14,18 @@
  *   [D03] Observer-side circular guard
  *   [D05] Per-path observe for useSyncExternalStore
  *
- * Spec S01, Spec S02, Spec S03
+ *,,
  *
- * See also: tugplan-tugways-phase-5d4-observable-properties.md
  */
 
 // ---------------------------------------------------------------------------
-// PropertyDescriptor and PropertySchema (Spec S02)
+// PropertyDescriptor and PropertySchema ()
 // ---------------------------------------------------------------------------
 
 /**
  * Describes a single property in a PropertyStore schema.
  *
- * Spec S02 (#s02-property-schema)
+ * (#s02-property-schema)
  */
 export interface PropertyDescriptor {
   /** Dot-separated key path (e.g., "style.backgroundColor"). */
@@ -49,14 +48,14 @@ export interface PropertyDescriptor {
  * The schema for a PropertyStore: the full set of available paths and their
  * type/constraint metadata.
  *
- * Spec S02 (#s02-property-schema)
+ * (#s02-property-schema)
  */
 export interface PropertySchema {
   paths: PropertyDescriptor[];
 }
 
 // ---------------------------------------------------------------------------
-// PropertyChange and PropertyChangeListener (Spec S03)
+// PropertyChange and PropertyChangeListener ()
 // ---------------------------------------------------------------------------
 
 /**
@@ -65,7 +64,7 @@ export interface PropertySchema {
  * The `source` field enables observer-side circular guard: observers that
  * originated the change can skip re-dispatch. [D03]
  *
- * Spec S03 (#s03-property-change)
+ * (#s03-property-change)
  */
 export interface PropertyChange {
   /** The path that changed. */
@@ -94,12 +93,12 @@ export interface PropertyChange {
  * they simply ignore the PropertyChange record. This makes observe() directly
  * usable as useSyncExternalStore's subscribe function. [D05]
  *
- * Spec S03 (#s03-property-change)
+ * (#s03-property-change)
  */
 export type PropertyChangeListener = (change: PropertyChange) => void;
 
 // ---------------------------------------------------------------------------
-// PropertyStore (Spec S01)
+// PropertyStore ()
 // ---------------------------------------------------------------------------
 
 /**
@@ -144,7 +143,7 @@ export interface PropertyStoreOptions {
  * [D02] Store owns values with optional callbacks
  * [D03] Observer-side circular guard
  * [D05] Per-path observe for useSyncExternalStore
- * Spec S01 (#s01-property-store-api)
+ * (#s01-property-store-api)
  */
 export class PropertyStore {
   private readonly _schema: PropertySchema;
@@ -176,7 +175,7 @@ export class PropertyStore {
    *
    * If an onGet callback is provided, it overrides the internal map read.
    *
-   * Spec S01 (#s01-property-store-api)
+   * (#s01-property-store-api)
    */
   get(path: string): unknown {
     this._requireValidPath(path);
@@ -202,7 +201,7 @@ export class PropertyStore {
    * If an onSet callback is provided, it is called after the internal write
    * and observer notification.
    *
-   * Spec S01 (#s01-property-store-api)
+   * (#s01-property-store-api)
    */
   set(path: string, value: unknown, source: string): void {
     const descriptor = this._requireValidPath(path);
@@ -259,7 +258,7 @@ export class PropertyStore {
    * Throws if the path is not in the schema.
    *
    * [D05] Per-path observe for useSyncExternalStore
-   * Spec S01 (#s01-property-store-api)
+   * (#s01-property-store-api)
    */
   observe(path: string, listener: PropertyChangeListener | (() => void)): () => void {
     this._requireValidPath(path);
@@ -283,7 +282,7 @@ export class PropertyStore {
    * Return the PropertySchema describing all available paths and their
    * types and constraints.
    *
-   * Spec S01 (#s01-property-store-api)
+   * (#s01-property-store-api)
    */
   getSchema(): PropertySchema {
     return this._schema;

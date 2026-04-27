@@ -22,7 +22,7 @@ import WebKit
 //
 // ## Multi-display note
 //
-// Step 4→5's flip reference is the PRIMARY screen (the one that
+// Viewport→screen flip reference is the PRIMARY screen (the one that
 // contains the menu bar — `NSScreen.screens.first`), NOT the screen
 // containing the key window (`NSScreen.main`). On a single-display
 // setup the two are identical; on a multi-display rig Tug.app may
@@ -32,7 +32,7 @@ import WebKit
 // ## Out-of-bounds policy
 //
 // Viewport points outside the WKWebView's CSS viewport return nil.
-// Callers (the CGEvent verb dispatchers in Step 2) translate nil
+// Callers (the CGEvent verb dispatchers) translate nil
 // into the `CoordinateOutOfBoundsError` RPC response so the TS
 // harness can surface a typed error. Out-of-bounds on the window or
 // display also return nil — there is no ambiguity about which
@@ -49,13 +49,13 @@ import WebKit
 // the `webView.convert(_:to:)` and `window.convertToScreen(_:)`
 // AppKit calls. The pure halves have regression cases pinned in
 // `runPureMathUnitTests()`; the full chain is exercised end-to-end
-// by Step 1's coord-round-trip experiment.
+// by the coord-round-trip experiment.
 
 enum CoordMapping {
 
     // MARK: - Pure math (unit-testable, no AppKit objects)
 
-    /// Step 1→2: viewport (CSS, Y-down, origin top-left of view) →
+    /// Viewport (CSS, Y-down, origin top-left of view) →
     /// view-local AppKit (Y-up, origin bottom-left of view). Returns
     /// nil when `p` is outside `[0, viewSize.width] × [0, viewSize.height]`.
     static func viewportToViewLocalPure(_ p: CGPoint, viewSize: CGSize) -> CGPoint? {
@@ -66,7 +66,7 @@ enum CoordMapping {
         return CGPoint(x: p.x, y: viewSize.height - p.y)
     }
 
-    /// Step 4→5: screen AppKit (Y-up, origin bottom-left of primary
+    /// Screen AppKit (Y-up, origin bottom-left of primary
     /// screen) → CG screen (Y-down, origin top-left of primary
     /// screen). Y-flip uses the primary screen's height regardless
     /// of which display `p` logically sits on — the CG coordinate
@@ -125,8 +125,7 @@ enum CoordMapping {
     // MARK: - Pure-math unit tests (hand-rolled; no XCTest dependency)
 
     /// Regression cases pinning the pure-math halves. Invoked from
-    /// the Step 1 spike harness; becomes XCTest's fixture source
-    /// when Step 2 wires a proper test target.
+    /// the spike harness; becomes XCTest's fixture source when wired to a test target.
     ///
     /// Returns a list of (case name, passed) pairs. Empty = every
     /// case passed. Callers NSLog the failures for diagnosis.

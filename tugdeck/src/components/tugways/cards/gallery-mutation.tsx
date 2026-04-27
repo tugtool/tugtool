@@ -31,7 +31,7 @@ import { TugLabel } from "@/components/tugways/tug-label";
  * - useDOMStyle: swaps border-width between "1px" and "3px"
  *
  * [D01] Three mutation zones
- * Spec S01, S02, S03 (#public-api)
+ *, S02, S03 (#public-api)
  */
 export function MutationModelDemo() {
   const boxRef = useRef<HTMLDivElement>(null);

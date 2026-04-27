@@ -436,7 +436,7 @@ export function TugPane({
   const performSelectCard = useCallback(
     (newCardId: string) => {
       // Route the intra-pane tab switch through `transferFocusForActivation`
-      // (selection plan #step-23b, Pass 3 split (b)). This is row 1 of the
+      // Tab row: this is row 1 of the
       // activation trigger taxonomy: tab click within a pane.
       //
       // The helper's five-step body subsumes the previous explicit
@@ -450,7 +450,7 @@ export function TugPane({
       // dispatch through React's synthetic event system, so without
       // it `setActiveCardInPane`'s `notify()` would be batched and
       // step 5's `.focus()` would land on a still-`display:none`
-      // element (silent failure). See plan #step-23b's M01 closure
+      // element (silent failure). See [M01] closure
       // gate.
       transferFocusForActivation({
         outgoingCardId: activeCardIdRef.current ?? null,
@@ -781,7 +781,7 @@ export function TugPane({
 
   const handleDragStart = useCallback(
     (event: React.PointerEvent) => {
-      // Drag-start focus save (selection plan #step-23c). The pane
+      // Drag-start focus save. The pane
       // title bar is not focusable, so WebKit's mousedown default
       // would normally blur whatever element inside the active
       // card has focus. Saving the active card's bag in capture

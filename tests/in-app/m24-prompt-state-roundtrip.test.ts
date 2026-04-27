@@ -1,7 +1,6 @@
 /**
  * m24-prompt-state-roundtrip.test.ts — comprehensive prompt-state
- * round-trip matrix across reload + relaunch (selection plan
- * Step 25C.3 Layer 2 / [M24]).
+ * round-trip matrix across reload + relaunch ([M24]).
  *
  * ## Why this exists
  *
@@ -444,7 +443,7 @@ function assertBagOnDisk(
 
   // Axis 4: scrollTop — FAILS today. `TugTextEditingState` has no
   // slot for `scrollTop`, so the engine's `captureState` never
-  // writes it. Layer 3 of Step 25C.3 adds this field.
+  // writes it. Future engine work adds this field.
   expect(
     (engineState as Record<string, unknown>).scrollTop,
     "axis scrollTop: bag.content.scrollTop must carry the seeded editor offset",
@@ -569,7 +568,7 @@ async function assertLiveState(app: App): Promise<void> {
 
   // Axis 4: scrollTop — FAILS today. The bag has no `scrollTop`
   // axis, so on restore the editor mounts at its bake-in default
-  // (typically 0). Layer 3 + 4 of Step 25C.3 close this.
+  // (typically 0). These layers close this.
   const liveScroll = await app.evalJS<number>(
     `(function(){
       var ed = document.querySelector('[data-card-id="A"] ${PROMPT_INPUT_SELECTOR}');

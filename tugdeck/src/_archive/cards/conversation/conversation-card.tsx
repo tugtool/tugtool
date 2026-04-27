@@ -19,7 +19,7 @@
  * Live meta updates: useCardMeta pushes the current title to CardHeader.
  *
  * References: [D03] React content only, [D04] CustomEvents, [D08] React adapter,
- *             Spec S02, Table T03, Step 8.3
+ *            , Step 8.3
  */
 
 import {

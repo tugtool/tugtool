@@ -404,20 +404,13 @@ describe("useCardPersistence – parent-sets-ref, child-reads-ref indirection", 
 });
 
 // ---------------------------------------------------------------------------
-// T-P07: `onCardActivated` is declared + forwarded — Step 22 ([A2]).
+// T-P07: `onCardActivated` is declared + forwarded ([A2]).
 //
-// At Step 22, the field is threaded through the hook but no dispatcher
-// exists yet; the shared CardHost activation effect lands in Step 23
-// as part of [A3] and becomes the first caller. These tests pin the
-// declarative shape so content factories can register in advance.
-//
-// TODO(step-23): extend this suite with a behavior test: once [A3]
-// wires the dispatcher, verify that `onCardActivated` fires on
-// `false → true` transitions of `isFocusDestination(cardId)` and is
-// skipped on the initial mount activation.
+// Tests pin the declarative shape and store wiring so content factories
+// can register in advance.
 // ---------------------------------------------------------------------------
 
-describe("useCardPersistence – onCardActivated field ([A2], Step 22)", () => {
+describe("useCardPersistence – onCardActivated field ([A2])", () => {
   it("T-P07a: accepts the onCardActivated option (compile-time shape)", () => {
     const { Provider, getLatestCallbacks } = makeTestProvider();
 
@@ -443,7 +436,7 @@ describe("useCardPersistence – onCardActivated field ([A2], Step 22)", () => {
     const callbacks = getLatestCallbacks();
     expect(callbacks).not.toBeNull();
     // The hook forwards a stable wrapper on the callbacks record so the
-    // activation effect ([A3], Step 23) can invoke it without checking
+    // activation path ([A3]) can invoke it without checking
     // option-presence first.
     expect(typeof callbacks!.onCardActivated).toBe("function");
   });
@@ -472,7 +465,7 @@ describe("useCardPersistence – onCardActivated field ([A2], Step 22)", () => {
     });
 
     const callbacks = getLatestCallbacks()!;
-    // Simulate the Step 23 dispatcher firing the callback.
+    // Simulate the activation dispatcher firing the callback.
     callbacks.onCardActivated!();
     callbacks.onCardActivated!();
     expect(invocations).toBe(2);
@@ -554,8 +547,8 @@ describe("useCardPersistence – onCardActivated field ([A2], Step 22)", () => {
   });
 
   // Helper: a provider that wires BOTH CardPersistenceContext and
-  // DeckManagerContext, so the hook's new store-channel registration
-  // (Step 23A) runs alongside the record-channel registration.
+  // DeckManagerContext, so the hook's store-channel registration
+  // runs alongside the record-channel registration.
   function ProviderWithStore({
     store,
     cardId,

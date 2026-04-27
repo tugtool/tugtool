@@ -176,12 +176,12 @@ interface DiagnosticInfo {
  *      content immediately rather than the empty-on-mount default —
  *      handy for theming and visual smoke-checks.
  *   2. Test fixture: harness tests that need predictable scrollable
- *      content (selection plan [M14] scroll persistence, [M23]
+ *      content ([M14] scroll persistence, [M23]
  *      cross-card selection) seed cards with the variant component
  *      id and get deterministic content with no UI driving.
  *
  * Selection persistence is owned by the underlying `TugMarkdownView`
- * (Step 25B): when its `persistKey` is set, it publishes `Range`s to
+ * When its `persistKey` is set, it publishes `Range`s to
  * `selectionGuard.cardRanges`, and `CardHost`'s automatic
  * `bag.domSelection` capture/restore round-trips the selection
  * across app-lifecycle saves and cold-boot. This card therefore
@@ -202,7 +202,7 @@ export interface GalleryMarkdownViewProps {
  * controls the content size for Stream and Static actions.
  *
  * Selection persistence: delegated entirely to `TugMarkdownView`'s
- * `persistKey="markdown-view"` opt-in (Step 25B). Text content
+ * `persistKey="markdown-view"` opt-in. Text content
  * persistence is intentionally not wired — the gallery card is a
  * visual / performance verification surface, and the
  * `staticContentSize` bake-in is the canonical re-mount source of

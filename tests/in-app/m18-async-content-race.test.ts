@@ -24,7 +24,7 @@
  * bearing only when an async factory ships.
  *
  * If a future async factory exposes the race, this test will
- * start failing and the [M18] fix lands in [25C](#step-25c).
+ * start failing; [M18] covers the async-content race.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  */

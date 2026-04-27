@@ -1,7 +1,7 @@
 /**
  * m07-em-card-detach.test.ts — EM-card detach to a new standalone
  * pane preserves engine state and dispatches `onCardActivated`
- * on the moved card (parent plan #step-23e [M07] EM-half).
+ * on the moved card ([M07] EM-half).
  *
  * Mirrors `m07-card-detach.test.ts` (the FC-half) but with EM
  * cards. After detach, `transferFocusAfterMove` resolves the
@@ -16,9 +16,8 @@
  *
  * Intentionally omitted, same rationale as `m06-em-cross-pane`:
  * focus on the engine root after a re-mount is timing-dependent
- * and tracked as a related gap in
- * [Step 23F](../../roadmap/tugplan-selection.md#step-23f). The
- * 23E deliverable here is the dispatch wiring, verified by the
+ * and tracked as a related gap in focus timing; the
+ * deliverable here is the dispatch wiring, verified by the
  * trace event firing.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.

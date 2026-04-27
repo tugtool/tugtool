@@ -274,7 +274,7 @@ async fn test_snapshot_watch_initial_value() {
 async fn test_stats_feed_delivery() {
     use tugcast_core::{FeedId, Frame};
 
-    // Create watch channels with pre-loaded stats data matching Spec S02 schemas
+    // Create watch channels with pre-loaded stats data matching
     let process_info_json = serde_json::json!({
         "name": "process_info",
         "pid": 12345,

@@ -3,7 +3,7 @@
  * token-classify.ts — Shared token classifier for the four-prefix system.
  *
  * Classifies a CSS custom property short name (the part after `--tug-`) into
- * one of the four prefix categories defined in roadmap/token-prefix-system.md:
+ * one of the four prefix categories defined in design doc:
  *
  *   tug7  — Seven-slot semantic tokens (element-*, surface-*, effect-*)
  *   tugc  — Color palette tokens (hue constants, named grays, global anchors,

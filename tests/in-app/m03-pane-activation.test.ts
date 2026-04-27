@@ -1,8 +1,8 @@
 /**
  * m03-pane-activation.test.ts — Cross-pane activation via title-bar click
- * (parent plan #step-14, Phase 3 second test).
+ * ([M03]).
  *
- * Scenario (parent plan #phase-3-tests):
+ * Scenario:
  *
  *   Seed two panes each with one FC card (A1 in p1, A2 in p2). Click
  *   into A1's form-control input and type a short string so A1 carries

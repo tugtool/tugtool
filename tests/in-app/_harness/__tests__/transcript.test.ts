@@ -1,6 +1,6 @@
 /**
  * transcript.test.ts — round-trip coverage for the sidecar
- * verifier (Pass 7B).
+ * verifier.
  *
  * Three round-trips:
  *
@@ -13,7 +13,7 @@
  *      when the sidecar matches; throws (without parsing) when
  *      it doesn't.
  *
- * The capture-script consumer (Pass 7C) shares the helper with
+ * The capture-script consumer shares the helper with
  * `reapprove-transcript.ts`; both rely on these tests to pin
  * hash stability against bytes-on-disk.
  */

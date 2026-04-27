@@ -17,10 +17,10 @@
  *   4. Each pane's `activeCardId` is a member of that pane's `cardIds`.
  *   5. `activePaneId`, when set, references a real pane in `panes`.
  *
- * Spec S01: Canvas Data Model Types
+ *: Canvas Data Model Types
  */
 
-// ---- Types (Spec S01) ----
+// ---- Types () ----
 
 /**
  * Per-card state bag. Uniform schema across every card type; each component
@@ -31,7 +31,7 @@
  * session) and in tugbank under `dev.tugtool.deck.cardstate/{cardId}` (durable
  * backing store).
  *
- * Spec S01: CardStateBag type ([D01], [D02])
+ *: CardStateBag type ([D01], [D02])
  */
 export interface CardStateBag {
   /** Scroll position of the card's host content element. */

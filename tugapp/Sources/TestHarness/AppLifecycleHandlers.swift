@@ -4,9 +4,8 @@ import Foundation
 
 // MARK: - AppLifecycleHandlers
 //
-// DEBUG-only handlers for the four `simulateApp*` RPC verbs added in
-// the harness extensions plan ([D07] / Spec [#s01-hardware-rpc] /
-// Step 4). Each verb invokes the matching `NSApp` primitive on the
+// DEBUG-only handlers for the four `simulateApp*` RPC verbs ([D07]).
+// Each verb invokes the matching `NSApp` primitive on the
 // main thread, then waits up to a bounded timeout for the
 // corresponding `NSApplication.did...Notification` to fire on the
 // real `AppDelegate`. Returns void on success, throws
@@ -67,8 +66,7 @@ enum AppLifecycleError: Error, CustomStringConvertible {
 
 enum AppLifecycleHandlers {
 
-    /// Default bound for delegate-callback wait. The plan's
-    /// [#step-4] artifact pins this at 1000ms — enough for any
+    /// Default bound for delegate-callback wait. 1000ms — enough for any
     /// real activation transition to drain through the run loop,
     /// short enough that a stuck call doesn't hang the test runner.
     /// Callers can override per-call via `verbObj["timeoutMs"]`.
