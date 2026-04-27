@@ -553,6 +553,12 @@ app-test *FILES:
         exit 1
     fi
 
+# Three-file smoke: bridge basics + handshake + one AT scenario.
+# Useful after a Swift / harness change or right after `just build-app`
+# to confirm the pipeline still works without running the full sweep.
+# Runtime ~20-30s (vs ~3min for the full sweep).
+app-test-smoke: (app-test "harness-smoke/smoke.test.ts" "harness-smoke/version-handshake.test.ts" "at0001-tab-switch-fc.test.ts")
+
 # Clean Rust targets and Mac app build artifacts
 clean:
     cd tugrust && cargo clean
