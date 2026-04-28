@@ -24,22 +24,35 @@
  *
  * Laws: [L01] one root.render() at mount; CM6 manages its own DOM
  *        tree internally and is never re-rendered through React,
- *        [L02] atom segments, decoration set, and keymap policy
- *        live in CM6 (StateField + closure-captured ref), never in
- *        React state, [L03] mount, dispose, and the keymap-config
- *        mirror run in `useLayoutEffect`, [L06] all editor appearance
- *        flows through CSS and direct DOM, never React state, [L07]
- *        delegate methods and keymap handlers read `viewRef.current`
- *        and `keymapConfigRef.current` at call time, [L11] responder
- *        for editing actions (including atom insert / clipboard /
- *        submit / history-nav) on the owned document, selection,
- *        and atom set, [L15] token-driven control states, [L19]
- *        component authoring guide, [L21] CodeMirror 6 (MIT) — see
- *        `THIRD_PARTY_NOTICES.md`, [L22] theme-change subscription
- *        writes through a CM6 transaction, never round-tripping
- *        through React, [L24] `viewRef`/`hostRef`/`keymapConfigRef`
- *        local-data, CM6 owns document, selection, and
- *        atom-decoration state, appearance via CSS / DOM.
+ *        [L02] atom segments, decoration set, keymap policy, and
+ *        typeahead state live in CM6 (StateField + closure-captured
+ *        refs), never in React state, [L03] mount, dispose, the
+ *        keymap-config mirror, the completion-providers mirror,
+ *        and the typeahead state subscription run in
+ *        `useLayoutEffect`, [L04] popup position is read from CM6
+ *        via `coordsAtPos`, never via React-state-driven layout,
+ *        [L06] all editor appearance — including the typeahead
+ *        popup body — flows through CSS and direct DOM, never
+ *        React state, [L07] delegate methods, keymap handlers, the
+ *        completion provider thunk, and the typeahead-change
+ *        observer ref read their state at call time, [L11]
+ *        responder for editing actions (including atom insert /
+ *        clipboard / submit / history-nav) on the owned document,
+ *        selection, atom set, and typeahead session — popup items
+ *        dispatch directly into the substrate's accept helper
+ *        because the popup is a substrate-internal UI surface,
+ *        [L15] token-driven control states, [L19] component
+ *        authoring guide, [L20] popup uses
+ *        `tug-completion-menu`'s own tokens — no token-slot
+ *        violations, [L21] CodeMirror 6 (MIT) — see
+ *        `THIRD_PARTY_NOTICES.md`, [L22] theme-change subscription,
+ *        typeahead state observer, and async completion-provider
+ *        results all stream through CM6 transactions and direct
+ *        DOM updates — never through React state, [L24] `viewRef`,
+ *        `hostRef`, `popupRef`, `keymapConfigRef`,
+ *        `completionProvidersRef` are local-data refs; CM6 owns
+ *        document, selection, atom-decoration, and typeahead
+ *        state; appearance via CSS / DOM.
  *
  * StrictMode lifecycle: the `EditorView` is constructed inside a
  * `useLayoutEffect` with empty deps, stored on `viewRef`, and
@@ -53,6 +66,9 @@
  */
 
 import "./tug-edit.css";
+// The substrate uses tug-completion-menu's CSS classes for the
+// typeahead popup so the surface matches `tug-prompt-input`.
+import "./tug-completion-menu.css";
 
 import React, {
   useCallback,
@@ -92,9 +108,17 @@ import { clipboardExt } from "./tug-edit/clipboard-filters";
 import { tugSelectionLayer } from "./tug-edit/selection-layer";
 import { tugEditKeymap } from "./tug-edit/keymap";
 import type { TugEditKeymapConfig } from "./tug-edit/keymap";
+import {
+  acceptCompletionAt,
+  getCompletionState,
+  navigateCompletion,
+  subscribeCompletionState,
+  tugCompletionExt,
+} from "./tug-edit/completion-extension";
 import { useOptionalResponder } from "./use-responder";
 import type { ActionHandler, ActionHandlerResult } from "./responder-chain";
 import { TUG_ACTIONS, type TugAction } from "./action-vocabulary";
+import type { CompletionItem, CompletionProvider } from "@/lib/tug-text-engine";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -227,6 +251,39 @@ export interface TugEditProps
    * when the user reaches the forward end of the stack.
    */
   historyProvider?: HistoryProvider;
+  /**
+   * Map of trigger character → `CompletionProvider`. When the user
+   * types a key in the map (e.g. `@` or `/`), the substrate opens a
+   * typeahead popup of items returned by the provider, lets the user
+   * navigate with arrow keys, and on Enter or Tab inserts the chosen
+   * item as a tug atom.
+   *
+   * Providers may be sync (a plain function) or async (with a
+   * `.subscribe` method that the substrate uses to refresh results
+   * as they stream in — `[L22]`).
+   */
+  completionProviders?: Record<string, CompletionProvider>;
+  /**
+   * Preferred direction for the completion popup relative to the
+   * trigger character. `"down"` (default) places the popup below the
+   * trigger when there's room; `"up"` places it above. The substrate
+   * auto-flips when the preferred direction would clip against the
+   * editor's scroll-clipping ancestor.
+   * @default "down"
+   */
+  completionDirection?: "up" | "down";
+  /**
+   * Optional observer of typeahead state changes. Fires after every
+   * activate / update / navigate / cancel — useful for hosts that
+   * want to coordinate other UI (e.g. dim a sibling control while
+   * typeahead is active). The substrate already drives the popup
+   * itself; consumers do not need to render anything in response.
+   */
+  onTypeaheadChange?: (
+    active: boolean,
+    filtered: readonly CompletionItem[],
+    selectedIndex: number,
+  ) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -247,9 +304,15 @@ export interface TugEditProps
 function buildExtensions(
   host: HTMLElement,
   getKeymapConfig: () => TugEditKeymapConfig,
+  getCompletionProviders: () => Record<string, CompletionProvider>,
 ): readonly Extension[] {
   return [
     history(),
+    // Typeahead first so its `Prec.highest` keymap sees Enter / Tab /
+    // Arrows / Escape before the Step 4 keymap when a session is
+    // active. When inactive, every branch returns `false` and the
+    // keystroke falls through to `tugEditKeymap` and beyond.
+    tugCompletionExt(getCompletionProviders),
     // tug-specific keymap runs before defaultKeymap / historyKeymap
     // (Prec.high inside `tugEditKeymap`) so Enter / numpad Enter /
     // Cmd-Enter / Cmd-Up / Cmd-Down get tug semantics. Falling
@@ -293,12 +356,41 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
       numpadEnterAction = DEFAULT_NUMPAD_ENTER_ACTION,
       onSubmit,
       historyProvider,
+      completionProviders,
+      completionDirection = "down",
+      onTypeaheadChange,
       ...rest
     }: TugEditProps,
     ref,
   ) {
     const hostRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
+    const popupRef = useRef<HTMLDivElement>(null);
+
+    // Live providers ref. The typeahead extension reads this via a
+    // thunk on every transaction, so swapping providers across
+    // renders takes effect without rebuilding the editor [L07].
+    const completionProvidersRef = useRef<Record<string, CompletionProvider>>(
+      completionProviders ?? {},
+    );
+    useLayoutEffect(() => {
+      completionProvidersRef.current = completionProviders ?? {};
+    }, [completionProviders]);
+
+    // Live observer ref for the optional `onTypeaheadChange` callback
+    // — same [L07] pattern: the field-listener captured below reads
+    // the current callback so a re-render with a new callback
+    // identity doesn't require re-subscribing.
+    const onTypeaheadChangeRef = useRef(onTypeaheadChange);
+    useLayoutEffect(() => {
+      onTypeaheadChangeRef.current = onTypeaheadChange;
+    }, [onTypeaheadChange]);
+
+    // Live preferred-direction ref read by the popup positioner.
+    const completionDirectionRef = useRef(completionDirection);
+    useLayoutEffect(() => {
+      completionDirectionRef.current = completionDirection;
+    }, [completionDirection]);
 
     // Live keymap config. The extension's keydown handler reads
     // `keymapConfigRef.current` via the thunk passed to
@@ -510,7 +602,11 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
 
       const state = EditorState.create({
         doc: "",
-        extensions: buildExtensions(host, () => keymapConfigRef.current),
+        extensions: buildExtensions(
+          host,
+          () => keymapConfigRef.current,
+          () => completionProvidersRef.current,
+        ),
       });
       const view = new EditorView({
         state,
@@ -529,7 +625,40 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
       };
       subscribeThemeChange(onThemeChange);
 
+      // Wire the typeahead state to the popup DOM. The completion
+      // extension's per-view subscription fires on every state change
+      // — we paint the popup body imperatively per [L06] (mirrors
+      // `tug-prompt-input`'s approach) and forward to the optional
+      // `onTypeaheadChange` callback. The painter uses `coordsAtPos`
+      // to anchor the popup to the trigger character, auto-flipping
+      // up vs. down based on space inside the nearest scroll-clipping
+      // ancestor.
+      const completionUnsub = subscribeCompletionState(view, () => {
+        paintCompletionPopup(
+          view,
+          popupRef.current,
+          hostRef.current,
+          completionDirectionRef.current,
+        );
+        const snap = getCompletionState(view);
+        onTypeaheadChangeRef.current?.(
+          snap.active,
+          snap.filtered,
+          snap.selectedIndex,
+        );
+      });
+      // Initial paint: the editor mounts inactive, but a future
+      // step (e.g., state restoration) might mount with typeahead
+      // already open — paint once so the popup matches.
+      paintCompletionPopup(
+        view,
+        popupRef.current,
+        hostRef.current,
+        completionDirectionRef.current,
+      );
+
       return () => {
+        completionUnsub();
         unsubscribeThemeChange(onThemeChange);
         view.destroy();
         viewRef.current = null;
@@ -545,7 +674,21 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
           data-borderless={borderless ? "" : undefined}
           className={cn("tug-edit", className)}
           {...rest}
-        />
+        >
+          {/* Typeahead popup. Empty until a trigger fires; the
+              typeahead-state subscriber installed in the mount
+              effect paints the contents and the position via
+              direct DOM writes (mirrors `tug-prompt-input`'s
+              pattern, [L06] / [L22]). The popup sits inside the
+              host so click-to-accept walks up to the editor's
+              `data-responder-id` and keeps it as first responder. */}
+          <div
+            ref={popupRef}
+            data-slot="tug-completion-menu"
+            className="tug-completion-menu"
+            style={{ display: "none" }}
+          />
+        </div>
       </ResponderScope>
     );
   },
@@ -564,4 +707,173 @@ function clearEditor(view: EditorView): void {
     selection: EditorSelection.cursor(0),
     userEvent: "delete.tug-clear",
   });
+}
+
+// ---------------------------------------------------------------------------
+// Completion popup painter
+// ---------------------------------------------------------------------------
+
+/** Padding between the trigger anchor and the popup. */
+const POPUP_GAP = 4;
+
+/**
+ * Repaint the typeahead popup. Called whenever the typeahead state
+ * changes via the per-view subscription installed in the mount
+ * effect.
+ *
+ * Hides the popup when typeahead is inactive or the filtered list
+ * is empty. Otherwise rebuilds the popup body if the items changed,
+ * reuses existing DOM nodes when only the selected index moved, and
+ * — via a deferred `view.requestMeasure` — positions the popup at
+ * the trigger character with auto-flip up vs. down based on the
+ * available space inside the nearest scroll-clipping ancestor.
+ *
+ * Why the deferred positioning: the painter is called from a CM6
+ * `ViewPlugin.update` listener, which fires DURING CM6's update
+ * cycle. Calling `view.coordsAtPos` synchronously from there throws
+ * "Reading the editor layout isn't allowed during an update" — CM6
+ * catches the throw, logs it, and deactivates the plugin. Once the
+ * plugin is deactivated, no further state changes are observed:
+ * the popup gets stuck at its last position and stops responding to
+ * keyboard navigation. Routing the read+write through
+ * `requestMeasure` schedules them in CM6's regular measure phase
+ * where layout reads are legal.
+ *
+ * Mirrors `tug-prompt-input`'s painter for the visual surface.
+ */
+function paintCompletionPopup(
+  view: EditorView,
+  popup: HTMLDivElement | null,
+  host: HTMLDivElement | null,
+  direction: "up" | "down",
+): void {
+  if (popup === null || host === null) return;
+  const state = getCompletionState(view);
+  if (!state.active || state.filtered.length === 0) {
+    popup.style.display = "none";
+    return;
+  }
+  // ---- Item rendering (synchronous, no DOM measurement needed) ----
+  const items = popup.querySelectorAll(".tug-completion-menu-item");
+  let same = items.length === state.filtered.length;
+  if (same) {
+    for (let k = 0; k < state.filtered.length; k++) {
+      const label = items[k]?.querySelector(".tug-completion-menu-label");
+      if (label?.textContent !== state.filtered[k]!.label) {
+        same = false;
+        break;
+      }
+    }
+  }
+  if (same) {
+    items.forEach((el, k) => {
+      el.className = "tug-completion-menu-item"
+        + (k === state.selectedIndex ? " tug-completion-menu-item-selected" : "");
+    });
+    popup.style.display = "block";
+    (items[state.selectedIndex] as HTMLElement | undefined)?.scrollIntoView({
+      block: "nearest",
+    });
+  } else {
+    popup.style.display = "block";
+    popup.innerHTML = "";
+    state.filtered.forEach((item, i) => {
+      const div = document.createElement("div");
+      div.className = "tug-completion-menu-item"
+        + (i === state.selectedIndex ? " tug-completion-menu-item-selected" : "");
+      const label = document.createElement("span");
+      label.className = "tug-completion-menu-label";
+      if (item.matches && item.matches.length > 0) {
+        let pos = 0;
+        for (const [start, end] of item.matches) {
+          if (start > pos) {
+            label.appendChild(document.createTextNode(item.label.slice(pos, start)));
+          }
+          const mark = document.createElement("span");
+          mark.className = "tug-completion-match";
+          mark.textContent = item.label.slice(start, end);
+          label.appendChild(mark);
+          pos = end;
+        }
+        if (pos < item.label.length) {
+          label.appendChild(document.createTextNode(item.label.slice(pos)));
+        }
+      } else {
+        label.textContent = item.label;
+      }
+      div.appendChild(label);
+      div.addEventListener("pointermove", () => {
+        // Move the keyboard selection to the hovered item — single
+        // highlight semantics, mirrors the prompt-input painter.
+        navigateCompletionByIndex(view, i);
+      });
+      div.addEventListener("pointerdown", (e) => {
+        // Don't let the click steal focus from the editor — the
+        // accept transaction below moves the caret deliberately.
+        e.preventDefault();
+        acceptCompletionAt(view, i);
+      });
+      popup.appendChild(div);
+    });
+    const selectedEl = popup.children[state.selectedIndex] as HTMLElement | undefined;
+    selectedEl?.scrollIntoView({ block: "nearest" });
+  }
+
+  // ---- Deferred positioning ----
+  // Read coordsAtPos / hostRect / popupH / clipRect in the measure
+  // phase (where layout reads are legal), then write the position
+  // styles in the same phase's write step. The `key` field
+  // coalesces multiple repaints in the same frame down to a single
+  // measurement.
+  view.requestMeasure({
+    key: "tug-edit-completion-position",
+    read(): {
+      anchorCoords: { left: number; right: number; top: number; bottom: number } | null;
+      hostRect: DOMRect;
+      popupH: number;
+      clipRect: { top: number; bottom: number };
+    } | null {
+      if (popup === null || host === null) return null;
+      const anchorCoords = view.coordsAtPos(state.anchorOffset);
+      const hostRect = host.getBoundingClientRect();
+      const popupH = popup.offsetHeight;
+      let scrollParent: HTMLElement | null = host.parentElement;
+      while (scrollParent !== null) {
+        const ov = getComputedStyle(scrollParent).overflowY;
+        if (ov === "auto" || ov === "scroll" || ov === "hidden") break;
+        scrollParent = scrollParent.parentElement;
+      }
+      const clipRect = scrollParent !== null
+        ? scrollParent.getBoundingClientRect()
+        : { top: 0, bottom: window.innerHeight };
+      return { anchorCoords, hostRect, popupH, clipRect };
+    },
+    write(measured) {
+      if (measured === null || popup === null) return;
+      const { anchorCoords, hostRect, popupH, clipRect } = measured;
+      if (anchorCoords === null) return;
+      popup.style.left = `${anchorCoords.left - hostRect.left}px`;
+      popup.style.right = "";
+      const spaceAbove = anchorCoords.top - clipRect.top;
+      const spaceBelow = clipRect.bottom - anchorCoords.bottom;
+      const useDown = direction === "down"
+        ? spaceBelow >= popupH || spaceBelow >= spaceAbove
+        : spaceAbove < popupH && spaceBelow > spaceAbove;
+      if (useDown) {
+        popup.style.top = `${anchorCoords.bottom - hostRect.top + POPUP_GAP}px`;
+        popup.style.bottom = "";
+      } else {
+        popup.style.bottom = `${hostRect.bottom - anchorCoords.top + POPUP_GAP}px`;
+        popup.style.top = "";
+      }
+    },
+  });
+}
+
+/** Navigate to a specific item by index — used by the popup's hover handler. */
+function navigateCompletionByIndex(view: EditorView, index: number): void {
+  const state = getCompletionState(view);
+  if (!state.active) return;
+  if (index === state.selectedIndex) return;
+  navigateCompletion(view, { to: index });
 }

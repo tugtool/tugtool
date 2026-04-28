@@ -743,17 +743,22 @@ Manual scenarios are documented in each step. The IME validation gate (Step 6) i
 - Gallery card: mock `@` (file) and `/` (slash) providers using existing fixtures.
 
 **Tasks:**
-- [ ] Implement trigger detection via a `ViewPlugin` watching transactions.
-- [ ] Wire selection changes to insert the chosen completion as an atom (transaction inserts U+FFFC + adds decoration field entry).
-- [ ] Match the existing completion menu's positioning + keyboard nav.
+- [x] Implement trigger detection via a `ViewPlugin` watching transactions.
+- [x] Wire selection changes to insert the chosen completion as an atom (transaction inserts U+FFFC + adds decoration field entry — single transaction so the editor never observes a partially-applied accept).
+- [x] Match the existing completion menu's positioning + keyboard nav. Painter mirrors `tug-prompt-input`'s pattern; auto-flips up vs. down based on space inside the nearest scroll-clipping ancestor.
+- [x] Move the rounded-corner clip from `.tug-edit` to `.cm-editor` so the popup, anchored absolutely inside the host, can extend past the editor's bounds without being clipped.
 
 **Tests:**
-- [ ] Integration: type `@`, mock provider returns 3 items, popup renders, arrow keys navigate, Enter inserts the atom.
-- [ ] Integration: Esc dismisses the popup without inserting.
+- [x] Pure logic: `lookupCompletionProvider` resolves ASCII triggers and normalizes full-width punctuation.
+- [x] Pure logic: `detectTriggerInsertion` fires only on single-keystroke insertions adjacent to the caret — paste-like multi-character inserts are deliberately ignored.
+- [x] Pure logic: `deriveQueryUpdate` covers query advance, no-op match, non-empty selection cancel, caret-before-anchor cancel, query-newline cancel, and the empty-query-immediately-after-trigger no-op.
+- [x] StateField `create()` returns the inactive snapshot and stays inactive when only document-mapping (no effects) runs against it.
+
+  Keystroke-vs-popup interactions (Enter inserts the atom, Esc dismisses, hover updates selection, click accepts) cross React renders, real focus, and `coordsAtPos`-driven positioning — none of which happy-dom models. The project's test-scoping rule reserves them for `just app-test` (real WebKit) and the gallery card.
 
 **Checkpoint:**
-- [ ] Manual: gallery `@` and `/` typeahead works end-to-end.
-- [ ] `bun run check`, `bun test` exit 0.
+- [ ] Manual gallery walk-through (real WebKit): type `@` to open the file popup, type a few letters to filter, arrow-keys navigate, Enter inserts the atom; type `/` to open the command popup, repeat; Escape dismisses without inserting.
+- [x] `bun run check`, `bun test` exit 0.
 
 ---
 

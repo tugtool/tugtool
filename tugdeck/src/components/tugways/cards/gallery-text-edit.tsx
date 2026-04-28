@@ -35,6 +35,8 @@ import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { captureEditState } from "@/components/tugways/tug-edit/keymap";
 import type { AtomSegment } from "@/lib/tug-atom-img";
 import type {
+  CompletionItem,
+  CompletionProvider,
   HistoryProvider,
   InputAction,
   TugTextEditingState,
@@ -86,6 +88,75 @@ const ATOM_SAMPLES: { label: string; segment: AtomSegment }[] = [
     segment: { kind: "atom", type: "link", label: "anthropic.com", value: "https://www.anthropic.com" },
   },
 ];
+
+// ---------------------------------------------------------------------------
+// Mock completion providers
+// ---------------------------------------------------------------------------
+
+/**
+ * Hard-coded sample file list for the `@`-trigger provider. Real
+ * tug-prompt-input wires `@` to a live FileTreeStore-backed provider;
+ * the gallery just demonstrates the popup's keyboard nav, hover, and
+ * accept flow against a fixed set of items.
+ */
+const MOCK_FILES: { path: string; label: string }[] = [
+  { path: "/project/src/main.ts", label: "main.ts" },
+  { path: "/project/src/app.tsx", label: "app.tsx" },
+  { path: "/project/src/router.ts", label: "router.ts" },
+  { path: "/project/src/lib/utils.ts", label: "utils.ts" },
+  { path: "/project/src/lib/store.ts", label: "store.ts" },
+  { path: "/project/styles/themes/brio.css", label: "brio.css" },
+  { path: "/project/styles/themes/harmony.css", label: "harmony.css" },
+  { path: "/project/README.md", label: "README.md" },
+  { path: "/project/package.json", label: "package.json" },
+];
+
+/**
+ * Hard-coded sample slash-command list for the `/`-trigger provider.
+ * Mirrors a typical command palette: each item carries a label and
+ * the verbatim slash command string used as the atom value.
+ */
+const MOCK_COMMANDS: { command: string; label: string }[] = [
+  { command: "/commit", label: "/commit" },
+  { command: "/build", label: "/build" },
+  { command: "/test", label: "/test" },
+  { command: "/run", label: "/run" },
+  { command: "/help", label: "/help" },
+];
+
+/**
+ * Filter a list against a query. Returns items that contain every
+ * character of the query as a subsequence (case-insensitive),
+ * preserving the original order.
+ */
+function fuzzyFilter<T extends { label: string }>(items: T[], query: string): T[] {
+  if (query.length === 0) return items;
+  const q = query.toLowerCase();
+  return items.filter((item) => {
+    const label = item.label.toLowerCase();
+    let qi = 0;
+    for (let i = 0; i < label.length && qi < q.length; i++) {
+      if (label[i] === q[qi]) qi++;
+    }
+    return qi === q.length;
+  });
+}
+
+/** `@`-trigger provider — synchronous match against the mock file list. */
+const mockFileProvider: CompletionProvider = (query: string): CompletionItem[] => {
+  return fuzzyFilter(MOCK_FILES, query).map((file) => ({
+    label: file.label,
+    atom: { kind: "atom", type: "file", label: file.label, value: file.path },
+  }));
+};
+
+/** `/`-trigger provider — synchronous match against the mock command list. */
+const mockCommandProvider: CompletionProvider = (query: string): CompletionItem[] => {
+  return fuzzyFilter(MOCK_COMMANDS, query).map((cmd) => ({
+    label: cmd.label,
+    atom: { kind: "atom", type: "command", label: cmd.label, value: cmd.command },
+  }));
+};
 
 // ---------------------------------------------------------------------------
 // Card-scoped history provider
@@ -178,6 +249,18 @@ export function GalleryTextEdit() {
     [],
   );
 
+  // Stable typeahead provider map. Module-level constants — neither
+  // the file list nor the command list changes during the gallery's
+  // lifetime, so the map's identity stays stable across renders and
+  // the substrate's provider thunk doesn't churn.
+  const completionProviders = useMemo<Record<string, CompletionProvider>>(
+    () => ({
+      "@": mockFileProvider,
+      "/": mockCommandProvider,
+    }),
+    [],
+  );
+
   // Submit handler: capture the current editing state, append it to
   // the per-card history, reset the provider's cursor / draft, then
   // clear the editor for the next draft. The capture happens on the
@@ -228,6 +311,7 @@ export function GalleryTextEdit() {
               returnAction={returnAction}
               onSubmit={handleSubmit}
               historyProvider={historyProvider}
+              completionProviders={completionProviders}
             />
           </div>
         </div>
