@@ -358,6 +358,48 @@ export function TugPopoverTrigger({ asChild = true, children }: TugPopoverTrigge
 }
 
 /* ---------------------------------------------------------------------------
+ * TugPopoverAnchor
+ * ---------------------------------------------------------------------------*/
+
+/** TugPopoverAnchor props. */
+export interface TugPopoverAnchorProps {
+  /**
+   * Render as child element, merging anchor behavior onto it.
+   * @default true
+   */
+  asChild?: boolean;
+  children: React.ReactNode;
+}
+
+/**
+ * Thin wrapper on Radix `Popover.Anchor`. Use when the popover should
+ * position relative to an element WITHOUT composing the trigger's
+ * auto-toggle `onClick` onto that element. Pair with imperative
+ * `popoverRef.current.open()` / `.close()` for purely
+ * imperative-control popovers — i.e., a popover whose visibility is
+ * driven by a parent's logic (matrix branches, async work, etc.)
+ * rather than a single click on a button.
+ *
+ * Why this exists: composing `Popover.Trigger` onto an element that
+ * already participates in pointerdown / pointerup / click event
+ * choreography (X buttons with pointer-capture, controls that have
+ * their own onClick semantics, etc.) creates a fight between Radix's
+ * toggle and the imperative `open()` call. The toggle reads the
+ * `open` prop from its closure at click time; if the popover state
+ * has updated between event phases (e.g., between `pointerup` and
+ * `click` when the parent's pointerup handler already opened the
+ * popover imperatively), the toggle inverts and immediately closes
+ * what just opened. Using Anchor + imperative open avoids this
+ * because no `onClick` toggle is composed onto the host element.
+ *
+ * Defaults to `asChild` so the caller's element is used directly as
+ * the anchor without a wrapper div.
+ */
+export function TugPopoverAnchor({ asChild = true, children }: TugPopoverAnchorProps) {
+  return <Popover.Anchor asChild={asChild}>{children}</Popover.Anchor>;
+}
+
+/* ---------------------------------------------------------------------------
  * TugPopoverContent
  * ---------------------------------------------------------------------------*/
 

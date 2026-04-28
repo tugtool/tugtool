@@ -43,6 +43,14 @@ import { useRequiredResponderChain } from "@/components/tugways/responder-chain-
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { useDeckManager } from "@/deck-manager-context";
 import { TugButton } from "@/components/tugways/internal/tug-button";
+import {
+  TugPopover,
+  TugPopoverAnchor,
+  TugPopoverContent,
+  type TugPopoverHandle,
+} from "@/components/tugways/tug-popover";
+import { TugLabel } from "@/components/tugways/tug-label";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
 import * as paneContentRegistry from "@/components/chrome/pane-content-registry";
 import * as paneRootRegistry from "@/components/chrome/pane-root-registry";
 import {
@@ -65,6 +73,25 @@ export interface CardTitleBarProps {
   icon?: string;
   closable?: boolean;
   collapsed: boolean;
+  /**
+   * Number of cards in this pane. Drives the close-confirmation
+   * behavior of the title-bar X button:
+   *
+   *   - `cardCount > 1` → click X opens a "Close N Tabs?" confirm
+   *     popover anchored to the X button. `onClose` fires only on
+   *     the user's confirm. The button also drops `data-no-activate`
+   *     so clicking X on a background pane brings the pane forward
+   *     before the popover opens (the user needs to see what they're
+   *     about to discard).
+   *   - `cardCount <= 1` → click X invokes `onClose` immediately,
+   *     no popover. The button keeps `data-no-activate` so a quick
+   *     close on a background single-tab pane doesn't bring it to
+   *     the front first.
+   *
+   * Defaults to `1` (single-tab semantics) so existing callers that
+   * don't pass the prop keep their current behavior.
+   */
+  cardCount?: number;
   onCollapse: () => void;
   onClose?: () => void;
   onDragStart?: (event: React.PointerEvent) => void;
@@ -75,6 +102,7 @@ export function CardTitleBar({
   icon,
   closable = true,
   collapsed,
+  cardCount = 1,
   onCollapse,
   onClose,
   onDragStart,
@@ -97,6 +125,14 @@ export function CardTitleBar({
     [onCollapse],
   );
 
+  // Imperative handle on the close-confirm popover. Non-null only
+  // when a popover is rendered (cardCount > 1). The popover uses a
+  // `TugPopoverAnchor` (not `TugPopoverTrigger`) on the X button —
+  // see the comment on the render block below for why.
+  const closeConfirmPopoverRef = useRef<TugPopoverHandle>(null);
+
+  const isMultiTab = cardCount > 1;
+
   const handleClosePointerDown = useCallback(
     (event: React.PointerEvent<HTMLButtonElement>) => {
       event.stopPropagation();
@@ -115,16 +151,36 @@ export function CardTitleBar({
         event.clientX <= rect.right &&
         event.clientY >= rect.top &&
         event.clientY <= rect.bottom;
-      if (inside) {
+      if (!inside) return;
+      if (isMultiTab) {
+        closeConfirmPopoverRef.current?.open();
+      } else {
         onClose?.();
       }
     },
-    [onClose],
+    [isMultiTab, onClose],
   );
 
   const handleCloseClick = useCallback(() => {
+    if (isMultiTab) {
+      // Multi-tab: open the confirm popover. The pointerup handler
+      // already handled the open in normal click flow; calling open()
+      // here a second time is idempotent (TugPopover.open() just
+      // setState(true), which is a no-op when already open).
+      closeConfirmPopoverRef.current?.open();
+    } else {
+      onClose?.();
+    }
+  }, [isMultiTab, onClose]);
+
+  const handleConfirmClose = useCallback(() => {
+    closeConfirmPopoverRef.current?.close();
     onClose?.();
   }, [onClose]);
+
+  const handleCancelClose = useCallback(() => {
+    closeConfirmPopoverRef.current?.close();
+  }, []);
 
   const handleCollapsePointerDown = useCallback(
     (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -186,19 +242,97 @@ export function CardTitleBar({
         />
 
         {closable && (
-          <TugButton
-            subtype="icon"
-            emphasis="ghost"
-            role="action"
-            size="sm"
-            icon={<X />}
-            data-no-activate
-            onPointerDown={handleClosePointerDown}
-            onPointerUp={handleClosePointerUp}
-            onClick={handleCloseClick}
-            aria-label="Close card"
-            data-testid="tug-pane-close-button"
-          />
+          isMultiTab ? (
+            // Multi-tab: render the X button inside a TugPopover whose
+            // anchor — NOT trigger — is the X button itself. Why
+            // Anchor instead of Trigger:
+            //
+            //   - `TugPopoverTrigger` composes Radix's auto-toggle
+            //     `onClick` onto the host element via `Slot.mergeProps`.
+            //     The X button's pointer-capture flow opens the popover
+            //     imperatively on `pointerup`; React then commits the
+            //     state transition before the trailing `click` event
+            //     fires; Radix's toggle reads the just-committed
+            //     `open=true` from its closure and inverts to
+            //     `open=false` — closing the popover the user just
+            //     opened. The "popover briefly flashes" bug.
+            //   - `TugPopoverAnchor` provides positioning only — no
+            //     toggle, no `onClick` composition. Open is purely
+            //     imperative via `closeConfirmPopoverRef.current.open()`
+            //     and the popover stays open until the user clicks
+            //     Confirm / Cancel, presses Escape, or clicks outside.
+            //
+            // We also pass `dismissOnChainActivity={false}` so the
+            // popover doesn't self-close on its own
+            // `cancelDialog` re-emit (which `TugPopover.handleOpenChange(false)`
+            // dispatches on every close) — the inner shell's
+            // observeDispatch would otherwise see that dispatch (sender
+            // is the popover's own senderId, but only the SHELL's
+            // observer filters self; the outer subscription doesn't).
+            // Click-outside and Escape are still handled by Radix's
+            // DismissableLayer regardless of this flag.
+            <TugPopover ref={closeConfirmPopoverRef} dismissOnChainActivity={false}>
+              <TugPopoverAnchor asChild>
+                <TugButton
+                  subtype="icon"
+                  emphasis="ghost"
+                  role="action"
+                  size="sm"
+                  icon={<X />}
+                  onPointerDown={handleClosePointerDown}
+                  onPointerUp={handleClosePointerUp}
+                  onClick={handleCloseClick}
+                  aria-label={`Close pane (${cardCount} tabs)`}
+                  data-testid="tug-pane-close-button"
+                />
+              </TugPopoverAnchor>
+              <TugPopoverContent side="bottom" sideOffset={6}>
+                <div
+                  data-slot="tug-pane-close-confirm"
+                  className="tug-confirm-popover"
+                >
+                  <div className="tug-confirm-popover-actions">
+                    <TugPushButton
+                      emphasis="ghost"
+                      size="sm"
+                      onClick={handleCancelClose}
+                    >
+                      Cancel
+                    </TugPushButton>
+                    <TugPushButton
+                      emphasis="filled"
+                      role="danger"
+                      size="sm"
+                      onClick={handleConfirmClose}
+                    >
+                      Close All
+                    </TugPushButton>
+                  </div>
+                  <TugLabel size="md" align="center">
+                    Close {cardCount} Tabs?
+                  </TugLabel>
+                </div>
+              </TugPopoverContent>
+            </TugPopover>
+          ) : (
+            // Single-tab: plain X button. `data-no-activate` keeps a
+            // background-pane close from bringing the pane forward —
+            // the user has nothing to lose, no need to surface
+            // anything.
+            <TugButton
+              subtype="icon"
+              emphasis="ghost"
+              role="action"
+              size="sm"
+              icon={<X />}
+              data-no-activate
+              onPointerDown={handleClosePointerDown}
+              onPointerUp={handleClosePointerUp}
+              onClick={handleCloseClick}
+              aria-label="Close card"
+              data-testid="tug-pane-close-button"
+            />
+          )
         )}
       </div>
     </div>
@@ -479,6 +613,12 @@ export function TugPane({
     };
   }, [stackId, cardEl]);
 
+  // Chain-action close (Cmd-W via TUG_ACTIONS.CLOSE). Browser-standard
+  // "close the active tab" semantics: multi-tab → remove the active
+  // card; single-tab → close the pane. The title-bar X is a different
+  // gesture (`handleTitleBarClose`), with a different policy: always
+  // closes the entire pane, with a multi-tab confirm popover owned by
+  // CardTitleBar.
   const handleChromeClose = useCallback(() => {
     const currentCards = cardsRef.current;
     const currentActiveId = activeCardIdRef.current;
@@ -488,6 +628,14 @@ export function TugPane({
       onClose?.();
     }
   }, [onClose, store, stackId]);
+
+  // Title-bar X close. Always closes the entire pane. CardTitleBar
+  // is responsible for surfacing the multi-tab confirm popover before
+  // calling this — by the time we get here the user has already
+  // confirmed (or the pane was single-tab to begin with).
+  const handleTitleBarClose = useCallback(() => {
+    onClose?.();
+  }, [onClose]);
 
   const handlePreviousTab = useCallback(() => {
     const currentCards = cardsRef.current;
@@ -1223,8 +1371,9 @@ export function TugPane({
             icon={effectiveMeta.icon}
             closable={closable}
             collapsed={collapsed}
+            cardCount={cards?.length ?? 1}
             onCollapse={handleFrameCollapseToggle}
-            onClose={handleChromeClose}
+            onClose={handleTitleBarClose}
             onDragStart={handleDragStart}
           />
 
