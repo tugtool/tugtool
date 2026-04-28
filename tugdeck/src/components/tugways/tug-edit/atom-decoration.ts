@@ -57,23 +57,44 @@ export interface PositionedAtom {
 // ---------------------------------------------------------------------------
 
 /**
+ * Module-level regeneration counter. Bumped each time
+ * `regenerateAtomsEffect` is processed so that new `AtomWidget`
+ * instances created after the bump compare `!eq` to instances
+ * created before it. Without the bump, two widgets carrying the
+ * same `segment` would be treated as identical by CM6's
+ * reconciliation and the cached DOM (with stale SVG colors baked at
+ * the old theme's tokens) would survive a theme switch.
+ *
+ * The counter is read at widget construction, so any caller that
+ * builds an `AtomWidget` (insertAtom, restoreState, regenerate)
+ * automatically picks up the current generation. Module-level
+ * because it tracks a global "render generation" the way browsers
+ * track frame counts.
+ */
+let _atomRegenToken = 0;
+
+/**
  * CodeMirror widget that paints an atom as a replaced inline element.
  *
  * `toDOM` defers to `createAtomImgElement` so the atom looks identical
  * to the rest of the tug ecosystem (gallery, prompt-input, prompt-entry).
- * `eq` returns true when two widgets share the same segment identity,
- * letting CM6 reuse the existing DOM across unrelated transactions —
- * theme regeneration deliberately bypasses this by dispatching new
- * widget instances.
+ * `eq` returns true only when two widgets share both the same segment
+ * identity AND the same regeneration token; theme switches bump the
+ * token so the new widgets force a DOM rebuild.
  */
 export class AtomWidget extends WidgetType {
+  /** Render generation captured at construction. */
+  public readonly regenToken: number;
+
   constructor(public readonly segment: AtomSegment) {
     super();
+    this.regenToken = _atomRegenToken;
   }
 
   override eq(other: AtomWidget): boolean {
     return (
-      this.segment.type === other.segment.type
+      this.regenToken === other.regenToken
+      && this.segment.type === other.segment.type
       && this.segment.label === other.segment.label
       && this.segment.value === other.segment.value
     );
@@ -165,14 +186,17 @@ function toAtomRange(p: PositionedAtom): Range<Decoration> {
 
 /**
  * Walk the existing decoration set and construct a fresh widget for
- * each atom occurrence. The new widget is `!eq` to the old one (we
- * use a marker symbol on the segment to force inequality), so CM6
- * remounts the DOM and the freshly-resolved theme colors take effect.
+ * each atom occurrence. Bumping `_atomRegenToken` before constructing
+ * the new widgets means every new widget compares `!eq` to its
+ * predecessor (segments match but tokens don't), which forces CM6's
+ * reconciliation to remount the DOM and the freshly-resolved theme
+ * tokens take effect inside `createAtomImgElement`.
  */
 function regenerateWidgets(
   deco: DecorationSet,
   state: EditorState,
 ): DecorationSet {
+  _atomRegenToken++;
   const ranges: Range<Decoration>[] = [];
   const cursor = deco.iter();
   while (cursor.value !== null) {
@@ -180,10 +204,7 @@ function regenerateWidgets(
     if (widget instanceof AtomWidget) {
       ranges.push(
         Decoration.replace({
-          // Cloning the segment preserves identity for app code while
-          // forcing widget inequality (every regeneration is a fresh
-          // object reference).
-          widget: new AtomWidget({ ...widget.segment }),
+          widget: new AtomWidget(widget.segment),
           inclusive: false,
         }).range(cursor.from, cursor.to),
       );

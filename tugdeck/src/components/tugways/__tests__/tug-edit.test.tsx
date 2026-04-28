@@ -33,6 +33,7 @@ import {
   atomDecorationField,
   AtomWidget,
   getAtomsInState,
+  regenerateAtomsEffect,
 } from "@/components/tugways/tug-edit/atom-decoration";
 import { TUG_ATOM_CHAR, type AtomSegment } from "@/lib/tug-atom-img";
 
@@ -401,6 +402,33 @@ describe("TugEdit — atom integration", () => {
       const widget = (cursor.value!.spec as { widget?: unknown }).widget;
       expect(widget).toBeInstanceOf(AtomWidget);
       expect((widget as AtomWidget).segment).toEqual(FILE_ATOM);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("regenerateAtomsEffect produces widgets that compare !eq to the prior generation", () => {
+    const { view, delegate, unmount } = mountAtomHarness();
+    try {
+      delegate.insertAtom(FILE_ATOM);
+
+      const before = view.state.field(atomDecorationField).iter();
+      expect(before.value).not.toBeNull();
+      const oldWidget = (before.value!.spec as { widget?: unknown }).widget as AtomWidget;
+      expect(oldWidget).toBeInstanceOf(AtomWidget);
+      const oldToken = oldWidget.regenToken;
+
+      view.dispatch({ effects: regenerateAtomsEffect.of(null) });
+
+      const after = view.state.field(atomDecorationField).iter();
+      const newWidget = (after.value!.spec as { widget?: unknown }).widget as AtomWidget;
+      expect(newWidget).toBeInstanceOf(AtomWidget);
+
+      // Same segment data — but token bumped, so `eq` is false and
+      // CM6 will rebuild the DOM with freshly resolved theme colors.
+      expect(newWidget.segment).toEqual(oldWidget.segment);
+      expect(newWidget.regenToken).toBeGreaterThan(oldToken);
+      expect(newWidget.eq(oldWidget)).toBe(false);
     } finally {
       unmount();
     }
