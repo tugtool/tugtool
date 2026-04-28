@@ -872,69 +872,69 @@ Manual scenarios are documented in each step. The IME validation gate (Step 6) i
 
 ---
 
-#### Step 9.5A: Atom-only-selection copy {#step-9-5a}
+#### Step 9.5A: Empirical diagnostic for atom clipboard {#step-9-5a}
 
 **Depends on:** #step-9
 
-**Commit:** `fix(tug-edit): copy works on atom-only and widget-heavy selections`
+**Status:** [x] Complete — diagnosis fed Step 9.5B's design.
 
-**References:** [L06], [L07], [L11], [L19], `tug-edit/clipboard-filters.ts`, `tug-edit/atom-decoration.ts`, (#tuglaws-compliance)
+**Commit:** `test(tug-edit): app-test diagnostic for atom clipboard round-trip`
+
+**References:** `tests/app-test/at0043-tug-edit-copy-diag.test.ts`, `tug-edit/clipboard-filters.ts`, `lib/tug-native-clipboard.ts`
 
 **Background:**
-Surfaced during the manual checkpoint of Step 9. With a selection that covers only atoms (or only widget-replaced ranges), pressing `⌘C` (or activating the menu's *Copy*) produces no clipboard write. Root cause: the responder action calls `document.execCommand("copy")`, which depends on the live *DOM Selection*. CM6's `Decoration.replace` swaps out the U+FFFC text in the rendered tree and inserts the widget DOM in its place; for an atom-only logical range, the DOM Selection has no usable text content and `execCommand("copy")` either returns false or fires a copy event the system clipboard ignores. CM6's logical `view.state.selection.main` is correct throughout — the failure is at the `execCommand` ⇄ DOM Selection bridge.
+Manual checkpoint of Step 9 surfaced two clipboard-related symptoms:
+1. "Selecting an atom by itself fails to copy."
+2. "Selecting an atom with text works, but the atom does not survive the paste round-trip — it pastes as plain text."
+
+Initial hypothesis (recorded at the time of plan authoring): symptom 1 was caused by `document.execCommand("copy")` returning false for an atom-only selection, since the DOM Selection over a `Decoration.replace` range has no underlying text in the rendered DOM — the widget swaps out the U+FFFC character. Symptom 2 was hypothesized as a separate bug: the native clipboard bridge doesn't carry custom MIME types.
+
+**Empirical finding (m43 app-test, real WebKit):**
+| Scenario | `execCommand("copy")` | copy event fires | bridge-readable text |
+|----------|----------------------|------------------|----------------------|
+| text-only `"abc"` | `true` | yes | `"abc"` |
+| mixed `"x" + atom` | `true` | yes | `"xmain.ts"` |
+| atom-only | `true` | yes | `"main.ts"` |
+
+`execCommand("copy")` succeeds for all three. The copy event fires for all three. `clipboardExt` writes `text/plain` (atom labels substituted for U+FFFC, per `serializeClipboard`'s `fallback` field) **and** the `application/x-tug-atoms` sidecar in all three cases. The native bridge reads only `text/plain` + `text/html` — the sidecar is invisible to it.
+
+So the original hypothesis for symptom 1 was wrong. **Symptom 1 and symptom 2 are the same root cause, expressed differently:** atoms travel through the custom MIME sidecar; the native bridge in Tug.app doesn't carry custom MIMEs; paste reconstructs from `text/plain` only, producing the label as text instead of an atom widget. Atom-only pastes as `"main.ts"` (looks like "nothing copied" from a UX POV); mixed pastes as `"xmain.ts"` (looks like "atom became plain text"). The shared fix in Step 9.5B addresses both.
 
 **Artifacts:**
-- `tug-edit.tsx`: `handleCopy` / `handleCut` no longer route through `document.execCommand("copy")`. Instead they synthesize a `ClipboardEvent` with a fresh `DataTransfer` and dispatch it on `view.contentDOM`, then issue the system clipboard write directly via `navigator.clipboard.write(...)` (browser path) or the native bridge (Tug.app path, lazily extended in Step 9.5B).
-- `tug-edit/clipboard-filters.ts`: re-export the existing `serializeClipboard` / `getAtomsInRange` plumbing so the responder action can produce the same `text/plain` + sidecar payload the DOM `copy` event handler already emits.
-
-**Tasks:**
-- [ ] Confirm root cause empirically: log `view.state.selection.main`, `window.getSelection().toString()`, and `event.defaultPrevented` from the responder action with an atom-only selection in the gallery; record the result in the commit body.
-- [ ] Refactor `handleCopy` / `handleCut` to call a shared `copyCurrentSelection(view, isCut)` helper that reads from `view.state.selection.main`, builds the payload via `serializeClipboard`, writes to the system clipboard, and (for cut) issues the delete transaction.
-- [ ] Browser path: write via `navigator.clipboard.write([new ClipboardItem({...})])` with `text/plain` + `application/x-tug-atoms`. (Step 9.5B adds `text/html`.)
-- [ ] Tug.app path: depends on Step 9.5B's native-bridge write extension; until that lands, this step's scope is browser-path-only and the WKWebView fallback continues to use `execCommand("copy")` with a documented limitation.
-- [ ] Keep the existing `clipboardExt` `copy` / `cut` DOM event handlers in place — they still fire when the keyboard binding goes through CM6's own copy path or when the user's host wires copy via direct event dispatch, and the new responder-side write must not double-count when both paths run.
-
-**Tests:**
-- [ ] Unit: `copyCurrentSelection` writes the same payload shape the DOM `copy` handler does for an atom-only range, a mixed range, and a text-only range. Stub `navigator.clipboard.write` to capture the `ClipboardItem`s.
-- [ ] Unit: cut path issues the post-blink delete transaction with `userEvent: "delete.cut"` for an atom-only range; the resulting document drops the atom decoration.
-- [ ] Regression: existing copy / cut event-driven tests in `clipboardExt`'s suite continue to pass — the DOM event path is not the responder-side path, but they share the serializer.
-
-**Checkpoint:**
-- [ ] Manual: select only an atom in the gallery card, press ⌘C, paste into a tug-edit editor in a fresh card → atom round-trips. Browser path covered here; Tug.app path covered after Step 9.5B.
-- [ ] `bun run check`, `bun test` exit 0.
+- `tests/app-test/at0043-tug-edit-copy-diag.test.ts`: drives the gallery through the three scenarios, captures `view.state.selection.main` / DOM Selection / `execCommand` return / `copyEventFired` into `window.__tugCopyDiag`, and reads the bridge-readable clipboard contents after each ⌘C. Assertions are currently bag-of-`expect()` for shape; the test stays as a regression guard against the round-trip post-fix.
 
 ---
 
-#### Step 9.5B: HTML clipboard channel for native-bridge round-trip {#step-9-5b}
+#### Step 9.5B: Atom clipboard round-trip via text/html {#step-9-5b}
 
 **Depends on:** #step-9-5a
 
-**Commit:** `fix(tug-edit): atoms survive paste round-trip via text/html`
+**Commit:** `fix(tug-edit): atoms round-trip via text/html clipboard channel`
 
-**References:** [L06], [L11], [L19], `tug-edit/clipboard-filters.ts`, `lib/tug-native-clipboard.ts`, `lib/tug-text-engine.ts` (sanitizeAtomHtml), `tug-prompt-input.tsx` (paste path), (#tuglaws-compliance)
+**References:** [L06], [L11], [L19], `tug-edit/clipboard-filters.ts`, `lib/tug-native-clipboard.ts`, `lib/tug-text-engine.ts` (`sanitizeAtomHtml`), `lib/tug-atom-img.ts` (`atomImgHTML`), `tug-prompt-input.tsx` (paste path), (#tuglaws-compliance)
 
 **Background:**
-Also surfaced during the manual checkpoint of Step 9. In Tug.app the paste path takes the native clipboard bridge branch (`hasNativeClipboardBridge() === true`), which returns `{ text, html }` only — never the `application/x-tug-atoms` custom MIME the substrate writes on copy. `tug-edit.tsx`'s native-bridge paste handler destructures `text` and inserts it verbatim, so atoms in a copied range arrive as plain text (or U+FFFC tofu) on the destination side. tug-prompt-input survives this because contentEditable's native HTML serialization already preserves atom `<img>` tags with `data-atom-*` attributes — it round-trips through the html channel automatically. tug-edit needs the equivalent explicit mechanism.
+Per Step 9.5A: copy already writes a `text/plain` payload with atom labels substituted for U+FFFC plus an `application/x-tug-atoms` sidecar carrying full atom segments. In browser-mode paste (`document.execCommand("paste")` → paste event → `clipboardExt.handlePaste`), the sidecar reconstructs atoms correctly. In Tug.app the paste path takes the native bridge, which exposes only `{ text, html }` — the sidecar is absent and atoms are lost. tug-prompt-input doesn't have this problem because contentEditable's native HTML serialization already encodes atom `<img>` elements with `data-atom-*` attributes; the html channel round-trips automatically. tug-edit (CM6) writes nothing to the html channel today.
 
 **Artifacts:**
-- `tug-edit/clipboard-filters.ts`: `serializeClipboard` also emits a `text/html` payload built from each atom's `<img data-atom-label data-atom-value data-atom-type>` markup (reusing `atomImgHTML` from `tug-atom-img.ts` for fidelity). The DOM `copy` handler writes it; `copyCurrentSelection` from Step 9.5A writes it.
-- `tug-edit/clipboard-filters.ts`: `parseClipboardHtml(html)` parses the html string back into `{ docText, atoms }` — same shape `parseClipboardSidecar` returns. Used as the fallback path on paste when the custom MIME is absent but html with atom markers is present.
-- `tug-edit.tsx`: native-bridge paste branch now consumes `html` first (parse via `parseClipboardHtml`); falls through to `text` when html has no atom markers.
+- `tug-edit/clipboard-filters.ts`: extend `ClipboardSerialization` and `serializeClipboard` to produce a `text/html` payload — text glyphs interleaved with `<img data-atom-label data-atom-value data-atom-type>` produced by `atomImgHTML` from `tug-atom-img.ts`. Wire the DOM `copy` handler to `dt.setData("text/html", payload.html)`.
+- `tug-edit/clipboard-filters.ts`: `parseClipboardHtml(html)` parses an html payload back into `{ docText, atoms }` shaped identically to the sidecar parser's output. Used by the native-bridge paste branch.
+- `tug-edit.tsx`: native-bridge paste branch consumes `html` first (parse via `parseClipboardHtml`); falls through to inserting `text` verbatim when html has no atom markers (or no html at all).
 
 **Tasks:**
-- [ ] Add `text/html` writes in `serializeClipboard`'s output (and in `copyCurrentSelection`'s `ClipboardItem`).
-- [ ] Implement `parseClipboardHtml` — DOMParser-based, scoped to `data-atom-*` element extraction with positions inferred from text position before each img.
-- [ ] Update tug-edit.tsx native-bridge paste branch to try `parseClipboardHtml(html)` first; build a single transaction that inserts the doc text + atom decorations together (mirrors the existing handlePaste sidecar branch).
-- [ ] Browser path is unchanged — `clipboardExt.handlePaste` still prefers the custom MIME sidecar. The html channel is the cross-bridge fallback.
+- [ ] Extend `serializeClipboard` to emit the html payload; update `handleCopyOrCut` to write it to `dt.setData("text/html", ...)`.
+- [ ] Implement `parseClipboardHtml(html)` — DOMParser-based, scoped to `<img data-atom-label>` element extraction. Position inference: walk the body's first-level node sequence, append text-node `data` to a running `docText` and emit a `￼` plus an atom record at each img.
+- [ ] Update `tug-edit.tsx` native-bridge paste handler to call `parseClipboardHtml(html)` first; if it returns atoms, dispatch a transaction that inserts the doc text + atom decorations together (mirrors the existing sidecar branch in `handlePaste`).
+- [ ] Browser path stays unchanged — `clipboardExt.handlePaste` still prefers the custom MIME sidecar. The html channel is the cross-bridge fallback.
 
 **Tests:**
 - [ ] Unit: `parseClipboardHtml` round-trips with `serializeClipboard`'s html output for atom-only, mixed, and text-only payloads.
-- [ ] Unit: `parseClipboardHtml` rejects malformed input (no `<img>`, missing data attributes, attribute typos) and returns null without throwing.
-- [ ] Integration: simulated native-bridge paste with `{ text, html }` carrying atom img markup reconstructs atom decorations at the inserted positions.
+- [ ] Unit: `parseClipboardHtml` rejects malformed input (no `<img>`, missing data attributes, attribute typos) and returns null / empty atoms without throwing.
+- [ ] App-test: extend `at0043-tug-edit-copy-diag.test.ts` (or add a sibling `at0044`) to round-trip through copy → bridge read → paste, asserting the atom decorations land in the destination editor's `atomDecorationField`.
 
 **Checkpoint:**
-- [ ] Manual: copy a mixed atom + text selection in Tug.app, paste into a fresh tug-edit card → atoms re-render as widgets, text content matches.
-- [ ] `bun run check`, `bun test` exit 0.
+- [ ] Manual: in Tug.app, copy an atom-only / mixed selection and paste into a fresh tug-edit card → atoms re-render as widgets in both cases.
+- [ ] `bun run check`, `bun test`, `just app-test at0043` exit 0.
 
 ---
 
