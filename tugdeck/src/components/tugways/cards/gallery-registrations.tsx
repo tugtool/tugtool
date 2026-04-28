@@ -67,6 +67,7 @@ import { GalleryMarkdownView } from "./gallery-markdown-view";
 import { GalleryAtom } from "./gallery-atom";
 import { GalleryPromptInput } from "./gallery-prompt-input";
 import { GalleryPromptEntry } from "./gallery-prompt-entry";
+import { GalleryTextEdit } from "./gallery-text-edit";
 import { GallerySplitPane } from "./gallery-split-pane";
 import { GalleryStatePreservation } from "./gallery-state-preservation";
 import "./gallery.css";
@@ -358,6 +359,16 @@ export function registerGalleryCards(): void {
     sizePolicy: GALLERY_COMPLEX_SIZE,
     category: CATEGORIES.textInput,
     engineKind: "em",
+  });
+
+  registerCard({
+    componentId: "gallery-text-edit",
+    contentFactory: (_cardId) => <GalleryTextEdit />,
+    defaultMeta: { title: "TugEdit", icon: "TextCursorInput", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.textInput,
   });
 
   registerCard({

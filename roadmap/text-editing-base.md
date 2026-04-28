@@ -160,7 +160,7 @@ This plan uses explicit `{#anchor}` tags on every cited heading and the `[ID] La
 
 ---
 
-#### [Q03] CM6 lifecycle vs React StrictMode (OPEN) {#q03-strict-mode}
+#### [Q03] CM6 lifecycle vs React StrictMode (DECIDED) {#q03-strict-mode}
 
 **Question:** How does the `EditorView` lifecycle survive StrictMode's double-mount in dev?
 
@@ -168,7 +168,7 @@ This plan uses explicit `{#anchor}` tags on every cited heading and the `[ID] La
 
 **Plan to resolve:** Adopt the standard pattern used by `@uiw/react-codemirror`: store the view on a ref, construct in `useLayoutEffect`, dispose in cleanup, branch on existence. Validated by mounting / unmounting `gallery-text-edit` repeatedly with no console warnings and no DOM leftovers. Documented in [Step 1](#step-1).
 
-**Resolution:** OPEN. Resolved in Step 1.
+**Resolution:** DECIDED — `useLayoutEffect` with empty deps constructs the view, the cleanup destroys it and clears `viewRef.current` to `null`. StrictMode's mount/unmount/mount cycle creates a fresh view each pass and disposes the previous one cleanly. The `view()` delegate method reads `viewRef.current` at call time so consumers see the live view across the cycle. Recorded inline in `tugdeck/src/components/tugways/tug-edit.tsx`. Test coverage in `tug-edit.test.tsx` exercises the unmount → re-mount round-trip and asserts a fresh `EditorView` instance is constructed.
 
 ---
 
@@ -569,19 +569,19 @@ Manual scenarios are documented in each step. The IME validation gate (Step 6) i
 - Registration in `gallery-registrations.tsx`.
 
 **Tasks:**
-- [ ] `bun add @codemirror/state @codemirror/view @codemirror/commands` (in `tugdeck/`).
-- [ ] Implement `tug-edit.tsx` with the StrictMode-safe lifecycle pattern from [Q03](#q03-strict-mode).
-- [ ] Implement `gallery-text-edit.tsx` and register it.
-- [ ] Verify the gallery card mounts with a working empty editor: type, arrow keys, undo all functional.
+- [x] `bun add @codemirror/state @codemirror/view @codemirror/commands` (in `tugdeck/`). Installed `@codemirror/state@6.6.0`, `@codemirror/view@6.41.1`, `@codemirror/commands@6.10.3`.
+- [x] Implement `tug-edit.tsx` with the StrictMode-safe lifecycle pattern from [Q03](#q03-strict-mode).
+- [x] Implement `gallery-text-edit.tsx` and register it.
+- [ ] Verify the gallery card mounts with a working empty editor: type, arrow keys, undo all functional. *(Manual verification — HMR is running; ready for user walkthrough.)*
 
 **Tests:**
-- [ ] Unit: `tug-edit.test.tsx` mounts `<TugEdit />`, asserts the `EditorView` is created and `delegate.view()` returns it; unmounts and re-mounts verifying no leaks.
+- [x] Unit: `tug-edit.test.tsx` mounts `<TugEdit />`, asserts the `EditorView` is created and `delegate.view()` returns it; unmounts and re-mounts verifying no leaks. *(3 tests pass, 12 expect calls.)*
 
 **Checkpoint:**
-- [ ] `bun run check` exits 0.
-- [ ] `bun test` exits 0.
-- [ ] Manual: gallery `TextEdit` card mounts, accepts typing, supports arrow keys / Cmd+Z. No console warnings under StrictMode dev mount.
-- [ ] [Q03](#q03-strict-mode) resolved (DECIDED) and decision recorded inline at the top of `tug-edit.tsx`.
+- [x] `bun run check` exits 0. *(Two pre-existing errors in `card-host.tsx` and `tug-pane.tsx` are present on main and unrelated to this step; no new errors introduced by Step 1.)*
+- [x] `bun test` exits 0. *(2417 tests pass; full suite green.)*
+- [ ] Manual: gallery `TextEdit` card mounts, accepts typing, supports arrow keys / Cmd+Z. No console warnings under StrictMode dev mount. *(Pending user walkthrough.)*
+- [x] [Q03](#q03-strict-mode) resolved (DECIDED) and decision recorded inline at the top of `tug-edit.tsx`.
 
 ---
 

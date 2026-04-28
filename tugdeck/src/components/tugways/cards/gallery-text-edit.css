@@ -1,0 +1,19 @@
+/*
+ * gallery-text-edit.css — gallery card layout for the TugEdit demo.
+ *
+ * The host wrapper sets a fixed minimum height so the empty editor
+ * is visibly present at mount. Token-driven appearance for the
+ * editor itself arrives in spike Step 2 (theming).
+ */
+
+.gallery-text-edit-host {
+  display: flex;
+  min-height: 240px;
+  border: 1px solid var(--tug7-element-field-border-normal-plain-rest);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.gallery-text-edit-host > .tug-edit {
+  flex: 1 1 auto;
+}
