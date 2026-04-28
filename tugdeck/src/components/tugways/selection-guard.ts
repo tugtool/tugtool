@@ -35,7 +35,7 @@
  *   3. `data-tug-select` attribute API: four modes (default, none, all,
  *      custom) give card authors fine-grained per-region control.
  *
- * See tuglaws/selection-model.md for the full system documentation.
+ * See tuglaws/card-state-model.md for the full system documentation.
  */
 
 import { getDeckStore } from "../../lib/deck-store-registry";

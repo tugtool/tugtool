@@ -9,6 +9,102 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-04-27T23:38:20Z
+---
+
+## step-8: Final audit complete. All 13 SCs verified green; plan status flipped to complete (2026-04-27); Audit Close-out subsection appended. bun x tsc --noEmit exit 0; bun test 2414 pass / 0 fail.
+
+**Files changed:**
+- tuglaws-tidyup-ae990f1-1
+
+---
+
+---
+step: step-7
+date: 2025-04-27T23:34:07Z
+---
+
+## step-7: Cross-reference repairs per SC08/SC09/SC10. tuglaws.md: L23 cross-refs state-preservation.md; L09 cross-refs lifecycle-delegates.md. pane-model.md: Cross-Links section adds entries for state-preservation.md and lifecycle-delegates.md. app-test-inventory.md: every [A9] paragraph (7 total) now carries a state-preservation.md link in the same paragraph (SC10 awk gate green). bun x tsc --noEmit exit 0; bun test 2414/0.
+
+**Files changed:**
+- tuglaws-tidyup-ae990f1-1
+
+---
+
+---
+step: step-6
+date: 2025-04-27T23:29:16Z
+---
+
+## step-6: Promoted 25 law lines in tuglaws.md from bold prose to H3 headings with {#lNN} trailing-attribute anchors per [Q02] / [D04]. Stripped duplicated law-text appendix from framework-architecture.md and replaced with single H2 'Laws referenced in this document' cross-ref list (9 laws: L02, L03, L04, L05, L06, L07, L08, L11, L24). Sub-step C (manual GitHub preview verification per OF6) deferred to Step 8 audit. All 5 plan tests pass.
+
+**Files changed:**
+- tuglaws-tidyup-ae990f1-1
+
+---
+
+---
+step: step-5
+date: 2025-04-27T23:23:20Z
+---
+
+## step-5: Created tuglaws/app-test-harness.md (155 lines) per Spec S05 + [D03]: lifted architectural content (lifecycle model, fidelity envelope, native-gesture rationale, accessibility-grant relationship) from tests/app-test/README.md. Reduced README from 445 to 258 lines (gate: <320), kept procedural sections only per [D03] retain list. SC05 identifiers present; SC07 banner present.
+
+**Files changed:**
+- tuglaws-tidyup-ae990f1-1
+
+---
+
+---
+step: step-4
+date: 2025-04-27T23:15:42Z
+---
+
+## step-4: Created tuglaws/lifecycle-delegates.md (211 lines) per Spec S04 + [D07] + OQ1 expansion: covers all 11 TugCardDelegate methods, the strict cross-card will/did ordering invariant, MessageChannel drain queue, LIFECYCLE_LOG, portal-refactoring relationship, and authoring rules. Source-of-truth is card-lifecycle.ts (primary), card-host.tsx (secondary). All SC04 identifiers present; banner present; tsc clean.
+
+**Files changed:**
+- tuglaws-tidyup-ae990f1-1
+
+---
+
+---
+step: step-3
+date: 2025-04-27T23:09:12Z
+---
+
+## step-3: Created tuglaws/state-preservation.md (274 lines) per Spec S03: banner, Why, two opt-in layers, public-identifier inventory (15 identifiers), save/restore lifecycle, restore ordering, DOM attributes table, FocusSnapshot/CardStateBag detail, authoring rules, AT-tag relationship table, Files, Cross-Links. All SC03 identifiers present; SC07 banner present; tsc/test green.
+
+**Files changed:**
+- tuglaws-tidyup-ae990f1-1
+
+---
+
+---
+step: step-2
+date: 2025-04-27T23:01:21Z
+---
+
+## step-2: git mv selection-model.md -> card-state-model.md, inserted Cross-references banner, renamed Scroll Persistence -> Preservation, added Form-control Value Preservation section, reduced ResponderChainProvider section to cross-ref, added Cross-Links closing section. Updated cross-refs in pane-model.md, component-authoring.md, responder-chain.md, plus comment-only path updates in selection-guard.ts and use-copyable-text.tsx.
+
+**Files changed:**
+- tuglaws-tidyup-ae990f1-1
+
+---
+
+---
+step: step-1
+date: 2025-04-27T22:54:32Z
+---
+
+## step-1: Created tuglaws/INDEX.md per Spec S01 / [D05]: 35 lines, 5 H2 sections, lists every existing tuglaws/*.md plus the 4 forthcoming new docs.
+
+**Files changed:**
+- tuglaws-tidyup-ae990f1-1
+
+---
+
+---
 step: step-16
 date: 2025-04-24T00:08:53Z
 ---

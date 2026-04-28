@@ -1,54 +1,44 @@
-# Session Memory — in-app-test-harness-701669b-2
+# Session Memory — tuglaws-tidyup-ae990f1-1
 
 ## Project map
-Tugdeck: React 19 + Vite + bun. Tugapp Swift `TestHarness/` DEBUG-only. `tests/in-app/` is a separate bun workspace, `bunfig.toml` roots `.` + NO happy-dom. Steps 1-3 deck-trace; Step 4 authored Phase 2 plan; Steps 5-11 built bridge+harness; Step 12 README; Step 13 m01 test; Step 14 m03 test; Step 15 m16 test; Step 16 Phase 3 checkpoint.
+Pure-docs plan in `tuglaws/`. Existing docs: framework-architecture, tuglaws (H3 law headings + {#lNN} anchors), design-decisions, pane-model, card-state-model (renamed from selection-model), state-preservation, lifecycle-delegates, app-test-harness, responder-chain, action-naming, component-authoring, token-naming, color-palette, theme-engine, app-test-inventory, code-signing-mac, tugplan-skeleton, INDEX. Source edits inline-comment-only per [D06].
 
-## Files touched (condensed)
-- tugdeck: `deck-trace.ts`, `deck-manager.ts` (testMode+seedDeckState), `deck-manager-store.ts` (invokeSaveCallback), `components/chrome/{card-host,deck-commit-beacon,deck-canvas}.tsx`, `main.tsx`, `test-surface.ts` (SURFACE_VERSION "1.0.0"). Tests in `src/__tests__/`.
-- tugapp: `Sources/TestHarness/{TestHarnessBridge,TestHarnessListener,TestHarnessConnection,TestHarnessUserScript}.swift`; `MainWindow.swift`+`AppDelegate.swift` DEBUG wiring; `Tug.xcodeproj/project.pbxproj`.
-- roadmap: `tugplan-in-app-bridge.md`.
-- tests/in-app scaffold: `tsconfig.json` (@/_harness alias), `bunfig.toml`, `package.json`, `.gitignore`, `bun.lock`, `logs/.gitkeep`, `README.md`, `lint-no-timers.ts`.
-- tests/in-app/_harness: `errors.ts`+test, `types.ts`, `rpc.ts`+test, `index.ts`, `client.ts`, `matchers.ts`+test.
-- tests/in-app harness tests: `_smoke / _wait-for-condition / _version-handshake / _double-connect / _log-capture .test.ts` — all `skipIf(!SHOULD_RUN)`.
-- Scenario tests: `m01-tab-switch-fc.test.ts` (step 13), `m03-pane-activation.test.ts` (step 14), **`m16-tab-close-handoff.test.ts` (step 15 NEW)**.
+## Files touched
+- tuglaws/INDEX.md — Step 1; ≤150 lines (35 actual).
+- tuglaws/card-state-model.md — Step 2 rename.
+- tuglaws/state-preservation.md — Step 3 (274 lines).
+- tuglaws/lifecycle-delegates.md — Step 4 (211 lines).
+- tuglaws/app-test-harness.md — Step 5 NEW (155 lines).
+- tests/app-test/README.md — Step 5 reduced to 258 lines.
+- tuglaws/pane-model.md — Step 2 + 7 Cross-Links updates.
+- tuglaws/component-authoring.md, tuglaws/responder-chain.md — Step 2 link target updates.
+- tugdeck/src/components/tugways/{selection-guard.ts,use-copyable-text.tsx} — Step 2 comment paths.
+- tuglaws/tuglaws.md — Step 6: 25 H3 laws + {#lNN}; Step 7 cross-refs.
+- tuglaws/framework-architecture.md — Step 6 appendix → cross-ref list.
+- tuglaws/app-test-inventory.md — Step 7 [A9] paragraph links.
+- .tugtool/tugplan-tuglaws-tidyup.md — Step 8: Status flipped to `complete (2026-04-27)`; Audit Close-out subsection appended.
 
 ## Patterns established
-- `invokeSaveCallback(id, source)` single entry. `_flipFirstResponder` takes `trigger` string.
-- DEV gate: `import.meta.env?.DEV === true && window.__tugTestMode === true`.
-- Swift `TestHarness/*.swift` opens `#if DEBUG` line 1, closes at EOF.
-- WKUserScript `atDocumentStart` sets `__tugTestMode = true` before tugdeck JS.
-- RPC: NDJSON, numeric id; `version`/`evalJS`/`waitForCondition`; evalJS=5000ms, wfc=2000ms/16ms.
-- Test pattern: `skipIf(!SHOULD_RUN)` → `launchTugApp()` → `close()` in finally. One App per file; `app.reset()` between scenarios.
-- Wrapper idiom: client helpers take `HarnessCaller`; App delegates `client.X(this as HarnessCaller, ...)`. `callSurface()` IIFE + `lit()` JSON helper.
-- Matcher: pure `toContainOrderedSubset` + `registerSubsetMatcher()` at module load for fluent form.
-- client.ts mirrors (NOT imports) test-surface.ts shapes. Drift caught by `SURFACE_VERSION` handshake [D11].
-- Lint no-timers: pure-bun script. `_harness/` uses `setTimeoutNative` alias.
-- File naming: `_*.test.ts` = harness-internal; `<scenario>.test.ts` = user scenarios.
-- Scenario idiom: declare `app` OUTSIDE try so catch can call `app.tailLog(50)`. Trace assertions: `mark = markDeckTrace()` before gesture, `getDeckTrace({ since: mark })` after, scoped per transition. Omit fields (e.g. `source` on save-callback) in expected entries to accept any value for that field — the subset matcher only asserts specified fields.
-- **FC-card seeding:** `componentId: "gallery-input"` — renders TugInputs stamped `data-tug-state-key="gallery-input/size/sm"` etc. Selector `[data-card-id="X"] [data-tug-state-key="gallery-input/size/sm"]`. `componentStatePreservationKey` collisions across cards are OK because lookup scopes by `[data-card-id]` subtree.
-- **Tab selector:** `[data-testid="tug-tab-${cardId}"]` (from `tug-tab-bar.tsx`).
-- **Pane title selector:** `[data-pane-id="${paneId}"] [data-testid="tug-pane-title"]` — `.tug-pane` frame carries `data-pane-id={id}` (line 1153), `CardTitleBar` renders `<span data-testid="tug-pane-title">` (tug-pane.tsx:155).
-- **Cross-pane activation path:** `pane-focus-controller` capture-pointerdown → `store.activateCard(pane.activeCardId)` → `_flipFirstResponder` → `fr-flip`. Title-bar click is a Branch-A activation (walks up to `[data-pane-id]`, no metaKey/no-activate opt-outs).
+- SC07 banner: `# Title` + italic tagline + `*Cross-references: [D##]→design-decisions.md. [L##]→tuglaws.md.*` + `---`.
+- INDEX entries (D05): one line `- [name](name) — desc`.
+- AT-tag prose refs use bare `[AT0008]`.
+- TODO-candidate-law comment (Q01): `<!-- TODO: candidate law? roadmap disagrees on X — ... -->`.
+- Top-of-doc pointer pattern: README starts "For architecture see X; this doc is procedure".
+- Files section split: "primary canonical authority" / "secondary implementation source" / "historical / secondary planning".
+- Law heading convention (Step 6 / Q02): `### LNN. <Title>. {#lNN}` lowercase L + two-digit anchors per OF6.
+- FA cross-ref list shape: `**LNN** — one-line summary. [full text](tuglaws.md#lNN)` per item, citation order.
+- Step 7 [A9] linking pattern: inline `(see [state-preservation.md](state-preservation.md))` after `[A9]` mention; awk gate `RS=""` paragraph blocks.
+- Step 8 audit close-out: SC table with command + result, additional acceptance table, residual-mentions paragraph (Risk R02), phase exit checklist as `[x]` items.
 
 ## Build / test notes
-- `cd tugdeck && bun x tsc --noEmit` / `bun test` — exit 0.
-- `cd tests/in-app && bun x tsc --noEmit -p tsconfig.json` — exit 0.
-- `cd tests/in-app && bun test` — 29 pass, 11 skip (was 10), 0 fail.
-- `cd tests/in-app && bun run lint:no-timers` — clean (8 files, was 7).
-- `bun test tests/in-app/m03-pane-activation.test.ts` — exit 0 (1 skipped default).
-- `bun test tests/in-app/m16-tab-close-handoff.test.ts` — exit 0 (1 skipped default).
-- Swift `swiftc -typecheck ...` — exit 0.
-- `tests/in-app/bunfig.toml` MUST keep `[test] root = "."` + NO happy-dom preload.
+- `bun x tsc --noEmit` in `tugdeck/`: exit 0.
+- `bun test` in `tugdeck/`: 2414 pass / 0 fail / 9963 expects across 141 files (10.29s).
+- All 13 SCs pass on Step 8 audit; all acceptance gates pass.
+- Residual `selection-model.md` grep (Task 4 / Risk R02): hits only in roadmap/ and .tugtool/ planning files; SC11 paths (tuglaws/, tugdeck/src/, tests/) clean. Non-gating.
 
 ## Hints for upcoming steps
-- Step 16 complete. Plan Status now `active`. Documentation Plan + phase-2-bridge intro both updated to reflect `roadmap/tugplan-in-app-bridge.md` as landed canonical Phase 2 spec.
-- Phase 3 integration checkpoint passed: aggregate `bun test tests/in-app/` 29 pass / 11 skip / 0 fail; tugdeck `bun test` 2434 pass. No new happy-dom tests (only "NO happy-dom" comments). Swift TestHarness/* and all new MainWindow/AppDelegate lines are `#if DEBUG`-gated; tugdeck `__tug` surface DEV+__tugTestMode gated. Release-build binary size invariance verified by inspection; `wc -c` on notarized binary deferred (needs built app).
-- Drift-prevention exercise deferred pending built Tug.app DEBUG binary (same blocker as Step 11 manual tasks). Path forward: `TUGAPP_IN_APP_TEST=1 bun test tests/in-app/m{01,03,16}*`, then hand-revert each target fix and re-run to see failure.
-- m16 idiom notes: used `traceClose.filter(e => e.kind === "save-callback" && e.cardId === "c2")` + `expect(...).toEqual([])` for the "did not happen" assertion (ordered-subset matcher is only positive). `DeckTraceEvent` is exported as a type from `_harness/index.ts`. Gated c3 host root wait AFTER the close-click (c3 not mounted until handoff runs).
-- `EXPECTED_SURFACE_VERSION` in `_harness/index.ts` must match `SURFACE_VERSION` in `tugdeck/src/test-surface.ts` AND `TestHarnessConnection.surfaceVersion` (currently "1.0.0").
-- `App.logPath` null unless `testName` passed. Always pass `testName` in scenario tests so `tailLog(50)` has output.
-- Socket path default `/tmp/tugapp-test-${randomUUID()}.sock`. Swift allow-list `/tmp`, `/private/tmp`, `/var/folders`, `$HOME`.
-- Deferred [D03]/[D08] from `tugplan-in-app-bridge.md` parked. Step 11 manual tasks deferred (require built Tug.app).
-- `CaretState` input variant after typing: `{ kind:"input", selectionStart:N, selectionEnd:N, selectionDirection:"none", value:"..." }`. `readSelectionDirection` normalizes null→"none".
-- `waitForCondition` + `assertHostRootRegistered(cardId)` is the right wait-for-mount primitive after `seedDeckState`. For multi-card seeds, AND multiple calls.
-- **Save-callback semantics:** Intra-pane tab switch via `performSelectCard` (tug-pane.tsx:436) calls `store.invokeSaveCallback(outgoingCardId)` → emits trace event. Cross-pane activation via `pane-focus-controller` calls `store.activateCard(newFR)` with NO explicit save-callback in the production path as of this step. The m03 plan asserts a save-callback between click and fr-flip; if this fails in a real run, it surfaces a gap in the cross-pane save wiring (the M-series fix may add it). Omit `source` in the expected subset so any source tag passes.
+- Plan is now complete. No follow-on steps in this plan. Roadmap items deferred to future plans:
+  - Token-system consolidation (palette/tokens/theme) — defer per #non-goals.
+  - Promote any `<!-- TODO: candidate law? -->` comments to actual entries.
+  - Cross-doc anchor inventory validate script.
+- Plan decisions: [D01] promote selection-model. [D02] state-preservation=mechanism, card-state-model=contract. [D03] harness=arch / README=procedure. [D04] strip FA appendix. [D05] one-line INDEX. [D06] comment-only source edits. [D07] card-lifecycle.ts is lifecycle authority.

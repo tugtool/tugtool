@@ -14,7 +14,7 @@
  *   - No visible selection highlight ever appears
  *
  * This is the "copyable" category from the three-category selection
- * model (selectable, copyable, chrome). See tuglaws/selection-model.md.
+ * model (selectable, copyable, chrome). See tuglaws/card-state-model.md.
  *
  * Usage:
  *   const ref = useRef<HTMLElement>(null);
