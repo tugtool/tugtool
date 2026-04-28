@@ -613,7 +613,7 @@ Manual scenarios are documented in each step. The IME validation gate (Step 6) i
 - [x] `bun add @codemirror/state @codemirror/view @codemirror/commands` (in `tugdeck/`). Installed `@codemirror/state@6.6.0`, `@codemirror/view@6.41.1`, `@codemirror/commands@6.10.3`.
 - [x] Implement `tug-edit.tsx` with the StrictMode-safe lifecycle pattern from [Q03](#q03-strict-mode).
 - [x] Implement `gallery-text-edit.tsx` and register it.
-- [ ] Verify the gallery card mounts with a working empty editor: type, arrow keys, undo all functional. *(Manual verification — HMR is running; ready for user walkthrough.)*
+- [x] Verify the gallery card mounts with a working empty editor: type, arrow keys, undo all functional. *(Manually verified by user.)*
 
 **Tests:**
 - [x] Unit: `tug-edit.test.tsx` mounts `<TugEdit />`, asserts the `EditorView` is created and `delegate.view()` returns it; unmounts and re-mounts verifying no leaks. *(3 tests pass, 12 expect calls.)*
@@ -621,7 +621,7 @@ Manual scenarios are documented in each step. The IME validation gate (Step 6) i
 **Checkpoint:**
 - [x] `bun run check` exits 0. *(Two pre-existing errors in `card-host.tsx` and `tug-pane.tsx` are present on main and unrelated to this step; no new errors introduced by Step 1.)*
 - [x] `bun test` exits 0. *(2417 tests pass; full suite green.)*
-- [ ] Manual: gallery `TextEdit` card mounts, accepts typing, supports arrow keys / Cmd+Z. No console warnings under StrictMode dev mount. *(Pending user walkthrough.)*
+- [x] Manual: gallery `TextEdit` card mounts, accepts typing, supports arrow keys / Cmd+Z. No console warnings under StrictMode dev mount. *(Manually verified by user.)*
 - [x] [Q03](#q03-strict-mode) resolved (DECIDED) and decision recorded inline at the top of `tug-edit.tsx`.
 
 ---
