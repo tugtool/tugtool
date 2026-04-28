@@ -3,15 +3,15 @@
  *
  * Demo surface for the CodeMirror 6-backed `TugEdit` substrate.
  * Mounts an editor and exposes the host's focus-style and borderless
- * variants so reviewers can exercise each. Theme switching is
- * application-level and not surfaced here. Card-level controls for
- * atoms, completion, history, and the rest of the prop surface are
- * layered on as the substrate grows.
+ * variants, plus a row of atom-insert buttons covering each kind
+ * supported by `tug-atom-img.ts` (file, command, doc, image, link).
+ * Card-level controls for completion, history, and the rest of the
+ * prop surface are layered on as the substrate grows.
  *
  * Laws: [L01] one root.render() at mount, [L06] appearance via
- *        CSS and DOM, never React state, [L11] toggle controls
- *        emit selectValue actions consumed by this scope's responder
- *        form, [L19] component authoring guide.
+ *        CSS and DOM, never React state, [L11] toggle controls and
+ *        atom-insert buttons emit actions consumed by this scope's
+ *        responder form, [L19] component authoring guide.
  */
 
 import "./gallery-text-edit.css";
@@ -23,7 +23,9 @@ import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import type { AtomSegment } from "@/lib/tug-atom-img";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -37,6 +39,34 @@ const FOCUS_STYLE_CHOICES: TugChoiceItem[] = [
 const BORDERLESS_CHOICES: TugChoiceItem[] = [
   { value: "false", label: "Bordered" },
   { value: "true", label: "Borderless" },
+];
+
+/**
+ * Sample atoms exercising every kind that `tug-atom-img.ts` knows
+ * how to draw. Each click on the matching button inserts a fresh
+ * atom of that kind at the editor's current selection.
+ */
+const ATOM_SAMPLES: { label: string; segment: AtomSegment }[] = [
+  {
+    label: "file",
+    segment: { kind: "atom", type: "file", label: "main.ts", value: "/project/src/main.ts" },
+  },
+  {
+    label: "command",
+    segment: { kind: "atom", type: "command", label: "/commit", value: "/commit" },
+  },
+  {
+    label: "doc",
+    segment: { kind: "atom", type: "doc", label: "tuglaws.md", value: "/tuglaws/tuglaws.md" },
+  },
+  {
+    label: "image",
+    segment: { kind: "atom", type: "image", label: "screenshot.png", value: "/Desktop/screenshot.png" },
+  },
+  {
+    label: "link",
+    segment: { kind: "atom", type: "link", label: "anthropic.com", value: "https://www.anthropic.com" },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -76,6 +106,30 @@ export function GalleryTextEdit() {
               focusStyle={focusStyle}
               borderless={borderless}
             />
+          </div>
+        </div>
+
+        <TugSeparator />
+
+        {/* ---- Atoms ----
+           Each button inserts a fresh atom of one kind at the editor's
+           current selection. Verifies that atomicRanges, decoration
+           rendering, and the imperative `insertAtom` delegate method
+           work end to end.
+        */}
+        <div className="cg-section">
+          <TugLabel className="cg-section-title">Insert atom</TugLabel>
+          <div className="gallery-text-edit-atom-row">
+            {ATOM_SAMPLES.map((sample) => (
+              <TugPushButton
+                key={sample.label}
+                size="sm"
+                emphasis="outlined"
+                onClick={() => editRef.current?.insertAtom(sample.segment)}
+              >
+                {sample.label}
+              </TugPushButton>
+            ))}
           </div>
         </div>
 

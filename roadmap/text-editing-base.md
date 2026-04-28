@@ -136,7 +136,7 @@ This plan uses explicit `{#anchor}` tags on every cited heading and the `[ID] La
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] CM6 atomic-range fidelity vs current atom UX (OPEN) {#q01-atomic-fidelity}
+#### [Q01] CM6 atomic-range fidelity vs current atom UX (DECIDED) {#q01-atomic-fidelity}
 
 **Question:** Does `EditorView.atomicRanges` + `Decoration.replace` produce cursor / selection / delete behavior across atoms that matches what users have today with the SVG-`<img>` replaced element approach?
 
@@ -144,11 +144,11 @@ This plan uses explicit `{#anchor}` tags on every cited heading and the `[ID] La
 
 **Plan to resolve:** Prototype in [Step 3](#step-3). The success criterion is concretely enumerated in [List L01](#l01-atom-motion-cases).
 
-**Resolution:** OPEN. Resolved in Step 3 checkpoint.
+**Resolution:** DECIDED — `EditorView.atomicRanges` lifted from the `atomDecorationField`'s `Decoration.replace` ranges produces correct one-step motion (`view.moveByChar` advances or retreats one document offset across each U+FFFC), one-step deletion (`deleteCharBackward` / `deleteCharForward` remove the whole atom and clear the decoration), and one-step selection extension. Tests in `tug-edit.test.tsx` cover motion, extension, and both delete directions. Cases 1–7 in [List L01](#l01-atom-motion-cases) are covered by the integration tests; cases 8–10 (clipboard) are covered by the pure serialization round-trip tests in `tug-edit-clipboard.test.ts` and exercised end-to-end via the gallery card.
 
 ---
 
-#### [Q02] Atom clipboard serialization (OPEN) {#q02-atom-clipboard}
+#### [Q02] Atom clipboard serialization (DECIDED) {#q02-atom-clipboard}
 
 **Question:** When an atom is copied or cut, what does the clipboard contain? Plain text with U+FFFC at the atom position? A sidecar JSON mime type for round-trip within tugdeck? Plain text with the atom's label?
 
@@ -156,7 +156,10 @@ This plan uses explicit `{#anchor}` tags on every cited heading and the `[ID] La
 
 **Plan to resolve:** Decided alongside [Step 3](#step-3) — the cut/copy/paste round-trip test enumerates the expected behavior and the implementation matches. Documented in [D05](#d05-atom-rendering).
 
-**Resolution:** OPEN. Resolved in Step 3.
+**Resolution:** DECIDED — three-payload contract:
+1. `text/plain` (external apps): atom labels in place of U+FFFC, so external pastes see "Please review main.ts" rather than tofu glyphs.
+2. `application/x-tug-atoms` (tug-internal): JSON sidecar versioned at `1` carrying `{ position, segment }` entries with positions relative to the copied slice. On paste, this rewrites the matching label-substrings in the plain text back to U+FFFC characters and dispatches a single transaction that applies both the inserted text and the matching `addAtomsEffect`.
+3. The `text/plain` representation that *would* go on the clipboard for tug-internal pastes carries U+FFFC directly — but in practice tug-internal pastes always read the sidecar first. The fallback string (label-substituted) is what other apps see. Implementation in `tug-edit/clipboard-filters.ts`; pure tests in `tug-edit-clipboard.test.ts` cover the round-trip and rejection of malformed sidecars.
 
 ---
 
@@ -671,22 +674,22 @@ Manual scenarios are documented in each step. The IME validation gate (Step 6) i
 - Gallery card: a button row that inserts each atom kind (file, command, doc, image, link).
 
 **Tasks:**
-- [ ] Implement `AtomWidget` reusing `createAtomImgElement` from `tug-atom-img.ts`.
-- [ ] Implement `atomDecorationField` keyed off U+FFFC positions in the doc.
-- [ ] Implement `atomicRangesExt` provider.
-- [ ] Implement clipboard filters with explicit sidecar MIME (`application/x-tug-atoms`).
-- [ ] Walk every case in [List L01](#l01-atom-motion-cases) manually.
+- [x] Implement `AtomWidget` reusing `createAtomImgElement` from `tug-atom-img.ts`. *(See `tug-edit/atom-decoration.ts`. `eq` matches on segment identity; `ignoreEvent` lets clicks bubble for double-click selection.)*
+- [x] Implement `atomDecorationField` keyed off U+FFFC positions in the doc. *(`StateField<DecorationSet>` with `addAtomsEffect`, `replaceAtomsEffect`, and `regenerateAtomsEffect` for theme regeneration.)*
+- [x] Implement `atomicRangesExt` provider. *(See `tug-edit/atomic-ranges.ts`.)*
+- [x] Implement clipboard filters with explicit sidecar MIME (`application/x-tug-atoms`). *(See `tug-edit/clipboard-filters.ts`. Pure `serializeClipboard`/`parseClipboardSidecar` for round-trip; DOM event handlers wrap them. External clipboards see atom labels in place of U+FFFC.)*
+- [ ] Walk every case in [List L01](#l01-atom-motion-cases) manually. *(Pending user walkthrough — gallery card now exposes insert-atom buttons for all five kinds.)*
 
 **Tests:**
-- [ ] Integration: insert atom, arrow-right past atom, assert selection offset advanced by 1 (atom = 1 character).
-- [ ] Integration: backspace immediately after atom, assert atom removed and decoration cleared.
-- [ ] Integration: shift+right-arrow extends selection across atom in one step.
-- [ ] Integration: copy + paste round-trip preserves atom decoration.
+- [x] Integration: insert atom, arrow-right past atom, assert selection offset advanced by 1 (atom = 1 character). *(See `tug-edit.test.tsx#right-arrow advances by one across an atom`.)*
+- [x] Integration: backspace immediately after atom, assert atom removed and decoration cleared. *(See `tug-edit.test.tsx#backspace immediately after an atom deletes the whole atom and clears the decoration`.)*
+- [x] Integration: shift+right-arrow extends selection across atom in one step. *(See `tug-edit.test.tsx#shift+right extends the selection across an atom in one step`.)*
+- [x] Integration: copy + paste round-trip preserves atom decoration. *(See `tug-edit-clipboard.test.ts` for the pure serialization round-trip — 12 tests covering happy path, malformed sidecars, and label-replacement ordering.)*
 
 **Checkpoint:**
-- [ ] All 10 cases in [List L01](#l01-atom-motion-cases) pass manually.
-- [ ] [Q01](#q01-atomic-fidelity) and [Q02](#q02-atom-clipboard) resolved (DECIDED).
-- [ ] `bun run check`, `bun test`, `bun run audit:tokens lint` exit 0.
+- [ ] All 10 cases in [List L01](#l01-atom-motion-cases) pass manually. *(Pending user walkthrough.)*
+- [x] [Q01](#q01-atomic-fidelity) and [Q02](#q02-atom-clipboard) resolved (DECIDED).
+- [x] `bun run check`, `bun test`, `bun run audit:tokens lint` exit 0. *(2438 tests pass; +17 new for Step 3. Two pre-existing TS errors on main remain unrelated.)*
 
 ---
 

@@ -7,23 +7,26 @@
  * `EditorView.updateListener`, and exposes an imperative delegate
  * via `ref`.
  *
- * Owns the document, caret, and selection — the state that editing
- * actions (cut, copy, paste, selectAll, undo, redo, submit) mutate.
- * Per [L11], `TugEdit` is the responder that registers handlers
- * for those actions on its owned state.
+ * Owns the document, caret, selection, and embedded atoms — the state
+ * that editing actions (cut, copy, paste, selectAll, undo, redo,
+ * insertAtom, submit) mutate. Per [L11], `TugEdit` is the responder
+ * that registers handlers for those actions on its owned state.
  *
  * Laws: [L01] one root.render() at mount; CM6 manages its own DOM
  *        tree internally and is never re-rendered through React,
- *        [L03] mount and dispose run in `useLayoutEffect`,
- *        [L06] all editor appearance flows through CSS and direct
- *        DOM, never React state, [L07] delegate methods read
- *        `viewRef.current` at call time, [L11] responder for
- *        editing actions on the owned document and selection,
- *        [L15] token-driven control states, [L19] component
- *        authoring guide, [L21] CodeMirror 6 (MIT) — see
- *        `THIRD_PARTY_NOTICES.md`, [L24] `viewRef`/`hostRef`
- *        local-data, CM6 owns document and selection, appearance
- *        via CSS / DOM.
+ *        [L02] atom segments and decoration set live in CM6's
+ *        StateField, never in React state, [L03] mount and dispose
+ *        run in `useLayoutEffect`, [L06] all editor appearance flows
+ *        through CSS and direct DOM, never React state, [L07] delegate
+ *        methods read `viewRef.current` at call time, [L11] responder
+ *        for editing actions (including atom insert / clipboard) on
+ *        the owned document, selection, and atom set, [L15] token-
+ *        driven control states, [L19] component authoring guide,
+ *        [L21] CodeMirror 6 (MIT) — see `THIRD_PARTY_NOTICES.md`,
+ *        [L22] theme-change subscription writes through a CM6
+ *        transaction, never round-tripping through React, [L24]
+ *        `viewRef`/`hostRef` local-data, CM6 owns document, selection,
+ *        and atom-decoration state, appearance via CSS / DOM.
  *
  * StrictMode lifecycle: the `EditorView` is constructed inside a
  * `useLayoutEffect` with empty deps, stored on `viewRef`, and
@@ -41,11 +44,21 @@ import "./tug-edit.css";
 import React, { useLayoutEffect, useRef, useImperativeHandle } from "react";
 import { EditorState } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
-import { drawSelection, EditorView, keymap } from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { cn } from "@/lib/utils";
+import { subscribeThemeChange, unsubscribeThemeChange } from "@/theme-tokens";
+import type { AtomSegment } from "@/lib/tug-atom-img";
 import { tugTheme } from "./tug-edit/theme";
 import { hostFocusMirror } from "./tug-edit/host-state";
+import {
+  atomDecorationField,
+  insertAtomAtSelection,
+  regenerateAtomsEffect,
+} from "./tug-edit/atom-decoration";
+import { atomicRangesExt } from "./tug-edit/atomic-ranges";
+import { clipboardExt } from "./tug-edit/clipboard-filters";
+import { tugSelectionLayer } from "./tug-edit/selection-layer";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -76,6 +89,16 @@ export interface TugEditDelegate {
    * currently mounted.
    */
   view(): EditorView | null;
+  /**
+   * Insert an atom at the current selection head, replacing any
+   * non-empty selection. The transaction inserts the U+FFFC text
+   * marker and the matching decoration in a single step, so the
+   * editor never observes a partially-applied atom. After the
+   * insertion the caret lands immediately after the new atom.
+   *
+   * No-op when the editor is not mounted.
+   */
+  insertAtom(segment: AtomSegment): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -136,14 +159,29 @@ function buildExtensions(host: HTMLElement): readonly Extension[] {
   return [
     history(),
     keymap.of([...defaultKeymap, ...historyKeymap]),
-    // `drawSelection` emits the styled `.cm-cursor` and
-    // `.cm-selectionBackground` DOM that `tugTheme` paints. Without
-    // it, CM6 falls back to the browser-native caret (suppressed by
-    // our theme's `caret-color: transparent`) and the caret would
-    // be invisible.
-    drawSelection(),
+    // Selection painted by `tugSelectionLayer` — a custom layer that
+    // emits `.cm-selectionBackground` divs covering every non-empty
+    // range in the editor's selection. We deliberately do NOT use
+    // `drawSelection`: drawSelection bundles a styled `.cm-cursor`
+    // (which sizes itself from `coordsAtPos`'s glyph rect and
+    // wobbles between text and atom positions) and a `Prec.highest`
+    // theme that forces `caret-color: transparent !important` and
+    // `::selection: transparent !important` (which we cannot
+    // override from outside). Building our own selection layer lets
+    // us keep CM6's atom-aware selection paint while leaving the
+    // native caret intact — the native caret is sized by the
+    // line-box, which the `.cm-line::before` ghost in `tugTheme`
+    // pins to a uniform line-height.
+    tugSelectionLayer,
     tugTheme,
     hostFocusMirror(host),
+    // Atom support: the decoration field is the data layer; the
+    // atomic-ranges provider lifts that data into CM6's motion /
+    // deletion machinery; clipboard filters round-trip the atoms
+    // through copy / cut / paste.
+    atomDecorationField,
+    atomicRangesExt,
+    clipboardExt,
   ];
 }
 
@@ -167,6 +205,11 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
       view() {
         return viewRef.current;
       },
+      insertAtom(segment: AtomSegment) {
+        const view = viewRef.current;
+        if (view === null) return;
+        insertAtomAtSelection(view, segment);
+      },
     }), []);
 
     // Mount the EditorView. Cleanup destroys it; re-mount creates
@@ -185,7 +228,19 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
       });
       viewRef.current = view;
 
+      // Atom SVGs bake their colors at construction time (`tug-atom-img.ts`
+      // resolves token values via `getTokenValue` at the moment the
+      // `<img>` is built). When the application theme changes, those
+      // colors are stale, so we dispatch a `regenerateAtomsEffect` to
+      // force every widget to be reconstructed [D05]. Subscription is
+      // direct DOM observation per [L22] — no React state round-trip.
+      const onThemeChange = (): void => {
+        view.dispatch({ effects: regenerateAtomsEffect.of(null) });
+      };
+      subscribeThemeChange(onThemeChange);
+
       return () => {
+        unsubscribeThemeChange(onThemeChange);
         view.destroy();
         viewRef.current = null;
       };

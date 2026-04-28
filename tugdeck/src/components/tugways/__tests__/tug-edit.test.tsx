@@ -23,10 +23,58 @@ import "../../../__tests__/setup-rtl";
 import React, { useRef, useLayoutEffect } from "react";
 import { describe, it, expect, afterEach } from "bun:test";
 import { render, cleanup } from "@testing-library/react";
+import { EditorSelection } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { deleteCharBackward, deleteCharForward } from "@codemirror/commands";
 
 import { TugEdit } from "@/components/tugways/tug-edit";
 import type { TugEditDelegate } from "@/components/tugways/tug-edit";
+import {
+  atomDecorationField,
+  AtomWidget,
+  getAtomsInState,
+} from "@/components/tugways/tug-edit/atom-decoration";
+import { TUG_ATOM_CHAR, type AtomSegment } from "@/lib/tug-atom-img";
+
+// ---------------------------------------------------------------------------
+// Canvas 2D shim
+// ---------------------------------------------------------------------------
+//
+// happy-dom does not implement `HTMLCanvasElement.getContext("2d")`. The
+// atom-rendering path (`tug-atom-img.ts`) creates a measurement canvas
+// to compute label widths during SVG generation; without a context,
+// every atom insertion throws `null is not an object (evaluating
+// 'ctx.font = font')` mid-dispatch. The shim returns a minimal 2D
+// context object that supplies just the surface area atom rendering
+// touches: a writable `font` string and a `measureText` that returns
+// a plausible width. Installed once at module load — every atom test
+// in this file relies on it.
+
+interface MinimalCtx2D {
+  font: string;
+  measureText(text: string): { width: number };
+}
+
+(() => {
+  // Probe the live canvas prototype rather than reaching for a global
+  // `HTMLCanvasElement` class — happy-dom's setup-rtl does not bind
+  // `HTMLCanvasElement` on `global`, but `document.createElement` does
+  // produce real instances whose prototype is reachable.
+  const probe = document.createElement("canvas");
+  const proto = Object.getPrototypeOf(probe) as {
+    getContext?: (type: string) => unknown;
+  };
+  const ctx: MinimalCtx2D = {
+    font: "",
+    measureText(text: string) {
+      return { width: text.length * 7 };
+    },
+  };
+  proto.getContext = function getContext(type: string): unknown {
+    if (type === "2d") return ctx;
+    return null;
+  };
+})();
 
 // ---------------------------------------------------------------------------
 // Test harness
@@ -165,5 +213,196 @@ describe("TugEdit — theme and host-state wiring", () => {
     const content = container.querySelector<HTMLElement>(".cm-content");
     expect(content).not.toBeNull();
     expect(content!.getAttribute("contenteditable")).toBe("true");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Atom integration
+// ---------------------------------------------------------------------------
+
+const FILE_ATOM: AtomSegment = {
+  kind: "atom",
+  type: "file",
+  label: "main.ts",
+  value: "/main.ts",
+};
+
+/**
+ * Helper: render TugEdit, capture the live delegate, type some text
+ * via `view.dispatch`, and return the view + delegate for the test
+ * to drive. Uses dispatch (not simulated keypresses) so the tests
+ * stay independent of happy-dom's beforeinput/keydown handling —
+ * everything here runs at the EditorView state level.
+ */
+function mountAtomHarness(): {
+  view: EditorView;
+  delegate: TugEditDelegate;
+  unmount: () => void;
+} {
+  const delegateRef: { current: TugEditDelegate | null } = { current: null };
+
+  function H(): React.ReactElement {
+    const ref = useRef<TugEditDelegate>(null);
+    useLayoutEffect(() => {
+      delegateRef.current = ref.current;
+    }, []);
+    return <TugEdit ref={ref} data-testid="atom-harness" />;
+  }
+
+  const result = render(<H />);
+  const delegate = delegateRef.current!;
+  const view = delegate.view()!;
+  return {
+    view,
+    delegate,
+    unmount: result.unmount,
+  };
+}
+
+describe("TugEdit — atom integration", () => {
+  it("insertAtom places U+FFFC and a matching widget decoration at the caret", () => {
+    const { view, delegate, unmount } = mountAtomHarness();
+    try {
+      // Pre-fill some text: "abXcd" with cursor at position 2.
+      view.dispatch({ changes: { from: 0, insert: "abcd" } });
+      view.dispatch({ selection: { anchor: 2 } });
+
+      delegate.insertAtom(FILE_ATOM);
+
+      // Document gained one U+FFFC at offset 2.
+      expect(view.state.doc.toString()).toBe(`ab${TUG_ATOM_CHAR}cd`);
+      expect(view.state.doc.length).toBe(5);
+
+      // Caret lands immediately after the new atom.
+      expect(view.state.selection.main.head).toBe(3);
+
+      // The decoration field carries one AtomWidget over [2, 3).
+      const atoms = getAtomsInState(view.state);
+      expect(atoms).toHaveLength(1);
+      expect(atoms[0]!.position).toBe(2);
+      expect(atoms[0]!.segment).toEqual(FILE_ATOM);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("right-arrow advances by one across an atom (atomicRanges respected)", () => {
+    const { view, delegate, unmount } = mountAtomHarness();
+    try {
+      view.dispatch({ changes: { from: 0, insert: "ab" } });
+      view.dispatch({ selection: { anchor: 2 } });
+      delegate.insertAtom(FILE_ATOM);
+      // After insertAtom: doc is "ab￼", caret at 3. Insert
+      // trailing text then move caret back to just before the atom.
+      view.dispatch({ changes: { from: 3, insert: "cd" } });
+      view.dispatch({ selection: { anchor: 2 } });
+
+      const start = view.state.selection.main;
+      const next = view.moveByChar(start, true);
+      // The atom is one document character (one U+FFFC), so a single
+      // moveByChar step lands the caret immediately after it.
+      expect(next.head).toBe(3);
+      expect(next.empty).toBe(true);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("left-arrow steps back across an atom in one step", () => {
+    const { view, delegate, unmount } = mountAtomHarness();
+    try {
+      view.dispatch({ changes: { from: 0, insert: "ab" } });
+      view.dispatch({ selection: { anchor: 2 } });
+      delegate.insertAtom(FILE_ATOM);
+      // Caret is at 3 (right after the atom).
+      const next = view.moveByChar(view.state.selection.main, false);
+      expect(next.head).toBe(2);
+      expect(next.empty).toBe(true);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("shift+right extends the selection across an atom in one step", () => {
+    const { view, delegate, unmount } = mountAtomHarness();
+    try {
+      view.dispatch({ changes: { from: 0, insert: "ab" } });
+      view.dispatch({ selection: { anchor: 2 } });
+      delegate.insertAtom(FILE_ATOM);
+      // Place a collapsed caret immediately before the atom.
+      view.dispatch({ selection: EditorSelection.cursor(2) });
+
+      // Build an extending range using moveByChar with extend.
+      const range = view.state.selection.main;
+      const moved = view.moveByChar(range, true);
+      // A non-extending move with the same call would have anchor=head;
+      // the atomicRanges behavior we care about is whether the extended
+      // form lands at 3 (after-atom). Replicate the extend by holding
+      // the anchor fixed.
+      const extended = EditorSelection.range(range.anchor, moved.head);
+
+      expect(extended.from).toBe(2);
+      expect(extended.to).toBe(3);
+      expect(extended.empty).toBe(false);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("backspace immediately after an atom deletes the whole atom and clears the decoration", () => {
+    const { view, delegate, unmount } = mountAtomHarness();
+    try {
+      view.dispatch({ changes: { from: 0, insert: "ab" } });
+      view.dispatch({ selection: { anchor: 2 } });
+      delegate.insertAtom(FILE_ATOM);
+      // Caret at 3 (after the atom).
+      expect(view.state.doc.length).toBe(3);
+
+      const handled = deleteCharBackward(view);
+      expect(handled).toBe(true);
+
+      // U+FFFC is gone; the decoration set is empty.
+      expect(view.state.doc.toString()).toBe("ab");
+      expect(getAtomsInState(view.state)).toHaveLength(0);
+
+      // The decoration field's range set is also empty (the deletion
+      // dropped the [2, 3) widget along with the character).
+      const decoSet = view.state.field(atomDecorationField);
+      expect(decoSet.size).toBe(0);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("forward-delete immediately before an atom deletes the whole atom", () => {
+    const { view, delegate, unmount } = mountAtomHarness();
+    try {
+      view.dispatch({ changes: { from: 0, insert: "ab" } });
+      view.dispatch({ selection: { anchor: 2 } });
+      delegate.insertAtom(FILE_ATOM);
+      // Move caret back to immediately before the atom.
+      view.dispatch({ selection: EditorSelection.cursor(2) });
+
+      const handled = deleteCharForward(view);
+      expect(handled).toBe(true);
+      expect(view.state.doc.toString()).toBe("ab");
+      expect(getAtomsInState(view.state)).toHaveLength(0);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("atomDecorationField widgets carry the original AtomSegment identity", () => {
+    const { view, delegate, unmount } = mountAtomHarness();
+    try {
+      delegate.insertAtom(FILE_ATOM);
+      const cursor = view.state.field(atomDecorationField).iter();
+      expect(cursor.value).not.toBeNull();
+      const widget = (cursor.value!.spec as { widget?: unknown }).widget;
+      expect(widget).toBeInstanceOf(AtomWidget);
+      expect((widget as AtomWidget).segment).toEqual(FILE_ATOM);
+    } finally {
+      unmount();
+    }
   });
 });

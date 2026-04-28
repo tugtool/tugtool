@@ -7,7 +7,6 @@
   --tug7-element-field-border-normal-plain-readonly  | --tug7-surface-field-primary-normal-plain-readonly | informational
   --tug7-element-field-text-normal-plain-disabled    | --tug7-surface-field-primary-normal-plain-disabled | informational
   --tug7-element-field-text-normal-plain-readonly    | --tug7-surface-field-primary-normal-plain-readonly | informational
-  --tug7-element-selection-text-normal-plain-rest    | --tug7-surface-selection-primary-normal-plain-rest | informational
   --tug7-element-global-fill-normal-accentCool-rest  | --tug7-surface-field-primary-normal-plain-rest     | informational
 } */
 
@@ -18,13 +17,19 @@
  * | --tug7-element-field-text-normal-plain-rest       | --tug7-surface-field-primary-normal-plain-rest     | content       | .cm-content (color, theme.ts)                                        |
  * | --tug7-element-field-border-normal-plain-rest     | --tug7-surface-field-primary-normal-plain-rest     | informational | .tug-edit (border)                                                   |
  * | --tug7-element-field-border-normal-plain-hover    | --tug7-surface-field-primary-normal-plain-hover    | informational | .tug-edit:hover (border-color)                                       |
- * | --tug7-element-field-border-normal-plain-active   | --tug7-surface-field-primary-normal-plain-focus    | informational | .tug-edit[data-focused] (border-color), .cm-cursor (theme.ts)        |
+ * | --tug7-element-field-border-normal-plain-active   | --tug7-surface-field-primary-normal-plain-focus    | informational | .tug-edit[data-focused] (border-color), .cm-content (caret-color)    |
  * | --tug7-element-field-border-normal-plain-disabled | --tug7-surface-field-primary-normal-plain-disabled | informational | .tug-edit[data-disabled] (border-color)                              |
  * | --tug7-element-field-border-normal-plain-readonly | --tug7-surface-field-primary-normal-plain-readonly | informational | .tug-edit[data-readonly] (border-color)                              |
  * | --tug7-element-field-text-normal-plain-disabled   | --tug7-surface-field-primary-normal-plain-disabled | informational | .cm-content (theme.ts, &[data-disabled])                             |
  * | --tug7-element-field-text-normal-plain-readonly   | --tug7-surface-field-primary-normal-plain-readonly | informational | .cm-content (theme.ts, &.cm-readonly)                                |
- * | --tug7-element-selection-text-normal-plain-rest   | --tug7-surface-selection-primary-normal-plain-rest | informational | .cm-selectionBackground (theme.ts, focused)                          |
  * | --tug7-element-global-fill-normal-accentCool-rest | --tug7-surface-field-primary-normal-plain-rest     | informational | .tug-edit[data-focus-style="ring"][data-focused] (outline / border)  |
+ *
+ * Selection paint deliberately uses CSS system colors (`Highlight`,
+ * `HighlightText`) for the active state — see `tug-edit/theme.ts`.
+ * The inactive overlay variant uses
+ * `--tug7-surface-selection-primary-normal-plain-inactive` directly
+ * in `theme.ts`; that token is declared in `theme-pairings.ts`
+ * already so it does not need its own row here.
  */
 
 

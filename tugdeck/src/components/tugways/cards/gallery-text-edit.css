@@ -17,3 +17,10 @@
 .gallery-text-edit-host > .tug-edit {
   flex: 1 1 auto;
 }
+
+.gallery-text-edit-atom-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}

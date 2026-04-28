@@ -7,16 +7,62 @@
  * editor without remount and without explicit `subscribeThemeChange`
  * wiring [D06].
  *
+ * Caret and selection rendering:
+ *
+ *   - **Caret**: native browser caret driven by `caret-color` on
+ *     `.cm-content`. The browser sizes the caret to the line-box,
+ *     and the `.cm-line::before` ghost element below pins every
+ *     line's box to the line-height (≈24.5px) regardless of
+ *     content, so the caret is uniform across text and atom
+ *     positions.
+ *   - **Selection**: a custom layer (`tug-edit/selection-layer.ts`)
+ *     paints `.cm-selectionBackground` divs behind every non-empty
+ *     range. These are real DOM nodes — they cover atom widgets
+ *     cleanly and persist when the editor loses focus. Native
+ *     `::selection` is suppressed below so it doesn't double-paint
+ *     with the layer.
+ *
+ * This intentionally does NOT use `drawSelection` from
+ * `@codemirror/view` — that bundles a styled `.cm-cursor` (which
+ * wobbles between text and atom positions because it's sized by
+ * `coordsAtPos`'s glyph rect) and a `Prec.highest` theme that
+ * forces `caret-color: transparent !important` and `::selection:
+ * transparent !important`. Both undermine the native-caret-with-
+ * uniform-height approach used here.
+ *
  * Selectors covered:
  *
  *   `&`                            — editor root (.cm-editor)
- *   `.cm-content`                  — editable text surface
- *   `.cm-line`                     — per-line wrapper (no own appearance)
- *   `.cm-cursor, .cm-dropCursor`   — primary caret + drop indicator
- *   `.cm-selectionBackground`      — span CM6 paints behind ranged selection
- *   `&.cm-focused .cm-selectionBackground`
- *                                  — active (focused) selection paint
+ *   `.cm-content`                  — editable text surface; sets
+ *                                    `caret-color`, `font-size`, and
+ *                                    `line-height`
+ *   `.cm-line`                     — per-line wrapper
+ *   `.cm-line::before`             — zero-width line-height-tall
+ *                                    ghost that pins line-box height
+ *                                    so the caret is uniform
+ *   `.cm-content img[data-atom-label]`
+ *                                  — atom widgets — vertical-align
+ *                                    middle so a 24px atom never
+ *                                    grows the line box past the
+ *                                    line-height we set on
+ *                                    `.cm-content`
+ *   `.cm-selectionBackground`      — custom selection-layer overlay;
+ *                                    active / inactive variants split
+ *                                    on `&.cm-focused`
+ *   `.cm-content ::selection`      — native ::selection — bg
+ *                                    transparent (overlay handles
+ *                                    background) and fg recolored to
+ *                                    the selection-text token so
+ *                                    selected glyphs read clearly
+ *                                    against the overlay
  *   `&.cm-readonly`                — readonly state surface + text
+ *
+ * Line metrics: `.cm-content` carries an explicit `font-size` and
+ * `line-height` so every line has the same height regardless of
+ * whether it contains text, atoms, or both. The atom rendering path
+ * (`tug-atom-img.ts`) bakes its layout against a 14px base; the
+ * line-height of 1.75 (≈24.5px) accommodates the atom's 24px height
+ * with a sub-pixel margin.
  *
  * Host-wrapper styling (rest/hover/focus border, focus-style variants,
  * borderless modifier, disabled state) lives in `tug-edit.css` so it
@@ -50,8 +96,19 @@ const TOKENS = {
   contentBgReadonly: "var(--tug7-surface-field-primary-normal-plain-readonly)",
   contentFgReadonly: "var(--tug7-element-field-text-normal-plain-readonly)",
   caret: "var(--tug7-element-field-border-normal-plain-active)",
-  selectionBgActive: "var(--tug7-surface-selection-primary-normal-plain-rest)",
-  selectionFgActive: "var(--tug7-element-selection-text-normal-plain-rest)",
+  // Active selection bg / fg use the CSS `Highlight` / `HighlightText`
+  // system colors directly (see `.cm-selectionBackground` and
+  // `.cm-content ::selection` rules below). System colors give us
+  // pixel-perfect parity with native `::selection` rendering on
+  // focused fields without needing to declare them as tokens here.
+  // Inactive variant — applied to the selection overlay when the
+  // editor itself has lost focus (e.g., the user clicked a nearby
+  // button) but the selection should remain visibly present.
+  // Cross-*card* inactive paint is a separate mechanism: the host
+  // card routes the engine selection through
+  // `selectionGuard.cardRanges` and the
+  // `::highlight(inactive-selection)` Custom Highlight rule declared
+  // in `tug-pane.css` ([L23]).
   selectionBgInactive: "var(--tug7-surface-selection-primary-normal-plain-inactive)",
 } as const;
 
@@ -75,13 +132,17 @@ export const tugTheme: Extension = EditorView.theme({
     height: "100%",
   },
 
-  // Editable text surface. CM6 hides the native caret via
-  // `caret-color: transparent` on `.cm-content` and renders a styled
-  // `.cm-cursor` div instead, so we keep the same convention here and
-  // color the cursor explicitly below.
+  // Editable text surface. The native caret is colored via
+  // `caret-color`; the browser sizes it from the line's line-height
+  // rather than the adjacent glyph's metrics, which is what we want
+  // when atoms (24px tall) sit next to text (~18px tall). Explicit
+  // font-size and line-height pin the line metrics so every line is
+  // the same height regardless of contents.
   ".cm-content": {
-    caretColor: "transparent",
+    caretColor: TOKENS.caret,
     fontFamily: "inherit",
+    fontSize: "14px",
+    lineHeight: "1.75",
     padding: "8px 10px",
   },
 
@@ -89,25 +150,82 @@ export const tugTheme: Extension = EditorView.theme({
     padding: "0",
   },
 
-  // Primary caret + drop-position indicator.
-  ".cm-cursor, .cm-dropCursor": {
-    borderLeftColor: TOKENS.caret,
-    borderLeftWidth: "1.5px",
+  // The browser sizes the caret to the tallest inline content in the
+  // current line — text glyphs (~18px), atom widgets (24px), or the
+  // CSS line-height, whichever is largest. Without something pinning
+  // every line to a uniform tallest inline element, the caret jumps
+  // height as it moves between text-only and atom-bearing positions.
+  // The fix is the ghost-element trick: a zero-width, 1.75em-tall
+  // inline-block prepended to every line via `::before`. The line's
+  // tallest inline content is now always the ghost, so the caret is
+  // always 1.75em (24.5px at 14px font-size). Selection unaffected
+  // because the pseudo isn't in the DOM tree — it doesn't participate
+  // in the document model, only in line layout. Used by Slack,
+  // Discord, Linear and friends for the same reason.
+  ".cm-line::before": {
+    content: '""',
+    display: "inline-block",
+    width: "0",
+    height: "1.75em",
+    verticalAlign: "middle",
   },
 
-  // Inactive (blurred) ranged selection — CM6 still paints
-  // `.cm-selectionBackground` when the editor is not focused; we use the
-  // tug "inactive" selection surface so it visibly differs from the
-  // focused state without going invisible.
-  ".cm-selectionBackground, ::selection": {
-    backgroundColor: TOKENS.selectionBgInactive,
+  // Atom widgets render via `tug-atom-img.ts` as `<img>` elements with
+  // an inline `vertical-align` offset designed for the host's flowing
+  // text baseline. Inside the editor we pin them to vertical-align
+  // middle so the 24px atom centers in the 24.5px line box and never
+  // pushes the line box taller. `!important` is required because the
+  // atom rendering applies vertical-align as an inline style.
+  ".cm-content img[data-atom-label]": {
+    verticalAlign: "middle !important",
   },
 
-  // Active (focused) ranged selection — the normal native selection
-  // appearance for tug surfaces.
-  "&.cm-focused .cm-selectionBackground, &.cm-focused ::selection": {
-    backgroundColor: TOKENS.selectionBgActive,
-    color: TOKENS.selectionFgActive,
+  // Selection overlay painted by `tug-edit/selection-layer.ts`.
+  // The `.cm-selectionBackground` divs are layered behind the
+  // editable surface, so they cover atom widgets cleanly and
+  // persist when the editor loses focus.
+  //
+  // `--tugx-edit-selection-bg-rest` is a tug-edit-specific token
+  // (defined in `brio.css` and `harmony.css`) that resolves to a
+  // higher-chroma blue than the shared
+  // `--tug7-surface-selection-primary-normal-plain-rest`. The
+  // shared token is tuned for native `::selection` rendering,
+  // where WebKit substitutes the OS system selection color on
+  // focused fields and the literal CSS color is mostly cosmetic.
+  // Our overlay is a `<div>` background — WebKit honors the
+  // literal color verbatim, with no system substitution — so we
+  // need a saturated source value to render as vivid blue
+  // rather than the pale tint the shared token produces when
+  // painted as a layer.
+  // !important is required: CM6's base theme has a rule
+  // `&light.cm-focused > .cm-scroller > .cm-selectionLayer
+  // .cm-selectionBackground { background: #d7d4f0 }` (a pale lilac)
+  // at specificity (0,6,0), which beats any plain selector we can
+  // write. The shorthand `background` also resets `background-color`,
+  // so a later longhand alone can't override it without an
+  // `!important` win or matching specificity.
+  ".cm-selectionBackground": {
+    backgroundColor: "var(--tugx-edit-selection-bg-rest) !important",
+  },
+
+  // Dim the overlay to the tug "inactive" selection token when the
+  // editor itself has lost focus (within a still-focused card,
+  // e.g. the user clicked an adjacent button). Cross-card inactive
+  // paint is handled at the pane level via `selectionGuard.cardRanges`
+  // and the `::highlight(inactive-selection)` rule in `tug-pane.css`
+  // ([L23]).
+  "&:not(.cm-focused) .cm-selectionBackground": {
+    backgroundColor: TOKENS.selectionBgInactive + " !important",
+  },
+
+  // Native ::selection paints the selected text glyphs themselves.
+  // The overlay handles the background; setting `background:
+  // transparent` here prevents a double-paint with the overlay,
+  // and the `color` recolors the glyphs to the tug
+  // selection-text token so they read clearly against the overlay.
+  ".cm-content ::selection": {
+    backgroundColor: "transparent",
+    color: "var(--tug7-element-selection-text-normal-plain-rest)",
   },
 
   // Focus-state surface — subtle background tint shift in the default
