@@ -288,11 +288,12 @@ const COMPONENT_OWNED_FOCUS_TARGETS: readonly string[] = [
  * Pure read; does not mutate focus, selection, or any DOM state.
  */
 export function captureFocus(cardRoot: HTMLElement): FocusSnapshot {
-  // Dropped m36's `fallbackComponentStatePreservationKey` parameter.
-  // Audit (verified by `smoke-capture-phase-save.test.ts`)
-  // proved every activation-trigger source already saves in capture
-  // phase — `document.activeElement` is correct at save time, no
-  // fallback needed.
+  // Single-argument: callers must only invoke this when focus is
+  // expected to be inside the card. For the inactive-card save case
+  // (focus has moved to a sibling card by save time) the right
+  // answer is "preserve the previous bag.focus", not "use a stale
+  // fallback" — that policy lives in the CardHost assembler so the
+  // capture function itself can stay a pure read of the current DOM.
   const active = cardRoot.ownerDocument.activeElement;
   if (!(active instanceof HTMLElement)) return { kind: "none" };
   if (!cardRoot.contains(active)) return { kind: "none" };
@@ -637,14 +638,16 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   const hostContentElRef = useRef<HTMLDivElement | null>(null);
   hostContentElRef.current = hostContentEl;
 
-  // (Retired the `lastFocusedPersistKeyRef` fallback that m36 added to
-  // `captureFocus`. The fallback was a
-  // workaround for the case where the deactivation save fired AFTER
-  // focus moved to a sibling card. Layer 1's audit (verified by
-  // `smoke-capture-phase-save.test.ts`) proved every activation-
-  // trigger source already saves in capture phase before focus moves
-  // — the fallback is unnecessary in steady state. `captureFocus`
-  // returned to its single-argument signature.)
+  // No `focusin` ref tracker here. The historical
+  // `lastFocusedPersistKeyRef` fallback was retired in 8914b519 on
+  // the strength of an audit that only covered activation-trigger
+  // saves (all in capture phase, focus still in card). Inactive-
+  // card saves (`visibilitychange`, `beforeunload`, debounced-while-
+  // inactive) need protection too: the assembler now forwards the
+  // previous bag's `focus` axis when `document.activeElement` is
+  // outside this card root, which is the same outcome the focusin
+  // tracker provided for the inactive-save case without the extra
+  // listener. See the assembler body and the [at0039] gate.
 
   // Content restore is imperative and trigger-driven. The trigger is the
   // child calling `register(callbacks)` — its own `useLayoutEffect` is
@@ -1066,10 +1069,50 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       cardRoot && !ownsSelectionAndFocus
         ? captureDomSelection(cardId, cardRoot)
         : null;
-    const focus: FocusSnapshot =
-      cardRoot && !ownsSelectionAndFocus
-        ? captureFocus(cardRoot)
-        : { kind: "none" };
+    // Focus axis. Two branches matter for [L23]:
+    //
+    //   1. Focus is INSIDE this card root → `captureFocus` is
+    //      authoritative. It picks up the user's currently-focused
+    //      keyed input / focus-tagged element / component-owned
+    //      region. Returning `{ kind: "none" }` from this branch is
+    //      intentional (e.g. the user genuinely clicked away from
+    //      every keyed element while still inside the card).
+    //
+    //   2. Focus is OUTSIDE this card root → `document.activeElement`
+    //      is in a sibling card, the body, or off-document. This
+    //      happens whenever a save fires for an INACTIVE card —
+    //      `visibilitychange` (cmd-tab / app-hide), `beforeunload`
+    //      (Developer > Reload), or a debounced save while the user
+    //      is editing in another card. `captureFocus` would return
+    //      `{ kind: "none" }` here too, but writing that into the
+    //      bag would BLANK whatever focus was captured at the
+    //      previous save (typically the deactivation-time capture
+    //      that correctly named the input the user had focused).
+    //      Per [L23], an internal save must not destroy a user-
+    //      visible axis just because focus is momentarily elsewhere.
+    //      Forward the previous bag's focus instead.
+    //
+    // The historical alternative was an [L03] focusin listener
+    // (`lastFocusedPersistKeyRef`) feeding a fallback parameter to
+    // `captureFocus`. The audit that retired it (commit 8914b519)
+    // only checked activation-trigger save sources, all of which
+    // fire in capture phase before focus moves; it missed the
+    // inactive-card save sources covered by branch 2 above. The
+    // assembler-local "preserve previous bag.focus" rule is
+    // simpler — no listener, no ref, no extra capture pass — and
+    // covers the same cases.
+    let focus: FocusSnapshot = { kind: "none" };
+    if (cardRoot && !ownsSelectionAndFocus) {
+      const active = cardRoot.ownerDocument.activeElement;
+      const focusInsideCard =
+        active instanceof HTMLElement && cardRoot.contains(active);
+      if (focusInsideCard) {
+        focus = captureFocus(cardRoot);
+      } else {
+        const prev = store.getCardState(cardId);
+        if (prev?.focus !== undefined) focus = prev.focus;
+      }
+    }
     const bag: CardStateBag = {
       ...(scroll !== undefined ? { scroll } : {}),
       ...(content !== undefined ? { content } : {}),
@@ -1255,10 +1298,12 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     };
   }, [cardId, rootEl, store, hostStackId]);
 
-  // (Retired the `lastFocusedPersistKeyRef` focusin listener that m36
-  // added. Capture-phase deactivation save
-  // is the canonical capture point; `document.activeElement` is
-  // sufficient there. See `smoke-capture-phase-save.test.ts`.)
+  // No focusin listener here — the assembler preserves the previous
+  // bag's `focus` axis when `document.activeElement` is outside this
+  // card, which covers the inactive-card save paths
+  // (`visibilitychange`, `beforeunload`, debounced) the original
+  // `lastFocusedPersistKeyRef` listener was added to handle. See the
+  // assembler body in this file and the [at0039] gate.
 
   // ---- Render ----
   if (!registration) {
