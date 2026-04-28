@@ -33,7 +33,7 @@
  */
 
 import { EditorSelection, Prec } from "@codemirror/state";
-import type { Extension } from "@codemirror/state";
+import type { Extension, TransactionSpec } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import type { WidgetType } from "@codemirror/view";
 import {
@@ -79,11 +79,21 @@ export interface TugEditKeymapConfig {
 // ---------------------------------------------------------------------------
 
 /**
- * Snapshot the editor's text + atoms + selection into the
- * serializable shape the existing `HistoryProvider` API expects. The
+ * Snapshot the editor's text + atoms + selection + scroll position
+ * (both axes) into the serializable shape the existing
+ * `HistoryProvider` and state-preservation APIs both consume. The
  * shape matches `TugTextEditingState` produced by `TugTextEngine` so
- * a session/route history populated from `tug-prompt-input` can drive
- * `tug-edit` without translation.
+ * a session / route history populated from `tug-prompt-input` can
+ * drive `tug-edit` without translation, and so the same payload
+ * survives a tugbank round-trip across reloads ([L23]).
+ *
+ * Both scroll axes are read directly off `view.scrollDOM` (the
+ * `.cm-scroller` element CM6 owns) — the live, single-source-of-
+ * truth scroll positions. History nav consumers ignore these fields;
+ * state preservation consumers honor them. `scrollLeft` matters
+ * specifically for `tug-edit` (line-wrap off by default) — long
+ * lines scroll horizontally and the user's chosen horizontal
+ * position must survive reload.
  */
 export function captureEditState(view: EditorView): TugTextEditingState {
   const text = view.state.doc.toString();
@@ -106,14 +116,56 @@ export function captureEditState(view: EditorView): TugTextEditingState {
     text,
     atoms,
     selection: { start: sel.from, end: sel.to },
+    scrollTop: view.scrollDOM.scrollTop,
+    scrollLeft: view.scrollDOM.scrollLeft,
   };
 }
 
 /**
- * Replace the document, atom decorations, and selection in a single
- * transaction. The replace-atoms effect feeds the atom decoration
- * field's `replaceAtomsEffect` branch, so the new positions point
- * into the freshly-installed document — never into a stale one.
+ * Build the transaction spec that replaces the document, atom
+ * decorations, and selection in one step. Shared between
+ * `applyEditState` (history nav — also requests `scrollIntoView`) and
+ * `restoreEditState` in `state-preservation.ts` (state-preservation
+ * restore — writes scrollTop separately so a saved scroll position
+ * is honored verbatim).
+ *
+ * The replace-atoms effect feeds the atom decoration field's
+ * `replaceAtomsEffect` branch, so the new positions point into the
+ * freshly-installed document — never into a stale one.
+ */
+export function buildEditStateTransaction(
+  view: EditorView,
+  state: TugTextEditingState,
+  opts: { scrollIntoView: boolean },
+): TransactionSpec {
+  const positioned: PositionedAtom[] = state.atoms.map((a) => ({
+    position: a.position,
+    segment: {
+      kind: "atom",
+      type: a.type,
+      label: a.label,
+      value: a.value,
+    } satisfies AtomSegment,
+  }));
+  const docLen = view.state.doc.length;
+  const sel = state.selection
+    ? EditorSelection.range(state.selection.start, state.selection.end)
+    : EditorSelection.cursor(state.text.length);
+  const spec: TransactionSpec = {
+    changes: { from: 0, to: docLen, insert: state.text },
+    effects: replaceAtomsEffect.of(positioned),
+    selection: sel,
+  };
+  if (opts.scrollIntoView) {
+    spec.scrollIntoView = true;
+  }
+  return spec;
+}
+
+/**
+ * History-navigation restore: replace the document, atom decorations,
+ * and selection in a single transaction; flush the WebKit caret
+ * cache; scroll the cursor into view.
  *
  * After the dispatch we explicitly blur and re-focus the contentDOM.
  * WebKit's contentEditable caret renderer caches the prior frame's
@@ -131,30 +183,19 @@ export function captureEditState(view: EditorView): TugTextEditingState {
  * event but no responder-chain handler treats focusout as a
  * demotion, so the responder remains first responder across the
  * blur/focus pair.
+ *
+ * `state.scrollTop` is intentionally ignored on the history-nav
+ * path: the user just navigated to a different document and expects
+ * the cursor to be visible, not the prior scroll offset
+ * reinstated. The state-preservation restore path uses
+ * `restoreEditState` in `state-preservation.ts`, which honors
+ * `state.scrollTop`.
  */
 export function applyEditState(
   view: EditorView,
   state: TugTextEditingState,
 ): void {
-  const positioned: PositionedAtom[] = state.atoms.map((a) => ({
-    position: a.position,
-    segment: {
-      kind: "atom",
-      type: a.type,
-      label: a.label,
-      value: a.value,
-    } satisfies AtomSegment,
-  }));
-  const docLen = view.state.doc.length;
-  const sel = state.selection
-    ? EditorSelection.range(state.selection.start, state.selection.end)
-    : EditorSelection.cursor(state.text.length);
-  view.dispatch({
-    changes: { from: 0, to: docLen, insert: state.text },
-    effects: replaceAtomsEffect.of(positioned),
-    selection: sel,
-    scrollIntoView: true,
-  });
+  view.dispatch(buildEditStateTransaction(view, state, { scrollIntoView: true }));
   view.contentDOM.blur();
   // Force a layout flush so the blur lands before the focus call.
   void view.contentDOM.offsetWidth;

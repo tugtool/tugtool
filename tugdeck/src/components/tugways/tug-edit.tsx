@@ -106,7 +106,7 @@ import {
 import { atomicRangesExt } from "./tug-edit/atomic-ranges";
 import { clipboardExt } from "./tug-edit/clipboard-filters";
 import { tugSelectionLayer } from "./tug-edit/selection-layer";
-import { tugEditKeymap } from "./tug-edit/keymap";
+import { captureEditState, tugEditKeymap } from "./tug-edit/keymap";
 import type { TugEditKeymapConfig } from "./tug-edit/keymap";
 import {
   acceptCompletionAt,
@@ -115,10 +115,20 @@ import {
   subscribeCompletionState,
   tugCompletionExt,
 } from "./tug-edit/completion-extension";
+import {
+  paintMirrorAsActive as paintMirrorAsActiveImpl,
+  paintMirrorAsInactive as paintMirrorAsInactiveImpl,
+  restoreEditState,
+  TugEditStatePreservation,
+} from "./tug-edit/state-preservation";
+import type { PendingEditRestore } from "./tug-edit/state-preservation";
+import { deckTrace } from "@/deck-trace";
+import { selectionGuard } from "./selection-guard";
+import { useCardId } from "./use-card-state-preservation";
 import { useOptionalResponder } from "./use-responder";
 import type { ActionHandler, ActionHandlerResult } from "./responder-chain";
 import { TUG_ACTIONS, type TugAction } from "./action-vocabulary";
-import type { CompletionItem, CompletionProvider } from "@/lib/tug-text-engine";
+import type { CompletionItem, CompletionProvider, TugTextEditingState } from "@/lib/tug-text-engine";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -181,6 +191,50 @@ export interface TugEditDelegate {
    * offset 0.
    */
   focus(): void;
+  /**
+   * Snapshot the editor's text + atoms + selection + scrollTop into
+   * a `TugTextEditingState`. Used by save callbacks (state
+   * preservation) and history-nav consumers that want the same
+   * shape. Returns the empty seed `{ text: "", atoms: [],
+   * selection: null }` when no view is mounted.
+   */
+  captureState(): TugTextEditingState;
+  /**
+   * Restore a previously-captured editing state without claiming
+   * focus. Replaces doc + atoms + selection in one transaction;
+   * writes saved `scrollTop` directly. The consumer is responsible
+   * for choosing the paint channel afterward via
+   * `paintMirrorAsActive` (active card) or `paintMirrorAsInactive`
+   * (inactive card). No-op when the editor is not mounted.
+   *
+   * Distinct from history-nav restore (which focuses + scrolls the
+   * cursor into view); used by state preservation. [L23]
+   */
+  restoreState(state: TugTextEditingState): void;
+  /**
+   * Paint the editor as the deck-level first responder. Claims focus
+   * and (when `state` is supplied) asserts selection + scrollTop
+   * verbatim from the bag. The single legitimate call site for
+   * mutating the global Selection + claiming document focus from a
+   * `tug-edit` instance. [L23]
+   *
+   * No-op when the editor is not mounted.
+   */
+  paintMirrorAsActive(state?: TugTextEditingState): void;
+  /**
+   * Paint the editor as a non-first-responder card. Builds a `Range`
+   * from the (saved or live) selection over `view.contentDOM` and
+   * routes it through `publish` (typically
+   * `range => selectionGuard.updateCardDomSelection(cardId, range)`).
+   * No focus claim; no `window.getSelection()` mutation; no
+   * dispatch to CM6 itself. [L23], [L12].
+   *
+   * No-op when the editor is not mounted.
+   */
+  paintMirrorAsInactive(
+    publish: (range: Range | null) => void,
+    state?: TugTextEditingState,
+  ): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -284,6 +338,26 @@ export interface TugEditProps
     filtered: readonly CompletionItem[],
     selectedIndex: number,
   ) => void;
+  /**
+   * Opt in to tugdeck card state preservation. When `true`, the
+   * editor registers `onSave` / `onRestore` / `onCardActivated` /
+   * `onCardWillDeactivate` callbacks with the enclosing `CardHost`
+   * via `useCardStatePreservation`, so doc + atoms + selection +
+   * scrollTop survive cmd-tab cycles, tab deactivation, and a
+   * cold-mount restore from tugbank. The active / inactive paint
+   * channel decisions follow [L23] — the active card claims focus
+   * + global Selection; inactive cards publish their selection
+   * through `selectionGuard`'s inactive highlight.
+   *
+   * Default `true`. Set to `false` for stand-alone harnesses
+   * (storybook, unit tests) that mount `TugEdit` outside a deck;
+   * the registration is silently a no-op when the
+   * `CardStatePreservationContext` is null, but the
+   * `preserveState=false` opt-out skips the hook entirely.
+   *
+   * @default true
+   */
+  preserveState?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -359,6 +433,7 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
       completionProviders,
       completionDirection = "down",
       onTypeaheadChange,
+      preserveState = true,
       ...rest
     }: TugEditProps,
     ref,
@@ -366,6 +441,29 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
     const hostRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
     const popupRef = useRef<HTMLDivElement>(null);
+    // Buffered onRestore payload for the rare case where onRestore
+    // fires before the EditorView's mount effect creates the view.
+    // React fires child effects before parent effects, so a sibling
+    // state-preservation registration that lives "above" the editor's
+    // mount in the tree can dispatch onRestore one tick earlier than
+    // the view is born. The mount effect inspects this ref and
+    // replays the buffered restore through the same paint channel
+    // (active / inactive) the original onRestore call would have
+    // chosen. [L23], [L07].
+    const pendingRestoreRef = useRef<PendingEditRestore | null>(null);
+
+    // Enclosing card's id from `CardStatePreservationContext`. Null
+    // when this editor is rendered outside a `CardHost` (storybook,
+    // unit test). Held in a ref so the mount effect's buffered-
+    // restore branch can publish through `selectionGuard` with the
+    // card's identity at fire time per [L07] (cross-pane moves
+    // preserve cardId in practice, but the ref keeps the contract
+    // safe under any future identity-semantics change).
+    const cardId = useCardId();
+    const cardIdRef = useRef(cardId);
+    useLayoutEffect(() => {
+      cardIdRef.current = cardId;
+    }, [cardId]);
 
     // Live providers ref. The typeahead extension reads this via a
     // thunk on every transaction, so swapping providers across
@@ -438,6 +536,29 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
         const view = viewRef.current;
         if (view === null) return;
         view.focus();
+      },
+      captureState(): TugTextEditingState {
+        const view = viewRef.current;
+        if (view === null) return { text: "", atoms: [], selection: null };
+        return captureEditState(view);
+      },
+      restoreState(state: TugTextEditingState) {
+        const view = viewRef.current;
+        if (view === null) return;
+        restoreEditState(view, state);
+      },
+      paintMirrorAsActive(state?: TugTextEditingState) {
+        const view = viewRef.current;
+        if (view === null) return;
+        paintMirrorAsActiveImpl(view, state);
+      },
+      paintMirrorAsInactive(
+        publish: (range: Range | null) => void,
+        state?: TugTextEditingState,
+      ) {
+        const view = viewRef.current;
+        if (view === null) return;
+        paintMirrorAsInactiveImpl(view, publish, state);
       },
     }), []);
 
@@ -657,7 +778,55 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
         completionDirectionRef.current,
       );
 
+      // Emit `engine-ready` for harness tests that gate on the
+      // EditorView being constructed inside this card. Mirrors the
+      // matching emit site in `tug-prompt-input.tsx`. The cardId is
+      // read from the ref so a stand-alone TugEdit (no enclosing
+      // CardHost) is silent — there's no card to associate the
+      // event with.
+      const readyCardId = cardIdRef.current;
+      if (readyCardId !== null) {
+        deckTrace.record({
+          kind: "engine-ready",
+          cardId: readyCardId,
+          engine: "tug-edit",
+        });
+      }
+
+      // Replay any onRestore payload that fired before this mount
+      // effect ran. React fires child effects before parent
+      // effects, so the `TugEditStatePreservation` child's
+      // registration may have dispatched onRestore one tick before
+      // the EditorView was constructed. The hook stashed the
+      // payload on `pendingRestoreRef`; we apply it now through the
+      // same paint channel the live `onRestore` call would have
+      // chosen, then clear the ref. [L23].
+      const pending = pendingRestoreRef.current;
+      if (pending !== null) {
+        const { state: bufferedState, isActive } = pending;
+        restoreEditState(view, bufferedState);
+        if (isActive) {
+          paintMirrorAsActiveImpl(view, bufferedState);
+        } else {
+          paintMirrorAsInactiveImpl(view, (range) => {
+            const id = cardIdRef.current;
+            if (id !== null) {
+              selectionGuard.updateCardDomSelection(id, range);
+            }
+          }, bufferedState);
+        }
+        pendingRestoreRef.current = null;
+      }
+
       return () => {
+        // Drop the card's last-published Range from selectionGuard
+        // so the inactive-selection highlight doesn't linger over
+        // DOM nodes that are about to unmount. Mirrors the
+        // `tug-prompt-input` cleanup. [L23].
+        const id = cardIdRef.current;
+        if (id !== null) {
+          selectionGuard.updateCardDomSelection(id, null);
+        }
         completionUnsub();
         unsubscribeThemeChange(onThemeChange);
         view.destroy();
@@ -689,6 +858,19 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
             style={{ display: "none" }}
           />
         </div>
+        {/* State-preservation registration. Conditional on
+            `preserveState` so stand-alone harnesses (storybook,
+            unit tests) can opt out. Renders `null` (no DOM); the
+            hook is the work — registers `onSave` / `onRestore` /
+            `onCardActivated` / `onCardWillDeactivate` with the
+            enclosing `CardHost` via `useCardStatePreservation`.
+            [L23], [L03]. */}
+        {preserveState && (
+          <TugEditStatePreservation
+            viewRef={viewRef}
+            pendingRestoreRef={pendingRestoreRef}
+          />
+        )}
       </ResponderScope>
     );
   },

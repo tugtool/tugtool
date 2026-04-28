@@ -167,6 +167,21 @@ export interface TugTextEditingState {
    * `undefined`.
    */
   scrollTop?: number | null;
+  /**
+   * Editor's contenteditable `scrollLeft` at capture time. Same
+   * semantics as {@link scrollTop} but for the horizontal axis: a
+   * number means "restore `root.scrollLeft` to this value after the
+   * doc + selection are applied", `null`/`undefined` means "no
+   * asserted horizontal scroll position".
+   *
+   * Editors that wrap lines never accumulate non-zero horizontal
+   * scroll, so this stays at 0 in practice for them. Editors with
+   * line-wrap off (e.g. the `tug-edit` substrate's default) need
+   * this axis to round-trip whenever the user has scrolled
+   * horizontally. Optional for the same forward-compat reason as
+   * {@link scrollTop}.
+   */
+  scrollLeft?: number | null;
 }
 
 /**
@@ -500,7 +515,8 @@ export class TugTextEngine {
   private _browserMirror: {
     selection: { start: number; end: number } | null;
     scrollTop: number;
-  } = { selection: null, scrollTop: 0 };
+    scrollLeft: number;
+  } = { selection: null, scrollTop: 0, scrollLeft: 0 };
 
   // IME composition state.
   // _composing is true between compositionstart and compositionend.
@@ -932,6 +948,7 @@ export class TugTextEngine {
     // `clear()` would return stale state. [L23]
     this._browserMirror.selection = null;
     this._browserMirror.scrollTop = 0;
+    this._browserMirror.scrollLeft = 0;
     this.updateEmpty();
     this.onChange?.();
     this.emitSelectionChanged();
@@ -965,21 +982,23 @@ export class TugTextEngine {
         atomIdx++;
       }
     }
-    // Browser-mirrored axes (selection, scrollTop) come from
-    // `_browserMirror` — the engine's authoritative model. Reading
-    // `window.getSelection()` or `root.scrollTop` here would persist
-    // whatever the browser happens to show at this instant, which is
-    // wrong when the editor is hidden / focus has moved / scrollTop
-    // has been involuntarily clamped (e.g. on a card deactivation
-    // when the save callback fires). The mirror is updated only at
-    // *publish points* (programmatic engine writes,
-    // selectionchange-in-root, scroll-while-visible), so it always
-    // reflects the user's intended state. [L23]
+    // Browser-mirrored axes (selection, scrollTop, scrollLeft) come
+    // from `_browserMirror` — the engine's authoritative model.
+    // Reading `window.getSelection()` or `root.scrollTop` /
+    // `root.scrollLeft` here would persist whatever the browser
+    // happens to show at this instant, which is wrong when the
+    // editor is hidden / focus has moved / scroll has been
+    // involuntarily clamped (e.g. on a card deactivation when the
+    // save callback fires). The mirror is updated only at *publish
+    // points* (programmatic engine writes, selectionchange-in-root,
+    // scroll-while-visible), so it always reflects the user's
+    // intended state. [L23]
     return {
       text,
       atoms,
       selection: this._browserMirror.selection,
       scrollTop: this._browserMirror.scrollTop,
+      scrollLeft: this._browserMirror.scrollLeft,
     };
   }
 
@@ -1048,6 +1067,8 @@ export class TugTextEngine {
       this._browserMirror.selection = state.selection ?? null;
       this._browserMirror.scrollTop =
         typeof state.scrollTop === "number" ? state.scrollTop : 0;
+      this._browserMirror.scrollLeft =
+        typeof state.scrollLeft === "number" ? state.scrollLeft : 0;
     } finally {
       this._suppressSelectionEmits = false;
     }
@@ -1071,17 +1092,17 @@ export class TugTextEngine {
    * every inactive card's paint, so the active card's
    * `removeAllRanges()` has nothing else's state to destroy.
    *
-   * scrollTop: direct DOM write to `root.scrollTop`. Per-element,
-   * not racy across cards.
+   * scrollTop / scrollLeft: direct DOM writes. Per-element, not racy
+   * across cards.
    *
    * Skips silently when the engine root is detached. The permanent
    * layout observer below will catch up on the next layout
    * transition. [L23], [L10].
    *
-   * Source selection: when `state` is supplied
-   * (cold-boot restore path), read selection + scrollTop from the bag
-   * directly. When omitted (cmd-tab return path), fall back to the
-   * in-memory mirror. Both paths land identical writes; the parameter
+   * Source state: when `state` is supplied (cold-boot restore path),
+   * read selection + both scroll axes from the bag directly. When
+   * omitted (cmd-tab return path), fall back to the in-memory
+   * mirror. Both paths land identical writes; the parameter
    * documents intent — cold-boot trusts the just-loaded bag, while
    * cmd-tab trusts the mirror that captured the last live state.
    */
@@ -1093,11 +1114,19 @@ export class TugTextEngine {
         ? state.scrollTop
         : this._browserMirror.scrollTop
       : this._browserMirror.scrollTop;
+    const scrollLeft = state
+      ? typeof state.scrollLeft === "number"
+        ? state.scrollLeft
+        : this._browserMirror.scrollLeft
+      : this._browserMirror.scrollLeft;
     if (selection) {
       this.setSelectedRange(selection.start, selection.end);
     }
     if (this.root.scrollTop !== scrollTop) {
       this.root.scrollTop = scrollTop;
+    }
+    if (this.root.scrollLeft !== scrollLeft) {
+      this.root.scrollLeft = scrollLeft;
     }
   }
 
@@ -1119,18 +1148,18 @@ export class TugTextEngine {
    * active selection belongs to whichever card is the deck-level
    * first responder — its `paintMirrorAsActive` writes that.
    *
-   * scrollTop: direct DOM write to `root.scrollTop`. Per-element,
-   * not racy across cards. Inactive cards still need their
-   * scrollTop preserved — the user expects to find the editor at the
-   * same scroll offset when it later activates.
+   * scrollTop / scrollLeft: direct DOM writes. Per-element, not racy
+   * across cards. Inactive cards still need their scroll position
+   * preserved — the user expects to find the editor at the same
+   * scroll offsets when it later activates.
    *
    * Skips silently when the engine root is detached. [L23], [L10],
    * [L12] (selectionGuard owns card-scoped selection state).
    *
-   * Source selection: when `state` is supplied
-   * (cold-boot restore path), read selection + scrollTop from the bag
-   * directly. When omitted (cmd-tab return path), fall back to the
-   * in-memory mirror. Both paths land identical writes; the parameter
+   * Source state: when `state` is supplied (cold-boot restore path),
+   * read selection + both scroll axes from the bag directly. When
+   * omitted (cmd-tab return path), fall back to the in-memory
+   * mirror. Both paths land identical writes; the parameter
    * documents intent.
    */
   paintMirrorAsInactive(
@@ -1144,6 +1173,11 @@ export class TugTextEngine {
         ? state.scrollTop
         : this._browserMirror.scrollTop
       : this._browserMirror.scrollTop;
+    const scrollLeft = state
+      ? typeof state.scrollLeft === "number"
+        ? state.scrollLeft
+        : this._browserMirror.scrollLeft
+      : this._browserMirror.scrollLeft;
     if (selection !== null) {
       const start = flatToDom(this.root, selection.start);
       const end = flatToDom(this.root, selection.end);
@@ -1164,23 +1198,30 @@ export class TugTextEngine {
     if (this.root.scrollTop !== scrollTop) {
       this.root.scrollTop = scrollTop;
     }
+    if (this.root.scrollLeft !== scrollLeft) {
+      this.root.scrollLeft = scrollLeft;
+    }
   }
 
   /**
-   * Repaint just the scroll axis. Called by the permanent layout
-   * observer below — layout transitions can clamp `scrollTop`, so
-   * the observer pairs `autoResize` with this scroll-only repaint
-   * to reassert the user's chosen offset on every box-dimension
-   * change. NO selection write, NO focus claim — those belong to
-   * `paintMirrorAsActive` / `paintMirrorAsInactive` and are routed
-   * by the component layer based on the deck-level active state.
-   * [L10] (engine doesn't reach into deck state); [L23] (scroll
-   * preserved through layout transitions).
+   * Repaint just the scroll axes. Called by the permanent layout
+   * observer below — layout transitions can clamp `scrollTop` /
+   * `scrollLeft`, so the observer pairs `autoResize` with this
+   * scroll-only repaint to reassert the user's chosen offsets on
+   * every box-dimension change. NO selection write, NO focus claim
+   * — those belong to `paintMirrorAsActive` /
+   * `paintMirrorAsInactive` and are routed by the component layer
+   * based on the deck-level active state. [L10] (engine doesn't
+   * reach into deck state); [L23] (scroll preserved through layout
+   * transitions).
    */
   repaintMirrorScroll(): void {
     if (!this.root.isConnected) return;
     if (this.root.scrollTop !== this._browserMirror.scrollTop) {
       this.root.scrollTop = this._browserMirror.scrollTop;
+    }
+    if (this.root.scrollLeft !== this._browserMirror.scrollLeft) {
+      this.root.scrollLeft = this._browserMirror.scrollLeft;
     }
   }
 
@@ -2171,26 +2212,28 @@ export class TugTextEngine {
       this.emitSelectionChanged();
     });
 
-    // 10c. Root-level scroll — user-driven publish point for the
-    // scrollTop axis of `_browserMirror`. Fires when the user
-    // wheels, drags the scrollbar, arrows past the viewport edge, or
-    // when a programmatic write changes scrollTop (in which case the
+    // 10c. Root-level scroll — user-driven publish point for both
+    // scroll axes of `_browserMirror`. Fires when the user wheels,
+    // drags the scrollbar, arrows past the viewport edge, or when a
+    // programmatic write changes either axis (in which case the
     // mirror was already written synchronously by the call site —
     // this update is a no-op in steady state).
     //
     // Visibility filter: only update the mirror when the root is in
     // the live render tree and isn't a hidden subtree. Browsers may
     // fire `scroll` events when an element is hidden via
-    // `display: none` (scrollTop reset to 0 as part of layout) or
-    // when `clientHeight` shrinks below `scrollTop`. Those are NOT
-    // user-driven scrolls; updating the mirror from them would
-    // destroy the user's intended position the moment a card is
-    // deactivated. The filter rejects any scroll event fired when
-    // the engine's content area isn't being rendered. [L23]
+    // `display: none` (scrollTop / scrollLeft reset to 0 as part of
+    // layout) or when `clientHeight` / `clientWidth` shrinks below
+    // the current offset. Those are NOT user-driven scrolls;
+    // updating the mirror from them would destroy the user's
+    // intended position the moment a card is deactivated. The
+    // filter rejects any scroll event fired when the engine's
+    // content area isn't being rendered. [L23]
     this.listen(root, "scroll", () => {
       if (!root.isConnected) return;
       if ((root as HTMLElement).offsetParent === null) return;
       this._browserMirror.scrollTop = root.scrollTop;
+      this._browserMirror.scrollLeft = root.scrollLeft;
     });
 
     // 11. IME composition tracking

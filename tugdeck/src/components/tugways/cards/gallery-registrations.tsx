@@ -369,6 +369,7 @@ export function registerGalleryCards(): void {
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
     category: CATEGORIES.textInput,
+    engineKind: "em",
   });
 
   registerCard({

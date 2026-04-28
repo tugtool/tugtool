@@ -800,22 +800,22 @@ Manual scenarios are documented in each step. The IME validation gate (Step 6) i
 - Gallery card: state-preservation demo enabled via `preserveState`.
 
 **Tasks:**
-- [ ] `captureState` reads `view.state.doc.toString()`, atom segments from `atomDecorationField`, selection, scrollTop.
-- [ ] `restoreState` dispatches a transaction that sets doc + decoration field + selection; writes scrollTop directly on `.cm-scroller`.
-- [ ] `paintMirrorAsActive` claims focus + `view.dispatch({ selection })`.
-- [ ] `paintMirrorAsInactive` builds a `Range` from mirror selection over the live `cm-content` node and routes it through the supplied `publish` callback (typically `selectionGuard.updateCardDomSelection`).
-- [ ] Cmd-tab away → return scenario: selection + scrollTop preserved.
-- [ ] Cold-mount restore scenario: every inactive card paints via the `publish` channel, the active card paints via active channel, ordering invariant respected.
+- [x] `captureState` reads `view.state.doc.toString()`, atom segments from `atomDecorationField`, selection, scrollTop.
+- [x] `restoreState` dispatches a transaction that sets doc + decoration field + selection; writes scrollTop directly on `.cm-scroller`.
+- [x] `paintMirrorAsActive` claims focus + `view.dispatch({ selection })`.
+- [x] `paintMirrorAsInactive` builds a `Range` from mirror selection over the live `cm-content` node and routes it through the supplied `publish` callback (typically `selectionGuard.updateCardDomSelection`).
+- [x] Cmd-tab away → return scenario: selection + scrollTop preserved. (Substrate wiring: `onCardWillDeactivate` → `paintMirrorAsInactive(publish)`; `onCardActivated` → `paintMirrorAsActive()`. Manual confirmation in real WebKit reserved for the Checkpoint.)
+- [x] Cold-mount restore scenario: every inactive card paints via the `publish` channel, the active card paints via active channel, ordering invariant respected. (`useEditStatePreservation`'s `onRestore` branches on `isActive`. Ordering invariant enforced by `CardHost` per [L23] — substrate just chooses the channel.)
 
 **Tests:**
-- [ ] Integration: capture/restore round-trip preserves doc, atoms, selection, scrollTop.
-- [ ] Integration: deactivate → activate sequence routes through both paint channels in order.
-- [ ] `just app-test` covering pane state preservation if existing harness applies.
+- [x] Integration: capture/restore round-trip preserves doc, atoms, selection, scrollTop.
+- [x] Integration: deactivate → activate sequence routes through both paint channels in order.
+- [x] `just app-test` covering pane state preservation if existing harness applies. — Existing harness (at0037, at0039, at0006-em-*) wires `tug-prompt-input` EM cards specifically; it doesn't apply unmodified to the `tug-edit` substrate. The substrate primitives are covered by the integration tests; cross-React state-preservation correctness in real WebKit is the responsibility of the manual gallery walk-through (Checkpoint below) and will be promoted to a dedicated `tug-edit` app-test if/when we cut over `tug-prompt-input`'s engine to the substrate (Step 13).
 
 **Checkpoint:**
 - [ ] Manual: cmd-tab to another app and back; selection / scroll preserved.
 - [ ] Manual: reload tugdeck; selection / scroll restored on first paint.
-- [ ] `bun run check`, `bun test` exit 0.
+- [x] `bun run check`, `bun test` exit 0.
 
 ---
 
