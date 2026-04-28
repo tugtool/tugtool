@@ -1,7 +1,8 @@
 # Cross-Platform Engine Strategy
 
 Date written: 2026-04-27
-Status: Exploration — captures current thinking; no decision committed.
+Last updated: 2026-04-28
+Status: Direction — leaning toward Option C (native shell per platform, no shared shell framework). Options B and A retained as alternatives. Final commitment deferred until port timing arrives.
 
 ## Summary
 
@@ -10,7 +11,11 @@ Tug today is a SwiftUI/AppKit shell hosting a `WKWebView` that loads tugdeck. Cr
 - **WKWebView dependence** — the macOS-specific embedding API.
 - **WebKit (engine) dependence** — the renderer + JS engine itself.
 
-The first is shallow in this codebase. The second is deeper but already partially paid for. A decision is not urgent, but the cost of *delaying* the decision (more WebKit-only escape hatches added over time) is real and should be capped now.
+The first is shallow in this codebase. The second is deeper but already partially paid for.
+
+The architectural insight that emerged from working through the options: **the actual cross-platform codebase is `tugdeck/` and `tugrust/`. The shells are just adapters.** Each shell needs to host a webview, expose the same JS bridge contract to tugdeck, and spawn the same Rust binaries. The host language and framework are largely irrelevant as long as the contract holds. This reframes the framework choice from "what abstraction layer do we adopt" to "do we want a framework here at all."
+
+**Current lean: Option C** — purpose-built native shell per platform, no shared shell framework. Options B (Tauri on Win/Linux, native Swift on Mac) and A (Tauri everywhere) remain as alternatives if the DIY pipeline cost turns out to be heavier than expected. Implementation timing and platform-specific details are deferred.
 
 ## Where the codebase actually is today
 
@@ -86,55 +91,82 @@ For cross-platform inevitability, however, it's a bet against the dominant engin
 
 Conclusion: not a poor decision *yet*, but it's a decision with an expiration date if cross-platform is a real goal.
 
-## Three credible architectures going forward
+## The path forward — Option C (current lean)
 
-### Option A — Tauri 2 + system webview per platform
+### Option C — Native shell per platform, no shared shell framework
 
-Tauri 2's default model: WKWebView on macOS, WebView2 (Chromium-based) on Windows, WebKitGTK on Linux.
+Each platform gets a purpose-built native host that speaks the same JS bridge contract to tugdeck. The shells share nothing structural with each other — only the bridge contract and the Rust binaries they spawn.
 
-- Pros: Preserves WKWebView investment on macOS. Chromium on Windows for free. Tiny binaries (~10MB vs Electron's 100MB+). Rust backend fits the existing tugrust ecosystem. Mature in 2026.
-- Cons: Three-engine test matrix. Linux gets the worst engine of the three. WebKit-quirk territory is not escaped on Apple platforms.
+- **macOS:** Swift + AppKit + WKWebView (current `tugapp/`, unchanged).
+- **Windows:** C++ / C# / Rust + Win32 + WebView2.
+- **Linux:** C / Vala / Rust + GTK + WebKitGTK.
 
-### Option B — Electron (Chromium everywhere, including macOS)
+The cross-platform "shared codebase" is precisely what's in `tugdeck/` and `tugrust/`. The shells are honest, thin adapters: they host a webview, expose a bridge, spawn subprocesses, build menus. They don't pretend to be anything more.
 
-Ship one engine on every OS.
+The reasoning:
 
-- Pros: contenteditable surface dramatically simpler. Single engine to test. Largest ecosystem and most documentation.
-- Cons: macOS native feel suffers (no native scroll inertia, ~150–200MB extra RAM, ~100MB installer). Less aligned with Rust-first instincts.
+- **Tauri's "abstraction" is leaky in practice.** Real Tauri apps are full of `#[cfg(target_os = "...")]` blocks. The "one Rust API works on all three platforms" pitch is aspirational; the reality is "structured platform-specific code with shared API names." Menu construction has macOS vs Windows vs Linux quirks. Window decorations behave differently. WebView preferences leak through (`WebContext` is GTK-specific, user-agent semantics differ per platform). Clipboard plugin behavior on Wayland vs X11 diverges. If you're writing platform-specific code anyway, the framework tax buys you less than it claims.
+- **The shells are small.** `tugapp/` is ~1,400 lines for the core three Swift files. A Win32+WebView2 host is in the same range. A GTK+WebKitGTK host is in the same range. We're not talking about a year of work per platform — a few weeks of competent platform-native code per platform, on a deferred timeline that already exists.
+- **The actual cross-platform code is `tugdeck/` and `tugrust/`.** Every shell speaks the same JS bridge contract to the same React app and spawns the same Rust binaries. As long as the contract holds, the host language is irrelevant. This is *cleaner* architecture than "use Tauri" — the cross-platform-ness lives where it should (in the shared business logic), and the shells are honest about being platform-specific instead of pretending to be unified.
+- **Each shell uses the language most natural for its platform.** Swift+AppKit is the right way to write a Mac app. Windows is best served by something that integrates with Win32 and the WebView2 SDK natively (C++ or C#, or Rust via `windows-rs` + `webview2-rs`). Linux is best served by GTK-native code. Each platform gets first-class treatment instead of a forced-uniform second-class abstraction.
+- **AI-assisted coding has changed the calculus.** The historical argument for adopting a cross-platform framework was *"a small team can't possibly maintain three platform-specific codebases."* That argument was valid five years ago, and arguably even eighteen months ago. It is no longer load-bearing. LLM coding assistants can produce competent Win32+WebView2 hosts and GTK+WebKitGTK hosts in days, not months. MSI installer authoring, NSIS scripts, .deb/.rpm packaging, AppImage builders, Sparkle/WinSparkle integration — all the pipeline work that used to require a dedicated DevOps engineer or a framework's accumulated infrastructure — is now well within what an LLM can scaffold and maintain on demand. The reason to outsource pipeline work to a framework like Tauri was that doing it yourself was prohibitive. It isn't anymore. This is a recent and material change in the build-vs-adopt tradeoff.
 
-For a dev tool whose audience runs many Electron apps already (VSCode, Slack, Discord, Figma desktop), this is not the dealbreaker it would be for a consumer app.
+The costs are real and worth naming honestly:
 
-### Option C — Hybrid: WKWebView on macOS, bundled Chromium on Linux/Windows
+- **Three host codebases to maintain.** Mac (Swift, existing), Windows (TBD language), Linux (TBD language). No shared shell code; bug fixes and feature additions happen per-platform.
+- **Three build/sign/package pipelines.** Notarization on Mac (existing), Authenticode + WiX/NSIS on Windows, .deb/.rpm/AppImage on Linux. Each is its own learning curve; AI assistance helps but doesn't eliminate.
+- **Auto-updater per platform.** Sparkle on Mac, WinSparkle on Windows, AppImageUpdate or custom on Linux. Tug doesn't have an auto-updater on any platform today, so this work exists under any option — Option C just means doing it three times instead of once-via-framework.
+- **Platform API churn over time.** Win32 SDK updates, WebView2 version bumps, GTK 4→5 migrations. Without a framework absorbing these, the team handles them directly (with AI assistance).
+- **No plugin ecosystem.** Tauri's clipboard / shell / dialog / fs plugins don't exist for you. Equivalents are routine API calls on each platform, but they're still LOC.
 
-Tauri's Wry doesn't directly support bundling Chromium, but Tauri-on-mac combined with Electron-on-Windows/Linux sharing the same React frontend is doable.
+Pros (the inverse of those costs being acceptable):
 
-- Pros: Best of both — Apple polish on Apple platforms, engine consistency on the other two.
-- Cons: Two host shells to maintain. Worth it only if Apple-platform polish is a brand commitment.
+- **Maximum native polish on every platform.** Each shell uses its OS the way that OS wants to be used.
+- **No framework abstraction tax.** No `cfg` blocks navigating around Tauri's opinions; just write the platform code directly. No Tauri release-cycle dependency.
+- **Leanest possible result.** No Tauri runtime, no Wry layer, no Tao layer. Just your code calling system APIs.
+- **Independent platform release cadences.** A Linux GTK regression doesn't block a Windows release; a WebView2 issue doesn't block Mac.
+- **Philosophically aligned with the original architecture choices.** The reasons WKWebView was chosen on Mac (lean, native, OS-supplied engine, no framework freight) generalize naturally to "do the same thing on Win and Linux."
 
-## Current lean
+### Option B — Native Swift host on macOS, Tauri 2 on Windows and Linux (alternative)
 
-**Option A is the path of least regret if a decision happens in the next few months.** Existing investment carries forward, cross-platform works, and the three-engine matrix is the same matrix every Tauri app already deals with.
+Keep the existing `tugapp/` Swift+WKWebView host as-is on macOS. Use Tauri only on the platforms that don't have a working native shell yet.
 
-Option B becomes the right call if contenteditable pain compounds further — specifically, if Safari shim #4, #5, or #6 gets written. That's the trigger condition to reopen this doc.
+- Pros vs C: Single language (Rust) for the two new shells. Tauri's bundler, signing pipeline, and auto-updater are wired in for Win/Linux. Tauri's plugin ecosystem (dialog, shell, clipboard, fs) provides cross-platform implementations. Less per-platform pipeline DIY.
+- Cons vs C: Tauri's abstractions are leaky enough that you write platform-specific code anyway. Framework version churn (1.x→2.x was a substantial migration). Tauri's opinions on permissions/capabilities are imposed on a setup that doesn't need them. Win/Linux shells are mediated through a framework when they could be direct.
+
+**Reconsider trigger from C → B:** if writing the Win/Linux shells from scratch turns out to be substantially harder than expected (e.g., MSI authoring, code signing, or AppImage builds become quagmires that AI assistance can't unblock cleanly), retreat to B.
+
+### Option A — Tauri 2 on every platform (further alternative)
+
+Tauri 2's default model: WKWebView on macOS, WebView2 on Windows, WebKitGTK on Linux. One Rust shell everywhere.
+
+- Pros vs C and B: Single host codebase. Single build pipeline. Single test matrix on the native side. No drift risk between shells.
+- Cons vs C and B: Throws away the working Swift host on Mac. Tauri-on-mac loses precise `NSApplicationDelegate` lifecycle semantics (the will/did pairs, NSApp hide/unhide) without per-platform AppKit shims. `TestHarnessBridge.swift` would need a Tauri-side rewrite. Mac becomes a Tauri target rather than a native target. Inherits all of Tauri's framework tax on the platform that already has a working native solution.
+
+**Reconsider trigger from C/B → A:** if maintaining two or three separate host shells turns out to produce real user-visible bug drift across platforms (Mac-only or Win-only regressions piling up), revisit.
 
 ## Concrete actions for the next few weeks
 
-These are cheap, do not commit to any framework, and buy optionality.
+These are cheap, do not yet commit to a port timeline, and apply equally well under any of the three options.
 
-1. **Build an engine-portability scorecard.** For each major UI surface (prompt entry, tug-editor, tug-pane, gallery cards, contenteditable areas), note: WebKit-only behaviors? Safari shims? Treat the shim files as a first inventory. This becomes the migration risk doc.
-2. **Sanity-check the frontend in Chrome and Edge today.** tugdeck is just a Vite app — point a browser at the dev server and capture regressions. That list is the "what would Tauri-on-Linux/Windows actually break" delta. Cheap, decisive data.
-3. **Draw a hard line around the bridge.** Make all `window.webkit.messageHandlers` references go through one `nativeBridge.ts` module so a future Tauri/Electron port has exactly one file to swap. Right now it leaks into 4–5 files.
-4. **No new WebKit-only escape hatches.** Anything added that is WebKit-engine-only (CSS feature with no Blink equivalent, an Apple-only API) gets called out and paid down or replaced. Prevents lock-in from deepening while the framework decision is open.
-5. **Defer actual port work** until the component library is stable. Trying to chase two moving targets in parallel makes both worse. One more cycle of macOS feature-completeness, *then* port.
+1. **Build an engine-portability scorecard against the three target engines.** For each major UI surface (prompt entry, tug-editor, tug-pane, gallery cards, contenteditable areas), note behavior on Apple WebKit (current Mac), Chromium (Windows via WebView2), and WebKitGTK (Linux). Treat the existing shim files as a first inventory of where Apple-WebKit quirks already bite. This becomes the migration risk doc.
+2. **Sanity-check the frontend in Chrome and Edge today.** tugdeck is just a Vite app — point a browser at the dev server and capture regressions. That list is the "what would Win/Linux actually break" delta. Cheap, decisive data, and approximates WebView2 closely enough for first-pass triage.
+3. **Draw a hard line around the bridge.** Funnel all `window.webkit.messageHandlers` references through one `nativeBridge.ts` module so each shell has exactly one JS-side file implementing the bridge contract. Right now it leaks into 4–5 files. Under Option C this is critical, not just nice — the contract is *the* cross-platform abstraction; it has to be explicit, named, and version-able.
+4. **No new WebKit-only escape hatches without a Chromium / WebKitGTK plan.** Anything added that's Apple-WebKit-only (CSS feature with no Blink equivalent, an Apple-only API) gets called out and paid down or has a documented fallback for the other two engines.
+5. **Defer the actual Win/Linux port work** until the macOS component library stabilizes. One more cycle of macOS feature-completeness, *then* port.
 
-## Decisions that are not on the table right now
+## Decisions still open
 
-- Which framework to port to (Tauri vs Electron vs Hybrid).
-- Whether to drop macOS-native polish in favor of Chromium consistency.
-- Linux distribution model (Flatpak / AppImage / native packages).
-- Windows installer / signing strategy.
+- **Port timing.** Win/Linux work is deferred until the macOS component library stabilizes. Trigger date is not set.
+- **Final commitment between Options C, B, and A.** Lean is C, but the call gets revisited when the port actually starts. Build a Win shell prototype first (a few weeks of work) and let the actual experience inform whether to continue with C, retreat to B, or unify under A.
+- **Host language(s) for Win/Linux under Option C.** Candidates: C++ + Win32 + WebView2 SDK (most direct, ugliest), C# + WinUI 3 + WebView2 (most idiomatic Windows, brings .NET runtime), Rust + `windows-rs` + `webview2-rs` (consistent with the rest of the stack, more verbose). Linux candidates: Rust + `gtk-rs` + `webkit2gtk-rs`, or C/Vala + GTK directly. Decision deferred until prototyping starts.
+- **Linux distribution model** (Flatpak / AppImage / native `.deb` and `.rpm`).
+- **Windows installer / signing strategy** (MSI vs MSIX, Authenticode certificate sourcing).
+- **Auto-updater architecture.** Tug has none today. Will need one before public Win/Linux release. Sparkle on Mac is the obvious choice; Win/Linux choices depend on Option B vs C.
+- **Tauri-side test harness shape (only relevant under Option A or B).** `TestHarnessBridge.swift` is Mac-only today; a Win/Linux equivalent for app-test parity needs designing but doesn't have to be Tauri-flavored — it can be a separate Rust crate called by every shell.
+- **Bridge-rename cadence.** Whether to migrate JS callers off `window.webkit.messageHandlers` proactively (action item #3) before any other shell exists, or do it as part of the port itself.
 
-These can all be decided 3–6 months from now with much better information than is available today. The point of this doc is to keep that future decision *cheap* by capping current lock-in.
+These can be decided 3–6 months from now with much better information. The point of this doc is to keep those future decisions *cheap* by capping current lock-in and naming the architectural lean clearly so day-to-day work doesn't drift away from it.
 
 ## References
 
