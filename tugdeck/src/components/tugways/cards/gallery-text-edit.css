@@ -3,21 +3,15 @@
  *
  * The host wrapper sets a fixed minimum height so the editor is
  * visibly present at mount. Editor appearance (caret, selection,
- * content fg / bg, focus, disabled) is owned by `tug-edit.css` and
- * the CM6 theme extension; this file styles only the gallery
- * surround.
+ * content fg / bg, border, focus, disabled) is owned by `tug-edit.css`
+ * and `tug-edit/theme.ts`; this file styles only the gallery surround.
  *
- * Laws: [L06] appearance via CSS, [L16] foreground-only rules declare
- *       their rendering surface, [L19] CSS organization.
+ * Laws: [L06] appearance via CSS, [L19] CSS organization.
  */
 
-/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
 .gallery-text-edit-host {
   display: flex;
   min-height: 240px;
-  border: 1px solid var(--tug7-element-field-border-normal-plain-rest);
-  border-radius: 6px;
-  overflow: hidden;
 }
 
 .gallery-text-edit-host > .tug-edit {

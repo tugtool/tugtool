@@ -121,3 +121,49 @@ describe("TugEdit — bootstrap", () => {
     expect(captured!.view()).toBeNull();
   });
 });
+
+describe("TugEdit — theme and host-state wiring", () => {
+  it("applies the focusStyle prop as data-focus-style on the host", () => {
+    const { container, rerender } = render(
+      <TugEdit data-testid="theme-edit" focusStyle="background" />,
+    );
+    const host = container.querySelector<HTMLElement>('[data-testid="theme-edit"]')!;
+    expect(host.getAttribute("data-focus-style")).toBe("background");
+
+    rerender(<TugEdit data-testid="theme-edit" focusStyle="ring" />);
+    expect(host.getAttribute("data-focus-style")).toBe("ring");
+  });
+
+  it("applies data-borderless only when borderless is true", () => {
+    const { container, rerender } = render(
+      <TugEdit data-testid="theme-edit" borderless={false} />,
+    );
+    const host = container.querySelector<HTMLElement>('[data-testid="theme-edit"]')!;
+    expect(host.hasAttribute("data-borderless")).toBe(false);
+
+    rerender(<TugEdit data-testid="theme-edit" borderless={true} />);
+    expect(host.hasAttribute("data-borderless")).toBe(true);
+    expect(host.getAttribute("data-borderless")).toBe("");
+  });
+
+  it("attaches a CodeMirror theme class to the editor root", () => {
+    const { container } = render(<TugEdit data-testid="theme-edit" />);
+    const cmEditor = container.querySelector<HTMLElement>(".cm-editor");
+    expect(cmEditor).not.toBeNull();
+
+    // CM6 emits an auto-generated theme class (looks like `ͼ{n}` —
+    // a U+023C tail-style character followed by a base-26 ordinal)
+    // for every `EditorView.theme(...)` extension. The presence of
+    // that class proves the tugTheme extension is loaded.
+    const classes = Array.from(cmEditor!.classList);
+    const hasCmGeneratedClass = classes.some((c) => /^ͼ/.test(c));
+    expect(hasCmGeneratedClass).toBe(true);
+  });
+
+  it("renders an editable `.cm-content` surface inside the host", () => {
+    const { container } = render(<TugEdit data-testid="theme-edit" />);
+    const content = container.querySelector<HTMLElement>(".cm-content");
+    expect(content).not.toBeNull();
+    expect(content!.getAttribute("contenteditable")).toBe("true");
+  });
+});

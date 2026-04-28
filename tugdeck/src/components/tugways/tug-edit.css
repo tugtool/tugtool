@@ -1,29 +1,127 @@
-/*
- * tug-edit.css — host wrapper styling for the TugEdit substrate.
- *
- * Layout-only at present. The host is a flex container that sizes
- * the live CodeMirror tree (`.cm-editor > .cm-scroller > .cm-content`)
- * to fill its parent. Token-driven appearance for the editor surface
- * (caret, selection, content fg, content bg, focus, disabled) is
- * applied through the CM6 theme extension; CSS variables flow through
- * automatically on theme change.
- *
- * Laws: [L06] appearance via CSS, [L19] CSS organization.
+/* @tug-pairings {
+  --tug7-element-field-text-normal-plain-rest        | --tug7-surface-field-primary-normal-plain-rest     | content
+  --tug7-element-field-border-normal-plain-rest      | --tug7-surface-field-primary-normal-plain-rest     | informational
+  --tug7-element-field-border-normal-plain-hover     | --tug7-surface-field-primary-normal-plain-hover    | informational
+  --tug7-element-field-border-normal-plain-active    | --tug7-surface-field-primary-normal-plain-focus    | informational
+  --tug7-element-field-border-normal-plain-disabled  | --tug7-surface-field-primary-normal-plain-disabled | informational
+  --tug7-element-field-border-normal-plain-readonly  | --tug7-surface-field-primary-normal-plain-readonly | informational
+  --tug7-element-field-text-normal-plain-disabled    | --tug7-surface-field-primary-normal-plain-disabled | informational
+  --tug7-element-field-text-normal-plain-readonly    | --tug7-surface-field-primary-normal-plain-readonly | informational
+  --tug7-element-selection-text-normal-plain-rest    | --tug7-surface-selection-primary-normal-plain-rest | informational
+  --tug7-element-global-fill-normal-accentCool-rest  | --tug7-surface-field-primary-normal-plain-rest     | informational
+} */
+
+/**
+ * @tug-pairings
+ * | Element                                           | Surface                                            | Role          | Context                                                              |
+ * |---------------------------------------------------|----------------------------------------------------|---------------|----------------------------------------------------------------------|
+ * | --tug7-element-field-text-normal-plain-rest       | --tug7-surface-field-primary-normal-plain-rest     | content       | .cm-content (color, theme.ts)                                        |
+ * | --tug7-element-field-border-normal-plain-rest     | --tug7-surface-field-primary-normal-plain-rest     | informational | .tug-edit (border)                                                   |
+ * | --tug7-element-field-border-normal-plain-hover    | --tug7-surface-field-primary-normal-plain-hover    | informational | .tug-edit:hover (border-color)                                       |
+ * | --tug7-element-field-border-normal-plain-active   | --tug7-surface-field-primary-normal-plain-focus    | informational | .tug-edit[data-focused] (border-color), .cm-cursor (theme.ts)        |
+ * | --tug7-element-field-border-normal-plain-disabled | --tug7-surface-field-primary-normal-plain-disabled | informational | .tug-edit[data-disabled] (border-color)                              |
+ * | --tug7-element-field-border-normal-plain-readonly | --tug7-surface-field-primary-normal-plain-readonly | informational | .tug-edit[data-readonly] (border-color)                              |
+ * | --tug7-element-field-text-normal-plain-disabled   | --tug7-surface-field-primary-normal-plain-disabled | informational | .cm-content (theme.ts, &[data-disabled])                             |
+ * | --tug7-element-field-text-normal-plain-readonly   | --tug7-surface-field-primary-normal-plain-readonly | informational | .cm-content (theme.ts, &.cm-readonly)                                |
+ * | --tug7-element-selection-text-normal-plain-rest   | --tug7-surface-selection-primary-normal-plain-rest | informational | .cm-selectionBackground (theme.ts, focused)                          |
+ * | --tug7-element-global-fill-normal-accentCool-rest | --tug7-surface-field-primary-normal-plain-rest     | informational | .tug-edit[data-focus-style="ring"][data-focused] (outline / border)  |
  */
 
+
+/* ============================================================================
+   Host wrapper
+   ========================================================================= */
+
+/*
+ * `.tug-edit` is the React-owned wrapper that hosts CM6's `.cm-editor`
+ * tree (`.cm-editor > .cm-scroller > .cm-content`). It sets the layout
+ * frame, the rest/hover/focus border, and the focus-style and
+ * borderless variants. Editor-internal appearance (text color,
+ * background, caret, selection) is set in `tug-edit/theme.ts` so the
+ * styles scope correctly to CM6's instance.
+ */
 .tug-edit {
-  /* The host wrapper is a positioning container for CM6's own DOM
-   * tree (`.cm-editor > .cm-scroller > .cm-content`). Sized by its
-   * parent; the editor inside fills its space.
-   */
   display: flex;
   position: relative;
   min-height: 0;
   min-width: 0;
+
+  background-color: var(--tug7-surface-field-primary-normal-plain-rest);
+  border: 1px solid var(--tug7-element-field-border-normal-plain-rest);
+  border-radius: 0.375rem; /* 6px — matches tug-input md */
+  /* Clip the inner CM6 surface to the rounded corners — without this
+   * the editor's own background fills the squared rectangle and bleeds
+   * past the wrapper's border-radius at every corner.
+   */
+  overflow: hidden;
+  transition:
+    background-color 80ms ease,
+    border-color 80ms ease,
+    color 80ms ease;
 }
 
 .tug-edit > .cm-editor {
   flex: 1 1 auto;
   min-height: 0;
   min-width: 0;
+}
+
+/* ---- Hover (only when not focused, disabled, or readonly) ---- */
+
+.tug-edit:hover:not([data-focused]):not([data-disabled]):not([data-readonly]) {
+  background-color: var(--tug7-surface-field-primary-normal-plain-hover);
+  border-color: var(--tug7-element-field-border-normal-plain-hover);
+}
+
+/* ---- Focus: background (default) ---- */
+
+.tug-edit[data-focused][data-focus-style="background"] {
+  background-color: var(--tug7-surface-field-primary-normal-plain-focus);
+  border-color: var(--tug7-element-field-border-normal-plain-active);
+}
+
+/* ---- Focus: ring ----
+ * Ring style keeps the surface at rest and signals focus with an
+ * accent-colored border + outline. The companion bg override below
+ * keeps the inner CM6 surface from shifting under the ring.
+ */
+
+.tug-edit[data-focused][data-focus-style="ring"] {
+  background-color: var(--tug7-surface-field-primary-normal-plain-rest);
+  border-color: var(--tug7-element-global-fill-normal-accentCool-rest);
+  outline: 2px solid var(--tug7-element-global-fill-normal-accentCool-rest);
+  outline-offset: -1px;
+}
+
+.tug-edit[data-focus-style="ring"] > .cm-editor.cm-focused {
+  background-color: var(--tug7-surface-field-primary-normal-plain-rest);
+}
+
+/* ---- Borderless ---- */
+
+.tug-edit[data-borderless] {
+  border-color: transparent;
+}
+
+.tug-edit[data-borderless]:hover:not([data-focused]):not([data-disabled]):not([data-readonly]) {
+  border-color: transparent;
+}
+
+.tug-edit[data-borderless][data-focused][data-focus-style="background"] {
+  border-color: transparent;
+}
+
+/* ---- Disabled ---- */
+
+.tug-edit[data-disabled] {
+  background-color: var(--tug7-surface-field-primary-normal-plain-disabled);
+  border-color: var(--tug7-element-field-border-normal-plain-disabled);
+  cursor: not-allowed;
+}
+
+/* ---- Read-only ---- */
+
+.tug-edit[data-readonly]:not([data-disabled]) {
+  background-color: var(--tug7-surface-field-primary-normal-plain-readonly);
+  border-color: var(--tug7-element-field-border-normal-plain-readonly);
 }

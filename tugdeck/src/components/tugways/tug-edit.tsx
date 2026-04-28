@@ -41,9 +41,18 @@ import "./tug-edit.css";
 import React, { useLayoutEffect, useRef, useImperativeHandle } from "react";
 import { EditorState } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
-import { EditorView, keymap } from "@codemirror/view";
+import { drawSelection, EditorView, keymap } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { cn } from "@/lib/utils";
+import { tugTheme } from "./tug-edit/theme";
+import { hostFocusMirror } from "./tug-edit/host-state";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Default focus indication when `focusStyle` is not supplied. */
+const DEFAULT_FOCUS_STYLE = "background" as const;
 
 // ---------------------------------------------------------------------------
 // TugEditDelegate
@@ -74,6 +83,17 @@ export interface TugEditDelegate {
 // ---------------------------------------------------------------------------
 
 /**
+ * Focus indication variants for the host wrapper.
+ *
+ *   `"background"` — focused state shifts the editor surface to a
+ *                    subtle focus tint and the host border to the
+ *                    field's active border color.
+ *   `"ring"`        — focused state draws an accent-colored ring
+ *                    around the host wrapper.
+ */
+export type TugEditFocusStyle = "background" | "ring";
+
+/**
  * Props for `TugEdit`. The component renders a host `<div>`
  * around the live `EditorView`; standard `<div>` props
  * (`className`, `style`, `data-*`, etc.) flow through to the
@@ -86,6 +106,19 @@ export interface TugEditProps
    * the component's own `tug-edit` base class.
    */
   className?: string;
+  /**
+   * Focus indication style for the host wrapper.
+   * @default "background"
+   * @selector .tug-edit[data-focus-style]
+   */
+  focusStyle?: TugEditFocusStyle;
+  /**
+   * Suppress the host wrapper's border. For embedding in compound
+   * components where the parent owns the border treatment.
+   * @default false
+   * @selector .tug-edit[data-borderless]
+   */
+  borderless?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -93,20 +126,37 @@ export interface TugEditProps
 // ---------------------------------------------------------------------------
 
 /**
- * Build the initial CM6 extension set used at mount.
+ * Build the CM6 extension set used at mount. The host element is
+ * captured so the focus-mirror extension can reach it directly.
  *
  * Kept as a free function so the extension list is easy to grow
  * without disturbing the lifecycle code.
  */
-function buildInitialExtensions(): readonly Extension[] {
+function buildExtensions(host: HTMLElement): readonly Extension[] {
   return [
     history(),
     keymap.of([...defaultKeymap, ...historyKeymap]),
+    // `drawSelection` emits the styled `.cm-cursor` and
+    // `.cm-selectionBackground` DOM that `tugTheme` paints. Without
+    // it, CM6 falls back to the browser-native caret (suppressed by
+    // our theme's `caret-color: transparent`) and the caret would
+    // be invisible.
+    drawSelection(),
+    tugTheme,
+    hostFocusMirror(host),
   ];
 }
 
 export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
-  function TugEdit({ className, ...rest }: TugEditProps, ref) {
+  function TugEdit(
+    {
+      className,
+      focusStyle = DEFAULT_FOCUS_STYLE,
+      borderless = false,
+      ...rest
+    }: TugEditProps,
+    ref,
+  ) {
     const hostRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
 
@@ -127,7 +177,7 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
 
       const state = EditorState.create({
         doc: "",
-        extensions: buildInitialExtensions(),
+        extensions: buildExtensions(host),
       });
       const view = new EditorView({
         state,
@@ -145,6 +195,8 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
       <div
         ref={hostRef}
         data-slot="editor"
+        data-focus-style={focusStyle}
+        data-borderless={borderless ? "" : undefined}
         className={cn("tug-edit", className)}
         {...rest}
       />

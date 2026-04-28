@@ -49,6 +49,7 @@ const COMPONENT_CSS_FILES = [
   "tug-badge.css",
   "tug-switch.css",
   "tug-checkbox.css",
+  "tug-edit.css",
   "tug-input.css",
   "tug-label.css",
   "tug-marquee.css",
