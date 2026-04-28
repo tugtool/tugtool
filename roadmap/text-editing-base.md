@@ -39,7 +39,7 @@ The user's stated direction is *better than Claude Code TUI editing*, not *Notio
 - **Reuse the existing interfaces.** `TugTextInputDelegate`, `AtomSegment`, `CompletionProvider`, `HistoryProvider`, `DropHandler`, the right-click classifier, and the [L23] capture/restore protocol are substrate-agnostic and survive the swap. The CM6 backing is implementation, not contract.
 - **Gallery card is the test surface.** A new TextEdit gallery card exercises every prop and every feature. The same card is what we demo to confirm exit criteria, and what reviewers walk through when judging substrate fit.
 - **Build stays green at every commit.** `bun run check`, `bun test`, `bun run audit:tokens lint`, and the workspace `cargo nextest run` pass on every step. `-D warnings` enforced.
-- **Tuglaws apply at every step.** [L01], [L02], [L03], [L06], [L07], [L15], [L19], [L22], [L23] all touch this work. The closing checkpoint walks them.
+- **Tuglaws apply at every step.** The new substrate is a tugways component and obeys [tuglaws.md](../tuglaws/tuglaws.md) without exception. [Table T02](#t02-tuglaws-applied) is the authoritative cross-walk: it names every law engaged by the spike, the compliance approach, and the step where each check lands. Every execution step's `**References:**` line cites the laws that step engages; Step 12 walks the full set.
 
 #### Success Criteria (Measurable) {#success-criteria}
 
@@ -302,6 +302,47 @@ This plan uses explicit `{#anchor}` tags on every cited heading and the `[ID] La
 
 ### Deep Dives {#deep-dives}
 
+#### Tuglaws compliance {#tuglaws-compliance}
+
+This spike implements a new tugways component, so [tuglaws.md](../tuglaws/tuglaws.md) governs every step. This subsection enumerates the laws engaged by the spike, how `TugEdit` complies, and where each compliance check lands. Each execution step's `**References:**` line cites the laws that step engages; the table below is the authoritative cross-walk.
+
+**Table T02: Tuglaws applied to `TugEdit`** {#t02-tuglaws-applied}
+
+| Law | Engagement | Compliance approach | Where it lands |
+|---|---|---|---|
+| [L01] One `root.render()` at mount | Always | The React shell mounts once; CM6 manages its own DOM tree internally and is never re-rendered through React after construction. | Steps 1, 11 (gallery uses the registered card factory; no external `root.render`). |
+| [L02] External state via `useSyncExternalStore` only | When CM6 state must drive React renders | When the React shell *renders* something derived from CM6 state (e.g., the typeahead popup's open/closed flag), it subscribes through `useSyncExternalStore` against a small subscribable adapter over `EditorView.updateListener`. CM6's internal state is never copied into `useState`. | Step 5 (typeahead state observer), Step 7 (state-preservation hook). |
+| [L03] `useLayoutEffect` for registrations events depend on | Always | Mount, dispose, state-preservation registration, route-prefix listener, and typeahead extension registration all run in `useLayoutEffect` so the substrate is ready before any keyboard or pointer event can land. | Steps 1, 5, 7, 9, 10. |
+| [L04] No measure-after-parent-setState on child DOM | Completion popup positioning | Popup position reads `EditorView.coordsAtPos` directly from the live view rather than via React-state-driven layout. | Step 5. |
+| [L05] No `requestAnimationFrame` for React-commit-coupled work | Always | We never use rAF to bridge CM6 state into React commits. CM6 has its own scheduler; the React shell observes via `EditorView.updateListener`. | All steps (negative invariant). |
+| [L06] Appearance via CSS and DOM, never React state | Theme, atom rendering, focus indication, disabled, placeholder, growDirection, maximized, focusStyle, borderless, drag-over | All editor visuals flow through CSS variables (theme), CM6 widget DOM (atoms), CSS class toggles on the host (focus / disabled), and DOM-side mutations (drop hover). No `useState` drives editor appearance. | Steps 2, 3, 8, 10. |
+| [L07] Handlers access state through refs / stable singletons | Delegate methods, keymap handlers, completion select, drop handler, route-prefix listener | The `useImperativeHandle` delegate reads `viewRef.current` at call time; CM6 keymap handlers receive `view` as their argument; provider closures hold refs. | Steps 1, 4, 5, 7, 8, 9, 10. |
+| [L09] Cards never set their own position / size / z-order | Gallery card | `gallery-text-edit.tsx` sets only content layout; the hosting `TugPane` owns geometry. | Steps 1, 11. |
+| [L10] One responsibility per layer | Always | `TugEdit` is the substrate (text editing); `gallery-text-edit` is composition (demo); the eventual `tug-prompt-input` wrapper layers prompt-domain semantics on top. The substrate exposes route-prefix support as an *option*, off by default. | Steps 1, 10, 13. |
+| [L11] Controls emit; responders own state | Always — `TugEdit` is a responder | `TugEdit` owns the document, caret, and selection: it is the responder for `cut` / `copy` / `paste` / `selectAll` / `undo` / `redo` and the domain `submit` action. Step 4 wires the keymap; Step 5 wires completion-menu emitter→responder routing; Step 9 wires the right-click context menu. | Steps 1 (declared), 4, 5, 9. |
+| [L12] Selection stays inside card boundaries | Selection paint, state preservation | The `cm-content` node is registered with `SelectionGuard` as the editor's selection boundary; inactive-selection paint goes through `selectionGuard.cardRanges` so selection cannot escape the card. | Steps 7, 9. |
+| [L13] CSS for declarative motion; rAF only for gesture frame loops | Caret blink, focus transition, drag-over feedback | All editor motion is CSS-driven. No rAF. | Steps 2, 8. |
+| [L15] Token-driven control states | Theme, focus, disabled | Editor states (rest, focus, disabled, readonly) use seven-slot tokens; color transitions provide all interaction feedback — no box-shadow, no translateY, no gradients. | Steps 2, 10. |
+| [L16] Foreground-only rules declare `@tug-renders-on` | Theme CSS, gallery card CSS | Every CSS rule that sets `color`, `fill`, or `border-color` without `background-color` carries a `@tug-renders-on` annotation naming its surface. `audit-tokens lint` enforces this. The component's `@tug-pairings` block is added when the theme lands. | Steps 1 (gallery card), 2 (theme), 10 (state styles). |
+| [L17] Component aliases resolve to `--tug7-*` in one hop | Theme | If `--tugx-edit-*` aliases are introduced, each resolves directly to a `--tug7-*` token — no alias-to-alias chains. The audit enforces this. | Step 2. |
+| [L18] Element / surface vocabulary | Theme | Editor text uses `--tug7-element-*`; editor background uses `--tug7-surface-*`. Pairings are declared. | Step 2. |
+| [L19] Component authoring guide | Always | File pair (`tug-edit.tsx` + `tug-edit.css`), module docstring with the standardized citation set, props interface, `data-slot="editor"`, CSS organization. The gallery card mirrors the convention. | All steps. |
+| [L20] Each component owns scoped tokens; composed children keep theirs | When `TugEdit` composes other tug components | If later steps compose tug components inside the editor (e.g., context menu, completion menu), `TugEdit`'s CSS references only its own `--tug7-element-edit-*` / `--tug7-surface-edit-*` slot; composed children's tokens are not overridden. | Steps 5, 9. |
+| [L21] Third-party code requires license compliance | CM6 substrate | CodeMirror 6 (MIT) is logged in `THIRD_PARTY_NOTICES.md` (existing entry, expanded for the substrate adoption). Each consuming source file references the notice. | Step 1 (notices update + tug-edit.tsx citation), Steps 2–10 (extension modules cite the same entry). |
+| [L22] Direct DOM updates via store observer, not React round-trip | Completion provider results, inactive-selection paint | When CM6's `updateListener` triggers a paint to `selectionGuard.cardRanges`, the observer writes directly to the DOM — no `useSyncExternalStore` round-trip. Completion provider observers are subscribed through their store's API, not through React state. | Steps 5, 7. |
+| [L23] Internal operations must not lose user-visible state | State preservation | Selection, focus, scroll, content survive CM6 reconfigure, theme switch, cmd-tab cycle, tab deactivation, and cold-mount restore via the `useCardStatePreservation` protocol. The active/inactive paint distinction is the central mechanism. | Step 7. |
+| [L24] State partitioned into appearance / local data / structure | Always | Appearance (caret, selection paint, focus ring) → CSS / DOM. Local data (`viewRef`, `hostRef`, internal flags) → `useRef`. Structure (subscriptions to providers, state-preservation registration) → `useSyncExternalStore` / `useLayoutEffect` / store observers. | All steps. |
+| [L25] Deck → Pane → Card hierarchy | Gallery card | The TextEdit gallery card is content; the `TugPane` chrome owns its position, size, and z-order. | Steps 1, 11. |
+
+**Laws not engaged by this spike:**
+
+- [L08] Live preview in mutation transactions — the editor's edits are committed values per keystroke; no draft-vs-commit distinction.
+- [L14] Radix Presence enter/exit boundary — the spike does not introduce Radix-managed enter/exit.
+
+**Compliance verification per step:**
+
+Each step's `**References:**` line cites the law IDs the step engages. Step 12 (Integration Checkpoint) explicitly walks the entire law set against the new code and records the result. The component-authoring-guide checklist covers the [L19] surface; `audit-tokens lint` covers [L16] / [L17] / [L18] / [L20]; the tests in Steps 1, 3, 4, 5, 7, 9 cover the runtime invariants ([L01], [L03], [L07], [L11], [L23]).
+
 #### Substrate evaluation {#substrate-evaluation}
 
 ##### Option A — Keep polishing `contenteditable`
@@ -559,7 +600,7 @@ Manual scenarios are documented in each step. The IME validation gate (Step 6) i
 
 **Commit:** `feat(tug-edit): bootstrap CM6 substrate with empty editor`
 
-**References:** [D01](#d01-spike-cm6), [D03](#d03-tug-edit-name), [Q03](#q03-strict-mode), (#strategy, #internal-architecture)
+**References:** [D01](#d01-spike-cm6), [D03](#d03-tug-edit-name), [Q03](#q03-strict-mode), [L01], [L03], [L06], [L07], [L11], [L19], [L21], [L24], Table T02, (#strategy, #internal-architecture, #tuglaws-compliance)
 
 **Artifacts:**
 - `package.json`: add `@codemirror/state`, `@codemirror/view`, `@codemirror/commands` via `bun add`.
@@ -591,7 +632,7 @@ Manual scenarios are documented in each step. The IME validation gate (Step 6) i
 
 **Commit:** `feat(tug-edit): theme via 7-element CSS tokens`
 
-**References:** [D06](#d06-theming), [L06], [L15], (#t01-feature-surface)
+**References:** [D06](#d06-theming), [L06], [L15], [L16], [L17], [L18], [L19], [L20], Table T02, (#t01-feature-surface, #tuglaws-compliance)
 
 **Artifacts:**
 - `tug-edit/theme.ts` exporting `tugTheme` extension reading `var(--tug-*)` for content fg, content bg, caret color, selection bg.
@@ -620,7 +661,7 @@ Manual scenarios are documented in each step. The IME validation gate (Step 6) i
 
 **Commit:** `feat(tug-edit): atom widgets with atomicRanges and clipboard round-trip`
 
-**References:** [D05](#d05-atom-rendering), [Q01](#q01-atomic-fidelity), [Q02](#q02-atom-clipboard), List L01, (#t01-feature-surface, #l01-atom-motion-cases)
+**References:** [D05](#d05-atom-rendering), [Q01](#q01-atomic-fidelity), [Q02](#q02-atom-clipboard), List L01, [L02], [L06], [L07], [L11], [L19], [L22], Table T02, (#t01-feature-surface, #l01-atom-motion-cases, #tuglaws-compliance)
 
 **Artifacts:**
 - `tug-edit/atom-decoration.ts`: `AtomWidget extends WidgetType`, `atomDecorationField: StateField<DecorationSet>`, helpers to insert / replace / remove atoms via transactions.
@@ -655,7 +696,7 @@ Manual scenarios are documented in each step. The IME validation gate (Step 6) i
 
 **Commit:** `feat(tug-edit): keymap with submit/newline actions, history nav, undo`
 
-**References:** [Table T01](#t01-feature-surface), (#public-api)
+**References:** [Table T01](#t01-feature-surface), [L02], [L06], [L07], [L11], [L19], Table T02, (#public-api, #tuglaws-compliance)
 
 **Artifacts:**
 - `tug-edit/keymap.ts`: high-priority `keymap.of([...])` covering Enter / Shift-Enter / numpad Enter / Cmd+Enter / Cmd+A / Cmd+Z / Cmd+Shift+Z / Cmd+Up / Cmd+Down.
@@ -685,7 +726,7 @@ Manual scenarios are documented in each step. The IME validation gate (Step 6) i
 
 **Commit:** `feat(tug-edit): completion popup via CompletionProvider`
 
-**References:** [Table T01](#t01-feature-surface), [L19], (#internal-architecture)
+**References:** [Table T01](#t01-feature-surface), [L02], [L03], [L04], [L06], [L07], [L11], [L19], [L20], [L22], Table T02, (#internal-architecture, #tuglaws-compliance)
 
 **Artifacts:**
 - `tug-edit/completion-extension.ts`: extension watching for trigger characters from `completionProviders`, tracking query state, emitting typeahead state via `onTypeaheadChange`.
@@ -713,7 +754,7 @@ Manual scenarios are documented in each step. The IME validation gate (Step 6) i
 
 **Commit:** `N/A (verification only)`
 
-**References:** [R01](#r01-ime-atoms), [D01](#d01-spike-cm6), (#success-criteria)
+**References:** [R01](#r01-ime-atoms), [D01](#d01-spike-cm6), [L19], [L23], Table T02, (#success-criteria, #tuglaws-compliance)
 
 **Artifacts:**
 - A written validation report at `tugdeck/src/components/tugways/__tests__/tug-edit-ime-report.md` documenting test scenarios, observed behavior, and any defects.
@@ -738,7 +779,7 @@ Manual scenarios are documented in each step. The IME validation gate (Step 6) i
 
 **Commit:** `feat(tug-edit): L23 state preservation via active/inactive paint channels`
 
-**References:** [R02](#r02-l23-mirror), [L23], [L10], (#internal-architecture)
+**References:** [R02](#r02-l23-mirror), [L02], [L03], [L06], [L07], [L10], [L12], [L22], [L23], [L24], Table T02, (#internal-architecture, #tuglaws-compliance)
 
 **Artifacts:**
 - `tug-edit/state-preservation.ts`: `useEditStatePreservation` hook mirroring the existing `useCardStatePreservation` integration; `paintMirrorAsActive` / `paintMirrorAsInactive` implementations on the delegate.
@@ -770,7 +811,7 @@ Manual scenarios are documented in each step. The IME validation gate (Step 6) i
 
 **Commit:** `feat(tug-edit): file-drop atom insertion`
 
-**References:** [Table T01](#t01-feature-surface)
+**References:** [Table T01](#t01-feature-surface), [L06], [L07], [L13], [L19], Table T02, (#tuglaws-compliance)
 
 **Artifacts:**
 - `tug-edit/drop-extension.ts`: `EditorView.domEventHandlers({ drop, dragover })`; computes insertion offset via `view.posAtCoords`.
@@ -796,7 +837,7 @@ Manual scenarios are documented in each step. The IME validation gate (Step 6) i
 
 **Commit:** `feat(tug-edit): selection adapter and right-click classifier`
 
-**References:** [Table T01](#t01-feature-surface), `text-selection-adapter.ts`
+**References:** [Table T01](#t01-feature-surface), [L06], [L07], [L11], [L12], [L19], [L20], Table T02, `text-selection-adapter.ts`, (#tuglaws-compliance)
 
 **Artifacts:**
 - `tug-edit/selection-adapter.ts`: `createCMSelectionAdapter(view)` returning a `TextSelectionAdapter`.
@@ -822,7 +863,7 @@ Manual scenarios are documented in each step. The IME validation gate (Step 6) i
 
 **Commit:** `feat(tug-edit): full prop surface parity with tug-prompt-input`
 
-**References:** [Q04](#q04-route-atom-position), [Table T01](#t01-feature-surface)
+**References:** [Q04](#q04-route-atom-position), [Table T01](#t01-feature-surface), [L02], [L03], [L06], [L07], [L11], [L15], [L16], [L19], [L24], Table T02, (#tuglaws-compliance)
 
 **Artifacts:**
 - Placeholder via `@codemirror/view` `placeholder` extension.
@@ -854,7 +895,7 @@ Manual scenarios are documented in each step. The IME validation gate (Step 6) i
 
 **Commit:** `feat(gallery): TextEdit card exercises full tug-edit surface`
 
-**References:** (#t01-feature-surface)
+**References:** [L01], [L06], [L09], [L11], [L19], [L25], Table T02, (#t01-feature-surface, #tuglaws-compliance)
 
 **Artifacts:**
 - Final `gallery-text-edit.tsx` with controls / toggles for every prop on `TugEdit`.
@@ -882,13 +923,13 @@ Manual scenarios are documented in each step. The IME validation gate (Step 6) i
 
 **Commit:** `N/A (verification only)`
 
-**References:** [R03](#r03-bundle), (#success-criteria)
+**References:** [R03](#r03-bundle), [L01]–[L25] (full sweep), Table T02, (#success-criteria, #tuglaws-compliance)
 
 **Tasks:**
 - [ ] Run `bun run build` (production bundle).
 - [ ] Compare bundle size delta vs `main`. Record gzip and uncompressed deltas.
 - [ ] Walk every Success Criteria checkbox.
-- [ ] Walk [L01]–[L23] for new substrate code; record any clarifications.
+- [ ] Walk [L01]–[L25] for new substrate code against [Table T02](#t02-tuglaws-applied); record any clarifications. The expected outcome is that every law marked "Engaged" has a verifiable compliance landing in the substrate code or in `gallery-text-edit`.
 
 **Tests:**
 - [ ] Aggregate: full `bun test`, `bun run check`, `bun run audit:tokens lint`, `cargo nextest run` from repo root.
@@ -907,7 +948,7 @@ Manual scenarios are documented in each step. The IME validation gate (Step 6) i
 
 **Commit:** `docs(roadmap): record tug-edit substrate decision and scaffold migration plan`
 
-**References:** [D01](#d01-spike-cm6), [D04](#d04-additive), (#roadmap)
+**References:** [D01](#d01-spike-cm6), [D04](#d04-additive), [L21], (#roadmap, #tuglaws-compliance)
 
 **Artifacts:**
 - A "Decision" section appended to this plan recording: continue migrating to CM6, hold and revisit, or abandon and revert.

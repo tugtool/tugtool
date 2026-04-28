@@ -10,12 +10,46 @@
  * preservation arrive in later spike steps (see
  * `roadmap/text-editing-base.md`).
  *
- * Laws: [L01] one root.render() at mount, [L02] external state via
- *        useSyncExternalStore (none yet — added when listeners arrive),
- *        [L03] useLayoutEffect for registrations events depend on,
- *        [L06] appearance via CSS and DOM, never React state,
- *        [L07] handlers access current state through refs / stable
- *        singletons, [L19] component authoring guide.
+ * `TugEdit` owns its content document, caret, and selection — those
+ * are user-data state that lives only inside the component, so it is
+ * a *responder* (per [L11]) for the editing actions that operate on
+ * that state (cut / copy / paste / selectAll / undo / redo, plus
+ * domain submit/newline). Step 1 wires the substrate; the action
+ * registrations land in subsequent spike steps as keymap, completion,
+ * and selection-adapter extensions arrive.
+ *
+ * Laws this component obeys:
+ *
+ *   [L01] One `root.render()` at mount — the React shell mounts once;
+ *         CM6's `EditorView` manages its own DOM tree internally and
+ *         is never re-rendered through React after construction.
+ *   [L03] Mount and dispose run in `useLayoutEffect` so the live
+ *         `EditorView` is in place before any keyboard or pointer
+ *         events can fire against it.
+ *   [L06] All editor appearance — caret blink, selection paint,
+ *         hover, focus indication — flows through CSS and direct DOM
+ *         (CM6's own DOM mutations and our token-driven theme), never
+ *         through React state.
+ *   [L07] The `useImperativeHandle` delegate methods read
+ *         `viewRef.current` at call time so consumers see the live
+ *         view across React 19 StrictMode's mount/unmount/mount cycle
+ *         and across cross-pane moves.
+ *   [L11] `TugEdit` owns the document and selection state for its
+ *         content; it is the responder for editing actions that
+ *         mutate that state. Step 4 wires the keymap; later steps
+ *         wire completion, history, and clipboard handlers.
+ *   [L19] Component authoring guide — file pair (`tug-edit.tsx` +
+ *         `tug-edit.css`), module docstring, props interface,
+ *         `data-slot="editor"`, CSS organization. Token pairings
+ *         (`@tug-pairings`, `@tug-renders-on`) arrive in Step 2 when
+ *         the theme extension lands.
+ *   [L21] CodeMirror 6 (MIT) is the third-party substrate. Use is
+ *         logged in `THIRD_PARTY_NOTICES.md` under the existing
+ *         "CodeMirror 6" entry.
+ *   [L24] State zones — `viewRef` and `hostRef` live in the
+ *         local-data zone (`useRef`); `viewRef.current` is itself the
+ *         CM6 state-zone source of truth for document and selection;
+ *         all editor appearance is appearance-zone (CSS / DOM).
  *
  * Resolution of plan question [Q03] — CM6 lifecycle vs React StrictMode:
  *

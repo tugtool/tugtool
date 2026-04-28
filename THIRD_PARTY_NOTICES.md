@@ -169,9 +169,9 @@ SOFTWARE.
 
 ## CodeMirror 6
 
-**Source:** https://github.com/codemirror/dev
-**What was adopted:** Flat document model with offset-based positions as the universal coordinate system (flat offsets map 1:1 to document positions, all operations expressed in terms of offset ranges). Own undo stack with immutable snapshots and time-based merge heuristic for consecutive edits.
-**Used in:** `tugdeck/src/lib/tug-text-engine.ts` (flat offset position model, undo stack with merge window)
+**Source:** https://code.haverbeke.berlin/codemirror/dev (moved from https://github.com/codemirror/dev)
+**What was adopted:** (1) Flat document model with offset-based positions as the universal coordinate system (flat offsets map 1:1 to document positions, all operations expressed in terms of offset ranges); own undo stack with immutable snapshots and time-based merge heuristic for consecutive edits — both informed the existing engine. (2) The CodeMirror 6 packages themselves (`@codemirror/state`, `@codemirror/view`, `@codemirror/commands`, plus extensions added in later spike steps) as a runtime dependency for the new `TugEdit` substrate component, where the entire `EditorView`, state, decoration, transaction, and keymap machinery is consumed directly. See `roadmap/text-editing-base.md` for the substrate adoption rationale.
+**Used in:** `tugdeck/src/lib/tug-text-engine.ts` (flat offset position model, undo stack with merge window); `tugdeck/src/components/tugways/tug-edit.tsx` and adjacent extension modules under `tugdeck/src/components/tugways/` (CodeMirror 6 EditorView substrate)
 
 ```
 MIT License
