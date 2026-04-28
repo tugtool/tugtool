@@ -2,28 +2,56 @@
  * gallery-text-edit.tsx — TugEdit gallery card.
  *
  * Demo surface for the CodeMirror 6-backed `TugEdit` substrate.
- * Mounts an editor and exposes the host's focus-style and borderless
- * variants, the keymap policy (`returnAction`), a row of atom-insert
- * buttons covering each kind supported by `tug-atom-img.ts` (file,
- * command, doc, image, link), and a `historyProvider` that records
- * the user's own submissions: each submit captures the current
- * editing state, appends it to the in-card history list, and clears
- * the editor for the next draft. Cmd-Up walks back through the
- * actual submissions; Cmd-Down walks forward, then restores the
- * draft the user had typed before navigating.
+ * Mirrors `gallery-prompt-input`'s wiring so the typeahead is
+ * exercised against the live FileTreeStore and SessionMetadataStore
+ * — same backing data the production prompt input uses, no synthetic
+ * fixtures. Without that, the spike's typeahead surface would only
+ * exercise the substrate's keyboard / popup mechanics; integrating
+ * the real providers is what proves the substrate can replace the
+ * `tug-prompt-input` engine for completion as well.
  *
- * Laws: [L01] one root.render() at mount, [L02] the per-card history
- *        list and provider live in refs, never copied into React
- *        state for rendering, [L06] appearance via CSS and DOM, never
- *        React state, [L11] toggle controls and atom-insert buttons
- *        emit actions consumed by this scope's responder form, the
- *        editor handles the chain-routed editing actions on its own
- *        document, [L19] component authoring guide.
+ * Provider sources:
+ *   - `@` triggers `FileTreeStore.getFileCompletionProvider()` over a
+ *     workspace-filtered live `FeedStore<FILETREE>` — async; results
+ *     stream in via the provider's `subscribe` hook and the substrate
+ *     dispatches a refresh transaction whenever the FileTreeStore
+ *     emits.
+ *   - `/` triggers `getFixtureSessionMetadataStore().getCommandCompletionProvider()`
+ *     — same `SessionMetadataStore` class production uses, but
+ *     backed by the captured `capabilities/<LATEST>/system-metadata.jsonl`
+ *     payload from `just capture-capabilities`. Live SESSION_METADATA
+ *     only arrives when a code session is active, and the gallery is a
+ *     harness with no session — `gallery-prompt-entry` uses the same
+ *     fixture for the same reason.
+ *
+ * Card-scoped history is kept in a per-instance ref-held entry list:
+ * each Return submit captures the current editing state, appends it,
+ * and clears the editor. Cmd-Up/Cmd-Down walk the live entries and
+ * the saved draft, mirroring `SessionHistoryProvider`'s contract
+ * without requiring a real session.
+ *
+ * Laws: [L01] one root.render() at mount, [L02] history list and
+ *        feed-store stack live in refs; React state carries only the
+ *        rendered counter, [L03] the file-tree feed-store filter is
+ *        re-installed in a `useEffect` keyed on workspace identity,
+ *        matching `gallery-prompt-input`'s pattern, [L06] appearance
+ *        via CSS and DOM, never React state, [L07] provider thunks
+ *        and the card-scoped history closure read their state at
+ *        call time, [L11] toggle controls and atom-insert buttons
+ *        emit actions consumed by this scope's responder form,
+ *        [L19] component authoring guide, [L22] the file-completion
+ *        provider's async refresh path is a direct
+ *        store-observation channel — no React round-trip.
  */
 
 import "./gallery-text-edit.css";
 
-import React, { useMemo, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { TugEdit } from "@/components/tugways/tug-edit";
 import type { TugEditDelegate, TugEditFocusStyle } from "@/components/tugways/tug-edit";
 import { TugLabel } from "@/components/tugways/tug-label";
@@ -33,9 +61,15 @@ import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { captureEditState } from "@/components/tugways/tug-edit/keymap";
+import { useCardWorkspaceKey } from "@/components/tugways/hooks/use-card-workspace-key";
+import { presentWorkspaceKey } from "@/card-registry";
+import { FeedStore, type FeedStoreFilter } from "@/lib/feed-store";
+import { FileTreeStore } from "@/lib/filetree-store";
+import { getConnection } from "@/lib/connection-singleton";
+import { FeedId } from "@/protocol";
+import { getFixtureSessionMetadataStore } from "./completion-fixtures/system-metadata-fixture";
 import type { AtomSegment } from "@/lib/tug-atom-img";
 import type {
-  CompletionItem,
   CompletionProvider,
   HistoryProvider,
   InputAction,
@@ -90,73 +124,12 @@ const ATOM_SAMPLES: { label: string; segment: AtomSegment }[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Mock completion providers
+// Empty provider — fallback when the live FILETREE connection isn't
+// yet available. Stable identity so the substrate's provider thunk
+// doesn't churn on the unbound-window first render.
 // ---------------------------------------------------------------------------
 
-/**
- * Hard-coded sample file list for the `@`-trigger provider. Real
- * tug-prompt-input wires `@` to a live FileTreeStore-backed provider;
- * the gallery just demonstrates the popup's keyboard nav, hover, and
- * accept flow against a fixed set of items.
- */
-const MOCK_FILES: { path: string; label: string }[] = [
-  { path: "/project/src/main.ts", label: "main.ts" },
-  { path: "/project/src/app.tsx", label: "app.tsx" },
-  { path: "/project/src/router.ts", label: "router.ts" },
-  { path: "/project/src/lib/utils.ts", label: "utils.ts" },
-  { path: "/project/src/lib/store.ts", label: "store.ts" },
-  { path: "/project/styles/themes/brio.css", label: "brio.css" },
-  { path: "/project/styles/themes/harmony.css", label: "harmony.css" },
-  { path: "/project/README.md", label: "README.md" },
-  { path: "/project/package.json", label: "package.json" },
-];
-
-/**
- * Hard-coded sample slash-command list for the `/`-trigger provider.
- * Mirrors a typical command palette: each item carries a label and
- * the verbatim slash command string used as the atom value.
- */
-const MOCK_COMMANDS: { command: string; label: string }[] = [
-  { command: "/commit", label: "/commit" },
-  { command: "/build", label: "/build" },
-  { command: "/test", label: "/test" },
-  { command: "/run", label: "/run" },
-  { command: "/help", label: "/help" },
-];
-
-/**
- * Filter a list against a query. Returns items that contain every
- * character of the query as a subsequence (case-insensitive),
- * preserving the original order.
- */
-function fuzzyFilter<T extends { label: string }>(items: T[], query: string): T[] {
-  if (query.length === 0) return items;
-  const q = query.toLowerCase();
-  return items.filter((item) => {
-    const label = item.label.toLowerCase();
-    let qi = 0;
-    for (let i = 0; i < label.length && qi < q.length; i++) {
-      if (label[i] === q[qi]) qi++;
-    }
-    return qi === q.length;
-  });
-}
-
-/** `@`-trigger provider — synchronous match against the mock file list. */
-const mockFileProvider: CompletionProvider = (query: string): CompletionItem[] => {
-  return fuzzyFilter(MOCK_FILES, query).map((file) => ({
-    label: file.label,
-    atom: { kind: "atom", type: "file", label: file.label, value: file.path },
-  }));
-};
-
-/** `/`-trigger provider — synchronous match against the mock command list. */
-const mockCommandProvider: CompletionProvider = (query: string): CompletionItem[] => {
-  return fuzzyFilter(MOCK_COMMANDS, query).map((cmd) => ({
-    label: cmd.label,
-    atom: { kind: "atom", type: "command", label: cmd.label, value: cmd.command },
-  }));
-};
+const EMPTY_PROVIDER: CompletionProvider = ((_q: string) => []) as CompletionProvider;
 
 // ---------------------------------------------------------------------------
 // Card-scoped history provider
@@ -172,14 +145,6 @@ const mockCommandProvider: CompletionProvider = (query: string): CompletionItem[
  * ref-held array, and the provider reads through the same ref on
  * every `back()` / `forward()` — so a submit landing right before a
  * Cmd-Up brings the new entry into view immediately.
- *
- * Cursor / draft semantics:
- *   - `back(current)` saves `current` as the draft on the first
- *     call, then walks back through the entry list (newest first).
- *     Returns `null` once the oldest entry has been served.
- *   - `forward()` walks forward toward the present; once past the
- *     newest entry it returns the saved draft (which may itself be
- *     empty if the user submitted, then immediately Cmd-Up'd).
  */
 class CardHistoryProvider implements HistoryProvider {
   private cursor = -1;
@@ -228,7 +193,12 @@ class CardHistoryProvider implements HistoryProvider {
 // GalleryTextEdit
 // ---------------------------------------------------------------------------
 
-export function GalleryTextEdit() {
+interface GalleryTextEditProps {
+  /** Card instance id — used to scope the FILETREE feed-store filter. */
+  cardId: string;
+}
+
+export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
   const editRef = useRef<TugEditDelegate>(null);
   const [focusStyle, setFocusStyle] = useState<TugEditFocusStyle>("background");
   const [borderless, setBorderlessFlag] = useState<boolean>(false);
@@ -240,23 +210,79 @@ export function GalleryTextEdit() {
   // counter, not the entries themselves [L02].
   const entriesRef = useRef<TugTextEditingState[]>([]);
 
-  // One provider instance per card lifetime. The closure passed to
-  // the constructor reads `entriesRef.current` at every navigation,
-  // so newly-appended entries are visible without rebuilding the
-  // provider.
+  // One provider instance per card lifetime.
   const historyProvider = useMemo(
     () => new CardHistoryProvider(() => entriesRef.current),
     [],
   );
 
-  // Stable typeahead provider map. Module-level constants — neither
-  // the file list nor the command list changes during the gallery's
-  // lifetime, so the map's identity stays stable across renders and
-  // the substrate's provider thunk doesn't churn.
+  // ---- File-tree completion provider (per-card) ----
+  //
+  // Mirrors `gallery-prompt-input`'s setup: a workspace-filtered
+  // FeedStore over FILETREE plus a FileTreeStore that exposes the
+  // async `@`-trigger provider. The provider's `subscribe` hook
+  // streams refreshed results into the substrate's typeahead state
+  // through the completion-extension ([L22]).
+  const workspaceKey = useCardWorkspaceKey(cardId);
+  const workspaceFilter: FeedStoreFilter = useMemo(
+    () =>
+      workspaceKey
+        ? (_feedId, decoded) =>
+            typeof decoded === "object"
+            && decoded !== null
+            && "workspace_key" in decoded
+            && (decoded as { workspace_key: unknown }).workspace_key === workspaceKey
+        : presentWorkspaceKey,
+    [workspaceKey],
+  );
+
+  const fileTreeStackRef = useRef<{
+    feedStore: FeedStore;
+    fileTreeStore: FileTreeStore;
+    provider: CompletionProvider;
+  } | null>(null);
+
+  if (fileTreeStackRef.current === null) {
+    const connection = getConnection();
+    if (connection) {
+      const feedStore = new FeedStore(
+        connection,
+        [FeedId.FILETREE],
+        undefined,
+        workspaceFilter,
+      );
+      const fileTreeStore = new FileTreeStore(feedStore, FeedId.FILETREE);
+      const provider = fileTreeStore.getFileCompletionProvider();
+      fileTreeStackRef.current = { feedStore, fileTreeStore, provider };
+    }
+  }
+
+  // Re-install the workspace filter when the binding changes —
+  // mirror of the `gallery-prompt-input` pattern.
+  useEffect(() => {
+    fileTreeStackRef.current?.feedStore.setFilter(workspaceFilter);
+  }, [workspaceFilter]);
+
+  // Dispose the file-tree stack on unmount.
+  useEffect(() => {
+    return () => {
+      const stack = fileTreeStackRef.current;
+      if (stack !== null) {
+        stack.fileTreeStore.dispose();
+        stack.feedStore.dispose();
+        fileTreeStackRef.current = null;
+      }
+    };
+  }, []);
+
+  // Stable provider map. The thunk inside the substrate reads this
+  // map at every transaction; both providers' identities are stable
+  // across the card's lifetime, so empty deps are correct.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const completionProviders = useMemo<Record<string, CompletionProvider>>(
     () => ({
-      "@": mockFileProvider,
-      "/": mockCommandProvider,
+      "@": fileTreeStackRef.current?.provider ?? EMPTY_PROVIDER,
+      "/": getFixtureSessionMetadataStore().getCommandCompletionProvider(),
     }),
     [],
   );
@@ -272,8 +298,6 @@ export function GalleryTextEdit() {
     const snapshot = captureEditState(view);
     if (snapshot.text.length === 0) return; // ignore empty submits
     entriesRef.current.push(snapshot);
-    // Reset the provider's draft to a fresh blank state so the next
-    // Cmd-Up serves the just-submitted entry, not the saved draft.
     historyProvider.resetToDraft({ text: "", atoms: [], selection: null });
     editRef.current?.clear();
     setSubmitCount((n) => n + 1);
@@ -392,4 +416,3 @@ export function GalleryTextEdit() {
     </ResponderScope>
   );
 }
-

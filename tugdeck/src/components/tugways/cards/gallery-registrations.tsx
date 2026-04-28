@@ -363,7 +363,7 @@ export function registerGalleryCards(): void {
 
   registerCard({
     componentId: "gallery-text-edit",
-    contentFactory: (_cardId) => <GalleryTextEdit />,
+    contentFactory: (cardId) => <GalleryTextEdit cardId={cardId} />,
     defaultMeta: { title: "TugEdit", icon: "TextCursorInput", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
