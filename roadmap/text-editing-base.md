@@ -860,15 +860,15 @@ Manual scenarios are documented in each step. The IME validation gate (Step 6) i
 - Gallery card: right-click context menu functional with the new adapter.
 
 **Tasks:**
-- [ ] Port `hasRangedSelection`, `getSelectedText`, `selectAll`, `expandToWord`, `selectWordAtPoint` to read from `view.state.selection`.
-- [ ] Port `classifyRightClick` to use `view.coordsAtPos` for "near-caret" / "within-range" geometry.
+- [x] Port `hasRangedSelection`, `getSelectedText`, `selectAll`, `expandToWord`, `selectWordAtPoint` to read from `view.state.selection`.
+- [x] Port `classifyRightClick` to use `view.coordsAtPos` for "near-caret" / "within-range" geometry.
 
 **Tests:**
-- [ ] Integration: right-click in / near / outside a selection produces the expected classification.
+- [x] Integration: right-click in / near / outside a selection produces the expected classification.
 
 **Checkpoint:**
 - [ ] Manual: right-click context menu in gallery card behaves identically to the existing `tug-prompt-input` card.
-- [ ] `bun run check`, `bun test` exit 0.
+- [x] `bun run check`, `bun test` exit 0.
 
 ---
 
