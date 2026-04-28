@@ -102,7 +102,7 @@ import { dispatchAction } from "./action-dispatch";
  * tolerant of mid-navigation `evaluateJavaScript` errors.
  * Additive; major stays `1`.
  */
-export const SURFACE_VERSION = "1.4.0" as const;
+export const SURFACE_VERSION = "1.5.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -420,6 +420,25 @@ export interface TugTestSurface {
    * this).
    */
   appReload(): void;
+
+  // ---- Generic control-action dispatch (SURFACE_VERSION 1.5.0) ----
+
+  /**
+   * Fire a control-action dispatch through the same path the native
+   * Swift host uses for menu items and keyboard shortcuts:
+   * `action-dispatch.ts`'s `dispatchAction({ action })`. Routes
+   * through any registered handler (e.g. `show-component-gallery`,
+   * `add-card-to-active-pane`, `close`, `reload`).
+   *
+   * Returns `true` if a handler ran (registered + chain reached a
+   * matching responder), `false` otherwise. Most actions delegate to
+   * `responderChainManagerRef.sendToFirstResponder(...)` internally —
+   * so a `false` return commonly means "no first responder is set
+   * AND no responder up the chain handles this action," which is the
+   * useful signal for tests that need to verify an action stays
+   * reachable across deck mutations.
+   */
+  dispatchControlAction(actionName: string): void;
 
   /**
    * Return the current "ready generation" — a counter
@@ -1145,6 +1164,10 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       // dedup guard (`reloadPending`) and any future reload-side
       // bookkeeping in one place. [L23]
       dispatchAction({ action: "reload" });
+    },
+
+    dispatchControlAction(actionName: string): void {
+      dispatchAction({ action: actionName });
     },
 
     getReadyGen(): number {

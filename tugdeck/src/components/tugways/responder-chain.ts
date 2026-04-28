@@ -365,10 +365,49 @@ export class ResponderChainManager {
         nextFirst = node.parentId;
       }
 
+      // Last-resort fallback: if neither the DOM walk nor the
+      // captured parentId yields a still-registered ancestor, but a
+      // root responder (parentId === null) is registered, promote it.
+      // This is the symmetric counterpart of `register()`'s "auto-
+      // promote on first registration when firstResponder is null"
+      // branch — same invariant, applied at unregister time:
+      //
+      //   *while at least one root responder is registered, the
+      //   chain has a first responder.*
+      //
+      // Without this rule, a multi-step cascade (e.g. close a multi-
+      // tab pane in one render — cards unregister, then pane
+      // unregisters, then a portaled popover unmounts somewhere in
+      // between) can land `firstResponderId` on `null` even though
+      // the root (typically `deck-canvas`) is still alive. Subsequent
+      // `sendToFirstResponder` walks from null and silently no-ops —
+      // breaking menu items / keyboard shortcuts / control-frame
+      // actions that rely on the root's last-resort handlers ([D08]).
+      if (nextFirst === null) {
+        nextFirst = this.findRootResponderId();
+      }
+
       this.firstResponderId = nextFirst;
       this.syncFirstResponderDomAttribute();
       this.incrementAndNotify();
     }
+  }
+
+  /**
+   * Return the id of any registered root responder
+   * (`parentId === null`), or `null` if none is registered.
+   *
+   * `Map` iteration order is insertion order, so this returns the
+   * earliest-registered root — typically `deck-canvas`, which
+   * mounts before any descendant. Multi-root scenarios are not
+   * expected in production; this picks deterministically rather
+   * than throwing.
+   */
+  private findRootResponderId(): string | null {
+    for (const [rootId, rootNode] of this.nodes) {
+      if (rootNode.parentId === null) return rootId;
+    }
+    return null;
   }
 
   // ---- First responder management ----
