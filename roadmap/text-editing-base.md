@@ -872,6 +872,102 @@ Manual scenarios are documented in each step. The IME validation gate (Step 6) i
 
 ---
 
+#### Step 9.5A: Atom-only-selection copy {#step-9-5a}
+
+**Depends on:** #step-9
+
+**Commit:** `fix(tug-edit): copy works on atom-only and widget-heavy selections`
+
+**References:** [L06], [L07], [L11], [L19], `tug-edit/clipboard-filters.ts`, `tug-edit/atom-decoration.ts`, (#tuglaws-compliance)
+
+**Background:**
+Surfaced during the manual checkpoint of Step 9. With a selection that covers only atoms (or only widget-replaced ranges), pressing `⌘C` (or activating the menu's *Copy*) produces no clipboard write. Root cause: the responder action calls `document.execCommand("copy")`, which depends on the live *DOM Selection*. CM6's `Decoration.replace` swaps out the U+FFFC text in the rendered tree and inserts the widget DOM in its place; for an atom-only logical range, the DOM Selection has no usable text content and `execCommand("copy")` either returns false or fires a copy event the system clipboard ignores. CM6's logical `view.state.selection.main` is correct throughout — the failure is at the `execCommand` ⇄ DOM Selection bridge.
+
+**Artifacts:**
+- `tug-edit.tsx`: `handleCopy` / `handleCut` no longer route through `document.execCommand("copy")`. Instead they synthesize a `ClipboardEvent` with a fresh `DataTransfer` and dispatch it on `view.contentDOM`, then issue the system clipboard write directly via `navigator.clipboard.write(...)` (browser path) or the native bridge (Tug.app path, lazily extended in Step 9.5B).
+- `tug-edit/clipboard-filters.ts`: re-export the existing `serializeClipboard` / `getAtomsInRange` plumbing so the responder action can produce the same `text/plain` + sidecar payload the DOM `copy` event handler already emits.
+
+**Tasks:**
+- [ ] Confirm root cause empirically: log `view.state.selection.main`, `window.getSelection().toString()`, and `event.defaultPrevented` from the responder action with an atom-only selection in the gallery; record the result in the commit body.
+- [ ] Refactor `handleCopy` / `handleCut` to call a shared `copyCurrentSelection(view, isCut)` helper that reads from `view.state.selection.main`, builds the payload via `serializeClipboard`, writes to the system clipboard, and (for cut) issues the delete transaction.
+- [ ] Browser path: write via `navigator.clipboard.write([new ClipboardItem({...})])` with `text/plain` + `application/x-tug-atoms`. (Step 9.5B adds `text/html`.)
+- [ ] Tug.app path: depends on Step 9.5B's native-bridge write extension; until that lands, this step's scope is browser-path-only and the WKWebView fallback continues to use `execCommand("copy")` with a documented limitation.
+- [ ] Keep the existing `clipboardExt` `copy` / `cut` DOM event handlers in place — they still fire when the keyboard binding goes through CM6's own copy path or when the user's host wires copy via direct event dispatch, and the new responder-side write must not double-count when both paths run.
+
+**Tests:**
+- [ ] Unit: `copyCurrentSelection` writes the same payload shape the DOM `copy` handler does for an atom-only range, a mixed range, and a text-only range. Stub `navigator.clipboard.write` to capture the `ClipboardItem`s.
+- [ ] Unit: cut path issues the post-blink delete transaction with `userEvent: "delete.cut"` for an atom-only range; the resulting document drops the atom decoration.
+- [ ] Regression: existing copy / cut event-driven tests in `clipboardExt`'s suite continue to pass — the DOM event path is not the responder-side path, but they share the serializer.
+
+**Checkpoint:**
+- [ ] Manual: select only an atom in the gallery card, press ⌘C, paste into a tug-edit editor in a fresh card → atom round-trips. Browser path covered here; Tug.app path covered after Step 9.5B.
+- [ ] `bun run check`, `bun test` exit 0.
+
+---
+
+#### Step 9.5B: HTML clipboard channel for native-bridge round-trip {#step-9-5b}
+
+**Depends on:** #step-9-5a
+
+**Commit:** `fix(tug-edit): atoms survive paste round-trip via text/html`
+
+**References:** [L06], [L11], [L19], `tug-edit/clipboard-filters.ts`, `lib/tug-native-clipboard.ts`, `lib/tug-text-engine.ts` (sanitizeAtomHtml), `tug-prompt-input.tsx` (paste path), (#tuglaws-compliance)
+
+**Background:**
+Also surfaced during the manual checkpoint of Step 9. In Tug.app the paste path takes the native clipboard bridge branch (`hasNativeClipboardBridge() === true`), which returns `{ text, html }` only — never the `application/x-tug-atoms` custom MIME the substrate writes on copy. `tug-edit.tsx`'s native-bridge paste handler destructures `text` and inserts it verbatim, so atoms in a copied range arrive as plain text (or U+FFFC tofu) on the destination side. tug-prompt-input survives this because contentEditable's native HTML serialization already preserves atom `<img>` tags with `data-atom-*` attributes — it round-trips through the html channel automatically. tug-edit needs the equivalent explicit mechanism.
+
+**Artifacts:**
+- `tug-edit/clipboard-filters.ts`: `serializeClipboard` also emits a `text/html` payload built from each atom's `<img data-atom-label data-atom-value data-atom-type>` markup (reusing `atomImgHTML` from `tug-atom-img.ts` for fidelity). The DOM `copy` handler writes it; `copyCurrentSelection` from Step 9.5A writes it.
+- `tug-edit/clipboard-filters.ts`: `parseClipboardHtml(html)` parses the html string back into `{ docText, atoms }` — same shape `parseClipboardSidecar` returns. Used as the fallback path on paste when the custom MIME is absent but html with atom markers is present.
+- `tug-edit.tsx`: native-bridge paste branch now consumes `html` first (parse via `parseClipboardHtml`); falls through to `text` when html has no atom markers.
+
+**Tasks:**
+- [ ] Add `text/html` writes in `serializeClipboard`'s output (and in `copyCurrentSelection`'s `ClipboardItem`).
+- [ ] Implement `parseClipboardHtml` — DOMParser-based, scoped to `data-atom-*` element extraction with positions inferred from text position before each img.
+- [ ] Update tug-edit.tsx native-bridge paste branch to try `parseClipboardHtml(html)` first; build a single transaction that inserts the doc text + atom decorations together (mirrors the existing handlePaste sidecar branch).
+- [ ] Browser path is unchanged — `clipboardExt.handlePaste` still prefers the custom MIME sidecar. The html channel is the cross-bridge fallback.
+
+**Tests:**
+- [ ] Unit: `parseClipboardHtml` round-trips with `serializeClipboard`'s html output for atom-only, mixed, and text-only payloads.
+- [ ] Unit: `parseClipboardHtml` rejects malformed input (no `<img>`, missing data attributes, attribute typos) and returns null without throwing.
+- [ ] Integration: simulated native-bridge paste with `{ text, html }` carrying atom img markup reconstructs atom decorations at the inserted positions.
+
+**Checkpoint:**
+- [ ] Manual: copy a mixed atom + text selection in Tug.app, paste into a fresh tug-edit card → atoms re-render as widgets, text content matches.
+- [ ] `bun run check`, `bun test` exit 0.
+
+---
+
+#### Step 9.5C: Caret visibility at position 0 with leading atom {#step-9-5c}
+
+**Depends on:** #step-9-5b
+
+**Commit:** `fix(tug-edit): caret visible at offset 0 when line begins with atom widget`
+
+**References:** [L06], [L19], `tug-edit/theme.ts`, `tug-edit/atom-decoration.ts`, (#tuglaws-compliance)
+
+**Background:**
+Also surfaced during the manual checkpoint of Step 9. When the document starts with an atom (`Decoration.replace` over `[0, 1)` with a widget), the native caret at offset 0 is invisible. Theme's `.cm-line::before` ghost is a zero-width inline-block sized to 1.75em — its purpose is to pin line-height uniformity ([Q05]). At position 0 the rendered DOM order is `[ghost (0px wide)]` + `[widget DOM]`. The native caret at offset 0 lands between the ghost and the widget, in zero horizontal space, hidden behind the widget's left margin. Every other line position has text glyphs whose advance gives the caret horizontal room.
+
+**Artifacts:**
+- `tug-edit/theme.ts` or `tug-edit.css`: a CSS rule that gives the caret room when the first inline content of a line is a widget. Candidate: `padding-inline-start: 1px` on `.cm-line` (every line; cheap, uniform); or a `::before` width tweak from `0` to `1px`.
+- (Investigation may surface a structural fix instead — e.g., a Decoration.widget marker at side: -1 before each replace decoration that starts a line — pick the smallest change that resolves the visual symptom without disturbing existing line-metric guarantees.)
+
+**Tasks:**
+- [ ] Reproduce in the gallery: insert an atom into an empty document, click before the atom, observe the missing caret. Capture before/after screenshots in the commit body.
+- [ ] Pick the smallest fix: prefer a one-line CSS change. If CSS alone cannot resolve it without breaking caret height uniformity, evaluate a side-marker decoration pattern.
+- [ ] Verify existing caret-height parity with text + atom mixed lines is preserved.
+
+**Tests:**
+- [ ] Visual: gallery walk-through; manual checkpoint covers it.
+- [ ] No new automated tests required unless the chosen fix is a structural decoration (in which case unit-test the marker presence).
+
+**Checkpoint:**
+- [ ] Manual: leading-atom card in gallery shows a visible caret at offset 0; text-leading and mixed lines look unchanged.
+- [ ] `bun run check`, `bun test` exit 0.
+
+---
+
 #### Step 10: Polish props — placeholder, maxRows, growDirection, maximized, focusStyle, borderless, route prefixes, disabled {#step-10}
 
 **Depends on:** #step-9
