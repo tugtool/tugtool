@@ -184,6 +184,24 @@
   border-color: var(--tug7-element-highlight-stroke-normal-drop-rest);
 }
 
+/* Re-assert the drop ring when the editor is focused. The focus
+ * rules above carry specificity (0,3,0) — `.tug-edit[data-focused]
+ * [data-focus-style="..."]` — and beat the drop-only rule's
+ * (0,2,0) for both `border-color` and (in the ring variant)
+ * `outline`. This higher-specificity (0,3,0) selector matches the
+ * focus rules' specificity; later source order wins, so a focused
+ * editor that picks up a drag gets the drop colors regardless of
+ * whether `focusStyle` is `"background"` or `"ring"`. (The
+ * background variant happens to look right with the lower-
+ * specificity rule because focus-style="background" doesn't set
+ * `outline`, so only border-color was contended; the ring variant
+ * sets both, which is why this fix is needed.) */
+.tug-edit[data-focused][data-drop-active] {
+  border-color: var(--tug7-element-highlight-stroke-normal-drop-rest);
+  outline: 2px solid var(--tug7-element-highlight-stroke-normal-drop-rest);
+  outline-offset: -1px;
+}
+
 /* Hide the regular caret while a drag is in progress. The drop
  * caret indicator (`.cm-tug-drop-caret`) shows the resolved drop
  * position; the regular caret would be a competing visual signal
