@@ -30,10 +30,11 @@
  *        React round-trip.
  */
 
+import { invertedEffects } from "@codemirror/commands";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import type { DecorationSet } from "@codemirror/view";
 import { StateEffect, StateField } from "@codemirror/state";
-import type { EditorState, Range, Transaction } from "@codemirror/state";
+import type { EditorState, Extension, Range, Transaction } from "@codemirror/state";
 import {
   createAtomImgElement,
   TUG_ATOM_CHAR,
@@ -303,3 +304,63 @@ export function insertAtomAtSelection(
     userEvent: "input.tug-atom",
   });
 }
+
+// ---------------------------------------------------------------------------
+// History integration — inverted effects for atom deletions
+// ---------------------------------------------------------------------------
+//
+// `atomDecorationField`'s decorations are auto-mapped through document
+// changes — a deletion that covers a U+FFFC drops its decoration along
+// with the character. That's correct for the forward direction, but
+// breaks `undo`: when the inverse change re-inserts the U+FFFC text,
+// the decoration field has no record of the atom segment that used to
+// live there, so the restored character renders as a tofu glyph
+// instead of an atom widget.
+//
+// `@codemirror/commands`' `invertedEffects` facet is the supported
+// hook for "make a custom field's state survive undo": for every
+// transaction recorded in history, we register effects that should
+// be applied when the transaction is later undone. Here we examine
+// the pre-change atom set and emit `addAtomsEffect.of(removed)` for
+// any atom whose range was entirely deleted by `tr.changes`.
+//
+// Detection uses `mapPos` rather than `touchesRange` because
+// `touchesRange === "cover"` requires *strict* containment (change
+// extends past both ends of the queried range); an exact-match
+// deletion of `[0, 1)` against an atom at `[0, 1)` returns `true`,
+// not `"cover"`. The `mapPos` collapse test is the correct predicate:
+// if the atom's start (mapped right) and end (mapped left) land at
+// the same post-change position, the range collapsed to a point —
+// i.e. the atom was deleted.
+//
+// Forward additions (paste, insertAtom, replace-state) don't need an
+// inverted effect from us: the history undoes the underlying change
+// (which deletes the inserted U+FFFC) and our field's auto-mapping
+// drops the matching decoration along with it. So the only direction
+// that needs explicit help is "atom existed before the transaction
+// and was removed by it" — exactly the case `touchesRange === "cover"`
+// detects.
+//
+// Laws: [L02] field state participates in CM6's history machinery
+//        rather than being copied through React state, [L19] file
+//        structure (extension lives next to the field it covers).
+export const atomInvertedEffects: Extension = invertedEffects.of((tr) => {
+  const result: StateEffect<unknown>[] = [];
+  const before = tr.startState.field(atomDecorationField);
+  const removed: PositionedAtom[] = [];
+  before.between(0, tr.startState.doc.length, (from, to, value) => {
+    const widget = (value.spec as { widget?: WidgetType }).widget;
+    if (widget instanceof AtomWidget) {
+      const mappedFrom = tr.changes.mapPos(from, 1);
+      const mappedTo = tr.changes.mapPos(to, -1);
+      if (mappedFrom >= mappedTo) {
+        // Atom range collapsed under the change — it was deleted.
+        removed.push({ position: from, segment: widget.segment });
+      }
+    }
+  });
+  if (removed.length > 0) {
+    result.push(addAtomsEffect.of(removed));
+  }
+  return result;
+});

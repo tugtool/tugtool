@@ -922,19 +922,21 @@ Per Step 9.5A: copy already writes a `text/plain` payload with atom labels subst
 - `tug-edit.tsx`: native-bridge paste branch consumes `html` first (parse via `parseClipboardHtml`); falls through to inserting `text` verbatim when html has no atom markers (or no html at all).
 
 **Tasks:**
-- [ ] Extend `serializeClipboard` to emit the html payload; update `handleCopyOrCut` to write it to `dt.setData("text/html", ...)`.
-- [ ] Implement `parseClipboardHtml(html)` — DOMParser-based, scoped to `<img data-atom-label>` element extraction. Position inference: walk the body's first-level node sequence, append text-node `data` to a running `docText` and emit a `￼` plus an atom record at each img.
-- [ ] Update `tug-edit.tsx` native-bridge paste handler to call `parseClipboardHtml(html)` first; if it returns atoms, dispatch a transaction that inserts the doc text + atom decorations together (mirrors the existing sidecar branch in `handlePaste`).
-- [ ] Browser path stays unchanged — `clipboardExt.handlePaste` still prefers the custom MIME sidecar. The html channel is the cross-bridge fallback.
+- [x] Extend `serializeClipboard` to emit the html payload; update `handleCopyOrCut` to write it to `dt.setData("text/html", ...)`.
+- [x] Implement `parseClipboardHtml(html)` — DOMParser-based, descends through wrapper elements, emits `docText` with U+FFFC at each `<img data-atom-label>` plus a positioned atoms array.
+- [x] Update `tug-edit.tsx` native-bridge paste handler to call `parseClipboardHtml(html)` first; if it returns atoms, dispatch a single transaction that inserts the doc text + atom decorations together (`addAtomsEffect`, mirrors the sidecar branch in `clipboardExt.handlePaste`).
+- [x] Browser path stays unchanged — `clipboardExt.handlePaste` still prefers the custom MIME sidecar. The html channel is the cross-bridge fallback.
+- [x] **Surfaced after initial commit:** Cut + Undo did not restore the atom widget — the U+FFFC text reappeared but with no decoration, rendering as a tofu glyph. Root cause: `atomDecorationField` had no history integration, so a deletion-then-undo round-tripped the doc text but lost the atom segment data. **Fix:** added `atomInvertedEffects` extension via `@codemirror/commands`'s `invertedEffects` facet. For every transaction, walks the pre-state's atom decorations and registers an `addAtomsEffect.of(removed)` for any atom whose range collapsed under `tr.changes` (detected via `mapPos(from, 1) >= mapPos(to, -1)` — `touchesRange === "cover"` is too strict, returning `true` not `"cover"` for an exact-match deletion).
 
 **Tests:**
-- [ ] Unit: `parseClipboardHtml` round-trips with `serializeClipboard`'s html output for atom-only, mixed, and text-only payloads.
-- [ ] Unit: `parseClipboardHtml` rejects malformed input (no `<img>`, missing data attributes, attribute typos) and returns null / empty atoms without throwing.
-- [ ] App-test: extend `at0043-tug-edit-copy-diag.test.ts` (or add a sibling `at0044`) to round-trip through copy → bridge read → paste, asserting the atom decorations land in the destination editor's `atomDecorationField`.
+- [x] Unit: `parseClipboardHtml` round-trips with `serializeClipboard`'s html output for atom-only and mixed payloads (text-only payload has no html by design).
+- [x] Unit: `parseClipboardHtml` rejects malformed input (empty, no `<img>`, missing data attributes) and returns null without throwing. Wrapper tolerance covered (WebKit's `<span style="...">` and `<meta>` wrappers, `<br>` → newline).
+- [x] App-test: `at0043` extended to assert html now carries atom markers (relaxed from raw substring to attribute presence + label presence — WebKit wraps clipboard html in a computed-style `<span>`), and a live ⌘V round-trip reconstructs the atom widget in the destination editor.
+- [x] App-test: `at0044-tug-edit-clipboard-stress.test.ts` covers the multi-step scenarios that slipped past `at0043`'s single round-trip — repeated paste produces N atoms, ⌘X+⌘Z restores the cut atom, ⌘V+⌘Z removes the pasted atom. Verified stable across 3 consecutive runs.
 
 **Checkpoint:**
-- [ ] Manual: in Tug.app, copy an atom-only / mixed selection and paste into a fresh tug-edit card → atoms re-render as widgets in both cases.
-- [ ] `bun run check`, `bun test`, `just app-test at0043` exit 0.
+- [ ] Manual: in Tug.app, copy an atom-only / mixed selection and paste into a fresh tug-edit card → atoms re-render as widgets in both cases. Cut an atom and undo → widget reappears.
+- [x] `bun run check`, `bun test`, `just app-test at0043 at0044` exit 0.
 
 ---
 

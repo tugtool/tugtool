@@ -101,12 +101,14 @@ import {
 import { tugTheme } from "./tug-edit/theme";
 import { hostFocusMirror } from "./tug-edit/host-state";
 import {
+  addAtomsEffect,
   atomDecorationField,
+  atomInvertedEffects,
   insertAtomAtSelection,
   regenerateAtomsEffect,
 } from "./tug-edit/atom-decoration";
 import { atomicRangesExt } from "./tug-edit/atomic-ranges";
-import { clipboardExt } from "./tug-edit/clipboard-filters";
+import { clipboardExt, parseClipboardHtml } from "./tug-edit/clipboard-filters";
 import { tugDropExtension } from "./tug-edit/drop-extension";
 import { createCMSelectionAdapter } from "./tug-edit/selection-adapter";
 import { tugSelectionLayer } from "./tug-edit/selection-layer";
@@ -436,8 +438,11 @@ function buildExtensions(
     // atomic-ranges provider lifts that data into CM6's motion /
     // deletion machinery; clipboard filters round-trip the atoms
     // through copy / cut / paste; the drop extension lifts dragged
-    // files from Finder into atoms at the drop point.
+    // files from Finder into atoms at the drop point;
+    // `atomInvertedEffects` registers history-aware undo so a cut
+    // atom's widget reappears on Cmd-Z.
     atomDecorationField,
+    atomInvertedEffects,
     atomicRangesExt,
     clipboardExt,
     tugDropExtension(host, getDropHandler),
@@ -798,8 +803,16 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
     // path is to delegate to Swift. Outside Tug.app, fall back to
     // execCommand("paste") which fires a paste event on contentDOM
     // that our `clipboardExt` decodes (atom sidecar or plain text).
-    // Native bridge returns plain text only — atom sidecars never
-    // cross the bridge, which matches the tug-prompt-input policy.
+    //
+    // Bridge-paste atom round-trip: the bridge exposes
+    // `text/plain` + `text/html` only — never the
+    // `application/x-tug-atoms` custom MIME the substrate writes on
+    // copy. We parse `html` first via `parseClipboardHtml`. When the
+    // html carries atom `<img data-atom-*>` markup, we reconstruct
+    // the atoms in a single transaction (text + decorations
+    // together, mirrors the `clipboardExt.handlePaste` sidecar
+    // branch). When the html is empty / atom-free / malformed, we
+    // fall through to inserting `text` verbatim.
     const handlePaste = useCallback((): ActionHandlerResult => {
       const view = viewRef.current;
       if (view === null) return;
@@ -807,10 +820,27 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
       if (hasNativeClipboardBridge()) {
         const readPromise = readClipboardViaNative();
         return () => {
-          void readPromise.then(({ text }) => {
+          void readPromise.then(({ text, html }) => {
             const live = viewRef.current;
-            if (live === null || text === "") return;
+            if (live === null) return;
             const { from, to } = live.state.selection.main;
+            const parsedHtml = parseClipboardHtml(html);
+            if (parsedHtml !== null) {
+              const placedAtoms = parsedHtml.atoms.map((a) => ({
+                position: from + a.position,
+                segment: a.segment,
+              }));
+              live.dispatch({
+                changes: { from, to, insert: parsedHtml.docText },
+                effects: placedAtoms.length > 0
+                  ? addAtomsEffect.of(placedAtoms)
+                  : [],
+                selection: { anchor: from + parsedHtml.docText.length },
+                userEvent: "input.paste",
+              });
+              return;
+            }
+            if (text === "") return;
             live.dispatch({
               changes: { from, to, insert: text },
               selection: { anchor: from + text.length },

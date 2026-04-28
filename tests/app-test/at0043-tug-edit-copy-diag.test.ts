@@ -21,28 +21,21 @@
  * `window.webkit.messageHandlers.clipboardRead` channel that
  * `tug-native-clipboard.ts` exposes to the substrate's paste handler.
  *
- * ## Findings (recorded for future readers)
+## Findings (recorded for future readers)
  *
- *   | scenario   | bridge text |
- *   |------------|-------------|
- *   | text-only  | "abc"       |
- *   | mixed      | "xmain.ts"  |
- *   | atom-only  | "main.ts"   |
+ *   | scenario   | bridge text | bridge html       |
+ *   |------------|-------------|-------------------|
+ *   | text-only  | "abc"       | "" (no atoms)     |
+ *   | mixed      | "xmain.ts"  | x + <img …>       |
+ *   | atom-only  | "main.ts"   | <img …>           |
  *
- *   In every case, `document.execCommand("copy")` succeeds, the copy
- *   event fires, and `clipboardExt` writes both `text/plain` (with
- *   atom labels substituted for U+FFFC, per `serializeClipboard`'s
- *   `fallback` field) and the `application/x-tug-atoms` sidecar.
- *   The native bridge reads `text/plain` + `text/html` only — the
- *   sidecar is invisible to it. So both UX symptoms are the same root
- *   cause: atoms travel through the custom MIME but the bridge
- *   doesn't carry custom MIMEs, and the substrate's paste path on
- *   Tug.app reconstructs from `text` only.
- *
- * The fix lands in Step 9.5B: emit a `text/html` payload too (the
- * bridge does carry html), and parse it on the bridge-paste path
- * to reconstruct atoms. Once 9.5B lands, this test is extended to
- * assert on the html field and round-trip atom decorations.
+ *   `text/plain` carries atom labels substituted for U+FFFC (per
+ *   `serializeClipboard`'s `fallback` field) so external apps see
+ *   readable text. Step 9.5B's fix added `text/html` carrying
+ *   `<img data-atom-*>` markup so the substrate's bridge-paste path
+ *   can reconstruct atom decorations. The test rounds-trips through
+ *   copy → bridge read → paste-into-fresh-card and asserts the atom
+ *   `<img>` reappears in the destination editor's DOM.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  */
@@ -278,16 +271,59 @@ describe.skipIf(!SHOULD_RUN)(
               "atom-only ⌘C: bridge text payload (label only)",
             ).toBe(FILE_ATOM_LABEL);
 
-            // ---- Pre-fix baseline assertions on html ----
-            // Step 9.5B will populate `text/html` with atom <img>
-            // markup. Until that lands, the bridge sees no html for
-            // any scenario. Recording these as expectations now means
-            // the fix-step's commit will turn them red and force the
-            // implementer to update them — a clear signal of the
-            // post-fix shape.
-            expect(textOnlyClip.html, "text-only html payload (pre-9.5B)").toBe("");
-            expect(mixedClip.html, "mixed html payload (pre-9.5B)").toBe("");
-            expect(atomOnlyClip.html, "atom-only html payload (pre-9.5B)").toBe("");
+            // ---- Post-9.5B html payload assertions ----
+            //
+            // text-only has no atoms, so `serializeClipboard.html` is
+            // empty by design — nothing to round-trip via the html
+            // channel.
+            expect(textOnlyClip.html, "text-only html payload — no atoms = empty").toBe("");
+
+            // Mixed and atom-only carry atom `<img data-atom-*>`
+            // markup. We don't pin the exact serialized form — atom
+            // SVG inlining drifts with theme tokens AND WebKit wraps
+            // the bridge-read html in `<span style="...">` carrying
+            // computed-style. Instead assert the reconstructable
+            // shape: `data-atom-label`, `data-atom-value`, and
+            // `data-atom-type` attributes are all present in the
+            // html, and the file label appears. The
+            // wrapper-tolerance is exercised by
+            // `parseClipboardHtml` (unit-tested) and by the live
+            // round-trip below.
+            expect(mixedClip.html, "mixed html: contains atom-label attribute")
+              .toContain("data-atom-label=");
+            expect(mixedClip.html, "mixed html: contains atom-value attribute")
+              .toContain("data-atom-value=");
+            expect(mixedClip.html, "mixed html: contains atom-type attribute")
+              .toContain("data-atom-type=");
+            expect(mixedClip.html, "mixed html: contains 'main.ts' label")
+              .toContain(FILE_ATOM_LABEL);
+            // Leading "x" text glyph survives the WebKit-span wrap.
+            expect(mixedClip.html, "mixed html: leading 'x' text glyph survived")
+              .toContain(">x<");
+
+            expect(atomOnlyClip.html, "atom-only html: contains atom-label attribute")
+              .toContain("data-atom-label=");
+            expect(atomOnlyClip.html, "atom-only html: contains 'main.ts' label")
+              .toContain(FILE_ATOM_LABEL);
+
+            // ---- Round-trip assertion ----
+            //
+            // Confirm the bridge-paste path reconstructs the atom
+            // widget from the html payload. The atom-only clipboard
+            // is what was last copied; clear the editor and ⌘V should
+            // produce one `<img data-atom-label>` in the destination.
+            await clearEditor(app);
+            await app.nativeKey("v", ["cmd"]);
+            await app.waitForCondition<boolean>(
+              `(function(){
+                var ed = document.querySelector('[data-card-id="A"] ${TUG_EDIT_CONTENT_SELECTOR}');
+                if (ed === null) return false;
+                var imgs = ed.querySelectorAll('img[data-atom-label]');
+                return imgs.length === 1
+                  && imgs[0].getAttribute('data-atom-label') === ${JSON.stringify(FILE_ATOM_LABEL)};
+              })()`,
+              { timeoutMs: 4000 },
+            );
           } finally {
             await app.close();
           }

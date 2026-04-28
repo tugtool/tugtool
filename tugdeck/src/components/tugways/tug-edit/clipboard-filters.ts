@@ -21,7 +21,11 @@
 
 import { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
-import { TUG_ATOM_CHAR, type AtomSegment } from "@/lib/tug-atom-img";
+import {
+  atomImgHTML,
+  TUG_ATOM_CHAR,
+  type AtomSegment,
+} from "@/lib/tug-atom-img";
 import {
   addAtomsEffect,
   getAtomsInRange,
@@ -69,6 +73,25 @@ export interface ClipboardSerialization {
   fallback: string;
   /** JSON sidecar payload with atom data; null if no atoms in range. */
   sidecar: TugAtomsClipboardPayload | null;
+  /**
+   * HTML representation of the copied range — escaped text segments
+   * interleaved with `<img data-atom-label data-atom-value
+   * data-atom-type>` elements at U+FFFC positions, produced via
+   * `atomImgHTML`. Empty string when no atoms are in range (a plain
+   * `text/html` payload would only duplicate `text/plain`, which the
+   * substrate's bridge-paste handler already prefers).
+   *
+   * Why html in addition to the sidecar: the substrate's primary
+   * paste path inside Tug.app reads the system clipboard via the
+   * native bridge (`tug-native-clipboard.ts`), which exposes
+   * `text/plain` and `text/html` only — custom MIME types (the
+   * sidecar) never cross that bridge. Without html, an in-app copy
+   * of an atom-bearing range pastes as label-substituted plain text
+   * and atoms vanish. Browsers, by contrast, see the full
+   * `clipboardData` set on a paste event so the sidecar still wins
+   * the browser-mode round trip.
+   */
+  html: string;
 }
 
 /**
@@ -98,11 +121,149 @@ export function serializeClipboard(
     }
   }
 
+  // Build the html payload by walking `text` glyph-by-glyph, emitting
+  // an `atomImgHTML` element at each U+FFFC and HTML-escaping every
+  // text segment. Position-keyed lookup avoids worrying about
+  // text-substitution length drift the way `fallback` had to.
+  let html = "";
+  if (local.length > 0) {
+    const byPosition = new Map<number, AtomSegment>();
+    for (const a of local) byPosition.set(a.position, a.segment);
+    let textBuf = "";
+    for (let i = 0; i < text.length; i++) {
+      const seg = byPosition.get(i);
+      if (seg !== undefined) {
+        if (textBuf.length > 0) {
+          html += escapeHtml(textBuf);
+          textBuf = "";
+        }
+        html += atomImgHTML(seg.type, seg.label, seg.value);
+        // Skip the U+FFFC character itself — it has no rendered
+        // counterpart in html, the img element fills its slot.
+        continue;
+      }
+      textBuf += text[i];
+    }
+    if (textBuf.length > 0) {
+      html += escapeHtml(textBuf);
+    }
+  }
+
   return {
     text,
     fallback,
     sidecar: local.length > 0 ? { version: 1, atoms: local } : null,
+    html,
   };
+}
+
+/**
+ * Escape `&`, `<`, `>` for safe placement inside an HTML payload's
+ * text positions. Quotes (`"`, `'`) are not escaped — they only need
+ * escaping inside attribute values, and our html payload only places
+ * raw text between (or around) `<img>` elements, never inside an
+ * attribute. The result is consumed by `DOMParser` on the paste side
+ * and by external apps' clipboard html readers; both treat unescaped
+ * quotes in text content as plain characters.
+ */
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * Parse result for `parseClipboardHtml` — same shape `parseClipboardSidecar`
+ * implies after pairing with the `text/plain` payload, but built directly
+ * from html so the bridge-paste path can build a single transaction.
+ */
+export interface ParsedClipboardHtml {
+  /** Document text, with U+FFFC at each atom position. */
+  docText: string;
+  /** Atoms with positions relative to `docText` (i.e. matching its U+FFFC). */
+  atoms: { position: number; segment: AtomSegment }[];
+}
+
+/**
+ * Parse a clipboard `text/html` payload produced by `serializeClipboard`
+ * (or by tug-prompt-input's contentEditable copy, which serializes
+ * the same `<img data-atom-*>` shape).
+ *
+ * Walks the parsed body's nodes — text and `<img data-atom-label>`
+ * elements only — accumulating a `docText` string with U+FFFC at each
+ * atom position and a parallel atoms array. Other element kinds
+ * (`<span>`, `<br>`, WebKit's clipboard `<meta>` wrapper, etc.) are
+ * descended through; their text-node children contribute, their
+ * non-`<img data-atom-label>` element children are ignored.
+ *
+ * Returns `null` when:
+ *   - the input doesn't parse as valid html,
+ *   - no `<img data-atom-label>` element appears anywhere in the body,
+ *   - any encountered atom img is missing one of `data-atom-type` /
+ *     `data-atom-label` / `data-atom-value`.
+ *
+ * Callers should fall back to a pure-text paste in any of those
+ * cases (see `tug-edit.tsx` native-bridge paste branch).
+ */
+export function parseClipboardHtml(html: string): ParsedClipboardHtml | null {
+  if (html === "") return null;
+  let doc: Document;
+  try {
+    doc = new DOMParser().parseFromString(html, "text/html");
+  } catch {
+    return null;
+  }
+  let docText = "";
+  const atoms: { position: number; segment: AtomSegment }[] = [];
+  let sawAtom = false;
+
+  const walk = (node: Node): boolean => {
+    // Returns false on a malformed atom-img encounter so the caller
+    // can short-circuit. Text accumulation and atom collection
+    // mutate the closures above.
+    if (node.nodeType === Node.TEXT_NODE) {
+      docText += node.textContent ?? "";
+      return true;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return true;
+    }
+    const el = node as HTMLElement;
+    if (el.tagName === "IMG" && el.hasAttribute("data-atom-label")) {
+      const type = el.dataset.atomType;
+      const label = el.dataset.atomLabel;
+      const value = el.dataset.atomValue;
+      if (
+        typeof type !== "string"
+        || typeof label !== "string"
+        || typeof value !== "string"
+      ) {
+        return false;
+      }
+      atoms.push({
+        position: docText.length,
+        segment: { kind: "atom", type, label, value },
+      });
+      docText += TUG_ATOM_CHAR;
+      sawAtom = true;
+      return true;
+    }
+    // BR carries a newline in clipboard html — preserve it so a
+    // multi-line copy round-trips.
+    if (el.tagName === "BR") {
+      docText += "\n";
+      return true;
+    }
+    // Any other element: descend into children, ignore the wrapper.
+    for (const child of Array.from(el.childNodes)) {
+      if (!walk(child)) return false;
+    }
+    return true;
+  };
+
+  for (const child of Array.from(doc.body.childNodes)) {
+    if (!walk(child)) return null;
+  }
+  if (!sawAtom) return null;
+  return { docText, atoms };
 }
 
 /**
@@ -172,6 +333,11 @@ function handleCopyOrCut(
   if (payload.sidecar !== null) {
     dt.setData("text/plain", payload.fallback);
     dt.setData(TUG_ATOMS_MIME, JSON.stringify(payload.sidecar));
+    // text/html: carries atom <img> markup so the paste path inside
+    // Tug.app's native bridge (which exposes only plain + html, never
+    // custom MIMEs) can reconstruct atoms. Browser-mode paste still
+    // prefers the sidecar — html is the cross-bridge fallback.
+    dt.setData("text/html", payload.html);
   } else {
     dt.setData("text/plain", payload.text);
   }
