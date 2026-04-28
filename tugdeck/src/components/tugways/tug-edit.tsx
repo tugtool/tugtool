@@ -1,69 +1,39 @@
 /**
  * TugEdit — CodeMirror 6-backed text editing substrate.
  *
- * The lower-level editing primitive that will eventually back
- * `TugPromptInput`, `TugPromptEntry`, and the live tide-card. Built on
- * an `EditorView` from CodeMirror 6; the React shell owns mount and
- * dispose, observes via `EditorView.updateListener`, and exposes an
- * imperative delegate. The substrate is text-only at this step —
- * atoms, theme, keymap, completion, history, drop, and state
- * preservation arrive in later spike steps (see
- * `roadmap/text-editing-base.md`).
+ * The lower-level editing primitive that backs higher-level tug
+ * components. Built on an `EditorView` from CodeMirror 6: the
+ * React shell owns mount and dispose, observes via
+ * `EditorView.updateListener`, and exposes an imperative delegate
+ * via `ref`.
  *
- * `TugEdit` owns its content document, caret, and selection — those
- * are user-data state that lives only inside the component, so it is
- * a *responder* (per [L11]) for the editing actions that operate on
- * that state (cut / copy / paste / selectAll / undo / redo, plus
- * domain submit/newline). Step 1 wires the substrate; the action
- * registrations land in subsequent spike steps as keymap, completion,
- * and selection-adapter extensions arrive.
+ * Owns the document, caret, and selection — the state that editing
+ * actions (cut, copy, paste, selectAll, undo, redo, submit) mutate.
+ * Per [L11], `TugEdit` is the responder that registers handlers
+ * for those actions on its owned state.
  *
- * Laws this component obeys:
+ * Laws: [L01] one root.render() at mount; CM6 manages its own DOM
+ *        tree internally and is never re-rendered through React,
+ *        [L03] mount and dispose run in `useLayoutEffect`,
+ *        [L06] all editor appearance flows through CSS and direct
+ *        DOM, never React state, [L07] delegate methods read
+ *        `viewRef.current` at call time, [L11] responder for
+ *        editing actions on the owned document and selection,
+ *        [L15] token-driven control states, [L19] component
+ *        authoring guide, [L21] CodeMirror 6 (MIT) — see
+ *        `THIRD_PARTY_NOTICES.md`, [L24] `viewRef`/`hostRef`
+ *        local-data, CM6 owns document and selection, appearance
+ *        via CSS / DOM.
  *
- *   [L01] One `root.render()` at mount — the React shell mounts once;
- *         CM6's `EditorView` manages its own DOM tree internally and
- *         is never re-rendered through React after construction.
- *   [L03] Mount and dispose run in `useLayoutEffect` so the live
- *         `EditorView` is in place before any keyboard or pointer
- *         events can fire against it.
- *   [L06] All editor appearance — caret blink, selection paint,
- *         hover, focus indication — flows through CSS and direct DOM
- *         (CM6's own DOM mutations and our token-driven theme), never
- *         through React state.
- *   [L07] The `useImperativeHandle` delegate methods read
- *         `viewRef.current` at call time so consumers see the live
- *         view across React 19 StrictMode's mount/unmount/mount cycle
- *         and across cross-pane moves.
- *   [L11] `TugEdit` owns the document and selection state for its
- *         content; it is the responder for editing actions that
- *         mutate that state. Step 4 wires the keymap; later steps
- *         wire completion, history, and clipboard handlers.
- *   [L19] Component authoring guide — file pair (`tug-edit.tsx` +
- *         `tug-edit.css`), module docstring, props interface,
- *         `data-slot="editor"`, CSS organization. Token pairings
- *         (`@tug-pairings`, `@tug-renders-on`) arrive in Step 2 when
- *         the theme extension lands.
- *   [L21] CodeMirror 6 (MIT) is the third-party substrate. Use is
- *         logged in `THIRD_PARTY_NOTICES.md` under the existing
- *         "CodeMirror 6" entry.
- *   [L24] State zones — `viewRef` and `hostRef` live in the
- *         local-data zone (`useRef`); `viewRef.current` is itself the
- *         CM6 state-zone source of truth for document and selection;
- *         all editor appearance is appearance-zone (CSS / DOM).
- *
- * Resolution of plan question [Q03] — CM6 lifecycle vs React StrictMode:
- *
- *   The `EditorView` is constructed inside a `useLayoutEffect` with
- *   an empty dep array, stored on `viewRef`, and disposed in the
- *   cleanup. Under React 19 StrictMode the dev double-invocation
- *   pattern runs the effect twice (mount → cleanup → mount); each
- *   pass constructs a fresh view and the previous cleanup destroys
- *   the prior one. No leaks, no orphaned views, no surviving DOM.
- *   `viewRef` is set to `null` in the cleanup so any imperative
- *   caller that reaches into the delegate between unmount and
- *   re-mount sees `view() === null` rather than a destroyed view.
- *   This pattern matches the standard CM6/React integration shape
- *   used by `@uiw/react-codemirror` and similar wrappers.
+ * StrictMode lifecycle: the `EditorView` is constructed inside a
+ * `useLayoutEffect` with empty deps, stored on `viewRef`, and
+ * disposed in the cleanup. React 19 StrictMode runs mount →
+ * cleanup → mount in dev; each pass constructs a fresh view, the
+ * prior cleanup destroys the prior view, and `viewRef.current`
+ * is `null` between passes so callers see `view() === null`
+ * rather than a destroyed view. Pattern matches the standard CM6
+ * + React integration used by `@uiw/react-codemirror` and similar
+ * wrappers.
  */
 
 import "./tug-edit.css";
@@ -82,18 +52,19 @@ import { cn } from "@/lib/utils";
 /**
  * Imperative handle exposed via `ref`.
  *
- * The Step 1 surface is intentionally minimal — just the underlying
- * `EditorView`, which lets tests and future spike steps reach into the
- * substrate. Subsequent spike steps widen this interface as features
- * land (atoms, selection, completion, state preservation, etc.) until
- * it converges on the full shape documented in the plan's
- * `Public API Surface` section.
+ * Exposes the underlying `EditorView`. Consumers that need to
+ * dispatch transactions, query state, or reach into extension
+ * data hold this handle and call `view()` at use time.
+ *
+ * `view()` returns `null` between unmount and re-mount — for
+ * example during React 19 StrictMode's dev double-mount, or after
+ * the component has been disposed. See the lifecycle note in the
+ * module docstring.
  */
 export interface TugEditDelegate {
   /**
-   * Return the live `EditorView`, or `null` between unmount and
-   * re-mount (e.g., during React StrictMode's dev double-invocation,
-   * or after the component has been unmounted).
+   * Return the live `EditorView`, or `null` if no view is
+   * currently mounted.
    */
   view(): EditorView | null;
 }
@@ -103,12 +74,10 @@ export interface TugEditDelegate {
 // ---------------------------------------------------------------------------
 
 /**
- * Props for `TugEdit`. The Step 1 surface inherits standard
- * `<div>` props (className, style, data-* attributes, etc.) and
- * applies them to the host wrapper. Substrate-specific props
- * (placeholder, maxRows, returnAction, completion providers,
- * history provider, drop handler, route prefixes, state
- * preservation, …) arrive in later spike steps.
+ * Props for `TugEdit`. The component renders a host `<div>`
+ * around the live `EditorView`; standard `<div>` props
+ * (`className`, `style`, `data-*`, etc.) flow through to the
+ * host.
  */
 export interface TugEditProps
   extends Omit<React.ComponentPropsWithoutRef<"div">, "onChange"> {
@@ -126,9 +95,8 @@ export interface TugEditProps
 /**
  * Build the initial CM6 extension set used at mount.
  *
- * Kept as a free function so the extension list is easy to extend in
- * later steps (atoms, theme, keymap, completion, …) without disturbing
- * the lifecycle code.
+ * Kept as a free function so the extension list is easy to grow
+ * without disturbing the lifecycle code.
  */
 function buildInitialExtensions(): readonly Extension[] {
   return [

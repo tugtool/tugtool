@@ -1,14 +1,11 @@
 /**
  * gallery-text-edit.tsx — TugEdit gallery card.
  *
- * Demo surface for the new CodeMirror 6-backed `TugEdit` substrate.
- * Step 1 of the text-editing-base spike scope: a single mounted
- * editor that accepts typing, arrow keys, and undo/redo.
- *
- * Subsequent spike steps grow this card to demonstrate atoms,
- * theme switching, completion, history navigation, drag-and-drop,
- * and full prop parity with `tug-prompt-input` (see
- * `roadmap/text-editing-base.md`).
+ * Demo surface for the CodeMirror 6-backed `TugEdit` substrate.
+ * Mounts a single editor inside a sized host so reviewers can
+ * exercise typing, motion, and undo/redo by hand. Card-level
+ * controls for atoms, theme, completion, history, and the rest
+ * of the prop surface are layered on as the substrate grows.
  *
  * Laws: [L01] one root.render() at mount, [L06] appearance via
  *        CSS and DOM, never React state, [L19] component authoring guide.

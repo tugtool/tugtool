@@ -1,9 +1,11 @@
 /*
  * gallery-text-edit.css — gallery card layout for the TugEdit demo.
  *
- * The host wrapper sets a fixed minimum height so the empty editor
- * is visibly present at mount. Token-driven appearance for the
- * editor itself arrives in spike Step 2 (theming).
+ * The host wrapper sets a fixed minimum height so the editor is
+ * visibly present at mount. Editor appearance (caret, selection,
+ * content fg / bg, focus, disabled) is owned by `tug-edit.css` and
+ * the CM6 theme extension; this file styles only the gallery
+ * surround.
  *
  * Laws: [L06] appearance via CSS, [L16] foreground-only rules declare
  *       their rendering surface, [L19] CSS organization.

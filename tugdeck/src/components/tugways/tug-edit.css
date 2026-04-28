@@ -1,10 +1,14 @@
 /*
  * tug-edit.css — host wrapper styling for the TugEdit substrate.
  *
- * Step 1 of the text-editing-base spike scope: host-wrapper layout
- * only. Token-driven appearance for the editor surface arrives in
- * Step 2 ([D06] theming via 7-element CSS variables in
- * `roadmap/text-editing-base.md`).
+ * Layout-only at present. The host is a flex container that sizes
+ * the live CodeMirror tree (`.cm-editor > .cm-scroller > .cm-content`)
+ * to fill its parent. Token-driven appearance for the editor surface
+ * (caret, selection, content fg, content bg, focus, disabled) is
+ * applied through the CM6 theme extension; CSS variables flow through
+ * automatically on theme change.
+ *
+ * Laws: [L06] appearance via CSS, [L19] CSS organization.
  */
 
 .tug-edit {

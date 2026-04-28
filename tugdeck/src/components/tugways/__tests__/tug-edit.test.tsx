@@ -1,5 +1,5 @@
 /**
- * TugEdit — Step 1 substrate bootstrap tests.
+ * TugEdit — substrate bootstrap tests.
  *
  * Verifies that the CodeMirror 6-backed `TugEdit` component:
  *   1. Mounts and constructs an `EditorView` accessible via the
@@ -7,13 +7,14 @@
  *   2. Renders the editor's DOM tree into the host wrapper.
  *   3. Disposes the `EditorView` cleanly on unmount, and a subsequent
  *      mount produces a fresh, distinct `EditorView` instance —
- *      validating the StrictMode-safe lifecycle pattern recorded
- *      in the `tug-edit.tsx` module docstring (plan [Q03]).
+ *      validating the StrictMode-safe lifecycle pattern documented
+ *      in the `tug-edit.tsx` module docstring.
  *
- * Scope: structural mount/unmount only. Focus, selection, key events,
- * and editor input behavior are out of scope for the happy-dom
- * environment per the project's test-scoping rule (those are exercised
- * via the gallery card and `just app-test` in later spike steps).
+ * Scope: structural mount / unmount only. Focus, selection, key
+ * events, and editor input behavior are out of scope for the
+ * happy-dom environment per the project's test-scoping rule;
+ * those interactions are exercised via the gallery card and
+ * `just app-test`.
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
  */
