@@ -309,7 +309,7 @@ export function CardTitleBar({
                     </TugPushButton>
                   </div>
                   <TugLabel size="md" align="center">
-                    Close {cardCount} Tabs?
+                    {`Close ${cardCount} Tabs?`}
                   </TugLabel>
                 </div>
               </TugPopoverContent>

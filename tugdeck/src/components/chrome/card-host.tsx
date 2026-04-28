@@ -1109,8 +1109,13 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       if (focusInsideCard) {
         focus = captureFocus(cardRoot);
       } else {
+        // Forward the previous bag's focus when present. `bag.focus`
+        // is `FocusSnapshot | null` — both the `undefined`
+        // (never-saved) and `null` (explicitly cleared) cases keep
+        // the local default `{ kind: "none" }`, which is filtered
+        // out of the assembled bag below.
         const prev = store.getCardState(cardId);
-        if (prev?.focus !== undefined) focus = prev.focus;
+        if (prev?.focus) focus = prev.focus;
       }
     }
     const bag: CardStateBag = {
