@@ -9,12 +9,21 @@
  *      mount produces a fresh, distinct `EditorView` instance —
  *      validating the StrictMode-safe lifecycle pattern documented
  *      in the `tug-edit.tsx` module docstring.
+ *   4. Pure-logic helpers (`resolveEnterAction`, `captureEditState`,
+ *      `applyEditState`) round-trip cleanly — these are pure
+ *      functions over CM6 view state, so happy-dom is the right
+ *      environment.
  *
- * Scope: structural mount / unmount only. Focus, selection, key
- * events, and editor input behavior are out of scope for the
- * happy-dom environment per the project's test-scoping rule;
- * those interactions are exercised via the gallery card and
- * `just app-test`.
+ * Scope: structural mount / unmount and pure-logic substrate
+ * helpers only. Focus, selection, keyboard events, and the
+ * keymap-vs-responder-chain interaction are deliberately NOT
+ * covered here — those interactions cross React renders,
+ * document-level capture-phase listeners, native browser focus,
+ * and the contentEditable selection model, none of which happy-dom
+ * models faithfully. The project's test-scoping rule reserves them
+ * for `just app-test` (real WebKit) and the gallery card. Adding
+ * synthetic `KeyboardEvent` dispatches here would produce green
+ * tests for behaviors that are broken in the real browser.
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
  */
@@ -35,7 +44,14 @@ import {
   getAtomsInState,
   regenerateAtomsEffect,
 } from "@/components/tugways/tug-edit/atom-decoration";
+import {
+  applyEditState,
+  captureEditState,
+  resolveEnterAction,
+} from "@/components/tugways/tug-edit/keymap";
+import type { TugEditKeymapConfig } from "@/components/tugways/tug-edit/keymap";
 import { TUG_ATOM_CHAR, type AtomSegment } from "@/lib/tug-atom-img";
+import type { TugTextEditingState } from "@/lib/tug-text-engine";
 
 // ---------------------------------------------------------------------------
 // Canvas 2D shim
@@ -434,3 +450,137 @@ describe("TugEdit — atom integration", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Keymap — pure policy
+// ---------------------------------------------------------------------------
+
+const SUBMIT_CONFIG: TugEditKeymapConfig = {
+  returnAction: "submit",
+  numpadEnterAction: "submit",
+  onSubmit: () => {},
+  historyProvider: null,
+};
+
+const NEWLINE_CONFIG: TugEditKeymapConfig = {
+  returnAction: "newline",
+  numpadEnterAction: "newline",
+  onSubmit: () => {},
+  historyProvider: null,
+};
+
+describe("TugEdit — resolveEnterAction", () => {
+  it("returns the configured returnAction for plain Enter", () => {
+    expect(resolveEnterAction(SUBMIT_CONFIG, false, false)).toBe("submit");
+    expect(resolveEnterAction(NEWLINE_CONFIG, false, false)).toBe("newline");
+  });
+
+  it("flips the action when Shift is held", () => {
+    expect(resolveEnterAction(SUBMIT_CONFIG, false, true)).toBe("newline");
+    expect(resolveEnterAction(NEWLINE_CONFIG, false, true)).toBe("submit");
+  });
+
+  it("uses numpadEnterAction when isNumpad is true", () => {
+    const mixed: TugEditKeymapConfig = {
+      ...SUBMIT_CONFIG,
+      returnAction: "newline",
+      numpadEnterAction: "submit",
+    };
+    expect(resolveEnterAction(mixed, false, false)).toBe("newline");
+    expect(resolveEnterAction(mixed, true, false)).toBe("submit");
+  });
+
+  it("flips the numpad action under Shift", () => {
+    const mixed: TugEditKeymapConfig = {
+      ...SUBMIT_CONFIG,
+      numpadEnterAction: "newline",
+    };
+    expect(resolveEnterAction(mixed, true, false)).toBe("newline");
+    expect(resolveEnterAction(mixed, true, true)).toBe("submit");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Keymap — state capture and restore
+// ---------------------------------------------------------------------------
+
+describe("TugEdit — captureEditState / applyEditState", () => {
+  it("captureEditState reflects text + atoms + selection from the live view", () => {
+    const { view, delegate, unmount } = mountAtomHarness();
+    try {
+      view.dispatch({ changes: { from: 0, insert: "abcd" } });
+      view.dispatch({ selection: { anchor: 2 } });
+      delegate.insertAtom(FILE_ATOM);
+      // Doc is now "ab￼cd" (length 5), caret at 3.
+      const captured = captureEditState(view);
+      expect(captured.text).toBe(`ab${TUG_ATOM_CHAR}cd`);
+      expect(captured.atoms).toHaveLength(1);
+      expect(captured.atoms[0]).toEqual({
+        position: 2,
+        type: FILE_ATOM.type,
+        label: FILE_ATOM.label,
+        value: FILE_ATOM.value,
+      });
+      expect(captured.selection).toEqual({ start: 3, end: 3 });
+    } finally {
+      unmount();
+    }
+  });
+
+  it("applyEditState replaces document, atoms, and selection in one transaction", () => {
+    const { view, unmount } = mountAtomHarness();
+    try {
+      // Seed with some content the caller will replace.
+      view.dispatch({ changes: { from: 0, insert: "stale" } });
+
+      const target: TugTextEditingState = {
+        text: `hello ${TUG_ATOM_CHAR} world`,
+        atoms: [
+          { position: 6, type: FILE_ATOM.type, label: FILE_ATOM.label, value: FILE_ATOM.value },
+        ],
+        selection: { start: 7, end: 7 },
+      };
+      applyEditState(view, target);
+
+      expect(view.state.doc.toString()).toBe(target.text);
+      const atoms = getAtomsInState(view.state);
+      expect(atoms).toHaveLength(1);
+      expect(atoms[0]!.position).toBe(6);
+      expect(atoms[0]!.segment.type).toBe(FILE_ATOM.type);
+      expect(atoms[0]!.segment.label).toBe(FILE_ATOM.label);
+      expect(atoms[0]!.segment.value).toBe(FILE_ATOM.value);
+      const sel = view.state.selection.main;
+      expect(sel.from).toBe(7);
+      expect(sel.to).toBe(7);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("captureEditState then applyEditState round-trips identically", () => {
+    const { view, delegate, unmount } = mountAtomHarness();
+    try {
+      view.dispatch({ changes: { from: 0, insert: "xy" } });
+      view.dispatch({ selection: { anchor: 2 } });
+      delegate.insertAtom(FILE_ATOM);
+      view.dispatch({ changes: { from: 3, insert: "zw" } });
+      view.dispatch({ selection: { anchor: 1 } });
+      const snapshot = captureEditState(view);
+
+      // Mutate then restore.
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: "noise" } });
+      applyEditState(view, snapshot);
+
+      expect(view.state.doc.toString()).toBe(snapshot.text);
+      const atoms = getAtomsInState(view.state);
+      expect(atoms).toHaveLength(1);
+      expect(atoms[0]!.position).toBe(2);
+      const sel = view.state.selection.main;
+      expect(sel.from).toBe(snapshot.selection!.start);
+      expect(sel.to).toBe(snapshot.selection!.end);
+    } finally {
+      unmount();
+    }
+  });
+});
+

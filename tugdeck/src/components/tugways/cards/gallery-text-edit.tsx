@@ -3,20 +3,27 @@
  *
  * Demo surface for the CodeMirror 6-backed `TugEdit` substrate.
  * Mounts an editor and exposes the host's focus-style and borderless
- * variants, plus a row of atom-insert buttons covering each kind
- * supported by `tug-atom-img.ts` (file, command, doc, image, link).
- * Card-level controls for completion, history, and the rest of the
- * prop surface are layered on as the substrate grows.
+ * variants, the keymap policy (`returnAction`), a row of atom-insert
+ * buttons covering each kind supported by `tug-atom-img.ts` (file,
+ * command, doc, image, link), and a `historyProvider` that records
+ * the user's own submissions: each submit captures the current
+ * editing state, appends it to the in-card history list, and clears
+ * the editor for the next draft. Cmd-Up walks back through the
+ * actual submissions; Cmd-Down walks forward, then restores the
+ * draft the user had typed before navigating.
  *
- * Laws: [L01] one root.render() at mount, [L06] appearance via
- *        CSS and DOM, never React state, [L11] toggle controls and
- *        atom-insert buttons emit actions consumed by this scope's
- *        responder form, [L19] component authoring guide.
+ * Laws: [L01] one root.render() at mount, [L02] the per-card history
+ *        list and provider live in refs, never copied into React
+ *        state for rendering, [L06] appearance via CSS and DOM, never
+ *        React state, [L11] toggle controls and atom-insert buttons
+ *        emit actions consumed by this scope's responder form, the
+ *        editor handles the chain-routed editing actions on its own
+ *        document, [L19] component authoring guide.
  */
 
 import "./gallery-text-edit.css";
 
-import React, { useRef } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { TugEdit } from "@/components/tugways/tug-edit";
 import type { TugEditDelegate, TugEditFocusStyle } from "@/components/tugways/tug-edit";
 import { TugLabel } from "@/components/tugways/tug-label";
@@ -25,7 +32,13 @@ import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { captureEditState } from "@/components/tugways/tug-edit/keymap";
 import type { AtomSegment } from "@/lib/tug-atom-img";
+import type {
+  HistoryProvider,
+  InputAction,
+  TugTextEditingState,
+} from "@/lib/tug-text-engine";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -39,6 +52,11 @@ const FOCUS_STYLE_CHOICES: TugChoiceItem[] = [
 const BORDERLESS_CHOICES: TugChoiceItem[] = [
   { value: "false", label: "Bordered" },
   { value: "true", label: "Borderless" },
+];
+
+const RETURN_ACTION_CHOICES: TugChoiceItem[] = [
+  { value: "submit", label: "Submits" },
+  { value: "newline", label: "Newline" },
 ];
 
 /**
@@ -70,22 +88,124 @@ const ATOM_SAMPLES: { label: string; segment: AtomSegment }[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Card-scoped history provider
+// ---------------------------------------------------------------------------
+
+/**
+ * History provider whose entry list is owned by the gallery card.
+ *
+ * Mirrors `SessionHistoryProvider` from `prompt-history-store.ts` so
+ * the gallery exercises the same contract production wires up. The
+ * crucial difference: the entry list is supplied via a getter, not
+ * baked at construction. The card's `onSubmit` handler appends to a
+ * ref-held array, and the provider reads through the same ref on
+ * every `back()` / `forward()` — so a submit landing right before a
+ * Cmd-Up brings the new entry into view immediately.
+ *
+ * Cursor / draft semantics:
+ *   - `back(current)` saves `current` as the draft on the first
+ *     call, then walks back through the entry list (newest first).
+ *     Returns `null` once the oldest entry has been served.
+ *   - `forward()` walks forward toward the present; once past the
+ *     newest entry it returns the saved draft (which may itself be
+ *     empty if the user submitted, then immediately Cmd-Up'd).
+ */
+class CardHistoryProvider implements HistoryProvider {
+  private cursor = -1;
+  private draft: TugTextEditingState = { text: "", atoms: [], selection: null };
+
+  constructor(private readonly getEntries: () => readonly TugTextEditingState[]) {}
+
+  back(current: TugTextEditingState): TugTextEditingState | null {
+    const entries = this.getEntries();
+    if (entries.length === 0) return null;
+    if (this.cursor === -1) {
+      this.draft = current;
+      this.cursor = entries.length - 1;
+    } else if (this.cursor > 0) {
+      this.cursor--;
+    } else {
+      return null;
+    }
+    return entries[this.cursor]!;
+  }
+
+  forward(): TugTextEditingState | null {
+    const entries = this.getEntries();
+    if (this.cursor === -1) return null;
+    if (this.cursor < entries.length - 1) {
+      this.cursor++;
+      return entries[this.cursor]!;
+    }
+    this.cursor = -1;
+    return this.draft;
+  }
+
+  /**
+   * Reset the cursor to the draft slot and replace the saved draft
+   * with the supplied state. Called from the submit flow so a
+   * subsequent Cmd-Up offers the just-submitted entry as the most
+   * recent — not the historic "draft I navigated away from."
+   */
+  resetToDraft(draft: TugTextEditingState): void {
+    this.cursor = -1;
+    this.draft = draft;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // GalleryTextEdit
 // ---------------------------------------------------------------------------
 
 export function GalleryTextEdit() {
   const editRef = useRef<TugEditDelegate>(null);
-  const [focusStyle, setFocusStyle] = React.useState<TugEditFocusStyle>("background");
-  const [borderless, setBorderlessFlag] = React.useState<boolean>(false);
+  const [focusStyle, setFocusStyle] = useState<TugEditFocusStyle>("background");
+  const [borderless, setBorderlessFlag] = useState<boolean>(false);
+  const [returnAction, setReturnAction] = useState<InputAction>("newline");
+  const [submitCount, setSubmitCount] = useState<number>(0);
+
+  // Per-card runtime history. The ref-held array is the single source
+  // of truth; React state (`submitCount`) carries only the rendered
+  // counter, not the entries themselves [L02].
+  const entriesRef = useRef<TugTextEditingState[]>([]);
+
+  // One provider instance per card lifetime. The closure passed to
+  // the constructor reads `entriesRef.current` at every navigation,
+  // so newly-appended entries are visible without rebuilding the
+  // provider.
+  const historyProvider = useMemo(
+    () => new CardHistoryProvider(() => entriesRef.current),
+    [],
+  );
+
+  // Submit handler: capture the current editing state, append it to
+  // the per-card history, reset the provider's cursor / draft, then
+  // clear the editor for the next draft. The capture happens on the
+  // current view so atoms in the submitted draft are preserved (so
+  // Cmd-Up after submit restores the exact draft, atoms and all).
+  const handleSubmit = (): void => {
+    const view = editRef.current?.view();
+    if (view === null || view === undefined) return;
+    const snapshot = captureEditState(view);
+    if (snapshot.text.length === 0) return; // ignore empty submits
+    entriesRef.current.push(snapshot);
+    // Reset the provider's draft to a fresh blank state so the next
+    // Cmd-Up serves the just-submitted entry, not the saved draft.
+    historyProvider.resetToDraft({ text: "", atoms: [], selection: null });
+    editRef.current?.clear();
+    setSubmitCount((n) => n + 1);
+  };
 
   // Sender ids for the selectValue actions below.
   const focusId = React.useId();
   const borderlessId = React.useId();
+  const returnId = React.useId();
 
   const { ResponderScope, responderRef } = useResponderForm({
     selectValue: {
       [focusId]: (v: string) => setFocusStyle(v as TugEditFocusStyle),
       [borderlessId]: (v: string) => setBorderlessFlag(v === "true"),
+      [returnId]: (v: string) => setReturnAction(v as InputAction),
     },
   });
 
@@ -105,6 +225,9 @@ export function GalleryTextEdit() {
               ref={editRef}
               focusStyle={focusStyle}
               borderless={borderless}
+              returnAction={returnAction}
+              onSubmit={handleSubmit}
+              historyProvider={historyProvider}
             />
           </div>
         </div>
@@ -131,6 +254,28 @@ export function GalleryTextEdit() {
               </TugPushButton>
             ))}
           </div>
+        </div>
+
+        <TugSeparator />
+
+        {/* ---- Return action ---- */}
+        <div className="cg-section">
+          <TugLabel className="cg-section-title">Return action</TugLabel>
+          <TugChoiceGroup
+            items={RETURN_ACTION_CHOICES}
+            value={returnAction}
+            senderId={returnId}
+            size="sm"
+          />
+        </div>
+
+        <TugSeparator />
+
+        {/* ---- Submit counter ---- */}
+        <div className="cg-section">
+          <TugLabel className="cg-section-title">
+            {`Submits: ${submitCount}`}
+          </TugLabel>
         </div>
 
         <TugSeparator />
@@ -163,3 +308,4 @@ export function GalleryTextEdit() {
     </ResponderScope>
   );
 }
+

@@ -707,19 +707,25 @@ Manual scenarios are documented in each step. The IME validation gate (Step 6) i
 - Gallery card: toggle for `returnAction`, mock `historyProvider` showing back/forward.
 
 **Tasks:**
-- [ ] Implement keymap with high precedence so it wins over `defaultKeymap`.
-- [ ] Wire `historyProvider.back` / `forward` to dispatch transactions that swap doc + selection.
-- [ ] Verify draft preservation: typing → Cmd+Up → Cmd+Down restores the typed draft.
+- [x] Implement keymap with high precedence so it wins over `defaultKeymap`.
+- [x] Wire `historyProvider.back` / `forward` to dispatch transactions that swap doc + selection.
+- [x] Verify draft preservation: typing → Cmd+Up → Cmd+Down restores the typed draft.
+- [x] **Register `tug-edit` as a responder via `useOptionalResponder`** with handlers for `SELECT_ALL` / `UNDO` / `REDO` / `COPY` / `CUT` / `PASTE` / `SUBMIT`. Without this the document-level capture-phase keydown listener in `responder-chain-provider.tsx` calls `event.preventDefault()` before the editor sees Cmd-A / C / X / V / Z, leaving CM6's own keymap inert — the keystrokes appear dead. (Discovered during Step 4 by observation in the gallery; not in the original plan but required for parity with `tug-prompt-input`.)
 
 **Tests:**
-- [ ] Integration: Return with `returnAction="submit"` fires `onSubmit`; with `returnAction="newline"` inserts `\n`.
-- [ ] Integration: Shift-Return always inserts `\n`.
-- [ ] Integration: Cmd+Up navigates back, Cmd+Down restores draft.
-- [ ] Integration: Cmd+Z undoes after typing + atom insert.
+- [x] Pure logic: `resolveEnterAction` policy table.
+- [x] Pure logic: `captureEditState` / `applyEditState` round-trip preserves doc, atoms, selection.
+- [x] Pure logic: applying a state with atoms reconstructs widgets at the right positions.
+
+  Keystroke-vs-responder-chain interactions are NOT tested in happy-dom — they cross document-level capture-phase listeners, real native focus, and the contentEditable selection model, none of which happy-dom models faithfully. Synthetic `KeyboardEvent` dispatches there produce green tests for behaviors that are broken in WebKit. Real verification belongs in the gallery card walkthrough and (eventually) `just app-test`.
 
 **Checkpoint:**
-- [ ] All keymap cases pass manually in gallery.
-- [ ] `bun run check`, `bun test` exit 0.
+- [ ] **Manual gallery walk-through (real WebKit):**
+  - [ ] Click into the editor; type some text. Cmd-A selects all. Cmd-C copies. Cmd-X cuts. Cmd-V pastes. Cmd-Z undoes. Cmd-Shift-Z redoes.
+  - [ ] Type a draft, press Return. Editor clears; "Submits" counter increments. Cmd-Up restores the just-submitted draft. Cmd-Down on the empty editor returns to the user's (empty) draft.
+  - [ ] Type a draft, press Cmd-Up. The first historical entry loads; Cmd-Down restores the typed draft.
+  - [ ] Toggle Return action to "Newline." Press Return — newline inserts. Press Shift-Return — onSubmit fires (clears, increments counter).
+- [x] `bun run check`, `bun test` exit 0.
 
 ---
 

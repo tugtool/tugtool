@@ -1,0 +1,285 @@
+/**
+ * tug-edit/keymap.ts — high-precedence keyboard handler for the
+ * tug-specific input actions: Enter (submit / newline), numpad Enter,
+ * Cmd-Enter (forced submit), and Cmd-Up / Cmd-Down (history nav).
+ *
+ * Cmd-A (selectAll), Cmd-Z (undo), and Cmd-Shift-Z (redo) are inherited
+ * from `@codemirror/commands` `defaultKeymap` + `historyKeymap`, which
+ * the React shell wires alongside this module — no need to redeclare
+ * them here.
+ *
+ * Why `EditorView.domEventHandlers` rather than `keymap.of`: the
+ * keymap facet normalizes both main-row Enter and numpad Enter to the
+ * same key string, so a binding written against `key: "Enter"` cannot
+ * tell them apart. Tug requires per-source action: numpad Enter
+ * submits even when `returnAction === "newline"` if the host wires
+ * `numpadEnterAction === "submit"`. We need `KeyboardEvent.code`,
+ * which only the raw event exposes, so the handler reads keydown
+ * events directly. `Prec.high` ensures we run before the default
+ * keymap and the history extension; returning `false` from any branch
+ * lets the next handler take over (e.g., a "newline" Enter falls
+ * through to `defaultKeymap`'s `insertNewlineAndIndent`).
+ *
+ * Configuration is supplied as a `getConfig` thunk so the React shell
+ * can update the values (returnAction / onSubmit / historyProvider)
+ * across renders without rebuilding the editor — the closure reads
+ * the latest config at fire time per [L07].
+ *
+ * Laws: [L02] config reaches CM6 through a closure over a ref, never
+ *        React state copied into CM6 state, [L07] handlers read
+ *        config / view at call time via the supplied closure, [L11]
+ *        the substrate is the responder for the submit / history-nav
+ *        actions on its owned document, [L19] file structure.
+ */
+
+import { EditorSelection, Prec } from "@codemirror/state";
+import type { Extension } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
+import type { WidgetType } from "@codemirror/view";
+import {
+  AtomWidget,
+  atomDecorationField,
+  replaceAtomsEffect,
+} from "./atom-decoration";
+import type { PositionedAtom } from "./atom-decoration";
+import type {
+  HistoryProvider,
+  InputAction,
+  TugTextEditingState,
+} from "@/lib/tug-text-engine";
+import type { AtomSegment } from "@/lib/tug-atom-img";
+
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
+
+/**
+ * Live policy values consulted at every keystroke. The React shell
+ * mirrors its props into a ref of this shape and passes a thunk that
+ * dereferences the ref, so prop changes take effect on the next event
+ * without needing to rebuild any extension.
+ */
+export interface TugEditKeymapConfig {
+  /** Action for the main-row Enter key (modifier-free). */
+  returnAction: InputAction;
+  /** Action for the numpad Enter key. */
+  numpadEnterAction: InputAction;
+  /** Submit handler. Invoked when the resolved action is `"submit"`. */
+  onSubmit: () => void;
+  /**
+   * History provider. Cmd-Up / Cmd-Down are no-ops when this is
+   * `null`; in that case the modifier-arrow combination falls through
+   * to whatever the default keymap chooses (typically: do nothing).
+   */
+  historyProvider: HistoryProvider | null;
+}
+
+// ---------------------------------------------------------------------------
+// State capture / restore
+// ---------------------------------------------------------------------------
+
+/**
+ * Snapshot the editor's text + atoms + selection into the
+ * serializable shape the existing `HistoryProvider` API expects. The
+ * shape matches `TugTextEditingState` produced by `TugTextEngine` so
+ * a session/route history populated from `tug-prompt-input` can drive
+ * `tug-edit` without translation.
+ */
+export function captureEditState(view: EditorView): TugTextEditingState {
+  const text = view.state.doc.toString();
+  const atoms: TugTextEditingState["atoms"] = [];
+  const cursor = view.state.field(atomDecorationField).iter();
+  while (cursor.value !== null) {
+    const widget = (cursor.value.spec as { widget?: WidgetType }).widget;
+    if (widget instanceof AtomWidget) {
+      atoms.push({
+        position: cursor.from,
+        type: widget.segment.type,
+        label: widget.segment.label,
+        value: widget.segment.value,
+      });
+    }
+    cursor.next();
+  }
+  const sel = view.state.selection.main;
+  return {
+    text,
+    atoms,
+    selection: { start: sel.from, end: sel.to },
+  };
+}
+
+/**
+ * Replace the document, atom decorations, and selection in a single
+ * transaction. The replace-atoms effect feeds the atom decoration
+ * field's `replaceAtomsEffect` branch, so the new positions point
+ * into the freshly-installed document — never into a stale one.
+ *
+ * After the dispatch we explicitly blur and re-focus the contentDOM.
+ * WebKit's contentEditable caret renderer caches the prior frame's
+ * caret geometry and does not always re-derive it after a
+ * transaction that replaces the entire document and moves the
+ * `Selection` to a new offset — the user sees the new caret at the
+ * restored position AND a leftover caret at the previous one
+ * (typically position 0 after the editor was just cleared). Calling
+ * `view.focus()` alone is a no-op when contentDOM is already
+ * focused, so the cache stays. Blurring forces WebKit to drop the
+ * cached paint and `view.focus()` reinstalls focus + re-syncs the
+ * caret from the current `state.selection`. Reading `offsetWidth`
+ * between the two flushes layout so the blur is committed before
+ * the focus call collapses with it. The blur fires a `focusout`
+ * event but no responder-chain handler treats focusout as a
+ * demotion, so the responder remains first responder across the
+ * blur/focus pair.
+ */
+export function applyEditState(
+  view: EditorView,
+  state: TugTextEditingState,
+): void {
+  const positioned: PositionedAtom[] = state.atoms.map((a) => ({
+    position: a.position,
+    segment: {
+      kind: "atom",
+      type: a.type,
+      label: a.label,
+      value: a.value,
+    } satisfies AtomSegment,
+  }));
+  const docLen = view.state.doc.length;
+  const sel = state.selection
+    ? EditorSelection.range(state.selection.start, state.selection.end)
+    : EditorSelection.cursor(state.text.length);
+  view.dispatch({
+    changes: { from: 0, to: docLen, insert: state.text },
+    effects: replaceAtomsEffect.of(positioned),
+    selection: sel,
+    scrollIntoView: true,
+  });
+  view.contentDOM.blur();
+  // Force a layout flush so the blur lands before the focus call.
+  void view.contentDOM.offsetWidth;
+  view.focus();
+}
+
+// ---------------------------------------------------------------------------
+// Handlers
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the effective action for an Enter-family keystroke,
+ * considering whether Shift flipped the base action.
+ *
+ * Exported separately so unit tests can drive the policy logic
+ * without synthesizing keyboard events or mounting an editor.
+ */
+export function resolveEnterAction(
+  config: TugEditKeymapConfig,
+  isNumpad: boolean,
+  shiftKey: boolean,
+): InputAction {
+  const base = isNumpad ? config.numpadEnterAction : config.returnAction;
+  if (!shiftKey) return base;
+  return base === "submit" ? "newline" : "submit";
+}
+
+/**
+ * History navigation precondition: caret is collapsed AND positioned
+ * at either end of the document. Matches the existing
+ * `tug-prompt-input` boundary rule so that mid-document arrow-keys
+ * pan the caret normally; only edge taps hand off to the history
+ * provider. The rule is symmetric across `back` and `forward` so a
+ * single Cmd-Up at the end of an unsubmitted draft pushes it onto
+ * the provider's draft slot before serving the most-recent entry.
+ */
+function atHistoryBoundary(view: EditorView): boolean {
+  const sel = view.state.selection.main;
+  if (!sel.empty) return false;
+  return sel.head === 0 || sel.head === view.state.doc.length;
+}
+
+/** Handle a Cmd-Up / Cmd-Down keystroke. */
+function handleHistoryNav(
+  view: EditorView,
+  config: TugEditKeymapConfig,
+  direction: "back" | "forward",
+): boolean {
+  if (config.historyProvider === null) return false;
+  if (!atHistoryBoundary(view)) return false;
+  const next = direction === "back"
+    ? config.historyProvider.back(captureEditState(view))
+    : config.historyProvider.forward();
+  if (next === null) return false;
+  applyEditState(view, next);
+  return true;
+}
+
+/** Handle an Enter or numpad-Enter keystroke. */
+function handleEnter(
+  view: EditorView,
+  config: TugEditKeymapConfig,
+  event: KeyboardEvent,
+): boolean {
+  // IME composition: leave Enter alone — the IME owns commit.
+  if (event.isComposing) return false;
+  const isNumpad = event.code === "NumpadEnter";
+  // Cmd-Enter (no Shift / Alt / Ctrl on macOS): forced submit, regardless
+  // of the configured returnAction. Wrappers (e.g., `tug-prompt-entry`)
+  // can layer additional Cmd-Enter semantics on top via the action
+  // chain; the substrate guarantees a submit fires.
+  if (event.metaKey && !event.shiftKey && !event.altKey && !event.ctrlKey) {
+    event.preventDefault();
+    config.onSubmit();
+    return true;
+  }
+  // Disqualify any other modifier combinations — pass through.
+  if (event.metaKey || event.ctrlKey || event.altKey) return false;
+  const action = resolveEnterAction(config, isNumpad, event.shiftKey);
+  if (action === "submit") {
+    event.preventDefault();
+    config.onSubmit();
+    return true;
+  }
+  // Newline: fall through to `defaultKeymap`'s `insertNewlineAndIndent`.
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Extension factory
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the high-precedence tug keymap extension.
+ *
+ * Returns an `EditorView.domEventHandlers` registration wrapped in
+ * `Prec.high` so it precedes both `defaultKeymap` and `historyKeymap`.
+ * Returning `true` from a branch claims the event; returning `false`
+ * lets the lower-precedence handlers run (e.g. newline insertion via
+ * `insertNewlineAndIndent`).
+ */
+export function tugEditKeymap(
+  getConfig: () => TugEditKeymapConfig,
+): Extension {
+  return Prec.high(
+    EditorView.domEventHandlers({
+      keydown(event, view) {
+        const config = getConfig();
+        if (event.key === "Enter") {
+          return handleEnter(view, config, event);
+        }
+        if (
+          (event.key === "ArrowUp" || event.key === "ArrowDown")
+          && (event.metaKey || event.ctrlKey)
+          && !event.altKey
+          && !event.shiftKey
+        ) {
+          return handleHistoryNav(
+            view,
+            config,
+            event.key === "ArrowUp" ? "back" : "forward",
+          );
+        }
+        return false;
+      },
+    }),
+  );
+}
