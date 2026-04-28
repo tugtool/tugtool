@@ -64,7 +64,12 @@ The test: *can the user end the interaction with a result that was never committ
 
 ### L23. Internal implementation operations must never lose, destroy, or cease to apply user-visible state. {#l23}
 
-Scroll position, selection, focus, and visible content are user data — the user put them there. A re-lex, re-parse, DOM rebuild, or any other internal bookkeeping operation must preserve these invariants. "Save and restore" is not preservation; it is destruction with attempted recovery. The correct approach is to diff and mutate minimally so user-visible state is never disturbed. See [state-preservation.md](state-preservation.md) for the [A9] component-state preservation protocol that operationalizes this law across the card-state pipeline.
+Selection, focus, scroll position (outer and inner regions), form-control values, and content payloads are user data — the user put them there. A re-lex, re-parse, DOM rebuild, tab switch, pane activation, cross-pane move, app cmd-tab cycle, or cold boot must preserve these invariants. The framework provides two complementary mechanisms, and the right choice depends on whether the live DOM survives the transition:
+
+- **In-session: minimal mutation.** `CardHost` portals into the host pane's DOM and is never remounted across cross-pane moves, tab switches, or pane activation changes. Because the DOM stays up, browser-native state (focused element, selection, scroll positions, native input values) is preserved without any save/restore. See [pane-model.md](pane-model.md) and [lifecycle-delegates.md](lifecycle-delegates.md).
+- **Cross-session: the [A9] protocol.** When the DOM does come down — cold boot from disk, tab deactivation (`display: none`), app cmd-tab cycle, card destruction-then-restore — `useComponentStatePreservation` and `useCardStatePreservation` capture user-visible state into a `CardStateBag` at the will-phase save moment and reapply it on restore. See [card-state-model.md](card-state-model.md) for the per-axis contract and [state-preservation.md](state-preservation.md) for the protocol.
+
+"Save and restore" is the right answer when the state genuinely goes away, the wrong answer when it never had to leave. Choosing save/restore where minimal mutation would have worked relies on a captured snapshot that may be stale; choosing minimal mutation where the DOM is being torn down loses user state outright. Pick the mechanism that matches the transition class. [D49, D50]
 
 ---
 
