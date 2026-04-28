@@ -168,18 +168,63 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
     const segmentRefs = React.useRef<(HTMLButtonElement | null)[]>([]);
     // Ref for the sliding indicator pill element.
     const indicatorRef = React.useRef<HTMLDivElement>(null);
+    // Latest active value, read from the ResizeObserver callback so a
+    // resize that fires after a `value` change picks up the right
+    // segment without re-creating the observer.
+    const activeValueRef = React.useRef(value);
+    activeValueRef.current = value;
+    // Stable items reference for the observer callback. Items typically
+    // come from a module-level constant, but a caller passing a fresh
+    // array each render must still see the correct active index in
+    // resize callbacks fired between renders.
+    const itemsRef = React.useRef(items);
+    itemsRef.current = items;
 
-    // Measure the active segment and apply position/width to indicator [L06].
-    // useLayoutEffect runs synchronously before paint — no flicker on mount.
-    React.useLayoutEffect(() => {
-      const activeIndex = items.findIndex((item) => item.value === value);
+    // Imperative measure: read the active segment's offsetLeft/Width
+    // and write the indicator's transform + width. Pulled out so both
+    // the value-change `useLayoutEffect` and the size-change
+    // `ResizeObserver` can call it [L06].
+    const measureIndicator = React.useCallback(() => {
+      const liveItems = itemsRef.current;
+      const liveValue = activeValueRef.current;
+      const activeIndex = liveItems.findIndex((item) => item.value === liveValue);
       if (activeIndex === -1) return;
       const segEl = segmentRefs.current[activeIndex];
       const indEl = indicatorRef.current;
       if (!segEl || !indEl) return;
       indEl.style.transform = `translateX(${segEl.offsetLeft}px)`;
       indEl.style.width = `${segEl.offsetWidth}px`;
-    }, [value, items]);
+    }, []);
+
+    // Re-measure on every value or items change. useLayoutEffect runs
+    // synchronously before paint so the indicator never flickers
+    // through a stale position.
+    React.useLayoutEffect(() => {
+      measureIndicator();
+    }, [value, items, measureIndicator]);
+
+    // Observe size changes on every segment so the indicator stays
+    // glued to the active one across font load, container resize, and
+    // any layout settling that runs after first paint. Without this,
+    // a choice group whose first paint happens before the surrounding
+    // layout has settled (a common case when the parent component
+    // mounts a substrate that imperatively inserts DOM in its own
+    // layout effect — CodeMirror, Monaco, Lexical) measures its
+    // segments at a tentative width and the indicator stays at width
+    // 0 until the next `value`/`items` change forces a re-measure.
+    // The observer fires once on attach with the current size and
+    // again on every change; both paths route through
+    // `measureIndicator` so the rendered indicator always reflects
+    // the segment's current geometry [L06].
+    React.useLayoutEffect(() => {
+      const segs = segmentRefs.current.filter(
+        (el): el is HTMLButtonElement => el !== null,
+      );
+      if (segs.length === 0) return;
+      const observer = new ResizeObserver(measureIndicator);
+      for (const seg of segs) observer.observe(seg);
+      return () => observer.disconnect();
+    }, [items, measureIndicator]);
 
     // Chain dispatch [L11]: targeted dispatch of `selectValue` to
     // the parent responder. Arrow keys move selection (not just
