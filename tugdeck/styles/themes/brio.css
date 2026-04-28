@@ -196,6 +196,7 @@ body {
 
   /* Element — Highlight */
   --tug7-element-highlight-fill-normal-drop-rest: --tug-color(blue, i: 55, t: 60);
+  --tug7-element-highlight-stroke-normal-drop-rest: --tug-color(orange);
 
   /* Surface — Highlight */
   --tug7-surface-highlight-primary-normal-drop-rest: --tug-color(blue, i: 50, t: 50, a: 18);

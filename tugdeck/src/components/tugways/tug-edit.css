@@ -8,6 +8,7 @@
   --tug7-element-field-text-normal-plain-disabled    | --tug7-surface-field-primary-normal-plain-disabled | informational
   --tug7-element-field-text-normal-plain-readonly    | --tug7-surface-field-primary-normal-plain-readonly | informational
   --tug7-element-global-fill-normal-accentCool-rest  | --tug7-surface-field-primary-normal-plain-rest     | informational
+  --tug7-element-highlight-stroke-normal-drop-rest   | --tug7-surface-field-primary-normal-plain-rest     | informational
 } */
 
 /**
@@ -23,6 +24,7 @@
  * | --tug7-element-field-text-normal-plain-disabled   | --tug7-surface-field-primary-normal-plain-disabled | informational | .cm-content (theme.ts, &[data-disabled])                             |
  * | --tug7-element-field-text-normal-plain-readonly   | --tug7-surface-field-primary-normal-plain-readonly | informational | .cm-content (theme.ts, &.cm-readonly)                                |
  * | --tug7-element-global-fill-normal-accentCool-rest | --tug7-surface-field-primary-normal-plain-rest     | informational | .tug-edit[data-focus-style="ring"][data-focused] (outline / border)  |
+ * | --tug7-element-highlight-stroke-normal-drop-rest  | --tug7-surface-field-primary-normal-plain-rest     | informational | .tug-edit[data-drop-active] (drop-ring outline / border)             |
  *
  * Selection paint deliberately uses CSS system colors (`Highlight`,
  * `HighlightText`) for the active state — see `tug-edit/theme.ts`.
@@ -30,6 +32,15 @@
  * `--tug7-surface-selection-primary-normal-plain-inactive` directly
  * in `theme.ts`; that token is declared in `theme-pairings.ts`
  * already so it does not need its own row here.
+ *
+ * The drop-active state (`[data-drop-active]`, set by the drop
+ * extension while a file drag is hovering the editor) is a
+ * cross-cutting concern: it supersedes any focus style and signals
+ * the in-progress drag with the main accent color rather than the
+ * accentCool used for focus. The drop ring is paired below with
+ * caret hiding (collapsed selections) and a switch to the inactive
+ * selection paint (ranged selections) so the editor visually steps
+ * out of the way of the drop preview.
  */
 
 
@@ -135,4 +146,70 @@
 .tug-edit[data-readonly]:not([data-disabled]) {
   background-color: var(--tug7-surface-field-primary-normal-plain-readonly);
   border-color: var(--tug7-element-field-border-normal-plain-readonly);
+}
+
+/* ---- Drop active ----
+ *
+ * Set by `tug-edit/drop-extension.ts` while a file drag is hovering
+ * the editor. Always shows during the drag regardless of focus
+ * style, so the user can see at a glance which editor will
+ * receive their drop.
+ *
+ * Distinguished from the focus ring by color: focus uses the
+ * cool-accent (indigo, `--tug7-element-global-fill-normal-accentCool-rest`),
+ * drop uses the main accent (orange,
+ * `--tug7-element-highlight-stroke-normal-drop-rest`). Same
+ * geometry as the focus ring (1px border + 2px outline at -1px
+ * offset), so a focused editor that picks up a drag swaps colors
+ * without shifting layout.
+ *
+ * The `[data-drop-active]` selector wins over the focus rules
+ * above because it appears later in the file (matching specificity
+ * (0,2,0)). The borderless variant is preserved by re-asserting
+ * the drop colors only on borderless drop-active editors below.
+ *
+ * @tug-renders-on .tug-edit
+ */
+.tug-edit[data-drop-active] {
+  border-color: var(--tug7-element-highlight-stroke-normal-drop-rest);
+  outline: 2px solid var(--tug7-element-highlight-stroke-normal-drop-rest);
+  outline-offset: -1px;
+}
+
+/* Re-assert the drop ring on borderless editors. Without this
+ * the borderless rule earlier would null out the border-color
+ * by source order. The outline is unaffected (borderless doesn't
+ * touch outline). */
+.tug-edit[data-borderless][data-drop-active] {
+  border-color: var(--tug7-element-highlight-stroke-normal-drop-rest);
+}
+
+/* Hide the regular caret while a drag is in progress. The drop
+ * caret indicator (`.cm-tug-drop-caret`) shows the resolved drop
+ * position; the regular caret would be a competing visual signal
+ * for a position the user is no longer placing.
+ *
+ * @tug-renders-on .cm-content (background established by tug-edit/theme.ts) */
+.tug-edit[data-drop-active] .cm-content {
+  caret-color: transparent;
+}
+
+/* When the editor has a ranged selection at drag start, switch
+ * the selection overlay to the inactive paint so the editor reads
+ * as "stepping out of the way" of the drop. The selection content
+ * itself is unchanged — only its rendering — so a drop that
+ * targets a position outside the selection leaves the selection
+ * intact and the user's prior context survives.
+ *
+ * `!important` is needed because CM6's base theme paints
+ * `.cm-selectionBackground` at specificity (0,6,0) and tug-edit's
+ * own theme rule already uses `!important` to win that fight; we
+ * have to match the override here. The selector is more specific
+ * than tug-edit/theme.ts's `.cm-selectionBackground` (we add
+ * `[data-drop-active]`) so the cascade order resolves correctly
+ * even with both `!important`s in play.
+ *
+ * @tug-renders-on .cm-content (background established by tug-edit/theme.ts) */
+.tug-edit[data-drop-active] .cm-selectionBackground {
+  background-color: var(--tug7-surface-selection-primary-normal-plain-inactive) !important;
 }

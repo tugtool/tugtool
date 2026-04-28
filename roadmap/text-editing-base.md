@@ -832,16 +832,17 @@ Manual scenarios are documented in each step. The IME validation gate (Step 6) i
 - Gallery card: drop a file from Finder onto the editor and observe atom insertion.
 
 **Tasks:**
-- [ ] Implement drop handler.
-- [ ] Compute insertion offset with the same vertical bias the existing engine uses (`DROP_Y_OFFSET_RATIO`).
-- [ ] Suppress browser default drop behavior (no navigation).
+- [x] Implement drop handler.
+- [x] Compute insertion offset with the same vertical bias the existing engine uses (`DROP_Y_OFFSET_RATIO`).
+- [x] Suppress browser default drop behavior (no navigation).
+- [x] Live drop-caret indicator tracks the resolved drop position during dragover so the user can see where the file will land. Implemented via a StateField (drop position) + ViewPlugin (paint via `requestMeasure`) — same shape as CM6's built-in `dropCursor`, themed via `--tug7-element-highlight-fill-normal-drop-rest`.
 
 **Tests:**
-- [ ] Integration: simulate `drop` event with a `DataTransfer` carrying a file; assert atom inserted at expected offset.
+- [x] Integration: simulate `drop` event with a `DataTransfer`-shaped payload carrying files; assert atoms inserted at the expected offset, default file→atom mapping classifies image extensions correctly, host-supplied dropHandler wins over the default, multi-file drops insert in document order, dragover/dragenter/drop preventDefault correctly, drop-caret element lifecycle (no caret pre-drag, removed after drop / dragleave-out / dragend, kept on dragleave-into-child).
 
 **Checkpoint:**
-- [ ] Manual: drop a file from Finder onto the gallery card; atom appears at drop point.
-- [ ] `bun run check`, `bun test` exit 0.
+- [ ] Manual: drop a file from Finder onto the gallery card; atom appears at drop point and the live drop-caret tracks the cursor before release.
+- [x] `bun run check`, `bun test` exit 0.
 
 ---
 

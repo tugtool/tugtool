@@ -105,6 +105,7 @@ import {
 } from "./tug-edit/atom-decoration";
 import { atomicRangesExt } from "./tug-edit/atomic-ranges";
 import { clipboardExt } from "./tug-edit/clipboard-filters";
+import { tugDropExtension } from "./tug-edit/drop-extension";
 import { tugSelectionLayer } from "./tug-edit/selection-layer";
 import { captureEditState, tugEditKeymap } from "./tug-edit/keymap";
 import type { TugEditKeymapConfig } from "./tug-edit/keymap";
@@ -128,7 +129,12 @@ import { useCardId } from "./use-card-state-preservation";
 import { useOptionalResponder } from "./use-responder";
 import type { ActionHandler, ActionHandlerResult } from "./responder-chain";
 import { TUG_ACTIONS, type TugAction } from "./action-vocabulary";
-import type { CompletionItem, CompletionProvider, TugTextEditingState } from "@/lib/tug-text-engine";
+import type {
+  CompletionItem,
+  CompletionProvider,
+  DropHandler,
+  TugTextEditingState,
+} from "@/lib/tug-text-engine";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -339,6 +345,17 @@ export interface TugEditProps
     selectedIndex: number,
   ) => void;
   /**
+   * File-drop handler. When the user drags a file from Finder onto
+   * the editor, the substrate's drop extension calls this with the
+   * dropped `FileList` and inserts each returned `AtomSegment` at
+   * the drop point as one transaction. Omit to fall back to a
+   * default mapping that classifies files as `image` or `file`
+   * by extension and uses the bare filename as both `label` and
+   * `value`. Hosts that need richer mapping (real paths, content
+   * hashes, server URLs) supply their own.
+   */
+  dropHandler?: DropHandler;
+  /**
    * Opt in to tugdeck card state preservation. When `true`, the
    * editor registers `onSave` / `onRestore` / `onCardActivated` /
    * `onCardWillDeactivate` callbacks with the enclosing `CardHost`
@@ -379,6 +396,7 @@ function buildExtensions(
   host: HTMLElement,
   getKeymapConfig: () => TugEditKeymapConfig,
   getCompletionProviders: () => Record<string, CompletionProvider>,
+  getDropHandler: () => DropHandler | null,
 ): readonly Extension[] {
   return [
     history(),
@@ -413,10 +431,12 @@ function buildExtensions(
     // Atom support: the decoration field is the data layer; the
     // atomic-ranges provider lifts that data into CM6's motion /
     // deletion machinery; clipboard filters round-trip the atoms
-    // through copy / cut / paste.
+    // through copy / cut / paste; the drop extension lifts dragged
+    // files from Finder into atoms at the drop point.
     atomDecorationField,
     atomicRangesExt,
     clipboardExt,
+    tugDropExtension(host, getDropHandler),
   ];
 }
 
@@ -433,6 +453,7 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
       completionProviders,
       completionDirection = "down",
       onTypeaheadChange,
+      dropHandler,
       preserveState = true,
       ...rest
     }: TugEditProps,
@@ -489,6 +510,14 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
     useLayoutEffect(() => {
       completionDirectionRef.current = completionDirection;
     }, [completionDirection]);
+
+    // Live drop-handler ref. The drop extension reads this thunk on
+    // every drop so the latest host-supplied handler runs without
+    // rebuilding the editor [L07].
+    const dropHandlerRef = useRef<DropHandler | null>(dropHandler ?? null);
+    useLayoutEffect(() => {
+      dropHandlerRef.current = dropHandler ?? null;
+    }, [dropHandler]);
 
     // Live keymap config. The extension's keydown handler reads
     // `keymapConfigRef.current` via the thunk passed to
@@ -727,6 +756,7 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
           host,
           () => keymapConfigRef.current,
           () => completionProvidersRef.current,
+          () => dropHandlerRef.current,
         ),
       });
       const view = new EditorView({
