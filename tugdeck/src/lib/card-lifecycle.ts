@@ -109,6 +109,13 @@ export interface CardLifecycleStore {
 export interface CardLifecycleManager {
   getKeyCard(): string | null;
   makeFirstResponder(id: string): void;
+  /**
+   * True when the chain's first responder is `id` or a descendant of
+   * `id`. Used by `setResponderChainKey`'s idempotency guard so
+   * promoting an already-active card doesn't demote an inner
+   * responder (TugEdit, etc.).
+   */
+  firstResponderIsAtOrBelow(id: string): boolean;
 }
 
 interface Subscription {
@@ -163,15 +170,30 @@ export class CardLifecycle {
 
   /**
    * Promote `cardId` as the responder chain's key card. No-op when no
-   * manager is attached, or when `cardId` is already the key card.
+   * manager is attached, or when the chain's first responder is
+   * already inside `cardId`'s subtree (the card is "already active"
+   * from the user's perspective).
    *
    * Carved out of `activateCard` so `DeckManager._flipFirstResponder` can
    * promote the responder chain as part of the composite-bit commit
    * without double-firing the will/did lifecycle events.
+   *
+   * Idempotency: the guard short-circuits when first responder is
+   * `cardId` itself OR a descendant of `cardId`. Without this guard a
+   * same-pane click that hits `activateCard(activeCardId)` would
+   * unconditionally call `makeFirstResponder(cardId)` and demote any
+   * inner responder (e.g. a TugEdit editor inside the card) — which
+   * silently steals keyboard commands the user expects to reach the
+   * inner responder. Previous implementation used
+   * `manager.getKeyCard() === cardId`, but `getKeyCard()` walks for a
+   * node tagged `kind: "card"` (set on the pane stack, not on
+   * card-host) so the comparison never matched cardId and the guard
+   * never fired. `firstResponderIsAtOrBelow` walks the chain by
+   * parentId / id and matches both id-equals and id-as-ancestor.
    */
   setResponderChainKey(cardId: string): void {
     if (this.manager === null) return;
-    if (this.manager.getKeyCard() === cardId) return;
+    if (this.manager.firstResponderIsAtOrBelow(cardId)) return;
     this.manager.makeFirstResponder(cardId);
   }
 

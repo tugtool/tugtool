@@ -2,53 +2,19 @@
  * tug-edit clipboard serialization — pure round-trip tests.
  *
  * Exercises `serializeClipboard`, `parseClipboardSidecar`, and
- * `parseClipboardHtml` in isolation. The DOM event handler that wraps
- * these helpers is exercised via the `tug-edit.test.tsx` integration
- * suite; this file proves the wire format itself is bidirectional and
- * rejects malformed payloads cleanly.
- *
- * Note: setup-rtl MUST be the first import (required because
- * `serializeClipboard` builds the html payload via `atomImgHTML`,
- * which calls `createAtomImgElement` → `getTokenValue` →
- * `getComputedStyle(document.body)`).
+ * `parseClipboardHtmlEnvelope` in isolation. The DOM event handlers
+ * that wrap these helpers are exercised via app-test (`at0043`,
+ * `at0044`); this file proves the wire format itself is bidirectional
+ * and rejects malformed payloads cleanly.
  */
-import "../../../__tests__/setup-rtl";
-
 import { describe, it, expect } from "bun:test";
 
 import {
-  parseClipboardHtml,
+  parseClipboardHtmlEnvelope,
   parseClipboardSidecar,
   serializeClipboard,
 } from "@/components/tugways/tug-edit/clipboard-filters";
 import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
-
-// ---------------------------------------------------------------------------
-// Canvas 2D shim — atom rendering measures glyph widths via a 2D
-// context; happy-dom doesn't implement one. Mirrors `tug-edit.test.tsx`.
-// ---------------------------------------------------------------------------
-
-interface MinimalCtx2D {
-  font: string;
-  measureText(text: string): { width: number };
-}
-
-(() => {
-  const probe = document.createElement("canvas");
-  const proto = Object.getPrototypeOf(probe) as {
-    getContext?: (type: string) => unknown;
-  };
-  const ctx: MinimalCtx2D = {
-    font: "",
-    measureText(text: string) {
-      return { width: text.length * 7 };
-    },
-  };
-  proto.getContext = function getContext(type: string): unknown {
-    if (type === "2d") return ctx;
-    return null;
-  };
-})();
 
 const SAMPLE_FILE = {
   position: 2,
@@ -60,22 +26,26 @@ const SAMPLE_LINK = {
   segment: { kind: "atom" as const, type: "link", label: "ant", value: "https://anthropic.com" },
 };
 
-describe("serializeClipboard", () => {
+// ---------------------------------------------------------------------------
+// serializeClipboard — text + fallback
+// ---------------------------------------------------------------------------
+
+describe("serializeClipboard — text + fallback", () => {
   it("returns null sidecar when there are no atoms in the slice", () => {
     const out = serializeClipboard("hello world", [], 0);
     expect(out.text).toBe("hello world");
     expect(out.fallback).toBe("hello world");
     expect(out.sidecar).toBeNull();
+    expect(out.html).toBe("");
   });
 
   it("emits sidecar atoms with positions relative to the slice origin", () => {
-    // Slice starts at offset 10 in the source doc; atom at absolute
-    // position 12 should map to local position 2.
     const atomAt12 = { ...SAMPLE_FILE, position: 12 };
     const text = `ab${TUG_ATOM_CHAR}cd`;
     const out = serializeClipboard(text, [atomAt12], 10);
     expect(out.text).toBe(text);
     expect(out.sidecar).not.toBeNull();
+    expect(out.sidecar!.text).toBe(text);
     expect(out.sidecar!.atoms).toEqual([
       { position: 2, segment: atomAt12.segment },
     ]);
@@ -92,8 +62,6 @@ describe("serializeClipboard", () => {
   });
 
   it("processes labels back-to-front so earlier replacements don't disturb later positions", () => {
-    // Long-then-short label order is the worst case for naive
-    // forward replacement.
     const text = `${TUG_ATOM_CHAR}_${TUG_ATOM_CHAR}`;
     const atoms = [
       {
@@ -120,8 +88,44 @@ describe("serializeClipboard", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// serializeClipboard — html envelope
+// ---------------------------------------------------------------------------
+
+describe("serializeClipboard — html envelope", () => {
+  it("emits a <span data-tug-atoms='...'> envelope with the visible label text", () => {
+    const text = `ab${TUG_ATOM_CHAR}cd`;
+    const out = serializeClipboard(text, [SAMPLE_FILE], 0);
+    expect(out.html.startsWith('<span data-tug-atoms="')).toBe(true);
+    expect(out.html.endsWith("</span>")).toBe(true);
+    // Visible portion is the label-substituted text (atom label
+    // replaces U+FFFC).
+    expect(out.html).toContain(">abmain.tscd</span>");
+  });
+
+  it("html-escapes &, <, > in the visible span content", () => {
+    const text = `<a&b>${TUG_ATOM_CHAR}c`;
+    const out = serializeClipboard(text, [{ ...SAMPLE_FILE, position: 5 }], 0);
+    expect(out.html).toContain(">&lt;a&amp;b&gt;main.tsc</span>");
+  });
+
+  it("keeps the data-tug-atoms attribute opaque (base64) — no quotes, no html-special chars", () => {
+    const text = TUG_ATOM_CHAR;
+    const out = serializeClipboard(text, [{ ...SAMPLE_FILE, position: 0 }], 0);
+    const m = /data-tug-atoms="([^"]*)"/.exec(out.html);
+    expect(m).not.toBeNull();
+    const encoded = m![1]!;
+    // Base64 alphabet: [A-Za-z0-9+/=].
+    expect(/^[A-Za-z0-9+/=]+$/.test(encoded)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseClipboardSidecar
+// ---------------------------------------------------------------------------
+
 describe("parseClipboardSidecar", () => {
-  it("round-trips a serialized payload", () => {
+  it("round-trips a serialized payload (with text field)", () => {
     const text = `ab${TUG_ATOM_CHAR}cd`;
     const out = serializeClipboard(text, [SAMPLE_FILE], 0);
     const parsed = parseClipboardSidecar(JSON.stringify(out.sidecar));
@@ -134,24 +138,35 @@ describe("parseClipboardSidecar", () => {
   });
 
   it("returns null for unknown version values", () => {
-    const payload = { version: 42, atoms: [] };
+    const payload = { version: 42, text: "", atoms: [] };
     expect(parseClipboardSidecar(JSON.stringify(payload))).toBeNull();
   });
 
+  it("returns null when text field is missing or wrong type", () => {
+    expect(parseClipboardSidecar(JSON.stringify({ version: 1, atoms: [] }))).toBeNull();
+    expect(
+      parseClipboardSidecar(JSON.stringify({ version: 1, text: 42, atoms: [] })),
+    ).toBeNull();
+  });
+
   it("returns null when atoms is missing or not an array", () => {
-    expect(parseClipboardSidecar(JSON.stringify({ version: 1 }))).toBeNull();
-    expect(parseClipboardSidecar(JSON.stringify({ version: 1, atoms: "x" }))).toBeNull();
+    expect(parseClipboardSidecar(JSON.stringify({ version: 1, text: "" }))).toBeNull();
+    expect(
+      parseClipboardSidecar(JSON.stringify({ version: 1, text: "", atoms: "x" })),
+    ).toBeNull();
   });
 
   it("rejects atom entries missing required fields", () => {
     const missingType = {
       version: 1,
+      text: TUG_ATOM_CHAR,
       atoms: [{ position: 0, segment: { kind: "atom", label: "a", value: "v" } }],
     };
     expect(parseClipboardSidecar(JSON.stringify(missingType))).toBeNull();
 
     const missingPosition = {
       version: 1,
+      text: TUG_ATOM_CHAR,
       atoms: [{ segment: { kind: "atom", type: "file", label: "a", value: "v" } }],
     };
     expect(parseClipboardSidecar(JSON.stringify(missingPosition))).toBeNull();
@@ -160,6 +175,7 @@ describe("parseClipboardSidecar", () => {
   it("ignores unknown segment kinds", () => {
     const wrongKind = {
       version: 1,
+      text: TUG_ATOM_CHAR,
       atoms: [
         {
           position: 0,
@@ -172,122 +188,88 @@ describe("parseClipboardSidecar", () => {
 });
 
 // ---------------------------------------------------------------------------
-// html payload — Step 9.5B
+// parseClipboardHtmlEnvelope — round-trips through the html channel
 // ---------------------------------------------------------------------------
-//
-// `serializeClipboard.html` is what crosses Tug.app's native clipboard
-// bridge (the bridge exposes `text/plain` + `text/html` only — never
-// the custom MIME sidecar). `parseClipboardHtml` reconstructs the doc
-// text + atoms on the bridge-paste path. These tests prove the
-// round-trip and the malformed-input rejection behavior.
 
-describe("serializeClipboard — html payload", () => {
-  it("emits empty html when there are no atoms in the slice", () => {
-    const out = serializeClipboard("hello world", [], 0);
-    expect(out.html).toBe("");
-  });
-
-  it("emits an <img data-atom-*> element at each atom position", () => {
-    const text = `ab${TUG_ATOM_CHAR}cd`;
-    const out = serializeClipboard(text, [SAMPLE_FILE], 0);
-    expect(out.html).toContain('data-atom-label="main.ts"');
-    expect(out.html).toContain('data-atom-type="file"');
-    // text segments before / after are present and HTML-escaped.
-    expect(out.html.startsWith("ab")).toBe(true);
-    expect(out.html.endsWith("cd")).toBe(true);
-  });
-
-  it("escapes &, <, > in surrounding text segments", () => {
-    const text = `<a&b>${TUG_ATOM_CHAR}c`;
-    const out = serializeClipboard(text, [{ ...SAMPLE_FILE, position: 5 }], 0);
-    expect(out.html.startsWith("&lt;a&amp;b&gt;")).toBe(true);
-    expect(out.html.endsWith("c")).toBe(true);
-  });
-
-  it("translates absolute positions to slice-relative positions in html order", () => {
-    // Slice starts at offset 10 in the source doc; atom at absolute
-    // 12 should appear after the first two text glyphs of the slice.
-    const text = `ab${TUG_ATOM_CHAR}cd`;
-    const out = serializeClipboard(text, [{ ...SAMPLE_FILE, position: 12 }], 10);
-    const labelIdx = out.html.indexOf('data-atom-label="main.ts"');
-    const cdIdx = out.html.indexOf("cd");
-    expect(labelIdx).toBeGreaterThan(0);
-    expect(cdIdx).toBeGreaterThan(labelIdx);
-  });
-});
-
-describe("parseClipboardHtml", () => {
+describe("parseClipboardHtmlEnvelope", () => {
   it("returns null for empty input", () => {
-    expect(parseClipboardHtml("")).toBeNull();
+    expect(parseClipboardHtmlEnvelope("")).toBeNull();
   });
 
-  it("returns null when no atom <img> is present", () => {
-    expect(parseClipboardHtml("<p>hello</p>")).toBeNull();
-    expect(parseClipboardHtml("plain text")).toBeNull();
-    // <img> without data-atom-label is ignored too.
-    expect(parseClipboardHtml('<img src="cat.png">')).toBeNull();
+  it("returns null when the html has no data-tug-atoms attribute", () => {
+    expect(parseClipboardHtmlEnvelope("<p>hello</p>")).toBeNull();
+    expect(parseClipboardHtmlEnvelope("plain text")).toBeNull();
+    expect(parseClipboardHtmlEnvelope('<span style="color:red">x</span>')).toBeNull();
   });
 
-  it("returns null when an atom img is missing required data attributes", () => {
+  it("returns null when data-tug-atoms is empty or malformed base64", () => {
+    expect(parseClipboardHtmlEnvelope('<span data-tug-atoms=""></span>')).toBeNull();
     expect(
-      parseClipboardHtml('<img data-atom-label="x">'),
-    ).toBeNull();
-    expect(
-      parseClipboardHtml(
-        '<img data-atom-label="x" data-atom-type="file">',
-      ),
+      parseClipboardHtmlEnvelope('<span data-tug-atoms="!!!not-base64!!!"></span>'),
     ).toBeNull();
   });
 
   it("round-trips a single atom-only slice", () => {
     const text = TUG_ATOM_CHAR;
     const out = serializeClipboard(text, [{ ...SAMPLE_FILE, position: 0 }], 0);
-    const parsed = parseClipboardHtml(out.html);
+    const parsed = parseClipboardHtmlEnvelope(out.html);
     expect(parsed).not.toBeNull();
-    expect(parsed!.docText).toBe(TUG_ATOM_CHAR);
+    expect(parsed!.text).toBe(TUG_ATOM_CHAR);
     expect(parsed!.atoms).toEqual([
       { position: 0, segment: SAMPLE_FILE.segment },
     ]);
   });
 
-  it("round-trips a mixed slice with multiple atoms", () => {
-    const text = `pre ${TUG_ATOM_CHAR} mid ${TUG_ATOM_CHAR} end`;
+  it("round-trips a mixed slice with multiple atoms across multiple lines", () => {
+    // The case the user-reported bug exercised: two atoms with text +
+    // newlines between them. Single-attribute envelope makes line-
+    // breaks a non-issue (the data is base64 inside an HTML attribute).
+    const text = `${TUG_ATOM_CHAR}\ndd\n${TUG_ATOM_CHAR}`;
     const atoms = [
-      { ...SAMPLE_FILE, position: 4 },
-      { ...SAMPLE_LINK, position: 10 },
+      { ...SAMPLE_FILE, position: 0 },
+      { ...SAMPLE_LINK, position: 5 },
     ];
     const out = serializeClipboard(text, atoms, 0);
-    const parsed = parseClipboardHtml(out.html);
+    const parsed = parseClipboardHtmlEnvelope(out.html);
     expect(parsed).not.toBeNull();
-    expect(parsed!.docText).toBe(text);
+    expect(parsed!.text).toBe(text);
     expect(parsed!.atoms).toEqual([
-      { position: 4, segment: SAMPLE_FILE.segment },
-      { position: 10, segment: SAMPLE_LINK.segment },
+      { position: 0, segment: SAMPLE_FILE.segment },
+      { position: 5, segment: SAMPLE_LINK.segment },
     ]);
   });
 
-  it("descends through wrapper elements (e.g. WebKit's <span> / <meta>)", () => {
-    // WebKit wraps clipboard html in <meta> + <span style="...">; the
-    // parser must descend into these and pick up text + atoms.
-    const html =
-      '<meta charset="utf-8"><span style="font-family: serif;">'
-      + 'ab<img data-atom-label="main.ts" data-atom-value="/main.ts" data-atom-type="file">cd'
-      + '</span>';
-    const parsed = parseClipboardHtml(html);
+  it("survives WebKit's <span style='...'> wrapper injection", () => {
+    // WebKit injects computed-style on the <span> when round-tripping
+    // html through NSPasteboard. The data-tug-atoms attribute survives
+    // unchanged — verified empirically in
+    // `at0045-pasteboard-custom-mime-probe.test.ts`. Construct a
+    // similar wrapped html here and assert the parser still finds the
+    // attribute.
+    const text = TUG_ATOM_CHAR;
+    const out = serializeClipboard(text, [{ ...SAMPLE_FILE, position: 0 }], 0);
+    const m = /data-tug-atoms="([^"]*)"/.exec(out.html)!;
+    const encoded = m[1]!;
+    const wrapped = `<meta charset="utf-8"><span data-tug-atoms="${encoded}" style="color: rgb(0,0,0); font-family: -webkit-system-font;">${SAMPLE_FILE.segment.label}</span>`;
+    const parsed = parseClipboardHtmlEnvelope(wrapped);
     expect(parsed).not.toBeNull();
-    expect(parsed!.docText).toBe(`ab${TUG_ATOM_CHAR}cd`);
+    expect(parsed!.text).toBe(TUG_ATOM_CHAR);
     expect(parsed!.atoms).toEqual([
-      { position: 2, segment: SAMPLE_FILE.segment },
+      { position: 0, segment: SAMPLE_FILE.segment },
     ]);
   });
 
-  it("preserves <br> as a newline in docText", () => {
-    const html =
-      'line1<br>'
-      + '<img data-atom-label="main.ts" data-atom-value="/main.ts" data-atom-type="file">'
-      + 'line2';
-    const parsed = parseClipboardHtml(html);
+  it("supports labels with non-ASCII characters via UTF-8 base64", () => {
+    const segment = {
+      kind: "atom" as const,
+      type: "file",
+      label: "résumé.txt",
+      value: "/files/résumé.txt",
+    };
+    const text = TUG_ATOM_CHAR;
+    const out = serializeClipboard(text, [{ position: 0, segment }], 0);
+    const parsed = parseClipboardHtmlEnvelope(out.html);
     expect(parsed).not.toBeNull();
-    expect(parsed!.docText).toBe(`line1\n${TUG_ATOM_CHAR}line2`);
+    expect(parsed!.atoms[0]!.segment).toEqual(segment);
   });
 });

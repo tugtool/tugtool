@@ -431,6 +431,33 @@ export class ResponderChainManager {
     return this.firstResponderId;
   }
 
+  /**
+   * True when `id` is the current first responder, or is reachable by
+   * walking `parentId` up from the first responder. False when the
+   * first responder is unset, when the walk falls off the root, or
+   * when the walk encounters an unregistered ancestor before reaching
+   * `id`.
+   *
+   * Use case: idempotency guards on "promote a container to first
+   * responder" operations. When the first responder is already
+   * somewhere inside the container's subtree, promoting the container
+   * would demote the inner responder for no benefit — and would
+   * silently steal keyboard commands the user expects to reach the
+   * inner responder. `setResponderChainKey` (in `card-lifecycle.ts`)
+   * is the canonical example: clicking inside an already-active card
+   * must not demote the card's editor.
+   */
+  firstResponderIsAtOrBelow(id: string): boolean {
+    let currentId: string | null = this.firstResponderId;
+    while (currentId !== null) {
+      if (currentId === id) return true;
+      const node = this.nodes.get(currentId);
+      if (!node) return false;
+      currentId = node.parentId;
+    }
+    return false;
+  }
+
   // ---- Key responder of kind (derived) ----
 
   /**

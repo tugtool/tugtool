@@ -278,33 +278,21 @@ describe.skipIf(!SHOULD_RUN)(
             // channel.
             expect(textOnlyClip.html, "text-only html payload — no atoms = empty").toBe("");
 
-            // Mixed and atom-only carry atom `<img data-atom-*>`
-            // markup. We don't pin the exact serialized form — atom
-            // SVG inlining drifts with theme tokens AND WebKit wraps
-            // the bridge-read html in `<span style="...">` carrying
-            // computed-style. Instead assert the reconstructable
-            // shape: `data-atom-label`, `data-atom-value`, and
-            // `data-atom-type` attributes are all present in the
-            // html, and the file label appears. The
-            // wrapper-tolerance is exercised by
-            // `parseClipboardHtml` (unit-tested) and by the live
-            // round-trip below.
-            expect(mixedClip.html, "mixed html: contains atom-label attribute")
-              .toContain("data-atom-label=");
-            expect(mixedClip.html, "mixed html: contains atom-value attribute")
-              .toContain("data-atom-value=");
-            expect(mixedClip.html, "mixed html: contains atom-type attribute")
-              .toContain("data-atom-type=");
-            expect(mixedClip.html, "mixed html: contains 'main.ts' label")
-              .toContain(FILE_ATOM_LABEL);
-            // Leading "x" text glyph survives the WebKit-span wrap.
-            expect(mixedClip.html, "mixed html: leading 'x' text glyph survived")
-              .toContain(">x<");
+            // Mixed and atom-only carry the `<span data-tug-atoms="…">`
+            // envelope (Step 9.5B redesign — see commit body). We
+            // assert the attribute presence and that the visible
+            // span content carries the label-substituted text. The
+            // base64 attribute value is opaque; the round-trip
+            // assertion below proves the data is recoverable.
+            expect(mixedClip.html, "mixed html: contains data-tug-atoms attribute")
+              .toContain("data-tug-atoms=");
+            expect(mixedClip.html, "mixed html: visible span content shows label-substituted text")
+              .toContain(`x${FILE_ATOM_LABEL}`);
 
-            expect(atomOnlyClip.html, "atom-only html: contains atom-label attribute")
-              .toContain("data-atom-label=");
-            expect(atomOnlyClip.html, "atom-only html: contains 'main.ts' label")
-              .toContain(FILE_ATOM_LABEL);
+            expect(atomOnlyClip.html, "atom-only html: contains data-tug-atoms attribute")
+              .toContain("data-tug-atoms=");
+            expect(atomOnlyClip.html, "atom-only html: visible span content shows the label")
+              .toContain(`>${FILE_ATOM_LABEL}<`);
 
             // ---- Round-trip assertion ----
             //

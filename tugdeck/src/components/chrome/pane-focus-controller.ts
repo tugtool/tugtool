@@ -195,6 +195,20 @@ export function usePaneFocusController(
       // Preserve #2: data-no-activate opt-out (close button).
       if (startEl.closest("[data-no-activate]")) return;
 
+      // Preserve #4: focus-refusing controls (TugButton et al. set
+      // `data-tug-focus="refuse"`). The responder-chain provider
+      // already skips first-responder promotion for these targets;
+      // we extend the same exemption here so a click on an
+      // in-pane button doesn't trigger `activateCard(activeCardId)`,
+      // which would call `makeFirstResponder(cardId)` and demote
+      // any inner first responder (e.g. a TugEdit inside the
+      // card). The control's own `onClick` still fires; only the
+      // pane-activation side-effect is skipped — matching the
+      // intent of `data-tug-focus="refuse"` ("this control does
+      // not change the user's focus context"). Same selector the
+      // chain provider uses, so the two surfaces stay aligned.
+      if (startEl.closest('[data-tug-focus="refuse"]')) return;
+
       const paneId = paneEl.getAttribute("data-pane-id");
       if (paneId === null) return;
 

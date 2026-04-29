@@ -108,7 +108,7 @@ import {
   regenerateAtomsEffect,
 } from "./tug-edit/atom-decoration";
 import { atomicRangesExt } from "./tug-edit/atomic-ranges";
-import { clipboardExt, parseClipboardHtml } from "./tug-edit/clipboard-filters";
+import { clipboardExt, parseClipboardHtmlEnvelope } from "./tug-edit/clipboard-filters";
 import { tugDropExtension } from "./tug-edit/drop-extension";
 import { createCMSelectionAdapter } from "./tug-edit/selection-adapter";
 import { tugSelectionLayer } from "./tug-edit/selection-layer";
@@ -807,12 +807,15 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
     // Bridge-paste atom round-trip: the bridge exposes
     // `text/plain` + `text/html` only — never the
     // `application/x-tug-atoms` custom MIME the substrate writes on
-    // copy. We parse `html` first via `parseClipboardHtml`. When the
-    // html carries atom `<img data-atom-*>` markup, we reconstruct
-    // the atoms in a single transaction (text + decorations
-    // together, mirrors the `clipboardExt.handlePaste` sidecar
-    // branch). When the html is empty / atom-free / malformed, we
-    // fall through to inserting `text` verbatim.
+    // copy (WebKit packs custom MIMEs into the undocumented
+    // `com.apple.WebKit.custom-pasteboard-data` archive blob,
+    // invisible to NSPasteboard.string-typed reads). The atom data
+    // rides along inside a `<span data-tug-atoms="…">` envelope on
+    // `text/html` instead — `parseClipboardHtmlEnvelope` extracts and
+    // base64-decodes it. When no envelope is present, fall through to
+    // inserting `text` verbatim (label-substituted from external apps,
+    // or the substrate's own copy on clipboards where the html got
+    // stripped en route).
     const handlePaste = useCallback((): ActionHandlerResult => {
       const view = viewRef.current;
       if (view === null) return;
@@ -824,18 +827,18 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
             const live = viewRef.current;
             if (live === null) return;
             const { from, to } = live.state.selection.main;
-            const parsedHtml = parseClipboardHtml(html);
-            if (parsedHtml !== null) {
-              const placedAtoms = parsedHtml.atoms.map((a) => ({
+            const sidecar = parseClipboardHtmlEnvelope(html);
+            if (sidecar !== null) {
+              const placedAtoms = sidecar.atoms.map((a) => ({
                 position: from + a.position,
                 segment: a.segment,
               }));
               live.dispatch({
-                changes: { from, to, insert: parsedHtml.docText },
+                changes: { from, to, insert: sidecar.text },
                 effects: placedAtoms.length > 0
                   ? addAtomsEffect.of(placedAtoms)
                   : [],
-                selection: { anchor: from + parsedHtml.docText.length },
+                selection: { anchor: from + sidecar.text.length },
                 userEvent: "input.paste",
               });
               return;

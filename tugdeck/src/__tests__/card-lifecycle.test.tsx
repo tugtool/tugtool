@@ -61,6 +61,15 @@ function makeManager(initialKeyCard: string | null = null): CardLifecycleManager
       return state.keyCard;
     },
     makeFirstResponder,
+    // Stub: tests in this file pre-date the at-or-below guard. The
+    // mock answers "first responder equals queried id" by checking
+    // its tracked keyCard, which is what the existing tests rely
+    // on (every test sets keyCard explicitly before driving the
+    // lifecycle). Returns false when keyCard is null so calls fall
+    // through to makeFirstResponder.
+    firstResponderIsAtOrBelow(id: string): boolean {
+      return state.keyCard === id;
+    },
   };
 }
 
