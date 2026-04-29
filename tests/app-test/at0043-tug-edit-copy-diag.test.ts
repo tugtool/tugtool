@@ -121,10 +121,30 @@ async function setupGallery(app: App): Promise<void> {
   );
 }
 
-/** Clear the editor (Cmd-A, Delete) so each scenario starts fresh. */
+/**
+ * Clear the editor (Cmd-A, Delete) so each scenario starts fresh.
+ * Settle gates between the two key events and after Delete: native
+ * key posting goes through the OS event queue at full speed, and
+ * firing Delete while Cmd-A is still in flight can leave Cmd-A's
+ * selection un-applied — Delete then removes only the character
+ * before the cursor, leaving residual text from the prior scenario.
+ * The textContent + atom-count wait confirms the doc is genuinely
+ * empty before the next scenario's typing begins.
+ */
 async function clearEditor(app: App): Promise<void> {
   await app.nativeKey("a", ["cmd"]);
+  await new Promise((r) => setTimeout(r, 80));
   await app.nativeKey("Delete");
+  await app.waitForCondition<boolean>(
+    `(function(){
+      var ed = document.querySelector('[data-card-id="A"] ${TUG_EDIT_CONTENT_SELECTOR}');
+      if (ed === null) return false;
+      return ed.querySelectorAll('img[data-atom-label]').length === 0
+        && ed.textContent.length === 0;
+    })()`,
+    { timeoutMs: 2000 },
+  );
+  await new Promise((r) => setTimeout(r, 80));
 }
 
 interface ClipboardSnapshot {
@@ -212,10 +232,24 @@ describe.skipIf(!SHOULD_RUN)(
 
             // ---- Scenario 1: text-only ----
             // Type "abc", select all, ⌘C. Bridge text should match
-            // verbatim — text glyphs round-trip unchanged.
+            // verbatim — text glyphs round-trip unchanged. Settle
+            // gates between native key events: CGEvent posting goes
+            // through the OS event queue at full speed, and firing
+            // Cmd-A while the previous keystroke is still in flight
+            // can leave the selection partially-applied (Cmd-C then
+            // copies the wrong range, or no range at all).
             await app.nativeType("abc");
+            await app.waitForCondition<boolean>(
+              `(function(){
+                var ed = document.querySelector('[data-card-id="A"] ${TUG_EDIT_CONTENT_SELECTOR}');
+                return ed !== null && ed.textContent === "abc";
+              })()`,
+              { timeoutMs: 2000 },
+            );
             await app.nativeKey("a", ["cmd"]);
+            await new Promise((r) => setTimeout(r, 80));
             await app.nativeKey("c", ["cmd"]);
+            await new Promise((r) => setTimeout(r, 150));
             const textOnlyClip = await readClipboard(app);
             expect(textOnlyClip.hasBridge, "native bridge required for this test").toBe(true);
             expect(
@@ -230,6 +264,13 @@ describe.skipIf(!SHOULD_RUN)(
             // substitutes labels for U+FFFC in the `fallback` payload.
             await clearEditor(app);
             await app.nativeType("x");
+            await app.waitForCondition<boolean>(
+              `(function(){
+                var ed = document.querySelector('[data-card-id="A"] ${TUG_EDIT_CONTENT_SELECTOR}');
+                return ed !== null && ed.textContent === "x";
+              })()`,
+              { timeoutMs: 2000 },
+            );
             await app.nativeClickAtElement(GALLERY_FILE_ATOM_BUTTON_SELECTOR);
             await app.nativeClickAtElement(`[data-card-id="A"] ${TUG_EDIT_CONTENT_SELECTOR}`);
             await app.waitForCondition<boolean>(
@@ -241,7 +282,9 @@ describe.skipIf(!SHOULD_RUN)(
               { timeoutMs: 2000 },
             );
             await app.nativeKey("a", ["cmd"]);
+            await new Promise((r) => setTimeout(r, 80));
             await app.nativeKey("c", ["cmd"]);
+            await new Promise((r) => setTimeout(r, 150));
             const mixedClip = await readClipboard(app);
             expect(
               mixedClip.text,
@@ -264,7 +307,9 @@ describe.skipIf(!SHOULD_RUN)(
               { timeoutMs: 2000 },
             );
             await app.nativeKey("ArrowLeft", ["shift"]);
+            await new Promise((r) => setTimeout(r, 80));
             await app.nativeKey("c", ["cmd"]);
+            await new Promise((r) => setTimeout(r, 150));
             const atomOnlyClip = await readClipboard(app);
             expect(
               atomOnlyClip.text,

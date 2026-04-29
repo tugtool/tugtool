@@ -269,6 +269,29 @@ export const tugTheme: Extension = EditorView.theme({
     backgroundColor: TOKENS.caret,
   },
 
+  // While the user is mid mouse-drag (mousedown without mouseup
+  // yet), suppress the caret entirely. The selection is in flux —
+  // the moment `selectionSet` fires from the next mousemove, the
+  // caret-layer would briefly paint a collapsed cursor at the
+  // mousedown anchor before the range widens. Matches WebKit's
+  // native behavior of hiding the caret during drag-selection.
+  // Toggled by `tugCaretInteractionPlugin`'s mousedown / global
+  // mouseup pair in `caret-layer.ts`.
+  "&[data-tug-edit-dragging] .tug-edit-caret-layer": {
+    display: "none",
+  },
+
+  // While the user is actively typing (any keydown within the last
+  // ~500ms), freeze the blink animation and pin the caret to full
+  // opacity. Standard text-editor behavior since the 1980s — the
+  // caret stays solid during typing and resumes blinking after a
+  // pause. Toggled by `tugCaretInteractionPlugin`'s keydown +
+  // idle-timer in `caret-layer.ts`.
+  "&[data-tug-edit-typing].cm-focused > .cm-scroller > .tug-edit-caret-layer": {
+    animation: "none",
+    opacity: 1,
+  },
+
   // Focus-state surface — subtle background tint shift in the default
   // focus style. Host-wrapper variants (`data-focus-style="ring"`) live
   // in `tug-edit.css`; this rule covers the default ("background") path

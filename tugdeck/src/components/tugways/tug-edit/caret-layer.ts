@@ -1,6 +1,9 @@
 /**
  * tug-edit/caret-layer.ts — custom CodeMirror 6 layer that paints a
- * single caret stroke at the head of a collapsed, focused selection.
+ * single caret stroke at the head of a collapsed, focused selection,
+ * plus a `ViewPlugin` that tracks interaction state (mouse drag,
+ * typing) and toggles attributes on the editor root so theme.ts can
+ * suppress the caret during drags and freeze the blink during typing.
  *
  * Replaces WebKit's contentEditable caret. The native caret renderer
  * caches paint geometry on focus and on scroll; layout-shifting
@@ -11,79 +14,76 @@
  * once flushed the cache by triggering `view.contentDOM.blur() →
  * offsetWidth read → view.focus()` after each known stale-able
  * transition. This layer makes those patches unnecessary by giving
- * CM6 ownership of caret rendering: there is no contentEditable
- * caret to stale; CM6 paints the caret atomically with each
- * transaction the same way `selection-layer.ts` paints the selection
- * background.
+ * CM6 ownership of caret rendering.
  *
- * Design contract (mirrors `selection-layer.ts`):
+ * Why DOM-rect geometry instead of `coordsAtPos` + `lineBlockAt`:
+ * `BlockInfo.top` returned by `lineBlockAt(pos)` is measured relative
+ * to the *document model* — i.e., the inside of `.cm-content`'s
+ * padding box. Layer markers are positioned relative to the
+ * *scroller's content area* (`.cm-scroller`), which is `.cm-content`'s
+ * outer edge — `padding-top` (8px in `theme.ts`) HIGHER. Using
+ * `lineBlock.top` directly would put the caret 8px above the visible
+ * line. Using `coordsAtPos(head).top - base.top` gives the *glyph*
+ * top, which is what `RectangleMarker.forRange` does for selections
+ * — but the glyph height (~14-18px) wobbles between text-only and
+ * atom-bearing positions, which is why we built our own caret rather
+ * than relying on `drawSelection`.
  *
- *   - `layer({ above: true })` so the caret stroke renders above
- *     selection background and text glyphs.
- *   - `markers()` returns `[]` when the editor isn't focused, when
- *     the main selection is ranged (caret is invisible during
- *     ranged-selection in standard caret semantics — selection paint
- *     handles the visible state), or when the head position has no
- *     coords (scrolled off-screen).
- *   - When focused + collapsed + visible, returns one
- *     `RectangleMarker`. Geometry:
- *     - `left = coords.left - base.left` (document-relative; same
- *       coordinate transformation `RectangleMarker.forRange` uses
- *       internally for empty ranges, lifted here so we can override
- *       height).
- *     - `top = view.lineBlockAt(head).top` (document-relative line
- *       top; uniform across atom-bearing and text-only positions).
- *     - `width = 2` (caret stroke width).
- *     - `height = view.lineBlockAt(head).height` (line-box height,
- *       which the `.cm-line::before` ghost in `theme.ts` pins to
- *       1.75em regardless of inline content).
- *   - Updates on `docChanged | selectionSet | viewportChanged |
- *     geometryChanged | focusChanged` so every transition that
- *     changes head position OR layout OR focus rebuilds the marker.
+ * The DOM approach reads the containing `.cm-line` element's
+ * `getBoundingClientRect()` for both Y and height. That rect reflects
+ * the *rendered* line box (including the `.cm-line::before` ghost
+ * that pins height to 1.75em), which is exactly the visible target
+ * we want the caret to track. One DOM read per `markers()` call —
+ * cheap, deterministic, no padding-coord-system ambiguity.
  *
- * Why the line-block-height geometry: `RectangleMarker.forRange` for
- * an empty range constructs the marker with `height = pos.bottom -
- * pos.top` from `coordsAtPos`, which is the *glyph* height — text
- * glyphs (~18px) vs atom widgets (24px) vs the line-height-pinning
- * ghost (24.5px) all give different answers. Substituting
- * `lineBlockAt(head).height` produces a uniform 24.5px caret that
- * never wobbles between text-only and atom-bearing positions.
+ * Interaction-state plugin:
  *
- * Why a custom layer instead of CM6's `drawSelection`: drawSelection
- * bundles `::selection: transparent !important` and `caret-color:
- * transparent !important` at `Prec.highest`; the former collides
- * with the substrate's existing `.cm-content ::selection { color }`
- * glyph-recolor rule. Building our own caret layer composes cleanly
- * with the existing `selection-layer.ts` overlay (same `layer()`
- * idiom, no precedence battles) and isolates the caret-rendering
- * concern from selection rendering.
+ *   - `mousedown` on contentDOM → set `data-tug-edit-dragging` on
+ *     `view.dom`. A document-level `mouseup` listener (registered
+ *     once-per-mousedown via `{ once: true }`) clears the attribute.
+ *     The theme suppresses the caret while the attribute is present
+ *     so a click-and-drag selection doesn't paint a stale caret in
+ *     the middle of the live drag — matching WebKit's native
+ *     behavior.
+ *   - `keydown` on contentDOM → set `data-tug-edit-typing` on
+ *     `view.dom` and start a 500ms idle timer. Any further keydown
+ *     resets the timer; when it fires the attribute clears. The
+ *     theme freezes the blink animation while the attribute is
+ *     present so the caret reads as steady during active typing —
+ *     matching standard text-editor behavior since the 1980s.
+ *
+ * Both attributes are toggled directly on the DOM without
+ * dispatching transactions; they are appearance-only state per [L06]
+ * and [L22].
  *
  * Laws: [L02] caret position is owned by CM6's `EditorState.selection`,
- *        not React state, [L06] caret painted via DOM layer (real DOM
- *        nodes — appearance-only), [L19] file structure (next to
- *        `selection-layer.ts`, the sister rendering layer), [L22]
- *        direct DOM-update observer (CM6 layer's `markers()` runs in
- *        the measure phase without a React round-trip).
+ *        not React state, [L06] caret painted via DOM layer + DOM
+ *        attribute toggles (real DOM nodes — appearance-only), [L19]
+ *        file structure (next to `selection-layer.ts`, the sister
+ *        rendering layer), [L22] direct DOM-update observers (CM6
+ *        layer's `markers()` and the interaction plugin's event
+ *        handlers run without React round-trips).
  */
 
-import { EditorView, layer, RectangleMarker } from "@codemirror/view";
+import { EditorView, layer, RectangleMarker, ViewPlugin } from "@codemirror/view";
 import type { LayerMarker } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 
 /** Caret stroke width in pixels. Matches WebKit's native caret stroke. */
 const CARET_STROKE_WIDTH = 2;
 
+/** Idle delay before the typing-steady attribute clears and blink resumes. */
+const TYPING_IDLE_MS = 500;
+
 /**
  * Document-relative origin used to translate viewport coordinates
- * returned by `coordsAtPos` into the layer's positioning context.
- * Layer markers are absolutely positioned with their parent at the
- * document origin, so left/top must be relative to the document
- * (scroller content area), not the viewport.
+ * returned by `getBoundingClientRect` / `coordsAtPos` into the
+ * layer's positioning context. Layer markers are absolutely
+ * positioned with their parent at the scroller's content top-left,
+ * so left/top must be relative to that.
  *
- * Mirrors the private `getBase(view)` helper in
- * `@codemirror/view`'s `RectangleMarker.forRange` implementation —
- * lifted here so we can compose caret X with line-block Y / height
- * instead of taking the glyph rect wholesale.
+ * Mirrors the private `getBase(view)` helper in `@codemirror/view`'s
+ * `RectangleMarker.forRange` implementation.
  */
 function documentBase(view: EditorView): { left: number; top: number } {
   const rect = view.scrollDOM.getBoundingClientRect();
@@ -94,10 +94,27 @@ function documentBase(view: EditorView): { left: number; top: number } {
 }
 
 /**
+ * Find the `.cm-line` element that contains the given document
+ * position. Walks up from `view.domAtPos(pos).node` to the nearest
+ * `.cm-line` ancestor (or returns the node itself when pos lands
+ * directly on the line element).
+ */
+function findLineElement(view: EditorView, pos: number): HTMLElement | null {
+  const { node } = view.domAtPos(pos);
+  let walker: Node | null = node;
+  while (walker !== null) {
+    if (walker instanceof HTMLElement && walker.classList.contains("cm-line")) {
+      return walker;
+    }
+    walker = walker.parentNode;
+  }
+  return null;
+}
+
+/**
  * Caret-overlay layer. Paints a single `tug-edit-caret` div at the
  * head of the main selection when the editor is focused and the
- * selection is collapsed. Empty otherwise — selection-overlay paint
- * handles the visible state for ranged selections.
+ * selection is collapsed.
  */
 export const tugCaretLayer: Extension = layer({
   above: true,
@@ -117,16 +134,79 @@ export const tugCaretLayer: Extension = layer({
     if (!sel.empty) return [];
     const coords = view.coordsAtPos(sel.head, 1);
     if (coords === null) return [];
-    const lineBlock = view.lineBlockAt(sel.head);
+    const lineEl = findLineElement(view, sel.head);
+    if (lineEl === null) return [];
+    const lineRect = lineEl.getBoundingClientRect();
     const base = documentBase(view);
     return [
       new RectangleMarker(
         "tug-edit-caret",
         coords.left - base.left,
-        lineBlock.top,
+        lineRect.top - base.top,
         CARET_STROKE_WIDTH,
-        lineBlock.height,
+        lineRect.height,
       ),
     ];
   },
 });
+
+/**
+ * Interaction-state plugin. Tracks mouse-drag and active-typing
+ * windows and reflects them as attributes on `view.dom` so the theme
+ * can adjust caret visibility / blink behavior. No transactions
+ * dispatched — appearance-only ([L06], [L22]).
+ */
+export const tugCaretInteractionPlugin: Extension = ViewPlugin.fromClass(
+  class {
+    private typingIdleTimer: number | null = null;
+
+    constructor(private readonly view: EditorView) {
+      view.contentDOM.addEventListener("mousedown", this.onMouseDown);
+      view.contentDOM.addEventListener("keydown", this.onKeyDown);
+    }
+
+    destroy(): void {
+      this.view.contentDOM.removeEventListener("mousedown", this.onMouseDown);
+      this.view.contentDOM.removeEventListener("keydown", this.onKeyDown);
+      document.removeEventListener("mouseup", this.onMouseUpGlobal);
+      if (this.typingIdleTimer !== null) {
+        window.clearTimeout(this.typingIdleTimer);
+        this.typingIdleTimer = null;
+      }
+      this.view.dom.removeAttribute("data-tug-edit-dragging");
+      this.view.dom.removeAttribute("data-tug-edit-typing");
+    }
+
+    private onMouseDown = (): void => {
+      this.view.dom.setAttribute("data-tug-edit-dragging", "");
+      // Document-level mouseup so we still clear when the user
+      // releases outside the editor (drag past the edge, etc.).
+      // `once: true` so it auto-removes after firing.
+      document.addEventListener("mouseup", this.onMouseUpGlobal, { once: true });
+    };
+
+    private onMouseUpGlobal = (): void => {
+      this.view.dom.removeAttribute("data-tug-edit-dragging");
+    };
+
+    private onKeyDown = (event: KeyboardEvent): void => {
+      // Pure modifier-only keystrokes (Shift / Cmd / Ctrl / Alt held
+      // alone) shouldn't pin the caret as "typing" — the user might
+      // be preparing to navigate or hold Shift to select. Filter on
+      // key name; everything else (printable input, Backspace,
+      // Delete, Enter, Tab, arrows) counts as active interaction.
+      const key = event.key;
+      const isModifierOnly =
+        key === "Shift" || key === "Meta" || key === "Control" || key === "Alt";
+      if (isModifierOnly) return;
+      this.view.dom.setAttribute("data-tug-edit-typing", "");
+      if (this.typingIdleTimer !== null) {
+        window.clearTimeout(this.typingIdleTimer);
+      }
+      this.typingIdleTimer = window.setTimeout(() => {
+        this.view.dom.removeAttribute("data-tug-edit-typing");
+        this.typingIdleTimer = null;
+      }, TYPING_IDLE_MS);
+    };
+  },
+);

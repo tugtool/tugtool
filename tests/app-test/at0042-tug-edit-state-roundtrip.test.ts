@@ -167,12 +167,27 @@ async function setupPhaseA(app: App, opts: { forceSave: boolean }): Promise<void
     `document.activeElement !== null && document.activeElement.matches(${JSON.stringify(editorSelector)})`,
     { timeoutMs: 2000 },
   );
+  // Brief settle so focus is solidly established before typing.
+  // Without this, the first few nativeType events sometimes race
+  // with focus reconciliation and land on the wrong target —
+  // worst-case symptom observed: stray modifier holds combine with
+  // queued character keys to trigger system shortcuts (emoji
+  // picker, dictation dialog) that interrupt the test.
+  await new Promise((r) => setTimeout(r, 100));
 
-  // Type the test fixture. nativeType produces real NSEvent keypresses
-  // that the WebView delivers as native `input` / `keydown` events,
-  // so CM6's standard input pipeline handles them — no synthetic
-  // dispatches.
-  await app.nativeType(TYPED_TEXT);
+  // Type the test fixture in small chunks with settle gaps. Posting
+  // many characters in one nativeType call saturates the OS event
+  // queue; WebKit silently drops trailing events and stray modifier
+  // bits can persist long enough to combine with the next character
+  // key into an unintended OS shortcut. Smaller bites give the
+  // queue time to drain between groups.
+  const TYPING_CHUNK_SIZE = 8;
+  const TYPING_CHUNK_DELAY_MS = 60;
+  for (let offset = 0; offset < TYPED_TEXT.length; offset += TYPING_CHUNK_SIZE) {
+    const chunk = TYPED_TEXT.slice(offset, offset + TYPING_CHUNK_SIZE);
+    await app.nativeType(chunk);
+    await new Promise((r) => setTimeout(r, TYPING_CHUNK_DELAY_MS));
+  }
 
   // Verify the editor's live document carries the typed text. We
   // read this from CM6 directly (not the DOM, not the bag) so a
@@ -465,7 +480,22 @@ describe.skipIf(!SHOULD_RUN)(
               { timeoutMs: 2000 },
             );
 
-            await app.nativeType(TYPED_LONG_LINE);
+            // Chunked typing: nativeType posts CGEvents into the
+            // OS event queue at full speed. Posting all 98
+            // characters of TYPED_LONG_LINE in one call leaves the
+            // queue saturated; WebKit silently drops the trailing
+            // events and the doc lands missing characters
+            // (typically "final." at the end). Posting in smaller
+            // chunks with a settle delay between gives WebKit time
+            // to drain each chunk's input pipeline before the next
+            // batch lands.
+            const TYPING_CHUNK_SIZE = 16;
+            const TYPING_CHUNK_DELAY_MS = 60;
+            for (let offset = 0; offset < TYPED_LONG_LINE.length; offset += TYPING_CHUNK_SIZE) {
+              const chunk = TYPED_LONG_LINE.slice(offset, offset + TYPING_CHUNK_SIZE);
+              await app.nativeType(chunk);
+              await new Promise((r) => setTimeout(r, TYPING_CHUNK_DELAY_MS));
+            }
             // 8s ceiling so the typing has slack on cold-launched
             // WebViews — the per-keystroke event posting is fast but
             // CM6's reconciliation has to flush each transaction
@@ -512,6 +542,19 @@ describe.skipIf(!SHOULD_RUN)(
               })()`,
               { timeoutMs: 2000 },
             );
+            // Settle: nativeType posts native NSEvents into WebKit's
+            // input pipeline; CM6's input-handler debounces and
+            // dispatches transactions in batches. The textContent
+            // wait above confirms the doc has caught up, but the
+            // last batch's `scrollIntoView: true` flag rides a
+            // pending measure cycle that fires after the textContent
+            // settles. Without a buffer between "scroll lands at
+            // 120" and the appReload-triggered save, that pending
+            // scrollIntoView can fire BETWEEN the wait and the save,
+            // moving scrollLeft back to the cursor's column. 250ms
+            // is enough for the measure cycle and any rAF-coupled
+            // observers to drain on a cold-launched WebView.
+            await new Promise((r) => setTimeout(r, 250));
 
             await app.appReload();
 

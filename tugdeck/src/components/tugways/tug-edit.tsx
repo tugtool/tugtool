@@ -111,7 +111,7 @@ import { atomicRangesExt } from "./tug-edit/atomic-ranges";
 import { clipboardExt, parseClipboardHtmlEnvelope } from "./tug-edit/clipboard-filters";
 import { tugDropExtension } from "./tug-edit/drop-extension";
 import { createCMSelectionAdapter } from "./tug-edit/selection-adapter";
-import { tugCaretLayer } from "./tug-edit/caret-layer";
+import { tugCaretInteractionPlugin, tugCaretLayer } from "./tug-edit/caret-layer";
 import { tugSelectionLayer } from "./tug-edit/selection-layer";
 import { captureEditState, tugEditKeymap } from "./tug-edit/keymap";
 import type { TugEditKeymapConfig } from "./tug-edit/keymap";
@@ -443,6 +443,7 @@ function buildExtensions(
     //     caret-cache staleness.
     tugSelectionLayer,
     tugCaretLayer,
+    tugCaretInteractionPlugin,
     tugTheme,
     hostFocusMirror(host),
     // Atom support: the decoration field is the data layer; the
