@@ -223,6 +223,14 @@ export function installHmrBridge(deck: DeckManager): void {
   import.meta.hot.on("vite:beforeFullReload", () => {
     deck.captureAllForTeardown("hmr-full-reload");
   });
+  // Force a full reload if THIS module is hot-replaced. Without this,
+  // every self-edit re-runs the body and accumulates duplicate
+  // `vite:beforeUpdate` listeners, each firing a redundant save pass.
+  // The bridge changes rarely; full reload is the simplest correct
+  // behavior.
+  import.meta.hot.accept(() => {
+    import.meta.hot?.invalidate();
+  });
 }
 ```
 
@@ -388,6 +396,8 @@ Plus a brief subsection in the doc explaining the bridge module and pointing at 
 
 **Commit:** `feat(deck-trace): add hmr / hmr-full-reload to SaveCallbackSource`
 
+**References:** [L23], (#tuglaws-compliance)
+
 Add the two new literals to `deck-trace.ts`'s `SaveCallbackSource` union. No call sites yet; this is a forward-declaration commit so subsequent edits in `deck-manager.ts` and the bridge module type-check cleanly.
 
 **Tests:**
@@ -402,7 +412,9 @@ Add the two new literals to `deck-trace.ts`'s `SaveCallbackSource` union. No cal
 
 **Commit:** `refactor(deck-manager): extract captureAllForTeardown from handleBeforeUnload`
 
-Refactor `handleBeforeUnload`'s body into a new public method `captureAllForTeardown(reason: SaveCallbackSource)`. Have `handleBeforeUnload` call `captureAllForTeardown("beforeunload")` to share the iterate-and-save pass.
+**References:** [L10], [L23], (#tuglaws-compliance)
+
+Refactor `handleBeforeUnload`'s body into a new public method `captureAllForTeardown(reason: SaveCallbackSource)`. Have `handleBeforeUnload` call `captureAllForTeardown("beforeunload")` to share the iterate-and-save pass. Pure refactor — no behavior change at this step. The new public method becomes the entry point used by the bridge in Step 3.
 
 **Tests:**
 - [ ] AT0042 still passes (cold-boot preservation contract unchanged).
@@ -417,7 +429,9 @@ Refactor `handleBeforeUnload`'s body into a new public method `captureAllForTear
 
 **Commit:** `feat(deck): hmr bridge — Vite beforeUpdate / beforeFullReload save passes`
 
-Add `tugdeck/src/hmr-bridge.ts` with `installHmrBridge(deck)` registering `vite:beforeUpdate` and `vite:beforeFullReload` handlers. Wire from `main.tsx` after the `new DeckManager(...)` line.
+**References:** [L03], [L07], [L10], [L19], [L21], [L23], (#tuglaws-compliance)
+
+Add `tugdeck/src/hmr-bridge.ts` with `installHmrBridge(deck)` registering `vite:beforeUpdate` and `vite:beforeFullReload` handlers. Wire from `main.tsx` after the `new DeckManager(...)` line. Bridge calls `import.meta.hot.accept(() => import.meta.hot.invalidate())` so a self-edit forces a full reload (avoids listener accumulation across hot replacements of the bridge module itself).
 
 **Manual verification:**
 - [ ] In dev mode, type into a tug-edit gallery card. Observe deck-trace ring (browser devtools): edit a theme.ts file → see `save-callback` events with `source: "hmr"` for the active card. Bag is now in deck-manager's cache.
@@ -433,6 +447,8 @@ Add `tugdeck/src/hmr-bridge.ts` with `installHmrBridge(deck)` registering `vite:
 #### Step 4: Restore-side remount detection in CardHost {#step-4}
 
 **Commit:** `fix(card-host): detect content-factory remount and replay bag.content + bag.components`
+
+**References:** [L03], [L07], [L23], [L24], (#tuglaws-compliance)
 
 Modify `registerStatePreservationCallbacks` in `card-host.tsx` to detect the "no-op pair → real callbacks" transition that signals a content-factory remount. When detected, reset `hasAppliedContentRestoreRef` and `hasRestoredComponentsRef`. Add `callbacksVersion` to the components-axis effect's dep array (so its one-shot reset re-fires the restore) and to the framework-axes effect's dep array (so `bag.focus` re-applies for non-content cards on HMR remount).
 
@@ -452,6 +468,8 @@ Modify `registerStatePreservationCallbacks` in `card-host.tsx` to detect the "no
 
 **Commit:** `test(app-test): atXXXX hmr state-preservation smoke`
 
+**References:** [L23], (#tuglaws-compliance)
+
 Add a new app-test that fires `vite:beforeUpdate` programmatically and asserts the bag round-trips for a populated tug-edit gallery card (text, selection, scroll). Sits next to AT0042 in the inventory.
 
 **Tests:**
@@ -467,6 +485,8 @@ Add a new app-test that fires `vite:beforeUpdate` programmatically and asserts t
 
 **Commit:** `docs(tuglaws): list HMR among state-preservation capture moments`
 
+**References:** [L23], (#tuglaws-compliance)
+
 Update `tuglaws/state-preservation.md`'s "Capture moments" list to include HMR module replacement. Add a brief subsection on the bridge module pointing at `tugdeck/src/hmr-bridge.ts`. Mention the new app-test by AT-tag.
 
 **Checkpoint:**
@@ -475,6 +495,8 @@ Update `tuglaws/state-preservation.md`'s "Capture moments" list to include HMR m
 ---
 
 #### Step 7: Manual walkthrough on the `tug-edit` gallery card {#step-7}
+
+**References:** [L23], (#tuglaws-compliance)
 
 **Tasks:**
 - [ ] Open the gallery, navigate to TugEdit card.
@@ -490,8 +512,55 @@ Update `tuglaws/state-preservation.md`'s "Capture moments" list to include HMR m
 
 ---
 
+### Tuglaws Compliance {#tuglaws-compliance}
+
+Audit against [`tuglaws/tuglaws.md`](../tuglaws/tuglaws.md). Engaged laws have a compliance approach; non-engaged laws are listed for completeness so a future reader can see the full surface was considered.
+
+#### Centrally engaged
+
+| Law | What it requires | Compliance approach | Step |
+|---|---|---|---|
+| **[L23] Internal operations must not lose user-visible state** | Re-lex / re-parse / DOM rebuild / tab switch / cmd-tab / cold boot must preserve selection, focus, scroll, content. The plan's reason-for-being. | Adds HMR module replacement and full-reload to the recognized capture moments. The capture pass is the same body that runs on `beforeunload`; the restore pass is the same body that runs on cold-boot. No new contract, no new mechanism — one new producer. | All steps. |
+
+#### Engaged in implementation
+
+| Law | What it requires | Compliance approach | Step |
+|---|---|---|---|
+| **[L03] Use `useLayoutEffect` for registrations that events depend on** | Mount-time wiring must complete before any event-driven handler runs. | `import.meta.hot.on(...)` in the bridge module runs at module init (before any React render). The CardHost restore effects we modify are already `useLayoutEffect`. | Steps 3, 4. |
+| **[L07] Action handlers access state through refs / stable singletons, never stale closures** | Handlers registered once at mount must read live state at call time. | Bridge's Vite event handlers close over the `deck` instance — a stable singleton constructed once in `main.tsx`. CardHost's remount-detection reads `cardStatePreservationCallbacksRef.current` (a ref) at call time. | Steps 3, 4. |
+| **[L10] One responsibility per layer** | DeckManager owns layout / orchestration; CardHost bridges per-card context; layers don't reach across. | Bridge module sits at the deck level (calls a method on `deck`); deck-manager grows one new public method that does what `handleBeforeUnload` already does; CardHost grows internal logic confined to its own scope. No cross-layer reaches. | Steps 2, 3, 4. |
+| **[L19] Component authoring guide** | File pair, module docstring, scoped responsibilities. | `hmr-bridge.ts` carries a module docstring describing purpose, dev-only nature, and the two registered events. Not a tugways component, but follows file-conventions. | Step 3. |
+| **[L21] Third-party code requires license compliance** | Adopting external code/patterns demands attribution. | `import.meta.hot.*` is Vite's runtime API exposed to the browser, not third-party code we're copying. No `THIRD_PARTY_NOTICES.md` entry needed. | Step 3 (negative invariant). |
+| **[L24] State partitioned into appearance / local data / structure** | Each piece of state belongs to exactly one zone. | Structure zone: `callbacksVersion` state, effect dep arrays, registration. Local data: the one-shot refs (`hasAppliedContentRestoreRef`, `hasRestoredComponentsRef`) are component-scoped React refs that don't coordinate outside CardHost. Appearance zone: untouched. | Step 4. |
+
+#### Non-engaged (explicit)
+
+| Law | Why not engaged |
+|---|---|
+| **[L01] One `root.render()` at mount, ever** | Plan adds no new `root.render` calls. |
+| **[L02] External state via `useSyncExternalStore` only** | Bridge module runs outside React. CardHost reads from refs (local data) and from `store.getCardState(cardId)` (the existing direct-read pattern, not `useState`-mirrored). No new `useState`+manual-sync paths. |
+| **[L04] No measure-after-parent-setState on child DOM** | No measurement / no parent→child setState cycles introduced. |
+| **[L05] No `requestAnimationFrame` for React-commit-coupled work** | Plan explicitly avoids RAF. The `vite:beforeUpdate` event is synchronous; the deck-manager save pass is synchronous; React Fast Refresh's commit cycle drives the remount detection. |
+| **[L06] Appearance via CSS and DOM, never React state** | Plan handles user data preservation, not appearance. |
+| **[L08] Mutation transactions: preview is appearance-only** | No mutation transactions. |
+| **[L09], [L25] Pane chrome / Deck → Pane → Card** | Plan doesn't touch chrome or hierarchy. |
+| **[L11] Controls emit; responders own state** | No new controls / responders. |
+| **[L12] Selection stays inside card boundaries** | Selection-guard pipeline untouched. |
+| **[L13], [L14] Motion / Radix Presence** | Not engaged. |
+| **[L15]–[L18], [L20] Token system / element vs surface / scoping** | No CSS / token changes. |
+| **[L22] External-state DOM updates observe the store directly** | Bridge listens to Vite events (not a tug store) and writes via `deck.captureAllForTeardown(...)`. The bag updates eventually drive React renders for restore — not direct-DOM-mutation paths from a store observer. The existing CardHost effects (which DO observe the store) are unchanged in their observer pattern. |
+
+#### Implementation notes that fell out of the audit
+
+1. **Bridge module self-HMR.** If `hmr-bridge.ts` is itself hot-replaced, Vite's `import.meta.hot.on(...)` listeners accumulate (each module-load registers new ones, old ones may remain unless explicitly disposed). The bridge should call `import.meta.hot.accept(() => import.meta.hot.invalidate())` so any change to it forces a full reload — no listener accumulation, no stale registrations. Costs nothing in production. Alternative (more nuanced) is to track listener references and `off()` them in `import.meta.hot.dispose(...)`; the invalidate-on-self-change pattern is simpler and fits a file that should rarely change.
+2. **Deck instance threading.** `installHmrBridge(deck)` takes the deck as an argument rather than using a module-level singleton getter (consistent with how `connection-singleton.ts` works for the WS connection). main.tsx is the single call site, called once after `new DeckManager(...)`.
+3. **`SaveCallbackSource` extension order.** Adding the two new literals at the END of the union (not alphabetical) keeps the diff minimal and matches the existing ordering (which mirrors the order events were added to the framework).
+
+---
+
 ### References {#references}
 
+- [`tuglaws/tuglaws.md`](../tuglaws/tuglaws.md) — the law surface this plan was audited against.
 - [`tuglaws/state-preservation.md`](../tuglaws/state-preservation.md) — the protocol this plan extends.
 - [`tuglaws/card-state-model.md`](../tuglaws/card-state-model.md) — per-axis contract (focus, scroll, form-control value).
 - [Vite HMR API](https://vitejs.dev/guide/api-hmr.html) — `import.meta.hot.on` events including `vite:beforeUpdate`, `vite:beforeFullReload`, `vite:beforePrune`.
