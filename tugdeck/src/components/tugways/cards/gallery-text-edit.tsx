@@ -80,6 +80,7 @@ import type { TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import { TugValueInput } from "@/components/tugways/tug-value-input";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { useComponentStatePreservation } from "@/components/tugways/use-component-state-preservation";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { captureEditState } from "@/components/tugways/tug-edit/keymap";
 import { useCardWorkspaceKey } from "@/components/tugways/hooks/use-card-workspace-key";
@@ -338,6 +339,71 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
 
   // ---- Submit counter (display only) ----
   const [submitCount, setSubmitCount] = useState<number>(0);
+
+  // ---- Component State Preservation ----
+  //
+  // Every prop the card lets the user tune is React state owned by
+  // this component, so it falls under the Component-level layer of
+  // the State Preservation Protocol (see
+  // `tuglaws/state-preservation.md`):
+  //
+  //   - State driven by tug components that already accept
+  //     `componentStatePreservationKey` (TugSwitch, TugChoiceGroup,
+  //     TugValueInput) is preserved by threading a key through the
+  //     prop. The framework captures `.checked` / `.value` into
+  //     `bag.components` and replays it on cold-boot — the parent
+  //     state owner reconciles via the existing dispatch chain.
+  //   - State driven by TugPopupButton (typography popups) and the
+  //     `maximized` toggle (a plain TugPushButton click) doesn't
+  //     have built-in preservation support, so we register
+  //     `useComponentStatePreservation` calls here that capture /
+  //     restore the local React state directly. Same `bag.components`
+  //     channel; same restore ordering.
+  //
+  // Keys are scoped to this card and stay grep-stable; the registry
+  // dedupes within the card subtree. The card-level
+  // `useCardStatePreservation` registration (inside `TugEdit` itself,
+  // gated on `preserveState`) handles the editor's document + atoms +
+  // selection on a separate axis (`bag.content`).
+  useComponentStatePreservation<boolean>({
+    componentStatePreservationKey: "maximized",
+    captureState: () => maximized,
+    restoreState: (v) => {
+      if (typeof v === "boolean") setMaximized(v);
+    },
+  });
+  useComponentStatePreservation<string | null>({
+    componentStatePreservationKey: "fontFamily",
+    captureState: () => fontFamily ?? null,
+    restoreState: (v) => {
+      if (v === null) setFontFamily(undefined);
+      else if (typeof v === "string") setFontFamily(v);
+    },
+  });
+  useComponentStatePreservation<number | null>({
+    componentStatePreservationKey: "fontSize",
+    captureState: () => fontSize ?? null,
+    restoreState: (v) => {
+      if (v === null) setFontSize(undefined);
+      else if (typeof v === "number") setFontSize(v);
+    },
+  });
+  useComponentStatePreservation<number | null>({
+    componentStatePreservationKey: "lineHeight",
+    captureState: () => lineHeight ?? null,
+    restoreState: (v) => {
+      if (v === null) setLineHeight(undefined);
+      else if (typeof v === "number") setLineHeight(v);
+    },
+  });
+  useComponentStatePreservation<string | null>({
+    componentStatePreservationKey: "letterSpacing",
+    captureState: () => letterSpacing ?? null,
+    restoreState: (v) => {
+      if (v === null) setLetterSpacing(undefined);
+      else if (typeof v === "string") setLetterSpacing(v);
+    },
+  });
 
   // Per-card runtime history. The ref-held array is the single source
   // of truth; React state (`submitCount`) carries only the rendered
@@ -619,6 +685,7 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
               <TugSwitch
                 checked={lineWrap}
                 senderId={lineWrapId}
+                componentStatePreservationKey="lineWrap"
                 size="sm"
               />
             </div>
@@ -627,6 +694,7 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
               <TugSwitch
                 checked={lineNumbers}
                 senderId={lineNumbersId}
+                componentStatePreservationKey="lineNumbers"
                 size="sm"
               />
             </div>
@@ -644,6 +712,7 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
               <TugValueInput
                 value={maxRows}
                 senderId={maxRowsId}
+                componentStatePreservationKey="maxRows"
                 min={1}
                 max={20}
                 step={1}
@@ -655,6 +724,7 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
               <TugSwitch
                 checked={disabled}
                 senderId={disabledId}
+                componentStatePreservationKey="disabled"
                 size="sm"
               />
             </div>
@@ -664,6 +734,7 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
                 items={GROW_DIRECTION_CHOICES}
                 value={growDirection}
                 senderId={growId}
+                componentStatePreservationKey="growDirection"
                 size="sm"
               />
             </div>
@@ -682,6 +753,7 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
                 items={RETURN_ACTION_CHOICES}
                 value={returnAction}
                 senderId={returnId}
+                componentStatePreservationKey="returnAction"
                 size="sm"
               />
             </div>
@@ -691,6 +763,7 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
                 items={ENTER_ACTION_CHOICES}
                 value={enterAction}
                 senderId={enterId}
+                componentStatePreservationKey="numpadEnterAction"
                 size="sm"
               />
             </div>
@@ -700,6 +773,7 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
                 items={COMPLETION_DIRECTION_CHOICES}
                 value={completionDirection}
                 senderId={completionDirId}
+                componentStatePreservationKey="completionDirection"
                 size="sm"
               />
             </div>
@@ -718,6 +792,7 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
                 items={FOCUS_STYLE_CHOICES}
                 value={focusStyle}
                 senderId={focusId}
+                componentStatePreservationKey="focusStyle"
                 size="sm"
               />
             </div>
@@ -727,6 +802,7 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
                 items={BORDERLESS_CHOICES}
                 value={borderless ? "true" : "false"}
                 senderId={borderlessId}
+                componentStatePreservationKey="borderless"
                 size="sm"
               />
             </div>
