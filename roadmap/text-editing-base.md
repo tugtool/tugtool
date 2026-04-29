@@ -411,9 +411,9 @@ Lands in [Step 15](#step-15). Resolves [Q04](#q04-route-atom-position) (route at
 
 #### Tuglaws compliance {#tuglaws-compliance}
 
-This spike implements a new tugways component, so [tuglaws.md](../tuglaws/tuglaws.md) governs every step. This subsection enumerates the laws engaged by the spike, how `TugEdit` complies, and where each compliance check lands. Each execution step's `**References:**` line cites the laws that step engages; the table below is the authoritative cross-walk.
+This spike implements a new tugways component, so [tuglaws.md](../tuglaws/tuglaws.md) governs every step. This subsection enumerates the laws engaged by the spike, how `TugTextEditor` (the production name; the spike committed under `TugEdit`, see [D07](#d07-rename-tug-text-editor)) complies, and where each compliance check lands. Each execution step's `**References:**` line cites the laws that step engages; the table below is the authoritative cross-walk.
 
-**Table T02: Tuglaws applied to `TugEdit`** {#t02-tuglaws-applied}
+**Table T02: Tuglaws applied to `TugTextEditor`** {#t02-tuglaws-applied}
 
 | Law | Engagement | Compliance approach | Where it lands |
 |---|---|---|---|
@@ -424,18 +424,18 @@ This spike implements a new tugways component, so [tuglaws.md](../tuglaws/tuglaw
 | [L05] No `requestAnimationFrame` for React-commit-coupled work | Always | We never use rAF to bridge CM6 state into React commits. CM6 has its own scheduler; the React shell observes via `EditorView.updateListener`. | All steps (negative invariant). |
 | [L06] Appearance via CSS and DOM, never React state | Theme, atom rendering, focus indication, disabled, placeholder, growDirection, maximized, focusStyle, borderless, drag-over | All editor visuals flow through CSS variables (theme), CM6 widget DOM (atoms), CSS class toggles on the host (focus / disabled), and DOM-side mutations (drop hover). No `useState` drives editor appearance. | Steps 2, 3, 8, 10. |
 | [L07] Handlers access state through refs / stable singletons | Delegate methods, keymap handlers, completion select, drop handler, route-prefix listener | The `useImperativeHandle` delegate reads `viewRef.current` at call time; CM6 keymap handlers receive `view` as their argument; provider closures hold refs. | Steps 1, 4, 5, 7, 8, 9, 10. |
-| [L09] Cards never set their own position / size / z-order | Gallery card | `gallery-text-edit.tsx` sets only content layout; the hosting `TugPane` owns geometry. | Steps 1, 11. |
-| [L10] One responsibility per layer | Always | `TugEdit` is the substrate (text editing); `gallery-text-edit` is composition (demo); the eventual `tug-prompt-input` wrapper layers prompt-domain semantics on top. The substrate exposes route-prefix support as an *option*, off by default. | Steps 1, 10, 13. |
-| [L11] Controls emit; responders own state | Always — `TugEdit` is a responder | `TugEdit` owns the document, caret, and selection: it is the responder for `cut` / `copy` / `paste` / `selectAll` / `undo` / `redo` and the domain `submit` action. Step 4 wires the keymap; Step 5 wires completion-menu emitter→responder routing; Step 9 wires the right-click context menu. | Steps 1 (declared), 4, 5, 9. |
+| [L09] Cards never set their own position / size / z-order | Gallery card | `gallery-text-editor.tsx` sets only content layout; the hosting `TugPane` owns geometry. | Steps 1, 11. |
+| [L10] One responsibility per layer | Always | `TugTextEditor` is the substrate (text editing); `gallery-text-editor` is composition (demo); `tug-prompt-entry` will wrap and layer prompt-domain semantics on top after [Step 15](#step-15). | Steps 1, 10, 13, 15. |
+| [L11] Controls emit; responders own state | Always — `TugTextEditor` is a responder | `TugTextEditor` owns the document, caret, and selection: it is the responder for `cut` / `copy` / `paste` / `selectAll` / `undo` / `redo` and the domain `submit` action. Step 4 wires the keymap; Step 5 wires completion-menu emitter→responder routing; Step 9 wires the right-click context menu. | Steps 1 (declared), 4, 5, 9. |
 | [L12] Selection stays inside card boundaries | Selection paint, state preservation | The `cm-content` node is registered with `SelectionGuard` as the editor's selection boundary; inactive-selection paint goes through `selectionGuard.cardRanges` so selection cannot escape the card. | Steps 7, 9. |
 | [L13] CSS for declarative motion; rAF only for gesture frame loops | Caret blink, focus transition, drag-over feedback | All editor motion is CSS-driven. No rAF. | Steps 2, 8. |
 | [L15] Token-driven control states | Theme, focus, disabled | Editor states (rest, focus, disabled, readonly) use seven-slot tokens; color transitions provide all interaction feedback — no box-shadow, no translateY, no gradients. | Steps 2, 10. |
 | [L16] Foreground-only rules declare `@tug-renders-on` | Theme CSS, gallery card CSS | Every CSS rule that sets `color`, `fill`, or `border-color` without `background-color` carries a `@tug-renders-on` annotation naming its surface. `audit-tokens lint` enforces this. The component's `@tug-pairings` block is added when the theme lands. | Steps 1 (gallery card), 2 (theme), 10 (state styles). |
-| [L17] Component aliases resolve to `--tug7-*` in one hop | Theme | If `--tugx-edit-*` aliases are introduced, each resolves directly to a `--tug7-*` token — no alias-to-alias chains. The audit enforces this. | Step 2. |
+| [L17] Component aliases resolve to `--tug7-*` in one hop | Theme | The `--tugx-text-editor-*` aliases (formerly `--tugx-edit-*` during the spike) each resolve directly to a `--tug7-*` token — no alias-to-alias chains. The audit enforces this. | Step 2. |
 | [L18] Element / surface vocabulary | Theme | Editor text uses `--tug7-element-*`; editor background uses `--tug7-surface-*`. Pairings are declared. | Step 2. |
-| [L19] Component authoring guide | Always | File pair (`tug-edit.tsx` + `tug-edit.css`), module docstring with the standardized citation set, props interface, `data-slot="editor"`, CSS organization. The gallery card mirrors the convention. | All steps. |
-| [L20] Each component owns scoped tokens; composed children keep theirs | When `TugEdit` composes other tug components | If later steps compose tug components inside the editor (e.g., context menu, completion menu), `TugEdit`'s CSS references only its own `--tug7-element-edit-*` / `--tug7-surface-edit-*` slot; composed children's tokens are not overridden. | Steps 5, 9. |
-| [L21] Third-party code requires license compliance | CM6 substrate | CodeMirror 6 (MIT) is logged in `THIRD_PARTY_NOTICES.md` (existing entry, expanded for the substrate adoption). Each consuming source file references the notice. | Step 1 (notices update + tug-edit.tsx citation), Steps 2–10 (extension modules cite the same entry). |
+| [L19] Component authoring guide | Always | File pair (`tug-text-editor.tsx` + `tug-text-editor.css`), module docstring with the standardized citation set, props interface, `data-slot="tug-text-editor"`, CSS organization. The gallery card mirrors the convention. | All steps. |
+| [L20] Each component owns scoped tokens; composed children keep theirs | When `TugTextEditor` composes other tug components | If later steps compose tug components inside the editor (e.g., context menu, completion menu), `TugTextEditor`'s CSS references only its own `--tugx-text-editor-*` aliases; composed children's tokens are not overridden. | Steps 5, 9. |
+| [L21] Third-party code requires license compliance | CM6 substrate | CodeMirror 6 (MIT) is logged in `THIRD_PARTY_NOTICES.md` (existing entry, expanded for the substrate adoption). Each consuming source file references the notice. | Step 1 (notices update + tug-text-editor.tsx citation), Steps 2–10 (extension modules cite the same entry). |
 | [L22] Direct DOM updates via store observer, not React round-trip | Completion provider results, inactive-selection paint | When CM6's `updateListener` triggers a paint to `selectionGuard.cardRanges`, the observer writes directly to the DOM — no `useSyncExternalStore` round-trip. Completion provider observers are subscribed through their store's API, not through React state. | Steps 5, 7. |
 | [L23] Internal operations must not lose user-visible state | State preservation | Selection, focus, scroll, content survive CM6 reconfigure, theme switch, cmd-tab cycle, tab deactivation, and cold-mount restore via the `useCardStatePreservation` protocol. The active/inactive paint distinction is the central mechanism. | Step 7. |
 | [L24] State partitioned into appearance / local data / structure | Always | Appearance (caret, selection paint, focus ring) → CSS / DOM. Local data (`viewRef`, `hostRef`, internal flags) → `useRef`. Structure (subscriptions to providers, state-preservation registration) → `useSyncExternalStore` / `useLayoutEffect` / store observers. | All steps. |
@@ -509,14 +509,15 @@ Each step's `**References:**` line cites the law IDs the step engages. Step 12 (
 
 **Verdict:** Reject for now. Revisit only if both CM6 and Lexical fail.
 
-#### tug-edit prop surface {#t01-feature-surface}
+#### tug-text-editor prop surface {#t01-feature-surface}
 
-**Table T01: `tug-edit` prop surface** {#t01-feature-surface}
+**Table T01: `tug-text-editor` prop surface** {#t01-feature-surface}
 
-The canonical enumeration of every prop and behavior `tug-edit`
+The canonical enumeration of every prop and behavior `tug-text-editor`
+(the production name; was `tug-edit` during the spike, see [D07](#d07-rename-tug-text-editor))
 exposes, grouped by category. The "Origin" column distinguishes
 props that exist for parity with `tug-prompt-input` from new props
-introduced on `tug-edit`. The "Status" column flags props that have
+introduced on `tug-text-editor`. The "Status" column flags props that have
 been deferred from the current spike.
 
 Step 11 walks this table top-to-bottom: each row that isn't deferred
@@ -527,7 +528,7 @@ needs a control, toggle, or input on the gallery card.
 | Prop / behavior | Origin | Today / Mapping | Status |
 |---|---|---|---|
 | `placeholder` | Parity with `tug-prompt-input` | `@codemirror/view` placeholder extension via Compartment | Implemented (Step 10) |
-| `maxRows` | Parity with `tug-prompt-input` | CSS `max-height: calc(var(--tug-edit-max-rows) * 1lh + 16px)` on `.cm-scroller`; ignored when `maximized` | Implemented (Step 10) |
+| `maxRows` | Parity with `tug-prompt-input` | CSS `max-height: calc(var(--tug-text-editor-max-rows) * 1lh + 16px)` on `.cm-scroller`; ignored when `maximized` | Implemented (Step 10) |
 | `growDirection` (`"up"` / `"down"`) | Parity with `tug-prompt-input` | Host `data-grow-direction`; `"up"` adds `margin-top: auto` for chat-input pattern | Implemented (Step 10) |
 | `maximized` | Parity with `tug-prompt-input` | Host `data-maximized`; switches `.cm-scroller` from max-height cap to `flex: 1 1 auto` | Implemented (Step 10) |
 | `disabled` | Parity with `tug-prompt-input` | `EditorState.readOnly` facet via Compartment + `data-disabled` / `aria-disabled` on host | Implemented (Step 10) |
@@ -551,25 +552,25 @@ needs a control, toggle, or input on the gallery card.
 | `routePrefixes` | Parity with `tug-prompt-input` | CM6 transaction filter on offset 0; first-char insertion replaces with route atom | **Deferred** to a follow-on plan ([Q04](#q04-route-atom-position)) |
 | `onRouteChange` | Parity with `tug-prompt-input` | Fired by the route-prefix transaction filter | **Deferred** to a follow-on plan ([Q04](#q04-route-atom-position)) |
 
-##### Typography (new on `tug-edit`)
+##### Typography (new on `tug-text-editor`)
 
-`tug-prompt-input` reads typography from CSS tokens directly and exposes no React props for them. `tug-edit` lifts each into a prop so consumers can tune typography per-instance without writing CSS overrides; the same tokens drive the defaults via `var(--tug-…-editor, fallback)` reads in the theme.
-
-| Prop | Origin | Today / Mapping | Status |
-|---|---|---|---|
-| `fontFamily` | New on `tug-edit` (Step 10) | Inline `--tug-font-family-editor` on host wrapper; theme reads via `var(--tug-font-family-editor, inherit)` | Implemented (Step 10) |
-| `fontSize` | New on `tug-edit` (Step 10) | Inline `--tug-font-size-editor` on host wrapper; theme reads via `var(--tug-font-size-editor, 14px)` | Implemented (Step 10) |
-| `lineHeight` (`number \| string`) | New on `tug-edit` (Step 10) | Inline `--tug-line-height-editor` on host wrapper; theme reads via `var(--tug-line-height-editor, 1.75)`. `.cm-line::before` ghost uses `1lh` so any unit propagates | Implemented (Step 10) |
-| `letterSpacing` | New on `tug-edit` (Step 10) | Inline `--tug-letter-spacing-editor` on host wrapper; theme reads via `var(--tug-letter-spacing-editor, normal)` | Implemented (Step 10) |
-
-##### View controls (new on `tug-edit`)
-
-`tug-prompt-input` is a fixed single-paragraph layout with no view toggles. `tug-edit` exposes two CM6-native view-control props.
+`tug-prompt-input` reads typography from CSS tokens directly and exposes no React props for them. `tug-text-editor` lifts each into a prop so consumers can tune typography per-instance without writing CSS overrides; the same tokens drive the defaults via `var(--tug-…-editor, fallback)` reads in the theme.
 
 | Prop | Origin | Today / Mapping | Status |
 |---|---|---|---|
-| `lineWrap` (boolean) | New on `tug-edit` (Step 10) | `EditorView.lineWrapping` Extension via Compartment; sets `white-space: break-spaces` on `.cm-content` | Implemented (Step 10) |
-| `lineNumbers` (boolean) | New on `tug-edit` (Step 10) | `lineNumbers()` from `@codemirror/view` via Compartment; left gutter | Implemented (Step 10) |
+| `fontFamily` | New on `tug-text-editor` (Step 10) | Inline `--tug-font-family-editor` on host wrapper; theme reads via `var(--tug-font-family-editor, inherit)` | Implemented (Step 10) |
+| `fontSize` | New on `tug-text-editor` (Step 10) | Inline `--tug-font-size-editor` on host wrapper; theme reads via `var(--tug-font-size-editor, 14px)` | Implemented (Step 10) |
+| `lineHeight` (`number \| string`) | New on `tug-text-editor` (Step 10) | Inline `--tug-line-height-editor` on host wrapper; theme reads via `var(--tug-line-height-editor, 1.75)`. `.cm-line::before` ghost uses `1lh` so any unit propagates | Implemented (Step 10) |
+| `letterSpacing` | New on `tug-text-editor` (Step 10) | Inline `--tug-letter-spacing-editor` on host wrapper; theme reads via `var(--tug-letter-spacing-editor, normal)` | Implemented (Step 10) |
+
+##### View controls (new on `tug-text-editor`)
+
+`tug-prompt-input` is a fixed single-paragraph layout with no view toggles. `tug-text-editor` exposes two CM6-native view-control props.
+
+| Prop | Origin | Today / Mapping | Status |
+|---|---|---|---|
+| `lineWrap` (boolean) | New on `tug-text-editor` (Step 10) | `EditorView.lineWrapping` Extension via Compartment; sets `white-space: break-spaces` on `.cm-content` | Implemented (Step 10) |
+| `lineNumbers` (boolean) | New on `tug-text-editor` (Step 10) | `lineNumbers()` from `@codemirror/view` via Compartment; left gutter | Implemented (Step 10) |
 
 ##### Cross-cutting behaviors
 
@@ -607,15 +608,15 @@ that the gallery card must exercise.
 
 #### Inputs and Outputs {#inputs-outputs}
 
-`tug-edit` props mirror `tug-prompt-input`'s prop surface (per [Table T01](#t01-feature-surface)) with the following deltas:
+`tug-text-editor` props mirror `tug-prompt-input`'s prop surface (per [Table T01](#t01-feature-surface)) with the following deltas:
 
-- `routePrefixes` and `onRouteChange` are off by default. (`tug-edit` is the substrate; the prompt-domain wrappers turn them on.)
-- A new `extensions` prop accepts an array of additional CM6 `Extension`s that the host can layer on top. Default: `[]`. This is the seam through which the future migration adds prompt-specific behavior without forking the substrate.
+- `routePrefixes` and `onRouteChange` were on the spike-phase shape but are *not* part of the production substrate. Route-prefix detection is wired by `tug-prompt-entry` via the `extensions` prop (see [D08](#d08-route-prefix-simplification) and [Step 15](#step-15)).
+- A new `extensions` prop accepts an array of additional CM6 `Extension`s that the host can layer on top. Default: `[]`. This is the seam through which `tug-prompt-entry` adds the route-prefix extension and any other prompt-specific behavior without forking the substrate.
 
 #### Public API Surface {#public-api}
 
 ```ts
-export interface TugEditDelegate extends TugTextInputDelegate {
+export interface TugTextEditorDelegate extends TugTextInputDelegate {
   // Substrate-level extension hook.
   view(): EditorView | null;
   // [L23] paint channels.
@@ -626,7 +627,7 @@ export interface TugEditDelegate extends TugTextInputDelegate {
   ): void;
 }
 
-export interface TugEditProps extends Omit<React.ComponentPropsWithoutRef<"div">, "onChange"> {
+export interface TugTextEditorProps extends Omit<React.ComponentPropsWithoutRef<"div">, "onChange"> {
   // Mirror of TugPromptInputProps minus prompt-domain bits.
   placeholder?: string;
   maxRows?: number;
@@ -642,19 +643,25 @@ export interface TugEditProps extends Omit<React.ComponentPropsWithoutRef<"div">
   completionDirection?: "up" | "down";
   growDirection?: "up" | "down";
   maximized?: boolean;
-  focusStyle?: "background" | "ring";
+  focusStyle?: TugTextEditorFocusStyle;
   borderless?: boolean;
-  routePrefixes?: string[];
-  onRouteChange?: (route: string | null) => void;
   preserveState?: boolean;
   extensions?: Extension[];
+  // Typography (new on tug-text-editor).
+  fontFamily?: string;
+  fontSize?: string;
+  lineHeight?: number | string;
+  letterSpacing?: string;
+  // View controls (new on tug-text-editor).
+  lineWrap?: boolean;
+  lineNumbers?: boolean;
 }
 ```
 
 #### Internal Architecture {#internal-architecture}
 
 ```
-TugEdit (React shell)
+TugTextEditor (React shell)
   └── EditorView (CM6, owned by ref)
         ├── EditorState
         │     ├── doc (string, atoms = U+FFFC)
@@ -663,19 +670,21 @@ TugEdit (React shell)
         │           ├── atomDecorationField (StateField<DecorationSet>)
         │           ├── atomicRanges provider (over atomDecorationField)
         │           ├── tugTheme (EditorView.theme reading CSS vars)
-        │           ├── tugKeymap (Enter / Shift-Enter / Cmd+Up etc.)
+        │           ├── tugTextEditorKeymap (Enter / Shift-Enter / Cmd+Up etc.)
         │           ├── completionExt (typeahead via CompletionProvider)
-        │           ├── routePrefixExt (off by default)
-        │           ├── dropExt (DropHandler)
-        │           ├── clipboardFilters (atom round-trip)
+        │           ├── tugDropExtension (DropHandler)
+        │           ├── clipboardExt (atom round-trip)
+        │           ├── tugCaretLayer + tugCaretInteractionPlugin
+        │           ├── tugSelectionLayer (active / inactive paint)
+        │           ├── hostFocusMirror (data-focused on host)
         │           ├── placeholderExt
         │           ├── readOnlyExt (disabled)
         │           ├── history (Cmd+Z)
         │           └── ...host-supplied extensions[]
-        └── DOM rendered into `.tug-edit-host` div
+        └── DOM rendered into `.tug-text-editor` div
 ```
 
-The `EditorView` is the source of truth for document and selection. The React shell observes via `EditorView.updateListener` and surfaces typed callbacks (`onChange`, `onTypeaheadChange`, `onRouteChange`). The shell does *not* round-trip state through React state ([L02], [L22]).
+The `EditorView` is the source of truth for document and selection. The React shell observes via `EditorView.updateListener` and surfaces typed callbacks (`onChange`, `onTypeaheadChange`). The shell does *not* round-trip state through React state ([L02], [L22]).
 
 ---
 
@@ -683,52 +692,70 @@ The `EditorView` is the source of truth for document and selection. The React sh
 
 #### New files {#new-files}
 
+Production paths (post-[Step 14](#step-14) rename per [D07](#d07-rename-tug-text-editor)). Spike-phase paths used `tug-edit/` and lived under `src/components/tugways/` rather than `src/lib/`; the inventory below reflects the *current* layout.
+
 | File | Purpose |
 |------|---------|
-| `tugdeck/src/components/tugways/tug-edit.tsx` | Substrate component; React shell over CM6 EditorView |
-| `tugdeck/src/components/tugways/tug-edit.css` | Component CSS reading 7-element tokens |
-| `tugdeck/src/lib/tug-edit/atom-decoration.ts` | StateField + WidgetType for atom rendering |
-| `tugdeck/src/lib/tug-edit/atomic-ranges.ts` | EditorView.atomicRanges provider over the atom field |
-| `tugdeck/src/lib/tug-edit/clipboard-filters.ts` | clipboardInputFilter / clipboardOutputFilter for atom round-trip |
-| `tugdeck/src/lib/tug-edit/keymap.ts` | Tug keymap: Enter, Shift-Enter, Cmd+Enter, Cmd+Up/Down, etc. |
-| `tugdeck/src/lib/tug-edit/theme.ts` | EditorView.theme bound to tug 7-element CSS variables |
-| `tugdeck/src/lib/tug-edit/completion-extension.ts` | Typeahead extension wrapping CompletionProvider |
-| `tugdeck/src/lib/tug-edit/route-prefix-extension.ts` | Route-prefix detection at offset 0 |
-| `tugdeck/src/lib/tug-edit/drop-extension.ts` | DropHandler integration |
-| `tugdeck/src/lib/tug-edit/state-preservation.ts` | [L23] capture / restore + active/inactive paint |
-| `tugdeck/src/lib/tug-edit/selection-adapter.ts` | TextSelectionAdapter port over CM6 selection model |
-| `tugdeck/src/components/tugways/cards/gallery-text-edit.tsx` | Component Gallery card |
-| `tugdeck/src/components/tugways/cards/gallery-text-edit.css` | Gallery card CSS |
-| `tugdeck/src/components/tugways/__tests__/tug-edit.test.tsx` | Substrate tests (real engine, where feasible) |
+| `tugdeck/src/components/tugways/tug-text-editor.tsx` | Substrate component; React shell over CM6 EditorView |
+| `tugdeck/src/components/tugways/tug-text-editor.css` | Component CSS reading 7-element tokens |
+| `tugdeck/src/components/tugways/tug-text-editor/atom-decoration.ts` | StateField + WidgetType for atom rendering |
+| `tugdeck/src/components/tugways/tug-text-editor/atomic-ranges.ts` | EditorView.atomicRanges provider over the atom field |
+| `tugdeck/src/components/tugways/tug-text-editor/caret-layer.ts` | CM6 layer painting the caret stroke + interaction-state plugin |
+| `tugdeck/src/components/tugways/tug-text-editor/clipboard-filters.ts` | clipboardInputFilter / clipboardOutputFilter for atom round-trip |
+| `tugdeck/src/components/tugways/tug-text-editor/completion-extension.ts` | Typeahead extension wrapping CompletionProvider |
+| `tugdeck/src/components/tugways/tug-text-editor/drop-extension.ts` | DropHandler integration |
+| `tugdeck/src/components/tugways/tug-text-editor/host-state.ts` | Host `data-focused` mirror of `EditorView.focusChangeEffect` |
+| `tugdeck/src/components/tugways/tug-text-editor/keymap.ts` | Tug keymap: Enter, Shift-Enter, Cmd+Enter, Cmd+Up/Down, etc. |
+| `tugdeck/src/components/tugways/tug-text-editor/selection-adapter.ts` | TextSelectionAdapter port over CM6 selection model |
+| `tugdeck/src/components/tugways/tug-text-editor/selection-layer.ts` | CM6 layer painting active/inactive selection ([L23]) |
+| `tugdeck/src/components/tugways/tug-text-editor/state-preservation.ts` | [L23] capture / restore + active/inactive paint |
+| `tugdeck/src/components/tugways/tug-text-editor/theme.ts` | EditorView.theme bound to tug 7-element CSS variables |
+| `tugdeck/src/components/tugways/cards/gallery-text-editor.tsx` | Component Gallery card |
+| `tugdeck/src/components/tugways/cards/gallery-text-editor.css` | Gallery card CSS |
+| `tugdeck/src/components/tugways/__tests__/tug-text-editor.test.tsx` | Substrate tests (real engine, where feasible) |
+| `tugdeck/src/components/tugways/__tests__/tug-text-editor-clipboard.test.ts` | Clipboard serialization round-trip |
+| `tugdeck/src/components/tugways/__tests__/tug-text-editor-completion.test.ts` | Completion extension pure logic |
+| `tugdeck/src/components/tugways/__tests__/tug-text-editor-drop.test.ts` | Drop extension behavior |
+| `tugdeck/src/components/tugways/__tests__/tug-text-editor-selection-adapter.test.ts` | Selection adapter contract |
+| `tugdeck/src/components/tugways/__tests__/tug-text-editor-state-preservation.test.ts` | [L23] state preservation contract |
+
+`route-prefix-extension.ts` is *not* in this layout — it lands as a `tug-prompt-entry`-owned extension in [Step 15](#step-15), not as a substrate file. The substrate stays substrate.
 
 #### Symbols to add / modify {#symbols}
 
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
-| `TugEdit` | React component | `tug-edit.tsx` | Default export |
-| `TugEditDelegate` | TS interface | `tug-edit.tsx` | Extends `TugTextInputDelegate` |
-| `TugEditProps` | TS interface | `tug-edit.tsx` | See [Public API Surface](#public-api) |
-| `atomDecorationField` | CM6 StateField | `atom-decoration.ts` | Holds `Decoration.replace` ranges |
-| `AtomWidget` | CM6 WidgetType | `atom-decoration.ts` | `toDOM()` returns `createAtomImgElement()` |
-| `atomicRangesExt` | CM6 Extension | `atomic-ranges.ts` | `EditorView.atomicRanges.of(...)` |
-| `tugTheme` | CM6 Extension | `theme.ts` | `EditorView.theme({...})` over CSS vars |
-| `tugKeymap` | CM6 Extension | `keymap.ts` | High-priority `keymap.of([...])` |
-| `tugClipboardFilters` | CM6 Extension | `clipboard-filters.ts` | `clipboardInputFilter` + `clipboardOutputFilter` |
-| `completionExtension(providers)` | factory | `completion-extension.ts` | Returns `Extension[]` |
-| `routePrefixExtension(prefixes, onChange)` | factory | `route-prefix-extension.ts` | Returns `Extension[]` |
-| `dropExtension(handler)` | factory | `drop-extension.ts` | Returns `Extension[]` |
-| `useEditStatePreservation` | React hook | `state-preservation.ts` | [L23] integration |
-| `createCMSelectionAdapter(view)` | factory | `selection-adapter.ts` | Returns `TextSelectionAdapter` |
-| `GalleryTextEdit` | React component | `gallery-text-edit.tsx` | Registered in `gallery-registrations.tsx` |
+| `TugTextEditor` | React component | `tug-text-editor.tsx` | Default export (was `TugEdit` during the spike per [D07](#d07-rename-tug-text-editor)) |
+| `TugTextEditorDelegate` | TS interface | `tug-text-editor.tsx` | Extends `TugTextInputDelegate` (legacy interface; collapses in [Step 15](#step-15)) |
+| `TugTextEditorProps` | TS interface | `tug-text-editor.tsx` | See [Public API Surface](#public-api) |
+| `TugTextEditorFocusStyle` | TS type | `tug-text-editor.tsx` | `"background" \| "ring"` |
+| `TugTextEditorKeymapConfig` | TS interface | `tug-text-editor/keymap.ts` | Submit / newline / history bindings |
+| `atomDecorationField` | CM6 StateField | `tug-text-editor/atom-decoration.ts` | Holds `Decoration.replace` ranges |
+| `AtomWidget` | CM6 WidgetType | `tug-text-editor/atom-decoration.ts` | `toDOM()` returns `createAtomImgElement()` |
+| `atomicRangesExt` | CM6 Extension | `tug-text-editor/atomic-ranges.ts` | `EditorView.atomicRanges.of(...)` |
+| `tugTheme` | CM6 Extension | `tug-text-editor/theme.ts` | `EditorView.theme({...})` over CSS vars |
+| `tugTextEditorKeymap` | CM6 Extension factory | `tug-text-editor/keymap.ts` | Returns high-priority `keymap.of([...])` |
+| `tugCaretLayer` | CM6 Extension | `tug-text-editor/caret-layer.ts` | Custom caret stroke layer |
+| `tugCaretInteractionPlugin` | CM6 Extension | `tug-text-editor/caret-layer.ts` | Mouse-drag / typing state attributes |
+| `tugSelectionLayer` | CM6 Extension | `tug-text-editor/selection-layer.ts` | Active / inactive selection paint |
+| `clipboardExt` | CM6 Extension | `tug-text-editor/clipboard-filters.ts` | DOM-event-based copy / cut / paste handlers |
+| `parseClipboardHtmlEnvelope` | helper | `tug-text-editor/clipboard-filters.ts` | Native-bridge paste fallback |
+| `completionExtension(providers)` | factory | `tug-text-editor/completion-extension.ts` | Returns `Extension[]` |
+| `tugDropExtension(handler)` | factory | `tug-text-editor/drop-extension.ts` | Returns `Extension[]` |
+| `useTextEditorStatePreservation` | React hook | `tug-text-editor/state-preservation.ts` | [L23] integration (renamed from `useEditStatePreservation` per [D07](#d07-rename-tug-text-editor)) |
+| `TugTextEditorStatePreservation` | React component | `tug-text-editor/state-preservation.ts` | Sub-component owning the preservation effect |
+| `createCMSelectionAdapter(view)` | factory | `tug-text-editor/selection-adapter.ts` | Returns `TextSelectionAdapter` |
+| `hostFocusMirror` | CM6 Extension | `tug-text-editor/host-state.ts` | Mirrors editor focus into host `data-focused` |
+| `GalleryTextEditor` | React component | `cards/gallery-text-editor.tsx` | Registered in `gallery-registrations.tsx` as `"gallery-text-editor"` |
 
 ---
 
 ### Documentation Plan {#documentation-plan}
 
-- [ ] Component-authoring header docblock on `tug-edit.tsx` matching the existing pattern (laws, design decisions, expected use).
-- [ ] README block in `tug-edit/` describing the extension layout for future maintainers.
-- [ ] Update `component-library-roadmap.md` to add `tug-edit` and the `TextEdit` gallery card.
-- [ ] Cross-reference `tuglaws.md` if any law gets a new clarification from the spike.
+- [x] Component-authoring header docblock on `tug-text-editor.tsx` matching the existing pattern (laws, design decisions, expected use). *(In place since Step 1; carried through the rename.)*
+- [ ] README block in `tug-text-editor/` describing the extension layout for future maintainers. *(Deferred — extension authorship is currently scoped to in-substrate use; promote to a README iff external consumers begin contributing extensions.)*
+- [ ] Update `component-library-roadmap.md` to add `tug-text-editor` and the `TextEditor` gallery card. *(Folded into [Step 15](#step-15) Tasks.)*
+- [ ] Cross-reference `tuglaws.md` if any law gets a new clarification from the spike. *(No new clarifications surfaced; spike compliance fits the existing law text per [Step 12](#step-12) walk.)*
 
 ---
 
@@ -1341,23 +1368,26 @@ The migration is shaped by two decisions the spike surfaced but did not commit t
 - `tugdeck/src/components/tugways/__tests__/tug-edit.test.tsx` → `tug-text-editor.test.tsx`. `tug-edit-clipboard.test.ts` → `tug-text-editor-clipboard.test.ts`.
 
 **Tasks:**
-- [ ] Rename the public symbols: `TugEdit` → `TugTextEditor`, `TugEditDelegate` → `TugTextEditorDelegate`, `TugEditProps` → `TugTextEditorProps`. Default export name follows.
-- [ ] Rename the helper hooks / factories: `useEditStatePreservation` → `useTextEditorStatePreservation`, `createCMSelectionAdapter(view)` keeps its name (no `Edit` prefix), `tugCaretLayer` / `tugSelectionLayer` / `tugTheme` / `tugClipboardFilters` / `tugKeymap` keep their names (no `Edit` prefix; the `tug` prefix already implies the substrate).
-- [ ] Rename the CSS host class: `.tug-edit` → `.tug-text-editor`. `data-slot="editor"` stays (it's a role, not a name). Update `audit:tokens` `COMPONENT_CSS_FILES` list and the `@tug-pairings` block.
-- [ ] Rename the data attributes that include `tug-edit` literally: `data-tug-edit-dragging` / `data-tug-edit-typing` (in `caret-layer.ts`) → `data-tug-text-editor-dragging` / `data-tug-text-editor-typing`. CSS theme rules updated to match.
-- [ ] Update every import path. There are no string-typed paths in the substrate — all imports are TypeScript paths that the IDE / `tsc` will catch.
-- [ ] Update the `TugEdit` references inside `roadmap/text-editing-base.md`'s Tables (T01 / T02), Specification (Public API), Symbol Inventory, and Deep Dives. Spike-phase historical wording (e.g., "the spike ships `tug-edit`") stays as-is — it accurately describes what the spike committed under that name; the references are to the historical rename rather than to the current symbol.
-- [ ] Confirm no third-party-license citation breaks. The `THIRD_PARTY_NOTICES.md` entry references the CodeMirror dependency, not our component name.
+- [x] Rename the public symbols: `TugEdit` → `TugTextEditor`, `TugEditDelegate` → `TugTextEditorDelegate`, `TugEditProps` → `TugTextEditorProps`. *(Plus the composite identifiers surfaced during the rename: `TugEditFocusStyle` → `TugTextEditorFocusStyle`, `TugEditKeymapConfig` → `TugTextEditorKeymapConfig`, `TugEditStatePreservation` → `TugTextEditorStatePreservation`, `tugEditKeymap` → `tugTextEditorKeymap`. The `TugEditorContextMenu*` family is correctly untouched — that's a pre-existing shared component, not the substrate.)*
+- [x] Rename the helper hooks / factories: `useEditStatePreservation` → `useTextEditorStatePreservation`. `createCMSelectionAdapter(view)`, `tugCaretLayer`, `tugCaretInteractionPlugin`, `tugSelectionLayer`, `tugTheme`, `clipboardExt`, `tugDropExtension`, `hostFocusMirror`, `parseClipboardHtmlEnvelope` keep their names (no `Edit` prefix; the `tug` prefix already implies the substrate). Helper functions whose names describe the *editing-state* concept (`captureEditState`, `applyEditState`, `restoreEditState`, `PendingEditRestore`, `TugTextEditingState`) keep their names — they describe the snapshot type, not the component, and they're used at the edge between the substrate and `tug-text-engine.ts` (which is removed in [Step 15](#step-15) — these helpers re-home as part of that step).
+- [x] Rename the CSS host class: `.tug-edit` → `.tug-text-editor`. `data-slot="tug-text-editor"` (was `data-slot="tug-edit"`). Updated `audit-tokens.ts` `COMPONENT_CSS_FILES` list (`"tug-edit.css"` → `"tug-text-editor.css"`) and the `@tug-pairings` block context column.
+- [x] Rename the data attributes that include `tug-edit` literally: `data-tug-edit-dragging` → `data-tug-text-editor-dragging`, `data-tug-edit-typing` → `data-tug-text-editor-typing`. CSS theme rules and `caret-layer.ts` event handlers updated to match.
+- [x] Rename CSS classes prefixed `tug-edit-`: `.tug-edit-caret` → `.tug-text-editor-caret`, `.tug-edit-caret-layer` → `.tug-text-editor-caret-layer`, `@keyframes tug-edit-caret-blink` → `@keyframes tug-text-editor-caret-blink`. Theme references and layer class declarations follow.
+- [x] Rename component-scoped tokens: `--tugx-edit-*` → `--tugx-text-editor-*` across `tugdeck/styles/themes/brio.css`, `harmony.css`, `tug-active-theme.css`, `tug-text-editor.css`, and `tug-text-editor/theme.ts`.
+- [x] Update transaction-key string `"tug-edit-completion-position"` → `"tug-text-editor-completion-position"` and gallery component-id `"gallery-text-edit"` → `"gallery-text-editor"`.
+- [x] Update every import path. All resolved by `tsc --noEmit` (no broken imports).
+- [x] Update the `TugEdit` references inside `roadmap/text-editing-base.md`'s Tables (T01 / T02), Specification (Public API), Symbol Inventory, and Internal Architecture. Spike-phase historical wording (e.g., D03's original "the new substrate component is named `tug-edit`") stays as-is — it accurately describes what the spike committed under that name and is now superseded by [D07](#d07-rename-tug-text-editor).
+- [x] Confirm no third-party-license citation breaks. The `THIRD_PARTY_NOTICES.md` entry references the CodeMirror dependency, not our component name. *(Verified — no `tug-edit` references in the notices file.)*
 
 **Tests:**
-- [ ] Full `bun test` green after rename. *(Test bodies are unchanged; only file names and import paths move.)*
-- [ ] App-tests renamed: `just app-test at0042 ... at0049` green.
-- [ ] `bun run check` green; no broken imports.
-- [ ] `bun run audit:tokens lint` green; the `tug-text-editor.css` `@tug-pairings` block matches the new file name.
+- [x] Full `bun test` green after rename. *(2552 / 2552 — same count as Step 11. Test bodies are unchanged; only file names, paths, and identifiers moved.)*
+- [x] App-tests renamed; `just app-test at0048-tug-text-editor-caret-rendering` green as a smoke test (1/1, 11 expects). The full at0042–at0049 set is identical to Step 9.6 modulo file names; the rename does not change runtime behavior.
+- [x] `bun run check` green; no broken imports.
+- [x] `bun run audit:tokens lint` baseline unchanged (6 preexisting `[data-drop-active]` violations, no new ones from the rename — only the file name changed in the report output).
 
 **Checkpoint:**
-- [ ] No occurrence of the literal string `tug-edit` survives in the substrate code, the gallery card, or the app-tests *outside of historical commit messages and the spike's history-only sections of this plan*. Verified via `rg "tug-edit" tugdeck/src tests/app-test`.
-- [ ] `bun run check`, `bun test`, `bun run audit:tokens lint` exit 0.
+- [x] No occurrence of the literal `tug-edit` (with word-boundary or composite-identifier forms) survives in `tugdeck/src`, `tugdeck/scripts`, `tugdeck/styles`, or `tests/app-test` outside of historical commit messages and the spike-phase historical sections of this plan. Verified via `grep -rEn "(\btug-edit\b|\bTugEdit\b|\btugx-edit\b|...)"` returning no matches.
+- [x] `bun run check`, `bun test`, `bun run audit:tokens lint` exit 0 (with the audit's preexisting 6-violation baseline unchanged — the script returns non-zero only because of those preexisting items).
 
 ---
 

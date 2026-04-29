@@ -1,5 +1,5 @@
 /**
- * tug-edit/caret-layer.ts — custom CodeMirror 6 layer that paints a
+ * tug-text-editor/caret-layer.ts — custom CodeMirror 6 layer that paints a
  * single caret stroke at the head of a collapsed, focused selection,
  * plus a `ViewPlugin` that tracks interaction state (mouse drag,
  * typing) and toggles attributes on the editor root so theme.ts can
@@ -48,14 +48,14 @@
  *
  * Interaction-state plugin:
  *
- *   - `mousedown` on contentDOM → set `data-tug-edit-dragging` on
+ *   - `mousedown` on contentDOM → set `data-tug-text-editor-dragging` on
  *     `view.dom`. A document-level `mouseup` listener (registered
  *     once-per-mousedown via `{ once: true }`) clears the attribute.
  *     The theme suppresses the caret while the attribute is present
  *     so a click-and-drag selection doesn't paint a stale caret in
  *     the middle of the live drag — matching WebKit's native
  *     behavior.
- *   - `keydown` on contentDOM → set `data-tug-edit-typing` on
+ *   - `keydown` on contentDOM → set `data-tug-text-editor-typing` on
  *     `view.dom` and start a 500ms idle timer. Any further keydown
  *     resets the timer; when it fires the attribute clears. The
  *     theme freezes the blink animation while the attribute is
@@ -118,13 +118,13 @@ function documentBase(view: EditorView): { left: number; top: number } {
 }
 
 /**
- * Caret-overlay layer. Paints a single `tug-edit-caret` div at the
+ * Caret-overlay layer. Paints a single `tug-text-editor-caret` div at the
  * head of the main selection when the editor is focused and the
  * selection is collapsed.
  */
 export const tugCaretLayer: Extension = layer({
   above: true,
-  class: "tug-edit-caret-layer",
+  class: "tug-text-editor-caret-layer",
   update(update) {
     return (
       update.docChanged
@@ -157,7 +157,7 @@ export const tugCaretLayer: Extension = layer({
     const nudgeUp = lineHeight * CARET_TOP_NUDGE_FACTOR;
     return [
       new RectangleMarker(
-        "tug-edit-caret",
+        "tug-text-editor-caret",
         coords.left - base.left,
         top - base.top - nudgeUp,
         CARET_STROKE_WIDTH,
@@ -190,12 +190,12 @@ export const tugCaretInteractionPlugin: Extension = ViewPlugin.fromClass(
         window.clearTimeout(this.typingIdleTimer);
         this.typingIdleTimer = null;
       }
-      this.view.dom.removeAttribute("data-tug-edit-dragging");
-      this.view.dom.removeAttribute("data-tug-edit-typing");
+      this.view.dom.removeAttribute("data-tug-text-editor-dragging");
+      this.view.dom.removeAttribute("data-tug-text-editor-typing");
     }
 
     private onMouseDown = (): void => {
-      this.view.dom.setAttribute("data-tug-edit-dragging", "");
+      this.view.dom.setAttribute("data-tug-text-editor-dragging", "");
       // Document-level mouseup so we still clear when the user
       // releases outside the editor (drag past the edge, etc.).
       // `once: true` so it auto-removes after firing.
@@ -203,7 +203,7 @@ export const tugCaretInteractionPlugin: Extension = ViewPlugin.fromClass(
     };
 
     private onMouseUpGlobal = (): void => {
-      this.view.dom.removeAttribute("data-tug-edit-dragging");
+      this.view.dom.removeAttribute("data-tug-text-editor-dragging");
     };
 
     private onKeyDown = (event: KeyboardEvent): void => {
@@ -216,12 +216,12 @@ export const tugCaretInteractionPlugin: Extension = ViewPlugin.fromClass(
       const isModifierOnly =
         key === "Shift" || key === "Meta" || key === "Control" || key === "Alt";
       if (isModifierOnly) return;
-      this.view.dom.setAttribute("data-tug-edit-typing", "");
+      this.view.dom.setAttribute("data-tug-text-editor-typing", "");
       if (this.typingIdleTimer !== null) {
         window.clearTimeout(this.typingIdleTimer);
       }
       this.typingIdleTimer = window.setTimeout(() => {
-        this.view.dom.removeAttribute("data-tug-edit-typing");
+        this.view.dom.removeAttribute("data-tug-text-editor-typing");
         this.typingIdleTimer = null;
       }, TYPING_IDLE_MS);
     };

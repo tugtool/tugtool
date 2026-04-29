@@ -1,5 +1,5 @@
 /**
- * at0046-tug-edit-first-responder-after-button-click.test.ts —
+ * at0046-tug-text-editor-first-responder-after-button-click.test.ts —
  * regression test for the user-reported bug from Step 9.5B's manual
  * checkpoint: clicking an atom-row button in the gallery card stole
  * first responder from the editor, so subsequent ⌘A / ⌘C / ⌘X / ⌘V
@@ -21,7 +21,7 @@
  *   which is set on the pane stack, NOT the card-host. The
  *   comparison never matched cardId and the guard never fired, so
  *   `makeFirstResponder(cardId)` always ran and demoted any inner
- *   responder (e.g. a TugEdit inside the card).
+ *   responder (e.g. a TugTextEditor inside the card).
  *
  * ## Two-pronged fix
  *
@@ -51,14 +51,14 @@ import {
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 90_000;
 
-const TUG_EDIT_CONTENT_SELECTOR = '[data-slot="tug-edit"] .cm-content';
+const TUG_EDIT_CONTENT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 const GALLERY_FILE_ATOM_BUTTON_SELECTOR =
-  '[data-card-id="A"] .gallery-text-edit-atom-row [data-slot="tug-push-button"]:nth-of-type(1)';
+  '[data-card-id="A"] .gallery-text-editor-atom-row [data-slot="tug-push-button"]:nth-of-type(1)';
 
 function deckShape() {
   return {
     cards: [
-      { id: "A", componentId: "gallery-text-edit", title: "TugEdit A", closable: true },
+      { id: "A", componentId: "gallery-text-editor", title: "TugTextEditor A", closable: true },
     ],
     panes: [
       {
@@ -151,8 +151,8 @@ describe.skipIf(!SHOULD_RUN)(
             });
             expect(
               baseline.firstResponderTag,
-              "baseline: first responder is the tug-edit host",
-            ).toContain("tug-edit");
+              "baseline: first responder is the tug-text-editor host",
+            ).toContain("tug-text-editor");
 
             // Move caret to end so the upcoming atom insert lands at
             // position 3 (after the text), not over the selection.
@@ -174,7 +174,7 @@ describe.skipIf(!SHOULD_RUN)(
             expect(
               afterClick.firstResponderTag,
               "after atom-button click: first responder MUST still be the editor",
-            ).toContain("tug-edit");
+            ).toContain("tug-text-editor");
 
             // ⌘A again — must select the entire (4-char) doc.
             await app.nativeKey("a", ["cmd"]);

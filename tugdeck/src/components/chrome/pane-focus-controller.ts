@@ -201,7 +201,7 @@ export function usePaneFocusController(
       // we extend the same exemption here so a click on an
       // in-pane button doesn't trigger `activateCard(activeCardId)`,
       // which would call `makeFirstResponder(cardId)` and demote
-      // any inner first responder (e.g. a TugEdit inside the
+      // any inner first responder (e.g. a TugTextEditor inside the
       // card). The control's own `onClick` still fires; only the
       // pane-activation side-effect is skipped — matching the
       // intent of `data-tug-focus="refuse"` ("this control does

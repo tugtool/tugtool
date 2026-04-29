@@ -1,6 +1,6 @@
 /**
- * tug-edit/state-preservation.ts — [L23] state preservation for the
- * `tug-edit` substrate.
+ * tug-text-editor/state-preservation.ts — [L23] state preservation for the
+ * `tug-text-editor` substrate.
  *
  * Three primitives plus a hook:
  *   - `restoreEditState(view, state)` — replace doc + atoms + selection
@@ -22,7 +22,7 @@
  *      Selection paints via the `inactive-selection` CSS Custom
  *      Highlight; no focus claim, no `window.getSelection()`
  *      mutation.
- *   - `useEditStatePreservation` — the React hook that registers
+ *   - `useTextEditorStatePreservation` — the React hook that registers
  *      save / restore / activate / deactivate callbacks with the
  *      enclosing `CardHost`, mirroring the
  *      `TugPromptInputStatePreservation` pattern.
@@ -108,7 +108,7 @@ function applyScrollAxes(view: EditorView, state: TugTextEditingState): void {
 }
 
 /**
- * Restore a serialized editing state into a `tug-edit` view without
+ * Restore a serialized editing state into a `tug-text-editor` view without
  * claiming focus.
  *
  * Dispatches one transaction that replaces doc + atom decorations +
@@ -260,9 +260,9 @@ export interface PendingEditRestore {
 }
 
 /**
- * Options for {@link useEditStatePreservation}.
+ * Options for {@link useTextEditorStatePreservation}.
  *
- * Both refs are written by the parent `TugEdit` component and read
+ * Both refs are written by the parent `TugTextEditor` component and read
  * here at fire time per [L07]. The hook never owns the EditorView —
  * it only orchestrates save / restore / activate / deactivate flows
  * around it.
@@ -276,16 +276,16 @@ export interface UseEditStatePreservationOptions {
   viewRef: React.RefObject<EditorView | null>;
   /**
    * Buffer for an `onRestore` payload that arrived before the
-   * EditorView was constructed. The mount effect in `TugEdit`
+   * EditorView was constructed. The mount effect in `TugTextEditor`
    * inspects this ref after creating the view and replays any
-   * buffered restore. The hook writes this ref; `TugEdit` reads
+   * buffered restore. The hook writes this ref; `TugTextEditor` reads
    * and clears it.
    */
   pendingRestoreRef: React.RefObject<PendingEditRestore | null>;
 }
 
 /**
- * Register tugdeck state-preservation callbacks for a `tug-edit`
+ * Register tugdeck state-preservation callbacks for a `tug-text-editor`
  * substrate.
  *
  * Mirrors `TugPromptInputStatePreservation` from `tug-prompt-input.tsx`:
@@ -307,7 +307,7 @@ export interface UseEditStatePreservationOptions {
  * no-deps `useLayoutEffect` in `useCardStatePreservation` fire
  * `onContentReady` after a successful restore.
  */
-export function useEditStatePreservation(
+export function useTextEditorStatePreservation(
   options: UseEditStatePreservationOptions,
 ): void {
   const { viewRef, pendingRestoreRef } = options;
@@ -403,7 +403,7 @@ export function useEditStatePreservation(
         }
       } else {
         // EditorView not yet constructed (rare — child-before-parent
-        // effect ordering). The mount effect in `TugEdit` will
+        // effect ordering). The mount effect in `TugTextEditor` will
         // replay this buffered payload through the same paint
         // channel chosen here.
         pendingRestoreRef.current = { state, isActive };
@@ -414,20 +414,20 @@ export function useEditStatePreservation(
 }
 
 /**
- * Thin wrapper component that calls {@link useEditStatePreservation}.
+ * Thin wrapper component that calls {@link useTextEditorStatePreservation}.
  *
- * Conditionally rendered by `TugEdit` based on its `preserveState`
+ * Conditionally rendered by `TugTextEditor` based on its `preserveState`
  * prop so the hook (and its registration with the enclosing
  * `CardHost`) is opt-in. When omitted, no callbacks are registered
  * and the editor is invisible to CardHost's save / restore protocol
  * — useful for stand-alone harnesses (storybook, unit tests) that
- * mount `TugEdit` outside a deck.
+ * mount `TugTextEditor` outside a deck.
  *
  * Returns `null` (no DOM); the hook is the work.
  */
-export function TugEditStatePreservation(
+export function TugTextEditorStatePreservation(
   props: UseEditStatePreservationOptions,
 ): null {
-  useEditStatePreservation(props);
+  useTextEditorStatePreservation(props);
   return null;
 }

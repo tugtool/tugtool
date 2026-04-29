@@ -1,5 +1,5 @@
 /**
- * at0045-tug-edit-cmd-a-after-typing.test.ts — bug #1 from manual
+ * at0045-tug-text-editor-cmd-a-after-typing.test.ts — bug #1 from manual
  * checkpoint of Step 9.5B: "after typing something, Cmd+A doesn't
  * select all". Confirm empirically whether the responder chain → CM6
  * selectAll path is broken after a typing transaction.
@@ -19,12 +19,12 @@ import {
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 90_000;
-const TUG_EDIT_CONTENT_SELECTOR = '[data-slot="tug-edit"] .cm-content';
+const TUG_EDIT_CONTENT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 
 function deckShape() {
   return {
     cards: [
-      { id: "A", componentId: "gallery-text-edit", title: "TugEdit A", closable: true },
+      { id: "A", componentId: "gallery-text-editor", title: "TugTextEditor A", closable: true },
     ],
     panes: [
       {

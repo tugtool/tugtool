@@ -1,5 +1,5 @@
 /**
- * tug-edit/drop-extension.ts — file-drop atom insertion + live drop
+ * tug-text-editor/drop-extension.ts — file-drop atom insertion + live drop
  * caret indicator.
  *
  * Wires three concerns into one extension:
@@ -49,8 +49,8 @@
  *        committed via `view.requestMeasure` (CM6's measure-phase
  *        scheduler), the drop is one transaction dispatched
  *        directly from the DOM event handler, [L19] file structure
- *        (`tug-edit/drop-extension.ts` paired with
- *        `tug-edit-drop.test.ts`).
+ *        (`tug-text-editor/drop-extension.ts` paired with
+ *        `tug-text-editor-drop.test.ts`).
  *
  * Third-party notice: CodeMirror 6 (MIT) — see
  * `THIRD_PARTY_NOTICES.md`. The drop caret pattern (StateField
@@ -263,7 +263,7 @@ class TugDropCaretPlugin implements PluginValue {
    *
    * Caret height matches `view.defaultLineHeight` (the line-box
    * height pinned by the `.cm-line::before` ghost in
-   * `tug-edit/theme.ts`) rather than the glyph rect from
+   * `tug-text-editor/theme.ts`) rather than the glyph rect from
    * `coordsAtPos` — the regular browser caret renders at the
    * full line-box height, and the drop caret should match so
    * the user reads them as the same kind of position indicator.
@@ -384,7 +384,7 @@ const tugDropCaretTheme = EditorView.baseTheme({
 
 /**
  * Mark/clear the host's `data-drop-active` attribute. The CSS in
- * `tug-edit.css` keys the drop ring, caret-hide, and inactive-
+ * `tug-text-editor.css` keys the drop ring, caret-hide, and inactive-
  * selection-paint rules off this attribute; setting/clearing it is
  * the only signal those rules need.
  *
@@ -405,9 +405,9 @@ function setDropActive(host: HTMLElement | null, active: boolean): void {
 /**
  * Build the drop-handling extension.
  *
- * `host` is the `tug-edit` wrapper `<div>` rendered by `TugEdit`.
+ * `host` is the `tug-text-editor` wrapper `<div>` rendered by `TugTextEditor`.
  * The drop pipeline writes the `data-drop-active` attribute on
- * this element so the CSS rules in `tug-edit.css` can paint the
+ * this element so the CSS rules in `tug-text-editor.css` can paint the
  * drop ring, hide the regular caret, and switch the selection
  * overlay to the inactive variant — all while a drag is in
  * progress, restored to the pre-drag appearance the moment the

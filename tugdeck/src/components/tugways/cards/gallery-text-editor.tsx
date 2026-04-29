@@ -1,7 +1,7 @@
 /**
- * gallery-text-edit.tsx — TugEdit gallery card.
+ * gallery-text-editor.tsx — TugTextEditor gallery card.
  *
- * Demo surface for the CodeMirror 6-backed `TugEdit` substrate.
+ * Demo surface for the CodeMirror 6-backed `TugTextEditor` substrate.
  * Mirrors `gallery-prompt-input`'s wiring so the typeahead is
  * exercised against the live FileTreeStore and SessionMetadataStore
  * — same backing data the production prompt input uses, no synthetic
@@ -35,7 +35,7 @@
  * `domEventHandlers.drop` path lands real `AtomSegment` values rather
  * than gallery-only stand-ins.
  *
- * Control surface: every non-deferred prop in `tug-edit`'s public
+ * Control surface: every non-deferred prop in `tug-text-editor`'s public
  * API has a runtime control on this card. Layout / state / behavior
  * props ride on `TugChoiceGroup` (selectValue) and `TugSwitch`
  * (toggle); `maxRows` rides on `TugValueInput` (setValueNumber);
@@ -45,7 +45,7 @@
  *
  * Laws: [L01] one root.render() at mount, [L02] history list and
  *        feed-store stack live in refs; React state carries only
- *        prop values that flow back into `TugEdit`, [L03] the
+ *        prop values that flow back into `TugTextEditor`, [L03] the
  *        file-tree feed-store filter is re-installed in a
  *        `useEffect` keyed on workspace identity, matching
  *        `gallery-prompt-input`'s pattern, [L06] appearance via CSS
@@ -60,7 +60,7 @@
  *        round-trip, [L25] deck → pane → card hierarchy preserved.
  */
 
-import "./gallery-text-edit.css";
+import "./gallery-text-editor.css";
 
 import React, {
   useEffect,
@@ -68,8 +68,8 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { TugEdit } from "@/components/tugways/tug-edit";
-import type { TugEditDelegate, TugEditFocusStyle } from "@/components/tugways/tug-edit";
+import { TugTextEditor } from "@/components/tugways/tug-text-editor";
+import type { TugTextEditorDelegate, TugTextEditorFocusStyle } from "@/components/tugways/tug-text-editor";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
@@ -82,7 +82,7 @@ import { TugValueInput } from "@/components/tugways/tug-value-input";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { useComponentStatePreservation } from "@/components/tugways/use-component-state-preservation";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
-import { captureEditState } from "@/components/tugways/tug-edit/keymap";
+import { captureEditState } from "@/components/tugways/tug-text-editor/keymap";
 import { useCardWorkspaceKey } from "@/components/tugways/hooks/use-card-workspace-key";
 import { presentWorkspaceKey } from "@/card-registry";
 import { FeedStore, type FeedStoreFilter } from "@/lib/feed-store";
@@ -299,16 +299,16 @@ class CardHistoryProvider implements HistoryProvider {
 }
 
 // ---------------------------------------------------------------------------
-// GalleryTextEdit
+// GalleryTextEditor
 // ---------------------------------------------------------------------------
 
-interface GalleryTextEditProps {
+interface GalleryTextEditorProps {
   /** Card instance id — used to scope the FILETREE feed-store filter. */
   cardId: string;
 }
 
-export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
-  const editRef = useRef<TugEditDelegate>(null);
+export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
+  const editRef = useRef<TugTextEditorDelegate>(null);
 
   // ---- Layout / state props ----
   const [maxRows, setMaxRows] = useState<number>(15);
@@ -317,7 +317,7 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
   const [disabled, setDisabled] = useState<boolean>(false);
 
   // ---- Focus / border (existing) ----
-  const [focusStyle, setFocusStyle] = useState<TugEditFocusStyle>("background");
+  const [focusStyle, setFocusStyle] = useState<TugTextEditorFocusStyle>("background");
   const [borderless, setBorderlessFlag] = useState<boolean>(false);
 
   // ---- Behavior props ----
@@ -362,7 +362,7 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
   //
   // Keys are scoped to this card and stay grep-stable; the registry
   // dedupes within the card subtree. The card-level
-  // `useCardStatePreservation` registration (inside `TugEdit` itself,
+  // `useCardStatePreservation` registration (inside `TugTextEditor` itself,
   // gated on `preserveState`) handles the editor's document + atoms +
   // selection on a separate axis (`bag.content`).
   useComponentStatePreservation<boolean>({
@@ -523,7 +523,7 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
 
   const { ResponderScope, responderRef } = useResponderForm({
     selectValue: {
-      [focusId]: (v: string) => setFocusStyle(v as TugEditFocusStyle),
+      [focusId]: (v: string) => setFocusStyle(v as TugTextEditorFocusStyle),
       [borderlessId]: (v: string) => setBorderlessFlag(v === "true"),
       [returnId]: (v: string) => setReturnAction(v as InputAction),
       [enterId]: (v: string) => setEnterAction(v as InputAction),
@@ -565,7 +565,7 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
     <ResponderScope>
       <div
         className="cg-content"
-        data-testid="gallery-text-edit"
+        data-testid="gallery-text-editor"
         ref={responderRef as (el: HTMLDivElement | null) => void}
       >
 
@@ -576,12 +576,12 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
             flex column so the editor can fill that height.
          */}
         <div className="cg-section">
-          <TugLabel className="cg-section-title">TugEdit</TugLabel>
+          <TugLabel className="cg-section-title">TugTextEditor</TugLabel>
           <div
-            className="gallery-text-edit-stack"
+            className="gallery-text-editor-stack"
             data-maximized={maximized ? "" : undefined}
           >
-            <div className="gallery-text-edit-toolbar">
+            <div className="gallery-text-editor-toolbar">
               <TugPushButton
                 size="sm"
                 emphasis="outlined"
@@ -621,8 +621,8 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
                 size="sm"
               />
             </div>
-            <div className="gallery-text-edit-host">
-              <TugEdit
+            <div className="gallery-text-editor-host">
+              <TugTextEditor
                 ref={editRef}
                 placeholder={DEMO_PLACEHOLDER}
                 maxRows={maxRows}
@@ -660,7 +660,7 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
          */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">Insert atom</TugLabel>
-          <div className="gallery-text-edit-atom-row">
+          <div className="gallery-text-editor-atom-row">
             {ATOM_SAMPLES.map((sample) => (
               <TugPushButton
                 key={sample.label}
@@ -679,9 +679,9 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
         {/* ---- View controls ---- */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">View</TugLabel>
-          <div className="gallery-text-edit-row">
-            <div className="gallery-text-edit-row-cell">
-              <span className="gallery-text-edit-row-label">Line wrap</span>
+          <div className="gallery-text-editor-row">
+            <div className="gallery-text-editor-row-cell">
+              <span className="gallery-text-editor-row-label">Line wrap</span>
               <TugSwitch
                 checked={lineWrap}
                 senderId={lineWrapId}
@@ -689,8 +689,8 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
                 size="sm"
               />
             </div>
-            <div className="gallery-text-edit-row-cell">
-              <span className="gallery-text-edit-row-label">Line numbers</span>
+            <div className="gallery-text-editor-row-cell">
+              <span className="gallery-text-editor-row-label">Line numbers</span>
               <TugSwitch
                 checked={lineNumbers}
                 senderId={lineNumbersId}
@@ -706,9 +706,9 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
         {/* ---- Layout ---- */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">Layout</TugLabel>
-          <div className="gallery-text-edit-row">
-            <div className="gallery-text-edit-row-cell">
-              <span className="gallery-text-edit-row-label">Max rows</span>
+          <div className="gallery-text-editor-row">
+            <div className="gallery-text-editor-row-cell">
+              <span className="gallery-text-editor-row-label">Max rows</span>
               <TugValueInput
                 value={maxRows}
                 senderId={maxRowsId}
@@ -719,8 +719,8 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
                 size="sm"
               />
             </div>
-            <div className="gallery-text-edit-row-cell">
-              <span className="gallery-text-edit-row-label">Disabled</span>
+            <div className="gallery-text-editor-row-cell">
+              <span className="gallery-text-editor-row-label">Disabled</span>
               <TugSwitch
                 checked={disabled}
                 senderId={disabledId}
@@ -728,8 +728,8 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
                 size="sm"
               />
             </div>
-            <div className="gallery-text-edit-row-cell">
-              <span className="gallery-text-edit-row-label">Grow direction</span>
+            <div className="gallery-text-editor-row-cell">
+              <span className="gallery-text-editor-row-label">Grow direction</span>
               <TugChoiceGroup
                 items={GROW_DIRECTION_CHOICES}
                 value={growDirection}
@@ -746,9 +746,9 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
         {/* ---- Behavior ---- */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">Behavior</TugLabel>
-          <div className="gallery-text-edit-row">
-            <div className="gallery-text-edit-row-cell">
-              <span className="gallery-text-edit-row-label">Return action</span>
+          <div className="gallery-text-editor-row">
+            <div className="gallery-text-editor-row-cell">
+              <span className="gallery-text-editor-row-label">Return action</span>
               <TugChoiceGroup
                 items={RETURN_ACTION_CHOICES}
                 value={returnAction}
@@ -757,8 +757,8 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
                 size="sm"
               />
             </div>
-            <div className="gallery-text-edit-row-cell">
-              <span className="gallery-text-edit-row-label">Numpad Enter</span>
+            <div className="gallery-text-editor-row-cell">
+              <span className="gallery-text-editor-row-label">Numpad Enter</span>
               <TugChoiceGroup
                 items={ENTER_ACTION_CHOICES}
                 value={enterAction}
@@ -767,8 +767,8 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
                 size="sm"
               />
             </div>
-            <div className="gallery-text-edit-row-cell">
-              <span className="gallery-text-edit-row-label">Completion popup</span>
+            <div className="gallery-text-editor-row-cell">
+              <span className="gallery-text-editor-row-label">Completion popup</span>
               <TugChoiceGroup
                 items={COMPLETION_DIRECTION_CHOICES}
                 value={completionDirection}
@@ -785,9 +785,9 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
         {/* ---- Style ---- */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">Style</TugLabel>
-          <div className="gallery-text-edit-row">
-            <div className="gallery-text-edit-row-cell">
-              <span className="gallery-text-edit-row-label">Focus style</span>
+          <div className="gallery-text-editor-row">
+            <div className="gallery-text-editor-row-cell">
+              <span className="gallery-text-editor-row-label">Focus style</span>
               <TugChoiceGroup
                 items={FOCUS_STYLE_CHOICES}
                 value={focusStyle}
@@ -796,8 +796,8 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
                 size="sm"
               />
             </div>
-            <div className="gallery-text-edit-row-cell">
-              <span className="gallery-text-edit-row-label">Border</span>
+            <div className="gallery-text-editor-row-cell">
+              <span className="gallery-text-editor-row-label">Border</span>
               <TugChoiceGroup
                 items={BORDERLESS_CHOICES}
                 value={borderless ? "true" : "false"}

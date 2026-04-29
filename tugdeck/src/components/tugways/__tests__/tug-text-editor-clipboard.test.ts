@@ -1,5 +1,5 @@
 /**
- * tug-edit clipboard serialization — pure round-trip tests.
+ * tug-text-editor clipboard serialization — pure round-trip tests.
  *
  * Exercises `serializeClipboard`, `parseClipboardSidecar`, and
  * `parseClipboardHtmlEnvelope` in isolation. The DOM event handlers
@@ -13,7 +13,7 @@ import {
   parseClipboardHtmlEnvelope,
   parseClipboardSidecar,
   serializeClipboard,
-} from "@/components/tugways/tug-edit/clipboard-filters";
+} from "@/components/tugways/tug-text-editor/clipboard-filters";
 import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
 
 const SAMPLE_FILE = {

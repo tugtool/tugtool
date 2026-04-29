@@ -186,13 +186,13 @@ body {
   --tug7-surface-selection-primary-normal-plain-inactive: --tug-color(yellow, i: 0, t: 30, a: 25);
   --tug7-surface-selection-primary-normal-plain-rest: --tug-color(blue, i: 50, t: 50, a: 40);
 
-  /* tug-edit selection overlay — saturated blue painted as a layer behind
+  /* tug-text-editor selection overlay — saturated blue painted as a layer behind
      the editable surface. tug-input and other native-::selection-driven
      controls get OS color substitution from WebKit on focused fields and
-     don't need this; tug-edit's overlay is a div whose CSS color is
+     don't need this; tug-text-editor's overlay is a div whose CSS color is
      honored verbatim, so we use a higher-chroma blue here to keep the
      visual saturated. */
-  --tugx-edit-selection-bg-rest: --tug-color(blue, i: 50, t: 55, a: 55);
+  --tugx-text-editor-selection-bg-rest: --tug-color(blue, i: 50, t: 55, a: 55);
 
   /* Element — Highlight */
   --tug7-element-highlight-fill-normal-drop-rest: --tug-color(blue, i: 55, t: 60);

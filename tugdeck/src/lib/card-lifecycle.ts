@@ -113,7 +113,7 @@ export interface CardLifecycleManager {
    * True when the chain's first responder is `id` or a descendant of
    * `id`. Used by `setResponderChainKey`'s idempotency guard so
    * promoting an already-active card doesn't demote an inner
-   * responder (TugEdit, etc.).
+   * responder (TugTextEditor, etc.).
    */
   firstResponderIsAtOrBelow(id: string): boolean;
 }
@@ -182,7 +182,7 @@ export class CardLifecycle {
    * `cardId` itself OR a descendant of `cardId`. Without this guard a
    * same-pane click that hits `activateCard(activeCardId)` would
    * unconditionally call `makeFirstResponder(cardId)` and demote any
-   * inner responder (e.g. a TugEdit editor inside the card) — which
+   * inner responder (e.g. a TugTextEditor editor inside the card) — which
    * silently steals keyboard commands the user expects to reach the
    * inner responder. Previous implementation used
    * `manager.getKeyCard() === cardId`, but `getKeyCard()` walks for a

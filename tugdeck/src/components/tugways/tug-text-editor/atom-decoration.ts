@@ -1,5 +1,5 @@
 /**
- * tug-edit/atom-decoration.ts — atom widgets and the decoration field
+ * tug-text-editor/atom-decoration.ts — atom widgets and the decoration field
  * that holds them.
  *
  * Atoms in the editor's text stream are represented by U+FFFC (the
@@ -19,7 +19,7 @@
  * (colors are resolved at `createAtomImgElement` call time), so a
  * theme switch must dispatch `regenerateAtomsEffect` to rebuild every
  * widget. Subscription to `subscribeThemeChange` is wired in
- * `tug-edit.tsx`.
+ * `tug-text-editor.tsx`.
  *
  * Laws: [L02] no React state for atom segments — atoms live entirely
  *        in CM6's StateField, [L06] atom widget DOM is appearance,
@@ -146,7 +146,7 @@ export const replaceAtomsEffect = StateEffect.define<readonly PositionedAtom[]>(
 // ---------------------------------------------------------------------------
 
 /**
- * The single source of truth for atom decorations in a `TugEdit`
+ * The single source of truth for atom decorations in a `TugTextEditor`
  * instance. Maps automatically through document changes: deleting a
  * range that covers a U+FFFC character drops the decoration with it.
  */

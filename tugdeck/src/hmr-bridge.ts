@@ -17,8 +17,8 @@
  * nothing to preserve.
  *
  * Vite's HMR breaks that assumption. When an upstream module change
- * (e.g. a CSS-token tweak in `tug-edit/theme.ts`) invalidates a
- * downstream React component (`tug-edit.tsx`), Fast Refresh remounts
+ * (e.g. a CSS-token tweak in `tug-text-editor/theme.ts`) invalidates a
+ * downstream React component (`tug-text-editor.tsx`), Fast Refresh remounts
  * the component. The DOM is torn down — but none of the four
  * known-transition triggers fire, because HMR is not a user-visible
  * event the framework knows about. CM6's internal text state, scroll

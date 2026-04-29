@@ -57,7 +57,7 @@
  * `bag.domSelection` for content-owning cards (those whose
  * `bag.content` is defined). This test deliberately defines
  * `bag.content` so it exercises the content-owning path — same as
- * `tug-edit` / `tug-prompt-input` in production. Tests that pin
+ * `tug-text-editor` / `tug-prompt-input` in production. Tests that pin
  * the form-control / non-content path live separately.
  */
 import "./setup-rtl";

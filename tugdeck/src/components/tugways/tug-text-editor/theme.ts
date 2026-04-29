@@ -1,5 +1,5 @@
 /**
- * tug-edit/theme.ts — `EditorView.theme` extension binding CodeMirror 6
+ * tug-text-editor/theme.ts — `EditorView.theme` extension binding CodeMirror 6
  * editor-internal selectors to the tug 7-element token system.
  *
  * The rules read CSS variables directly (`var(--tug7-…)`), so theme
@@ -9,15 +9,15 @@
  *
  * Caret and selection rendering:
  *
- *   - **Caret**: a custom layer (`tug-edit/caret-layer.ts`) paints a
- *     single `tug-edit-caret` div at the head of the main selection
+ *   - **Caret**: a custom layer (`tug-text-editor/caret-layer.ts`) paints a
+ *     single `tug-text-editor-caret` div at the head of the main selection
  *     when the editor is focused and the selection is collapsed.
  *     Native WebKit contentEditable caret is suppressed via
  *     `caret-color: transparent` on `.cm-content` because its paint
  *     cache stales across layout-shifting transitions (history-nav
  *     doc swap, typeahead deactivate, atom removal) and produced
  *     doubled-caret strokes.
- *   - **Selection**: a custom layer (`tug-edit/selection-layer.ts`)
+ *   - **Selection**: a custom layer (`tug-text-editor/selection-layer.ts`)
  *     paints `.cm-selectionBackground` divs behind every non-empty
  *     range. These are real DOM nodes — they cover atom widgets
  *     cleanly and persist when the editor loses focus. Native
@@ -72,7 +72,7 @@
  * with a sub-pixel margin.
  *
  * Host-wrapper styling (rest/hover/focus border, focus-style variants,
- * borderless modifier, disabled state) lives in `tug-edit.css` so it
+ * borderless modifier, disabled state) lives in `tug-text-editor.css` so it
  * participates in `audit-tokens lint`.
  *
  * Laws: [L06] appearance via CSS, [L15] token-driven control states,
@@ -92,7 +92,7 @@ import type { Extension } from "@codemirror/state";
 
 /**
  * Token references used in the theme. Centralized so future swaps (e.g.
- * promoting to `--tugx-edit-*` aliases per [L17]) happen in one place.
+ * promoting to `--tugx-text-editor-*` aliases per [L17]) happen in one place.
  */
 const TOKENS = {
   contentFg: "var(--tug7-element-field-text-normal-plain-rest)",
@@ -102,7 +102,7 @@ const TOKENS = {
   contentFgDisabled: "var(--tug7-element-field-text-normal-plain-disabled)",
   contentBgReadonly: "var(--tug7-surface-field-primary-normal-plain-readonly)",
   contentFgReadonly: "var(--tug7-element-field-text-normal-plain-readonly)",
-  // Caret stroke color — applied to the `.tug-edit-caret` marker
+  // Caret stroke color — applied to the `.tug-text-editor-caret` marker
   // painted by `caret-layer.ts`, NOT to `.cm-content`'s caret-color
   // (that's `transparent` to suppress the native caret).
   caret: "var(--tug7-element-field-border-normal-plain-active)",
@@ -127,7 +127,7 @@ const TOKENS = {
 // ---------------------------------------------------------------------------
 
 /**
- * The CodeMirror 6 theme extension for `TugEdit`.
+ * The CodeMirror 6 theme extension for `TugTextEditor`.
  *
  * Each rule pairs an element token with its surface token (or sets only
  * appearance properties whose surface is established by an enclosing
@@ -206,12 +206,12 @@ export const tugTheme: Extension = EditorView.theme({
     verticalAlign: "middle !important",
   },
 
-  // Selection overlay painted by `tug-edit/selection-layer.ts`.
+  // Selection overlay painted by `tug-text-editor/selection-layer.ts`.
   // The `.cm-selectionBackground` divs are layered behind the
   // editable surface, so they cover atom widgets cleanly and
   // persist when the editor loses focus.
   //
-  // `--tugx-edit-selection-bg-rest` is a tug-edit-specific token
+  // `--tugx-text-editor-selection-bg-rest` is a tug-text-editor-specific token
   // (defined in `brio.css` and `harmony.css`) that resolves to a
   // higher-chroma blue than the shared
   // `--tug7-surface-selection-primary-normal-plain-rest`. The
@@ -231,7 +231,7 @@ export const tugTheme: Extension = EditorView.theme({
   // so a later longhand alone can't override it without an
   // `!important` win or matching specificity.
   ".cm-selectionBackground": {
-    backgroundColor: "var(--tugx-edit-selection-bg-rest) !important",
+    backgroundColor: "var(--tugx-text-editor-selection-bg-rest) !important",
   },
 
   // Dim the overlay to the tug "inactive" selection token when the
@@ -254,10 +254,10 @@ export const tugTheme: Extension = EditorView.theme({
     color: "var(--tug7-element-selection-text-normal-plain-rest)",
   },
 
-  // Caret-overlay layer painted by `tug-edit/caret-layer.ts`. The
+  // Caret-overlay layer painted by `tug-text-editor/caret-layer.ts`. The
   // layer is non-interactive — pointer events fall through to the
   // editable surface so clicks land on the right offset.
-  ".tug-edit-caret-layer": {
+  ".tug-text-editor-caret-layer": {
     pointerEvents: "none",
   },
 
@@ -269,11 +269,11 @@ export const tugTheme: Extension = EditorView.theme({
   // (CM6's `cm-blink` / `cm-blink2` pattern), but for the substrate
   // a single keyframe is sufficient — the layer rebuilds on each
   // selectionSet, which restarts the animation implicitly.
-  "&.cm-focused > .cm-scroller > .tug-edit-caret-layer": {
-    animation: "tug-edit-caret-blink 1.2s steps(1) infinite",
+  "&.cm-focused > .cm-scroller > .tug-text-editor-caret-layer": {
+    animation: "tug-text-editor-caret-blink 1.2s steps(1) infinite",
   },
 
-  "@keyframes tug-edit-caret-blink": {
+  "@keyframes tug-text-editor-caret-blink": {
     "0%": { opacity: 1 },
     "50%": { opacity: 0 },
     "100%": { opacity: 1 },
@@ -281,7 +281,7 @@ export const tugTheme: Extension = EditorView.theme({
 
   // The caret stroke itself. `caret-layer.ts` constructs each
   // marker with width=2, height=line-block — this rule colors it.
-  ".tug-edit-caret": {
+  ".tug-text-editor-caret": {
     backgroundColor: TOKENS.caret,
   },
 
@@ -293,7 +293,7 @@ export const tugTheme: Extension = EditorView.theme({
   // native behavior of hiding the caret during drag-selection.
   // Toggled by `tugCaretInteractionPlugin`'s mousedown / global
   // mouseup pair in `caret-layer.ts`.
-  "&[data-tug-edit-dragging] .tug-edit-caret-layer": {
+  "&[data-tug-text-editor-dragging] .tug-text-editor-caret-layer": {
     display: "none",
   },
 
@@ -303,14 +303,14 @@ export const tugTheme: Extension = EditorView.theme({
   // caret stays solid during typing and resumes blinking after a
   // pause. Toggled by `tugCaretInteractionPlugin`'s keydown +
   // idle-timer in `caret-layer.ts`.
-  "&[data-tug-edit-typing].cm-focused > .cm-scroller > .tug-edit-caret-layer": {
+  "&[data-tug-text-editor-typing].cm-focused > .cm-scroller > .tug-text-editor-caret-layer": {
     animation: "none",
     opacity: 1,
   },
 
   // Focus-state surface — subtle background tint shift in the default
   // focus style. Host-wrapper variants (`data-focus-style="ring"`) live
-  // in `tug-edit.css`; this rule covers the default ("background") path
+  // in `tug-text-editor.css`; this rule covers the default ("background") path
   // for the inner editing surface.
   "&.cm-focused": {
     backgroundColor: TOKENS.contentBgFocus,
@@ -335,7 +335,7 @@ export const tugTheme: Extension = EditorView.theme({
 
   // Line-number gutter — rendered by the `lineNumbers()` extension
   // when the substrate's `lineNumbers` prop is true. Pairs the
-  // tug-edit-specific alias tokens (defined in tug-edit.css's
+  // tug-text-editor-specific alias tokens (defined in tug-text-editor.css's
   // component-scope `body` block) with the editor's typography
   // variables so the gutter inherits any prop-driven font / size /
   // line-height changes.
@@ -359,9 +359,9 @@ export const tugTheme: Extension = EditorView.theme({
   //     gives the same pixel line-height as the content,
   //     regardless of the gutter's font-size.
   ".cm-gutters": {
-    backgroundColor: "var(--tugx-edit-gutter-bg-rest)",
-    color: "var(--tugx-edit-gutter-text-rest)",
-    borderRight: "1px solid var(--tugx-edit-gutter-border-rest)",
+    backgroundColor: "var(--tugx-text-editor-gutter-bg-rest)",
+    color: "var(--tugx-text-editor-gutter-text-rest)",
+    borderRight: "1px solid var(--tugx-text-editor-gutter-border-rest)",
     fontFamily: "var(--tug-font-family-editor, inherit)",
     fontSize:
       "calc(var(--tug-font-size-editor, 14px) * 0.9)",

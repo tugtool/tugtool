@@ -1,5 +1,5 @@
 /**
- * tug-edit/drop-extension — file-drop atom insertion + drop caret.
+ * tug-text-editor/drop-extension — file-drop atom insertion + drop caret.
  *
  * Coverage:
  *   1. Pure helpers (`insertAtomsAt`, `dropOffsetAtCoords`) — drive
@@ -31,18 +31,18 @@ import { describe, it, expect, afterEach } from "bun:test";
 import { render, cleanup } from "@testing-library/react";
 import type { EditorView } from "@codemirror/view";
 
-import { TugEdit } from "@/components/tugways/tug-edit";
-import type { TugEditDelegate } from "@/components/tugways/tug-edit";
-import { getAtomsInState } from "@/components/tugways/tug-edit/atom-decoration";
+import { TugTextEditor } from "@/components/tugways/tug-text-editor";
+import type { TugTextEditorDelegate } from "@/components/tugways/tug-text-editor";
+import { getAtomsInState } from "@/components/tugways/tug-text-editor/atom-decoration";
 import {
   dropOffsetAtCoords,
   insertAtomsAt,
-} from "@/components/tugways/tug-edit/drop-extension";
+} from "@/components/tugways/tug-text-editor/drop-extension";
 import { TUG_ATOM_CHAR, type AtomSegment } from "@/lib/tug-atom-img";
 
 // ---------------------------------------------------------------------------
 // Canvas 2D shim — atom rendering measures glyph widths via a 2D
-// context; happy-dom doesn't implement one. Mirrors `tug-edit.test.tsx`.
+// context; happy-dom doesn't implement one. Mirrors `tug-text-editor.test.tsx`.
 // ---------------------------------------------------------------------------
 
 interface MinimalCtx2D {
@@ -75,17 +75,17 @@ function mountHarness(props?: {
   dropHandler?: (files: FileList) => AtomSegment[];
 }): {
   view: EditorView;
-  delegate: TugEditDelegate;
+  delegate: TugTextEditorDelegate;
   unmount: () => void;
 } {
-  const delegateRef: { current: TugEditDelegate | null } = { current: null };
+  const delegateRef: { current: TugTextEditorDelegate | null } = { current: null };
 
   function H(): React.ReactElement {
-    const ref = useRef<TugEditDelegate>(null);
+    const ref = useRef<TugTextEditorDelegate>(null);
     useLayoutEffect(() => {
       delegateRef.current = ref.current;
     }, []);
-    return React.createElement(TugEdit, {
+    return React.createElement(TugTextEditor, {
       ref,
       preserveState: false,
       dropHandler: props?.dropHandler,
@@ -560,11 +560,11 @@ describe("drop-caret lifecycle", () => {
 // ---------------------------------------------------------------------------
 
 describe("data-drop-active attribute", () => {
-  /** Find the `tug-edit` host wrapper that the drop extension toggles. */
+  /** Find the `tug-text-editor` host wrapper that the drop extension toggles. */
   function findHost(view: EditorView): HTMLElement | null {
     let el: HTMLElement | null = view.dom.parentElement;
     while (el !== null) {
-      if (el.getAttribute("data-slot") === "tug-edit") return el;
+      if (el.getAttribute("data-slot") === "tug-text-editor") return el;
       el = el.parentElement;
     }
     return null;

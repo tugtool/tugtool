@@ -1,6 +1,6 @@
 /**
- * tug-edit/clipboard-filters.ts — copy / cut / paste DOM event
- * handlers for atom-bearing tug-edit selections.
+ * tug-text-editor/clipboard-filters.ts — copy / cut / paste DOM event
+ * handlers for atom-bearing tug-text-editor selections.
  *
  * ## Wire format
  *
@@ -12,7 +12,7 @@
  * 2. `text/html`: a single `<span data-tug-atoms="…">…</span>`
  *    element. The `data-tug-atoms` attribute carries a base64-
  *    encoded JSON sidecar (`{version, text, atoms}`) — the
- *    self-contained payload tug-edit reads back on paste. The span's
+ *    self-contained payload tug-text-editor reads back on paste. The span's
  *    visible text is the same label-substituted string text/plain
  *    carries, so external apps that prefer rich html still get
  *    something readable.
@@ -323,7 +323,7 @@ function handleCopyOrCut(
 
 /**
  * Handle a paste event in browser mode (the substrate's
- * native-bridge paste path lives in `tug-edit.tsx` and calls
+ * native-bridge paste path lives in `tug-text-editor.tsx` and calls
  * `parseClipboardHtmlEnvelope` directly). The browser-mode handler
  * prefers the custom MIME sidecar — it's the most reliable carrier
  * inside a single WebKit instance because no html normalization

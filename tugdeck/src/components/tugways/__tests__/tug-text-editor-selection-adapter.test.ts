@@ -1,5 +1,5 @@
 /**
- * tug-edit/selection-adapter — `createCMSelectionAdapter` coverage.
+ * tug-text-editor/selection-adapter — `createCMSelectionAdapter` coverage.
  *
  * Coverage:
  *   1. Pure selection queries (`hasRangedSelection`, `getSelectedText`)
@@ -32,13 +32,13 @@ import { render, cleanup } from "@testing-library/react";
 import { EditorSelection } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 
-import { TugEdit } from "@/components/tugways/tug-edit";
-import type { TugEditDelegate } from "@/components/tugways/tug-edit";
-import { createCMSelectionAdapter } from "@/components/tugways/tug-edit/selection-adapter";
+import { TugTextEditor } from "@/components/tugways/tug-text-editor";
+import type { TugTextEditorDelegate } from "@/components/tugways/tug-text-editor";
+import { createCMSelectionAdapter } from "@/components/tugways/tug-text-editor/selection-adapter";
 
 // ---------------------------------------------------------------------------
 // Canvas 2D shim — atom rendering measures glyph widths via a 2D
-// context; happy-dom doesn't implement one. Mirrors `tug-edit.test.tsx`.
+// context; happy-dom doesn't implement one. Mirrors `tug-text-editor.test.tsx`.
 // ---------------------------------------------------------------------------
 
 interface MinimalCtx2D {
@@ -71,13 +71,13 @@ function mountHarness(initialDoc: string = ""): {
   view: EditorView;
   unmount: () => void;
 } {
-  const delegateRef: { current: TugEditDelegate | null } = { current: null };
+  const delegateRef: { current: TugTextEditorDelegate | null } = { current: null };
   function H(): React.ReactElement {
-    const ref = useRef<TugEditDelegate>(null);
+    const ref = useRef<TugTextEditorDelegate>(null);
     useLayoutEffect(() => {
       delegateRef.current = ref.current;
     }, []);
-    return React.createElement(TugEdit, { ref, preserveState: false });
+    return React.createElement(TugTextEditor, { ref, preserveState: false });
   }
   const result = render(React.createElement(H));
   const view = delegateRef.current!.view()!;

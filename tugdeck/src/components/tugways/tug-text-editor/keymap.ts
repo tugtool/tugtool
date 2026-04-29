@@ -1,5 +1,5 @@
 /**
- * tug-edit/keymap.ts — high-precedence keyboard handler for the
+ * tug-text-editor/keymap.ts — high-precedence keyboard handler for the
  * tug-specific input actions: Enter (submit / newline), numpad Enter,
  * Cmd-Enter (forced submit), and Cmd-Up / Cmd-Down (history nav).
  *
@@ -59,7 +59,7 @@ import type { AtomSegment } from "@/lib/tug-atom-img";
  * dereferences the ref, so prop changes take effect on the next event
  * without needing to rebuild any extension.
  */
-export interface TugEditKeymapConfig {
+export interface TugTextEditorKeymapConfig {
   /** Action for the main-row Enter key (modifier-free). */
   returnAction: InputAction;
   /** Action for the numpad Enter key. */
@@ -84,14 +84,14 @@ export interface TugEditKeymapConfig {
  * `HistoryProvider` and state-preservation APIs both consume. The
  * shape matches `TugTextEditingState` produced by `TugTextEngine` so
  * a session / route history populated from `tug-prompt-input` can
- * drive `tug-edit` without translation, and so the same payload
+ * drive `tug-text-editor` without translation, and so the same payload
  * survives a tugbank round-trip across reloads ([L23]).
  *
  * Both scroll axes are read directly off `view.scrollDOM` (the
  * `.cm-scroller` element CM6 owns) — the live, single-source-of-
  * truth scroll positions. History nav consumers ignore these fields;
  * state preservation consumers honor them. `scrollLeft` matters
- * specifically for `tug-edit` (line-wrap off by default) — long
+ * specifically for `tug-text-editor` (line-wrap off by default) — long
  * lines scroll horizontally and the user's chosen horizontal
  * position must survive reload.
  */
@@ -196,7 +196,7 @@ export function applyEditState(
  * without synthesizing keyboard events or mounting an editor.
  */
 export function resolveEnterAction(
-  config: TugEditKeymapConfig,
+  config: TugTextEditorKeymapConfig,
   isNumpad: boolean,
   shiftKey: boolean,
 ): InputAction {
@@ -223,7 +223,7 @@ function atHistoryBoundary(view: EditorView): boolean {
 /** Handle a Cmd-Up / Cmd-Down keystroke. */
 function handleHistoryNav(
   view: EditorView,
-  config: TugEditKeymapConfig,
+  config: TugTextEditorKeymapConfig,
   direction: "back" | "forward",
 ): boolean {
   if (config.historyProvider === null) return false;
@@ -239,7 +239,7 @@ function handleHistoryNav(
 /** Handle an Enter or numpad-Enter keystroke. */
 function handleEnter(
   view: EditorView,
-  config: TugEditKeymapConfig,
+  config: TugTextEditorKeymapConfig,
   event: KeyboardEvent,
 ): boolean {
   // IME composition: leave Enter alone — the IME owns commit.
@@ -279,8 +279,8 @@ function handleEnter(
  * lets the lower-precedence handlers run (e.g. newline insertion via
  * `insertNewlineAndIndent`).
  */
-export function tugEditKeymap(
-  getConfig: () => TugEditKeymapConfig,
+export function tugTextEditorKeymap(
+  getConfig: () => TugTextEditorKeymapConfig,
 ): Extension {
   return Prec.high(
     EditorView.domEventHandlers({

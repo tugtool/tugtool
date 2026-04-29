@@ -1,5 +1,5 @@
 /**
- * at0049-tug-edit-no-doubled-caret.test.ts — Step 9.6 regression
+ * at0049-tug-text-editor-no-doubled-caret.test.ts — Step 9.6 regression
  * guard. Verifies that each layout-shifting transition that
  * historically left WebKit's contentEditable caret cache stale (and
  * which the three deleted hacks once papered over) leaves exactly
@@ -41,15 +41,15 @@ import {
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
-const TUG_EDIT_CONTENT_SELECTOR = '[data-slot="tug-edit"] .cm-content';
+const TUG_EDIT_CONTENT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 const FILE_ATOM_BUTTON_SELECTOR =
-  '[data-card-id="A"] .gallery-text-edit-atom-row [data-slot="tug-push-button"]:nth-of-type(1)';
-const CARET_SELECTOR = '[data-card-id="A"] .tug-edit-caret';
+  '[data-card-id="A"] .gallery-text-editor-atom-row [data-slot="tug-push-button"]:nth-of-type(1)';
+const CARET_SELECTOR = '[data-card-id="A"] .tug-text-editor-caret';
 
 function deckShape() {
   return {
     cards: [
-      { id: "A", componentId: "gallery-text-edit", title: "TugEdit A", closable: true },
+      { id: "A", componentId: "gallery-text-editor", title: "TugTextEditor A", closable: true },
     ],
     panes: [
       {
@@ -128,7 +128,7 @@ async function clearEditor(app: App): Promise<void> {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "m49: tug-edit caret count stays at 1 across stale-cache transitions",
+  "m49: tug-text-editor caret count stays at 1 across stale-cache transitions",
   () => {
     test(
       "atom removal via backspace — exactly one caret",

@@ -1,5 +1,5 @@
 /**
- * tug-edit/selection-adapter.ts — `TextSelectionAdapter` factory backed
+ * tug-text-editor/selection-adapter.ts — `TextSelectionAdapter` factory backed
  * by a CodeMirror 6 `EditorView`.
  *
  * Adapts CM6's selection model to the substrate-neutral
@@ -27,7 +27,7 @@
  * Mutation methods (`selectAll`, `expandToWord`, `selectWordAtPoint`)
  * dispatch CM6 transactions with `userEvent: "select"`. The adapter
  * does not focus the view — the caller (typically the contextmenu
- * handler in `tug-edit.tsx`) already owns focus management.
+ * handler in `tug-text-editor.tsx`) already owns focus management.
  *
  * Laws: [L02] CM6 owns selection; the adapter reads through
  *        `view.state.selection`, [L06] no React state is mutated;
@@ -129,7 +129,7 @@ function pointInRects(rects: readonly Rect[], x: number, y: number): boolean {
  * current `view.state` — selection / document mutations between calls
  * are reflected without re-creating the adapter ([L07]).
  *
- * Used by `tug-edit.tsx` to drive `TugEditorContextMenu`: the
+ * Used by `tug-text-editor.tsx` to drive `TugEditorContextMenu`: the
  * contextmenu listener instantiates an adapter, asks
  * `classifyRightClick` how to position the menu (preserve / expand /
  * pick a fresh word), and passes `hasRangedSelection()` into the menu

@@ -1,4 +1,4 @@
-# tug-edit IME validation gate — report
+# tug-text-editor IME validation gate — report
 
 | Field | Value |
 |------|-------|
@@ -15,7 +15,7 @@
 
 ## Why this gate exists
 
-CM6's interaction with `atomicRanges` near IME composition is a known soft spot in upstream forum reports. Adopting CM6 as the `tug-edit` substrate is a [decided risk](../../../../../roadmap/text-editing-base.md#d01-spike-cm6); this report is the dedicated validation gate where that risk is checked against actual user-visible behavior.
+CM6's interaction with `atomicRanges` near IME composition is a known soft spot in upstream forum reports. Adopting CM6 as the `tug-text-editor` substrate is a [decided risk](../../../../../roadmap/text-editing-base.md#d01-spike-cm6); this report is the dedicated validation gate where that risk is checked against actual user-visible behavior.
 
 A failure in any scenario below — character drops, selection collapse, or visible glyph corruption — halts the spike pending discussion. A clean pass commits the substrate decision and unblocks Step 7.
 
@@ -25,15 +25,15 @@ What CM6 provides natively:
 - `compositionstart` / `compositionend` are owned by CM6's `inputState` machinery; the editor doesn't dispatch transactions for compose-intermediate strings the way a naïve `input`-event listener would.
 - `KeyboardEvent.isComposing` is honored by CM6's keymap dispatch. The substrate does not run a registered keybinding while a key event is part of an active composition.
 
-What `tug-edit` adds on top:
-- `tug-edit/keymap.ts:223` — the Enter handler short-circuits when `event.isComposing`, so the configured `submit`/`newline` action does not fire while the IME owns commit.
-- `tug-edit/completion-extension.ts:626` — the typeahead popup's high-precedence keymap short-circuits when `event.isComposing`, so Enter / Tab / Arrow keys belong to the IME during composition.
+What `tug-text-editor` adds on top:
+- `tug-text-editor/keymap.ts:223` — the Enter handler short-circuits when `event.isComposing`, so the configured `submit`/`newline` action does not fire while the IME owns commit.
+- `tug-text-editor/completion-extension.ts:626` — the typeahead popup's high-precedence keymap short-circuits when `event.isComposing`, so Enter / Tab / Arrow keys belong to the IME during composition.
 
-What the existing `TugTextEngine` does that `tug-edit` does **not** do (yet):
+What the existing `TugTextEngine` does that `tug-text-editor` does **not** do (yet):
 - Maintains a `_composing` flag flipped on `compositionstart` / `compositionend` and a `_compositionJustEnded` latch that's cleared on the next `keyup`. The latch catches WebKit's quirk where the Enter that commits a Japanese kana composition arrives as a `keydown` *after* `compositionend` (with `isComposing === false`); without the latch, that Enter would fire submit.
 - Cancels any active typeahead at `compositionstart` and re-detects via microtask after `compositionend`.
 
-The scenarios below are designed to expose any defect that would arise from these missing protections, as well as upstream R01 cases. If a scenario fails because of one of the missing protections rather than upstream R01, it's a one-line fix in `tug-edit` rather than a substrate-level halt — record this distinction in the **Notes** column.
+The scenarios below are designed to expose any defect that would arise from these missing protections, as well as upstream R01 cases. If a scenario fails because of one of the missing protections rather than upstream R01, it's a one-line fix in `tug-text-editor` rather than a substrate-level halt — record this distinction in the **Notes** column.
 
 ## How to run the tests
 
@@ -41,7 +41,7 @@ The scenarios below are designed to expose any defect that would arise from thes
 2. Configure a CJK input method on macOS:
    - **Japanese kana**: System Settings → Keyboard → Input Sources → add **Japanese – Romaji** (or Hiragana). Switch with `⌃Space` or the menu-bar input picker.
    - **Chinese pinyin**: System Settings → Keyboard → Input Sources → add **Pinyin – Simplified**.
-3. Click into the **TugEdit** field on the gallery card to focus it.
+3. Click into the **TugTextEditor** field on the gallery card to focus it.
 4. Run each scenario below. Record observed behavior in the corresponding section. A scenario passes if every numbered observation matches **Expected**.
 5. After all five scenarios, fill in the **Decision** section.
 
@@ -271,5 +271,5 @@ _(one to three sentences describing why the decision above was reached, especial
 
 If the spike continues, capture any non-halting defects observed during validation here so they're not lost. These belong in a small follow-up commit on `text-editing-base` before Step 7 begins or, if scoped, in a tracking item on the [follow-on roadmap](../../../../../roadmap/text-editing-base.md#roadmap).
 
-- [ ] _e.g. compose-end Enter quirk on WebKit not currently guarded in `tug-edit/keymap.ts` (parallels `_compositionJustEnded` in `tug-text-engine.ts`)._
+- [ ] _e.g. compose-end Enter quirk on WebKit not currently guarded in `tug-text-editor/keymap.ts` (parallels `_compositionJustEnded` in `tug-text-engine.ts`)._
 - [ ] _e.g. typeahead trigger detector runs during compose intermediate transactions; consider gating on `view.composing` in `completion-extension.ts`._

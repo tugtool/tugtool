@@ -1,14 +1,14 @@
 /**
- * TugEdit — substrate bootstrap tests.
+ * TugTextEditor — substrate bootstrap tests.
  *
- * Verifies that the CodeMirror 6-backed `TugEdit` component:
+ * Verifies that the CodeMirror 6-backed `TugTextEditor` component:
  *   1. Mounts and constructs an `EditorView` accessible via the
  *      imperative delegate.
  *   2. Renders the editor's DOM tree into the host wrapper.
  *   3. Disposes the `EditorView` cleanly on unmount, and a subsequent
  *      mount produces a fresh, distinct `EditorView` instance —
  *      validating the StrictMode-safe lifecycle pattern documented
- *      in the `tug-edit.tsx` module docstring.
+ *      in the `tug-text-editor.tsx` module docstring.
  *   4. Pure-logic helpers (`resolveEnterAction`, `captureEditState`,
  *      `applyEditState`) round-trip cleanly — these are pure
  *      functions over CM6 view state, so happy-dom is the right
@@ -36,20 +36,20 @@ import { EditorSelection } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { deleteCharBackward, deleteCharForward } from "@codemirror/commands";
 
-import { TugEdit } from "@/components/tugways/tug-edit";
-import type { TugEditDelegate } from "@/components/tugways/tug-edit";
+import { TugTextEditor } from "@/components/tugways/tug-text-editor";
+import type { TugTextEditorDelegate } from "@/components/tugways/tug-text-editor";
 import {
   atomDecorationField,
   AtomWidget,
   getAtomsInState,
   regenerateAtomsEffect,
-} from "@/components/tugways/tug-edit/atom-decoration";
+} from "@/components/tugways/tug-text-editor/atom-decoration";
 import {
   applyEditState,
   captureEditState,
   resolveEnterAction,
-} from "@/components/tugways/tug-edit/keymap";
-import type { TugEditKeymapConfig } from "@/components/tugways/tug-edit/keymap";
+} from "@/components/tugways/tug-text-editor/keymap";
+import type { TugTextEditorKeymapConfig } from "@/components/tugways/tug-text-editor/keymap";
 import { TUG_ATOM_CHAR, type AtomSegment } from "@/lib/tug-atom-img";
 import type { TugTextEditingState } from "@/lib/tug-text-engine";
 
@@ -98,7 +98,7 @@ interface MinimalCtx2D {
 // ---------------------------------------------------------------------------
 
 /**
- * Test harness that mounts a `TugEdit` and writes the live delegate
+ * Test harness that mounts a `TugTextEditor` and writes the live delegate
  * into a caller-supplied ref via `useLayoutEffect` so the test can
  * read it after `render` returns. Using `useLayoutEffect` rather than
  * `useEffect` ensures the delegate is observable in the same tick as
@@ -108,16 +108,16 @@ interface MinimalCtx2D {
 function Harness({
   delegateRef,
 }: {
-  delegateRef: { current: TugEditDelegate | null };
+  delegateRef: { current: TugTextEditorDelegate | null };
 }) {
-  const ref = useRef<TugEditDelegate>(null);
+  const ref = useRef<TugTextEditorDelegate>(null);
   useLayoutEffect(() => {
     delegateRef.current = ref.current;
     return () => {
       delegateRef.current = null;
     };
   }, [delegateRef]);
-  return <TugEdit ref={ref} data-testid="harness-edit" />;
+  return <TugTextEditor ref={ref} data-testid="harness-edit" />;
 }
 
 afterEach(() => {
@@ -128,9 +128,9 @@ afterEach(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("TugEdit — bootstrap", () => {
+describe("TugTextEditor — bootstrap", () => {
   it("mounts and exposes an EditorView through the delegate", () => {
-    const delegateRef: { current: TugEditDelegate | null } = { current: null };
+    const delegateRef: { current: TugTextEditorDelegate | null } = { current: null };
     const { container } = render(<Harness delegateRef={delegateRef} />);
 
     // The delegate is exposed via `useImperativeHandle`.
@@ -150,7 +150,7 @@ describe("TugEdit — bootstrap", () => {
   });
 
   it("disposes the EditorView on unmount and produces a fresh view on re-mount", () => {
-    const delegateRef: { current: TugEditDelegate | null } = { current: null };
+    const delegateRef: { current: TugTextEditorDelegate | null } = { current: null };
 
     // First mount.
     const first = render(<Harness delegateRef={delegateRef} />);
@@ -171,7 +171,7 @@ describe("TugEdit — bootstrap", () => {
   });
 
   it("clears the delegate's view between unmount and re-mount", () => {
-    const delegateRef: { current: TugEditDelegate | null } = { current: null };
+    const delegateRef: { current: TugTextEditorDelegate | null } = { current: null };
 
     const { unmount } = render(<Harness delegateRef={delegateRef} />);
     const captured = delegateRef.current;
@@ -181,38 +181,38 @@ describe("TugEdit — bootstrap", () => {
     unmount();
 
     // After unmount the harness clears `delegateRef`, so we read the
-    // captured handle. The cleanup in `tug-edit.tsx` zeroes
+    // captured handle. The cleanup in `tug-text-editor.tsx` zeroes
     // `viewRef.current`, so `view()` returns null.
     expect(captured!.view()).toBeNull();
   });
 });
 
-describe("TugEdit — theme and host-state wiring", () => {
+describe("TugTextEditor — theme and host-state wiring", () => {
   it("applies the focusStyle prop as data-focus-style on the host", () => {
     const { container, rerender } = render(
-      <TugEdit data-testid="theme-edit" focusStyle="background" />,
+      <TugTextEditor data-testid="theme-edit" focusStyle="background" />,
     );
     const host = container.querySelector<HTMLElement>('[data-testid="theme-edit"]')!;
     expect(host.getAttribute("data-focus-style")).toBe("background");
 
-    rerender(<TugEdit data-testid="theme-edit" focusStyle="ring" />);
+    rerender(<TugTextEditor data-testid="theme-edit" focusStyle="ring" />);
     expect(host.getAttribute("data-focus-style")).toBe("ring");
   });
 
   it("applies data-borderless only when borderless is true", () => {
     const { container, rerender } = render(
-      <TugEdit data-testid="theme-edit" borderless={false} />,
+      <TugTextEditor data-testid="theme-edit" borderless={false} />,
     );
     const host = container.querySelector<HTMLElement>('[data-testid="theme-edit"]')!;
     expect(host.hasAttribute("data-borderless")).toBe(false);
 
-    rerender(<TugEdit data-testid="theme-edit" borderless={true} />);
+    rerender(<TugTextEditor data-testid="theme-edit" borderless={true} />);
     expect(host.hasAttribute("data-borderless")).toBe(true);
     expect(host.getAttribute("data-borderless")).toBe("");
   });
 
   it("attaches a CodeMirror theme class to the editor root", () => {
-    const { container } = render(<TugEdit data-testid="theme-edit" />);
+    const { container } = render(<TugTextEditor data-testid="theme-edit" />);
     const cmEditor = container.querySelector<HTMLElement>(".cm-editor");
     expect(cmEditor).not.toBeNull();
 
@@ -226,7 +226,7 @@ describe("TugEdit — theme and host-state wiring", () => {
   });
 
   it("renders an editable `.cm-content` surface inside the host", () => {
-    const { container } = render(<TugEdit data-testid="theme-edit" />);
+    const { container } = render(<TugTextEditor data-testid="theme-edit" />);
     const content = container.querySelector<HTMLElement>(".cm-content");
     expect(content).not.toBeNull();
     expect(content!.getAttribute("contenteditable")).toBe("true");
@@ -245,7 +245,7 @@ const FILE_ATOM: AtomSegment = {
 };
 
 /**
- * Helper: render TugEdit, capture the live delegate, type some text
+ * Helper: render TugTextEditor, capture the live delegate, type some text
  * via `view.dispatch`, and return the view + delegate for the test
  * to drive. Uses dispatch (not simulated keypresses) so the tests
  * stay independent of happy-dom's beforeinput/keydown handling —
@@ -253,17 +253,17 @@ const FILE_ATOM: AtomSegment = {
  */
 function mountAtomHarness(): {
   view: EditorView;
-  delegate: TugEditDelegate;
+  delegate: TugTextEditorDelegate;
   unmount: () => void;
 } {
-  const delegateRef: { current: TugEditDelegate | null } = { current: null };
+  const delegateRef: { current: TugTextEditorDelegate | null } = { current: null };
 
   function H(): React.ReactElement {
-    const ref = useRef<TugEditDelegate>(null);
+    const ref = useRef<TugTextEditorDelegate>(null);
     useLayoutEffect(() => {
       delegateRef.current = ref.current;
     }, []);
-    return <TugEdit ref={ref} data-testid="atom-harness" />;
+    return <TugTextEditor ref={ref} data-testid="atom-harness" />;
   }
 
   const result = render(<H />);
@@ -276,7 +276,7 @@ function mountAtomHarness(): {
   };
 }
 
-describe("TugEdit — atom integration", () => {
+describe("TugTextEditor — atom integration", () => {
   it("insertAtom places U+FFFC and a matching widget decoration at the caret", () => {
     const { view, delegate, unmount } = mountAtomHarness();
     try {
@@ -455,21 +455,21 @@ describe("TugEdit — atom integration", () => {
 // Keymap — pure policy
 // ---------------------------------------------------------------------------
 
-const SUBMIT_CONFIG: TugEditKeymapConfig = {
+const SUBMIT_CONFIG: TugTextEditorKeymapConfig = {
   returnAction: "submit",
   numpadEnterAction: "submit",
   onSubmit: () => {},
   historyProvider: null,
 };
 
-const NEWLINE_CONFIG: TugEditKeymapConfig = {
+const NEWLINE_CONFIG: TugTextEditorKeymapConfig = {
   returnAction: "newline",
   numpadEnterAction: "newline",
   onSubmit: () => {},
   historyProvider: null,
 };
 
-describe("TugEdit — resolveEnterAction", () => {
+describe("TugTextEditor — resolveEnterAction", () => {
   it("returns the configured returnAction for plain Enter", () => {
     expect(resolveEnterAction(SUBMIT_CONFIG, false, false)).toBe("submit");
     expect(resolveEnterAction(NEWLINE_CONFIG, false, false)).toBe("newline");
@@ -481,7 +481,7 @@ describe("TugEdit — resolveEnterAction", () => {
   });
 
   it("uses numpadEnterAction when isNumpad is true", () => {
-    const mixed: TugEditKeymapConfig = {
+    const mixed: TugTextEditorKeymapConfig = {
       ...SUBMIT_CONFIG,
       returnAction: "newline",
       numpadEnterAction: "submit",
@@ -491,7 +491,7 @@ describe("TugEdit — resolveEnterAction", () => {
   });
 
   it("flips the numpad action under Shift", () => {
-    const mixed: TugEditKeymapConfig = {
+    const mixed: TugTextEditorKeymapConfig = {
       ...SUBMIT_CONFIG,
       numpadEnterAction: "newline",
     };
@@ -504,7 +504,7 @@ describe("TugEdit — resolveEnterAction", () => {
 // Keymap — state capture and restore
 // ---------------------------------------------------------------------------
 
-describe("TugEdit — captureEditState / applyEditState", () => {
+describe("TugTextEditor — captureEditState / applyEditState", () => {
   it("captureEditState reflects text + atoms + selection from the live view", () => {
     const { view, delegate, unmount } = mountAtomHarness();
     try {
@@ -591,7 +591,7 @@ describe("TugEdit — captureEditState / applyEditState", () => {
 // Structural assertions for the prop surface added in Step 10
 // (placeholder, maxRows, growDirection, maximized, disabled,
 // fontFamily, fontSize, lineHeight, letterSpacing, lineWrap,
-// lineNumbers). Each test mounts a `TugEdit` with the prop set,
+// lineNumbers). Each test mounts a `TugTextEditor` with the prop set,
 // then checks the corresponding DOM artifact: a data attribute on
 // the host, an inline CSS variable, an extension-rendered DOM
 // node, or a CM6 facet read on the view.
@@ -602,35 +602,35 @@ function PropHarness({
   delegateRef,
   ...props
 }: {
-  delegateRef: { current: TugEditDelegate | null };
-} & React.ComponentProps<typeof TugEdit>) {
-  const ref = useRef<TugEditDelegate>(null);
+  delegateRef: { current: TugTextEditorDelegate | null };
+} & React.ComponentProps<typeof TugTextEditor>) {
+  const ref = useRef<TugTextEditorDelegate>(null);
   useLayoutEffect(() => {
     delegateRef.current = ref.current;
     return () => {
       delegateRef.current = null;
     };
   }, [delegateRef]);
-  return <TugEdit ref={ref} data-testid="harness-edit" {...props} />;
+  return <TugTextEditor ref={ref} data-testid="harness-edit" {...props} />;
 }
 
-describe("TugEdit — prop surface", () => {
+describe("TugTextEditor — prop surface", () => {
   describe("defaults", () => {
     it("emits the default data attributes when no layout props are set", () => {
-      const delegateRef: { current: TugEditDelegate | null } = { current: null };
+      const delegateRef: { current: TugTextEditorDelegate | null } = { current: null };
       const { container } = render(<PropHarness delegateRef={delegateRef} />);
       const host = container.querySelector<HTMLElement>('[data-testid="harness-edit"]')!;
       expect(host.getAttribute("data-disabled")).toBeNull();
       expect(host.getAttribute("data-maximized")).toBeNull();
       expect(host.getAttribute("data-grow-direction")).toBe("down");
-      // `--tug-edit-max-rows` always lands so the CSS calc has a valid input.
-      expect(host.style.getPropertyValue("--tug-edit-max-rows")).toBe("8");
+      // `--tug-text-editor-max-rows` always lands so the CSS calc has a valid input.
+      expect(host.style.getPropertyValue("--tug-text-editor-max-rows")).toBe("8");
     });
   });
 
   describe("placeholder", () => {
     it("renders the placeholder DOM when set", () => {
-      const delegateRef: { current: TugEditDelegate | null } = { current: null };
+      const delegateRef: { current: TugTextEditorDelegate | null } = { current: null };
       const { container } = render(
         <PropHarness delegateRef={delegateRef} placeholder="Type here…" />,
       );
@@ -644,7 +644,7 @@ describe("TugEdit — prop surface", () => {
     });
 
     it("renders nothing for the placeholder when empty", () => {
-      const delegateRef: { current: TugEditDelegate | null } = { current: null };
+      const delegateRef: { current: TugTextEditorDelegate | null } = { current: null };
       const { container } = render(
         <PropHarness delegateRef={delegateRef} placeholder="" />,
       );
@@ -654,19 +654,19 @@ describe("TugEdit — prop surface", () => {
   });
 
   describe("maxRows", () => {
-    it("writes `--tug-edit-max-rows` as the inline CSS variable", () => {
-      const delegateRef: { current: TugEditDelegate | null } = { current: null };
+    it("writes `--tug-text-editor-max-rows` as the inline CSS variable", () => {
+      const delegateRef: { current: TugTextEditorDelegate | null } = { current: null };
       const { container } = render(
         <PropHarness delegateRef={delegateRef} maxRows={4} />,
       );
       const host = container.querySelector<HTMLElement>('[data-testid="harness-edit"]')!;
-      expect(host.style.getPropertyValue("--tug-edit-max-rows")).toBe("4");
+      expect(host.style.getPropertyValue("--tug-text-editor-max-rows")).toBe("4");
     });
   });
 
   describe("growDirection", () => {
     it('emits data-grow-direction="up" when set to "up"', () => {
-      const delegateRef: { current: TugEditDelegate | null } = { current: null };
+      const delegateRef: { current: TugTextEditorDelegate | null } = { current: null };
       const { container } = render(
         <PropHarness delegateRef={delegateRef} growDirection="up" />,
       );
@@ -677,7 +677,7 @@ describe("TugEdit — prop surface", () => {
 
   describe("maximized", () => {
     it("emits data-maximized when true and clears it when false", () => {
-      const delegateRef: { current: TugEditDelegate | null } = { current: null };
+      const delegateRef: { current: TugTextEditorDelegate | null } = { current: null };
       const { container, rerender } = render(
         <PropHarness delegateRef={delegateRef} maximized />,
       );
@@ -690,7 +690,7 @@ describe("TugEdit — prop surface", () => {
 
   describe("disabled", () => {
     it("sets EditorState.readOnly and emits the host data attribute", () => {
-      const delegateRef: { current: TugEditDelegate | null } = { current: null };
+      const delegateRef: { current: TugTextEditorDelegate | null } = { current: null };
       const { container, rerender } = render(
         <PropHarness delegateRef={delegateRef} disabled />,
       );
@@ -712,7 +712,7 @@ describe("TugEdit — prop surface", () => {
 
   describe("typography", () => {
     it("sets the four CSS custom properties when each prop is supplied", () => {
-      const delegateRef: { current: TugEditDelegate | null } = { current: null };
+      const delegateRef: { current: TugTextEditorDelegate | null } = { current: null };
       const { container } = render(
         <PropHarness
           delegateRef={delegateRef}
@@ -734,7 +734,7 @@ describe("TugEdit — prop surface", () => {
     });
 
     it("omits the CSS custom property when the prop is undefined", () => {
-      const delegateRef: { current: TugEditDelegate | null } = { current: null };
+      const delegateRef: { current: TugTextEditorDelegate | null } = { current: null };
       const { container } = render(<PropHarness delegateRef={delegateRef} />);
       const host = container.querySelector<HTMLElement>('[data-testid="harness-edit"]')!;
       expect(host.style.getPropertyValue("--tug-font-family-editor")).toBe("");
@@ -746,7 +746,7 @@ describe("TugEdit — prop surface", () => {
 
   describe("lineWrap", () => {
     it("toggles `EditorView.lineWrapping` via the Compartment", () => {
-      const delegateRef: { current: TugEditDelegate | null } = { current: null };
+      const delegateRef: { current: TugTextEditorDelegate | null } = { current: null };
       const { rerender } = render(<PropHarness delegateRef={delegateRef} />);
       const view = delegateRef.current!.view()!;
       // The `EditorView.lineWrapping` extension contributes a
@@ -768,7 +768,7 @@ describe("TugEdit — prop surface", () => {
 
   describe("lineNumbers", () => {
     it("renders the gutter when enabled and removes it when disabled", () => {
-      const delegateRef: { current: TugEditDelegate | null } = { current: null };
+      const delegateRef: { current: TugTextEditorDelegate | null } = { current: null };
       const { container, rerender } = render(
         <PropHarness delegateRef={delegateRef} lineNumbers />,
       );

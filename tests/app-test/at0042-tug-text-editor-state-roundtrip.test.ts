@@ -1,20 +1,20 @@
 /**
- * at0042-tug-edit-state-roundtrip.test.ts — gallery-text-edit
+ * at0042-tug-text-editor-state-roundtrip.test.ts — gallery-text-editor
  * state-preservation round-trip across `appReload` ([AT0042]).
  *
  * ## Why this exists
  *
- * The user-reported regression: load the gallery TugEdit card, type
+ * The user-reported regression: load the gallery TugTextEditor card, type
  * some text, hit `Developer > Reload`, and the typed text is gone.
  * The Step 7 implementation in `text-editing-base.md` wired
- * `useEditStatePreservation` into `TugEdit` and registered the hook
+ * `useTextEditorStatePreservation` into `TugTextEditor` and registered the hook
  * with the enclosing `CardHost`, but evidently the live save →
  * reload → restore pipeline does not round-trip the typed text.
  *
  * This test reproduces the user's exact path:
  *
  *   1. Launch with a fresh tugbank.
- *   2. Seed a deck with one `gallery-text-edit` card (no pre-cooked
+ *   2. Seed a deck with one `gallery-text-editor` card (no pre-cooked
  *      content).
  *   3. Click into the editor, type via `nativeType` (real
  *      NSEvent keystrokes that reach the WebView as native input),
@@ -34,7 +34,7 @@
  * fails at step 4, the in-memory save is broken and the on-disk
  * write would never have had the text. If it fails at step 6, the
  * before-unload flush isn't wiring through. If it fails at step 7,
- * the cold-mount restore branch in `useEditStatePreservation` isn't
+ * the cold-mount restore branch in `useTextEditorStatePreservation` isn't
  * landing the doc in the live view.
  *
  * The four-axis matrix (text + atoms + selection + scrollTop)
@@ -65,13 +65,13 @@ const TEST_TIMEOUT_MS = 90_000;
 // ---------------------------------------------------------------------------
 
 /**
- * `data-slot="tug-edit"` is the host wrapper attribute the
+ * `data-slot="tug-text-editor"` is the host wrapper attribute the
  * substrate emits ([L19] component-authoring guide). The CodeMirror
  * 6 contentEditable surface is `.cm-content` — every typed
  * character lands there.
  */
 const TUG_EDIT_CONTENT_SELECTOR =
-  '[data-slot="tug-edit"] .cm-content';
+  '[data-slot="tug-text-editor"] .cm-content';
 
 /**
  * Plain-ASCII text that exercises the `nativeType` path (the harness
@@ -81,11 +81,11 @@ const TUG_EDIT_CONTENT_SELECTOR =
  *
  * For the scrollLeft round-trip variant we need a line longer than
  * the editor's content box so the scroller actually has horizontal
- * room to scroll. `tug-edit` defaults to no line wrapping, so a long
+ * room to scroll. `tug-text-editor` defaults to no line wrapping, so a long
  * line of ASCII without spaces produces a single visual line that
  * extends past the right edge.
  */
-const TYPED_TEXT = "hello tug-edit reload";
+const TYPED_TEXT = "hello tug-text-editor reload";
 
 /**
  * Single-line ASCII string long enough to overflow the gallery
@@ -117,7 +117,7 @@ interface RawBag {
 function deckShape() {
   return {
     cards: [
-      { id: "A", componentId: "gallery-text-edit", title: "TugEdit A", closable: true },
+      { id: "A", componentId: "gallery-text-editor", title: "TugTextEditor A", closable: true },
     ],
     panes: [
       {
@@ -154,7 +154,7 @@ async function setupPhaseA(app: App, opts: { forceSave: boolean }): Promise<void
   );
 
   // Wait for the EditorView to mount; the `engine-ready` deck-trace
-  // event is emitted at the tail of `TugEdit`'s mount effect.
+  // event is emitted at the tail of `TugTextEditor`'s mount effect.
   await app.awaitEngineReady("A");
 
   // Click into the contentEditable so subsequent nativeType events
@@ -226,7 +226,7 @@ async function setupPhaseA(app: App, opts: { forceSave: boolean }): Promise<void
 function readActiveEngineState(bag: RawBag): Record<string, unknown> | null {
   const content = bag.content;
   if (typeof content !== "object" || content === null) return null;
-  // gallery-text-edit uses the raw TugTextEditingState shape — no
+  // gallery-text-editor uses the raw TugTextEditingState shape — no
   // currentRoute / perRoute wrapper.
   return content as Record<string, unknown>;
 }
@@ -352,7 +352,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "m42: gallery-text-edit state round-trip across appReload",
+  "m42: gallery-text-editor state round-trip across appReload",
   () => {
     test(
       "type, debounce, read disk — dirty-state save chain alone must persist typed text",
@@ -360,7 +360,7 @@ describe.skipIf(!SHOULD_RUN)(
         // Isolation test: prove the natural dirty-state debounce
         // save chain reaches tugbank without any reload trigger.
         // If this fails but the reload variants pass, the bug is
-        // in `useCardDirtyState`'s wiring for the tug-edit
+        // in `useCardDirtyState`'s wiring for the tug-text-editor
         // substrate (probably: typing in CM6 doesn't fire
         // `selectionchange` in a shape the dirty hook recognizes).
         const tugbankPath = mkTempTugbank();
@@ -368,7 +368,7 @@ describe.skipIf(!SHOULD_RUN)(
           seedTugbankForLaunch(tugbankPath);
 
           const app = await launchTugApp({
-            testName: "m42-gallery-text-edit-debounce-only",
+            testName: "m42-gallery-text-editor-debounce-only",
             env: { TUGBANK_PATH: tugbankPath },
             persistInTestMode: true,
           });
@@ -410,7 +410,7 @@ describe.skipIf(!SHOULD_RUN)(
           seedTugbankForLaunch(tugbankPath);
 
           const app = await launchTugApp({
-            testName: "m42-gallery-text-edit-no-force-save",
+            testName: "m42-gallery-text-editor-no-force-save",
             env: { TUGBANK_PATH: tugbankPath },
             persistInTestMode: true,
           });
@@ -447,7 +447,7 @@ describe.skipIf(!SHOULD_RUN)(
           seedTugbankForLaunch(tugbankPath);
 
           const app = await launchTugApp({
-            testName: "m42-gallery-text-edit-scroll-left",
+            testName: "m42-gallery-text-editor-scroll-left",
             env: { TUGBANK_PATH: tugbankPath },
             persistInTestMode: true,
           });
@@ -530,14 +530,14 @@ describe.skipIf(!SHOULD_RUN)(
             // and `captureEditState` reads it on save.
             await app.evalJS<void>(
               `(function(){
-                var sc = document.querySelector('[data-card-id="A"] [data-slot="tug-edit"] .cm-scroller');
+                var sc = document.querySelector('[data-card-id="A"] [data-slot="tug-text-editor"] .cm-scroller');
                 if (!sc) throw new Error("[m42] cm-scroller not found");
                 sc.scrollLeft = ${SCROLL_LEFT_OFFSET};
               })()`,
             );
             await app.waitForCondition<boolean>(
               `(function(){
-                var sc = document.querySelector('[data-card-id="A"] [data-slot="tug-edit"] .cm-scroller');
+                var sc = document.querySelector('[data-card-id="A"] [data-slot="tug-text-editor"] .cm-scroller');
                 return sc !== null && Math.abs(sc.scrollLeft - ${SCROLL_LEFT_OFFSET}) < 2;
               })()`,
               { timeoutMs: 2000 },
@@ -584,14 +584,14 @@ describe.skipIf(!SHOULD_RUN)(
             // Verify scrollLeft on the live `.cm-scroller`.
             await app.waitForCondition<boolean>(
               `(function(){
-                var sc = document.querySelector('[data-card-id="A"] [data-slot="tug-edit"] .cm-scroller');
+                var sc = document.querySelector('[data-card-id="A"] [data-slot="tug-text-editor"] .cm-scroller');
                 return sc !== null && Math.abs(sc.scrollLeft - ${SCROLL_LEFT_OFFSET}) < 2;
               })()`,
               { timeoutMs: 4000 },
             );
             const liveScrollLeft = await app.evalJS<number>(
               `(function(){
-                var sc = document.querySelector('[data-card-id="A"] [data-slot="tug-edit"] .cm-scroller');
+                var sc = document.querySelector('[data-card-id="A"] [data-slot="tug-text-editor"] .cm-scroller');
                 return sc === null ? -1 : sc.scrollLeft;
               })()`,
             );
@@ -621,7 +621,7 @@ describe.skipIf(!SHOULD_RUN)(
           seedTugbankForLaunch(tugbankPath);
 
           const app = await launchTugApp({
-            testName: "m42-gallery-text-edit-force-save",
+            testName: "m42-gallery-text-editor-force-save",
             env: { TUGBANK_PATH: tugbankPath },
             persistInTestMode: true,
           });

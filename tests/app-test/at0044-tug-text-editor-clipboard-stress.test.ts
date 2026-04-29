@@ -1,6 +1,6 @@
 /**
- * at0044-tug-edit-clipboard-stress.test.ts — multi-step clipboard
- * round-trip + undo for tug-edit atoms.
+ * at0044-tug-text-editor-clipboard-stress.test.ts — multi-step clipboard
+ * round-trip + undo for tug-text-editor atoms.
  *
  * ## Why this exists
  *
@@ -32,15 +32,15 @@ import {
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 90_000;
 
-const TUG_EDIT_CONTENT_SELECTOR = '[data-slot="tug-edit"] .cm-content';
+const TUG_EDIT_CONTENT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 const GALLERY_FILE_ATOM_BUTTON_SELECTOR =
-  '[data-card-id="A"] .gallery-text-edit-atom-row [data-slot="tug-push-button"]:nth-of-type(1)';
+  '[data-card-id="A"] .gallery-text-editor-atom-row [data-slot="tug-push-button"]:nth-of-type(1)';
 const FILE_ATOM_LABEL = "main.ts";
 
 function deckShape() {
   return {
     cards: [
-      { id: "A", componentId: "gallery-text-edit", title: "TugEdit A", closable: true },
+      { id: "A", componentId: "gallery-text-editor", title: "TugTextEditor A", closable: true },
     ],
     panes: [
       {
@@ -112,7 +112,7 @@ async function atomCount(app: App): Promise<number> {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "m44: tug-edit clipboard stress — repeated paste, undo",
+  "m44: tug-text-editor clipboard stress — repeated paste, undo",
   () => {
     test(
       "select-all + copy + paste twice produces three atom widgets in succession",

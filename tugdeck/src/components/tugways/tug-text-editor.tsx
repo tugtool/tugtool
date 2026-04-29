@@ -1,5 +1,5 @@
 /**
- * TugEdit — CodeMirror 6-backed text editing substrate.
+ * TugTextEditor — CodeMirror 6-backed text editing substrate.
  *
  * The lower-level editing primitive that backs higher-level tug
  * components. Built on an `EditorView` from CodeMirror 6: the
@@ -9,7 +9,7 @@
  *
  * Owns the document, caret, selection, and embedded atoms — the state
  * that editing actions (cut, copy, paste, selectAll, undo, redo,
- * insertAtom, submit) mutate. Per [L11], `TugEdit` is the responder
+ * insertAtom, submit) mutate. Per [L11], `TugTextEditor` is the responder
  * that registers handlers for those actions on its owned state. The
  * responder registration is what binds Cmd-A / Cmd-C / Cmd-X / Cmd-V
  * / Cmd-Z / Cmd-Shift-Z to the editor: those keystrokes are routed
@@ -65,7 +65,7 @@
  * wrappers.
  */
 
-import "./tug-edit.css";
+import "./tug-text-editor.css";
 // The substrate uses tug-completion-menu's CSS classes for the
 // typeahead popup so the surface matches `tug-prompt-input`.
 import "./tug-completion-menu.css";
@@ -98,37 +98,37 @@ import {
   hasNativeClipboardBridge,
   readClipboardViaNative,
 } from "@/lib/tug-native-clipboard";
-import { tugTheme } from "./tug-edit/theme";
-import { hostFocusMirror } from "./tug-edit/host-state";
+import { tugTheme } from "./tug-text-editor/theme";
+import { hostFocusMirror } from "./tug-text-editor/host-state";
 import {
   addAtomsEffect,
   atomDecorationField,
   atomInvertedEffects,
   insertAtomAtSelection,
   regenerateAtomsEffect,
-} from "./tug-edit/atom-decoration";
-import { atomicRangesExt } from "./tug-edit/atomic-ranges";
-import { clipboardExt, parseClipboardHtmlEnvelope } from "./tug-edit/clipboard-filters";
-import { tugDropExtension } from "./tug-edit/drop-extension";
-import { createCMSelectionAdapter } from "./tug-edit/selection-adapter";
-import { tugCaretInteractionPlugin, tugCaretLayer } from "./tug-edit/caret-layer";
-import { tugSelectionLayer } from "./tug-edit/selection-layer";
-import { captureEditState, tugEditKeymap } from "./tug-edit/keymap";
-import type { TugEditKeymapConfig } from "./tug-edit/keymap";
+} from "./tug-text-editor/atom-decoration";
+import { atomicRangesExt } from "./tug-text-editor/atomic-ranges";
+import { clipboardExt, parseClipboardHtmlEnvelope } from "./tug-text-editor/clipboard-filters";
+import { tugDropExtension } from "./tug-text-editor/drop-extension";
+import { createCMSelectionAdapter } from "./tug-text-editor/selection-adapter";
+import { tugCaretInteractionPlugin, tugCaretLayer } from "./tug-text-editor/caret-layer";
+import { tugSelectionLayer } from "./tug-text-editor/selection-layer";
+import { captureEditState, tugTextEditorKeymap } from "./tug-text-editor/keymap";
+import type { TugTextEditorKeymapConfig } from "./tug-text-editor/keymap";
 import {
   acceptCompletionAt,
   getCompletionState,
   navigateCompletion,
   subscribeCompletionState,
   tugCompletionExt,
-} from "./tug-edit/completion-extension";
+} from "./tug-text-editor/completion-extension";
 import {
   paintMirrorAsActive as paintMirrorAsActiveImpl,
   paintMirrorAsInactive as paintMirrorAsInactiveImpl,
   restoreEditState,
-  TugEditStatePreservation,
-} from "./tug-edit/state-preservation";
-import type { PendingEditRestore } from "./tug-edit/state-preservation";
+  TugTextEditorStatePreservation,
+} from "./tug-text-editor/state-preservation";
+import type { PendingEditRestore } from "./tug-text-editor/state-preservation";
 import { deckTrace } from "@/deck-trace";
 import { selectionGuard } from "./selection-guard";
 import { TugEditorContextMenu, type TugEditorContextMenuEntry } from "./tug-editor-context-menu";
@@ -181,7 +181,7 @@ const noopSubmit = (): void => {};
 // Why module-scope, not per-instance: a Compartment's identity is the
 // reference itself; dispatching `reconfigure(...)` on a Compartment
 // the view doesn't carry is a no-op. Module-scope means every
-// `TugEdit` mount uses the same Compartment identities — the
+// `TugTextEditor` mount uses the same Compartment identities — the
 // `buildExtensions` call wraps each one for that particular view
 // when the view is constructed, and subsequent `useLayoutEffect`
 // passes can reach into the live view and reconfigure.
@@ -204,7 +204,7 @@ const lineNumbersCompartment = new Compartment();
 const readOnlyCompartment = new Compartment();
 
 // ---------------------------------------------------------------------------
-// TugEditDelegate
+// TugTextEditorDelegate
 // ---------------------------------------------------------------------------
 
 /**
@@ -219,7 +219,7 @@ const readOnlyCompartment = new Compartment();
  * the component has been disposed. See the lifecycle note in the
  * module docstring.
  */
-export interface TugEditDelegate {
+export interface TugTextEditorDelegate {
   /**
    * Return the live `EditorView`, or `null` if no view is
    * currently mounted.
@@ -273,7 +273,7 @@ export interface TugEditDelegate {
    * and (when `state` is supplied) asserts selection + scrollTop
    * verbatim from the bag. The single legitimate call site for
    * mutating the global Selection + claiming document focus from a
-   * `tug-edit` instance. [L23]
+   * `tug-text-editor` instance. [L23]
    *
    * No-op when the editor is not mounted.
    */
@@ -295,7 +295,7 @@ export interface TugEditDelegate {
 }
 
 // ---------------------------------------------------------------------------
-// TugEditProps
+// TugTextEditorProps
 // ---------------------------------------------------------------------------
 
 /**
@@ -307,32 +307,32 @@ export interface TugEditDelegate {
  *   `"ring"`        — focused state draws an accent-colored ring
  *                    around the host wrapper.
  */
-export type TugEditFocusStyle = "background" | "ring";
+export type TugTextEditorFocusStyle = "background" | "ring";
 
 /**
- * Props for `TugEdit`. The component renders a host `<div>`
+ * Props for `TugTextEditor`. The component renders a host `<div>`
  * around the live `EditorView`; standard `<div>` props
  * (`className`, `style`, `data-*`, etc.) flow through to the
  * host.
  */
-export interface TugEditProps
+export interface TugTextEditorProps
   extends Omit<React.ComponentPropsWithoutRef<"div">, "onChange"> {
   /**
    * Optional className applied to the host wrapper. Composed with
-   * the component's own `tug-edit` base class.
+   * the component's own `tug-text-editor` base class.
    */
   className?: string;
   /**
    * Focus indication style for the host wrapper.
    * @default "background"
-   * @selector .tug-edit[data-focus-style]
+   * @selector .tug-text-editor[data-focus-style]
    */
-  focusStyle?: TugEditFocusStyle;
+  focusStyle?: TugTextEditorFocusStyle;
   /**
    * Suppress the host wrapper's border. For embedding in compound
    * components where the parent owns the border treatment.
    * @default false
-   * @selector .tug-edit[data-borderless]
+   * @selector .tug-text-editor[data-borderless]
    */
   borderless?: boolean;
   /**
@@ -418,7 +418,7 @@ export interface TugEditProps
    * through `selectionGuard`'s inactive highlight.
    *
    * Default `true`. Set to `false` for stand-alone harnesses
-   * (storybook, unit tests) that mount `TugEdit` outside a deck;
+   * (storybook, unit tests) that mount `TugTextEditor` outside a deck;
    * the registration is silently a no-op when the
    * `CardStatePreservationContext` is null, but the
    * `preserveState=false` opt-out skips the hook entirely.
@@ -436,10 +436,10 @@ export interface TugEditProps
   /**
    * Maximum visible rows before vertical scrolling kicks in. Caps the
    * height of `.cm-scroller` via CSS:
-   * `max-height: calc(var(--tug-edit-max-rows) * 1lh + padding)`.
+   * `max-height: calc(var(--tug-text-editor-max-rows) * 1lh + padding)`.
    * Ignored when `maximized` is true.
    * @default 8
-   * @selector .tug-edit (CSS variable `--tug-edit-max-rows`)
+   * @selector .tug-text-editor (CSS variable `--tug-text-editor-max-rows`)
    */
   maxRows?: number;
   /**
@@ -450,7 +450,7 @@ export interface TugEditProps
    * the bottom of a flex parent (`align-self: flex-end` /
    * `margin-top: auto` patterns).
    * @default "down"
-   * @selector .tug-edit[data-grow-direction]
+   * @selector .tug-text-editor[data-grow-direction]
    */
   growDirection?: "up" | "down";
   /**
@@ -459,7 +459,7 @@ export interface TugEditProps
    * `maxRows` is ignored and `.cm-scroller` switches from
    * `max-height` (capped) to `flex: 1 1 auto` (fills parent).
    * @default false
-   * @selector .tug-edit[data-maximized]
+   * @selector .tug-text-editor[data-maximized]
    */
   maximized?: boolean;
   /**
@@ -467,7 +467,7 @@ export interface TugEditProps
    * CM6 rejects content edits at the transaction level, and toggles
    * `data-disabled` on the host wrapper for visual state.
    * @default false
-   * @selector .tug-edit[data-disabled]
+   * @selector .tug-text-editor[data-disabled]
    */
   disabled?: boolean;
   /**
@@ -530,7 +530,7 @@ export interface TugEditProps
  */
 function buildExtensions(
   host: HTMLElement,
-  getKeymapConfig: () => TugEditKeymapConfig,
+  getKeymapConfig: () => TugTextEditorKeymapConfig,
   getCompletionProviders: () => Record<string, CompletionProvider>,
   getDropHandler: () => DropHandler | null,
   initial: {
@@ -555,14 +555,14 @@ function buildExtensions(
     // Typeahead first so its `Prec.highest` keymap sees Enter / Tab /
     // Arrows / Escape before the Step 4 keymap when a session is
     // active. When inactive, every branch returns `false` and the
-    // keystroke falls through to `tugEditKeymap` and beyond.
+    // keystroke falls through to `tugTextEditorKeymap` and beyond.
     tugCompletionExt(getCompletionProviders),
     // tug-specific keymap runs before defaultKeymap / historyKeymap
-    // (Prec.high inside `tugEditKeymap`) so Enter / numpad Enter /
+    // (Prec.high inside `tugTextEditorKeymap`) so Enter / numpad Enter /
     // Cmd-Enter / Cmd-Up / Cmd-Down get tug semantics. Falling
     // through (returning false) lets the default bindings handle
     // newline insertion, undo/redo, selectAll, and the rest.
-    tugEditKeymap(getKeymapConfig),
+    tugTextEditorKeymap(getKeymapConfig),
     keymap.of([...defaultKeymap, ...historyKeymap]),
     // Selection + caret painted by custom layers. We deliberately
     // do NOT use `drawSelection`: drawSelection bundles a styled
@@ -576,7 +576,7 @@ function buildExtensions(
     //   - `tugSelectionLayer` paints `.cm-selectionBackground` divs
     //     for non-empty ranges; survives editor blur and covers
     //     atom widgets cleanly.
-    //   - `tugCaretLayer` paints a single `.tug-edit-caret` div at
+    //   - `tugCaretLayer` paints a single `.tug-text-editor-caret` div at
     //     the head of a focused, collapsed selection. The native
     //     WebKit caret is suppressed by `caret-color: transparent`
     //     on `.cm-content` (in `tugTheme`); the layer paints the
@@ -606,8 +606,8 @@ function buildExtensions(
   ];
 }
 
-export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
-  function TugEdit(
+export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEditorProps>(
+  function TugTextEditor(
     {
       className,
       focusStyle = DEFAULT_FOCUS_STYLE,
@@ -634,7 +634,7 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
       letterSpacing,
       style: styleProp,
       ...rest
-    }: TugEditProps,
+    }: TugTextEditorProps,
     ref,
   ) {
     const hostRef = useRef<HTMLDivElement>(null);
@@ -655,8 +655,8 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
     // effect re-run.
     //
     // When Vite hot-replaces a module whose source contains a hook
-    // call (e.g. an edit to `tug-edit.tsx` itself, or to anything
-    // it transitively imports like `tug-edit/theme.ts`), Fast
+    // call (e.g. an edit to `tug-text-editor.tsx` itself, or to anything
+    // it transitively imports like `tug-text-editor/theme.ts`), Fast
     // Refresh re-runs every effect *defined in that module's
     // source*. The component instance is preserved — `useRef`
     // values survive — but the mount effect's cleanup runs (which
@@ -825,11 +825,11 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
 
     // Live keymap config. The extension's keydown handler reads
     // `keymapConfigRef.current` via the thunk passed to
-    // `tugEditKeymap`, so prop changes take effect on the next
+    // `tugTextEditorKeymap`, so prop changes take effect on the next
     // keystroke without rebuilding any extension. Initialised with
     // a no-op submit; the layout-effect below installs the real
     // values before any user input can land [L03, L07].
-    const keymapConfigRef = useRef<TugEditKeymapConfig>({
+    const keymapConfigRef = useRef<TugTextEditorKeymapConfig>({
       returnAction,
       numpadEnterAction,
       onSubmit: noopSubmit,
@@ -1288,7 +1288,7 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
       // Emit `engine-ready` for harness tests that gate on the
       // EditorView being constructed inside this card. Mirrors the
       // matching emit site in `tug-prompt-input.tsx`. The cardId is
-      // read from the ref so a stand-alone TugEdit (no enclosing
+      // read from the ref so a stand-alone TugTextEditor (no enclosing
       // CardHost) is silent — there's no card to associate the
       // event with.
       const readyCardId = cardIdRef.current;
@@ -1296,13 +1296,13 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
         deckTrace.record({
           kind: "engine-ready",
           cardId: readyCardId,
-          engine: "tug-edit",
+          engine: "tug-text-editor",
         });
       }
 
       // Replay any onRestore payload that fired before this mount
       // effect ran. React fires child effects before parent
-      // effects, so the `TugEditStatePreservation` child's
+      // effects, so the `TugTextEditorStatePreservation` child's
       // registration may have dispatched onRestore one tick before
       // the EditorView was constructed. The hook stashed the
       // payload on `pendingRestoreRef`; we apply it now through the
@@ -1382,7 +1382,7 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
 
     // Host inline style: caller-supplied `style` flows through first,
     // then we layer the substrate-managed CSS variables on top so prop
-    // values win over a generic `style` object. `--tug-edit-max-rows`
+    // values win over a generic `style` object. `--tug-text-editor-max-rows`
     // is unitless (consumed by `calc(... * 1lh)` in the CSS); the
     // typography variables fall through verbatim so callers can pass
     // any valid CSS value. Each variable is conditionally set so an
@@ -1392,7 +1392,7 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
       if (styleProp !== undefined) {
         Object.assign(next, styleProp);
       }
-      next["--tug-edit-max-rows"] = maxRows;
+      next["--tug-text-editor-max-rows"] = maxRows;
       if (fontFamily !== undefined) {
         next["--tug-font-family-editor"] = fontFamily;
       }
@@ -1413,14 +1413,14 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
       <ResponderScope>
         <div
           ref={composedHostRef}
-          data-slot="tug-edit"
+          data-slot="tug-text-editor"
           data-focus-style={focusStyle}
           data-borderless={borderless ? "" : undefined}
           data-disabled={disabled ? "" : undefined}
           data-maximized={maximized ? "" : undefined}
           data-grow-direction={growDirection}
           aria-disabled={disabled || undefined}
-          className={cn("tug-edit", className)}
+          className={cn("tug-text-editor", className)}
           style={hostStyle}
           {...rest}
         >
@@ -1441,7 +1441,7 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
               menu component only enters the React tree when actually
               open — keeping its `useRequiredResponderChain` hook off
               the path for stand-alone harnesses (storybook, unit
-              tests) that mount `TugEdit` outside a
+              tests) that mount `TugTextEditor` outside a
               `ResponderChainProvider` and never open the menu. The
               menu's own internal positioning runs via
               `useLayoutEffect` + DOM writes inside the menu, so the
@@ -1468,7 +1468,7 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
             enclosing `CardHost` via `useCardStatePreservation`.
             [L23], [L03]. */}
         {preserveState && (
-          <TugEditStatePreservation
+          <TugTextEditorStatePreservation
             viewRef={viewRef}
             pendingRestoreRef={pendingRestoreRef}
           />
@@ -1610,7 +1610,7 @@ function paintCompletionPopup(
   // coalesces multiple repaints in the same frame down to a single
   // measurement.
   view.requestMeasure({
-    key: "tug-edit-completion-position",
+    key: "tug-text-editor-completion-position",
     read(): {
       anchorCoords: { left: number; right: number; top: number; bottom: number } | null;
       hostRect: DOMRect;

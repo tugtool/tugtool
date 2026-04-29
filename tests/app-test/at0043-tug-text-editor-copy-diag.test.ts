@@ -1,6 +1,6 @@
 /**
- * at0043-tug-edit-copy-diag.test.ts — empirical clipboard read-back
- * for tug-edit copy across selection classes (text-only / mixed /
+ * at0043-tug-text-editor-copy-diag.test.ts — empirical clipboard read-back
+ * for tug-text-editor copy across selection classes (text-only / mixed /
  * atom-only).
  *
  * ## Why this exists
@@ -57,19 +57,19 @@ const TEST_TIMEOUT_MS = 90_000;
 // ---------------------------------------------------------------------------
 
 const TUG_EDIT_CONTENT_SELECTOR =
-  '[data-slot="tug-edit"] .cm-content';
+  '[data-slot="tug-text-editor"] .cm-content';
 
 /**
  * The gallery card renders five `TugPushButton`s in
- * `.gallery-text-edit-atom-row`, one per atom kind: file, command,
+ * `.gallery-text-editor-atom-row`, one per atom kind: file, command,
  * doc, image, link. We only need one — pick "file" by index. Its
  * onClick calls `editRef.current?.insertAtom({ kind: "atom", type:
  * "file", label: "main.ts", value: "/project/src/main.ts" })`.
  */
 const GALLERY_FILE_ATOM_BUTTON_SELECTOR =
-  '[data-card-id="A"] .gallery-text-edit-atom-row [data-slot="tug-push-button"]:nth-of-type(1)';
+  '[data-card-id="A"] .gallery-text-editor-atom-row [data-slot="tug-push-button"]:nth-of-type(1)';
 
-/** Label of the "file" sample atom in `gallery-text-edit.tsx`. */
+/** Label of the "file" sample atom in `gallery-text-editor.tsx`. */
 const FILE_ATOM_LABEL = "main.ts";
 
 // ---------------------------------------------------------------------------
@@ -79,7 +79,7 @@ const FILE_ATOM_LABEL = "main.ts";
 function deckShape() {
   return {
     cards: [
-      { id: "A", componentId: "gallery-text-edit", title: "TugEdit A", closable: true },
+      { id: "A", componentId: "gallery-text-editor", title: "TugTextEditor A", closable: true },
     ],
     panes: [
       {
@@ -212,7 +212,7 @@ async function readClipboard(app: App): Promise<ClipboardSnapshot> {
 // ---------------------------------------------------------------------------
 
 describe.skipIf(!SHOULD_RUN)(
-  "m43: tug-edit copy clipboard read-back across selection classes",
+  "m43: tug-text-editor copy clipboard read-back across selection classes",
   () => {
     test(
       "text-only / mixed / atom-only ⌘C produces the documented bridge text payload",
@@ -222,7 +222,7 @@ describe.skipIf(!SHOULD_RUN)(
           seedTugbankForLaunch(tugbankPath);
 
           const app = await launchTugApp({
-            testName: "m43-tug-edit-copy-diag",
+            testName: "m43-tug-text-editor-copy-diag",
             env: { TUGBANK_PATH: tugbankPath },
             persistInTestMode: true,
           });

@@ -1,8 +1,8 @@
 /**
- * tug-edit/host-state.ts — bridges CodeMirror 6 focus state into a
+ * tug-text-editor/host-state.ts — bridges CodeMirror 6 focus state into a
  * `data-focused` attribute on the React-owned host wrapper.
  *
- * The host wrapper (`<div class="tug-edit">`) is not the focused
+ * The host wrapper (`<div class="tug-text-editor">`) is not the focused
  * element when the editor has focus — `.cm-content` is. CSS rules that
  * style the host based on editor focus therefore cannot use the `:focus`
  * pseudo-class. This extension subscribes to CM6's update stream and
@@ -23,7 +23,7 @@ import type { Extension } from "@codemirror/state";
  * `host.dataset.focused` ("" when focused, attribute removed when not).
  *
  * The host element is captured by closure when the extension is created;
- * `TugEdit` constructs the extension once per `EditorView` mount, so the
+ * `TugTextEditor` constructs the extension once per `EditorView` mount, so the
  * captured `host` is always the live wrapper for that instance.
  */
 export function hostFocusMirror(host: HTMLElement): Extension {

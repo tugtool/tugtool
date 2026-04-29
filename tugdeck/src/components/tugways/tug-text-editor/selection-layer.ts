@@ -1,5 +1,5 @@
 /**
- * tug-edit/selection-layer.ts — custom CodeMirror 6 layer that paints
+ * tug-text-editor/selection-layer.ts — custom CodeMirror 6 layer that paints
  * `.cm-selectionBackground` divs behind every non-empty selection
  * range.
  *

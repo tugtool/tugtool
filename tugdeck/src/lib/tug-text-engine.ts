@@ -176,7 +176,7 @@ export interface TugTextEditingState {
    *
    * Editors that wrap lines never accumulate non-zero horizontal
    * scroll, so this stays at 0 in practice for them. Editors with
-   * line-wrap off (e.g. the `tug-edit` substrate's default) need
+   * line-wrap off (e.g. the `tug-text-editor` substrate's default) need
    * this axis to round-trip whenever the user has scrolled
    * horizontally. Optional for the same forward-compat reason as
    * {@link scrollTop}.

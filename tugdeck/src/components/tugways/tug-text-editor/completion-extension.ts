@@ -1,5 +1,5 @@
 /**
- * tug-edit/completion-extension.ts — typeahead completion engine.
+ * tug-text-editor/completion-extension.ts — typeahead completion engine.
  *
  * Detects a registered trigger character (`@`, `/`, etc. — supplied by
  * the host via `completionProviders`), opens a popup of matching
@@ -64,11 +64,11 @@
  *        in `useLayoutEffect` so the first paint observes the right
  *        snapshot, [L06] popup position is set via DOM style
  *        assignment, [L07] handlers and the `getProviders` thunk read
- *        the latest provider table at call time, [L11] tug-edit is
+ *        the latest provider table at call time, [L11] tug-text-editor is
  *        the responder for typeahead-accept; popup items dispatch
  *        directly into `acceptCompletionAt` because the popup is a
  *        substrate-internal UI, [L19] file structure, [L20] atom
- *        insertion uses the same `addAtomsEffect` other tug-edit
+ *        insertion uses the same `addAtomsEffect` other tug-text-editor
  *        modules use — no token-slot violations or composed-child
  *        overrides, [L22] async provider results stream into the
  *        field via a direct subscribe-and-dispatch path, never

@@ -1,5 +1,5 @@
 /**
- * at0048-tug-edit-caret-rendering.test.ts — Step 9.6 caret-layer
+ * at0048-tug-text-editor-caret-rendering.test.ts — Step 9.6 caret-layer
  * smoke test. Asserts the CM6-owned caret renders as exactly one
  * DOM node with line-height-derived geometry across the four
  * canonical doc shapes.
@@ -37,10 +37,10 @@ import {
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 90_000;
 
-const TUG_EDIT_CONTENT_SELECTOR = '[data-slot="tug-edit"] .cm-content';
+const TUG_EDIT_CONTENT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 const FILE_ATOM_BUTTON_SELECTOR =
-  '[data-card-id="A"] .gallery-text-edit-atom-row [data-slot="tug-push-button"]:nth-of-type(1)';
-const CARET_SELECTOR = '[data-card-id="A"] .tug-edit-caret';
+  '[data-card-id="A"] .gallery-text-editor-atom-row [data-slot="tug-push-button"]:nth-of-type(1)';
+const CARET_SELECTOR = '[data-card-id="A"] .tug-text-editor-caret';
 
 /** Expected caret height — `.cm-line::before` ghost pins to 1.75em at 14px. */
 const EXPECTED_CARET_HEIGHT_PX = 24.5;
@@ -53,7 +53,7 @@ const HEIGHT_TOLERANCE_PX = 1.0;
 function deckShape() {
   return {
     cards: [
-      { id: "A", componentId: "gallery-text-edit", title: "TugEdit A", closable: true },
+      { id: "A", componentId: "gallery-text-editor", title: "TugTextEditor A", closable: true },
     ],
     panes: [
       {
@@ -125,16 +125,16 @@ async function insertFileAtom(app: App): Promise<void> {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "m48: tug-edit caret rendering across doc shapes",
+  "m48: tug-text-editor caret rendering across doc shapes",
   () => {
     test(
-      "single .tug-edit-caret with line-box height across empty/text/atom/mixed",
+      "single .tug-text-editor-caret with line-box height across empty/text/atom/mixed",
       async () => {
         const tugbankPath = mkTempTugbank();
         try {
           seedTugbankForLaunch(tugbankPath);
           const app = await launchTugApp({
-            testName: "m48-tug-edit-caret-rendering",
+            testName: "m48-tug-text-editor-caret-rendering",
             env: { TUGBANK_PATH: tugbankPath },
             persistInTestMode: true,
           });

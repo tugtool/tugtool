@@ -1,5 +1,5 @@
 /**
- * tug-edit/atomic-ranges.ts — provider that lifts the atom decoration
+ * tug-text-editor/atomic-ranges.ts — provider that lifts the atom decoration
  * field into `EditorView.atomicRanges`.
  *
  * `EditorView.atomicRanges` tells CM6 which document ranges should

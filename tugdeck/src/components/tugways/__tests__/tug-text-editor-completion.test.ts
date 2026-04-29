@@ -1,5 +1,5 @@
 /**
- * tug-edit-completion — pure-logic tests for the typeahead engine.
+ * tug-text-editor-completion — pure-logic tests for the typeahead engine.
  *
  * Scope: the functions that compute typeahead state transitions
  * without depending on a live `EditorView`, real focus, or DOM
@@ -26,7 +26,7 @@ import {
   detectTriggerInsertion,
   deriveQueryUpdate,
   lookupCompletionProvider,
-} from "@/components/tugways/tug-edit/completion-extension";
+} from "@/components/tugways/tug-text-editor/completion-extension";
 import type {
   CompletionItem,
   CompletionProvider,
