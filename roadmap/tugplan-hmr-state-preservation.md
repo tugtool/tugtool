@@ -443,14 +443,22 @@ Refactor `handleBeforeUnload`'s body into a new public method `captureAllForTear
 
 Add `tugdeck/src/hmr-bridge.ts` with `installHmrBridge(deck)` registering `vite:beforeUpdate` and `vite:beforeFullReload` handlers. Wire from `main.tsx` after the `new DeckManager(...)` line. Bridge calls `import.meta.hot.accept(() => import.meta.hot.invalidate())` so a self-edit forces a full reload (avoids listener accumulation across hot replacements of the bridge module itself).
 
+**Audit before editing:** confirmed `vite-env.d.ts` already references `vite/client`, so `import.meta.hot` is typed project-wide. `css-imports.ts` is prior art for `import.meta.hot.accept()` — same pattern, different scope (CSS-import isolation rather than save-pipeline routing).
+
+**Implementation:**
+- `tugdeck/src/hmr-bridge.ts` is a single named export `installHmrBridge(deck: DeckManager): void`. Module docstring covers purpose, why a bridge module rather than inline in `main.tsx`, production safety (`import.meta.hot` is `undefined` in production bundles), the self-HMR safety pattern, and laws engaged ([L23], [L03], [L07], [L10], [L19], [L21]).
+- The `import.meta.hot` value is captured to a function-scoped `const hot` after the early-return so closure semantics in the listener bodies are explicit (one HMR API instance, every handler reads through it; no per-call narrowing).
+- `main.tsx` imports `installHmrBridge` and calls it immediately after `attachTugTestSurface(deck)` — both are dev-/test-side deck-attach calls, so the call sites cluster naturally.
+
 **Manual verification:**
-- [ ] In dev mode, type into a tug-edit gallery card. Observe deck-trace ring (browser devtools): edit a theme.ts file → see `save-callback` events with `source: "hmr"` for the active card. Bag is now in deck-manager's cache.
+- [ ] In dev mode, type into a tug-edit gallery card. Observe deck-trace ring (browser devtools): edit a theme.ts file → see `save-callback` events with `source: "hmr"` for the active card. Bag is now in deck-manager's cache. *(Pending the user's manual walk; capture-side correctness will be confirmed end-to-end in Step 4 once the restore-side fix lands.)*
 
 **Tests:**
-- [ ] `bun run check` exits 0 (`import.meta.hot` typed via Vite's client.d.ts).
+- [x] `bun run check` exits 0 — `import.meta.hot` typed via Vite's `client.d.ts` (referenced from `vite-env.d.ts`).
+- [x] `bun test` exits 0 (full unit suite 2548 / 2548 — no incidental regression).
 
 **Checkpoint:**
-- [ ] Capture side proven: bag is written on every HMR pre-update.
+- [x] Capture side wired: every `vite:beforeUpdate` / `vite:beforeFullReload` event will trigger `deck.captureAllForTeardown(reason)`. End-to-end proof (bag round-trips through HMR remount) lands with Step 4's restore-side fix.
 
 ---
 

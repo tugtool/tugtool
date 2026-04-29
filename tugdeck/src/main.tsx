@@ -28,6 +28,7 @@ import { initMotionObserver } from "./components/tugways/scale-timing";
 import { initThemeTokens } from "./theme-tokens";
 import { deserialize } from "./serialization";
 import { attachTugTestSurface } from "./test-surface";
+import { installHmrBridge } from "./hmr-bridge";
 
 /**
  * `window.tugdeck` — the single namespace the native Swift host uses
@@ -200,6 +201,15 @@ if (!container) {
   // `tugapp/Sources/TestHarness/TestHarnessUserScript.swift`.
   // See `test-surface.ts` for the full surface and attach-site rationale ([D03]/[D08]).
   attachTugTestSurface(deck);
+
+  // Install the Vite-HMR bridge so React Fast Refresh remounts (the
+  // dev-only fifth and sixth "known transitions" beyond tab-switch /
+  // saveState / beforeunload / close-before-destroy) trigger the
+  // same iterate-and-save pass as `beforeunload`. The bridge is a
+  // no-op in production — `import.meta.hot` is `undefined` in
+  // shipped bundles. See `hmr-bridge.ts` for the full rationale and
+  // the [L23] preservation contract this extension honors.
+  installHmrBridge(deck);
 
   // Wire the per-card services store to the deck-manager so it can
   // detect card removals and send `close_session` for any held
