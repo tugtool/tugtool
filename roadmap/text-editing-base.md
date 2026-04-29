@@ -405,38 +405,82 @@ Each step's `**References:**` line cites the law IDs the step engages. Step 12 (
 
 **Verdict:** Reject for now. Revisit only if both CM6 and Lexical fail.
 
-#### tug-prompt-input feature surface {#t01-feature-surface}
+#### tug-edit prop surface {#t01-feature-surface}
 
-**Table T01: tug-prompt-input feature surface (mirror in `tug-edit`)** {#t01-feature-surface}
+**Table T01: `tug-edit` prop surface** {#t01-feature-surface}
 
-| Prop / behavior | Today | `tug-edit` mapping |
-|---|---|---|
-| `placeholder` | Empty-state hint | `@codemirror/view` placeholder extension |
-| `maxRows` | Visible rows before scroll | CSS `max-height: calc(line-height * maxRows)` on `.cm-scroller` |
-| `returnAction` (`"submit"` / `"newline"`) | Return-key behavior on main keyboard | High-priority CM6 keymap on `Enter` |
-| `numpadEnterAction` (`"submit"` / `"newline"`) | Enter-key behavior on numpad | Distinct keymap entry; numpad Enter is `code: "NumpadEnter"` |
-| `onSubmit` | Submit handler | Invoked by submit-action keymap |
-| `onChange` | Content-change handler | CM6 `EditorView.updateListener` filtering on `update.docChanged` |
-| `completionProviders` | `Record<trigger, CompletionProvider>` | CM6 extension watching trigger characters; existing menu UI rendered alongside the editor DOM |
-| `historyProvider` | Cmd+Up / Cmd+Down navigation | Custom keymap dispatching transactions |
-| `onTypeaheadChange` | External observer of typeahead | Same callback shape; fired from the completion extension |
-| `dropHandler` | DragEvent → `AtomSegment[]` | `EditorView` `domEventHandlers` with `posAtCoords` for insertion offset |
-| `disabled` | Read-only | `EditorState.readOnly` facet + CSS class |
-| `completionDirection` (`"up"` / `"down"`) | Popup direction | Existing menu UI prop, unchanged |
-| `growDirection` (`"up"` / `"down"`) | Editor grow direction | Wrapper flex direction; CM6 default for "down", flex-end alignment for "up" |
-| `maximized` | Fill flex parent | CSS `flex: 1 1 auto` on outer; ignore `maxRows` |
-| `focusStyle` (`"background"` / `"ring"`) | Focus indication | CSS class toggled via CM6 `EditorView.focusChangeEffect`-equivalent listener |
-| `borderless` | Suppress border | CSS modifier |
-| `routePrefixes` | First-char route-detect glyphs | CM6 transaction filter on offset 0; first-char insertion replaces with route atom |
-| `onRouteChange` | Route change callback | Fired by the route-prefix transaction filter |
-| `preserveState` | [L23] state preservation toggle | Conditional `useCardStatePreservation` registration |
-| Cut / copy / paste with atoms | U+FFFC + sidecar | `clipboardInputFilter` / `clipboardOutputFilter` facets |
-| Right-click classifier | "near-caret" vs "within-range" vs "elsewhere" | Adapter ports to CM6 selection geometry via `coordsAtPos` / `posAtCoords` |
-| Active / inactive paint ([L23]) | `paintMirrorAsActive` / `paintMirrorAsInactive` | Active: `EditorView.dispatch({ selection })` + focus. Inactive: `selectionGuard.cardRanges` Range against `cm-content` |
-| Drag-and-drop file → atom | File drop produces atoms | `domEventHandlers.drop` with `posAtCoords` |
-| Theme switch live update | CSS variables propagate; atoms regenerate | CSS variables propagate automatically; atom regeneration via `subscribeThemeChange` triggers a re-decoration transaction |
-| Undo / redo | Native `execCommand` undo | `@codemirror/commands` history extension + Cmd+Z / Cmd+Shift+Z keymap |
-| IME composition | `compositionstart` / `compositionend` lifecycle | CM6 native IME handling; verified in [Step 6](#step-6) |
+The canonical enumeration of every prop and behavior `tug-edit`
+exposes, grouped by category. The "Origin" column distinguishes
+props that exist for parity with `tug-prompt-input` from new props
+introduced on `tug-edit`. The "Status" column flags props that have
+been deferred from the current spike.
+
+Step 11 walks this table top-to-bottom: each row that isn't deferred
+needs a control, toggle, or input on the gallery card.
+
+##### Layout / state
+
+| Prop / behavior | Origin | Today / Mapping | Status |
+|---|---|---|---|
+| `placeholder` | Parity with `tug-prompt-input` | `@codemirror/view` placeholder extension via Compartment | Implemented (Step 10) |
+| `maxRows` | Parity with `tug-prompt-input` | CSS `max-height: calc(var(--tug-edit-max-rows) * 1lh + 16px)` on `.cm-scroller`; ignored when `maximized` | Implemented (Step 10) |
+| `growDirection` (`"up"` / `"down"`) | Parity with `tug-prompt-input` | Host `data-grow-direction`; `"up"` adds `margin-top: auto` for chat-input pattern | Implemented (Step 10) |
+| `maximized` | Parity with `tug-prompt-input` | Host `data-maximized`; switches `.cm-scroller` from max-height cap to `flex: 1 1 auto` | Implemented (Step 10) |
+| `disabled` | Parity with `tug-prompt-input` | `EditorState.readOnly` facet via Compartment + `data-disabled` / `aria-disabled` on host | Implemented (Step 10) |
+| `focusStyle` (`"background"` / `"ring"`) | Parity with `tug-prompt-input` | Host `data-focus-style` toggled via CM6 `EditorView.focusChangeEffect` listener | Implemented (earlier step) |
+| `borderless` | Parity with `tug-prompt-input` | Host `data-borderless` CSS modifier | Implemented (earlier step) |
+| `preserveState` | Parity with `tug-prompt-input` | Conditional `useCardStatePreservation` registration | Implemented (earlier step) |
+
+##### Behavior
+
+| Prop / behavior | Origin | Today / Mapping | Status |
+|---|---|---|---|
+| `returnAction` (`"submit"` / `"newline"`) | Parity with `tug-prompt-input` | High-priority CM6 keymap on `Enter` | Implemented (earlier step) |
+| `numpadEnterAction` (`"submit"` / `"newline"`) | Parity with `tug-prompt-input` | Distinct keymap entry; numpad Enter is `code: "NumpadEnter"` | Implemented (earlier step) |
+| `onSubmit` | Parity with `tug-prompt-input` | Invoked by submit-action keymap | Implemented (earlier step) |
+| `onChange` | Parity with `tug-prompt-input` | CM6 `EditorView.updateListener` filtering on `update.docChanged` | Implemented (earlier step) |
+| `completionProviders` | Parity with `tug-prompt-input` | CM6 extension watching trigger characters; existing menu UI rendered alongside the editor DOM | Implemented (earlier step) |
+| `completionDirection` (`"up"` / `"down"`) | Parity with `tug-prompt-input` | Popup direction; existing menu UI prop | Implemented (earlier step) |
+| `historyProvider` | Parity with `tug-prompt-input` | Custom keymap dispatching transactions | Implemented (earlier step) |
+| `onTypeaheadChange` | Parity with `tug-prompt-input` | Same callback shape; fired from the completion extension | Implemented (earlier step) |
+| `dropHandler` | Parity with `tug-prompt-input` | `EditorView.domEventHandlers` with `posAtCoords` for insertion offset | Implemented (earlier step) |
+| `routePrefixes` | Parity with `tug-prompt-input` | CM6 transaction filter on offset 0; first-char insertion replaces with route atom | **Deferred** to a follow-on plan ([Q04](#q04-route-atom-position)) |
+| `onRouteChange` | Parity with `tug-prompt-input` | Fired by the route-prefix transaction filter | **Deferred** to a follow-on plan ([Q04](#q04-route-atom-position)) |
+
+##### Typography (new on `tug-edit`)
+
+`tug-prompt-input` reads typography from CSS tokens directly and exposes no React props for them. `tug-edit` lifts each into a prop so consumers can tune typography per-instance without writing CSS overrides; the same tokens drive the defaults via `var(--tug-…-editor, fallback)` reads in the theme.
+
+| Prop | Origin | Today / Mapping | Status |
+|---|---|---|---|
+| `fontFamily` | New on `tug-edit` (Step 10) | Inline `--tug-font-family-editor` on host wrapper; theme reads via `var(--tug-font-family-editor, inherit)` | Implemented (Step 10) |
+| `fontSize` | New on `tug-edit` (Step 10) | Inline `--tug-font-size-editor` on host wrapper; theme reads via `var(--tug-font-size-editor, 14px)` | Implemented (Step 10) |
+| `lineHeight` (`number \| string`) | New on `tug-edit` (Step 10) | Inline `--tug-line-height-editor` on host wrapper; theme reads via `var(--tug-line-height-editor, 1.75)`. `.cm-line::before` ghost uses `1lh` so any unit propagates | Implemented (Step 10) |
+| `letterSpacing` | New on `tug-edit` (Step 10) | Inline `--tug-letter-spacing-editor` on host wrapper; theme reads via `var(--tug-letter-spacing-editor, normal)` | Implemented (Step 10) |
+
+##### View controls (new on `tug-edit`)
+
+`tug-prompt-input` is a fixed single-paragraph layout with no view toggles. `tug-edit` exposes two CM6-native view-control props.
+
+| Prop | Origin | Today / Mapping | Status |
+|---|---|---|---|
+| `lineWrap` (boolean) | New on `tug-edit` (Step 10) | `EditorView.lineWrapping` Extension via Compartment; sets `white-space: break-spaces` on `.cm-content` | Implemented (Step 10) |
+| `lineNumbers` (boolean) | New on `tug-edit` (Step 10) | `lineNumbers()` from `@codemirror/view` via Compartment; left gutter | Implemented (Step 10) |
+
+##### Cross-cutting behaviors
+
+These aren't React props but are part of the prop / behavior surface
+that the gallery card must exercise.
+
+| Behavior | Origin | Today / Mapping | Status |
+|---|---|---|---|
+| Cut / copy / paste with atoms | Parity with `tug-prompt-input` | U+FFFC + sidecar via `clipboardInputFilter` / `clipboardOutputFilter` facets | Implemented (earlier step) |
+| Right-click classifier | Parity with `tug-prompt-input` | "near-caret" vs "within-range" vs "elsewhere"; adapter ports to CM6 selection geometry via `coordsAtPos` / `posAtCoords` | Implemented (earlier step) |
+| Active / inactive paint ([L23]) | Parity with `tug-prompt-input` | Active: `EditorView.dispatch({ selection })` + focus. Inactive: `selectionGuard.cardRanges` Range against `.cm-content` | Implemented (earlier step) |
+| Drag-and-drop file → atom | Parity with `tug-prompt-input` | `domEventHandlers.drop` with `posAtCoords` | Implemented (earlier step) |
+| Theme switch live update | Parity with `tug-prompt-input` | CSS variables propagate automatically; atom regeneration via `subscribeThemeChange` triggers a re-decoration transaction | Implemented (earlier step) |
+| Undo / redo | Parity with `tug-prompt-input` | `@codemirror/commands` history extension + Cmd+Z / Cmd+Shift+Z keymap | Implemented (earlier step) |
+| IME composition | Parity with `tug-prompt-input` | CM6 native IME handling; verified in [Step 6](#step-6) | Implemented (Step 6) |
 
 #### Atom motion correctness cases {#l01-atom-motion-cases}
 
@@ -1102,11 +1146,9 @@ The patches are the wrong abstraction. The caret should be CM6-owned and atomica
 - Visual reference matching the polish bar of `gallery-prompt-input.tsx`.
 
 **Tasks:**
-- [ ] Add toggles / inputs for every prop in [Table T01](#t01-feature-surface).
+- [ ] Add toggles / inputs for every prop in [Table T01](#t01-feature-surface) that isn't marked **Deferred**.
 - [ ] Atom-insert button row for each atom kind.
-- [ ] Mock providers for `@` and `/`.
-- [ ] Mock `HistoryProvider`.
-- [ ] Mock `DropHandler` (in addition to live drop).
+- [ ] Wire the real `@` / `/` completion providers, the real `HistoryProvider`, and the real `DropHandler` into the gallery card so the card exercises production handlers, not gallery-only stand-ins.
 
 **Tests:**
 - [ ] Integration: render the gallery card; assert each control mounts and dispatches.
