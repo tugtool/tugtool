@@ -207,9 +207,18 @@
  * position; the regular caret would be a competing visual signal
  * for a position the user is no longer placing.
  *
+ * Targets the `.tug-edit-caret-layer` painted by
+ * `tug-edit/caret-layer.ts`. The host wrapper carries
+ * `data-drop-active` (set by `drop-extension.ts` on
+ * dragenter/dragover and cleared on dragleave-out / drop /
+ * dragend), which is OUTSIDE the CM6 EditorView root, so the
+ * matching rule has to live here in `tug-edit.css` rather than
+ * in `tug-edit/theme.ts` (whose `&` selector roots at the CM6
+ * editor element, a child of `.tug-edit`).
+ *
  * @tug-renders-on .cm-content (background established by tug-edit/theme.ts) */
-.tug-edit[data-drop-active] .cm-content {
-  caret-color: transparent;
+.tug-edit[data-drop-active] .tug-edit-caret-layer {
+  display: none;
 }
 
 /* When the editor has a ranged selection at drag start, switch

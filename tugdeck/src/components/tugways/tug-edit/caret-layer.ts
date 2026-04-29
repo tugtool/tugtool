@@ -72,6 +72,20 @@ import type { Extension } from "@codemirror/state";
 /** Caret stroke width in pixels. Matches WebKit's native caret stroke. */
 const CARET_STROKE_WIDTH = 2;
 
+/**
+ * Upward nudge for the caret top, expressed as a fraction of the
+ * line-box height. Geometric centering (caret top = line top, height
+ * = full line box) renders a stroke spanning from the line's
+ * typographic top to its descender bottom — visually bottom-heavy
+ * because most text glyphs sit above the descender region. Shifting
+ * the caret up by ~8% of the line-box (≈2px at 24.5px line-height)
+ * aligns the stroke better with the optical center of the running
+ * text without changing its height. Line-height-dependent so larger
+ * font sizes (proportionally taller line boxes) shift
+ * proportionally.
+ */
+const CARET_TOP_NUDGE_FACTOR = 0.08;
+
 /** Idle delay before the typing-steady attribute clears and blink resumes. */
 const TYPING_IDLE_MS = 500;
 
@@ -138,11 +152,12 @@ export const tugCaretLayer: Extension = layer({
     if (lineEl === null) return [];
     const lineRect = lineEl.getBoundingClientRect();
     const base = documentBase(view);
+    const nudgeUp = lineRect.height * CARET_TOP_NUDGE_FACTOR;
     return [
       new RectangleMarker(
         "tug-edit-caret",
         coords.left - base.left,
-        lineRect.top - base.top,
+        lineRect.top - base.top - nudgeUp,
         CARET_STROKE_WIDTH,
         lineRect.height,
       ),
