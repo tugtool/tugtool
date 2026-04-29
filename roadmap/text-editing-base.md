@@ -263,6 +263,41 @@ This plan uses explicit `{#anchor}` tags on every cited heading and the `[ID] La
 
 ---
 
+#### [Q10] Row-height shape: pure CSS `max()` or JS-driven token? (DECIDED) {#q10-row-height-shape}
+
+**Question:** The fix for the atom-induced "hop" needs every `.cm-line` to be `max(declared_lineHeight, atomHeight)` tall. The substrate can express this two ways:
+
+- (a) **Pure CSS.** `.cm-line::before { height: max(1lh, var(--tug-text-editor-atom-height, 24px)); }`. Atom height is a CSS variable defined once (in `tug-atom-img.ts`'s root style or in `tug-text-editor.css`'s component-scope `body`). No JS measurement.
+- (b) **JS-driven token.** A TS constant `ATOM_HEIGHT_PX = 24` exported from `atom-decoration.ts`; the theme reads it via a generated CSS variable; the caret layer reads it directly. Single TS source of truth.
+- (c) **Both.** TS constant for JS reads (caret layer); CSS variable mirrors it for the theme's `max()`.
+
+**Why it matters:** Affects whether the atom widget owns its height (CSS-first) or the substrate code owns it (TS-first). [Q11](#q11-caret-height-source) is downstream — if the caret-layer needs the row height in JS, (b) or (c) win.
+
+**Plan to resolve:** Implementer picks during [Step 14.5](#step-14-5) T1; documents the choice in the file that owns the value.
+
+**Resolution:** DECIDED — (c) both. A single TS constant `ATOM_HEIGHT_PX` is the source of truth, exported from `atom-decoration.ts` (the file that owns the atom widget). The substrate publishes it as a CSS custom property `--tug-text-editor-atom-height` on the host wrapper at mount time so the theme's `max(1lh, var(--tug-text-editor-atom-height))` resolves at the same value. JS readers (caret layer, any future measurement code) import the constant directly. Single source, two outlets — no risk of CSS and JS disagreeing on the floor.
+
+---
+
+#### [Q11] Caret height source: `view.defaultLineHeight` or rendered row height? (DECIDED — empirical comparison during implementation) {#q11-caret-height-source}
+
+**Question:** Once the row height is `max(view.defaultLineHeight, atomHeight)`, the caret layer must size against the *rendered* row height, not `view.defaultLineHeight`. Three implementation paths:
+
+- (a) **Compute in JS.** `rowHeight = Math.max(view.defaultLineHeight, ATOM_HEIGHT_PX)`. Cheapest and most direct.
+- (b) **Read computed style.** `getComputedStyle(.cm-line, '::before').height` parsed back to px. Always tracks the actual rendered height; works regardless of where atom-height lives. Cost: one synchronous style read per caret paint.
+- (c) **Use CM6's `lineBlockAt`.** `view.lineBlockAt(head).height` divided by the number of wrapped rows on that block (via `view.viewState.heightOracle`). Tracks atom-induced height once CM6 measures it. Cost: relies on CM6 having measured the row already.
+
+**Why it matters:** Caret rendering happens on every `markers()` call (selection set, doc change, geometry change, focus change). Picking the right source affects per-paint cost AND correctness — a stale read produces a visibly mis-sized caret for one frame.
+
+**Plan to resolve:** Implement (b) and (c) side-by-side with diagnostic logging that captures both readings on every paint, plus the option (a) compute as a baseline. Walk the substrate through the gallery scenarios in [Step 14.5](#step-14-5)/T6 and compare:
+- Do (b) and (c) always agree to the pixel? Then pick the cheaper one (likely (a) if it also agrees, else (c)).
+- Do they disagree under any scenario (e.g., during a measure pass mid-frame, or when CM6 hasn't measured a fresh row yet)? Capture the disagreement in `roadmap/text-editing-base-caret-source-comparison.md`; pick the one that produced the visually-correct caret in that scenario; document the rationale.
+- The diagnostic instrumentation is removed in the same step — production code uses the chosen single source.
+
+**Resolution:** DECIDED — implement both (b) and (c), instrument the comparison, decide empirically. Document the chosen source and rationale in `caret-layer.ts` next to the production code. Remove the instrumentation (and the unchosen path) before [Step 14.5](#step-14-5) commits.
+
+---
+
 ### Risks and Mitigations {#risks}
 
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
@@ -1388,6 +1423,87 @@ The migration is shaped by two decisions the spike surfaced but did not commit t
 **Checkpoint:**
 - [x] No occurrence of the literal `tug-edit` (with word-boundary or composite-identifier forms) survives in `tugdeck/src`, `tugdeck/scripts`, `tugdeck/styles`, or `tests/app-test` outside of historical commit messages and the spike-phase historical sections of this plan. Verified via `grep -rEn "(\btug-edit\b|\bTugEdit\b|\btugx-edit\b|...)"` returning no matches.
 - [x] `bun run check`, `bun test`, `bun run audit:tokens lint` exit 0 (with the audit's preexisting 6-violation baseline unchanged — the script returns non-zero only because of those preexisting items).
+
+---
+
+#### Step 14.5: Layout polish — gutter sizing, dynamic line height, caret height, immediate prop response {#step-14-5}
+
+**Depends on:** #step-14
+
+**Commit:** `fix(tug-text-editor): gutter width, dynamic line height, caret 90%, immediate prop response`
+
+**References:** [L02], [L06], [L07], [L19], [L24], `tug-text-editor/theme.ts`, `tug-text-editor/caret-layer.ts`, `tug-text-editor/atom-decoration.ts`, `tug-text-editor.tsx`, `tug-atom-img.ts`, (#tuglaws-compliance)
+
+**Background:**
+Manual walkthrough after Step 14's rename surfaced four polish issues. None block the migration to `tug-prompt-entry` (Step 15) but each is a visible layout defect that should land on the substrate, not on the consumer:
+
+1. **Line-number gutter is too narrow.** The gutter sizes itself to fit the largest line number rendered, so a fresh editor with one line gets a 1-character gutter, then jumps wider as the user types past line 9, line 99, etc. The user's expectation: a stable gutter wide enough for four digits from mount, with numbers right-aligned.
+
+2. **Atoms make lines "hop" at small line heights.** The current `.cm-line::before` ghost (`tug-text-editor/theme.ts`) pins the line box to `1lh`. At line-heights below ~1.71 (≈24/14 with the default 14px font), atom widgets (rendered ~24px tall by `tug-atom-img.ts`) overflow the `1lh` line box and force `.cm-line` to grow to the atom's height. Adjacent text-only lines stay shorter. The user sees a vertical hop between atom-bearing and text-only lines as they type or scroll. The current `1.75` default is exactly tuned to *just* clear the atom — but anything smaller breaks. The user has stated emphatically: *no value (1.75 or any other) may be hard-coded as the floor.* Lines must always be tall enough to accommodate atoms regardless of the configured line-height.
+
+3. **Atoms must coexist with smaller line heights.** Corollary of #2 — once the line-height floor accommodates atoms, the user can set `lineHeight: 1.0` (or whatever) and atoms still fit cleanly without forcing a hop. The implementation must allow text glyphs to render at their natural baseline within a row whose height is `max(declared_line_height, atom_height)`, with atoms vertically centered within that row.
+
+4. **Caret is too tall.** The custom `tug-text-editor-caret` painted by `tug-text-editor/caret-layer.ts` uses `view.defaultLineHeight` as its stroke height. Visually the caret reads as the full line-box height — slightly larger than what users expect from a text-editing caret. Target: ~90% of the line height (subject to hand-tuning during implementation).
+
+5. **Line-number gutter doesn't update immediately on `lineHeight` prop change.** The substrate already calls `view.requestMeasure()` in a `useLayoutEffect` keyed on `[fontFamily, fontSize, lineHeight, letterSpacing]` (`tug-text-editor.tsx` ~ line 820). The content re-flows correctly, but the gutter's line-number cells keep their *previous* row heights until the user clicks back into the editor and types — at which point the gutter snaps to the new height. `requestMeasure()` alone is insufficient: CM6's `heightOracle` re-reads computed styles when scheduled, but the gutter's internal `lineMarker` heights are computed against a separate cache that only refreshes on a transaction. The fix is to either dispatch a no-op transaction alongside the measure request, or to rebuild the gutter via Compartment reconfiguration on prop change. Either way, prop change → visible gutter update must happen on the same animation frame as the content change, not on the next user interaction.
+
+The four issues span theme CSS, the atom widget contract, the caret layer, and the prop-change effect. They cluster into one polish step because they all live in the same handful of files and ship as one user-visible improvement; splitting them would invite churn (each fix would touch overlapping geometry assumptions).
+
+**Artifacts:**
+
+*Atom-height contract ([Q10](#q10-row-height-shape) = both):*
+- `tug-text-editor/atom-decoration.ts`: export a TS constant `ATOM_HEIGHT_PX` (initial value matches the current atom rendering; ~24). This is the *single source of truth* — no other file declares the value.
+- `tug-text-editor.tsx`: at mount, write the constant to the host wrapper as a CSS custom property `--tug-text-editor-atom-height` (e.g., on the same `style={hostStyle}` object that already carries `--tug-line-height-editor` and friends). The theme's `max()` reads this variable; JS readers import `ATOM_HEIGHT_PX` directly.
+- `tug-atom-img.ts`: no change required for the contract — the constant lives in `atom-decoration.ts`. If the atom rendering already publishes its height (e.g., as an SVG `viewBox` dimension), confirm the constant agrees; otherwise the constant is the canonical value and `tug-atom-img.ts` follows.
+
+*Theme — dynamic row height:*
+- `tug-text-editor/theme.ts`: replace `.cm-line::before { height: 1lh }` with `.cm-line::before { height: max(1lh, var(--tug-text-editor-atom-height, <atom-height>)) }` (or equivalent — see [Q10](#q10-row-height-shape)). This makes every line at least atom-tall while text-only lines at large line-heights still grow to the configured value. The atom widget's `vertical-align: middle !important` rule (already in place) keeps atoms centered within the row.
+- `tug-text-editor/theme.ts`: the gutter's `lineHeight` calc currently has the same `1.75` fallback. Replace the gutter's row height with the same `max(...)` formulation so the gutter rows track content rows pixel-for-pixel regardless of the configured `lineHeight`.
+
+*Theme — gutter width and alignment:*
+- `tug-text-editor/theme.ts`: add a `min-width` on `.cm-gutterElement` (or `.cm-lineNumbers`) sufficient for four digits at the gutter's font-size — e.g., `min-width: 4ch` (the `ch` unit is the width of the `0` glyph in the current font, so 4ch reliably accommodates `9999`). Confirm `text-align: right` so numbers align to the right edge regardless of digit count. The CM6 default is right-aligned; verify our theme didn't override it.
+- (Optional) `tug-text-editor.tsx`: pass a `formatNumber` option to `lineNumbers({ ... })` if a fixed-width zero-padded format is wanted instead of right-alignment. The user's spec says right-aligned; the simpler CSS-only path is preferred.
+
+*Caret height — 90% of row:*
+- `tug-text-editor/caret-layer.ts`: introduce a `CARET_HEIGHT_FACTOR = 0.9` constant. Replace the marker's `height: lineHeight` with `height: rowHeight * CARET_HEIGHT_FACTOR`. Recompute `top` so the caret stays vertically centered on the row's optical center: `top = rowCenter - height / 2`. Re-evaluate `CARET_TOP_NUDGE_FACTOR` once the height changes — the nudge was tuned against full-height; with 90% height it may not be needed at all (or may need to shrink). Hand-tune in the gallery; record the final factor in the constant's comment.
+- `tug-text-editor/caret-layer.ts`: row-height source is determined empirically per [Q11](#q11-caret-height-source). Initial implementation reads the row height *both* via `getComputedStyle(.cm-line, '::before').height` and via `view.lineBlockAt(head).height` (adjusted for wrap), and computes the JS baseline `Math.max(view.defaultLineHeight, ATOM_HEIGHT_PX)` as a third reference. A small diagnostic block logs the three values when they disagree (gated behind a `__TUG_CARET_DIAG__` flag so the cost is zero in production). The gallery walkthrough in T6 produces the comparison data; T7 below records the decision and removes the instrumentation.
+- `roadmap/text-editing-base-caret-source-comparison.md` (new, ephemeral): captures the diagnostic readings from T6, the chosen source, and the rationale. Lives next to `text-editing-base-perf-baseline.md` and the perf-after artifact.
+
+*Immediate gutter response:*
+- `tug-text-editor.tsx`: the existing typography-prop `useLayoutEffect` calls `view.requestMeasure()`. Augment it: dispatch a no-op transaction (`view.dispatch({})`) alongside the measure request so CM6's gutter cache regenerates synchronously with the next animation frame. *(Alternative: wrap `lineNumbers()` in a Compartment and `effects: [compartment.reconfigure(lineNumbersExt)]` on each typography-prop change — heavier but guaranteed full rebuild. Pick one and document the choice.)*
+- Verify the same fix covers `fontFamily`, `fontSize`, and `letterSpacing` changes — any prop that mutates pixel-level metrics should produce immediate gutter alignment.
+
+**Tasks:**
+
+- [ ] **T1 — Atom-height contract.** Per [Q10](#q10-row-height-shape)=(c): export `ATOM_HEIGHT_PX` from `atom-decoration.ts` as the single source of truth; publish it as the CSS custom property `--tug-text-editor-atom-height` on the host wrapper at mount; theme reads the CSS variable, JS reads the constant. Document the contract in the export's docstring and at the host's `style` assignment.
+- [ ] **T2 — Dynamic row height in theme.** Replace `.cm-line::before { height: 1lh }` with `max(1lh, var(--tug-text-editor-atom-height))`. Update the gutter row-height calc to use the same max. Verify the `1.75` fallbacks elsewhere in `theme.ts` are *fallbacks only* (the host wrapper always sets `--tug-line-height-editor`) and don't represent an effective floor; otherwise replace them with a clearly-marked safe-fallback comment.
+- [ ] **T3 — Gutter width / alignment.** Add `min-width: 4ch` (or equivalent) on `.cm-gutterElement` so four digits always fit. Confirm right-alignment.
+- [ ] **T4 — Caret 90% with empirical row-height source ([Q11](#q11-caret-height-source)).** Constant `CARET_HEIGHT_FACTOR = 0.9` (initial; hand-tune). Compute caret height = `rowHeight × CARET_HEIGHT_FACTOR`; recenter on row optical center. Re-evaluate `CARET_TOP_NUDGE_FACTOR` — likely shrinks or zeroes. Read `rowHeight` via *both* `getComputedStyle(.cm-line, '::before').height` and `view.lineBlockAt(head).height` (with wrap adjustment); compute the JS baseline `Math.max(view.defaultLineHeight, ATOM_HEIGHT_PX)` for reference; gate a diagnostic block behind a `__TUG_CARET_DIAG__` flag that logs disagreements only. Production paint uses one source — the choice is deferred to T7.
+- [ ] **T5 — Immediate prop response.** Either augment `view.requestMeasure()` with a no-op `view.dispatch({})` so the gutter rebuilds in the same frame, OR wrap `lineNumbers()` in a Compartment and reconfigure on each typography prop change. Confirm in the gallery: changing the `lineHeight` slider produces the new gutter row height *immediately* (no click-to-type required).
+- [ ] **T6 — Hand-tune in the gallery + collect Q11 comparison data.** Walk the substrate through these sequences in `gallery-text-editor` with the diagnostic flag on:
+  - Mount fresh; insert one atom on each of three different lines at `lineHeight = 1.0`, `1.25`, `1.5`, `1.75`, `2.0`. No hop between atom-bearing and text-only lines at any line-height.
+  - Change `lineHeight` prop while editing — gutter and content stay vertically aligned through every change.
+  - Type past line 9, line 99, line 999 — gutter doesn't reflow narrower→wider; numbers stay right-aligned.
+  - Caret reads as a text-editing caret (slimmer than the row), not a full-row bar. Hand-tune `CARET_HEIGHT_FACTOR` if 0.9 reads too tall or too short.
+  - Capture the diagnostic readings: do `getComputedStyle('::before')`, `lineBlockAt(head).height`, and the JS baseline `max(defaultLineHeight, ATOM_HEIGHT_PX)` agree on every paint? Or do they disagree under specific conditions (mid-measure-pass, fresh-row, post-prop-change)? Record observations in `roadmap/text-editing-base-caret-source-comparison.md`.
+- [ ] **T7 — Decide on the caret row-height source; remove instrumentation.** Based on T6 readings:
+  - If all three sources always agree, pick the JS baseline (`Math.max(view.defaultLineHeight, ATOM_HEIGHT_PX)`) — cheapest, no DOM read, no CM6 cache dependency.
+  - If they disagree under any scenario, pick the source that produced the visually-correct caret in that scenario (likely `getComputedStyle` for always-correct, or `lineBlockAt` if its measure cache is fresher than the JS baseline).
+  - Document the choice and the rationale in `caret-layer.ts` (next to the production code) and in `text-editing-base-caret-source-comparison.md`. Remove the diagnostic block, the unchosen alternatives, and the `__TUG_CARET_DIAG__` flag. Production code uses one source.
+
+**Tests:**
+
+- [ ] **Unit: row-height invariant.** A test that asserts the rendered `.cm-line::before` height equals `max(declared_lineHeight_in_px, atomHeight_in_px)` across two configurations: small lineHeight (atoms dominate) and large lineHeight (declared dominates). Probably DOM-measurement-based; if happy-dom can't compute `max()` reliably, lift to an app-test.
+- [ ] **Unit: gutter min-width.** A test that asserts `.cm-gutterElement`'s computed `min-width` is `≥ 4ch` (or whatever pixel equivalent). Or a test that asserts a gutter with one rendered line still measures wide enough for `9999`.
+- [ ] **Unit: caret height factor.** Existing `at0048-tug-text-editor-caret-rendering` already asserts caret height; update its tolerance to the new 90% target. Add a subtest for "row taller than `defaultLineHeight` due to atom widget" — caret height = `90% × rowHeight`, not `90% × defaultLineHeight`.
+- [ ] **App-test: immediate gutter update on prop change.** New `at0050-tug-text-editor-gutter-prop-response.test.ts`. Drive the gallery: snapshot gutter row Y positions; change `lineHeight` prop via the gallery slider; assert the gutter cells' new Y positions align with the content's new line positions *before* any user input lands. Wait at most one animation frame.
+- [ ] **App-test regression on at0042–at0049.** All previously green app-tests stay green; the layout change shouldn't affect any existing assertion (caret height tolerances may need a one-line widening).
+- [ ] `bun run check`, `bun test`, `bun run audit:tokens lint` exit 0.
+
+**Checkpoint:**
+
+- [ ] Manual: gallery walkthrough per T6. No hop, no narrow gutter, no typing-required gutter snap, caret reads correctly.
+- [ ] Aggregate test suites green.
 
 ---
 
