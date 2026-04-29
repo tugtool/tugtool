@@ -171,7 +171,7 @@ export const tugTheme: Extension = EditorView.theme({
     caretColor: "transparent",
     fontFamily: "var(--tug-font-family-editor, inherit)",
     fontSize: "var(--tug-font-size-editor, 14px)",
-    lineHeight: "var(--tug-line-height-editor, 1.75)",
+    lineHeight: "var(--tug-line-height-editor, 1.6)",
     letterSpacing: "var(--tug-letter-spacing-editor, normal)",
     padding: "8px 10px",
   },
@@ -195,8 +195,8 @@ export const tugTheme: Extension = EditorView.theme({
   //   - `1lh` is a CSS Values 4 length unit equal to the computed
   //     line-height of the element, so it tracks any unit (unitless
   //     multiplier, em, px) that callers pass through the `lineHeight`
-  //     prop. At the default 1.75 line-height on a 14px font, this
-  //     resolves to 24.5px.
+  //     prop. At the default 1.6 line-height on a 14px font, this
+  //     resolves to 22.4px.
   //   - `--tug-text-editor-atom-height` is published by the host
   //     wrapper from `getAtomHeightPx()` (`tug-atom-img.ts`'s
   //     `_fontSize × 1.75` rounded). The variable is *always* set
@@ -401,7 +401,7 @@ export const tugTheme: Extension = EditorView.theme({
     fontFamily: "var(--tug-font-family-editor, inherit)",
     fontSize: "var(--tug-font-size-editor, 14px)",
     lineHeight:
-      "max(calc(var(--tug-font-size-editor, 14px) * var(--tug-line-height-editor, 1.75)), var(--tug-text-editor-atom-height, 21px))",
+      "max(calc(var(--tug-font-size-editor, 14px) * var(--tug-line-height-editor, 1.6)), var(--tug-text-editor-atom-height, 21px))",
     letterSpacing: "var(--tug-letter-spacing-editor, normal)",
   },
 

@@ -165,8 +165,8 @@ const LINE_HEIGHT_OPTIONS: TugPopupButtonItem<number>[] = [
   { action: TUG_ACTIONS.SET_VALUE, value: 1.0, label: "1.0" },
   { action: TUG_ACTIONS.SET_VALUE, value: 1.2, label: "1.2" },
   { action: TUG_ACTIONS.SET_VALUE, value: 1.4, label: "1.4" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.6, label: "1.6" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.75, label: "1.75 (default)" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 1.6, label: "1.6 (default)" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 1.75, label: "1.75" },
   { action: TUG_ACTIONS.SET_VALUE, value: 2.0, label: "2.0" },
   { action: TUG_ACTIONS.SET_VALUE, value: 2.5, label: "2.5" },
 ];

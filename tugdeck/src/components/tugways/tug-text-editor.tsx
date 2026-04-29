@@ -609,11 +609,14 @@ export interface TugTextEditorProps
   fontSize?: string;
   /**
    * CSS `line-height` for the editor surface. Accepts either a
-   * unitless number (e.g. `1.75`, treated as a multiplier of
-   * `font-size`) or a CSS length string (e.g. `"24px"`). Sets
+   * unitless number (e.g. `1.6`, treated as a multiplier of
+   * `font-size`) or a CSS length string (e.g. `"22px"`). Sets
    * `--tug-line-height-editor` on the host wrapper. The
    * `.cm-line::before` ghost uses `1lh` so any change propagates to
    * line-box height regardless of unit.
+   *
+   * Default (when the prop is undefined): `1.6` via the theme's
+   * `var(--tug-line-height-editor, 1.6)` CSS fallback.
    */
   lineHeight?: string | number;
   /**
