@@ -44,15 +44,17 @@
  *                                    one), `font-size`, and
  *                                    `line-height`
  *   `.cm-line`                     — per-line wrapper
- *   `.cm-line::before`             — zero-width line-height-tall
+ *   `.cm-line::before`             — zero-width row-height-tall
  *                                    ghost that pins line-box height
- *                                    so the caret is uniform
+ *                                    to `max(1lh, atom-height)` so
+ *                                    rows are uniform across atoms
+ *                                    and the caret reads consistently
  *   `.cm-content img[data-atom-label]`
  *                                  — atom widgets — vertical-align
- *                                    middle so a 24px atom never
- *                                    grows the line box past the
- *                                    line-height we set on
- *                                    `.cm-content`
+ *                                    middle so the atom centers
+ *                                    within the (at-least-atom-tall)
+ *                                    line-box and never grows it
+ *                                    further
  *   `.cm-selectionBackground`      — custom selection-layer overlay;
  *                                    active / inactive variants split
  *                                    on `&.cm-focused`
@@ -65,11 +67,15 @@
  *   `&.cm-readonly`                — readonly state surface + text
  *
  * Line metrics: `.cm-content` carries an explicit `font-size` and
- * `line-height` so every line has the same height regardless of
- * whether it contains text, atoms, or both. The atom rendering path
- * (`tug-atom-img.ts`) bakes its layout against a 14px base; the
- * line-height of 1.75 (≈24.5px) accommodates the atom's 24px height
- * with a sub-pixel margin.
+ * `line-height` so the typographic baseline is prop-driven. The
+ * `.cm-line::before` ghost adds a row-height *floor* of
+ * `max(1lh, var(--tug-text-editor-atom-height))` so rows are always
+ * tall enough to host an atom regardless of the configured
+ * `lineHeight`. Atoms then center within the line-box and adjacent
+ * text-only and atom-bearing lines stay the same height — no hop.
+ * The atom-height variable is published by `tug-text-editor.tsx`'s
+ * host wrapper from `getAtomHeightPx()` so the floor tracks any
+ * future `setAtomFont` resize without further theme work.
  *
  * Host-wrapper styling (rest/hover/focus border, focus-style variants,
  * borderless modifier, disabled state) lives in `tug-text-editor.css` so it
@@ -174,34 +180,55 @@ export const tugTheme: Extension = EditorView.theme({
     padding: "0",
   },
 
-  // Pin every line's line-box to a uniform `1lh` (one line-height
-  // unit) regardless of inline content. Without this, a line's
-  // line-box height is the tallest inline content's height — text
-  // glyphs, atom widgets (24px), or the CSS line-height, whichever
-  // is largest. `caret-layer.ts` reads the rendered `.cm-line`
-  // height to size the caret stroke; the ghost pins that height to
-  // a constant tied to the configured `line-height`. Same trick
-  // used by Slack, Discord, Linear and friends. Selection
-  // unaffected because the pseudo isn't in the DOM tree — it
-  // doesn't participate in the document model, only in line layout.
-  // `1lh` is a CSS Values 4 length unit equal to the computed
-  // line-height of the element, so it tracks any unit (unitless
-  // multiplier, em, px) that callers pass through the
-  // `lineHeight` prop.
+  // Pin every line's line-box to a uniform height regardless of
+  // inline content. Without this, a line's line-box height is the
+  // tallest inline content's height — text glyphs, atom widgets (~21
+  // px at the substrate's default 12px atom-label font), or the CSS
+  // line-height, whichever is largest. The caret layer reads the
+  // rendered row height to size the caret stroke; the ghost pins
+  // that height to a stable, prop-driven value. Selection unaffected
+  // because the pseudo isn't in the DOM tree — it doesn't participate
+  // in the document model, only in line layout.
+  //
+  // Floor: `max(1lh, var(--tug-text-editor-atom-height))`.
+  //
+  //   - `1lh` is a CSS Values 4 length unit equal to the computed
+  //     line-height of the element, so it tracks any unit (unitless
+  //     multiplier, em, px) that callers pass through the `lineHeight`
+  //     prop. At the default 1.75 line-height on a 14px font, this
+  //     resolves to 24.5px.
+  //   - `--tug-text-editor-atom-height` is published by the host
+  //     wrapper from `getAtomHeightPx()` (`tug-atom-img.ts`'s
+  //     `_fontSize × 1.75` rounded). The variable is *always* set
+  //     by the substrate so the `max()` never collapses to a bare
+  //     `1lh`.
+  //
+  // Together the `max()` guarantees every line is at least atom-tall,
+  // so adjacent text-only and atom-bearing lines stay the same height
+  // — no vertical "hop" — even at small `lineHeight` values where
+  // `1lh` falls below the atom's intrinsic height.
+  //
+  // The fallback `21px` matches the substrate's default atom height
+  // (12px label × 1.75 rounded) and only renders if the host wrapper
+  // failed to publish the variable — a configuration bug, not a
+  // production state. Having the fallback prevents a totally-broken
+  // layout in that case.
   ".cm-line::before": {
     content: '""',
     display: "inline-block",
     width: "0",
-    height: "1lh",
+    height: "max(1lh, var(--tug-text-editor-atom-height, 21px))",
     verticalAlign: "middle",
   },
 
   // Atom widgets render via `tug-atom-img.ts` as `<img>` elements with
   // an inline `vertical-align` offset designed for the host's flowing
   // text baseline. Inside the editor we pin them to vertical-align
-  // middle so the 24px atom centers in the 24.5px line box and never
-  // pushes the line box taller. `!important` is required because the
-  // atom rendering applies vertical-align as an inline style.
+  // middle so the atom centers within the line-box (which is at
+  // least atom-tall thanks to the `.cm-line::before` floor above)
+  // and never grows the line further. `!important` is required
+  // because the atom rendering applies vertical-align as an inline
+  // style.
   ".cm-content img[data-atom-label]": {
     verticalAlign: "middle !important",
   },
@@ -349,15 +376,16 @@ export const tugTheme: Extension = EditorView.theme({
   //     over the same `--tug-font-size-editor` variable that drives
   //     `.cm-content`). Numbers read as ancillary chrome, not as
   //     content peers.
-  //   - **line-height** is computed in pixels via `calc()` over
-  //     `--tug-font-size-editor` × `--tug-line-height-editor`. We
-  //     do NOT use the unitless line-height multiplier directly:
-  //     a unitless multiplier resolves against the gutter's *own*
-  //     font-size (which we just shrank to 90%), so the gutter
-  //     rows would be 90% as tall as content rows and lose
-  //     vertical alignment. Multiplying the variables ourselves
-  //     gives the same pixel line-height as the content,
-  //     regardless of the gutter's font-size.
+  //   - **line-height** is `max(content-row-height, atom-height)` in
+  //     pixels — the same floor as `.cm-line::before` above. We do
+  //     NOT use the unitless line-height multiplier directly: a
+  //     unitless multiplier resolves against the gutter's *own*
+  //     font-size (which we just shrank to 90%), so the gutter rows
+  //     would be 90% as tall as content rows and lose vertical
+  //     alignment. Multiplying the variables ourselves and applying
+  //     the same atom-height floor keeps the gutter rows
+  //     pixel-aligned with the content rows at every line-height,
+  //     including line-heights below the atom-height floor.
   ".cm-gutters": {
     backgroundColor: "var(--tugx-text-editor-gutter-bg-rest)",
     color: "var(--tugx-text-editor-gutter-text-rest)",
@@ -366,18 +394,33 @@ export const tugTheme: Extension = EditorView.theme({
     fontSize:
       "calc(var(--tug-font-size-editor, 14px) * 0.85)",
     lineHeight:
-      "calc(var(--tug-font-size-editor, 14px) * var(--tug-line-height-editor, 1.75))",
+      "max(calc(var(--tug-font-size-editor, 14px) * var(--tug-line-height-editor, 1.75)), var(--tug-text-editor-atom-height, 21px))",
     letterSpacing: "var(--tug-letter-spacing-editor, normal)",
   },
 
   // Per-line cell inside the gutter.
   //
+  // - **min-width** is wide enough for four digits (`9999`) at the
+  //   gutter's font-size so the column doesn't reflow narrower→wider
+  //   as the user types past line 9, line 99, line 999. The `ch`
+  //   unit is the advance width of the `0` glyph in the *current*
+  //   font, so it scales with `--tug-font-size-editor` automatically.
+  //   Documents that exceed 9999 lines still grow the gutter past
+  //   this floor — `min-width` is exactly that, a floor.
+  // - **text-align: right** mirrors the convention every code editor
+  //   uses (VS Code, Sublime, Vim, IDEA): numbers right-align toward
+  //   the gutter's right edge so the units column stays in place
+  //   regardless of digit count. CM6's default is `text-align:
+  //   right` already; we restate it here so the rule survives any
+  //   future CM6 base-theme change.
   // - **Horizontal padding** gives the digit breathing room without
   //   nudging the content's column.
   // - **Vertical padding-top** is a small downward nudge that
   //   compensates for the smaller font sitting visually high in the
   //   row. Tunable.
   ".cm-lineNumbers .cm-gutterElement": {
+    minWidth: "4ch",
+    textAlign: "right",
     padding: "0.6px 8px 0 6px",
   },
 });

@@ -37,9 +37,28 @@ import { StateEffect, StateField } from "@codemirror/state";
 import type { EditorState, Extension, Range, Transaction } from "@codemirror/state";
 import {
   createAtomImgElement,
+  getAtomHeightPx,
   TUG_ATOM_CHAR,
   type AtomSegment,
 } from "@/lib/tug-atom-img";
+
+/**
+ * Atom-height contract for the substrate.
+ *
+ * The single source of truth for an atom widget's rendered pixel
+ * height lives in `tug-atom-img.ts` (where the SVG is built and
+ * `_fontSize` is owned). This module re-exports the getter so
+ * substrate code that needs the value — the theme's `.cm-line::before`
+ * floor, the caret layer's row-height read, the host wrapper's CSS
+ * variable publish — has a single substrate-internal import path.
+ *
+ * The host wrapper (`tug-text-editor.tsx`) writes the current value
+ * to `--tug-text-editor-atom-height` on mount (and on any prop change
+ * that could trigger a font swap). The theme's `max(1lh, var(...))`
+ * resolves at the published value; JS readers call `getAtomHeightPx()`
+ * directly. Single source, two outlets.
+ */
+export { getAtomHeightPx };
 
 // ---------------------------------------------------------------------------
 // Types

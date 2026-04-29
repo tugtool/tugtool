@@ -104,6 +104,7 @@ import {
   addAtomsEffect,
   atomDecorationField,
   atomInvertedEffects,
+  getAtomHeightPx,
   insertAtomAtSelection,
   regenerateAtomsEffect,
 } from "./tug-text-editor/atom-decoration";
@@ -202,6 +203,86 @@ const lineNumbersCompartment = new Compartment();
 
 /** Reconfigurable read-only state (`EditorState.readOnly.of(true|false)`). */
 const readOnlyCompartment = new Compartment();
+
+/**
+ * Reconfigurable geometry-revision marker.
+ *
+ * Holds an empty `EditorView.theme({})` extension whose contributed
+ * style-module identity changes every time a prop-response
+ * `useLayoutEffect` reconfigures it. The compartment exists solely
+ * to bridge the gap between two state systems:
+ *
+ *   1. Geometry-affecting props change rendered metrics through
+ *      paths CM6 doesn't observe natively:
+ *        - **Typography props** (`fontFamily`, `fontSize`,
+ *          `lineHeight`, `letterSpacing`) flow through CSS custom
+ *          properties on the host wrapper and propagate via
+ *          inheritance into `.cm-content`. The browser re-flows
+ *          on its own when these change.
+ *        - **`lineNumbers`** toggling adds or removes the
+ *          line-number gutter, changing the scroller's
+ *          clientWidth (and through it the contentDOM's
+ *          available width) — affecting per-line wrap counts.
+ *        - **`lineWrap`** toggling changes whether `.cm-content`
+ *          wraps overflow at all, directly altering per-line
+ *          heights for any line that previously overflowed.
+ *   2. CodeMirror 6 maintains a private `heightOracle` cache of
+ *      the editor's default line-height (read once via
+ *      `getComputedStyle` of `.cm-content`) plus per-line height
+ *      measurements in its `heightMap`. Gutter row heights,
+ *      scroll geometry, and viewport calculations all read from
+ *      these caches. CM6 does NOT observe CSS-variable changes
+ *      or geometry shifts induced by sibling-extension toggling;
+ *      its private `mustMeasureContent` flag is what tells the
+ *      next measure pass to re-read computed styles and
+ *      per-line rects into the oracle and heightMap.
+ *
+ * The decisive trigger for that flag — confirmed empirically and
+ * by reading CM6's source (`view.update` ~ line 7962 of
+ * `@codemirror/view/dist/index.js`) — is:
+ *
+ *     if (update.startState.facet(theme) != update.state.facet(theme))
+ *       this.viewState.mustMeasureContent = true;
+ *
+ * Each call to `EditorView.theme(spec)` mints a fresh prefix via
+ * `StyleModule.newName()` and contributes that prefix string to
+ * the `theme` facet. Reconfiguring this compartment with a
+ * freshly-built (even empty) `EditorView.theme({})` produces a
+ * new prefix → the `theme` facet's resolved value differs by
+ * reference → `mustMeasureContent` flips → the next measure
+ * pass calls `heightOracle.refresh(...)` against the
+ * now-current computed line-height → the heightMap rebuilds
+ * with the new oracle values → the gutter plugin picks up the
+ * fresh row heights on the post-measure update.
+ *
+ * No CSS rules go through this theme — its `spec` is `{}`. We
+ * don't want it to influence visual rendering; the marker's
+ * identity (the per-call prefix) is what CM6 compares, not its
+ * stylistic content. The real theme rules live in `tugTheme`
+ * from `theme.ts`, which stays as a static extension.
+ *
+ * Other paths considered and rejected by the trace in
+ * `typography-diag.ts`:
+ *
+ *   - Empty `view.dispatch({})` and `selection: state.selection`:
+ *     produce transactions with no facet diff. `mustMeasureContent`
+ *     stays false; the measure pass skips the refresh branch.
+ *   - `lineNumbersCompartment.reconfigure(cmLineNumbers())`: same
+ *     shape — touches the gutter facet but not the theme facet.
+ *   - `EditorView.contentAttributes.of({})` reconfigure: CM6
+ *     compares `contentAttributes` between updates inside
+ *     `viewState.update` (different code path), but
+ *     `mustMeasureContent` is set only on the `theme` facet diff.
+ *     Confirmed via the trace: the contentAttributes-reconfigure
+ *     dispatch fired but produced `heightChanged: false`.
+ *
+ * Without this bridge, CSS-variable typography changes are
+ * invisible to CM6 until the next "real" trigger (the user types
+ * a character, scrolls, or the window resizes) — which is the
+ * latency the user reported as "I have to click+type to see the
+ * gutter update."
+ */
+const typographyRevCompartment = new Compartment();
 
 // ---------------------------------------------------------------------------
 // TugTextEditorDelegate
@@ -552,6 +633,13 @@ function buildExtensions(
     lineWrapCompartment.of(initial.lineWrap ? EditorView.lineWrapping : []),
     lineNumbersCompartment.of(initial.lineNumbers ? cmLineNumbers() : []),
     readOnlyCompartment.of(EditorState.readOnly.of(initial.disabled)),
+    // Initial revision marker. Each `EditorView.theme({})` mints
+    // a fresh style-module prefix; subsequent reconfigures
+    // produce a new prefix → the `theme` facet's value differs
+    // → CM6 flips `mustMeasureContent = true` → next measure
+    // pass refreshes the heightOracle from the live computed
+    // styles. See `typographyRevCompartment` docstring above.
+    typographyRevCompartment.of(EditorView.theme({})),
     // Typeahead first so its `Prec.highest` keymap sees Enter / Tab /
     // Arrows / Escape before the Step 4 keymap when a session is
     // active. When inactive, every branch returns `false` and the
@@ -774,22 +862,47 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
         ),
       });
     }, [placeholder]);
+    // `lineWrap` and `lineNumbers` are *structural* prop changes
+    // that move the rendered geometry: turning either on or off
+    // changes per-line wrap counts (lineWrap) or contentDOM
+    // width (lineNumbers, because the gutter takes space from
+    // the scroller). Reconfiguring the compartment alone isn't
+    // enough — CM6's heightMap caches per-line measurements
+    // against the *previous* geometry, so the freshly-built
+    // gutter (or the next render after a wrap toggle) reads
+    // stale row heights until the next user-input transaction
+    // refreshes the cache.
+    //
+    // Bundling the typography-rev reconfigure into the same
+    // dispatch piggybacks the bridge ([typographyRevCompartment])
+    // so CM6's `mustMeasureContent` flag flips as part of the
+    // same update cycle. The measure pass on the next animation
+    // frame refreshes the heightOracle from the now-current
+    // computed styles → heightMap rebuilds → the new gutter
+    // plugin (or the post-wrap-toggle layout) renders against
+    // the fresh metrics. Same RAF, no stale frame.
     useLayoutEffect(() => {
       const view = viewRef.current;
       if (view === null) return;
       view.dispatch({
-        effects: lineWrapCompartment.reconfigure(
-          lineWrap ? EditorView.lineWrapping : [],
-        ),
+        effects: [
+          lineWrapCompartment.reconfigure(
+            lineWrap ? EditorView.lineWrapping : [],
+          ),
+          typographyRevCompartment.reconfigure(EditorView.theme({})),
+        ],
       });
     }, [lineWrap]);
     useLayoutEffect(() => {
       const view = viewRef.current;
       if (view === null) return;
       view.dispatch({
-        effects: lineNumbersCompartment.reconfigure(
-          lineNumbersProp ? cmLineNumbers() : [],
-        ),
+        effects: [
+          lineNumbersCompartment.reconfigure(
+            lineNumbersProp ? cmLineNumbers() : [],
+          ),
+          typographyRevCompartment.reconfigure(EditorView.theme({})),
+        ],
       });
     }, [lineNumbersProp]);
     useLayoutEffect(() => {
@@ -808,19 +921,67 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     // doesn't observe CSS-variable changes, though: its
     // `heightOracle` caches the measured `font-size` /
     // `line-height` / `char-width` from the last layout pass, and
-    // gutter row heights are computed against that cache. Without a
-    // refresh, the line-number gutter keeps its old row heights
-    // while `.cm-content`'s rows grow / shrink to match the new
-    // line-height — the columns drift out of vertical alignment.
+    // the line-number gutter's per-row heights are part of an
+    // internal `RangeSet` that's rebuilt only when an extension
+    // reconfigure or a non-empty transaction lands. A
+    // CSS-variable-only change leaves both stale — the content
+    // re-flows (because plain CSS) but the gutter rows hold their
+    // pre-change heights until a transaction fires.
     //
-    // `view.requestMeasure()` schedules a fresh measurement on the
-    // next animation frame; the heightOracle re-reads computed
-    // styles, the gutter regenerates its row heights, and the
-    // columns re-align. Cheap, idempotent, no transaction needed.
+    // Empirically, neither `view.requestMeasure()` nor
+    // `view.dispatch({})` (an empty no-op transaction) triggers
+    // the gutter's `RangeSet` rebuild — both leave the gutter
+    // visibly stale. The reliable hammer is reconfiguring the
+    // `lineNumbersCompartment` with its current value: passing
+    // the *same* extension instance still forces a compartment
+    // swap, which CM6 treats as a structural reconfigure and runs
+    // the full update cycle including gutter regeneration. We
+    // pair it with `requestMeasure` so any geometry not covered
+    // by the reconfigure (e.g. the scroller's height cache) also
+    // refreshes on the same frame.
+    //
+    // The reconfigure is harmless when `lineNumbersProp` is false
+    // — it swaps `[]` for `[]` — but it always forces the cycle
+    // we need. Heavier than the no-op transaction but the
+    // correctness benefit is decisive: gutter rebuilds within one
+    // animation frame of the prop change, with no click-to-type
+    // required (verified by `at0050`).
     useLayoutEffect(() => {
       const view = viewRef.current;
       if (view === null) return;
-      view.requestMeasure();
+      // Bridge typography prop changes (CSS-variable-driven —
+      // the browser re-flows automatically) into CM6's
+      // `mustMeasureContent` flag — its invalidation primitive,
+      // the only thing that tells the next measure pass to
+      // re-read computed styles into the `heightOracle`. Without
+      // this dispatch, CM6 holds its pre-change cached
+      // line-height (and the gutter row heights derived from
+      // it) until the next "real" trigger lands — typing,
+      // scroll, ResizeObserver. Symptom: the user changes the
+      // `lineHeight` prop, the content re-flows immediately,
+      // the gutter waits.
+      //
+      // Mechanism: reconfigure `typographyRevCompartment` to
+      // contribute a freshly-built `EditorView.theme({})`. Each
+      // call mints a new style-module prefix via
+      // `StyleModule.newName()` so the `theme` facet's resolved
+      // value differs by reference between transactions. CM6's
+      // `view.update` flips the flag in exactly that case:
+      //
+      //     if (update.startState.facet(theme) != update.state.facet(theme))
+      //       this.viewState.mustMeasureContent = true;
+      //
+      // (`@codemirror/view/dist/index.js`, ~line 7962). The flag
+      // flips → next measure pass enters `oracle.refresh(...)`
+      // against the now-current computed line-height → the
+      // heightMap rebuilds → the gutter plugin picks up the
+      // fresh row heights on the post-measure update. End-to-end
+      // within one animation frame of the prop change.
+      view.dispatch({
+        effects: typographyRevCompartment.reconfigure(
+          EditorView.theme({}),
+        ),
+      });
     }, [fontFamily, fontSize, lineHeight, letterSpacing]);
 
     // Live keymap config. The extension's keydown handler reads
@@ -1387,12 +1548,23 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     // typography variables fall through verbatim so callers can pass
     // any valid CSS value. Each variable is conditionally set so an
     // omitted prop leaves the existing token cascade intact.
+    //
+    // `--tug-text-editor-atom-height` is always set: it's the row-height
+    // floor used by the theme's `.cm-line::before { height: max(1lh, …) }`
+    // rule so lines are tall enough to host an atom widget regardless
+    // of the configured `lineHeight`. The value comes from
+    // `getAtomHeightPx()` which tracks the atom widget's own
+    // `_fontSize` × 1.75 sizing in `tug-atom-img.ts`. Always-set rather
+    // than conditional because a missing variable would let the theme's
+    // `max()` collapse to `1lh` (no floor) and atoms would re-introduce
+    // the line-hop the floor is meant to prevent.
     const hostStyle = useMemo<React.CSSProperties>(() => {
       const next: Record<string, string | number> = {};
       if (styleProp !== undefined) {
         Object.assign(next, styleProp);
       }
       next["--tug-text-editor-max-rows"] = maxRows;
+      next["--tug-text-editor-atom-height"] = `${getAtomHeightPx()}px`;
       if (fontFamily !== undefined) {
         next["--tug-font-family-editor"] = fontFamily;
       }

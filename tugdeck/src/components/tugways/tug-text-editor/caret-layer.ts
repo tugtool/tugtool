@@ -16,35 +16,38 @@
  * transition. This layer makes those patches unnecessary by giving
  * CM6 ownership of caret rendering.
  *
- * Geometry: glyph center + `view.defaultLineHeight`.
+ * Geometry: glyph center + rendered row height × `CARET_HEIGHT_FACTOR`.
  *
  *   - **Y position**: vertically centered on `coordsAtPos(head)`'s
  *     glyph rect. `coordsAtPos` returns the *glyph* bounds, which
  *     wobble between text-only and atom-bearing positions (text
- *     glyphs ~18px tall, atom widgets 24px), so we don't use the
+ *     glyphs ~18px tall, atom widgets ~21px), so we don't use the
  *     glyph height directly. We use the glyph rect only to find
  *     the visual-row's vertical *center* (the midpoint of `top` and
- *     `bottom`) and pad outward symmetrically by half of
- *     `view.defaultLineHeight`.
- *   - **Height**: `view.defaultLineHeight` (the computed pixel value
- *     of `.cm-content`'s `line-height`). This is one *visual row*
- *     tall regardless of line-wrap state, content composition, or
- *     where the caret lands.
+ *     `bottom`) and pad outward symmetrically by half of the
+ *     caret height.
+ *   - **Height**: `rowHeight × CARET_HEIGHT_FACTOR`. The caret is
+ *     visibly slimmer than the row — text-editing convention since
+ *     the caret needs to read as a thin vertical mark, not a
+ *     full-row bar.
+ *   - **Row height source**: read via `getComputedStyle` on the
+ *     `.cm-line::before` ghost (whose height is the floor
+ *     `max(1lh, atom-height)` set by `theme.ts`). Two alternative
+ *     sources are computed in parallel under a diagnostic flag — see
+ *     `readRowHeight*` helpers below — to confirm they agree.
+ *     Production paint uses the `getComputedStyle` source.
  *
- * Why not the containing `.cm-line` element's `getBoundingClientRect()`:
- * with `EditorView.lineWrapping` engaged, one `.cm-line` element
- * wraps multiple visual rows; the element's rect is the *whole
- * wrapped block* (N × line-height tall), not the row the caret
- * actually sits on. A line-rect-derived caret height would render
- * the caret as a multi-row vertical bar — comically large. The
- * glyph-center approach scales correctly because `coordsAtPos`
- * always reports the position at the head's specific visual row,
- * even mid-wrap.
- *
- * The earlier line-rect approach was correct only because line wrap
- * was off; once we exposed `lineWrap` as a public prop, the same
- * caret-layer had to handle both layouts. `defaultLineHeight` is
- * the smallest invariant that works.
+ * Why not the containing `.cm-line` element's `getBoundingClientRect()`
+ * directly: with `EditorView.lineWrapping` engaged, one `.cm-line`
+ * element wraps multiple visual rows; the element's rect is the
+ * *whole wrapped block* (N × row-height tall), not the row the
+ * caret actually sits on. The `::before` pseudo is a single
+ * inline-block whose computed height is *one* row regardless of
+ * wrap state, so reading it via `getComputedStyle(line, '::before')`
+ * gives us the per-row height we want. The glyph-center approach
+ * for the Y position scales correctly because `coordsAtPos` always
+ * reports the position at the head's specific visual row, even
+ * mid-wrap.
  *
  * Interaction-state plugin:
  *
@@ -78,26 +81,45 @@
 import { EditorView, layer, RectangleMarker, ViewPlugin } from "@codemirror/view";
 import type { LayerMarker } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
+import { getAtomHeightPx } from "./atom-decoration";
 
 /** Caret stroke width in pixels. Matches WebKit's native caret stroke. */
 const CARET_STROKE_WIDTH = 2;
 
 /**
- * Upward nudge for the caret top, expressed as a fraction of the
- * line-box height. Geometric centering (caret top = line top, height
- * = full line box) renders a stroke spanning from the line's
- * typographic top to its descender bottom — visually bottom-heavy
- * because most text glyphs sit above the descender region. Shifting
- * the caret up by ~8% of the line-box (≈2px at 24.5px line-height)
- * aligns the stroke better with the optical center of the running
- * text without changing its height. Line-height-dependent so larger
- * font sizes (proportionally taller line boxes) shift
- * proportionally.
+ * Caret height as a fraction of the rendered row height. A caret
+ * spanning the full row reads as a vertical bar rather than a
+ * text-editing caret — every code editor (VS Code, Sublime, IDEA,
+ * Vim) paints the caret slimmer than the row. 0.9 (90%) is the
+ * starting target; hand-tuned in the gallery against the rest of
+ * the substrate's chrome.
  */
-const CARET_TOP_NUDGE_FACTOR = 0.08;
+const CARET_HEIGHT_FACTOR = 0.9;
 
-/** Idle delay before the typing-steady attribute clears and blink resumes. */
+/**
+ * Idle delay before the typing-steady attribute clears and blink resumes.
+ */
 const TYPING_IDLE_MS = 500;
+
+/**
+ * When set on the global object, the caret layer logs disagreements
+ * between the three row-height sources (getComputedStyle on the
+ * `::before` ghost, `view.lineBlockAt(head).height`, and the JS
+ * baseline `max(view.defaultLineHeight, ATOM_HEIGHT_PX)`). Used
+ * during the Step 14.5 hand-tune to validate the production source
+ * choice. Production paint reads the getComputedStyle source — the
+ * direct rendered floor — and ignores the others when this flag is
+ * unset, so the cost of the comparison is zero in shipped builds.
+ */
+const CARET_DIAG_FLAG = "__TUG_CARET_DIAG__";
+
+interface CaretDiagGlobal {
+  [CARET_DIAG_FLAG]?: boolean;
+}
+
+function caretDiagEnabled(): boolean {
+  return (globalThis as CaretDiagGlobal)[CARET_DIAG_FLAG] === true;
+}
 
 /**
  * Document-relative origin used to translate viewport coordinates
@@ -115,6 +137,113 @@ function documentBase(view: EditorView): { left: number; top: number } {
     left: rect.left - view.scrollDOM.scrollLeft,
     top: rect.top - view.scrollDOM.scrollTop,
   };
+}
+
+/**
+ * Walk up from the DOM node at `pos` to find the enclosing `.cm-line`
+ * element. CM6's `domAtPos` returns the leaf node nearest the offset;
+ * we walk parents to the line element. Returns `null` if no line
+ * ancestor is found before reaching the contentDOM root.
+ */
+function lineElementAtPos(view: EditorView, pos: number): HTMLElement | null {
+  const dom = view.domAtPos(pos);
+  let node: Node | null = dom.node;
+  while (node !== null && node !== view.contentDOM) {
+    if (node instanceof HTMLElement && node.classList.contains("cm-line")) {
+      return node;
+    }
+    node = node.parentNode;
+  }
+  return null;
+}
+
+/**
+ * Production row-height source: parse the `::before` ghost's
+ * computed height (in pixels). The ghost's CSS is
+ * `height: max(1lh, var(--tug-text-editor-atom-height))` (set by
+ * `theme.ts`), so this read returns the actual rendered floor
+ * regardless of how `1lh` and the atom-height variable resolve at
+ * the current font / line-height props.
+ *
+ * Returns `view.defaultLineHeight` as a fallback when the line
+ * element can't be located or the parsed value isn't finite. The
+ * fallback is correct only when no atom forces the row taller than
+ * `defaultLineHeight`; in production this only fires before CM6
+ * has rendered any line element, which for a focused-editor caret
+ * paint shouldn't happen.
+ */
+function readRowHeightFromGhost(view: EditorView, head: number): number {
+  const line = lineElementAtPos(view, head);
+  if (line === null) return view.defaultLineHeight;
+  const ghost = window.getComputedStyle(line, "::before");
+  const parsed = parseFloat(ghost.height);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : view.defaultLineHeight;
+}
+
+/**
+ * Diagnostic-only row-height source: CM6's measured block height for
+ * the line containing `head`, divided by the number of visual rows
+ * the block spans. With line-wrap off this is always one row; with
+ * line-wrap on the block can span multiple rows (one `.cm-line`
+ * element wrapping N rows). The ratio gives per-row height — same
+ * concept as the ghost read but routed through CM6's height oracle
+ * instead of the browser's computed-style cache.
+ */
+function readRowHeightFromBlock(view: EditorView, head: number): number {
+  const block = view.lineBlockAt(head);
+  // The block's height covers the wrapped extent. To get per-row
+  // height we need to know how many visual rows it covers. CM6
+  // doesn't expose this directly; we approximate by dividing the
+  // block height by `view.defaultLineHeight` and rounding to the
+  // nearest row count, then dividing back. For a non-wrapped block
+  // this round-trips to the original per-row height; for a wrapped
+  // block of N rows it gives the per-row contribution.
+  const rowCount = Math.max(
+    1,
+    Math.round(block.height / view.defaultLineHeight),
+  );
+  return block.height / rowCount;
+}
+
+/**
+ * Diagnostic-only row-height source: the JS baseline computed
+ * directly from CM6's `defaultLineHeight` and the atom-height
+ * constant from `tug-atom-img.ts`. Cheapest of the three, but
+ * doesn't observe browser layout so a future CSS rule that modifies
+ * the row height (e.g. font-style on a specific line) would slip
+ * past it.
+ */
+function readRowHeightFromBaseline(view: EditorView): number {
+  return Math.max(view.defaultLineHeight, getAtomHeightPx());
+}
+
+/**
+ * Compare the three row-height sources and log when they disagree.
+ * Tolerance is 0.5px — sub-pixel rounding between the three paths
+ * is expected and not interesting. Logging is opt-in via the
+ * `__TUG_CARET_DIAG__` global flag.
+ */
+function logRowHeightDisagreement(
+  ghost: number,
+  block: number,
+  baseline: number,
+  pos: number,
+): void {
+  const tolerance = 0.5;
+  const maxDelta = Math.max(
+    Math.abs(ghost - block),
+    Math.abs(ghost - baseline),
+    Math.abs(block - baseline),
+  );
+  if (maxDelta <= tolerance) return;
+  // eslint-disable-next-line no-console
+  console.debug("[tug-text-editor caret-diag]", {
+    pos,
+    ghost,
+    block,
+    baseline,
+    maxDelta,
+  });
 }
 
 /**
@@ -141,27 +270,32 @@ export const tugCaretLayer: Extension = layer({
     const coords = view.coordsAtPos(sel.head, 1);
     if (coords === null) return [];
     const base = documentBase(view);
-    // One *visual* row tall, regardless of line-wrap state. See the
-    // module docstring for the rationale — `getBoundingClientRect()`
-    // on `.cm-line` would return the *wrapped block* height (N rows
-    // tall) when wrapping is engaged.
-    const lineHeight = view.defaultLineHeight;
+    // Production row-height source: the rendered `::before` ghost.
+    // Tracks the theme's `max(1lh, atom-height)` floor without
+    // re-implementing the math in JS.
+    const rowHeight = readRowHeightFromGhost(view, sel.head);
+    // Optional diagnostic comparison — opt-in via the
+    // `__TUG_CARET_DIAG__` global. Zero cost when disabled.
+    if (caretDiagEnabled()) {
+      const block = readRowHeightFromBlock(view, sel.head);
+      const baseline = readRowHeightFromBaseline(view);
+      logRowHeightDisagreement(rowHeight, block, baseline, sel.head);
+    }
+    const caretHeight = rowHeight * CARET_HEIGHT_FACTOR;
     // Center the caret on the glyph's vertical center: the glyph's
     // top / bottom are the only stable reference for the visual row
-    // the head currently sits on. Padding outward by half
-    // `lineHeight` gives a row-aligned caret that doesn't wobble
-    // when the head crosses an atom widget (whose glyph rect is
-    // 24px tall vs. ~18px for plain text).
+    // the head currently sits on. Pad outward by half `caretHeight`
+    // so the caret is centered on the row's optical center and
+    // shrinks symmetrically as `CARET_HEIGHT_FACTOR` decreases.
     const glyphCenter = (coords.top + coords.bottom) / 2;
-    const top = glyphCenter - lineHeight / 2;
-    const nudgeUp = lineHeight * CARET_TOP_NUDGE_FACTOR;
+    const top = glyphCenter - caretHeight / 2;
     return [
       new RectangleMarker(
         "tug-text-editor-caret",
         coords.left - base.left,
-        top - base.top - nudgeUp,
+        top - base.top,
         CARET_STROKE_WIDTH,
-        lineHeight,
+        caretHeight,
       ),
     ];
   },

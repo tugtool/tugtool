@@ -50,7 +50,7 @@ import {
   resolveEnterAction,
 } from "@/components/tugways/tug-text-editor/keymap";
 import type { TugTextEditorKeymapConfig } from "@/components/tugways/tug-text-editor/keymap";
-import { TUG_ATOM_CHAR, type AtomSegment } from "@/lib/tug-atom-img";
+import { getAtomHeightPx, TUG_ATOM_CHAR, type AtomSegment } from "@/lib/tug-atom-img";
 import type { TugTextEditingState } from "@/lib/tug-text-engine";
 
 // ---------------------------------------------------------------------------
@@ -626,6 +626,24 @@ describe("TugTextEditor — prop surface", () => {
       // `--tug-text-editor-max-rows` always lands so the CSS calc has a valid input.
       expect(host.style.getPropertyValue("--tug-text-editor-max-rows")).toBe("8");
     });
+
+    it("publishes `--tug-text-editor-atom-height` as a px value matching getAtomHeightPx()", () => {
+      // The substrate writes the atom-height floor to the host
+      // wrapper as a CSS variable so the theme's
+      // `.cm-line::before { height: max(1lh, var(...)) }` rule can
+      // resolve at the rendered atom widget's intrinsic height.
+      // Always-set, never absent — a missing variable would let the
+      // floor collapse and atoms would re-introduce the line-hop.
+      const delegateRef: { current: TugTextEditorDelegate | null } = { current: null };
+      const { container } = render(<PropHarness delegateRef={delegateRef} />);
+      const host = container.querySelector<HTMLElement>('[data-testid="harness-edit"]')!;
+      const value = host.style.getPropertyValue("--tug-text-editor-atom-height");
+      expect(value).toMatch(/^\d+px$/);
+      // Confirm the value matches the live `getAtomHeightPx()` read —
+      // the theme's `max()` is correct only when the variable agrees
+      // with whatever atom widgets the substrate actually paints.
+      expect(value).toBe(`${getAtomHeightPx()}px`);
+    });
   });
 
   describe("placeholder", () => {
@@ -741,6 +759,118 @@ describe("TugTextEditor — prop surface", () => {
       expect(host.style.getPropertyValue("--tug-font-size-editor")).toBe("");
       expect(host.style.getPropertyValue("--tug-line-height-editor")).toBe("");
       expect(host.style.getPropertyValue("--tug-letter-spacing-editor")).toBe("");
+    });
+
+    it("rebuilds the CM6 theme facet when a typography prop changes", () => {
+      // Substrate contract: when any of `fontFamily`, `fontSize`,
+      // `lineHeight`, or `letterSpacing` changes between renders,
+      // the substrate must dispatch a transaction that bumps the
+      // `styleModule` (and through it the `theme`) facet's
+      // resolved value. Per `view.update`
+      // (`@codemirror/view/dist/index.js` ~ line 7962):
+      //
+      //     if (update.startState.facet(theme) != update.state.facet(theme))
+      //       this.viewState.mustMeasureContent = true;
+      //
+      // — that diff is the only reliable trigger for CM6 to
+      // re-read computed styles from `.cm-content` into its
+      // `heightOracle` cache. Without it, gutter row heights and
+      // other geometry-dependent extensions hold their
+      // pre-change cached values until the next user-input
+      // transaction (typing, scroll). Symptom: "I have to
+      // click+type to see the gutter update."
+      //
+      // happy-dom can't observe the heightOracle refresh or the
+      // gutter rebuild — those need real layout. What we *can*
+      // observe is the `styleModule` facet's resolved array
+      // identity: the substrate's `typographyRevCompartment`
+      // reconfigures with `EditorView.theme({})`, each call mints
+      // a new style module via `StyleModule.newName()`, and the
+      // facet's combined output reference differs as a result.
+      // If the substrate ever stops dispatching the bridge
+      // transaction (e.g. the `useLayoutEffect` is rewritten
+      // without `typographyRevCompartment.reconfigure(...)`),
+      // this assertion fails — even before any visual regression
+      // surfaces.
+      const delegateRef: { current: TugTextEditorDelegate | null } = { current: null };
+      const { rerender } = render(
+        <PropHarness delegateRef={delegateRef} lineHeight={1.75} />,
+      );
+      const view = delegateRef.current!.view()!;
+      const stylesBefore = view.state.facet(EditorView.styleModule);
+      rerender(<PropHarness delegateRef={delegateRef} lineHeight={1.0} />);
+      const stylesAfter = view.state.facet(EditorView.styleModule);
+      expect(
+        stylesAfter,
+        "lineHeight prop change rebuilds the styleModule facet",
+      ).not.toBe(stylesBefore);
+    });
+
+    it("rebuilds the CM6 theme facet when lineNumbers toggles", () => {
+      // Toggling the line-number gutter changes the scroller's
+      // clientWidth (the gutter takes space from the content
+      // area). Per-line wrap counts shift, but CM6's heightMap
+      // doesn't observe sibling-extension geometry changes.
+      // Without piggybacking the bridge on the lineNumbers
+      // effect, the freshly-built gutter (or the now-wider
+      // content) reads stale per-line heights from the heightMap
+      // until the next user-input transaction. Guards: lineNumbers
+      // toggle bumps the styleModule facet alongside the gutter
+      // reconfigure.
+      const delegateRef: { current: TugTextEditorDelegate | null } = { current: null };
+      const { rerender } = render(
+        <PropHarness delegateRef={delegateRef} lineNumbers={false} />,
+      );
+      const view = delegateRef.current!.view()!;
+      const stylesBefore = view.state.facet(EditorView.styleModule);
+      rerender(<PropHarness delegateRef={delegateRef} lineNumbers={true} />);
+      const stylesAfter = view.state.facet(EditorView.styleModule);
+      expect(
+        stylesAfter,
+        "lineNumbers toggle rebuilds the styleModule facet (geometry bridge)",
+      ).not.toBe(stylesBefore);
+    });
+
+    it("rebuilds the CM6 theme facet when lineWrap toggles", () => {
+      // Toggling lineWrap changes whether `.cm-content` wraps
+      // overflow, directly altering per-line heights for any
+      // line that previously overflowed. Same heightMap-cache
+      // problem as the lineNumbers case; same fix.
+      const delegateRef: { current: TugTextEditorDelegate | null } = { current: null };
+      const { rerender } = render(
+        <PropHarness delegateRef={delegateRef} lineWrap={false} />,
+      );
+      const view = delegateRef.current!.view()!;
+      const stylesBefore = view.state.facet(EditorView.styleModule);
+      rerender(<PropHarness delegateRef={delegateRef} lineWrap={true} />);
+      const stylesAfter = view.state.facet(EditorView.styleModule);
+      expect(
+        stylesAfter,
+        "lineWrap toggle rebuilds the styleModule facet (geometry bridge)",
+      ).not.toBe(stylesBefore);
+    });
+
+    it("does NOT rebuild the theme facet when a non-geometry prop changes", () => {
+      // Negative invariant: the bridge fires only on prop
+      // changes that affect rendered geometry — typography props
+      // (font / size / line-height / letter-spacing), `lineNumbers`,
+      // and `lineWrap`. Changing `placeholder` (or any other
+      // non-geometry prop) must not pull the bridge through.
+      // Guards against a future refactor that accidentally
+      // widens any geometry-effect dependency array, which would
+      // make every prop change pay for a measure pass.
+      const delegateRef: { current: TugTextEditorDelegate | null } = { current: null };
+      const { rerender } = render(
+        <PropHarness delegateRef={delegateRef} placeholder="initial" />,
+      );
+      const view = delegateRef.current!.view()!;
+      const stylesBefore = view.state.facet(EditorView.styleModule);
+      rerender(<PropHarness delegateRef={delegateRef} placeholder="changed" />);
+      const stylesAfter = view.state.facet(EditorView.styleModule);
+      expect(
+        stylesAfter,
+        "placeholder change does not rebuild the styleModule facet",
+      ).toBe(stylesBefore);
     });
   });
 

@@ -75,6 +75,22 @@ const PADDING = 6;
 const GAP = 4;
 
 /**
+ * Current rendered height of an atom widget, in pixels. Derived from
+ * `_fontSize` × 1.75 (rounded). Tracks any prior `setAtomFont` call.
+ *
+ * Substrates that need to floor their line-height to "always tall
+ * enough to host an atom" read this value and either pass it as a
+ * CSS variable (theme `max(1lh, var(--…))`) or use it directly in JS
+ * geometry math (caret-layer row sizing). A function rather than a
+ * constant because the atom's intrinsic size moves with `setAtomFont`;
+ * callers re-read on prop / theme changes that may have triggered a
+ * font swap.
+ */
+export function getAtomHeightPx(): number {
+  return atomHeight();
+}
+
+/**
  * Set the font used for atom label rendering and measurement.
  * `family` is the full CSS font-family stack (e.g. `"Hack", monospace`).
  * Call this when the editor font changes, then regenerateAtoms().
