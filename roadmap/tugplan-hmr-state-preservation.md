@@ -400,11 +400,16 @@ Plus a brief subsection in the doc explaining the bridge module and pointing at 
 
 Add the two new literals to `deck-trace.ts`'s `SaveCallbackSource` union. No call sites yet; this is a forward-declaration commit so subsequent edits in `deck-manager.ts` and the bridge module type-check cleanly.
 
+**Audit before editing:** confirmed no consumer in `tugdeck/src` switches exhaustively on the union (the literal is used only as a trace tag passed through `invokeSaveCallback`, where the consumer reads it as an opaque string). Adding new literals is purely additive — no other site needs to learn about them in this step.
+
+**Implementation:** the two new literals are appended at the end of the union per the implementation note in [Tuglaws Compliance](#tuglaws-compliance), keeping the diff minimal. The type's docstring is expanded to distinguish production tags (lifecycle-driven) from dev-only tags (Vite HMR pipeline) and to record that the dev tags are dead code in production bundles (`import.meta.hot === undefined`).
+
 **Tests:**
-- [ ] `bun run check` exits 0.
+- [x] `bun run check` exits 0 — TypeScript accepts the augmented union.
+- [x] `bun test` exits 0 (unit suite incidental regression check) — 2548 / 2548 pass.
 
 **Checkpoint:**
-- [ ] Type union compiles; no other behavior change.
+- [x] Type union compiles; no other behavior change. Forward-declared literals are ready for consumption in Steps 2–3.
 
 ---
 

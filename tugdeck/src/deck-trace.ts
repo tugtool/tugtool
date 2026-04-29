@@ -79,14 +79,30 @@ import { isFocusDestination } from "./deck-store-selectors";
 // Event shape (`DeckTraceEvent` union)
 // ---------------------------------------------------------------------------
 
-/** Source tag on `save-callback` events. */
+/**
+ * Source tag on `save-callback` events.
+ *
+ * Production tags fire from real lifecycle moments — card close
+ * (`"close-handoff"`), debounced auto-save (`"debounced"`),
+ * visibility change (`"visibilitychange"`, fires on cmd-tab away or
+ * app hide), page unload (`"beforeunload"`), window blur
+ * (`"window-blur"`), and explicit manual saves (`"manual"`).
+ *
+ * Dev-only tags (`"hmr"`, `"hmr-full-reload"`) fire from the Vite
+ * HMR pipeline so the trace ring records HMR-driven save passes
+ * with a distinct source for observability. They are dead code in
+ * production bundles — `import.meta.hot` is `undefined` outside
+ * `vite dev`, so the handlers that emit these tags never run.
+ */
 export type SaveCallbackSource =
   | "close-handoff"
   | "debounced"
   | "visibilitychange"
   | "beforeunload"
   | "window-blur"
-  | "manual";
+  | "manual"
+  | "hmr"
+  | "hmr-full-reload";
 
 /** Entry-point tag on `selection-restore` events. */
 export type SelectionRestoreVia =
