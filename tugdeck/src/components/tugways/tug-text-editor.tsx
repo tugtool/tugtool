@@ -81,7 +81,7 @@ import React, {
 } from "react";
 import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
-import { EditorView, keymap, lineNumbers as cmLineNumbers, placeholder as cmPlaceholder } from "@codemirror/view";
+import { EditorView, highlightActiveLineGutter, keymap, placeholder as cmPlaceholder } from "@codemirror/view";
 import {
   defaultKeymap,
   history,
@@ -113,6 +113,7 @@ import { clipboardExt, parseClipboardHtmlEnvelope } from "./tug-text-editor/clip
 import { tugDropExtension } from "./tug-text-editor/drop-extension";
 import { createCMSelectionAdapter } from "./tug-text-editor/selection-adapter";
 import { tugCaretInteractionPlugin, tugCaretLayer } from "./tug-text-editor/caret-layer";
+import { tugLineNumbersGutter } from "./tug-text-editor/line-numbers-gutter";
 import { tugSelectionLayer } from "./tug-text-editor/selection-layer";
 import { captureEditState, tugTextEditorKeymap } from "./tug-text-editor/keymap";
 import type { TugTextEditorKeymapConfig } from "./tug-text-editor/keymap";
@@ -201,6 +202,17 @@ const lineWrapCompartment = new Compartment();
 /** Reconfigurable line-number gutter (`lineNumbers()` or empty). */
 const lineNumbersCompartment = new Compartment();
 
+/**
+ * Reconfigurable active-line gutter highlight
+ * (`highlightActiveLineGutter()` from `@codemirror/view`, or
+ * empty). Toggling this on adds a `cm-activeLineGutter` class to
+ * the gutter cell of the line containing the cursor. Has no
+ * visible effect when no gutter is rendered (i.e. when
+ * `lineNumbers` is false), but the two props are independent
+ * because future custom gutters may be added separately.
+ */
+const activeLineGutterCompartment = new Compartment();
+
 /** Reconfigurable read-only state (`EditorState.readOnly.of(true|false)`). */
 const readOnlyCompartment = new Compartment();
 
@@ -267,7 +279,7 @@ const readOnlyCompartment = new Compartment();
  *   - Empty `view.dispatch({})` and `selection: state.selection`:
  *     produce transactions with no facet diff. `mustMeasureContent`
  *     stays false; the measure pass skips the refresh branch.
- *   - `lineNumbersCompartment.reconfigure(cmLineNumbers())`: same
+ *   - `lineNumbersCompartment.reconfigure(tugLineNumbersGutter)`: same
  *     shape — touches the gutter facet but not the theme facet.
  *   - `EditorView.contentAttributes.of({})` reconfigure: CM6
  *     compares `contentAttributes` between updates inside
@@ -559,12 +571,30 @@ export interface TugTextEditorProps
    */
   lineWrap?: boolean;
   /**
-   * Show line numbers in a left gutter. When true, adds
-   * `lineNumbers()` from `@codemirror/view`. The gutter sits inside
-   * `.cm-scroller` and does not shift the caret-column origin.
+   * Show line numbers in a left gutter. When true, adds the
+   * substrate's `tugLineNumbersGutter` (a custom variant of
+   * `@codemirror/view`'s `lineNumbers()` that wraps each
+   * line-number value in a `<span>` for theme-driven sizing).
+   * The gutter sits inside `.cm-scroller` and does not shift
+   * the caret-column origin.
    * @default false
    */
   lineNumbers?: boolean;
+  /**
+   * Highlight the gutter cell of the line containing the cursor.
+   * When true, adds `highlightActiveLineGutter()` from
+   * `@codemirror/view`, which sets a `cm-activeLineGutter` class
+   * on the gutter cell whose line block contains the cursor.
+   * The class is theme-styled to a subtle background tint that
+   * tracks the cursor as it moves.
+   *
+   * Independent of `lineNumbers`: the highlight only has a
+   * visible effect when a gutter is rendered, but consumers can
+   * toggle the two props independently in case future gutters
+   * (folding markers, breakpoint markers) are added.
+   * @default false
+   */
+  highlightActiveLineGutter?: boolean;
   /**
    * CSS `font-family` for the editor surface. Sets the
    * `--tug-font-family-editor` custom property on the host wrapper;
@@ -618,6 +648,7 @@ function buildExtensions(
     placeholder: string;
     lineWrap: boolean;
     lineNumbers: boolean;
+    highlightActiveLineGutter: boolean;
     disabled: boolean;
   },
 ): readonly Extension[] {
@@ -631,7 +662,10 @@ function buildExtensions(
       initial.placeholder !== "" ? cmPlaceholder(initial.placeholder) : [],
     ),
     lineWrapCompartment.of(initial.lineWrap ? EditorView.lineWrapping : []),
-    lineNumbersCompartment.of(initial.lineNumbers ? cmLineNumbers() : []),
+    lineNumbersCompartment.of(initial.lineNumbers ? tugLineNumbersGutter : []),
+    activeLineGutterCompartment.of(
+      initial.highlightActiveLineGutter ? highlightActiveLineGutter() : [],
+    ),
     readOnlyCompartment.of(EditorState.readOnly.of(initial.disabled)),
     // Initial revision marker. Each `EditorView.theme({})` mints
     // a fresh style-module prefix; subsequent reconfigures
@@ -716,6 +750,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       disabled = false,
       lineWrap = false,
       lineNumbers: lineNumbersProp = false,
+      highlightActiveLineGutter: highlightActiveLineGutterProp = false,
       fontFamily,
       fontSize,
       lineHeight,
@@ -834,6 +869,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     const placeholderRef = useRef(placeholder);
     const lineWrapRef = useRef(lineWrap);
     const lineNumbersRef = useRef(lineNumbersProp);
+    const highlightActiveLineGutterRef = useRef(highlightActiveLineGutterProp);
     const disabledRef = useRef(disabled);
     useLayoutEffect(() => {
       placeholderRef.current = placeholder;
@@ -844,6 +880,9 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     useLayoutEffect(() => {
       lineNumbersRef.current = lineNumbersProp;
     }, [lineNumbersProp]);
+    useLayoutEffect(() => {
+      highlightActiveLineGutterRef.current = highlightActiveLineGutterProp;
+    }, [highlightActiveLineGutterProp]);
     useLayoutEffect(() => {
       disabledRef.current = disabled;
     }, [disabled]);
@@ -899,12 +938,26 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       view.dispatch({
         effects: [
           lineNumbersCompartment.reconfigure(
-            lineNumbersProp ? cmLineNumbers() : [],
+            lineNumbersProp ? tugLineNumbersGutter : [],
           ),
           typographyRevCompartment.reconfigure(EditorView.theme({})),
         ],
       });
     }, [lineNumbersProp]);
+    // Active-line gutter highlight is a pure-appearance toggle
+    // (CM6 adds / removes the `cm-activeLineGutter` class on the
+    // gutter cell whose line block contains the cursor). It
+    // doesn't affect geometry, so no typography-rev piggyback is
+    // needed — a plain compartment reconfigure is sufficient.
+    useLayoutEffect(() => {
+      const view = viewRef.current;
+      if (view === null) return;
+      view.dispatch({
+        effects: activeLineGutterCompartment.reconfigure(
+          highlightActiveLineGutterProp ? highlightActiveLineGutter() : [],
+        ),
+      });
+    }, [highlightActiveLineGutterProp]);
     useLayoutEffect(() => {
       const view = viewRef.current;
       if (view === null) return;
@@ -1380,6 +1433,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       const initialPlaceholder = placeholderRef.current;
       const initialLineWrap = lineWrapRef.current;
       const initialLineNumbers = lineNumbersRef.current;
+      const initialHighlightActiveLineGutter = highlightActiveLineGutterRef.current;
       const initialDisabled = disabledRef.current;
 
       const state = EditorState.create({
@@ -1393,6 +1447,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
             placeholder: initialPlaceholder,
             lineWrap: initialLineWrap,
             lineNumbers: initialLineNumbers,
+            highlightActiveLineGutter: initialHighlightActiveLineGutter,
             disabled: initialDisabled,
           },
         ),

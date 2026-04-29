@@ -338,6 +338,8 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
   // ---- View controls ----
   const [lineWrap, setLineWrap] = useState<boolean>(true);
   const [lineNumbers, setLineNumbers] = useState<boolean>(true);
+  const [highlightActiveLineGutter, setHighlightActiveLineGutter] =
+    useState<boolean>(false);
 
   // ---- Submit counter (display only) ----
   const [submitCount, setSubmitCount] = useState<number>(0);
@@ -518,6 +520,7 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
   const disabledId = React.useId();
   const lineWrapId = React.useId();
   const lineNumbersId = React.useId();
+  const activeLineGutterId = React.useId();
   const fontFamilyId = React.useId();
   const fontSizeId = React.useId();
   const lineHeightId = React.useId();
@@ -536,6 +539,7 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
       [disabledId]: (v: boolean) => setDisabled(v),
       [lineWrapId]: (v: boolean) => setLineWrap(v),
       [lineNumbersId]: (v: boolean) => setLineNumbers(v),
+      [activeLineGutterId]: (v: boolean) => setHighlightActiveLineGutter(v),
     },
     setValueNumber: {
       [maxRowsId]: (v: number) => setMaxRows(Math.max(1, Math.min(20, Math.round(v)))),
@@ -638,6 +642,7 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
                 completionDirection={completionDirection}
                 lineWrap={lineWrap}
                 lineNumbers={lineNumbers}
+                highlightActiveLineGutter={highlightActiveLineGutter}
                 fontFamily={fontFamily}
                 fontSize={fontSize === undefined ? undefined : `${fontSize}px`}
                 lineHeight={lineHeight}
@@ -697,6 +702,15 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
                 checked={lineNumbers}
                 senderId={lineNumbersId}
                 componentStatePreservationKey="lineNumbers"
+                size="sm"
+              />
+            </div>
+            <div className="gallery-text-editor-row-cell">
+              <span className="gallery-text-editor-row-label">Active line</span>
+              <TugSwitch
+                checked={highlightActiveLineGutter}
+                senderId={activeLineGutterId}
+                componentStatePreservationKey="highlightActiveLineGutter"
                 size="sm"
               />
             </div>

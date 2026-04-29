@@ -360,39 +360,46 @@ export const tugTheme: Extension = EditorView.theme({
     cursor: "not-allowed",
   },
 
-  // Line-number gutter — rendered by the `lineNumbers()` extension
-  // when the substrate's `lineNumbers` prop is true. Pairs the
-  // tug-text-editor-specific alias tokens (defined in tug-text-editor.css's
-  // component-scope `body` block) with the editor's typography
-  // variables so the gutter inherits any prop-driven font / size /
-  // line-height changes.
+  // Line-number gutter — rendered by `tugLineNumbersGutter`
+  // (`tug-text-editor/line-numbers-gutter.ts`) when the substrate's
+  // `lineNumbers` prop is true. Pairs the tug-text-editor-specific
+  // alias tokens (defined in `tug-text-editor.css`'s component-scope
+  // `body` block) with the editor's typography variables so the
+  // gutter inherits any prop-driven font / size / line-height
+  // changes.
   //
   // CM6's default gutter has no background and no separator — the
   // gutter sits flush against `.cm-content`. We carry our own
   // background + right-edge border to read as a distinct column.
   //
   // Typography rules:
-  //   - **font-size** is 90% of the content font-size (a `calc()`
-  //     over the same `--tug-font-size-editor` variable that drives
-  //     `.cm-content`). Numbers read as ancillary chrome, not as
-  //     content peers.
+  //   - **font-size** matches `.cm-content`'s. The cell's strut is
+  //     therefore at the *content* font-size, which positions the
+  //     cell's typographic baseline at the same place as the
+  //     content row's baseline (CSS line-box rules: half-leading +
+  //     ascent, applied to the same font metrics). The visibly
+  //     smaller line-number text is achieved by wrapping the
+  //     number in a `<span class="tug-text-editor-line-number-text">`
+  //     (via `tug-text-editor/line-numbers-gutter.ts`'s
+  //     `TugLineNumberMarker`) and shrinking just that span — the
+  //     span's own baseline aligns to the cell strut's baseline by
+  //     CSS default `vertical-align: baseline`, so the smaller
+  //     numbers sit baseline-aligned with the content text on
+  //     every font, every size. See the `line-numbers-gutter.ts`
+  //     module docstring for the full rationale (why a static
+  //     padding-top compensation drifts across fonts).
   //   - **line-height** is `max(content-row-height, atom-height)` in
   //     pixels — the same floor as `.cm-line::before` above. We do
-  //     NOT use the unitless line-height multiplier directly: a
-  //     unitless multiplier resolves against the gutter's *own*
-  //     font-size (which we just shrank to 90%), so the gutter rows
-  //     would be 90% as tall as content rows and lose vertical
-  //     alignment. Multiplying the variables ourselves and applying
-  //     the same atom-height floor keeps the gutter rows
-  //     pixel-aligned with the content rows at every line-height,
-  //     including line-heights below the atom-height floor.
+  //     NOT use the unitless line-height multiplier directly because
+  //     then the value wouldn't track the atom-height floor; we
+  //     want gutter rows pixel-aligned with content rows even at
+  //     small `lineHeight` values where the atom floor dominates.
   ".cm-gutters": {
     backgroundColor: "var(--tugx-text-editor-gutter-bg-rest)",
     color: "var(--tugx-text-editor-gutter-text-rest)",
     borderRight: "1px solid var(--tugx-text-editor-gutter-border-rest)",
     fontFamily: "var(--tug-font-family-editor, inherit)",
-    fontSize:
-      "calc(var(--tug-font-size-editor, 14px) * 0.85)",
+    fontSize: "var(--tug-font-size-editor, 14px)",
     lineHeight:
       "max(calc(var(--tug-font-size-editor, 14px) * var(--tug-line-height-editor, 1.75)), var(--tug-text-editor-atom-height, 21px))",
     letterSpacing: "var(--tug-letter-spacing-editor, normal)",
@@ -400,27 +407,44 @@ export const tugTheme: Extension = EditorView.theme({
 
   // Per-line cell inside the gutter.
   //
-  // - **min-width** is wide enough for four digits (`9999`) at the
-  //   gutter's font-size so the column doesn't reflow narrower→wider
-  //   as the user types past line 9, line 99, line 999. The `ch`
-  //   unit is the advance width of the `0` glyph in the *current*
-  //   font, so it scales with `--tug-font-size-editor` automatically.
-  //   Documents that exceed 9999 lines still grow the gutter past
-  //   this floor — `min-width` is exactly that, a floor.
-  // - **text-align: right** mirrors the convention every code editor
-  //   uses (VS Code, Sublime, Vim, IDEA): numbers right-align toward
-  //   the gutter's right edge so the units column stays in place
-  //   regardless of digit count. CM6's default is `text-align:
-  //   right` already; we restate it here so the rule survives any
-  //   future CM6 base-theme change.
-  // - **Horizontal padding** gives the digit breathing room without
-  //   nudging the content's column.
-  // - **Vertical padding-top** is a small downward nudge that
-  //   compensates for the smaller font sitting visually high in the
-  //   row. Tunable.
+  // - **min-width** is wide enough for five digits (`99999`) at
+  //   the cell's font-size (now content's) so the column doesn't
+  //   reflow narrower→wider as the user types past line 9 / 99 /
+  //   999. The `ch` unit is the advance width of the `0` glyph in
+  //   the current font, so it scales with `--tug-font-size-editor`
+  //   automatically. Documents past 99999 lines still grow the
+  //   column past this floor — `min-width` is exactly that, a
+  //   floor. (Note the cell font is content-size; the visible
+  //   numeric text is rendered smaller via the inner span — so
+  //   five `ch` here is generous, accommodating both the
+  //   spacer-rendered digits and the actual rendered digits.)
+  // - **text-align: right** mirrors the convention every code
+  //   editor uses (VS Code, Sublime, Vim, IDEA): numbers
+  //   right-align toward the gutter's right edge so the units
+  //   column stays in place regardless of digit count. CM6's
+  //   default is `text-align: right` already; we restate it here
+  //   so the rule survives any future CM6 base-theme change.
+  // - **padding** is horizontal-only. With the cell's strut at
+  //   content font-size, baseline alignment is automatic — no
+  //   padding-top compensation needed.
   ".cm-lineNumbers .cm-gutterElement": {
     minWidth: "5ch",
     textAlign: "right",
-    padding: "0.6px 4px 0 5px",
+    padding: "0 4px 0 5px",
+  },
+
+  // Line-number text inside the cell — wrapped in a `<span>` by
+  // `TugLineNumberMarker` (`line-numbers-gutter.ts`) so the
+  // visible numbers can be smaller than the content while
+  // remaining baseline-aligned with it. `font-size: 0.85em` is
+  // relative to the cell's own font-size (content's), so the
+  // shrink ratio is constant regardless of the user's
+  // `--tug-font-size-editor` value. The span's CSS default
+  // `vertical-align: baseline` does the alignment automatically:
+  // the span's baseline aligns to the cell strut's baseline,
+  // which the cell's matching font-size establishes at the same
+  // position as the content row's baseline.
+  ".tug-text-editor-line-number-text": {
+    fontSize: "0.85em",
   },
 });
