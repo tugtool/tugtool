@@ -113,8 +113,8 @@ const BORDERLESS_CHOICES: TugChoiceItem[] = [
 ];
 
 const RETURN_ACTION_CHOICES: TugChoiceItem[] = [
-  { value: "submit", label: "Submits" },
   { value: "newline", label: "Newline" },
+  { value: "submit", label: "Submits" },
 ];
 
 const ENTER_ACTION_CHOICES: TugChoiceItem[] = [
@@ -311,7 +311,7 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
   const editRef = useRef<TugEditDelegate>(null);
 
   // ---- Layout / state props ----
-  const [maxRows, setMaxRows] = useState<number>(8);
+  const [maxRows, setMaxRows] = useState<number>(15);
   const [growDirection, setGrowDirection] = useState<"up" | "down">("down");
   const [maximized, setMaximized] = useState<boolean>(false);
   const [disabled, setDisabled] = useState<boolean>(false);
@@ -334,8 +334,8 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
   const [letterSpacing, setLetterSpacing] = useState<string | undefined>(undefined);
 
   // ---- View controls ----
-  const [lineWrap, setLineWrap] = useState<boolean>(false);
-  const [lineNumbers, setLineNumbers] = useState<boolean>(false);
+  const [lineWrap, setLineWrap] = useState<boolean>(true);
+  const [lineNumbers, setLineNumbers] = useState<boolean>(true);
 
   // ---- Submit counter (display only) ----
   const [submitCount, setSubmitCount] = useState<number>(0);

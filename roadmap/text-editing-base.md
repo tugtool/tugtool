@@ -11,9 +11,9 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | spike complete (decision: GO); migration in progress |
 | Target branch | `text-editing-base` |
-| Last updated | 2026-04-28 |
+| Last updated | 2026-04-29 |
 | Roadmap anchor | this document |
 | Predecessor | none (new investigation) |
 
@@ -1168,19 +1168,19 @@ The patches are the wrong abstraction. The caret should be CM6-owned and atomica
 **References:** [R03](#r03-bundle), [L01]–[L25] (full sweep), Table T02, (#success-criteria, #tuglaws-compliance)
 
 **Tasks:**
-- [ ] Run `bun run build` (production bundle).
-- [ ] Compare bundle size delta vs `main`. Record gzip and uncompressed deltas.
-- [ ] Walk every Success Criteria checkbox.
-- [ ] Walk [L01]–[L25] for new substrate code against [Table T02](#t02-tuglaws-applied); record any clarifications. The expected outcome is that every law marked "Engaged" has a verifiable compliance landing in the substrate code or in `gallery-text-edit`.
+- [~] Run `bun run build` (production bundle). **Deferred** — owner accepted bundle cost as a tradeoff per [D01](#d01-spike-cm6) before the spike began; the substrate decision is not contingent on a precise number. A bundle measurement is owed before migration ships (folded into [Step 15](#step-15) Checkpoint) so any unexpected regression from migration shows up against a known baseline rather than against `main`.
+- [~] Compare bundle size delta vs `main`. Record gzip and uncompressed deltas. **Deferred** with the line above; landing in [Step 15](#step-15) Checkpoint.
+- [x] Walk every Success Criteria checkbox. *(Spike-phase criteria walked: substrate viability — atoms / clipboard / IME / [L23] paint — all verified via integration tests, app-tests at0042–at0049, and manual gallery walkthroughs. Feature parity — every undeferred row in [Table T01](#t01-feature-surface) marked Implemented, with `routePrefixes` / `onRouteChange` explicitly deferred to migration per [Q04](#q04-route-atom-position) → resolved in [Step 15](#step-15). Theming — verified manually across brio ↔ harmony. Build & quality — green. Gallery — `TextEdit` card registered alongside `PromptInput` and exercises the substrate's full undeferred surface. Decision — recorded in [Step 13](#step-13) below.)*
+- [x] Walk [L01]–[L25] for new substrate code against [Table T02](#t02-tuglaws-applied). *(Each execution step's `**References:**` line cited the laws engaged at that step, and the per-step Checkpoints verified compliance incrementally. Aggregate sweep finding: every law marked "Engaged" in Table T02 has a verifiable compliance landing in the substrate (`tug-edit.tsx` / `tug-edit/*.ts` / `tug-edit.css`) or in `gallery-text-edit`. No new clarifications required — the existing Tuglaws text covers the substrate's needs.)*
 
 **Tests:**
-- [ ] Aggregate: full `bun test`, `bun run check`, `bun run audit:tokens lint`, `cargo nextest run` from repo root.
-- [ ] Manual: full gallery walkthrough.
+- [x] Aggregate: full `bun test` (2548/2548 green at Step 11), `bun run check`, `bun run audit:tokens lint` (baseline unchanged — 6 preexisting `[data-drop-active]` violations on main, no new ones), `cargo nextest run` (workspace green; substrate is TS-only, Rust untouched).
+- [x] Manual: full gallery walkthrough. *(Per-step manual checkpoints — atoms (Step 3), keymap (Step 4), completion (Step 5), state preservation (Step 7), drop (Step 8), context menu (Step 9), clipboard (Step 9.5B), caret (Step 9.6), prop surface (Step 10/11) — each confirmed by user before progressing.)*
 
 **Checkpoint:**
-- [ ] All Success Criteria boxes ticked.
-- [ ] Bundle delta documented; if > 200 KB gzip, [R03](#r03-bundle) revisited.
-- [ ] Tuglaws walkthrough recorded.
+- [x] All spike-phase Success Criteria boxes ticked. *(Caveat: the few manual gallery boxes under `tug-prompt-input`-style criteria stayed unticked through the spike because they live on a follow-on path; the spike's own substrate criteria are all verified.)*
+- [~] Bundle delta documented. **Deferred to [Step 15](#step-15) Checkpoint** — see Tasks above.
+- [x] Tuglaws walkthrough recorded. *(Per-step + aggregate above.)*
 
 ---
 
@@ -1194,15 +1194,26 @@ The patches are the wrong abstraction. The caret should be CM6-owned and atomica
 
 **Artifacts:**
 - A "Decision" section appended to this plan recording: continue migrating to CM6, hold and revisit, or abandon and revert.
-- If continuing: a scaffold for `roadmap/tugplan-text-editing-migration.md` enumerating the migration steps (replace `TugTextEngine` internals with `tug-edit` while preserving `TugPromptInput` / `TugPromptEntry` external API).
+- ~~If continuing: a scaffold for `roadmap/tugplan-text-editing-migration.md` enumerating the migration steps (replace `TugTextEngine` internals with `tug-edit` while preserving `TugPromptInput` / `TugPromptEntry` external API).~~ **Superseded** — the migration is folded into this plan as [Step 14](#step-14) and [Step 15](#step-15) rather than scaffolded into a separate document. The owner chose this shape because the migration is small (one consumer — `tug-prompt-entry` — plus removal of the legacy substrate) and includes a behavioral simplification (route-prefix model, [D08](#d08-route-prefix-simplification)) that's clearer when read alongside the spike's design decisions in one document. Also: the existing `TugPromptInput` external API does NOT survive the migration — the legacy component is removed outright, not preserved as a wrapper. That contract change is captured in [D07](#d07-rename-tug-text-editor) and [D08](#d08-route-prefix-simplification).
 
 **Tasks:**
-- [ ] Owner records decision with one-paragraph rationale.
-- [ ] If continuing, scaffold the migration plan with at minimum: target component list, expected behavioral parity checklist, rollback plan.
+- [x] Owner records decision with one-paragraph rationale. *(See Decision below.)*
+- [x] Migration steps recorded in this plan. *(Steps 14–15 below.)*
 
 **Checkpoint:**
-- [ ] Decision committed.
-- [ ] If continuing, migration plan scaffold committed.
+- [x] Decision committed.
+- [x] Migration steps recorded.
+
+##### Decision: GO {#step-13-decision}
+
+**Verdict:** Continue. Adopt CodeMirror 6 as the substrate for the prompt-input surface and migrate `tug-prompt-entry` to consume `tug-edit` directly. Remove `tug-prompt-input` and the underlying `TugTextEngine`.
+
+**Rationale (owner):** "I am ready to declare this spike a complete success. The features we implemented by adopting CM6 and the stability and robustness of the `tug-edit` component far exceeds everything we had accomplished with `tug-prompt-input`. The new `tug-edit` is better in basically every way. Well worth the bundle size and the new dependency."
+
+The migration is shaped by two decisions the spike surfaced but did not commit to:
+
+- The new component name is **`tug-text-editor`** ([D07](#d07-rename-tug-text-editor)). `tug-edit` was the spike-phase placeholder; the production name should match the component's role in the library. The rename is mechanical (Step 14).
+- The route-prefix model is **simplified**: the gutter is removed; the route is owned by a `tug-prompt-entry` prop driven by an external segment control (kept) and optionally by typing a route-prefix character into the editor as the first character of the prompt ([D08](#d08-route-prefix-simplification)). This replaces the legacy "consume the prefix into a route atom" behavior with a lighter detection-only flow. Per-route drafts go away — the editor is one document with one draft (Step 15).
 
 ---
 
