@@ -258,8 +258,8 @@ body {
 
 .tug-prompt-entry-tools-popover {
   display: inline-flex;
-  flex-direction: row;
-  align-items: center;
-  gap: var(--tug-space-xs);
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--tug-space-sm);
   padding: var(--tug-space-xs);
 }

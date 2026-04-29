@@ -166,6 +166,22 @@ export interface EditorSettings {
   letterSpacing: number;
   /** Unit-less line-height multiplier (e.g. 1.7). */
   lineHeight: number;
+  /** Whether the editor wraps long lines. Defaults to false on the
+   *  substrate; opt-in via the tools popup. */
+  lineWrap: boolean;
+  /** Whether the editor renders the line-numbers gutter. */
+  lineNumbers: boolean;
+  /** Whether the editor highlights the gutter cell of the line containing
+   *  the cursor. Independent of `lineNumbers`. */
+  highlightActiveLineGutter: boolean;
+  /** Return-key action override.
+   *
+   *   - `"default"` — defer to the host's per-route default
+   *     (e.g. `tug-prompt-entry`'s "newline on Prompt, submit on
+   *     Shell/Command" mapping).
+   *   - `"submit"`  — Return submits, Shift+Return inserts a newline.
+   *   - `"newline"` — Return inserts a newline, Shift+Return submits. */
+  returnAction: "default" | "submit" | "newline";
 }
 
 /**

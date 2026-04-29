@@ -39,6 +39,8 @@ import { TugPushButton } from "../tug-push-button";
 import { TugRadioGroup, TugRadioItem } from "../tug-radio-group";
 import { TugPopupButton } from "../tug-popup-button";
 import type { TugPopupButtonItem } from "../tug-popup-button";
+import { TugSwitch } from "../tug-switch";
+import { TugChoiceGroup, type TugChoiceItem } from "../tug-choice-group";
 import { useTugSheet } from "../tug-sheet";
 import { useResponderChain } from "../responder-chain-provider";
 import { useResponderForm } from "../use-responder-form";
@@ -109,6 +111,12 @@ const LETTER_SPACING_OPTIONS: TugPopupButtonItem<number>[] = [
 /** Percentage the entry panel pegs to when the user clicks Maximize.
  *  Mirrors the panel's `maxSize="90%"` upper bound — keep them in sync. */
 const ENTRY_PANEL_MAX_PCT = 90;
+
+const RETURN_ACTION_CHOICES: TugChoiceItem[] = [
+  { value: "default", label: "Default" },
+  { value: "submit", label: "Submits" },
+  { value: "newline", label: "Newline" },
+];
 
 const LINE_HEIGHT_OPTIONS: TugPopupButtonItem<number>[] = [
   { action: TUG_ACTIONS.SET_VALUE, value: 1.0, label: "1.0" },
@@ -1086,6 +1094,10 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   const fontSizePopupId = useId();
   const letterSpacingPopupId = useId();
   const lineHeightPopupId = useId();
+  const lineWrapId = useId();
+  const lineNumbersId = useId();
+  const activeLineGutterId = useId();
+  const returnActionId = useId();
   const { ResponderScope, responderRef } = useResponderForm({
     setValueString: {
       [fontPopupId]: (v: string) => editorStore.set({ fontId: v }),
@@ -1094,6 +1106,19 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
       [fontSizePopupId]: (v: number) => editorStore.set({ fontSize: v }),
       [letterSpacingPopupId]: (v: number) => editorStore.set({ letterSpacing: v }),
       [lineHeightPopupId]: (v: number) => editorStore.set({ lineHeight: v }),
+    },
+    toggle: {
+      [lineWrapId]: (v: boolean) => editorStore.set({ lineWrap: v }),
+      [lineNumbersId]: (v: boolean) => editorStore.set({ lineNumbers: v }),
+      [activeLineGutterId]: (v: boolean) =>
+        editorStore.set({ highlightActiveLineGutter: v }),
+    },
+    selectValue: {
+      [returnActionId]: (v: string) => {
+        if (v === "default" || v === "submit" || v === "newline") {
+          editorStore.set({ returnAction: v });
+        }
+      },
     },
   });
 
@@ -1125,34 +1150,71 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
 
   const toolsContent = (
     <>
-      <TugPopupButton
-        topLabel="Font"
-        label={EDITOR_FONT_OPTIONS.find(f => f.value === editorSettings.fontId)?.label ?? "Font"}
-        items={EDITOR_FONT_OPTIONS}
-        senderId={fontPopupId}
-        size="sm"
-      />
-      <TugPopupButton
-        topLabel="Size"
-        label={`${editorSettings.fontSize}px`}
-        items={FONT_SIZE_OPTIONS}
-        senderId={fontSizePopupId}
-        size="sm"
-      />
-      <TugPopupButton
-        topLabel="Tracking"
-        label={letterSpacingLabel}
-        items={LETTER_SPACING_OPTIONS}
-        senderId={letterSpacingPopupId}
-        size="sm"
-      />
-      <TugPopupButton
-        topLabel="Leading"
-        label={editorSettings.lineHeight.toFixed(1)}
-        items={LINE_HEIGHT_OPTIONS}
-        senderId={lineHeightPopupId}
-        size="sm"
-      />
+      <div className="tide-card-tools-row">
+        <TugPopupButton
+          topLabel="Font"
+          label={EDITOR_FONT_OPTIONS.find(f => f.value === editorSettings.fontId)?.label ?? "Font"}
+          items={EDITOR_FONT_OPTIONS}
+          senderId={fontPopupId}
+          size="sm"
+        />
+        <TugPopupButton
+          topLabel="Size"
+          label={`${editorSettings.fontSize}px`}
+          items={FONT_SIZE_OPTIONS}
+          senderId={fontSizePopupId}
+          size="sm"
+        />
+        <TugPopupButton
+          topLabel="Spacing"
+          label={letterSpacingLabel}
+          items={LETTER_SPACING_OPTIONS}
+          senderId={letterSpacingPopupId}
+          size="sm"
+        />
+        <TugPopupButton
+          topLabel="Leading"
+          label={editorSettings.lineHeight.toFixed(1)}
+          items={LINE_HEIGHT_OPTIONS}
+          senderId={lineHeightPopupId}
+          size="sm"
+        />
+      </div>
+      <div className="tide-card-tools-row">
+        <div className="tide-card-tools-cell">
+          <span className="tide-card-tools-label">Line wrap</span>
+          <TugSwitch
+            checked={editorSettings.lineWrap}
+            senderId={lineWrapId}
+            size="sm"
+          />
+        </div>
+        <div className="tide-card-tools-cell">
+          <span className="tide-card-tools-label">Line numbers</span>
+          <TugSwitch
+            checked={editorSettings.lineNumbers}
+            senderId={lineNumbersId}
+            size="sm"
+          />
+        </div>
+        <div className="tide-card-tools-cell">
+          <span className="tide-card-tools-label">Active line</span>
+          <TugSwitch
+            checked={editorSettings.highlightActiveLineGutter}
+            senderId={activeLineGutterId}
+            size="sm"
+          />
+        </div>
+        <div className="tide-card-tools-cell">
+          <span className="tide-card-tools-label">Return</span>
+          <TugChoiceGroup
+            items={RETURN_ACTION_CHOICES}
+            value={editorSettings.returnAction}
+            senderId={returnActionId}
+            size="xs"
+          />
+        </div>
+      </div>
     </>
   );
 
@@ -1208,6 +1270,14 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
                 onAfterSubmit={handleAfterSubmit}
                 statusContent={statusContent}
                 toolsContent={toolsContent}
+                lineWrap={editorSettings.lineWrap}
+                lineNumbers={editorSettings.lineNumbers}
+                highlightActiveLineGutter={editorSettings.highlightActiveLineGutter}
+                returnAction={
+                  editorSettings.returnAction === "default"
+                    ? undefined
+                    : editorSettings.returnAction
+                }
                 maximized={maximized}
                 onMaximizeChange={setMaximized}
                 componentStatePreservationKey="entry-chrome"

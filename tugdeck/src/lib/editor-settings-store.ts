@@ -36,6 +36,14 @@ export const DEFAULT_SETTINGS: EditorSettings = {
   letterSpacing: 0,
   // Matches the historical CSS default in tug-prompt-input.css.
   lineHeight: 1.7,
+  lineWrap: false,
+  lineNumbers: false,
+  highlightActiveLineGutter: false,
+  // The host (e.g. `tug-prompt-entry`) decides Return semantics by
+  // default — see the per-route mapping in the entry. The popup
+  // exposes a manual override that wins when set to a non-`"default"`
+  // value.
+  returnAction: "default",
 };
 
 /** Font stacks keyed by font ID. */

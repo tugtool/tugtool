@@ -196,3 +196,34 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
+/* ----------------------------------------------------------------------------
+   .tide-card-tools-row — one horizontal row inside the entry's tools popover.
+   ----------------------------------------------------------------------------
+   The popover hosts two stacked rows: row 1 carries the typography popup
+   buttons (Font / Size / Spacing / Leading); row 2 carries the View toggles
+   plus the Return-action selector. Each cell stacks a tiny label above its
+   control so the row reads like the other gallery panels. The popover
+   itself owns the column layout (`.tug-prompt-entry-tools-popover`).
+   ----------------------------------------------------------------------------- */
+
+.tide-card-tools-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: var(--tug-space-xs);
+}
+
+.tide-card-tools-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--tug-space-xxs, 2px);
+}
+
+/* @tug-renders-on: surface.global.neutral.default */
+.tide-card-tools-label {
+  font-size: var(--tug-font-size-xs, 0.75rem);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  white-space: nowrap;
+}
+

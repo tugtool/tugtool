@@ -376,6 +376,35 @@ export interface TugPromptEntryProps {
   /** Caller-supplied className merged with the root. */
   className?: string;
   /**
+   * Soft-wrap long lines at the editor's width. Forwarded verbatim
+   * to the substrate.
+   * @default false
+   */
+  lineWrap?: boolean;
+  /**
+   * Show the line-numbers gutter in the embedded editor. Forwarded
+   * verbatim to the substrate.
+   * @default false
+   */
+  lineNumbers?: boolean;
+  /**
+   * Highlight the gutter cell of the line containing the cursor.
+   * Forwarded verbatim to the substrate.
+   * @default false
+   */
+  highlightActiveLineGutter?: boolean;
+  /**
+   * Manual Return-key override. When set, wins over the entry's
+   * per-route default (which makes Return insert a newline on the
+   * Prompt route and submit on Shell / Command). When omitted, the
+   * per-route default applies.
+   *
+   * Numpad Enter is always "submit" inside `tug-prompt-entry` — the
+   * underlying `TugTextEditor` keeps both options as a separate
+   * prop, but the entry pins it to the typical Tide use case.
+   */
+  returnAction?: "submit" | "newline";
+  /**
    * Opt the entry into the Component State Preservation Protocol
    * for its chrome state ([D13], [A9]). Only `toolsOpen` (the tools
    * popover open/closed flag) is preserved via this hook. The active
@@ -446,6 +475,10 @@ export const TugPromptEntry = React.forwardRef<
     maximized,
     onMaximizeChange,
     className,
+    lineWrap,
+    lineNumbers,
+    highlightActiveLineGutter,
+    returnAction: returnActionOverride,
     componentStatePreservationKey,
   } = props;
 
@@ -941,7 +974,12 @@ export const TugPromptEntry = React.forwardRef<
             completionProviders={completionProviders}
             dropHandler={dropHandler}
             historyProvider={currentHistoryProvider}
-            returnAction={RETURN_ACTION_BY_ROUTE[route] ?? "submit"}
+            returnAction={
+              returnActionOverride ?? RETURN_ACTION_BY_ROUTE[route] ?? "submit"
+            }
+            lineWrap={lineWrap}
+            lineNumbers={lineNumbers}
+            highlightActiveLineGutter={highlightActiveLineGutter}
             onSubmit={performSubmit}
             extensions={editorExtensions}
             /* State preservation is owned by TugPromptEntry. Disable
