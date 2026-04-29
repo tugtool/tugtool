@@ -688,7 +688,42 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   const [callbacksVersion, setCallbacksVersion] = useState(0);
   const registerStatePreservationCallbacks = useCallback(
     (callbacks: CardStatePreservationCallbacks) => {
+      // Detect a content-factory remount by watching the shape of
+      // the registered callbacks across the cleanup → remount cycle.
+      //
+      // `useCardStatePreservation`'s unmount cleanup re-registers a
+      // no-op pair `{ onSave: () => undefined, onRestore: () => {} }`
+      // — note the absence of `restorePendingRef`. A subsequent
+      // *real* registration carries the ref. The transition
+      // `prev.restorePendingRef === undefined && callbacks.restorePendingRef !== undefined`
+      // is therefore the bookkeeping signature of "the content
+      // factory just unmounted and remounted" — typically Vite
+      // HMR / React Fast Refresh in dev, theoretically any other
+      // remount that keeps CardHost up while replacing its
+      // content-factory subtree.
+      //
+      // The capture half (`hmr-bridge.ts` listening to
+      // `vite:beforeUpdate`) has already run a save pass by the time
+      // this remount-registration arrives, so the bag in
+      // deck-manager's cache is fresh. Resetting both restore
+      // one-shot guards lets the existing restore effects re-fire
+      // and replay the bag onto the new child tree.
+      //
+      // First-mount scenario: `prev === null` → `isRemount` is
+      // false → no reset (guards are already false from `useRef(false)`
+      // initial values). Cleanup-pair → cleanup-pair (rare): both
+      // sides have `restorePendingRef === undefined` → `isRemount`
+      // false → no reset. Neither edge case mis-fires.
+      const prev = cardStatePreservationCallbacksRef.current;
+      const isRemount =
+        callbacks.restorePendingRef !== undefined &&
+        prev !== null &&
+        prev.restorePendingRef === undefined;
       cardStatePreservationCallbacksRef.current = callbacks;
+      if (isRemount) {
+        hasAppliedContentRestoreRef.current = false;
+        hasRestoredComponentsRef.current = false;
+      }
       setCallbacksVersion((v) => v + 1);
     },
     [],
@@ -1007,7 +1042,18 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       attributeFilter: ["style"],
     });
     return () => observer.disconnect();
-  }, [cardId, hostStackId, hostContentEl, store]);
+    // `callbacksVersion` joins the dep set so this effect re-fires on
+    // a content-factory remount (the no-op-pair → real-callbacks
+    // transition that `registerStatePreservationCallbacks` watches
+    // for). Without it, HMR remount of a non-content card (one whose
+    // bag.focus axis is the only authoritative focus mechanism)
+    // wouldn't re-apply `bag.focus` — `cardId` / `hostStackId` /
+    // `hostContentEl` / `store` are all stable across the remount.
+    // The body is idempotent: scroll / form-controls / region-scroll
+    // / DOM-selection writes match what's already there for unchanged
+    // axes, and focus re-application during cold-boot's first commit
+    // is benign (the user hasn't moved focus yet).
+  }, [cardId, hostStackId, hostContentEl, store, callbacksVersion]);
 
   // Cross-pane-move focus restore is owned by
   // `transferFocusAfterMove` in `focus-transfer.ts`, called
@@ -1171,8 +1217,13 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     const bag = store.getCardState(cardId);
     if (!bag) return;
     store.restoreCardState(cardId, bag);
+    // `callbacksVersion` joins the dep set so this effect re-fires on
+    // a content-factory remount. The matching one-shot reset for
+    // `hasRestoredComponentsRef` lives in
+    // `registerStatePreservationCallbacks` and only flips when the
+    // no-op-pair → real-callbacks transition is observed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cardId, store]);
+  }, [cardId, store, callbacksVersion]);
 
   const markDirty = useCardDirtyState({
     hostContentEl,

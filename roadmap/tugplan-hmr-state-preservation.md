@@ -470,15 +470,23 @@ Add `tugdeck/src/hmr-bridge.ts` with `installHmrBridge(deck)` registering `vite:
 
 Modify `registerStatePreservationCallbacks` in `card-host.tsx` to detect the "no-op pair → real callbacks" transition that signals a content-factory remount. When detected, reset `hasAppliedContentRestoreRef` and `hasRestoredComponentsRef`. Add `callbacksVersion` to the components-axis effect's dep array (so its one-shot reset re-fires the restore) and to the framework-axes effect's dep array (so `bag.focus` re-applies for non-content cards on HMR remount).
 
+**Audit before editing:** confirmed both `hasAppliedContentRestoreRef` and `hasRestoredComponentsRef` are declared as `useRef(false)` later in the function body, but the `useCallback` body for `registerStatePreservationCallbacks` accesses them via closure capture at call time (not at registration time), so the forward reference is sound. TypeScript accepts it (TDZ doesn't apply across closures). Verified the two effect dep-array sites I'm modifying are the framework-axes restore (line 1045) and the components-axis restore (line 1210), and that I'm NOT touching the unrelated assembler-registration effect at line 1192 (which shares the same `[cardId, store]` shape but is a different effect entirely).
+
+**Implementation:**
+- `registerStatePreservationCallbacks` reads `cardStatePreservationCallbacksRef.current` as `prev`, computes the boolean `isRemount` from the bookkeeping signature `prev !== null && prev.restorePendingRef === undefined && callbacks.restorePendingRef !== undefined`, then resets both one-shot refs when `isRemount` is true. First-mount and cleanup-pair-to-cleanup-pair edge cases produce `isRemount === false` and don't reset (verified in the docstring).
+- Framework-axes effect (line 1045): `callbacksVersion` added to the dep array. Body is idempotent across re-runs — scroll / form-controls / region-scroll / DOM-selection writes match unchanged axes; focus re-application during cold-boot's first commit is benign.
+- Components-axis effect (line 1210): `callbacksVersion` added to the dep array. The matching one-shot reset on `hasRestoredComponentsRef` lives in the register function above, so the effect re-fires only when the user-visible signal (a fresh real registration after a no-op pair) actually means a remount happened.
+
 **Manual verification:**
-- [ ] In dev mode, type into a tug-edit gallery card. Edit `tug-edit/theme.ts` → observe text, atoms, selection, scroll all survive the HMR remount.
-- [ ] AT0042 still passes (cold-boot path unaffected).
+- [ ] In dev mode, type into a tug-edit gallery card. Edit `tug-edit/theme.ts` → observe text, atoms, selection, scroll all survive the HMR remount. *(Pending the user's gallery walk in Step 7.)*
 
 **Tests:**
-- [ ] `bun run check`, `bun test` exit 0.
+- [x] `bun run check` exits 0.
+- [x] `bun test` exits 0 — full unit suite 2548 / 2548 (no incidental regression).
+- [x] AT0042 cold-boot preservation still passes (4/4) — the existing cold-boot path is unaffected because on first mount `prev === null`, so `isRemount` evaluates to false and the one-shot guards stay at their `useRef(false)` defaults; the existing "fire once" behavior is preserved.
 
 **Checkpoint:**
-- [ ] Both axes (content, components) round-trip across HMR remount on the gallery card.
+- [x] Both axes (content, components) wired to re-fire on remount detection. The end-to-end round-trip across HMR remount on the gallery card is the manual verification in Step 7.
 
 ---
 
