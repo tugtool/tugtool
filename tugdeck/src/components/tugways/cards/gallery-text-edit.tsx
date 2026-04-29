@@ -30,18 +30,34 @@
  * the saved draft, mirroring `SessionHistoryProvider`'s contract
  * without requiring a real session.
  *
+ * Dropped files round-trip through `galleryDropHandler` — the same
+ * shape `gallery-prompt-input` uses — so the substrate's
+ * `domEventHandlers.drop` path lands real `AtomSegment` values rather
+ * than gallery-only stand-ins.
+ *
+ * Control surface: every non-deferred prop in `tug-edit`'s public
+ * API has a runtime control on this card. Layout / state / behavior
+ * props ride on `TugChoiceGroup` (selectValue) and `TugSwitch`
+ * (toggle); `maxRows` rides on `TugValueInput` (setValueNumber);
+ * typography props ride on `TugPopupButton` (setValueString /
+ * setValueNumber). A `TugPushButton` toolbar above the editor carries
+ * the imperative actions (`Clear`, `Maximize`).
+ *
  * Laws: [L01] one root.render() at mount, [L02] history list and
- *        feed-store stack live in refs; React state carries only the
- *        rendered counter, [L03] the file-tree feed-store filter is
- *        re-installed in a `useEffect` keyed on workspace identity,
- *        matching `gallery-prompt-input`'s pattern, [L06] appearance
- *        via CSS and DOM, never React state, [L07] provider thunks
- *        and the card-scoped history closure read their state at
- *        call time, [L11] toggle controls and atom-insert buttons
- *        emit actions consumed by this scope's responder form,
- *        [L19] component authoring guide, [L22] the file-completion
- *        provider's async refresh path is a direct
- *        store-observation channel — no React round-trip.
+ *        feed-store stack live in refs; React state carries only
+ *        prop values that flow back into `TugEdit`, [L03] the
+ *        file-tree feed-store filter is re-installed in a
+ *        `useEffect` keyed on workspace identity, matching
+ *        `gallery-prompt-input`'s pattern, [L06] appearance via CSS
+ *        and DOM, never React state, [L07] provider thunks and the
+ *        card-scoped history closure read their state at call
+ *        time, [L09] cards never set their own position / size /
+ *        z-order — `TugPane` owns geometry, [L11] toggle controls
+ *        and atom-insert buttons emit actions consumed by this
+ *        scope's responder form, [L19] component authoring guide,
+ *        [L22] the file-completion provider's async refresh path
+ *        is a direct store-observation channel — no React
+ *        round-trip, [L25] deck → pane → card hierarchy preserved.
  */
 
 import "./gallery-text-edit.css";
@@ -59,7 +75,12 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugPopupButton } from "@/components/tugways/tug-popup-button";
+import type { TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
+import { TugSwitch } from "@/components/tugways/tug-switch";
+import { TugValueInput } from "@/components/tugways/tug-value-input";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { captureEditState } from "@/components/tugways/tug-edit/keymap";
 import { useCardWorkspaceKey } from "@/components/tugways/hooks/use-card-workspace-key";
 import { presentWorkspaceKey } from "@/card-registry";
@@ -95,6 +116,74 @@ const RETURN_ACTION_CHOICES: TugChoiceItem[] = [
   { value: "newline", label: "Newline" },
 ];
 
+const ENTER_ACTION_CHOICES: TugChoiceItem[] = [
+  { value: "submit", label: "Submits" },
+  { value: "newline", label: "Newline" },
+];
+
+const GROW_DIRECTION_CHOICES: TugChoiceItem[] = [
+  { value: "down", label: "Down" },
+  { value: "up", label: "Up" },
+];
+
+const COMPLETION_DIRECTION_CHOICES: TugChoiceItem[] = [
+  { value: "down", label: "Down" },
+  { value: "up", label: "Up" },
+];
+
+const FONT_FAMILY_OPTIONS: TugPopupButtonItem<string>[] = [
+  { action: TUG_ACTIONS.SET_VALUE, value: "default", label: "Default (editor)" },
+  {
+    action: TUG_ACTIONS.SET_VALUE,
+    value: '"Hack", "JetBrains Mono", "SFMono-Regular", "Menlo", monospace',
+    label: "Hack (mono)",
+  },
+  {
+    action: TUG_ACTIONS.SET_VALUE,
+    value: '"IBM Plex Sans", "Inter", "Segoe UI", system-ui, sans-serif',
+    label: "IBM Plex Sans",
+  },
+  {
+    action: TUG_ACTIONS.SET_VALUE,
+    value: '"Inter", "Segoe UI", system-ui, sans-serif',
+    label: "Inter",
+  },
+];
+
+const FONT_SIZE_OPTIONS: TugPopupButtonItem<number>[] = [
+  { action: TUG_ACTIONS.SET_VALUE, value: 11, label: "11 px" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 12, label: "12 px" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 13, label: "13 px" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 14, label: "14 px" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 15, label: "15 px" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 16, label: "16 px" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 18, label: "18 px" },
+];
+
+const LINE_HEIGHT_OPTIONS: TugPopupButtonItem<number>[] = [
+  { action: TUG_ACTIONS.SET_VALUE, value: 1.2, label: "1.2" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 1.4, label: "1.4" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 1.6, label: "1.6" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 1.75, label: "1.75 (default)" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 2.0, label: "2.0" },
+];
+
+const LETTER_SPACING_OPTIONS: TugPopupButtonItem<string>[] = [
+  { action: TUG_ACTIONS.SET_VALUE, value: "-0.05em", label: "-0.05em" },
+  { action: TUG_ACTIONS.SET_VALUE, value: "-0.02em", label: "-0.02em" },
+  { action: TUG_ACTIONS.SET_VALUE, value: "normal", label: "Normal" },
+  { action: TUG_ACTIONS.SET_VALUE, value: "0.02em", label: "0.02em" },
+  { action: TUG_ACTIONS.SET_VALUE, value: "0.05em", label: "0.05em" },
+];
+
+/**
+ * Demo placeholder text. Mentions the completion triggers, drop
+ * action, IME case, and the Return-vs-Enter contrast so a manual
+ * walk-through hits every behavior the substrate exposes.
+ */
+const DEMO_PLACEHOLDER =
+  "Type here… @ for file, / for command, drag files, test IME, Return vs Enter";
+
 /**
  * Sample atoms exercising every kind that `tug-atom-img.ts` knows
  * how to draw. Each click on the matching button inserts a fresh
@@ -122,6 +211,25 @@ const ATOM_SAMPLES: { label: string; segment: AtomSegment }[] = [
     segment: { kind: "atom", type: "link", label: "anthropic.com", value: "https://www.anthropic.com" },
   },
 ];
+
+// ---------------------------------------------------------------------------
+// Drop handler
+// ---------------------------------------------------------------------------
+
+/**
+ * Map a `FileList` into one `file`-kind `AtomSegment` per file. Same
+ * shape `gallery-prompt-input` uses; the substrate runs the dropped
+ * payload through this and inserts the resulting atoms at the drop
+ * point in a single transaction.
+ */
+function galleryDropHandler(files: FileList): AtomSegment[] {
+  const atoms: AtomSegment[] = [];
+  for (let i = 0; i < files.length; i++) {
+    const name = files[i]!.name;
+    atoms.push({ kind: "atom", type: "file", label: name, value: name });
+  }
+  return atoms;
+}
 
 // ---------------------------------------------------------------------------
 // Empty provider — fallback when the live FILETREE connection isn't
@@ -200,9 +308,35 @@ interface GalleryTextEditProps {
 
 export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
   const editRef = useRef<TugEditDelegate>(null);
+
+  // ---- Layout / state props ----
+  const [maxRows, setMaxRows] = useState<number>(8);
+  const [growDirection, setGrowDirection] = useState<"up" | "down">("down");
+  const [maximized, setMaximized] = useState<boolean>(false);
+  const [disabled, setDisabled] = useState<boolean>(false);
+
+  // ---- Focus / border (existing) ----
   const [focusStyle, setFocusStyle] = useState<TugEditFocusStyle>("background");
   const [borderless, setBorderlessFlag] = useState<boolean>(false);
+
+  // ---- Behavior props ----
   const [returnAction, setReturnAction] = useState<InputAction>("newline");
+  const [enterAction, setEnterAction] = useState<InputAction>("submit");
+  const [completionDirection, setCompletionDirection] = useState<"up" | "down">("down");
+
+  // ---- Typography props ----
+  // `undefined` means "let the prop fall through to the token default";
+  // explicit values override.
+  const [fontFamily, setFontFamily] = useState<string | undefined>(undefined);
+  const [fontSize, setFontSize] = useState<number | undefined>(undefined);
+  const [lineHeight, setLineHeight] = useState<number | undefined>(undefined);
+  const [letterSpacing, setLetterSpacing] = useState<string | undefined>(undefined);
+
+  // ---- View controls ----
+  const [lineWrap, setLineWrap] = useState<boolean>(false);
+  const [lineNumbers, setLineNumbers] = useState<boolean>(false);
+
+  // ---- Submit counter (display only) ----
   const [submitCount, setSubmitCount] = useState<number>(0);
 
   // Per-card runtime history. The ref-held array is the single source
@@ -303,18 +437,63 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
     setSubmitCount((n) => n + 1);
   };
 
-  // Sender ids for the selectValue actions below.
+  // Sender ids for every responder-form binding below. Held in
+  // `useId()` slots so dispatches resolve through the responder
+  // chain by id, not by closure capture.
   const focusId = React.useId();
   const borderlessId = React.useId();
   const returnId = React.useId();
+  const enterId = React.useId();
+  const growId = React.useId();
+  const completionDirId = React.useId();
+  const maxRowsId = React.useId();
+  const disabledId = React.useId();
+  const lineWrapId = React.useId();
+  const lineNumbersId = React.useId();
+  const fontFamilyId = React.useId();
+  const fontSizeId = React.useId();
+  const lineHeightId = React.useId();
+  const letterSpacingId = React.useId();
 
   const { ResponderScope, responderRef } = useResponderForm({
     selectValue: {
       [focusId]: (v: string) => setFocusStyle(v as TugEditFocusStyle),
       [borderlessId]: (v: string) => setBorderlessFlag(v === "true"),
       [returnId]: (v: string) => setReturnAction(v as InputAction),
+      [enterId]: (v: string) => setEnterAction(v as InputAction),
+      [growId]: (v: string) => setGrowDirection(v as "up" | "down"),
+      [completionDirId]: (v: string) => setCompletionDirection(v as "up" | "down"),
+    },
+    toggle: {
+      [disabledId]: (v: boolean) => setDisabled(v),
+      [lineWrapId]: (v: boolean) => setLineWrap(v),
+      [lineNumbersId]: (v: boolean) => setLineNumbers(v),
+    },
+    setValueNumber: {
+      [maxRowsId]: (v: number) => setMaxRows(Math.max(1, Math.min(20, Math.round(v)))),
+      [fontSizeId]: (v: number) => setFontSize(v),
+      [lineHeightId]: (v: number) => setLineHeight(v),
+    },
+    setValueString: {
+      [fontFamilyId]: (v: string) => setFontFamily(v === "default" ? undefined : v),
+      [letterSpacingId]: (v: string) => setLetterSpacing(v === "normal" ? undefined : v),
     },
   });
+
+  // Derive labels for the typography popups so the trigger reads
+  // back the active value rather than a generic placeholder.
+  const fontFamilyLabel =
+    fontFamily === undefined
+      ? "Font: Default"
+      : `Font: ${FONT_FAMILY_OPTIONS.find((o) => o.value === fontFamily)?.label ?? "Custom"}`;
+  const fontSizeLabel =
+    fontSize === undefined ? "Size: Default" : `Size: ${fontSize}px`;
+  const lineHeightLabel =
+    lineHeight === undefined ? "Line: Default" : `Line: ${lineHeight}`;
+  const letterSpacingLabel =
+    letterSpacing === undefined
+      ? "Spacing: Normal"
+      : `Spacing: ${letterSpacing}`;
 
   return (
     <ResponderScope>
@@ -324,30 +503,95 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
         ref={responderRef as (el: HTMLDivElement | null) => void}
       >
 
-        {/* ---- Editor ---- */}
+        {/* ---- Editor ----
+            Toolbar above carries the imperative + typography
+            controls; the editor itself sits below. When
+            `maximized` is on, both wrap inside a fixed-height
+            flex column so the editor can fill that height.
+         */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">TugEdit</TugLabel>
-          <div className="gallery-text-edit-host">
-            <TugEdit
-              ref={editRef}
-              focusStyle={focusStyle}
-              borderless={borderless}
-              returnAction={returnAction}
-              onSubmit={handleSubmit}
-              historyProvider={historyProvider}
-              completionProviders={completionProviders}
-            />
+          <div
+            className="gallery-text-edit-stack"
+            data-maximized={maximized ? "" : undefined}
+          >
+            <div className="gallery-text-edit-toolbar">
+              <TugPushButton
+                size="sm"
+                emphasis="outlined"
+                onClick={() => editRef.current?.clear()}
+              >
+                Clear
+              </TugPushButton>
+              <TugPushButton
+                size="sm"
+                emphasis="ghost"
+                onClick={() => setMaximized((m) => !m)}
+              >
+                {maximized ? "Minimize" : "Maximize"}
+              </TugPushButton>
+              <TugPopupButton
+                label={fontFamilyLabel}
+                items={FONT_FAMILY_OPTIONS}
+                senderId={fontFamilyId}
+                size="sm"
+              />
+              <TugPopupButton
+                label={fontSizeLabel}
+                items={FONT_SIZE_OPTIONS}
+                senderId={fontSizeId}
+                size="sm"
+              />
+              <TugPopupButton
+                label={lineHeightLabel}
+                items={LINE_HEIGHT_OPTIONS}
+                senderId={lineHeightId}
+                size="sm"
+              />
+              <TugPopupButton
+                label={letterSpacingLabel}
+                items={LETTER_SPACING_OPTIONS}
+                senderId={letterSpacingId}
+                size="sm"
+              />
+            </div>
+            <div className="gallery-text-edit-host">
+              <TugEdit
+                ref={editRef}
+                placeholder={DEMO_PLACEHOLDER}
+                maxRows={maxRows}
+                growDirection={growDirection}
+                maximized={maximized}
+                disabled={disabled}
+                focusStyle={focusStyle}
+                borderless={borderless}
+                returnAction={returnAction}
+                numpadEnterAction={enterAction}
+                completionDirection={completionDirection}
+                lineWrap={lineWrap}
+                lineNumbers={lineNumbers}
+                fontFamily={fontFamily}
+                fontSize={fontSize === undefined ? undefined : `${fontSize}px`}
+                lineHeight={lineHeight}
+                letterSpacing={letterSpacing}
+                onSubmit={handleSubmit}
+                historyProvider={historyProvider}
+                completionProviders={completionProviders}
+                dropHandler={galleryDropHandler}
+              />
+            </div>
           </div>
         </div>
 
         <TugSeparator />
 
         {/* ---- Atoms ----
-           Each button inserts a fresh atom of one kind at the editor's
-           current selection. Verifies that atomicRanges, decoration
-           rendering, and the imperative `insertAtom` delegate method
-           work end to end.
-        */}
+            Each button inserts a fresh atom of one kind at the
+            editor's current selection. Verifies that
+            atomicRanges, decoration rendering, and the
+            imperative `insertAtom` delegate method work end to
+            end.
+         */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">Insert atom</TugLabel>
           <div className="gallery-text-edit-atom-row">
@@ -366,15 +610,127 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
 
         <TugSeparator />
 
-        {/* ---- Return action ---- */}
+        {/* ---- View controls ---- */}
         <div className="cg-section">
-          <TugLabel className="cg-section-title">Return action</TugLabel>
-          <TugChoiceGroup
-            items={RETURN_ACTION_CHOICES}
-            value={returnAction}
-            senderId={returnId}
-            size="sm"
-          />
+          <TugLabel className="cg-section-title">View</TugLabel>
+          <div className="gallery-text-edit-row">
+            <div className="gallery-text-edit-row-cell">
+              <span className="gallery-text-edit-row-label">Line wrap</span>
+              <TugSwitch
+                checked={lineWrap}
+                senderId={lineWrapId}
+                size="sm"
+              />
+            </div>
+            <div className="gallery-text-edit-row-cell">
+              <span className="gallery-text-edit-row-label">Line numbers</span>
+              <TugSwitch
+                checked={lineNumbers}
+                senderId={lineNumbersId}
+                size="sm"
+              />
+            </div>
+          </div>
+        </div>
+
+        <TugSeparator />
+
+        {/* ---- Layout ---- */}
+        <div className="cg-section">
+          <TugLabel className="cg-section-title">Layout</TugLabel>
+          <div className="gallery-text-edit-row">
+            <div className="gallery-text-edit-row-cell">
+              <span className="gallery-text-edit-row-label">Max rows</span>
+              <TugValueInput
+                value={maxRows}
+                senderId={maxRowsId}
+                min={1}
+                max={20}
+                step={1}
+                size="sm"
+              />
+            </div>
+            <div className="gallery-text-edit-row-cell">
+              <span className="gallery-text-edit-row-label">Disabled</span>
+              <TugSwitch
+                checked={disabled}
+                senderId={disabledId}
+                size="sm"
+              />
+            </div>
+            <div className="gallery-text-edit-row-cell">
+              <span className="gallery-text-edit-row-label">Grow direction</span>
+              <TugChoiceGroup
+                items={GROW_DIRECTION_CHOICES}
+                value={growDirection}
+                senderId={growId}
+                size="sm"
+              />
+            </div>
+          </div>
+        </div>
+
+        <TugSeparator />
+
+        {/* ---- Behavior ---- */}
+        <div className="cg-section">
+          <TugLabel className="cg-section-title">Behavior</TugLabel>
+          <div className="gallery-text-edit-row">
+            <div className="gallery-text-edit-row-cell">
+              <span className="gallery-text-edit-row-label">Return action</span>
+              <TugChoiceGroup
+                items={RETURN_ACTION_CHOICES}
+                value={returnAction}
+                senderId={returnId}
+                size="sm"
+              />
+            </div>
+            <div className="gallery-text-edit-row-cell">
+              <span className="gallery-text-edit-row-label">Numpad Enter</span>
+              <TugChoiceGroup
+                items={ENTER_ACTION_CHOICES}
+                value={enterAction}
+                senderId={enterId}
+                size="sm"
+              />
+            </div>
+            <div className="gallery-text-edit-row-cell">
+              <span className="gallery-text-edit-row-label">Completion popup</span>
+              <TugChoiceGroup
+                items={COMPLETION_DIRECTION_CHOICES}
+                value={completionDirection}
+                senderId={completionDirId}
+                size="sm"
+              />
+            </div>
+          </div>
+        </div>
+
+        <TugSeparator />
+
+        {/* ---- Style ---- */}
+        <div className="cg-section">
+          <TugLabel className="cg-section-title">Style</TugLabel>
+          <div className="gallery-text-edit-row">
+            <div className="gallery-text-edit-row-cell">
+              <span className="gallery-text-edit-row-label">Focus style</span>
+              <TugChoiceGroup
+                items={FOCUS_STYLE_CHOICES}
+                value={focusStyle}
+                senderId={focusId}
+                size="sm"
+              />
+            </div>
+            <div className="gallery-text-edit-row-cell">
+              <span className="gallery-text-edit-row-label">Border</span>
+              <TugChoiceGroup
+                items={BORDERLESS_CHOICES}
+                value={borderless ? "true" : "false"}
+                senderId={borderlessId}
+                size="sm"
+              />
+            </div>
+          </div>
         </div>
 
         <TugSeparator />
@@ -384,32 +740,6 @@ export function GalleryTextEdit({ cardId }: GalleryTextEditProps) {
           <TugLabel className="cg-section-title">
             {`Submits: ${submitCount}`}
           </TugLabel>
-        </div>
-
-        <TugSeparator />
-
-        {/* ---- Focus style ---- */}
-        <div className="cg-section">
-          <TugLabel className="cg-section-title">Focus style</TugLabel>
-          <TugChoiceGroup
-            items={FOCUS_STYLE_CHOICES}
-            value={focusStyle}
-            senderId={focusId}
-            size="sm"
-          />
-        </div>
-
-        <TugSeparator />
-
-        {/* ---- Borderless ---- */}
-        <div className="cg-section">
-          <TugLabel className="cg-section-title">Border</TugLabel>
-          <TugChoiceGroup
-            items={BORDERLESS_CHOICES}
-            value={borderless ? "true" : "false"}
-            senderId={borderlessId}
-            size="sm"
-          />
         </div>
 
       </div>

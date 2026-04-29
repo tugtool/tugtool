@@ -1146,16 +1146,16 @@ The patches are the wrong abstraction. The caret should be CM6-owned and atomica
 - Visual reference matching the polish bar of `gallery-prompt-input.tsx`.
 
 **Tasks:**
-- [ ] Add toggles / inputs for every prop in [Table T01](#t01-feature-surface) that isn't marked **Deferred**.
-- [ ] Atom-insert button row for each atom kind.
-- [ ] Wire the real `@` / `/` completion providers, the real `HistoryProvider`, and the real `DropHandler` into the gallery card so the card exercises production handlers, not gallery-only stand-ins.
+- [x] Added toggles / inputs for every undeferred prop in [Table T01](#t01-feature-surface): a toolbar above the editor carries Clear / Maximize / Font / Size / Line / Spacing; rows below cover View (lineWrap, lineNumbers), Layout (maxRows, disabled, growDirection), Behavior (returnAction, numpadEnterAction, completionDirection), and Style (focusStyle, borderless). Placeholder is set to a demo string that names every behavior the substrate exposes.
+- [x] Atom-insert button row covers all five `tug-atom-img` kinds (file, command, doc, image, link).
+- [x] Wired the real `FileTreeStore` `@`-trigger completion provider over a workspace-filtered `FeedStore<FILETREE>`, the fixture-backed `SessionMetadataStore.getCommandCompletionProvider()` for `/`, the per-card `CardHistoryProvider` (mirroring `SessionHistoryProvider`'s contract over a ref-held entry list), and `galleryDropHandler` for `FileList → AtomSegment[]`. No mock providers; no gallery-only stand-ins.
 
 **Tests:**
-- [ ] Integration: render the gallery card; assert each control mounts and dispatches.
+- [ ] Integration: render the gallery card; assert each control mounts and dispatches. **Skipped** — wiring a structural happy-dom render against the gallery card collides with the suite's process-wide `mock.module` of `@/lib/connection-singleton` (registered by `use-card-feed-store.test.tsx`, `tide-card.test.tsx`, `tide-card-last-error.test.tsx`). The substrate's prop wiring is already covered by the 33 `tug-edit.test.tsx` unit tests added in Steps 1–10; the gallery card is exercised by manual walk-through.
 
 **Checkpoint:**
-- [ ] Manual: walk the entire gallery card; every feature works as documented.
-- [ ] `bun run check`, `bun test`, `bun run audit:tokens lint` exit 0.
+- [ ] Manual: walk the entire gallery card; every feature works as documented. *(Pending user walkthrough — full prop surface now wired.)*
+- [x] `bun run check`, `bun test` exit 0 — full suite green (2548 / 2548). `bun run audit:tokens lint` baseline unchanged (6 preexisting `[data-drop-active]` violations untouched, no new ones from Step 11).
 
 ---
 

@@ -9,6 +9,41 @@
  * Laws: [L06] appearance via CSS, [L19] CSS organization.
  */
 
+/* ---------------------------------------------------------------------------
+   Editor block: toolbar above, host below.
+   --------------------------------------------------------------------------- */
+
+/*
+ * `.gallery-text-edit-stack` is the flex column holding the toolbar
+ * and the editor host. By default it grows to its content; when
+ * `[data-maximized]` is set on it (mirroring the prop on the inner
+ * `TugEdit` host wrapper), it switches to a fixed-height column so
+ * the maximized editor has a height to fill.
+ */
+.gallery-text-edit-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gallery-text-edit-stack[data-maximized] {
+  height: 320px;
+  min-height: 0;
+}
+
+/*
+ * Toolbar above the editor. Carries the imperative buttons (Clear,
+ * Maximize) and the typography popups (Font, Size, Line, Spacing).
+ * Wraps onto multiple rows when the gallery card is narrow.
+ */
+.gallery-text-edit-toolbar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .gallery-text-edit-host {
   display: flex;
   min-height: 240px;
@@ -18,9 +53,57 @@
   flex: 1 1 auto;
 }
 
+/*
+ * When the stack is maximized, the host fills the remaining vertical
+ * space inside the fixed-height stack. `min-height: 0` lets it
+ * shrink below the natural 240px baseline so it doesn't push the
+ * stack past its `height: 320px` cap.
+ */
+.gallery-text-edit-stack[data-maximized] > .gallery-text-edit-host {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Atom-insert row.
+   --------------------------------------------------------------------------- */
+
 .gallery-text-edit-atom-row {
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+/* ---------------------------------------------------------------------------
+   Control rows (View, Layout, Behavior, Style sections).
+   --------------------------------------------------------------------------- */
+
+/*
+ * `.gallery-text-edit-row` holds a horizontal series of labelled
+ * controls. Wraps onto multiple rows on narrow gallery widths.
+ * Mirrors the polish-bar shape used in `gallery-prompt-input.css`'s
+ * key-config section but laid out horizontally because each
+ * tug-edit section pairs short labels with compact controls.
+ */
+.gallery-text-edit-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+}
+
+.gallery-text-edit-row-cell {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.gallery-text-edit-row-label {
+  font-size: 12px;
+  font-weight: 500;
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+  color: var(--tug7-element-global-text-normal-default-rest);
 }
