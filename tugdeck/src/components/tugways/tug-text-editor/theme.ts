@@ -364,7 +364,7 @@ export const tugTheme: Extension = EditorView.theme({
     borderRight: "1px solid var(--tugx-text-editor-gutter-border-rest)",
     fontFamily: "var(--tug-font-family-editor, inherit)",
     fontSize:
-      "calc(var(--tug-font-size-editor, 14px) * 0.9)",
+      "calc(var(--tug-font-size-editor, 14px) * 0.85)",
     lineHeight:
       "calc(var(--tug-font-size-editor, 14px) * var(--tug-line-height-editor, 1.75))",
     letterSpacing: "var(--tug-letter-spacing-editor, normal)",
@@ -378,6 +378,6 @@ export const tugTheme: Extension = EditorView.theme({
   //   compensates for the smaller font sitting visually high in the
   //   row. Tunable.
   ".cm-lineNumbers .cm-gutterElement": {
-    padding: "0.25px 8px 0 6px",
+    padding: "0.6px 8px 0 6px",
   },
 });
