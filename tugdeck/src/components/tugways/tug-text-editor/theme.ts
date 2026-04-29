@@ -419,8 +419,8 @@ export const tugTheme: Extension = EditorView.theme({
   //   compensates for the smaller font sitting visually high in the
   //   row. Tunable.
   ".cm-lineNumbers .cm-gutterElement": {
-    minWidth: "4ch",
+    minWidth: "5ch",
     textAlign: "right",
-    padding: "0.6px 8px 0 6px",
+    padding: "0.6px 4px 0 5px",
   },
 });
