@@ -595,10 +595,17 @@ useLayoutEffect(() => {
 
 **References:** [L23], (#tuglaws-compliance)
 
-Update `tuglaws/state-preservation.md`'s "Capture moments" list to include HMR module replacement. Add a brief subsection on the bridge module pointing at `tugdeck/src/hmr-bridge.ts`. Mention the new app-test by AT-tag.
+Update `tuglaws/state-preservation.md`'s "Capture moments" list to include HMR module replacement. Add a brief subsection on the bridge module pointing at `tugdeck/src/hmr-bridge.ts`. Mention the new test by file path (the originally-planned app-test pivoted to a CardHost integration test — see [Step 5](#step-5)).
+
+**Implementation:**
+- **Capture moments** list grows from 3 entries to 6 — added `beforeunload` (which had been omitted from the doc despite already being in the framework), HMR module replacement (dev-only), and HMR full reload (dev-only).
+- **Restore moments** list grows from 3 entries to 4, adding "HMR content-factory remount (dev-only)" with a one-paragraph explanation of the count-based detector + the `callbacksVersion` bump pattern.
+- New top-level section **The HMR bridge** documents the three-layer architecture: bridge module → framework remount detection → substrate-local snapshot ref. Each layer has its scope (covered transition, mechanism, why the others can't observe it) explicit. Includes the `fastRefreshSnapshotRef` code snippet so the load-bearing pattern is greppable from the doc.
+- **Files** section gains entries for `hmr-bridge.ts`, `tug-edit.tsx`'s snapshot-ref site, and the new `card-host-hmr-remount.test.tsx` integration test. The `card-host.tsx` entry is updated to mention the count-based remount detector and the `callbacksVersion` plumbing across the three restore effects.
+- **Cross-Links** section gains an entry for the HMR plan doc (full design rationale) and the Vite HMR API reference.
 
 **Checkpoint:**
-- [ ] Doc reflects implementation.
+- [x] Doc reflects implementation. `bun run check` and `bun test` exit 0 (markdown-only update, but verified to confirm no incidental fallout).
 
 ---
 

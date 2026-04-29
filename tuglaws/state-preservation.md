@@ -128,7 +128,10 @@ The framework drives both layers from a small set of well-defined moments. Outsi
 
 1. **Tab deactivation.** The user switches away from this card to a sibling within the same pane. The card stays mounted; the captured bag is held in DeckManager's in-memory cache and debounced to tugbank.
 2. **`saveState` RPC.** Triggered by Swift on app-level events (resign-active, hide). The framework captures every active card's bag in one pass. This is the "before backgrounding" capture.
-3. **Close-before-destroy.** A flush path. Before a card is torn down (close or move to a different pane), the framework captures one last bag so reopen / drop can replay it.
+3. **`beforeunload`.** Browser-level page reload or navigation. DeckManager listens once at construction and iterates every active card's `onSave` synchronously before the page tears down. Idempotent against `reloadPending` / `stateFlushed` so a manual `prepareForReload` followed by a real `beforeunload` doesn't double-save.
+4. **Close-before-destroy.** A flush path. Before a card is torn down (close or move to a different pane), the framework captures one last bag so reopen / drop can replay it.
+5. **HMR module replacement (dev-only).** `tugdeck/src/hmr-bridge.ts` listens for Vite's `vite:beforeUpdate` event — fired synchronously before any module replacement applies — and triggers `deck.captureAllForTeardown("hmr")`, which is the same iterate-and-save body that `beforeunload` runs. The bag lands in DeckManager's in-memory cache before React Fast Refresh starts remounting components. `import.meta.hot` is `undefined` in production builds, so the entire bridge is dead code in shipped bundles. See [The HMR bridge](#the-hmr-bridge) below.
+6. **HMR full reload (dev-only).** Sibling of `beforeunload`. The bridge listens for Vite's `vite:beforeFullReload` and triggers `deck.captureAllForTeardown("hmr-full-reload")`. Defensive — if Vite escalates from incremental HMR to a full page reload, both `vite:beforeFullReload` and `beforeunload` may fire; the second is a no-op via the `reloadPending` / `stateFlushed` guard.
 
 The capture-phase invariant ([A9], gated by [`smoke-capture-phase-save.test.ts`](../tests/app-test/harness-smoke/smoke-capture-phase-save.test.ts)) is that capture runs **before any DOM mutation** in the same React commit. If a tab switch tears down the outgoing card's DOM and then runs capture, the captured value is empty. The protocol guarantees the inverse: capture runs in `useLayoutEffect` (Rule 3 / [L03]) before the commit phase that would unmount, so the live DOM is always observable when `captureState` / `onSave` fire. The smoke test asserts this at the architecture level so the invariant can never silently regress.
 
@@ -139,12 +142,84 @@ The capture-phase invariant ([A9], gated by [`smoke-capture-phase-save.test.ts`]
 1. **Cold-boot mount.** First mount of `CardHost` after a process boot, when a previously-saved bag exists for this `cardId`.
 2. **Cross-pane move replay.** A card moved between panes is unmounted at the source and re-mounted at the destination; the bag captured at close-before-destroy is replayed on the new `CardHost`.
 3. **Tab-close-then-reopen.** Same shape as cross-pane move — a fresh `CardHost` mount with a previously-saved bag.
+4. **HMR content-factory remount (dev-only).** When Vite hot-replaces a module that React Fast Refresh handles by remounting just the content factory (CardHost itself stays up), `useCardStatePreservation`'s cleanup-then-mount cycle drives a second `register` call on the same CardHost. CardHost's `registerStatePreservationCallbacks` counts real registrations; the second-or-later real call (carrying `restorePendingRef`) is treated as a remount. The one-shot guards `hasAppliedContentRestoreRef` and `hasRestoredComponentsRef` reset, the `callbacksVersion` bump re-fires the existing restore effects, and both `bag.content` and `bag.components` replay onto the new tree. The framework-axes restore effect (`bag.scroll`, `bag.formControls`, `bag.regionScroll`, `bag.domSelection`, `bag.focus`) also re-fires on the same version bump. See [The HMR bridge](#the-hmr-bridge) and the corresponding `card-host-hmr-remount.test.tsx` test for end-to-end coverage of this transition.
 
 Restore does **not** fire on intra-pane tab switch. Tab switches are pure visibility transitions: the inactive card's DOM stays mounted, the user's state stays alive in the live tree, and there is nothing to restore because nothing was destroyed. This is L23 in its strongest form.
 
 ### What's in `bag` at save time vs. restore time
 
 Both ends see the same shape: a `CardStateBag`. At save time, every axis is populated from the live DOM and the live React tree (`captureFocus(cardRoot)`, walking `data-tug-state-key` for `bag.formControls`, walking `data-tug-scroll-key` for `bag.regionScroll`, calling each registered `captureState()` for `bag.components`, calling the card's `onSave()` for `bag.content`). At restore time, the same bag is replayed onto a freshly-mounted DOM: form controls re-set their `.value` (with a `MutationObserver` re-applying for late mounts), regions re-scroll, the focus snapshot is dispatched through `applyFocusSnapshot` on the active card of the active pane, and the components-axis is replayed in parent-first order via the registry.
+
+---
+
+## The HMR bridge
+
+Vite's HMR is the protocol's fifth and sixth capture moment, scoped to dev-mode only. Three pieces work together; each handles a transition the others can't observe.
+
+### Bridge module — `tugdeck/src/hmr-bridge.ts`
+
+A single named export, `installHmrBridge(deck)`, called once from `main.tsx` after `new DeckManager(...)`. Inside, an early-return guard on `import.meta.hot` (which Vite strips to `undefined` in production) wraps two listener registrations:
+
+- `vite:beforeUpdate` → `deck.captureAllForTeardown("hmr")`
+- `vite:beforeFullReload` → `deck.captureAllForTeardown("hmr-full-reload")`
+
+`captureAllForTeardown(reason)` is the same iterate-and-save body that `handleBeforeUnload` calls — `handleBeforeUnload` itself collapses to a one-line delegate. The `reason` parameter only affects the `save-callback` deck-trace tag.
+
+The bridge also calls `import.meta.hot.accept(() => import.meta.hot.invalidate())` so a self-edit forces a full page reload rather than re-running the body, which would accumulate duplicate listeners on each subsequent HMR cycle.
+
+### Framework remount detection — `card-host.tsx`
+
+When React Fast Refresh remounts a content factory whose tree lives inside a CardHost that itself stays mounted, `useCardStatePreservation`'s cleanup-then-mount cycle drives a second `register` call. CardHost's `registerStatePreservationCallbacks` counts real registrations (those carrying `restorePendingRef`) per CardHost instance. The second-or-later real call resets `hasAppliedContentRestoreRef` and `hasRestoredComponentsRef`; the `callbacksVersion` bump re-fires the existing restore effects, replaying both `bag.content` and `bag.components` onto the new tree. The framework-axes restore effect (scroll, formControls, regionScroll, domSelection, focus) also re-fires on the same version bump for non-content cards.
+
+### Substrate-local snapshot — `tugdeck/src/components/tugways/tug-edit.tsx`
+
+The framework path covers true content-factory remounts. It does **not** cover Fast Refresh's "soft refresh" pattern: when Vite hot-replaces a module, Fast Refresh re-runs `useLayoutEffect` cleanups + bodies *for hooks defined in that module's source*, while preserving the React component instance and its `useState` / `useRef` values. `useCardStatePreservation` lives in a different source module than `tug-edit.tsx`, so its effect doesn't re-run, no `register` call lands, and the framework's remount detector sees nothing — yet `tug-edit.tsx`'s mount effect *does* re-run, destroying and recreating the CM6 view.
+
+`TugEdit` covers this gap with a single `useRef<TugTextEditingState | null>` per instance:
+
+```ts
+const fastRefreshSnapshotRef = useRef<TugTextEditingState | null>(null);
+
+useLayoutEffect(() => {
+  // …construct view…
+
+  if (pendingRestoreRef.current !== null) {
+    // framework path (cold-boot, cross-pane move, etc.)
+  } else if (fastRefreshSnapshotRef.current !== null) {
+    restoreEditState(view, fastRefreshSnapshotRef.current);
+    fastRefreshSnapshotRef.current = null;
+  }
+
+  return () => {
+    if (view.contentDOM.isConnected) {
+      try {
+        fastRefreshSnapshotRef.current = captureEditState(view);
+      } catch {
+        fastRefreshSnapshotRef.current = null;
+      }
+    }
+    // …destroy view…
+  };
+}, []);
+```
+
+The framework-driven `pendingRestoreRef` path takes precedence; the snapshot ref is checked only when no framework restore is pending — exactly the case Fast Refresh's soft refresh produces. On a true remount the component instance is gone and so is the ref; the framework bag becomes the source of truth on those paths.
+
+This is **not** a sidecar cache. The earlier prototype was a module-scoped `Map<cardId, …>` that competed with the framework bag; it was rejected for the four reasons enumerated in `roadmap/tugplan-hmr-state-preservation.md` (two sources of truth, doesn't generalize, hides the contract, fights Fast Refresh's React-state-preservation). The substrate-local `useRef` is fundamentally different: scoped to one component instance, only fires when the framework can't observe the transition, generalizes nothing because nothing else needs it.
+
+Other components with non-React state that can be lost across same-instance effect re-run (a future canvas, video player, WebGL surface, etc.) can adopt the same one-line `useRef` pattern; nothing about it leaks across components.
+
+### Three layers, each handling its own case
+
+| Layer | Mechanism | Triggered by |
+|---|---|---|
+| Framework bag pipeline | `useCardStatePreservation` ↔ CardHost ↔ deck-manager → tugbank | Cold-boot, cross-pane move, `beforeunload`, `saveState` RPC |
+| Framework remount detection | Count-based `register` detector + reset of one-shot guards | True content-factory remount with CardHost staying up |
+| Substrate-local snapshot ref | `fastRefreshSnapshotRef` in `TugEdit` (one-line pattern, adoptable by analogous substrates) | React Fast Refresh same-instance effect re-run |
+
+End-to-end manual gating: edit any substrate file in dev, save, watch the editor's typed text + selection survive across Vite's HMR cycle. Automated coverage: `tugdeck/src/__tests__/card-host-hmr-remount.test.tsx` pins the framework remount-detection logic; AT0042 pins the cold-boot end-to-end path; the manual walk on the `tug-edit` gallery card pins the live Fast Refresh round-trip that test infrastructure can't produce faithfully.
+
+The full design rationale and step history lives in [`roadmap/tugplan-hmr-state-preservation.md`](../roadmap/tugplan-hmr-state-preservation.md).
 
 ---
 
@@ -257,8 +332,11 @@ Primary sources — the files that define the protocol's exported identifiers. L
 
 Secondary sources — where the protocol is wired up in practice.
 
-- [`tugdeck/src/components/chrome/card-host.tsx`](../tugdeck/src/components/chrome/card-host.tsx) — `captureFocus`, `applyFocusSnapshot`, the `registerStatePreservationCallbacks` plumbing, the post-attach effect that orders DOM-authority restore after `onContentReady`.
-- [`tugdeck/src/deck-manager.ts`](../tugdeck/src/deck-manager.ts) — Per-card `CardStateBag` cache; activation and deactivation callback channels (`registerActivationCallback`, `invokeActivationCallback`, `registerDeactivationCallback`); `saveState` RPC entry point.
+- [`tugdeck/src/components/chrome/card-host.tsx`](../tugdeck/src/components/chrome/card-host.tsx) — `captureFocus`, `applyFocusSnapshot`, the `registerStatePreservationCallbacks` plumbing (including the count-based remount detector), the post-attach effect that orders DOM-authority restore after `onContentReady`, and the `callbacksVersion` dep across the framework-axes / content-axis / components-axis restore effects.
+- [`tugdeck/src/deck-manager.ts`](../tugdeck/src/deck-manager.ts) — Per-card `CardStateBag` cache; activation and deactivation callback channels (`registerActivationCallback`, `invokeActivationCallback`, `registerDeactivationCallback`); `saveState` RPC entry point; the public `captureAllForTeardown(reason)` entry point shared by `beforeunload` and the HMR bridge.
+- [`tugdeck/src/hmr-bridge.ts`](../tugdeck/src/hmr-bridge.ts) — Dev-only `installHmrBridge(deck)`; routes Vite's `vite:beforeUpdate` and `vite:beforeFullReload` events into `deck.captureAllForTeardown(reason)`.
+- [`tugdeck/src/components/tugways/tug-edit.tsx`](../tugdeck/src/components/tugways/tug-edit.tsx) — Per-instance `fastRefreshSnapshotRef` mount-effect snapshot/replay, covering Fast Refresh's same-instance effect re-run case the framework signal can't observe.
+- [`tugdeck/src/__tests__/card-host-hmr-remount.test.tsx`](../tugdeck/src/__tests__/card-host-hmr-remount.test.tsx) — CardHost integration test pinning the count-based remount detector (content + components axes round-trip across simulated remount, cold-boot guard preserved, multi-cycle stability).
 - [`tests/app-test/harness-smoke/smoke-capture-phase-save.test.ts`](../tests/app-test/harness-smoke/smoke-capture-phase-save.test.ts) — Architecture-level smoke test gating the capture-phase invariant.
 
 ---
@@ -270,5 +348,7 @@ Secondary sources — where the protocol is wired up in practice.
 - [pane-model.md](pane-model.md) — Deck → Pane → Card hierarchy; cards are the unit of preservation, panes own geometry, the deck owns the per-card bag cache.
 - [responder-chain.md](responder-chain.md) — First-responder promotion drives the `isActive` flag in `onRestore`; `applyFocusSnapshot` interacts with the responder chain on cold-boot restore.
 - [app-test-inventory.md](app-test-inventory.md) — Every AT-tag that gates this protocol. The regression catalog.
+- [`roadmap/tugplan-hmr-state-preservation.md`](../roadmap/tugplan-hmr-state-preservation.md) — Step-by-step history of the HMR-as-known-transition extension (capture-side bridge, restore-side count-based remount detection, substrate-local snapshot for Fast Refresh's soft-refresh path, and the design rationale behind each layer).
+- [Vite HMR API](https://vitejs.dev/guide/api-hmr.html) — `import.meta.hot.on` events, including `vite:beforeUpdate` and `vite:beforeFullReload`, which the bridge module subscribes to.
 - [tuglaws.md](tuglaws.md) — [L23] (state preservation across bookkeeping operations); [L09] / [L10] (Pane vs. Card responsibilities); [L03] (`useLayoutEffect` for registrations).
 - [design-decisions.md](design-decisions.md) — [D13] (Component State Preservation Protocol), [D49] (per-tab state bag), [D50] (`useCardStatePreservation` hook), [D78] (child-driven ready callback), [D79] (no `requestAnimationFrame` for state-commit-dependent ops).
