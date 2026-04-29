@@ -584,3 +584,198 @@ describe("TugEdit — captureEditState / applyEditState", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Prop surface
+// ---------------------------------------------------------------------------
+//
+// Structural assertions for the prop surface added in Step 10
+// (placeholder, maxRows, growDirection, maximized, disabled,
+// fontFamily, fontSize, lineHeight, letterSpacing, lineWrap,
+// lineNumbers). Each test mounts a `TugEdit` with the prop set,
+// then checks the corresponding DOM artifact: a data attribute on
+// the host, an inline CSS variable, an extension-rendered DOM
+// node, or a CM6 facet read on the view.
+
+import { EditorState as ES } from "@codemirror/state";
+
+function PropHarness({
+  delegateRef,
+  ...props
+}: {
+  delegateRef: { current: TugEditDelegate | null };
+} & React.ComponentProps<typeof TugEdit>) {
+  const ref = useRef<TugEditDelegate>(null);
+  useLayoutEffect(() => {
+    delegateRef.current = ref.current;
+    return () => {
+      delegateRef.current = null;
+    };
+  }, [delegateRef]);
+  return <TugEdit ref={ref} data-testid="harness-edit" {...props} />;
+}
+
+describe("TugEdit — prop surface", () => {
+  describe("defaults", () => {
+    it("emits the default data attributes when no layout props are set", () => {
+      const delegateRef: { current: TugEditDelegate | null } = { current: null };
+      const { container } = render(<PropHarness delegateRef={delegateRef} />);
+      const host = container.querySelector<HTMLElement>('[data-testid="harness-edit"]')!;
+      expect(host.getAttribute("data-disabled")).toBeNull();
+      expect(host.getAttribute("data-maximized")).toBeNull();
+      expect(host.getAttribute("data-grow-direction")).toBe("down");
+      // `--tug-edit-max-rows` always lands so the CSS calc has a valid input.
+      expect(host.style.getPropertyValue("--tug-edit-max-rows")).toBe("8");
+    });
+  });
+
+  describe("placeholder", () => {
+    it("renders the placeholder DOM when set", () => {
+      const delegateRef: { current: TugEditDelegate | null } = { current: null };
+      const { container } = render(
+        <PropHarness delegateRef={delegateRef} placeholder="Type here…" />,
+      );
+      // CM6's `placeholder` extension paints a span/div inside
+      // `.cm-content` carrying the placeholder text. Querying by
+      // text content is the most stable assertion across CM6
+      // versions (the exact element / class isn't part of CM6's
+      // public API).
+      const host = container.querySelector<HTMLElement>('[data-testid="harness-edit"]')!;
+      expect(host.textContent).toContain("Type here…");
+    });
+
+    it("renders nothing for the placeholder when empty", () => {
+      const delegateRef: { current: TugEditDelegate | null } = { current: null };
+      const { container } = render(
+        <PropHarness delegateRef={delegateRef} placeholder="" />,
+      );
+      const host = container.querySelector<HTMLElement>('[data-testid="harness-edit"]')!;
+      expect(host.textContent).toBe("");
+    });
+  });
+
+  describe("maxRows", () => {
+    it("writes `--tug-edit-max-rows` as the inline CSS variable", () => {
+      const delegateRef: { current: TugEditDelegate | null } = { current: null };
+      const { container } = render(
+        <PropHarness delegateRef={delegateRef} maxRows={4} />,
+      );
+      const host = container.querySelector<HTMLElement>('[data-testid="harness-edit"]')!;
+      expect(host.style.getPropertyValue("--tug-edit-max-rows")).toBe("4");
+    });
+  });
+
+  describe("growDirection", () => {
+    it('emits data-grow-direction="up" when set to "up"', () => {
+      const delegateRef: { current: TugEditDelegate | null } = { current: null };
+      const { container } = render(
+        <PropHarness delegateRef={delegateRef} growDirection="up" />,
+      );
+      const host = container.querySelector<HTMLElement>('[data-testid="harness-edit"]')!;
+      expect(host.getAttribute("data-grow-direction")).toBe("up");
+    });
+  });
+
+  describe("maximized", () => {
+    it("emits data-maximized when true and clears it when false", () => {
+      const delegateRef: { current: TugEditDelegate | null } = { current: null };
+      const { container, rerender } = render(
+        <PropHarness delegateRef={delegateRef} maximized />,
+      );
+      const host = container.querySelector<HTMLElement>('[data-testid="harness-edit"]')!;
+      expect(host.getAttribute("data-maximized")).toBe("");
+      rerender(<PropHarness delegateRef={delegateRef} maximized={false} />);
+      expect(host.getAttribute("data-maximized")).toBeNull();
+    });
+  });
+
+  describe("disabled", () => {
+    it("sets EditorState.readOnly and emits the host data attribute", () => {
+      const delegateRef: { current: TugEditDelegate | null } = { current: null };
+      const { container, rerender } = render(
+        <PropHarness delegateRef={delegateRef} disabled />,
+      );
+      const host = container.querySelector<HTMLElement>('[data-testid="harness-edit"]')!;
+      const view = delegateRef.current!.view()!;
+      expect(host.getAttribute("data-disabled")).toBe("");
+      expect(host.getAttribute("aria-disabled")).toBe("true");
+      expect(view.state.facet(ES.readOnly)).toBe(true);
+
+      rerender(<PropHarness delegateRef={delegateRef} disabled={false} />);
+      expect(host.getAttribute("data-disabled")).toBeNull();
+      expect(host.getAttribute("aria-disabled")).toBeNull();
+      // The view itself is preserved across the reconfigure — the
+      // Compartment swap leaves the EditorView's identity intact.
+      expect(delegateRef.current!.view()).toBe(view);
+      expect(view.state.facet(ES.readOnly)).toBe(false);
+    });
+  });
+
+  describe("typography", () => {
+    it("sets the four CSS custom properties when each prop is supplied", () => {
+      const delegateRef: { current: TugEditDelegate | null } = { current: null };
+      const { container } = render(
+        <PropHarness
+          delegateRef={delegateRef}
+          fontFamily='"Inter", sans-serif'
+          fontSize="16px"
+          lineHeight={2}
+          letterSpacing="0.02em"
+        />,
+      );
+      const host = container.querySelector<HTMLElement>('[data-testid="harness-edit"]')!;
+      expect(host.style.getPropertyValue("--tug-font-family-editor")).toBe(
+        '"Inter", sans-serif',
+      );
+      expect(host.style.getPropertyValue("--tug-font-size-editor")).toBe("16px");
+      expect(host.style.getPropertyValue("--tug-line-height-editor")).toBe("2");
+      expect(host.style.getPropertyValue("--tug-letter-spacing-editor")).toBe(
+        "0.02em",
+      );
+    });
+
+    it("omits the CSS custom property when the prop is undefined", () => {
+      const delegateRef: { current: TugEditDelegate | null } = { current: null };
+      const { container } = render(<PropHarness delegateRef={delegateRef} />);
+      const host = container.querySelector<HTMLElement>('[data-testid="harness-edit"]')!;
+      expect(host.style.getPropertyValue("--tug-font-family-editor")).toBe("");
+      expect(host.style.getPropertyValue("--tug-font-size-editor")).toBe("");
+      expect(host.style.getPropertyValue("--tug-line-height-editor")).toBe("");
+      expect(host.style.getPropertyValue("--tug-letter-spacing-editor")).toBe("");
+    });
+  });
+
+  describe("lineWrap", () => {
+    it("toggles `EditorView.lineWrapping` via the Compartment", () => {
+      const delegateRef: { current: TugEditDelegate | null } = { current: null };
+      const { rerender } = render(<PropHarness delegateRef={delegateRef} />);
+      const view = delegateRef.current!.view()!;
+      // The `EditorView.lineWrapping` extension contributes a
+      // `cm-lineWrapping` class to `.cm-content` via the
+      // `contentAttributes` facet. We read the class directly because
+      // the public `view.lineWrapping` getter reads from the height
+      // oracle, which is only refreshed on a real layout cycle —
+      // happy-dom doesn't run one, so it stays at its initial value.
+      // The class assertion is the underlying contract: it's what
+      // CM6 itself uses (in `guessWrapping`) to decide whether the
+      // extension is engaged.
+      expect(view.contentDOM.classList.contains("cm-lineWrapping")).toBe(false);
+      rerender(<PropHarness delegateRef={delegateRef} lineWrap />);
+      expect(view.contentDOM.classList.contains("cm-lineWrapping")).toBe(true);
+      // The view identity is preserved across the Compartment swap.
+      expect(delegateRef.current!.view()).toBe(view);
+    });
+  });
+
+  describe("lineNumbers", () => {
+    it("renders the gutter when enabled and removes it when disabled", () => {
+      const delegateRef: { current: TugEditDelegate | null } = { current: null };
+      const { container, rerender } = render(
+        <PropHarness delegateRef={delegateRef} lineNumbers />,
+      );
+      const host = container.querySelector<HTMLElement>('[data-testid="harness-edit"]')!;
+      expect(host.querySelector(".cm-lineNumbers")).not.toBeNull();
+      rerender(<PropHarness delegateRef={delegateRef} lineNumbers={false} />);
+      expect(host.querySelector(".cm-lineNumbers")).toBeNull();
+    });
+  });
+});

@@ -79,9 +79,9 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { EditorSelection, EditorState } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
-import { EditorView, keymap } from "@codemirror/view";
+import { EditorView, keymap, lineNumbers as cmLineNumbers, placeholder as cmPlaceholder } from "@codemirror/view";
 import {
   defaultKeymap,
   history,
@@ -156,8 +156,52 @@ const DEFAULT_RETURN_ACTION: InputAction = "submit";
 /** Default numpad-Enter action. Matches `tug-prompt-input`'s default. */
 const DEFAULT_NUMPAD_ENTER_ACTION: InputAction = "submit";
 
+/**
+ * Default maxRows when `maxRows` is not supplied. Matches
+ * `tug-prompt-input`'s historical maximum visible rows.
+ */
+const DEFAULT_MAX_ROWS = 8;
+
 /** No-op submit handler used when the host omits `onSubmit`. */
 const noopSubmit = (): void => {};
+
+// ---------------------------------------------------------------------------
+// Compartments
+// ---------------------------------------------------------------------------
+//
+// Compartments let the React shell reconfigure individual extensions
+// (placeholder text, soft-wrap toggle, gutter toggle, read-only toggle)
+// without rebuilding the EditorView. Each Compartment is module-scoped
+// because CM6 identifies a Compartment by reference — the shell
+// dispatches `compartment.reconfigure(newExt)` whenever the
+// corresponding prop changes, and CM6 swaps the Compartment's contents
+// in place. The view, the document, the selection, the history, and
+// every other extension are untouched.
+//
+// Why module-scope, not per-instance: a Compartment's identity is the
+// reference itself; dispatching `reconfigure(...)` on a Compartment
+// the view doesn't carry is a no-op. Module-scope means every
+// `TugEdit` mount uses the same Compartment identities — the
+// `buildExtensions` call wraps each one for that particular view
+// when the view is constructed, and subsequent `useLayoutEffect`
+// passes can reach into the live view and reconfigure.
+//
+// `Compartment.of(initial)` returns the wrapped extension; we feed
+// the initial prop values at view-construction time inside
+// `buildExtensions`, then use `compartment.reconfigure(next)` from
+// effects on prop change.
+
+/** Reconfigurable placeholder text. Empty extension when no placeholder. */
+const placeholderCompartment = new Compartment();
+
+/** Reconfigurable soft-wrap (`EditorView.lineWrapping` or empty). */
+const lineWrapCompartment = new Compartment();
+
+/** Reconfigurable line-number gutter (`lineNumbers()` or empty). */
+const lineNumbersCompartment = new Compartment();
+
+/** Reconfigurable read-only state (`EditorState.readOnly.of(true|false)`). */
+const readOnlyCompartment = new Compartment();
 
 // ---------------------------------------------------------------------------
 // TugEditDelegate
@@ -382,6 +426,91 @@ export interface TugEditProps
    * @default true
    */
   preserveState?: boolean;
+  /**
+   * Empty-state hint rendered inside the editor when the document is
+   * empty. Wired through `@codemirror/view`'s `placeholder` extension
+   * via a Compartment so changes take effect without remounting.
+   * @default ""
+   */
+  placeholder?: string;
+  /**
+   * Maximum visible rows before vertical scrolling kicks in. Caps the
+   * height of `.cm-scroller` via CSS:
+   * `max-height: calc(var(--tug-edit-max-rows) * 1lh + padding)`.
+   * Ignored when `maximized` is true.
+   * @default 8
+   * @selector .tug-edit (CSS variable `--tug-edit-max-rows`)
+   */
+  maxRows?: number;
+  /**
+   * Direction the editor grows as lines are added.
+   * `"down"` — top edge fixed, bottom extends (default).
+   * `"up"` — bottom edge fixed, top extends. The host wrapper sets
+   * `data-grow-direction="up"`; layout consumers anchor the editor to
+   * the bottom of a flex parent (`align-self: flex-end` /
+   * `margin-top: auto` patterns).
+   * @default "down"
+   * @selector .tug-edit[data-grow-direction]
+   */
+  growDirection?: "up" | "down";
+  /**
+   * Expand the editor to fill available container space. The container
+   * must be a flex column with a constrained height. When true,
+   * `maxRows` is ignored and `.cm-scroller` switches from
+   * `max-height` (capped) to `flex: 1 1 auto` (fills parent).
+   * @default false
+   * @selector .tug-edit[data-maximized]
+   */
+  maximized?: boolean;
+  /**
+   * Whether the editor is disabled. Sets `EditorState.readOnly` so
+   * CM6 rejects content edits at the transaction level, and toggles
+   * `data-disabled` on the host wrapper for visual state.
+   * @default false
+   * @selector .tug-edit[data-disabled]
+   */
+  disabled?: boolean;
+  /**
+   * Soft-wrap long lines at the editor's width. When true, adds
+   * `EditorView.lineWrapping` (sets `white-space: break-spaces` on
+   * `.cm-content`); when false, long lines scroll horizontally.
+   * @default false
+   */
+  lineWrap?: boolean;
+  /**
+   * Show line numbers in a left gutter. When true, adds
+   * `lineNumbers()` from `@codemirror/view`. The gutter sits inside
+   * `.cm-scroller` and does not shift the caret-column origin.
+   * @default false
+   */
+  lineNumbers?: boolean;
+  /**
+   * CSS `font-family` for the editor surface. Sets the
+   * `--tug-font-family-editor` custom property on the host wrapper;
+   * the theme reads it via `var(--tug-font-family-editor, …)` so
+   * undefined falls back to the existing token.
+   */
+  fontFamily?: string;
+  /**
+   * CSS `font-size` for the editor surface (e.g. `"14px"`,
+   * `"1rem"`). Sets `--tug-font-size-editor` on the host wrapper.
+   */
+  fontSize?: string;
+  /**
+   * CSS `line-height` for the editor surface. Accepts either a
+   * unitless number (e.g. `1.75`, treated as a multiplier of
+   * `font-size`) or a CSS length string (e.g. `"24px"`). Sets
+   * `--tug-line-height-editor` on the host wrapper. The
+   * `.cm-line::before` ghost uses `1lh` so any change propagates to
+   * line-box height regardless of unit.
+   */
+  lineHeight?: string | number;
+  /**
+   * CSS `letter-spacing` for the editor surface (e.g. `"0.01em"`,
+   * `"normal"`). Sets `--tug-letter-spacing-editor` on the host
+   * wrapper.
+   */
+  letterSpacing?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -404,9 +533,25 @@ function buildExtensions(
   getKeymapConfig: () => TugEditKeymapConfig,
   getCompletionProviders: () => Record<string, CompletionProvider>,
   getDropHandler: () => DropHandler | null,
+  initial: {
+    placeholder: string;
+    lineWrap: boolean;
+    lineNumbers: boolean;
+    disabled: boolean;
+  },
 ): readonly Extension[] {
   return [
     history(),
+    // Compartment-wrapped extensions go first so their initial values
+    // are layered before precedence-sensitive extensions (keymap, theme).
+    // Each compartment is reconfigured from the React shell on prop
+    // change without rebuilding the view.
+    placeholderCompartment.of(
+      initial.placeholder !== "" ? cmPlaceholder(initial.placeholder) : [],
+    ),
+    lineWrapCompartment.of(initial.lineWrap ? EditorView.lineWrapping : []),
+    lineNumbersCompartment.of(initial.lineNumbers ? cmLineNumbers() : []),
+    readOnlyCompartment.of(EditorState.readOnly.of(initial.disabled)),
     // Typeahead first so its `Prec.highest` keymap sees Enter / Tab /
     // Arrows / Escape before the Step 4 keymap when a session is
     // active. When inactive, every branch returns `false` and the
@@ -476,6 +621,18 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
       onTypeaheadChange,
       dropHandler,
       preserveState = true,
+      placeholder = "",
+      maxRows = DEFAULT_MAX_ROWS,
+      growDirection = "down",
+      maximized = false,
+      disabled = false,
+      lineWrap = false,
+      lineNumbers: lineNumbersProp = false,
+      fontFamily,
+      fontSize,
+      lineHeight,
+      letterSpacing,
+      style: styleProp,
       ...rest
     }: TugEditProps,
     ref,
@@ -539,6 +696,73 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
     useLayoutEffect(() => {
       dropHandlerRef.current = dropHandler ?? null;
     }, [dropHandler]);
+
+    // Snapshot refs for Compartment-wrapped extensions. The mount
+    // effect (empty-deps) reads these refs to seed initial values into
+    // `buildExtensions`. Subsequent prop changes flow through the
+    // matching reconfigure effects below — the refs aren't read again
+    // after mount, but they're convenient for the mount path because
+    // React 19 StrictMode runs mount → cleanup → mount in dev and the
+    // re-mount needs the latest values, not the values from the
+    // closure that was captured at first mount [L07].
+    const placeholderRef = useRef(placeholder);
+    const lineWrapRef = useRef(lineWrap);
+    const lineNumbersRef = useRef(lineNumbersProp);
+    const disabledRef = useRef(disabled);
+    useLayoutEffect(() => {
+      placeholderRef.current = placeholder;
+    }, [placeholder]);
+    useLayoutEffect(() => {
+      lineWrapRef.current = lineWrap;
+    }, [lineWrap]);
+    useLayoutEffect(() => {
+      lineNumbersRef.current = lineNumbersProp;
+    }, [lineNumbersProp]);
+    useLayoutEffect(() => {
+      disabledRef.current = disabled;
+    }, [disabled]);
+
+    // Reconfigure each Compartment-wrapped extension on prop change.
+    // CM6's `compartment.reconfigure(next)` swaps the extension in
+    // place — no view rebuild, no document loss, no selection loss.
+    // Each effect is independent so a placeholder change doesn't
+    // touch the line-wrap state and vice-versa.
+    useLayoutEffect(() => {
+      const view = viewRef.current;
+      if (view === null) return;
+      view.dispatch({
+        effects: placeholderCompartment.reconfigure(
+          placeholder !== "" ? cmPlaceholder(placeholder) : [],
+        ),
+      });
+    }, [placeholder]);
+    useLayoutEffect(() => {
+      const view = viewRef.current;
+      if (view === null) return;
+      view.dispatch({
+        effects: lineWrapCompartment.reconfigure(
+          lineWrap ? EditorView.lineWrapping : [],
+        ),
+      });
+    }, [lineWrap]);
+    useLayoutEffect(() => {
+      const view = viewRef.current;
+      if (view === null) return;
+      view.dispatch({
+        effects: lineNumbersCompartment.reconfigure(
+          lineNumbersProp ? cmLineNumbers() : [],
+        ),
+      });
+    }, [lineNumbersProp]);
+    useLayoutEffect(() => {
+      const view = viewRef.current;
+      if (view === null) return;
+      view.dispatch({
+        effects: readOnlyCompartment.reconfigure(
+          EditorState.readOnly.of(disabled),
+        ),
+      });
+    }, [disabled]);
 
     // Live keymap config. The extension's keydown handler reads
     // `keymapConfigRef.current` via the thunk passed to
@@ -929,6 +1153,15 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
       const host = hostRef.current;
       if (host === null) return;
 
+      // Read the latest prop snapshot for the Compartment-wrapped
+      // extensions. The mount effect runs once per StrictMode pass and
+      // captures these values; subsequent prop changes flow through
+      // the dedicated `useLayoutEffect` reconfigure passes below.
+      const initialPlaceholder = placeholderRef.current;
+      const initialLineWrap = lineWrapRef.current;
+      const initialLineNumbers = lineNumbersRef.current;
+      const initialDisabled = disabledRef.current;
+
       const state = EditorState.create({
         doc: "",
         extensions: buildExtensions(
@@ -936,6 +1169,12 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
           () => keymapConfigRef.current,
           () => completionProvidersRef.current,
           () => dropHandlerRef.current,
+          {
+            placeholder: initialPlaceholder,
+            lineWrap: initialLineWrap,
+            lineNumbers: initialLineNumbers,
+            disabled: initialDisabled,
+          },
         ),
       });
       const view = new EditorView({
@@ -1043,6 +1282,35 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
       };
     }, []);
 
+    // Host inline style: caller-supplied `style` flows through first,
+    // then we layer the substrate-managed CSS variables on top so prop
+    // values win over a generic `style` object. `--tug-edit-max-rows`
+    // is unitless (consumed by `calc(... * 1lh)` in the CSS); the
+    // typography variables fall through verbatim so callers can pass
+    // any valid CSS value. Each variable is conditionally set so an
+    // omitted prop leaves the existing token cascade intact.
+    const hostStyle = useMemo<React.CSSProperties>(() => {
+      const next: Record<string, string | number> = {};
+      if (styleProp !== undefined) {
+        Object.assign(next, styleProp);
+      }
+      next["--tug-edit-max-rows"] = maxRows;
+      if (fontFamily !== undefined) {
+        next["--tug-font-family-editor"] = fontFamily;
+      }
+      if (fontSize !== undefined) {
+        next["--tug-font-size-editor"] = fontSize;
+      }
+      if (lineHeight !== undefined) {
+        next["--tug-line-height-editor"] =
+          typeof lineHeight === "number" ? String(lineHeight) : lineHeight;
+      }
+      if (letterSpacing !== undefined) {
+        next["--tug-letter-spacing-editor"] = letterSpacing;
+      }
+      return next as React.CSSProperties;
+    }, [styleProp, maxRows, fontFamily, fontSize, lineHeight, letterSpacing]);
+
     return (
       <ResponderScope>
         <div
@@ -1050,7 +1318,12 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
           data-slot="tug-edit"
           data-focus-style={focusStyle}
           data-borderless={borderless ? "" : undefined}
+          data-disabled={disabled ? "" : undefined}
+          data-maximized={maximized ? "" : undefined}
+          data-grow-direction={growDirection}
+          aria-disabled={disabled || undefined}
           className={cn("tug-edit", className)}
+          style={hostStyle}
           {...rest}
         >
           {/* Typeahead popup. Empty until a trigger fires; the

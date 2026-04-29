@@ -148,6 +148,71 @@
   border-color: var(--tug7-element-field-border-normal-plain-readonly);
 }
 
+/* ---- maxRows: cap visible rows before vertical scrolling ---- */
+
+/* `--tug-edit-max-rows` is set as an inline style on `.tug-edit` from
+ * the React shell (numeric, unitless). The cap is computed on the
+ * inner `.cm-scroller` because that's the element CodeMirror 6
+ * lays out as the scroll container; setting a max-height on the
+ * outer host would clip the scrollbar.
+ *
+ * `1lh` is the computed line-height of the element; combined with
+ * the unitless `--tug-edit-max-rows` it yields exactly N visible
+ * rows. The trailing `+ 16px` accounts for `.cm-content`'s 8px
+ * top + 8px bottom padding (set in `tug-edit/theme.ts`) so the
+ * cap is "N rows of text" rather than "N rows of text minus the
+ * pad."
+ *
+ * `overflow-y: auto` is CM6's own default on `.cm-scroller`; we
+ * don't override it. When the document is short enough to fit, the
+ * scrollbar doesn't appear; once it grows past the cap, vertical
+ * scrolling kicks in.
+ *
+ * Skipped when `[data-maximized]` is set — that variant fills the
+ * flex parent and ignores `maxRows` per the prop contract. */
+.tug-edit:not([data-maximized]) > .cm-editor > .cm-scroller {
+  max-height: calc(var(--tug-edit-max-rows, 8) * 1lh + 16px);
+}
+
+/* ---- Maximized: fill available container space ---- */
+
+/* When the host is placed in a flex column with a constrained
+ * height, `[data-maximized]` makes the editor fill that height
+ * instead of sizing to its content. `flex: 1 1 auto` on
+ * `.tug-edit` itself plus `min-height: 0` (already set above)
+ * lets the host accept whatever height the parent allots; the
+ * inner `.cm-scroller` then expands to that height and scrolls
+ * its content within it. `maxRows` is ignored — the parent's
+ * height is the only cap. */
+.tug-edit[data-maximized] {
+  flex: 1 1 auto;
+}
+
+.tug-edit[data-maximized] > .cm-editor > .cm-scroller {
+  /* No max-height — the rule above is already gated on
+   * `:not([data-maximized])`, but we make the flex behavior
+   * explicit here so the scroller expands to fill its parent. */
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* ---- growDirection: anchor the editor to the bottom of its parent ---- */
+
+/* When `growDirection="up"`, push the host to the bottom of any
+ * extra vertical space provided by an enclosing flex column —
+ * the chat-input pattern. `margin-top: auto` consumes free space
+ * before the host, leaving the host pinned to the bottom edge.
+ * Has no effect when the parent isn't a flex column with extra
+ * space; safe default.
+ *
+ * `growDirection="down"` is the natural CM6 layout (top fixed,
+ * bottom extends as content grows) — no rule needed. The
+ * attribute is still emitted on the host so consumers and tests
+ * can target it. */
+.tug-edit[data-grow-direction="up"] {
+  margin-top: auto;
+}
+
 /* ---- Drop active ----
  *
  * Set by `tug-edit/drop-extension.ts` while a file drag is hovering

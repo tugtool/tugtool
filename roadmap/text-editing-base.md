@@ -181,9 +181,9 @@ This plan uses explicit `{#anchor}` tags on every cited heading and the `[ID] La
 
 **Why it matters:** Today the route atom is in the doc. CM6 supports both: it can live in the doc as a `Decoration.replace` over offset 0, *or* it can be a sibling DOM element and the editor doc starts post-route. The first preserves the current model; the second simplifies cursor-at-start handling.
 
-**Plan to resolve:** Decided in [Step 10](#step-10) when the route-prefix feature lands. Default is "in the doc at offset 0" to match existing semantics, switched if a concrete blocker appears.
+**Plan to resolve:** Deferred. Originally slated for [Step 10](#step-10), but the route-prefix feature has been pulled out of the current spike to be revisited in a follow-on plan. Default still anticipated to be "in the doc at offset 0" to match existing semantics, switched if a concrete blocker appears.
 
-**Resolution:** OPEN. Resolved in Step 10.
+**Resolution:** OPEN. Deferred to a future route-prefix plan.
 
 ---
 
@@ -1042,35 +1042,50 @@ The patches are the wrong abstraction. The caret should be CM6-owned and atomica
 
 ---
 
-#### Step 10: Polish props — placeholder, maxRows, growDirection, maximized, focusStyle, borderless, route prefixes, disabled {#step-10}
+#### Step 10: Polish props — placeholder, maxRows, growDirection, maximized, focusStyle, borderless, typography, line wrap, line numbers, disabled {#step-10}
 
 **Depends on:** #step-9
 
-**Commit:** `feat(tug-edit): full prop surface parity with tug-prompt-input`
+**Commit:** `feat(tug-edit): prop surface — typography, view controls, layout, focus, disabled`
 
-**References:** [Q04](#q04-route-atom-position), [Table T01](#t01-feature-surface), [L02], [L03], [L06], [L07], [L11], [L15], [L16], [L19], [L24], Table T02, (#tuglaws-compliance)
+**References:** [Table T01](#t01-feature-surface), [L02], [L03], [L06], [L07], [L11], [L15], [L16], [L19], [L24], Table T02, (#tuglaws-compliance)
+
+**Note:** Route-prefix work (`routePrefixes`, `onRouteChange`, [Q04](#q04-route-atom-position)) is **deferred** out of this step and the current spike. It will land in a follow-on plan. The exit criterion for the spike phase is relaxed accordingly (see [Phase Exit Criteria](#exit-criteria)).
 
 **Artifacts:**
+
+*Layout / focus / state (parity with `tug-prompt-input`):*
 - Placeholder via `@codemirror/view` `placeholder` extension.
 - `maxRows` via CSS on `.cm-scroller`.
 - `growDirection` via wrapper flex-direction / align-end.
 - `maximized` via flex:1 1 auto on outer wrapper, `maxRows` ignored.
 - `focusStyle` via CSS class toggled on `EditorView.focusChangeEffect`-equivalent.
 - `borderless` via CSS modifier.
-- `routePrefixes` / `onRouteChange` via `route-prefix-extension.ts` watching offset 0; route atom inserted in-doc per [Q04](#q04-route-atom-position).
 - `disabled` via `EditorState.readOnly` facet + CSS class.
 
+*Typography (new on `tug-edit`; not yet exposed as React props on `tug-prompt-input`):*
+- `fontFamily`, `fontSize`, `lineHeight`, `letterSpacing` props applied as inline style on the `.tug-edit` host wrapper. CM6's surface inherits because `tug-edit/theme.ts` already declares `fontFamily: "inherit"`; equivalent inheritance is added for the other three. Defaults pull from existing tokens (`--tug-font-family-editor`, `--tug-font-size-editor`, `--tug-line-height-editor`, `--tug-letter-spacing-editor`); explicit prop value overrides the token.
+
+*View controls (new on `tug-edit`; CM6 native features):*
+- `lineWrap` (boolean) — when `true`, adds `EditorView.lineWrapping` to extensions (sets `white-space: break-spaces` on `.cm-content`, no horizontal scroll). Default: `false`.
+- `lineNumbers` (boolean) — when `true`, adds `lineNumbers()` from `@codemirror/view` (left gutter showing 1-based line numbers). Default: `false`.
+
 **Tasks:**
-- [ ] Implement each prop.
-- [ ] Resolve [Q04](#q04-route-atom-position) (default: route atom in-doc at offset 0).
+- [x] Implement each layout / focus / state prop (placeholder, maxRows, growDirection, maximized, focusStyle, borderless, disabled). `placeholder` / `lineWrap` / `lineNumbers` / `disabled` ride on Compartments so prop changes reconfigure live without rebuilding the EditorView; `maxRows` / `growDirection` / `maximized` ride on data attributes + a `--tug-edit-max-rows` CSS variable.
+- [x] Implement typography props (`fontFamily`, `fontSize`, `lineHeight`, `letterSpacing`) as inline `style={{...}}` CSS custom properties (`--tug-font-family-editor`, `--tug-font-size-editor`, `--tug-line-height-editor`, `--tug-letter-spacing-editor`) on the host wrapper. The theme reads them with token-name fallbacks so the same tokens drive both `tug-edit` and `tug-prompt-input`. The `.cm-line::before` ghost switched from `1.75em` to `1lh` so any `lineHeight` value (unitless multiplier or length) propagates to the line-box pin without breaking the caret-layer's height read.
+- [x] Implement `lineWrap` and `lineNumbers` extension toggles. The caret layer's `getBoundingClientRect()` read on `.cm-line` still tracks the *line-block* height; for soft-wrapped lines a single `.cm-line` element wraps multiple visual rows, but CM6's measurement updates the rendered rect to reflect the wrapped block. Gutter doesn't shift the caret-column origin because `caret-layer.ts`'s `documentBase(view)` is computed from `view.scrollDOM`'s rect minus its own scrollLeft — the gutter sits inside `.cm-scroller` and is already accounted for.
+- [x] Confirmed: `lineNumbers()` from `@codemirror/view` renders a `.cm-lineNumbers` gutter; integration test asserts the class lands and clears across the Compartment toggle.
 
 **Tests:**
-- [ ] Integration: each prop unit-checked.
-- [ ] `bun run audit:tokens lint` exits 0 (focus/disabled CSS uses tokens).
+- [x] Integration: each prop unit-checked. New `TugEdit — prop surface` describe block in `tug-edit.test.tsx` covers defaults, placeholder, maxRows, growDirection, maximized, disabled (with `EditorState.readOnly` facet read + view-identity preservation across Compartment swap), typography (4 inline custom properties), lineWrap (`cm-lineWrapping` class on `.cm-content`), and lineNumbers (gutter render/clear).
+- [ ] Wrapping: a long line at narrow width wraps inside the editor with no horizontal scroll; caret renders on the visible wrap row. **Deferred to gallery card walk in Step 11** — happy-dom doesn't run a layout engine so visual wrapping isn't observable in unit tests.
+- [ ] Line numbers: gutter renders, increments on Enter, decrements on Backspace at line start, updates on cut/paste. **Render verified in unit tests; live increment/decrement deferred to gallery card walk in Step 11.**
+- [x] Typography: explicit prop values override token defaults; theme reads via CSS custom properties so the cascade is straightforward.
+- [x] `bun run audit:tokens lint` baseline unchanged — no new violations from Step 10 (the 6 preexisting `[data-drop-active]` MISSING_ANNOTATION / UNRESOLVED_PAIRING entries are not in the diff).
 
 **Checkpoint:**
-- [ ] Gallery card exercises every prop.
-- [ ] `bun run check`, `bun test` exit 0.
+- [ ] Gallery card exercises every prop in this step. **Deferred to Step 11.**
+- [x] `bun run check`, `bun test` exit 0 — full suite green (2548 / 2548).
 
 ---
 
@@ -1156,7 +1171,7 @@ The patches are the wrong abstraction. The caret should be CM6-owned and atomica
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
 - [ ] `tug-edit` exists and ships ([D03](#d03-tug-edit-name), [D04](#d04-additive)).
-- [ ] Every prop in [Table T01](#t01-feature-surface) has a working equivalent on `tug-edit`.
+- [ ] Every prop in [Table T01](#t01-feature-surface) has a working equivalent on `tug-edit`, **except** `routePrefixes` / `onRouteChange`, which are deferred to a follow-on route-prefix plan (see [Q04](#q04-route-atom-position) and [Step 10](#step-10)).
 - [ ] Every case in [List L01](#l01-atom-motion-cases) passes.
 - [ ] IME validation report ([Step 6](#step-6)) committed and unblocks the rest of the plan, OR the spike is halted with the report explaining why.
 - [ ] [L23] paint channels work across cmd-tab and cold-mount restore.

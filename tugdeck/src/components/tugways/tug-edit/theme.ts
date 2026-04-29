@@ -150,11 +150,23 @@ export const tugTheme: Extension = EditorView.theme({
   // the same height regardless of contents — `caret-layer.ts` reads
   // `lineBlockAt(head).height` to size the caret stroke, so this
   // line-height directly controls caret height too.
+  //
+  // The four typography rules (`fontFamily`, `fontSize`,
+  // `lineHeight`, `letterSpacing`) read CSS custom properties so the
+  // React shell's `fontFamily` / `fontSize` / `lineHeight` /
+  // `letterSpacing` props can override per-instance via inline
+  // `style={{...}}` on the host wrapper without rebuilding the
+  // theme. The variable names match `tug-prompt-input.css`'s tokens
+  // so the same tokens drive both substrates; the inline fallbacks
+  // here keep the rendered metrics stable when no token is set
+  // (storybook, unit tests, or hosts that haven't loaded the theme
+  // CSS).
   ".cm-content": {
     caretColor: "transparent",
-    fontFamily: "inherit",
-    fontSize: "14px",
-    lineHeight: "1.75",
+    fontFamily: "var(--tug-font-family-editor, inherit)",
+    fontSize: "var(--tug-font-size-editor, 14px)",
+    lineHeight: "var(--tug-line-height-editor, 1.75)",
+    letterSpacing: "var(--tug-letter-spacing-editor, normal)",
     padding: "8px 10px",
   },
 
@@ -162,21 +174,25 @@ export const tugTheme: Extension = EditorView.theme({
     padding: "0",
   },
 
-  // Pin every line's line-box to a uniform 1.75em (24.5px at 14px
-  // font-size) regardless of inline content. Without this, a line's
+  // Pin every line's line-box to a uniform `1lh` (one line-height
+  // unit) regardless of inline content. Without this, a line's
   // line-box height is the tallest inline content's height — text
-  // glyphs (~18px), atom widgets (24px), or the CSS line-height,
-  // whichever is largest. `caret-layer.ts` reads
-  // `lineBlockAt(head).height` to size the caret stroke; the ghost
-  // pins that height to a constant. Same trick used by Slack,
-  // Discord, Linear and friends. Selection unaffected because the
-  // pseudo isn't in the DOM tree — it doesn't participate in the
-  // document model, only in line layout.
+  // glyphs, atom widgets (24px), or the CSS line-height, whichever
+  // is largest. `caret-layer.ts` reads the rendered `.cm-line`
+  // height to size the caret stroke; the ghost pins that height to
+  // a constant tied to the configured `line-height`. Same trick
+  // used by Slack, Discord, Linear and friends. Selection
+  // unaffected because the pseudo isn't in the DOM tree — it
+  // doesn't participate in the document model, only in line layout.
+  // `1lh` is a CSS Values 4 length unit equal to the computed
+  // line-height of the element, so it tracks any unit (unitless
+  // multiplier, em, px) that callers pass through the
+  // `lineHeight` prop.
   ".cm-line::before": {
     content: '""',
     display: "inline-block",
     width: "0",
-    height: "1.75em",
+    height: "1lh",
     verticalAlign: "middle",
   },
 
