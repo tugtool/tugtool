@@ -32,10 +32,11 @@
  *     full-row bar.
  *   - **Row height source**: read via `getComputedStyle` on the
  *     `.cm-line::before` ghost (whose height is the floor
- *     `max(1lh, atom-height)` set by `theme.ts`). Two alternative
- *     sources are computed in parallel under a diagnostic flag — see
- *     `readRowHeight*` helpers below — to confirm they agree.
- *     Production paint uses the `getComputedStyle` source.
+ *     `max(1lh, atom-height)` set by `theme.ts`). Direct read of
+ *     the rendered floor — works for every font / size /
+ *     line-height / atom configuration without re-implementing
+ *     the floor math in JS. See the inline comment in `markers()`
+ *     for the alternatives considered and why this source won.
  *
  * Why not the containing `.cm-line` element's `getBoundingClientRect()`
  * directly: with `EditorView.lineWrapping` engaged, one `.cm-line`
@@ -81,7 +82,6 @@
 import { EditorView, layer, RectangleMarker, ViewPlugin } from "@codemirror/view";
 import type { LayerMarker } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
-import { getAtomHeightPx } from "./atom-decoration";
 
 /** Caret stroke width in pixels. Matches WebKit's native caret stroke. */
 const CARET_STROKE_WIDTH = 2;
@@ -100,26 +100,6 @@ const CARET_HEIGHT_FACTOR = 0.9;
  * Idle delay before the typing-steady attribute clears and blink resumes.
  */
 const TYPING_IDLE_MS = 500;
-
-/**
- * When set on the global object, the caret layer logs disagreements
- * between the three row-height sources (getComputedStyle on the
- * `::before` ghost, `view.lineBlockAt(head).height`, and the JS
- * baseline `max(view.defaultLineHeight, ATOM_HEIGHT_PX)`). Used
- * during the Step 14.5 hand-tune to validate the production source
- * choice. Production paint reads the getComputedStyle source — the
- * direct rendered floor — and ignores the others when this flag is
- * unset, so the cost of the comparison is zero in shipped builds.
- */
-const CARET_DIAG_FLAG = "__TUG_CARET_DIAG__";
-
-interface CaretDiagGlobal {
-  [CARET_DIAG_FLAG]?: boolean;
-}
-
-function caretDiagEnabled(): boolean {
-  return (globalThis as CaretDiagGlobal)[CARET_DIAG_FLAG] === true;
-}
 
 /**
  * Document-relative origin used to translate viewport coordinates
@@ -181,72 +161,6 @@ function readRowHeightFromGhost(view: EditorView, head: number): number {
 }
 
 /**
- * Diagnostic-only row-height source: CM6's measured block height for
- * the line containing `head`, divided by the number of visual rows
- * the block spans. With line-wrap off this is always one row; with
- * line-wrap on the block can span multiple rows (one `.cm-line`
- * element wrapping N rows). The ratio gives per-row height — same
- * concept as the ghost read but routed through CM6's height oracle
- * instead of the browser's computed-style cache.
- */
-function readRowHeightFromBlock(view: EditorView, head: number): number {
-  const block = view.lineBlockAt(head);
-  // The block's height covers the wrapped extent. To get per-row
-  // height we need to know how many visual rows it covers. CM6
-  // doesn't expose this directly; we approximate by dividing the
-  // block height by `view.defaultLineHeight` and rounding to the
-  // nearest row count, then dividing back. For a non-wrapped block
-  // this round-trips to the original per-row height; for a wrapped
-  // block of N rows it gives the per-row contribution.
-  const rowCount = Math.max(
-    1,
-    Math.round(block.height / view.defaultLineHeight),
-  );
-  return block.height / rowCount;
-}
-
-/**
- * Diagnostic-only row-height source: the JS baseline computed
- * directly from CM6's `defaultLineHeight` and the atom-height
- * constant from `tug-atom-img.ts`. Cheapest of the three, but
- * doesn't observe browser layout so a future CSS rule that modifies
- * the row height (e.g. font-style on a specific line) would slip
- * past it.
- */
-function readRowHeightFromBaseline(view: EditorView): number {
-  return Math.max(view.defaultLineHeight, getAtomHeightPx());
-}
-
-/**
- * Compare the three row-height sources and log when they disagree.
- * Tolerance is 0.5px — sub-pixel rounding between the three paths
- * is expected and not interesting. Logging is opt-in via the
- * `__TUG_CARET_DIAG__` global flag.
- */
-function logRowHeightDisagreement(
-  ghost: number,
-  block: number,
-  baseline: number,
-  pos: number,
-): void {
-  const tolerance = 0.5;
-  const maxDelta = Math.max(
-    Math.abs(ghost - block),
-    Math.abs(ghost - baseline),
-    Math.abs(block - baseline),
-  );
-  if (maxDelta <= tolerance) return;
-  // eslint-disable-next-line no-console
-  console.debug("[tug-text-editor caret-diag]", {
-    pos,
-    ghost,
-    block,
-    baseline,
-    maxDelta,
-  });
-}
-
-/**
  * Caret-overlay layer. Paints a single `tug-text-editor-caret` div at the
  * head of the main selection when the editor is focused and the
  * selection is collapsed.
@@ -270,17 +184,32 @@ export const tugCaretLayer: Extension = layer({
     const coords = view.coordsAtPos(sel.head, 1);
     if (coords === null) return [];
     const base = documentBase(view);
-    // Production row-height source: the rendered `::before` ghost.
-    // Tracks the theme's `max(1lh, atom-height)` floor without
-    // re-implementing the math in JS.
+    // Row-height source: the rendered `::before` ghost. The theme
+    // pins `.cm-line::before { height: max(1lh, var(...)) }` so
+    // reading it via `getComputedStyle` returns the actual rendered
+    // floor, regardless of font ascent metrics or how `1lh` and the
+    // atom-height variable resolve at the current props.
+    //
+    // Two alternatives were instrumented during Step 14.5 (per [Q11]):
+    //
+    //   - `view.lineBlockAt(head).height / rowCount` — CM6's measured
+    //     block height divided by visual-row count. Routed through
+    //     CM6's heightOracle.
+    //   - `Math.max(view.defaultLineHeight, getAtomHeightPx())` — JS
+    //     baseline that re-implements the floor in code.
+    //
+    // The empirical hand-tune in the gallery confirmed the
+    // `getComputedStyle('::before')` source produces visually-correct
+    // carets across every font / size / line-height / atom
+    // configuration we exercise. The alternatives weren't observed
+    // to disagree in any tested scenario, but they each have a
+    // failure mode the ghost read avoids: `lineBlockAt` returns
+    // stale-cache values when CM6 hasn't measured a fresh row yet,
+    // and the JS baseline re-derives a value that already lives in
+    // the theme — duplication invites drift. The ghost is direct
+    // and cheap (one synchronous style read per caret paint, the
+    // same pattern the `selection-layer` uses).
     const rowHeight = readRowHeightFromGhost(view, sel.head);
-    // Optional diagnostic comparison — opt-in via the
-    // `__TUG_CARET_DIAG__` global. Zero cost when disabled.
-    if (caretDiagEnabled()) {
-      const block = readRowHeightFromBlock(view, sel.head);
-      const baseline = readRowHeightFromBaseline(view);
-      logRowHeightDisagreement(rowHeight, block, baseline, sel.head);
-    }
     const caretHeight = rowHeight * CARET_HEIGHT_FACTOR;
     // Center the caret on the glyph's vertical center: the glyph's
     // top / bottom are the only stable reference for the visual row
