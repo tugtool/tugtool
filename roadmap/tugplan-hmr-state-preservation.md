@@ -421,12 +421,17 @@ Add the two new literals to `deck-trace.ts`'s `SaveCallbackSource` union. No cal
 
 Refactor `handleBeforeUnload`'s body into a new public method `captureAllForTeardown(reason: SaveCallbackSource)`. Have `handleBeforeUnload` call `captureAllForTeardown("beforeunload")` to share the iterate-and-save pass. Pure refactor — no behavior change at this step. The new public method becomes the entry point used by the bridge in Step 3.
 
+**Audit before editing:** `saveAndFlushSync` and `prepareForReload` are NOT folded in — they have distinct semantics (forced flush + lock-via-`stateFlushed` / `reloadPending`) versus `captureAllForTeardown` (idempotent guard-based flush, no lock). `captureAllForTeardown` is added as a sibling alongside them, not a replacement. Confirmed `flushDirtyCardStates` is idempotent (clears `dirtyCardIds` after iteration) so close-succession teardown signals can't double-save the same bag.
+
+**Implementation:** the new method lives next to `saveAndFlushSync` / `prepareForReload` (the other public flush operations). Its docstring enumerates the three callers (`beforeunload`, `vite:beforeUpdate`, `vite:beforeFullReload`), distinguishes the idempotent semantics from the forced-lock semantics of `saveAndFlushSync`, and cites [L23] / [L10]. The new method is class-only (not added to the polymorphic store interface in `deck-manager-store.ts`) — same as `saveAndFlushSync` and `prepareForReload`, since the only external caller is the bridge module which holds a concrete `DeckManager` reference.
+
 **Tests:**
-- [ ] AT0042 still passes (cold-boot preservation contract unchanged).
-- [ ] Existing deck-manager unit tests still pass.
+- [x] AT0042 still passes — cold-boot preservation contract unchanged (4/4).
+- [x] Existing deck-manager unit tests still pass — full unit suite 2548/2548.
+- [x] `bun run check` exits 0.
 
 **Checkpoint:**
-- [ ] `bun test`, `bun run check` exit 0.
+- [x] `bun test`, `bun run check` exit 0. Pure refactor; no observable behavior change.
 
 ---
 

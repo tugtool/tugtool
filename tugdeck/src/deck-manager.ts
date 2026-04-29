@@ -253,19 +253,11 @@ export class DeckManager implements IDeckManagerStore {
   private stateFlushed = false;
 
   private readonly handleBeforeUnload = (): void => {
-    if (this.reloadPending || this.stateFlushed) return;
-    if (this.saveTimer !== null) {
-      window.clearTimeout(this.saveTimer);
-      this.saveTimer = null;
-      this.saveLayout();
-    }
-    // Route through `invokeSaveCallback` so the deck-trace sees a
-    // `save-callback` event tagged `"beforeunload"` per
-    // [#l01-recording-sites].
-    for (const cardId of Array.from(this.saveCallbacks.keys())) {
-      this.invokeSaveCallback(cardId, "beforeunload");
-    }
-    this.flushDirtyCardStates({ sync: true });
+    // Delegate to `captureAllForTeardown`. The body is shared with
+    // other teardown-class signals (HMR `vite:beforeUpdate`, etc.)
+    // so the iterate-and-save pass has one implementation; the
+    // `reason` parameter distinguishes them in the deck-trace ring.
+    this.captureAllForTeardown("beforeunload");
   };
 
   // ---- Initial focused card ID for reload restoration ([D03]) ----
@@ -1343,6 +1335,54 @@ export class DeckManager implements IDeckManagerStore {
         );
       }
     }
+  }
+
+  /**
+   * Iterate every active card, fire its registered save callback
+   * tagged with `reason` for the deck-trace ring, flush any pending
+   * debounced layout save first, and drain the dirty-card-state
+   * queue synchronously.
+   *
+   * Used by every teardown-class signal that wants the framework to
+   * capture user-visible state into bags before a transition that
+   * may tear down DOM:
+   *
+   *   - `beforeunload` — the page is about to navigate / reload.
+   *     `handleBeforeUnload` calls in with `reason = "beforeunload"`.
+   *   - HMR module replacement — Vite's `vite:beforeUpdate` event;
+   *     the bridge in `hmr-bridge.ts` calls in with
+   *     `reason = "hmr"`.
+   *   - HMR full reload — Vite's `vite:beforeFullReload` event;
+   *     the bridge calls in with `reason = "hmr-full-reload"`. (A
+   *     defensive sibling of `beforeunload`; if both fire, the
+   *     second is a no-op via the early-out below.)
+   *
+   * Idempotent against `reloadPending` / `stateFlushed`. When one
+   * of those flags is set — because `prepareForReload` or
+   * `saveAndFlushSync` already drained the framework — this method
+   * is a no-op. Multiple teardown signals firing in close
+   * succession therefore can't double-save: the second one
+   * early-returns. Distinct from `saveAndFlushSync`, which is a
+   * forced flush that sets `stateFlushed = true` to lock the
+   * framework against further saves; `captureAllForTeardown` does
+   * not lock.
+   *
+   * [L23] (preserve user-visible state across known transitions);
+   * [L10] (deck-manager owns layout / orchestration; per-card save
+   * is dispatched through `invokeSaveCallback` rather than reaching
+   * into card internals).
+   */
+  captureAllForTeardown(reason: SaveCallbackSource): void {
+    if (this.reloadPending || this.stateFlushed) return;
+    if (this.saveTimer !== null) {
+      window.clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+      this.saveLayout();
+    }
+    for (const cardId of Array.from(this.saveCallbacks.keys())) {
+      this.invokeSaveCallback(cardId, reason);
+    }
+    this.flushDirtyCardStates({ sync: true });
   }
 
   saveAndFlushSync(): void {
