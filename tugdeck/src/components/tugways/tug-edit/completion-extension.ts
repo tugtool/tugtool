@@ -343,53 +343,16 @@ const completionPlugin = ViewPlugin.fromClass(
       // transaction so they apply atomically with the user's
       // keystroke. This `update` method only reacts to the resulting
       // state changes: it manages the active provider's async-result
-      // subscription, notifies React subscribers, and refreshes
-      // WebKit's contentEditable caret cache after the popup
-      // disappears.
+      // subscription and notifies React subscribers.
       const newState = update.state.field(completionField);
       if (newState !== this.lastState) {
         const providerChanged = newState.provider !== this.lastState.provider;
         if (providerChanged) {
           this.installProviderSubscription(newState);
         }
-        const justDeactivated = this.lastState.active && !newState.active;
         this.lastState = newState;
         for (const listener of this.listeners) listener();
-        if (justDeactivated) {
-          this.scheduleCaretRefresh();
-        }
       }
-    }
-
-    /**
-     * Force WebKit to drop its cached contentEditable caret paint
-     * after the typeahead popup hides. WebKit retains the caret
-     * geometry from the moment the popup was painted on top of the
-     * surface; once the popup goes away, the cached paint can
-     * remain at the pre-deletion column while the live caret
-     * renders at the post-deletion column — the user sees two
-     * adjacent caret strokes. Same root cause and fix as the
-     * history-nav cache flush in `applyEditState`. We route through
-     * `requestMeasure` so the blur/focus pair runs in CM6's
-     * measure phase, after the update cycle completes; doing it
-     * synchronously would throw "Reading the editor layout isn't
-     * allowed during an update."
-     */
-    private scheduleCaretRefresh(): void {
-      this.view.requestMeasure({
-        key: "tug-edit-completion-caret-refresh",
-        read(): null {
-          return null;
-        },
-        write(_, view) {
-          if (!view.hasFocus) return;
-          view.contentDOM.blur();
-          // Force a layout flush so the blur lands before the
-          // re-focus collapses with it.
-          void view.contentDOM.offsetWidth;
-          view.focus();
-        },
-      });
     }
 
     /**

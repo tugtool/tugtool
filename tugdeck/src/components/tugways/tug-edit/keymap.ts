@@ -164,25 +164,7 @@ export function buildEditStateTransaction(
 
 /**
  * History-navigation restore: replace the document, atom decorations,
- * and selection in a single transaction; flush the WebKit caret
- * cache; scroll the cursor into view.
- *
- * After the dispatch we explicitly blur and re-focus the contentDOM.
- * WebKit's contentEditable caret renderer caches the prior frame's
- * caret geometry and does not always re-derive it after a
- * transaction that replaces the entire document and moves the
- * `Selection` to a new offset — the user sees the new caret at the
- * restored position AND a leftover caret at the previous one
- * (typically position 0 after the editor was just cleared). Calling
- * `view.focus()` alone is a no-op when contentDOM is already
- * focused, so the cache stays. Blurring forces WebKit to drop the
- * cached paint and `view.focus()` reinstalls focus + re-syncs the
- * caret from the current `state.selection`. Reading `offsetWidth`
- * between the two flushes layout so the blur is committed before
- * the focus call collapses with it. The blur fires a `focusout`
- * event but no responder-chain handler treats focusout as a
- * demotion, so the responder remains first responder across the
- * blur/focus pair.
+ * and selection in a single transaction; scroll the cursor into view.
  *
  * `state.scrollTop` is intentionally ignored on the history-nav
  * path: the user just navigated to a different document and expects
@@ -190,16 +172,16 @@ export function buildEditStateTransaction(
  * reinstated. The state-preservation restore path uses
  * `restoreEditState` in `state-preservation.ts`, which honors
  * `state.scrollTop`.
+ *
+ * Caret rendering after the doc swap is owned by `caret-layer.ts`,
+ * which paints from `state.selection` on every transaction — no
+ * cache to flush, no blur/focus thrash needed.
  */
 export function applyEditState(
   view: EditorView,
   state: TugTextEditingState,
 ): void {
   view.dispatch(buildEditStateTransaction(view, state, { scrollIntoView: true }));
-  view.contentDOM.blur();
-  // Force a layout flush so the blur lands before the focus call.
-  void view.contentDOM.offsetWidth;
-  view.focus();
 }
 
 // ---------------------------------------------------------------------------

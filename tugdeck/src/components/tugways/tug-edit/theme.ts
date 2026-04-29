@@ -9,12 +9,14 @@
  *
  * Caret and selection rendering:
  *
- *   - **Caret**: native browser caret driven by `caret-color` on
- *     `.cm-content`. The browser sizes the caret to the line-box,
- *     and the `.cm-line::before` ghost element below pins every
- *     line's box to the line-height (≈24.5px) regardless of
- *     content, so the caret is uniform across text and atom
- *     positions.
+ *   - **Caret**: a custom layer (`tug-edit/caret-layer.ts`) paints a
+ *     single `tug-edit-caret` div at the head of the main selection
+ *     when the editor is focused and the selection is collapsed.
+ *     Native WebKit contentEditable caret is suppressed via
+ *     `caret-color: transparent` on `.cm-content` because its paint
+ *     cache stales across layout-shifting transitions (history-nav
+ *     doc swap, typeahead deactivate, atom removal) and produced
+ *     doubled-caret strokes.
  *   - **Selection**: a custom layer (`tug-edit/selection-layer.ts`)
  *     paints `.cm-selectionBackground` divs behind every non-empty
  *     range. These are real DOM nodes — they cover atom widgets
@@ -27,14 +29,19 @@
  * wobbles between text and atom positions because it's sized by
  * `coordsAtPos`'s glyph rect) and a `Prec.highest` theme that
  * forces `caret-color: transparent !important` and `::selection:
- * transparent !important`. Both undermine the native-caret-with-
- * uniform-height approach used here.
+ * transparent !important`. The latter collides with the
+ * `.cm-content ::selection { color: ... }` glyph-recolor rule
+ * declared below. The custom caret + selection layers together
+ * cover what drawSelection would, without the precedence battle.
  *
  * Selectors covered:
  *
  *   `&`                            — editor root (.cm-editor)
  *   `.cm-content`                  — editable text surface; sets
- *                                    `caret-color`, `font-size`, and
+ *                                    `caret-color: transparent` to
+ *                                    suppress WebKit's native caret
+ *                                    (the layer paints the visible
+ *                                    one), `font-size`, and
  *                                    `line-height`
  *   `.cm-line`                     — per-line wrapper
  *   `.cm-line::before`             — zero-width line-height-tall
@@ -95,6 +102,9 @@ const TOKENS = {
   contentFgDisabled: "var(--tug7-element-field-text-normal-plain-disabled)",
   contentBgReadonly: "var(--tug7-surface-field-primary-normal-plain-readonly)",
   contentFgReadonly: "var(--tug7-element-field-text-normal-plain-readonly)",
+  // Caret stroke color — applied to the `.tug-edit-caret` marker
+  // painted by `caret-layer.ts`, NOT to `.cm-content`'s caret-color
+  // (that's `transparent` to suppress the native caret).
   caret: "var(--tug7-element-field-border-normal-plain-active)",
   // Active selection bg / fg use the CSS `Highlight` / `HighlightText`
   // system colors directly (see `.cm-selectionBackground` and
@@ -132,14 +142,16 @@ export const tugTheme: Extension = EditorView.theme({
     height: "100%",
   },
 
-  // Editable text surface. The native caret is colored via
-  // `caret-color`; the browser sizes it from the line's line-height
-  // rather than the adjacent glyph's metrics, which is what we want
-  // when atoms (24px tall) sit next to text (~18px tall). Explicit
+  // Editable text surface. The native WebKit contentEditable caret
+  // is suppressed (`caret-color: transparent`) because its paint
+  // cache stales across layout-shifting transitions; the visible
+  // caret is painted by `caret-layer.ts` instead. Explicit
   // font-size and line-height pin the line metrics so every line is
-  // the same height regardless of contents.
+  // the same height regardless of contents — `caret-layer.ts` reads
+  // `lineBlockAt(head).height` to size the caret stroke, so this
+  // line-height directly controls caret height too.
   ".cm-content": {
-    caretColor: TOKENS.caret,
+    caretColor: "transparent",
     fontFamily: "inherit",
     fontSize: "14px",
     lineHeight: "1.75",
@@ -150,18 +162,16 @@ export const tugTheme: Extension = EditorView.theme({
     padding: "0",
   },
 
-  // The browser sizes the caret to the tallest inline content in the
-  // current line — text glyphs (~18px), atom widgets (24px), or the
-  // CSS line-height, whichever is largest. Without something pinning
-  // every line to a uniform tallest inline element, the caret jumps
-  // height as it moves between text-only and atom-bearing positions.
-  // The fix is the ghost-element trick: a zero-width, 1.75em-tall
-  // inline-block prepended to every line via `::before`. The line's
-  // tallest inline content is now always the ghost, so the caret is
-  // always 1.75em (24.5px at 14px font-size). Selection unaffected
-  // because the pseudo isn't in the DOM tree — it doesn't participate
-  // in the document model, only in line layout. Used by Slack,
-  // Discord, Linear and friends for the same reason.
+  // Pin every line's line-box to a uniform 1.75em (24.5px at 14px
+  // font-size) regardless of inline content. Without this, a line's
+  // line-box height is the tallest inline content's height — text
+  // glyphs (~18px), atom widgets (24px), or the CSS line-height,
+  // whichever is largest. `caret-layer.ts` reads
+  // `lineBlockAt(head).height` to size the caret stroke; the ghost
+  // pins that height to a constant. Same trick used by Slack,
+  // Discord, Linear and friends. Selection unaffected because the
+  // pseudo isn't in the DOM tree — it doesn't participate in the
+  // document model, only in line layout.
   ".cm-line::before": {
     content: '""',
     display: "inline-block",
@@ -226,6 +236,37 @@ export const tugTheme: Extension = EditorView.theme({
   ".cm-content ::selection": {
     backgroundColor: "transparent",
     color: "var(--tug7-element-selection-text-normal-plain-rest)",
+  },
+
+  // Caret-overlay layer painted by `tug-edit/caret-layer.ts`. The
+  // layer is non-interactive — pointer events fall through to the
+  // editable surface so clicks land on the right offset.
+  ".tug-edit-caret-layer": {
+    pointerEvents: "none",
+  },
+
+  // Caret blink animation — `steps(1)` produces the same hard
+  // on/off cadence WebKit's native caret uses. Driven by the
+  // layer's own animation declaration so the keyframes only run
+  // while the editor is focused. Two animation names alternated on
+  // each selection change would let us restart the blink cycle
+  // (CM6's `cm-blink` / `cm-blink2` pattern), but for the substrate
+  // a single keyframe is sufficient — the layer rebuilds on each
+  // selectionSet, which restarts the animation implicitly.
+  "&.cm-focused > .cm-scroller > .tug-edit-caret-layer": {
+    animation: "tug-edit-caret-blink 1.2s steps(1) infinite",
+  },
+
+  "@keyframes tug-edit-caret-blink": {
+    "0%": { opacity: 1 },
+    "50%": { opacity: 0 },
+    "100%": { opacity: 1 },
+  },
+
+  // The caret stroke itself. `caret-layer.ts` constructs each
+  // marker with width=2, height=line-block — this rule colors it.
+  ".tug-edit-caret": {
+    backgroundColor: TOKENS.caret,
   },
 
   // Focus-state surface — subtle background tint shift in the default

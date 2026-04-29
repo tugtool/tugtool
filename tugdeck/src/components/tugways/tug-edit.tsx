@@ -111,6 +111,7 @@ import { atomicRangesExt } from "./tug-edit/atomic-ranges";
 import { clipboardExt, parseClipboardHtmlEnvelope } from "./tug-edit/clipboard-filters";
 import { tugDropExtension } from "./tug-edit/drop-extension";
 import { createCMSelectionAdapter } from "./tug-edit/selection-adapter";
+import { tugCaretLayer } from "./tug-edit/caret-layer";
 import { tugSelectionLayer } from "./tug-edit/selection-layer";
 import { captureEditState, tugEditKeymap } from "./tug-edit/keymap";
 import type { TugEditKeymapConfig } from "./tug-edit/keymap";
@@ -418,20 +419,30 @@ function buildExtensions(
     // newline insertion, undo/redo, selectAll, and the rest.
     tugEditKeymap(getKeymapConfig),
     keymap.of([...defaultKeymap, ...historyKeymap]),
-    // Selection painted by `tugSelectionLayer` — a custom layer that
-    // emits `.cm-selectionBackground` divs covering every non-empty
-    // range in the editor's selection. We deliberately do NOT use
-    // `drawSelection`: drawSelection bundles a styled `.cm-cursor`
-    // (which sizes itself from `coordsAtPos`'s glyph rect and
-    // wobbles between text and atom positions) and a `Prec.highest`
-    // theme that forces `caret-color: transparent !important` and
-    // `::selection: transparent !important` (which we cannot
-    // override from outside). Building our own selection layer lets
-    // us keep CM6's atom-aware selection paint while leaving the
-    // native caret intact — the native caret is sized by the
-    // line-box, which the `.cm-line::before` ghost in `tugTheme`
-    // pins to a uniform line-height.
+    // Selection + caret painted by custom layers. We deliberately
+    // do NOT use `drawSelection`: drawSelection bundles a styled
+    // `.cm-cursor` (which sizes itself from `coordsAtPos`'s glyph
+    // rect and wobbles between text and atom positions) and a
+    // `Prec.highest` theme that forces `caret-color: transparent
+    // !important` and `::selection: transparent !important` (which
+    // collide with the substrate's existing glyph-recolor rule).
+    // The two own-layer extensions cover the same surface without
+    // the precedence battle:
+    //   - `tugSelectionLayer` paints `.cm-selectionBackground` divs
+    //     for non-empty ranges; survives editor blur and covers
+    //     atom widgets cleanly.
+    //   - `tugCaretLayer` paints a single `.tug-edit-caret` div at
+    //     the head of a focused, collapsed selection. The native
+    //     WebKit caret is suppressed by `caret-color: transparent`
+    //     on `.cm-content` (in `tugTheme`); the layer paints the
+    //     visible caret with height taken from
+    //     `lineBlockAt(head).height` so it stays uniform across
+    //     text-only, atom-only, and mixed lines. Replaces three
+    //     prior cache-flush hacks (history-nav, typeahead-deactivate,
+    //     atom-removal) that worked around WebKit's contentEditable
+    //     caret-cache staleness.
     tugSelectionLayer,
+    tugCaretLayer,
     tugTheme,
     hostFocusMirror(host),
     // Atom support: the decoration field is the data layer; the
