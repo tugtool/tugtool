@@ -15,7 +15,7 @@ import type React from "react";
 
 import { createFixtureSessionMetadataStore } from "../components/tugways/cards/completion-fixtures/system-metadata-fixture";
 import { wrapPositionZero } from "../components/tugways/cards/completion-providers/position-zero";
-import type { CompletionProvider } from "../lib/tug-text-engine";
+import type { CompletionProvider } from "../lib/tug-text-types";
 import type { TugPromptEntryDelegate } from "../components/tugways/tug-prompt-entry";
 
 // ---------------------------------------------------------------------------

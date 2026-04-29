@@ -51,7 +51,7 @@ import { EditorSettingsStore } from "@/lib/editor-settings-store";
 import { getConnection } from "@/lib/connection-singleton";
 import { presentWorkspaceKey } from "@/card-registry";
 import { FeedId } from "@/protocol";
-import type { CompletionProvider } from "@/lib/tug-text-engine";
+import type { CompletionProvider } from "@/lib/tug-text-types";
 import { useCardWorkspaceKey } from "@/components/tugways/hooks/use-card-workspace-key";
 import { getFixtureSessionMetadataStore } from "./completion-fixtures/system-metadata-fixture";
 import { wrapPositionZero } from "./completion-providers/position-zero";

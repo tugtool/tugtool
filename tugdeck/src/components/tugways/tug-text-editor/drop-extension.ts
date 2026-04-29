@@ -68,7 +68,7 @@ import {
   type AtomSegment,
 } from "@/lib/tug-atom-img";
 import { addAtomsEffect } from "./atom-decoration";
-import type { DropHandler } from "@/lib/tug-text-engine";
+import type { DropHandler } from "@/lib/tug-text-types";
 
 // ---------------------------------------------------------------------------
 // Constants

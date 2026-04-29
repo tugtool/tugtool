@@ -14,7 +14,7 @@
 
 import type { FeedStore } from "./feed-store";
 import type { FeedIdValue } from "../protocol";
-import type { CompletionProvider, CompletionItem } from "./tug-text-engine";
+import type { CompletionProvider, CompletionItem } from "./tug-text-types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

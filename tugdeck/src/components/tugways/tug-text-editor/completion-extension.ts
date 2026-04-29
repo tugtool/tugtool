@@ -92,7 +92,7 @@ import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
 import type {
   CompletionItem,
   CompletionProvider,
-} from "@/lib/tug-text-engine";
+} from "@/lib/tug-text-types";
 
 // ---------------------------------------------------------------------------
 // Public state shape

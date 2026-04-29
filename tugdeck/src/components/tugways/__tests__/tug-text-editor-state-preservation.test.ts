@@ -46,7 +46,7 @@ import {
   restoreEditState,
 } from "@/components/tugways/tug-text-editor/state-preservation";
 import { TUG_ATOM_CHAR, type AtomSegment } from "@/lib/tug-atom-img";
-import type { TugTextEditingState } from "@/lib/tug-text-engine";
+import type { TugTextEditingState } from "@/lib/tug-text-types";
 
 // ---------------------------------------------------------------------------
 // Canvas 2D shim — atom rendering measures glyph widths via a 2D context;

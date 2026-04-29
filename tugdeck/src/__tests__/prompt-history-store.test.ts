@@ -12,7 +12,7 @@
 import { describe, test, expect, afterEach, mock } from "bun:test";
 import { PromptHistoryStore } from "../lib/prompt-history-store";
 import type { HistoryEntry } from "../lib/prompt-history-store";
-import type { TugTextEditingState } from "../lib/tug-text-engine";
+import type { TugTextEditingState } from "../lib/tug-text-types";
 
 // ---------------------------------------------------------------------------
 // fetch mock helpers

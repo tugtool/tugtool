@@ -37,7 +37,7 @@ import { SessionMetadataStore } from "./session-metadata-store";
 import { FileTreeStore } from "./filetree-store";
 import { FeedStore, type FeedStoreFilter } from "./feed-store";
 import { FeedId } from "../protocol";
-import type { CompletionProvider } from "./tug-text-engine";
+import type { CompletionProvider } from "./tug-text-types";
 import { getConnection } from "./connection-singleton";
 import { getTugbankClient } from "./tugbank-singleton";
 import {

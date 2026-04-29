@@ -30,7 +30,7 @@ import {
 import type {
   CompletionItem,
   CompletionProvider,
-} from "@/lib/tug-text-engine";
+} from "@/lib/tug-text-types";
 
 // ---------------------------------------------------------------------------
 // Fixtures

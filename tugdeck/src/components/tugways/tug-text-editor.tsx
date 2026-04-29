@@ -93,7 +93,7 @@ import {
 import { cn } from "@/lib/utils";
 import { subscribeThemeChange, unsubscribeThemeChange } from "@/theme-tokens";
 import type { AtomSegment } from "@/lib/tug-atom-img";
-import type { HistoryProvider, InputAction } from "@/lib/tug-text-engine";
+import type { HistoryProvider, InputAction } from "@/lib/tug-text-types";
 import {
   hasNativeClipboardBridge,
   readClipboardViaNative,
@@ -143,7 +143,7 @@ import type {
   CompletionProvider,
   DropHandler,
   TugTextEditingState,
-} from "@/lib/tug-text-engine";
+} from "@/lib/tug-text-types";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -625,6 +625,19 @@ export interface TugTextEditorProps
    * wrapper.
    */
   letterSpacing?: string;
+  /**
+   * Additional CM6 extensions installed at mount time alongside the
+   * substrate's built-in extension set. Use this seam for compound
+   * components that need a host-supplied extension (e.g.
+   * `tug-prompt-entry`'s route-prefix detector).
+   *
+   * Read once at mount: changes after the view is constructed do
+   * NOT propagate. Host-supplied extensions are expected to be
+   * stable for the life of the editor view; per-prop reactivity
+   * should be threaded through refs read by the extension at fire
+   * time per [L07].
+   */
+  extensions?: Extension | readonly Extension[];
 }
 
 // ---------------------------------------------------------------------------
@@ -654,9 +667,17 @@ function buildExtensions(
     highlightActiveLineGutter: boolean;
     disabled: boolean;
   },
+  hostExtensions: readonly Extension[],
 ): readonly Extension[] {
   return [
     history(),
+    // Host-supplied extensions are layered first so they sit BELOW the
+    // substrate's keymap / theme precedence. A compound component that
+    // wants its own keymap or `Prec.highest` rules can wrap them in
+    // `Prec.highest(...)` itself; lining them up under the substrate's
+    // base keeps `tugTextEditorKeymap` and `tugTheme` authoritative
+    // for the substrate's own contracts.
+    ...hostExtensions,
     // Compartment-wrapped extensions go first so their initial values
     // are layered before precedence-sensitive extensions (keymap, theme).
     // Each compartment is reconfigured from the React shell on prop
@@ -758,6 +779,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       fontSize,
       lineHeight,
       letterSpacing,
+      extensions: extensionsProp,
       style: styleProp,
       ...rest
     }: TugTextEditorProps,
@@ -860,6 +882,19 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     useLayoutEffect(() => {
       dropHandlerRef.current = dropHandler ?? null;
     }, [dropHandler]);
+
+    // Snapshot of host-supplied extensions captured at mount only;
+    // reactivity inside the host extension itself must come through
+    // refs read at fire time per [L07]. Stored in a ref so the StrictMode
+    // re-mount path reads the same value even though the closure
+    // would otherwise be stale.
+    const extensionsRef = useRef<readonly Extension[]>(
+      extensionsProp === undefined
+        ? []
+        : Array.isArray(extensionsProp)
+          ? (extensionsProp as readonly Extension[])
+          : [extensionsProp as Extension],
+    );
 
     // Snapshot refs for Compartment-wrapped extensions. The mount
     // effect (empty-deps) reads these refs to seed initial values into
@@ -1453,6 +1488,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
             highlightActiveLineGutter: initialHighlightActiveLineGutter,
             disabled: initialDisabled,
           },
+          extensionsRef.current,
         ),
       });
       const view = new EditorView({

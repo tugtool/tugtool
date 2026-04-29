@@ -111,6 +111,13 @@ async function discoverAndLoad(): Promise<void> {
 
 function collectFontFaceRules(): CSSFontFaceRule[] {
   const out: CSSFontFaceRule[] = [];
+  // happy-dom doesn't define `CSSFontFaceRule` on the global, so an
+  // `instanceof CSSFontFaceRule` check throws "ReferenceError" the
+  // moment the rule list is non-empty. Guard the check so the
+  // function degrades gracefully in that environment (font discovery
+  // simply finds nothing — which is correct, since happy-dom has no
+  // real font CSSOM).
+  if (typeof CSSFontFaceRule === "undefined") return out;
   for (const sheet of Array.from(document.styleSheets)) {
     let rules: CSSRuleList;
     try {

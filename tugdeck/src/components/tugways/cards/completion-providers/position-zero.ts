@@ -11,7 +11,7 @@
  * Tide card's `/` slash-command provider and by the gallery card.
  */
 
-import type { CompletionProvider } from "@/lib/tug-text-engine";
+import type { CompletionProvider } from "@/lib/tug-text-types";
 import type { TugPromptEntryDelegate } from "@/components/tugways/tug-prompt-entry";
 
 /**

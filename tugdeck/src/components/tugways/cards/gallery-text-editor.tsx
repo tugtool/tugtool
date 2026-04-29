@@ -96,7 +96,7 @@ import type {
   HistoryProvider,
   InputAction,
   TugTextEditingState,
-} from "@/lib/tug-text-engine";
+} from "@/lib/tug-text-types";
 
 // ---------------------------------------------------------------------------
 // Constants

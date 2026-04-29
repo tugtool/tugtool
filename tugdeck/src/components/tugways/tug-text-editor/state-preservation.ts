@@ -70,7 +70,7 @@ import {
   useCardId,
   useCardStatePreservation,
 } from "@/components/tugways/use-card-state-preservation";
-import type { TugTextEditingState } from "@/lib/tug-text-engine";
+import type { TugTextEditingState } from "@/lib/tug-text-types";
 import { buildEditStateTransaction, captureEditState } from "./keymap";
 
 // ---------------------------------------------------------------------------

@@ -65,7 +65,6 @@ import { GallerySheet } from "./gallery-sheet";
 import { GalleryBulletin } from "./gallery-bulletin";
 import { GalleryMarkdownView } from "./gallery-markdown-view";
 import { GalleryAtom } from "./gallery-atom";
-import { GalleryPromptInput } from "./gallery-prompt-input";
 import { GalleryPromptEntry } from "./gallery-prompt-entry";
 import { GalleryTextEditor } from "./gallery-text-editor";
 import { GallerySplitPane } from "./gallery-split-pane";
@@ -337,17 +336,6 @@ export function registerGalleryCards(): void {
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
     category: CATEGORIES.textInput,
-  });
-
-  registerCard({
-    componentId: "gallery-prompt-input",
-    contentFactory: (cardId) => <GalleryPromptInput cardId={cardId} />,
-    defaultMeta: { title: "TugPromptInput", icon: "TextCursorInput", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.textInput,
-    engineKind: "em",
   });
 
   registerCard({

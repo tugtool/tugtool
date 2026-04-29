@@ -1,7 +1,7 @@
 /* ============================================================================
    tug-prompt-entry.css
    ============================================================================
-   Compound composition: TugPromptInput + TugChoiceGroup + TugPushButton,
+   Compound composition: TugTextEditor + TugChoiceGroup + TugPushButton,
    wrapped in a container with a thin toolbar row.
 
    Per [D11], TugPromptEntry reuses existing base-tier global / field / badge
@@ -21,7 +21,6 @@
  *   --tug7-element-badge-text-tinted-action-rest     | --tug7-surface-badge-primary-tinted-action-rest    | content
  *   --tug7-element-field-border-normal-danger-rest   | --tug7-surface-global-primary-normal-control-rest | informational
  *   --tug7-element-global-text-normal-muted-rest     | --tug7-surface-global-primary-normal-control-rest | content
- *   --tug7-element-global-text-normal-default-rest   | --tug7-surface-field-primary-normal-plain-focus   | content
  * } */
 
 /**
@@ -31,8 +30,6 @@
  * | --tug7-element-badge-text-tinted-action-rest        | --tug7-surface-badge-primary-tinted-action-rest      | content       | .tug-prompt-entry-queue-badge (color + background)                 |
  * | --tug7-element-field-border-normal-danger-rest      | --tug7-surface-global-primary-normal-control-rest    | informational | .tug-prompt-entry[data-errored] (outline) — errored ring           |
  * | --tug7-element-global-text-normal-muted-rest        | --tug7-surface-global-primary-normal-control-rest    | content       | .tug-prompt-entry-status-content (color) — status row text         |
- * | --tug7-element-global-text-normal-muted-rest        | --tugx-prompt-entry-surface                           | content       | .tug-prompt-entry-gutter (color) — resting route indicator         |
- * | --tug7-element-global-text-normal-default-rest      | --tug7-surface-field-primary-normal-plain-focus      | content       | .tug-prompt-entry:focus-within .tug-prompt-entry-gutter (color)    |
  */
 
 /* ----------------------------------------------------------------------------
@@ -45,12 +42,6 @@
 body {
   --tugx-prompt-entry-surface: var(--tug7-surface-global-primary-normal-control-rest);
   --tugx-prompt-entry-errored:  var(--tug7-element-field-border-normal-danger-rest);
-  /* Vertical text inset shared by the gutter and the editor inside the
-     entry: both stack on the same flex row, so their first-line
-     baselines only line up when their top padding matches. One value
-     in one place, referenced by both rules below. */
-  --tugx-prompt-entry-text-inset-y: 6px;
-  --tugx-prompt-entry-route-inset-y: 7px;
 }
 
 /* ----------------------------------------------------------------------------
@@ -82,88 +73,34 @@ body {
   background-color: var(--tug7-surface-field-primary-normal-plain-focus);
 }
 
-/* .tug-prompt-entry-input-area — two-column wrapper around the
-   route gutter + TugPromptInput.
+/* .tug-prompt-entry-input-area — wrapper around the embedded TugTextEditor.
    Exists so phase-sensitive selectors (e.g., awaiting_approval dim) can
-   target the input region without reaching into the composed input's
-   own token slot [L20]. Flex row so the fixed-width gutter sits to
-   the leading side of the editor; the editor takes the remaining
-   horizontal space and stretches vertically to fill the area. */
+   target the input region without reaching into the substrate's own
+   token slot [L20]. The substrate takes the remaining horizontal space
+   and stretches vertically to fill the area. */
 .tug-prompt-entry-input-area {
   display: flex;
   flex: 1 1 auto;
-  flex-direction: row;
+  flex-direction: column;
   align-items: stretch;
   min-height: 0;
 }
 
-/* The prompt input sits to the right of the gutter and takes the
-   remaining horizontal space. `min-width: 0` prevents the editor's
-   intrinsic width from forcing the row wider than the column. */
-.tug-prompt-entry-input-area > .tug-prompt-input {
+/* The substrate takes the entire input area. `min-width: 0` prevents
+   the editor's intrinsic width from forcing the row wider than its
+   column. */
+.tug-prompt-entry-input-area > .tug-text-editor {
   flex: 1 1 auto;
   min-width: 0;
 }
 
-/* ----------------------------------------------------------------------------
-   .tug-prompt-entry-gutter — static route indicator next to the editor
-   ----------------------------------------------------------------------------
-   Renders the active route's prefix character (`❯`, `$`, `:`) as plain
-   text in the editor's own font and size. Because the gutter uses the
-   same font-family, font-size, and line-height as the editor, the
-   character shares the editor's baseline and line-box geometry — no
-   per-route nudge, no SVG metric mismatch across fonts. Fixed-width
-   column outside the editor's text flow: the caret can never land in
-   it, bulk edits can never remove it, and switching routes never
-   requires re-inserting an atom.
-   ----------------------------------------------------------------------------- */
-
-/* @tug-renders-on: --tugx-prompt-entry-surface */
-.tug-prompt-entry-gutter {
-  display: flex;
-  flex: 0 0 auto;
-  /* Match the editor's font stack + size + line-height + top padding
-     (see tug-prompt-input.css `.tug-prompt-input-editor`) so the route
-     glyph shares the editor's baseline and line-box geometry — the
-     font does the alignment work, not per-route padding. */
-  font-family: var(--tug-font-family-editor, inherit);
-  font-size: var(--tug-font-size-editor, 13px);
-  line-height: var(--tug-line-height-editor, 1.7);
-  padding-top: var(--tugx-prompt-entry-route-inset-y);
-  padding-left: var(--tug-space-md);
-  padding-right: 2px;
-  justify-content: flex-start;
-  align-items: flex-start;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  pointer-events: none;
-  user-select: none;
-}
-
-/* Tighten the editor's leading padding inside the entry so the caret
-   sits a couple pixels past the gutter glyph instead of the default
-   10px, and pin the vertical inset to the shared alias so the gutter
-   and the editor share one source of truth for their first-line
-   baseline offset. Scoped to the compound — other TugPromptInput
-   consumers keep the standard padding. */
-.tug-prompt-entry-input-area .tug-prompt-input-editor {
-  padding-top: var(--tugx-prompt-entry-text-inset-y);
-  padding-bottom: var(--tugx-prompt-entry-text-inset-y);
-  padding-left: 2px;
-}
-
-/* Nudge the route glyph (`❯`, `$`, `:`) up a touch inside the choice-group
-   buttons at the bottom of the entry. Text characters baseline-align to the
-   label, which optically reads too low next to a cap-height word like
-   `Prompt`. One scoped rule — the rest of the choice group is untouched. */
+/* Nudge the route glyph (`❯`, `$`, `:`) up a touch inside the
+   choice-group buttons at the bottom of the entry. Text characters
+   baseline-align to the label, which optically reads too low next to
+   a cap-height word like `Prompt`. One scoped rule — the rest of the
+   choice group is untouched. */
 .tug-prompt-entry-toolbar .tug-group-item-icon {
   transform: translateY(-1px);
-}
-
-/* When the compound is focus-within (editor carries focus), surface
-   the gutter as the active route accent so the gutter, choice-group
-   segment, and focused editor all read as one coherent control. */
-.tug-prompt-entry:focus-within .tug-prompt-entry-gutter {
-  color: var(--tug7-element-global-text-normal-default-rest);
 }
 
 /* ----------------------------------------------------------------------------

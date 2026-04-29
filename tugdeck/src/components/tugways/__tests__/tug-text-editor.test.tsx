@@ -51,7 +51,7 @@ import {
 } from "@/components/tugways/tug-text-editor/keymap";
 import type { TugTextEditorKeymapConfig } from "@/components/tugways/tug-text-editor/keymap";
 import { getAtomHeightPx, TUG_ATOM_CHAR, type AtomSegment } from "@/lib/tug-atom-img";
-import type { TugTextEditingState } from "@/lib/tug-text-engine";
+import type { TugTextEditingState } from "@/lib/tug-text-types";
 
 // ---------------------------------------------------------------------------
 // Canvas 2D shim

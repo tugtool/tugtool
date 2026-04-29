@@ -53,7 +53,7 @@ import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { getConnection } from "@/lib/connection-singleton";
 import { registerCard } from "@/card-registry";
 import { FeedId } from "@/protocol";
-import type { CompletionProvider } from "@/lib/tug-text-engine";
+import type { CompletionProvider } from "@/lib/tug-text-types";
 import {
   cardSessionBindingStore,
   type CardSessionMode,

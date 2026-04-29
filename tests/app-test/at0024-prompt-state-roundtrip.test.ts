@@ -121,12 +121,11 @@ const TEST_TIMEOUT_MS = 90_000;
 // ---------------------------------------------------------------------------
 
 type PromptComponentId =
-  | "gallery-prompt-input"
   | "gallery-prompt-entry"
   | "tide";
 
 const PROMPT_INPUT_SELECTOR =
-  '[data-tug-prompt-input-root] [contenteditable]';
+  '[data-slot="tug-text-editor"] .cm-content';
 
 /** TUG_ATOM_CHAR — the U+FFFC placeholder atom character (engine internal). */
 const TUG_ATOM_CHAR = "￼";
@@ -135,11 +134,12 @@ const TUG_ATOM_CHAR = "￼";
 const TUG_PROMPT_ENTRY_DEFAULT_ROUTE = "❯";
 
 /**
- * Inactive route seeded alongside the active route for `entry` and
- * `tide`. Its presence in `bag.content.perRoute` rides the same
- * persistence pipe; we assert on disk that it survives the round-trip.
+ * The single-draft simplification ([Q07]=a) removed per-route drafts.
+ * Older bags carried `perRoute: { "❯": …, "$": … }`; the new shape is
+ * `{ route, draft }` — only the active route's draft survives on
+ * disk. The legacy secondary-route assertion is gone with that
+ * change.
  */
-const SECONDARY_ROUTE = "$";
 
 // ---------------------------------------------------------------------------
 // Seed payload
@@ -199,9 +199,6 @@ const SEED_SELECTION = { start: 50, end: 100 };
 
 const SEED_SCROLL_TOP = 80;
 
-const SECONDARY_ROUTE_TEXT = "shell command draft\nsecond line";
-const SECONDARY_ROUTE_SELECTION = { start: 4, end: 11 };
-
 interface EngineState {
   text: string;
   atoms: ReadonlyArray<{
@@ -219,34 +216,20 @@ const ACTIVE_ENGINE_STATE: EngineState = {
   selection: SEED_SELECTION,
 };
 
-const SECONDARY_ENGINE_STATE: EngineState = {
-  text: SECONDARY_ROUTE_TEXT,
-  atoms: [],
-  selection: SECONDARY_ROUTE_SELECTION,
-};
-
 // ---------------------------------------------------------------------------
 // Bag construction
 // ---------------------------------------------------------------------------
 
 /**
- * Build the `bag.content` payload for a given card. `gallery-prompt-input`
- * uses the raw `TugTextEditingState` shape; `gallery-prompt-entry` and
- * `tide` use the wrapper shape `{ currentRoute, perRoute, maximized }`.
- *
- * The wrapper-shape cards also seed a secondary `$` route entry so the
- * full per-route map is exercised, not just the active slot.
+ * Build the `bag.content` payload for a given card. Both
+ * `gallery-prompt-entry` and `tide` use the simplified
+ * `{ route, draft, maximized? }` wrapper from Step 15 ([Q07]=a):
+ * one active route, one draft snapshot.
  */
-function makeContentBag(componentId: PromptComponentId): Record<string, unknown> {
-  if (componentId === "gallery-prompt-input") {
-    return ACTIVE_ENGINE_STATE as unknown as Record<string, unknown>;
-  }
+function makeContentBag(_componentId: PromptComponentId): Record<string, unknown> {
   return {
-    currentRoute: TUG_PROMPT_ENTRY_DEFAULT_ROUTE,
-    perRoute: {
-      [TUG_PROMPT_ENTRY_DEFAULT_ROUTE]: ACTIVE_ENGINE_STATE,
-      [SECONDARY_ROUTE]: SECONDARY_ENGINE_STATE,
-    },
+    route: TUG_PROMPT_ENTRY_DEFAULT_ROUTE,
+    draft: ACTIVE_ENGINE_STATE,
     maximized: false,
   };
 }
@@ -363,26 +346,16 @@ interface RawBag {
  */
 function readActiveEngineState(
   bag: RawBag,
-  componentId: PromptComponentId,
+  _componentId: PromptComponentId,
 ): Record<string, unknown> | null {
   const content = bag.content;
   if (typeof content !== "object" || content === null) return null;
-  if (componentId === "gallery-prompt-input") {
-    return content as Record<string, unknown>;
-  }
+  // Step 15 simplified shape: `{ route, draft, maximized? }`. The
+  // engine-level state lives directly under `draft`.
   const wrapper = content as Record<string, unknown>;
-  const currentRoute = wrapper.currentRoute;
-  const perRoute = wrapper.perRoute;
-  if (
-    typeof currentRoute !== "string" ||
-    typeof perRoute !== "object" ||
-    perRoute === null
-  ) {
-    return null;
-  }
-  const inner = (perRoute as Record<string, unknown>)[currentRoute];
-  if (typeof inner !== "object" || inner === null) return null;
-  return inner as Record<string, unknown>;
+  const draft = wrapper.draft;
+  if (typeof draft !== "object" || draft === null) return null;
+  return draft as Record<string, unknown>;
 }
 
 /**
@@ -449,24 +422,9 @@ function assertBagOnDisk(
     "axis scrollTop: bag.content.scrollTop must carry the seeded editor offset",
   ).toBe(SEED_SCROLL_TOP);
 
-  // Bonus: wrapper-shape cards persist their full per-route map.
-  // Asserts the secondary route survived the capture-and-save round
-  // trip — the route the user wasn't looking at when the reload
-  // fired must come back too.
-  if (componentId !== "gallery-prompt-input") {
-    const wrapper = bag as Record<string, unknown> | undefined;
-    const content = wrapper?.content as Record<string, unknown> | undefined;
-    const perRoute = content?.perRoute as
-      | Record<string, Record<string, unknown>>
-      | undefined;
-    const secondary = perRoute?.[SECONDARY_ROUTE];
-    expect(
-      secondary,
-      "axis secondary-route: $ route must be preserved on disk",
-    ).toBeDefined();
-    expect(secondary?.text).toBe(SECONDARY_ROUTE_TEXT);
-    expect(secondary?.selection).toEqual(SECONDARY_ROUTE_SELECTION);
-  }
+  // The Step 15 simplification dropped per-route drafts ([Q07]=a),
+  // so there is no secondary-route assertion here anymore — only the
+  // active route's draft survives a round-trip.
 }
 
 // ---------------------------------------------------------------------------
@@ -674,18 +632,6 @@ async function runRelaunchScenario(
 describe.skipIf(!SHOULD_RUN)(
   "m24: prompt-state round-trip across reload + relaunch",
   () => {
-    test(
-      "gallery-prompt-input × appReload",
-      () => runAppReloadScenario("gallery-prompt-input"),
-      TEST_TIMEOUT_MS,
-    );
-
-    test(
-      "gallery-prompt-input × relaunch",
-      () => runRelaunchScenario("gallery-prompt-input"),
-      TEST_TIMEOUT_MS,
-    );
-
     test(
       "gallery-prompt-entry × appReload",
       () => runAppReloadScenario("gallery-prompt-entry"),

@@ -259,6 +259,12 @@ export function captureDomSelection(
  * bystander DOM.
  */
 const COMPONENT_OWNED_SELECTORS: readonly string[] = [
+  '[data-slot="tug-text-editor"]',
+  // Legacy marker kept so existing focus-classifier tests built around
+  // synthetic DOM continue to exercise the lookup logic; nothing in the
+  // production tree writes this attribute now that the legacy substrate
+  // is gone, but the second-position selector is harmless and forward
+  // compatible with any future host that adopts the same convention.
   "[data-tug-prompt-input-root]",
 ];
 
@@ -270,6 +276,7 @@ const COMPONENT_OWNED_SELECTORS: readonly string[] = [
  * on save, `querySelector(...)` on restore. Order must match.
  */
 const COMPONENT_OWNED_FOCUS_TARGETS: readonly string[] = [
+  '[data-slot="tug-text-editor"] .cm-content',
   "[data-tug-prompt-input-root] [contenteditable]",
 ];
 

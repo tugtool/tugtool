@@ -7,7 +7,7 @@
  * @module lib/prompt-history-store
  */
 
-import type { HistoryProvider, TugTextEditingState } from "./tug-text-engine";
+import type { HistoryProvider, TugTextEditingState } from "./tug-text-types";
 import { putPromptHistory, getPromptHistory } from "../settings-api";
 import { logSessionLifecycle } from "./session-lifecycle-log";
 
