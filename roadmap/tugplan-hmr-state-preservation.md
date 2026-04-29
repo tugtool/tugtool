@@ -382,11 +382,12 @@ Plus a brief subsection in the doc explaining the bridge module and pointing at 
 | **MODIFIED** `tugdeck/src/main.tsx` | One `installHmrBridge(deck)` call after `new DeckManager(...)` | +2 |
 | **MODIFIED** `tugdeck/src/deck-manager.ts` | New `captureAllForTeardown(reason)` method; refactor `handleBeforeUnload` to call it | ~15 |
 | **MODIFIED** `tugdeck/src/deck-trace.ts` | Two new `SaveCallbackSource` literals | +2 |
-| **MODIFIED** `tugdeck/src/components/chrome/card-host.tsx` | Detect remount in `registerStatePreservationCallbacks`; reset content-axis and components-axis one-shot guards; add `callbacksVersion` to framework-axes and components-axis effect deps | ~13 |
-| **NEW** `tests/app-test/atXXXX-hmr-state-preservation.test.ts` | End-to-end smoke test | ~80 |
+| **MODIFIED** `tugdeck/src/components/chrome/card-host.tsx` | Detect remount in `registerStatePreservationCallbacks` (count-based); reset content-axis and components-axis one-shot guards; add `callbacksVersion` to framework-axes and components-axis effect deps | ~16 |
+| **MODIFIED** `tugdeck/src/components/tugways/tug-edit.tsx` | Substrate-local `fastRefreshSnapshotRef` for Fast Refresh same-instance effect re-run (Step 5b) | ~30 |
+| **NEW** `tugdeck/src/__tests__/card-host-hmr-remount.test.tsx` | CardHost-level integration test pinning the no-op-pair → real-callbacks transition (content + components axes). The originally-planned `vite:beforeUpdate`-firing app-test doesn't have a tractable implementation; this unit-level test is the load-bearing pin. See [Step 5](#step-5) for the rationale. | ~560 |
 | **MODIFIED** `tuglaws/state-preservation.md` | Add HMR to "Capture moments" list; brief subsection on the bridge | ~10 |
 
-**Total touched files: 7. Total net lines: ~150.**
+**Total touched files: 8. Total net lines: ~180 (excluding the integration test, whose ≈560 lines are mostly the standard `Store`-stub harness shared with `card-host-composition.test.tsx`).**
 
 ---
 
@@ -478,32 +479,113 @@ Modify `registerStatePreservationCallbacks` in `card-host.tsx` to detect the "no
 - Components-axis effect (line 1210): `callbacksVersion` added to the dep array. The matching one-shot reset on `hasRestoredComponentsRef` lives in the register function above, so the effect re-fires only when the user-visible signal (a fresh real registration after a no-op pair) actually means a remount happened.
 
 **Manual verification:**
-- [ ] In dev mode, type into a tug-edit gallery card. Edit `tug-edit/theme.ts` → observe text, atoms, selection, scroll all survive the HMR remount. *(Pending the user's gallery walk in Step 7.)*
+- [x] In dev mode, type into a tug-edit gallery card. Edit `tug-edit/theme.ts` → observed text, selection across HMR. **A first attempt at this step relied solely on a fingerprint detector (`prev.restorePendingRef === undefined`) for the no-op-pair → real-callbacks transition — that detector covers a *true* remount but not the case React Fast Refresh actually produces in dev. Empirical observation (diagnostic logs) showed Fast Refresh's "soft refresh": same component instance preserved, but `useLayoutEffect` mount effects defined in the hot-replaced source module re-run their cleanup-then-body cycle. `useCardStatePreservation`'s effect lives in a *different* source module so it does NOT re-run; the framework signal never fires and content was lost on every save.** The fingerprint detector was widened to a count-based detector (any second-or-later real registration on the same CardHost = a remount) so true remounts are still handled, but the soft-refresh case is fixed substrate-side — see the note appended to [Step 5](#step-5).
 
 **Tests:**
 - [x] `bun run check` exits 0.
-- [x] `bun test` exits 0 — full unit suite 2548 / 2548 (no incidental regression).
-- [x] AT0042 cold-boot preservation still passes (4/4) — the existing cold-boot path is unaffected because on first mount `prev === null`, so `isRemount` evaluates to false and the one-shot guards stay at their `useRef(false)` defaults; the existing "fire once" behavior is preserved.
+- [x] `bun test` exits 0 — full unit suite 2552 / 2552 (no incidental regression).
+- [x] AT0042 cold-boot preservation still passes (4/4) — the existing cold-boot path is unaffected because on a first mount with no prior callbacks, the count-based detector stays at 1 (no `isRemount`) and the one-shot guards remain at their `useRef(false)` defaults; the existing "fire once" behavior is preserved.
 
 **Checkpoint:**
-- [x] Both axes (content, components) wired to re-fire on remount detection. The end-to-end round-trip across HMR remount on the gallery card is the manual verification in Step 7.
+- [x] Both axes (content, components) wired to re-fire on the count-based remount signal. End-to-end gallery walk in Step 7 confirmed the broader fix works once the substrate-local snapshot path landed alongside.
 
 ---
 
 #### Step 5: Smoke test {#step-5}
 
-**Commit:** `test(app-test): atXXXX hmr state-preservation smoke`
+**Commit:** `test(card-host): pin HMR-remount detection — content + components axes round-trip`
 
 **References:** [L23], (#tuglaws-compliance)
 
-Add a new app-test that fires `vite:beforeUpdate` programmatically and asserts the bag round-trips for a populated tug-edit gallery card (text, selection, scroll). Sits next to AT0042 in the inventory.
+**Audit before editing:** the originally-planned shape (an app-test that fires `vite:beforeUpdate` programmatically) doesn't have a tractable implementation. Vite's HMR client subscribes to events delivered over the dev server's WebSocket — there's no public API to synthesize a `vite:beforeUpdate` from test code. Even if there were, simulating React Fast Refresh's component remount (the half this plan's restore-side fix actually keys off) is a separate intractable concern: Fast Refresh can't be invoked from a test harness. Both halves would need full dev-environment infrastructure to exercise faithfully.
+
+**Pivot:** the load-bearing bookkeeping is the **no-op-pair → real-callbacks transition** in `useCardStatePreservation`'s register/cleanup cycle. That transition can be reproduced *exactly* by a happy-dom integration test that mounts CardHost with a content factory whose subtree conditionally renders a probe — toggling the wrapper's `useState` produces the same React-tree-shape signal Fast Refresh produces, which is the signal `registerStatePreservationCallbacks` reacts to. AT0042 already pins the cold-boot end-to-end path; this test pins the new remount-detection logic. Together they cover the matrix.
+
+**Implementation:** new file `tugdeck/src/__tests__/card-host-hmr-remount.test.tsx` modeled on the harness in `card-host-composition.test.tsx`:
+- Minimal `Store` stub implementing `IDeckManagerStore` (same shape as the composition test).
+- `Probe` component using `useCardStatePreservation` (content axis) and `useComponentStatePreservation` (components axis), both backed by React `useState` so the round-trip is observable through the rendered DOM.
+- `Wrapper` component with `useState<boolean>` controlling whether the Probe is rendered. Toggling it simulates the unmount-then-remount pattern.
+- Module-level `handles` ref exposes the probe's React state setters / getters and accumulates `onRestore` / `restoreState` calls so each test's assertions are simple equality checks.
+
+Test cases cover:
+1. `bag.content` round-trip across the simulated remount via `useCardStatePreservation`'s `onRestore`.
+2. `bag.components` round-trip across the same remount via `useComponentStatePreservation`'s `restoreState` (the orchestrator's parent-first walk).
+3. First-mount cold-boot guard preserved — no spurious restore when no prior bag exists.
+4. Multiple consecutive remount cycles preserve the latest-saved value (no stale-snapshot bug).
+
+The manual gallery walk in Step 7 covers what this can't (real Vite HMR + real Fast Refresh against the live tug-edit substrate).
 
 **Tests:**
-- [ ] New app-test passes.
-- [ ] Full sweep stays green.
+- [x] New `card-host-hmr-remount.test.tsx` passes — 4/4 tests green; both axes round-trip across the simulated remount; cold-boot guard preserved; multiple remount cycles round-trip the latest-saved value.
+- [x] Full unit suite stays green — 2552 / 2552 (was 2548; the new file adds 4 tests).
+- [x] `bun run check` exits 0.
+- [x] AT0042 still passes (4/4) — cold-boot end-to-end path untouched.
 
 **Checkpoint:**
-- [ ] Contract is pinned by automation, not just by manual gallery walkthrough.
+- [x] Contract is pinned by automation: the bookkeeping signature `registerStatePreservationCallbacks` reacts to is exercised, both axes (content + components) verified, cold-boot guard verified, repeated cycles verified. Real Vite HMR + Fast Refresh remains pinned by the manual walk in Step 7.
+
+---
+
+#### Step 5b: Substrate-local snapshot for Fast Refresh's soft-refresh path {#step-5b}
+
+**Commit:** `fix(tug-edit): preserve content across Fast Refresh same-instance effect re-run`
+
+**References:** [L23], (#tuglaws-compliance)
+
+**Why this exists.** Steps 3–5 wired the framework path: `vite:beforeUpdate` captures the bag, the count-based detector in CardHost re-fires the restore effects on a true remount. End-to-end manual testing on the `tug-edit` gallery card revealed an empirically-observed gap the framework path can't close: when Vite hot-replaces a module, React Fast Refresh's "soft refresh" preserves the React component instance but re-runs `useLayoutEffect` cleanups and bodies *for hooks defined in the hot-replaced source module*. `tug-edit.tsx`'s mount effect — which constructs the CM6 view in its body and destroys it in its cleanup — re-runs. `useCardStatePreservation` lives in a separate source module so its effect does NOT re-run, no `register` call lands, the count-based detector never fires, no restore replays. The new view starts with an empty doc and the user's typing is gone.
+
+The framework can't observe this transition because the entire signal is internal to one component's effect re-run cycle. The fix has to live in the substrate.
+
+**Implementation:** a single `useRef<TugTextEditingState | null>` per `TugEdit` instance. The mount-effect cleanup writes `captureEditState(view)` into the ref before destroying the view; the next mount-effect body checks the ref after constructing the new view and replays through `restoreEditState` if non-null, then clears the ref.
+
+```ts
+// tug-edit.tsx
+const fastRefreshSnapshotRef = useRef<TugTextEditingState | null>(null);
+
+useLayoutEffect(() => {
+  // …construct view…
+
+  if (pendingRestoreRef.current !== null) {
+    // framework cold-boot path (cross-pane move, fresh mount with bag)
+  } else if (fastRefreshSnapshotRef.current !== null) {
+    restoreEditState(view, fastRefreshSnapshotRef.current);
+    fastRefreshSnapshotRef.current = null;
+  }
+
+  return () => {
+    if (view.contentDOM.isConnected) {
+      try {
+        fastRefreshSnapshotRef.current = captureEditState(view);
+      } catch {
+        fastRefreshSnapshotRef.current = null;
+      }
+    }
+    // …destroy view…
+  };
+}, []);
+```
+
+**Why this is not the rejected substrate-local cache.** The earlier prototype was a module-scoped `Map<cardId, capturedState>` that competed with the framework bag — two sources of truth, didn't generalize, hid the contract, fought Fast Refresh's React-state-preservation. This is fundamentally different:
+- **Single `useRef` per instance** — not a module-level Map. Lives only inside one TugEdit instance.
+- **Survives only the substrate's own effect re-run cycle.** A true remount destroys the component instance and the ref with it; the framework bag becomes the source of truth.
+- **Doesn't compete with the bag.** The framework-driven `pendingRestoreRef` path takes precedence. The snapshot ref is checked only when the framework didn't fire a restore — which is exactly the case Fast Refresh's soft refresh produces.
+- **Targeted at the one transition the framework can't observe.** Generalizes nothing because nothing else needs it. Other components with similar concerns can adopt the same one-line `useRef` pattern; nothing about it leaks across components.
+
+**Three layers, each handling its own case:**
+
+| Layer | Mechanism | Triggered by |
+|---|---|---|
+| Framework bag pipeline | `useCardStatePreservation` ↔ CardHost ↔ deck-manager → tugbank | Cold-boot, cross-pane move, beforeunload, `saveState` RPC |
+| Framework remount detection | Count-based `register` detector + reset of one-shot guards (Step 4) | True content-factory remount with CardHost staying up |
+| Substrate-local snapshot ref | `fastRefreshSnapshotRef` in `TugEdit` (this step) | React Fast Refresh same-instance effect re-run |
+
+**Tests:**
+- [x] `bun run check` exits 0.
+- [x] `bun test` exits 0 — full unit suite 2552 / 2552.
+- [x] AT0042 cold-boot preservation still passes (4/4) — substrate-local snapshot doesn't fire on cold boot because `pendingRestoreRef` (framework path) takes precedence.
+
+**Checkpoint:**
+- [x] End-to-end manual verification on the `tug-edit` gallery card: typed text preserved across a `tug-edit/theme.ts` edit → save → HMR cycle. Confirmed by user observation (diagnostic logs showed `[hmr-bridge] vite:beforeUpdate` → `[tug-edit] mount-effect cleanup fires; doc.length=N` → `[tug-edit] mount-effect body fires` → typed text restored in the rendered editor). Diagnostic console.debug calls removed once the fix landed; the contract is now silent in dev too.
 
 ---
 

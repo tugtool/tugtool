@@ -651,6 +651,44 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
     // chosen. [L23], [L07].
     const pendingRestoreRef = useRef<PendingEditRestore | null>(null);
 
+    // Snapshot survival across React Fast Refresh's same-instance
+    // effect re-run.
+    //
+    // When Vite hot-replaces a module whose source contains a hook
+    // call (e.g. an edit to `tug-edit.tsx` itself, or to anything
+    // it transitively imports like `tug-edit/theme.ts`), Fast
+    // Refresh re-runs every effect *defined in that module's
+    // source*. The component instance is preserved — `useRef`
+    // values survive — but the mount effect's cleanup runs (which
+    // destroys the CM6 view) and the body runs again (which
+    // creates a fresh empty view). This destroys the user's
+    // typed state without going through any framework transition:
+    // `useCardStatePreservation`'s effect lives in a *different*
+    // source module, so it does NOT re-run, no `register` call
+    // happens, and CardHost's remount-detection (which keys off
+    // register-twice) doesn't fire. The framework bag is captured
+    // by the HMR bridge but no restore replay is triggered.
+    //
+    // This ref bridges that gap. The mount-effect cleanup writes
+    // `captureEditState(view)` here just before destroying the
+    // view. The new mount-effect body reads from here and replays
+    // through `restoreEditState`, then clears it. On a true
+    // remount (cardId changes, cross-pane move) the component
+    // instance is gone and so is this ref — the framework bag is
+    // the source of truth on those paths, as it should be.
+    //
+    // This is NOT a sidecar cache competing with the framework bag.
+    // It's strictly a substrate-local mechanism for "the substrate
+    // remembers across its own effect re-run." The framework bag
+    // pipeline (`useCardStatePreservation` ↔ CardHost ↔
+    // deck-manager) remains the load-bearing path for every other
+    // transition (cold-boot, cross-pane, beforeunload, hard
+    // remount); both layers are complementary, with this ref
+    // covering the one case the framework can't observe (because
+    // its hooks live in a different source module than the one
+    // Fast Refresh hot-replaced).
+    const fastRefreshSnapshotRef = useRef<TugTextEditingState | null>(null);
+
     // Enclosing card's id from `CardStatePreservationContext`. Null
     // when this editor is rendered outside a `CardHost` (storybook,
     // unit test). Held in a ref so the mount effect's buffered-
@@ -1285,9 +1323,48 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
           }, bufferedState);
         }
         pendingRestoreRef.current = null;
+      } else if (fastRefreshSnapshotRef.current !== null) {
+        // No framework-driven restore is pending, but our own
+        // mount-effect cleanup just ran (Fast Refresh same-instance
+        // effect re-run pattern) and stashed the live state. Replay
+        // it through `restoreEditState` — same path the framework's
+        // `onRestore` would use, just sourced from our local ref
+        // instead of `bag.content`.
+        //
+        // The cardId-stable framework path skips this branch
+        // because `pendingRestoreRef` would have been populated by
+        // CardHost's onRestore dispatch on a true remount; it isn't
+        // populated here precisely BECAUSE the framework couldn't
+        // see this transition (Fast Refresh's effect re-run within
+        // a preserved component instance).
+        const snapshot = fastRefreshSnapshotRef.current;
+        restoreEditState(view, snapshot);
+        fastRefreshSnapshotRef.current = null;
       }
 
       return () => {
+        // Capture the live state before destroying the view, so a
+        // Fast Refresh same-instance effect re-run can replay it on
+        // the next mount-effect body fire. See the
+        // `fastRefreshSnapshotRef` declaration above for why this
+        // path exists.
+        //
+        // Guarded on `view.contentDOM.isConnected` so we only
+        // capture when there is actually a live DOM-attached view
+        // (StrictMode mount → unmount → mount in dev, for example,
+        // tears down the view between the two mounts; the second
+        // mount would observe the snapshot from the first cleanup
+        // and replay an empty-document state, which is a no-op).
+        if (view.contentDOM.isConnected) {
+          try {
+            fastRefreshSnapshotRef.current = captureEditState(view);
+          } catch {
+            // Capture is best-effort; if anything goes wrong, fall
+            // through to the framework bag path on the next true
+            // remount.
+            fastRefreshSnapshotRef.current = null;
+          }
+        }
         // Drop the card's last-published Range from selectionGuard
         // so the inactive-selection highlight doesn't linger over
         // DOM nodes that are about to unmount. Mirrors the

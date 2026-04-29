@@ -686,39 +686,50 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // `callbacks=null` and returned early, never re-running when
   // callbacks finally appear.
   const [callbacksVersion, setCallbacksVersion] = useState(0);
+  // Counts how many "real" (carrying `restorePendingRef`)
+  // registrations have landed on this CardHost since mount. The
+  // first one is the content factory's initial registration; any
+  // subsequent one is a remount of that factory while CardHost
+  // itself stays mounted. Empirically the only producer of a
+  // second+ real registration on the same CardHost is React Fast
+  // Refresh (Vite HMR), but the detector is shape-agnostic — any
+  // path that destroys and recreates the content factory subtree
+  // produces the same signal.
+  //
+  // The earlier fingerprint approach watched for
+  // `prev.restorePendingRef === undefined` — the no-op pair the
+  // `useCardStatePreservation` cleanup registers. That fingerprint
+  // works in unit-tested mount-then-unmount-then-mount cycles where
+  // React fires effect cleanups in their canonical order, but in
+  // practice Fast Refresh's lifecycle is murkier: it sometimes
+  // re-renders the component without firing cleanup, and the
+  // no-op-pair may never appear between two real registrations.
+  // The count-based detector catches both shapes.
+  const realCallbackRegistrationCountRef = useRef(0);
   const registerStatePreservationCallbacks = useCallback(
     (callbacks: CardStatePreservationCallbacks) => {
-      // Detect a content-factory remount by watching the shape of
-      // the registered callbacks across the cleanup → remount cycle.
+      // A "real" registration carries `restorePendingRef`. The
+      // cleanup of `useCardStatePreservation` registers a no-op
+      // pair without it; that no-op shape doesn't increment the
+      // counter and therefore never trips the remount branch on
+      // its own.
+      const isRealRegistration = callbacks.restorePendingRef !== undefined;
+      if (isRealRegistration) {
+        realCallbackRegistrationCountRef.current += 1;
+      }
+
+      // Second+ real registration on the same CardHost = the
+      // content factory just remounted. Reset the one-shot guards
+      // so the existing restore effects re-fire on the
+      // `callbacksVersion` bump below; they'll read the freshly-
+      // captured bag (the HMR bridge's `vite:beforeUpdate` save
+      // pass already ran) and replay both axes onto the new tree.
       //
-      // `useCardStatePreservation`'s unmount cleanup re-registers a
-      // no-op pair `{ onSave: () => undefined, onRestore: () => {} }`
-      // — note the absence of `restorePendingRef`. A subsequent
-      // *real* registration carries the ref. The transition
-      // `prev.restorePendingRef === undefined && callbacks.restorePendingRef !== undefined`
-      // is therefore the bookkeeping signature of "the content
-      // factory just unmounted and remounted" — typically Vite
-      // HMR / React Fast Refresh in dev, theoretically any other
-      // remount that keeps CardHost up while replacing its
-      // content-factory subtree.
-      //
-      // The capture half (`hmr-bridge.ts` listening to
-      // `vite:beforeUpdate`) has already run a save pass by the time
-      // this remount-registration arrives, so the bag in
-      // deck-manager's cache is fresh. Resetting both restore
-      // one-shot guards lets the existing restore effects re-fire
-      // and replay the bag onto the new child tree.
-      //
-      // First-mount scenario: `prev === null` → `isRemount` is
-      // false → no reset (guards are already false from `useRef(false)`
-      // initial values). Cleanup-pair → cleanup-pair (rare): both
-      // sides have `restorePendingRef === undefined` → `isRemount`
-      // false → no reset. Neither edge case mis-fires.
-      const prev = cardStatePreservationCallbacksRef.current;
+      // First registration (count === 1) leaves the guards at
+      // their `useRef(false)` initial values; the existing
+      // cold-boot path applies the bag exactly once.
       const isRemount =
-        callbacks.restorePendingRef !== undefined &&
-        prev !== null &&
-        prev.restorePendingRef === undefined;
+        isRealRegistration && realCallbackRegistrationCountRef.current >= 2;
       cardStatePreservationCallbacksRef.current = callbacks;
       if (isRemount) {
         hasAppliedContentRestoreRef.current = false;
