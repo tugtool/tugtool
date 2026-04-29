@@ -45,6 +45,34 @@
 
 
 /* ============================================================================
+   Component-scoped extension tokens
+   ============================================================================
+   `--tugx-edit-*` extension tokens (per token-naming.md): substrate-
+   specific aliases over 7-slot tokens. Defined here in the component
+   `body` block so they participate in `audit-tokens` and tug-edit
+   theme.ts can reference them as opaque names.
+
+   `--tugx-edit-gutter-bg-rest` / `--tugx-edit-gutter-border-rest` /
+   `--tugx-edit-gutter-text-rest` drive the line-number gutter
+   (`.cm-lineNumbers`) introduced by the `lineNumbers` prop. They
+   alias to the new `indicator` 7-slot tokens — a dedicated component
+   vocabulary for ancillary, distinct-but-related UI surfaces (line
+   numbers, status bars, mini-maps, badges-as-context). Compared to
+   reusing the `field` tokens directly, this lets the indicator
+   surface evolve independently from the editable field's chrome.
+
+   The `--tugx-edit-selection-bg-rest` value is theme-specific
+   (defined in `styles/themes/brio.css` / `harmony.css`) — it has no
+   plain-token equivalent, so it stays in the theme files.
+*/
+
+body {
+  --tugx-edit-gutter-bg-rest: var(--tug7-surface-indicator-primary-normal-plain-rest);
+  --tugx-edit-gutter-border-rest: var(--tug7-element-indicator-border-normal-plain-rest);
+  --tugx-edit-gutter-text-rest: var(--tug7-element-indicator-text-normal-plain-rest);
+}
+
+/* ============================================================================
    Host wrapper
    ========================================================================= */
 

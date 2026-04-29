@@ -641,6 +641,17 @@ body {
   --tug7-surface-field-primary-normal-plain-readonly: --tug-color(violet, i: 6, t: 88);
   --tug7-surface-field-primary-normal-plain-rest: --tug-color(indigo, i: 5, t: 91);
 
+  /* Indicator */
+  /* Subtle ancillary UI surface for line-number gutters, status
+     bars, mini-maps, badges-as-context — reads as part of the
+     enclosing field but visually distinct. Starting values: a notch
+     grayer than `--tug7-surface-field-primary-normal-plain-rest`,
+     a softer border than the field's plain border, muted text.
+     Hand-tune to taste. */
+  --tug7-element-indicator-border-normal-plain-rest: --tug-color(indigo, i: 7, t: 50);
+  --tug7-element-indicator-text-normal-plain-rest: --tug-color(indigo, i: 5, t: 30);
+  --tug7-surface-indicator-primary-normal-plain-rest: --tug-color(indigo, i: 5, t: 88);
+
   /* Toggle */
   --tug7-element-checkmark-icon-normal-plain-mixed: --tug-color(indigo, i: 4, t: 90);
   --tug7-element-checkmark-icon-normal-plain-rest: --tug-color(sapphire-cobalt, i: 4, t: 100);

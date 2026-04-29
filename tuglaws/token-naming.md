@@ -69,7 +69,7 @@ Note: `effect` tokens do not participate in contrast pairing — they are parame
 
 The UI component or system the token belongs to.
 
-`global` · `control` · `tab` · `tone` · `field` · `badge` · `selection` · `checkmark` · `toggle` · `radio` · `overlay` · `highlight` · `card`
+`global` · `control` · `tab` · `tone` · `field` · `badge` · `selection` · `checkmark` · `toggle` · `radio` · `overlay` · `highlight` · `card` · `indicator`
 
 ### Constituent
 

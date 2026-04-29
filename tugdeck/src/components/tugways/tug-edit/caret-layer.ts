@@ -16,25 +16,35 @@
  * transition. This layer makes those patches unnecessary by giving
  * CM6 ownership of caret rendering.
  *
- * Why DOM-rect geometry instead of `coordsAtPos` + `lineBlockAt`:
- * `BlockInfo.top` returned by `lineBlockAt(pos)` is measured relative
- * to the *document model* — i.e., the inside of `.cm-content`'s
- * padding box. Layer markers are positioned relative to the
- * *scroller's content area* (`.cm-scroller`), which is `.cm-content`'s
- * outer edge — `padding-top` (8px in `theme.ts`) HIGHER. Using
- * `lineBlock.top` directly would put the caret 8px above the visible
- * line. Using `coordsAtPos(head).top - base.top` gives the *glyph*
- * top, which is what `RectangleMarker.forRange` does for selections
- * — but the glyph height (~14-18px) wobbles between text-only and
- * atom-bearing positions, which is why we built our own caret rather
- * than relying on `drawSelection`.
+ * Geometry: glyph center + `view.defaultLineHeight`.
  *
- * The DOM approach reads the containing `.cm-line` element's
- * `getBoundingClientRect()` for both Y and height. That rect reflects
- * the *rendered* line box (including the `.cm-line::before` ghost
- * that pins height to 1.75em), which is exactly the visible target
- * we want the caret to track. One DOM read per `markers()` call —
- * cheap, deterministic, no padding-coord-system ambiguity.
+ *   - **Y position**: vertically centered on `coordsAtPos(head)`'s
+ *     glyph rect. `coordsAtPos` returns the *glyph* bounds, which
+ *     wobble between text-only and atom-bearing positions (text
+ *     glyphs ~18px tall, atom widgets 24px), so we don't use the
+ *     glyph height directly. We use the glyph rect only to find
+ *     the visual-row's vertical *center* (the midpoint of `top` and
+ *     `bottom`) and pad outward symmetrically by half of
+ *     `view.defaultLineHeight`.
+ *   - **Height**: `view.defaultLineHeight` (the computed pixel value
+ *     of `.cm-content`'s `line-height`). This is one *visual row*
+ *     tall regardless of line-wrap state, content composition, or
+ *     where the caret lands.
+ *
+ * Why not the containing `.cm-line` element's `getBoundingClientRect()`:
+ * with `EditorView.lineWrapping` engaged, one `.cm-line` element
+ * wraps multiple visual rows; the element's rect is the *whole
+ * wrapped block* (N × line-height tall), not the row the caret
+ * actually sits on. A line-rect-derived caret height would render
+ * the caret as a multi-row vertical bar — comically large. The
+ * glyph-center approach scales correctly because `coordsAtPos`
+ * always reports the position at the head's specific visual row,
+ * even mid-wrap.
+ *
+ * The earlier line-rect approach was correct only because line wrap
+ * was off; once we exposed `lineWrap` as a public prop, the same
+ * caret-layer had to handle both layouts. `defaultLineHeight` is
+ * the smallest invariant that works.
  *
  * Interaction-state plugin:
  *
@@ -108,24 +118,6 @@ function documentBase(view: EditorView): { left: number; top: number } {
 }
 
 /**
- * Find the `.cm-line` element that contains the given document
- * position. Walks up from `view.domAtPos(pos).node` to the nearest
- * `.cm-line` ancestor (or returns the node itself when pos lands
- * directly on the line element).
- */
-function findLineElement(view: EditorView, pos: number): HTMLElement | null {
-  const { node } = view.domAtPos(pos);
-  let walker: Node | null = node;
-  while (walker !== null) {
-    if (walker instanceof HTMLElement && walker.classList.contains("cm-line")) {
-      return walker;
-    }
-    walker = walker.parentNode;
-  }
-  return null;
-}
-
-/**
  * Caret-overlay layer. Paints a single `tug-edit-caret` div at the
  * head of the main selection when the editor is focused and the
  * selection is collapsed.
@@ -148,18 +140,28 @@ export const tugCaretLayer: Extension = layer({
     if (!sel.empty) return [];
     const coords = view.coordsAtPos(sel.head, 1);
     if (coords === null) return [];
-    const lineEl = findLineElement(view, sel.head);
-    if (lineEl === null) return [];
-    const lineRect = lineEl.getBoundingClientRect();
     const base = documentBase(view);
-    const nudgeUp = lineRect.height * CARET_TOP_NUDGE_FACTOR;
+    // One *visual* row tall, regardless of line-wrap state. See the
+    // module docstring for the rationale — `getBoundingClientRect()`
+    // on `.cm-line` would return the *wrapped block* height (N rows
+    // tall) when wrapping is engaged.
+    const lineHeight = view.defaultLineHeight;
+    // Center the caret on the glyph's vertical center: the glyph's
+    // top / bottom are the only stable reference for the visual row
+    // the head currently sits on. Padding outward by half
+    // `lineHeight` gives a row-aligned caret that doesn't wobble
+    // when the head crosses an atom widget (whose glyph rect is
+    // 24px tall vs. ~18px for plain text).
+    const glyphCenter = (coords.top + coords.bottom) / 2;
+    const top = glyphCenter - lineHeight / 2;
+    const nudgeUp = lineHeight * CARET_TOP_NUDGE_FACTOR;
     return [
       new RectangleMarker(
         "tug-edit-caret",
         coords.left - base.left,
-        lineRect.top - base.top - nudgeUp,
+        top - base.top - nudgeUp,
         CARET_STROKE_WIDTH,
-        lineRect.height,
+        lineHeight,
       ),
     ];
   },

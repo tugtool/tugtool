@@ -764,6 +764,27 @@ export const TugEdit = React.forwardRef<TugEditDelegate, TugEditProps>(
       });
     }, [disabled]);
 
+    // Typography prop changes flow through inline CSS variables on
+    // the host wrapper (see `hostStyle` below) — the new values
+    // cascade into `.cm-content` and `.cm-gutters` immediately. CM6
+    // doesn't observe CSS-variable changes, though: its
+    // `heightOracle` caches the measured `font-size` /
+    // `line-height` / `char-width` from the last layout pass, and
+    // gutter row heights are computed against that cache. Without a
+    // refresh, the line-number gutter keeps its old row heights
+    // while `.cm-content`'s rows grow / shrink to match the new
+    // line-height — the columns drift out of vertical alignment.
+    //
+    // `view.requestMeasure()` schedules a fresh measurement on the
+    // next animation frame; the heightOracle re-reads computed
+    // styles, the gutter regenerates its row heights, and the
+    // columns re-align. Cheap, idempotent, no transaction needed.
+    useLayoutEffect(() => {
+      const view = viewRef.current;
+      if (view === null) return;
+      view.requestMeasure();
+    }, [fontFamily, fontSize, lineHeight, letterSpacing]);
+
     // Live keymap config. The extension's keydown handler reads
     // `keymapConfigRef.current` via the thunk passed to
     // `tugEditKeymap`, so prop changes take effect on the next

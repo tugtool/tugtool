@@ -332,4 +332,52 @@ export const tugTheme: Extension = EditorView.theme({
     color: TOKENS.contentFgDisabled,
     cursor: "not-allowed",
   },
+
+  // Line-number gutter — rendered by the `lineNumbers()` extension
+  // when the substrate's `lineNumbers` prop is true. Pairs the
+  // tug-edit-specific alias tokens (defined in tug-edit.css's
+  // component-scope `body` block) with the editor's typography
+  // variables so the gutter inherits any prop-driven font / size /
+  // line-height changes.
+  //
+  // CM6's default gutter has no background and no separator — the
+  // gutter sits flush against `.cm-content`. We carry our own
+  // background + right-edge border to read as a distinct column.
+  //
+  // Typography rules:
+  //   - **font-size** is 90% of the content font-size (a `calc()`
+  //     over the same `--tug-font-size-editor` variable that drives
+  //     `.cm-content`). Numbers read as ancillary chrome, not as
+  //     content peers.
+  //   - **line-height** is computed in pixels via `calc()` over
+  //     `--tug-font-size-editor` × `--tug-line-height-editor`. We
+  //     do NOT use the unitless line-height multiplier directly:
+  //     a unitless multiplier resolves against the gutter's *own*
+  //     font-size (which we just shrank to 90%), so the gutter
+  //     rows would be 90% as tall as content rows and lose
+  //     vertical alignment. Multiplying the variables ourselves
+  //     gives the same pixel line-height as the content,
+  //     regardless of the gutter's font-size.
+  ".cm-gutters": {
+    backgroundColor: "var(--tugx-edit-gutter-bg-rest)",
+    color: "var(--tugx-edit-gutter-text-rest)",
+    borderRight: "1px solid var(--tugx-edit-gutter-border-rest)",
+    fontFamily: "var(--tug-font-family-editor, inherit)",
+    fontSize:
+      "calc(var(--tug-font-size-editor, 14px) * 0.9)",
+    lineHeight:
+      "calc(var(--tug-font-size-editor, 14px) * var(--tug-line-height-editor, 1.75))",
+    letterSpacing: "var(--tug-letter-spacing-editor, normal)",
+  },
+
+  // Per-line cell inside the gutter.
+  //
+  // - **Horizontal padding** gives the digit breathing room without
+  //   nudging the content's column.
+  // - **Vertical padding-top** is a small downward nudge that
+  //   compensates for the smaller font sitting visually high in the
+  //   row. Tunable.
+  ".cm-lineNumbers .cm-gutterElement": {
+    padding: "0.75px 8px 0 6px",
+  },
 });
