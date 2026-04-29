@@ -944,6 +944,8 @@ Per Step 9.5A: copy already writes a `text/plain` payload with atom labels subst
 
 **Depends on:** #step-9-5b
 
+**Status:** Folded into [Step 9.6](#step-9-6). 9.6's caret-rendering decision must produce a visible caret at offset 0 on a leading-atom doc; this requirement is captured in 9.6/T3 and 9.6/T4. 9.5C will not ship as a separate step.
+
 **Commit:** `fix(tug-edit): caret visible at offset 0 when line begins with atom widget`
 
 **References:** [L06], [L19], `tug-edit/theme.ts`, `tug-edit/atom-decoration.ts`, (#tuglaws-compliance)
@@ -967,6 +969,74 @@ Also surfaced during the manual checkpoint of Step 9. When the document starts w
 **Checkpoint:**
 - [ ] Manual: leading-atom card in gallery shows a visible caret at offset 0; text-leading and mixed lines look unchanged.
 - [ ] `bun run check`, `bun test` exit 0.
+
+---
+
+#### Step 9.6: CM6-owned caret + retire the cache-flush hacks {#step-9-6}
+
+**Depends on:** #step-9-5b (Step 9.5C is parallel — fold its requirement into the chosen caret design rather than landing 9.5C separately)
+
+**Commit:** `feat(tug-edit): cm6-owned caret retires the webkit cache-flush hacks`
+
+**References:** [L02], [L06], [L13], [L19], [L22], `tug-edit/theme.ts`, `tug-edit/selection-layer.ts`, `tug-edit/keymap.ts` (`applyEditState`), `tug-edit/completion-extension.ts` (`scheduleCaretRefresh`), `tug-edit/atom-decoration.ts` (`atomCaretRefreshPlugin`), (#tuglaws-compliance)
+
+**Background:**
+The substrate currently uses WebKit's native contentEditable caret because we want uniform line-height across text and atom widgets — the comment in `selection-layer.ts` records the explicit decision to NOT use `drawSelection`, which sizes its `.cm-cursor` from `coordsAtPos`'s glyph rect and wobbles between text-only and atom-bearing positions. WebKit's caret renderer caches paint geometry; certain layout-shifting transitions (typeahead deactivate, history-nav doc swap, atom removal via backspace/cut/undo) leave the cache stale and the new caret renders alongside the cached one — the user sees doubled-up caret strokes.
+
+Three patches currently flush WebKit's cache by triggering `view.contentDOM.blur() → offsetWidth read → view.focus()`:
+1. `keymap.ts:applyEditState` — history-nav (Cmd-Up/Down).
+2. `completion-extension.ts:scheduleCaretRefresh` — typeahead deactivate (commit `e4ddd7e3`).
+3. `atom-decoration.ts:atomCaretRefreshPlugin` — atom-decoration count decrease (added in commit `8c5ce8bc`, the third hack).
+
+Each patch bolts a focus thrash onto a per-transaction path, fires `focusin`/`focusout` events the chain provider has to walk, and adds a visible blip on rapid sequences (multi-key delete, multi-step undo). The user reports cumulative slowness when typing → atoms → typing → atoms → many backspaces, AND a doubled-caret state after the deletes finish — suggesting the per-keystroke side effects of the three patches AND the underlying caret-cache problem are both still in play.
+
+The patches are the wrong abstraction. The caret should be CM6-owned and atomically updated with the doc — the same way the selection overlay already is in `selection-layer.ts`. Three patch sites for one missing primitive.
+
+**Artifacts:**
+- `roadmap/text-editing-base-perf-baseline.md` (new): real-WebKit profiling notes for the user's reported scenario, recorded before any code changes (Step 9.6/T1).
+- `tug-edit/caret-layer.ts` OR `tug-edit/theme.ts` change (depending on chosen design — Step 9.6/T3): the CM6-owned caret extension. Two options on the table:
+  - **A) `drawSelection` + height override.** Use `@codemirror/view`'s built-in selection layer; override its `.cm-cursor` CSS to derive height from `.cm-line` line-box (`1.75em` matches the existing ghost) instead of the glyph rect. Pros: standard CM6 path, well-tested. Cons: bundles an `::selection` rule and `caret-color: transparent !important` we have to coexist with the existing `selection-layer.ts` overlay — `Prec`/`!important` interactions need verification.
+  - **B) Custom caret decoration.** A `Decoration.widget` at `selection.head` for collapsed selections; hidden for ranged. Styled as a 2px-wide div pinned to line-height. Pros: full control, no precedence battles. Cons: one more bespoke extension to maintain.
+- `tug-edit/keymap.ts`: delete the blur/offsetWidth/focus block in `applyEditState`.
+- `tug-edit/completion-extension.ts`: delete `scheduleCaretRefresh` and the `justDeactivated` branch that calls it.
+- `tug-edit/atom-decoration.ts`: delete `atomCaretRefreshPlugin` and `atomCaretRefreshExt` and the matching import in `tug-edit.tsx`'s extension list.
+- `tests/app-test/at0048-tug-edit-caret-rendering.test.ts` (new): caret element exists with expected geometry across atom-only / mixed / text-only / multi-line docs.
+- `tests/app-test/at0049-tug-edit-no-doubled-caret.test.ts` (new): each previously-hacked transition (atom removal, typeahead deactivate, history-nav restore, paste over selection, undo of cut, undo of paste) leaves exactly one caret element.
+- Step 9.6/T1's profile re-run, captured as `text-editing-base-perf-after.md` and committed alongside the implementation.
+
+**Tasks:**
+
+- [ ] **T1 — Profile current per-keystroke cost (no code changes).** Real-WebKit profiling in Tug.app (Develop menu → Show JavaScript Console → Timelines → Record). Run the user's reported scenario: type "hello", insert "file" atom, type "world", insert "file" atom, then 10 backspaces in succession. Capture per-keystroke flame graph for: text insert, atom insert, text backspace, backspace through atom, plain backspace AFTER all atoms removed. Record the top 5 hot frames per keystroke type and a coarse ms/keystroke median. Output: `roadmap/text-editing-base-perf-baseline.md`. Commit as `docs(roadmap): per-keystroke perf baseline before step 9.6`.
+
+- [ ] **T2 — Diagnose doubled-caret root cause.** Confirm WebKit caret-cache staleness IS the cause and which transitions trigger it. Test scenarios with all three hacks temporarily disabled: atom removal (backspace), ranged delete crossing atoms, undo of atom insert, undo of cut, paste over selection, history-nav restore, typeahead deactivate. For each scenario, observe whether doubled-caret appears. Document findings in the same notes file.
+
+- [ ] **T3 — Decide A vs. B.** Write a one-page decision record (in the same notes file) covering: line-height parity, interaction with the existing `selection-layer.ts` overlay, atom-widget caret room ([Q05] / Step 9.5C requirement — leading-atom doc must show a visible caret at offset 0), and per-keystroke cost. Pick the option that needs *zero* per-transaction side effects.
+
+- [ ] **T4 — Implement.** Build the chosen caret extension. Update `theme.ts` (remove `caret-color: TOKENS.caret`, add caret element styling, keep `::selection` suppression intact). Wire into `tug-edit.tsx`'s extension list. Confirm via gallery walk-through that text-only, atom-only, and mixed lines all render a visible caret with consistent height — including offset 0 on a leading-atom doc (folds Step 9.5C in).
+
+- [ ] **T5 — Delete the three hacks.** Remove `applyEditState`'s blur/offsetWidth/focus block, `scheduleCaretRefresh` + the `justDeactivated` branch, and `atomCaretRefreshPlugin` + `atomCaretRefreshExt` + the matching import. The hacks come out together; if any scenario still doubles after removal, T2 missed something — go back to T2, don't paper over.
+
+- [ ] **T6 — Re-profile.** Repeat T1's measurement with the implementation in place. Numbers committed as `text-editing-base-perf-after.md`. Per-keystroke cost should be ≤ baseline (and typically lower, since the three blur/focus refreshes are gone).
+
+**Tests:**
+
+- [ ] **at0048-tug-edit-caret-rendering**: with the editor focused, the caret element (selector to be defined by T3's decision) is exactly one node, with `getBoundingClientRect().height ≈ 1.75em` (24.5px at 14px font), across:
+  - empty doc, caret at 0
+  - text-only doc, caret at end
+  - atom-only doc, caret before atom (Step 9.5C)
+  - atom-only doc, caret after atom
+  - mixed doc, caret on text adjacent to atom
+- [ ] **at0049-tug-edit-no-doubled-caret**: for each of T2's transition scenarios, after the transition completes the caret element count is exactly one. Probe via DOM `querySelectorAll`.
+- [ ] **at0044-tug-edit-clipboard-stress** stays green (the existing undo + repeated-paste regression guards).
+- [ ] **at0042-tug-edit-state-roundtrip**, **at0043-tug-edit-copy-diag**, **at0045-tug-edit-cmd-a-after-typing**, **at0046-tug-edit-first-responder-after-button-click** stay green.
+- [ ] **bun run check** clean; **bun test** 2537/0.
+
+**Checkpoint:**
+
+- [ ] Manual: rerun the user's reported sequence (type → atom → type → atom → multiple backspaces). No doubled-caret at any point. Typing speed feels native — no perceptible cumulative slowdown after atoms are removed and plain backspaces continue.
+- [ ] Manual: leading-atom doc with caret at offset 0 — caret is visible (folds Step 9.5C in).
+- [ ] Manual: typeahead activate + cancel via Esc, history nav (Cmd-Up / Cmd-Down), undo of cut, undo of paste, paste over selection — all leave a single caret.
+- [ ] All app-tests green across three consecutive runs.
 
 ---
 
