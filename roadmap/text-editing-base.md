@@ -183,7 +183,83 @@ This plan uses explicit `{#anchor}` tags on every cited heading and the `[ID] La
 
 **Plan to resolve:** Deferred. Originally slated for [Step 10](#step-10), but the route-prefix feature has been pulled out of the current spike to be revisited in a follow-on plan. Default still anticipated to be "in the doc at offset 0" to match existing semantics, switched if a concrete blocker appears.
 
-**Resolution:** OPEN. Deferred to a future route-prefix plan.
+**Resolution:** SUPERSEDED by [D08](#d08-route-prefix-simplification). The route is no longer rendered as an atom inside the doc — the gutter is removed, the route is owned by `tug-prompt-entry`'s `route` prop, and prefix-typing detection is a substrate-host extension that does not insert an atom. See [Q05](#q05-prefix-disposition)–[Q09](#q09-submit-strip) for the residual details.
+
+---
+
+#### [Q05] Route-prefix character disposition: stays in the doc or consumed? (DECIDED) {#q05-prefix-disposition}
+
+**Question:** When the user types `>`, `$`, or `:` as the first character of the prompt and the route prop flips, what happens to the typed character?
+
+- (a) The character stays in the doc as plain text (the editor shows `> hello world`); the route prop is metadata. *(Working assumption; matches the owner's "type the route prefix characters into the `tug-text-editor`" wording.)*
+- (b) The character is consumed (removed from the doc) when the route flip fires; the editor shows `hello world` but the route prop is set. *(Closer to the legacy "leading route atom" UX; defeats the simplification purpose.)*
+
+**Why it matters:** Drives the implementation of the detection extension and the submit-time text-extraction path (see [Q09](#q09-submit-strip)).
+
+**Plan to resolve:** Owner picks (a) or (b) before [Step 15](#step-15) is implementation-ready.
+
+**Resolution:** DECIDED — (a). The character stays in the doc as plain text; the route prop is metadata. Submit-time stripping is handled separately per [Q09](#q09-submit-strip).
+
+---
+
+#### [Q06] Bidirectional flip: does deleting the leading prefix character reset the route? (DECIDED) {#q06-prefix-deletion}
+
+**Question:** If the user types `> hello` (route flips to Code) and then deletes the leading `>` (leaving `hello`), what happens to the route prop?
+
+- (a) Route flips back to a default. *(Symmetric with detection. Default is whatever's in [Q07-default](#q07-perroute-drafts).)*
+- (b) Route stays at Code (the prefix-selected route). *(One-way detection — typing flips, deleting doesn't.)*
+- (c) Route flips back to whatever the segment control last selected. *(The segment control is the "owner of record"; typing temporarily overrides it; deleting reverts.)*
+
+**Why it matters:** Determines whether the prefix-typing detection is a one-shot event or a continuous classifier. Continuous is more code but matches user mental models better.
+
+**Plan to resolve:** Owner picks (a), (b), or (c) before [Step 15](#step-15) is implementation-ready. The plan currently assumes (c) — segment control is the owner of record — which gives the cleanest mental model: "typing a prefix overrides; deleting restores."
+
+**Resolution:** DECIDED — (b). One-way detection. Typing a route-prefix character at offset 0 flips the route prop; deletion of the leading prefix does not flip it back. The route changes again only when the user types a *different* prefix as the first character (which counts as a new flip event) or clicks the segment control. Detection is a one-shot classifier on insertions, not a continuous classifier watching every doc change.
+
+---
+
+#### [Q07] Per-route drafts: keep or drop? (DECIDED) {#q07-perroute-drafts}
+
+**Question:** Today `tug-prompt-entry` keeps a separate draft per route (`perRoute: Record<string, TugTextEditingState>`). When the user switches from Code (with a partially-written prompt) to Shell (empty), then back to Code, the original draft restores. Does the simplification preserve this, or collapse to a single shared draft?
+
+- (a) Drop. The editor holds one document. Switching routes does not change the doc. *(Matches the simplification's spirit; loses the per-route draft feature.)*
+- (b) Keep. `tug-prompt-entry` continues to store `perRoute` and swaps the editor's doc on route switch. *(Retains the feature; reintroduces the doc-swap complexity that the simplification was trying to remove.)*
+
+**Why it matters:** Determines the shape of `TugPromptEntryState` (preserved-state payload) and the route-switch handler. Has direct user-visible consequences for the workflow.
+
+**Plan to resolve:** Owner picks (a) or (b). The plan currently assumes (a) — drop — per the owner's "greatly simplify" framing. Persistence migration keeps the active-route draft and discards the rest on first restore.
+
+**Resolution:** DECIDED — (a). Drop per-route drafts. The editor holds one document. Switching routes does not change the doc. Persistence migration keeps the active-route draft and discards the rest on first restore.
+
+---
+
+#### [Q08] Segment control: keep or remove? (DECIDED) {#q08-segment-control}
+
+**Question:** The current `tug-prompt-entry` renders a `TugChoiceGroup` segmented control showing Code|Shell|Command (`ROUTE_ITEMS`). Once the gutter is gone, does the segment control stay, or does the route only flip via prefix typing?
+
+- (a) Keep. The segment control is the user's primary route selector; prefix typing is an opt-in shortcut. *(Working assumption; matches the owner's "prop that `tug-prompt-entry` stores for Code|Shell|Command determines the route" — the segment control is what sets that prop today.)*
+- (b) Remove. The route only flips via prefix typing. *(Most extreme simplification; loses discoverability.)*
+
+**Why it matters:** Drives the layout and the surface area of the migration step.
+
+**Plan to resolve:** Owner picks. The plan currently assumes (a) — keep — per the working interpretation of the owner's wording.
+
+**Resolution:** DECIDED — (a). Keep the segment control. It remains the user's primary route selector; prefix typing is an opt-in shortcut.
+
+---
+
+#### [Q09] Submit-time prefix stripping (DECIDED) {#q09-submit-strip}
+
+**Question:** Given [Q05](#q05-prefix-disposition)=(a) (prefix stays in the doc), at submit time the doc text is `> hello`. What goes to the route handler?
+
+- (a) Strip the leading prefix iff it matches the active route's prefix character. The handler receives `hello`. *(Matches today's behavior — the legacy engine effectively did this via the route-atom model.)*
+- (b) Pass the doc text verbatim. The handler receives `> hello`. *(Simpler; pushes the strip responsibility downstream; user sees the prefix in their prompt history.)*
+
+**Why it matters:** User-visible. Affects what prompts log to history, what the route handler receives, what `Cmd-Up` restores.
+
+**Plan to resolve:** Owner picks. Plan currently assumes (a) — strip-on-match — for parity with today.
+
+**Resolution:** DECIDED — (a). Strip the leading prefix at submit time iff `doc[0]` matches the active route's prefix character. Combined with [Q06](#q06-prefix-deletion)=(b), this means: if the user types `>` (route flips to Code) and submits, the handler receives the doc minus the leading `>`; if the user later switches the route via the segment control to Shell while a leading `>` remains in the doc, the `>` no longer matches the active prefix (`$`) and is passed verbatim — the prefix becomes literal text the moment the route diverges from it.
 
 ---
 
@@ -300,6 +376,34 @@ This plan uses explicit `{#anchor}` tags on every cited heading and the `[ID] La
 **Implications:**
 - All editor chrome appearance is controlled through the existing token files (`brio.css`, `harmony.css`).
 - Adding a token for an editor-specific concern (e.g., a CM6 gutter color) follows the standard 7-element pattern.
+
+#### [D07] Rename `tug-edit` → `tug-text-editor` for production (DECIDED) {#d07-rename-tug-text-editor}
+
+**Decision:** With the spike concluded and the substrate accepted, the working name `tug-edit` is replaced by the production name `tug-text-editor` across the component (file pair, internal directory, public symbols, CSS classes, data attributes, app-test names, hook names, gallery card name). Supersedes [D03](#d03-tug-edit-name)'s spike-phase naming.
+
+**Rationale:**
+- `tug-edit` reads as a verb; the component is a *substrate* — a noun. `tug-text-editor` names what it is.
+- Aligns with the component-library roster: peer components use noun-shaped names (`tug-pane`, `tug-deck`, `tug-prompt-entry`, `tug-markdown-view`).
+- The rename is mechanical and is its own step ([Step 14](#step-14)); migration ([Step 15](#step-15)) starts against a clean rename baseline so review can read each commit independently.
+
+**Implications:**
+- Spike-phase plan text that refers to `tug-edit` historically (e.g., this section's earlier wording in [D03](#d03-tug-edit-name)) is left as-is. Authoritative current name is `tug-text-editor`.
+- The `useEditStatePreservation` hook becomes `useTextEditorStatePreservation`. The substrate-internal helpers prefixed `tug…` (`tugCaretLayer`, `tugTheme`, etc.) keep their names — the `tug` prefix already implies the substrate; adding `TextEditor` would just lengthen them.
+
+#### [D08] Route-prefix simplification (DECIDED) {#d08-route-prefix-simplification}
+
+**Decision:** The route-prefix model in `tug-prompt-entry` is simplified to remove the gutter, remove the leading route atom, and remove per-route drafts. The route is owned by `tug-prompt-entry`'s existing `route` state, which the existing segment control sets directly ([Q08](#q08-segment-control)=(a) keep). The substrate (`tug-text-editor`) gains a small one-shot prefix-detection extension contributed by `tug-prompt-entry`: when an insertion makes a route-prefix character (`>` / `$` / `:`) the first character of the doc *and* that character maps to a different route than the current `route` prop, the extension calls `setRoute(matchingRoute)` once. The character stays in the doc as plain text ([Q05](#q05-prefix-disposition)=(a)). Detection is one-way: deleting the leading prefix does NOT revert the route ([Q06](#q06-prefix-deletion)=(b)); the user changes routes after that only via the segment control or by typing a different prefix as the new first character. Per-route drafts (`perRoute: Record<string, TugTextEditingState>`) are removed — the editor holds one document, one draft, and the active route is metadata about how to dispatch on submit ([Q07](#q07-perroute-drafts)=(a)). At submit time, a leading prefix is stripped iff it matches the active route's prefix character ([Q09](#q09-submit-strip)=(a)); if the route has diverged from the leading character, the character is passed verbatim.
+
+Lands in [Step 15](#step-15). Resolves [Q04](#q04-route-atom-position) (route atom no longer lives in the doc) and [Q05](#q05-prefix-disposition) / [Q06](#q06-prefix-deletion) / [Q07](#q07-perroute-drafts) / [Q08](#q08-segment-control) / [Q09](#q09-submit-strip).
+
+**Rationale (owner):** "We *greatly simplify* the whole notion of the route prefix as it is currently implemented in `tug-prompt-entry`. The prop that `tug-prompt-entry` stores for Code|Shell|Command determines the route. We remove the gutter showing the route prefix character. The user can optionally type the route prefix characters into the `tug-text-editor`. If the user does this, we detect it and switch the route appropriately and as needed. If the user does not type (or edit and replace) one of these route prefix characters in the `tug-text-editor` to make it the first character of a prompt, then we do nothing."
+
+**Implications:**
+- The substrate (`tug-text-editor`) does not own the route concept. The detection is wired by `tug-prompt-entry` via a small route-prefix extension factory (likely `tug-prompt-entry/route-prefix-extension.ts`) consumed via the substrate's existing `extensions` prop. The substrate stays substrate.
+- The legacy "consume the prefix into a route atom" flow is gone. There is no leading atom in the doc; no `stripRouteAtoms` migration needed for that shape; the submit-time handler does the strip ([Q09](#q09-submit-strip)).
+- Detection is one-shot, not continuous: the trigger is "an insertion made `doc[0]` a route prefix that differs from the current route." Deletions are ignored; replays of the same prefix are no-ops. This makes the extension pure (no continuous classifier, no debouncing) and matches the user's mental model of "I typed a prefix and the route changed."
+- Per-route drafts are a feature loss. Restoring a session that had three drafts (one per route) drops two of them. Migration keeps the draft for the route active at save time and discards the rest. (See [Step 15](#step-15) Tasks for the persistence migration.)
+- A residual subtle case: user types `>` (route flips to Code), then clicks the Shell segment (route flips to Shell). The doc still starts with `>` and the route is now Shell. On submit the `>` is passed verbatim because it doesn't match Shell's prefix `$`. This is the intentional consequence of [Q09](#q09-submit-strip)=(a): the prefix is literal text the moment the route diverges from it.
 
 ---
 
@@ -1217,6 +1321,109 @@ The migration is shaped by two decisions the spike surfaced but did not commit t
 
 ---
 
+#### Step 14: Rename `tug-edit` → `tug-text-editor` {#step-14}
+
+**Depends on:** #step-13
+
+**Commit:** `refactor(tug-text-editor): rename tug-edit to tug-text-editor`
+
+**References:** [D07](#d07-rename-tug-text-editor), [L19], [L21], (#tuglaws-compliance)
+
+**Background:**
+`tug-edit` was the spike-phase working name. With the spike concluded and the substrate accepted as a permanent component, the public name should match its role in the component library: this is the *text editor* component that other components compose. `tug-edit` reads like a verb; `tug-text-editor` reads like the substrate it is. The rename is mechanical — no behavior changes — but its scope is broad (component, directory, files, internal symbols, CSS classes, app-test names, hook names) so it lands in its own step with its own commit so the migration step (Step 15) starts against a clean rename baseline.
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/tug-text-editor.tsx` (renamed from `tug-edit.tsx`).
+- `tugdeck/src/components/tugways/tug-text-editor.css` (renamed from `tug-edit.css`).
+- `tugdeck/src/components/tugways/tug-text-editor/` (renamed from `tug-edit/`) and every file inside (`atom-decoration.ts`, `atomic-ranges.ts`, `caret-layer.ts`, `clipboard-filters.ts`, `completion-extension.ts`, `drop-extension.ts`, `keymap.ts`, `selection-adapter.ts`, `selection-layer.ts`, `state-preservation.ts`, `theme.ts`, `host-state.ts` — and any other module the spike landed).
+- `tugdeck/src/components/tugways/cards/gallery-text-edit.tsx` → `gallery-text-editor.tsx` (new file name; gallery card name "TextEdit" → "TextEditor"). Registration in `gallery-registrations.tsx` updated.
+- App-test files renamed: `at0042-tug-edit-state-roundtrip.test.ts` → `at0042-tug-text-editor-state-roundtrip.test.ts` (and the at0043–at0049 set, all with the same `tug-edit` → `tug-text-editor` substitution).
+- `tugdeck/src/components/tugways/__tests__/tug-edit.test.tsx` → `tug-text-editor.test.tsx`. `tug-edit-clipboard.test.ts` → `tug-text-editor-clipboard.test.ts`.
+
+**Tasks:**
+- [ ] Rename the public symbols: `TugEdit` → `TugTextEditor`, `TugEditDelegate` → `TugTextEditorDelegate`, `TugEditProps` → `TugTextEditorProps`. Default export name follows.
+- [ ] Rename the helper hooks / factories: `useEditStatePreservation` → `useTextEditorStatePreservation`, `createCMSelectionAdapter(view)` keeps its name (no `Edit` prefix), `tugCaretLayer` / `tugSelectionLayer` / `tugTheme` / `tugClipboardFilters` / `tugKeymap` keep their names (no `Edit` prefix; the `tug` prefix already implies the substrate).
+- [ ] Rename the CSS host class: `.tug-edit` → `.tug-text-editor`. `data-slot="editor"` stays (it's a role, not a name). Update `audit:tokens` `COMPONENT_CSS_FILES` list and the `@tug-pairings` block.
+- [ ] Rename the data attributes that include `tug-edit` literally: `data-tug-edit-dragging` / `data-tug-edit-typing` (in `caret-layer.ts`) → `data-tug-text-editor-dragging` / `data-tug-text-editor-typing`. CSS theme rules updated to match.
+- [ ] Update every import path. There are no string-typed paths in the substrate — all imports are TypeScript paths that the IDE / `tsc` will catch.
+- [ ] Update the `TugEdit` references inside `roadmap/text-editing-base.md`'s Tables (T01 / T02), Specification (Public API), Symbol Inventory, and Deep Dives. Spike-phase historical wording (e.g., "the spike ships `tug-edit`") stays as-is — it accurately describes what the spike committed under that name; the references are to the historical rename rather than to the current symbol.
+- [ ] Confirm no third-party-license citation breaks. The `THIRD_PARTY_NOTICES.md` entry references the CodeMirror dependency, not our component name.
+
+**Tests:**
+- [ ] Full `bun test` green after rename. *(Test bodies are unchanged; only file names and import paths move.)*
+- [ ] App-tests renamed: `just app-test at0042 ... at0049` green.
+- [ ] `bun run check` green; no broken imports.
+- [ ] `bun run audit:tokens lint` green; the `tug-text-editor.css` `@tug-pairings` block matches the new file name.
+
+**Checkpoint:**
+- [ ] No occurrence of the literal string `tug-edit` survives in the substrate code, the gallery card, or the app-tests *outside of historical commit messages and the spike's history-only sections of this plan*. Verified via `rg "tug-edit" tugdeck/src tests/app-test`.
+- [ ] `bun run check`, `bun test`, `bun run audit:tokens lint` exit 0.
+
+---
+
+#### Step 15: Migrate `tug-prompt-entry` to `tug-text-editor`; remove `tug-prompt-input`; simplify route prefix {#step-15}
+
+**Depends on:** #step-14
+
+**Commit:** `feat(tug-prompt-entry): adopt tug-text-editor; remove tug-prompt-input; simplify route prefix`
+
+**References:** [D04](#d04-additive), [D07](#d07-rename-tug-text-editor), [D08](#d08-route-prefix-simplification), [Q05](#q05-prefix-disposition), [Q06](#q06-prefix-deletion), [Q07](#q07-perroute-drafts), [Q08](#q08-segment-control), [Q09](#q09-submit-strip), [L01], [L02], [L06], [L11], [L19], [L23], [L24], (#tuglaws-compliance)
+
+**Background:**
+`tug-prompt-entry` is the only consumer of `tug-prompt-input` outside of `tug-prompt-input`'s own gallery card and tests. With the spike's substrate decision committed ([Step 13](#step-13)), `tug-prompt-entry` switches over to `tug-text-editor` directly and the legacy substrate is removed. The migration also implements the simplified route-prefix model committed in [D08](#d08-route-prefix-simplification): the gutter goes; the leading route atom goes; per-route drafts go; the route stays a `tug-prompt-entry` state field driven by the existing segment control, with one-shot prefix detection as an opt-in shortcut. All open questions are decided ([Q05](#q05-prefix-disposition)=a stays-in-doc, [Q06](#q06-prefix-deletion)=b one-way detection, [Q07](#q07-perroute-drafts)=a drop, [Q08](#q08-segment-control)=a keep, [Q09](#q09-submit-strip)=a strip-on-match).
+
+**Artifacts:**
+
+*Migration:*
+- `tugdeck/src/components/tugways/tug-prompt-entry.tsx`: replace `<TugPromptInput>` with `<TugTextEditor>`. Update `promptInputRef` → `textEditorRef`, `TugPromptInputDelegate` → `TugTextEditorDelegate`. Update the imperative methods that round-trip through the substrate (`paintMirrorAsActive` / `paintMirrorAsInactive` / `regenerateAtoms` / `captureEditingState` / `applyEditingState` / `isEmpty` / `getValue` / etc.) to the substrate's new delegate.
+- `tugdeck/src/components/tugways/tug-prompt-entry.tsx`: remove gutter render block (currently a child element with `className="tug-prompt-entry-gutter"`); remove gutter CSS.
+- `tugdeck/src/components/tugways/tug-prompt-entry.tsx`: remove the per-route draft model — `perRoute: Record<string, TugTextEditingState>` field; route-switch handler that swapped drafts; the `currentRoute` field collapses into existing `route` state; `TugPromptEntryState`'s preserved-state shape simplifies to `{ route, draft: TugTextEditingState | null, maximized? }`. Add a one-shot persistence migration that maps any restored `perRoute[route]` payload onto `draft` and discards the rest.
+- `tugdeck/src/components/tugways/tug-prompt-entry/route-prefix-extension.ts` (new): CM6 extension factory `createRoutePrefixExtension({ aliasMap, getCurrentRoute, setRoute })`. The extension's update listener fires only when `tr.docChanged` AND the inverse-mapped change set contains an *insertion* whose effect is to make `doc[0]` a route prefix that maps to a route different from `getCurrentRoute()`. On match, it calls `setRoute(matchingRoute)`. Deletions, identity-replays of the same prefix, and changes that don't touch offset 0 are no-ops by construction. The character stays in the doc — the extension never dispatches its own transactions.
+- `tugdeck/src/components/tugways/tug-prompt-entry.tsx`: install the extension via the substrate's `extensions` prop. Update the submit handler to strip a leading prefix character iff `doc[0]` matches the active route's prefix character (per [Q09](#q09-submit-strip)=a); pass the doc text verbatim otherwise.
+
+*Removal:*
+- Delete `tugdeck/src/components/tugways/tug-prompt-input.tsx`.
+- Delete `tugdeck/src/lib/tug-text-engine.ts` (~2,200 lines).
+- Delete `tugdeck/src/components/tugways/cards/gallery-prompt-input.tsx` and unregister it from `gallery-registrations.tsx`.
+- Delete `tugdeck/src/components/tugways/__tests__/tug-prompt-input.test.tsx`.
+- Audit and remove now-unused supporting modules: `tug-atom-img.ts` (still used by `tug-text-editor`'s atom widget — keep), helpers in `tug-text-engine`'s sibling modules unique to the legacy engine (delete), the `TugTextInputDelegate` interface (replaced by `TugTextEditorDelegate`; if no other consumer remains, delete; otherwise rename and slim).
+- Update any test file that imports `TugPromptInput` for composition shape — `card-host-composition.test.tsx`, etc. — to use the new substrate or a minimal stand-in.
+
+*Bundle measurement (folded from [Step 12](#step-12)):*
+- Run `bun run build` against `main` (snapshot baseline) and against the migrated branch (snapshot post-migration). Record gzip and uncompressed deltas in this step's commit body. Net delta is what matters: CM6 added bytes, but `tug-text-engine.ts` (~2,200 lines) leaving is a meaningful deduction.
+
+**Tasks:**
+- [ ] Wire `<TugTextEditor>` into `tug-prompt-entry.tsx` in place of `<TugPromptInput>`. Update `promptInputRef` → `textEditorRef`, `TugPromptInputDelegate` → `TugTextEditorDelegate`. Confirm the entry's external prop surface is unchanged so `tide-card` and gallery consumers are untouched.
+- [ ] Remove the gutter render block (`className="tug-prompt-entry-gutter"`) and the matching CSS. Update the entry's flex layout so the editor occupies the previously-gutter-flanked region cleanly.
+- [ ] Keep the `TugChoiceGroup` segment-control render block; its existing `onChange → setRouteState` wiring stays. ([Q08](#q08-segment-control)=a.)
+- [ ] Implement `createRoutePrefixExtension` per the Artifacts. One-shot detection on insertions only; deletion of the leading prefix is a no-op ([Q06](#q06-prefix-deletion)=b). Idempotent — flipping to the same route is a no-op.
+- [ ] Drop per-route drafts. Collapse `TugPromptEntryState` to `{ route, draft, maximized? }`. Add a one-shot persistence migration that maps any restored `perRoute[currentRoute]` payload onto `draft` and discards the rest. Strip the `stripRouteAtoms` helper (no longer needed — there is no leading route atom in any restored payload after this migration runs once).
+- [ ] Update the submit handler: strip `doc[0]` iff it matches the active route's prefix character ([Q09](#q09-submit-strip)=a). Pass verbatim otherwise.
+- [ ] Confirm AT0042 (`at0042-tug-text-editor-state-roundtrip`, post-rename) still green against the new state shape.
+- [ ] Delete `tug-prompt-input.tsx`, `tug-text-engine.ts`, `gallery-prompt-input.tsx`, and the legacy test file. Walk every import; deletion must leave `bun run check` green.
+- [ ] Audit `TugTextInputDelegate`: if `tug-prompt-entry` is the only remaining surface that referred to it, retire the interface name in favor of `TugTextEditorDelegate`. If other code (focus-transfer, responder chain, key-pipeline tests) still types against the legacy interface name, slim it down to the substrate-agnostic methods and re-home it.
+- [ ] Update tests that reference `TugPromptInput`. Composition tests (`card-host-composition.test.tsx`, etc.) switch to `TugTextEditor` or a minimal stub.
+- [ ] Bundle measurement (see Artifacts). Record deltas in the commit body and update [R03](#r03-bundle) in this plan if the net delta differs materially from the spike-phase target.
+- [ ] Update `tuglaws.md` only if a law clarification surfaced — the rename and migration shouldn't change Tuglaws text, but the audit may flag a previously-implicit pattern that's now substrate-only.
+- [ ] Update component-library-roadmap to list `tug-text-editor` as the prompt substrate; remove the `PromptInput` gallery card from the published roster.
+
+**Tests:**
+- [ ] Migrate `tug-prompt-entry.test.tsx` to drive the new substrate. Existing tests on submit / route / completion forwarding stay; the harness underneath swaps from `TugPromptInput` to `TugTextEditor`.
+- [ ] New unit tests for `createRoutePrefixExtension`: typed `>` at offset 0 → route flips to Code; typed `$` at offset 0 → flips to Shell; typed `:` at offset 0 → flips to Command; typed letter at offset 0 → no flip; typed prefix at offset > 0 → no flip; deletion of leading prefix → no flip ([Q06](#q06-prefix-deletion)=b, *one-way detection*); replay of the same prefix (route already set) → no flip; paste-insert that makes `doc[0]` a prefix → flip; replace-insert (selection + type prefix) that puts a prefix at offset 0 → flip.
+- [ ] New unit tests for the submit-time strip: `doc="> hello"`, route=Code → handler receives `"hello"`; `doc="> hello"`, route=Shell → handler receives `"> hello"` verbatim; `doc="hello"`, any route → handler receives `"hello"`; `doc=""`, any route → handler receives `""`.
+- [ ] New unit tests for the persistence migration: legacy `perRoute` payload restores onto the simplified `draft` field for the active route; payload without `perRoute` restores untouched.
+- [ ] App-test: full `tug-prompt-entry` round-trip — type, submit, history-up, route-switch via segment control, route-flip via prefix typing, prefix deletion (route stays — Q06=b), reload, restore. New file `at0050-tug-prompt-entry-text-editor-migration.test.ts`.
+- [ ] `bun run build` produces a green production bundle; deltas recorded.
+- [ ] `bun test`, `bun run check`, `bun run audit:tokens lint` exit 0. `cargo nextest run` exits 0.
+
+**Checkpoint:**
+- [ ] Manual: `tug-prompt-entry` in the live tide-card behaves as documented — typing, submit (with leading-prefix strip-on-match per [Q09](#q09-submit-strip)=a), route segment selection, prefix typing → one-shot route flip ([Q06](#q06-prefix-deletion)=b: deleting the prefix leaves the route where it is), submit of `> hello` while route=Shell passes `> hello` verbatim, history nav, completion popups (`@`, `/`), drop, IME, [L23] preservation across cmd-tab and reload.
+- [ ] Bundle deltas recorded in the commit body.
+- [ ] `bun run check`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run` exit 0.
+- [ ] No occurrence of the literal strings `TugPromptInput`, `tug-prompt-input`, or `TugTextEngine` survives anywhere outside historical commit messages and the historical sections of this plan. Verified via `rg "TugPromptInput|tug-prompt-input|TugTextEngine" tugdeck/src tests/app-test`.
+
+---
+
 ### Deliverables and Checkpoints {#deliverables}
 
 **Deliverable:** A CM6-backed `tug-edit` substrate component with full feature parity to `tug-prompt-input`'s prop surface, exercised in a Component Gallery `TextEdit` card, validated through an IME compose gate, and accompanied by a written go/no-go decision on adopting CM6 for the existing prompt surfaces.
@@ -1239,11 +1446,10 @@ The migration is shaped by two decisions the spike surfaced but did not commit t
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
-- [ ] **Markdown live decorations.** A follow-on plan adds source-with-live-decoration support to `tug-edit` (bold/italic/headings/lists/code fences/blockquotes), patterned on Obsidian Live Preview / `codemirror-rich-markdoc`. Out of scope for this phase per [D02](#d02-markdown-ceiling).
-- [ ] **Migration plan: `tug-prompt-input` internals → `tug-edit`.** Scaffolded in [Step 13](#step-13) if the decision is "go". Replaces the contenteditable + `TugTextEngine` internals while preserving the external prop surface.
-- [ ] **Migration: `tug-prompt-entry`.** Consumes `tug-edit` via `tug-prompt-input` once that surface is migrated. No direct dependency on `tug-edit`.
-- [ ] **Migration: `tide-card`.** Same as above — transitive via `tug-prompt-entry`.
-- [ ] **Component-library-roadmap update.** Add `tug-edit` and the `TextEdit` gallery card to the published roster.
+- [ ] **Markdown live decorations.** A follow-on plan adds source-with-live-decoration support to `tug-text-editor` (bold/italic/headings/lists/code fences/blockquotes), patterned on Obsidian Live Preview / `codemirror-rich-markdoc`. Out of scope for this phase per [D02](#d02-markdown-ceiling).
+- [x] **Migration: `tug-prompt-entry` → `tug-text-editor`; remove `tug-prompt-input`.** ~~Scaffolded as a separate plan~~ — folded into this plan as [Step 14](#step-14) (rename) and [Step 15](#step-15) (migration + route-prefix simplification) per [D07](#d07-rename-tug-text-editor) and [D08](#d08-route-prefix-simplification).
+- [ ] **Migration: `tide-card`.** No direct work expected — `tide-card` consumes `tug-prompt-entry`, which absorbs the substrate swap transparently.
+- [ ] **Component-library-roadmap update.** Add `tug-text-editor` to the published roster (and remove the legacy `tug-prompt-input` entry). Folded into [Step 15](#step-15) Tasks.
 
 | Checkpoint | Verification |
 |------------|--------------|
