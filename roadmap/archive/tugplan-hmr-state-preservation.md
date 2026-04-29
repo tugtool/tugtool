@@ -11,7 +11,7 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | complete |
 | Target branch | `hmr-state-preservation` |
 | Last updated | 2026-04-29 |
 | Roadmap anchor | this document |
@@ -56,12 +56,12 @@ The right answer: make HMR *another known transition* and let the existing pipel
 
 #### Success Criteria (Measurable) {#success-criteria}
 
-- [ ] Editing any substrate source file during dev (HMR-driven module replacement) preserves the editor's text + atoms + selection + scroll position across the resulting remount. (verification: manual walk on the `tug-edit` gallery card; automated smoke test driving `vite:beforeUpdate`)
-- [ ] Editing a substrate file preserves all `useComponentStatePreservation`-backed component state (gallery toggles, popup values) without relying on Fast Refresh's React-state-survival side-effect.
-- [ ] `vite:beforeFullReload` triggers the same save path as `beforeunload`, so a dev-mode full reload behaves like a production reload.
-- [ ] Production bundle is unchanged in behavior — `import.meta.hot` guard is dead code in prod builds.
-- [ ] [`tuglaws/state-preservation.md`](../tuglaws/state-preservation.md) updated to list HMR among the capture moments.
-- [ ] No regression in AT0042 (existing cold-boot path) and the substrate's own unit tests.
+- [x] Editing any substrate source file during dev (HMR-driven module replacement) preserves the editor's text + atoms + selection + scroll position across the resulting remount. Confirmed end-to-end via the manual gallery walk in Step 7. The contract is split across two layers: the framework path (capture via `vite:beforeUpdate`, restore via the count-based remount detector in CardHost — pinned by `card-host-hmr-remount.test.tsx`) handles true content-factory remounts; the substrate-local `fastRefreshSnapshotRef` in `tug-edit.tsx` handles Fast Refresh's same-instance effect re-run case (Step 5b).
+- [x] Editing a substrate file preserves all `useComponentStatePreservation`-backed component state (gallery toggles, popup values) — pinned by the `bag.components` round-trip test in `card-host-hmr-remount.test.tsx` and confirmed in the gallery walk.
+- [x] `vite:beforeFullReload` triggers the same save path as `beforeunload` — the bridge calls `deck.captureAllForTeardown("hmr-full-reload")`, which delegates to the same body `handleBeforeUnload` runs.
+- [x] Production bundle is unchanged in behavior — `import.meta.hot` guard ensures the bridge body is dead code in prod builds.
+- [x] [`tuglaws/state-preservation.md`](../tuglaws/state-preservation.md) updated to list HMR among the capture moments (Step 6).
+- [x] No regression in AT0042 (existing cold-boot path) and the substrate's own unit tests — full unit suite 2552 / 2552; AT0042 4/4.
 
 ---
 
@@ -614,16 +614,16 @@ Update `tuglaws/state-preservation.md`'s "Capture moments" list to include HMR m
 **References:** [L23], (#tuglaws-compliance)
 
 **Tasks:**
-- [ ] Open the gallery, navigate to TugEdit card.
-- [ ] Type a paragraph; insert atoms; select a range; scroll.
-- [ ] Toggle every gallery control to a non-default value.
-- [ ] Edit `tug-edit/theme.ts` (any innocuous CSS tweak); save.
-- [ ] Observe: editor text, atoms, selection, scroll all preserved; gallery toggles all preserved.
-- [ ] Repeat with edits to `tug-edit.tsx`, `tug-edit.css`, `caret-layer.ts` — every substrate file. All preserve.
-- [ ] Repeat with an edit to `gallery-text-edit.tsx` itself — full subtree remounts; bag-driven preservation kicks in for everything.
+- [x] Open the gallery, navigate to TugEdit card.
+- [x] Type a paragraph; insert atoms; select a range; scroll.
+- [x] Toggle every gallery control to a non-default value.
+- [x] Edit `tug-edit/theme.ts` (any innocuous CSS tweak); save.
+- [x] Observe: editor text, atoms, selection, scroll all preserved; gallery toggles all preserved.
+- [x] Repeat with edits to `tug-edit.tsx`, `tug-edit.css`, `caret-layer.ts` — every substrate file. All preserve.
+- [x] Repeat with an edit to `gallery-text-edit.tsx` itself — full subtree remounts; bag-driven preservation kicks in for everything.
 
 **Checkpoint:**
-- [ ] HMR feels like an in-app transition, not a teardown.
+- [x] HMR feels like an in-app transition, not a teardown. Confirmed by the user across multiple consecutive HMR cycles, including 569-character documents.
 
 ---
 
