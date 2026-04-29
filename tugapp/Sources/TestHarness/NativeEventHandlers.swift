@@ -63,6 +63,37 @@ let NATIVE_DOUBLE_CLICK_INTERVAL_MS: Int = 80
 /// are wasteful but harmless.
 let NATIVE_MODIFIER_SETTLE_MS: Int = 10
 
+/// Gap between consecutive character keystrokes inside `nativeType`.
+/// Each character posts up to four events (shift-down, char-down,
+/// char-up, shift-up). With no spacing between iterations, the OS
+/// event queue saturates on long strings — windowserver drops
+/// trailing events and the doc lands missing characters (observed
+/// at0042 long-line typing dropping "final."). Spacing also gives
+/// WebKit's contentEditable input pipeline time to produce one
+/// `input` event per char, which CM6's input observer needs to
+/// dispatch one transaction per char rather than batching multiple
+/// chars into a single dispatch (which can lose intermediate
+/// reconciliation).
+///
+/// 6ms is chosen so 100-char strings finish in ~600ms — fast
+/// enough to feel responsive in tests but slow enough to keep the
+/// queue drained.
+let NATIVE_TYPE_INTER_CHAR_MS: Int = 6
+
+/// Settle delay after a `nativeKey` or `nativeType` sequence
+/// completes, before the function returns. Ensures the trailing
+/// modifier-release events have been processed by windowserver
+/// before the NEXT call's modifier press lands. Without this, two
+/// back-to-back `nativeKey("?", ["cmd"])` calls can have call N's
+/// Cmd-up race with call N+1's Cmd-down — the OS sees a Cmd that
+/// never released, and inadvertent global hotkeys (Cmd-Ctrl-Space
+/// emoji picker, Fn-Fn dictation) can trigger when adjacent
+/// modifier streams overlap.
+///
+/// 15ms covers windowserver dispatch latency on Apple Silicon +
+/// M1 Max Intel under macOS 13-15, with margin for queue load.
+let NATIVE_KEY_POST_SEQUENCE_SETTLE_MS: Int = 15
+
 // MARK: - Enums
 
 enum MouseButton: String {
@@ -516,6 +547,15 @@ final class NativeEventHandlers {
     /// Shift is not already in `modifiers`, we press it transparently
     /// around the keystroke. Call sites that want explicit control
     /// over Shift can pass `.shift` in `modifiers`.
+    ///
+    /// A post-sequence settle (`NATIVE_KEY_POST_SEQUENCE_SETTLE_MS`)
+    /// fires after `holdModifier` returns so the modifier-release
+    /// events fully drain before the function returns. Back-to-back
+    /// `nativeKey` calls without this settle can race the previous
+    /// call's modifier release with the next call's modifier press,
+    /// leaving windowserver's modifier table in an inconsistent
+    /// state — observed symptom: inadvertent global hotkey triggers
+    /// (Cmd-Ctrl-Space emoji picker, Fn-Fn dictation).
     func nativeKey(key: String, modifiers: [ModifierKey] = []) throws {
         activateSelf()
         guard let mapping = VirtualKeyMap.lookup(key) else {
@@ -535,11 +575,34 @@ final class NativeEventHandlers {
                 postKeyEvent(keyCode: ModifierKey.shift.keyCode, keyDown: false)
             }
         }
+        sleepMs(NATIVE_KEY_POST_SEQUENCE_SETTLE_MS)
     }
 
     /// Type an ASCII string via a sequence of keystrokes. Non-ASCII
     /// input is rejected up-front (before any events are posted) so
     /// the caller sees a typed error instead of a partial typing.
+    ///
+    /// Two robustness measures:
+    ///
+    /// 1. **Sticky shift**: when a run of shift-needing characters
+    ///    appears (e.g., "ABC", "!@#"), Shift is pressed once at
+    ///    the start of the run and released once at the end —
+    ///    *not* toggled between every char. Toggling between
+    ///    consecutive shift-needing chars produces a brief
+    ///    Shift-up/Shift-down pair that can be misinterpreted by
+    ///    windowserver under load and dropped from the event
+    ///    stream.
+    ///
+    /// 2. **Inter-char gap** (`NATIVE_TYPE_INTER_CHAR_MS`): a small
+    ///    sleep between consecutive characters keeps the OS event
+    ///    queue drained. Posting all events at full speed on long
+    ///    strings (the at0042 long-line case) saturates the queue
+    ///    and windowserver silently drops trailing events —
+    ///    observed symptom: the last few characters of a typed
+    ///    string don't land in the doc.
+    ///
+    /// 3. **Post-sequence settle** (same as `nativeKey`): trailing
+    ///    Shift-release fully drains before the function returns.
     func nativeType(text: String) throws {
         activateSelf()
         // Reject non-ASCII before posting anything. Inspect the
@@ -555,19 +618,42 @@ final class NativeEventHandlers {
         // `text.unicodeScalars`) is safe. Named keys like "Enter"
         // cannot be expressed as single chars; callers use
         // `nativeKey("Enter")` for those.
+        var shiftHeld = false
+        // `defer` guarantees Shift is released even if a later
+        // `VirtualKeyMap.lookup` throws an unknown-key error
+        // mid-string — no danger of a stuck modifier bleeding into
+        // the next test.
+        defer {
+            if shiftHeld {
+                postKeyEvent(keyCode: ModifierKey.shift.keyCode, keyDown: false)
+            }
+            sleepMs(NATIVE_KEY_POST_SEQUENCE_SETTLE_MS)
+        }
+        var first = true
         for char in text {
             let name = String(char)
             guard let mapping = VirtualKeyMap.lookup(name) else {
                 throw NativeEventError.unknownKey(name)
             }
-            if mapping.needsShift {
+            if !first {
+                sleepMs(NATIVE_TYPE_INTER_CHAR_MS)
+            }
+            first = false
+            // Sticky shift: only toggle when the requirement
+            // changes. Avoids the double-toggle hazard of
+            // Shift-up immediately followed by Shift-down on
+            // consecutive shift-needing chars.
+            if mapping.needsShift && !shiftHeld {
                 postKeyEvent(keyCode: ModifierKey.shift.keyCode, keyDown: true)
+                sleepMs(NATIVE_MODIFIER_SETTLE_MS)
+                shiftHeld = true
+            } else if !mapping.needsShift && shiftHeld {
+                postKeyEvent(keyCode: ModifierKey.shift.keyCode, keyDown: false)
+                sleepMs(NATIVE_MODIFIER_SETTLE_MS)
+                shiftHeld = false
             }
             postKeyEvent(keyCode: mapping.keyCode, keyDown: true)
             postKeyEvent(keyCode: mapping.keyCode, keyDown: false)
-            if mapping.needsShift {
-                postKeyEvent(keyCode: ModifierKey.shift.keyCode, keyDown: false)
-            }
         }
     }
 
