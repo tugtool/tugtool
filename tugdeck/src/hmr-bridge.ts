@@ -124,6 +124,24 @@ export function installHmrBridge(deck: DeckManager): void {
     deck.captureAllForTeardown("hmr-full-reload");
   });
 
+  // `vite:afterUpdate` fires after an incremental HMR update has been
+  // applied. Notify the native host so the dev-info overlay's "load"
+  // timestamp reflects when fresh modules came online. Full reloads go
+  // through the WebView's didFinish navigation path on the native side
+  // and are not reported here.
+  hot.on("vite:afterUpdate", () => {
+    const handler = (
+      window as unknown as {
+        webkit?: {
+          messageHandlers?: {
+            hmrUpdate?: { postMessage: (v: unknown) => void };
+          };
+        };
+      }
+    ).webkit?.messageHandlers?.hmrUpdate;
+    handler?.postMessage({});
+  });
+
   // Self-HMR: ask Vite to do a full page reload if THIS module is
   // hot-replaced, rather than re-evaluating the body and stacking
   // a duplicate set of listeners on top of the old ones.

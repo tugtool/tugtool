@@ -11,6 +11,14 @@ protocol BridgeDelegate: AnyObject {
     func bridgeSetTheme(color: String)
     func bridgeDevBadge(backend: Bool, app: Bool)
     func bridgeIsDevMode() -> Bool
+    func bridgePageDidLoad()
+    func bridgeHmrUpdate()
+}
+
+/// Pass-through container so the dev-info overlay does not block clicks
+/// to the WebView underneath.
+private final class DevInfoOverlayView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 /// Main window containing the WKWebView for tugdeck dashboard
@@ -19,6 +27,8 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     private var containerView: NSView!
     private var spinnerView: NSView?
     private var contentController: WKUserContentController!
+    private var devInfoOverlay: DevInfoOverlayView?
+    private var devInfoLabel: NSTextField?
     weak var bridgeDelegate: BridgeDelegate?
     private var bridgeCleaned = false
 
@@ -38,6 +48,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.add(self, name: "devBadge")
         contentController.add(self, name: "clipboardRead")
         contentController.add(self, name: "cardList")
+        contentController.add(self, name: "hmrUpdate")
 
         // Configure WKWebView
         let config = WKWebViewConfiguration()
@@ -211,6 +222,47 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         self.backgroundColor = NSColor(hexString: hex) ?? NSColor(hexString: MainWindow.defaultBackgroundHex)!
     }
 
+    /// Show or hide a small dev-info overlay in the bottom-left corner of
+    /// the canvas. Pass an empty string to hide. Lazily constructs the
+    /// overlay on first use.
+    func setDevInfo(text: String) {
+        if text.isEmpty {
+            devInfoOverlay?.isHidden = true
+            return
+        }
+        if devInfoOverlay == nil {
+            let overlay = DevInfoOverlayView()
+            overlay.translatesAutoresizingMaskIntoConstraints = false
+            overlay.wantsLayer = true
+            overlay.layer?.backgroundColor = NSColor(white: 0, alpha: 0.55).cgColor
+            overlay.layer?.cornerRadius = 3
+
+            let label = NSTextField(labelWithString: "")
+            label.translatesAutoresizingMaskIntoConstraints = false
+            label.font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+            label.textColor = NSColor.white
+            label.isBordered = false
+            label.drawsBackground = false
+            label.isEditable = false
+            label.isSelectable = false
+            overlay.addSubview(label)
+
+            containerView.addSubview(overlay)
+            NSLayoutConstraint.activate([
+                label.topAnchor.constraint(equalTo: overlay.topAnchor, constant: 3),
+                label.bottomAnchor.constraint(equalTo: overlay.bottomAnchor, constant: -3),
+                label.leadingAnchor.constraint(equalTo: overlay.leadingAnchor, constant: 6),
+                label.trailingAnchor.constraint(equalTo: overlay.trailingAnchor, constant: -6),
+                overlay.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 8),
+                overlay.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -8),
+            ])
+            devInfoOverlay = overlay
+            devInfoLabel = label
+        }
+        devInfoLabel?.stringValue = text
+        devInfoOverlay?.isHidden = false
+    }
+
     /// Capture the current WebView content as a static snapshot and overlay it,
     /// so the user sees a frozen frame during shutdown instead of disconnect
     /// banners, theme flashes, or blank screens. The WebView stays alive
@@ -293,6 +345,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.removeScriptMessageHandler(forName: "devBadge")
         contentController.removeScriptMessageHandler(forName: "clipboardRead")
         contentController.removeScriptMessageHandler(forName: "cardList")
+        contentController.removeScriptMessageHandler(forName: "hmrUpdate")
         bridgeCleaned = true
     }
 
@@ -323,6 +376,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         NSLog("MainWindow: didFinish navigation at %@", Date() as CVarArg)
         // WebView is NOT revealed here — we wait for frontendReady so the theme
         // and all visual state is applied before the user sees anything.
+        bridgeDelegate?.bridgePageDidLoad()
     }
 
     /// Reveal the WebView. Called from frontendReady bridge message, which fires
@@ -544,6 +598,8 @@ extension MainWindow: WKScriptMessageHandler {
                let appDelegate = NSApp.delegate as? AppDelegate {
                 appDelegate.updateCardList(list)
             }
+        case "hmrUpdate":
+            bridgeDelegate?.bridgeHmrUpdate()
         default:
             NSLog("MainWindow: unknown script message: %@", message.name)
         }

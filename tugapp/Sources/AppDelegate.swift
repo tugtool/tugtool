@@ -8,6 +8,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastAuthURL: String?
     private var vitePort: Int = TugConfig.defaultVitePort
     private var initialLoadComplete = false
+    private let appLaunchTime = Date()
+    private var lastLoadTime = Date()
 
     /// Tracks whether `bridgeFrontendReady` has fired at least once.
     ///
@@ -90,6 +92,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.bridgeDelegate = self
         loadPreferences()
         lap("loadPreferences")
+
+        updateDevInfoOverlay()
 
         #if DEBUG
         // In-app test harness: if TUGAPP_TEST_SOCKET is set, start
@@ -618,11 +622,54 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             sourceTreePath = url.path
             savePreferences()
+            updateDevInfoOverlay()
         }
     }
 
     private func updateDeveloperMenuVisibility() {
         developerMenu.isHidden = !devModeEnabled
+    }
+
+    /// Read the short git revision of the source tree. Returns nil when the
+    /// path is missing, not a git repo, or git is unavailable on PATH.
+    private func gitShortRev(at path: String) -> String? {
+        guard let gitPath = ProcessManager.which("git") else { return nil }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: gitPath)
+        proc.arguments = ["-C", path, "rev-parse", "--short", "HEAD"]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = Pipe()
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+            guard proc.terminationStatus == 0 else { return nil }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let value = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return value.isEmpty ? nil : value
+        } catch {
+            return nil
+        }
+    }
+
+    /// Update the bottom-left dev-info overlay. Hidden when dev mode is off.
+    private func updateDevInfoOverlay() {
+        guard devModeEnabled else {
+            window.setDevInfo(text: "")
+            return
+        }
+        let rev: String
+        if let path = sourceTreePath, let r = gitShortRev(at: path) {
+            rev = r
+        } else {
+            rev = "unknown"
+        }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        let buildStamp = formatter.string(from: appLaunchTime)
+        let loadStamp = formatter.string(from: lastLoadTime)
+        window.setDevInfo(text: "\(rev) · build \(buildStamp) · load \(loadStamp)")
     }
 
     /// Update the cached card list from the frontend (called by MainWindow on cardList message).
@@ -671,6 +718,7 @@ extension AppDelegate: BridgeDelegate {
             }
             self.sourceTreePath = url.path
             self.savePreferences()
+            self.updateDevInfoOverlay()
             // Re-send dev_mode if already enabled (per D12)
             if self.devModeEnabled {
                 self.processManager.sendDevMode(enabled: true, sourceTree: url.path, vitePort: self.vitePort)
@@ -682,6 +730,7 @@ extension AppDelegate: BridgeDelegate {
     func bridgeSetDevMode(enabled: Bool, completion: @escaping (Bool) -> Void) {
         self.devModeEnabled = enabled
         self.updateDeveloperMenuVisibility()
+        self.updateDevInfoOverlay()
         self.savePreferences()
 
         // If enabling without source tree, show error and bail out
@@ -803,6 +852,16 @@ extension AppDelegate: BridgeDelegate {
 
     func bridgeIsDevMode() -> Bool {
         return devModeEnabled
+    }
+
+    func bridgePageDidLoad() {
+        lastLoadTime = Date()
+        updateDevInfoOverlay()
+    }
+
+    func bridgeHmrUpdate() {
+        lastLoadTime = Date()
+        updateDevInfoOverlay()
     }
 }
 
