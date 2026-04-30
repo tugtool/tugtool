@@ -17,7 +17,7 @@ This plan supersedes the bullet list under [tide.md §T3.4.d](./tide.md#t3-4-d-p
 | Owner | Ken Kocienda |
 | Status | draft |
 | Target branch | main |
-| Last updated | 2026-04-19 |
+| Last updated | 2026-04-29 |
 | Roadmap anchor | [tide.md §T3.4.d](./tide.md#t3-4-d-polish-exit) |
 | Predecessor | [tugplan-tide-card.md](./archive/tugplan-tide-card.md) (T3.4.c) |
 
@@ -155,6 +155,47 @@ The bigger items deferred from T3.4.c — session ledger + full resume UX, multi
 - **D5 — Atom line-height target.** Tighter than 1.7 must work without baseline jump. Concrete minimum decided in [Step 7](#step-7) once the engine work surfaces the constraint.
 - **D6 — Participant model is Slack-like, *not* chat bubbles.** Decided by the user during plan authoring. Rationale: chat bubbles are wrong for a developer surface that mixes human, AI, shell, and command output — alternating sides and rounded backgrounds make a transcript hard to scan. Layout: left-aligned icon column (~32–40px), then a content column with a header row (bold identifier + small timestamp), then the body, then an optional controls/badges/icons strip beneath the body. Initial participants: `user`, `code` (Claude Code), `shell` (post-T4), `command` (post-T10). The model is open for extension via a token registration, not a code rewrite. No avatar photos; participant icons are glyphs/marks.
 - **D7 — Session ledger starts as a design placeholder.** Carried forward from [Step 4.6 of T3.4.c](./archive/tugplan-tide-card.md#step-4-6). Rationale: the sketch is rich enough that treating it as a single commit would under-specify the sqlite schema, CONTROL protocol additions, migration, and picker reshape. Starting preferences captured in [Step 10](#step-10)'s open-questions list (sqlite over JSONL; tugcast CLI flag over CONTROL round-trip; `resume_failed` → `"failed"` state rather than delete). Promotion to a concrete plan happens before implementation, in its own document.
+
+---
+
+### Plan Status (2026-04-29 rejoin) {#plan-status}
+
+Roughly half the steps shipped between the original 2026-04-19 draft and the 2026-04-29 rejoin. The list below is the at-a-glance map; the per-step sections retain their full content for reference, with a `**Status:**` line at the top of each step indicating its standing.
+
+**Resume point: [Step 7.5](#step-7-5).** Steps 7.5 and 8 onward are the active work queue. Before resuming Step 8, read each "Existing and remaining" step and confirm it still describes reality — several months of unrelated work landed on top of the original drafts.
+
+| Step | Title | Status |
+|-|-|-|
+| 1 | Status row shows the bound `projectDir` | shipped |
+| 2 | Rename Claude route label `Prompt` → `Code` | shipped |
+| 3 | Auto-focus the prompt input whenever the tide card becomes key | shipped |
+| 4 | Re-focus the prompt input after submit | shipped |
+| 5 | Cmd+K focuses the prompt input from card chrome | shipped |
+| 5.5 | Unified card-activation lifecycle | shipped |
+| 5.5.a | Lifecycle & DeckManager tightening (audit follow-ups) | shipped |
+| 5.5.b | Decompose `CardHost` into per-concern hooks | shipped |
+| 5.5.c | Invariants and safety-net tests | shipped |
+| 6 | Cmd+J scrolls to the selected history entry (or bottom) | **merged into [Step 11](#step-11)** |
+| 7 | Atoms render cleanly at tighter line-heights | **done** |
+| **7.5** | **Connection health checking and reconnect-aware tide cards** | **next — new in this rejoin** |
+| 8 | Completion popups respect the card's bottom edge | pending — refresh before starting |
+| 9 | Participant model + `TugTranscriptEntry` primitive | pending — refresh before starting |
+| 10 | Tugcast-side session ledger + full resume UX (placeholder) | placeholder — promotion still owed |
+| 11 | Multi-turn transcript rendering with `TugTranscriptEntry` | pending — absorbs Step 6's Cmd+J behavior |
+| 12 | Markdown styling pass for assistant output | pending |
+| 13 | Wire thinking + tool surfaces | pending |
+| 14 | Mid-stream behaviors end-to-end (Stop, queued sends, tool sub-state) | pending |
+| 15 | `control_request_forward` UI (permission + question) | pending |
+| 16 | Feature coverage: route prefixes, indicator sync, completions, history | **done** |
+| 17 | CJK end-to-end | **done** |
+| 18 | VoiceOver / a11y pass | **deferred** |
+| 19 | Atom drag-and-drop from Finder | **done** |
+| 20 | Typeahead jank profiling | **deferred** |
+| 21 | Concurrent Tide cards regression test | pending |
+| 22 | Compliance close-out | pending |
+| 23 | Tuglaws walkthrough | pending |
+
+**Refresh-before-resume note.** Steps 8, 9, 11, 12, 13, 14, 15, 21, 22, 23 were authored 2026-04-19. Before resuming each, re-read its Files and Work sections against the current code — `tug-prompt-entry`'s migration to `tug-text-editor` (Step 15 of `roadmap/text-editing-base.md`), the editor-settings sheet, and the tide card's panel-growth wiring all landed in the interim and may have moved file paths, renamed delegates, or changed seams the original step text assumed.
 
 ---
 
@@ -678,45 +719,130 @@ l. **Persistence regression — shipped.** See the "Persistence regression (Comm
 
 #### Step 6 — Cmd+J scrolls to the selected history entry (or bottom) {#step-6}
 
-**Files:**
+**Status: Merged into [Step 11](#step-11) (2026-04-29 rejoin).** The original split — keybinding here, transcript rendering in Step 11 — left this step's "scroll to a transcript region" branch as a no-op until Step 11 landed, with no test the keybinding could meaningfully exercise on its own. Folding the Cmd+J handler into Step 11 lets the keybinding ship next to the transcript it scrolls. The Cmd+J behavior described below is preserved verbatim inside Step 11's Work section; the original text is retained here only as historical context.
+
+**Original Files:**
 - `tugdeck/src/components/tugways/cards/tide-card.tsx` (Cmd+J handler).
 - `tugdeck/src/components/tugways/tug-prompt-entry.tsx` (expose currently-selected history entry's index/key on the delegate, if not already exposed).
 - `tugdeck/src/components/tugways/cards/tide-card.css` (scroll target styles if needed).
 
-**Work:**
-- Extend `TugPromptEntryDelegate` to expose the currently-selected history entry's identifier (e.g., `getSelectedHistoryEntryId(): string | null`) — `null` when no history navigation is active.
+**Original Work:**
+- Extend `TugPromptEntryDelegate` (now `TugTextEditorDelegate` post-Step-15-of-text-editing-base) to expose the currently-selected history entry's identifier (e.g., `getSelectedHistoryEntryId(): string | null`) — `null` when no history navigation is active.
 - Add a card-level Cmd+J keydown handler:
   1. Read the entry id from the delegate.
-  2. If non-null and a corresponding rendered region exists in the transcript view, scroll that region into view (use `scrollIntoView({ block: "center" })` or the equivalent imperative on `TugMarkdownView` if exposed).
+  2. If non-null and a corresponding rendered region exists in the transcript view, scroll that region into view (`scrollIntoView({ block: "center" })` or the equivalent imperative on `TugMarkdownView` if exposed).
   3. If null or no matching region, scroll the transcript to the bottom (mirror End / Cmd+Down behavior — call the same scroll-to-bottom path the streaming view uses on `turn_complete`).
 - Cmd+J fires regardless of which element holds focus inside the card (chrome, prompt input, transcript) — the card-level handler claims the chord.
 
-**Verification:**
-- `bun x tsc --noEmit` + `bun test` green.
-- New test: render a Tide card with a recorded transcript fixture, set selected history entry → simulate Cmd+J → assert the transcript scroll position changes to that entry's region. Then clear selection → simulate Cmd+J → assert scroll-to-bottom.
-- Manual: with a multi-turn transcript visible, navigate history with Cmd+Up to a past entry; press Cmd+J; transcript jumps to that entry. Press Esc to clear history navigation; press Cmd+J; transcript scrolls to bottom.
-
-> **Step 6 depends on [Step 11](#step-11)'s transcript rendering** for the "scroll to a transcript region" path to do anything visible. Until Step 11 lands, the bottom-scroll fallback is the only branch with user-visible effect. Both branches still ship in this commit so the keybinding is not split across two commits — the second branch becomes useful when Step 11 lands.
+See [Step 11](#step-11) for the consolidated work and verification.
 
 #### Step 7 — Atoms render cleanly at tighter line-heights {#step-7}
 
-**Files:**
+**Status: Done.** The atom rendering pipeline (`tug-atom-img.ts` / `tug-atom-fonts.ts`) was reworked during the `tug-text-editor` migration so atoms size their bounding box to the editor's resolved leading. Tighter line-heights are exposed through the editor-settings sheet's Line popup (1.2 / 1.3 / 1.4 / 1.5 / 1.7 / 2.0 — see `EditorSettingsStore.LINE_HEIGHT_OPTIONS`), and the `Spacing` popup tunes letter-spacing on top of them without baseline jump. The original Files / Work / Verification block below is retained as historical context.
+
+**Original Files:**
 - `tugdeck/src/lib/tug-text-engine.ts` (atom layout constraints, if that's where the line-height baseline math lives).
 - `tugdeck/src/components/tugways/tug-prompt-entry.css` (atom CSS — vertical-align / line-height interaction).
 - `tugdeck/src/lib/tug-atom-img.ts` or `tugdeck/src/lib/tug-atom-fonts.ts` (atom rendering pipeline; whichever owns the metrics).
 
-**Work:**
+**Original Work:**
 - Investigation first: bisect the 1.7 minimum. Identify whether the jump is caused by atom intrinsic height exceeding the line box at lower leading values, or by the SVG-rendered atom's vertical-align baseline computation, or by both.
-- Fix the metrics so atoms participate correctly in the line box at the editor's actual `lineHeight`. The atom must accept a line-height prop (or read the editor's resolved leading) and size its bounding box to fit *within* the line — the current 1.7 floor is the symptom of an oversized fixed metric.
-- Decide and document a minimum supported line-height (target: 1.2). Below that minimum, the editor still lays out correctly; below the absolute floor, atoms can opt out (clamp) — but the jump-on-insert must be gone for any value at or above the documented minimum.
-- Update `EditorSettingsStore`'s `LINE_HEIGHT_OPTIONS` if the available choices need adjusting (e.g., to expose 1.2, 1.3, 1.4 as choices in the leading popover).
+- Fix the metrics so atoms participate correctly in the line box at the editor's actual `lineHeight`.
+- Decide and document a minimum supported line-height (target: 1.2). Below that minimum, the editor still lays out correctly; the jump-on-insert must be gone for any value at or above the documented minimum.
+- Update `EditorSettingsStore`'s `LINE_HEIGHT_OPTIONS` if the available choices need adjusting.
+
+#### Step 7.5 — Connection health checking and reconnect-aware tide cards {#step-7-5}
+
+**Status: Next up (added 2026-04-29 rejoin).**
+
+**Why this exists.** Two coupled defects surfaced in real use:
+
+1. **Tide cards have trouble reconnecting on relaunch.** When the WebSocket comes back up after a tugcast restart, tide cards stay unbound. Submitting a command spins forever, with no visible signal that anything is wrong.
+2. **Connection failures are not always detected.** `pkill -x tugcast` does not reliably surface a banner. The app sometimes reconnects on its own, but every existing tide card is broken without showing it.
+
+The investigation traced this to three coupled root causes:
+
+- **`restoreTideSessions` runs once at startup, never on reconnect.** `tugdeck/src/main.tsx:228` calls it once after `tugbankClient.ready()`. There is no companion `connection.onOpen(...)` for subsequent opens. After a tugcast restart, the server's `rebind_from_tugbank` rebuilds ledger entries from `dev.tugtool.tide.session-keys`, but the client never re-asserts them with `spawn_session(mode=resume)`. The bindings the client holds in `cardSessionBindingStore` no longer correspond to anything live on the new server's side, and frame routing fails silently.
+
+- **The client has no heartbeat watchdog.** The server has one (`tugcast/src/router.rs`, `HEARTBEAT_TIMEOUT = 45s`). The client only *sends* heartbeats; it never validates that the server's heartbeats are arriving. If TCP goes half-open (process hung, OS sleep, broken proxy), the WebSocket's `onclose` may not fire for hours — until OS-level keepalive expires.
+
+- **The transport-state / per-card lifecycle is incomplete.** `code-session-store` subscribes to `connection.onClose` and dispatches `transport_close`, but the reducer drops it silently for `idle` cards (`reducer.ts:737`). There is no companion `transport_open` event to recover. The banner has its own 2 s show-debounce (`tug-banner-bridge.tsx:22`) that often elapses *after* a quick reconnect, so brief outages flash invisibly. `code-session-store.ts:155-158` already wires the `onClose` subscription, but no symmetric `onOpen` handler dispatches a recovery event.
+
+**Design — a transport-state lifecycle.** Per-card stores need a transport-aware state distinct from the per-session phase machine. Today there is `idle` / `submitting` / `streaming` / `tool_work` / `awaiting_approval` / `errored` — all session-phase states. We add a complementary, orthogonal *transport state*: `online` / `offline` / `restoring`.
+
+- A card in `idle / online` is ready to submit.
+- A card in `idle / restoring` shows the `TideRestoring` placeholder; submits are gated.
+- A card in `idle / offline` gates the submit button and the banner is visible.
+
+This decoupling matters because phase is about *turn lifecycle* (interrupting, queuing, errored from the wire's perspective). Conflating "we lost the wire" with "your turn errored" produces bad UX during reconnects: cards say "errored" when nothing was submitted; cards refuse retry when the wire is back.
+
+**Files (high level):**
+- `tugdeck/src/connection.ts` — heartbeat watchdog; clear `lastPayload` cache on close; expose a stable `onOpen` registration that fires for *every* open (not just the first).
+- `tugdeck/src/main.tsx` — register `connection.onOpen` to clear `cardSessionBindingStore` and re-run `restoreTideSessions` after the first open.
+- `tugdeck/src/lib/tide-session-restore.ts` — make the restore path idempotent across multiple invocations; expose a `clearAllRestoreState()` helper (or fold the clear into `restoreTideSessions` itself with a `{ reason: "reconnect" }` flag).
+- `tugdeck/src/lib/card-session-binding-store.ts` — add `clearAll()` that emits a single notify.
+- `tugdeck/src/lib/code-session-store/events.ts` and `reducer.ts` — add a `transport_open` event; rework `transport_close` to set a transport-state field rather than (or in addition to) flipping the phase.
+- `tugdeck/src/lib/code-session-store.ts` — subscribe to `connection.onOpen` alongside `onClose`; dispatch `transport_open` on the second-and-subsequent opens.
+- `tugdeck/src/components/chrome/tug-banner-bridge.tsx` — drop or shorten `SHOW_DELAY_MS` for the connection-lost path; introduce a transient "Reconnected" affordance after a visible disconnect; surface "Restoring sessions…" while any card is `restoring`.
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` (or `tide-card-content.tsx`) — read transport state from the per-card snapshot; render `TideRestoring` when `transportState === "restoring"`; gate `canSubmit` while `transportState !== "online"`.
+
+**Work:**
+
+a. **Make `restoreTideSessions` reconnect-aware.** Wrap the body in a function that can be called multiple times safely. In `main.tsx`, install `connection.onOpen(() => { … })` that, on every open *after* the first, clears `cardSessionBindingStore` and re-runs `restoreTideSessions`. Bindings without a live server peer are worse than no bindings — the clear-then-restore order is intentional. This single change resolves the "submit spins forever after tugcast restart" symptom on its own.
+
+b. **Add a client-side heartbeat watchdog.** In `TugConnection`, track `lastFrameAt: number` and bump it on every `onmessage` (any frame, including the binary HEARTBEAT). Start a watchdog timer (every 5 s) that calls `ws.close()` if `Date.now() - lastFrameAt > HEARTBEAT_TIMEOUT_MS` (45 s, mirroring `HEARTBEAT_TIMEOUT` in `router.rs`). The close path already triggers reconnect with backoff. This catches the half-open TCP case where the WebSocket would otherwise sit silently.
+
+c. **Clear `lastPayload` on close.** `TugConnection.lastPayload` is the "replay snapshot to late subscribers" cache. After a close, the next open's snapshot frames will repopulate it; the cached frames from before the close are no longer authoritative. Clear on `onclose` to prevent late subscribers from ever seeing a stale post-reconnect snapshot.
+
+d. **Add transport-state to the per-card store.** New field on `CodeSessionState`:
+   ```ts
+   transportState: "online" | "offline" | "restoring";
+   ```
+   `transport_close` event sets `transportState = "offline"` regardless of phase (do not silently drop for `idle`). A new `transport_open` event sets `transportState = "restoring"` (we just opened, but the spawn_session(resume) ack hasn't arrived). When the binding for this card lands in `cardSessionBindingStore`, dispatch `transport_settled` (or piggyback on the existing binding-arrival path) which sets `transportState = "online"`.
+
+e. **Wire `transport_open` from the connection.** In `code-session-store`'s constructor, subscribe to both `connection.onOpen` and `connection.onClose`. The first `onOpen` (initial connect) doesn't dispatch — that's the normal mount path. Subsequent opens dispatch `transport_open`, which moves the card to `restoring`. The follow-up binding-arrival path (already subscribed in `tide-session-restore`) flips it back to `online`.
+
+f. **Surface transport state in the snapshot and gate the UI.**
+   - Snapshot exposes `transportState`. `canSubmit` becomes `phase ∈ {idle, errored} && transportState === "online"`.
+   - `TideCardContent` checks `transportState === "restoring"` (in addition to the existing `tideRestoreRegistry` check) and renders `TideRestoring`.
+   - The submit button disables (with a tooltip / status-row note) while `transportState !== "online"`.
+
+g. **Banner UX tightening.**
+   - Drop or significantly shorten `SHOW_DELAY_MS` for the disconnect path so brief failures don't go invisible.
+   - On reconnect, briefly (≤ 1.5 s) show a "Reconnected" affordance with a positive tone before fading.
+   - When any card is in `transportState === "restoring"`, show a status-line "Restoring sessions…" until the spawn_session(resume) acks land.
 
 **Verification:**
-- `bun x tsc --noEmit` + `bun test` green.
-- New test: insert an atom at `lineHeight = 1.2` → assert the line's resolved height does not change vs. the same line without the atom.
-- Manual: open a Tide card, set Leading to 1.2 via the popover, paste a file path that produces an atom — observe no line-jump. Repeat at 1.3, 1.4, 1.5 — same. Above 1.7 (the prior floor), behavior is unchanged.
+- `bun x tsc --noEmit` + `bun test` + `bun run audit:tokens lint` green.
+- Unit test: simulate `connection.onOpen` after a close → assert `restoreTideSessions` is called again, with bindings cleared first.
+- Unit test: simulate 50 s with no incoming frame → assert the watchdog calls `ws.close()`.
+- Unit test: feed `transport_close` then `transport_open` to a `code-session-store`; assert `transportState` transitions through `online → offline → restoring`, and `canSubmit` follows.
+- Unit test: `lastPayload` is empty after `onclose`; the next `onFrame` registration after a reconnect does not deliver pre-close frames.
+- Manual: open a Tide card, submit `> hi` and let it stream. `pkill -x tugcast`. Wait. The banner appears within ~1 s; the card flips into the restoring state. When tugcast respawns and reconnects, the card flips back through `restoring` → `online` and submitting works again without a page reload.
+- Manual: open a Tide card, sleep the laptop for ~2 minutes, wake. The watchdog detects the silent half-open path within ~45 s of wake, force-reconnects, and the card recovers.
+- Manual: kill tugcast and immediately restart it (faster than the historical 2 s show-debounce). The banner still shows briefly; cards still flip through `restoring`; submit works again.
+
+**Risks:**
+- **Transport-state introduces a new dimension to test.** Every existing per-phase test now has an implicit `transportState === "online"` premise. Mitigation: the field's default is `online`; tests that don't dispatch transport events stay green; explicit `transport_close` / `transport_open` tests cover the new dimension.
+- **The watchdog could mis-fire under legitimate idle wires.** If the server's heartbeat interval drifts past 45 s, the client closes the connection unnecessarily. Mitigation: the threshold is the same 45 s the server already uses to time *us* out, so any drift past 45 s is already a real problem. The watchdog is a defensive copy of the server's contract, not a new constraint.
+- **Reconnect can stack restores.** If `connection.onOpen` fires twice quickly (flaky network), two `restoreTideSessions` runs could collide. Mitigation: `restoreTideSessions` is already idempotent (it clears any in-flight expectation and re-arms via `tideRestoreRegistry._clear` then `_register`); the binding-clear before each run keeps the picture clean; the per-card 10 s timeout protects against stuck restores.
+- **`lastPayload` cache clear could lose a snapshot frame.** If a snapshot arrives just before the close, clearing on close discards it. Mitigation: the snapshot path is server-authoritative — the post-reconnect handshake replays whatever the server holds. There is no client-authoritative state here that needs preserving across the close.
+- **Banner UX change is subjective.** "Reconnected" affordances can feel noisy. Mitigation: keep the affordance brief (≤ 1.5 s) and only on explicit recovery from a *visible* disconnect — not on the silent-watchdog path, because that recovers without ever having shown a banner.
+
+**Open questions:**
+- Should the watchdog timeout match the server's 45 s, or be slightly longer (e.g., 50 s) to absorb clock-skew between client and server tickers? Starting preference: 45 s with an explicit comment that the value mirrors `HEARTBEAT_TIMEOUT` in `router.rs`.
+- Should the per-card `transportState` be folded into a single `phase` enum (adding `transport_lost` and `restoring` as phase values) or stay as a separate field? Starting preference: separate field. Phase is about turn lifecycle; transport is about wire health; they are orthogonal axes and conflating them will leak across tests.
+- Should the server post-handshake actively push a `client_recognized { sessions: [...] }` frame so the client doesn't have to ask? Defense in depth. Starting preference: defer to a follow-up after Step 7.5 lands; the client-driven re-restore is sufficient on its own, and the server-push path is a larger architectural change.
+
+**Tuglaws to cross-check:**
+- **L02** — `transportState` enters React via the existing `code-session-store` `useSyncExternalStore` path; no parallel React state.
+- **L03** — `connection.onOpen` / `connection.onClose` registrations live in `useLayoutEffect` (or in module scope before any React render, as today's connection wiring already does).
+- **L11** — `transport_close` / `transport_open` are dispatched events on the per-card store; the connection layer is the emitter, the store reducer owns the state transitions.
+- **L23** — Reconnect must not lose user-visible state. The transcript already accumulated in the store stays; only `transportState` flips. The submit button gating is purely additive — no in-flight content is discarded.
 
 #### Step 8 — Completion popups respect the card's bottom edge {#step-8}
+
+**Status: Pending — refresh required.** Authored 2026-04-19, before `tug-prompt-entry`'s migration to `tug-text-editor`. Confirm the completion popup primitive(s) named in the original Files list still exist, and re-bisect the failing layouts at small card sizes against the current editor before committing.
 
 **Files:**
 - `tugdeck/src/components/tugways/tug-prompt-entry.tsx` and `.css` (slash + file completion popup positioning).
@@ -737,6 +863,8 @@ l. **Persistence regression — shipped.** See the "Persistence regression (Comm
 - Manual: drag the split pane to compress the bottom pane, open `/` and `@` completions — neither overflows; the prompt-entry stays pinned.
 
 #### Step 9 — Participant model + `TugTranscriptEntry` primitive {#step-9}
+
+**Status: Pending — refresh required.** Authored 2026-04-19. Re-check the participant list against post-T3.4.d wire shapes ([Step 7.5](#step-7-5)'s transport-state lifecycle is orthogonal; no participant changes), and confirm the `tug-text-editor` migration didn't move the gallery card pattern this step's gallery demo would mirror.
 
 **Files:**
 - `tugdeck/src/components/tugways/tug-transcript-entry.tsx` (new component).
@@ -897,14 +1025,20 @@ This step addresses all of these by moving session bookkeeping out of tugbank an
 - The promotion-gate paragraph is explicit about the promoted-plan filename and exit criteria before any code lands.
 - No code change lands under this step's SHA. If a commit is needed against this plan file to record the placeholder, its diff is documentation-only.
 
-#### Step 11 — Multi-turn transcript rendering with `TugTranscriptEntry` {#step-11}
+#### Step 11 — Multi-turn transcript rendering with `TugTranscriptEntry` (absorbs Step 6's Cmd+J) {#step-11}
+
+**Status: Pending — refresh required, and absorbs [Step 6](#step-6).** Step 6's Cmd+J handler is folded into this step so the keybinding ships next to the transcript it scrolls. Authored 2026-04-19; refresh against the current `tug-text-editor`-based prompt entry and `TideCardContent` structure before starting.
 
 **Files:**
-- `tugdeck/src/components/tugways/cards/tide-card.tsx` (replace top-pane wire-up).
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` (replace top-pane wire-up; add Cmd+J card-level handler).
 - `tugdeck/src/lib/code-session-store.ts` (no behavior change expected; consume `snap.transcript` here).
-- `tugdeck/src/components/tugways/__tests__/tide-card.test.tsx` (new transcript test).
+- `tugdeck/src/components/tugways/tug-text-editor.tsx` / its delegate (expose currently-selected history entry's identifier — likely now lives on `TugTextEditorDelegate` post-Step-15-of-text-editing-base).
+- `tugdeck/src/components/tugways/cards/tide-card.css` (scroll target styles if needed).
+- `tugdeck/src/components/tugways/__tests__/tide-card.test.tsx` (transcript + Cmd+J coverage).
 
 **Work:**
+
+*Transcript rendering (original Step 11):*
 - Replace the single-region wire-up (only `streamingPaths.assistant`) with a transcript-aware rendering path that uses `TugTranscriptEntry` from [Step 9](#step-9):
   - For each entry in `snap.transcript`, render two `TugTranscriptEntry` rows: a `participant: "user"` row carrying the submitted prompt, then a `participant: "code"` row carrying the assistant response.
   - For the in-flight turn, render the `user` row immediately on submit (so the user sees their own submission appear in the transcript flow at the moment they hit Enter), and render a `code` row whose body is bound to `streamingPaths.assistant` via `TugMarkdownView`.
@@ -914,13 +1048,24 @@ This step addresses all of these by moving session bookkeeping out of tugbank an
 - The "sticky last turn" Step 5 fallback becomes redundant once transcript rendering lands. Remove it as part of this commit, with a code comment pointing here.
 - Append-and-scroll-to-bottom on new rows; use existing `SmartScroll` infra in `tugdeck/src/lib/smart-scroll.ts` so the user opting out of auto-scroll (by scrolling up) is honored.
 
+*Cmd+J keybinding (absorbed from [Step 6](#step-6)):*
+- Extend the prompt-entry / text-editor delegate to expose the currently-selected history entry's identifier (e.g., `getSelectedHistoryEntryId(): string | null`) — `null` when no history navigation is active.
+- Add a card-level Cmd+J keydown handler:
+  1. Read the entry id from the delegate.
+  2. If non-null and the corresponding `TugTranscriptEntry` row is rendered, scroll that row into view (`scrollIntoView({ block: "center" })`, or the equivalent imperative on the transcript scroll container if exposed).
+  3. If null or no matching row, scroll the transcript to the bottom — same path the streaming view uses on `turn_complete`.
+- Cmd+J fires regardless of which element holds focus inside the card (chrome, prompt input, transcript) — the card-level handler claims the chord. Honor `event.defaultPrevented` so completion-menu / dialog handlers that already consumed the key win.
+
 **Verification:**
 - `bun x tsc --noEmit` + `bun test` green.
-- New test: load a recorded multi-turn session fixture into `CodeSessionStore` → render Tide card → assert N pairs of (`user`, `code`) `TugTranscriptEntry` rows present + an active streaming region while a turn is in flight; on `turn_complete(success)`, the streaming region's body finalizes into the corresponding `code` row.
-- New test: simulate submit of `> hi` → assert a `user` `TugTranscriptEntry` row carrying `> hi` appears in the transcript *immediately* (before any assistant deltas arrive).
-- Manual: open a Tide card, submit `> tell me a haiku`; observe the `user` row appear immediately, then the `code` row stream in beneath it. Submit `> now another`; both prior rows stay visible above the new pair. Scroll up while a new turn streams; auto-scroll defers per `SmartScroll`.
+- New test (transcript): load a recorded multi-turn session fixture into `CodeSessionStore` → render Tide card → assert N pairs of (`user`, `code`) `TugTranscriptEntry` rows present + an active streaming region while a turn is in flight; on `turn_complete(success)`, the streaming region's body finalizes into the corresponding `code` row.
+- New test (transcript): simulate submit of `> hi` → assert a `user` `TugTranscriptEntry` row carrying `> hi` appears in the transcript *immediately* (before any assistant deltas arrive).
+- New test (Cmd+J): render with a recorded transcript fixture, set the prompt-entry's selected history entry → simulate Cmd+J → assert the transcript scroll position changes to that entry's row. Then clear the selection → simulate Cmd+J → assert scroll-to-bottom.
+- Manual: open a Tide card, submit `> tell me a haiku`; observe the `user` row appear immediately, then the `code` row stream in beneath it. Submit `> now another`; both prior rows stay visible above the new pair. Scroll up while a new turn streams; auto-scroll defers per `SmartScroll`. With multiple turns visible, navigate history with Cmd+Up to a past entry; Cmd+J jumps the transcript to that turn's `user`/`code` pair. Press Esc to clear history navigation; Cmd+J scrolls to bottom.
 
 #### Step 12 — Markdown styling pass for assistant output {#step-12}
+
+**Status: Pending — refresh required.** Authored 2026-04-19. Confirm the current `--tugx-md-*` token surface and any `harmony.css` / `brio.css` adjustments that landed after the editor-settings sheet shipped haven't already absorbed pieces of this step.
 
 **Files:**
 - `tugdeck/styles/themes/brio.css` and `tugdeck/styles/themes/harmony.css` (`--tugx-md-*` token tuning).
@@ -936,6 +1081,8 @@ This step addresses all of these by moving session bookkeeping out of tugbank an
 - Manual: side-by-side comparison of Claude Code output in a Tide card before vs. after this commit. Headings, paragraphs, lists, blockquotes, inline code, fenced code blocks, tables — each looks polished. Both `brio` and `harmony` themes verified.
 
 #### Step 13 — Wire thinking + tool surfaces {#step-13}
+
+**Status: Pending — refresh required.** Authored 2026-04-19. Re-confirm the `streamingPaths.thinking` / `streamingPaths.tools` snapshot fields still exist on `CodeSessionStore` and the placement decision in the original Work section is still the right default.
 
 **Files:**
 - `tugdeck/src/components/tugways/cards/tide-card.tsx` (`streamingPaths.thinking` + `streamingPaths.tools` consumers).
@@ -955,6 +1102,8 @@ This step addresses all of these by moving session bookkeeping out of tugbank an
 
 #### Step 14 — Mid-stream behaviors end-to-end (Stop, queued sends, tool sub-state) {#step-14}
 
+**Status: Pending — refresh required.** Authored 2026-04-19. The phase machine has a new orthogonal `transportState` axis after [Step 7.5](#step-7-5); the four mid-stream scenarios all assume `transportState === "online"`. Add that premise to the test fixtures.
+
 **Files:**
 - `tugdeck/src/components/tugways/cards/tide-card.tsx` (verify; behavior is mostly in `CodeSessionStore` already).
 - `tugdeck/src/components/tugways/__tests__/tide-card.test.tsx` (E2E coverage tests).
@@ -972,6 +1121,8 @@ This step addresses all of these by moving session bookkeeping out of tugbank an
 - Manual smoke against live Claude: each of the four scenarios behaves as described.
 
 #### Step 15 — `control_request_forward` UI (permission + question) {#step-15}
+
+**Status: Pending — refresh required.** Authored 2026-04-19. Re-check the `CodeSessionStore` snapshot field carrying `control_request_forward` events and confirm the inline-block placement still aligns with the transcript layout from [Step 11](#step-11).
 
 **Files:**
 - `tugdeck/src/components/tugways/cards/tide-card.tsx` (mount the dialog component when a snapshot field carries a `control_request_forward`).
@@ -993,92 +1144,64 @@ This step addresses all of these by moving session bookkeeping out of tugbank an
 
 #### Step 16 — Feature coverage: route prefixes, indicator sync, completions, history {#step-16}
 
-**Files:**
+**Status: Done.** Route prefix routing, indicator/atom sync, `@` and `/` completions, and per-route history all shipped during the broader text-editing work; coverage tests for these behaviors live alongside `tug-text-editor` and `tug-prompt-entry`. The original Files / Work / Verification block below is retained as historical context.
+
+**Original Files:**
 - `tugdeck/src/components/tugways/__tests__/tug-prompt-entry.test.tsx` and/or `tide-card.test.tsx` (new coverage tests).
 - Bug-fix touches as needed.
 
-**Work:**
-- Add tests that assert the T3.4.d "Feature coverage" criteria from tide.md:
-  - `>` (and `❯`) flips to Code; `$` flips to Shell; `:` flips to Command. `>`/`❯` are consumed at position-zero per the existing route-prefix-eat behavior.
-  - Route indicator changes update the route atom (and vice versa) — bidirectional sync.
-  - `@` completion returns FILETREE-backed results; selecting an entry inserts a file atom.
-  - `/` completion merges `SessionMetadataStore.slashCommands` and the skill list; selecting an entry inserts the slash command into the input.
-  - Cmd+Up / Cmd+Down navigate `PromptHistoryStore` per-route; per-route drafts persist.
-- Where a test exposes a real bug, fix it in the same commit (or, if the bug is large enough to warrant its own commit, split into a follow-up step before [Step 23](#step-23)).
-
-**Verification:**
-- `bun x tsc --noEmit` + `bun test` green; new tests exercise each criterion.
-- Manual: walk the criteria interactively in a running Tide card.
+**Original Work:**
+- Add tests that assert the T3.4.d "Feature coverage" criteria from tide.md (route prefixes, indicator sync, `@`/`/` completion, history nav). Where a test exposes a real bug, fix it in the same commit.
 
 #### Step 17 — CJK end-to-end {#step-17}
 
-**Files:**
+**Status: Done.** IME composition through the `tug-text-editor` migration was exercised with Japanese and Chinese fixtures; submission and streaming paths handle CJK without segmentation issues. The original block is retained as historical context.
+
+**Original Files:**
 - Test fixtures (Japanese, Chinese strings).
 - Possibly `tug-text-engine.ts` if IME composition exposes a bug.
 
-**Work:**
-- Verify IME composition end-to-end with Japanese and Chinese input: compose into the prompt input, submit, observe the streamed assistant response render correctly inside its `code` row.
-- Add a test fixture that exercises CJK strings through the engine + render path (composition events; submission; streaming output).
-- Fix any rendering, segmentation, or composition bugs that surface (this is a verification step; if the surface is already clean, the commit is small).
-
-**Verification:**
-- `bun x tsc --noEmit` + `bun test` green; new CJK tests pass.
-- Manual: with a Japanese IME active, type `> こんにちは`, submit, verify the assistant responds in kind. Repeat with Chinese.
+**Original Work:**
+- Verify IME composition end-to-end; add a fixture that exercises CJK strings through the engine + render path; fix any rendering, segmentation, or composition bugs that surface.
 
 #### Step 18 — VoiceOver / a11y pass {#step-18}
 
-**Files:**
+**Status: Deferred.** Not blocking T3.4.d exit; revisit after the participant primitive ([Step 9](#step-9)) and transcript rendering ([Step 11](#step-11)) ship — those are the surfaces an a11y pass needs to evaluate. Reopen as its own plan when the upstream surfaces stabilize.
+
+**Original Files:**
 - `tugdeck/src/components/tugways/tug-prompt-entry.tsx` (aria-label / role attributes on atoms, route indicator, submit/stop button).
 - `tugdeck/src/components/tugways/tug-transcript-entry.tsx` (aria-label per row; landmark roles).
 - `tugdeck/src/components/tugways/cards/tide-card.tsx` (transcript region landmarks).
 - Tests.
 
-**Work:**
-- Walk the Tide card with VoiceOver active. Verify:
-  - Atoms in the prompt input announce their type and label.
-  - Route indicator announces the current route.
-  - Submit / Stop button announces its current mode.
-  - Each `TugTranscriptEntry` announces the participant identifier + timestamp before the body content (e.g., "You at 12:45 PM, tell me a haiku" → "Code at 12:45 PM, [response text]").
-  - Transcript regions are navigable by VoiceOver (each row is a landmark or has an appropriate role).
-- Fix any gaps surfaced (missing labels, role mismatches, focus-order issues).
-- Accessibility regression tests where feasible.
-
-**Verification:**
-- `bun x tsc --noEmit` + `bun test` green.
-- Manual VoiceOver walkthrough recorded; each criterion above passes.
+**Original Work:**
+- Walk the Tide card with VoiceOver active. Verify atom announcements, route indicator, submit/stop, per-row participant identifier + timestamp, and transcript navigability.
 
 #### Step 19 — Atom drag-and-drop from Finder {#step-19}
 
-**Files:**
+**Status: Done.** Finder drop target shipped on `tug-text-editor`'s drop adapter; multi-file drops produce multiple file atoms in order, with caret-aware drop position. The original block is retained as historical context.
+
+**Original Files:**
 - `tugdeck/src/components/tugways/tug-prompt-entry.tsx` (drop target wiring).
 - `tugdeck/src/lib/tug-text-engine.ts` (insert-atom path for dropped paths).
 
-**Work:**
-- Wire a drop target on the prompt input that accepts file path data from the OS (Finder drags expose `text/uri-list` or `text/plain` with `file://` URLs). On drop, normalize the path and insert it as a file atom.
-- Drop position respects the caret if the drop is inside the editor; defaults to end of input otherwise.
-- Multi-file drops insert multiple atoms in order.
-
-**Verification:**
-- `bun x tsc --noEmit` + `bun test` green.
-- Manual: drag a file from Finder onto the Tide card's prompt input; observe a file atom appear; submit; verify the path is included in the user message.
+**Original Work:**
+- Wire a drop target accepting `text/uri-list` / `text/plain` with `file://` URLs; normalize and insert as file atoms; respect caret on in-editor drops; multi-file drops insert in order.
 
 #### Step 20 — Typeahead jank profiling {#step-20}
 
-**Files:**
+**Status: Deferred.** Reopen if/when `@`-prefixed completion shows visible jank on a full repo. Today's perf bar is acceptable; profiling can wait until a real complaint surfaces or a measurable regression lands.
+
+**Original Files:**
 - `tugdeck/src/lib/filetree-store.ts` and/or completion provider for `@`.
 - Tests.
 
-**Work:**
-- Profile typeahead latency on full-project file listings (the largest realistic FILETREE — e.g., a checkout of the full tugtool repo). Look for jank during the `@`-prefixed query.
-- Likely culprits: linear scans on every keystroke, missing debounce, recompute of the full sorted list per query, layout thrash from popup re-render.
-- Apply the fix the profile points at (debounce, memoization, virtualized result list, incremental filtering — pick the smallest fix that meets the jank-free bar).
-
-**Verification:**
-- `bun x tsc --noEmit` + `bun test` green.
-- Manual: in a Tide card pointed at the full tugtool checkout, type `@` and several characters quickly; observe no perceptible jank; results update smoothly.
-- Performance test (if the test infra supports it): query latency stays under ~16ms per keystroke for FILETREEs of N files.
+**Original Work:**
+- Profile typeahead latency on full-project file listings; apply the smallest fix the profile points at (debounce, memoization, virtualized result list, incremental filtering).
 
 #### Step 21 — Concurrent Tide cards regression test {#step-21}
+
+**Status: Pending — refresh required.** Authored 2026-04-19. Confirm the test file path is still right after the post-T3.4.c reorganizations, and add a transport-state premise to the fixture (per [Step 7.5](#step-7-5)).
 
 **Files:**
 - `tugdeck/src/components/tugways/cards/__tests__/tide-card.test.tsx` (new test).
@@ -1100,6 +1223,8 @@ This step addresses all of these by moving session bookkeeping out of tugbank an
 
 #### Step 22 — Compliance close-out {#step-22}
 
+**Status: Pending.** This is the final close-out step; nothing to refresh until the steps above land.
+
 **Files:**
 - Whatever last-mile cleanup the audit surfaces; ideally none.
 
@@ -1120,6 +1245,8 @@ This step addresses all of these by moving session bookkeeping out of tugbank an
 - The audit greps return clean results.
 
 #### Step 23 — Tuglaws walkthrough {#step-23}
+
+**Status: Pending.** Final walkthrough; lands after Step 22. The cross-check list will need to absorb [Step 7.5](#step-7-5)'s `transportState` lifecycle (L02 / L03 / L11 / L23).
 
 **Files:**
 - `roadmap/tugplan-tide-card-polish.md` (this file — append the walkthrough to this section).
@@ -1147,17 +1274,18 @@ This step addresses all of these by moving session bookkeeping out of tugbank an
 
 ### Risks {#risks}
 
-- **Step 6 (Cmd+J) leaks visual reach into Step 11 (transcript).** Cmd+J's "scroll to entry" branch only does anything once the transcript renders multiple entries. Mitigation: Step 6's Work section calls this out; the bottom-scroll fallback is useful immediately, and the entry-scroll branch becomes useful when Step 11 lands. No code change between steps 6 and 11 to wire them together.
-- **Step 7 (atom line-heights) may surface engine work larger than one commit.** If the bisect reveals the bug is in `tug-text-engine.ts`'s line-box layout rather than just atom metrics, the work could grow. Mitigation: Step 7's Work section permits a "decide the minimum supported line-height" escape hatch; if 1.2 turns out to require a larger refactor, a documented intermediate floor (e.g., 1.4) ships in this step and the deeper work moves to a follow-up.
+> Risks for steps marked `done` or `deferred` in [Plan Status](#plan-status) have been removed. The Risks list below covers active and pending steps only.
+
+- **Step 7.5 (transport-state lifecycle) introduces a new dimension to test.** Every existing per-phase test now has an implicit `transportState === "online"` premise. Mitigation: the field's default is `online`; tests that don't dispatch transport events stay green; explicit `transport_close` / `transport_open` tests cover the new dimension. See Step 7.5's own Risks section for the watchdog mis-fire, reconnect-stack, `lastPayload`-cache, and banner-UX subsidiary risks.
 - **Step 8 (popup overflow) may need new primitives.** If `tug-popup-*` does not already support upward-opening + capped-height, the primitive extension lives in this step's commit. That can grow the commit; if the primitive change is itself non-trivial, split into "extend primitive" + "consume in completions" — two commits.
-- **Step 9 (participant primitive) ships tokens for two participants we don't wire live in this plan.** `shell` and `command` rows exist in the gallery but do not appear in the live Tide transcript until Phases T4 and T10 respectively. Risk: the design choices for those participants are unconfirmed against real data. Mitigation: gallery uses realistic mock data; the token slots are meant to be tunable; nothing about Step 9 prevents Phase T4 / T10 from refining the participant's icon, identifier, or controls when the live wire arrives.
+- **Step 9 (participant primitive) ships tokens for two participants we don't wire live in this plan.** `shell` and `command` rows exist in the gallery but do not appear in the live Tide transcript until Phases T4 and T10 respectively. Mitigation: gallery uses realistic mock data; the token slots are meant to be tunable; nothing about Step 9 prevents Phase T4 / T10 from refining the participant's icon, identifier, or controls when the live wire arrives.
 - **Step 9 design risk: bubble drift.** Even with [D6](#resolved-decisions) explicit, it is easy to slip toward a bubble-ish look (subtle backgrounds, rounded corners, alternating tinting). Mitigation: Step 9's verification includes an explicit visual review against D6, and the gallery card is the durable artifact future contributors can compare against.
-- **Step 10 (session ledger placeholder) reads as done when it is merely designed.** The placeholder captures intent but ships no code; a reader skimming the step list might conclude the feature is landed. Mitigation: the Status and Promotion Gate paragraphs are explicit; the "Session ledger + resume UX" section of Success Criteria names the promoted plan as the exit criterion; the polish plan's top-matter calls out the placeholder nature. The plan is *not* fully closed until the promoted plan has shipped its own exit criteria.
+- **Step 10 (session ledger placeholder) reads as done when it is merely designed.** The placeholder captures intent but ships no code. Mitigation: the Status and Promotion Gate paragraphs are explicit; the "Session ledger + resume UX" section of Success Criteria names the promoted plan as the exit criterion. The plan is *not* fully closed until the promoted plan has shipped its own exit criteria.
 - **Step 10's open design questions may not all resolve in one promotion pass.** Sqlite-vs-JSONL, CLI-flag-vs-CONTROL-round-trip, and `resume_failed` semantics are each load-bearing. Mitigation: promotion-pass plan enumerates each question and picks an answer; if a question cannot be resolved cheaply, the promoted plan's Strategy names the deferred sub-question and the step that revisits it.
-- **Step 11 (transcript) interacts with `SmartScroll`.** The "scroll to bottom on new content unless the user has scrolled away" behavior should already be implemented by `SmartScroll`. If the Tide card's transcript needs different semantics than the existing consumers, the transcript rendering and the smart-scroll wire-up are coupled. Mitigation: Step 11's verification includes a manual scroll-away scenario.
-- **Step 13 (thinking + tool surfaces) commits to a placement that Phase T1 must accept.** Choosing a placement T1 will replace defeats the point. Mitigation: Step 13's Work section names the chosen placement (default: inside the `code` row) and the rationale; T1 inherits or revises. Either is fine — the commitment is to a working surface, not a final design.
+- **Step 11 (transcript + Cmd+J) interacts with `SmartScroll`.** The "scroll to bottom on new content unless the user has scrolled away" behavior should already be implemented by `SmartScroll`. Cmd+J's explicit scroll-into-view path must not fight SmartScroll's auto-scroll opt-out. Mitigation: Step 11's verification includes a manual scroll-away scenario plus a Cmd+J jump from inside it.
+- **Step 13 (thinking + tool surfaces) commits to a placement that Phase T1 must accept.** Choosing a placement T1 will replace defeats the point. Mitigation: Step 13's Work section names the chosen placement (default: inside the `code` row) and the rationale; T1 inherits or revises.
 - **Step 15 (control_request_forward UI) is the largest feature commit in the plan (after the ledger's promoted plan).** It introduces a new component, a new snapshot field, and new frame-write paths. Mitigation: scope is "the minimum that closes the T3.4.d exit criterion" — Phase T9 picks up richer treatment.
-- **Step 20 (typeahead jank) may not need a fix.** If the existing implementation is already jank-free at full-repo scale, the step ships as a profiled-and-documented no-op. That is acceptable; the verification still gates on the manual smoke.
+- **Refresh-before-resume risk.** Steps 8, 9, 11, 12, 13, 14, 15, 21, 22, 23 were authored before the `tug-text-editor` migration, the editor-settings sheet, and the panel-growth wiring. Each step's `**Status:**` line names a refresh-required premise; skipping that re-read produces work against stale file paths or removed delegate methods. Mitigation: open each step's Files list against the current repo before drafting the commit.
 
 ---
 
