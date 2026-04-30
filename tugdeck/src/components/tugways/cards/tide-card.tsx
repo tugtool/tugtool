@@ -282,7 +282,7 @@ export function TideCardContent({ cardId }: TideCardContentProps) {
     tideRestoreRegistry.getSnapshot,
   );
   if (services !== null) {
-    return <TideCardBody cardId={cardId} services={services} />;
+    return <TideCardServicesGate cardId={cardId} services={services} />;
   }
   const expectation = restoreMap.get(cardId);
   if (expectation !== undefined) {
@@ -294,6 +294,54 @@ export function TideCardContent({ cardId }: TideCardContentProps) {
     );
   }
   return <TideProjectPicker cardId={cardId} />;
+}
+
+// ---------------------------------------------------------------------------
+// TideCardServicesGate — transportState routing
+// ---------------------------------------------------------------------------
+
+/**
+ * Routes between `TideCardBody` and `TideRestoring` based on the
+ * per-card store's `transportState` ([D01]). When the wire is `online`
+ * the body renders normally; when it's `restoring` (between
+ * `transport_open` and `transport_settled`) the same placeholder used
+ * by the registry-driven path takes over until the binding is
+ * re-acked. The hint text + Cancel button are still useful even when
+ * the registry has no entry — the UI is honestly "we know the wire is
+ * back; we don't yet know if your session survived."
+ *
+ * Why a wrapper rather than an early return inside `TideCardBody`:
+ * `TideCardBody` calls many hooks after the snapshot read; an early
+ * return there would change hook order between renders. Localizing
+ * the transportState read in this thin gate keeps `TideCardBody`'s
+ * hook list stable.
+ *
+ * The gate also reads `projectDir` reactively from the binding store
+ * so the placeholder's project label keeps up with any rebind that
+ * happens while transportState is in flight (rare; this is defensive
+ * against the single notify per `setBinding`).
+ */
+function TideCardServicesGate({
+  cardId,
+  services,
+}: TideCardBodyProps) {
+  const transportState = useSyncExternalStore(
+    services.codeSessionStore.subscribe,
+    () => services.codeSessionStore.getSnapshot().transportState,
+  );
+  const projectDir = useSyncExternalStore(
+    cardSessionBindingStore.subscribe,
+    useCallback(
+      () => cardSessionBindingStore.getBinding(cardId)?.projectDir ?? "",
+      [cardId],
+    ),
+  );
+
+  if (transportState === "restoring") {
+    return <TideRestoring cardId={cardId} projectDir={projectDir} />;
+  }
+
+  return <TideCardBody cardId={cardId} services={services} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -921,6 +969,26 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
     codeSnap.lastError !== null &&
     codeSnap.lastError.cause !== "resume_failed";
 
+  // Transport-state banner — covers the case where the wire dropped on
+  // an idle card. Non-idle phases set `lastError.cause = "transport_closed"`
+  // ([D06]), which the error banner above already surfaces with full
+  // detail; idle stays `lastError: null` so without this branch an idle
+  // offline card would show no UI at all (just a disabled send button).
+  // The error banner takes precedence to avoid two banners stacking;
+  // restoring is unreachable here because `TideCardServicesGate`
+  // routes that case to `TideRestoring`, but covering it keeps the
+  // computation total.
+  const showTransportBanner =
+    bannerError === null && codeSnap.transportState !== "online";
+  const transportBannerLabel =
+    codeSnap.transportState === "offline"
+      ? "Reconnecting"
+      : "Restoring session";
+  const transportBannerMessage =
+    codeSnap.transportState === "offline"
+      ? "Lost the connection to tugcast. Trying to reconnect…"
+      : "The connection is back. Re-acknowledging your session…";
+
   const editorSettings = useSyncExternalStore(
     editorStore.subscribe,
     editorStore.getSnapshot,
@@ -1279,6 +1347,28 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
       >
         <p>The card can&apos;t reach its session. Dismiss to continue; close and reopen the card to retry.</p>
       </TugPaneBanner>
+      {/*
+        Transport-state status banner. Shown when the wire is dropped
+        on an idle card (where lastError stays null per [D06]) — non-
+        idle phases already get the error banner above with cause
+        `transport_closed`. The two banners are mutually exclusive at
+        the source (see `showTransportBanner`); only one ever has
+        `visible: true` at a time.
+
+        The status variant + caution tone signal "transient,
+        recoverable" rather than "errored, action required". No
+        Dismiss button: the banner clears itself once the wire is
+        back ([D04] reconnect path → store flips transportState back
+        to `online` → banner unmounts via the visible flip).
+      */}
+      <TugPaneBanner
+        visible={showTransportBanner}
+        variant="status"
+        tone="caution"
+        icon="unplug"
+        label={transportBannerLabel}
+        message={transportBannerMessage}
+      />
       </div>
     </CardContentResponderScope>
   );

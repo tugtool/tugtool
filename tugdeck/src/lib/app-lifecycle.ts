@@ -49,6 +49,30 @@
  * requires a reliable "fire once at app start" signal, that signal
  * needs its own out-of-band delivery path — do not bolt it onto the
  * app-lifecycle channel.
+ *
+ * Reconnect replay contract:
+ *   When tugcast restarts under a live Tug.app, the Swift host
+ *   replays the CURRENT OS-level state once the new control socket
+ *   is up — `applicationDidBecomeActive` / `applicationDidResignActive`
+ *   plus `applicationDidHide` / `applicationDidUnhide`. Lifecycle
+ *   frames sent during the outage hit the dead control socket's
+ *   early-return guard and are dropped, so this replay is the only
+ *   reliable signal the tugdeck side gets that the app's actual OS
+ *   state may differ from what `AppLifecycle` last saw. Observers
+ *   MUST be idempotent under repeated `did*` events:
+ *     - A redundant `applicationDidBecomeActive` against an already-
+ *       active state must be a no-op.
+ *     - A redundant `applicationDidResignActive` against an already-
+ *       resigned state must be a no-op.
+ *     - Same for `applicationDidHide` / `applicationDidUnhide`.
+ *   Existing observers (selection-guard's `windowHasFocus` flips,
+ *   lifecycle-cascade's `deactivatedByAppCardId` guard,
+ *   action-dispatch's `deckManager.saveAndFlush`) are all
+ *   idempotent by construction. Replays do NOT carry `will*`
+ *   frames — those mark transitions, not steady states, and have
+ *   no meaning in a replay. The Swift host tags replayed frames
+ *   with `replayed: true`; the action-dispatch handler logs the
+ *   tag for diagnostics but the observer fan-out is unchanged.
  */
 
 import {

@@ -444,6 +444,14 @@ export function initActionDispatch(
       );
       return;
     }
+    // The Swift host tags frames replayed on tugcast reconnect with
+    // `replayed: true` so the lifecycle trace can distinguish the
+    // recovery path from a literal OS notification. Observers see no
+    // difference — they are idempotent under repeated `did*` events
+    // by contract (see `app-lifecycle.ts` JSDoc).
+    if (payload.replayed === true) {
+      console.log(`[AppLifecycle] replayed ${event} (post-reconnect resync)`);
+    }
     switch (event) {
       case "willBecomeActive":
         lifecycle.notifyApplicationWillBecomeActive();

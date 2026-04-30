@@ -114,13 +114,31 @@ class ControlSocketConnection {
         }
     }
 
-    /// Send a JSON message (newline-terminated)
+    /// Send a JSON message (newline-terminated).
+    ///
+    /// Uses `FileHandle.write(contentsOf:)` (macOS 10.15.4+) rather than
+    /// the Obj-C-bridged `write(_:)`. The bridged variant raises
+    /// `NSFileHandleOperationException` on a broken pipe (e.g., when
+    /// the peer process has died), which Swift cannot catch — the
+    /// uncaught Obj-C exception terminates the host. The Swift-throwing
+    /// API surfaces the same condition as a catchable Swift error so
+    /// a stale send after the peer's death drops the message instead
+    /// of taking the app down. Pairs with the disconnect-side cleanup
+    /// in `ProcessManager.handleDisconnect`, which clears the
+    /// connection ref so callers normally hit the early-return guard
+    /// in `sendControl` before reaching this method at all.
     func send(_ dict: [String: Any]) {
         guard let jsonData = try? JSONSerialization.data(withJSONObject: dict),
               var payload = String(data: jsonData, encoding: .utf8) else { return }
         payload.append("\n")
-        if let data = payload.data(using: .utf8) {
-            fileHandle.write(data)
+        guard let data = payload.data(using: .utf8) else { return }
+        do {
+            try fileHandle.write(contentsOf: data)
+        } catch {
+            NSLog(
+                "ControlSocketConnection: write failed: %@",
+                error.localizedDescription
+            )
         }
     }
 

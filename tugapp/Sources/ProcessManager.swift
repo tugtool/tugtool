@@ -440,12 +440,30 @@ class ProcessManager {
         }
     }
 
-    /// Handle UDS disconnect
+    /// Handle UDS disconnect from the tugcast child.
+    ///
+    /// Fires when the peer end of the control socket closes — almost
+    /// always because tugcast exited (planned shutdown or unexpected
+    /// death). Both cases must drop the stale `controlConnection`
+    /// reference: any subsequent `sendControl` / `sendDevMode` call
+    /// would otherwise pass its `guard let connection` check, reach
+    /// `connection.send(...)`, and write to a broken file descriptor.
+    /// Even with the Swift-throwing `write(contentsOf:)` in
+    /// `ControlSocketConnection.send`, dropping the ref is the
+    /// cheaper / more obvious path: there's no live peer to talk to,
+    /// so callers should hit the early-return guard rather than
+    /// attempt-then-log per call.
+    ///
+    /// The supervisor loop in `startProcess` is responsible for
+    /// respawning tugcast and `handleNewConnection` will install a
+    /// fresh connection when the new tugcast's UDS arrives.
     private func handleDisconnect() {
         if restartDecision == .pending {
             NSLog("ProcessManager: control socket EOF without shutdown message (unexpected death)")
             restartDecision = .restartWithBackoff
         }
+        controlConnection?.close()
+        controlConnection = nil
     }
 
     /// Send a control command to tugcast via UDS

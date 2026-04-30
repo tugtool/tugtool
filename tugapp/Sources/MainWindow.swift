@@ -144,6 +144,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         webView.evaluateJavaScript(script, completionHandler: completionHandler)
     }
 
+
     #if DEBUG
     /// Test-harness accessor: hand the live WKWebView to
     /// `TestHarnessBridge` so it can forward `evalJS` /

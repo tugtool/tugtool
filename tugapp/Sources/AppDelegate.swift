@@ -8,6 +8,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastAuthURL: String?
     private var vitePort: Int = TugConfig.defaultVitePort
     private var initialLoadComplete = false
+
+    /// Tracks whether `bridgeFrontendReady` has fired at least once.
+    ///
+    /// `bridgeFrontendReady` fires every time tugdeck dispatches its
+    /// `signalReady()`, which fires on every `connectionDidOpen` —
+    /// initial app boot AND every reconnect. To distinguish the two,
+    /// keep a flag: the first frontendReady is mount; every
+    /// subsequent one is a reconnect.
+    ///
+    /// Used to gate the post-reconnect lifecycle replay — re-fire
+    /// the current OS app-lifecycle state through the
+    /// `app-lifecycle` control frame so the tugdeck-side
+    /// `AppLifecycle` singleton converges on truth after frames
+    /// dropped during the outage. Not wanted on the initial mount:
+    /// the OS hasn't told tugdeck anything yet that needs replaying,
+    /// and the first paint is driven by `revealWebView` in
+    /// `MainWindow.bridgeFrontendReady`.
+    private var frontendHasLoadedOnce = false
     private var developerMenu: NSMenuItem!
     private var aboutMenuItem: NSMenuItem?
     private var settingsMenuItem: NSMenuItem?
@@ -125,8 +143,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 // Tugcast restarted — silently re-authenticate without a full page reload.
                 // The fetch sets the new session cookie; the WebSocket reconnection loop
                 // in connection.ts will pick it up on its next attempt.
+                //
+                // Lifecycle replay is NOT triggered here. At this point
+                // the tugdeck WebSocket is still down; tugcast's
+                // broadcast channel (`dispatch_action` in `actions.rs`)
+                // silently drops frames sent to a feed with no
+                // subscribers. The replay is scheduled in
+                // `bridgeFrontendReady` instead (gated on a
+                // `frontendHasLoadedOnce` flag), which fires after
+                // tugdeck's `signalReady()` runs on every
+                // `connectionDidOpen` — the post-reconnect frontendReady
+                // is the first moment a subscribed client exists.
                 NSLog("AppDelegate: tugcast restarted, re-authenticating silently (no page reload)")
-                self.window.evaluateJavaScript("fetch('/auth?token=\(token)',{credentials:'include'}).then(function(){window.tugdeck?.reconnect?.()}).catch(function(){})")
+                self.window.evaluateJavaScript(
+                    "fetch('/auth?token=\(token)',{credentials:'include'}).then(function(){window.tugdeck?.reconnect?.()}).catch(function(){})"
+                )
                 self.processManager.sendDevMode(
                     enabled: self.devModeEnabled,
                     sourceTree: path,
@@ -247,6 +278,57 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidUnhide(_ notification: Notification) {
         NSLog("AppDelegate: applicationDidUnhide")
         processManager.sendControl("app-lifecycle", params: ["event": "didUnhide"])
+    }
+
+    /// Re-fire the current OS-level app-lifecycle state through the
+    /// `app-lifecycle` control frame.
+    ///
+    /// Called from `processManager.onReady`'s tugcast-restart branch.
+    /// While tugcast was dead, every `applicationDidBecomeActive` /
+    /// `applicationDidResignActive` / `applicationDidHide` /
+    /// `applicationDidUnhide` notification fired into a `sendControl`
+    /// call that hit the `guard let connection = controlConnection`
+    /// early-return (because `handleDisconnect` cleared the ref to
+    /// avoid the broken-pipe crash). The tugdeck-side `AppLifecycle`
+    /// singleton therefore holds whatever state was last successfully
+    /// delivered before the outage, which can disagree with the OS's
+    /// current state if the user Cmd-Tabbed during the outage.
+    ///
+    /// This method dispatches the matching `did*` frames for the
+    /// CURRENT OS state — not the history. The tugdeck-side observers
+    /// (selection-guard, focus-cascade, deck.saveAndFlush) are
+    /// idempotent under repeated `did*` events: each one is a
+    /// state-derivation that re-runs cleanly. Don't replay `will*`
+    /// frames — those mark transitions, not steady states, and
+    /// have no meaning in a replay context.
+    ///
+    /// `replayed: true` rides on each frame so the tugdeck-side log
+    /// can distinguish a replay from a literal OS notification — the
+    /// observer behavior is the same; the discriminator is for
+    /// diagnostics.
+    private func replayLifecycleState() {
+        let active = NSApp.isActive
+        let hidden = NSApp.isHidden
+        NSLog(
+            "AppDelegate: replayLifecycleState (active=%d hidden=%d)",
+            active ? 1 : 0,
+            hidden ? 1 : 0
+        )
+        // Active/resign: send whichever matches NSApp.isActive.
+        let activeEvent = active ? "didBecomeActive" : "didResignActive"
+        processManager.sendControl(
+            "app-lifecycle",
+            params: ["event": activeEvent, "replayed": true]
+        )
+        // Hide/unhide: an app that's been Cmd-H'd is also `isHidden`
+        // and conventionally not `isActive`. Sending both is correct:
+        // the two axes are orthogonal in AppKit and the tugdeck-side
+        // observers ignore the dimensions they don't care about.
+        let hiddenEvent = hidden ? "didHide" : "didUnhide"
+        processManager.sendControl(
+            "app-lifecycle",
+            params: ["event": hiddenEvent, "replayed": true]
+        )
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -673,6 +755,34 @@ extension AppDelegate: BridgeDelegate {
         DispatchQueue.main.async {
             self.aboutMenuItem?.isEnabled = true
             self.settingsMenuItem?.isEnabled = true
+
+            // First frontendReady is the initial mount — no replay
+            // needed (the OS hasn't told tugdeck anything that needs
+            // re-asserting yet) and the WebView is already painted by
+            // `revealWebView` upstream.
+            if !self.frontendHasLoadedOnce {
+                self.frontendHasLoadedOnce = true
+                return
+            }
+
+            // Subsequent frontendReady fires are post-reconnect
+            // resyncs: tugcast went away, came back, tugdeck's
+            // WebSocket re-handshook, and `signalReady()` fired
+            // again. By this moment the WebSocket is open and
+            // tugdeck is subscribed to CONTROL — so control frames
+            // sent here actually reach the renderer (unlike
+            // frames sent from `processManager.onReady`, which
+            // would be dispatched into a tugcast broadcast with
+            // no live subscribers and silently dropped).
+            //
+            // Replay the current OS-level app-lifecycle state.
+            // Lifecycle frames sent during the outage hit the
+            // cleared `controlConnection` early-return and were
+            // dropped, so the tugdeck-side `AppLifecycle`
+            // singleton holds whatever it last saw before the
+            // close — possibly out of sync with the OS.
+            // Replay re-asserts current truth.
+            self.replayLifecycleState()
         }
     }
 

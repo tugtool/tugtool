@@ -296,7 +296,7 @@ if (!container) {
   // App lifecycle events (become-active / resign-active / hide / unhide)
   // ride the `app-lifecycle` control frame instead, routed through
   // `action-dispatch.ts` to the `AppLifecycle` singleton. The
-  // control-frame path is preferred; only these two stay as
+  // control-frame path is preferred; only these stay as
   // evaluateJavaScript entry points because they're synchronous
   // Swift-initiated RPCs where a WebSocket round-trip is the wrong
   // timing.
