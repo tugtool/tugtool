@@ -109,7 +109,14 @@ export class CodeSessionStore {
   private _cachedSnapshot: CodeSessionSnapshot | null = null;
   private _disposed = false;
   private _feedStoreUnsub: (() => void) | null = null;
-  private _lifecycleCloseUnsub: (() => void) | null = null;
+  /**
+   * Aggregated unsubscribe callbacks for every `ConnectionLifecycle`
+   * channel the store observes. Currently `connectionDidClose` (Step 1b)
+   * and `connectionDidReconnect` (Step 5). Held as an array so adding
+   * future channels is a one-line append at construction and a
+   * one-line iteration at dispose; no chance of forgetting one.
+   */
+  private _lifecycleUnsubs: Array<() => void> = [];
   private _lastFrameByFeed: Map<number, unknown> = new Map();
 
   constructor(options: CodeSessionStoreOptions) {
@@ -161,13 +168,34 @@ export class CodeSessionStore {
       this.onFeedStoreChange(),
     );
 
-    // Subscribe unconditionally. The reducer itself decides whether
-    // a close matters — idle closes are dropped, non-idle routes to
-    // `errored`. Cheap to leave registered for the store's lifetime.
-    this._lifecycleCloseUnsub = this.lifecycle.observeConnectionDidClose(() => {
-      if (this._disposed) return;
-      this.dispatch({ type: "transport_close" });
-    });
+    // Lifecycle wiring per [D07]: `ConnectionLifecycle` is the action
+    // source, the reducer is the responder. The store subscribes once
+    // at construction and translates the two lifecycle events that
+    // matter to its reducer:
+    //
+    //   - `connectionDidClose` → `transport_close`. The reducer flips
+    //     `transportState` to `offline` (and, for non-idle phases, the
+    //     phase to `errored` per [D06]).
+    //   - `connectionDidReconnect` → `transport_open`. The reducer
+    //     flips `transportState` to `restoring` per [D08]. The
+    //     lifecycle gates this event on a prior open + close, so the
+    //     store never has to maintain a `_seenFirstOpen` flag of its
+    //     own — initial-mount opens never reach this callback.
+    //
+    // Both subscriptions live for the store's lifetime; `dispose()`
+    // unsubscribes the whole list.
+    this._lifecycleUnsubs.push(
+      this.lifecycle.observeConnectionDidClose(() => {
+        if (this._disposed) return;
+        this.dispatch({ type: "transport_close" });
+      }),
+    );
+    this._lifecycleUnsubs.push(
+      this.lifecycle.observeConnectionDidReconnect(() => {
+        if (this._disposed) return;
+        this.dispatch({ type: "transport_open" });
+      }),
+    );
   }
 
   /** L02 subscribe contract. Returns an unsubscribe function. */
@@ -227,6 +255,26 @@ export class CodeSessionStore {
   send(text: string, atoms: AtomSegment[]): void {
     if (this._disposed) return;
     this.dispatch({ type: "send", text, atoms });
+  }
+
+  /**
+   * System notification: the per-card binding has been (re-)acked by
+   * the supervisor and the wire is fully settled. Dispatched by the
+   * `cardSessionBindingStore` subscriber in `tide-session-restore.ts`
+   * after a restore completes; the reducer flips `transportState`
+   * from `restoring` → `online` (and is a no-op when already online).
+   *
+   * Public rather than internal because the dispatch source lives
+   * outside this class. The store does not subscribe to the binding
+   * store directly: per [D04] / [D07] the binding subscriber in
+   * `tide-session-restore.ts` is the canonical "binding has arrived"
+   * signal, and feeding the event through a named method here keeps
+   * `dispatch` private and the binding subscriber free of any
+   * knowledge of the reducer event vocabulary.
+   */
+  notifyTransportSettled(): void {
+    if (this._disposed) return;
+    this.dispatch({ type: "transport_settled" });
   }
 
   /**
@@ -293,10 +341,10 @@ export class CodeSessionStore {
       this._feedStoreUnsub();
       this._feedStoreUnsub = null;
     }
-    if (this._lifecycleCloseUnsub) {
-      this._lifecycleCloseUnsub();
-      this._lifecycleCloseUnsub = null;
+    for (const unsub of this._lifecycleUnsubs) {
+      unsub();
     }
+    this._lifecycleUnsubs = [];
     this.feedStore.dispose();
     this._listeners = [];
     this.state.queuedSends = [];

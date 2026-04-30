@@ -109,6 +109,20 @@ class CardServicesStore {
    * stays card-type-agnostic.
    */
   attachDeckManager(deckManager: DeckManager): void {
+    // Ensure the binding-store subscription is in place before any
+    // later module subscribes to the same store. The downstream
+    // `tide-session-restore.ts` binding subscriber depends on
+    // cardServicesStore having already constructed the per-card
+    // services for a freshly-arrived binding (it looks up the
+    // codeSessionStore via `getServices`); subscribers fire in
+    // registration order, so cardServicesStore must register first.
+    // Wiring this through `attachDeckManager` (the canonical
+    // "wire me up at startup" entry point from `main.tsx`) makes the
+    // ordering deterministic in production. Lazy init inside
+    // `getServices` / `subscribe` still covers tests that don't call
+    // `attachDeckManager`.
+    this._ensureInitialized();
+
     if (this._deckUnsub) {
       this._deckUnsub();
       this._deckUnsub = null;

@@ -911,20 +911,20 @@ Tests (19):
 - `tugdeck/src/lib/tide-session-restore.ts` — when the `cardSessionBindingStore` subscriber observes a binding for a card, dispatch `transport_settled` into the per-card store (in addition to the existing `tideRestoreRegistry._clear` path). Look up the per-card store via the existing card→store registry.
 
 **Tasks:**
-- [ ] Add `lifecycle.observeConnectionDidReconnect` subscription that dispatches `transport_open` into the per-card reducer.
-- [ ] Hold both lifecycle unsubs together; unsubscribe both in the `dispose()` path.
-- [ ] In `tide-session-restore.ts` `cardSessionBindingStore` subscriber, after `tideRestoreRegistry._clear(cardId)`, look up the per-card store and dispatch `transport_settled`.
+- [x] Add `lifecycle.observeConnectionDidReconnect` subscription that dispatches `transport_open` into the per-card reducer.
+- [x] Hold both lifecycle unsubs together; unsubscribe both in the `dispose()` path. _(Renamed `_lifecycleCloseUnsub` → `_lifecycleUnsubs: Array<() => void>`; dispose iterates the array.)_
+- [x] In `tide-session-restore.ts` `cardSessionBindingStore` subscriber, after `tideRestoreRegistry._clear(cardId)`, look up the per-card store and dispatch `transport_settled`. _(Added a public `CodeSessionStore.notifyTransportSettled()` method as the named entry point so the binding subscriber stays free of the reducer's event vocabulary. Subscriber ordering is fixed by having `cardServicesStore.attachDeckManager` call `_ensureInitialized` so cardServicesStore subscribes to the binding store before `tide-session-restore` does — guarantees the per-card store has been constructed by the time the dispatch lookup runs.)_
 
 **Tests:**
-- [ ] Store unit: construct a `CodeSessionStore` with a real `ConnectionLifecycle`. Drive `lifecycle.notifyConnectionDidClose()` → assert `transportState === "offline"`. Drive `lifecycle.notifyConnectionDidOpen()` (after a prior open + close to satisfy [D08]) → assert `transportState === "restoring"`. Manually populate `cardSessionBindingStore` for the card → assert `transport_settled` dispatched and `transportState === "online"`.
-- [ ] Store unit: construct a store with a lifecycle in `state="open"` and `everOpened=true` but no prior close. Verify no spurious `transport_open` dispatch on construction.
-- [ ] Integration: drive the full `connect → open → close → reconnect → open → binding-arrived` cycle through a real `ConnectionLifecycle`; assert `transportState` walks `online → offline → restoring → online`.
+- [x] Store unit: construct a `CodeSessionStore` with a real `ConnectionLifecycle`. Drive `lifecycle.notifyConnectionDidClose()` → assert `transportState === "offline"`. Drive `lifecycle.notifyConnectionDidOpen()` (after a prior open + close to satisfy [D08]) → assert `transportState === "restoring"`. Manually populate `cardSessionBindingStore` for the card → assert `transport_settled` dispatched and `transportState === "online"`. _(Lifecycle-driven cases live in `code-session-store.transport-state.test.ts`; the manually-populate-binding-store assertion lives in the new `tide-session-restore-transport-settled.test.ts` which exercises the full production wire.)_
+- [x] Store unit: construct a store with a lifecycle in `state="open"` and `everOpened=true` but no prior close. Verify no spurious `transport_open` dispatch on construction.
+- [x] Integration: drive the full `connect → open → close → reconnect → open → binding-arrived` cycle through a real `ConnectionLifecycle`; assert `transportState` walks `online → offline → restoring → online`.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` green.
-- [ ] `bun test src/lib/code-session-store src/lib/tide-session-restore src/__tests__` green.
-- [ ] Full `bun test` green (no regressions).
-- [ ] `bun run audit:tokens lint` unchanged from baseline.
+- [x] `bun x tsc --noEmit` green.
+- [x] `bun test src/lib/code-session-store src/lib/tide-session-restore src/__tests__` green.
+- [x] Full `bun test` green (no regressions). _(2615 pass / 0 fail; net +8 tests for Step 5: 5 lifecycle-driven cases, 1 dispose case, 2 binding-subscriber wire-up cases.)_
+- [x] `bun run audit:tokens lint` unchanged from baseline. _(Zero violations.)_
 
 ---
 

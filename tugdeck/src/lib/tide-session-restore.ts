@@ -54,6 +54,7 @@ import type { TugbankClient } from "./tugbank-client";
 import { sendSpawnSession } from "./session-lifecycle";
 import { logSessionLifecycle } from "./session-lifecycle-log";
 import { cardSessionBindingStore } from "./card-session-binding-store";
+import { cardServicesStore } from "./card-services-store";
 import { pickerNoticeStore } from "./picker-notice-store";
 import { FeedId } from "../protocol";
 
@@ -179,11 +180,30 @@ function installRegistrySubscriptions(connection: TugConnection): void {
   _subscriptionsInstalled = true;
 
   // When a binding arrives for a restoring card, the restore succeeded.
+  // Also notify the card's CodeSessionStore that the wire is settled,
+  // so its `transportState` can flip from `restoring` back to `online`
+  // (per [D04] / [D07]). The lookup runs here rather than inside
+  // `cardServicesStore` because `cardServicesStore` is responsible only
+  // for owning the per-card services bag — the "the supervisor has
+  // re-acked, transport is settled" semantic belongs to this restore
+  // module, which already owns the corresponding restore-registry
+  // bookkeeping.
+  //
+  // Subscriber ordering (production): `cardServicesStore.attachDeckManager`
+  // (called from `main.tsx` before `restoreTideSessions`) calls
+  // `_ensureInitialized`, so cardServicesStore subscribed to the
+  // binding store first. By the time this callback runs,
+  // cardServicesStore has already reconciled and the per-card store
+  // is constructed. `notifyTransportSettled()` is a no-op on a fresh
+  // store (already `online`); it only changes state when a store
+  // survives a `restoring` phase, which is the contract under test.
   cardSessionBindingStore.subscribe(() => {
     const bindings = cardSessionBindingStore.getSnapshot();
     for (const cardId of Array.from(tideRestoreRegistry.getSnapshot().keys())) {
       if (bindings.has(cardId)) {
         tideRestoreRegistry._clear(cardId);
+        const services = cardServicesStore.getServices(cardId);
+        services?.codeSessionStore.notifyTransportSettled();
       }
     }
   });
