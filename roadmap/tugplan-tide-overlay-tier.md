@@ -258,6 +258,21 @@ This plan follows [tuglaws/tugplan-skeleton.md §reference-conventions](../tugla
 
 **Decision:** *To be recorded after [Step 0](#step-0) completes.* If the spike asserts focus retention works, this decision records "direct call (option c) is the path"; if it fails, this decision records "responder-id mirroring (option a) is the path" and notes the substep added to [Step 1](#step-1).
 
+#### [D09] Hook + registry live in `tugdeck/src/lib/`; root component lives in `tugdeck/src/components/chrome/` (DECIDED) {#d09-lib-vs-chrome-placement}
+
+**Decision:** The portal-target hook (`use-canvas-overlay.ts`) and the module-scope registry (`canvas-overlay-registry.ts`) live under `tugdeck/src/lib/`. The root component (`canvas-overlay-root.tsx`) lives under `tugdeck/src/components/chrome/`.
+
+**Rationale:**
+- `chrome/` is for components that wrap or compose substrates from above (deck-canvas, card-host, card-portal, pane-content-registry-as-a-pane-concern). Substrates do not import from `chrome/` — that direction would invert the layering.
+- The completion popup migration is a substrate consumer of the hook (`tug-text-editor.tsx` calls `useCanvasOverlay`). If the hook lives in `chrome/`, the substrate imports up through chrome — wrong direction per [L10].
+- Existing precedent: `tugdeck/src/lib/` already holds cross-cutting service modules consumed by substrates (`selection-guard.ts`, `card-session-binding-store.ts`, `prompt-history-store.ts`, `code-session-store.ts`). The hook + registry slot in cleanly there.
+- The root component itself, however, is a deck-level chrome concern: it mounts inside `DeckCanvas`, owns the canvas-level fixed-position div, and is registered by `DeckCanvas` via [L09]/[L25]'s composition shape. It belongs in `chrome/`.
+
+**Implications:**
+- Substrate imports look like `import { useCanvasOverlay } from "@/lib/use-canvas-overlay"` — same shape as existing substrate imports of `selection-guard` etc.
+- The root component imports the registry from `lib/` (chrome-imports-lib is allowed and conventional).
+- New unit tests for hook + registry live under `tugdeck/src/lib/__tests__/`; tests for `<CanvasOverlayRoot />` live under `tugdeck/src/components/chrome/__tests__/` (kept locally with the component).
+
 ---
 
 ### Deep Dives {#deep-dives}
@@ -269,7 +284,7 @@ This plan follows [tuglaws/tugplan-skeleton.md §reference-conventions](../tugla
 **Registry API (sketch).**
 
 ```ts
-// tugdeck/src/components/chrome/canvas-overlay-registry.ts
+// tugdeck/src/lib/canvas-overlay-registry.ts
 
 let currentRoot: HTMLElement | null = null;
 const subscribers = new Set<() => void>();
@@ -300,7 +315,7 @@ export function subscribe(fn: () => void): () => void {
 **Hook (sketch).**
 
 ```ts
-// tugdeck/src/components/chrome/use-canvas-overlay.ts
+// tugdeck/src/lib/use-canvas-overlay.ts
 
 export function useCanvasOverlay(): HTMLElement {
   const subscribe = useCallback((cb: () => void) => canvasOverlayRegistry.subscribe(cb), []);
@@ -310,7 +325,24 @@ export function useCanvasOverlay(): HTMLElement {
 }
 ```
 
-**Mount-time race.** `<CanvasOverlayRoot />` lives inside `DeckCanvas`. The completion overlay also lives inside `DeckCanvas` (transitively, via `CardHost` → tide card → editor). If a tide card's editor mounts before `<CanvasOverlayRoot />`, the hook returns `document.body` for one tick. That tick's portal target is wrong only if the popup is *active* at first mount — which it isn't (typeahead state defaults to inactive). Confirmed safe by inspection.
+**Mount-time ordering.** `<CanvasOverlayRoot />` lives inside `DeckCanvas`. The completion overlay also lives inside `DeckCanvas` (transitively, via `CardHost` → tide card → editor). React's `useLayoutEffect` order is bottom-up: child effects fire before parent effects, and siblings fire in JSX order. So when the deck mounts in one commit, `CompletionOverlay`'s subscription may run *before* `<CanvasOverlayRoot />`'s `register()`. The hook returns `document.body` during that gap. Two reasons this is safe:
+
+1. **Typeahead is inactive at first mount.** `completionField`'s default value is `inactiveState`. The React shell observes `state.active && state.filtered.length > 0 === false` and renders nothing during the gap. The portal target choice is therefore unobserved.
+2. **`useSyncExternalStore` re-runs on root registration.** When `<CanvasOverlayRoot />`'s effect fires `register(el)`, the registry notifies subscribers, the hook re-derives the snapshot (`getRoot() = el`), React re-renders. By the time typeahead activates (any keystroke after mount), the registered root has been observed for many ticks.
+
+Don't "fix" the gap with a synchronous `register-from-render` shortcut — that would violate L03. The body-fallback path is the gap's safety net by design.
+
+**Two subscribers on typeahead state.** Plan readers should expect two subscribers, not one: a structure-zone subscriber and an appearance-zone subscriber. The structure subscriber lives in the React shell — `useSyncExternalStore` against `subscribeCompletionState` returning the derived boolean `state.active && state.filtered.length > 0`. It governs whether the portal exists in the React tree (mount/unmount). The appearance subscriber lives outside React — direct `subscribeCompletionState` callback that runs `paintCompletionPopup` against the portal node. It governs item DOM, position, and visibility writes. Both legitimate per L22 (one is React-zone state-of-existence, the other is direct-DOM appearance). Both wired in `CompletionOverlay`'s mount effect; both unwired in cleanup. The `onTypeaheadChange` host callback (the editor's prop interface) also moves to `CompletionOverlay` and reads `onTypeaheadChangeRef.current` from a passed-in ref so it stays stable per L07.
+
+**L19 expectations for `CanvasOverlayRoot`.** A leaf chrome component with no visible mark. Authoring-guide treatment:
+- `data-slot="tug-canvas-overlay-root"` on the rendered `<div>`.
+- Module docstring explains the contract (single-root invariant, lifecycle, body-fallback rationale, dev-mode warn-once).
+- Props: empty interface `CanvasOverlayRootProps`. No props means the call site is unambiguous.
+- No `@tug-pairings` (no foreground/background pairs to declare).
+- No `@tug-renders-on` (no color-setting rules; the root is transparent).
+- Dedicated CSS file (`canvas-overlay-root.css`) is unnecessary for the four declarations needed (`position`, `inset`, `pointer-events`, `z-index`); inline `style` prop on the `<div>` is acceptable per the authoring guide's "no-token-no-css-file" rule for trivial components. If the root grows to need theming hooks later, promote to a CSS file at that time.
+
+**Multiple simultaneous popups.** Two Tide cards with typeahead open both portal into the same overlay root. Each gets its own `<div data-slot="tug-completion-menu">`. Z-order between them is DOM-insertion-order (later mount wins). Acceptable for completion (only one editor has focus at a time; the other popup is visually present but inert).
 
 #### Painter Migration {#painter-migration}
 
@@ -432,15 +464,15 @@ export function CanvasOverlayRoot(): React.ReactElement;
 
 No props. Renders one `<div data-slot="tug-canvas-overlay-root" />` with `position: fixed; inset: 0; pointer-events: none; z-index: var(--tug-z-overlay-base)`. Registers itself in `useLayoutEffect`; unregisters on cleanup. Dev-mode warns if a second root registers concurrently.
 
-**`useCanvasOverlay`** — `tugdeck/src/components/chrome/use-canvas-overlay.ts`
+**`useCanvasOverlay`** — `tugdeck/src/lib/use-canvas-overlay.ts`
 
 ```ts
 export function useCanvasOverlay(): HTMLElement;
 ```
 
-Returns the currently-registered overlay root, or `document.body` as fallback ([D02]). Subscribes via `useSyncExternalStore` so consumers re-render when the registered root changes (rare; mostly mount/unmount of `DeckCanvas`).
+Returns the currently-registered overlay root, or `document.body` as fallback ([D02]). Subscribes via `useSyncExternalStore` so consumers re-render when the registered root changes (rare; mostly mount/unmount of `DeckCanvas`). Lives in `lib/` (not `chrome/`) because it is a service hook consumed by substrates as well as chrome — see [D09].
 
-**`canvas-overlay-registry`** — `tugdeck/src/components/chrome/canvas-overlay-registry.ts`
+**`canvas-overlay-registry`** — `tugdeck/src/lib/canvas-overlay-registry.ts`
 
 ```ts
 export function register(el: HTMLElement): void;
@@ -473,6 +505,12 @@ Consumed by:
 #### Internal Architecture {#internal-architecture}
 
 ```
+Layer placement per [D09]:
+
+  chrome/  canvas-overlay-root.tsx          ← React component (mounts inside DeckCanvas)
+  lib/     canvas-overlay-registry.ts       ← module-scope state + subscribe API
+  lib/     use-canvas-overlay.ts            ← hook with body-fallback per [D02]
+
 DeckCanvas (chrome/deck-canvas.tsx)
 ├── outer responder div (setDeckRef)
 │   ├── inner container div (containerRef)
@@ -484,6 +522,10 @@ DeckCanvas (chrome/deck-canvas.tsx)
 TugTextEditor (tugways/tug-text-editor.tsx)
 ├── popupRef <div>          ← REMOVED (was inside the editor host)
 ├── CompletionOverlay       ← NEW; sibling React component, renders null
+│   ├── useSyncExternalStore on derived boolean (structure-zone subscriber)
+│   ├── direct subscribeCompletionState callback (appearance-zone subscriber → painter)
+│   ├── ResizeObserver on host (re-anchor + collapsed-pane cancel)
+│   ├── active-card subscription (card-deactivation cancel)
 │   └── createPortal(node, useCanvasOverlay())
 └── paintCompletionPopup    ← REWRITTEN; viewport-relative position math
 ```
@@ -496,21 +538,21 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 
 | File | Purpose |
 |------|---------|
-| `tugdeck/src/components/chrome/canvas-overlay-root.tsx` | The single overlay root component. |
-| `tugdeck/src/components/chrome/canvas-overlay-registry.ts` | Module-scope registry; `register` / `unregister` / `getRoot` / `subscribe`. |
-| `tugdeck/src/components/chrome/use-canvas-overlay.ts` | `useCanvasOverlay()` hook with body-fallback. |
-| `tugdeck/src/components/chrome/__tests__/canvas-overlay.test.tsx` | Unit tests for registry + hook. |
+| `tugdeck/src/components/chrome/canvas-overlay-root.tsx` | The single overlay root component. Chrome-tier per [D09]. |
+| `tugdeck/src/lib/canvas-overlay-registry.ts` | Module-scope registry; `register` / `unregister` / `getRoot` / `subscribe`. Lib-tier per [D09]. |
+| `tugdeck/src/lib/use-canvas-overlay.ts` | `useCanvasOverlay()` hook with body-fallback. Lib-tier per [D09]. |
+| `tugdeck/src/lib/__tests__/canvas-overlay.test.tsx` | Unit tests for registry + hook. |
 | `tugdeck/src/components/tugways/__tests__/completion-overlay.test.tsx` | Unit tests for `CompletionOverlay` mount/unmount semantics. |
 | `tugdeck/src/components/tugways/__tests__/painter-position-math.test.ts` | Unit tests for the painter's pure position-math fn. |
-| `tugapp/Tests/AppTests/at0039-completion-popup-escapes-card.test.ts` | App-test: popup escapes a small card. |
+| `tugapp/Tests/AppTests/at0039-completion-popup-escapes-card.test.ts` | App-test: popup escapes a small card; click-to-accept retains editor focus (the [Q01] regression guard, promoted from the [Step 0](#step-0) spike). |
 
 #### Symbols to add / modify {#symbols}
 
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
 | `CanvasOverlayRoot` | component | `chrome/canvas-overlay-root.tsx` | New. |
-| `useCanvasOverlay` | hook | `chrome/use-canvas-overlay.ts` | New. |
-| `register` / `unregister` / `getRoot` / `subscribe` | fn | `chrome/canvas-overlay-registry.ts` | New module. |
+| `useCanvasOverlay` | hook | `lib/use-canvas-overlay.ts` | New. |
+| `register` / `unregister` / `getRoot` / `subscribe` | fn | `lib/canvas-overlay-registry.ts` | New module. |
 | `--tug-z-overlay-*` | CSS custom properties | `tugdeck/styles/chrome.css` | New. |
 | `CompletionOverlay` | component | `tugways/tug-text-editor.tsx` (or sibling file) | New; replaces in-host `popupRef` div. |
 | `paintCompletionPopup` | fn | `tugways/tug-text-editor.tsx` | Modified — drops `host` arg; viewport-relative math. |
@@ -524,8 +566,9 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 
 - [ ] `tuglaws/component-authoring.md` — add a paragraph: "popup-class primitives portal to the canvas overlay root, not their host pane." Cross-link [D01] / [D02].
 - [ ] `tuglaws/app-test-inventory.md` — add `[AT0039]` entry; bump high-water mark.
-- [ ] `tugdeck/src/components/chrome/canvas-overlay-root.tsx` docstring — explain the overlay-root contract, single-root invariant, lifecycle.
-- [ ] `tugdeck/src/components/chrome/use-canvas-overlay.ts` docstring — explain the body-fallback rationale per [D02].
+- [ ] `tugdeck/src/components/chrome/canvas-overlay-root.tsx` docstring — explain the overlay-root contract, single-root invariant, lifecycle, why the component is in chrome while the registry/hook are in lib per [D09].
+- [ ] `tugdeck/src/lib/use-canvas-overlay.ts` docstring — explain the body-fallback rationale per [D02] and the lib-tier placement per [D09].
+- [ ] `tugdeck/src/lib/canvas-overlay-registry.ts` docstring — explain the synchronous-notify subscribe contract, single-root invariant, multi-deck promotion path.
 - [ ] No external API or schema docs to update; this plan is internal-only.
 
 ---
@@ -555,23 +598,20 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 **References:** [Q01], Risk R01, (#test-strategy), (#painter-migration)
 
 **Artifacts:**
-- A throwaway test file `tugdeck/src/__tests__/spike-portal-focus.test.tsx` (deleted in [Step 1](#step-1)) that:
-  - Mounts a CodeMirror `EditorView` and a sibling portaled `<div>` with a child element.
-  - Synthesizes a `pointerdown` + `preventDefault()` on the portaled child.
-  - Asserts `document.activeElement === view.contentDOM`.
+- A new app-test `tugapp/Tests/AppTests/at0039-completion-popup-escapes-card.test.ts` containing the focus-retention assertion. The file is born here as a spike scaffolding (an `EditorView` + sibling-portaled `<div>` + click on the portaled child + `document.activeElement` check) and grows in [Step 1](#step-1) into the full app-test for the popup-escapes-card assertion. **The file is not thrown away after Step 0** — it is the permanent regression guard for [Q01] going forward.
 - A short note in [D08]: "Confirmed — direct call (option c) is the path." OR "Failed — option (a) responder-id mirroring is required; substep added to Step 1."
 
 **Tasks:**
-- [ ] Implement the spike test file (≤ 50 lines).
-- [ ] Run as both happy-dom and app-test variants. Happy-dom may pass spuriously; the app-test result is the gating one.
+- [ ] Implement the focus-retention assertion as the first test inside the new `at0039-*` app-test file (~40 lines for this step's scope).
+- [ ] Run via `just app-test at0039-completion-popup-escapes-card`. Happy-dom variants may pass spuriously; the real-browser app-test is the gating result.
 - [ ] If app-test passes: record [D08] resolution as option (c). Proceed to [Step 1](#step-1).
 - [ ] If app-test fails: record [D08] resolution as option (a). Add a `data-responder-id` mirroring substep to [Step 1](#step-1) before the migration lands.
 
 **Tests:**
-- [ ] App-test: synthesized `pointerdown` + `preventDefault()` on a portaled element while editor is focused → `document.activeElement` is still `view.contentDOM`.
+- [ ] App-test (in `at0039-*`): synthesized `pointerdown` + `preventDefault()` on a portaled element while editor is focused → `document.activeElement` is still `view.contentDOM`.
 
 **Checkpoint:**
-- [ ] `just app-test spike-portal-focus` exits with `VERDICT: PASS` (or `VERDICT: FAIL` documented as the [D08] fallback trigger).
+- [ ] `just app-test at0039-completion-popup-escapes-card` exits with `VERDICT: PASS` (or `VERDICT: FAIL` documented as the [D08] fallback trigger).
 - [ ] `bun x tsc --noEmit` green.
 - [ ] [D08] is filled in with the spike result.
 
@@ -583,39 +623,41 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 
 **Commit:** `Add canvas overlay tier; migrate completion popup off card subtree`
 
-**References:** [D01], [D02], [D03], [D05], [D07], [D08], Spec (#public-api), (#overlay-root-contract), (#painter-migration)
+**References:** [D01], [D02], [D03], [D05], [D07], [D08], [D09], Spec (#public-api), (#overlay-root-contract), (#painter-migration)
 
 **Artifacts:**
-- New `tugdeck/src/components/chrome/canvas-overlay-registry.ts`.
-- New `tugdeck/src/components/chrome/canvas-overlay-root.tsx`.
-- New `tugdeck/src/components/chrome/use-canvas-overlay.ts`.
+- New `tugdeck/src/lib/canvas-overlay-registry.ts` per [D09].
+- New `tugdeck/src/lib/use-canvas-overlay.ts` per [D09].
+- New `tugdeck/src/components/chrome/canvas-overlay-root.tsx` per [D09].
 - `tugdeck/styles/chrome.css` — add `--tug-z-overlay-*` tokens per [D05].
 - `tugdeck/src/components/chrome/deck-canvas.tsx` — mount `<CanvasOverlayRoot />` per [D07].
-- `tugdeck/src/components/tugways/tug-text-editor.tsx` — drop in-host `popupRef` div; introduce `CompletionOverlay`; rewrite `paintCompletionPopup` per (#painter-migration).
+- `tugdeck/src/components/tugways/tug-text-editor.tsx` — drop in-host `popupRef` div; introduce `CompletionOverlay` (the React shell, owns mount/unmount + `onTypeaheadChange` host-callback wiring + ResizeObserver re-anchor); rewrite `paintCompletionPopup` per (#painter-migration).
 - `tugdeck/src/components/tugways/tug-completion-menu.css` — drop `position: absolute` and `z-index: 50` from `.tug-completion-menu`.
-- New unit tests under `chrome/__tests__/` and `tugways/__tests__/`.
-- New app-test `at0039-completion-popup-escapes-card.test.ts`.
-- Spike file from [Step 0](#step-0) deleted.
+- New unit tests under `tugdeck/src/lib/__tests__/` (registry + hook) and `tugdeck/src/components/tugways/__tests__/` (overlay shell + painter math).
+- App-test `at0039-completion-popup-escapes-card.test.ts` extended with the popup-escapes-card layout assertion (the file was created in [Step 0](#step-0) for the focus-retention case).
 - `[Q01]` updated to DECIDED in this plan; `[D08]` already populated.
 - *(Conditional — only if Step 0 chose option (a))* `data-responder-id` mirrored on the portal-root div; integration test asserts chain dispatch reaches the editor's responder.
 
 **Tasks:**
-- [ ] Add the registry, root, and hook files. Hook returns `getRoot() ?? document.body` per [D02].
+- [ ] Add the registry (`lib/canvas-overlay-registry.ts`) and hook (`lib/use-canvas-overlay.ts`) files per [D09]. Hook returns `getRoot() ?? document.body` per [D02].
+- [ ] Add the root component (`chrome/canvas-overlay-root.tsx`). L19 expectations: `data-slot="tug-canvas-overlay-root"`, module docstring covering single-root invariant + lifecycle + body-fallback rationale, empty `CanvasOverlayRootProps` interface, no `@tug-pairings`, no `@tug-renders-on`, inline-style `<div>` for the four declarations (no dedicated CSS file at this size).
 - [ ] Add `--tug-z-overlay-*` tokens to `chrome.css`. Set the overlay-root element's z-index to `--tug-z-overlay-base`.
 - [ ] Mount `<CanvasOverlayRoot />` in `DeckCanvas` per [D07] (sibling of `containerRef`, inside `setDeckRef`).
-- [ ] Drop the in-host `popupRef` `<div>` from `tug-text-editor.tsx`'s JSX. Introduce `CompletionOverlay` — a `useSyncExternalStore`-driven component that, when typeahead is active, renders a portal via `useCanvasOverlay`. Inside the portal, mount one `<div data-slot="tug-completion-menu" class="tug-completion-menu">` and let `paintCompletionPopup` write into it.
+- [ ] Drop the in-host `popupRef` `<div>` from `tug-text-editor.tsx`'s JSX. Introduce `CompletionOverlay` — a `useSyncExternalStore`-driven component that, when typeahead is active, renders a portal via `useCanvasOverlay`. Inside the portal, mount one `<div data-slot="tug-completion-menu" class="tug-completion-menu">` and let `paintCompletionPopup` write into it. The shell owns *both* the structure-zone subscriber (the derived-boolean `useSyncExternalStore` for portal mount/unmount) and the appearance-zone subscriber (the direct `subscribeCompletionState` callback that runs the painter and fires `onTypeaheadChangeRef.current`). Both subscribers wire in a single `useLayoutEffect`; both unwire in cleanup. See (#overlay-root-contract) for the two-subscriber framing.
 - [ ] Rewrite `paintCompletionPopup` per (#painter-migration): drop `host` arg, drop `clipRect` walk-up, drop `hostRect` subtractions, add viewport-margin clamp, base auto-flip on viewport space.
+- [ ] **ResizeObserver re-anchor.** In `CompletionOverlay`'s mount effect, install a `ResizeObserver` on the editor's host element. On observed resize, call `paintCompletionPopup(view, popupNode, completionDirectionRef.current)` (which internally uses `view.requestMeasure` so the read happens in the legal layout-read phase). This catches pane-sash drags, window resizes, and any other host-bounds change while typeahead is active. RAF/throttling is not required at this step — `ResizeObserver` already coalesces; revisit only if profiling shows jank.
 - [ ] Drop `position` and `z-index` from `.tug-completion-menu` in `tug-completion-menu.css`. The popup `<div>` inside the overlay root inherits `position: fixed` from the canvas root via inline style or class; visual styles (border, shadow, background) stay.
 - [ ] *(Conditional)* If [D08] resolved to option (a): expose a stable `viewId` on `EditorView` (or generate one); set `data-responder-id="tug-text-editor:<viewId>"` on the portal-root div.
-- [ ] Delete `tugdeck/src/__tests__/spike-portal-focus.test.tsx`.
 
 **Tests:**
 - [ ] Unit: registry register/unregister/subscribe with single + double registration.
 - [ ] Unit: `useCanvasOverlay` returns registered root when present, body when absent.
 - [ ] Unit: `CompletionOverlay` mounts a portal when typeahead activates; unmounts when state clears.
 - [ ] Unit: extracted painter math returns correct `{ top, left }` object for top/bottom/left/right anchor positions and for both auto-flip directions.
+- [ ] Unit: `onTypeaheadChange` host callback still fires on typeahead state changes after the subscription migration to `CompletionOverlay`.
 - [ ] App-test `at0039`: open a Tide card with a small bottom pane; type `@`; assert `document.querySelector('[data-slot="tug-completion-menu"]').getBoundingClientRect()` extends *outside* the pane element's clip rect; the prompt input's bounding rect bottom is unchanged.
-- [ ] App-test `at0039`: click an item in the popup; assert `document.activeElement === editor.contentDOM` AND the doc text inserted the expected atom.
+- [ ] App-test `at0039`: click an item in the popup; assert `document.activeElement === editor.contentDOM` AND the doc text inserted the expected atom. (Reuses Step 0's focus-retention scaffolding.)
+- [ ] App-test `at0039`: open `@` completion; programmatically resize the editor host (sash-drag simulation); assert the popup re-anchors to within ±2px of the new trigger-character coords.
 - [ ] *(Conditional)* If [D08] is option (a): integration test fires a chain dispatch with action `INSERT_ATOM` from the portal element; assert the editor's responder handler runs.
 
 **Checkpoint:**
@@ -638,15 +680,18 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 
 **Artifacts:**
 - `CompletionOverlay` subscribes to active-card transitions; calls `cancelCompletion(view)` on transition-away.
-- New unit test under `tugways/__tests__/`.
+- `CompletionOverlay`'s ResizeObserver from [Step 1](#step-1) gains a "host height collapsed to 0" branch that also fires `cancelCompletion(view)` (folds the pane-collapse case in cleanly).
+- New unit tests under `tugways/__tests__/`.
 
 **Tasks:**
 - [ ] In `CompletionOverlay`, subscribe via `useCardId` + the deck-store's active-card observation. When the owning card transitions from active → not-active, call `cancelCompletion(view)`.
+- [ ] Extend the ResizeObserver callback from [Step 1](#step-1): if the editor host's `offsetHeight === 0` (or `offsetWidth === 0`), the pane holding it has collapsed; call `cancelCompletion(view)` and skip the re-anchor. Folds pane-collapse into the same observer; no separate subscription needed.
 - [ ] Confirm the existing `Escape` keymap path in `completion-extension.ts` still fires once the popup is detached — no code change expected; verify with a unit test.
 - [ ] Confirm `view.destroy()` (which fires on `TugTextEditor` unmount) clears the typeahead state via the existing `view.dispatch(cancelEffect)` paths.
 
 **Tests:**
 - [ ] Unit (integration shape): mount two tide cards; activate card A's editor; open `@` completion; activate card B; assert card A's `CompletionOverlay` portal is unmounted within the same effect tick.
+- [ ] Unit: collapse the pane holding the prompt input while typeahead is active; assert the overlay portal unmounts within the same observer tick.
 - [ ] Unit: `Escape` keydown while completion is active still fires `cancelCompletion(view)` after the migration.
 - [ ] Unit: unmount `TugTextEditor` while completion is active → no orphaned overlay portal in the DOM.
 
@@ -654,6 +699,7 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 - [ ] `bun x tsc --noEmit` green.
 - [ ] `bun test` green.
 - [ ] Manual: open `@` completion in card A; click into card B's chrome; popup vanishes immediately.
+- [ ] Manual: open `@` completion; collapse the prompt pane via the sash drag; popup vanishes immediately.
 
 ---
 
@@ -702,7 +748,7 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 - This plan's [#tuglaws-cross-check] section filled in below.
 
 **Tasks:**
-- [ ] Add the component-authoring paragraph: "Popup-class primitives portal to the canvas overlay root, not their host pane. Use `useCanvasOverlay` from `chrome/use-canvas-overlay.ts` for the portal target. Pane-scoped overlays (sheets, pane banners) continue to use `TugPanePortalContext`."
+- [ ] Add the component-authoring paragraph: "Popup-class primitives portal to the canvas overlay root, not their host pane. Use `useCanvasOverlay` from `lib/use-canvas-overlay.ts` for the portal target (the hook lives in `lib/` so substrates can import it without inverting the chrome/substrate layering — see [D09] in `tugplan-tide-overlay-tier.md`). Pane-scoped overlays (sheets, pane banners) continue to use `TugPanePortalContext`."
 - [ ] Add `[AT0039]` to `app-test-inventory.md`. Bump high-water to `AT0039`.
 - [ ] Walk each of [L02], [L03], [L06], [L11], [L19], [L22], [L23] in the inline [#tuglaws-cross-check] section: applies-and-satisfied OR does-not-apply (and why).
 
