@@ -50,7 +50,7 @@ This plan fixes all three by introducing a `ConnectionLifecycle` abstraction (th
 #### Success Criteria (Measurable) {#success-criteria}
 
 - **Submit always works after `pkill -x tugcast`.** After the kill and tugcast respawn, every tide card that was bound before the kill rebinds *and* a freshly-typed `> hi` reaches Claude and streams a response — without a page reload. (Verified by app-test recipe and manual smoke. Step 1 delivers binding re-assertion; Step 8 delivers server-side resume reliability so the resume frame succeeds end-to-end.)
-- `ConnectionLifecycle` exposes named events (`connectionDidOpen`, `connectionDidReconnect`, `connectionDidClose`, `connectionDidEnterReconnecting`, `connectionWillOpen`) and a `getState()` query. All in-tree callers of connection events subscribe through the lifecycle; bare `connection.onOpen` / `connection.onClose` callable APIs are removed by Step 5. (Verified by `grep`-able codebase + unit tests on the lifecycle's gating behavior.)
+- `ConnectionLifecycle` exposes named events (`connectionDidOpen`, `connectionDidReconnect`, `connectionDidClose`, `connectionDidEnterReconnecting`, `connectionWillOpen`) and a `getState()` query. All in-tree callers of connection events subscribe through the lifecycle; bare `connection.onOpen` / `connection.onClose` callable APIs are totally removed by Step 1b per [D09]. (Verified by `grep`-able codebase + unit tests on the lifecycle's gating behavior.)
 - A half-open WebSocket where no frames arrive for ≥ 45 s causes the client to force-close and reconnect. (Verified by unit test on the watchdog timer; manual smoke via OS sleep / wake.)
 - `transportState` transitions are observable in the per-card snapshot: `online → offline` on close, `offline → restoring` on next open, `restoring → online` when the binding lands. (Verified by reducer unit tests.)
 - `canSubmit` is gated on `transportState === "online"` in addition to phase. (Verified by snapshot test; manual smoke disables the submit button visibly during a kill+restart cycle.)
@@ -275,9 +275,9 @@ This plan follows [tuglaws/tugplan-skeleton.md §reference-conventions](../tugla
 - Provides a single place that names the events: a reader of `code-session-store.ts:155` sees `lifecycle.observeConnectionDidClose(() => dispatch({type: "transport_close"}))` and immediately understands the contract — versus a bare `conn.onClose` callback that requires reading WebSocket lifecycle docs to interpret.
 
 **Implications:**
-- `code-session-store.ts` migrates from `conn.onClose` to `lifecycle.observeConnectionDidClose` and adds `lifecycle.observeConnectionDidReconnect` for the `transport_open` dispatch (Step 5).
+- `code-session-store.ts` migrates from `conn.onClose` to `lifecycle.observeConnectionDidClose` in Step 1b (alongside the legacy-API removal). Step 5 then adds `lifecycle.observeConnectionDidReconnect` for the `transport_open` dispatch — that's the only piece deferred to Step 5 because it depends on the `transport_open` event variant added in Step 4.
 - Future transport-aware stores (e.g., `card-services-store`) follow the same pattern.
-- Tests use a real `ConnectionLifecycle` and call `notify*` directly. `MockTugConnection` no longer needs to fake transport-event registration (Step 5).
+- Tests use a real `ConnectionLifecycle` and call `notify*` directly. `TestFrameChannel` (the renamed-and-stripped former `MockTugConnection`) no longer fakes transport-event registration as of Step 1b.
 
 #### [D08] `connectionDidReconnect` requires both a prior successful open AND a close since (DECIDED) {#d08-reconnect-gating}
 
@@ -292,22 +292,23 @@ This plan follows [tuglaws/tugplan-skeleton.md §reference-conventions](../tugla
 
 **Implications:**
 - The lifecycle is the only place the gating logic lives. `connection-lifecycle.test.ts` covers all the corner cases (mount path, reconnect after established connection, close-before-first-successful-open, multiple closes between opens, multiple opens after one close).
-- No subscriber needs a per-store `_seenFirstOpen` field. Step 5's `code-session-store` migration deletes that pattern outright; it never lands in production.
+- No subscriber needs a per-store `_seenFirstOpen` field. The pattern never lands in production: Step 1b's close migration uses `observeConnectionDidClose` (no flag); Step 5's reconnect migration uses `observeConnectionDidReconnect` (no flag — the lifecycle's gating handles it).
 - Future transport-aware abstractions (per-card stores, banner) can subscribe to lifecycle events without re-implementing the gating.
 
 #### [D09] `ConnectionLifecycle` is the canonical surface for connection events (DECIDED) {#d09-lifecycle-canonical}
 
-**Decision:** All in-tree consumers of WebSocket connection events subscribe through `ConnectionLifecycle.observe*`. The bare `connection.onOpen(callback)` and `connection.onClose(callback)` callable APIs on `TugConnection` are removed by the end of Step 5. The lifecycle is the *only* public surface for connection events; `TugConnection` itself is treated as transport-only.
+**Decision:** All in-tree consumers of WebSocket connection events subscribe through `ConnectionLifecycle.observe*`. The bare `connection.onOpen(callback)` and `connection.onClose(callback)` callable APIs on `TugConnection` are removed *totally* by the end of Step 1 (commit 1b) — no deprecation period, no commented-out shims, no parallel APIs in tree. The lifecycle is the *only* public surface for connection events; `TugConnection` itself is treated as transport-only.
 
 **Rationale:**
 - Two parallel event APIs (lifecycle observers + bare callbacks) is one too many. Drift between them creates exactly the kind of "which gating logic applies here?" confusion that broke the original Step 1 attempt.
 - `AppLifecycle` and `CardLifecycle` already established this pattern: there is no parallel `app.onWillBecomeActive(callback)` API on the underlying message-channel — `useAppDelegate` and `observeApplication*` are the surface. `ConnectionLifecycle` should match.
 - Removing the bare APIs forces every event-name choice to surface in the lifecycle's vocabulary, which is reviewable and easy to grep for.
+- Total removal in Step 1 (rather than phased across Step 5) means there is never a "two parallel APIs in tree" period that future readers could mistake for the intended pattern.
 
 **Implications:**
-- Step 1 introduces the lifecycle and migrates `main.tsx`'s `signalReady` from `connection.onOpen` to `lifecycle.observeConnectionDidOpen`.
-- Step 5 migrates the last remaining caller (`code-session-store.ts:155`'s `conn.onClose`) and removes `TugConnection.onOpen` and `TugConnection.onClose` from the public API.
-- `MockTugConnection` no longer exposes `onClose`; tests construct a real `ConnectionLifecycle` and drive `lifecycle.notify*` directly.
+- Step 1a (shipped) introduces the lifecycle, wires `TugConnection.setLifecycle`, and migrates `main.tsx`'s `signalReady` from `connection.onOpen` to `lifecycle.observeConnectionDidOpen`. Legacy callable APIs remain in tree, with one remaining caller (`code-session-store.ts:155`).
+- Step 1b (pending) migrates that last caller, deletes `TugConnection.onOpen` / `onClose` (and their backing arrays + dispatch loops), renames `MockTugConnection` → `TestFrameChannel` and strips its lifecycle methods, and migrates all 21 in-tree consumers. Phase Exit Criteria's `grep` checks enforce totality.
+- `TestFrameChannel` no longer exposes `onClose`; tests construct a real `ConnectionLifecycle` and drive `lifecycle.notify*` directly.
 
 ---
 
@@ -392,7 +393,7 @@ registerConnectionLifecycle(connectionLifecycle);
 
 The lifecycle is attached *before* `connection.connect()` runs, so the very first handshake fires `connectionDidOpen` through it.
 
-**Production subscribers (post-Step 5):**
+**Production subscribers (full set, post-Step 5):**
 
 | Subscriber | Event | What it does |
 |-|-|-|
@@ -513,7 +514,7 @@ Full surface in [Spec S00](#s00-connection-lifecycle-api). Five `notify*` method
 setLifecycle(lifecycle: ConnectionLifecycle | null): void;
 ```
 
-Removed (Step 5):
+Removed (Step 1b):
 
 ```ts
 // REMOVED
@@ -582,7 +583,7 @@ TugConnection ──notify*──▶ ConnectionLifecycle ──observe*──▶
   ws.onclose                connectionDidClose
   scheduleReconnect()       connectionDidEnterReconnecting
 
-ConnectionLifecycle subscribers (post-Step 5):
+ConnectionLifecycle subscribers (full set, post-Step 5):
   main.tsx               ──observeConnectionDidOpen──▶ signalReady()
   main.tsx               ──observeConnectionDidReconnect──▶ clearAll() + restoreTideSessions(reason="reconnect")
   CodeSessionStore       ──observeConnectionDidClose──▶ dispatch(transport_close)
@@ -625,7 +626,7 @@ None.
 | `registerConnectionLifecycle` / `getConnectionLifecycle` | function | `tugdeck/src/lib/connection-lifecycle.ts` | Module singleton helpers |
 | `everOpened` / `sawCloseSinceLastOpen` | private field | `tugdeck/src/lib/connection-lifecycle.ts` | Lifecycle gating per [D08] |
 | `setLifecycle` | method (new) | `tugdeck/src/connection.ts` | Wires `TugConnection` to fire `notify*` at four transitions |
-| `onOpen` / `onClose` | method (REMOVED Step 5) | `tugdeck/src/connection.ts` | Replaced by lifecycle observers per [D09] |
+| `onOpen` / `onClose` | method (REMOVED Step 1b) | `tugdeck/src/connection.ts` | Total removal per [D09]; backing `openCallbacks` / `closeCallbacks` arrays and dispatch for-loops also deleted |
 | `lastFrameAt` | private field | `tugdeck/src/connection.ts` | Bumped on every `onmessage` post-handshake |
 | `watchdogTimer` | private field | `tugdeck/src/connection.ts` | `setInterval` handle |
 | `startWatchdog` / `stopWatchdog` | private method | `tugdeck/src/connection.ts` | Lifecycle parallel to heartbeat |
@@ -640,9 +641,10 @@ None.
 | `handleTransportClose` | function (modified) | `tugdeck/src/lib/code-session-store/reducer.ts` | No longer drops for idle [D06] |
 | `handleTransportOpen` | function (new) | `tugdeck/src/lib/code-session-store/reducer.ts` | Sets `transportState = "restoring"` |
 | `handleTransportSettled` | function (new) | `tugdeck/src/lib/code-session-store/reducer.ts` | Sets `transportState = "online"` |
-| `_lifecycleUnsubs` | private field | `tugdeck/src/lib/code-session-store.ts` | Holds the two lifecycle observer unsubs (close + reconnect). No `_seenFirstOpen` field — [D08] makes it unnecessary. |
+| `_lifecycleCloseUnsub` | private field (Step 1b) | `tugdeck/src/lib/code-session-store.ts` | Holds the close-observer unsub. No `_seenFirstOpen` field — [D08] makes it unnecessary. Renamed to `_lifecycleUnsubs: Array<()=>void>` in Step 5 when the reconnect observer is added. |
+| `lifecycle` | required option (Step 1b) | `tugdeck/src/lib/code-session-store.ts` `CodeSessionStoreOptions` | Required; tests pass a fresh `ConnectionLifecycle()`. Production passes the singleton from `getConnectionLifecycle()` (with null guard). |
 | Lifecycle subscribers | inline | `tugdeck/src/main.tsx` | `signalReady` on `did-open`; clear-then-restore on `did-reconnect` |
-| `MockTugConnection.onClose` | method (REMOVED Step 5) | `tugdeck/src/lib/code-session-store/testing/mock-feed-store.ts` | Tests construct a real `ConnectionLifecycle` instead |
+| `MockTugConnection` → `TestFrameChannel` | rename (Step 1b) | `tugdeck/src/lib/code-session-store/testing/mock-feed-store.ts` | Renamed; `onClose` / `closeCallbacks` / `triggerClose` deleted. Module banner rewritten to describe a frame I/O test seam, not a connection mock. |
 | `SHOW_DELAY_MS` | const (modified) | `tugdeck/src/components/chrome/tug-banner-bridge.tsx` | Reduced from 2000 to ≤ 250 |
 | Reconnected affordance | new render branch | `tugdeck/src/components/chrome/tug-banner-bridge.tsx` | ≤ 1.5 s positive-tone banner |
 | Restoring-sessions status | new render branch | `tugdeck/src/components/chrome/tug-banner-bridge.tsx` | Driven by the union of per-card `transportState === "restoring"` |
@@ -672,7 +674,7 @@ None.
 | **App-test (`just app-test`)** | Run against the built app; observe DOM after kill+restart of tugcast | End-to-end reconnect round-trip incl. submit-works; banner fast-show |
 | **Manual smoke** | OS-level scenarios that don't fit harnesses | Laptop-sleep half-open detection; subjective banner-UX review |
 
-**Test seam:** With `ConnectionLifecycle` as a pure event pipe, tests almost never need a `TugConnection` fake. They construct a real `ConnectionLifecycle`, register subscribers, and drive `notify*` directly. The legacy `MockTugConnection.onClose` path is removed in Step 5 (per [D09]); existing tests that use it migrate to the lifecycle.
+**Test seam:** With `ConnectionLifecycle` as a pure event pipe, tests almost never need a `TugConnection` fake. They construct a real `ConnectionLifecycle`, register subscribers, and drive `notify*` directly. The renamed-and-stripped `TestFrameChannel` (formerly `MockTugConnection`) handles only frame I/O — the legacy `onClose` / `triggerClose` methods are removed in Step 1b per [D09]; existing tests that used them migrate to the lifecycle.
 
 ---
 
@@ -706,41 +708,102 @@ None.
 
 ---
 
-#### Step 1 — `ConnectionLifecycle` abstraction + reconnect-aware restore {#step-1}
+#### Step 1 — `ConnectionLifecycle` abstraction + total removal of legacy connection APIs {#step-1}
 
 **Depends on:** #step-0
 
-**Commit:** `tugdeck: introduce ConnectionLifecycle; re-restore on reconnect`
+**Commit:** Lands in two commits on the same branch:
+- **1a (shipped — `0d624d45`):** `Land Step 1: ConnectionLifecycle + reconnect-aware restore` — foundation only; legacy `TugConnection.onOpen` / `onClose` callables remain in tree alongside the lifecycle.
+- **1b (next):** `tugdeck: total removal of legacy connection APIs (Step 1 cleanup)` — migrates the last in-tree caller (`code-session-store.ts:155`), removes the legacy callable APIs and their backing arrays from `TugConnection`, renames `MockTugConnection` → `TestFrameChannel` and strips its lifecycle methods, migrates all 21 test files to the renamed channel + a real `ConnectionLifecycle` for transport-event tests.
 
 **References:** [D04], [D07], [D08], [D09], Spec S00, Spec S01, (#connection-lifecycle-contract, #internal-architecture)
 
-**Artifacts:**
+**Artifacts (1a — shipped):**
 - `tugdeck/src/lib/connection-lifecycle.ts` (new) — `ConnectionLifecycle` class, `ConnectionState` type, `registerConnectionLifecycle` / `getConnectionLifecycle` module singleton helpers. Five `notify*` and five `observe*` methods per [Spec S00](#s00-connection-lifecycle-api). Internal `everOpened` + `sawCloseSinceLastOpen` flags for the `connectionDidReconnect` gating per [D08].
-- `tugdeck/src/connection.ts` — add `setLifecycle(lifecycle)`. Fire `notifyConnectionWillOpen` in `ws.onopen`, `notifyConnectionDidOpen` after the handshake response, `notifyConnectionDidClose` in `ws.onclose`, `notifyConnectionDidEnterReconnecting` in `scheduleReconnect`. Lifecycle fires before the legacy `openCallbacks` / `closeCallbacks` so subscribers gating on `getState()` see consistent state. Legacy `onOpen` / `onClose` callable APIs are *not yet removed* — they have one remaining caller (`code-session-store.ts:155`); Step 5 migrates that and removes them per [D09].
-- `tugdeck/src/lib/card-session-binding-store.ts` — add `clearAll()` with single notify; no-op when empty.
-- `tugdeck/src/lib/tide-session-restore.ts` — accept `opts?: { reason?: "startup" | "reconnect" }`; thread `reason` into `logSessionLifecycle("restore.fired_resume_spawns", ...)`. Body remains idempotent across calls.
-- `tugdeck/src/main.tsx` — construct `ConnectionLifecycle`, attach via `connection.setLifecycle(lifecycle)`, register as singleton via `registerConnectionLifecycle(lifecycle)` *before* `connection.connect()` runs. Migrate `signalReady` to `lifecycle.observeConnectionDidOpen(signalReady)`. Subscribe the reconnect handler via `lifecycle.observeConnectionDidReconnect(() => { cardSessionBindingStore.clearAll(); restoreTideSessions(deck, tugbankClient, connection, { reason: "reconnect" }); })`.
-- `tugdeck/src/__tests__/connection-lifecycle.test.ts` (new) — exhaustive lifecycle tests; see Tests below.
-- `tugdeck/src/__tests__/card-session-binding-store.test.ts` — append `clearAll` cases.
+- `tugdeck/src/connection.ts` — added `setLifecycle(lifecycle)`. Fires `notifyConnectionWillOpen` in `ws.onopen`, `notifyConnectionDidOpen` after the handshake response, `notifyConnectionDidClose` in `ws.onclose`, `notifyConnectionDidEnterReconnecting` in `scheduleReconnect`. Lifecycle fires before the legacy `openCallbacks` / `closeCallbacks` so subscribers gating on `getState()` see consistent state.
+- `tugdeck/src/lib/card-session-binding-store.ts` — added `clearAll()` with single notify; no-op when empty.
+- `tugdeck/src/lib/tide-session-restore.ts` — accepts `opts?: { reason?: "startup" | "reconnect" }`; threads `reason` into `logSessionLifecycle("restore.fired_resume_spawns", ...)`.
+- `tugdeck/src/main.tsx` — constructs `ConnectionLifecycle`, attaches via `connection.setLifecycle(lifecycle)`, registers as singleton via `registerConnectionLifecycle(lifecycle)` *before* `connection.connect()` runs. Migrates `signalReady` to `lifecycle.observeConnectionDidOpen(signalReady)`. Subscribes the reconnect handler via `lifecycle.observeConnectionDidReconnect(() => { cardSessionBindingStore.clearAll(); restoreTideSessions(deck, tugbankClient, connection, { reason: "reconnect" }); })`.
+- `tugdeck/src/__tests__/connection-lifecycle.test.ts` (new) — exhaustive lifecycle tests.
+- `tugdeck/src/__tests__/card-session-binding-store.test.ts` — appended `clearAll` cases.
 
-**Tasks:**
+**Artifacts (1b — pending):**
+- `tugdeck/src/lib/code-session-store.ts` — replace the `this.conn.onClose(...)` subscription at line 155 with `this.lifecycle.observeConnectionDidClose(...)`. Add `lifecycle: ConnectionLifecycle` as a required field on `CodeSessionStoreOptions`. Rename the unsub field to `_lifecycleCloseUnsub` and update `dispose()` accordingly.
+- `tugdeck/src/connection.ts` — **delete** the `onOpen(callback): void` and `onClose(callback): () => void` methods, the `openCallbacks: Array<() => void>` and `closeCallbacks: Array<() => void>` private fields, and the `for (const cb of this.openCallbacks)` / `for (const cb of this.closeCallbacks)` loops in `ws.onopen` / `ws.onclose`. The lifecycle is the sole event surface per [D09].
+- `tugdeck/src/lib/code-session-store/testing/mock-feed-store.ts` — rename `MockTugConnection` → `TestFrameChannel`. Delete `closeCallbacks`, `onClose`, and `triggerClose`. Update `MockFeedStore`'s constructor parameter type from `_conn: MockTugConnection` to `_conn: TestFrameChannel`. Update the module banner to describe a frame I/O test seam, not a connection mock.
+- `tugdeck/src/lib/card-services-store.ts` — pass `lifecycle: getConnectionLifecycle()!` (with a `null` guard that warns and returns `null` like the existing `getConnection()` guard) into the `new CodeSessionStore({...})` call at line 183.
+- `tugdeck/src/components/tugways/cards/gallery-prompt-entry.tsx` — pass `lifecycle: new ConnectionLifecycle()` (a fresh instance for the gallery; it never receives transport events) into the `new CodeSessionStore({...})` call. Update the `MockTugConnection` import to `TestFrameChannel`. Update doc comments.
+- All 21 in-tree consumers of `MockTugConnection` migrate to `TestFrameChannel`. The full list is in [#mocktugconnection-consumers](#mocktugconnection-consumers) below.
+- Test files using `conn.triggerClose()` migrate to constructing a real `ConnectionLifecycle` and calling `lifecycle.notifyConnectionDidClose()` instead — confirmed sites: `code-session-store.errored.test.ts` (lines 119, 132), `code-session-store.dispose.test.ts` (line 114).
+- `tugdeck/src/lib/code-session-store/__tests__/mock-feed-store.test.ts` — delete the `"fires close listeners on triggerClose and supports unsubscribe"` block (lines 196–209). The features it tests no longer exist.
+- All test files that call `new CodeSessionStore({...})` (~21 files) — add `lifecycle: new ConnectionLifecycle()` to the options object. Tests that need to drive transport events keep a reference to the lifecycle and call `lifecycle.notifyConnectionDidClose()` / etc.
+
+**Tasks (1a — shipped):**
 - [x] Create `connection-lifecycle.ts` with the full surface from [Spec S00](#s00-connection-lifecycle-api). Match `app-lifecycle.ts` shape (event sets keyed by event name, throw-isolated `fire`, dev-mode trace logs).
 - [x] Implement the `[D08]` gating — `connectionDidReconnect` fires only when `everOpened === true` AND `sawCloseSinceLastOpen === true`. Both flags owned by the lifecycle.
 - [x] Wire `TugConnection.setLifecycle` and the four `notify*` call sites. Lifecycle fires *before* the legacy callback arrays.
 - [x] Add `clearAll` to `CardSessionBindingStore`.
 - [x] Extend `restoreTideSessions` with `opts?: { reason?: "startup" | "reconnect" }`.
 - [x] In `main.tsx`, construct + attach + register the lifecycle, migrate `signalReady`, register the reconnect handler. Confirm lifecycle is attached *before* `connection.connect()` so the very first handshake fires through it.
-- [x] Verify the legacy `onOpen` / `onClose` callbacks remain callable (one caller in `code-session-store.ts:155` until Step 5).
 
-**Tests:**
+**Tasks (1b — pending):**
+- [ ] Add `lifecycle: ConnectionLifecycle` as a required option on `CodeSessionStoreOptions`. Replace the `conn.onClose` subscription with `lifecycle.observeConnectionDidClose` (still dispatches `transport_close`). Rename `_closeUnsub` → `_lifecycleCloseUnsub`; update `dispose()`.
+- [ ] Update `card-services-store.ts:183` to pass `lifecycle: getConnectionLifecycle()!` with a null guard.
+- [ ] Update `gallery-prompt-entry.tsx` to pass `lifecycle: new ConnectionLifecycle()` (fresh per gallery card; no events ever fire against it).
+- [ ] Rename `MockTugConnection` → `TestFrameChannel` in `mock-feed-store.ts`. Delete `closeCallbacks`, `onClose`, `triggerClose`. Update the module banner.
+- [ ] Bulk-rename `MockTugConnection` → `TestFrameChannel` across all 21 consumer files (imports, type annotations, instantiation).
+- [ ] Migrate test files using `conn.triggerClose()` to a real `ConnectionLifecycle` + `lifecycle.notifyConnectionDidClose()`. Sites: `code-session-store.errored.test.ts` (2 calls), `code-session-store.dispose.test.ts` (1 call).
+- [ ] Add `lifecycle: new ConnectionLifecycle()` to every `new CodeSessionStore({...})` callsite in tests (~21 files). Tests that drive transport events keep the lifecycle reference; tests that don't can inline-construct.
+- [ ] Delete the `"fires close listeners on triggerClose and supports unsubscribe"` block in `mock-feed-store.test.ts`.
+- [ ] **Delete** `TugConnection.onOpen`, `TugConnection.onClose`, `openCallbacks`, `closeCallbacks`, and the for-loops that iterate them. No deprecation; no commented-out code; no zombie types.
+- [ ] Verify totality with `grep`:
+  - `grep -rn "MockTugConnection" src/` → 0 hits
+  - `grep -rn "\.onOpen(\|\.onClose(" src/` → 0 hits in tugdeck (excluding the lifecycle's own implementation file)
+  - `grep -rn "openCallbacks\|closeCallbacks" src/` → 0 hits
+  - `grep -rn "triggerClose" src/` → 0 hits
+
+**Tests (1a — shipped):**
 - [x] `connection-lifecycle.test.ts`: initial state, all four state transitions, observer dispatch (registration, unsubscribe, throw-isolation), `connectionDidReconnect` gating across mount path / first reconnect / subsequent reconnects / close-before-first-successful-open / multiple closes between opens / multiple opens after one close / late subscriber receiving later reconnects. **17 cases.**
 - [x] `card-session-binding-store.test.ts`: `clearAll()` fires exactly one notify, leaves `getSnapshot().size === 0`, returns a new Map reference, no-op on empty.
 
+**Tests (1b — pending):**
+- [ ] All migrated test files compile and pass under `bun test`. The behavior under test (transport-close → store flips to `errored` for non-idle phases; idle drops the close) is unchanged — the only delta is the *trigger* (lifecycle vs. mock callback).
+- [ ] `code-session-store.dispose.test.ts`: post-dispose, calling `lifecycle.notifyConnectionDidClose()` does not dispatch into the disposed store (the unsub ran).
+
 **Checkpoint:**
-- [x] `bun x tsc --noEmit` green.
-- [x] `bun test src/__tests__/connection-lifecycle.test.ts src/__tests__/card-session-binding-store.test.ts` green. Full `bun test` suite green.
-- [x] `bun run audit:tokens lint` unchanged from `main` baseline (Step 1 has no CSS changes).
-- [ ] Manual: in a running tugdeck with HMR, observe the lifecycle traces in the browser console after `pkill -x tugcast` and tugcast respawn. Expect: `[ConnectionLifecycle] connectionDidClose`, `[ConnectionLifecycle] connectionDidEnterReconnecting`, then `connectionWillOpen` → `connectionDidOpen` → `connectionDidReconnect`. Step 1 alone does *not* guarantee submit works — Step 8 closes that loop.
+- [x] (1a) `bun x tsc --noEmit` green; full `bun test` suite green; `bun run audit:tokens lint` unchanged from baseline.
+- [ ] (1b) `bun x tsc --noEmit` green.
+- [ ] (1b) Full `bun test` suite green; no regressions in any of the 21 migrated test files.
+- [ ] (1b) `bun run audit:tokens lint` unchanged from baseline (1b has no CSS changes).
+- [ ] (1b) All four `grep` totality checks return zero hits.
+- [ ] Manual (after 1b lands): in a running tugdeck with HMR, observe the lifecycle traces in the browser console after `pkill -x tugcast` and tugcast respawn. Expect: `[ConnectionLifecycle] connectionDidClose`, `[ConnectionLifecycle] connectionDidEnterReconnecting`, then `connectionWillOpen` → `connectionDidOpen` → `connectionDidReconnect`. Step 1 alone does *not* guarantee submit works — Step 8 closes that loop.
+
+##### MockTugConnection consumers (full list, 21 files) {#mocktugconnection-consumers}
+
+Production / gallery (2):
+- `tugdeck/src/components/tugways/cards/gallery-prompt-entry.tsx`
+- `tugdeck/src/components/tugways/cards/completion-fixtures/system-metadata-fixture.ts`
+
+Tests (19):
+- `tugdeck/src/components/tugways/__tests__/tug-prompt-entry.test.tsx`
+- `tugdeck/src/__tests__/tide-card-last-error.test.tsx`
+- `tugdeck/src/__tests__/use-card-feed-store.test.tsx`
+- `tugdeck/src/__tests__/session-chain.integration.test.ts`
+- `tugdeck/src/lib/code-session-store/testing/mock-feed-store.ts` (the source file)
+- `tugdeck/src/lib/code-session-store/__tests__/reducer.test.ts`
+- `tugdeck/src/lib/code-session-store/__tests__/code-session-store.cost-update.test.ts`
+- `tugdeck/src/lib/code-session-store/__tests__/code-session-store.filter.test.ts`
+- `tugdeck/src/lib/code-session-store/__tests__/code-session-store.queue.test.ts`
+- `tugdeck/src/lib/code-session-store/__tests__/code-session-store.scaffold.test.ts`
+- `tugdeck/src/lib/code-session-store/__tests__/code-session-store.round-trip.test.ts`
+- `tugdeck/src/lib/code-session-store/__tests__/code-session-store.errored.test.ts`
+- `tugdeck/src/lib/code-session-store/__tests__/code-session-store.deltas.test.ts`
+- `tugdeck/src/lib/code-session-store/__tests__/code-session-store.interrupt.test.ts`
+- `tugdeck/src/lib/code-session-store/__tests__/mock-feed-store.test.ts`
+- `tugdeck/src/lib/code-session-store/__tests__/code-session-store.control-errors.test.ts`
+- `tugdeck/src/lib/code-session-store/__tests__/code-session-store.control-forward.test.ts`
+- `tugdeck/src/lib/code-session-store/__tests__/code-session-store.tools.test.ts`
+- `tugdeck/src/lib/code-session-store/__tests__/code-session-store.dispose.test.ts`
 
 ---
 
@@ -833,41 +896,34 @@ None.
 
 ---
 
-#### Step 5 — Migrate `code-session-store` to lifecycle; remove legacy callable APIs {#step-5}
+#### Step 5 — Wire `transport_open` and `transport_settled` from the lifecycle {#step-5}
 
 **Depends on:** #step-4
 
-**Commit:** `tugdeck: migrate code-session-store to ConnectionLifecycle; remove legacy onOpen/onClose`
+**Commit:** `tugdeck: code-session-store dispatches transport_open on reconnect`
 
-**References:** [D07], [D08], [D09], (#internal-architecture, #connection-lifecycle-contract)
+**References:** [D04], [D07], [D08], (#internal-architecture, #connection-lifecycle-contract, #transport-state-lifecycle)
+
+> **Note:** Step 1 already migrated `code-session-store`'s close subscription from `conn.onClose` to `lifecycle.observeConnectionDidClose` and removed the legacy callable APIs. Step 5's remaining work is the *open* side of the transport-state lifecycle: dispatching `transport_open` on reconnect, and `transport_settled` when the binding arrives.
 
 **Artifacts:**
-- `tugdeck/src/lib/code-session-store.ts` — replace the `conn.onClose(...)` subscription at line 155 with two lifecycle observers: `lifecycle.observeConnectionDidClose` (dispatches `transport_close`) and `lifecycle.observeConnectionDidReconnect` (dispatches `transport_open`). Hold both unsubs in `_lifecycleUnsubs: Array<() => void>`. **No `_seenFirstOpen` flag** — [D08]'s gating makes it unnecessary by construction.
+- `tugdeck/src/lib/code-session-store.ts` — add a second lifecycle observer alongside the existing close observer: `lifecycle.observeConnectionDidReconnect` dispatches `transport_open`. Hold both unsubs in `_lifecycleUnsubs: Array<() => void>` (rename the existing `_lifecycleCloseUnsub` accordingly). **No `_seenFirstOpen` flag** — [D08]'s gating in the lifecycle layer makes it unnecessary by construction.
 - `tugdeck/src/lib/tide-session-restore.ts` — when the `cardSessionBindingStore` subscriber observes a binding for a card, dispatch `transport_settled` into the per-card store (in addition to the existing `tideRestoreRegistry._clear` path). Look up the per-card store via the existing card→store registry.
-- `tugdeck/src/connection.ts` — **remove** the legacy `onOpen` / `onClose` callable APIs and their backing `openCallbacks` / `closeCallbacks` arrays. `TugConnection`'s public surface is now `connect`, `close`, `forceReconnect`, `send`, `onFrame`, `setLifecycle`, `sendControlFrame`, `onDisconnectState`. Per [D09].
-- `tugdeck/src/lib/code-session-store/testing/mock-feed-store.ts` — remove `onClose` and `closeCallbacks` from `MockTugConnection`. Tests that previously called `conn.triggerClose()` migrate to `lifecycle.notifyConnectionDidClose()` against a real `ConnectionLifecycle` instance.
-- Tests that consume `MockTugConnection.onClose` (`code-session-store.errored.test.ts`, `session-chain.integration.test.ts`, etc.) migrate to constructing a real `ConnectionLifecycle` and driving lifecycle events directly.
 
 **Tasks:**
-- [ ] Add a `lifecycle` parameter (or accessor via `connection.getLifecycle()`) to `CodeSessionStore`'s constructor — whichever fits the existing options shape best.
-- [ ] Replace the `conn.onClose` subscription with `lifecycle.observeConnectionDidClose` (still dispatches `transport_close`).
-- [ ] Add `lifecycle.observeConnectionDidReconnect` subscription that dispatches `transport_open`. **No flag** — the lifecycle's gating per [D08] guarantees this fires only on real recoveries.
-- [ ] Hold both unsubs in `_lifecycleUnsubs`; unsubscribe in the dispose path.
+- [ ] Add `lifecycle.observeConnectionDidReconnect` subscription that dispatches `transport_open` into the per-card reducer.
+- [ ] Hold both lifecycle unsubs together; unsubscribe both in the `dispose()` path.
 - [ ] In `tide-session-restore.ts` `cardSessionBindingStore` subscriber, after `tideRestoreRegistry._clear(cardId)`, look up the per-card store and dispatch `transport_settled`.
-- [ ] Remove `TugConnection.onOpen` and `TugConnection.onClose` (and their backing arrays). Verify there are no remaining callers via `grep`.
-- [ ] Remove `MockTugConnection.onClose` and `closeCallbacks`. Verify no tests reference them.
-- [ ] Migrate all existing tests that drove `conn.triggerClose()` to drive `lifecycle.notifyConnectionDidClose()` against a real `ConnectionLifecycle` instance constructed in the test.
 
 **Tests:**
 - [ ] Store unit: construct a `CodeSessionStore` with a real `ConnectionLifecycle`. Drive `lifecycle.notifyConnectionDidClose()` → assert `transportState === "offline"`. Drive `lifecycle.notifyConnectionDidOpen()` (after a prior open + close to satisfy [D08]) → assert `transportState === "restoring"`. Manually populate `cardSessionBindingStore` for the card → assert `transport_settled` dispatched and `transportState === "online"`.
-- [ ] Store unit: construct a store with a connection that's already open (lifecycle in `state="open"`). Verify no spurious `transport_open` dispatch on construction. Drive `notifyConnectionDidClose` then `notifyConnectionDidOpen` → assert `transportState` walks `online → offline → restoring`.
+- [ ] Store unit: construct a store with a lifecycle in `state="open"` and `everOpened=true` but no prior close. Verify no spurious `transport_open` dispatch on construction.
 - [ ] Integration: drive the full `connect → open → close → reconnect → open → binding-arrived` cycle through a real `ConnectionLifecycle`; assert `transportState` walks `online → offline → restoring → online`.
-- [ ] Migration verification: `grep -rn "TugConnection.onOpen\|conn.onClose\|MockTugConnection.onClose"` returns zero hits in `src/`.
 
 **Checkpoint:**
 - [ ] `bun x tsc --noEmit` green.
-- [ ] `bun test src/lib/code-session-store src/lib/tide-session-restore src/__tests__` green (all migrated tests pass).
-- [ ] Full `bun test` green (no regressions in unrelated suites).
+- [ ] `bun test src/lib/code-session-store src/lib/tide-session-restore src/__tests__` green.
+- [ ] Full `bun test` green (no regressions).
 - [ ] `bun run audit:tokens lint` unchanged from baseline.
 
 ---
@@ -1028,8 +1084,8 @@ The walkthrough is recorded in Step 9's tuglaws-walkthrough verification.
 
 ### Compatibility / Migration / Rollout {#rollout}
 
-- **Compatibility policy:** Steps 1–7 are tugdeck-internal architecture. Step 5 removes the `TugConnection.onOpen` and `TugConnection.onClose` callable APIs; this is a breaking change to those internal entry points (no external consumers exist). Step 8 *may* touch tugcast (server-side spawn-recovery logic) but does not change the wire shape between tugdeck and tugcast. No tugbank schema changes anywhere in the plan.
-- **Migration plan:** None for end-users. Internal callers of `TugConnection.onOpen` / `onClose` are migrated to `ConnectionLifecycle.observe*` in Steps 1 (signalReady) and 5 (code-session-store). `MockTugConnection.onClose` migrates to lifecycle-driven tests in Step 5. `transportState` defaults to `"online"`; existing reducer tests with no transport dispatch stay green.
+- **Compatibility policy:** Steps 1–7 are tugdeck-internal architecture. Step 1b totally removes the `TugConnection.onOpen` and `TugConnection.onClose` callable APIs (and their backing arrays); this is a breaking change to those internal entry points (no external consumers exist). Step 8 *may* touch tugcast (server-side spawn-recovery logic) but does not change the wire shape between tugdeck and tugcast. No tugbank schema changes anywhere in the plan.
+- **Migration plan:** None for end-users. Internal callers of `TugConnection.onOpen` / `onClose` are migrated to `ConnectionLifecycle.observe*` in Step 1 (1a: `signalReady` and the reconnect handler in `main.tsx`; 1b: `code-session-store.ts:155`'s close subscription, plus the `MockTugConnection` → `TestFrameChannel` rename and 21-file consumer migration). Step 5 adds the open-side dispatch (`transport_open` via `observeConnectionDidReconnect`). `transportState` defaults to `"online"`; existing reducer tests with no transport dispatch stay green.
 - **Rollout plan:** Lands on `tugplan-tide-connection-health` branch behind no feature flag. Each step is a green commit; the branch can be merged to `main` once Step 9 passes.
 - **Rollback strategy:** Revert the merge commit. No persistent state is introduced; transport state is in-memory only. If Step 8b's tugcast fix needs reverting independently, its commits are separable from the tugdeck-side commits.
 
@@ -1047,7 +1103,11 @@ The walkthrough is recorded in Step 9's tuglaws-walkthrough verification.
 - [ ] `bun run audit:tokens lint` green on `main` after merge.
 - [ ] `cargo nextest run` green on `main` after merge.
 - [ ] `just app-test at0NNN-tide-reconnect-roundtrip.test.ts` (asserting submit-works end-to-end) and the banner-fast-show recipe both `VERDICT: PASS`.
-- [ ] `grep -rn "TugConnection.onOpen\|conn.onOpen\|conn.onClose\|MockTugConnection.onClose"` in `src/` returns zero hits — [D09] is enforced.
+- [ ] [D09] totality enforced via four `grep` checks (run after Step 1b lands and re-run at exit):
+  - `grep -rn "MockTugConnection" src/` → 0 hits
+  - `grep -rn "\.onOpen(\|\.onClose(" src/` → 0 hits in tugdeck (excluding the lifecycle's own implementation file)
+  - `grep -rn "openCallbacks\|closeCallbacks" src/` → 0 hits
+  - `grep -rn "triggerClose" src/` → 0 hits
 - [ ] [#success-criteria] all hold under manual smoke.
 
 **Acceptance tests:**
@@ -1068,11 +1128,12 @@ The walkthrough is recorded in Step 9's tuglaws-walkthrough verification.
 | Checkpoint | Verification |
 |------------|--------------|
 | Step 0 plan landed and Step 7.5 redirect | `grep -n "step-7-5" roadmap/tugplan-tide-card-polish.md` shows the redirect |
-| Step 1 ConnectionLifecycle + reconnect handler | `connection-lifecycle.test.ts` green; manual: console traces show full will/did/reconnect cycle |
+| Step 1a (shipped) ConnectionLifecycle + reconnect handler | `connection-lifecycle.test.ts` green; manual: console traces show full will/did/reconnect cycle |
+| Step 1b total removal of legacy APIs | All four `grep` totality checks return zero hits; `MockTugConnection` renamed to `TestFrameChannel` and stripped; 21 consumers migrated |
 | Step 2 watchdog fires on stale wire | Connection unit test green |
 | Step 3 `lastPayload` cleared on close | Connection unit test green |
 | Step 4 `transportState` field present | Reducer unit tests green |
-| Step 5 store migrated to lifecycle; legacy APIs removed | `grep` returns zero hits for `TugConnection.onOpen`/`onClose` and `MockTugConnection.onClose` |
+| Step 5 `transport_open` and `transport_settled` dispatched | Store unit test green; full close→reconnect→bind cycle walks transport state through `online → offline → restoring → online` |
 | Step 6 UI gates on `transportState` | Component test green; manual: card disables submit during reconnect |
 | Step 7 banner UX | Component tests green; `just app-test` banner recipe `VERDICT: PASS` |
 | Step 8 server-side resume reliability | [Q01] resolved; `cargo nextest run` green for tugcast; manual: `pkill -x tugcast` → submit works |
