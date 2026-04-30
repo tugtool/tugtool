@@ -1082,26 +1082,30 @@ This step has no automated tests. Both bugs are AppKit / WKWebView compositor-le
 
 *Step 8b — Fix (scope determined by 8a)*
 
-- [ ] Implement the smallest fix that makes `spawn_session(mode=resume)` succeed after `pkill -x tugcast`. Likely candidates by hypothesis:
-  - **Orphaned tugcode**: tugcast's startup detects orphaned tugcode bridges and reaps them before `rebind_from_tugbank` runs. (Or tugcast registers a process group so `pkill` cascades.)
-  - **JSONL state**: tugcast verifies JSONL integrity before issuing `spawn_session(mode=resume)` to claude; if corrupt, marks the session abandoned and the client's existing `resume_failed` UX flips to a fresh bind.
-  - **Crash budget too aggressive**: differentiate "claude subprocess fails to start" (real failure, exhaust budget) from "sub-second-grace-period after parent kill" (don't count toward budget).
-  - **Client-side fallback (Risk R04 path)**: if the spike concludes the proper fix is out-of-plan-scope, add a small client-side path: on `SESSION_STATE: errored detail=crash_budget_exhausted`, surface a "Start fresh" button in the existing `Session errored` modal (`tide-card-content.tsx`'s error UI). Click flips the card to `mode=new` while preserving the in-memory transcript display.
+- [x] Implement the smallest fix that makes `spawn_session(mode=resume)` succeed after `pkill -x tugcast`. _(Done via the persistence-gap fix the spike pointed to. The hypothesised candidates were each correctly disposed:)_
+  - **Orphaned tugcode**: ~~tugcast's startup detects orphaned tugcode bridges and reaps them before `rebind_from_tugbank` runs.~~ _Not the cause — `tokio::process::Command::kill_on_drop(true)` already cascades correctly; the spike confirmed no orphan tugcode processes survive across the kill._
+  - **JSONL state**: ~~tugcast verifies JSONL integrity before issuing `spawn_session(mode=resume)` to claude.~~ _Not the cause — the JSONL is intact and claude `--resume` would succeed against it; the JSONL's mere existence is what trips claude's `--session-id` collision check when the bridge spawns in the wrong mode._
+  - **Crash budget too aggressive**: ~~differentiate real failures from sub-second post-kill grace-period exits.~~ _Not the cause — the spawn was real and reported a real failure. The budget logic is correct; the spawn arguments were wrong._
+  - **Client-side fallback (Risk R04 path)**: ~~"Start fresh" button surfaced from a tugcast errored frame.~~ _Not needed — the spike showed the fix is small and lives entirely on the tugcast side. The `Session errored` modal stays exactly as it is for genuinely-unrecoverable cases (real claude exits, etc.); legacy `crash_budget_exhausted` is no longer reachable for tugbank records that have been migrated._
+  - **Persistence-gap fix (the actual landing)**: extend `SessionKeyRecord` with `session_mode: Option<String>` (forward-compatible via `#[serde(default)]`); `do_spawn_session` writes the *effective* session_mode (the mode the bridge will actually use) on every persist; `rebind_from_tugbank` reads it back into the rebound `LedgerEntry`'s `session_mode` (falling back to `SessionMode::New` only for legacy `None` records). Defense-in-depth in `do_spawn_session`: when an existing entry is `Idle` and the request's mode differs, propagate the request's mode into the entry before the bridge spawns, then re-persist with the corrected mode so the next restart reads it directly. Gate is `spawn_state == Idle` so a running session never has its mode silently switched. _All three fix sites land in `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs`; tugcode is untouched. No tugbank schema break: pre-fix records deserialize via `#[serde(default)]` and are migrated in-place on the first reconnect after the user installs the fix._
 
 *Step 8c — Pin the success criterion*
 
-- [ ] Add a Rust-side test in `tugcast` that simulates the `pkill` scenario and asserts `spawn_session(mode=resume)` succeeds. Use a test-only signal injection that mimics the exit semantics of an actual kill.
-- [ ] Update the manual smoke note in Step 1 to remove the "submit doesn't work after kill" caveat.
+- [x] Add a Rust-side test in `tugcast` that simulates the `pkill` scenario and asserts `spawn_session(mode=resume)` succeeds. _(Done — three new tests in `agent_supervisor.rs`:)_
+  - `test_q01_rebind_resume_corrects_legacy_record_on_reconnect` — drives the legacy-record path (record with `session_mode: None`) through rebind → `spawn_session(mode=resume)` and asserts the entry's mode flips to `Resume` via the defense-in-depth path AND that the corrected mode is re-persisted in the tugbank record (so the next restart reads it back directly).
+  - `test_q01_rebind_persisted_resume_seeds_entry_directly` — drives the post-fix first-class path (record with `session_mode: Some("resume")`) and asserts rebind seeds the entry's mode from the persisted field without needing the defense path.
+  - `test_q01_defense_in_depth_does_not_override_running_session` — guards the `spawn_state == Idle` gate so a reconnect with a different mode against a running session does NOT silently switch the mode. Mirrors the same invariant the existing `effective_mode` ack computation upholds.
+- [ ] Update the manual smoke note in Step 1 to remove the "submit doesn't work after kill" caveat. _(Deferred to Step 9's manual-scenario sweep — the `pkill -x tugcast` end-to-end submit-works check is already a Step 9 deliverable.)_
 
 **Tests:**
-- [ ] `cargo nextest run` against `tugcast` — new spawn-recovery test passes; existing tests stay green.
-- [ ] Manual: `pkill -x tugcast`. Wait for respawn. Submit `> hi`. Streaming response arrives.
+- [x] `cargo nextest run` against `tugcast` — new spawn-recovery tests pass; existing tests stay green. _(448 pass / 0 fail / 4 skipped, was 446 pre-fix. Full Rust workspace: 1149 pass / 0 fail / 9 skipped, was 1147. `cargo clippy --workspace --no-deps` clean.)_
+- [ ] Manual: `pkill -x tugcast`. Wait for respawn. Submit `> hi`. Streaming response arrives. _(Pending; deferred to the user-run end-to-end smoke. The fix lands behind the user's normal `just app` rebuild path; the user has direct repro steps.)_
 
 **Checkpoint:**
-- [ ] [Q01] resolved (root cause documented in a commit message).
-- [ ] `cargo nextest run` green for tugcast.
-- [ ] Manual smoke for the `pkill -x tugcast` scenario passes end-to-end.
-- [ ] If the fallback path was taken (Risk R04), the "Start fresh" UX is documented and a follow-on plan filed for the deeper fix.
+- [x] [Q01] resolved (root cause documented in a commit message). _(Step 8a's commit `2ea69b9b` documented the root cause; this step's commit lands the fix.)_
+- [x] `cargo nextest run` green for tugcast. _(448 pass / 0 fail.)_
+- [ ] Manual smoke for the `pkill -x tugcast` scenario passes end-to-end. _(Pending; user-run smoke after the fix builds on this branch.)_
+- [x] If the fallback path was taken (Risk R04), the "Start fresh" UX is documented and a follow-on plan filed for the deeper fix. _(Risk R04 fallback NOT taken — the persistence-gap fix is small, fully tugcast-side, and ships in this step. The "Start fresh" UX stays unimplemented; the existing `Session errored` modal continues to handle genuinely-unrecoverable cases unchanged.)_
 
 ---
 

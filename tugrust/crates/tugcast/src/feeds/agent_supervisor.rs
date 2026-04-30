@@ -309,6 +309,17 @@ pub struct SessionKeysStoreError(pub String);
 /// - `project_dir`: `Some` for post-W2 records; `None` for pre-W2 legacy blobs
 ///   (dropped on rebind once rebind populates workspace paths).
 /// - `claude_session_id`: `None` until P14 starts populating it.
+/// - `session_mode`: `Some("new"|"resume")` for post-[Q01] records; `None`
+///   for legacy blobs that predate the [Q01] fix. `do_spawn_session` writes
+///   the *effective* mode (what the bridge will actually use) on every
+///   spawn, so a single successful spawn upgrades a legacy record to the
+///   new shape. `rebind_from_tugbank` reads this back to seed the rebound
+///   `LedgerEntry`'s `session_mode` correctly across restarts; for legacy
+///   `None` records it falls back to `SessionMode::New` and the
+///   defense-in-depth path in `do_spawn_session` corrects the mode on the
+///   first reconnect when `spawn_state == Idle`. See `[Q01]` in
+///   `roadmap/tugplan-tide-connection-health.md` for the full root-cause
+///   write-up.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SessionKeyRecord {
     pub tug_session_id: String,
@@ -316,6 +327,8 @@ pub struct SessionKeyRecord {
     pub project_dir: Option<String>,
     #[serde(default)]
     pub claude_session_id: Option<String>,
+    #[serde(default)]
+    pub session_mode: Option<String>,
 }
 
 /// Persistence surface for the `(card_id → SessionKeyRecord)` mapping.
@@ -405,6 +418,7 @@ impl SessionKeysStore for TugbankClient {
                     tug_session_id: s,
                     project_dir: None,
                     claude_session_id: None,
+                    session_mode: None,
                 },
                 _ => {
                     warn!(card_id, "non-json non-string session-keys entry; skipping");
@@ -1142,21 +1156,43 @@ impl AgentSupervisor {
         };
         let (entry_arc, inserted) = phase1;
 
-        // Q01 spike: log the effective session_mode the bridge will actually
-        // use. When `inserted == true`, this matches the request's
-        // `session_mode`. When `inserted == false` (reconnect or
-        // rebind-then-spawn), it's the mode stored on the existing ledger
-        // entry, which may differ from the incoming request — most
-        // notably after `rebind_from_tugbank` defaults every entry to
-        // `SessionMode::New` because the persisted record carries no mode
-        // field. A request/effective mismatch on the resume path is the
-        // hypothesized root cause of `crash_budget_exhausted` after app
-        // restart: the bridge spawns with `--session-mode new --session-id
-        // <id>` against an existing JSONL, claude rejects with "is already
-        // in use", tugcode emits `error` (not `resume_failed`), the bridge
-        // sees stdout EOF as `Crashed`, and three retries inside 60 s
-        // exhaust the budget.
-        let effective_session_mode = entry_arc.lock().await.session_mode;
+        // [Q01] resolution: compute (and persist) the *effective* session
+        // mode — the mode the bridge will actually use when it spawns
+        // tugcode. For a fresh insert (Phase 1's `or_insert_with` fired)
+        // the effective mode is the request's mode. For an existing entry
+        // that's still `Idle` (rebound from tugbank but not yet spawned),
+        // we propagate the request's mode into the entry so legacy
+        // `SessionKeyRecord`s that lack the `session_mode` field — which
+        // rebind defaults to `SessionMode::New` — don't lock the bridge
+        // into the wrong mode after a restart. The defense-in-depth is
+        // gated on `Idle` so we never silently switch the mode of a
+        // running subprocess (the comment on the ack's `effective_mode`
+        // computation already calls this out: "the running tugcode
+        // subprocess was spawned with the original mode and silently
+        // switching it client-side would misrepresent live state").
+        //
+        // Without this fix, the chain that produced [Q01]'s
+        // `crash_budget_exhausted` symptom plays out: rebind defaults the
+        // entry to `New`, the client's `spawn_session(mode=resume)` is a
+        // no-op for `entry.session_mode`, the bridge spawns
+        // `--session-mode new --session-id <id>` against an existing
+        // per-session JSONL, claude rejects "is already in use", tugcode
+        // emits `error` (not `resume_failed`), the bridge sees stdout EOF
+        // as `Crashed`, and three retries inside the 60 s budget exhaust
+        // it. With the fix, the rebind-side schema read populates the
+        // mode correctly for new records; the defense-in-depth covers
+        // every legacy record on its first reconnect and re-persists the
+        // full schema in the Phase 2 write below.
+        let effective_session_mode = {
+            let mut entry = entry_arc.lock().await;
+            if !inserted
+                && entry.spawn_state == SpawnState::Idle
+                && entry.session_mode != session_mode
+            {
+                entry.session_mode = session_mode;
+            }
+            entry.session_mode
+        };
         tracing::info!(
             target: "tide::session-lifecycle",
             event = "spawn.effective_mode",
@@ -1228,10 +1264,19 @@ impl AgentSupervisor {
         // Phase 2: strict tugbank write per [D12]. Partial ledger/
         // client_sessions state on failure is tolerable (rewritten on retry);
         // silent failure is not.
+        //
+        // [Q01]: persist the *effective* session mode (computed above)
+        // rather than the request's mode. For a fresh entry the two are
+        // identical; for a reconnect or a defense-in-depth-corrected
+        // rebound entry the effective mode reflects what the bridge
+        // actually uses, and writing that here closes the persistence
+        // gap so the next `rebind_from_tugbank` reads the correct mode
+        // back without needing the defense-in-depth path again.
         let record = SessionKeyRecord {
             tug_session_id: tug_session_id.as_str().to_string(),
             project_dir: Some(project_dir_str.clone()),
             claude_session_id: None,
+            session_mode: Some(effective_session_mode.as_wire_str().to_string()),
         };
         if let Err(e) = self.store.set_session_record(card_id, &record) {
             warn!(
@@ -1917,6 +1962,24 @@ impl AgentSupervisor {
 
             let tug_session_id = TugSessionId::new(record.tug_session_id);
 
+            // [Q01] resolution: read the user's original `session_mode`
+            // from the persisted record so the rebound entry seeds with
+            // the mode the bridge needs on the first reconnect. Records
+            // written by post-fix builds carry `Some("new"|"resume")`;
+            // pre-fix legacy records carry `None` and we fall back to
+            // `SessionMode::New` (the historical default). The
+            // defense-in-depth path in `do_spawn_session` upgrades
+            // legacy entries to the request's mode when `spawn_state ==
+            // Idle` and re-persists the full schema, so a single
+            // successful spawn migrates the record and the next restart
+            // reads it back correctly without the defense path firing.
+            let rebound_mode = SessionMode::from_wire_str(record.session_mode.as_deref());
+            let mode_source: &'static str = if record.session_mode.is_some() {
+                "persisted"
+            } else {
+                "legacy_default"
+            };
+
             // Insert the ledger entry — or, if one already exists (this
             // function is idempotent per [F15]), release the workspace
             // refcount we just acquired and skip.
@@ -1926,41 +1989,26 @@ impl AgentSupervisor {
                 let _ = self.registry.release(&workspace_key);
                 continue;
             }
-            // Rebind predates the user's 4.5 resume choice — the tugbank
-            // record doesn't carry `session_mode`. The rebound Idle entry
-            // will not acquire a subprocess until a real client later
-            // sends `spawn_session` for it; that path's reconnect branch
-            // reuses the existing mode (since `or_insert_with` does not
-            // fire for an existing key), so this `New` default is what
-            // the rebound session will run with. `New` is the safe
-            // default — future session-metadata ledger work can
-            // preserve the user's recorded choice across restarts.
             let entry = LedgerEntry::new(
                 tug_session_id.clone(),
                 workspace_key,
                 project_dir,
-                SessionMode::New,
+                rebound_mode,
                 CrashBudget::new(3, Duration::from_secs(60)),
             );
-            // Q01 spike: log every rebound entry's defaulted mode. The
-            // tugbank session-keys record carries no `session_mode`
-            // (only tug_session_id + project_dir + claude_session_id),
-            // so rebind currently has to pick a default. `New` is the
-            // current pick — but when the bridge later spawns claude
-            // with `--session-mode new --session-id <id>` against an
-            // existing per-session JSONL (left on disk by a previous
-            // run that did submit a turn), claude rejects with
-            // "is already in use" and the crash-loop exhausts the
-            // budget. Logging the rebound mode makes the
-            // request/effective mismatch greppable in
-            // `spawn.effective_mode` events that fire on the next
-            // client reconnect.
+            // Trace the rebound mode + its source so [Q01]-shaped
+            // regressions (a missing or mis-parsed `session_mode` field
+            // turning into a New-default rebound entry that the bridge
+            // then spawns against an existing JSONL) are greppable
+            // alongside the `spawn.effective_mode` event that fires on
+            // the subsequent client reconnect.
             tracing::info!(
                 target: "tide::session-lifecycle",
                 event = "rebind.entry",
                 card_id = card_id,
                 tug_session_id = %tug_session_id,
-                rebind_default_mode = "new",
+                rebound_mode = rebound_mode.as_wire_str(),
+                mode_source,
             );
             ledger.insert(tug_session_id, Arc::new(Mutex::new(entry)));
             inserted += 1;
@@ -3430,6 +3478,7 @@ mod tests {
                     tug_session_id: "sess-a".to_string(),
                     project_dir: Some(test_project_dir().to_string()),
                     claude_session_id: None,
+                    session_mode: None,
                 },
             )
             .unwrap();
@@ -3440,6 +3489,7 @@ mod tests {
                     tug_session_id: "sess-b".to_string(),
                     project_dir: Some(test_project_dir().to_string()),
                     claude_session_id: None,
+                    session_mode: None,
                 },
             )
             .unwrap();
@@ -3475,36 +3525,44 @@ mod tests {
         assert_eq!(inserted_second, 0);
     }
 
-    /// [Q01] Step 8a spike — repro for `crash_budget_exhausted` after app
-    /// restart.
+    /// [Q01] Step 8b regression gate — legacy `SessionKeyRecord` (no
+    /// `session_mode` field) gets corrected on the first reconnect
+    /// through the defense-in-depth path.
     ///
-    /// The bug: `rebind_from_tugbank` constructs every rebound `LedgerEntry`
-    /// with `SessionMode::New` because the persisted `SessionKeyRecord`
-    /// carries no `session_mode` field. When the frontend reconnects after
-    /// a restart and fires `spawn_session(mode=resume)` for the same
-    /// `tug_session_id`, the supervisor's `or_insert_with` is a no-op
-    /// (entry already exists), so the ledger entry's `session_mode` is
-    /// **not** updated to `Resume`. The bridge then spawns tugcode with
-    /// `--session-mode new --session-id <id>`. Claude rejects with
-    /// "Session ID is already in use" (the per-session JSONL was left on
-    /// disk by the previous run that submitted at least one turn). tugcode
-    /// classifies this as `collision` → emits `error` IPC (not
-    /// `resume_failed`) → exits. The bridge sees stdout EOF without a
-    /// resume_failed line, returns `RelayOutcome::Crashed`, and the
-    /// crash-loop exhausts the per-session budget (3 crashes / 60 s)
-    /// in ~3 retries.
+    /// The bug history: `rebind_from_tugbank` used to hard-code
+    /// `SessionMode::New` because the persisted record carried no
+    /// `session_mode`. When the client reconnected with a
+    /// `spawn_session(mode=resume)` payload, the supervisor's
+    /// `or_insert_with` was a no-op (entry already existed), so the
+    /// ledger entry's mode stayed `New`. The bridge then spawned
+    /// tugcode with `--session-mode new --session-id <id>`, claude
+    /// rejected with "Session ID is already in use" (an existing JSONL
+    /// from a prior submitted turn), tugcode emitted `error` (not
+    /// `resume_failed`), the bridge saw `RelayOutcome::Crashed`, and
+    /// three retries inside 60 s exhausted the per-session
+    /// `CrashBudget`.
     ///
-    /// This test reproduces the **request/effective mode mismatch** —
-    /// the load-bearing precondition for the crash loop — without
-    /// running an actual subprocess. A Phase 1 fix that propagates the
-    /// resume request into the rebound entry (or persists `session_mode`
-    /// in tugbank) makes this test fail.
+    /// The fix: extend `SessionKeyRecord` with `session_mode:
+    /// Option<String>`, persist it on every `do_spawn_session` write,
+    /// and read it back in `rebind_from_tugbank`. For legacy records
+    /// that predate the fix (`session_mode == None`), rebind still
+    /// defaults to `New`, but a defense-in-depth path inside
+    /// `do_spawn_session` updates the entry's mode on the first
+    /// reconnect when `spawn_state == Idle`. The Phase 2 tugbank write
+    /// then re-persists the full schema, migrating the record so the
+    /// next restart reads the correct mode without the defense path
+    /// firing.
+    ///
+    /// This test asserts the corrected behavior end-to-end against a
+    /// legacy record. A separate test
+    /// (`test_q01_rebind_persisted_resume_seeds_entry_directly`) covers
+    /// the post-fix first-class path.
     #[tokio::test]
-    async fn test_q01_rebind_resume_yields_mode_mismatch_on_reconnect() {
+    async fn test_q01_rebind_resume_corrects_legacy_record_on_reconnect() {
         let store = Arc::new(InMemoryStore::default());
-        // Persisted record from a prior run that opened the card in mode=new
-        // (the user's actual choice) and submitted at least one turn.
-        // The persisted shape carries no `session_mode` field.
+        // Legacy record: pre-fix shape with no `session_mode` field.
+        // Simulated by writing `None` — the schema accepts it for
+        // forward compatibility with old blobs already in tugbank.
         store
             .set_session_record(
                 "card-tide",
@@ -3512,14 +3570,16 @@ mod tests {
                     tug_session_id: "sess-resume-target".to_string(),
                     project_dir: Some(test_project_dir().to_string()),
                     claude_session_id: None,
+                    session_mode: None,
                 },
             )
             .unwrap();
 
         let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
 
-        // Tugcast restart: rebind_from_tugbank fires, defaulting the
-        // entry's mode to `New` per the comment-and-code default.
+        // Tugcast restart: rebind defaults the legacy-record entry to
+        // `SessionMode::New`. The defense-in-depth path corrects this
+        // on the first reconnect.
         let inserted = sup.rebind_from_tugbank().await.unwrap();
         assert_eq!(inserted, 1);
 
@@ -3531,14 +3591,15 @@ mod tests {
             assert_eq!(
                 entry.session_mode,
                 SessionMode::New,
-                "rebind defaults the rebound entry's mode to New regardless of \
-                 the user's original choice — this is the persistence gap that \
-                 underlies [Q01]",
+                "legacy record (session_mode == None) rebinds with the \
+                 historical New default; the defense-in-depth path \
+                 corrects it on the next reconnect",
             );
         }
 
         // Frontend reconnect: client fires `spawn_session(mode=resume)`
-        // for the still-bound card.
+        // for the still-bound card. The defense-in-depth update fires
+        // because the entry is `Idle` and the request mode differs.
         sup.handle_control(
             "spawn_session",
             &resume_payload("card-tide", "sess-resume-target"),
@@ -3547,11 +3608,128 @@ mod tests {
         .await
         .unwrap();
 
-        // The smoking gun: the supervisor accepted the resume request,
-        // but the ledger entry the bridge will read still carries
-        // `SessionMode::New` because `or_insert_with` is a no-op for an
-        // already-present key and no other code path updates the mode
-        // on reconnect.
+        // [Q01] resolution: ledger entry's mode now reflects the
+        // request, so the bridge will spawn with `--session-mode resume
+        // --session-id <id>` and claude --resume succeeds against the
+        // existing JSONL.
+        let ledger = sup.ledger.lock().await;
+        let entry = ledger.get(&id).unwrap().clone();
+        drop(ledger);
+        let entry = entry.lock().await;
+        assert_eq!(
+            entry.session_mode,
+            SessionMode::Resume,
+            "[Q01] resolution: defense-in-depth in do_spawn_session \
+             updates an Idle rebound entry's session_mode to match the \
+             request before the bridge spawns. A regression here would \
+             reintroduce the crash_budget_exhausted symptom for any user \
+             who has tugbank records written before the fix landed.",
+        );
+        drop(entry);
+
+        // Phase 2's tugbank write should have re-persisted the full
+        // schema with the corrected mode, so the next restart reads
+        // `Resume` directly without going through the defense path.
+        let persisted = store.entries_snapshot();
+        let migrated = persisted
+            .iter()
+            .find(|(card_id, _)| *card_id == "card-tide")
+            .expect("session-keys record persists across reconnect");
+        assert_eq!(
+            migrated.1.session_mode.as_deref(),
+            Some("resume"),
+            "[Q01] resolution: the reconnect's tugbank write migrates \
+             the legacy record to the post-fix schema, populating \
+             `session_mode` so the next restart's rebind reads it back \
+             directly",
+        );
+    }
+
+    /// [Q01] Step 8b — first-class path: a `SessionKeyRecord` written
+    /// by post-fix tugcast carries `session_mode = Some(...)`. Rebind
+    /// must seed the rebound entry's mode from that field directly,
+    /// without relying on the defense-in-depth path.
+    #[tokio::test]
+    async fn test_q01_rebind_persisted_resume_seeds_entry_directly() {
+        let store = Arc::new(InMemoryStore::default());
+        store
+            .set_session_record(
+                "card-tide",
+                &SessionKeyRecord {
+                    tug_session_id: "sess-resume-target".to_string(),
+                    project_dir: Some(test_project_dir().to_string()),
+                    claude_session_id: None,
+                    session_mode: Some("resume".to_string()),
+                },
+            )
+            .unwrap();
+
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
+
+        let inserted = sup.rebind_from_tugbank().await.unwrap();
+        assert_eq!(inserted, 1);
+
+        let id = TugSessionId::new("sess-resume-target");
+        let ledger = sup.ledger.lock().await;
+        let entry = ledger.get(&id).unwrap().clone();
+        drop(ledger);
+        let entry = entry.lock().await;
+        assert_eq!(
+            entry.session_mode,
+            SessionMode::Resume,
+            "[Q01] resolution: rebind reads the persisted session_mode \
+             field directly. No reconnect needed for the bridge to use \
+             the right mode.",
+        );
+    }
+
+    /// [Q01] Step 8b — defense-in-depth must NOT fire when the entry
+    /// is past `Idle` (i.e., the bridge has already spawned tugcode).
+    /// Silently switching the mode of a running subprocess would
+    /// misrepresent live state — the existing `effective_mode` ack
+    /// computation already gates on this, and we mirror the gate here.
+    #[tokio::test]
+    async fn test_q01_defense_in_depth_does_not_override_running_session() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
+
+        // Fresh spawn in `new` mode. After `handle_control`, the entry
+        // is `Spawning` (eager-spawn promoted it). A subsequent
+        // reconnect with mode=resume must NOT flip the entry's mode.
+        sup.handle_control(
+            "spawn_session",
+            &spawn_payload("card-tide", "sess-running"),
+            10,
+        )
+        .await
+        .unwrap();
+
+        let id = TugSessionId::new("sess-running");
+        {
+            let ledger = sup.ledger.lock().await;
+            let entry = ledger.get(&id).unwrap().clone();
+            let entry = entry.lock().await;
+            assert_ne!(
+                entry.spawn_state,
+                SpawnState::Idle,
+                "eager-spawn promotes Idle→Spawning before
+                 do_spawn_session returns; the defense-in-depth gate \
+                 must observe a non-Idle state below"
+            );
+            assert_eq!(entry.session_mode, SessionMode::New);
+        }
+
+        // Reconnect from a different client requesting resume. The
+        // defense-in-depth must skip because the entry is no longer
+        // Idle.
+        sup.handle_control(
+            "spawn_session",
+            &resume_payload("card-tide", "sess-running"),
+            11,
+        )
+        .await
+        .unwrap();
+
         let ledger = sup.ledger.lock().await;
         let entry = ledger.get(&id).unwrap().clone();
         drop(ledger);
@@ -3559,15 +3737,10 @@ mod tests {
         assert_eq!(
             entry.session_mode,
             SessionMode::New,
-            "[Q01] precondition: the bridge will spawn tugcode with \
-             --session-mode new even though the client requested resume. \
-             tugcode → claude --session-id <id> against an existing JSONL \
-             then errors with 'is already in use', the bridge sees \
-             RelayOutcome::Crashed (no resume_failed IPC was emitted by \
-             tugcode for the collision case), and the crash-loop exhausts \
-             the budget. Step 8b's fix must propagate the requested mode \
-             into the rebound entry (or persist `session_mode` in the \
-             SessionKeyRecord schema and have rebind read it back).",
+            "[Q01] guard: defense-in-depth must NOT switch the mode of \
+             a running session — the bridge has already spawned tugcode \
+             with the original mode and the running subprocess is \
+             load-bearing. The gate is `spawn_state == Idle`.",
         );
     }
 
@@ -4104,6 +4277,7 @@ mod tests {
             tug_session_id: "sess-xyz".to_string(),
             project_dir: Some("/work/alpha".to_string()),
             claude_session_id: Some("claude-uuid-7".to_string()),
+            session_mode: Some("resume".to_string()),
         };
         let json = serde_json::to_value(&record).expect("serialize");
         let parsed: SessionKeyRecord = serde_json::from_value(json).expect("deserialize");
@@ -4117,6 +4291,12 @@ mod tests {
         assert_eq!(parsed.tug_session_id, "abc");
         assert_eq!(parsed.project_dir, None);
         assert_eq!(parsed.claude_session_id, None);
+        // [Q01] resolution: legacy records lack `session_mode`. The
+        // schema's `#[serde(default)]` lets them deserialize as `None`,
+        // and the rebind path falls back to `SessionMode::New` while
+        // the defense-in-depth path corrects the entry on the first
+        // reconnect.
+        assert_eq!(parsed.session_mode, None);
     }
 
     #[test]
@@ -4151,6 +4331,7 @@ mod tests {
             tug_session_id: "sess-w2".to_string(),
             project_dir: Some("/work/beta".to_string()),
             claude_session_id: Some("claude-42".to_string()),
+            session_mode: Some("new".to_string()),
         };
         client
             .set_session_record("card-w2", &written)
@@ -4548,6 +4729,7 @@ mod tests {
                     tug_session_id: "sess-legacy".to_string(),
                     project_dir: None,
                     claude_session_id: None,
+                    session_mode: None,
                 },
             )
             .unwrap();
@@ -4569,6 +4751,7 @@ mod tests {
                     tug_session_id: "sess-gone".to_string(),
                     project_dir: Some("/nonexistent/rebind-missing-path-test".to_string()),
                     claude_session_id: None,
+                    session_mode: None,
                 },
             )
             .unwrap();
@@ -4590,6 +4773,7 @@ mod tests {
                     tug_session_id: "sess-valid".to_string(),
                     project_dir: Some(test_project_dir().to_string()),
                     claude_session_id: None,
+                    session_mode: None,
                 },
             )
             .unwrap();
