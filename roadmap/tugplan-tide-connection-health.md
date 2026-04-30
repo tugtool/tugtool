@@ -849,15 +849,15 @@ Tests (19):
 - `tugdeck/src/connection.ts` — `this.lastPayload.clear()` in the `onclose` handler before `notifyDisconnectState` and before reconnect scheduling.
 
 **Tasks:**
-- [ ] Add the `lastPayload.clear()` call in `onclose`. Place it after `stopHeartbeat()` but before `notifyDisconnectState(false)` so any subscriber that re-registers in response to the disconnect state does not see stale frames.
-- [ ] Add a one-line comment naming [D05].
+- [x] Add the `lastPayload.clear()` call in `onclose`. Place it after `stopHeartbeat()` but before `notifyDisconnectState(false)` so any subscriber that re-registers in response to the disconnect state does not see stale frames. _(Placed after `stopHeartbeat()` and before the `lifecycle.notifyConnectionDidClose()` / reconnect scheduling that any disconnect-state-driven re-register would react to.)_
+- [x] Add a one-line comment naming [D05].
 
 **Tests:**
-- [ ] Connection unit test: register a callback for a feed, deliver a frame to populate the cache, simulate `onclose`, register a *new* callback for the same feed. Assert the new callback receives no replay.
+- [x] Connection unit test: register a callback for a feed, deliver a frame to populate the cache, simulate `onclose`, register a *new* callback for the same feed. Assert the new callback receives no replay.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit` green.
-- [ ] `cd tugdeck && bun test src/connection` green.
+- [x] `cd tugdeck && bun x tsc --noEmit` green.
+- [x] `cd tugdeck && bun test src/connection` green. _(`src/__tests__/connection.test.ts` — 3 pass / 0 fail. Full suite 2591 pass / 0 fail.)_
 
 ---
 

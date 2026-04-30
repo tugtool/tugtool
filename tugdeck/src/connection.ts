@@ -232,6 +232,17 @@ export class TugConnection {
       console.log("tugdeck: WebSocket closed", event.code, event.reason);
       this.stopHeartbeat();
 
+      // Drop the snapshot-replay cache before anything else reacts to
+      // the close. `lastPayload` exists to replay the most recent frame
+      // on each feed to a late `onFrame` subscriber; once the wire is
+      // down, every cached entry is stale relative to the post-reconnect
+      // server view. A subscriber that registers in response to
+      // `connectionDidClose` (or to the disconnect-state notification
+      // raised by `scheduleReconnect`) must not observe pre-close
+      // frames, since the post-reconnect handshake will replay
+      // whatever is current. See [D05].
+      this.lastPayload.clear();
+
       // Store close info for banner display
       this.lastCloseCode = event.code;
       this.lastCloseReason = event.reason || null;

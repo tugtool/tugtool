@@ -83,6 +83,17 @@ class FakeWebSocket {
   fireMessage(data: string | ArrayBuffer): void {
     this.onmessage?.({ data } as MessageEvent);
   }
+
+  /**
+   * Synchronously dispatch the `onclose` event so tests can drive the
+   * connection's close path directly. The real browser would fire this
+   * after `close()` is called or on remote disconnect; the fake leaves
+   * the trigger to the test for deterministic ordering.
+   */
+  fireClose(code: number = 1000, reason: string = ""): void {
+    this.readyState = 3;
+    this.onclose?.({ code, reason } as CloseEvent);
+  }
 }
 
 let lastWs: FakeWebSocket | null = null;
@@ -257,5 +268,62 @@ describe("TugConnection — heartbeat watchdog (Step 2)", () => {
     // threshold trips the watchdog.
     advanceTime(30_000);
     expect(ws.closeCalls).toBe(1);
+  });
+});
+
+/**
+ * Encode a SESSION_STATE frame whose decoded form is
+ * `{ tug_session_id, state }` — sufficient to populate the
+ * `lastPayload` cache for the SESSION_STATE feed without dragging in
+ * the full server-side encoder. The bytes are opaque to the test —
+ * the assertion is on whether the cache replays them or not.
+ */
+function sessionStateFrame(payload: object): ArrayBuffer {
+  const bytes = new TextEncoder().encode(JSON.stringify(payload));
+  return encodeFrame({
+    feedId: FeedId.SESSION_STATE,
+    flags: FrameFlags.DATA,
+    payload: bytes,
+  });
+}
+
+describe("TugConnection — lastPayload cleared on close (Step 3)", () => {
+  beforeEach(() => {
+    installFakes();
+  });
+
+  afterEach(() => {
+    uninstallFakes();
+  });
+
+  it("a callback registered after onclose receives no replay of pre-close frames", () => {
+    const conn = new TugConnection("ws://test.invalid/");
+    const ws = completeHandshake(conn);
+
+    // Populate `lastPayload` for the SESSION_STATE feed via a normal
+    // dispatch. The first subscriber sees the frame on arrival.
+    const earlyDeliveries: Uint8Array[] = [];
+    conn.onFrame(FeedId.SESSION_STATE, (payload) => {
+      earlyDeliveries.push(payload);
+    });
+    ws.fireMessage(sessionStateFrame({
+      tug_session_id: "tug-1",
+      state: "live",
+    }));
+    expect(earlyDeliveries.length).toBe(1);
+
+    // Drop the wire. `onclose` should clear `lastPayload` before any
+    // reconnect logic runs; `notifyConnectionDidClose` and
+    // `scheduleReconnect` consequently observe an empty cache.
+    ws.fireClose(1006, "abnormal");
+
+    // A late subscriber registers for the same feed. Without [D05]'s
+    // cache clear, `onFrame`'s replay path would fire this callback
+    // with the stale pre-close payload.
+    const lateDeliveries: Uint8Array[] = [];
+    conn.onFrame(FeedId.SESSION_STATE, (payload) => {
+      lateDeliveries.push(payload);
+    });
+    expect(lateDeliveries.length).toBe(0);
   });
 });
