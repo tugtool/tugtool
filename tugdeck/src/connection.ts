@@ -43,6 +43,24 @@ const PROTOCOL_VERSION = 1;
 /** Heartbeat interval in milliseconds (15 seconds) */
 const HEARTBEAT_INTERVAL_MS = 15_000;
 
+/**
+ * Threshold above which the wire is presumed dead and the client
+ * force-closes its WebSocket. Mirrors the server's `HEARTBEAT_TIMEOUT`
+ * constant in `tugcast/src/router.rs:48`. The server emits a HEARTBEAT
+ * every 15 s, so 45 s = three missed heartbeats — clear evidence the
+ * wire is broken, not just quiet. The two constants must change in
+ * lockstep; if the server's timeout moves, this one moves with it.
+ */
+const HEARTBEAT_TIMEOUT_MS = 45_000;
+
+/**
+ * Cadence at which the watchdog checks `Date.now() - lastFrameAt`.
+ * Small enough to detect a stalled wire within ~5 s of the threshold,
+ * large enough to absorb the natural jitter between heartbeat arrivals
+ * and the timer firing.
+ */
+const WATCHDOG_TICK_MS = 5_000;
+
 /** Connection state */
 const ConnectionState = {
   CONNECTED: "connected",
@@ -73,6 +91,23 @@ export class TugConnection {
   private heartbeatTimer: number | null = null;
   private url: string;
   private handshakePending: boolean = false;
+
+  /**
+   * Timestamp of the most recent frame received over the WebSocket
+   * (any frame, including the binary HEARTBEAT echo). Updated on every
+   * post-handshake `onmessage`. The watchdog reads this to decide
+   * whether the wire has gone quiet for longer than the server's own
+   * `HEARTBEAT_TIMEOUT`. Initialized lazily when the handshake
+   * completes; pre-handshake quiet does not feed the watchdog.
+   */
+  private lastFrameAt: number = 0;
+
+  /**
+   * Handle for the `setInterval` that drives the heartbeat watchdog.
+   * Lives parallel to `heartbeatTimer` so the watchdog and the
+   * outbound heartbeat can be reasoned about independently.
+   */
+  private watchdogTimer: number | null = null;
 
   // Reconnection state
   private state: ConnectionStateValue = ConnectionState.DISCONNECTED;
@@ -154,6 +189,11 @@ export class TugConnection {
             this.retryDelay = INITIAL_RETRY_DELAY_MS;
             this.clearCountdownTimer();
             this.notifyDisconnectState(false);
+            // Seed the watchdog clock with the moment the wire became
+            // live. Without this, the very first watchdog tick after a
+            // long handshake-pending period would see `lastFrameAt = 0`
+            // and force-close immediately.
+            this.lastFrameAt = Date.now();
             this.startHeartbeat();
             // The lifecycle is the sole event surface for open/close
             // transitions; it internally fires `connectionDidReconnect`
@@ -169,6 +209,13 @@ export class TugConnection {
         }
         return;
       }
+
+      // Any post-handshake message — including the binary HEARTBEAT
+      // echo — is evidence the wire is alive. Bump the watchdog clock
+      // unconditionally before the decode so a malformed frame still
+      // resets the stall timer (the server reached us; the bytes
+      // arriving garbled is a separate problem).
+      this.lastFrameAt = Date.now();
 
       // Normal mode: binary frames
       if (event.data instanceof ArrayBuffer) {
@@ -402,21 +449,56 @@ export class TugConnection {
   }
 
   /**
-   * Start sending heartbeat frames periodically
+   * Start sending heartbeat frames periodically and arm the inbound
+   * heartbeat watchdog. Both timers share a lifecycle: they start
+   * together when the handshake completes and stop together on close.
    */
   private startHeartbeat(): void {
     this.heartbeatTimer = window.setInterval(() => {
       this.send(FeedId.HEARTBEAT, new Uint8Array(0));
     }, HEARTBEAT_INTERVAL_MS);
+    this.startWatchdog();
   }
 
   /**
-   * Stop the heartbeat timer
+   * Stop the heartbeat and watchdog timers.
    */
   private stopHeartbeat(): void {
     if (this.heartbeatTimer !== null) {
       window.clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
+    }
+    this.stopWatchdog();
+  }
+
+  /**
+   * Arm the heartbeat watchdog. Every `WATCHDOG_TICK_MS` it checks
+   * whether the wire has been quiet longer than `HEARTBEAT_TIMEOUT_MS`;
+   * if so, it force-closes the WebSocket. The `onclose` path then
+   * runs reconnection with exponential backoff.
+   *
+   * Mirrors the server's own timeout — see [D02] / `router.rs:48`.
+   */
+  private startWatchdog(): void {
+    this.watchdogTimer = window.setInterval(() => {
+      if (Date.now() - this.lastFrameAt > HEARTBEAT_TIMEOUT_MS) {
+        console.warn(
+          "tugdeck: heartbeat watchdog firing — force-closing stale wire",
+        );
+        this.ws?.close();
+      }
+    }, WATCHDOG_TICK_MS);
+  }
+
+  /**
+   * Disarm the watchdog. Called from `stopHeartbeat` on close so the
+   * timer cannot fire against a connection that's already been torn
+   * down.
+   */
+  private stopWatchdog(): void {
+    if (this.watchdogTimer !== null) {
+      window.clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
     }
   }
 }

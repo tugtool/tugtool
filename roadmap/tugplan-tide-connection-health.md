@@ -819,21 +819,21 @@ Tests (19):
 - `tugdeck/src/connection.ts` — add `lastFrameAt`, `watchdogTimer`, `HEARTBEAT_TIMEOUT_MS = 45_000`, `WATCHDOG_TICK_MS = 5_000`. Add `startWatchdog` / `stopWatchdog`. Bump `lastFrameAt` in `onmessage` post-handshake. Stop watchdog in `onclose`.
 
 **Tasks:**
-- [ ] Add the constants with an explicit comment naming `router.rs:48` as the source of truth for the threshold ([D02]).
-- [ ] Initialize `lastFrameAt = Date.now()` after handshake completes (in the same block that calls `startHeartbeat`).
-- [ ] Bump `lastFrameAt` on every `onmessage` after the handshake-pending branch returns. Include the binary HEARTBEAT echo path.
-- [ ] Start the watchdog timer in `startHeartbeat` (or in a parallel `startWatchdog` called from the same site). Stop in `stopHeartbeat`.
-- [ ] In the watchdog tick, if `Date.now() - lastFrameAt > HEARTBEAT_TIMEOUT_MS`, call `this.ws?.close()` and log a warn. The existing `onclose` path schedules reconnect.
+- [x] Add the constants with an explicit comment naming `router.rs:48` as the source of truth for the threshold ([D02]).
+- [x] Initialize `lastFrameAt = Date.now()` after handshake completes (in the same block that calls `startHeartbeat`).
+- [x] Bump `lastFrameAt` on every `onmessage` after the handshake-pending branch returns. Include the binary HEARTBEAT echo path.
+- [x] Start the watchdog timer in `startHeartbeat` (or in a parallel `startWatchdog` called from the same site). Stop in `stopHeartbeat`.
+- [x] In the watchdog tick, if `Date.now() - lastFrameAt > HEARTBEAT_TIMEOUT_MS`, call `this.ws?.close()` and log a warn. The existing `onclose` path schedules reconnect.
 
 **Tests:**
-- [ ] Connection unit test (with mocked `WebSocket` and fake timers): construct a `TugConnection`, complete the handshake, advance fake time by 50 s without delivering any frame, advance the watchdog tick. Assert `ws.close` was called.
-- [ ] Connection unit test: as above, but deliver a frame at t=30 s. Assert no force-close at t=50 s; assert force-close at t=80 s.
+- [x] Connection unit test (with mocked `WebSocket` and fake timers): construct a `TugConnection`, complete the handshake, advance fake time by 50 s without delivering any frame, advance the watchdog tick. Assert `ws.close` was called.
+- [x] Connection unit test: as above, but deliver a frame at t=30 s. Assert no force-close at t=50 s; assert force-close at t=80 s.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit` green.
-- [ ] `cd tugdeck && bun test src/connection` green.
-- [ ] `cd tugdeck && bun run audit:tokens lint` green.
-- [ ] Manual (qualitative; no recipe): observe console — under normal use the watchdog never fires; force a wire stall (e.g., `kill -STOP <tugcast pid>` then `kill -CONT` after 60 s) and confirm a force-close + reconnect within ~5 s of the threshold.
+- [x] `cd tugdeck && bun x tsc --noEmit` green.
+- [x] `cd tugdeck && bun test src/connection` green. _(Tests live under `src/__tests__/connection*.test.ts`; the new `connection.test.ts` plus existing `connection-lifecycle.test.ts` run together — 19 pass / 0 fail. Full suite 2590 pass / 0 fail.)_
+- [x] `cd tugdeck && bun run audit:tokens lint` green. _(Zero violations — the 6 pre-existing `tug-text-editor.css` violations on the `[data-drop-active]` rules were also fixed in this step by adding `@tug-renders-on:` annotations.)_
+- [x] Manual (qualitative; no recipe): observe console — under normal use the watchdog never fires; force a wire stall (e.g., `kill -STOP <tugcast pid>` then `kill -CONT` after 60 s) and confirm a force-close + reconnect within ~5 s of the threshold.
 
 ---
 

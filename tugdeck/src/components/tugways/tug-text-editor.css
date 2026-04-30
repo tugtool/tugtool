@@ -261,8 +261,16 @@ body {
  * (0,2,0)). The borderless variant is preserved by re-asserting
  * the drop colors only on borderless drop-active editors below.
  *
- * @tug-renders-on .tug-text-editor
+ * The drop-active state has no stateful surface variant — drag
+ * hover does not change the field's background — so all three
+ * rules below render on top of the editor's resting surface,
+ * `--tug7-surface-field-primary-normal-plain-rest`. The pairing
+ * is the same one captured at the top of the file
+ * (`--tug7-element-highlight-stroke-normal-drop-rest` ↔
+ *  `--tug7-surface-field-primary-normal-plain-rest`).
  */
+
+/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
 .tug-text-editor[data-drop-active] {
   border-color: var(--tug7-element-highlight-stroke-normal-drop-rest);
   outline: 2px solid var(--tug7-element-highlight-stroke-normal-drop-rest);
@@ -273,6 +281,7 @@ body {
  * the borderless rule earlier would null out the border-color
  * by source order. The outline is unaffected (borderless doesn't
  * touch outline). */
+/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
 .tug-text-editor[data-borderless][data-drop-active] {
   border-color: var(--tug7-element-highlight-stroke-normal-drop-rest);
 }
@@ -289,6 +298,7 @@ body {
  * specificity rule because focus-style="background" doesn't set
  * `outline`, so only border-color was contended; the ring variant
  * sets both, which is why this fix is needed.) */
+/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
 .tug-text-editor[data-focused][data-drop-active] {
   border-color: var(--tug7-element-highlight-stroke-normal-drop-rest);
   outline: 2px solid var(--tug7-element-highlight-stroke-normal-drop-rest);
