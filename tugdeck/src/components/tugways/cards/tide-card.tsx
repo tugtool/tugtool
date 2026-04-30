@@ -954,7 +954,19 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   const editorSourceRef = useMemo(
     () => ({
       get current(): HTMLElement | null {
-        return entryDelegateRef.current?.getEditorElement() ?? null;
+        // The legacy substrate's contentEditable was both the
+        // content surface AND the scroll container, so reading
+        // `scrollHeight`/`clientHeight` off it correctly reported
+        // overflow. CM6 splits those two roles: `view.contentDOM`
+        // grows freely, and `view.scrollDOM` (`.cm-scroller`) is
+        // the bounded overflow element. Walk up from contentDOM to
+        // hand the hook the scroller — that's where overflow
+        // actually shows up. Falls through to the contentDOM if
+        // the scroller isn't found (defensive for non-CM6 hosts of
+        // the entry, e.g. the gallery's stand-alone harness).
+        const contentEl = entryDelegateRef.current?.getEditorElement();
+        if (contentEl === null || contentEl === undefined) return null;
+        return contentEl.closest<HTMLElement>(".cm-scroller") ?? contentEl;
       },
     }),
     [],
@@ -1036,16 +1048,17 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
     },
   });
 
-  // Animate the snap-back-to-userSize ONLY on explicit user submit —
-  // not on any other data-empty transition (manual delete, undo, etc.).
-  // Fires before `input.clear()` so the animated restore commits to
-  // the library store first; the content-driven hook's subsequent
-  // instant-restore is a no-op because the library store already
-  // matches the user size. Skip while maximized — the maximize peg
-  // owns the size.
+  // Snap-back-to-userSize on explicit user submit — not on any other
+  // data-empty transition (manual delete, undo, etc.). Fires before
+  // `input.clear()` so the restore commits to the library store
+  // first; the content-driven hook's subsequent restore is a no-op
+  // because the library store already matches the user size. Skip
+  // while maximized — the maximize peg owns the size. No animation
+  // here: the snap is paired with the user pressing Send and should
+  // feel immediate, not show motion.
   const handleBeforeSubmit = useCallback(() => {
     if (maximized) return;
-    entryPanelRef.current?.restoreUserSize({ animated: true });
+    entryPanelRef.current?.restoreUserSize();
   }, [maximized]);
 
   // Return focus to the editor after a successful submit so the user
