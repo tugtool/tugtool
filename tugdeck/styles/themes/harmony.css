@@ -639,7 +639,7 @@ body {
   --tug7-surface-field-primary-normal-plain-focus: --tug-color(indigo, i: 6, t: 95);
   --tug7-surface-field-primary-normal-plain-hover: --tug-color(violet, i: 6, t: 88);
   --tug7-surface-field-primary-normal-plain-readonly: --tug-color(violet, i: 6, t: 88);
-  --tug7-surface-field-primary-normal-plain-rest: --tug-color(indigo, i: 5, t: 91);
+  --tug7-surface-field-primary-normal-plain-rest: --tug-color(indigo, i: 6, t: 91);
 
   /* Indicator */
   /* Subtle ancillary UI surface for line-number gutters, status

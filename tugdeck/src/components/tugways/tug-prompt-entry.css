@@ -88,10 +88,15 @@ body {
 
 /* The substrate takes the entire input area. `min-width: 0` prevents
    the editor's intrinsic width from forcing the row wider than its
-   column. */
-.tug-prompt-entry-input-area > .tug-text-editor {
+   column. The editor sits flush against the entry's edges — drop the
+   substrate's default rounded corners (and the inner `.cm-editor`
+   clip radius that pairs with them) so the entry reads as a single
+   continuous panel. */
+.tug-prompt-entry-input-area > .tug-text-editor,
+.tug-prompt-entry-input-area > .tug-text-editor > .cm-editor {
   flex: 1 1 auto;
   min-width: 0;
+  border-radius: 0;
 }
 
 /* Nudge the route glyph (`❯`, `$`, `:`) up a touch inside the

@@ -635,11 +635,11 @@ body {
   --tug7-element-field-text-normal-plain-readonly: --tug-color(indigo, i: 5, t: 66);
   --tug7-element-field-text-normal-plain-rest: --tug-color(indigo, i: 3, t: 94);
   --tug7-element-field-text-normal-required-rest: --tug-color(red, t: 69);
-  --tug7-surface-field-primary-normal-plain-disabled: --tug-color(indigo-violet, i: 5, t: 6);
+  --tug7-surface-field-primary-normal-plain-disabled: --tug-color(red, i: 5, t: 6);
   --tug7-surface-field-primary-normal-plain-focus: --tug-color(indigo-violet, i: 10, t: 13);
   --tug7-surface-field-primary-normal-plain-hover: --tug-color(violet, i: 5, t: 11);
   --tug7-surface-field-primary-normal-plain-readonly: --tug-color(violet, i: 5, t: 11);
-  --tug7-surface-field-primary-normal-plain-rest: --tug-color(indigo-violet, i: 5, t: 8);
+  --tug7-surface-field-primary-normal-plain-rest: --tug-color(indigo-violet, i: 5, t: 12);
 
   /* Indicator */
   /* Subtle ancillary UI surface for line-number gutters, status
@@ -650,7 +650,7 @@ body {
      Hand-tune to taste. */
   --tug7-element-indicator-border-normal-plain-rest: --tug-color(indigo, i: 5, t: 30);
   --tug7-element-indicator-text-normal-plain-rest: --tug-color(indigo, i: 5, t: 55);
-  --tug7-surface-indicator-primary-normal-plain-rest: --tug-color(indigo-violet, i: 5, t: 5);
+  --tug7-surface-indicator-primary-normal-plain-rest: --tug-color(indigo-violet, i: 15, t: 10);
 
   /* Toggle */
   --tug7-element-checkmark-icon-normal-plain-mixed: --tug-color(indigo, i: 3, t: 90);
