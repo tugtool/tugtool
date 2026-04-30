@@ -112,7 +112,7 @@ This plan follows [tuglaws/tugplan-skeleton.md §reference-conventions](../tugla
 
 > One open question is the gate before [Step 1](#step-1) lands. Step 0 is dedicated to resolving it.
 
-#### [Q01] Does `pointerdown` + `preventDefault()` keep editor focus when the popup is portaled out of the editor's DOM subtree? (OPEN — gated on Step 0) {#q01-pointerdown-focus-across-portal}
+#### [Q01] Does `pointerdown` + `preventDefault()` keep editor focus when the popup is portaled out of the editor's DOM subtree? (DECIDED — see [D08]) {#q01-pointerdown-focus-across-portal}
 
 **Question:** Today the completion popup's per-item `pointerdown` handler calls `e.preventDefault()` to suppress the browser's default focus shift, then dispatches `acceptCompletionAt(view, i)`. The editor stays focused; the accept transaction lands on the live caret. This works because the popup lives inside the editor's DOM subtree — the `pointerdown` originates on a descendant element. Once the popup is portaled to a sibling (canvas overlay root), the `pointerdown` originates on a *non-descendant* element. WebKit and Chromium both document the `preventDefault()` behavior as element-agnostic, but it has been observed to fail in nested portal cases with focus traps.
 
@@ -125,7 +125,7 @@ This plan follows [tuglaws/tugplan-skeleton.md §reference-conventions](../tugla
 
 **Plan to resolve:** Step 0 spike — implement a minimal `CanvasOverlayRoot` + portal a *test-only* div (no production migration) and click on it. Assert `document.activeElement === editor.contentDOM`. If true, proceed with (c) in [Step 1](#step-1). If false, [Step 1](#step-1) gains substeps for (a). Result documented in [D08].
 
-**Resolution:** OPEN. Will be DECIDED at end of [Step 0](#step-0).
+**Resolution:** DECIDED — option (c). See [D08] for the spike result and rationale.
 
 ---
 
@@ -254,9 +254,25 @@ This plan follows [tuglaws/tugplan-skeleton.md §reference-conventions](../tugla
 - The overlay-root `<div>` is `position: fixed; inset: 0; pointer-events: none; z-index: <below-the-overlay-tier-ceiling>`. Children opt back in with `pointer-events: auto`.
 - The root has no `data-responder-id`; it inherits the deck-canvas one via the document-level walk-up.
 
-#### [D08] [Q01] resolution recorded here once Step 0 lands (PENDING) {#d08-q01-resolution}
+#### [D08] `[Q01]` resolves to option (c): direct call survives portal detachment (DECIDED — Step 0, 2026-04-30) {#d08-q01-resolution}
 
-**Decision:** *To be recorded after [Step 0](#step-0) completes.* If the spike asserts focus retention works, this decision records "direct call (option c) is the path"; if it fails, this decision records "responder-id mirroring (option a) is the path" and notes the substep added to [Step 1](#step-1).
+**Decision:** The completion popup migration uses **option (c)**: keep the existing `pointerdown` + `e.preventDefault()` + direct `acceptCompletionAt(view, i)` call path unchanged when the popup is portaled to a sibling of the editor's DOM subtree. No responder-id mirroring substep is added to [Step 1](#step-1).
+
+**Spike result:** `at0051-completion-popup-escapes-card.test.ts` (Step 0 phase) PASSED on the first attempt against Tug.app on macOS / WebKit:
+
+- Real OS-level `nativeClickAtElement` on a portaled `<button>` (sibling of, not descendant of, the editor's host).
+- Button's `pointerdown` listener calls `e.preventDefault()`.
+- After the click, `document.activeElement` is still the editor's `.cm-content`, and `data-first-responder` still resolves to the `tug-text-editor` host.
+
+**Rationale:**
+- WebKit honors `preventDefault()` on `pointerdown` regardless of whether the originating element is a descendant of the previously-focused element. This matches the documented spec contract; the spike confirms it for the actual Tug.app shell.
+- Option (a) — mirrored `data-responder-id` on the portal root + exposed `viewId` — would have introduced new surface area without meaningful payoff if (c) works. Avoiding it keeps the migration's surface minimal.
+- Option (b) — chain-dispatched ACCEPT_COMPLETION action — would have added a vocabulary entry and a responder-handler hop for what is genuinely a substrate-internal operation. Not warranted.
+
+**Implications:**
+- [Step 1](#step-1)'s `pointerdown` handler in `CompletionOverlay`'s portaled item DOM is the same shape as today's: `e.preventDefault()` + `acceptCompletionAt(view, i)`. No `data-responder-id` mirroring; no new actions.
+- The Step 0 spike test stays in `tests/app-test/at0051-completion-popup-escapes-card.test.ts` as the permanent regression guard. If a future browser engine (or a Tug WebView swap) breaks the focus-retention contract, this test catches it before the migration's other assertions can hide it.
+- Risk R01 ("`pointerdown` focus-retention fails post-detach") is resolved; residual risk drops to "future browser/WebView change breaks the contract" — which the regression test guards.
 
 #### [D09] Hook + registry live in `tugdeck/src/lib/`; root component lives in `tugdeck/src/components/chrome/` (DECIDED) {#d09-lib-vs-chrome-placement}
 
@@ -544,7 +560,7 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 | `tugdeck/src/lib/__tests__/canvas-overlay.test.tsx` | Unit tests for registry + hook. |
 | `tugdeck/src/components/tugways/__tests__/completion-overlay.test.tsx` | Unit tests for `CompletionOverlay` mount/unmount semantics. |
 | `tugdeck/src/components/tugways/__tests__/painter-position-math.test.ts` | Unit tests for the painter's pure position-math fn. |
-| `tugapp/Tests/AppTests/at0039-completion-popup-escapes-card.test.ts` | App-test: popup escapes a small card; click-to-accept retains editor focus (the [Q01] regression guard, promoted from the [Step 0](#step-0) spike). |
+| `tests/app-test/at0051-completion-popup-escapes-card.test.ts` | App-test: popup escapes a small card; click-to-accept retains editor focus (the [Q01] regression guard, promoted from the [Step 0](#step-0) spike). |
 
 #### Symbols to add / modify {#symbols}
 
@@ -565,7 +581,7 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 ### Documentation Plan {#documentation-plan}
 
 - [ ] `tuglaws/component-authoring.md` — add a paragraph: "popup-class primitives portal to the canvas overlay root, not their host pane." Cross-link [D01] / [D02].
-- [ ] `tuglaws/app-test-inventory.md` — add `[AT0039]` entry; bump high-water mark.
+- [ ] `tuglaws/app-test-inventory.md` — add `[AT0051]` entry; bump high-water mark.
 - [ ] `tugdeck/src/components/chrome/canvas-overlay-root.tsx` docstring — explain the overlay-root contract, single-root invariant, lifecycle, why the component is in chrome while the registry/hook are in lib per [D09].
 - [ ] `tugdeck/src/lib/use-canvas-overlay.ts` docstring — explain the body-fallback rationale per [D02] and the lib-tier placement per [D09].
 - [ ] `tugdeck/src/lib/canvas-overlay-registry.ts` docstring — explain the synchronous-notify subscribe contract, single-root invariant, multi-deck promotion path.
@@ -598,22 +614,22 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 **References:** [Q01], Risk R01, (#test-strategy), (#painter-migration)
 
 **Artifacts:**
-- A new app-test `tugapp/Tests/AppTests/at0039-completion-popup-escapes-card.test.ts` containing the focus-retention assertion. The file is born here as a spike scaffolding (an `EditorView` + sibling-portaled `<div>` + click on the portaled child + `document.activeElement` check) and grows in [Step 1](#step-1) into the full app-test for the popup-escapes-card assertion. **The file is not thrown away after Step 0** — it is the permanent regression guard for [Q01] going forward.
+- A new app-test `tests/app-test/at0051-completion-popup-escapes-card.test.ts` containing the focus-retention assertion. The file is born here as a spike scaffolding (an `EditorView` + sibling-portaled `<div>` + click on the portaled child + `document.activeElement` check) and grows in [Step 1](#step-1) into the full app-test for the popup-escapes-card assertion. **The file is not thrown away after Step 0** — it is the permanent regression guard for [Q01] going forward.
 - A short note in [D08]: "Confirmed — direct call (option c) is the path." OR "Failed — option (a) responder-id mirroring is required; substep added to Step 1."
 
 **Tasks:**
-- [ ] Implement the focus-retention assertion as the first test inside the new `at0039-*` app-test file (~40 lines for this step's scope).
-- [ ] Run via `just app-test at0039-completion-popup-escapes-card`. Happy-dom variants may pass spuriously; the real-browser app-test is the gating result.
-- [ ] If app-test passes: record [D08] resolution as option (c). Proceed to [Step 1](#step-1).
-- [ ] If app-test fails: record [D08] resolution as option (a). Add a `data-responder-id` mirroring substep to [Step 1](#step-1) before the migration lands.
+- [x] Implement the focus-retention assertion as the first test inside the new `at0051-*` app-test file (~40 lines for this step's scope).
+- [x] Run via `just app-test at0051-completion-popup-escapes-card`. Happy-dom variants may pass spuriously; the real-browser app-test is the gating result.
+- [x] If app-test passes: record [D08] resolution as option (c). Proceed to [Step 1](#step-1).
+- [ ] ~~If app-test fails: record [D08] resolution as option (a). Add a `data-responder-id` mirroring substep to [Step 1](#step-1) before the migration lands.~~ — Not triggered; spike passed.
 
 **Tests:**
-- [ ] App-test (in `at0039-*`): synthesized `pointerdown` + `preventDefault()` on a portaled element while editor is focused → `document.activeElement` is still `view.contentDOM`.
+- [x] App-test (in `at0051-*`): synthesized `pointerdown` + `preventDefault()` on a portaled element while editor is focused → `document.activeElement` is still `view.contentDOM`.
 
 **Checkpoint:**
-- [ ] `just app-test at0039-completion-popup-escapes-card` exits with `VERDICT: PASS` (or `VERDICT: FAIL` documented as the [D08] fallback trigger).
-- [ ] `bun x tsc --noEmit` green.
-- [ ] [D08] is filled in with the spike result.
+- [x] `just app-test at0051-completion-popup-escapes-card` exits with `VERDICT: PASS`.
+- [x] `bun x tsc --noEmit` green.
+- [x] [D08] is filled in with the spike result.
 
 ---
 
@@ -634,7 +650,7 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 - `tugdeck/src/components/tugways/tug-text-editor.tsx` — drop in-host `popupRef` div; introduce `CompletionOverlay` (the React shell, owns mount/unmount + `onTypeaheadChange` host-callback wiring + ResizeObserver re-anchor); rewrite `paintCompletionPopup` per (#painter-migration).
 - `tugdeck/src/components/tugways/tug-completion-menu.css` — drop `position: absolute` and `z-index: 50` from `.tug-completion-menu`.
 - New unit tests under `tugdeck/src/lib/__tests__/` (registry + hook) and `tugdeck/src/components/tugways/__tests__/` (overlay shell + painter math).
-- App-test `at0039-completion-popup-escapes-card.test.ts` extended with the popup-escapes-card layout assertion (the file was created in [Step 0](#step-0) for the focus-retention case).
+- App-test `at0051-completion-popup-escapes-card.test.ts` extended with the popup-escapes-card layout assertion (the file was created in [Step 0](#step-0) for the focus-retention case).
 - `[Q01]` updated to DECIDED in this plan; `[D08]` already populated.
 - *(Conditional — only if Step 0 chose option (a))* `data-responder-id` mirrored on the portal-root div; integration test asserts chain dispatch reaches the editor's responder.
 
@@ -655,16 +671,16 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 - [ ] Unit: `CompletionOverlay` mounts a portal when typeahead activates; unmounts when state clears.
 - [ ] Unit: extracted painter math returns correct `{ top, left }` object for top/bottom/left/right anchor positions and for both auto-flip directions.
 - [ ] Unit: `onTypeaheadChange` host callback still fires on typeahead state changes after the subscription migration to `CompletionOverlay`.
-- [ ] App-test `at0039`: open a Tide card with a small bottom pane; type `@`; assert `document.querySelector('[data-slot="tug-completion-menu"]').getBoundingClientRect()` extends *outside* the pane element's clip rect; the prompt input's bounding rect bottom is unchanged.
-- [ ] App-test `at0039`: click an item in the popup; assert `document.activeElement === editor.contentDOM` AND the doc text inserted the expected atom. (Reuses Step 0's focus-retention scaffolding.)
-- [ ] App-test `at0039`: open `@` completion; programmatically resize the editor host (sash-drag simulation); assert the popup re-anchors to within ±2px of the new trigger-character coords.
+- [ ] App-test `at0051`: open a Tide card with a small bottom pane; type `@`; assert `document.querySelector('[data-slot="tug-completion-menu"]').getBoundingClientRect()` extends *outside* the pane element's clip rect; the prompt input's bounding rect bottom is unchanged.
+- [ ] App-test `at0051`: click an item in the popup; assert `document.activeElement === editor.contentDOM` AND the doc text inserted the expected atom. (Reuses Step 0's focus-retention scaffolding.)
+- [ ] App-test `at0051`: open `@` completion; programmatically resize the editor host (sash-drag simulation); assert the popup re-anchors to within ±2px of the new trigger-character coords.
 - [ ] *(Conditional)* If [D08] is option (a): integration test fires a chain dispatch with action `INSERT_ATOM` from the portal element; assert the editor's responder handler runs.
 
 **Checkpoint:**
 - [ ] `bun x tsc --noEmit` green.
 - [ ] `bun test` green (all new unit tests + existing suite).
 - [ ] `bun run audit:tokens lint` exits 0 with the new `--tug-z-overlay-*` tokens recognized.
-- [ ] `just app-test at0039-completion-popup-escapes-card` exits with `VERDICT: PASS`.
+- [ ] `just app-test at0051-completion-popup-escapes-card` exits with `VERDICT: PASS`.
 - [ ] `rg "z-index" tugdeck/src/components/tugways/tug-completion-menu.css` returns zero matches.
 - [ ] Manual smoke: reproduce the original screenshot scenario; popup is fully visible; prompt input pinned.
 
@@ -744,12 +760,12 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 
 **Artifacts:**
 - `tuglaws/component-authoring.md` — new section codifying the rule.
-- `tuglaws/app-test-inventory.md` — new `[AT0039]` entry; high-water bumped to `AT0039`.
+- `tuglaws/app-test-inventory.md` — new `[AT0051]` entry; high-water bumped to `AT0051`.
 - This plan's [#tuglaws-cross-check] section filled in below.
 
 **Tasks:**
 - [ ] Add the component-authoring paragraph: "Popup-class primitives portal to the canvas overlay root, not their host pane. Use `useCanvasOverlay` from `lib/use-canvas-overlay.ts` for the portal target (the hook lives in `lib/` so substrates can import it without inverting the chrome/substrate layering — see [D09] in `tugplan-tide-overlay-tier.md`). Pane-scoped overlays (sheets, pane banners) continue to use `TugPanePortalContext`."
-- [ ] Add `[AT0039]` to `app-test-inventory.md`. Bump high-water to `AT0039`.
+- [ ] Add `[AT0051]` to `app-test-inventory.md`. Bump high-water to `AT0051`.
 - [ ] Walk each of [L02], [L03], [L06], [L11], [L19], [L22], [L23] in the inline [#tuglaws-cross-check] section: applies-and-satisfied OR does-not-apply (and why).
 
 **Tests:**
@@ -758,7 +774,7 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 **Checkpoint:**
 - [ ] `bun x tsc --noEmit` green.
 - [ ] `bun test` green.
-- [ ] `tuglaws/app-test-inventory.md` lists `[AT0039]` and the high-water mark reflects it.
+- [ ] `tuglaws/app-test-inventory.md` lists `[AT0051]` and the high-water mark reflects it.
 - [ ] [#tuglaws-cross-check] section is filled in.
 
 ---
@@ -778,7 +794,7 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 
 **Tests:**
 - [ ] Aggregate run: `bun x tsc --noEmit && bun test && bun run audit:tokens lint && cargo nextest run` (workspace) all green.
-- [ ] `just app-test at0039-completion-popup-escapes-card` exits with `VERDICT: PASS`.
+- [ ] `just app-test at0051-completion-popup-escapes-card` exits with `VERDICT: PASS`.
 - [ ] Manual end-to-end: open Tide card → shrink bottom pane → `@` shows full popup → click item → atom inserted, focus on editor → click peer card → popup vanishes → return to card → `@` again works.
 
 **Checkpoint:**
@@ -815,14 +831,14 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 - [ ] [Q01] is DECIDED (recorded in [D08]).
 - [ ] No popup-class CSS file contains a literal `z-index:` value.
 - [ ] `tuglaws/component-authoring.md` codifies the canvas-overlay rule.
-- [ ] `tuglaws/app-test-inventory.md` lists `[AT0039]`.
+- [ ] `tuglaws/app-test-inventory.md` lists `[AT0051]`.
 - [ ] [#tuglaws-cross-check] is filled in.
 - [ ] `bun x tsc --noEmit && bun test && bun run audit:tokens lint && cargo nextest run` all green.
-- [ ] `just app-test at0039-completion-popup-escapes-card` exits with `VERDICT: PASS`.
+- [ ] `just app-test at0051-completion-popup-escapes-card` exits with `VERDICT: PASS`.
 - [ ] Manual smoke matches the (#success-criteria) reproduction script.
 
 **Acceptance tests:**
-- [ ] `at0039-completion-popup-escapes-card` (real-browser app-test).
+- [ ] `at0051-completion-popup-escapes-card` (real-browser app-test).
 - [ ] Step 1 unit suite (registry, hook, painter math, mount/unmount).
 - [ ] Step 2 unit suite (lifecycle pruning).
 
@@ -838,8 +854,8 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 | Checkpoint | Verification |
 |------------|--------------|
 | Overlay root mounts once per `DeckCanvas` | `document.querySelectorAll('[data-slot="tug-canvas-overlay-root"]').length === 1` after deck mount |
-| Completion popup escapes card frame | `at0039` app-test |
-| Click-to-accept keeps editor focused | `at0039` app-test step 2 |
+| Completion popup escapes card frame | `at0051` app-test |
+| Click-to-accept keeps editor focused | `at0051` app-test step 2 |
 | Lifecycle pruning closes overlay on deactivate | Step 2 unit test |
 | Popup-class z-indexes are tokens | `rg "z-index: \d+" tugdeck/src/components/tugways/{tug-popover,tug-editor-context-menu,tug-menu,tug-tooltip,tug-completion-menu}.css` returns zero matches |
 | Tuglaws walkthrough recorded | [#tuglaws-cross-check] is filled in |
