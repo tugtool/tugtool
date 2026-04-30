@@ -47,8 +47,9 @@ import { STREAMING_PATHS } from "@/lib/code-session-store/types";
 import type { AtomSegment } from "@/lib/tug-text-types";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { CodeSessionStore } from "@/lib/code-session-store";
+import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import type { TugConnection } from "@/connection";
-import { MockTugConnection } from "@/lib/code-session-store/testing/mock-feed-store";
+import { TestFrameChannel } from "@/lib/code-session-store/testing/mock-feed-store";
 import { FIXTURE_IDS } from "@/lib/code-session-store/testing/golden-catalog";
 import { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
@@ -99,9 +100,10 @@ interface MockServices {
 }
 
 function buildMockServices(): MockServices {
-  const conn = new MockTugConnection() as unknown as TugConnection;
+  const conn = new TestFrameChannel() as unknown as TugConnection;
   const codeSessionStore = new CodeSessionStore({
     conn,
+    lifecycle: new ConnectionLifecycle(),
     tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
   });
   const inertFeed = new InertFeedStore() as never;
@@ -176,7 +178,7 @@ function setDocText(view: EditorView, text: string): void {
 // ---------------------------------------------------------------------------
 
 describe("TugPromptEntry — scaffold + markup", () => {
-  it("renders without throwing against a minimal MockTugConnection-backed store", () => {
+  it("renders without throwing against a minimal TestFrameChannel-backed store", () => {
     const { container } = renderEntry();
     const root = container.querySelector<HTMLElement>(
       '[data-slot="tug-prompt-entry"]',

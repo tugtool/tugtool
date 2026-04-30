@@ -2,7 +2,7 @@
  * TideCardContent — lastError banner integration (TugPaneBanner adoption).
  *
  * Drives `CodeSessionStore` through real error transitions by dispatching
- * SESSION_STATE frames on a MockTugConnection, then asserts the rendered
+ * SESSION_STATE frames on a TestFrameChannel, then asserts the rendered
  * TugPaneBanner appears, dismisses, and re-raises on new errors.
  *
  * Banner unmount is deferred to the exit animation's `.finished` — tests
@@ -10,7 +10,7 @@
  * post-animation DOM.
  *
  * Mirrors the harness structure in `tide-card.test.tsx` — setup-rtl first,
- * connection-singleton mocked to return a MockTugConnection so the
+ * connection-singleton mocked to return a TestFrameChannel so the
  * module-scope `cardServicesStore` constructs a real store against a
  * test-controllable wire.
  */
@@ -19,7 +19,7 @@ import "./setup-rtl";
 import { describe, it, expect, afterEach, mock } from "bun:test";
 import { render, act, cleanup, fireEvent, waitFor } from "@testing-library/react";
 
-import { MockTugConnection } from "@/lib/code-session-store/testing/mock-feed-store";
+import { TestFrameChannel } from "@/lib/code-session-store/testing/mock-feed-store";
 import { FeedId } from "@/protocol";
 
 // Single connection instance for the test file; re-used across tests
@@ -27,11 +27,23 @@ import { FeedId } from "@/protocol";
 // test clears the binding in afterEach, which disposes services and
 // unsubscribes the FeedStore from onFrame, so the connection can be
 // reused cleanly.
-const mockConnection = new MockTugConnection();
+const mockConnection = new TestFrameChannel();
 
 mock.module("@/lib/connection-singleton", () => ({
   getConnection: () => mockConnection,
   setConnection: () => {},
+}));
+
+// `cardServicesStore._construct` requires a `ConnectionLifecycle`. The
+// banner tests don't drive transport-close events, so a fresh inert
+// instance is sufficient — the store keeps a subscription that never
+// fires.
+import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
+const mockLifecycle = new ConnectionLifecycle();
+mock.module("@/lib/connection-lifecycle", () => ({
+  ConnectionLifecycle,
+  getConnectionLifecycle: () => mockLifecycle,
+  registerConnectionLifecycle: () => {},
 }));
 
 // EditorSettingsStore subscribes to tugbank on construction; stub it

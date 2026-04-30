@@ -15,9 +15,10 @@
 import { describe, it, expect } from "bun:test";
 
 import { CodeSessionStore } from "@/lib/code-session-store";
+import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import type { TugConnection } from "@/connection";
 import {
-  MockTugConnection,
+  TestFrameChannel,
 } from "@/lib/code-session-store/testing/mock-feed-store";
 import {
   FIXTURE_IDS,
@@ -25,9 +26,10 @@ import {
 } from "@/lib/code-session-store/testing/golden-catalog";
 import { FeedId } from "@/protocol";
 
-function constructStore(conn: MockTugConnection): CodeSessionStore {
+function constructStore(conn: TestFrameChannel): CodeSessionStore {
   return new CodeSessionStore({
     conn: conn as unknown as TugConnection,
+    lifecycle: new ConnectionLifecycle(),
     tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
   });
 }
@@ -35,7 +37,7 @@ function constructStore(conn: MockTugConnection): CodeSessionStore {
 describe("CodeSessionStore — interrupt mid-stream on test-06 (Step 7)", () => {
   it("preserves accumulated text and commits an interrupted TurnEntry", () => {
     const probe = loadGoldenProbe("v2.1.105", "test-06-interrupt-mid-stream");
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("please run forever", []);
@@ -97,7 +99,7 @@ describe("CodeSessionStore — interrupt mid-stream on test-06 (Step 7)", () => 
 
 describe("CodeSessionStore — synthetic queue clear on interrupt (Step 7)", () => {
   it("discards queued sends and emits only the original user_message + interrupt", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("first", []);
@@ -165,7 +167,7 @@ describe("CodeSessionStore — synthetic queue clear on interrupt (Step 7)", () 
   });
 
   it("drops interrupt() when the store is idle", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.interrupt();
@@ -176,7 +178,7 @@ describe("CodeSessionStore — synthetic queue clear on interrupt (Step 7)", () 
 
 describe("CodeSessionStore — interrupt during awaiting_approval (Step 9b)", () => {
   it("clears pendingApproval and restores prevPhase before turn_complete arrives", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("read some file", []);

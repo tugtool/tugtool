@@ -21,9 +21,10 @@
 import { describe, it, expect } from "bun:test";
 
 import { CodeSessionStore } from "@/lib/code-session-store";
+import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import type { TugConnection } from "@/connection";
 import {
-  MockTugConnection,
+  TestFrameChannel,
 } from "@/lib/code-session-store/testing/mock-feed-store";
 import {
   FIXTURE_IDS,
@@ -31,9 +32,10 @@ import {
 } from "@/lib/code-session-store/testing/golden-catalog";
 import { FeedId } from "@/protocol";
 
-function constructStore(conn: MockTugConnection): CodeSessionStore {
+function constructStore(conn: TestFrameChannel): CodeSessionStore {
   return new CodeSessionStore({
     conn: conn as unknown as TugConnection,
+    lifecycle: new ConnectionLifecycle(),
     tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
   });
 }
@@ -44,7 +46,7 @@ function constructStore(conn: MockTugConnection): CodeSessionStore {
  * pre-forward phase the reducer can restore to.
  */
 function drainToStreaming(
-  conn: MockTugConnection,
+  conn: TestFrameChannel,
   store: CodeSessionStore,
   msgId: string,
 ): void {
@@ -73,7 +75,7 @@ function drainToStreaming(
 
 describe("CodeSessionStore — synthetic permission-allow (Step 6)", () => {
   it("flips to awaiting_approval on control_request_forward and restores on respondApproval", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("ls the cwd", []);
@@ -118,7 +120,7 @@ describe("CodeSessionStore — synthetic permission-allow (Step 6)", () => {
   });
 
   it("drops respondApproval when no pending approval is set", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("hello", []);
@@ -132,7 +134,7 @@ describe("CodeSessionStore — synthetic permission-allow (Step 6)", () => {
 describe("CodeSessionStore — permission deny on test-11 (Step 6)", () => {
   it("round-trips the deny fixture with respondApproval mid-turn", () => {
     const probe = loadGoldenProbe("v2.1.105", "test-11-permission-deny-roundtrip");
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("read a nonexistent file", []);
@@ -202,7 +204,7 @@ describe("CodeSessionStore — permission deny on test-11 (Step 6)", () => {
 
 describe("CodeSessionStore — synthetic AskUserQuestion (Step 6)", () => {
   it("populates pendingQuestion and emits question_answer on respondQuestion", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("ask me something", []);
@@ -246,7 +248,7 @@ describe("CodeSessionStore — synthetic AskUserQuestion (Step 6)", () => {
   });
 
   it("drops respondQuestion when no pending question is set", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("hello", []);

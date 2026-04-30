@@ -18,22 +18,27 @@
 import { describe, it, expect } from "bun:test";
 
 import { CodeSessionStore } from "@/lib/code-session-store";
+import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import type { TugConnection } from "@/connection";
 import {
-  MockTugConnection,
+  TestFrameChannel,
 } from "@/lib/code-session-store/testing/mock-feed-store";
 import { FIXTURE_IDS } from "@/lib/code-session-store/testing/golden-catalog";
 import { FeedId } from "@/protocol";
 
-function constructStore(conn: MockTugConnection): CodeSessionStore {
+function constructStore(
+  conn: TestFrameChannel,
+  lifecycle: ConnectionLifecycle = new ConnectionLifecycle(),
+): CodeSessionStore {
   return new CodeSessionStore({
     conn: conn as unknown as TugConnection,
+    lifecycle,
     tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
   });
 }
 
 function driveToStreaming(
-  conn: MockTugConnection,
+  conn: TestFrameChannel,
   store: CodeSessionStore,
   msgId: string,
 ): void {
@@ -60,7 +65,7 @@ function driveToStreaming(
 
 describe("CodeSessionStore — SESSION_STATE errored trigger (Step 8)", () => {
   it("routes a session_state errored frame into the errored phase", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("hello", []);
@@ -87,7 +92,7 @@ describe("CodeSessionStore — SESSION_STATE errored trigger (Step 8)", () => {
   });
 
   it("drops non-errored session_state frames silently", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("hi", []);
@@ -109,14 +114,15 @@ describe("CodeSessionStore — SESSION_STATE errored trigger (Step 8)", () => {
 });
 
 describe("CodeSessionStore — transport close trigger (Step 8)", () => {
-  it("routes onClose into the errored phase during an active turn", () => {
-    const conn = new MockTugConnection();
-    const store = constructStore(conn);
+  it("routes connectionDidClose into the errored phase during an active turn", () => {
+    const conn = new TestFrameChannel();
+    const lifecycle = new ConnectionLifecycle();
+    const store = constructStore(conn, lifecycle);
 
     store.send("hello", []);
     expect(store.getSnapshot().phase).toBe("submitting");
 
-    conn.triggerClose();
+    lifecycle.notifyConnectionDidClose();
 
     const snap = store.getSnapshot();
     expect(snap.phase).toBe("errored");
@@ -124,12 +130,13 @@ describe("CodeSessionStore — transport close trigger (Step 8)", () => {
     expect(snap.lastError?.cause).toBe("transport_closed");
   });
 
-  it("drops onClose when the store is idle", () => {
-    const conn = new MockTugConnection();
-    const store = constructStore(conn);
+  it("drops connectionDidClose when the store is idle", () => {
+    const conn = new TestFrameChannel();
+    const lifecycle = new ConnectionLifecycle();
+    const store = constructStore(conn, lifecycle);
 
     expect(store.getSnapshot().phase).toBe("idle");
-    conn.triggerClose();
+    lifecycle.notifyConnectionDidClose();
 
     const snap = store.getSnapshot();
     expect(snap.phase).toBe("idle");
@@ -139,7 +146,7 @@ describe("CodeSessionStore — transport close trigger (Step 8)", () => {
 
 describe("CodeSessionStore — wire error event (Step 9a audit)", () => {
   it("routes a CODE_OUTPUT error frame into the errored phase with cause=wire_error", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("hi", []);
@@ -161,7 +168,7 @@ describe("CodeSessionStore — wire error event (Step 9a audit)", () => {
 
 describe("CodeSessionStore — retry recovery from errored (Step 8)", () => {
   it("re-submits from errored, keeps lastError until turn_complete(success)", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("initial", []);

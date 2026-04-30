@@ -39,6 +39,7 @@ import { FeedStore, type FeedStoreFilter } from "./feed-store";
 import { FeedId } from "../protocol";
 import type { CompletionProvider } from "./tug-text-types";
 import { getConnection } from "./connection-singleton";
+import { getConnectionLifecycle } from "./connection-lifecycle";
 import { getTugbankClient } from "./tugbank-singleton";
 import {
   cardSessionBindingStore,
@@ -180,8 +181,18 @@ class CardServicesStore {
       return null;
     }
 
+    const lifecycle = getConnectionLifecycle();
+    if (!lifecycle) {
+      console.warn(
+        "CardServicesStore: connection lifecycle unavailable for cardId",
+        cardId,
+      );
+      return null;
+    }
+
     const codeSessionStore = new CodeSessionStore({
       conn: connection,
+      lifecycle,
       tugSessionId: binding.tugSessionId,
     });
     const editorStore = new EditorSettingsStore();

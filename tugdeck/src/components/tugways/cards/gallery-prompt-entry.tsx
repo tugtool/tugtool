@@ -4,8 +4,9 @@
  * Mounts `TugPromptEntry` inside a horizontal `TugSplitPane` (top 70% —
  * placeholder; bottom 30% — entry, clamped at 85%). The card wires:
  *
- *   • A `MockTugConnection`-backed `CodeSessionStore` (the entry's turn
- *     state surface — no real Claude backend is required in the gallery).
+ *   • A `TestFrameChannel`-backed `CodeSessionStore` paired with a fresh
+ *     `ConnectionLifecycle` that never receives transport events (no real
+ *     Claude backend is required in the gallery).
  *   • Live `@` file completion via `FileTreeStore` against the real
  *     connection-singleton, mirroring `gallery-prompt-input`. When no
  *     live connection is available (tests, first paint before
@@ -42,8 +43,9 @@ import type { TugPopupButtonItem } from "../tug-popup-button";
 import { useResponderForm } from "../use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { CodeSessionStore } from "@/lib/code-session-store";
+import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import type { TugConnection } from "@/connection";
-import { MockTugConnection } from "@/lib/code-session-store/testing/mock-feed-store";
+import { TestFrameChannel } from "@/lib/code-session-store/testing/mock-feed-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
 import { FileTreeStore } from "@/lib/filetree-store";
 import { FeedStore, type FeedStoreFilter } from "@/lib/feed-store";
@@ -65,7 +67,7 @@ import "./gallery-prompt-entry.css";
 /**
  * Stable identifier for the gallery's mock `CodeSessionStore`. Not tied
  * to any real Claude session — the gallery runs the turn-state surface
- * entirely against the `MockTugConnection`.
+ * entirely against the `TestFrameChannel`.
  */
 export const GALLERY_TUG_SESSION_ID = "gallery-prompt-entry-session";
 
@@ -135,13 +137,18 @@ export interface GalleryPromptEntryProps {
 export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
   // --- Mock-backed CodeSessionStore (turn-state surface). ---
   const mockSessionRef = useRef<{
-    connection: MockTugConnection;
+    connection: TestFrameChannel;
     codeSessionStore: CodeSessionStore;
   } | null>(null);
   if (mockSessionRef.current === null) {
-    const connection = new MockTugConnection();
+    const connection = new TestFrameChannel();
+    // Fresh lifecycle for the gallery card. No transport events ever
+    // fire against it — the gallery has no real WebSocket — so the
+    // `transport_close` reducer event is effectively unreachable.
+    const lifecycle = new ConnectionLifecycle();
     const codeSessionStore = new CodeSessionStore({
       conn: connection as unknown as TugConnection,
+      lifecycle,
       tugSessionId: GALLERY_TUG_SESSION_ID,
     });
     mockSessionRef.current = { connection, codeSessionStore };

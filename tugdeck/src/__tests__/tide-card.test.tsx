@@ -30,15 +30,22 @@ const fakeConnection = {
     sentFrames.push({ feedId, payload });
   },
   onFrame: (_feedId: number, _cb: (payload: Uint8Array) => void) => () => {},
-  // CodeSessionStore subscribes via `onClose` for transport-close
-  // routing; tests never trigger a close so the returned unsubscribe
-  // stub is sufficient.
-  onClose: (_cb: () => void) => () => {},
 };
 
 mock.module("@/lib/connection-singleton", () => ({
   getConnection: () => fakeConnection,
   setConnection: () => {},
+}));
+
+// `cardServicesStore._construct` requires a `ConnectionLifecycle`
+// alongside the connection. Tests never trigger transport events, so
+// a fresh inert instance is sufficient.
+import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
+const fakeLifecycle = new ConnectionLifecycle();
+mock.module("@/lib/connection-lifecycle", () => ({
+  ConnectionLifecycle,
+  getConnectionLifecycle: () => fakeLifecycle,
+  registerConnectionLifecycle: () => {},
 }));
 
 // Mock the tugbank singleton so the picker's recents list + the

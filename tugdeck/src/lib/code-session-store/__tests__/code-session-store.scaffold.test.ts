@@ -8,20 +8,26 @@
 import { describe, it, expect } from "bun:test";
 
 import { CodeSessionStore } from "@/lib/code-session-store";
+import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import type { TugConnection } from "@/connection";
-import { MockTugConnection } from "@/lib/code-session-store/testing/mock-feed-store";
+import { TestFrameChannel } from "@/lib/code-session-store/testing/mock-feed-store";
 import { FIXTURE_IDS } from "@/lib/code-session-store/testing/golden-catalog";
 
 const TUG_SESSION_ID = FIXTURE_IDS.TUG_SESSION_ID;
 
 function makeInertConnection(): TugConnection {
-  return new MockTugConnection() as unknown as TugConnection;
+  return new TestFrameChannel() as unknown as TugConnection;
+}
+
+function makeInertLifecycle(): ConnectionLifecycle {
+  return new ConnectionLifecycle();
 }
 
 describe("CodeSessionStore — Step 1 scaffold", () => {
   it("exposes the initial snapshot shape", () => {
     const store = new CodeSessionStore({
       conn: makeInertConnection(),
+      lifecycle: makeInertLifecycle(),
       tugSessionId: TUG_SESSION_ID,
     });
 
@@ -47,6 +53,7 @@ describe("CodeSessionStore — Step 1 scaffold", () => {
   it("seeds the streaming document via initialValues", () => {
     const store = new CodeSessionStore({
       conn: makeInertConnection(),
+      lifecycle: makeInertLifecycle(),
       tugSessionId: TUG_SESSION_ID,
     });
 
@@ -58,6 +65,7 @@ describe("CodeSessionStore — Step 1 scaffold", () => {
   it("memoizes getSnapshot between dispatches", () => {
     const store = new CodeSessionStore({
       conn: makeInertConnection(),
+      lifecycle: makeInertLifecycle(),
       tugSessionId: TUG_SESSION_ID,
     });
 
@@ -71,6 +79,7 @@ describe("CodeSessionStore — Step 1 scaffold", () => {
   it("respects a custom displayLabel", () => {
     const store = new CodeSessionStore({
       conn: makeInertConnection(),
+      lifecycle: makeInertLifecycle(),
       tugSessionId: TUG_SESSION_ID,
       displayLabel: "card-A",
     });
@@ -81,6 +90,7 @@ describe("CodeSessionStore — Step 1 scaffold", () => {
   it("dispose clears in-flight paths and preserves an empty transcript", () => {
     const store = new CodeSessionStore({
       conn: makeInertConnection(),
+      lifecycle: makeInertLifecycle(),
       tugSessionId: TUG_SESSION_ID,
     });
 

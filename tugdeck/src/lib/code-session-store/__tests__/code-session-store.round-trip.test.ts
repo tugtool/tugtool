@@ -1,7 +1,7 @@
 /**
  * Step 3 — basic round-trip: load `v2.1.105/test-01-basic-round-trip`,
  * dispatch a `send`, replay every decoded CODE_OUTPUT event through
- * `MockTugConnection.dispatchDecoded`, and verify the full turn
+ * `TestFrameChannel.dispatchDecoded`, and verify the full turn
  * transitions `idle → submitting → awaiting_first_token → streaming →
  * idle`, commits one `TurnEntry(result: "success")`, captures the
  * Claude `session_id`, and writes a `user_message` CODE_INPUT frame.
@@ -10,9 +10,10 @@
 import { describe, it, expect } from "bun:test";
 
 import { CodeSessionStore } from "@/lib/code-session-store";
+import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import type { TugConnection } from "@/connection";
 import {
-  MockTugConnection,
+  TestFrameChannel,
 } from "@/lib/code-session-store/testing/mock-feed-store";
 import {
   FIXTURE_IDS,
@@ -23,9 +24,10 @@ import { FeedId } from "@/protocol";
 describe("CodeSessionStore — basic round-trip (Step 3)", () => {
   it("drives the full turn state machine on test-01", () => {
     const probe = loadGoldenProbe("v2.1.105", "test-01-basic-round-trip");
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = new CodeSessionStore({
       conn: conn as unknown as TugConnection,
+      lifecycle: new ConnectionLifecycle(),
       tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
     });
 
@@ -82,9 +84,10 @@ describe("CodeSessionStore — basic round-trip (Step 3)", () => {
 
   it("captures the final assistant text on the committed TurnEntry", () => {
     const probe = loadGoldenProbe("v2.1.105", "test-01-basic-round-trip");
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = new CodeSessionStore({
       conn: conn as unknown as TugConnection,
+      lifecycle: new ConnectionLifecycle(),
       tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
     });
 
@@ -100,9 +103,10 @@ describe("CodeSessionStore — basic round-trip (Step 3)", () => {
   });
 
   it("routes frames for other tug_session_ids to neither phase nor transcript", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = new CodeSessionStore({
       conn: conn as unknown as TugConnection,
+      lifecycle: new ConnectionLifecycle(),
       tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
     });
 

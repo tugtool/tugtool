@@ -24,8 +24,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 
 import { CodeSessionStore } from "@/lib/code-session-store";
+import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import type { TugConnection } from "@/connection";
-import { MockTugConnection } from "@/lib/code-session-store/testing/mock-feed-store";
+import { TestFrameChannel } from "@/lib/code-session-store/testing/mock-feed-store";
 import { FeedId } from "@/protocol";
 import {
   cardSessionBindingStore,
@@ -206,11 +207,12 @@ function makeBinding(
 }
 
 function makeStore(
-  conn: MockTugConnection,
+  conn: TestFrameChannel,
   tugSessionId: string,
 ): CodeSessionStore {
   return new CodeSessionStore({
     conn: conn as unknown as TugConnection,
+    lifecycle: new ConnectionLifecycle(),
     tugSessionId,
   });
 }
@@ -281,7 +283,7 @@ describe("R-CHAIN-01 — Fresh new", () => {
   it("history.push lands under the picker-chosen session id without waiting on session_init", async () => {
     const cardId = "card-rchain-01";
     const sessionId = "tug-rchain-01";
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = makeStore(conn, sessionId);
     bindForTest(cardId, sessionId);
 
@@ -313,7 +315,7 @@ describe("R-CHAIN-01 — Fresh new", () => {
   it("session_init logs with divergent=false when claude's id matches the picker's", async () => {
     const cardId = "card-rchain-01b";
     const sessionId = "tug-rchain-01b";
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = makeStore(conn, sessionId);
     bindForTest(cardId, sessionId);
 
@@ -367,7 +369,7 @@ describe("R-CHAIN-02 — Resume success", () => {
       ],
     });
 
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = makeStore(conn, sessionId);
     bindForTest(cardId, sessionId);
 
@@ -410,7 +412,7 @@ describe("R-CHAIN-03 — Resume failure", () => {
   it("resume_failed → lastError populated, binding cleared, picker notice stashed", () => {
     const cardId = "card-rchain-03";
     const staleId = "stale-session";
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = makeStore(conn, staleId);
     const unsubscribe = installCardObserver(cardId, store);
     bindForTest(cardId, staleId);
@@ -466,12 +468,12 @@ describe("R-CHAIN-04 — Concurrent resume rejected", () => {
     const cardA = "card-rchain-04-a";
     const cardB = "card-rchain-04-b";
 
-    const connA = new MockTugConnection();
+    const connA = new TestFrameChannel();
     const storeA = makeStore(connA, sessionId);
     const unsubA = installCardObserver(cardA, storeA);
     bindForTest(cardA, sessionId);
 
-    const connB = new MockTugConnection();
+    const connB = new TestFrameChannel();
     const storeB = makeStore(connB, sessionId);
     const unsubB = installCardObserver(cardB, storeB);
     bindForTest(cardB, sessionId);

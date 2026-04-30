@@ -10,9 +10,10 @@
 import { describe, it, expect } from "bun:test";
 
 import { CodeSessionStore } from "@/lib/code-session-store";
+import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import type { TugConnection } from "@/connection";
 import {
-  MockTugConnection,
+  TestFrameChannel,
 } from "@/lib/code-session-store/testing/mock-feed-store";
 import {
   FIXTURE_IDS,
@@ -26,9 +27,10 @@ describe("CodeSessionStore — assistant_text delta accumulation (Step 4)", () =
       "v2.1.105",
       "test-02-longer-response-streaming",
     );
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = new CodeSessionStore({
       conn: conn as unknown as TugConnection,
+      lifecycle: new ConnectionLifecycle(),
       tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
     });
 
@@ -98,9 +100,10 @@ describe("CodeSessionStore — assistant_text delta accumulation (Step 4)", () =
   it("accumulates only in arrival order — replacing on is_partial:false matches the authoritative text", () => {
     // Synthetic: two partials then a complete with DIFFERENT bytes.
     // The complete event's text is what wins.
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = new CodeSessionStore({
       conn: conn as unknown as TugConnection,
+      lifecycle: new ConnectionLifecycle(),
       tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
     });
 
@@ -161,9 +164,10 @@ describe("CodeSessionStore — assistant_text delta accumulation (Step 4)", () =
 
 describe("CodeSessionStore — thinking_text delta accumulation (Step 4)", () => {
   it("accumulates two thinking_text partials then replaces on is_partial:false", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = new CodeSessionStore({
       conn: conn as unknown as TugConnection,
+      lifecycle: new ConnectionLifecycle(),
       tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
     });
 
@@ -234,9 +238,10 @@ describe("CodeSessionStore — thinking_text delta accumulation (Step 4)", () =>
   });
 
   it("interleaves thinking_text and assistant_text on the same msg_id without cross-contamination", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = new CodeSessionStore({
       conn: conn as unknown as TugConnection,
+      lifecycle: new ConnectionLifecycle(),
       tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
     });
 

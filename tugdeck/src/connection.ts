@@ -69,8 +69,6 @@ export class TugConnection {
   private ws: WebSocket | null = null;
   private callbacks: Map<number, FrameCallback[]> = new Map();
   private lastPayload: Map<number, Uint8Array> = new Map();
-  private openCallbacks: Array<() => void> = [];
-  private closeCallbacks: Array<() => void> = [];
   private disconnectStateCallbacks: Array<DisconnectStateCallback> = [];
   private heartbeatTimer: number | null = null;
   private url: string;
@@ -157,14 +155,10 @@ export class TugConnection {
             this.clearCountdownTimer();
             this.notifyDisconnectState(false);
             this.startHeartbeat();
-            // Lifecycle fires before legacy callbacks so observers
-            // and callbacks can interleave-safely if needed; the
-            // lifecycle itself will internally fire `connectionDidReconnect`
+            // The lifecycle is the sole event surface for open/close
+            // transitions; it internally fires `connectionDidReconnect`
             // after `connectionDidOpen` if a prior close was observed.
             this.lifecycle?.notifyConnectionDidOpen();
-            for (const cb of this.openCallbacks) {
-              cb();
-            }
           } catch {
             console.error("tugdeck: handshake failed: invalid JSON");
             this.ws?.close();
@@ -195,15 +189,10 @@ export class TugConnection {
       this.lastCloseCode = event.code;
       this.lastCloseReason = event.reason || null;
 
-      // Lifecycle fires before legacy callbacks so subscribers that
-      // gate on `getState()` see "closed" by the time their close
-      // handler runs.
+      // The lifecycle is the sole event surface for close
+      // notifications. Subscribers that gate on `getState()` see
+      // "closed" by the time their close handler runs.
       this.lifecycle?.notifyConnectionDidClose();
-
-      // Notify close callbacks
-      for (const cb of this.closeCallbacks) {
-        try { cb(); } catch (e) { console.error("onClose callback error:", e); }
-      }
 
       // Don't reconnect if close was intentional
       if (this.intentionalClose) {
@@ -321,21 +310,6 @@ export class TugConnection {
   sendControlFrame(action: string, params?: Record<string, unknown>): void {
     const frame = controlFrame(action, params);
     this.send(frame.feedId, frame.payload);
-  }
-
-  /**
-   * Register a callback for when the connection opens
-   */
-  onOpen(callback: () => void): void {
-    this.openCallbacks.push(callback);
-  }
-
-  onClose(callback: () => void): () => void {
-    this.closeCallbacks.push(callback);
-    return () => {
-      const idx = this.closeCallbacks.indexOf(callback);
-      if (idx >= 0) this.closeCallbacks.splice(idx, 1);
-    };
   }
 
   /**

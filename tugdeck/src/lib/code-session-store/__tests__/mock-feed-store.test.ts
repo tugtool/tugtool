@@ -1,17 +1,16 @@
 /**
- * Tests for the test-only `MockFeedStore` and `MockTugConnection`
- * doubles (Step 2). Exercises replay + filter + ordering,
- * `replayRange` bounded playback for Step 7's interleave, and the
- * `MockTugConnection.send` recording path that decodes CODE_INPUT
- * payloads back to structured `InboundMessage` objects via
- * `decodeCodeInputPayload`.
+ * Tests for the test-only `MockFeedStore` and `TestFrameChannel`
+ * doubles. Exercises replay + filter + ordering, `replayRange` bounded
+ * playback for the interleave case, and the `TestFrameChannel.send`
+ * recording path that decodes CODE_INPUT payloads back to structured
+ * `InboundMessage` objects via `decodeCodeInputPayload`.
  */
 
 import { describe, it, expect } from "bun:test";
 
 import {
   MockFeedStore,
-  MockTugConnection,
+  TestFrameChannel,
   type MockFrame,
 } from "@/lib/code-session-store/testing/mock-feed-store";
 import { FIXTURE_IDS } from "@/lib/code-session-store/testing/golden-catalog";
@@ -40,7 +39,7 @@ function makeThreeFrames(): MockFrame[] {
 
 describe("MockFeedStore — replay + filter + ordering", () => {
   it("replays frames in order and notifies subscribers once per frame", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = new MockFeedStore(conn, [FeedId.CODE_OUTPUT]);
     const seen: unknown[] = [];
     store.subscribe(() => {
@@ -57,7 +56,7 @@ describe("MockFeedStore — replay + filter + ordering", () => {
   });
 
   it("drops frames whose feedId is not in the subscribed set", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = new MockFeedStore(conn, [FeedId.CODE_OUTPUT]);
     let notifyCount = 0;
     store.subscribe(() => {
@@ -79,7 +78,7 @@ describe("MockFeedStore — replay + filter + ordering", () => {
   });
 
   it("applies the filter predicate to drop non-matching frames", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const filter = (_feedId: number, decoded: unknown): boolean =>
       (decoded as { tug_session_id?: string }).tug_session_id === "A";
     const store = new MockFeedStore(
@@ -119,7 +118,7 @@ describe("MockFeedStore — replay + filter + ordering", () => {
 
 describe("MockFeedStore — replayRange", () => {
   it("plays only the first N frames on a bounded call", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = new MockFeedStore(conn, [FeedId.CODE_OUTPUT]);
     let notifyCount = 0;
     store.subscribe(() => {
@@ -137,7 +136,7 @@ describe("MockFeedStore — replayRange", () => {
   });
 
   it("supports pause/resume via two consecutive replayRange calls", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = new MockFeedStore(conn, [FeedId.CODE_OUTPUT]);
     let notifyCount = 0;
     store.subscribe(() => {
@@ -156,9 +155,9 @@ describe("MockFeedStore — replayRange", () => {
   });
 });
 
-describe("MockTugConnection — send recording", () => {
+describe("TestFrameChannel — send recording", () => {
   it("decodes a CODE_INPUT payload back to the original InboundMessage", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const msg: InboundMessage = {
       type: "user_message",
       text: "hi",
@@ -180,7 +179,7 @@ describe("MockTugConnection — send recording", () => {
   });
 
   it("dispatches onFrame callbacks via dispatchFrame", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const received: Uint8Array[] = [];
     conn.onFrame(FeedId.CODE_OUTPUT, (payload) => {
       received.push(payload);
@@ -191,20 +190,5 @@ describe("MockTugConnection — send recording", () => {
 
     expect(received.length).toBe(1);
     expect(received[0]).toBe(bytes);
-  });
-
-  it("fires close listeners on triggerClose and supports unsubscribe", () => {
-    const conn = new MockTugConnection();
-    let closeCount = 0;
-    const unsub = conn.onClose(() => {
-      closeCount += 1;
-    });
-
-    conn.triggerClose();
-    expect(closeCount).toBe(1);
-
-    unsub();
-    conn.triggerClose();
-    expect(closeCount).toBe(1);
   });
 });

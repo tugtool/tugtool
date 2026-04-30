@@ -746,17 +746,17 @@ None.
 - [x] Extend `restoreTideSessions` with `opts?: { reason?: "startup" | "reconnect" }`.
 - [x] In `main.tsx`, construct + attach + register the lifecycle, migrate `signalReady`, register the reconnect handler. Confirm lifecycle is attached *before* `connection.connect()` so the very first handshake fires through it.
 
-**Tasks (1b — pending):**
-- [ ] Add `lifecycle: ConnectionLifecycle` as a required option on `CodeSessionStoreOptions`. Replace the `conn.onClose` subscription with `lifecycle.observeConnectionDidClose` (still dispatches `transport_close`). Rename `_closeUnsub` → `_lifecycleCloseUnsub`; update `dispose()`.
-- [ ] Update `card-services-store.ts:183` to pass `lifecycle: getConnectionLifecycle()!` with a null guard.
-- [ ] Update `gallery-prompt-entry.tsx` to pass `lifecycle: new ConnectionLifecycle()` (fresh per gallery card; no events ever fire against it).
-- [ ] Rename `MockTugConnection` → `TestFrameChannel` in `mock-feed-store.ts`. Delete `closeCallbacks`, `onClose`, `triggerClose`. Update the module banner.
-- [ ] Bulk-rename `MockTugConnection` → `TestFrameChannel` across all 21 consumer files (imports, type annotations, instantiation).
-- [ ] Migrate test files using `conn.triggerClose()` to a real `ConnectionLifecycle` + `lifecycle.notifyConnectionDidClose()`. Sites: `code-session-store.errored.test.ts` (2 calls), `code-session-store.dispose.test.ts` (1 call).
-- [ ] Add `lifecycle: new ConnectionLifecycle()` to every `new CodeSessionStore({...})` callsite in tests (~21 files). Tests that drive transport events keep the lifecycle reference; tests that don't can inline-construct.
-- [ ] Delete the `"fires close listeners on triggerClose and supports unsubscribe"` block in `mock-feed-store.test.ts`.
-- [ ] **Delete** `TugConnection.onOpen`, `TugConnection.onClose`, `openCallbacks`, `closeCallbacks`, and the for-loops that iterate them. No deprecation; no commented-out code; no zombie types.
-- [ ] Verify totality with `grep`:
+**Tasks (1b — shipped):**
+- [x] Add `lifecycle: ConnectionLifecycle` as a required option on `CodeSessionStoreOptions`. Replace the `conn.onClose` subscription with `lifecycle.observeConnectionDidClose` (still dispatches `transport_close`). Rename `_closeUnsub` → `_lifecycleCloseUnsub`; update `dispose()`.
+- [x] Update `card-services-store.ts:183` to pass `lifecycle: getConnectionLifecycle()!` with a null guard.
+- [x] Update `gallery-prompt-entry.tsx` to pass `lifecycle: new ConnectionLifecycle()` (fresh per gallery card; no events ever fire against it).
+- [x] Rename `MockTugConnection` → `TestFrameChannel` in `mock-feed-store.ts`. Delete `closeCallbacks`, `onClose`, `triggerClose`. Update the module banner.
+- [x] Bulk-rename `MockTugConnection` → `TestFrameChannel` across all 21 consumer files (imports, type annotations, instantiation).
+- [x] Migrate test files using `conn.triggerClose()` to a real `ConnectionLifecycle` + `lifecycle.notifyConnectionDidClose()`. Sites: `code-session-store.errored.test.ts` (2 calls), `code-session-store.dispose.test.ts` (1 call).
+- [x] Add `lifecycle: new ConnectionLifecycle()` to every `new CodeSessionStore({...})` callsite in tests (~21 files). Tests that drive transport events keep the lifecycle reference; tests that don't can inline-construct.
+- [x] Delete the `"fires close listeners on triggerClose and supports unsubscribe"` block in `mock-feed-store.test.ts`.
+- [x] **Delete** `TugConnection.onOpen`, `TugConnection.onClose`, `openCallbacks`, `closeCallbacks`, and the for-loops that iterate them. No deprecation; no commented-out code; no zombie types.
+- [x] Verify totality with `grep`:
   - `grep -rn "MockTugConnection" src/` → 0 hits
   - `grep -rn "\.onOpen(\|\.onClose(" src/` → 0 hits in tugdeck (excluding the lifecycle's own implementation file)
   - `grep -rn "openCallbacks\|closeCallbacks" src/` → 0 hits
@@ -766,17 +766,17 @@ None.
 - [x] `connection-lifecycle.test.ts`: initial state, all four state transitions, observer dispatch (registration, unsubscribe, throw-isolation), `connectionDidReconnect` gating across mount path / first reconnect / subsequent reconnects / close-before-first-successful-open / multiple closes between opens / multiple opens after one close / late subscriber receiving later reconnects. **17 cases.**
 - [x] `card-session-binding-store.test.ts`: `clearAll()` fires exactly one notify, leaves `getSnapshot().size === 0`, returns a new Map reference, no-op on empty.
 
-**Tests (1b — pending):**
-- [ ] All migrated test files compile and pass under `bun test`. The behavior under test (transport-close → store flips to `errored` for non-idle phases; idle drops the close) is unchanged — the only delta is the *trigger* (lifecycle vs. mock callback).
-- [ ] `code-session-store.dispose.test.ts`: post-dispose, calling `lifecycle.notifyConnectionDidClose()` does not dispatch into the disposed store (the unsub ran).
+**Tests (1b — shipped):**
+- [x] All migrated test files compile and pass under `bun test`. The behavior under test (transport-close → store flips to `errored` for non-idle phases; idle drops the close) is unchanged — the only delta is the *trigger* (lifecycle vs. mock callback).
+- [x] `code-session-store.dispose.test.ts`: post-dispose, calling `lifecycle.notifyConnectionDidClose()` does not dispatch into the disposed store (the unsub ran).
 
 **Checkpoint:**
 - [x] (1a) `bun x tsc --noEmit` green; full `bun test` suite green; `bun run audit:tokens lint` unchanged from baseline.
-- [ ] (1b) `bun x tsc --noEmit` green.
-- [ ] (1b) Full `bun test` suite green; no regressions in any of the 21 migrated test files.
-- [ ] (1b) `bun run audit:tokens lint` unchanged from baseline (1b has no CSS changes).
-- [ ] (1b) All four `grep` totality checks return zero hits.
-- [ ] Manual (after 1b lands): in a running tugdeck with HMR, observe the lifecycle traces in the browser console after `pkill -x tugcast` and tugcast respawn. Expect: `[ConnectionLifecycle] connectionDidClose`, `[ConnectionLifecycle] connectionDidEnterReconnecting`, then `connectionWillOpen` → `connectionDidOpen` → `connectionDidReconnect`. Step 1 alone does *not* guarantee submit works — Step 8 closes that loop.
+- [x] (1b) `bun x tsc --noEmit` green.
+- [x] (1b) Full `bun test` suite green; no regressions in any of the 21 migrated test files.
+- [x] (1b) `bun run audit:tokens lint` unchanged from baseline (1b has no CSS changes).
+- [x] (1b) All four `grep` totality checks return zero hits.
+- [x] Manual (after 1b lands): in a running tugdeck with HMR, observe the lifecycle traces in the browser console after `pkill -x tugcast` and tugcast respawn. Expect: `[ConnectionLifecycle] connectionDidClose`, `[ConnectionLifecycle] connectionDidEnterReconnecting`, then `connectionWillOpen` → `connectionDidOpen` → `connectionDidReconnect`. Step 1 alone does *not* guarantee submit works — Step 8 closes that loop.
 
 ##### MockTugConnection consumers (full list, 21 files) {#mocktugconnection-consumers}
 

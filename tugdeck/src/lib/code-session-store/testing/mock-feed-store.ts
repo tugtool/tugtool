@@ -1,9 +1,9 @@
 /**
- * Test-only doubles for `TugConnection` and `FeedStore`.
+ * Test-only doubles for tugcast frame I/O.
  *
- * `MockTugConnection` mirrors the surface of `TugConnection` that
- * `CodeSessionStore` reaches through (`send`, `onFrame`, `onClose`) and
- * adds two test-only helpers:
+ * `TestFrameChannel` is a pure frame I/O test seam: it mirrors the
+ * subset of `TugConnection` that `CodeSessionStore` reaches through
+ * (`send`, `onFrame`) and adds two test helpers:
  *
  * - `dispatchFrame(feedId, payload)` fires all registered `onFrame`
  *   callbacks synchronously with raw payload bytes.
@@ -16,11 +16,16 @@
  * `decodeCodeInputPayload` so tests can assert on structured JSON
  * rather than chasing bytes.
  *
+ * Connection lifecycle (open/close/reconnect) is owned by
+ * `ConnectionLifecycle` — tests that need to drive transport events
+ * construct a real lifecycle and call `lifecycle.notifyConnectionDidClose()`
+ * etc. directly. This channel intentionally does not emit lifecycle
+ * events, so the type system enforces that lifecycle and frame I/O
+ * remain separate concerns.
+ *
  * `MockFeedStore` is a self-contained `FeedStore` double that tests can
  * drive directly via `replay` / `replayRange` without constructing a
- * real connection. Step 2 tests use it in isolation; Step 3+ tests
- * construct the real `FeedStore` against `MockTugConnection` instead —
- * both paths coexist.
+ * real connection.
  */
 
 import {
@@ -37,16 +42,17 @@ export interface MockFrame {
 }
 
 /**
- * Test double for `TugConnection`. Records outbound frames, replays
- * incoming frames through registered `onFrame` callbacks, and exposes
- * `triggerClose` for transport-close tests in Step 8.
+ * Test double for the frame I/O surface of `TugConnection`. Records
+ * outbound frames and replays incoming frames through registered
+ * `onFrame` callbacks. Lifecycle events (open/close/reconnect) are
+ * *not* part of this surface — drive those via `ConnectionLifecycle`
+ * directly.
  */
-export class MockTugConnection {
+export class TestFrameChannel {
   readonly recordedFrames: Array<{ feedId: number; decoded: unknown }> = [];
 
   private frameCallbacks: Map<number, Array<(payload: Uint8Array) => void>> =
     new Map();
-  private closeCallbacks: Array<() => void> = [];
 
   send(feedId: FeedIdValue, payload: Uint8Array, _flags?: number): void {
     if (feedId === FeedId.CODE_INPUT) {
@@ -64,14 +70,6 @@ export class MockTugConnection {
       this.frameCallbacks.set(feedId, []);
     }
     this.frameCallbacks.get(feedId)!.push(callback);
-  }
-
-  onClose(callback: () => void): () => void {
-    this.closeCallbacks.push(callback);
-    return () => {
-      const idx = this.closeCallbacks.indexOf(callback);
-      if (idx >= 0) this.closeCallbacks.splice(idx, 1);
-    };
   }
 
   /**
@@ -95,14 +93,6 @@ export class MockTugConnection {
     const payload = new TextEncoder().encode(JSON.stringify(decoded));
     this.dispatchFrame(feedId, payload);
   }
-
-  /** Fire all registered `onClose` callbacks synchronously. Test-only. */
-  triggerClose(): void {
-    const cbs = this.closeCallbacks.slice();
-    for (const cb of cbs) {
-      cb();
-    }
-  }
 }
 
 /**
@@ -120,7 +110,7 @@ export class MockFeedStore {
   private readonly _filter?: FeedStoreFilter;
 
   constructor(
-    _conn: MockTugConnection,
+    _conn: TestFrameChannel,
     feedIds: ReadonlyArray<FeedIdValue>,
     _decode?: (payload: Uint8Array) => unknown,
     filter?: FeedStoreFilter,

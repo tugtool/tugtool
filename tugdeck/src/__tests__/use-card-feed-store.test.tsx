@@ -2,7 +2,7 @@
  * useCardFeedStore hook unit tests.
  *
  * Host-side hook that owns the per-card FeedStore pipeline. Tests wire a
- * MockTugConnection through the connection-singleton mock so the real
+ * TestFrameChannel through the connection-singleton mock so the real
  * FeedStore constructs against a test-controllable wire, then assert:
  *   - empty feedIds yields an empty map (no FeedStore constructed)
  *   - dispatched frames flow into the returned map
@@ -15,11 +15,11 @@ import "./setup-rtl";
 import { describe, it, expect, afterEach, mock } from "bun:test";
 import { renderHook, act } from "@testing-library/react";
 
-import { MockTugConnection } from "@/lib/code-session-store/testing/mock-feed-store";
+import { TestFrameChannel } from "@/lib/code-session-store/testing/mock-feed-store";
 import { FeedId } from "@/protocol";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 
-const mockConnection = new MockTugConnection();
+const mockConnection = new TestFrameChannel();
 
 mock.module("@/lib/connection-singleton", () => ({
   getConnection: () => mockConnection,

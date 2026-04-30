@@ -30,9 +30,10 @@
 import { describe, it, expect } from "bun:test";
 
 import { CodeSessionStore } from "@/lib/code-session-store";
+import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import type { TugConnection } from "@/connection";
 import {
-  MockTugConnection,
+  TestFrameChannel,
 } from "@/lib/code-session-store/testing/mock-feed-store";
 import { FIXTURE_IDS } from "@/lib/code-session-store/testing/golden-catalog";
 import { FeedId } from "@/protocol";
@@ -41,18 +42,19 @@ const TUG_A = FIXTURE_IDS.TUG_SESSION_ID;
 const TUG_B = "tug00000-0000-4000-8000-0000000000bb";
 
 function constructStore(
-  conn: MockTugConnection,
+  conn: TestFrameChannel,
   tugSessionId: string = TUG_A,
 ): CodeSessionStore {
   return new CodeSessionStore({
     conn: conn as unknown as TugConnection,
+    lifecycle: new ConnectionLifecycle(),
     tugSessionId,
   });
 }
 
 describe("CodeSessionStore — session_unknown CONTROL error (T3.4.a.1)", () => {
   it("routes to errored with cause=session_unknown when the frame matches this session", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("read something", []);
@@ -74,7 +76,7 @@ describe("CodeSessionStore — session_unknown CONTROL error (T3.4.a.1)", () => 
   });
 
   it("drops session_unknown while the store is idle", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     conn.dispatchDecoded(FeedId.CONTROL, {
@@ -89,7 +91,7 @@ describe("CodeSessionStore — session_unknown CONTROL error (T3.4.a.1)", () => 
   });
 
   it("does not route session_unknown for some other session", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("hi", []);
@@ -108,7 +110,7 @@ describe("CodeSessionStore — session_unknown CONTROL error (T3.4.a.1)", () => 
 
 describe("CodeSessionStore — session_not_owned CONTROL error (T3.4.a.1)", () => {
   it("routes to errored via the phase gate when the wire frame has no tug_session_id", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("hi", []);
@@ -128,7 +130,7 @@ describe("CodeSessionStore — session_not_owned CONTROL error (T3.4.a.1)", () =
   });
 
   it("drops session_not_owned while the store is idle (no active send)", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     conn.dispatchDecoded(FeedId.CONTROL, {
@@ -142,7 +144,7 @@ describe("CodeSessionStore — session_not_owned CONTROL error (T3.4.a.1)", () =
   });
 
   it("drops session_not_owned once the store has received Claude tokens", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("hi", []);
@@ -181,7 +183,7 @@ describe("CodeSessionStore — session_not_owned CONTROL error (T3.4.a.1)", () =
 
 describe("CodeSessionStore — multi-card routing of unrouted CONTROL errors (T3.4.a.1)", () => {
   it("routes an unrouted session_not_owned only to the store in a waiting-for-response phase", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const storeA = constructStore(conn, TUG_A);
     const storeB = constructStore(conn, TUG_B);
 
@@ -204,7 +206,7 @@ describe("CodeSessionStore — multi-card routing of unrouted CONTROL errors (T3
   });
 
   it("recovers via send() from errored after a CONTROL error", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("first attempt", []);
@@ -253,7 +255,7 @@ describe("CodeSessionStore — multi-card routing of unrouted CONTROL errors (T3
   });
 
   it("ignores non-error CONTROL frames with matching tug_session_id", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("hi", []);
@@ -272,7 +274,7 @@ describe("CodeSessionStore — multi-card routing of unrouted CONTROL errors (T3
   });
 
   it("ignores app-level CONTROL frames with no tug_session_id (reload, set-theme)", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("hi", []);
@@ -295,7 +297,7 @@ describe("CodeSessionStore — resume_failed CODE_OUTPUT event", () => {
     // tugcode emits this after a failed `--resume` spawn falls back to
     // fresh. The fallback produced a usable session, so the store stays
     // in `idle`; `lastError` carries the notice for Step 6's affordance.
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     expect(store.getSnapshot().phase).toBe("idle");
@@ -317,7 +319,7 @@ describe("CodeSessionStore — resume_failed CODE_OUTPUT event", () => {
   });
 
   it("drops resume_failed frames whose tug_session_id does not match this store", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     conn.dispatchDecoded(FeedId.CODE_OUTPUT, {

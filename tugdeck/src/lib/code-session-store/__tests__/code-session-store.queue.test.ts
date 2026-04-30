@@ -10,16 +10,18 @@
 import { describe, it, expect } from "bun:test";
 
 import { CodeSessionStore } from "@/lib/code-session-store";
+import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import type { TugConnection } from "@/connection";
 import {
-  MockTugConnection,
+  TestFrameChannel,
 } from "@/lib/code-session-store/testing/mock-feed-store";
 import { FIXTURE_IDS } from "@/lib/code-session-store/testing/golden-catalog";
 import { FeedId } from "@/protocol";
 
-function constructStore(conn: MockTugConnection): CodeSessionStore {
+function constructStore(conn: TestFrameChannel): CodeSessionStore {
   return new CodeSessionStore({
     conn: conn as unknown as TugConnection,
+    lifecycle: new ConnectionLifecycle(),
     tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
   });
 }
@@ -30,7 +32,7 @@ function constructStore(conn: MockTugConnection): CodeSessionStore {
  * scratch buffer is isolated.
  */
 function driveToStreaming(
-  conn: MockTugConnection,
+  conn: TestFrameChannel,
   store: CodeSessionStore,
   msgId: string,
 ): void {
@@ -56,7 +58,7 @@ function driveToStreaming(
 }
 
 function dispatchTurnCompleteSuccess(
-  conn: MockTugConnection,
+  conn: TestFrameChannel,
   msgId: string,
 ): void {
   conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
@@ -68,7 +70,7 @@ function dispatchTurnCompleteSuccess(
 }
 
 function userMessageFrames(
-  conn: MockTugConnection,
+  conn: TestFrameChannel,
 ): Array<{ text: string }> {
   return conn.recordedFrames
     .filter(
@@ -81,7 +83,7 @@ function userMessageFrames(
 
 describe("CodeSessionStore — queue flush via turn_complete(success) collapse (Step 7)", () => {
   it("flushes exactly one queued send per successful turn and stays in submitting", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("first", []);
@@ -155,7 +157,7 @@ describe("CodeSessionStore — queue flush via turn_complete(success) collapse (
   });
 
   it("clears a non-empty queue on turn_complete(error) without flushing", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("first", []);

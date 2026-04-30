@@ -16,9 +16,10 @@
 import { describe, it, expect } from "bun:test";
 
 import { CodeSessionStore } from "@/lib/code-session-store";
+import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import type { TugConnection } from "@/connection";
 import {
-  MockTugConnection,
+  TestFrameChannel,
 } from "@/lib/code-session-store/testing/mock-feed-store";
 import {
   FIXTURE_IDS,
@@ -27,9 +28,10 @@ import {
 import { FeedId } from "@/protocol";
 import type { ToolCallState } from "@/lib/code-session-store/types";
 
-function constructStore(conn: MockTugConnection): CodeSessionStore {
+function constructStore(conn: TestFrameChannel): CodeSessionStore {
   return new CodeSessionStore({
     conn: conn as unknown as TugConnection,
+    lifecycle: new ConnectionLifecycle(),
     tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
   });
 }
@@ -42,7 +44,7 @@ function readInflightTools(store: CodeSessionStore): ToolCallState[] {
 describe("CodeSessionStore — tool lifecycle on test-05 (Step 5)", () => {
   it("flips to tool_work on the first tool_use and back to streaming on tool_result", () => {
     const probe = loadGoldenProbe("v2.1.105", "test-05-tool-use-read");
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     const phases: string[] = [];
@@ -108,7 +110,7 @@ describe("CodeSessionStore — tool lifecycle on test-05 (Step 5)", () => {
 describe("CodeSessionStore — concurrent tool calls on test-07 (Step 5)", () => {
   it("keeps two distinct tool_use_ids in inflight.tools simultaneously and only returns to streaming when both resolve", () => {
     const probe = loadGoldenProbe("v2.1.105", "test-07-multiple-tool-calls");
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("read multiple files", []);
@@ -180,7 +182,7 @@ describe("CodeSessionStore — concurrent tool calls on test-07 (Step 5)", () =>
   });
 
   it("drops a stray tool_result for an unknown tool_use_id without mutating state", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("do stuff", []);

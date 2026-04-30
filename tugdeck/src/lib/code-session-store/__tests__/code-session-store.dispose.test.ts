@@ -2,8 +2,9 @@
  * Step 9 — dispose teardown.
  *
  * `dispose()` unsubscribes the FeedStore subscription + the
- * `conn.onClose` subscription from Step 8, clears the listener list,
- * clears `queuedSends`, and resets the in-flight streaming paths.
+ * `connectionDidClose` subscription on `ConnectionLifecycle`, clears
+ * the listener list, clears `queuedSends`, and resets the in-flight
+ * streaming paths.
  *
  * It explicitly does NOT clear the transcript ([L23] — user-visible
  * state must not be destroyed by internal implementation operations)
@@ -14,9 +15,10 @@
 import { describe, it, expect } from "bun:test";
 
 import { CodeSessionStore } from "@/lib/code-session-store";
+import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import type { TugConnection } from "@/connection";
 import {
-  MockTugConnection,
+  TestFrameChannel,
 } from "@/lib/code-session-store/testing/mock-feed-store";
 import {
   FIXTURE_IDS,
@@ -24,9 +26,13 @@ import {
 } from "@/lib/code-session-store/testing/golden-catalog";
 import { FeedId } from "@/protocol";
 
-function constructStore(conn: MockTugConnection): CodeSessionStore {
+function constructStore(
+  conn: TestFrameChannel,
+  lifecycle: ConnectionLifecycle = new ConnectionLifecycle(),
+): CodeSessionStore {
   return new CodeSessionStore({
     conn: conn as unknown as TugConnection,
+    lifecycle,
     tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
   });
 }
@@ -34,7 +40,7 @@ function constructStore(conn: MockTugConnection): CodeSessionStore {
 describe("CodeSessionStore — dispose teardown (Step 9)", () => {
   it("preserves transcript but stops listening after dispose", () => {
     const probe = loadGoldenProbe("v2.1.105", "test-01-basic-round-trip");
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     let notifyCount = 0;
@@ -89,7 +95,7 @@ describe("CodeSessionStore — dispose teardown (Step 9)", () => {
   });
 
   it("is idempotent on double-dispose", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("hi", []);
@@ -99,25 +105,26 @@ describe("CodeSessionStore — dispose teardown (Step 9)", () => {
   });
 
   it("stops routing transport close events after dispose", () => {
-    const conn = new MockTugConnection();
-    const store = constructStore(conn);
+    const conn = new TestFrameChannel();
+    const lifecycle = new ConnectionLifecycle();
+    const store = constructStore(conn, lifecycle);
 
     store.send("hi", []);
     expect(store.getSnapshot().phase).toBe("submitting");
 
     store.dispose();
 
-    // triggerClose after dispose: the onClose unsub ran, so the
-    // store's close handler should no longer be registered. Even if
-    // it were, the `_disposed` guard in the close callback drops the
+    // notifyConnectionDidClose after dispose: the lifecycle unsub ran,
+    // so the store's close handler is no longer registered. Even if it
+    // were, the `_disposed` guard in the close callback drops the
     // dispatch. State stays where it was at dispose time.
-    conn.triggerClose();
+    lifecycle.notifyConnectionDidClose();
     expect(store.getSnapshot().phase).toBe("submitting");
     expect(store.getSnapshot().lastError).toBeNull();
   });
 
   it("does not fire listeners for frames that arrived before dispose but after unsubscribe", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("hi", []);

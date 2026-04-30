@@ -5,7 +5,7 @@
  * reason about.
  *
  * The class integration tests (round-trip / deltas / tools / ...)
- * cover the same paths end-to-end through `MockTugConnection`; this
+ * cover the same paths end-to-end through `TestFrameChannel`; this
  * file exists because the plan's "Reducer split for testability"
  * section explicitly advocates a unit tier that bypasses the wrapper.
  */

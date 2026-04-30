@@ -4,7 +4,7 @@
  * The `CodeSessionStore` constructs a filtered `FeedStore` subscribing
  * to `[CODE_OUTPUT, SESSION_STATE]` with a predicate matching only
  * frames whose payload `tug_session_id` matches the store's own. Two
- * stores against the same `MockTugConnection` must therefore observe
+ * stores against the same `TestFrameChannel` must therefore observe
  * disjoint frame streams even though the connection replays every
  * frame to every registered `onFrame` callback.
  *
@@ -17,9 +17,10 @@
 import { describe, it, expect } from "bun:test";
 
 import { CodeSessionStore } from "@/lib/code-session-store";
+import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import type { TugConnection } from "@/connection";
 import {
-  MockTugConnection,
+  TestFrameChannel,
 } from "@/lib/code-session-store/testing/mock-feed-store";
 import { FIXTURE_IDS } from "@/lib/code-session-store/testing/golden-catalog";
 import { FeedId } from "@/protocol";
@@ -28,18 +29,19 @@ const TUG_A = FIXTURE_IDS.TUG_SESSION_ID;
 const TUG_B = "tug00000-0000-4000-8000-0000000000bb";
 
 function constructStore(
-  conn: MockTugConnection,
+  conn: TestFrameChannel,
   tugSessionId: string,
 ): CodeSessionStore {
   return new CodeSessionStore({
     conn: conn as unknown as TugConnection,
+    lifecycle: new ConnectionLifecycle(),
     tugSessionId,
   });
 }
 
 describe("CodeSessionStore — multi-instance filter isolation (Step 9)", () => {
   it("routes a resume_failed frame to the matching store only", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const storeA = constructStore(conn, TUG_A);
     const storeB = constructStore(conn, TUG_B);
 
@@ -71,7 +73,7 @@ describe("CodeSessionStore — multi-instance filter isolation (Step 9)", () => 
   });
 
   it("drives independent turn state machines for each store", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const storeA = constructStore(conn, TUG_A);
     const storeB = constructStore(conn, TUG_B);
 
@@ -80,7 +82,7 @@ describe("CodeSessionStore — multi-instance filter isolation (Step 9)", () => 
     expect(storeB.getSnapshot().phase).toBe("idle");
 
     // Two outbound frames so far: one from each... wait, only A sent.
-    // MockTugConnection records every outbound frame; we assert both
+    // TestFrameChannel records every outbound frame; we assert both
     // the count and the session attribution.
     expect(conn.recordedFrames.length).toBe(1);
     expect(conn.recordedFrames[0].decoded).toMatchObject({
@@ -128,7 +130,7 @@ describe("CodeSessionStore — multi-instance filter isolation (Step 9)", () => 
   });
 
   it("filters out frames with a mismatched tug_session_id before the reducer", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const storeA = constructStore(conn, TUG_A);
 
     storeA.send("hi", []);
@@ -150,7 +152,7 @@ describe("CodeSessionStore — multi-instance filter isolation (Step 9)", () => 
   });
 
   it("routes SESSION_STATE errored only to the matching store", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const storeA = constructStore(conn, TUG_A);
     const storeB = constructStore(conn, TUG_B);
 

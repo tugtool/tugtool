@@ -11,9 +11,10 @@
 import { describe, it, expect } from "bun:test";
 
 import { CodeSessionStore } from "@/lib/code-session-store";
+import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import type { TugConnection } from "@/connection";
 import {
-  MockTugConnection,
+  TestFrameChannel,
 } from "@/lib/code-session-store/testing/mock-feed-store";
 import {
   FIXTURE_IDS,
@@ -21,15 +22,16 @@ import {
 } from "@/lib/code-session-store/testing/golden-catalog";
 import { FeedId } from "@/protocol";
 
-function constructStore(conn: MockTugConnection): CodeSessionStore {
+function constructStore(conn: TestFrameChannel): CodeSessionStore {
   return new CodeSessionStore({
     conn: conn as unknown as TugConnection,
+    lifecycle: new ConnectionLifecycle(),
     tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
   });
 }
 
 function driveToStreaming(
-  conn: MockTugConnection,
+  conn: TestFrameChannel,
   store: CodeSessionStore,
 ): void {
   conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
@@ -55,7 +57,7 @@ function driveToStreaming(
 
 describe("CodeSessionStore — cost_update (Step 6)", () => {
   it("captures a full CostSnapshot including num_turns/duration/usage", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("hi", []);
@@ -91,7 +93,7 @@ describe("CodeSessionStore — cost_update (Step 6)", () => {
   });
 
   it("overwrites lastCost on a second cost_update", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("hi", []);
@@ -118,7 +120,7 @@ describe("CodeSessionStore — cost_update (Step 6)", () => {
   });
 
   it("leaves optional fields null when the wire event omits them", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("hi", []);
@@ -138,7 +140,7 @@ describe("CodeSessionStore — cost_update (Step 6)", () => {
   });
 
   it("ignores cost_update with non-numeric total_cost_usd", () => {
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("hi", []);
@@ -153,7 +155,7 @@ describe("CodeSessionStore — cost_update (Step 6)", () => {
 
   it("captures a zero CostSnapshot from the test-01 fixture round-trip", () => {
     const probe = loadGoldenProbe("v2.1.105", "test-01-basic-round-trip");
-    const conn = new MockTugConnection();
+    const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
     store.send("hello", []);

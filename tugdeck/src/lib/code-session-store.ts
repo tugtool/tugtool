@@ -25,6 +25,7 @@ import {
   type FeedIdValue,
 } from "@/protocol";
 import type { TugConnection } from "@/connection";
+import type { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import {
   PropertyStore,
   type PropertyDescriptor,
@@ -76,6 +77,15 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
 
 export interface CodeSessionStoreOptions {
   conn: TugConnection;
+  /**
+   * Connection-lifecycle event pipe. The store subscribes to
+   * `connectionDidClose` to dispatch `transport_close` into the reducer
+   * (idle phases drop it, non-idle routes to `errored`). Required so the
+   * store has a single, named source of truth for transport-close
+   * events; the legacy `TugConnection.onClose` callable was removed in
+   * favor of this lifecycle.
+   */
+  lifecycle: ConnectionLifecycle;
   tugSessionId: string;
   displayLabel?: string;
 }
@@ -88,6 +98,7 @@ export class CodeSessionStore {
   readonly streamingDocument: PropertyStore;
 
   private readonly conn: TugConnection;
+  private readonly lifecycle: ConnectionLifecycle;
   private readonly tugSessionId: string;
   private readonly displayLabel: string;
   private readonly feedStore: FeedStore;
@@ -98,11 +109,12 @@ export class CodeSessionStore {
   private _cachedSnapshot: CodeSessionSnapshot | null = null;
   private _disposed = false;
   private _feedStoreUnsub: (() => void) | null = null;
-  private _closeUnsub: (() => void) | null = null;
+  private _lifecycleCloseUnsub: (() => void) | null = null;
   private _lastFrameByFeed: Map<number, unknown> = new Map();
 
   constructor(options: CodeSessionStoreOptions) {
     this.conn = options.conn;
+    this.lifecycle = options.lifecycle;
     this.tugSessionId = options.tugSessionId;
     this.displayLabel = options.displayLabel ?? options.tugSessionId.slice(0, 8);
 
@@ -152,7 +164,7 @@ export class CodeSessionStore {
     // Subscribe unconditionally. The reducer itself decides whether
     // a close matters — idle closes are dropped, non-idle routes to
     // `errored`. Cheap to leave registered for the store's lifetime.
-    this._closeUnsub = this.conn.onClose(() => {
+    this._lifecycleCloseUnsub = this.lifecycle.observeConnectionDidClose(() => {
       if (this._disposed) return;
       this.dispatch({ type: "transport_close" });
     });
@@ -274,9 +286,9 @@ export class CodeSessionStore {
       this._feedStoreUnsub();
       this._feedStoreUnsub = null;
     }
-    if (this._closeUnsub) {
-      this._closeUnsub();
-      this._closeUnsub = null;
+    if (this._lifecycleCloseUnsub) {
+      this._lifecycleCloseUnsub();
+      this._lifecycleCloseUnsub = null;
     }
     this.feedStore.dispose();
     this._listeners = [];

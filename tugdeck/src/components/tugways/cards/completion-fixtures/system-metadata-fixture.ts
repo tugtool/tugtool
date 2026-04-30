@@ -2,7 +2,7 @@
  * system-metadata-fixture.ts — offline `/` completion source for the
  * gallery-prompt-entry demo card (D5).
  *
- * The gallery card drives `CodeSessionStore` against a `MockTugConnection`,
+ * The gallery card drives `CodeSessionStore` against a `TestFrameChannel`,
  * so Claude Code's `system_metadata` frame — which normally populates the
  * live `SessionMetadataStore` on session start — never reaches the card
  * and `/` would open an empty popup. This fixture feeds the *same*
