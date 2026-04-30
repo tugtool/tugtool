@@ -40,7 +40,7 @@ import { TugRadioGroup, TugRadioItem } from "../tug-radio-group";
 import { TugPopupButton } from "../tug-popup-button";
 import type { TugPopupButtonItem } from "../tug-popup-button";
 import { TugSwitch } from "../tug-switch";
-import { TugChoiceGroup, type TugChoiceItem } from "../tug-choice-group";
+import { TugSeparator } from "../tug-separator";
 import { useTugSheet } from "../tug-sheet";
 import { useResponderChain } from "../responder-chain-provider";
 import { useResponderForm } from "../use-responder-form";
@@ -111,12 +111,6 @@ const LETTER_SPACING_OPTIONS: TugPopupButtonItem<number>[] = [
 /** Percentage the entry panel pegs to when the user clicks Maximize.
  *  Mirrors the panel's `maxSize="90%"` upper bound — keep them in sync. */
 const ENTRY_PANEL_MAX_PCT = 90;
-
-const RETURN_ACTION_CHOICES: TugChoiceItem[] = [
-  { value: "default", label: "Default" },
-  { value: "submit", label: "Submits" },
-  { value: "newline", label: "Newline" },
-];
 
 const LINE_HEIGHT_OPTIONS: TugPopupButtonItem<number>[] = [
   { action: TUG_ACTIONS.SET_VALUE, value: 1.0, label: "1.0" },
@@ -1076,6 +1070,62 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   //   - FOCUS_PROMPT (⌘K): move keyboard focus to the prompt editor.
   //     Reads the delegate via the ref [L07] so the handler closure
   //     registered at mount never goes stale.
+  // --- Stable senders for the editor-settings controls. Declared
+  // here so both `useResponderForm` (below) and the sheet body
+  // can reference them. ---
+  const fontPopupId = useId();
+  const fontSizePopupId = useId();
+  const letterSpacingPopupId = useId();
+  const lineHeightPopupId = useId();
+  const lineWrapId = useId();
+  const lineNumbersId = useId();
+  const activeLineGutterId = useId();
+
+  // --- Editor-settings sheet (title-bar `…` button → OPEN_MENU). ---
+  const { showSheet, renderSheet } = useTugSheet();
+  // Each `showSheet()` mounts a fresh sheet body, but the body
+  // subscribes to `editorStore` directly so it tracks live changes
+  // (e.g. the user toggling a switch) without an outer re-render.
+  const openEditorSettingsSheet = useCallback(() => {
+    void showSheet({
+      title: "Editor settings",
+      content: (close) => (
+        <EditorSettingsSheetBody
+          editorStore={editorStore}
+          fontPopupId={fontPopupId}
+          fontSizePopupId={fontSizePopupId}
+          letterSpacingPopupId={letterSpacingPopupId}
+          lineHeightPopupId={lineHeightPopupId}
+          lineWrapId={lineWrapId}
+          lineNumbersId={lineNumbersId}
+          activeLineGutterId={activeLineGutterId}
+          onClose={close}
+        />
+      ),
+      // Override Radix FocusScope's default first-focusable pick so
+      // the OK button claims initial focus. With OK focused, Return
+      // dismisses the sheet directly via the button's native click
+      // semantics — no extra keymap needed.
+      onOpenAutoFocus: (event) => {
+        event.preventDefault();
+        const okButton = document.querySelector<HTMLButtonElement>(
+          '[data-slot="tug-sheet"] [data-tug-default-button="ok"]',
+        );
+        okButton?.focus();
+      },
+    });
+  }, [
+    showSheet,
+    editorStore,
+    fontPopupId,
+    fontSizePopupId,
+    letterSpacingPopupId,
+    lineHeightPopupId,
+    lineWrapId,
+    lineNumbersId,
+    activeLineGutterId,
+  ]);
+
   const {
     ResponderScope: CardContentResponderScope,
     responderRef: cardContentResponderRef,
@@ -1086,18 +1136,13 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
       [TUG_ACTIONS.FOCUS_PROMPT]: (_event: ActionEvent) => {
         entryDelegateRef.current?.focus();
       },
+      [TUG_ACTIONS.OPEN_MENU]: (_event: ActionEvent) => {
+        openEditorSettingsSheet();
+      },
     },
   });
 
-  // --- Responder scope for tools-panel popup buttons. ---
-  const fontPopupId = useId();
-  const fontSizePopupId = useId();
-  const letterSpacingPopupId = useId();
-  const lineHeightPopupId = useId();
-  const lineWrapId = useId();
-  const lineNumbersId = useId();
-  const activeLineGutterId = useId();
-  const returnActionId = useId();
+  // --- Responder scope for the editor-settings controls. ---
   const { ResponderScope, responderRef } = useResponderForm({
     setValueString: {
       [fontPopupId]: (v: string) => editorStore.set({ fontId: v }),
@@ -1112,13 +1157,6 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
       [lineNumbersId]: (v: boolean) => editorStore.set({ lineNumbers: v }),
       [activeLineGutterId]: (v: boolean) =>
         editorStore.set({ highlightActiveLineGutter: v }),
-    },
-    selectValue: {
-      [returnActionId]: (v: string) => {
-        if (v === "default" || v === "submit" || v === "newline") {
-          editorStore.set({ returnAction: v });
-        }
-      },
     },
   });
 
@@ -1142,81 +1180,6 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
       Project: {projectDir}
     </TugBadge>
   ) : null;
-
-  const letterSpacingLabel =
-    editorSettings.letterSpacing === 0
-      ? "Normal"
-      : `${editorSettings.letterSpacing > 0 ? "+" : ""}${editorSettings.letterSpacing.toFixed(2)} px`;
-
-  const toolsContent = (
-    <>
-      <div className="tide-card-tools-row">
-        <TugPopupButton
-          topLabel="Font"
-          label={EDITOR_FONT_OPTIONS.find(f => f.value === editorSettings.fontId)?.label ?? "Font"}
-          items={EDITOR_FONT_OPTIONS}
-          senderId={fontPopupId}
-          size="sm"
-        />
-        <TugPopupButton
-          topLabel="Size"
-          label={`${editorSettings.fontSize}px`}
-          items={FONT_SIZE_OPTIONS}
-          senderId={fontSizePopupId}
-          size="sm"
-        />
-        <TugPopupButton
-          topLabel="Spacing"
-          label={letterSpacingLabel}
-          items={LETTER_SPACING_OPTIONS}
-          senderId={letterSpacingPopupId}
-          size="sm"
-        />
-        <TugPopupButton
-          topLabel="Leading"
-          label={editorSettings.lineHeight.toFixed(1)}
-          items={LINE_HEIGHT_OPTIONS}
-          senderId={lineHeightPopupId}
-          size="sm"
-        />
-      </div>
-      <div className="tide-card-tools-row">
-        <div className="tide-card-tools-cell">
-          <span className="tide-card-tools-label">Line wrap</span>
-          <TugSwitch
-            checked={editorSettings.lineWrap}
-            senderId={lineWrapId}
-            size="sm"
-          />
-        </div>
-        <div className="tide-card-tools-cell">
-          <span className="tide-card-tools-label">Line numbers</span>
-          <TugSwitch
-            checked={editorSettings.lineNumbers}
-            senderId={lineNumbersId}
-            size="sm"
-          />
-        </div>
-        <div className="tide-card-tools-cell">
-          <span className="tide-card-tools-label">Active line</span>
-          <TugSwitch
-            checked={editorSettings.highlightActiveLineGutter}
-            senderId={activeLineGutterId}
-            size="sm"
-          />
-        </div>
-        <div className="tide-card-tools-cell">
-          <span className="tide-card-tools-label">Return</span>
-          <TugChoiceGroup
-            items={RETURN_ACTION_CHOICES}
-            value={editorSettings.returnAction}
-            senderId={returnActionId}
-            size="xs"
-          />
-        </div>
-      </div>
-    </>
-  );
 
   return (
     <CardContentResponderScope>
@@ -1269,20 +1232,15 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
                 onBeforeSubmit={handleBeforeSubmit}
                 onAfterSubmit={handleAfterSubmit}
                 statusContent={statusContent}
-                toolsContent={toolsContent}
                 lineWrap={editorSettings.lineWrap}
                 lineNumbers={editorSettings.lineNumbers}
                 highlightActiveLineGutter={editorSettings.highlightActiveLineGutter}
-                returnAction={
-                  editorSettings.returnAction === "default"
-                    ? undefined
-                    : editorSettings.returnAction
-                }
                 maximized={maximized}
                 onMaximizeChange={setMaximized}
                 componentStatePreservationKey="entry-chrome"
               />
             </TugBox>
+            {renderSheet()}
           </ResponderScope>
         </TugSplitPanel>
       </TugSplitPane>
@@ -1310,6 +1268,139 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
       </TugPaneBanner>
       </div>
     </CardContentResponderScope>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// EditorSettingsSheetBody — sheet content for the title-bar `…` menu
+// ---------------------------------------------------------------------------
+
+/**
+ * Props for {@link EditorSettingsSheetBody}.
+ *
+ * Sender ids are provided by the enclosing `TideCardBody` so the form
+ * bindings (registered there via `useResponderForm`) can target the
+ * controls. The store reference is forwarded so the body can subscribe
+ * directly via `useSyncExternalStore` and stay in sync without an
+ * outer re-render of the sheet payload.
+ */
+interface EditorSettingsSheetBodyProps {
+  editorStore: EditorSettingsStore;
+  fontPopupId: string;
+  fontSizePopupId: string;
+  letterSpacingPopupId: string;
+  lineHeightPopupId: string;
+  lineWrapId: string;
+  lineNumbersId: string;
+  activeLineGutterId: string;
+  /** Dismiss callback supplied by `useTugSheet`'s render closure. */
+  onClose: () => void;
+}
+
+/**
+ * Body of the editor-settings sheet shown when the user taps the `…`
+ * button in the Tide card's title bar.
+ *
+ * Sections:
+ *   1. **Typography** — Font / Size / Line / Spacing popup buttons,
+ *      all on one row.
+ *   2. **View** — Line wrap / Line numbers / Active line, each on
+ *      its own row with the label after the switch (TugSwitch's
+ *      native layout convention).
+ */
+function EditorSettingsSheetBody({
+  editorStore,
+  fontPopupId,
+  fontSizePopupId,
+  letterSpacingPopupId,
+  lineHeightPopupId,
+  lineWrapId,
+  lineNumbersId,
+  activeLineGutterId,
+  onClose,
+}: EditorSettingsSheetBodyProps) {
+  const editorSettings = useSyncExternalStore(
+    editorStore.subscribe,
+    editorStore.getSnapshot,
+  );
+
+  const letterSpacingLabel =
+    editorSettings.letterSpacing === 0
+      ? "Normal"
+      : `${editorSettings.letterSpacing > 0 ? "+" : ""}${editorSettings.letterSpacing.toFixed(2)} px`;
+
+  return (
+    <div className="tide-card-settings">
+      <div className="tide-card-settings-row">
+        <TugPopupButton
+          className="tide-card-settings-popup tide-card-settings-popup-font"
+          topLabel="Font"
+          label={EDITOR_FONT_OPTIONS.find(f => f.value === editorSettings.fontId)?.label ?? "Font"}
+          items={EDITOR_FONT_OPTIONS}
+          senderId={fontPopupId}
+          size="sm"
+        />
+        <TugPopupButton
+          className="tide-card-settings-popup tide-card-settings-popup-size"
+          topLabel="Size"
+          label={`${editorSettings.fontSize}px`}
+          items={FONT_SIZE_OPTIONS}
+          senderId={fontSizePopupId}
+          size="sm"
+        />
+        <TugPopupButton
+          className="tide-card-settings-popup tide-card-settings-popup-line"
+          topLabel="Line"
+          label={editorSettings.lineHeight.toFixed(1)}
+          items={LINE_HEIGHT_OPTIONS}
+          senderId={lineHeightPopupId}
+          size="sm"
+        />
+        <TugPopupButton
+          className="tide-card-settings-popup tide-card-settings-popup-spacing"
+          topLabel="Spacing"
+          label={letterSpacingLabel}
+          items={LETTER_SPACING_OPTIONS}
+          senderId={letterSpacingPopupId}
+          size="sm"
+        />
+      </div>
+
+      <TugSeparator />
+
+      <div className="tide-card-settings-switches">
+        <TugSwitch
+          label="Line wrap"
+          checked={editorSettings.lineWrap}
+          senderId={lineWrapId}
+          size="md"
+        />
+        <TugSwitch
+          label="Line numbers"
+          checked={editorSettings.lineNumbers}
+          senderId={lineNumbersId}
+          size="md"
+        />
+        <TugSwitch
+          label="Active line"
+          checked={editorSettings.highlightActiveLineGutter}
+          senderId={activeLineGutterId}
+          size="md"
+        />
+      </div>
+
+      <div className="tug-sheet-actions">
+        <TugPushButton
+          autoFocus
+          emphasis="filled"
+          role="action"
+          onClick={onClose}
+          data-tug-default-button="ok"
+        >
+          OK
+        </TugPushButton>
+      </div>
+    </div>
   );
 }
 

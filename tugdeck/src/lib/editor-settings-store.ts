@@ -39,11 +39,6 @@ export const DEFAULT_SETTINGS: EditorSettings = {
   lineWrap: false,
   lineNumbers: false,
   highlightActiveLineGutter: false,
-  // The host (e.g. `tug-prompt-entry`) decides Return semantics by
-  // default — see the per-route mapping in the entry. The popup
-  // exposes a manual override that wins when set to a non-`"default"`
-  // value.
-  returnAction: "default",
 };
 
 /** Font stacks keyed by font ID. */

@@ -74,6 +74,14 @@ export interface CardTitleBarProps {
   closable?: boolean;
   collapsed: boolean;
   /**
+   * Click handler for the title bar's `…` (Ellipsis) menu button.
+   * Wired by TugPane to dispatch `TUG_ACTIONS.OPEN_MENU` through the
+   * responder chain so the active card content can present its
+   * card-level menu (typically as a TugSheet). When omitted, the
+   * button still renders but is a no-op.
+   */
+  onMenuClick?: () => void;
+  /**
    * Number of cards in this pane. Drives the close-confirmation
    * behavior of the title-bar X button:
    *
@@ -106,6 +114,7 @@ export function CardTitleBar({
   onCollapse,
   onClose,
   onDragStart,
+  onMenuClick,
 }: CardTitleBarProps) {
   const handleTitleBarPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
@@ -224,6 +233,7 @@ export function CardTitleBar({
           size="sm"
           icon={<Ellipsis />}
           onPointerDown={(e: React.PointerEvent) => e.stopPropagation()}
+          onClick={onMenuClick}
           aria-label="Card menu"
           data-testid="tug-pane-title-bar-menu-button"
         />
@@ -636,6 +646,30 @@ export function TugPane({
   const handleTitleBarClose = useCallback(() => {
     onClose?.();
   }, [onClose]);
+
+  // Title-bar `…` button. Dispatches `TUG_ACTIONS.OPEN_MENU` to the
+  // active card's content responder by id (the convention is
+  // `${cardId}-card-content`, matching what `useResponder({ kind:
+  // "card-content" })` consumers register). Targets directly rather
+  // than walking from the first responder so the menu opens even
+  // before the user has focused inside the card. Cards that don't
+  // register a card-content responder, or that don't bind
+  // `OPEN_MENU`, get a silent no-op — the button remains harmless.
+  // [L11].
+  const handleTitleBarMenuClick = useCallback(() => {
+    const activeId = activeCardIdRef.current;
+    if (!activeId) return;
+    const targetId = `${activeId}-card-content`;
+    try {
+      manager.sendToTarget(targetId, {
+        action: TUG_ACTIONS.OPEN_MENU,
+        sender: stackId,
+        phase: "discrete",
+      });
+    } catch {
+      // Active card has no card-content responder — nothing to do.
+    }
+  }, [manager, stackId]);
 
   const handlePreviousTab = useCallback(() => {
     const currentCards = cardsRef.current;
@@ -1375,6 +1409,7 @@ export function TugPane({
             onCollapse={handleFrameCollapseToggle}
             onClose={handleTitleBarClose}
             onDragStart={handleDragStart}
+            onMenuClick={handleTitleBarMenuClick}
           />
 
           <div className="tug-pane-body" data-testid="tug-pane-body">

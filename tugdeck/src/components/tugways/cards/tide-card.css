@@ -197,33 +197,80 @@
 }
 
 /* ----------------------------------------------------------------------------
-   .tide-card-tools-row — one horizontal row inside the entry's tools popover.
+   .tide-card-settings — body of the editor-settings sheet
    ----------------------------------------------------------------------------
-   The popover hosts two stacked rows: row 1 carries the typography popup
-   buttons (Font / Size / Spacing / Leading); row 2 carries the View toggles
-   plus the Return-action selector. Each cell stacks a tiny label above its
-   control so the row reads like the other gallery panels. The popover
-   itself owns the column layout (`.tug-prompt-entry-tools-popover`).
+   Shown when the user taps the title bar's `…` button. Two sections:
+   a row of typography popups (Font / Size / Line / Spacing) and a
+   stack of view switches (Line wrap / Line numbers / Active line).
    ----------------------------------------------------------------------------- */
 
-.tide-card-tools-row {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-end;
-  gap: var(--tug-space-xs);
+/* Widen the sheet only when its body is the editor-settings content,
+   so the four popup buttons sit on one row without wrapping. Sized
+   to the row's natural width (popups + gaps + sheet padding); the
+   default 460px is appropriate for short-form confirmations. */
+.tug-sheet-content:has(.tide-card-settings) {
+  max-width: 560px;
 }
 
-.tide-card-tools-cell {
+/* All-caps treatment for the sheet title when it heads the editor
+   settings — matches the in-body section titles (View) for visual
+   consistency without changing the global sheet header style. */
+.tug-sheet-content:has(.tide-card-settings) .tug-sheet-title {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: var(--tug-font-size-xs, 0.75rem);
+  font-weight: 600;
+}
+
+.tide-card-settings {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: var(--tug-space-xxs, 2px);
+  gap: var(--tug-space-md);
+  padding: var(--tug-space-xs) 0;
 }
 
-/* @tug-renders-on: surface.global.neutral.default */
-.tide-card-tools-label {
-  font-size: var(--tug-font-size-xs, 0.75rem);
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  white-space: nowrap;
+/* All four typography popups on one row. `flex-wrap: nowrap` keeps
+   them aligned even when the sheet is narrower than ideal — combined
+   with the per-popup `min-width` rules below, the row claims the
+   width it needs and the sheet's `overflow-y: auto` handles vertical
+   pressure. */
+.tide-card-settings-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: flex-end;
+  gap: var(--tug-space-md);
+}
+
+/* The TugPopupButton applies the className we pass directly to the
+   trigger TugButton, so `.tide-card-settings-popup-*` selects the
+   button itself (no descendant). We pin a `min-width` per popup so
+   toggling between options never reflows the row — the button stays
+   at the width of its widest option. Numbers come from the option
+   labels: the longest Font label is `IBM Plex Sans` (~13 chars at
+   sm size); the longest Spacing label is `-0.35 px`. */
+.tide-card-settings-popup {
+  min-width: 6.5rem;
+}
+
+.tide-card-settings-popup-font {
+  min-width: 9.5rem;
+}
+
+.tide-card-settings-popup-size,
+.tide-card-settings-popup-line {
+  min-width: 6rem;
+}
+
+.tide-card-settings-popup-spacing {
+  min-width: 7rem;
+}
+
+/* One switch per row, comfortable vertical margin between them. */
+.tide-card-settings-switches {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--tug-space-md);
 }
 
