@@ -24,6 +24,23 @@ export type CodeSessionPhase =
   | "errored";
 
 /**
+ * Health of the WebSocket transport, orthogonal to `phase`. The
+ * reducer treats `transportState` as a separate axis ([D01]) so a
+ * card that is idle but offline can still gate submit on the wire,
+ * and so reconnect doesn't have to invent a "transport_lost" phase
+ * that contaminates the turn-lifecycle vocabulary.
+ *
+ * - `online`     — wire is up; submit is allowed (subject to phase).
+ * - `offline`    — wire is down. The user cannot submit.
+ *                  Set on `transport_close` for every phase ([D06]).
+ * - `restoring`  — wire is back up but the per-card binding has not
+ *                  yet been re-acked by the supervisor. Set on
+ *                  `transport_open`; cleared by `transport_settled`
+ *                  once `cardSessionBindingStore` confirms the bind.
+ */
+export type TransportState = "online" | "offline" | "restoring";
+
+/**
  * Per-tool-call state tracked inside the reducer's toolCallMap and committed
  * into `TurnEntry.toolCalls` in insertion order ([Q02]).
  */
@@ -98,6 +115,7 @@ export interface CostSnapshot {
  */
 export interface CodeSessionSnapshot {
   phase: CodeSessionPhase;
+  transportState: TransportState;
 
   tugSessionId: string;
   displayLabel: string;

@@ -36,12 +36,14 @@ import type {
   ControlRequestForward,
   CostSnapshot,
   ToolCallState,
+  TransportState,
   TurnEntry,
 } from "./types";
 
 /** Reducer-internal state. Not exposed to consumers. */
 export interface CodeSessionState {
   phase: CodeSessionPhase;
+  transportState: TransportState;
 
   tugSessionId: string;
   displayLabel: string;
@@ -75,6 +77,7 @@ export function createInitialState(
 ): CodeSessionState {
   return {
     phase: "idle",
+    transportState: "online",
     tugSessionId,
     displayLabel,
     activeMsgId: null,
@@ -731,22 +734,74 @@ function handleResumeFailed(
 function handleTransportClose(
   state: CodeSessionState,
 ): { state: CodeSessionState; effects: Effect[] } {
-  // Transport close while idle is noise — nothing's in flight, so
-  // there's nothing for the user to recover. Re-open handling lives at
-  // the connection layer.
-  if (state.phase === "idle") {
+  // Idempotence: a duplicate close from the lifecycle (e.g., a stray
+  // dispatch during teardown) on an already-offline state is a no-op.
+  // Returning the same state reference keeps `getSnapshot()`
+  // reference-stable for `useSyncExternalStore`.
+  if (state.transportState === "offline") {
     return { state, effects: [] };
   }
+
+  // Transport close from `idle` no longer drops silently — per [D06]
+  // the offline transportState gates submit even for cards that had
+  // nothing in flight. Phase stays `idle` (there is nothing to error
+  // on); `lastError` is left untouched for the same reason.
+  if (state.phase === "idle") {
+    return {
+      state: { ...state, transportState: "offline" },
+      effects: [],
+    };
+  }
+
+  // Non-idle: flip phase to errored and stamp lastError exactly as
+  // before, but ALSO record `transportState = "offline"`. The card
+  // observer reads phase to surface "errored"; submit gating reads
+  // the conjunction of phase ∈ {idle, errored} and transportState.
   return {
     state: {
       ...state,
       phase: "errored",
+      transportState: "offline",
       lastError: {
         cause: "transport_closed",
         message: "transport closed",
         at: Date.now(),
       },
     },
+    effects: [],
+  };
+}
+
+function handleTransportOpen(
+  state: CodeSessionState,
+): { state: CodeSessionState; effects: Effect[] } {
+  // [D08] no-op when already online. The lifecycle layer already
+  // gates `connectionDidReconnect` on having seen a prior close, so a
+  // `transport_open` against `online` would be a duplicate dispatch
+  // (or a bootstrap-time event that arrived before any close). Return
+  // the same state ref so subscribers don't observe a churn.
+  if (state.transportState === "online") {
+    return { state, effects: [] };
+  }
+  return {
+    state: { ...state, transportState: "restoring" },
+    effects: [],
+  };
+}
+
+function handleTransportSettled(
+  state: CodeSessionState,
+): { state: CodeSessionState; effects: Effect[] } {
+  // Idempotence: settling while already online is a no-op. The
+  // `cardSessionBindingStore` subscription path may dispatch this on
+  // first bind even when `transportState` was already `online`
+  // (initial mount, no transport_close had been observed); skipping
+  // the churn keeps the snapshot ref stable.
+  if (state.transportState === "online") {
+    return { state, effects: [] };
+  }
+  return {
+    state: { ...state, transportState: "online" },
     effects: [],
   };
 }
@@ -875,6 +930,10 @@ export function reduce(
       return handleSessionNotOwned(state, event);
     case "transport_close":
       return handleTransportClose(state);
+    case "transport_open":
+      return handleTransportOpen(state);
+    case "transport_settled":
+      return handleTransportSettled(state);
     case "error":
       return handleWireError(state, event);
     case "resume_failed":

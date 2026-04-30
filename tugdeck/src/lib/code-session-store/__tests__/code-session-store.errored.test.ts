@@ -126,20 +126,31 @@ describe("CodeSessionStore — transport close trigger (Step 8)", () => {
 
     const snap = store.getSnapshot();
     expect(snap.phase).toBe("errored");
+    expect(snap.transportState).toBe("offline");
+    expect(snap.canSubmit).toBe(false);
     expect(snap.lastError).not.toBeNull();
     expect(snap.lastError?.cause).toBe("transport_closed");
   });
 
-  it("drops connectionDidClose when the store is idle", () => {
+  it("idle connectionDidClose flips transportState to offline (phase preserved, no lastError)", () => {
+    // [D06] reverses the old "drop silently when idle" behavior:
+    // transport health is now an axis orthogonal to phase, so an idle
+    // card whose wire goes down still needs to gate submit. The phase
+    // stays `idle` (nothing to error on); `lastError` is left null
+    // because no in-flight turn was disrupted.
     const conn = new TestFrameChannel();
     const lifecycle = new ConnectionLifecycle();
     const store = constructStore(conn, lifecycle);
 
     expect(store.getSnapshot().phase).toBe("idle");
+    expect(store.getSnapshot().transportState).toBe("online");
+
     lifecycle.notifyConnectionDidClose();
 
     const snap = store.getSnapshot();
     expect(snap.phase).toBe("idle");
+    expect(snap.transportState).toBe("offline");
+    expect(snap.canSubmit).toBe(false);
     expect(snap.lastError).toBeNull();
   });
 });

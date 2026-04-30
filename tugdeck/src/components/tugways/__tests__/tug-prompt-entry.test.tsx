@@ -448,6 +448,7 @@ describe("TugPromptEntry — route indicator bidirectional sync", () => {
 function defaultSnapshot(): CodeSessionSnapshot {
   return {
     phase: "idle",
+    transportState: "online",
     tugSessionId: "tug-session-id",
     displayLabel: "test",
     activeMsgId: null,

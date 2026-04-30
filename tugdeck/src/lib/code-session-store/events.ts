@@ -207,12 +207,39 @@ export interface SessionStateErroredEvent {
 }
 
 /**
- * Internal event injected when `TugConnection.onClose` fires. Not a
- * wire event — the store subscribes to the connection's close callback
- * at construction and dispatches this action per [].
+ * Internal event injected when `ConnectionLifecycle` fires
+ * `connectionDidClose`. Not a wire event — the store subscribes to the
+ * lifecycle at construction and dispatches this action per [D06].
+ * The reducer always sets `transportState = "offline"`; non-idle
+ * phases additionally flip to `errored` and stamp `lastError`.
  */
 export interface TransportCloseEvent {
   type: "transport_close";
+}
+
+/**
+ * Internal event injected when `ConnectionLifecycle` fires
+ * `connectionDidReconnect` (or, defensively, an open from any state).
+ * The reducer moves `transportState` from `offline` to `restoring`;
+ * `transport_settled` is what eventually clears it back to `online`
+ * once the per-card binding is re-acked. Per [D08], an open while
+ * already `online` is a no-op (state ref unchanged) so duplicate
+ * lifecycle dispatches don't churn subscribers.
+ */
+export interface TransportOpenEvent {
+  type: "transport_open";
+}
+
+/**
+ * Internal event injected by the `cardSessionBindingStore` subscription
+ * once the per-card binding is (re-)established. Distinct from
+ * `transport_open` because the wire being live does not by itself mean
+ * the supervisor has re-acked this card's session — the card stays in
+ * `restoring` until the binding lands, then this event flips
+ * `transportState` to `online`. Per [D04].
+ */
+export interface TransportSettledEvent {
+  type: "transport_settled";
 }
 
 /**
@@ -287,4 +314,6 @@ export type CodeSessionEvent =
   | SessionUnknownEvent
   | SessionNotOwnedEvent
   | TransportCloseEvent
+  | TransportOpenEvent
+  | TransportSettledEvent
   | ResumeFailedEvent;

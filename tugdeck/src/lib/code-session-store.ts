@@ -190,10 +190,17 @@ export class CodeSessionStore {
     }
     const snap: CodeSessionSnapshot = {
       phase: this.state.phase,
+      transportState: this.state.transportState,
       tugSessionId: this.tugSessionId,
       displayLabel: this.displayLabel,
       activeMsgId: this.state.activeMsgId,
-      canSubmit: this.state.phase === "idle" || this.state.phase === "errored",
+      // [D01] submit is gated on the conjunction of phase and
+      // transport health. An idle card whose wire is offline must
+      // refuse new turns until reconnect; a card whose phase is
+      // errored but whose wire is back can still retry.
+      canSubmit:
+        (this.state.phase === "idle" || this.state.phase === "errored") &&
+        this.state.transportState === "online",
       canInterrupt:
         this.state.phase === "submitting" ||
         this.state.phase === "awaiting_first_token" ||

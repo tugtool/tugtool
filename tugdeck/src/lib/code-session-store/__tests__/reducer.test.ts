@@ -584,13 +584,6 @@ describe("reduce — explicit drops", () => {
     expect(state).toBe(s0);
     expect(effects.length).toBe(0);
   });
-
-  it("drops transport_close while idle as a no-op (Step 8)", () => {
-    const s0 = fresh();
-    const { state, effects } = reduce(s0, { type: "transport_close" });
-    expect(state).toBe(s0);
-    expect(effects.length).toBe(0);
-  });
 });
 
 describe("reduce — errored triggers (Step 8)", () => {
@@ -610,8 +603,110 @@ describe("reduce — errored triggers (Step 8)", () => {
     const s0: CodeSessionState = { ...fresh(), phase: "submitting" };
     const { state, effects } = reduce(s0, { type: "transport_close" });
     expect(state.phase).toBe("errored");
+    expect(state.transportState).toBe("offline");
     expect(state.lastError?.cause).toBe("transport_closed");
     expect(effects.length).toBe(0);
   });
 });
 
+// ---------------------------------------------------------------------------
+// handleTransportClose / handleTransportOpen / handleTransportSettled
+//
+// `transportState` is orthogonal to `phase` ([D01]). The three transport
+// events drive a small state machine on `transportState` alone:
+//
+//   online ─ transport_close ─▶ offline ─ transport_open ─▶ restoring
+//      ▲                                                       │
+//      └──────────────── transport_settled ◀──────────────────┘
+//
+// Phase only changes on `transport_close` from non-idle phases (per
+// [D06]); the other two events leave `phase` untouched.
+// ---------------------------------------------------------------------------
+
+const NON_IDLE_PHASES = [
+  "submitting",
+  "awaiting_first_token",
+  "streaming",
+  "tool_work",
+  "awaiting_approval",
+  "errored",
+] as const;
+
+describe("reduce — transport_close ([D06])", () => {
+  it("from idle: phase preserved, transportState=offline, lastError unchanged", () => {
+    const s0 = fresh();
+    const { state, effects } = reduce(s0, { type: "transport_close" });
+    expect(state.phase).toBe("idle");
+    expect(state.transportState).toBe("offline");
+    expect(state.lastError).toBeNull();
+    expect(effects.length).toBe(0);
+  });
+
+  for (const phase of NON_IDLE_PHASES) {
+    it(`from ${phase}: phase=errored, transportState=offline, lastError.cause=transport_closed`, () => {
+      const s0: CodeSessionState = { ...fresh(), phase };
+      const { state, effects } = reduce(s0, { type: "transport_close" });
+      expect(state.phase).toBe("errored");
+      expect(state.transportState).toBe("offline");
+      expect(state.lastError?.cause).toBe("transport_closed");
+      expect(effects.length).toBe(0);
+    });
+  }
+
+  it("idempotent: a second transport_close while already offline returns the same state ref", () => {
+    const s0 = fresh();
+    const { state: s1 } = reduce(s0, { type: "transport_close" });
+    const { state: s2 } = reduce(s1, { type: "transport_close" });
+    expect(s2).toBe(s1);
+  });
+});
+
+describe("reduce — transport_open ([D08])", () => {
+  it("from offline → restoring", () => {
+    const s0: CodeSessionState = { ...fresh(), transportState: "offline" };
+    const { state, effects } = reduce(s0, { type: "transport_open" });
+    expect(state.transportState).toBe("restoring");
+    expect(state.phase).toBe(s0.phase);
+    expect(effects.length).toBe(0);
+  });
+
+  it("from online: no-op, returns the same state reference", () => {
+    const s0 = fresh();
+    expect(s0.transportState).toBe("online");
+    const { state, effects } = reduce(s0, { type: "transport_open" });
+    expect(state).toBe(s0);
+    expect(effects.length).toBe(0);
+  });
+
+  it("preserves an active phase across the open", () => {
+    const s0: CodeSessionState = {
+      ...fresh(),
+      phase: "errored",
+      transportState: "offline",
+    };
+    const { state } = reduce(s0, { type: "transport_open" });
+    expect(state.phase).toBe("errored");
+    expect(state.transportState).toBe("restoring");
+  });
+});
+
+describe("reduce — transport_settled ([D04])", () => {
+  it("from restoring → online", () => {
+    const s0: CodeSessionState = { ...fresh(), transportState: "restoring" };
+    const { state } = reduce(s0, { type: "transport_settled" });
+    expect(state.transportState).toBe("online");
+  });
+
+  it("from offline → online (defensive: settle without a prior open)", () => {
+    const s0: CodeSessionState = { ...fresh(), transportState: "offline" };
+    const { state } = reduce(s0, { type: "transport_settled" });
+    expect(state.transportState).toBe("online");
+  });
+
+  it("from online: no-op, returns the same state reference", () => {
+    const s0 = fresh();
+    const { state, effects } = reduce(s0, { type: "transport_settled" });
+    expect(state).toBe(s0);
+    expect(effects.length).toBe(0);
+  });
+});

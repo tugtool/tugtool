@@ -876,23 +876,23 @@ Tests (19):
 - `tugdeck/src/lib/code-session-store.ts` — `getSnapshot` includes `transportState`. `canSubmit` becomes `(phase === "idle" || phase === "errored") && transportState === "online"`.
 
 **Tasks:**
-- [ ] Extend the type definitions; let TypeScript guide the cascading default-value updates.
-- [ ] Update `createInitialState` to include `transportState: "online"`.
-- [ ] Rework `handleTransportClose` per [D06]; update existing reducer tests that assert "drops for idle" to the new behavior.
-- [ ] Add `handleTransportOpen` (sets `transportState = "restoring"` from any prior state; treat from `online` as a no-op per [D08]).
-- [ ] Add `handleTransportSettled` (sets `transportState = "online"`).
-- [ ] Update `canSubmit` and the snapshot-equality cache check.
+- [x] Extend the type definitions; let TypeScript guide the cascading default-value updates. _(Added `TransportState` type plus `transportState` field on `CodeSessionSnapshot` and reducer-internal `CodeSessionState`. tsc surfaced one missing field on a `defaultSnapshot()` helper in `tug-prompt-entry.test.tsx`, fixed in the same step.)_
+- [x] Update `createInitialState` to include `transportState: "online"`.
+- [x] Rework `handleTransportClose` per [D06]; update existing reducer tests that assert "drops for idle" to the new behavior. _(Idle now flips `transportState` to offline while preserving phase + null `lastError`; non-idle preserves the existing flip-to-errored + lastError stamp. Idempotent on a second close while already offline. Replaced the obsolete reducer-test case and updated `code-session-store.errored.test.ts`'s "drops onClose when idle" case.)_
+- [x] Add `handleTransportOpen` (sets `transportState = "restoring"` from any prior state; treat from `online` as a no-op per [D08]).
+- [x] Add `handleTransportSettled` (sets `transportState = "online"`). _(No-op when already online so a redundant binding-arrived dispatch doesn't churn the snapshot ref.)_
+- [x] Update `canSubmit` and the snapshot-equality cache check. _(`canSubmit = (phase ∈ {idle, errored}) && transportState === "online"`; `_cachedSnapshot` invalidates on every state-or-effect change, which already covers the four new events.)_
 
 **Tests:**
-- [ ] Reducer unit: `transport_close` from each phase → `transportState === "offline"`. Phase preserved for idle (no longer flips to errored); flips to errored for non-idle phases as before.
-- [ ] Reducer unit: `transport_open` from `offline` → `restoring`. From `online` → no-op (state reference unchanged).
-- [ ] Reducer unit: `transport_settled` from any state → `online`.
-- [ ] Snapshot integration: drive a store through `online → offline → restoring → online`; assert `canSubmit` follows.
+- [x] Reducer unit: `transport_close` from each phase → `transportState === "offline"`. Phase preserved for idle (no longer flips to errored); flips to errored for non-idle phases as before. _(Includes parameterized tests for all 6 non-idle phases plus an idempotence assertion.)_
+- [x] Reducer unit: `transport_open` from `offline` → `restoring`. From `online` → no-op (state reference unchanged). Plus a phase-preservation case from `errored + offline`.
+- [x] Reducer unit: `transport_settled` from any state → `online`. Includes the no-op-from-online case.
+- [x] Snapshot integration: drive a store through `online → offline → restoring → online`; assert `canSubmit` follows. _(New file `code-session-store.transport-state.test.ts` — 3 cases including the conjunction-gating proof that errored + online still allows retry.)_
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit` green.
-- [ ] `cd tugdeck && bun test src/lib/code-session-store` green.
-- [ ] `cd tugdeck && bun run audit:tokens lint` green.
+- [x] `cd tugdeck && bun x tsc --noEmit` green.
+- [x] `cd tugdeck && bun test src/lib/code-session-store` green. _(Full suite 2607 pass / 0 fail — net +16 tests for Step 4.)_
+- [x] `cd tugdeck && bun run audit:tokens lint` green. _(Zero violations.)_
 
 ---
 
