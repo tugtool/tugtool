@@ -753,7 +753,10 @@ See [Step 11](#step-11) for the consolidated work and verification.
 
 #### Step 7.5 — Connection health checking and reconnect-aware tide cards {#step-7-5}
 
-**Status: Next up (added 2026-04-29 rejoin).**
+**Status: Promoted to its own plan on 2026-04-30.** This step was extracted into [tugplan-tide-connection-health.md](./tugplan-tide-connection-health.md). Follow that plan; the original sketch below is preserved verbatim only as historical context for the extraction. The executable work — design decisions, execution steps, verification — lives in the new plan.
+
+<details>
+<summary>Original sketch (historical, superseded by tugplan-tide-connection-health.md)</summary>
 
 **Why this exists.** Two coupled defects surfaced in real use:
 
@@ -839,6 +842,8 @@ g. **Banner UX tightening.**
 - **L03** — `connection.onOpen` / `connection.onClose` registrations live in `useLayoutEffect` (or in module scope before any React render, as today's connection wiring already does).
 - **L11** — `transport_close` / `transport_open` are dispatched events on the per-card store; the connection layer is the emitter, the store reducer owns the state transitions.
 - **L23** — Reconnect must not lose user-visible state. The transcript already accumulated in the store stays; only `transportState` flips. The submit button gating is purely additive — no in-flight content is discarded.
+
+</details>
 
 #### Step 8 — Completion popups respect the card's bottom edge {#step-8}
 
