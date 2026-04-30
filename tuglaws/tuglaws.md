@@ -2,7 +2,7 @@
 
 *Invariants for the tugways system. Violating any law requires updating the design first — never silently diverge.*
 
-*Cross-references: `[D##]` → [design-decisions.md](design-decisions.md). `[L##]` references within this file.*
+*Cross-references: `[D##]` → [design-decisions.md](design-decisions.md). `[L##]` references within this file. For named patterns the laws imply but don't spell out, see [recipes.md](recipes.md) (`[R#]`).*
 
 ---
 

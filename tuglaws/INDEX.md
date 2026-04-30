@@ -7,6 +7,7 @@
 - [framework-architecture.md](framework-architecture.md) — Narrative overview of the tug framework: React for tree reconciliation, CSS+DOM for appearance, the responder chain for action routing. Read first.
 - [tuglaws.md](tuglaws.md) — The numbered laws (`[L##]`). Invariants every change is checked against; violations require updating the design first.
 - [design-decisions.md](design-decisions.md) — The numbered decisions (`[D##]`). Each entry records a non-obvious choice and its rationale; laws reference decisions and vice versa.
+- [recipes.md](recipes.md) — Named patterns the laws imply but don't spell out (`[R#]`). Reach for the recipe by name when a situation matches; reference implementations cited inline.
 
 ## Component & UI architecture
 
