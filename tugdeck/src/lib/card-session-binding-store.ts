@@ -60,6 +60,22 @@ export class CardSessionBindingStore {
     this._bindings = next;
     for (const listener of this._listeners) listener();
   };
+
+  /**
+   * Drop every binding in a single notify. Used by the reconnect handler
+   * after a WebSocket re-open: bindings without a live server peer are
+   * worse than no bindings, so the new resume frames go out against an
+   * empty store. Per [D04] in
+   * `roadmap/tugplan-tide-connection-health.md`, the clear-then-restore
+   * order is part of the contract. A no-op when the store is already
+   * empty so the first reconnect after a fresh boot does not emit a
+   * spurious notify.
+   */
+  clearAll = (): void => {
+    if (this._bindings.size === 0) return;
+    this._bindings = new Map();
+    for (const listener of this._listeners) listener();
+  };
 }
 
 /** Module-scope singleton — mirrors FeedStore's usage shape. */

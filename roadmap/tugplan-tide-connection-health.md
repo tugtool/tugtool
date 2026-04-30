@@ -2,7 +2,7 @@
 
 ## Tide Connection Health & Reconnect-Aware Cards {#tide-connection-health}
 
-**Purpose:** Make Tide cards survive a tugcast restart and a half-open WebSocket without leaving stranded bindings or silent submit-spinners. Add a client-side heartbeat watchdog, a transport-state lifecycle on the per-card store, and a reconnect-aware restore path that re-asserts session bindings every time the WebSocket comes back up.
+**Purpose:** Make Tide cards survive a tugcast restart and a half-open WebSocket *with submit always working at the end of the cycle*. Introduce a `ConnectionLifecycle` abstraction parallel to `AppLifecycle` and `CardLifecycle`; add a client-side heartbeat watchdog and a transport-state axis on the per-card store; and fix the server-side session-recovery path so resume after `pkill -x tugcast` actually succeeds end-to-end.
 
 ---
 
@@ -34,13 +34,14 @@ Tracing these symptoms surfaces three coupled root causes:
 - **The client has no heartbeat watchdog.** The server has one — `tugcast/src/router.rs` enforces `HEARTBEAT_TIMEOUT = 45 s`. The client only *sends* heartbeats; it never validates that the server's heartbeats are arriving. If TCP goes half-open (process hung, OS sleep, broken proxy), the WebSocket's `onclose` may not fire for hours, until OS-level keepalive expires.
 - **The transport-state / per-card lifecycle is incomplete.** `code-session-store.ts:155` already subscribes to `connection.onClose` and dispatches `transport_close`, but the reducer drops it silently for `idle` cards (`reducer.ts:737`). There is no companion `transport_open` event to recover. The banner has its own 2 s show-debounce (`tug-banner-bridge.tsx:22`) that often elapses *after* a quick reconnect, so brief outages flash invisibly.
 
-This plan fixes all three by introducing a client-side watchdog, clearing the `lastPayload` snapshot cache on close, making `restoreTideSessions` reconnect-aware, and adding an orthogonal transport-state axis to the per-card store that the UI gates on.
+This plan fixes all three by introducing a `ConnectionLifecycle` abstraction (the foundational deliverable; every subsequent step subscribes through it), a client-side watchdog driven by lifecycle state, a `lastPayload` snapshot-cache clear on close, an orthogonal transport-state axis on the per-card store that the UI gates on, and — crucially — a tugcast-side fix so `spawn_session(mode=resume)` after a kill actually succeeds rather than failing with `crash_budget_exhausted`.
 
 #### Strategy {#strategy}
 
-- **Land the immediate UX win first.** Step 1 (reconnect-aware `restoreTideSessions`) on its own resolves the "submit spins forever after tugcast restart" symptom. Subsequent steps add defense-in-depth and polish.
+- **Lifecycle abstraction first, behavior on top.** Step 1's foundational deliverable is `ConnectionLifecycle` — named events (`connectionDidOpen`, `connectionDidReconnect`, `connectionDidClose`, etc.) parallel to the existing `AppLifecycle` and `CardLifecycle`. Every subsequent client-side step in this plan subscribes through the lifecycle; no step uses bare `connection.onOpen` / `connection.onClose` callbacks. The lifecycle owns the close-then-open gating that distinguishes "wire is alive" from "wire is alive *again*", so subscribers never re-derive it (and never get it wrong, as a per-store first-flag does).
+- **End-to-end submit-works is the bar.** The success criterion is "submit always works after `pkill -x tugcast`" — not "binding re-asserts" or "banner shows up." A properly functioning reconnection scheme delivers full restoration. Step 8 is dedicated to fixing the server-side `crash_budget_exhausted` path so the resume frame the client now sends actually completes successfully on tugcast's side.
 - **Transport state is orthogonal to phase.** Phase is *turn lifecycle*; transport is *wire health*. Two independent axes. Conflating them produces bad UX during reconnects ("errored" cards that nothing was submitted on; cards refusing retry when the wire is back) and leaks across tests.
-- **Connection layer emits; reducer owns transitions.** `transport_close` and `transport_open` are dispatched events on the per-card store. The connection layer is the emitter. The reducer owns the state. Mirrors [L11].
+- **Lifecycle layer emits; reducer owns transitions.** Per-card stores translate lifecycle events into store-level events (`transport_close`, `transport_open`, `transport_settled`). The lifecycle is the action source; the store reducer is the responder. Mirrors [L11].
 - **Watchdog mirrors the server's contract.** The 45 s threshold is the same `HEARTBEAT_TIMEOUT` the server already uses to time *us* out. The watchdog is a defensive copy of an existing constraint, not a new one.
 - **Build stays green at every commit.** `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, and `cargo nextest run` pass on every step. Warnings are errors.
 - **App-test recipes where feasible; manual where not.** Kill+restart and rapid-cycle scenarios become `app-test` recipes. OS sleep / wake stays manual.
@@ -48,24 +49,29 @@ This plan fixes all three by introducing a client-side watchdog, clearing the `l
 
 #### Success Criteria (Measurable) {#success-criteria}
 
-- After `pkill -x tugcast` followed by tugcast respawn, every tide card that was bound before the kill rebinds without a page reload, and submitting works again. (Verified by app-test recipe and manual smoke.)
+- **Submit always works after `pkill -x tugcast`.** After the kill and tugcast respawn, every tide card that was bound before the kill rebinds *and* a freshly-typed `> hi` reaches Claude and streams a response — without a page reload. (Verified by app-test recipe and manual smoke. Step 1 delivers binding re-assertion; Step 8 delivers server-side resume reliability so the resume frame succeeds end-to-end.)
+- `ConnectionLifecycle` exposes named events (`connectionDidOpen`, `connectionDidReconnect`, `connectionDidClose`, `connectionDidEnterReconnecting`, `connectionWillOpen`) and a `getState()` query. All in-tree callers of connection events subscribe through the lifecycle; bare `connection.onOpen` / `connection.onClose` callable APIs are removed by Step 5. (Verified by `grep`-able codebase + unit tests on the lifecycle's gating behavior.)
 - A half-open WebSocket where no frames arrive for ≥ 45 s causes the client to force-close and reconnect. (Verified by unit test on the watchdog timer; manual smoke via OS sleep / wake.)
 - `transportState` transitions are observable in the per-card snapshot: `online → offline` on close, `offline → restoring` on next open, `restoring → online` when the binding lands. (Verified by reducer unit tests.)
 - `canSubmit` is gated on `transportState === "online"` in addition to phase. (Verified by snapshot test; manual smoke disables the submit button visibly during a kill+restart cycle.)
 - The disconnect banner appears within ≤ 1 s of a connection loss (was: up to 2 s due to debounce). (Verified by app-test recipe.)
 - After a visible disconnect, a transient "Reconnected" affordance shows for ≤ 1.5 s on recovery. (Verified by manual smoke.)
-- `lastPayload` is empty after `onclose`; a late `onFrame` registration after reconnect does not deliver any pre-close frame. (Verified by unit test.)
+- `lastPayload` is empty after `connectionDidClose`; a late `onFrame` registration after reconnect does not deliver any pre-close frame. (Verified by unit test.)
 
 #### Scope {#scope}
 
-1. Reconnect-aware `restoreTideSessions` driven by `connection.onOpen` (every open after the first).
-2. Client-side heartbeat watchdog inside `TugConnection` that force-closes on `lastFrameAt` staleness.
-3. `lastPayload` snapshot-cache clear on `onclose`.
-4. New `transportState: "online" | "offline" | "restoring"` field on `CodeSessionState` and on `CodeSessionSnapshot`.
-5. New `transport_open` event; rework of `transport_close` so it sets `transportState` for *every* phase (no longer dropped for `idle`).
-6. `code-session-store` subscribes to both `connection.onOpen` and `connection.onClose`; the first `onOpen` is the mount path and does not dispatch.
-7. UI gating on `transportState`: `canSubmit` becomes `phase ∈ {idle, errored} && transportState === "online"`; `TideCardContent` renders `TideRestoring` while `transportState === "restoring"`.
-8. Banner UX tightening: shorter / removed disconnect debounce; transient "Reconnected" affordance; "Restoring sessions…" status while any card is in `restoring`.
+1. **`ConnectionLifecycle` abstraction** (new file, parallel to `app-lifecycle.ts` / `card-lifecycle.ts`): named events, `notify*` / `observe*` pairs, `getState()` query, module-level singleton via `register*` / `get*`. Owns the close-then-open gating that distinguishes `connectionDidReconnect` from a bare `connectionDidOpen`.
+2. **`TugConnection` drives the lifecycle** at four well-defined transitions (`will-open`, `did-open`, `did-close`, `did-enter-reconnecting`).
+3. Reconnect-aware `restoreTideSessions` driven by `connectionLifecycle.observeConnectionDidReconnect`.
+4. Client-side heartbeat watchdog inside `TugConnection` that force-closes on `lastFrameAt` staleness, gated on lifecycle state.
+5. `lastPayload` snapshot-cache clear on `connectionDidClose`.
+6. New `transportState: "online" | "offline" | "restoring"` field on `CodeSessionState` and on `CodeSessionSnapshot`.
+7. New `transport_open` event; rework of `transport_close` so it sets `transportState` for *every* phase (no longer dropped for `idle`).
+8. `code-session-store` migrates to `lifecycle.observeConnectionDidClose` / `observeConnectionDidReconnect`; bare `connection.onOpen` / `connection.onClose` callable APIs are removed.
+9. `MockTugConnection` migrates: lifecycle events come from a real `ConnectionLifecycle` driven directly by tests; the mock shrinks to transport-only.
+10. UI gating on `transportState`: `canSubmit` becomes `phase ∈ {idle, errored} && transportState === "online"`; `TideCardContent` renders `TideRestoring` while `transportState === "restoring"`.
+11. Banner UX tightening: shorter / removed disconnect debounce; transient "Reconnected" affordance; "Restoring sessions…" status while any card is in `restoring`.
+12. **Server-side fix for `crash_budget_exhausted` after `pkill -x tugcast`** so the resume frame the client now sends actually completes successfully on tugcast's side. Investigation-driven; specific subtasks land after Step 8's spike.
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
@@ -73,16 +79,18 @@ This plan fixes all three by introducing a client-side watchdog, clearing the `l
 - Folding `transportState` into the existing `phase` enum. See [D01].
 - Rewriting `TugConnection`'s reconnect/backoff strategy. The watchdog reuses the existing `ws.close()` → `scheduleReconnect()` path.
 - Persisting transport state across page reloads. Transport state is in-memory only; on reload, every store starts at `online` and the normal `restoreTideSessions` path runs.
-- Adding new wire frames. Every change is internal to `TugConnection`, `CodeSessionStore`, and the UI components that read its snapshot.
+- Adding new client→server wire frames in Steps 1–7. Step 8 *may* introduce server-side state changes inside tugcast, but the wire shape between tugdeck and tugcast is unchanged.
 - Reworking the picker, the session ledger, or any other Step-10-and-later work in `tugplan-tide-card-polish.md`. Those are independent.
+- A `useConnectionLifecycle` React hook. Lifecycle subscribers in this plan are all module-scope (lifecycle events drive store state which React reads through the existing `useSyncExternalStore` paths). A hook can be added in a follow-on if a UI component needs to subscribe directly.
 
 #### Dependencies / Prerequisites {#dependencies}
 
 - Existing `spawn_session(mode=resume)` plumbing from [T3.4.c Step 4i](./archive/tugplan-tide-card.md#step-4i) and the picker work in [Step 4.5](./archive/tugplan-tide-card.md#step-4-5).
-- Existing `connection.onOpen` and `connection.onClose` registration APIs in `TugConnection`.
+- **Existing `AppLifecycle` (`tugdeck/src/lib/app-lifecycle.ts`) and `CardLifecycle` (`tugdeck/src/lib/card-lifecycle.ts`) as the templates `ConnectionLifecycle` mirrors.** Same naming convention (`{notify,observe}{will,did}<Event>`), same module-level singleton pattern, same dev-mode trace-log toggle.
 - Existing `cardSessionBindingStore` and `tideRestoreRegistry` modules (`tugdeck/src/lib/card-session-binding-store.ts`, `tugdeck/src/lib/tide-session-restore.ts`).
 - Existing `code-session-store` reducer + effect-list architecture ([D11] in T3.4.c).
 - Existing `TugBanner` primitive and `tug-banner-bridge.tsx` provider.
+- Tugcast supervisor + agent-spawn code paths in `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` (Step 8 investigation surface).
 
 #### Constraints {#constraints}
 
@@ -115,7 +123,23 @@ This plan follows [tuglaws/tugplan-skeleton.md §reference-conventions](../tugla
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-> The three open questions on the source [step-7-5](./tugplan-tide-card-polish.md#step-7-5) sketch were promoted to design decisions during plan authoring. See [D01], [D02], [D03]. No questions remain open at plan-author time.
+> The three open questions on the source [step-7-5](./tugplan-tide-card-polish.md#step-7-5) sketch were promoted to design decisions during plan authoring. See [D01], [D02], [D03]. One additional question is open at plan-author time and is the gate before Step 8 lands.
+
+#### [Q01] Root cause of `crash_budget_exhausted` after `pkill -x tugcast` (OPEN) {#q01-crash-budget-root-cause}
+
+**Question:** After `pkill -x tugcast` and tugcast respawn, the client correctly fires `spawn_session(mode=resume)` — but tugcast responds with `SESSION_STATE: errored detail=crash_budget_exhausted`. Why does the new tugcast process fail to spawn the underlying claude subprocess for the recovered session, repeatedly enough to exhaust its retry budget?
+
+**Why it matters:** Until this is answered and fixed, success criterion #1 ("submit always works after `pkill -x tugcast`") cannot be met. Step 1's reconnect work proved the binding does re-assert; the failure is now downstream on the server.
+
+**Hypotheses to investigate (Step 8's spike):**
+- The previous claude subprocess held an open file handle on the per-session JSONL transcript; on `pkill -9`-style termination the JSONL was left in a state the new claude process refuses to resume from.
+- The previous tugcode bridge process is orphaned (not killed by `pkill -x tugcast` — only tugcast itself is killed) and is still holding a lock or socket the new tugcast can't supersede.
+- Tugcast's `spawn_session(mode=resume)` re-uses the previous `tug_session_id` but allocates a fresh worker; if the worker spawn flow assumes a clean `claude_session_id` and the previous one is still referenced somewhere, the spawn loops.
+- A real crash budget that's correctly reporting a real spawn failure that needs a code fix in claude/tugcode/tugcast subprocess management.
+
+**Plan to resolve:** Step 8 begins with a directed spike: instrument `agent_supervisor.rs` to log every spawn attempt's exit reason, reproduce the kill+restart locally, read the actual exit signal / stderr / lock state. Once the failure mode is concrete, scope the fix.
+
+**Resolution:** OPEN — must be answered as Step 8's first deliverable. The fix is whatever the spike reveals.
 
 ---
 
@@ -128,6 +152,7 @@ This plan follows [tuglaws/tugplan-skeleton.md §reference-conventions](../tugla
 | Reconnect can stack restores | low | low | `restoreTideSessions` is idempotent; binding-clear before each run; per-card 10 s timeout | Logs show overlapping `restore.fired_resume_spawns` events |
 | `lastPayload` cache clear loses a snapshot frame | low | low | Snapshot path is server-authoritative; post-reconnect handshake replays | A late subscriber renders empty after reconnect |
 | Banner UX change feels noisy | low | med | Keep "Reconnected" ≤ 1.5 s; only on recovery from a *visible* disconnect | User feedback or design review flags noise |
+| Step 8 spike reveals the fix is larger than this plan can absorb | high | med | Step 8 starts with a time-boxed spike; if the fix lands in claude/tugcode rather than tugcast, scope the smallest tugcast-side mitigation that satisfies success criterion #1 and file the deeper fix as a follow-on | Spike runs > 2 days without a concrete fix path |
 
 **Risk R01: Watchdog false-positive force-close** {#r01-watchdog-false-positive}
 
@@ -141,11 +166,15 @@ This plan follows [tuglaws/tugplan-skeleton.md §reference-conventions](../tugla
 - **Mitigation:** `restoreTideSessions` is idempotent (it clears in-flight expectations and re-arms via `tideRestoreRegistry._clear` then `_register`); Step 1 inserts `cardSessionBindingStore.clearAll()` before each run; the per-card 10 s timeout in `tideRestoreRegistry` cleans up stuck restores.
 - **Residual risk:** Two `spawn_session(resume)` frames could land back-to-back on the server. The server's existing dedupe on `tug_session_id` collapses them to one bind.
 
-**Risk R03: `transport_open` dispatched on initial mount** {#r03-initial-open-dispatch}
+**Risk R03: ~~`transport_open` dispatched on initial mount~~** (RETIRED) {#r03-initial-open-dispatch}
 
-- **Risk:** If `code-session-store`'s constructor subscribes to `onOpen` *after* the connection is already open, the late callback fires immediately, dispatching `transport_open` on what is actually the mount path. The card flips through `restoring` for no reason.
-- **Mitigation:** The store tracks a `_seenFirstOpen: boolean` that flips on the first `onOpen` callback (or, equivalently, gates the dispatch on whether `transport_close` was ever observed). The first `onOpen` is the mount path and never dispatches; only subsequent opens dispatch `transport_open`.
-- **Residual risk:** Edge case where the connection oscillates open → close → open before the store's `useLayoutEffect` runs. The reducer is defensive: `transport_open` from `transportState === "online"` is a no-op.
+> **Retired by [D09].** The original framing assumed per-store flags (`_seenFirstOpen`) would gate the spurious-mount dispatch. That framing was wrong on two counts: (1) `connection.onOpen` doesn't fire callbacks for handshakes that already completed before registration, so the "first invocation = mount path" assumption was false; (2) the gating belongs at the lifecycle layer, not duplicated in every subscriber. `ConnectionLifecycle` now centralizes the close-then-open gating: subscribers use `observeConnectionDidReconnect` (fires only on recovery) or `observeConnectionDidOpen` (fires on every open). No per-store flags. No spurious mount-path dispatch is possible by construction.
+
+**Risk R04: Step 8 spike reveals a fix beyond this plan's natural scope** {#r04-spike-overruns}
+
+- **Risk:** The `crash_budget_exhausted` root cause may live in claude / tugcode / OS-level subprocess management rather than tugcast itself, and an honest fix might require changes too large for this plan to absorb in one branch.
+- **Mitigation:** Step 8 begins with a time-boxed spike (target: 1–2 days). If the spike concludes that the proper fix is out-of-scope, fall back to the smallest tugcast-side mitigation that still satisfies success criterion #1 — for example, a clean-state recovery path where tugcast detects the unrecoverable session, marks it abandoned in the ledger, and the client's existing `resume_failed` UX flips the picker into a fresh-session bind. The deeper fix files as a follow-on plan against tugcast and claude.
+- **Residual risk:** The fallback path loses transcript continuity for the user (a fresh session means a fresh JSONL). This is strictly better than the current behavior (errored card with no path forward) and matches the user's existing "close and reopen the card to retry" affordance, but it is not the ideal end state.
 
 ---
 
@@ -196,7 +225,7 @@ This plan follows [tuglaws/tugplan-skeleton.md §reference-conventions](../tugla
 
 #### [D04] Reconnect-aware restore clears bindings before re-running (DECIDED) {#d04-clear-then-restore}
 
-**Decision:** On every `connection.onOpen` *after the first*, the reconnect handler calls `cardSessionBindingStore.clearAll()` and *then* calls `restoreTideSessions`. The clear-then-restore order is part of the contract.
+**Decision:** On every `connectionDidReconnect`, the reconnect handler calls `cardSessionBindingStore.clearAll()` and *then* calls `restoreTideSessions(..., { reason: "reconnect" })`. The clear-then-restore order is part of the contract.
 
 **Rationale:**
 - Bindings without a live server peer are worse than no bindings: workspace-key filters in `FeedStore` route frames the new server is not actually emitting, and `useCardWorkspaceKey` reads stale data.
@@ -207,6 +236,7 @@ This plan follows [tuglaws/tugplan-skeleton.md §reference-conventions](../tugla
 - `CardSessionBindingStore` gains a `clearAll()` method that emits a single notify (not N notifies for N entries).
 - `restoreTideSessions` accepts a `{ reason: "reconnect" }` flag (or equivalent) so its lifecycle log distinguishes startup from reconnect runs.
 - Cards observing the binding store will see at least one render with no binding between `clearAll` and the first `setBinding`. The UI's `transportState === "restoring"` rendering covers this gap (see [D06]).
+- The handler is registered via `lifecycle.observeConnectionDidReconnect(...)` per [D09]; the lifecycle's [D08] gating guarantees it never fires on the initial mount path.
 
 #### [D05] `lastPayload` snapshot cache clears on `onclose` (DECIDED) {#d05-clear-last-payload-on-close}
 
@@ -234,36 +264,143 @@ This plan follows [tuglaws/tugplan-skeleton.md §reference-conventions](../tugla
 - Two reducer tests (`reducer.test.ts:588` and `code-session-store.errored.test.ts:124`) need their assertions updated to reflect the new "always sets transportState" behavior.
 - The `lastError.cause = "transport_closed"` path stays the same for non-idle phases.
 
-#### [D07] Connection layer emits transport events; reducer owns transitions (DECIDED) {#d07-connection-emits-reducer-owns}
+#### [D07] Lifecycle emits connection events; per-card stores translate to store events (DECIDED) {#d07-lifecycle-emits-stores-translate}
 
-**Decision:** `TugConnection` is the sole emitter of `transport_close` and `transport_open`. `CodeSessionStore` subscribes to both via `connection.onClose` and `connection.onOpen` and dispatches the corresponding event into the reducer. The reducer is the sole owner of the `transportState` value.
+**Decision:** `TugConnection` calls `connectionLifecycle.notify*` at four well-defined transitions (`will-open`, `did-open`, `did-close`, `did-enter-reconnecting`). `CodeSessionStore` and other per-card stores subscribe via `connectionLifecycle.observeConnectionDidClose` / `observeConnectionDidReconnect` and translate those into store-level events (`transport_close`, `transport_open`, `transport_settled`). The store reducer is the sole owner of the `transportState` value. No store subscribes to `TugConnection` directly.
 
 **Rationale:**
-- This mirrors [L11]: "Controls emit actions; responders own state that actions operate on." The connection layer is the action source; the store reducer is the responder.
-- It keeps `TugConnection` free of any per-card store knowledge, and keeps the reducer free of WebSocket lifecycle concerns.
-- Symmetrical subscription (`onClose` and `onOpen`) at the store level means any per-card store can be tested in isolation by dispatching events directly, with no fake `TugConnection` required.
+- Mirrors [L11]: "Controls emit actions; responders own state that actions operate on." `ConnectionLifecycle` is the action source; the store reducer is the responder.
+- Keeps `TugConnection` free of any per-card store knowledge.
+- Keeps `ConnectionLifecycle` a pure event pipe (no I/O, no per-card knowledge), which lets tests drive the lifecycle directly without faking the connection.
+- Provides a single place that names the events: a reader of `code-session-store.ts:155` sees `lifecycle.observeConnectionDidClose(() => dispatch({type: "transport_close"}))` and immediately understands the contract — versus a bare `conn.onClose` callback that requires reading WebSocket lifecycle docs to interpret.
 
 **Implications:**
-- `code-session-store.ts` adds an `onOpen` subscription alongside the existing `onClose` subscription.
-- The first `onOpen` is the mount path: no dispatch. Tracked via `_seenFirstOpen` (see [R03]).
+- `code-session-store.ts` migrates from `conn.onClose` to `lifecycle.observeConnectionDidClose` and adds `lifecycle.observeConnectionDidReconnect` for the `transport_open` dispatch (Step 5).
 - Future transport-aware stores (e.g., `card-services-store`) follow the same pattern.
+- Tests use a real `ConnectionLifecycle` and call `notify*` directly. `MockTugConnection` no longer needs to fake transport-event registration (Step 5).
 
-#### [D08] First `onOpen` is the mount path, not a reconnect (DECIDED) {#d08-first-open-is-mount}
+#### [D08] `connectionDidReconnect` requires both a prior successful open AND a close since (DECIDED) {#d08-reconnect-gating}
 
-**Decision:** The first invocation of the `connection.onOpen` callback within a store's lifetime does not dispatch `transport_open`. Subsequent invocations do. The "first open" is tracked per-store, not globally.
+**Decision:** `ConnectionLifecycle.notifyConnectionDidOpen` fires `connectionDidReconnect` iff *both* (a) a previous `notifyConnectionDidOpen` has fired successfully on this lifecycle instance (`everOpened === true`) and (b) `notifyConnectionDidClose` has fired since the last open (`sawCloseSinceLastOpen === true`). Both flags are owned by the lifecycle; subscribers never re-derive the gating.
 
 **Rationale:**
-- A store that mounts after the connection is already open should start in `transportState === "online"`, not `"restoring"`.
-- Tracking per-store keeps the policy consistent regardless of when the store mounts in the page lifecycle.
-- The connection layer's subscription model already supports this: callbacks registered after open fire immediately, so the per-store guard is the correct place to suppress the spurious initial dispatch.
+- The semantic of `connectionDidReconnect` is "the wire is alive *again*" — explicitly distinct from "the wire is alive" (`connectionDidOpen`). Both flags are required to capture this:
+  - `everOpened` rules out the case where the very first connect attempt closes before its handshake completes (rare — handshake protocol/version mismatch in `connection.ts:117-145`); the next successful open is then the *first* real open of the lifecycle, not a recovery.
+  - `sawCloseSinceLastOpen` rules out spurious double-fires (a stray duplicate `did-open` event).
+- Centralizing the gating in the lifecycle layer is the architectural fix for the bug that broke Step 1's first attempt: a per-store "first invocation" flag was wrong because callbacks registered after the handshake never see a true first invocation. The lifecycle, which owns the truth, doesn't have that problem.
+- Subscribers that want "do this work on every recovery" use `observeConnectionDidReconnect`. Subscribers that want "do this work on every open including the initial mount" use `observeConnectionDidOpen`. Two named events, two clear semantics.
 
 **Implications:**
-- The store reducer treats `transport_open` from `transportState === "online"` as a no-op (defensive double-protection).
-- A short comment in the store ties this decision back to [D08].
+- The lifecycle is the only place the gating logic lives. `connection-lifecycle.test.ts` covers all the corner cases (mount path, reconnect after established connection, close-before-first-successful-open, multiple closes between opens, multiple opens after one close).
+- No subscriber needs a per-store `_seenFirstOpen` field. Step 5's `code-session-store` migration deletes that pattern outright; it never lands in production.
+- Future transport-aware abstractions (per-card stores, banner) can subscribe to lifecycle events without re-implementing the gating.
+
+#### [D09] `ConnectionLifecycle` is the canonical surface for connection events (DECIDED) {#d09-lifecycle-canonical}
+
+**Decision:** All in-tree consumers of WebSocket connection events subscribe through `ConnectionLifecycle.observe*`. The bare `connection.onOpen(callback)` and `connection.onClose(callback)` callable APIs on `TugConnection` are removed by the end of Step 5. The lifecycle is the *only* public surface for connection events; `TugConnection` itself is treated as transport-only.
+
+**Rationale:**
+- Two parallel event APIs (lifecycle observers + bare callbacks) is one too many. Drift between them creates exactly the kind of "which gating logic applies here?" confusion that broke the original Step 1 attempt.
+- `AppLifecycle` and `CardLifecycle` already established this pattern: there is no parallel `app.onWillBecomeActive(callback)` API on the underlying message-channel — `useAppDelegate` and `observeApplication*` are the surface. `ConnectionLifecycle` should match.
+- Removing the bare APIs forces every event-name choice to surface in the lifecycle's vocabulary, which is reviewable and easy to grep for.
+
+**Implications:**
+- Step 1 introduces the lifecycle and migrates `main.tsx`'s `signalReady` from `connection.onOpen` to `lifecycle.observeConnectionDidOpen`.
+- Step 5 migrates the last remaining caller (`code-session-store.ts:155`'s `conn.onClose`) and removes `TugConnection.onOpen` and `TugConnection.onClose` from the public API.
+- `MockTugConnection` no longer exposes `onClose`; tests construct a real `ConnectionLifecycle` and drive `lifecycle.notify*` directly.
 
 ---
 
 ### Deep Dives {#deep-dives}
+
+#### Connection Lifecycle Contract {#connection-lifecycle-contract}
+
+`ConnectionLifecycle` (`tugdeck/src/lib/connection-lifecycle.ts`) is parallel to `AppLifecycle` and `CardLifecycle`: a stateless event pipe with named events, `notify*` / `observe*` pairs, a state query, and a module-level singleton.
+
+**Five events:**
+
+| Event | Fires when | Owner of the truth |
+|-|-|-|
+| `connectionWillOpen` | TCP connection made; protocol handshake in progress | `TugConnection.ws.onopen` |
+| `connectionDidOpen` | Handshake response accepted; wire is alive. Fires on initial open AND every reconnect. | `TugConnection` post-handshake branch |
+| `connectionDidReconnect` | A `connectionDidOpen` that *followed* a prior `connectionDidClose`, AND a prior successful open exists. Subset of `connectionDidOpen`. | Lifecycle internal gating (see [D08]) |
+| `connectionDidClose` | WebSocket lost: server-initiated close, network error, or intentional `close()` | `TugConnection.ws.onclose` |
+| `connectionDidEnterReconnecting` | Backoff timer scheduled after a close, awaiting next attempt | `TugConnection.scheduleReconnect()` |
+
+**State machine:**
+
+```
+       connectionWillOpen          connectionDidOpen
+closed ─────────────────▶ opening ───────────────────▶ open
+  ▲                          │                          │
+  │                          │                          │
+  │                          │                          │ connectionDidClose
+  │                          │                          ▼
+  │                          │                       closed
+  │                          │                          │
+  │  connectionDidClose       │                          │ connectionDidEnterReconnecting
+  │ (handshake failure)       │                          ▼
+  │                          ▼                       reconnecting
+  └────────────────────── closed                         │
+                                                        │ connectionWillOpen
+                                                        ▼
+                                                     opening
+                                                        │ connectionDidOpen
+                                                        ▼
+                                                     open  + connectionDidReconnect (if everOpened)
+```
+
+**Public API (Spec S00):** {#s00-connection-lifecycle-api}
+
+```ts
+export type ConnectionState = "closed" | "opening" | "open" | "reconnecting";
+export type ConnectionLifecycleObserver = () => void;
+
+export class ConnectionLifecycle {
+  // State query
+  getState(): ConnectionState;
+  isOpen(): boolean;
+
+  // Notify (called by TugConnection)
+  notifyConnectionWillOpen(): void;
+  notifyConnectionDidOpen(): void;
+  notifyConnectionDidClose(): void;
+  notifyConnectionDidEnterReconnecting(): void;
+
+  // Observe (called by subscribers)
+  observeConnectionWillOpen(cb: ConnectionLifecycleObserver): () => void;
+  observeConnectionDidOpen(cb: ConnectionLifecycleObserver): () => void;
+  observeConnectionDidReconnect(cb: ConnectionLifecycleObserver): () => void;
+  observeConnectionDidClose(cb: ConnectionLifecycleObserver): () => void;
+  observeConnectionDidEnterReconnecting(cb: ConnectionLifecycleObserver): () => void;
+}
+
+// Module-level singleton (mirrors registerAppLifecycle)
+export function registerConnectionLifecycle(lifecycle: ConnectionLifecycle | null): void;
+export function getConnectionLifecycle(): ConnectionLifecycle | null;
+```
+
+**Gating semantics ([D08]):** `connectionDidReconnect` fires only when both `everOpened === true` and `sawCloseSinceLastOpen === true`. The lifecycle owns these flags; subscribers never see them or re-derive them. Tests in `connection-lifecycle.test.ts` pin every corner case (mount path, reconnect, close-before-first-successful-open, double opens, double closes).
+
+**Production wiring (`main.tsx`):**
+
+```ts
+export const connectionLifecycle = new ConnectionLifecycle();
+connection.setLifecycle(connectionLifecycle);
+registerConnectionLifecycle(connectionLifecycle);
+```
+
+The lifecycle is attached *before* `connection.connect()` runs, so the very first handshake fires `connectionDidOpen` through it.
+
+**Production subscribers (post-Step 5):**
+
+| Subscriber | Event | What it does |
+|-|-|-|
+| `main.tsx` | `connectionDidOpen` | `signalReady()` — frontendReady postMessage to native host |
+| `main.tsx` | `connectionDidReconnect` | `clearAll()` then `restoreTideSessions(reason="reconnect")` |
+| `code-session-store.ts` (per card) | `connectionDidClose` | dispatch `{type: "transport_close"}` |
+| `code-session-store.ts` (per card) | `connectionDidReconnect` | dispatch `{type: "transport_open"}` |
+| `tug-banner-bridge.tsx` | `connectionDidClose`, `connectionDidEnterReconnecting`, `connectionDidOpen` | Banner show/hide and "Reconnected" affordance |
 
 #### Transport-State Lifecycle {#transport-state-lifecycle}
 
@@ -365,14 +502,29 @@ The "Restoring sessions…" status is a separate transient indicator, driven by 
 
 #### Public API Surface {#public-api}
 
+**`ConnectionLifecycle` (`tugdeck/src/lib/connection-lifecycle.ts`, NEW):**
+
+Full surface in [Spec S00](#s00-connection-lifecycle-api). Five `notify*` methods, five `observe*` methods, `getState()` / `isOpen()` queries, module-level `registerConnectionLifecycle` / `getConnectionLifecycle` singleton helpers.
+
 **`TugConnection` (`tugdeck/src/connection.ts`):**
 
-No new public methods. Internal additions:
+```ts
+// NEW
+setLifecycle(lifecycle: ConnectionLifecycle | null): void;
+```
+
+Removed (Step 5):
+
+```ts
+// REMOVED
+onOpen(callback: () => void): void;
+onClose(callback: () => void): () => void;
+```
+
+Internal additions for the watchdog (Step 2):
 - `private lastFrameAt: number`
 - `private watchdogTimer: number | null`
 - `private startWatchdog()` / `private stopWatchdog()`
-
-`onOpen` and `onClose` registration APIs are unchanged.
 
 **`CardSessionBindingStore` (`tugdeck/src/lib/card-session-binding-store.ts`):**
 
@@ -422,10 +574,25 @@ export function restoreTideSessions(
 #### Internal Architecture {#internal-architecture}
 
 ```
-TugConnection ──onOpen────▶ main.tsx                       (1st: mount path; 2nd+: clearAll + restore)
-              ──onOpen────▶ CodeSessionStore               (1st: no dispatch; 2nd+: dispatch transport_open)
-              ──onClose───▶ CodeSessionStore               (always dispatch transport_close)
-              ──watchdog──▶ ws.close() if stale            (defensive, runs every 5 s)
+TugConnection ──notify*──▶ ConnectionLifecycle ──observe*──▶ subscribers
+
+  ws.onopen                 connectionWillOpen
+  handshake-ok              connectionDidOpen
+                            (+ connectionDidReconnect, gated)
+  ws.onclose                connectionDidClose
+  scheduleReconnect()       connectionDidEnterReconnecting
+
+ConnectionLifecycle subscribers (post-Step 5):
+  main.tsx               ──observeConnectionDidOpen──▶ signalReady()
+  main.tsx               ──observeConnectionDidReconnect──▶ clearAll() + restoreTideSessions(reason="reconnect")
+  CodeSessionStore       ──observeConnectionDidClose──▶ dispatch(transport_close)
+  CodeSessionStore       ──observeConnectionDidReconnect──▶ dispatch(transport_open)
+  tug-banner-bridge      ──observeConnectionDidClose / DidOpen / DidEnterReconnecting──▶ banner show/hide
+
+TugConnection (transport-only, no event API):
+  send / onFrame                                 (frame I/O)
+  watchdog                                       (defensive close on lastFrameAt staleness)
+  forceReconnect                                 (Swift-bridge entry point)
 
 CardSessionBindingStore ──setBinding──▶ tide-session-restore subscriber
                                           └──▶ CodeSessionStore.dispatch(transport_settled)
@@ -444,13 +611,21 @@ None.
 
 | File | Purpose |
 |------|---------|
-| `tests/app-test/at0NNN-tide-reconnect-roundtrip.test.ts` | App-test recipe: kill+restart tugcast, verify cards rebind without reload (Step 8). Number assigned at commit time. |
-| `tests/app-test/at0NNN-tide-banner-fast-show.test.ts` | App-test recipe: confirm banner appears within ≤ 1 s of disconnect (Step 7). Number assigned at commit time. |
+| `tugdeck/src/lib/connection-lifecycle.ts` | `ConnectionLifecycle` class + module singleton. Parallel to `app-lifecycle.ts` and `card-lifecycle.ts`. (Step 1) |
+| `tugdeck/src/__tests__/connection-lifecycle.test.ts` | Unit tests for the lifecycle's state machine, observer dispatch, and gating. (Step 1) |
+| `tests/app-test/at0NNN-tide-reconnect-roundtrip.test.ts` | App-test recipe: kill+restart tugcast, verify submit works end-to-end. Number assigned at commit time. (Step 9) |
+| `tests/app-test/at0NNN-tide-banner-fast-show.test.ts` | App-test recipe: confirm banner appears within ≤ 1 s of disconnect. Number assigned at commit time. (Step 7) |
 
 #### Symbols to add / modify {#symbols}
 
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
+| `ConnectionLifecycle` | class | `tugdeck/src/lib/connection-lifecycle.ts` | New. [D07] [D08] [D09] |
+| `ConnectionState` | type | `tugdeck/src/lib/connection-lifecycle.ts` | `"closed" \| "opening" \| "open" \| "reconnecting"` |
+| `registerConnectionLifecycle` / `getConnectionLifecycle` | function | `tugdeck/src/lib/connection-lifecycle.ts` | Module singleton helpers |
+| `everOpened` / `sawCloseSinceLastOpen` | private field | `tugdeck/src/lib/connection-lifecycle.ts` | Lifecycle gating per [D08] |
+| `setLifecycle` | method (new) | `tugdeck/src/connection.ts` | Wires `TugConnection` to fire `notify*` at four transitions |
+| `onOpen` / `onClose` | method (REMOVED Step 5) | `tugdeck/src/connection.ts` | Replaced by lifecycle observers per [D09] |
 | `lastFrameAt` | private field | `tugdeck/src/connection.ts` | Bumped on every `onmessage` post-handshake |
 | `watchdogTimer` | private field | `tugdeck/src/connection.ts` | `setInterval` handle |
 | `startWatchdog` / `stopWatchdog` | private method | `tugdeck/src/connection.ts` | Lifecycle parallel to heartbeat |
@@ -458,19 +633,21 @@ None.
 | `WATCHDOG_TICK_MS` | const | `tugdeck/src/connection.ts` | `5_000` |
 | `lastPayload.clear()` | call site | `tugdeck/src/connection.ts` `onclose` | [D05] |
 | `clearAll` | method | `tugdeck/src/lib/card-session-binding-store.ts` | Single-notify clear |
+| `RestoreReason` / `RestoreOptions` | type | `tugdeck/src/lib/tide-session-restore.ts` | Threaded into the `restore.fired_resume_spawns` log |
 | `transportState` | field | `tugdeck/src/lib/code-session-store/types.ts` `CodeSessionState`, `CodeSessionSnapshot` | [D01] |
 | `transport_open` | event variant | `tugdeck/src/lib/code-session-store/events.ts` | [D07] |
 | `transport_settled` | event variant | `tugdeck/src/lib/code-session-store/events.ts` | [D04] |
 | `handleTransportClose` | function (modified) | `tugdeck/src/lib/code-session-store/reducer.ts` | No longer drops for idle [D06] |
 | `handleTransportOpen` | function (new) | `tugdeck/src/lib/code-session-store/reducer.ts` | Sets `transportState = "restoring"` |
 | `handleTransportSettled` | function (new) | `tugdeck/src/lib/code-session-store/reducer.ts` | Sets `transportState = "online"` |
-| `_seenFirstOpen` | private field | `tugdeck/src/lib/code-session-store.ts` | Suppresses initial dispatch [D08] |
-| `_openUnsub` | private field | `tugdeck/src/lib/code-session-store.ts` | Symmetric to `_closeUnsub` |
-| Reconnect handler | inline | `tugdeck/src/main.tsx` | Calls `clearAll` + `restoreTideSessions(..., { reason: "reconnect" })` on second-and-subsequent opens |
+| `_lifecycleUnsubs` | private field | `tugdeck/src/lib/code-session-store.ts` | Holds the two lifecycle observer unsubs (close + reconnect). No `_seenFirstOpen` field — [D08] makes it unnecessary. |
+| Lifecycle subscribers | inline | `tugdeck/src/main.tsx` | `signalReady` on `did-open`; clear-then-restore on `did-reconnect` |
+| `MockTugConnection.onClose` | method (REMOVED Step 5) | `tugdeck/src/lib/code-session-store/testing/mock-feed-store.ts` | Tests construct a real `ConnectionLifecycle` instead |
 | `SHOW_DELAY_MS` | const (modified) | `tugdeck/src/components/chrome/tug-banner-bridge.tsx` | Reduced from 2000 to ≤ 250 |
 | Reconnected affordance | new render branch | `tugdeck/src/components/chrome/tug-banner-bridge.tsx` | ≤ 1.5 s positive-tone banner |
 | Restoring-sessions status | new render branch | `tugdeck/src/components/chrome/tug-banner-bridge.tsx` | Driven by the union of per-card `transportState === "restoring"` |
 | `transportState` read | new render gate | `tugdeck/src/components/tugways/cards/tide-card-content.tsx` | Renders `TideRestoring` while `restoring`; gates submit button |
+| Tugcast spawn-recovery fix | TBD | `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` (and possibly tugcode/claude) | Step 8 — exact symbols depend on the spike outcome |
 
 ---
 
@@ -487,11 +664,15 @@ None.
 
 | Category | Purpose | When to use |
 |----------|---------|-------------|
-| **Reducer unit** | Direct dispatch into the reducer; assert `transportState` and `lastError` transitions | All transport-event behaviors; `_seenFirstOpen` gating |
-| **Connection unit** | Mock `WebSocket` and timers; assert watchdog force-closes; assert `lastPayload` cleared on close | Watchdog timing, snapshot-cache hygiene |
-| **Snapshot integration** | Drive a real `CodeSessionStore` instance and a fake `TugConnection`; assert `canSubmit` toggles correctly | Cross-axis gating (phase × transportState) |
-| **App-test (`just app-test`)** | Run against the built app; observe DOM after kill+restart of tugcast | End-to-end reconnect round-trip; banner fast-show |
+| **Lifecycle unit** | Construct a real `ConnectionLifecycle`; drive `notify*` directly; assert state transitions, observer dispatch, gating semantics | All `connectionDidReconnect` corner cases; subscriber registration / unsubscribe / throw isolation |
+| **Reducer unit** | Direct dispatch into the reducer; assert `transportState` and `lastError` transitions | All transport-event behaviors |
+| **Connection unit** | Mock `WebSocket` and timers; assert watchdog force-closes; assert `lastPayload` cleared on close; assert `notify*` calls fire at the right transitions | Watchdog timing, snapshot-cache hygiene, lifecycle wiring |
+| **Snapshot integration** | Drive a real `CodeSessionStore` against a real `ConnectionLifecycle`; trigger lifecycle events; assert `canSubmit` toggles correctly | Cross-axis gating (phase × transportState) |
+| **Tugcast unit (Rust)** | `cargo nextest run` against tugcast — assert spawn-recovery behavior after simulated kill | Step 8's server-side fix |
+| **App-test (`just app-test`)** | Run against the built app; observe DOM after kill+restart of tugcast | End-to-end reconnect round-trip incl. submit-works; banner fast-show |
 | **Manual smoke** | OS-level scenarios that don't fit harnesses | Laptop-sleep half-open detection; subjective banner-UX review |
+
+**Test seam:** With `ConnectionLifecycle` as a pure event pipe, tests almost never need a `TugConnection` fake. They construct a real `ConnectionLifecycle`, register subscribers, and drive `notify*` directly. The legacy `MockTugConnection.onClose` path is removed in Step 5 (per [D09]); existing tests that use it migrate to the lifecycle.
 
 ---
 
@@ -525,34 +706,41 @@ None.
 
 ---
 
-#### Step 1 — Reconnect-aware `restoreTideSessions` {#step-1}
+#### Step 1 — `ConnectionLifecycle` abstraction + reconnect-aware restore {#step-1}
 
 **Depends on:** #step-0
 
-**Commit:** `tugdeck: re-restore tide sessions on every websocket re-open`
+**Commit:** `tugdeck: introduce ConnectionLifecycle; re-restore on reconnect`
 
-**References:** [D04], [D07], Spec S01, (#transport-state-lifecycle, #internal-architecture)
+**References:** [D04], [D07], [D08], [D09], Spec S00, Spec S01, (#connection-lifecycle-contract, #internal-architecture)
 
 **Artifacts:**
-- `tugdeck/src/lib/card-session-binding-store.ts` — add `clearAll()` with single notify.
-- `tugdeck/src/lib/tide-session-restore.ts` — accept `opts?: { reason?: "startup" | "reconnect" }`; add to `logSessionLifecycle("restore.fired_resume_spawns", { ..., reason })`. Body remains idempotent across calls.
-- `tugdeck/src/main.tsx` — install `connection.onOpen(...)` that, on every open *after* the first, calls `cardSessionBindingStore.clearAll()` and then `restoreTideSessions(deck, tugbankClient, connection, { reason: "reconnect" })`. Track `_seenFirstOpen` locally inside the closure.
+- `tugdeck/src/lib/connection-lifecycle.ts` (new) — `ConnectionLifecycle` class, `ConnectionState` type, `registerConnectionLifecycle` / `getConnectionLifecycle` module singleton helpers. Five `notify*` and five `observe*` methods per [Spec S00](#s00-connection-lifecycle-api). Internal `everOpened` + `sawCloseSinceLastOpen` flags for the `connectionDidReconnect` gating per [D08].
+- `tugdeck/src/connection.ts` — add `setLifecycle(lifecycle)`. Fire `notifyConnectionWillOpen` in `ws.onopen`, `notifyConnectionDidOpen` after the handshake response, `notifyConnectionDidClose` in `ws.onclose`, `notifyConnectionDidEnterReconnecting` in `scheduleReconnect`. Lifecycle fires before the legacy `openCallbacks` / `closeCallbacks` so subscribers gating on `getState()` see consistent state. Legacy `onOpen` / `onClose` callable APIs are *not yet removed* — they have one remaining caller (`code-session-store.ts:155`); Step 5 migrates that and removes them per [D09].
+- `tugdeck/src/lib/card-session-binding-store.ts` — add `clearAll()` with single notify; no-op when empty.
+- `tugdeck/src/lib/tide-session-restore.ts` — accept `opts?: { reason?: "startup" | "reconnect" }`; thread `reason` into `logSessionLifecycle("restore.fired_resume_spawns", ...)`. Body remains idempotent across calls.
+- `tugdeck/src/main.tsx` — construct `ConnectionLifecycle`, attach via `connection.setLifecycle(lifecycle)`, register as singleton via `registerConnectionLifecycle(lifecycle)` *before* `connection.connect()` runs. Migrate `signalReady` to `lifecycle.observeConnectionDidOpen(signalReady)`. Subscribe the reconnect handler via `lifecycle.observeConnectionDidReconnect(() => { cardSessionBindingStore.clearAll(); restoreTideSessions(deck, tugbankClient, connection, { reason: "reconnect" }); })`.
+- `tugdeck/src/__tests__/connection-lifecycle.test.ts` (new) — exhaustive lifecycle tests; see Tests below.
+- `tugdeck/src/__tests__/card-session-binding-store.test.ts` — append `clearAll` cases.
 
 **Tasks:**
-- [ ] Add `clearAll` to `CardSessionBindingStore`.
-- [ ] Extend `restoreTideSessions` with the `opts` parameter and pass `reason` into the lifecycle log.
-- [ ] In `main.tsx`, register the post-first-open handler that clears bindings then re-runs restore.
-- [ ] Confirm the new handler does not interfere with the existing `signalReady` `onOpen` registration (both fire; order doesn't matter).
+- [x] Create `connection-lifecycle.ts` with the full surface from [Spec S00](#s00-connection-lifecycle-api). Match `app-lifecycle.ts` shape (event sets keyed by event name, throw-isolated `fire`, dev-mode trace logs).
+- [x] Implement the `[D08]` gating — `connectionDidReconnect` fires only when `everOpened === true` AND `sawCloseSinceLastOpen === true`. Both flags owned by the lifecycle.
+- [x] Wire `TugConnection.setLifecycle` and the four `notify*` call sites. Lifecycle fires *before* the legacy callback arrays.
+- [x] Add `clearAll` to `CardSessionBindingStore`.
+- [x] Extend `restoreTideSessions` with `opts?: { reason?: "startup" | "reconnect" }`.
+- [x] In `main.tsx`, construct + attach + register the lifecycle, migrate `signalReady`, register the reconnect handler. Confirm lifecycle is attached *before* `connection.connect()` so the very first handshake fires through it.
+- [x] Verify the legacy `onOpen` / `onClose` callbacks remain callable (one caller in `code-session-store.ts:155` until Step 5).
 
 **Tests:**
-- [ ] Reducer-adjacent unit test: `cardSessionBindingStore.clearAll()` after several `setBinding` calls fires exactly one notify and leaves `getSnapshot().size === 0`.
-- [ ] Connection-integration unit test: with a fake `TugConnection` that supports replaying `onOpen` callbacks, simulate `connect → open → close → reconnect → open`. Assert `restoreTideSessions` is called exactly twice (once for first open, once for re-open) and that `clearAll` runs between them. Reuse the `tide-session-restore` test helpers if they exist.
+- [x] `connection-lifecycle.test.ts`: initial state, all four state transitions, observer dispatch (registration, unsubscribe, throw-isolation), `connectionDidReconnect` gating across mount path / first reconnect / subsequent reconnects / close-before-first-successful-open / multiple closes between opens / multiple opens after one close / late subscriber receiving later reconnects. **17 cases.**
+- [x] `card-session-binding-store.test.ts`: `clearAll()` fires exactly one notify, leaves `getSnapshot().size === 0`, returns a new Map reference, no-op on empty.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit` green.
-- [ ] `cd tugdeck && bun test src/lib/card-session-binding-store src/lib/tide-session-restore` green.
-- [ ] `cd tugdeck && bun run audit:tokens lint` green.
-- [ ] Manual: in a running tugdeck with HMR, `pkill -x tugcast` then wait for tugcast to respawn; confirm the previously-bound tide card flips its body in without a page reload and submitting `> hi` works.
+- [x] `bun x tsc --noEmit` green.
+- [x] `bun test src/__tests__/connection-lifecycle.test.ts src/__tests__/card-session-binding-store.test.ts` green. Full `bun test` suite green.
+- [x] `bun run audit:tokens lint` unchanged from `main` baseline (Step 1 has no CSS changes).
+- [ ] Manual: in a running tugdeck with HMR, observe the lifecycle traces in the browser console after `pkill -x tugcast` and tugcast respawn. Expect: `[ConnectionLifecycle] connectionDidClose`, `[ConnectionLifecycle] connectionDidEnterReconnecting`, then `connectionWillOpen` → `connectionDidOpen` → `connectionDidReconnect`. Step 1 alone does *not* guarantee submit works — Step 8 closes that loop.
 
 ---
 
@@ -645,33 +833,42 @@ None.
 
 ---
 
-#### Step 5 — Wire `transport_open` from the connection {#step-5}
+#### Step 5 — Migrate `code-session-store` to lifecycle; remove legacy callable APIs {#step-5}
 
 **Depends on:** #step-4
 
-**Commit:** `tugdeck: code-session-store dispatches transport_open on reconnect`
+**Commit:** `tugdeck: migrate code-session-store to ConnectionLifecycle; remove legacy onOpen/onClose`
 
-**References:** [D07], [D08], Risk R03, (#internal-architecture)
+**References:** [D07], [D08], [D09], (#internal-architecture, #connection-lifecycle-contract)
 
 **Artifacts:**
-- `tugdeck/src/lib/code-session-store.ts` — add `_openUnsub` field; subscribe to `connection.onOpen` in the constructor alongside the existing `onClose` subscription. Track `_seenFirstOpen: boolean` initialized to `false`. The first `onOpen` flips the flag and does not dispatch; subsequent opens dispatch `transport_open`.
-- `tugdeck/src/lib/tide-session-restore.ts` — when the `cardSessionBindingStore` subscriber observes a binding for a card, dispatch `transport_settled` into the per-card store (in addition to the existing `tideRestoreRegistry._clear` path). Requires a way to reach the per-card store from `tide-session-restore`; the binding-arrival path already runs in module scope, so this means looking up the store via the existing card→store registry.
+- `tugdeck/src/lib/code-session-store.ts` — replace the `conn.onClose(...)` subscription at line 155 with two lifecycle observers: `lifecycle.observeConnectionDidClose` (dispatches `transport_close`) and `lifecycle.observeConnectionDidReconnect` (dispatches `transport_open`). Hold both unsubs in `_lifecycleUnsubs: Array<() => void>`. **No `_seenFirstOpen` flag** — [D08]'s gating makes it unnecessary by construction.
+- `tugdeck/src/lib/tide-session-restore.ts` — when the `cardSessionBindingStore` subscriber observes a binding for a card, dispatch `transport_settled` into the per-card store (in addition to the existing `tideRestoreRegistry._clear` path). Look up the per-card store via the existing card→store registry.
+- `tugdeck/src/connection.ts` — **remove** the legacy `onOpen` / `onClose` callable APIs and their backing `openCallbacks` / `closeCallbacks` arrays. `TugConnection`'s public surface is now `connect`, `close`, `forceReconnect`, `send`, `onFrame`, `setLifecycle`, `sendControlFrame`, `onDisconnectState`. Per [D09].
+- `tugdeck/src/lib/code-session-store/testing/mock-feed-store.ts` — remove `onClose` and `closeCallbacks` from `MockTugConnection`. Tests that previously called `conn.triggerClose()` migrate to `lifecycle.notifyConnectionDidClose()` against a real `ConnectionLifecycle` instance.
+- Tests that consume `MockTugConnection.onClose` (`code-session-store.errored.test.ts`, `session-chain.integration.test.ts`, etc.) migrate to constructing a real `ConnectionLifecycle` and driving lifecycle events directly.
 
 **Tasks:**
-- [ ] Add `_openUnsub` and `_seenFirstOpen` to `CodeSessionStore`.
-- [ ] In the constructor, after subscribing to `onClose`, subscribe to `onOpen`. Inside the callback, if `!this._seenFirstOpen` then set the flag and return without dispatch; else dispatch `transport_open`.
-- [ ] In the dispose path, unsubscribe from `onOpen` (if unsub returned).
-- [ ] Verify `connection.onOpen` returns an unsub function — if not, extend it to do so (matching the shape of `onClose`).
-- [ ] In `tide-session-restore.ts`, in the `cardSessionBindingStore` subscriber, after `tideRestoreRegistry._clear(cardId)`, dispatch `transport_settled` into the corresponding store. Use the existing card-store registry lookup (or thread the dispatch through an effect).
+- [ ] Add a `lifecycle` parameter (or accessor via `connection.getLifecycle()`) to `CodeSessionStore`'s constructor — whichever fits the existing options shape best.
+- [ ] Replace the `conn.onClose` subscription with `lifecycle.observeConnectionDidClose` (still dispatches `transport_close`).
+- [ ] Add `lifecycle.observeConnectionDidReconnect` subscription that dispatches `transport_open`. **No flag** — the lifecycle's gating per [D08] guarantees this fires only on real recoveries.
+- [ ] Hold both unsubs in `_lifecycleUnsubs`; unsubscribe in the dispose path.
+- [ ] In `tide-session-restore.ts` `cardSessionBindingStore` subscriber, after `tideRestoreRegistry._clear(cardId)`, look up the per-card store and dispatch `transport_settled`.
+- [ ] Remove `TugConnection.onOpen` and `TugConnection.onClose` (and their backing arrays). Verify there are no remaining callers via `grep`.
+- [ ] Remove `MockTugConnection.onClose` and `closeCallbacks`. Verify no tests reference them.
+- [ ] Migrate all existing tests that drove `conn.triggerClose()` to drive `lifecycle.notifyConnectionDidClose()` against a real `ConnectionLifecycle` instance constructed in the test.
 
 **Tests:**
-- [ ] Store unit: with a fake `TugConnection` that supports `triggerOpen()` and `triggerClose()`, construct a store. Trigger one `open` → no dispatch (mount path). Trigger `close` → `transport_close` dispatched. Trigger `open` → `transport_open` dispatched.
-- [ ] Store unit: with a fresh store and a connection that is already open (subscriber fires immediately on register), assert no spurious initial dispatch.
-- [ ] Integration: drive the store through a full `connect → open → close → reconnect → open → binding-arrived` cycle; assert `transportState` walks `online → offline → restoring → online`.
+- [ ] Store unit: construct a `CodeSessionStore` with a real `ConnectionLifecycle`. Drive `lifecycle.notifyConnectionDidClose()` → assert `transportState === "offline"`. Drive `lifecycle.notifyConnectionDidOpen()` (after a prior open + close to satisfy [D08]) → assert `transportState === "restoring"`. Manually populate `cardSessionBindingStore` for the card → assert `transport_settled` dispatched and `transportState === "online"`.
+- [ ] Store unit: construct a store with a connection that's already open (lifecycle in `state="open"`). Verify no spurious `transport_open` dispatch on construction. Drive `notifyConnectionDidClose` then `notifyConnectionDidOpen` → assert `transportState` walks `online → offline → restoring`.
+- [ ] Integration: drive the full `connect → open → close → reconnect → open → binding-arrived` cycle through a real `ConnectionLifecycle`; assert `transportState` walks `online → offline → restoring → online`.
+- [ ] Migration verification: `grep -rn "TugConnection.onOpen\|conn.onClose\|MockTugConnection.onClose"` returns zero hits in `src/`.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit` green.
-- [ ] `cd tugdeck && bun test src/lib/code-session-store src/lib/tide-session-restore` green.
+- [ ] `bun x tsc --noEmit` green.
+- [ ] `bun test src/lib/code-session-store src/lib/tide-session-restore src/__tests__` green (all migrated tests pass).
+- [ ] Full `bun test` green (no regressions in unrelated suites).
+- [ ] `bun run audit:tokens lint` unchanged from baseline.
 
 ---
 
@@ -713,12 +910,13 @@ None.
 **References:** Spec S03, (#banner-ux)
 
 **Artifacts:**
-- `tugdeck/src/components/chrome/tug-banner-bridge.tsx` — reduce `SHOW_DELAY_MS` from `2000` to `≤ 250` (or remove the debounce and rely on the disconnect callback timing). Add a "Reconnected ✓" affordance that shows for ≤ 1.5 s on recovery from a *visible* disconnect (track `wasShown: boolean` to gate). Add a "Restoring sessions…" status driven by the union of per-card `transportState === "restoring"` (subscribe via the existing per-card registry — read-only).
+- `tugdeck/src/components/chrome/tug-banner-bridge.tsx` — migrate from the existing `connection.onDisconnectState` callback (which is a separate, banner-specific path inside `TugConnection`) to a combination of `lifecycle.observeConnectionDidClose`, `observeConnectionDidEnterReconnecting`, and `observeConnectionDidOpen`. Reduce `SHOW_DELAY_MS` from `2000` to `≤ 250` (or remove the debounce and rely on the lifecycle event timing). Add a "Reconnected ✓" affordance that shows for ≤ 1.5 s on recovery from a *visible* disconnect (track `wasShown: boolean` to gate, fired on `connectionDidReconnect` only when the banner had been visible). Add a "Restoring sessions…" status driven by the union of per-card `transportState === "restoring"` (subscribe via the existing per-card registry — read-only).
 - `tests/app-test/at0NNN-tide-banner-fast-show.test.ts` (new) — kill the tugcast subprocess from the harness, observe the banner DOM appears within ≤ 1 s. Recipe ends with `VERDICT: PASS|FAIL`.
 
 **Tasks:**
+- [ ] Migrate banner subscriptions from `connection.onDisconnectState` to lifecycle observers. Keep the `disconnectState` shape (countdown / reason) but compute it from lifecycle events plus the existing internal countdown timer.
 - [ ] Lower `SHOW_DELAY_MS` to 250 ms (or zero with a 1-tick guard, whichever the existing test infra accepts cleanly).
-- [ ] Add the `wasShown` state machine that flips when the banner becomes visible and gates the "Reconnected" affordance.
+- [ ] Add the `wasShown` state machine that flips when the banner becomes visible. The "Reconnected" affordance subscribes to `connectionDidReconnect` and renders only when `wasShown` is true.
 - [ ] Add the `restoringCount` subscription; show the status string when `> 0`.
 - [ ] Author the app-test recipe per the `feedback_just_app_test` memory: ends with greppable `VERDICT: PASS|FAIL`.
 
@@ -735,32 +933,81 @@ None.
 
 ---
 
-#### Step 8 — Integration Checkpoint {#step-8}
+#### Step 8 — Server-side resume reliability ([Q01] resolution) {#step-8}
 
 **Depends on:** #step-1, #step-2, #step-3, #step-4, #step-5, #step-6, #step-7
 
+**Commit:** depends on the spike outcome — at least one tugcast crate commit; possibly tugcode and/or supporting Rust crates. Each substep gets its own commit.
+
+**References:** [Q01], Risk R04, (#success-criteria)
+
+**Artifacts (concrete subset depends on Step 8a's spike outcome):**
+- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — likely the primary surface. Spawn-flow / crash-budget / session-recovery logic lives here.
+- Possibly `tugrust/crates/tugcode/src/...` — if tugcode's claude-subprocess management is implicated (orphaned bridge process, stale lock files, JSONL handle).
+- Possibly tugcast's `rebind_from_tugbank` if the recovery path needs to mark sessions abandoned more aggressively.
+- Possibly a small client-side fallback in `tide-session-restore.ts` if the spike concludes that some sessions are genuinely unrecoverable: in that case, on `SESSION_STATE: errored detail=crash_budget_exhausted` we offer the user a one-click "Start fresh" path that flips the card to `mode=new` while preserving the displayed transcript.
+
+**Tasks:**
+
+*Step 8a — Spike (time-boxed: 1–2 days)*
+
+- [ ] Reproduce locally: launch tugcast, open a tide card, submit a turn so the claude subprocess is alive, `pkill -x tugcast`, observe respawn behavior.
+- [ ] Instrument `agent_supervisor.rs` to log every spawn attempt's exit code / signal / stderr / stdout. Capture the actual failure mode for the `crash_budget_exhausted` path.
+- [ ] Check for orphaned tugcode bridge processes (`ps aux | grep tugcode` after the kill). If present, that's the issue — `pkill -x tugcast` doesn't transitively kill the subprocesses it spawned.
+- [ ] Inspect the per-session JSONL state on disk after the kill. Is it truncated? Is there a lock file? Does claude refuse to resume from it?
+- [ ] Document the root cause in the commit message of the resolution commit. Update [Q01]'s resolution field with `DECIDED (see Step 8b)` plus a one-paragraph summary.
+
+*Step 8b — Fix (scope determined by 8a)*
+
+- [ ] Implement the smallest fix that makes `spawn_session(mode=resume)` succeed after `pkill -x tugcast`. Likely candidates by hypothesis:
+  - **Orphaned tugcode**: tugcast's startup detects orphaned tugcode bridges and reaps them before `rebind_from_tugbank` runs. (Or tugcast registers a process group so `pkill` cascades.)
+  - **JSONL state**: tugcast verifies JSONL integrity before issuing `spawn_session(mode=resume)` to claude; if corrupt, marks the session abandoned and the client's existing `resume_failed` UX flips to a fresh bind.
+  - **Crash budget too aggressive**: differentiate "claude subprocess fails to start" (real failure, exhaust budget) from "sub-second-grace-period after parent kill" (don't count toward budget).
+  - **Client-side fallback (Risk R04 path)**: if the spike concludes the proper fix is out-of-plan-scope, add a small client-side path: on `SESSION_STATE: errored detail=crash_budget_exhausted`, surface a "Start fresh" button in the existing `Session errored` modal (`tide-card-content.tsx`'s error UI). Click flips the card to `mode=new` while preserving the in-memory transcript display.
+
+*Step 8c — Pin the success criterion*
+
+- [ ] Add a Rust-side test in `tugcast` that simulates the `pkill` scenario and asserts `spawn_session(mode=resume)` succeeds. Use a test-only signal injection that mimics the exit semantics of an actual kill.
+- [ ] Update the manual smoke note in Step 1 to remove the "submit doesn't work after kill" caveat.
+
+**Tests:**
+- [ ] `cargo nextest run` against `tugcast` — new spawn-recovery test passes; existing tests stay green.
+- [ ] Manual: `pkill -x tugcast`. Wait for respawn. Submit `> hi`. Streaming response arrives.
+
+**Checkpoint:**
+- [ ] [Q01] resolved (root cause documented in a commit message).
+- [ ] `cargo nextest run` green for tugcast.
+- [ ] Manual smoke for the `pkill -x tugcast` scenario passes end-to-end.
+- [ ] If the fallback path was taken (Risk R04), the "Start fresh" UX is documented and a follow-on plan filed for the deeper fix.
+
+---
+
+#### Step 9 — Integration Checkpoint {#step-9}
+
+**Depends on:** #step-1, #step-2, #step-3, #step-4, #step-5, #step-6, #step-7, #step-8
+
 **Commit:** `N/A (verification only)`
 
-**References:** [D01], [D02], [D04], [D06], [D07], (#success-criteria)
+**References:** [D01], [D02], [D04], [D06], [D07], [D08], [D09], [Q01], (#success-criteria)
 
 **Artifacts:**
 - `tests/app-test/at0NNN-tide-reconnect-roundtrip.test.ts` (new) — kill+restart tugcast end-to-end; verify card binding flips through `online → offline → restoring → online` without page reload; verify submit works after recovery. Recipe ends with `VERDICT: PASS|FAIL`.
 
 **Tasks:**
-- [ ] Author the end-to-end app-test recipe.
-- [ ] Walk the [#tuglaws-cross-check] list; record the result in the commit message of Step 7's *previous* commit, or in a `tuglaws-walkthrough` log entry if the project keeps one.
+- [ ] Author the end-to-end app-test recipe. Now that Step 8 has fixed the server-side recovery path, "submit works" is a reachable assertion.
+- [ ] Walk the [#tuglaws-cross-check] list; record the result in the commit message of Step 8's *previous* commit, or in a `tuglaws-walkthrough` log entry if the project keeps one.
 - [ ] Spot-check the [#success-criteria] list against current behavior; flag any criterion that does not hold.
 
 **Tests:**
-- [ ] App-test: `just app-test at0NNN-tide-reconnect-roundtrip.test.ts` exits with `VERDICT: PASS`.
+- [ ] App-test: `just app-test at0NNN-tide-reconnect-roundtrip.test.ts` exits with `VERDICT: PASS`. Asserts: after `pkill -x tugcast`, the card binding re-asserts AND a submitted turn streams a response.
 - [ ] Manual scenario (no recipe — laptop sleep is awkward to orchestrate): open a tide card, sleep the laptop for ~2 minutes, wake. The watchdog detects the silent half-open within ~45 s of wake, force-reconnects, the card flips through `restoring → online`, submit works. Note observed timing in the commit message.
 - [ ] Manual scenario (no recipe): kill+restart tugcast faster than the old 2 s show-debounce. Banner still shows briefly; cards still flip through `restoring`; submit works again.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit` green.
-- [ ] `cd tugdeck && bun test` (full suite) green.
-- [ ] `cd tugdeck && bun run audit:tokens lint` green.
-- [ ] `cd tugrust && cargo nextest run` green.
+- [ ] `bun x tsc --noEmit` green.
+- [ ] `bun test` (full suite) green.
+- [ ] `bun run audit:tokens lint` green.
+- [ ] `cargo nextest run` green.
 - [ ] `just app-test at0NNN-tide-reconnect-roundtrip.test.ts` and the banner recipe both end with `VERDICT: PASS`.
 - [ ] All [#success-criteria] entries verifiable.
 
@@ -770,57 +1017,63 @@ None.
 
 Per the `feedback_tuglaws_cross_check` memory and the constraint in [#constraints], every step that touches the connection layer, the per-card store, or the banner re-checks against [tuglaws.md](../tuglaws/tuglaws.md). The following laws apply:
 
-- **[L02] External state enters React through `useSyncExternalStore` only.** `transportState` is added to the existing `code-session-store` snapshot (Step 4) and read via the existing `useSyncExternalStore` path. No parallel React state. The banner reads its inputs via the same pattern.
-- **[L03] Use `useLayoutEffect` for registrations that events depend on.** `connection.onOpen` and `connection.onClose` registrations live at module scope before any React render (existing pattern in `code-session-store.ts:155`); the new `onOpen` subscription added in Step 5 follows the same shape.
-- **[L11] Controls emit actions; responders own state.** `transport_close`, `transport_open`, and `transport_settled` are dispatched events on the per-card store. The connection layer is the emitter; the reducer owns the state transitions. See [D07].
-- **[L23] Internal implementation operations must never lose, destroy, or cease to apply user-visible state.** Reconnect must not lose the user-visible transcript. The transcript already accumulated in the store is preserved across `transport_close` / `transport_open` / `transport_settled` cycles. Only `transportState`, the inflight buffers, and gating change. The submit-button gating is purely additive — no in-flight content is discarded. The `lastPayload.clear()` discards only server-authoritative cached frames that are about to be replayed by the post-reconnect handshake.
+- **[L02] External state enters React through `useSyncExternalStore` only.** `transportState` is added to the existing `code-session-store` snapshot (Step 4) and read via the existing `useSyncExternalStore` path. No parallel React state. `ConnectionLifecycle` itself is consumed at module scope (Step 1, 5, 7); React reads its effects through the per-card store, never directly.
+- **[L03] Use `useLayoutEffect` for registrations that events depend on.** `ConnectionLifecycle` `notify*` calls fire synchronously in the WebSocket transport's call stack; subscribers register at module scope or in `useLayoutEffect` (banner). Per-card store subscriptions in `code-session-store.ts` register at construction (well before any React render).
+- **[L11] Controls emit actions; responders own state.** `ConnectionLifecycle` is the action source for connection events; `CodeSessionStore`'s reducer is the responder for `transport_*` events. See [D07] and [D09].
+- **[L23] Internal implementation operations must never lose, destroy, or cease to apply user-visible state.** Reconnect must not lose the user-visible transcript. The transcript already accumulated in the store is preserved across `transport_close` / `transport_open` / `transport_settled` cycles. Only `transportState`, the inflight buffers, and gating change. The submit-button gating is purely additive — no in-flight content is discarded. The `lastPayload.clear()` discards only server-authoritative cached frames that are about to be replayed by the post-reconnect handshake. If Step 8b's fallback path (Risk R04) is taken, "Start fresh" preserves the in-memory transcript display while the server-side session is rebound.
 
-The walkthrough is recorded in Step 8's tuglaws-walkthrough verification.
+The walkthrough is recorded in Step 9's tuglaws-walkthrough verification.
 
 ---
 
 ### Compatibility / Migration / Rollout {#rollout}
 
-- **Compatibility policy:** Internal architecture only. No public API or wire-format changes. No tugcast changes. No tugbank schema changes.
-- **Migration plan:** None. `transportState` defaults to `"online"`; existing stores work without dispatching transport events.
-- **Rollout plan:** Lands on `tugplan-tide-connection-health` branch behind no feature flag. Each step is a green commit; the branch can be merged to `main` once Step 8 passes.
-- **Rollback strategy:** Revert the merge commit. No persistent state is introduced; transport state is in-memory only.
+- **Compatibility policy:** Steps 1–7 are tugdeck-internal architecture. Step 5 removes the `TugConnection.onOpen` and `TugConnection.onClose` callable APIs; this is a breaking change to those internal entry points (no external consumers exist). Step 8 *may* touch tugcast (server-side spawn-recovery logic) but does not change the wire shape between tugdeck and tugcast. No tugbank schema changes anywhere in the plan.
+- **Migration plan:** None for end-users. Internal callers of `TugConnection.onOpen` / `onClose` are migrated to `ConnectionLifecycle.observe*` in Steps 1 (signalReady) and 5 (code-session-store). `MockTugConnection.onClose` migrates to lifecycle-driven tests in Step 5. `transportState` defaults to `"online"`; existing reducer tests with no transport dispatch stay green.
+- **Rollout plan:** Lands on `tugplan-tide-connection-health` branch behind no feature flag. Each step is a green commit; the branch can be merged to `main` once Step 9 passes.
+- **Rollback strategy:** Revert the merge commit. No persistent state is introduced; transport state is in-memory only. If Step 8b's tugcast fix needs reverting independently, its commits are separable from the tugdeck-side commits.
 
 ---
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** Tide cards rebind without a page reload after a tugcast restart, and the client detects half-open WebSocket states within ~45 s.
+**Deliverable:** Tide cards rebind *and submit successfully* after a `pkill -x tugcast`, without a page reload. The client detects half-open WebSocket states within ~45 s. All connection events flow through `ConnectionLifecycle`.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] All eight execution steps committed; each commit's checkpoint passes.
-- [ ] `cd tugdeck && bun x tsc --noEmit` green on `main` after merge.
-- [ ] `cd tugdeck && bun test` green on `main` after merge.
-- [ ] `cd tugdeck && bun run audit:tokens lint` green on `main` after merge.
-- [ ] `cd tugrust && cargo nextest run` green on `main` after merge.
-- [ ] `just app-test at0NNN-tide-reconnect-roundtrip.test.ts` and the banner-fast-show recipe both `VERDICT: PASS`.
+- [ ] All nine execution steps committed; each commit's checkpoint passes.
+- [ ] `bun x tsc --noEmit` green on `main` after merge.
+- [ ] `bun test` green on `main` after merge.
+- [ ] `bun run audit:tokens lint` green on `main` after merge.
+- [ ] `cargo nextest run` green on `main` after merge.
+- [ ] `just app-test at0NNN-tide-reconnect-roundtrip.test.ts` (asserting submit-works end-to-end) and the banner-fast-show recipe both `VERDICT: PASS`.
+- [ ] `grep -rn "TugConnection.onOpen\|conn.onOpen\|conn.onClose\|MockTugConnection.onClose"` in `src/` returns zero hits — [D09] is enforced.
 - [ ] [#success-criteria] all hold under manual smoke.
 
 **Acceptance tests:**
-- [ ] App-test: `at0NNN-tide-reconnect-roundtrip.test.ts` `VERDICT: PASS`.
+- [ ] App-test: `at0NNN-tide-reconnect-roundtrip.test.ts` `VERDICT: PASS` (binding re-asserts AND submit works after kill+restart).
 - [ ] App-test: `at0NNN-tide-banner-fast-show.test.ts` `VERDICT: PASS`.
+- [ ] Lifecycle unit tests under `tugdeck/src/__tests__/connection-lifecycle.test.ts` covering all gating corner cases.
 - [ ] Reducer + store unit tests under `tugdeck/src/lib/code-session-store/__tests__/` covering all transport-event transitions.
+- [ ] Tugcast spawn-recovery test under `tugrust/crates/tugcast/...` exercising the simulated `pkill` scenario.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
 - [ ] Server-pushed `client_recognized { sessions: [...] }` frame for defense-in-depth (deferred per [D03]).
-- [ ] Telemetry on watchdog firings vs `onclose` arrivals — useful for tuning the threshold if real-world data suggests drift.
+- [ ] Telemetry on watchdog firings vs `connectionDidClose` arrivals — useful for tuning the threshold if real-world data suggests drift.
 - [ ] Apply the same transport-state pattern to `card-services-store` if that store grows wire-dependent state.
+- [ ] If Step 8b took the Risk R04 fallback path: a follow-on plan against tugcast / tugcode for the deeper spawn-recovery fix that preserves transcript continuity rather than offering "Start fresh."
+- [ ] A `useConnectionLifecycle` React hook for components that need to subscribe to connection events directly (none in this plan; deferred until a real consumer appears).
 
 | Checkpoint | Verification |
 |------------|--------------|
 | Step 0 plan landed and Step 7.5 redirect | `grep -n "step-7-5" roadmap/tugplan-tide-card-polish.md` shows the redirect |
-| Step 1 reconnect-aware restore | Manual: `pkill -x tugcast`, observe rebind without reload |
+| Step 1 ConnectionLifecycle + reconnect handler | `connection-lifecycle.test.ts` green; manual: console traces show full will/did/reconnect cycle |
 | Step 2 watchdog fires on stale wire | Connection unit test green |
 | Step 3 `lastPayload` cleared on close | Connection unit test green |
 | Step 4 `transportState` field present | Reducer unit tests green |
-| Step 5 `transport_open` dispatched on reconnect | Store unit test green |
+| Step 5 store migrated to lifecycle; legacy APIs removed | `grep` returns zero hits for `TugConnection.onOpen`/`onClose` and `MockTugConnection.onClose` |
 | Step 6 UI gates on `transportState` | Component test green; manual: card disables submit during reconnect |
 | Step 7 banner UX | Component tests green; `just app-test` banner recipe `VERDICT: PASS` |
-| Step 8 integration | `just app-test` reconnect recipe `VERDICT: PASS`; manual sleep/wake check noted |
+| Step 8 server-side resume reliability | [Q01] resolved; `cargo nextest run` green for tugcast; manual: `pkill -x tugcast` → submit works |
+| Step 9 integration | `just app-test` reconnect recipe `VERDICT: PASS` (asserts submit-works); manual sleep/wake check noted |

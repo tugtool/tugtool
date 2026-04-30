@@ -110,6 +110,54 @@ describe("CardSessionBindingStore – snapshot stability", () => {
   });
 });
 
+describe("CardSessionBindingStore – clearAll", () => {
+  test("drops every binding in a single notify", () => {
+    const store = new CardSessionBindingStore();
+    store.setBinding("card-1", makeBinding({ tugSessionId: "sess-1" }));
+    store.setBinding("card-2", makeBinding({ tugSessionId: "sess-2" }));
+    store.setBinding("card-3", makeBinding({ tugSessionId: "sess-3" }));
+
+    let notifications = 0;
+    store.subscribe(() => {
+      notifications += 1;
+    });
+
+    store.clearAll();
+
+    expect(notifications).toBe(1);
+    expect(store.getSnapshot().size).toBe(0);
+    expect(store.getBinding("card-1")).toBeUndefined();
+    expect(store.getBinding("card-2")).toBeUndefined();
+    expect(store.getBinding("card-3")).toBeUndefined();
+  });
+
+  test("returns a new Map reference after clearing a populated store", () => {
+    const store = new CardSessionBindingStore();
+    store.setBinding("card-1", makeBinding());
+    const before = store.getSnapshot();
+    store.clearAll();
+    const after = store.getSnapshot();
+    expect(after).not.toBe(before);
+    expect(after.size).toBe(0);
+  });
+
+  test("is a no-op when the store is already empty", () => {
+    const store = new CardSessionBindingStore();
+    let notifications = 0;
+    store.subscribe(() => {
+      notifications += 1;
+    });
+
+    store.clearAll();
+
+    expect(notifications).toBe(0);
+    const before = store.getSnapshot();
+    store.clearAll();
+    const after = store.getSnapshot();
+    expect(after).toBe(before);
+  });
+});
+
 describe("CardSessionBindingStore – unsubscribe", () => {
   test("unsubscribed listeners stop receiving notifications", () => {
     const store = new CardSessionBindingStore();

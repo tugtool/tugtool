@@ -14,6 +14,7 @@ import {
   encodeFrame,
   controlFrame,
 } from "./protocol";
+import type { ConnectionLifecycle } from "./lib/connection-lifecycle";
 
 /** Callback for receiving frames from a specific feed */
 export type FrameCallback = (payload: Uint8Array) => void;
@@ -85,8 +86,31 @@ export class TugConnection {
   private lastCloseCode: number | null = null;
   private lastCloseReason: string | null = null;
 
+  /**
+   * Connection-lifecycle event pipe. Attached at construction by
+   * `main.tsx` (production) or by tests that need to observe
+   * lifecycle events. `TugConnection` only fires `notify*` calls; it
+   * does not subscribe — consumers do that via `lifecycle.observe*`.
+   * See `lib/connection-lifecycle.ts` for the event semantics.
+   */
+  private lifecycle: ConnectionLifecycle | null = null;
+
   constructor(url: string) {
     this.url = url;
+  }
+
+  /**
+   * Attach a `ConnectionLifecycle` so this connection's WebSocket
+   * transitions are observable through named lifecycle events. Idempotent
+   * if called more than once with the same instance; the most recent
+   * call wins. Pass `null` to detach (used by tests for clean teardown).
+   *
+   * Production wiring: `main.tsx` constructs `ConnectionLifecycle`,
+   * attaches it here, and registers it as the module singleton via
+   * `registerConnectionLifecycle` so non-React subscribers can find it.
+   */
+  setLifecycle(lifecycle: ConnectionLifecycle | null): void {
+    this.lifecycle = lifecycle;
   }
 
   /**
@@ -102,6 +126,7 @@ export class TugConnection {
       console.log("tugdeck: WebSocket transport open, sending handshake");
       // Send protocol handshake as a text frame
       this.handshakePending = true;
+      this.lifecycle?.notifyConnectionWillOpen();
       this.ws!.send(JSON.stringify({
         protocol: PROTOCOL_NAME,
         version: PROTOCOL_VERSION,
@@ -132,6 +157,11 @@ export class TugConnection {
             this.clearCountdownTimer();
             this.notifyDisconnectState(false);
             this.startHeartbeat();
+            // Lifecycle fires before legacy callbacks so observers
+            // and callbacks can interleave-safely if needed; the
+            // lifecycle itself will internally fire `connectionDidReconnect`
+            // after `connectionDidOpen` if a prior close was observed.
+            this.lifecycle?.notifyConnectionDidOpen();
             for (const cb of this.openCallbacks) {
               cb();
             }
@@ -164,6 +194,11 @@ export class TugConnection {
       // Store close info for banner display
       this.lastCloseCode = event.code;
       this.lastCloseReason = event.reason || null;
+
+      // Lifecycle fires before legacy callbacks so subscribers that
+      // gate on `getState()` see "closed" by the time their close
+      // handler runs.
+      this.lifecycle?.notifyConnectionDidClose();
 
       // Notify close callbacks
       for (const cb of this.closeCallbacks) {
@@ -204,6 +239,7 @@ export class TugConnection {
 
     // Notify React components of disconnected state
     this.notifyDisconnectState(false);
+    this.lifecycle?.notifyConnectionDidEnterReconnecting();
 
     // Start countdown timer (updates every second)
     this.countdownTimer = window.setInterval(() => {

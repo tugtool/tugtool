@@ -248,16 +248,34 @@ function parseSessionStateFrame(payload: Uint8Array): SessionStateMessage | null
 // ---------------------------------------------------------------------------
 
 /**
+ * Reason a `restoreTideSessions` call is happening. Surfaced on the
+ * `restore.fired_resume_spawns` lifecycle log so traces distinguish the
+ * one-time startup pass from reconnect-driven re-asserts.
+ */
+export type RestoreReason = "startup" | "reconnect";
+
+export interface RestoreOptions {
+  readonly reason?: RestoreReason;
+}
+
+/**
  * Re-assert session bindings for every tide card in the deck that has
  * a persisted tugbank record. Callers should invoke after
  * `tugbankClient.ready()` has resolved and `DeckManager` has loaded
  * the layout — typically right after `initActionDispatch` in
  * `main.tsx`.
+ *
+ * Idempotent across calls. The module-level `installRegistrySubscriptions`
+ * guard ensures the binding-arrival and SESSION_STATE subscribers are
+ * wired exactly once even when this function runs again on reconnect;
+ * `fireRestore` itself clears any stale per-card timer before arming a
+ * new one, so a re-fire after a previous restore is well-defined.
  */
 export function restoreTideSessions(
   deck: DeckManager,
   tugbank: TugbankClient,
   connection: TugConnection,
+  opts?: RestoreOptions,
 ): void {
   installRegistrySubscriptions(connection);
 
@@ -283,9 +301,11 @@ export function restoreTideSessions(
     logSessionLifecycle("restore.fired_resume_spawns", {
       card_count: cards.length,
       restore_count: restoredCount,
+      reason: opts?.reason ?? "startup",
     });
   }
 }
+
 
 /**
  * Send the `spawn_session(mode=resume)` frame and register the

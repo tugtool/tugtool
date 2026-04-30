@@ -12,6 +12,11 @@ import { DeckManager } from "./deck-manager";
 import { initActionDispatch } from "./action-dispatch";
 import { cardServicesStore } from "./lib/card-services-store";
 import { restoreTideSessions } from "./lib/tide-session-restore";
+import { cardSessionBindingStore } from "./lib/card-session-binding-store";
+import {
+  ConnectionLifecycle,
+  registerConnectionLifecycle,
+} from "./lib/connection-lifecycle";
 import { readLayout, readTheme, readCardStates, readDeckState } from "./settings-api";
 import { getThemeSetter } from "./action-dispatch";
 import {
@@ -80,6 +85,15 @@ const wsUrl = `ws://${window.location.host}/ws`;
 
 // Create connection (module scope — must be synchronous)
 export const connection = new TugConnection(wsUrl);
+
+// Construct the connection-lifecycle event pipe and attach it to the
+// connection BEFORE `connection.connect()` runs below, so the very first
+// handshake fires `connectionDidOpen` through the lifecycle. Register it
+// as the module singleton for non-React subscribers (mirrors AppLifecycle's
+// `registerAppLifecycle` pattern).
+export const connectionLifecycle = new ConnectionLifecycle();
+connection.setLifecycle(connectionLifecycle);
+registerConnectionLifecycle(connectionLifecycle);
 
 // Register connection in the singleton so modules that cannot safely import
 // from main.tsx (due to circular dependency risk) can access it via getConnection().
@@ -227,6 +241,24 @@ if (!container) {
   // bound body before `cardDidActivate` fires for any of them.
   restoreTideSessions(deck, tugbankClient, connection);
 
+  // Reconnect path: every WebSocket recovery from a close re-runs the
+  // restore loop so cards rebind without a page reload after a tugcast
+  // restart. The order — clearAll, then re-restore — is per [D04] in
+  // roadmap/tugplan-tide-connection-health.md: bindings the client
+  // still holds against a now-dead server are worse than no bindings,
+  // because they would route frames the new server is not emitting.
+  //
+  // `connectionDidReconnect` (vs `connectionDidOpen`) is the right event
+  // here: it fires only when the wire recovered from a prior close,
+  // never on the initial app-boot open. The lifecycle layer maintains
+  // the close-then-open gating so this subscriber never has to.
+  connectionLifecycle.observeConnectionDidReconnect(() => {
+    cardSessionBindingStore.clearAll();
+    restoreTideSessions(deck, tugbankClient, connection, {
+      reason: "reconnect",
+    });
+  });
+
   // React to live tugbank changes pushed via the DEFAULTS WebSocket feed.
   // When an external process writes to tugbank (e.g., `tugbank write ... theme harmony`),
   // the TugbankClient cache updates and this callback fires.
@@ -276,7 +308,9 @@ if (!container) {
   // Signal frontend readiness to native app.
   // This fires after theme is applied, canvas color is sent, and DeckManager is
   // constructed — so the WebView can be safely revealed without visual artifacts.
-  // Also re-fires on WebSocket reconnection (e.g. after tugcast restart).
+  // Subscribed via `connectionDidOpen` (not `connectionDidReconnect`) because
+  // signalReady should also re-fire on every reconnect — the WebView host
+  // tracks readiness per-connection.
   const signalReady = () => {
     const webkit = (window as unknown as {
       webkit?: {
@@ -288,7 +322,7 @@ if (!container) {
     webkit?.messageHandlers?.frontendReady?.postMessage({});
   };
   signalReady();
-  connection.onOpen(signalReady);
+  connectionLifecycle.observeConnectionDidOpen(signalReady);
 
   console.log("tugdeck initialized");
 })();
