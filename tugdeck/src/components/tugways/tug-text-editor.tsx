@@ -72,6 +72,7 @@ import "./tug-completion-menu.css";
 
 import React, {
   useCallback,
+  useContext,
   useId,
   useImperativeHandle,
   useLayoutEffect,
@@ -121,6 +122,7 @@ import { captureEditState, tugTextEditorKeymap } from "./tug-text-editor/keymap"
 import type { TugTextEditorKeymapConfig } from "./tug-text-editor/keymap";
 import {
   acceptCompletionAt,
+  cancelCompletion,
   getCompletionState,
   navigateCompletion,
   subscribeCompletionState,
@@ -137,6 +139,7 @@ import { deckTrace } from "@/deck-trace";
 import { selectionGuard } from "./selection-guard";
 import { TugEditorContextMenu, type TugEditorContextMenuEntry } from "./tug-editor-context-menu";
 import { useCardId } from "./use-card-state-preservation";
+import { DeckManagerContext } from "@/deck-manager-context";
 import { useOptionalResponder } from "./use-responder";
 import type { ActionHandler, ActionHandlerResult } from "./responder-chain";
 import { TUG_ACTIONS, type TugAction } from "./action-vocabulary";
@@ -1794,8 +1797,7 @@ interface CompletionOverlayProps {
  *
  * ## Subscriptions
  *
- * Two subscribers on the typeahead state, both wired in this
- * component's `useLayoutEffect`:
+ * Three subscribers, all wired in this component's `useLayoutEffect`:
  *
  *   1. **Paint subscriber** — direct `subscribeCompletionState(view, …)`
  *      callback that runs `paintCompletionPopup(view, popup, direction)`
@@ -1803,15 +1805,30 @@ interface CompletionOverlayProps {
  *      writes; per [L22] this is direct-DOM, never round-tripped
  *      through React state.
  *
- *   2. **ResizeObserver re-anchor** — observes the editor host
- *      element. On observed resize, fires the painter so the popup
- *      re-anchors. Catches sash-drag / pane-resize cases that don't
- *      fire window events. [Q01]'s sash-drag regression prevention.
+ *   2. **ResizeObserver re-anchor + pane-collapse cancel** — observes
+ *      the editor host element. On every observed resize:
+ *        - if the host has collapsed to zero size (`offsetHeight === 0`
+ *          or `offsetWidth === 0`), the holding pane has collapsed —
+ *          dispatch `cancelCompletion(view)` and skip the re-anchor
+ *          (no anchor exists when the editor is unrendered);
+ *        - otherwise, fire the painter so the popup re-anchors.
+ *      Catches sash-drag / pane-resize cases that don't fire window
+ *      events and the pane-collapse path that would otherwise leave
+ *      the popup orphaned. ([D06] pane-collapse fold-in.)
+ *
+ *   3. **Card-deactivate cancel** — subscribes via the deck-manager's
+ *      `observeCardDidDeactivate(cardId, …)`. When the owning card
+ *      transitions from active → not-active, dispatches
+ *      `cancelCompletion(view)`. Tolerant of being rendered outside
+ *      a `DeckManagerContext.Provider` or outside a `CardHost`
+ *      (subscription is a no-op when either is absent), matching
+ *      how `useCardId` and `useKeyCardId` handle out-of-tree mounts.
+ *      ([D06].)
  *
  * The component itself reads no React state and renders no React
  * children apart from the portaled wrapper — it is structure-zone
  * housekeeping (which DOM exists where) plus the appearance-zone
- * subscriber.
+ * subscribers.
  *
  * Laws: [L02] state observation goes through the per-view subscriber
  *        set the completion-extension already exposes (no React state
@@ -1834,6 +1851,13 @@ function CompletionOverlay({
 }: CompletionOverlayProps): React.ReactElement {
   const overlayRoot = useCanvasOverlay();
   const popupRef = useRef<HTMLDivElement | null>(null);
+  // Tolerant context reads ([D02] body-fallback parallel): a standalone
+  // gallery test mount lacks both a `CardHost` (so `useCardId` returns
+  // null) and a `DeckManagerContext.Provider` (so `store` is null).
+  // The deactivate-cancel branch no-ops when either is absent — this
+  // matches how `useKeyCardId` is tolerant of out-of-provider mounts.
+  const cardId = useCardId();
+  const store = useContext(DeckManagerContext);
 
   useLayoutEffect(() => {
     const popup = popupRef.current;
@@ -1860,17 +1884,30 @@ function CompletionOverlay({
       );
     });
 
-    // ResizeObserver re-anchor. Pane sash drags do NOT fire window
-    // resize/scroll, but they DO change the editor host's bounding
-    // rect. Without this, the popup goes stale at its last computed
-    // viewport coords. The observer also handles full window resize
-    // (the host's rect changes when the viewport does). Coalescing
-    // is built into ResizeObserver — no manual rAF/throttle needed
-    // unless profiling shows jank.
+    // ResizeObserver re-anchor + pane-collapse cancel. Pane sash drags
+    // do NOT fire window resize/scroll, but they DO change the editor
+    // host's bounding rect. Without this, the popup goes stale at its
+    // last computed viewport coords. The observer also handles full
+    // window resize (the host's rect changes when the viewport does).
+    // Coalescing is built into ResizeObserver — no manual rAF/throttle
+    // needed unless profiling shows jank.
+    //
+    // Pane-collapse branch ([D06] fold-in): when the holding pane
+    // collapses, the host's `offsetHeight` (or `offsetWidth`) drops to
+    // zero. Re-anchoring would dereference a null `coordsAtPos` against
+    // an unrendered editor; cancel instead so the popup vanishes
+    // alongside the editor. `cancelCompletion` is a no-op when the
+    // typeahead session is inactive, so the cancel is safe to fire on
+    // the initial observer notification (which happy-dom emits with
+    // zeroed sizes for un-laid-out hosts).
     let resizeObserver: ResizeObserver | null = null;
     const host = hostRef.current;
     if (host !== null && typeof ResizeObserver !== "undefined") {
       resizeObserver = new ResizeObserver(() => {
+        if (host.offsetHeight === 0 || host.offsetWidth === 0) {
+          cancelCompletion(view);
+          return;
+        }
         // Re-paint goes through the painter's own
         // `view.requestMeasure` so the read happens in the legal
         // layout-read phase. We do not re-paint if the popup is
@@ -1880,15 +1917,44 @@ function CompletionOverlay({
       resizeObserver.observe(host);
     }
 
+    // Card-deactivate cancel ([D06]). A typeahead session belongs to
+    // the card whose editor opened it. When the user activates a
+    // peer card, the deck-store fires `cardDidDeactivate(cardId)`
+    // for the owning card; we cancel so the popup does not float
+    // orphaned over the now-hidden editor.
+    //
+    // Tolerant of `cardId === null` (out-of-CardHost test mount) and
+    // `store === null` (out-of-provider test mount): both paths
+    // simply skip the subscription. This matches the existing
+    // `useKeyCardId` pattern and keeps the gallery / unit-test mounts
+    // working without a deck-manager harness.
+    let unobserveDeactivate: (() => void) | null = null;
+    if (store !== null && cardId !== null) {
+      unobserveDeactivate = store.observeCardDidDeactivate(cardId, () => {
+        cancelCompletion(view);
+      });
+    }
+
     return () => {
       unsubscribe();
       resizeObserver?.disconnect();
+      unobserveDeactivate?.();
     };
-    // `view` is the only externally-changing input; the refs are
-    // stable for the component's lifetime by construction. Re-running
-    // on view change is correct (a new view means we must re-subscribe
-    // against its plugin instance).
-  }, [view, hostRef, onTypeaheadChangeRef, completionDirectionRef]);
+    // `view`, `cardId`, and `store` are the externally-changing
+    // inputs; the refs are stable for the component's lifetime by
+    // construction. Re-running on view change is correct (a new view
+    // means we must re-subscribe against its plugin instance);
+    // re-running on cardId / store change is essentially never (the
+    // card identity is stable across the editor's life and the
+    // store is provider-scoped).
+  }, [
+    view,
+    hostRef,
+    onTypeaheadChangeRef,
+    completionDirectionRef,
+    cardId,
+    store,
+  ]);
 
   // Render the popup div via portal. Always rendered while the
   // overlay is mounted; visibility is controlled by the painter.

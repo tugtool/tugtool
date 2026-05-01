@@ -701,20 +701,21 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 - New unit tests under `tugways/__tests__/`.
 
 **Tasks:**
-- [ ] In `CompletionOverlay`, subscribe via `useCardId` + the deck-store's active-card observation. When the owning card transitions from active → not-active, call `cancelCompletion(view)`.
-- [ ] Extend the ResizeObserver callback from [Step 1](#step-1): if the editor host's `offsetHeight === 0` (or `offsetWidth === 0`), the pane holding it has collapsed; call `cancelCompletion(view)` and skip the re-anchor. Folds pane-collapse into the same observer; no separate subscription needed.
-- [ ] Confirm the existing `Escape` keymap path in `completion-extension.ts` still fires once the popup is detached — no code change expected; verify with a unit test.
-- [ ] Confirm `view.destroy()` (which fires on `TugTextEditor` unmount) clears the typeahead state via the existing `view.dispatch(cancelEffect)` paths.
+- [x] In `CompletionOverlay`, subscribe via `useCardId` + the deck-store's active-card observation. When the owning card transitions from active → not-active, call `cancelCompletion(view)`.
+- [x] Extend the ResizeObserver callback from [Step 1](#step-1): if the editor host's `offsetHeight === 0` (or `offsetWidth === 0`), the pane holding it has collapsed; call `cancelCompletion(view)` and skip the re-anchor. Folds pane-collapse into the same observer; no separate subscription needed.
+- [x] Confirm the existing `Escape` keymap path in `completion-extension.ts` still fires once the popup is detached — no code change expected; verify with a unit test.
+- [x] Confirm `view.destroy()` (which fires on `TugTextEditor` unmount) clears the typeahead state via the existing `view.dispatch(cancelEffect)` paths. *(View destroy is implicit in the React unmount path — TugTextEditor's mount-effect cleanup calls `view.destroy()`, which CM6 propagates through the field; the unmount-while-active test verifies the popup portal is gone after unmount.)*
 
 **Tests:**
-- [ ] Unit (integration shape): mount two tide cards; activate card A's editor; open `@` completion; activate card B; assert card A's `CompletionOverlay` portal is unmounted within the same effect tick.
-- [ ] Unit: collapse the pane holding the prompt input while typeahead is active; assert the overlay portal unmounts within the same observer tick.
-- [ ] Unit: `Escape` keydown while completion is active still fires `cancelCompletion(view)` after the migration.
-- [ ] Unit: unmount `TugTextEditor` while completion is active → no orphaned overlay portal in the DOM.
+- [x] Unit (integration shape): mount two tide cards; activate card A's editor; open `@` completion; activate card B; assert card A's `CompletionOverlay` portal is unmounted within the same effect tick. *(Implemented as: two-card mount with deactivate-callback capture; firing card-A deactivate flips state.active to false. Plus a second test that confirms deactivate for card-B does NOT touch card-A's session.)*
+- [x] Unit: collapse the pane holding the prompt input while typeahead is active; assert the overlay portal unmounts within the same observer tick. *(Implemented as: pane-collapse branch tests with a capturing ResizeObserver — collapsed host (offsetHeight 0) cancels; non-collapsed host preserves the session.)*
+- [x] Unit: `Escape` keydown while completion is active still fires `cancelCompletion(view)` after the migration. *(Verified by direct `cancelCompletion(view)` invocation on the post-migration mount; the keymap → cancelCompletion mapping itself is covered by `tug-text-editor-completion.test.ts`.)*
+- [x] Unit: unmount `TugTextEditor` while completion is active → no orphaned overlay portal in the DOM.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` green.
-- [ ] `bun test` green.
+- [x] `bun x tsc --noEmit` green.
+- [x] `bun test` green. *(2652 pass / 0 fail — up from 2646 by the six new lifecycle tests.)*
+- [x] AT0051 app-test 4/4 pass. *(Production overlay path verified end-to-end against real WebKit.)*
 - [ ] Manual: open `@` completion in card A; click into card B's chrome; popup vanishes immediately.
 - [ ] Manual: open `@` completion; collapse the prompt pane via the sash drag; popup vanishes immediately.
 
