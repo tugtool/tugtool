@@ -790,19 +790,19 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 **References:** (#success-criteria), [D01], [D02], [D03], [D04], [D05], [D06], [D07], [D08]
 
 **Tasks:**
-- [ ] Verify all artifacts from Steps 1–4 are present and work together.
-- [ ] Re-read each success criterion and confirm the verification passes.
-- [ ] Confirm none of the non-goals leaked into scope.
+- [x] Verify all artifacts from Steps 1–4 are present and work together. *(Single `<CanvasOverlayRoot />` mount in `deck-canvas.tsx:442`; `useCanvasOverlay` is a single-export portal-target hook in `lib/use-canvas-overlay.ts`; `--tug-z-overlay-*` tokens in `chrome.css`; `CompletionOverlay` shell wired in `tug-text-editor.tsx`; component-authoring guide adds `## Portaling and Overlays`; inventory lists `[AT0051]` with high-water at AT0051; cross-check section filled in.)*
+- [x] Re-read each success criterion and confirm the verification passes. *(See verification ledger below.)*
+- [x] Confirm none of the non-goals leaked into scope. *(Only the five popup-class CSS files were touched across the entire plan — verified via `git diff 088c40d9..HEAD --name-only -- 'tugdeck/src/components/tugways/*.css'`. Radix popovers still portal via Radix.Portal; TugSheet / TugPaneBanner still use TugPanePortalContext; banner-class literals (99000+) preserved deliberately above the overlay tier; `useCanvasOverlay` exposes only a portal target — no positioning helpers; the registry holds a single root, no multi-deck keying.)*
 
 **Tests:**
-- [ ] Aggregate run: `bun x tsc --noEmit && bun test && bun run audit:tokens lint && cargo nextest run` (workspace) all green.
-- [ ] `just app-test at0051-completion-popup-escapes-card` exits with `VERDICT: PASS`.
-- [ ] Manual end-to-end: open Tide card → shrink bottom pane → `@` shows full popup → click item → atom inserted, focus on editor → click peer card → popup vanishes → return to card → `@` again works.
+- [x] Aggregate run: `bun x tsc --noEmit && bun test && bun run audit:tokens lint && cargo nextest run` (workspace) all green. *(tsc: 0 errors; bun test: 2652 pass / 0 fail; audit:tokens lint: zero violations; cargo nextest: 1149 passed / 9 skipped.)*
+- [x] `just app-test at0051-completion-popup-escapes-card` exits with `VERDICT: PASS`. *(4/4 tests green.)*
+- [x] Manual end-to-end: open Tide card → shrink bottom pane → `@` shows full popup → click item → atom inserted, focus on editor → click peer card → popup vanishes → return to card → `@` again works. *(User-verified during Step 1 (popup escapes the card), Step 2 (cross-card deactivate vanishes the popup; pane-collapse vanishes it), and Step 3 (popover-on-completion-menu stacking) manual smokes.)*
 
 **Checkpoint:**
-- [ ] All success criteria in (#success-criteria) verifiably pass.
-- [ ] All open questions are DECIDED or DEFERRED with rationale.
-- [ ] Verification ledger below is complete.
+- [x] All success criteria in (#success-criteria) verifiably pass.
+- [x] All open questions are DECIDED or DEFERRED with rationale. *([Q01] DECIDED in [D08] (option (c), Step 0); no other open questions outstanding.)*
+- [x] Verification ledger below is complete.
 
 ---
 
@@ -828,21 +828,21 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] All [#success-criteria] are verifiably met.
-- [ ] All execution steps are committed.
-- [ ] [Q01] is DECIDED (recorded in [D08]).
-- [ ] No popup-class CSS file contains a literal `z-index:` value.
-- [ ] `tuglaws/component-authoring.md` codifies the canvas-overlay rule.
-- [ ] `tuglaws/app-test-inventory.md` lists `[AT0051]`.
-- [ ] [#tuglaws-cross-check] is filled in.
-- [ ] `bun x tsc --noEmit && bun test && bun run audit:tokens lint && cargo nextest run` all green.
-- [ ] `just app-test at0051-completion-popup-escapes-card` exits with `VERDICT: PASS`.
-- [ ] Manual smoke matches the (#success-criteria) reproduction script.
+- [x] All [#success-criteria] are verifiably met.
+- [x] All execution steps are committed. *(Steps 0–4 committed; commit hashes: e32f3c36, 517bde87, 3d4c6eb5, 157d8866, a9533f3d.)*
+- [x] [Q01] is DECIDED (recorded in [D08]).
+- [x] No popup-class CSS file contains a literal `z-index:` value.
+- [x] `tuglaws/component-authoring.md` codifies the canvas-overlay rule.
+- [x] `tuglaws/app-test-inventory.md` lists `[AT0051]`.
+- [x] [#tuglaws-cross-check] is filled in.
+- [x] `bun x tsc --noEmit && bun test && bun run audit:tokens lint && cargo nextest run` all green.
+- [x] `just app-test at0051-completion-popup-escapes-card` exits with `VERDICT: PASS`.
+- [x] Manual smoke matches the (#success-criteria) reproduction script.
 
 **Acceptance tests:**
-- [ ] `at0051-completion-popup-escapes-card` (real-browser app-test).
-- [ ] Step 1 unit suite (registry, hook, painter math, mount/unmount).
-- [ ] Step 2 unit suite (lifecycle pruning).
+- [x] `at0051-completion-popup-escapes-card` (real-browser app-test). *(4/4 pass.)*
+- [x] Step 1 unit suite (registry, hook, painter math, mount/unmount). *(12 registry tests + 8 painter tests + 6 structural overlay tests, all green within the broader 2652-test suite.)*
+- [x] Step 2 unit suite (lifecycle pruning). *(6 lifecycle tests covering cross-card deactivate, peer-card isolation, pane-collapse, Escape, and unmount-while-active.)*
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
