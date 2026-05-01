@@ -683,7 +683,7 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 - [x] `bun run audit:tokens lint` exits 0 with the new `--tug-z-overlay-*` tokens recognized.
 - [x] `just app-test at0051-completion-popup-escapes-card` exits with `VERDICT: PASS` (4/4 tests; deterministic across repeated runs).
 - [x] `rg "z-index: \d+" tugdeck/src/components/tugways/tug-completion-menu.css` returns zero matches (the file may reference `--tug-z-overlay-popup` via `var(...)` — that is the intended tier-token consumer).
-- [ ] Manual smoke: reproduce the original screenshot scenario; popup is fully visible; prompt input pinned. *(Deferred to user verification — the four app-tests cover the migrated invariants; the manual smoke is a confirmation pass.)*
+- [x] Manual smoke: reproduce the original screenshot scenario; popup is fully visible; prompt input pinned. *(User-verified.)*
 
 ---
 
