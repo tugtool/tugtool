@@ -833,6 +833,59 @@ The cursor tells the user what will happen if they click. The baseline is `curso
 
 ---
 
+## Portaling and Overlays
+
+Components that paint above the pane stack — typeahead popups, popovers, dropdown menus, tooltips — must escape every pane's `overflow: hidden` clip rect. Two portal targets exist; pick the one that matches the overlay's lifetime.
+
+### Canvas overlay tier (popup-class)
+
+**Popup-class primitives portal to the canvas overlay root, not their host pane.** A single `<CanvasOverlayRoot />` is mounted inside `DeckCanvas` as a sibling of the pane container; popup-class CSS lands above it via the `--tug-z-overlay-*` tier tokens defined in `chrome.css`.
+
+Use `useCanvasOverlay` from `lib/use-canvas-overlay.ts` for the portal target. The hook lives under `lib/` (not `chrome/`) so substrates can import it without inverting the chrome-imports-substrate layering — see [D09] in `roadmap/tugplan-tide-overlay-tier.md`. The hook returns the registered root, or `document.body` as a fallback when no root is mounted (test mounts, gallery cards).
+
+```tsx
+import { createPortal } from "react-dom";
+import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
+
+function MyOverlay({ children }: { children: React.ReactNode }): React.ReactElement {
+  const overlayRoot = useCanvasOverlay();
+  return createPortal(
+    <div
+      style={{ position: "fixed", pointerEvents: "auto" }}
+      className="my-overlay"
+    >
+      {children}
+    </div>,
+    overlayRoot,
+  );
+}
+```
+
+Pair with the right tier token in CSS:
+
+| Class           | Token                       | Examples                                              |
+|-----------------|-----------------------------|-------------------------------------------------------|
+| Tooltip         | `--tug-z-overlay-tooltip`   | `TugTooltip`                                          |
+| Popup           | `--tug-z-overlay-popup`     | `TugPopover`, `tug-completion-menu`                   |
+| Menu            | `--tug-z-overlay-menu`      | `TugContextMenu`, `TugPopupMenu`, `TugMenu`           |
+| Dialog (future) | `--tug-z-overlay-dialog`    | placeholder for modal-ish overlays                    |
+
+The canvas overlay root carries `data-tug-focus="refuse"` so a click on a portaled child does not demote the editor's first-responder status (see "Focus refusal for controls" above and [Q01]/[D08] in the overlay-tier plan). The popup itself owns its own pointer interaction; the focus refusal is for the surrounding root only.
+
+### Pane-scoped overlays
+
+**Pane-scoped overlays (sheets, pane banners, in-pane bulletins) continue to use `TugPanePortalContext`.** These overlays must die with the pane — when the pane closes, the portal target unmounts, taking the overlay with it. The canvas overlay tier outlives any single pane and is the wrong target for pane-bound UI.
+
+| Surface                        | Portal target                | Lifetime          |
+|--------------------------------|------------------------------|-------------------|
+| `TugSheet`                     | `TugPanePortalContext`       | Owning pane       |
+| `TugPaneBanner`                | `TugPanePortalContext`       | Owning pane       |
+| `TugBanner`, `TugAlert`, `TugBulletin` | App root             | App-lifetime      |
+
+App-banner-class primitives keep their existing literal z-indexes (99000+) — those deliberately outrank the canvas overlay tier so a connection-loss banner overlays a completion menu.
+
+---
+
 ## Accessibility
 
 Every component must be accessible. This is not optional.

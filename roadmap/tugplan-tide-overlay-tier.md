@@ -766,18 +766,18 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 - This plan's [#tuglaws-cross-check] section filled in below.
 
 **Tasks:**
-- [ ] Add the component-authoring paragraph: "Popup-class primitives portal to the canvas overlay root, not their host pane. Use `useCanvasOverlay` from `lib/use-canvas-overlay.ts` for the portal target (the hook lives in `lib/` so substrates can import it without inverting the chrome/substrate layering — see [D09] in `tugplan-tide-overlay-tier.md`). Pane-scoped overlays (sheets, pane banners) continue to use `TugPanePortalContext`."
-- [ ] Add `[AT0051]` to `app-test-inventory.md`. Bump high-water to `AT0051`.
-- [ ] Walk each of [L02], [L03], [L06], [L11], [L19], [L22], [L23] in the inline [#tuglaws-cross-check] section: applies-and-satisfied OR does-not-apply (and why).
+- [x] Add the component-authoring paragraph: "Popup-class primitives portal to the canvas overlay root, not their host pane. Use `useCanvasOverlay` from `lib/use-canvas-overlay.ts` for the portal target (the hook lives in `lib/` so substrates can import it without inverting the chrome/substrate layering — see [D09] in `tugplan-tide-overlay-tier.md`). Pane-scoped overlays (sheets, pane banners) continue to use `TugPanePortalContext`." *(Implemented as a new `## Portaling and Overlays` section in `tuglaws/component-authoring.md` covering canvas overlay tier vs. pane-scoped portal targets, the tier-token table, the focus-refuse marker, and the canonical usage pattern.)*
+- [x] Add `[AT0051]` to `app-test-inventory.md`. Bump high-water to `AT0051`. *(New "Overlay-tier tags" section seated after AT0038; high-water mark line updated.)*
+- [x] Walk each of [L02], [L03], [L06], [L11], [L19], [L22], [L23] in the inline [#tuglaws-cross-check] section: applies-and-satisfied OR does-not-apply (and why). *(Each entry now records applies-and-satisfied with the load-bearing detail; the L11 entry was rewritten to drop the Step-0 conditional now that [D08] is resolved to option (c).)*
 
 **Tests:**
-- [ ] No new tests.
+- [x] No new tests.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` green.
-- [ ] `bun test` green.
-- [ ] `tuglaws/app-test-inventory.md` lists `[AT0051]` and the high-water mark reflects it.
-- [ ] [#tuglaws-cross-check] section is filled in.
+- [x] `bun x tsc --noEmit` green.
+- [x] `bun test` green. *(2652 pass / 0 fail.)*
+- [x] `tuglaws/app-test-inventory.md` lists `[AT0051]` and the high-water mark reflects it.
+- [x] [#tuglaws-cross-check] section is filled in.
 
 ---
 
@@ -808,15 +808,15 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 
 ### Tuglaws Cross-Check {#tuglaws-cross-check}
 
-> Filled in during [Step 4](#step-4).
+> Filled in during [Step 4](#step-4). Each entry: applies-and-satisfied (with the load-bearing detail) or does-not-apply (with the reason).
 
-- **L02 — External state via `useSyncExternalStore`.** Applies. Typeahead state continues to enter React via `subscribeCompletionState` (the per-view subscriber set in `completion-extension.ts`). The new `CompletionOverlay` shell uses `useSyncExternalStore` against that subscriber. The `canvas-overlay-registry` exposes a `subscribe` API and `useCanvasOverlay` consumes it via `useSyncExternalStore`. No parallel React state.
-- **L03 — `useLayoutEffect` for registrations events depend on.** Applies. `<CanvasOverlayRoot />`'s `register` / `unregister` runs in `useLayoutEffect`. Consumers' portal-target consumption fires on the same commit so the first paint observes the right root.
-- **L06 — Appearance via CSS/DOM, not React state.** Applies. Popup position, item DOM, visibility, all written directly to the portaled overlay node. The React shell controls only mount/unmount. Token tier values are CSS variables.
-- **L11 — Action source / responder.** Applies. `pointerdown` + `acceptCompletionAt` is substrate-internal (no responder hop) per [D08] resolution from [Step 0](#step-0). If [D08] resolved to option (a), the portal root mirrors the editor's `data-responder-id` so the chain walk-up resolves the editor.
-- **L19 — File structure.** Applies. New chrome files (`canvas-overlay-root.tsx`, `canvas-overlay-registry.ts`, `use-canvas-overlay.ts`) live under `chrome/`. The `CompletionOverlay` shell lives next to its substrate in `tugways/tug-text-editor.tsx`.
-- **L22 — Direct DOM writes for high-frequency updates.** Applies. Popup item rebuilds, position writes, hide/show all stay on direct DOM. The React shell renders `null`.
-- **L23 — Preserve user-visible state across migration.** Applies. The completion state lives in CM6's `StateField`, not React. The migration restructures the React tree and the DOM; the StateField is untouched. An open completion session at the moment of migration would survive a hot-reload of the affected files.
+- **L02 — External state via `useSyncExternalStore`.** Applies and satisfied. Typeahead state continues to enter React via `subscribeCompletionState` (the per-view subscriber set in `completion-extension.ts`); the `CompletionOverlay` shell observes through that subscriber inside its `useLayoutEffect`. The `canvas-overlay-registry` exposes a `subscribe` API; `useCanvasOverlay` consumes it via `useSyncExternalStore` (`tugdeck/src/lib/use-canvas-overlay.ts`). The deck-store deactivate subscription is read-once-and-bind inside the same effect (not React state). No parallel React state for any of these signals.
+- **L03 — `useLayoutEffect` for registrations events depend on.** Applies and satisfied. `<CanvasOverlayRoot />`'s `register` / `unregister` runs in `useLayoutEffect` (`canvas-overlay-root.tsx:95-102`); consumers' portal-target consumption fires on the same commit so the first paint observes the right root. `CompletionOverlay`'s subscribe-and-paint effect is also `useLayoutEffect`, so the typeahead, pane-collapse, and card-deactivate handlers are all bound before any user gesture can reach them.
+- **L06 — Appearance via CSS/DOM, not React state.** Applies and satisfied. Popup position, item DOM, hide/show — all written directly to the portaled overlay node by `paintCompletionPopup`. The React shell renders `createPortal(<div .../>, overlayRoot)` and never reads/writes appearance state through React. Token tier values are CSS variables (`--tug-z-overlay-*` in `chrome.css`).
+- **L11 — Action source / responder.** Applies and satisfied. `pointerdown` + `acceptCompletionAt` is substrate-internal (no responder hop), per [D08] resolved to option (c) in [Step 0](#step-0): the spike confirmed `e.preventDefault()` keeps `document.activeElement` on the editor across the portal hop. The canvas overlay root carries `data-tug-focus="refuse"` so a click on a portaled child does not demote the first responder.
+- **L19 — File structure.** Applies and satisfied. The root component lives under `chrome/` (`canvas-overlay-root.tsx`); the registry and hook live under `lib/` (`canvas-overlay-registry.ts`, `use-canvas-overlay.ts`) so substrates can import the hook without inverting the layering — see [D09]. The `CompletionOverlay` shell lives next to its substrate in `tugways/tug-text-editor.tsx`.
+- **L22 — Direct DOM writes for high-frequency updates.** Applies and satisfied. Popup item rebuilds, position writes, hide/show all stay on direct DOM via `view.requestMeasure` (legal layout-read phase). The React shell renders only the wrapper `<div>` and never re-renders on typeahead state changes; the painter handles the high-frequency write side.
+- **L23 — Preserve user-visible state across migration.** Applies and satisfied. The completion state lives in CM6's `StateField`, not React. The migration restructured the React tree and the popup's DOM home, but the StateField is untouched — an open completion session at the moment of migration survives a hot-reload of the affected files. The lifecycle pruning paths (card deactivate, pane collapse, Escape, view destroy) all flow through `cancelCompletion(view)` against the same field; no state divergence between the field and the React shell.
 
 ---
 

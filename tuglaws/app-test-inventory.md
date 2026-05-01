@@ -21,7 +21,7 @@ The selection-plan history (`roadmap/tugplan-selection.md`) captures the elabora
 
 ## Adding a new tag
 
-1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0038**.
+1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0051**.
 2. Add an entry below in the appropriate section (or create a section).
 3. State, in one line each: card types, state axes, trigger, status.
 4. Cross-link the elaborated entry in `roadmap/tugplan-selection.md` if applicable.
@@ -234,6 +234,15 @@ Surfaced during selection-plan Step 25C.4 (active/inactive paint split). Gate cr
 - **Status:** ✅ closed at Step 25C.4.
 - **Tests:** `at0038-deactivation-inactive-paint.test.ts` (renamed from `m27-*` during the 25L AT-series audit; original numbering collided with the AT0027 layout-state tag).
 - **Summary:** When a user deactivates a scrolled EM card with a selection, `paintMirrorAsInactive(publish)` rebuilds a DOM Range at the user's actual selection — not at a wrong scroll-relative position. Gates `flatToDom`'s correctness against scrolled content.
+
+### Overlay-tier tags (AT0051)
+
+Surfaced during the canvas overlay-tier plan (`roadmap/tugplan-tide-overlay-tier.md`). Gate the canvas-level escape hatch for popup-class primitives — popups must clear every pane's `overflow: hidden` clip rect and stay anchored to their trigger across host-bounds changes.
+
+#### [AT0051] Completion popup escapes the card frame
+- **Status:** ✅ closed at overlay-tier Step 1.
+- **Tests:** `at0051-completion-popup-escapes-card.test.ts` (4 cases: portal focus retention spike, structural placement, live click-to-accept, ResizeObserver re-anchor).
+- **Summary:** Typeahead popup is portaled into `<CanvasOverlayRoot />` (sibling of the pane container in `DeckCanvas`); painted at viewport coordinates with `position: fixed`; `pointerdown` + `e.preventDefault()` keeps `document.activeElement` on the editor across the portal hop ([D08] resolution); ResizeObserver on the editor host re-anchors on sash drag and cancels the session on pane collapse ([D06]).
 
 ## Maintenance
 
