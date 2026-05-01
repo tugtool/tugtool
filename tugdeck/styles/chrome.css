@@ -6,6 +6,42 @@
  * Uses --tug-* tokens from tug.css.
  */
 
+/* ---- Canvas overlay tier (popup-class portal stacking) ----
+ *
+ * Defines the z-index tier consumed by popup-class overlays that
+ * portal into <CanvasOverlayRoot />. Range deliberately above pane
+ * content + drag affordances, deliberately below app-level banners
+ * (tug-banner.css uses 99000+) and bulletins so a connection-loss
+ * banner visually outranks a completion menu.
+ *
+ * Members: tooltip < popup < menu < dialog. Numerically gapped so
+ * future intermediate tiers can slot in without renumbering.
+ *
+ *   --tug-z-overlay-base    — the root <CanvasOverlayRoot /> div
+ *   --tug-z-overlay-tooltip — TugTooltip
+ *   --tug-z-overlay-popup   — TugPopover, TugCompletionMenu
+ *   --tug-z-overlay-menu    — TugContextMenu, TugPopupMenu, TugMenu
+ *   --tug-z-overlay-dialog  — modal-ish overlays (placeholder)
+ */
+:root {
+  --tug-z-overlay-base:    9000;
+  --tug-z-overlay-tooltip: 9100;
+  --tug-z-overlay-popup:   9200;
+  --tug-z-overlay-menu:    9300;
+  --tug-z-overlay-dialog:  9400;
+}
+
+/* ---- Canvas overlay root ----
+ *
+ * The single deck-level overlay container (one per <DeckCanvas />).
+ * Layout properties (position, inset, pointer-events) live on the
+ * component's inline style; only z-index is here so it can read the
+ * token defined above.
+ */
+.tug-canvas-overlay-root {
+  z-index: var(--tug-z-overlay-base);
+}
+
 /* ---- Resize handles: 8px hit area on each edge/corner ---- */
 .tug-pane-resize { position: absolute; z-index: 1; user-select: none; }
 .tug-pane-resize-n  { top: -4px; left: 8px; right: 8px; height: 8px; cursor: ns-resize; }

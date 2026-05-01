@@ -79,6 +79,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import { EditorView, highlightActiveLineGutter, keymap, placeholder as cmPlaceholder } from "@codemirror/view";
@@ -91,6 +92,7 @@ import {
   undo,
 } from "@codemirror/commands";
 import { cn } from "@/lib/utils";
+import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { subscribeThemeChange, unsubscribeThemeChange } from "@/theme-tokens";
 import type { AtomSegment } from "@/lib/tug-atom-img";
 import type { HistoryProvider, InputAction } from "@/lib/tug-text-types";
@@ -787,7 +789,13 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
   ) {
     const hostRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
-    const popupRef = useRef<HTMLDivElement>(null);
+    // Render-flow signal: child <CompletionOverlay /> mounts only when
+    // a non-null view is available. The view itself is canonical in
+    // `viewRef` (used by every imperative consumer); this state is a
+    // structure-zone signal for the child to subscribe to typeahead
+    // events on the live view. [L02 — child observes view via this
+    // state plus the completion-extension's own subscriber set.]
+    const [view, setView] = useState<EditorView | null>(null);
     // Buffered onRestore payload for the rare case where onRestore
     // fires before the EditorView's mount effect creates the view.
     // React fires child effects before parent effects, so a sibling
@@ -1496,6 +1504,12 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
         parent: host,
       });
       viewRef.current = view;
+      // Promote the view to React state so the sibling
+      // <CompletionOverlay /> can mount and subscribe. The state
+      // change runs in the same commit as the mount effect; the
+      // overlay's own useLayoutEffect runs on the subsequent commit
+      // with the live view.
+      setView(view);
 
       // Atom SVGs bake their colors at construction time (`tug-atom-img.ts`
       // resolves token values via `getTokenValue` at the moment the
@@ -1508,37 +1522,12 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       };
       subscribeThemeChange(onThemeChange);
 
-      // Wire the typeahead state to the popup DOM. The completion
-      // extension's per-view subscription fires on every state change
-      // — we paint the popup body imperatively per [L06] (mirrors
-      // `tug-prompt-input`'s approach) and forward to the optional
-      // `onTypeaheadChange` callback. The painter uses `coordsAtPos`
-      // to anchor the popup to the trigger character, auto-flipping
-      // up vs. down based on space inside the nearest scroll-clipping
-      // ancestor.
-      const completionUnsub = subscribeCompletionState(view, () => {
-        paintCompletionPopup(
-          view,
-          popupRef.current,
-          hostRef.current,
-          completionDirectionRef.current,
-        );
-        const snap = getCompletionState(view);
-        onTypeaheadChangeRef.current?.(
-          snap.active,
-          snap.filtered,
-          snap.selectedIndex,
-        );
-      });
-      // Initial paint: the editor mounts inactive, but a future
-      // step (e.g., state restoration) might mount with typeahead
-      // already open — paint once so the popup matches.
-      paintCompletionPopup(
-        view,
-        popupRef.current,
-        hostRef.current,
-        completionDirectionRef.current,
-      );
+      // Typeahead popup wiring lives in <CompletionOverlay /> below.
+      // The overlay subscribes to subscribeCompletionState(view, ...)
+      // in its own useLayoutEffect once `view` (this state) becomes
+      // non-null, and owns the popup DOM under a portal into
+      // <CanvasOverlayRoot />. The host element here no longer
+      // contains the popup div.
 
       // Emit `engine-ready` for harness tests that gate on the
       // EditorView being constructed inside this card. Mirrors the
@@ -1628,10 +1617,13 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
         if (id !== null) {
           selectionGuard.updateCardDomSelection(id, null);
         }
-        completionUnsub();
         unsubscribeThemeChange(onThemeChange);
         view.destroy();
         viewRef.current = null;
+        // Clear the React state so <CompletionOverlay /> unmounts
+        // its portal in the next commit and any internal subscription
+        // is torn down via its effect cleanup.
+        setView(null);
       };
     }, []);
 
@@ -1690,19 +1682,6 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
           style={hostStyle}
           {...rest}
         >
-          {/* Typeahead popup. Empty until a trigger fires; the
-              typeahead-state subscriber installed in the mount
-              effect paints the contents and the position via
-              direct DOM writes (mirrors `tug-prompt-input`'s
-              pattern, [L06] / [L22]). The popup sits inside the
-              host so click-to-accept walks up to the editor's
-              `data-responder-id` and keeps it as first responder. */}
-          <div
-            ref={popupRef}
-            data-slot="tug-completion-menu"
-            className="tug-completion-menu"
-            style={{ display: "none" }}
-          />
           {/* Right-click context menu. Conditionally rendered so the
               menu component only enters the React tree when actually
               open — keeping its `useRequiredResponderChain` hook off
@@ -1726,6 +1705,22 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
             />
           )}
         </div>
+        {/* Typeahead overlay. Renders `null` until the view is born;
+            once `view` is non-null, mounts a portal into
+            <CanvasOverlayRoot /> via `useCanvasOverlay` (or
+            document.body fallback if no overlay root is registered
+            — e.g., standalone harness). Owns the popup DOM, the
+            paint subscription, the `onTypeaheadChange` host-callback
+            relay, and a ResizeObserver that re-anchors on host
+            bounds change (sash drags). [D01, D02, D03, D07]. */}
+        {view !== null && (
+          <CompletionOverlay
+            view={view}
+            hostRef={hostRef}
+            onTypeaheadChangeRef={onTypeaheadChangeRef}
+            completionDirectionRef={completionDirectionRef}
+          />
+        )}
         {/* State-preservation registration. Conditional on
             `preserveState` so stand-alone harnesses (storybook,
             unit tests) can opt out. Renders `null` (no DOM); the
@@ -1760,25 +1755,272 @@ function clearEditor(view: EditorView): void {
 }
 
 // ---------------------------------------------------------------------------
+// Completion overlay (portaled popup shell)
+// ---------------------------------------------------------------------------
+
+interface CompletionOverlayProps {
+  /** Live `EditorView`. Pre-conditioned on non-null at the call site. */
+  view: EditorView;
+  /** The editor's host `<div>` ref. Observed by ResizeObserver to re-anchor on host bounds change (sash drag, pane resize). */
+  hostRef: React.RefObject<HTMLDivElement | null>;
+  /** Live ref to the optional `onTypeaheadChange` callback prop. */
+  onTypeaheadChangeRef: React.RefObject<TugTextEditorProps["onTypeaheadChange"]>;
+  /** Live ref to the preferred-direction prop. */
+  completionDirectionRef: React.RefObject<"up" | "down">;
+}
+
+/**
+ * `CompletionOverlay` — portaled shell for the typeahead popup.
+ *
+ * Renders one `<div data-slot="tug-completion-menu">` into
+ * `<CanvasOverlayRoot />` via `createPortal` (or `document.body` as
+ * fallback when no root is registered, per [D02]). The popup `<div>`
+ * is `position: fixed` and `z-index: var(--tug-z-overlay-popup)` so
+ * it escapes every pane's `overflow: hidden` and sits visually above
+ * the entire pane tree.
+ *
+ * The popup `<div>` exists in the DOM whenever this component is
+ * mounted (i.e., whenever the parent editor has a live view). The
+ * painter writes `display: none` when typeahead is inactive and
+ * `display: block` when active. We do not conditionally mount the
+ * portal on the active boolean because:
+ *   - The popup div is DOM-cheap (one empty element).
+ *   - Always-mounted means a stable popup ref for the painter; no
+ *     gap between "view ready" and "popup div ready" the painter has
+ *     to coordinate around.
+ *   - Toggling display is what the today's painter already does on
+ *     state change; the migration preserves that semantics rather
+ *     than introducing a new mount/unmount path.
+ *
+ * ## Subscriptions
+ *
+ * Two subscribers on the typeahead state, both wired in this
+ * component's `useLayoutEffect`:
+ *
+ *   1. **Paint subscriber** — direct `subscribeCompletionState(view, …)`
+ *      callback that runs `paintCompletionPopup(view, popup, direction)`
+ *      and forwards to `onTypeaheadChangeRef.current`. Appearance-zone
+ *      writes; per [L22] this is direct-DOM, never round-tripped
+ *      through React state.
+ *
+ *   2. **ResizeObserver re-anchor** — observes the editor host
+ *      element. On observed resize, fires the painter so the popup
+ *      re-anchors. Catches sash-drag / pane-resize cases that don't
+ *      fire window events. [Q01]'s sash-drag regression prevention.
+ *
+ * The component itself reads no React state and renders no React
+ * children apart from the portaled wrapper — it is structure-zone
+ * housekeeping (which DOM exists where) plus the appearance-zone
+ * subscriber.
+ *
+ * Laws: [L02] state observation goes through the per-view subscriber
+ *        set the completion-extension already exposes (no React state
+ *        copy), [L03] subscriptions and observers register in
+ *        `useLayoutEffect` before any user gesture can fire, [L06]
+ *        popup body and position are direct DOM writes, [L07] the
+ *        `onTypeaheadChange` prop and `direction` prop are read via
+ *        refs so a re-render with new identities doesn't re-subscribe,
+ *        [L11] `pointerdown` + `acceptCompletionAt` is substrate-internal
+ *        (verified across portal detachment in tests/app-test/at0051,
+ *        recorded in [D08]), [L22] high-frequency repaints are
+ *        direct-DOM not React-state, [L23] typeahead state lives in
+ *        CM6's `StateField` and survives this migration trivially.
+ */
+function CompletionOverlay({
+  view,
+  hostRef,
+  onTypeaheadChangeRef,
+  completionDirectionRef,
+}: CompletionOverlayProps): React.ReactElement {
+  const overlayRoot = useCanvasOverlay();
+  const popupRef = useRef<HTMLDivElement | null>(null);
+
+  useLayoutEffect(() => {
+    const popup = popupRef.current;
+    if (popup === null) return;
+
+    // Initial paint: covers the case where the typeahead state was
+    // already active when this overlay mounted (e.g., a state
+    // restoration that landed an active session in the field).
+    paintCompletionPopup(view, popup, completionDirectionRef.current);
+
+    // Paint subscriber — fires on every typeahead-state change.
+    // The completion-extension's per-view subscriber set is exactly
+    // the right granularity: state changes only flip the snapshot
+    // identity on real changes (the field's `update` reducer
+    // returns `value` unchanged for non-events), so we only repaint
+    // when something actually changed.
+    const unsubscribe = subscribeCompletionState(view, () => {
+      paintCompletionPopup(view, popup, completionDirectionRef.current);
+      const snap = getCompletionState(view);
+      onTypeaheadChangeRef.current?.(
+        snap.active,
+        snap.filtered,
+        snap.selectedIndex,
+      );
+    });
+
+    // ResizeObserver re-anchor. Pane sash drags do NOT fire window
+    // resize/scroll, but they DO change the editor host's bounding
+    // rect. Without this, the popup goes stale at its last computed
+    // viewport coords. The observer also handles full window resize
+    // (the host's rect changes when the viewport does). Coalescing
+    // is built into ResizeObserver — no manual rAF/throttle needed
+    // unless profiling shows jank.
+    let resizeObserver: ResizeObserver | null = null;
+    const host = hostRef.current;
+    if (host !== null && typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(() => {
+        // Re-paint goes through the painter's own
+        // `view.requestMeasure` so the read happens in the legal
+        // layout-read phase. We do not re-paint if the popup is
+        // hidden — the painter early-returns on inactive state.
+        paintCompletionPopup(view, popup, completionDirectionRef.current);
+      });
+      resizeObserver.observe(host);
+    }
+
+    return () => {
+      unsubscribe();
+      resizeObserver?.disconnect();
+    };
+    // `view` is the only externally-changing input; the refs are
+    // stable for the component's lifetime by construction. Re-running
+    // on view change is correct (a new view means we must re-subscribe
+    // against its plugin instance).
+  }, [view, hostRef, onTypeaheadChangeRef, completionDirectionRef]);
+
+  // Render the popup div via portal. Always rendered while the
+  // overlay is mounted; visibility is controlled by the painter.
+  return createPortal(
+    <div
+      ref={popupRef}
+      data-slot="tug-completion-menu"
+      className="tug-completion-menu"
+      style={{
+        position: "fixed",
+        // `pointer-events: auto` re-enables clicks on this child of
+        // the canvas overlay root (which has `pointer-events: none`).
+        pointerEvents: "auto",
+        // Hidden by default; the painter writes `display: block` on
+        // active typeahead state.
+        display: "none",
+      }}
+    />,
+    overlayRoot,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Completion popup painter
 // ---------------------------------------------------------------------------
 
 /** Padding between the trigger anchor and the popup. */
 const POPUP_GAP = 4;
 
+/** Inset from each viewport edge, so the popup never sits flush. */
+const POPUP_VIEWPORT_MARGIN = 8;
+
 /**
- * Repaint the typeahead popup. Called whenever the typeahead state
- * changes via the per-view subscription installed in the mount
- * effect.
+ * Pure position-math function. Inputs are viewport-relative; outputs
+ * are viewport-relative `top` / `left` for `position: fixed`. Exported
+ * for unit tests; the painter inlines the call inside CM6's measure
+ * phase.
+ *
+ * Auto-flip rule:
+ *   - `direction = "down"`: open downward iff the space below the
+ *     anchor is at least the popup's height OR is at least as much
+ *     as the space above.
+ *   - `direction = "up"`: open upward iff the space above is at
+ *     least the popup's height; otherwise fall back to whichever
+ *     side has more room.
+ *
+ * Horizontal: clamp `anchorCoords.left` so the popup never spills off
+ * the viewport. The popup's natural left edge is the trigger char's
+ * left edge; the clamp bounds it to `[POPUP_VIEWPORT_MARGIN,
+ * viewportWidth - popupWidth - POPUP_VIEWPORT_MARGIN]`.
+ *
+ * Returns `null` for `top`/`left` when the popup should hide
+ * (`anchorCoords` is null — caller maps off-screen).
+ */
+export interface ComputeCompletionPositionInput {
+  anchorCoords: { left: number; top: number; bottom: number } | null;
+  popupWidth: number;
+  popupHeight: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  direction: "up" | "down";
+}
+
+export interface ComputeCompletionPositionOutput {
+  /** Top edge in viewport coords, or `null` if anchorCoords was null. */
+  top: number | null;
+  /** Left edge in viewport coords, or `null` if anchorCoords was null. */
+  left: number | null;
+  /** Whether the popup opens downward (`true`) or upward (`false`). */
+  opensDown: boolean;
+}
+
+export function computeCompletionPosition(
+  input: ComputeCompletionPositionInput,
+): ComputeCompletionPositionOutput {
+  const {
+    anchorCoords,
+    popupWidth,
+    popupHeight,
+    viewportWidth,
+    viewportHeight,
+    direction,
+  } = input;
+  if (anchorCoords === null) {
+    return { top: null, left: null, opensDown: direction === "down" };
+  }
+  // Horizontal clamp. If popup is wider than the viewport (degenerate
+  // case), `min` will be greater than `max` after the subtraction;
+  // clamp to `POPUP_VIEWPORT_MARGIN` in that case so the popup at
+  // least starts at the safe-margin edge rather than off-screen.
+  const minLeft = POPUP_VIEWPORT_MARGIN;
+  const maxLeft = Math.max(
+    POPUP_VIEWPORT_MARGIN,
+    viewportWidth - popupWidth - POPUP_VIEWPORT_MARGIN,
+  );
+  const left = Math.max(minLeft, Math.min(anchorCoords.left, maxLeft));
+
+  // Vertical: pick down vs. up based on the requested `direction`
+  // hint plus available viewport space. `direction === "down"` is
+  // the default for an editor whose prompt sits in the page's
+  // bottom area (typeahead floats above the line); `direction ===
+  // "up"` is for editors near the top.
+  const spaceAbove = anchorCoords.top - POPUP_VIEWPORT_MARGIN;
+  const spaceBelow = viewportHeight - anchorCoords.bottom - POPUP_VIEWPORT_MARGIN;
+  const useDown =
+    direction === "down"
+      ? spaceBelow >= popupHeight || spaceBelow >= spaceAbove
+      : spaceAbove < popupHeight && spaceBelow > spaceAbove;
+
+  let top: number;
+  if (useDown) {
+    top = anchorCoords.bottom + POPUP_GAP;
+  } else {
+    top = anchorCoords.top - POPUP_GAP - popupHeight;
+  }
+  return { top, left, opensDown: useDown };
+}
+
+/**
+ * Repaint the typeahead popup against `popup` (a `<div>` portaled to
+ * the canvas overlay root). Called whenever the typeahead state
+ * changes via the per-view subscription installed in
+ * `CompletionOverlay`.
  *
  * Hides the popup when typeahead is inactive or the filtered list
  * is empty. Otherwise rebuilds the popup body if the items changed,
  * reuses existing DOM nodes when only the selected index moved, and
  * — via a deferred `view.requestMeasure` — positions the popup at
- * the trigger character with auto-flip up vs. down based on the
- * available space inside the nearest scroll-clipping ancestor.
+ * the trigger character using viewport-relative coords (the popup
+ * is `position: fixed` inside the canvas overlay root).
  *
- * Why the deferred positioning: the painter is called from a CM6
+ * Why the deferred positioning: the painter may be called from a CM6
  * `ViewPlugin.update` listener, which fires DURING CM6's update
  * cycle. Calling `view.coordsAtPos` synchronously from there throws
  * "Reading the editor layout isn't allowed during an update" — CM6
@@ -1788,16 +2030,13 @@ const POPUP_GAP = 4;
  * keyboard navigation. Routing the read+write through
  * `requestMeasure` schedules them in CM6's regular measure phase
  * where layout reads are legal.
- *
- * Mirrors `tug-prompt-input`'s painter for the visual surface.
  */
 function paintCompletionPopup(
   view: EditorView,
   popup: HTMLDivElement | null,
-  host: HTMLDivElement | null,
   direction: "up" | "down",
 ): void {
-  if (popup === null || host === null) return;
+  if (popup === null) return;
   const state = getCompletionState(view);
   if (!state.active || state.filtered.length === 0) {
     popup.style.display = "none";
@@ -1860,6 +2099,7 @@ function paintCompletionPopup(
       div.addEventListener("pointerdown", (e) => {
         // Don't let the click steal focus from the editor — the
         // accept transaction below moves the caret deliberately.
+        // Confirmed cross-portal-detachment in tests/app-test/at0051.
         e.preventDefault();
         acceptCompletionAt(view, i);
       });
@@ -1870,52 +2110,47 @@ function paintCompletionPopup(
   }
 
   // ---- Deferred positioning ----
-  // Read coordsAtPos / hostRect / popupH / clipRect in the measure
-  // phase (where layout reads are legal), then write the position
-  // styles in the same phase's write step. The `key` field
-  // coalesces multiple repaints in the same frame down to a single
-  // measurement.
+  // Read coordsAtPos + popup width/height in the measure phase
+  // (where layout reads are legal), then write the position styles
+  // in the same phase's write step. The `key` field coalesces
+  // multiple repaints in the same frame down to a single measurement.
   view.requestMeasure({
     key: "tug-text-editor-completion-position",
     read(): {
-      anchorCoords: { left: number; right: number; top: number; bottom: number } | null;
-      hostRect: DOMRect;
-      popupH: number;
-      clipRect: { top: number; bottom: number };
+      anchorCoords: { left: number; top: number; bottom: number } | null;
+      popupWidth: number;
+      popupHeight: number;
     } | null {
-      if (popup === null || host === null) return null;
+      if (popup === null) return null;
       const anchorCoords = view.coordsAtPos(state.anchorOffset);
-      const hostRect = host.getBoundingClientRect();
-      const popupH = popup.offsetHeight;
-      let scrollParent: HTMLElement | null = host.parentElement;
-      while (scrollParent !== null) {
-        const ov = getComputedStyle(scrollParent).overflowY;
-        if (ov === "auto" || ov === "scroll" || ov === "hidden") break;
-        scrollParent = scrollParent.parentElement;
-      }
-      const clipRect = scrollParent !== null
-        ? scrollParent.getBoundingClientRect()
-        : { top: 0, bottom: window.innerHeight };
-      return { anchorCoords, hostRect, popupH, clipRect };
+      return {
+        anchorCoords,
+        popupWidth: popup.offsetWidth,
+        popupHeight: popup.offsetHeight,
+      };
     },
     write(measured) {
       if (measured === null || popup === null) return;
-      const { anchorCoords, hostRect, popupH, clipRect } = measured;
-      if (anchorCoords === null) return;
-      popup.style.left = `${anchorCoords.left - hostRect.left}px`;
-      popup.style.right = "";
-      const spaceAbove = anchorCoords.top - clipRect.top;
-      const spaceBelow = clipRect.bottom - anchorCoords.bottom;
-      const useDown = direction === "down"
-        ? spaceBelow >= popupH || spaceBelow >= spaceAbove
-        : spaceAbove < popupH && spaceBelow > spaceAbove;
-      if (useDown) {
-        popup.style.top = `${anchorCoords.bottom - hostRect.top + POPUP_GAP}px`;
-        popup.style.bottom = "";
-      } else {
-        popup.style.bottom = `${hostRect.bottom - anchorCoords.top + POPUP_GAP}px`;
-        popup.style.top = "";
+      const { anchorCoords, popupWidth, popupHeight } = measured;
+      const result = computeCompletionPosition({
+        anchorCoords,
+        popupWidth,
+        popupHeight,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        direction,
+      });
+      if (result.top === null || result.left === null) {
+        popup.style.display = "none";
+        return;
       }
+      popup.style.left = `${result.left}px`;
+      popup.style.top = `${result.top}px`;
+      // `bottom` is unused in the viewport-relative model — clear any
+      // stale value left from a prior in-host-positioned mount, even
+      // though that path no longer exists.
+      popup.style.right = "";
+      popup.style.bottom = "";
     },
   });
 }

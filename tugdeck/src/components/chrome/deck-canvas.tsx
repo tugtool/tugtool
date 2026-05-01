@@ -24,6 +24,7 @@ import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { TugPane } from "./tug-pane";
 import { CardHost } from "./card-host";
+import { CanvasOverlayRoot } from "./canvas-overlay-root";
 import { DeckCommitBeacon } from "./deck-commit-beacon";
 import { usePaneFocusController } from "./pane-focus-controller";
 import { getRegistration, getSizePolicy } from "@/card-registry";
@@ -429,6 +430,16 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         );
       })}
       </div>
+      {/*
+        * CanvasOverlayRoot: single deck-level container for popup-class
+        * overlays (completion menus, popovers, etc.). Mounted as a
+        * SIBLING of containerRef — not a descendant — so no pane's
+        * `overflow: hidden` clips the overlay. The root is
+        * position-fixed; pointer-events: none on the root, opt-in
+        * pointer-events: auto on its children. See
+        * canvas-overlay-root.tsx for the full contract. [D01, D07, D09]
+        */}
+      <CanvasOverlayRoot />
       </div>
     </ResponderScope>
   );

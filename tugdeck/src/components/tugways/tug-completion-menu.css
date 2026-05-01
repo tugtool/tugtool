@@ -33,11 +33,17 @@ body {
 
 /* ---------------------------------------------------------------------------
    Root container — floating panel
-   --------------------------------------------------------------------------- */
+   ---------------------------------------------------------------------------
+   The popup is portaled into <CanvasOverlayRoot /> by `CompletionOverlay`
+   in `tug-text-editor.tsx`. The component sets `position: fixed` inline
+   so the popup is anchored to the viewport (via the painter's
+   computed top/left). This file does not set `position`. The
+   `--tug-z-overlay-popup` token (chrome.css) puts the popup at the
+   correct depth in the canvas overlay tier — above pane content,
+   below app-level banners. */
 
 .tug-completion-menu {
-  position: absolute;
-  z-index: 50;
+  z-index: var(--tug-z-overlay-popup);
   min-width: 200px;
   max-width: 400px;
   max-height: 240px;

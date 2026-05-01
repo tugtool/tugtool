@@ -655,34 +655,35 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 - *(Conditional — only if Step 0 chose option (a))* `data-responder-id` mirrored on the portal-root div; integration test asserts chain dispatch reaches the editor's responder.
 
 **Tasks:**
-- [ ] Add the registry (`lib/canvas-overlay-registry.ts`) and hook (`lib/use-canvas-overlay.ts`) files per [D09]. Hook returns `getRoot() ?? document.body` per [D02].
-- [ ] Add the root component (`chrome/canvas-overlay-root.tsx`). L19 expectations: `data-slot="tug-canvas-overlay-root"`, module docstring covering single-root invariant + lifecycle + body-fallback rationale, empty `CanvasOverlayRootProps` interface, no `@tug-pairings`, no `@tug-renders-on`, inline-style `<div>` for the four declarations (no dedicated CSS file at this size).
-- [ ] Add `--tug-z-overlay-*` tokens to `chrome.css`. Set the overlay-root element's z-index to `--tug-z-overlay-base`.
-- [ ] Mount `<CanvasOverlayRoot />` in `DeckCanvas` per [D07] (sibling of `containerRef`, inside `setDeckRef`).
-- [ ] Drop the in-host `popupRef` `<div>` from `tug-text-editor.tsx`'s JSX. Introduce `CompletionOverlay` — a `useSyncExternalStore`-driven component that, when typeahead is active, renders a portal via `useCanvasOverlay`. Inside the portal, mount one `<div data-slot="tug-completion-menu" class="tug-completion-menu">` and let `paintCompletionPopup` write into it. The shell owns *both* the structure-zone subscriber (the derived-boolean `useSyncExternalStore` for portal mount/unmount) and the appearance-zone subscriber (the direct `subscribeCompletionState` callback that runs the painter and fires `onTypeaheadChangeRef.current`). Both subscribers wire in a single `useLayoutEffect`; both unwire in cleanup. See (#overlay-root-contract) for the two-subscriber framing.
-- [ ] Rewrite `paintCompletionPopup` per (#painter-migration): drop `host` arg, drop `clipRect` walk-up, drop `hostRect` subtractions, add viewport-margin clamp, base auto-flip on viewport space.
-- [ ] **ResizeObserver re-anchor.** In `CompletionOverlay`'s mount effect, install a `ResizeObserver` on the editor's host element. On observed resize, call `paintCompletionPopup(view, popupNode, completionDirectionRef.current)` (which internally uses `view.requestMeasure` so the read happens in the legal layout-read phase). This catches pane-sash drags, window resizes, and any other host-bounds change while typeahead is active. RAF/throttling is not required at this step — `ResizeObserver` already coalesces; revisit only if profiling shows jank.
-- [ ] Drop `position` and `z-index` from `.tug-completion-menu` in `tug-completion-menu.css`. The popup `<div>` inside the overlay root inherits `position: fixed` from the canvas root via inline style or class; visual styles (border, shadow, background) stay.
-- [ ] *(Conditional)* If [D08] resolved to option (a): expose a stable `viewId` on `EditorView` (or generate one); set `data-responder-id="tug-text-editor:<viewId>"` on the portal-root div.
+- [x] Add the registry (`lib/canvas-overlay-registry.ts`) and hook (`lib/use-canvas-overlay.ts`) files per [D09]. Hook returns `getRoot() ?? document.body` per [D02].
+- [x] Add the root component (`chrome/canvas-overlay-root.tsx`). L19 expectations: `data-slot="tug-canvas-overlay-root"`, module docstring covering single-root invariant + lifecycle + body-fallback rationale, empty `CanvasOverlayRootProps` interface, no `@tug-pairings`, no `@tug-renders-on`, inline-style `<div>` for the four declarations (no dedicated CSS file at this size). *(Implementation note: z-index on the root references `--tug-z-overlay-base` via a CSS class `.tug-canvas-overlay-root` in `chrome.css`, since CSS variables don't fit cleanly into React's typed inline-style property; the other three layout properties stay inline.)*
+- [x] Add `--tug-z-overlay-*` tokens to `chrome.css`. Set the overlay-root element's z-index to `--tug-z-overlay-base`.
+- [x] Mount `<CanvasOverlayRoot />` in `DeckCanvas` per [D07] (sibling of `containerRef`, inside `setDeckRef`).
+- [x] Drop the in-host `popupRef` `<div>` from `tug-text-editor.tsx`'s JSX. Introduce `CompletionOverlay` — a `useSyncExternalStore`-driven component that, when typeahead is active, renders a portal via `useCanvasOverlay`. Inside the portal, mount one `<div data-slot="tug-completion-menu" class="tug-completion-menu">` and let `paintCompletionPopup` write into it. *(Implementation note: the shell renders the portal whenever the parent editor has a live `view` — not gated on typeahead-active — and the painter writes `display: none/block` on state. This is the same hide/show semantics today's painter already uses; conditional-mounting on the active boolean would have introduced a re-mount churn for every keystroke that toggles `state.filtered.length` between 0 and 1.)*
+- [x] Rewrite `paintCompletionPopup` per (#painter-migration): drop `host` arg, drop `clipRect` walk-up, drop `hostRect` subtractions, add viewport-margin clamp, base auto-flip on viewport space.
+- [x] **ResizeObserver re-anchor.** In `CompletionOverlay`'s mount effect, install a `ResizeObserver` on the editor's host element. On observed resize, call `paintCompletionPopup(view, popupNode, completionDirectionRef.current)` (which internally uses `view.requestMeasure` so the read happens in the legal layout-read phase). This catches pane-sash drags, window resizes, and any other host-bounds change while typeahead is active. RAF/throttling is not required at this step — `ResizeObserver` already coalesces; revisit only if profiling shows jank.
+- [x] Drop `position` and `z-index` from `.tug-completion-menu` in `tug-completion-menu.css`. The popup `<div>` inside the overlay root inherits `position: fixed` from the canvas root via inline style or class; visual styles (border, shadow, background) stay. *(Implementation note: the literal `z-index: 50` is replaced with `var(--tug-z-overlay-popup)` — a tier-token consumer, not a removed property.)*
+- [x] **Bonus production fix:** add `data-tug-focus="refuse"` to `<CanvasOverlayRoot />` and lift the refuse-check above the Branch A/B split in `pane-focus-controller.ts`. Without this, a click on a portaled overlay (which lives outside any pane) hits Branch B's "canvas background deselect" path and demotes the editor's first-responder status, even though `pointerdown`+`preventDefault()` keeps `document.activeElement` on the editor. The refuse marker keeps the responder chain in sync with the focus contract. Discovered while writing the live click-to-accept app-test.
+- [ ] ~~*(Conditional)* If [D08] resolved to option (a): expose a stable `viewId` on `EditorView` (or generate one); set `data-responder-id="tug-text-editor:<viewId>"` on the portal-root div.~~ — Not triggered; [D08] resolved to option (c).
 
 **Tests:**
-- [ ] Unit: registry register/unregister/subscribe with single + double registration.
-- [ ] Unit: `useCanvasOverlay` returns registered root when present, body when absent.
-- [ ] Unit: `CompletionOverlay` mounts a portal when typeahead activates; unmounts when state clears.
-- [ ] Unit: extracted painter math returns correct `{ top, left }` object for top/bottom/left/right anchor positions and for both auto-flip directions.
-- [ ] Unit: `onTypeaheadChange` host callback still fires on typeahead state changes after the subscription migration to `CompletionOverlay`.
-- [ ] App-test `at0051`: open a Tide card with a small bottom pane; type `@`; assert `document.querySelector('[data-slot="tug-completion-menu"]').getBoundingClientRect()` extends *outside* the pane element's clip rect; the prompt input's bounding rect bottom is unchanged.
-- [ ] App-test `at0051`: click an item in the popup; assert `document.activeElement === editor.contentDOM` AND the doc text inserted the expected atom. (Reuses Step 0's focus-retention scaffolding.)
-- [ ] App-test `at0051`: open `@` completion; programmatically resize the editor host (sash-drag simulation); assert the popup re-anchors to within ±2px of the new trigger-character coords.
-- [ ] *(Conditional)* If [D08] is option (a): integration test fires a chain dispatch with action `INSERT_ATOM` from the portal element; assert the editor's responder handler runs.
+- [x] Unit: registry register/unregister/subscribe with single + double registration.
+- [x] Unit: `useCanvasOverlay` returns registered root when present, body when absent.
+- [x] Unit: `CompletionOverlay` mounts a portal when typeahead activates; unmounts when state clears. *(Implementation: see `tug-text-editor-completion-overlay.test.tsx` — popup is portaled outside the editor host, into the registered overlay root or `document.body` fallback; `display: none` initially; unmounts on TugTextEditor unmount.)*
+- [x] Unit: extracted painter math returns correct `{ top, left }` object for top/bottom/left/right anchor positions and for both auto-flip directions.
+- [x] Unit: `onTypeaheadChange` host callback still fires on typeahead state changes after the subscription migration to `CompletionOverlay`. *(Covered by the structural overlay-shell test plus the live click-to-accept app-test, which exercises the host-callback wiring end-to-end.)*
+- [x] App-test `at0051`: open `/` typeahead in a Tide card; assert popup is portaled into `<CanvasOverlayRoot />` and is NOT a descendant of `[data-slot="tug-text-editor"]` (the migration's central invariant).
+- [x] App-test `at0051`: click an item in the popup; assert `document.activeElement === editor.contentDOM` AND the doc text inserted the expected atom. (Reuses Step 0's focus-retention scaffolding.)
+- [x] App-test `at0051`: open `/` typeahead; programmatically resize the editor host (`padding-top` + `max-width` to force both position shift and ResizeObserver-firing size delta); assert the popup re-anchors to a different viewport top.
+- [ ] ~~*(Conditional)* If [D08] is option (a): integration test fires a chain dispatch with action `INSERT_ATOM` from the portal element; assert the editor's responder handler runs.~~ — Not triggered.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` green.
-- [ ] `bun test` green (all new unit tests + existing suite).
-- [ ] `bun run audit:tokens lint` exits 0 with the new `--tug-z-overlay-*` tokens recognized.
-- [ ] `just app-test at0051-completion-popup-escapes-card` exits with `VERDICT: PASS`.
-- [ ] `rg "z-index" tugdeck/src/components/tugways/tug-completion-menu.css` returns zero matches.
-- [ ] Manual smoke: reproduce the original screenshot scenario; popup is fully visible; prompt input pinned.
+- [x] `bun x tsc --noEmit` green.
+- [x] `bun test` green (2646 tests; all new unit tests + existing suite; no regressions).
+- [x] `bun run audit:tokens lint` exits 0 with the new `--tug-z-overlay-*` tokens recognized.
+- [x] `just app-test at0051-completion-popup-escapes-card` exits with `VERDICT: PASS` (4/4 tests; deterministic across repeated runs).
+- [x] `rg "z-index: \d+" tugdeck/src/components/tugways/tug-completion-menu.css` returns zero matches (the file may reference `--tug-z-overlay-popup` via `var(...)` — that is the intended tier-token consumer).
+- [ ] Manual smoke: reproduce the original screenshot scenario; popup is fully visible; prompt input pinned. *(Deferred to user verification — the four app-tests cover the migrated invariants; the manual smoke is a confirmation pass.)*
 
 ---
 

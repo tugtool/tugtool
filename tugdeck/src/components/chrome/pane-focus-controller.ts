@@ -175,6 +175,21 @@ export function usePaneFocusController(
       // outside the deck root and must not trigger classification.
       if (!root.contains(startEl)) return;
 
+      // Focus-refuse short-circuit. Lifted ABOVE the Branch A/B
+      // split so `data-tug-focus="refuse"` skips BOTH the in-pane
+      // activation path AND the canvas-background deselect path.
+      // The canvas-overlay tier (`<CanvasOverlayRoot />`) sets this
+      // attribute so a click on a portaled completion menu / popup
+      // — which is inside the deck root but OUTSIDE any pane —
+      // does not get treated as a canvas-background deselect that
+      // would demote the active editor's first-responder status.
+      // The popup item's own `pointerdown` + `preventDefault()`
+      // keeps `document.activeElement` on the editor's contentDOM;
+      // this short-circuit keeps the responder chain in sync.
+      // Same selector the chain provider uses, so the two surfaces
+      // stay aligned.
+      if (startEl.closest('[data-tug-focus="refuse"]')) return;
+
       const paneEl = startEl.closest("[data-pane-id]");
 
       if (paneEl === null) {
@@ -194,20 +209,6 @@ export function usePaneFocusController(
 
       // Preserve #2: data-no-activate opt-out (close button).
       if (startEl.closest("[data-no-activate]")) return;
-
-      // Preserve #4: focus-refusing controls (TugButton et al. set
-      // `data-tug-focus="refuse"`). The responder-chain provider
-      // already skips first-responder promotion for these targets;
-      // we extend the same exemption here so a click on an
-      // in-pane button doesn't trigger `activateCard(activeCardId)`,
-      // which would call `makeFirstResponder(cardId)` and demote
-      // any inner first responder (e.g. a TugTextEditor inside the
-      // card). The control's own `onClick` still fires; only the
-      // pane-activation side-effect is skipped — matching the
-      // intent of `data-tug-focus="refuse"` ("this control does
-      // not change the user's focus context"). Same selector the
-      // chain provider uses, so the two surfaces stay aligned.
-      if (startEl.closest('[data-tug-focus="refuse"]')) return;
 
       const paneId = paneEl.getAttribute("data-pane-id");
       if (paneId === null) return;
