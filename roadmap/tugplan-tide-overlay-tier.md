@@ -716,8 +716,8 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 - [x] `bun x tsc --noEmit` green.
 - [x] `bun test` green. *(2652 pass / 0 fail — up from 2646 by the six new lifecycle tests.)*
 - [x] AT0051 app-test 4/4 pass. *(Production overlay path verified end-to-end against real WebKit.)*
-- [ ] Manual: open `@` completion in card A; click into card B's chrome; popup vanishes immediately.
-- [ ] Manual: open `@` completion; collapse the prompt pane via the sash drag; popup vanishes immediately.
+- [x] Manual: open `@` completion in card A; click into card B's chrome; popup vanishes immediately. *(User-verified.)*
+- [x] Manual: open `@` completion; collapse the prompt pane via the sash drag; popup vanishes immediately. *(User-verified.)*
 
 ---
 
@@ -737,18 +737,18 @@ TugTextEditor (tugways/tug-text-editor.tsx)
 - `tug-completion-menu.css` — already has no `z-index` after [Step 1](#step-1); this step verifies and adds a brief comment.
 
 **Tasks:**
-- [ ] Replace each literal `z-index:` in the five popup-class CSS files with the appropriate `--tug-z-overlay-*` token. Add `@tug-renders-on:` pairings comments where appropriate.
-- [ ] Confirm app-banner-class and pane-internal CSS files are NOT touched.
+- [x] Replace each literal `z-index:` in the five popup-class CSS files with the appropriate `--tug-z-overlay-*` token. Add `@tug-renders-on:` pairings comments where appropriate. *(`@tug-renders-on:` is a color-pairing annotation; the audit:tokens lint only fires for `color`/`fill`/`border-color` rules, so no new pairings comments were required by the z-index swap. Each migrated rule now carries an inline comment naming the overlay tier and citing [D04]/[D05].)*
+- [x] Confirm app-banner-class and pane-internal CSS files are NOT touched. *(Only the five popup-class files were modified — verified via `git status`.)*
 
 **Tests:**
-- [ ] No new tests; existing visual smoke tests cover.
+- [x] No new tests; existing visual smoke tests cover.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` green.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
-- [ ] `rg "z-index: 50|z-index: 200" tugdeck/src/components/tugways/{tug-popover,tug-editor-context-menu,tug-menu,tug-tooltip,tug-completion-menu}.css` returns zero matches.
-- [ ] Manual: open a popover on top of a completion menu (or vice versa); verify stacking matches [D05]'s declared order.
+- [x] `bun x tsc --noEmit` green.
+- [x] `bun test` green. *(2915 pass / 135 skip / 0 fail.)*
+- [x] `bun run audit:tokens lint` exits 0. *("Zero violations. All annotation, alias, and pairing checks pass.")*
+- [x] `rg "z-index: 50|z-index: 200" tugdeck/src/components/tugways/{tug-popover,tug-editor-context-menu,tug-menu,tug-tooltip,tug-completion-menu}.css` returns zero matches.
+- [x] Manual: open a popover on top of a completion menu (or vice versa); verify stacking matches [D05]'s declared order. *(User-verified.)*
 
 ---
 

@@ -57,8 +57,11 @@ body {
   /* Typography */
   font-size: 0.75rem;
   line-height: 1.4;
-  /* Layering */
-  z-index: 50;
+  /* Layering — tooltip tier in the canvas overlay stack ([D04], [D05]).
+     Below the popup tier so a popover opened over a tooltip wins
+     (tooltips are explanatory; popovers are interactive). Below
+     app-level banners (99000+). */
+  z-index: var(--tug-z-overlay-tooltip);
   /* Depth */
   box-shadow: var(--tugx-tooltip-shadow);
   /* Smooth origin for directional animations */

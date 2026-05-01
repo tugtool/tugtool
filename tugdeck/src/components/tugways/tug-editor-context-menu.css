@@ -44,8 +44,10 @@
 }
 
 .tug-editor-context-menu {
-  /* Stacking: above cards, popovers, and completion menus. */
-  z-index: 50;
+  /* Stacking — menu tier in the canvas overlay stack ([D04], [D05]).
+     Above the popup tier so a context menu opened on top of a popover
+     or completion menu wins. Below app-level banners (99000+). */
+  z-index: var(--tug-z-overlay-menu);
   /* Menu grows from the click point. */
   transform-origin: top left;
   animation: tug-editor-context-menu-enter calc(120ms * var(--tug-timing, 1)) ease;

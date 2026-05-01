@@ -229,8 +229,11 @@ body {
   border-radius: var(--tug-radius-md);
   color: var(--tugx-menu-fg);
   padding: var(--tug-space-xs);
-  /* High z-index so the portal-rendered dropdown renders above all cards */
-  z-index: 200;
+  /* Layering — menu tier in the canvas overlay stack ([D04], [D05]).
+     Above the popup tier so a dropdown opened on top of a popover wins.
+     Below app-level banners (99000+). The Radix portal still mounts at
+     the document root; the token only sets the stacking context. */
+  z-index: var(--tug-z-overlay-menu);
 }
 
 /* ============================================================================

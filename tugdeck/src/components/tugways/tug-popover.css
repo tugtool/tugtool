@@ -44,8 +44,10 @@ body {
   border-radius: 0.5rem;
   /* Depth */
   box-shadow: var(--tugx-popover-shadow);
-  /* Layering */
-  z-index: 50;
+  /* Layering — popup tier in the canvas overlay stack ([D04], [D05]).
+     Numerically above pane content (1–11) and below app-level banners
+     (99000+); peer to the completion menu. */
+  z-index: var(--tug-z-overlay-popup);
   /* Smooth origin for directional animations */
   transform-origin: var(--radix-popover-content-transform-origin);
 }

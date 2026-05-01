@@ -43,6 +43,11 @@ body {
    below app-level banners. */
 
 .tug-completion-menu {
+  /* Layering — popup tier in the canvas overlay stack ([D04], [D05]).
+     Peer to the popover tier; menus and dialogs paint above. The
+     numeric literal that previously sat here was retired during the
+     overlay-tier migration — keep the token reference intact rather
+     than reintroducing a hard-coded depth. */
   z-index: var(--tug-z-overlay-popup);
   min-width: 200px;
   max-width: 400px;
