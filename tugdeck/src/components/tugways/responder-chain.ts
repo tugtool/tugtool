@@ -10,7 +10,57 @@
  *
  * [D01] Plain TypeScript class outside React state
  * [D05] Two-level action validation (canHandle + validateAction)
- *,,
+ *
+ * ## INVARIANTS (per `tugplan-tide-overlay-framework.md` [D04])
+ *
+ * Six contracts the chain guarantees. Each is asserted by a test in
+ * `tugdeck/src/__tests__/responder-chain-invariants.test.ts`. Reviewers
+ * touching the chain should verify whether their change preserves
+ * each invariant; tests are the load-bearing assertion.
+ *
+ *   I1. Every registered responder's `parentId` is either `null` or the
+ *       id of another registered responder (at registration time). The
+ *       chain does NOT enforce this — it is a caller contract. The walk
+ *       semantics (#i1-test) tolerate a stale parentId by stopping at
+ *       the dangling reference (no infinite loop, no crash).
+ *
+ *   I2. `firstResponderId` is `null` OR the id of a currently registered
+ *       responder. Maintained by `unregister`'s DOM-walk fallback that
+ *       promotes the nearest still-registered ancestor when the current
+ *       first responder is removed; never leaves a dangling id.
+ *
+ *   I3. `sendToTarget(id, ...)` walks `parentId` from `id`, regardless
+ *       of `firstResponderId` state. Never a no-op because the first
+ *       responder is unexpected. (This is the contract that fixed the
+ *       Step 3 cancel-cascade bug — see `tugplan-tide-overlay-framework.md`
+ *       (#sheet-cascade-rationale).)
+ *
+ *   I4. `findResponderForTarget(node)` walks DOM `parentElement` from
+ *       `node`, returning the id of the nearest *registered* responder
+ *       along the rendered DOM path, or `null` if none exists. This is
+ *       the DOM-walk axis of (#mental-model)'s [D03] dual-walk policy:
+ *       different by design from `walkFromNode`, which walks `parentId`
+ *       through the registry.
+ *
+ *   I5. A modal that captures a `cascadeTargetId` at open time can
+ *       dispatch to that target on close even when there is no DOM-walk
+ *       path between the modal's portaled DOM and the target. The two
+ *       walks (DOM vs. parentId) serve different purposes per [D03];
+ *       cascade dispatches must use the parentId-walking variant
+ *       (`sendToTarget`) so they are independent of DOM ancestry.
+ *
+ *   I6. `data-tug-focus="refuse"` controls only chain-promotion-skip and
+ *       browser-focus-prevention semantics (button-class behavior, in
+ *       `responder-chain-provider.tsx`). It does NOT control
+ *       pane-focus-controller activation/deselect — that subsystem keys
+ *       on `[data-slot="tug-canvas-overlay-root"]` (per [D01]). One
+ *       attribute, one semantic; do not overload.
+ *
+ * The mental model the framework operates within — five subsystems
+ * (portals, responder chain, focus events, pane focus controller, focus-
+ * discipline markers) and their interactions — is documented in
+ * `tugplan-tide-overlay-framework.md` (#mental-model). Read it before
+ * proposing chain-touching changes.
  */
 
 import { createContext } from "react";

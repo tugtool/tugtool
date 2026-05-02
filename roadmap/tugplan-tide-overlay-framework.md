@@ -498,26 +498,26 @@ The framework adheres to:
 - Module docstring updates in `use-responder.tsx`, `canvas-overlay-root.tsx`, `tug-sheet.tsx` — link to this plan's mental model.
 
 **Tasks:**
-- [ ] Add `INVARIANTS:` block at the top of `responder-chain.ts`. Six lines, one per invariant.
-- [ ] Create `tugdeck/src/__tests__/responder-chain-invariants.test.ts` with six describe blocks (one per invariant) and assertions:
-  - **I1** — register a responder with `parentId` = unregistered id; verify the chain warns or rejects (depending on existing semantics).
-  - **I2** — register, set first responder, unregister, observe `firstResponderId` is null or another registered id.
-  - **I3** — register two responders A → B; with `firstResponderId = null`, `sendToTarget(A, ...)` walks A → B regardless.
-  - **I4** — register a responder; `findResponderForTarget(an inner DOM node)` returns the responder's id; `findResponderForTarget(a node outside)` returns null.
-  - **I5** — register A; portal a subtree (containing a different responder C) elsewhere; `sendToTarget(A, ...)` from inside C's subtree still works.
-  - **I6** — assert `[data-tug-focus="refuse"]` does not affect pane-focus-controller behavior (per [D01]). Stub mocks pane-focus-controller's input and verifies the right selector path.
-- [ ] Update `use-responder.tsx` docstring with a section on `parentId` source (React context) and a link to (#mental-model).
-- [ ] Update `canvas-overlay-root.tsx` docstring to point at [D01] and (#mental-model).
-- [ ] Update `tug-sheet.tsx` top-of-file docstring with a "see (#mental-model) for the system-level architecture" pointer.
+- [x] Add `INVARIANTS:` block at the top of `responder-chain.ts`. Six lines, one per invariant. — block expands each invariant with a short rationale plus a pointer to (#mental-model) and the invariants test file.
+- [x] Create `tugdeck/src/__tests__/responder-chain-invariants.test.ts` with six describe blocks (one per invariant) and assertions:
+  - [x] **I1** — register a responder with `parentId` = unregistered id; verify the chain warns or rejects (depending on existing semantics). — chain tolerates the dangling reference (does not throw, walk terminates with `handled === false`); test pins this tolerance.
+  - [x] **I2** — register, set first responder, unregister, observe `firstResponderId` is null or another registered id. — covers fresh manager (null), single root (auto-promoted), root unregister (null), child first-responder unregister (null OR registered ancestor).
+  - [x] **I3** — register two responders A → B; with `firstResponderId = null`, `sendToTarget(A, ...)` walks A → B regardless. — also covers unrelated-tree firstResponder (sendToTarget from disjoint subtree still walks correctly) and unregistered target (throws).
+  - [x] **I4** — register a responder; `findResponderForTarget(an inner DOM node)` returns the responder's id; `findResponderForTarget(a node outside)` returns null. — covers descendant lookup, nested-responder deepest-match, no-ancestor null, and stale-attribute null.
+  - [x] **I5** — register A; portal a subtree (containing a different responder C) elsewhere; `sendToTarget(A, ...)` from inside C's subtree still works. — pane → card-host → portaled-modal topology; verifies `findResponderForTarget` returns the modal (DOM-walk axis) but `sendToTarget(card-host)` still reaches the pane handler (parentId axis).
+  - [x] **I6** — assert `[data-tug-focus="refuse"]` does not affect pane-focus-controller behavior (per [D01]). Stub mocks pane-focus-controller's input and verifies the right selector path. — three assertions covering refuse-without-overlay, overlay-without-refuse, and disjoint-targets demonstrate that the two selectors gate distinct element sets.
+- [x] Update `use-responder.tsx` docstring with a section on `parentId` source (React context) and a link to (#mental-model). — added "Where `parentId` comes from (and why portals matter)" section explaining the context-vs-DOM divergence and the explicit `options.parentId` override pattern.
+- [x] Update `canvas-overlay-root.tsx` docstring to point at [D01] and (#mental-model). — added "Focus-discipline disambiguation" section in the `@module` block plus a "Framework decisions" entry citing `tugplan-tide-overlay-framework.md` [D01].
+- [x] Update `tug-sheet.tsx` top-of-file docstring with a "see (#mental-model) for the system-level architecture" pointer. — already added in Step 2 as a top-of-file `@see` pointer.
 
 **Tests:**
-- [ ] All six invariant tests pass.
+- [x] All six invariant tests pass. — `responder-chain-invariants.test.ts`: 17 pass / 0 fail (2 + 4 + 3 + 4 + 1 + 3 across I1–I6).
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` green.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
-- [ ] Code-review pass: every modified module's docstring has a link to (#mental-model) where it touches framework concerns.
+- [x] `bun x tsc --noEmit` green.
+- [x] `bun test` green. — full suite 2690 pass / 0 fail across 159 files.
+- [x] `bun run audit:tokens lint` exits 0.
+- [x] Code-review pass: every modified module's docstring has a link to (#mental-model) where it touches framework concerns. — `responder-chain.ts` (INVARIANTS block + bottom pointer), `use-responder.tsx` (parentId section), `canvas-overlay-root.tsx` (focus-discipline section + framework decisions), `tug-sheet.tsx` (top-of-file `@see`).
 
 ---
 

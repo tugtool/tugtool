@@ -38,6 +38,22 @@
  * registry means consumers observe the new root inside the same commit
  * cycle that registered it.
  *
+ * ## Focus-discipline disambiguation
+ *
+ * Per `tugplan-tide-overlay-framework.md` [D01] (#mental-model), this
+ * root no longer carries `data-tug-focus="refuse"`. Pane-focus-
+ * controller's "skip clicks inside the canvas overlay" check keys on
+ * `data-slot="tug-canvas-overlay-root"` (the slot above) directly,
+ * decoupled from the button-class chain-promotion / browser-focus-
+ * prevention semantics that `data-tug-focus="refuse"` now exclusively
+ * controls. One attribute, one semantic. Modals portaled here (sheets,
+ * popovers, completions) are free to claim first responder without
+ * inheriting an ill-fitting refuse marker.
+ *
+ * See (#mental-model) for the five-subsystem architecture (portals,
+ * responder chain, focus events, pane focus controller, focus-
+ * discipline markers) this root participates in.
+ *
  * Laws: [L02] consumers observe the registered root via the registry's
  *        `subscribe` API + `useSyncExternalStore` (in `use-canvas-overlay.ts`),
  *        [L03] register/unregister run in `useLayoutEffect` so the root
@@ -53,6 +69,11 @@
  *            as a sibling of the pane container,
  *            [D09] root component lives in `chrome/`; registry + hook
  *            live in `lib/` (substrates consume the hook).
+ *
+ * Framework decisions:
+ *   - `tugplan-tide-overlay-framework.md` [D01] — focus-discipline
+ *     attribute disambiguation; pane-focus-controller selector decoupled
+ *     from `data-tug-focus="refuse"`.
  *
  * @module components/chrome/canvas-overlay-root
  */

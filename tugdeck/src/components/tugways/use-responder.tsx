@@ -17,6 +17,40 @@
  * event fires, eliminating the timing gap between imperative state mutations
  * and React rendering.
  *
+ * ## Where `parentId` comes from (and why portals matter)
+ *
+ * `parentId` is sourced in this priority order:
+ *   1. The explicit `options.parentId` if the caller passes one.
+ *   2. Otherwise, the value of `ResponderParentContext` at the call site
+ *      (which is always the nearest enclosing `<ResponderScope>`'s
+ *      registered id).
+ *
+ * Critically, the React-context lookup is independent of DOM placement.
+ * A subtree portaled out of its parent's DOM via `createPortal(jsx,
+ * targetElsewhere)` still reads the consumer's React-tree
+ * `ResponderParentContext`. This is by design: chain dispatches walk
+ * `parentId` (the React-tree axis), so a portaled modal still routes
+ * dispatches up to its conceptual parent even though its rendered DOM
+ * has no responder ancestor.
+ *
+ * The chain's two walks — `walkFromNode(id)` via `parentId` (chain
+ * dispatch) and `findResponderForTarget(node)` via DOM `parentElement`
+ * (pointer/focus promotion) — answer different questions and can return
+ * different ancestors for portaled subtrees. Both are correct; per
+ * `tugplan-tide-overlay-framework.md` [D03], use the right walk for
+ * the job.
+ *
+ * Consumers that need to override the React-tree default (e.g.,
+ * `CardHost` re-parenting `cardId` onto its host pane's `stackId`) pass
+ * `options.parentId` explicitly; that override is what makes
+ * portaled-content dispatch reach handlers that live "above" the React
+ * placement.
+ *
+ * See `tugplan-tide-overlay-framework.md` (#mental-model) for the
+ * five-subsystem architecture this hook participates in (portals,
+ * chain, focus events, pane focus controller, focus-discipline
+ * markers).
+ *
  * [D02] Nested context for parent discovery
  * [D03] useResponder uses useLayoutEffect for registration
  * [D41] Use useLayoutEffect for registrations that events depend on
