@@ -31,6 +31,7 @@
 import "./tug-transcript-entry.css";
 
 import React from "react";
+import { Bot, Command, Shell, User } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -40,30 +41,32 @@ import { cn } from "@/lib/utils";
 
 /**
  * Speakers a Tide transcript can mix. The set is open by design — adding
- * a participant means extending this union, registering a glyph in
+ * a participant means extending this union, registering an icon in
  * {@link PARTICIPANT_ICONS}, and (optionally) defining new
  * `--tugx-transcript-*-<participant>` flavor tokens. No primitive edit.
  */
 export type Participant = "user" | "code" | "shell" | "command";
 
 /**
- * Glyph rendered in the icon column for each participant. Limited to the
- * three route-prefix characters in current use:
+ * Icon rendered in the gutter for each participant. Lucide glyphs picked
+ * to read at a glance:
  *
- *   - `>` for `user` and `code` — both occupy the Code-route channel; the
- *     speaker distinction comes from the bold identifier text rather than
- *     a separate glyph.
- *   - `$` for `shell` — Shell-route prefix.
- *   - `:` for `command` — Command-route prefix.
+ *   - `User` for `user` — the human in the conversation.
+ *   - `Bot` for `code` — the assistant.
+ *   - `Shell` for `shell` — shell command output.
+ *   - `Command` for `command` — `:` surface built-ins.
  *
- * No invented icons. New participants extend this registry with whatever
- * glyph a future design pass calls for.
+ * The route prefix character (`>` / `$` / `:`) lives alongside the typed
+ * input itself — in the body for `user`, in the identifier for `shell`
+ * and `command` — not in the gutter. New participants extend this
+ * registry with whatever icon a future design pass calls for.
  */
+const ICON_PIXEL_SIZE = 16;
 const PARTICIPANT_ICONS: Record<Participant, React.ReactNode> = {
-  user: ">",
-  code: ">",
-  shell: "$",
-  command: ":",
+  user: <User size={ICON_PIXEL_SIZE} />,
+  code: <Bot size={ICON_PIXEL_SIZE} />,
+  shell: <Shell size={ICON_PIXEL_SIZE} />,
+  command: <Command size={ICON_PIXEL_SIZE} />,
 };
 
 // ---------------------------------------------------------------------------

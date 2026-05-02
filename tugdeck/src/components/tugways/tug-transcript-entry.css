@@ -20,9 +20,10 @@
   align-items: flex-start;
   justify-content: center;
   width: var(--tugx-transcript-icon-column-width);
-  font-family: var(--tug-font-family-mono);
-  font-size: var(--tugx-transcript-icon-size);
-  line-height: var(--tug-line-height-normal);
+  /* Nudge the lucide glyph down 1px so it sits on the identifier's
+     baseline rather than the top of the row. Smaller than --tug-space-2xs
+     (2px) — a literal because the scale stops at 2px. */
+  padding-top: 1px;
   color: var(--tugx-transcript-icon-color);
   user-select: none;
 }

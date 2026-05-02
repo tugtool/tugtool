@@ -837,7 +837,7 @@ body {
   --tug7-element-card-title-normal-plain-rest: --tug-color(indigo, i: 4, t: 8);
 
   /* Transcript primitive */
-  --tugx-transcript-row-gap: var(--tug-space-lg);
+  --tugx-transcript-row-gap: var(--tug-space-xl);
   --tugx-transcript-icon-column-width: 36px;
   --tugx-transcript-icon-size: var(--tug-icon-size-md);
   --tugx-transcript-header-gap: var(--tug-space-sm);
@@ -855,7 +855,7 @@ body {
      tug-transcript-entry.css maps the active flavor onto the rendered
      `--tugx-transcript-icon-color`. Adding a participant is a token + a
      cascade rule; no primitive edit. */
-  --tugx-transcript-icon-color-user: var(--tug7-element-global-icon-normal-default-rest);
+  --tugx-transcript-icon-color-user: var(--tug7-element-tone-icon-normal-accent-rest);
   --tugx-transcript-icon-color-code: var(--tug7-element-tone-icon-normal-agent-rest);
   --tugx-transcript-icon-color-shell: var(--tug7-element-tone-icon-normal-data-rest);
   --tugx-transcript-icon-color-command: var(--tug7-element-tone-icon-normal-active-rest);

@@ -46,7 +46,7 @@ import React, {
   useSyncExternalStore,
 } from "react";
 
-import { ArrowUp, Maximize2, Minimize2, Settings, Square } from "lucide-react";
+import { ArrowUp, Bot, Command, Maximize2, Minimize2, Settings, Shell, Square } from "lucide-react";
 import { EditorView } from "@codemirror/view";
 
 import { cn } from "@/lib/utils";
@@ -90,14 +90,17 @@ import type { HistoryEntry } from "@/lib/prompt-history-store";
 
 /**
  * The three route prefix characters surfaced in the segment control.
- * Each segment pairs a descriptive label (what the route does) with
- * the prefix character rendered as a leading icon so the control is
- * both scannable and self-documenting.
+ * Each segment renders a lucide gutter glyph (matching the participant
+ * iconography in TugTranscriptEntry) followed by the route prefix and
+ * label — `[icon] [gap] [prefix][thin-space][name]`. The thin space
+ * (`U+2009`) separates the prefix from the name without giving them
+ * full word-spacing.
  */
+const THIN_SPACE = " ";
 const ROUTE_ITEMS: ReadonlyArray<TugChoiceItem> = [
-  { value: "❯", label: "Code",    icon: "❯" },
-  { value: "$", label: "Shell",   icon: "$" },
-  { value: ":", label: "Command", icon: ":" },
+  { value: "❯", label: `❯${THIN_SPACE}Code`,    icon: <Bot /> },
+  { value: "$", label: `$${THIN_SPACE}Shell`,   icon: <Shell /> },
+  { value: ":", label: `:${THIN_SPACE}Command`, icon: <Command /> },
 ];
 
 /**

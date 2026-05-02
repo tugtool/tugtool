@@ -136,16 +136,18 @@ This plan follows [tuglaws/tugplan-skeleton.md §reference-conventions](../tugla
 
 **Question:** Which icon glyph represents each participant?
 
-**Resolution:** DECIDED — three glyphs total, all derived from the existing route-prefix vocabulary. No invented icons:
+**Resolution:** DECIDED — lucide icons in the gutter, route-prefix character moved to live alongside the typed input itself (in the body for `user`, in the identifier for `shell` and `command`):
 
-| Participant | Glyph | Rationale |
+| Participant | Gutter icon (lucide) | Where the route prefix sits |
 |-|-|-|
-| `user`    | `>` | The user's submission belongs to the route they typed into; default Code-route glyph since most submissions go there |
-| `code`    | `>` | Code route's response side; same channel as the user submission that triggered it |
-| `shell`   | `$` | Shell route prefix |
-| `command` | `:` | Command route prefix |
+| `user`    | `User`    | In the body (`> tell me a haiku`) |
+| `code`    | `Bot`     | n/a (assistant response, no typed input) |
+| `shell`   | `Shell`   | In the identifier (`$ git`) |
+| `command` | `Command` | In the identifier (`:cost`) |
 
-Speaker distinction between `user` and `code` rows comes from the bold identifier (`"You"` vs the dynamic model name from [Q02]), not the icon. The visual rhythm of alternating `> You / > <model>` rows reads as one continuous Code-route conversation with two voices — Slack-style. Consumers can override the icon column via the body-column composition if a future need surfaces; the primitive does not invent additional glyphs.
+Speaker distinction between `user` and `code` rows comes from both the gutter icon and the bold identifier (`"You"` vs the dynamic model name from [Q02]). Lucide icons read at a glance and stay consistent with the rest of the tugways primitives' iconography. New participants extend `PARTICIPANT_ICONS` with whatever lucide icon a future design pass calls for.
+
+**Iteration note:** An earlier draft of this plan resolved [Q03] with three text glyphs (`>`, `>`, `$`, `:`) in the gutter. After visual review of the gallery, the design moved to lucide icons (above) — the prefix character is more legible alongside the typed input than as a separate gutter mark.
 
 ---
 
@@ -435,7 +437,7 @@ happy-dom is suitable for all units in this plan: no `getBoundingClientRect`-bas
 
 **Tasks:**
 - [x] Author the TSX per the component-authoring guide: module docstring, library imports, internal imports, props interface (exported), component (exported, functional — no imperative API so no `forwardRef`), `data-slot="tug-transcript-entry"`, single `data-participant` attribute on the row root, `role="article"` + `aria-labelledby` pointing at the bold identifier.
-- [x] Implement the icon registry per [Q03]: `PARTICIPANT_ICONS = { user: ">", code: ">", shell: "$", command: ":" }`. Three glyphs total — no invented icons.
+- [x] Implement the icon registry per [Q03]: `PARTICIPANT_ICONS = { user: <User/>, code: <Bot/>, shell: <Shell/>, command: <Command/> }` from `lucide-react` — lucide glyphs in the gutter, route prefix lives alongside the typed input.
 - [x] Author the CSS using only `--tugx-transcript-*` and base `--tug-*` tokens. Two-column grid (`grid-template-columns: var(--tugx-transcript-icon-column-width) 1fr`). Header uses flex with `--tugx-transcript-header-gap`. Body and controls stack with `margin-top` from tokens. The `[data-participant]` cascade rules live here and map each flavor token onto the active `--tugx-transcript-icon-color`.
 - [x] Author unit tests covering: per-participant DOM shape (4 cases), slot pass-through (`body`, `controls`), optional-slot omission (`timestamp`, `controls`), and `className` forwarding.
 
@@ -463,8 +465,8 @@ happy-dom is suitable for all units in this plan: no `getBoundingClientRect`-bas
 **Artifacts:**
 - New `gallery-transcript-entry.tsx` rendering all four variants stacked with realistic mock content:
   - `user` row: identifier `"You"`, timestamp `"2:14 PM"`, body `> tell me a haiku`.
-  - `code` row: identifier — a mock model name (e.g., `"claude-opus-4-7"`) demonstrating the dynamic shape from [Q02], timestamp `"2:14 PM"`, body — a `<TugMarkdownView>` with a static `setRegion("body", "Cherry blossoms fall...")` to demonstrate the slot accepts an MV; controls — a model name badge + a copy button.
-  - `shell` row: identifier `"git"`, timestamp `"2:13 PM"`, body — a `<pre>` block with mock `git status` output; controls — an exit-code badge `"exit 0"`.
+  - `code` row: identifier — a mock model name (e.g., `"claude-opus-4-7"`) demonstrating the dynamic shape from [Q02], timestamp `"2:14 PM"`, body — plain JSX rendering of the haiku (a markdown view's reserved viewport added a tall blank gap; the live consumer will substitute a per-row `TugMarkdownView`); controls — a model name badge + a copy button.
+  - `shell` row: identifier `"$ git"` (route prefix moved to the identifier per [Q03]), timestamp `"2:13 PM"`, body — a `<pre>` block with mock `git status` output; controls — an exit-code badge `"exit 0"`.
   - `command` row: identifier `":cost"`, timestamp `"2:12 PM"`, body — structured rendered output (table or labeled values); controls — a refresh button.
 - One `registerCard({ componentId: "gallery-transcript-entry", contentFactory: (_cardId) => <GalleryTranscriptEntry />, defaultMeta: { title: "TugTranscriptEntry", icon: "MessageSquare", closable: true }, family: "developer", acceptsFamilies: ["developer"], sizePolicy: ..., category: ... })` entry in `gallery-registrations.tsx`.
 

@@ -28,15 +28,17 @@ const PARTICIPANTS: ReadonlyArray<Participant> = [
 ];
 
 /**
- * Glyph each participant renders into the icon column. Mirrors
+ * Lucide icon name each participant renders into the gutter. Mirrors
  * `PARTICIPANT_ICONS` in the primitive — kept here as a literal so the
- * test fails loudly if either side drifts.
+ * test fails loudly if either side drifts. Lucide's `createLucideIcon`
+ * stamps the SVG with `class="lucide-<iconName>"`, so we assert that
+ * class is present to verify the right icon for the right participant.
  */
-const PARTICIPANT_GLYPHS: Record<Participant, string> = {
-  user: ">",
-  code: ">",
-  shell: "$",
-  command: ":",
+const PARTICIPANT_ICON_CLASSES: Record<Participant, string> = {
+  user: "lucide-user",
+  code: "lucide-bot",
+  shell: "lucide-shell",
+  command: "lucide-command",
 };
 
 afterEach(() => {
@@ -69,7 +71,9 @@ describe("TugTranscriptEntry", () => {
 
       const icon = root?.querySelector(".tug-transcript-entry__icon");
       expect(icon?.getAttribute("aria-hidden")).toBe("true");
-      expect(icon?.textContent).toBe(PARTICIPANT_GLYPHS[participant]);
+      const svg = icon?.querySelector("svg");
+      expect(svg).not.toBeNull();
+      expect(svg?.classList.contains(PARTICIPANT_ICON_CLASSES[participant])).toBe(true);
 
       const identifier = root?.querySelector(
         ".tug-transcript-entry__identifier",

@@ -99,14 +99,11 @@ body {
   border-radius: 0;
 }
 
-/* Nudge the route glyph (`❯`, `$`, `:`) up a touch inside the
-   choice-group buttons at the bottom of the entry. Text characters
-   baseline-align to the label, which optically reads too low next to
-   a cap-height word like `Prompt`. One scoped rule — the rest of the
-   choice group is untouched. */
-.tug-prompt-entry-toolbar .tug-group-item-icon {
-  transform: translateY(-1px);
-}
+/* No vertical nudge for the route choice-group's lucide icons — flex
+   `align-items: center` from the segment lands them at the right
+   optical center. (An earlier draft used text glyphs `❯`/`$`/`:` which
+   needed a -1px nudge; lucide SVGs have a different visual center and
+   sit naturally without one.) */
 
 /* ----------------------------------------------------------------------------
    .tug-prompt-entry-toolbar — the row under the editor
