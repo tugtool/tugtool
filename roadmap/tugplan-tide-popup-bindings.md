@@ -1216,18 +1216,18 @@ This is the central correctness invariant: `manager.getFirstResponder()` at `cap
 - This plan's [#tuglaws-cross-check] section filled in.
 
 **Tasks:**
-- [ ] Extend `tuglaws/component-authoring.md`'s overlay section with the four-role popup taxonomy from (#popup-role-taxonomy): companion, service, modal-with-trap, hover hint. Include the author-guidance "while this popup is open, where does the user expect their typing to go?" question. Cross-link to [D05] (companion DOM-focus signal), [D06] / [D07] (service capture/restore), [D09] (popup-in-sheet stacking).
-- [ ] Document `TugSheetStackingContext` in the same authoring-guide section: any popup-class primitive that portals to the canvas overlay root MUST consume the context and apply the corresponding `*-in-dialog` class when its value is true. Symbol-inventory diff at [Step 8](#step-8) verifies coverage.
-- [ ] Add new app-test ids (assigned at this step from the next available `atNNNN`) to `tuglaws/app-test-inventory.md`: companion auto-dismiss, service close-focus restore, sheet escapes card, popup-in-sheet stacking. Bump high-water mark.
-- [ ] Walk each of [L02], [L03], [L06], [L07], [L11], [L19], [L22], [L23], [L24] in the inline [#tuglaws-cross-check] section. Per the user's standing rule (`feedback_tuglaws_cross_check`), name the laws touched in the commit message.
+- [x] Extend `tuglaws/component-authoring.md`'s overlay section with the four-role popup taxonomy from (#popup-role-taxonomy): companion, service, modal-with-trap, hover hint. — added "Picking a popup role" subsection with the author-guidance question ("while this popup is open, where does the user expect their typing to go?"), the four-role table, and per-role guidance with cross-links to [D05] (companion DOM-focus signal), Risk R02 (service consumer-override path), and the modal-with-trap "do NOT consume `useServicePopupBinding`" caveat.
+- [x] Document `TugSheetStackingContext` in the same authoring-guide section. — added "Popup-in-sheet stacking via TugSheetStackingContext" subsection: explains the stacking problem ([D09] motivation), the consumer contract (consume context + apply `*-in-dialog` class), shows a code skeleton, names which class goes with which token tier, and notes the `TugTooltip` / `tug-completion-menu` exemptions. Also extended the existing tier table with the two new `*-in-dialog` rows and updated the "Pane-scoped overlays" table — the `TugSheet` row now reads "Canvas overlay root" (post-Step 2) with a note that `inert`/focus-trap stay card-scoped via `cardEl`.
+- [x] Add new app-test ids to `tuglaws/app-test-inventory.md`. — already added in [Step 4](#step-4) (AT0052–AT0054 companion-binding tags) and [Step 5](#step-5) (AT0055–AT0058 service-binding tags). High-water mark already at AT0058.
+- [x] Walk each of [L02], [L03], [L06], [L07], [L11], [L19], [L22], [L23], [L24] in the inline [#tuglaws-cross-check] section. — section is filled in at lines 1262-1276 of this file. [L01] and [L25] additionally noted as does-not-apply / applies-and-satisfied for completeness.
 
 **Tests:**
-- [ ] No new tests.
+- [x] No new tests.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` green.
-- [ ] `bun test` green.
-- [ ] [#tuglaws-cross-check] is filled in.
+- [x] `bun x tsc --noEmit` green.
+- [x] `bun test` green. — 2718 pass / 0 fail across 163 files (unchanged from end of Step 6; Step 7 is documentation-only).
+- [x] [#tuglaws-cross-check] is filled in.
 
 ---
 
@@ -1240,18 +1240,26 @@ This is the central correctness invariant: `manager.getFirstResponder()` at `cap
 **References:** (#success-criteria), [D01], [D02], [D03], [D04], [D05], [D06], [D07], [D08]
 
 **Tasks:**
-- [ ] Verify all artifacts from Steps 1–7 are present and work together.
-- [ ] Re-read each success criterion and confirm it passes.
-- [ ] Confirm none of the non-goals leaked into scope.
-- [ ] `rg "card-level hack" tugdeck/src` returns zero hits remaining for popup-related concerns.
+- [x] Verify all artifacts from Steps 1–7 are present and work together. — `use-companion-popup-binding.ts`, `use-service-popup-binding.ts`, `tug-sheet-stacking-context.ts`, `ResponderManager.focusResponder` + `ResponderNode.focus` field, six wired primitives (TugPopupMenu, TugPopover, TugConfirmPopover, TugContextMenu, TugSheetContent canvas-tier render, CompletionOverlay companion wiring), four new z-tier tokens (chrome.css), CSS rules in tug-popover.css / tug-menu.css, ten new tests (8 hook + 2 trigger discipline), seven new app-tests (AT0052–AT0058), `tuglaws/component-authoring.md` overlay-section update, `tuglaws/app-test-inventory.md` high-water at AT0058.
+- [x] Re-read each success criterion and confirm it passes:
+  - **Sheet escapes its card** — user-confirmed bug-fix verification (image 2 reproducer).
+  - **All popup-class primitives portal to the canvas overlay root** — Step 1 grep audit: `rg "createPortal\(.+document\.body\)" tugdeck/src/components/tugways` returns no popup-class hits.
+  - **`manager.focusResponder(id)` brings DOM focus in sync with chain state** — Step 3's `focus-responder.test.tsx` (11 tests across 4 branches) + Step 5's at0055 app-test.
+  - **Companion popup auto-dismisses on first-responder change** — Step 4's at0052 app-test PASS (image 5 reproducer).
+  - **Service popup restores focus to the prior responder on close** — Step 5's at0055 app-test PASS.
+  - **Popups inside sheets stack above the sheet** — Step 5's at0057 app-test PASS (z-index 9600 + class + rect overlap).
+  - **No card-level hacks** — Step 6's audit greps return zero hits for popup close-focus overrides at the card level.
+  - **All gates green at every step** — confirmed by the aggregate run below.
+- [x] Confirm none of the non-goals leaked into scope. — single-root invariant preserved (no multi-deck topology); banner-class primitives untouched (still 99000+); pane-internal stacking literals untouched; no popover-sub-popup model; Radix `FocusScope` trap config untouched; typeahead state shape unchanged; no new "dismiss companion popup" action; completion-overlay z-elevation in sheets explicitly deferred per [Step 5](#step-5)'s `tug-completion-menu.css` note; no `skipRestore()` opt-out (Risk R02 deferral); no `TugAlert`-in-sheet token.
+- [x] `rg "card-level hack" tugdeck/src` returns zero hits remaining for popup-related concerns. — confirmed.
 
 **Tests:**
-- [ ] Aggregate run: `bun x tsc --noEmit && bun test && bun run audit:tokens lint && cargo nextest run` (workspace) all green.
-- [ ] All app-tests added in Steps 2, 4, 5 exit with `VERDICT: PASS`.
+- [x] Aggregate run: `bun x tsc --noEmit && bun test && bun run audit:tokens lint && cargo nextest run` (workspace) all green. — tsc exit 0; bun test 2718 pass / 0 fail across 163 files; audit:tokens lint zero violations; cargo nextest run 1149 passed / 9 skipped across 18 binaries.
+- [x] All app-tests added in Steps 2, 4, 5 exit with `VERDICT: PASS`. — `just app-test at0052 at0053 at0054 at0055 at0056 at0057 at0058` returns VERDICT: PASS (7/7 files green; 7/7 tests passed). Step 2 deferred its sheet-escape and drag-tracking app-tests; the originating "sheet clip" bug-fix is user-verified manually.
 
 **Checkpoint:**
-- [ ] All success criteria checked off.
-- [ ] User-verified manual smoke against all three originating bug reports (sheet clip, completion-on-font-click, font-close-focus-return).
+- [x] All success criteria checked off.
+- [x] User-verified manual smoke against all three originating bug reports (sheet clip, completion-on-font-click, font-close-focus-return). — all three confirmed by user as fixed.
 
 ---
 

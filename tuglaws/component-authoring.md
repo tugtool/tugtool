@@ -863,24 +863,82 @@ function MyOverlay({ children }: { children: React.ReactNode }): React.ReactElem
 
 Pair with the right tier token in CSS:
 
-| Class           | Token                       | Examples                                              |
-|-----------------|-----------------------------|-------------------------------------------------------|
-| Tooltip         | `--tug-z-overlay-tooltip`   | `TugTooltip`                                          |
-| Popup           | `--tug-z-overlay-popup`     | `TugPopover`, `tug-completion-menu`                   |
-| Menu            | `--tug-z-overlay-menu`      | `TugContextMenu`, `TugPopupMenu`, `TugMenu`           |
-| Dialog (future) | `--tug-z-overlay-dialog`    | placeholder for modal-ish overlays                    |
+| Class                     | Token                              | Examples                                                |
+|---------------------------|------------------------------------|---------------------------------------------------------|
+| Tooltip                   | `--tug-z-overlay-tooltip`          | `TugTooltip`                                            |
+| Popup                     | `--tug-z-overlay-popup`            | `TugPopover`, `tug-completion-menu`                     |
+| Menu                      | `--tug-z-overlay-menu`             | `TugContextMenu`, `TugPopupMenu`, `TugMenu`             |
+| Dialog                    | `--tug-z-overlay-dialog`           | `TugSheet`                                              |
+| Popup-in-dialog (elevated)| `--tug-z-overlay-popup-in-dialog`  | `TugPopover` opened from a control inside a sheet       |
+| Menu-in-dialog  (elevated)| `--tug-z-overlay-menu-in-dialog`   | `TugPopupMenu` / `TugContextMenu` inside a sheet        |
 
 The canvas overlay root carries `data-tug-focus="refuse"` so a click on a portaled child does not demote the editor's first-responder status (see "Focus refusal for controls" above and [Q01]/[D08] in the overlay-tier plan). The popup itself owns its own pointer interaction; the focus refusal is for the surrounding root only.
 
+### Picking a popup role
+
+Every popup-class primitive plays one of four **roles** in the user's focus relationship with the surrounding workspace. Pick the role at component-design time by asking: **while this popup is open, where does the user expect their typing to go?**
+
+| Role                | Examples                                       | Open behavior                                | Close behavior                                  | Hook                          |
+|---------------------|------------------------------------------------|----------------------------------------------|-------------------------------------------------|-------------------------------|
+| **Companion**       | `CompletionOverlay` (file completion)          | Owner keeps DOM focus; popup never steals it | Owner keeps DOM focus                           | `useCompanionPopupBinding`    |
+| **Service**         | `TugPopupMenu`, `TugPopover`, `TugContextMenu` | Popup grabs focus via Radix `FocusScope`     | Restore prior first-responder via `focusResponder` | `useServicePopupBinding`   |
+| **Modal-with-trap** | `TugSheet`, `TugAlert`                         | Trap focus inside; owning card body becomes `inert` | Restore focus to trigger; chain-native `cancelDialog`   | (existing `FocusScope` + chain-native dispatch) |
+| **Hover hint**      | `TugTooltip`                                   | n/a — tooltips don't take focus              | n/a                                             | n/a                           |
+
+Author guidance: the question above narrows to a role.
+
+- "The popup itself" → **service**. The user is now choosing an item in the menu / interacting with the popover. Use `useServicePopupBinding`. `TugPopupMenu`, `TugPopover`, `TugConfirmPopover`, `TugContextMenu`, and (by composition) `TugPopupButton` all carry this internally — consumers don't pass `onCloseAutoFocus` overrides. Custom close behavior calls `manager.focusResponder(targetId)` from the menu-item handler before close (Risk R02 in `tugplan-tide-popup-bindings.md`).
+- "The same place as before" → **companion**. The user is still typing into the editor and the popup is a side-channel. Use `useCompanionPopupBinding({ ownerEl, onShouldDismiss })` at the consumer site. The hook fires `onShouldDismiss` exactly when DOM focus transitions out of the owner element's subtree (microtask-deferred to ride past in-subtree sibling transitions). See [D05] in `tugplan-tide-popup-bindings.md`.
+- "Nowhere — the rest of the workspace is blocked" → **modal-with-trap**. A sheet is not "a service popup with a focus trap"; it is a workspace-blocking interaction the user explicitly entered. Sheets use Radix's `FocusScope` trap and the existing chain-native `cancelDialog` close path. Do NOT consume `useServicePopupBinding` from a modal-with-trap primitive — its restore-prior semantics are wrong here (a sheet's "Cancel" button should restore focus to the trigger, not to whatever was first responder before).
+- "No input — just a hint that goes away on hover-out" → **hover hint**. Tooltips share the canvas overlay tier for tier consistency only; they do not consume any binding.
+
+Per [L19], every popup-class component documents its role in its module docstring and consumes the corresponding binding (or none, for modal-with-trap and hover hint). Reviewers verify the docstring matches the binding.
+
+### Popup-in-sheet stacking via TugSheetStackingContext
+
+A popup opened from a control inside a sheet must visually stack ABOVE the sheet, not behind it. Both sheets (`--tug-z-overlay-dialog: 9400`) and popups (`--tug-z-overlay-popup: 9200` / `--tug-z-overlay-menu: 9300`) portal to the same canvas overlay root, so default tokens would put the popup behind. Per [D09] in `tugplan-tide-popup-bindings.md`, the elevation is signaled through React context.
+
+**Authoring contract.** Any popup-class primitive that portals to the canvas overlay root MUST consume `TugSheetStackingContext` and apply the corresponding `*-in-dialog` class on its portaled content element when the value is `true`:
+
+```tsx
+import { useContext } from "react";
+import { cn } from "@/lib/utils";
+import { TugSheetStackingContext } from "@/components/tugways/tug-sheet-stacking-context";
+
+function MyMenuContent({ children }: { children: React.ReactNode }): React.ReactElement {
+  const inDialog = useContext(TugSheetStackingContext);
+  return (
+    <DropdownMenuPrimitive.Content
+      className={cn("tug-menu-content", inDialog && "tug-menu-in-dialog")}
+      // …
+    >
+      {children}
+    </DropdownMenuPrimitive.Content>
+  );
+}
+```
+
+Pair with one CSS rule that swaps to the elevated z-tier token:
+
+```css
+.tug-menu-content.tug-menu-in-dialog {
+  z-index: var(--tug-z-overlay-menu-in-dialog);
+}
+```
+
+Use `tug-popup-in-dialog` for popovers (z-tier 9500) and `tug-menu-in-dialog` for menus / context menus / popup menus (z-tier 9600). The `menu > popup` ordering is preserved inside dialogs so a popover that opens a menu inside a sheet keeps the same relative stacking it has outside a sheet.
+
+`TugTooltip` does not consume the context — tooltips are hover-only and never opened from buttons inside a sheet in a way that requires elevation. `tug-completion-menu.css` does not need the elevation rule by default (a completion overlay opening inside a sheet is unusual; the editor inside a sheet is rare).
+
 ### Pane-scoped overlays
 
-**Pane-scoped overlays (sheets, pane banners, in-pane bulletins) continue to use `TugPanePortalContext`.** These overlays must die with the pane — when the pane closes, the portal target unmounts, taking the overlay with it. The canvas overlay tier outlives any single pane and is the wrong target for pane-bound UI.
+**Pane-scoped overlays (pane banners, in-pane bulletins) use `TugPanePortalContext`.** These overlays must die with the pane — when the pane closes, the portal target unmounts, taking the overlay with it. Sheets used to live here too, but moved to the canvas overlay tier in `tugplan-tide-popup-bindings.md` Step 2 (the user-visible bug was "the sheet is clipped by the card"; the card-modal behavior — `inert` on `.tug-pane-body`, focus trap, restore-to-trigger — stays card-scoped via `cardEl`, while only the rendering target moved to the canvas tier).
 
-| Surface                        | Portal target                | Lifetime          |
-|--------------------------------|------------------------------|-------------------|
-| `TugSheet`                     | `TugPanePortalContext`       | Owning pane       |
-| `TugPaneBanner`                | `TugPanePortalContext`       | Owning pane       |
-| `TugBanner`, `TugAlert`, `TugBulletin` | App root             | App-lifetime      |
+| Surface                                | Portal target                | Lifetime          |
+|----------------------------------------|------------------------------|-------------------|
+| `TugSheet`                             | `<CanvasOverlayRoot />`      | Canvas-lifetime; `inert`/`focus`-trap stay card-scoped |
+| `TugPaneBanner`                        | `TugPanePortalContext`       | Owning pane       |
+| `TugBanner`, `TugAlert`, `TugBulletin` | App root                     | App-lifetime      |
 
 App-banner-class primitives keep their existing literal z-indexes (99000+) — those deliberately outrank the canvas overlay tier so a connection-loss banner overlays a completion menu.
 
