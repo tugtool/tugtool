@@ -178,7 +178,7 @@ Roughly half the steps shipped between the original 2026-04-19 draft and the 202
 | 6 | Cmd+J scrolls to the selected history entry (or bottom) | **merged into [Step 11](#step-11)** |
 | 7 | Atoms render cleanly at tighter line-heights | **done** |
 | **7.5** | **Connection health checking and reconnect-aware tide cards** | **next — new in this rejoin** |
-| 8 | Canvas-level overlays: popups escape the card, constrained only by the canvas | pending — replanned 2026-04-30 |
+| 8 | Canvas-level overlays: popups escape the card, constrained only by the canvas | **done** — split into three subordinate plans (overlay-tier, popup-bindings, overlay-framework); see [step](#step-8) |
 | 9 | Participant model + `TugTranscriptEntry` primitive | pending — refresh before starting |
 | 10 | Tugcast-side session ledger + full resume UX (placeholder) | placeholder — promotion still owed |
 | 11 | Multi-turn transcript rendering with `TugTranscriptEntry` | pending — absorbs Step 6's Cmd+J behavior |
@@ -195,7 +195,7 @@ Roughly half the steps shipped between the original 2026-04-19 draft and the 202
 | 22 | Compliance close-out | pending |
 | 23 | Tuglaws walkthrough | pending |
 
-**Refresh-before-resume note.** Steps 8, 9, 11, 12, 13, 14, 15, 21, 22, 23 were authored 2026-04-19. Before resuming each, re-read its Files and Work sections against the current code — `tug-prompt-entry`'s migration to `tug-text-editor` (Step 15 of `roadmap/text-editing-base.md`), the editor-settings sheet, and the tide card's panel-growth wiring all landed in the interim and may have moved file paths, renamed delegates, or changed seams the original step text assumed.
+**Refresh-before-resume note.** Steps 9, 11, 12, 13, 14, 15, 21, 22, 23 were authored 2026-04-19. Before resuming each, re-read its Files and Work sections against the current code — `tug-prompt-entry`'s migration to `tug-text-editor` (Step 15 of `roadmap/text-editing-base.md`), the editor-settings sheet, and the tide card's panel-growth wiring all landed in the interim and may have moved file paths, renamed delegates, or changed seams the original step text assumed.
 
 ---
 
@@ -847,92 +847,15 @@ g. **Banner UX tightening.**
 
 #### Step 8 — Canvas-level overlays: popups escape the card, constrained only by the canvas {#step-8}
 
-**Status: Pending — replan landed 2026-04-30.** The original Step 8 (authored 2026-04-19) proposed capping the popup's height to the card and opening upward when below was tight. That is the wrong primitive: it treats the card as a legitimate visual constraint on a popup. It is not. A popup is a child of the canvas, not the card. The replan below reframes Step 8 as introducing a canvas-level overlay tier and migrating the completion popup (and any other popup-class primitive that today portals into a card-pane subtree) onto it. The card is just where the trigger lives; the only legitimate visual constraint is the canvas viewport.
+**Status: Done.** The work originally sketched here grew into three subordinate plans, each replacing or extending the last as the design settled. Deep technical detail lives in those plans; this step is now a marker pointing to them:
 
-**Why this exists.** Today the completion popup is rendered as a child of the editor host `<div>` inside `tug-text-editor.tsx` (the `popupRef` `<div>` near the JSX root, declared `position: absolute; z-index: 50` in `tug-completion-menu.css`). That puts the popup's containing block inside the bottom split pane of the tide card, and its visual clip is the first scroll-clipping ancestor — typically the `TugPane` that holds the prompt-entry, which has `overflow: hidden`. The current painter (`paintCompletionPopup` in `tug-text-editor.tsx`) is *designed* around this constraint: it walks up looking for the first scroll-clipping ancestor and uses that ancestor's rect as its clip when picking up vs. down. The popup cannot escape the card no matter how clever the height math gets, because it is *rooted* inside it.
+1. [tugplan-tide-overlay-tier.md](./archive/tugplan-tide-overlay-tier.md) — landed 2026-04-30. Introduced `<CanvasOverlayRoot />`, the `useCanvasOverlay` portal hook, and the `--tug-z-overlay-*` token tier. Migrated the file-completion popup off the editor host onto the canvas overlay tier so it escapes the card frame.
 
-The right model already exists in the codebase: `tug-editor-context-menu.tsx` uses `createPortal(..., document.body)` + `position: fixed` + viewport-relative coords + viewport-margin clamping. Radix's `Popover.Portal` (used by `TugPopover` / `TugConfirmPopover`) does the same. The completion popup is the outlier. This step generalizes the right model into a single canvas-level overlay tier and migrates the outlier(s) onto it.
+2. [tugplan-tide-popup-bindings.md](./archive/tugplan-tide-popup-bindings.md) — generalized the canvas overlay tier to every popup-class primitive (Radix popovers, popup menus, context menus, tooltips, sheets) and closed the long-standing gap between `manager.makeFirstResponder(id)` (chain-state only) and DOM focus. Added `ResponderManager.focusResponder(id)` plus two binding hooks: `useCompanionPopupBinding` (popups that live only while their owner is first responder) and `useServicePopupBinding` (popups that take focus while open and restore the prior responder on close).
 
-**Refresh-before-resume note.** `tug-prompt-entry`'s migration to `tug-text-editor` (Step 15 of `roadmap/text-editing-base.md`) moved the popup's mount point from `tug-prompt-entry.tsx` into `tug-text-editor.tsx`. The completion engine now lives in `tug-text-editor/completion-extension.ts` (state field, view plugin, transaction extender, keymap). The state observed by the painter is `subscribeCompletionState` / `getCompletionState`. Re-confirm these seams before editing.
+3. [tugplan-tide-overlay-framework.md](./archive/tugplan-tide-overlay-framework.md) — completed 2026-05-02. Disambiguated the overloaded `data-tug-focus="refuse"` attribute into per-concern markers, gave `useTugSheet` an explicit close-cascade target API, and documented the responder-chain / portal / focus / pane-controller mental model in one place. Resolved the picker cancel-cascade bug surfaced during popup-bindings Step 2.
 
-**Files:**
-- `tugdeck/src/components/chrome/canvas-overlay-root.tsx` (new) — single fixed-position overlay container mounted once at the canvas level. Stable target for `createPortal`.
-- `tugdeck/src/components/chrome/use-canvas-overlay.ts` (new) — small hook: `useCanvasOverlay(open) → portalNode`. Owns viewport clamp helpers, an optional close-on-canvas-scroll/resize subscription, and the `position: fixed` defaults.
-- `tugdeck/src/components/chrome/deck-canvas.tsx` — mount `<CanvasOverlayRoot />` once, as a *sibling* of the pane tree (not a descendant of any pane).
-- `tugdeck/styles/chrome.css` (or wherever the existing z-index constants live) — add a `--tug-z-overlay-*` token tier; canvas overlays read from that tier instead of literal z-indexes scattered across CSS files.
-- `tugdeck/src/components/tugways/tug-text-editor.tsx` — drop the in-host popup `<div>`. Add a sibling React component (e.g., `CompletionOverlay`) that `useSyncExternalStore`s the per-view completion state, mounts a `useCanvasOverlay` portal only when `state.active && state.filtered.length > 0`, and runs the existing item-painting / hover / click handlers on the portal node. Replace the painter's "find scroll-clipping ancestor" logic with viewport-relative positioning (the `view.coordsAtPos` call already returns viewport coords; the `hostRect` subtractions go away).
-- `tugdeck/src/components/tugways/tug-completion-menu.css` — drop `position: absolute` and `z-index: 50` from `.tug-completion-menu`; the overlay tier provides those. Keep the visual styles (background, border, shadow, item rules) untouched.
-- `tugdeck/src/components/tugways/internal/tug-popup-menu.tsx` — audit. If it positions inside its trigger's stacking context, route it through `useCanvasOverlay`. (No code change if it already escapes via Radix or `document.body`.)
-- `tuglaws/component-authoring.md` — codify the rule: "popup-class primitives portal to the canvas overlay root, not their host pane". One paragraph; cross-link this step.
-- New test files:
-  - `tugdeck/src/components/chrome/__tests__/canvas-overlay.test.tsx` — overlay root mounts once, portals render inside it, viewport-margin clamp behaves.
-  - `tugdeck/src/components/tugways/__tests__/completion-overlay-not-clipped.test.tsx` — popup escapes a deliberately small `overflow: hidden` ancestor.
-
-**Work:**
-
-1. **Mount point.** Add `<CanvasOverlayRoot />` once inside `deck-canvas.tsx`, as a sibling to (not a descendant of) any pane DOM. The root is a single empty `<div data-slot="tug-canvas-overlay-root">` with `position: fixed; inset: 0; pointer-events: none; z-index: var(--tug-z-overlay-tier)`. `pointer-events: none` lets clicks pass through the root itself; child overlays opt back in via `pointer-events: auto`. The root MUST be a sibling of the pane tree — no pane's `overflow: hidden` or stacking context can ever clip an overlay. (It's still inside `body` whose `overflow: hidden` is the canvas stop — that's the constraint we *want*.)
-
-2. **Stacking discipline.** Define a `--tug-z-overlay-*` token tier in `chrome.css`: a small set (e.g., `--tug-z-overlay-popup`, `--tug-z-overlay-menu`, `--tug-z-overlay-tooltip`, `--tug-z-overlay-dialog`) with explicit ordering. All canvas overlays read from that tier. This step does NOT mass-migrate Radix popovers (see "Out of scope") but it DOES rewrite `tug-popover.css`'s literal `z-index: 50` and any other literals discovered in the audit to read from the new tokens — so future popovers can't drift.
-
-3. **Positioning model.** Overlays receive a viewport rect (or "anchor + side + offset") and use `position: fixed; top/left` in viewport coords. The existing completion painter already calls `view.coordsAtPos(state.anchorOffset)` which returns viewport coords; once the popup is detached from the editor host, the `hostRect.left` / `hostRect.top` / `hostRect.bottom` subtractions in `paintCompletionPopup` go away. Keep the auto-flip up/down — but the "available space" check uses **viewport** edges, not the scroll-clipping ancestor's rect. Add the existing context-menu's `VIEWPORT_MARGIN` clamp so the popup never disappears off-screen at extreme anchor positions.
-
-4. **Substrate migration — completion popup.** Drop the popup `<div>` from inside the editor host JSX. Add a sibling component `CompletionOverlay` that:
-   - Subscribes to `subscribeCompletionState(view, listener)` via `useSyncExternalStore`. (The plugin already exposes the per-view subscriber set; no new API needed. [L02].)
-   - Mounts a portal via `useCanvasOverlay` only when `state.active && state.filtered.length > 0`. Inactive state means no DOM in the overlay root.
-   - Runs the existing item-building / hover-pointermove / pointerdown-accept handlers on the portal node ([L06] / [L22] direct DOM writes preserved). The `pointerdown` `e.preventDefault()` keeps focus in the editor — load-bearing for [L11] (see step 7).
-   - Re-measures position on `view.requestMeasure` (today's pattern stays), plus on `window` `scroll`/`resize` for canvas-relative re-anchoring. Cancels the typeahead session ([L11]) on canvas-level interactions outside the editor (covered by the existing keymap path; verify it still fires).
-
-5. **Substrate migration — TugPopupMenu.** Audit. If it currently positions inside its trigger's stacking context (i.e., not via Radix Portal and not into `document.body`), migrate to `useCanvasOverlay`. If it already portals correctly, normalize its z-index to the new tokens and leave the rest alone.
-
-6. **Lifecycle pruning.** Overlays must hide / unmount when:
-   - The owning card is no longer the active card of its pane ([D10] focus model). Wire via `useCardId` + the active-card store on the overlay component.
-   - The owning pane is collapsed or unmounted (the per-view `subscribeCompletionState` already unsubscribes on view destroy; the overlay component's `useEffect` cleanup must hide the portal on `view.destroy()`).
-   - The viewport scrolls or resizes — the completion overlay re-measures; transient menus (TugPopupMenu) close.
-   - `Escape` is pressed (already handled per-component in the keymap; verify it still fires once the popup is detached).
-   This lifecycle is the new responsibility introduced by detaching the popup from the card subtree. Without it, the overlay is the only thing left visible when the card it belongs to is hidden, collapsed, or behind another card.
-
-7. **Responder chain.** Today the popup sits inside the editor host, so click-to-accept walks up to the editor's `data-responder-id` and keeps it as first responder ([L11] action source/responder). Once portaled out of the host, that walk-up is broken. Two options, in preference order:
-   - (a) **Accept directly via `acceptCompletionAt(view, i)`** — already what `pointerdown` does (the `pointerdown` + `preventDefault()` suppresses the focus shift, so the editor keeps focus and `view.dispatch` runs without a responder hop). Verify this still works once the popup is portaled. This is the path of least change; the pointerdown handler is substrate-internal and does not need the chain.
-   - (b) **Mirror the responder id on the portal root** — set `data-responder-id` on the portal container to the editor's id so a generic walk-up still finds the right responder. Contingency only if (a) breaks.
-   The choice is made during implementation based on whether the existing `pointerdown` path still keeps focus on the editor in WebKit when the popup lives outside the editor's DOM subtree.
-
-8. **Tuglaws walkthrough.** Cite [L02] (popup state via `useSyncExternalStore` against the per-view subscriber set — unchanged), [L03] (overlay-root attach in `useLayoutEffect`), [L06] (DOM writes for position — unchanged), [L11] (responder chain — see step 7), [L19] (file structure — new files under `chrome/`), [L22] (high-frequency direct DOM writes — unchanged). Add the `component-authoring.md` paragraph codifying the rule.
-
-**Verification:**
-- `bun x tsc --noEmit` + `bun test` + `bun run audit:tokens lint` green.
-- Unit test: `<CanvasOverlayRoot />` mounts a single root keyed by `data-slot="tug-canvas-overlay-root"`; `useCanvasOverlay(open)` portals into it; `pointer-events: none` on the root and `auto` on the child overlay.
-- Unit test: render `TugTextEditor` inside a deliberately small + `overflow: hidden` container; trigger `@` completion; assert the popup's `getBoundingClientRect()` extends *outside* the container's rect (the inverse of the original Step 8 test).
-- Unit test (or app-test): mount a Tide card, shrink the bottom pane to its `minSize`, open `@` — assert the popup is visible at viewport coords, the prompt input's bounding rect bottom is unchanged, and the popup is NOT clipped by the pane.
-- Unit test: with the popup open, deactivate the card (focus another card); assert the portal is unmounted (or hidden) within the activation tick.
-- Manual: reproduce the originally-reported screenshot scenario (small card, `@` completion, three rows of file matches). The popup overflows the card downward (or upward, whichever direction the auto-flip picks based on viewport space) and is fully visible. The prompt-entry stays pinned to its bottom pane bound. Repeat for `/` completion if/when wired.
-- App-test: AT for "popup escapes card frame" (mounts a tide card in a small pane, opens completion, asserts the visible DOM extends beyond the pane's clip rect).
-
-**Out of scope (deferred):**
-- Migrating Radix-based popovers (`TugPopover`, `TugConfirmPopover`) onto `useCanvasOverlay`. Radix already portals to `document.body` via `Popover.Portal`; their layout is not card-clipped today. This step normalizes their z-index tokens but does NOT change their portal mechanism. A unification pass is a follow-up after the canvas overlay tier proves out.
-- Hover tooltips (TugTooltip) — same reasoning; their existing portal target works. Token normalization only.
-- The original Step 8's "split into primitive extension + consume in completions" was a hedge for the case where the existing `tug-popup-*` primitives needed an upward/capped-height variant. The replan removes that hedge — the work is "introduce canvas overlay tier + migrate the one outlier" as one atomic commit.
-
-**Risks:**
-- **The `pointerdown` + `preventDefault()` focus-retention trick may behave differently when the popup is outside the editor's DOM subtree.** WebKit and Chromium both honor it for foreign elements, but it has been observed to fail in nested portal cases with focus traps. Mitigation: step 7 lists fallback (b); also add an explicit unit/app-test that asserts focus stays on the editor across click-to-accept after the migration.
-- **Canvas-scope vs. body-scope for the overlay root.** Mounting under `deck-canvas.tsx` (canvas-scoped) means future multi-deck UIs each get their own overlay root. Body-scope is simpler and matches the editor context menu today. Choosing canvas-scope. If a multi-deck scenario never materializes, this is moot but harmless.
-- **Stacking context surprises.** A descendant somewhere in the pane tree may set `transform`, `will-change`, `filter`, `opacity < 1`, or `isolation: isolate` and form a stacking context. With portals to a sibling root, this no longer matters for clipping — but if the overlay tier's z-index is not high enough, an ancestor stacking context could still paint over the overlay. Mitigation: the `--tug-z-overlay-*` tier is set high enough (≥ 10000) that no card-level z-index can outrank it; document this in `chrome.css`.
-- **Hide-on-deactivate semantics.** Closing the popup when the card deactivates is the right default, but if the user clicks a control on a *peer* card to consult something while the popup is open, the popup vanishes mid-interaction. Acceptable for completion (typeahead is ephemeral); reconsider per-overlay if a future overlay needs to outlive its card's activation.
-- **Re-measure on scroll/resize cost.** A scroll listener that re-runs the painter on every event can be expensive in long transcripts. Mitigation: throttle via `requestAnimationFrame` and cap the reposition path to `view.requestMeasure` (already what the existing painter does).
-
-**Open questions:**
-- **Overlay-root scope.** Canvas-scoped vs. body-scoped. Starting preference: canvas-scoped (mounted in `deck-canvas`), since the user phrased the constraint as "the entire tugdeck/canvas". Revisit if a multi-deck scenario doesn't appear.
-- **Single root vs. per-card layer.** A single root keeps stacking simple. Per-card layers would let each card establish its own overlay tier (useful if cards float independently and one card's overlay should sit above another card's content but below an active card's overlay). Starting preference: single. Promote to per-card only if a real ordering case shows up.
-- **App-test vs. integration test for "popup is not clipped".** The bug is layout — happy-dom's layout fidelity is poor for overflow / clip-rect work. Starting preference: an app-test (real browser) covering the not-clipped assertion, plus a happy-dom unit test for the portal-mount mechanics (which doesn't need real layout).
-- **Should the existing `paintCompletionPopup` painter be refactored into the overlay component, or stay as a function in `tug-text-editor.tsx`?** The painter is editor-substrate-specific (it knows about CM6's `requestMeasure`, `coordsAtPos`, and the typeahead state shape). Starting preference: keep it in the editor module; the overlay component is a thin React shell that renders `null` and lets the painter own the DOM under the portal node. This preserves [L22]'s direct-DOM-write discipline.
-
-**Tuglaws to cross-check:**
-- **L02** — popup state continues to enter React via the per-view `subscribeCompletionState` adapter; no parallel React state; the overlay component's `useSyncExternalStore` is the only React-side observation.
-- **L03** — `<CanvasOverlayRoot />` registers itself in a `useLayoutEffect`; consumers attach via `useCanvasOverlay` whose ref handoff also runs in `useLayoutEffect`. No mount-order races against pane registration.
-- **L06** — popup position, item DOM, and visibility are written directly to the overlay node; never round-tripped through React state.
-- **L11** — the `pointerdown` + `acceptCompletionAt` path is substrate-internal (verified per step 7); no responder-chain change for the completion case. If the responder hop becomes necessary (fallback (b) in step 7), the portal root mirrors the editor's `data-responder-id`.
-- **L19** — new files live under `chrome/` (overlay root and hook are canvas chrome, not a tugway primitive); the migrated popup component lives next to its substrate (`tug-text-editor/`).
-- **L22** — high-frequency repaints (popup body rebuilds, position writes) stay on direct DOM writes; the React shell renders `null`.
-- **L23** — preserving user-visible state across the migration: an open completion session must survive any necessary effect-flush in the same tick. Today the state lives in CM6's `StateField`, not React; that survives any React tree restructuring trivially. Confirmed by inspection.
+The original 2026-04-19 sketch (cap popup height to card, open upward when tight) and the 2026-04-30 replan (single-plan canvas overlay tier) are both superseded by the trio above.
 
 #### Step 9 — Participant model + `TugTranscriptEntry` primitive {#step-9}
 
