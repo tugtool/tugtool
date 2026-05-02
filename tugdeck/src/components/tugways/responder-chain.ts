@@ -206,6 +206,29 @@ export interface ResponderNode<Extra extends string = never> {
    * are untagged; only tier-defining nodes (cards) opt in.
    */
   kind?: ResponderKind;
+  /**
+   * Optional substrate-supplied focus callback.
+   *
+   * Invoked by `manager.focusResponder(id)` AFTER `makeFirstResponder(id)`
+   * runs. Substrates with a non-trivial focus surface (CodeMirror's
+   * `view.focus()`, future custom editors with shadow-DOM hosts or
+   * contenteditable invariants) provide this callback so chain-driven
+   * focus restoration lands DOM focus on the correct element without
+   * the chain having to special-case those substrates.
+   *
+   * If absent, `focusResponder` falls back to a DOM walk: queries
+   * `document.querySelector('[data-responder-id="<id>"]')` and focuses
+   * either the responder's own element (if focusable) or the first
+   * tabbable descendant. Generic responders (text inputs, buttons,
+   * generic containers) omit the callback and the DOM walk Just Works.
+   *
+   * Per `tugplan-tide-popup-bindings.md` [D03] (#focus-contract). The
+   * callback is captured at registration; like `canHandle` /
+   * `validateAction` / `kind`, it is a structural property of the
+   * responder's identity. Changing it mid-life would require
+   * re-registration.
+   */
+  focus?: () => void;
 }
 
 // ---- ResponderChainManager ----
@@ -474,6 +497,100 @@ export class ResponderChainManager {
     this.firstResponderId = null;
     this.syncFirstResponderDomAttribute();
     this.incrementAndNotify();
+  }
+
+  /**
+   * Promote `id` to first responder AND restore DOM focus to its element.
+   *
+   * The single primitive that closes the gap between chain-state and DOM
+   * focus. Use cases: a popup-class primitive's close handler restoring
+   * focus to whichever responder was first responder when the popup
+   * opened (`useServicePopupBinding`); a chain-driven workflow that
+   * needs the keyboard caret to land on the newly-promoted responder
+   * (cross-card activation via Cmd-tab).
+   *
+   * Algorithm per `tugplan-tide-popup-bindings.md` [D04] (#focus-contract):
+   *
+   *   1. If `id` is not registered → no-op (and dev-mode warn). Tolerant
+   *      of races where the captured target was unregistered between
+   *      open and close.
+   *   2. Else: `makeFirstResponder(id)` so the chain's record is updated
+   *      first (subscribers see the change before DOM focus moves).
+   *   3. Then: invoke `node.focus?.()` if the substrate supplied one.
+   *      Substrates with non-trivial focus surfaces (CodeMirror,
+   *      contenteditable, shadow DOM) own the focus call here.
+   *   4. Otherwise: DOM-walk fallback. Look up the responder's element
+   *      by `[data-responder-id="<id>"]` and focus it (if focusable)
+   *      or its first tabbable descendant.
+   *
+   * State-zone classification per [L24]: this method only mutates
+   * structure-zone state (chain identity) and appearance-zone state
+   * (DOM focus). It does not touch React state and does not participate
+   * in `useSyncExternalStore` consumption.
+   */
+  focusResponder(id: string): void {
+    const node = this.nodes.get(id);
+    if (!node) {
+      if (typeof process !== "undefined" && process.env?.NODE_ENV !== "production") {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[ResponderManager] focusResponder("${id}") — node not registered.`,
+        );
+      }
+      return;
+    }
+
+    // Step 2: chain record first, so subscribers can observe the
+    // promotion before any DOM focus event fires from step 3 / 4.
+    this.makeFirstResponder(id);
+
+    // Step 3: substrate-supplied focus callback.
+    if (node.focus) {
+      node.focus();
+      return;
+    }
+
+    // Step 4: DOM-walk fallback. Look up the responder's host element
+    // by its `data-responder-id` attribute (written by `useResponder`'s
+    // ref callback). DOM-free environments (server-side rendering,
+    // unit tests without happy-dom) are detected via `typeof document`
+    // and skipped — the chain record is already updated, only the DOM
+    // focus side-effect is unavailable.
+    if (typeof document === "undefined") return;
+    const escapedId =
+      typeof CSS !== "undefined" && typeof CSS.escape === "function"
+        ? CSS.escape(id)
+        : id;
+    const el = document.querySelector<HTMLElement>(
+      `[data-responder-id="${escapedId}"]`,
+    );
+    if (!el) return;
+
+    // Focus the element itself if it is intrinsically focusable
+    // (a button / input / textarea / select / link, or carries a
+    // tabindex >= 0). Otherwise look for the first tabbable
+    // descendant. The element-first check matters for wrappers that
+    // declare `tabindex="0"` on themselves to claim keyboard focus
+    // — focusing a descendant first would drop focus inside the
+    // wrapper instead of on it.
+    const tabIndexAttr = el.getAttribute("tabindex");
+    const intrinsicallyFocusable =
+      el instanceof HTMLButtonElement ||
+      el instanceof HTMLInputElement ||
+      el instanceof HTMLTextAreaElement ||
+      el instanceof HTMLSelectElement ||
+      el instanceof HTMLAnchorElement;
+    const hasFocusableTabIndex =
+      tabIndexAttr !== null && parseInt(tabIndexAttr, 10) >= 0;
+    if (intrinsicallyFocusable || hasFocusableTabIndex) {
+      el.focus();
+      return;
+    }
+
+    const tabbable = el.querySelector<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
+    tabbable?.focus();
   }
 
   /** Returns the current firstResponderId (or null if none). */

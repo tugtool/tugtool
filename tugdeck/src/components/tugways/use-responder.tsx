@@ -142,6 +142,32 @@ export interface UseResponderOptions<Extra extends string = never> {
    * parent.
    */
   parentId?: string | null;
+  /**
+   * Optional substrate-supplied focus callback.
+   *
+   * Forwarded into the registered `ResponderNode.focus` field. Invoked
+   * by `manager.focusResponder(id)` after `makeFirstResponder(id)` runs
+   * — so chain-driven focus restoration lands DOM focus on the right
+   * element without `focusResponder` having to special-case substrates
+   * with non-trivial focus surfaces (CodeMirror's `view.focus()`,
+   * shadow-DOM hosts, contenteditable invariants).
+   *
+   * Substrates that own a non-trivial focus surface supply the
+   * callback (e.g., `TugTextEditor` passes `() => view.focus()`).
+   * Generic responders (text inputs, buttons, generic containers)
+   * omit the option; `focusResponder` falls back to a DOM walk that
+   * focuses the responder's `[data-responder-id]` element or its
+   * first tabbable descendant.
+   *
+   * Per `tugplan-tide-popup-bindings.md` [D03] (#focus-contract). Like
+   * `canHandle` / `validateAction` / `kind`, `focus` is a structural
+   * property captured at mount; changing it on a later render does
+   * not re-register and the change has no effect. This matches the
+   * "structure of the responder's identity" semantics — substrates
+   * either own a focus surface or they don't, and that doesn't change
+   * mid-life.
+   */
+  focus?: () => void;
 }
 
 // ---- useResponder ----
@@ -311,6 +337,21 @@ export function useOptionalResponder<Extra extends string = never>(
   // canHandle / validateAction and is the right behavior because a
   // responder's tier is its identity, not a per-render toggle.
   const kindAtMount = useRef(options.kind);
+  // Same shape as `kindAtMount`: the focus callback is a structural
+  // property captured at mount per [D03] (#focus-contract). Substrates
+  // either own a non-trivial focus surface or they don't — that's
+  // identity, not per-render state. The captured value at mount is
+  // what the registered node carries; changing the option on a later
+  // render does not re-register and the change has no effect.
+  //
+  // We intentionally do NOT proxy through `optionsRef` here (unlike
+  // `actions`, which we proxy so handler identity changes flow
+  // through). The focus callback is meant to invoke a stable surface
+  // method (e.g., `view.focus()` on a CM6 EditorView held in a ref);
+  // the substrate captures whichever ref it needs in the closure it
+  // hands us at registration time. The closure is the substrate's
+  // responsibility to set up correctly per [L07].
+  const focusAtMount = useRef(options.focus);
 
   // Tracks the DOM element the responderRef callback was most
   // recently called with. Declared up here (rather than alongside
@@ -400,6 +441,9 @@ export function useOptionalResponder<Extra extends string = never>(
     }
     if (kindAtMount.current !== undefined) {
       node.kind = kindAtMount.current;
+    }
+    if (focusAtMount.current !== undefined) {
+      node.focus = focusAtMount.current;
     }
     manager.register(node);
 

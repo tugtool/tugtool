@@ -1437,6 +1437,28 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     const { responderRef, ResponderScope } = useOptionalResponder({
       id: responderId,
       actions,
+      // Substrate-supplied focus callback per
+      // `tugplan-tide-popup-bindings.md` [D03] (#focus-contract).
+      // `manager.focusResponder(responderId)` invokes this AFTER
+      // promoting us to first responder; we land DOM focus on the
+      // CodeMirror view's contentDOM via `view.focus()`. The DOM-walk
+      // fallback inside `focusResponder` cannot do this correctly:
+      // CM6's contenteditable host is not a standard tabbable element
+      // and the responder element (the wrapper host div carrying
+      // `data-responder-id`) is not the focus target — querying for
+      // tabbable descendants would land on a child input or button
+      // depending on what's mounted, not on the contentDOM.
+      //
+      // Reading `viewRef.current` (not the `view` state) means we
+      // always invoke `focus()` on the live view, even if the
+      // EditorView was rebuilt between registration and invocation
+      // (Fast Refresh re-mount, StrictMode double-mount). The captured
+      // closure holds the stable ref object [L07]; the live view is
+      // read at invocation time. The `?.` no-ops cleanly if the view
+      // hasn't mounted yet (registration runs before the EditorView's
+      // mount effect on the first render); subsequent invocations
+      // observe the view that the mount effect installs.
+      focus: () => viewRef.current?.focus(),
     });
 
     // Menu items: stable for the menu's lifetime. `hasSelection` is
