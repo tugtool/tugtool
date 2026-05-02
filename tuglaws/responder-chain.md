@@ -216,6 +216,12 @@ Focus-refusing controls add `data-tug-focus="refuse"` to their root element. Two
 
 Controls add ONE attribute — both behaviors are handled centrally. The `click` event is unaffected: mousedown+mouseup on the same element still fires `click` normally. Keyboard Tab navigation is preserved: controls keep their default `tabindex`, so keyboard users can reach them via Tab and activate with Enter/Space.
 
+The bundle is intentional. Both behaviors serve one user goal: *"clicking a chrome control must not steal focus from where the user is typing."* Authoring an attribute that turns on only one half is incoherent — a button that takes browser focus but not chain promotion (or vice versa) is a bug, not a feature. The two layers operate at different levels (chain registry vs. browser focus) but address one concept; the attribute is the pinhole through which both are turned on atomically.
+
+### `data-tug-focus="refuse"` is button-class-only
+
+The attribute's semantics are narrow: button-class controls only. Structural markers like `data-slot="tug-canvas-overlay-root"` (which the pane-focus-controller reads to skip pane activation on overlay-tier clicks) are deliberately separate attributes for separate concerns. The pane-focus-controller's "is this click inside the overlay tier?" check uses `closest('[data-slot="tug-canvas-overlay-root"]')` directly — it does NOT read `data-tug-focus="refuse"`. Adding refuse-attribute semantics to a non-control element would be a mis-match between the attribute name and its actual concern; if you have an element that wants pane-activation-skip behavior, give it a structural marker.
+
 ### Why this matters
 
 Without focus refusal, clicking a toolbar button while a text editor has focus causes a visual flash — the editor briefly loses focus (and its selection dims), then the button's action refocuses the editor. The user sees a flicker. With focus refusal, focus never leaves the editor — the button activates on the first click with no flash.
@@ -281,6 +287,32 @@ Throwing on an unregistered target is deliberate: dispatching to a node that doe
 
 If you specifically want "deliver to this one node only, do not walk to ancestors if the node doesn't handle it," there is no single method for that. Check `nodeCanHandle(targetId, action)` first and only call `sendToTarget` if it returns true. In the current codebase no consumer needs that shape; every targeted dispatch has the "start walk here and let it bubble" semantic that the new behavior provides.
 
+**Cascade-target pattern: capture-at-open, dispatch-at-close.** Modal surfaces (sheets, alerts, confirmation popovers) often want a follow-up dispatch when the user closes them — e.g. a card's picker sheet closes and the card itself should close as a result. The fragility is that "first responder at close time" is not a value the consumer can predict: focus restore through Radix's `FocusScope.onUnmountAutoFocus`, the unregister fallback's parentId-promotion, and the focusin-driven first-responder update each move first responder, and the settled value at `onClosed` time is *whatever those mechanisms produced* — usually correct, sometimes not.
+
+The right pattern is to **capture the cascade target id at OPEN time** (when the consumer knows exactly which responder should handle the follow-up dispatch) and **dispatch via `sendToTarget` at CLOSE time** (which walks `parentId` from the captured target, not from the current first responder). The dispatch then reaches the right handler regardless of whatever first-responder state the close cascade settled on.
+
+```ts
+function presentSheet() {
+  void showSheet({
+    title: "Open Project",
+    content: ...,
+    cascadeTargetId: cardId,   // captured at OPEN — the card's responder id
+    onClosed: (result) => {
+      if (result === "open" || result === "retry") return;
+      manager?.sendToTarget(cardId, {
+        action: TUG_ACTIONS.CLOSE,
+        sender: senderId,
+        phase: "discrete",
+      });  // walks via parentId from cardId — reaches the pane's CLOSE handler
+    },
+  });
+}
+```
+
+The general rule: **pick the cascade target id whose registration outlives the dispatch window, not the closest one to the handler.** A card id (stable across cross-pane moves) is preferable to a pane id (changes on cross-pane moves) when both reach the same handler via the chain walk. The walk handles the upward traversal; the consumer's only job is to start it from a node that's still registered when the close fires.
+
+Modal surfaces that expose this pattern attach a `cascadeTargetId` option to their open-time API (`useTugSheet().showSheet({ cascadeTargetId })`). The hook does not consume the value itself — it just stores it on the active state so the option's contract is documented and consumers reference the captured id from their own `onClosed` closure.
+
 ### `manager.sendToTargetForContinuation(targetId, event) → { handled, continuation }`
 
 The targeted sibling of `sendToFirstResponderForContinuation`. Same walk semantics as `sendToTarget` (starts at the named node and walks upward via `parentId`), same error handling (throws if `targetId` is not registered), but returns the full `{ handled, continuation }` result instead of discarding the continuation. Callers that need two-phase execution against a specific target use this method and invoke the returned continuation at their commit point.
@@ -313,6 +345,53 @@ useLayoutEffect(() => {
 Observers run in insertion order and cannot intercept or modify the walk. They are fire-and-forget. An observer that unsubscribes itself during notification is safe — the manager snapshots the observer set to a local array before iterating.
 
 See [observeDispatch patterns](#observedispatch-patterns) below for the canonical precedents and the `blinkingRef` self-dispatch guard.
+
+---
+
+## Bringing DOM focus in sync with chain state — `focusResponder(id)`
+
+The chain's first responder and the browser's `document.activeElement` are conceptually different things. First responder is who the chain dispatches actions to; `activeElement` is who keyboard events go to and where the caret blinks. They usually agree because pointerdown/focusin promotion drives both off the same DOM-walk source — but a popup that takes DOM focus while a service binding's restore predicate keeps chain first responder pinned shows that the two axes are independent.
+
+`manager.focusResponder(id)` is the single primitive that closes the gap: it both promotes `id` to first responder AND restores DOM focus to the responder's element. Use it whenever code needs to land both at the same target (a popup-class primitive's close handler restoring focus to the responder that owned it before open; a chain-driven workflow that needs the keyboard caret to land on the newly-promoted responder).
+
+```ts
+manager.focusResponder(editorId);
+// Equivalent to:
+//   1. If id is not registered → no-op (and dev-mode warn).
+//   2. Else: this.makeFirstResponder(id).
+//   3. Then: invoke node.focus?.() if defined (substrate-supplied).
+//   4. Otherwise: DOM-walk fallback —
+//      document.querySelector(`[data-responder-id="${id}"]`)?.focus()
+//      (or its first tabbable descendant if the element itself is non-focusable).
+```
+
+**Substrate-supplied focus callback.** Responders whose focus surface is non-trivial supply a `focus?: () => void` callback at registration time (see the `focus` subsection in "Registering a responder" below). The callback is invoked AFTER `makeFirstResponder(id)` runs, so subscribers see the chain promotion before the DOM focus event fires. CodeMirror text editors, contentEditable hosts, shadow-DOM-rooted custom editors all benefit from supplying their own callback because the substrate knows how to focus itself correctly (e.g. `view.focus()` on a CM6 EditorView lands on `view.contentDOM`, which is what a generic `el.focus()` walk wouldn't necessarily find).
+
+**DOM-walk fallback.** When no `focus` callback is registered, `focusResponder` queries the DOM for `[data-responder-id="<id>"]` and focuses either the responder's own element (if intrinsically focusable: `<button>`, `<input>`, `<textarea>`, `<select>`, `<a>`, or `tabindex>=0`) or its first tabbable descendant. The element-first check matters for wrappers that declare `tabindex="0"` on themselves to claim keyboard focus — focusing a descendant first would drop focus inside the wrapper instead of on it. Detached elements and DOM-free environments (server-side rendering, unit tests without happy-dom) are handled gracefully — the chain record still updates, only the DOM focus side-effect is unavailable.
+
+**Tolerant of races.** If `id` was unregistered between the moment a caller captured it and the moment `focusResponder` ran, the method no-ops with a dev-mode warn. This is the right shape for popup close-focus restoration where the captured responder may have unmounted while the popup was open.
+
+State-zone classification: `focusResponder` mutates structure-zone state (chain identity) and appearance-zone state (DOM focus). It does not touch React state and does not participate in `useSyncExternalStore` consumption.
+
+---
+
+## Two walks, two questions: DOM walk vs. registry walk
+
+The chain's promotion path and dispatch path use *different* walks for *different* questions. This is not a bug or a redundancy — it is structural, and understanding it is the prerequisite for reasoning about portaled responders.
+
+| Walk | API | Starts from | Traverses | Used for |
+|------|-----|-------------|-----------|----------|
+| **DOM walk** | `findResponderForTarget(node)` | An arbitrary DOM node (event target) | DOM `parentElement` chain | Pointerdown / focusin promotion: "given the user's click target, which responder is rendered above it in the *DOM*?" |
+| **Registry walk** | `walkFromNode(id)` (private), used by `sendToFirstResponder` / `sendToTarget` | A registered responder id | `parentId` chain (set at registration via `ResponderParentContext`) | Dispatch: "given a starting responder, which ancestor handles this action via the *chain*?" |
+
+The two walks can produce **different answers for the same starting position** — by design. A `TugSheet` portaled into the canvas overlay root has:
+
+- **DOM ancestors:** clip → canvas-overlay-root → body. *None* are registered responders.
+- **Registry ancestors (via `parentId`):** card-host → pane → root. All registered.
+
+`findResponderForTarget(sheetContent)` returns the sheet's own id (the sheet's registered DOM element is the deepest DOM-walk match), or null when walking from a non-responder descendant of the overlay root. `walkFromNode(sheetId)` walks card-host → pane → root via `parentId`. Both are correct — they answer different questions.
+
+**The decision rule for new dispatch sites:** ask whether you want *"closest registered responder by physical position"* (DOM walk — used by promotion) or *"closest registered handler in the chain hierarchy"* (registry walk — used by dispatch). Promotion is always DOM-walk; dispatch is always registry-walk. The two are not interchangeable, and unifying them would lose information that the codebase quietly relies on.
 
 ---
 
@@ -420,6 +499,24 @@ Both are optional advisory callbacks on the responder node. They are not consult
 - **`validateAction(action)`** answers "is this action currently enabled?" for UI that wants to gray out a menu item. Defaults to `true` if omitted. Called by the chain's `validateAction` query, which is what `TugEditorContextMenu` uses to dim its own items based on current selection state.
 
 Leave both out unless you know you need them. The audit recommendation in A6 is that the overwhelming majority of responders provide neither; the chain's dispatch/query code has a fast path that skips the advisory branches entirely when they're absent.
+
+### `focus` — substrate-supplied focus callback
+
+An optional `focus?: () => void` callback may be registered alongside the responder. When `manager.focusResponder(id)` runs, it calls this callback (after the chain promotion) instead of the DOM-walk fallback. Substrates with non-trivial focus surfaces — CodeMirror text editors (`view.focus()`), future custom editors with shadow-DOM hosts or contenteditable invariants — supply the callback so chain-driven focus restoration lands DOM focus on the correct element.
+
+```tsx
+const editorViewRef = useRef<EditorView | null>(null);
+
+const { responderRef, ResponderScope } = useOptionalResponder({
+  id: editorId,
+  actions: { /* ... */ },
+  focus: () => editorViewRef.current?.focus(),
+});
+```
+
+Generic responders (text inputs, buttons, generic containers) omit the callback and the DOM-walk fallback Just Works.
+
+The callback is **structural**: like `kind`, `canHandle`, and `validateAction`, it is captured at registration (via a `focusAtMount` ref in `useResponder` / `useOptionalResponder`) and not live-proxied through `optionsRef`. The substrate is responsible for capturing whatever inner ref it needs in the closure (per [L07]). Reading a ref's `.current` from inside the callback (rather than closing over the value directly) means the callback always invokes `focus()` on the live view — covering Fast Refresh re-mount and StrictMode double-mount where the substrate identity may have been swapped between registration and invocation.
 
 ### Registration timing — [L03]
 

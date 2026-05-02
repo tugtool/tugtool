@@ -573,6 +573,28 @@ First responder is managed by the chain. The document-level pointerdown and focu
 
 The only sanctioned programmatic promotion is `DeckCanvas` promoting a freshly-opened card, where no pointer or focus event has fired yet. If you think your component needs `makeFirstResponder`, stop and ask — you are almost certainly fighting the chain for control of first-responder state and papering over a layering bug. The correct answer is almost always "wire `responderRef` correctly and let the chain's promotion listeners do their job."
 
+### Bringing DOM focus along: `focusResponder` and the substrate `focus` callback
+
+`manager.focusResponder(id)` is distinct from `makeFirstResponder` — it both promotes `id` to first responder AND restores DOM focus to the responder's element. Use it (sparingly, and only outside the standard pointerdown/focusin promotion paths) when you genuinely need both. Canonical consumers: a popup-class primitive's close handler restoring focus to the responder that owned it before the popup opened (the service-popup binding does this internally); a chain-driven workflow that needs the keyboard caret to land on a newly-promoted responder.
+
+If your component owns a non-trivial focus surface (a CodeMirror editor, a contentEditable host, a shadow-DOM-rooted custom widget), supply a `focus?: () => void` option at responder registration so `focusResponder(id)` lands DOM focus on the right element. Generic responders (text inputs, buttons, generic containers) omit the callback and the chain's DOM-walk fallback finds the first tabbable descendant correctly. The callback is structural — captured at registration like `kind` / `canHandle` — not a live-proxy.
+
+```tsx
+const viewRef = useRef<EditorView | null>(null);
+
+const { responderRef, ResponderScope } = useOptionalResponder({
+  id: editorId,
+  actions: { /* ... */ },
+  // Substrate knows how to focus itself correctly: view.focus() lands on
+  // view.contentDOM, which is what generic el.focus() wouldn't necessarily find.
+  focus: () => viewRef.current?.focus(),
+});
+```
+
+Reading `.current` from inside the callback (rather than closing over a value directly) makes the callback robust to Fast Refresh re-mount and StrictMode double-mount where the substrate identity may have been swapped between registration and invocation.
+
+See [responder-chain.md § Bringing DOM focus in sync with chain state](responder-chain.md#bringing-dom-focus-in-sync-with-chain-state--focusresponderid) for the full mechanism.
+
 ### Migration pattern — callback prop → chain dispatch
 
 When retrofitting an existing component that uses a callback prop to emit a user action, the mechanical pattern is:
@@ -805,6 +827,10 @@ Add `data-tug-focus="refuse"` to the control's root element. That's all — the 
 
 Controls that accept focus (text inputs, textareas, contentEditable) do NOT add this attribute.
 
+**One concept, two layers.** The attribute names a single user goal — *"clicking this control must not steal focus from where the user is typing."* The `ResponderChainProvider` realizes that goal at two layers in one bundle: (1) the chain-promotion-skip on `pointerdown` (so the chain's first responder stays where it was), and (2) the `mousedown.preventDefault()` browser-focus-prevention (so the DOM `activeElement` stays where it was). Authors set the attribute and get both behaviors atomically; an author cannot opt out of one without the other, by design — a button that takes browser focus but not chain promotion (or vice versa) is incoherent. This bundle is what makes service-popup close-focus restoration work correctly: the trigger click does NOT capture first responder, so the service binding's `captureOnOpen` snapshots the *editor's* responder id (not the trigger's), and `onCloseAutoFocus` restores focus to the editor on menu close.
+
+The attribute is button-class-only. Structural markers like `data-slot="tug-canvas-overlay-root"` (which pane-focus-controller reads to skip pane activation on overlay-tier clicks) are deliberately separate — see "Canvas overlay tier" above.
+
 ### Context menus
 
 The browser's native context menu is suppressed app-wide. Every right-click produces one of:
@@ -872,7 +898,7 @@ Pair with the right tier token in CSS:
 | Popup-in-dialog (elevated)| `--tug-z-overlay-popup-in-dialog`  | `TugPopover` opened from a control inside a sheet       |
 | Menu-in-dialog  (elevated)| `--tug-z-overlay-menu-in-dialog`   | `TugPopupMenu` / `TugContextMenu` inside a sheet        |
 
-The canvas overlay root carries `data-tug-focus="refuse"` so a click on a portaled child does not demote the editor's first-responder status (see "Focus refusal for controls" above and [Q01]/[D08] in the overlay-tier plan). The popup itself owns its own pointer interaction; the focus refusal is for the surrounding root only.
+**Pane focus controller skips clicks inside the canvas overlay tier.** The pane-focus-controller's document-level pointerdown listener checks `closest('[data-slot="tug-canvas-overlay-root"]')` and short-circuits when the click target lives inside the overlay tier — preventing pane-activation gestures from firing on popup-internal clicks. The canvas overlay root itself is identified by `data-slot="tug-canvas-overlay-root"`; it does NOT carry `data-tug-focus="refuse"`. The two attributes are deliberately distinct: `data-slot="tug-canvas-overlay-root"` is a structural marker (pane-focus-controller's "am I inside the overlay tier?" check), while `data-tug-focus="refuse"` is a button-class focus discipline (chain-promotion-skip + browser-focus-prevention bundled — see "Focus refusal for controls" above). Popups' own pointer interactions are owned by the popup primitives themselves; the overlay-tier short-circuit only governs the surrounding pane-activation behavior.
 
 ### Picking a popup role
 
