@@ -70,6 +70,7 @@ import { suppressButtonFocusShift } from "./internal/safari-focus-shift";
 import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
 import { TUG_ACTIONS } from "./action-vocabulary";
+import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 
 /* ---------------------------------------------------------------------------
  * Helpers
@@ -166,6 +167,7 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
     },
     ref,
   ) {
+    const overlayRoot = useCanvasOverlay();
     const [open, setOpen] = React.useState(false);
 
     // Override options set by the imperative alert() call.
@@ -307,7 +309,7 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
 
     return (
       <AlertDialog.Root open={open} onOpenChange={handleOpenChange}>
-        <AlertDialog.Portal>
+        <AlertDialog.Portal container={overlayRoot}>
           <AlertDialog.Overlay className="tug-alert-overlay" />
           <AlertDialog.Content
             ref={responderRef as (el: HTMLDivElement | null) => void}

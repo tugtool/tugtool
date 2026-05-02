@@ -53,6 +53,7 @@ import { ChevronRight } from "lucide-react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import { animate } from "@/components/tugways/tug-animator";
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
+import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 
 // ---- Types ----
 
@@ -163,6 +164,8 @@ export function TugPopupMenu({
   defaultOpen = false,
   "data-testid": dataTestId,
 }: TugPopupMenuProps) {
+  const overlayRoot = useCanvasOverlay();
+
   // Tracks whether a blink animation is in progress to guard against re-entrant calls.
   const blinkingRef = useRef(false);
 
@@ -305,7 +308,7 @@ export function TugPopupMenu({
                 <ChevronRight size={12} />
               </span>
             </DropdownMenuPrimitive.SubTrigger>
-            <DropdownMenuPrimitive.Portal>
+            <DropdownMenuPrimitive.Portal container={overlayRoot}>
               <DropdownMenuPrimitive.SubContent
                 className="tug-menu-content"
                 sideOffset={4}
@@ -340,7 +343,7 @@ export function TugPopupMenu({
       <DropdownMenuPrimitive.Trigger asChild>
         {trigger}
       </DropdownMenuPrimitive.Trigger>
-      <DropdownMenuPrimitive.Portal>
+      <DropdownMenuPrimitive.Portal container={overlayRoot}>
         <DropdownMenuPrimitive.Content
           className="tug-menu-content"
           align={align}

@@ -46,6 +46,7 @@ import React, { useCallback, useId, useLayoutEffect, useRef, useState } from "re
 import * as ContextMenuPrimitive from "@radix-ui/react-context-menu";
 import { playMenuItemBlink } from "@/components/tugways/tug-menu-item-blink";
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
+import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import type { TugAction } from "./action-vocabulary";
 import { useControlDispatch } from "./use-control-dispatch";
 
@@ -163,6 +164,8 @@ export function TugContextMenu<V extends TugContextMenuItemPayload = never>({
   senderId,
   children,
 }: TugContextMenuProps<V>) {
+  const overlayRoot = useCanvasOverlay();
+
   // Guards against re-entrant blink calls during animation. Also used by
   // the observeDispatch observer to skip dismissal while the menu is
   // dispatching its own action (so the blink can finish before close).
@@ -235,7 +238,7 @@ export function TugContextMenu<V extends TugContextMenuItemPayload = never>({
       <ContextMenuPrimitive.Trigger asChild>
         {children}
       </ContextMenuPrimitive.Trigger>
-      <ContextMenuPrimitive.Portal>
+      <ContextMenuPrimitive.Portal container={overlayRoot}>
         <ContextMenuPrimitive.Content
           data-slot="tug-context-menu"
           className="tug-menu-content"

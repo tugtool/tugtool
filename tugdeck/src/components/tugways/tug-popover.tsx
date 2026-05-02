@@ -122,6 +122,7 @@ import "./tug-popover.css";
 import React from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { cn } from "@/lib/utils";
+import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
 import { TUG_ACTIONS } from "./action-vocabulary";
@@ -452,8 +453,9 @@ export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverCont
     { side = "bottom", align = "center", sideOffset = 6, arrow = false, className, children },
     forwardedRef,
   ) {
+    const overlayRoot = useCanvasOverlay();
     return (
-      <Popover.Portal>
+      <Popover.Portal container={overlayRoot}>
         <Popover.Content
           ref={forwardedRef}
           data-slot="tug-popover"

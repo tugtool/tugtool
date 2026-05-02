@@ -42,6 +42,7 @@ import "./tug-tooltip.css";
 import React from "react";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { cn } from "@/lib/utils";
+import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
 
 /* ---------------------------------------------------------------------------
@@ -180,6 +181,8 @@ export function TugTooltip({
   onOpenChange: controlledOnOpenChange,
   children,
 }: TugTooltipProps) {
+  const overlayRoot = useCanvasOverlay();
+
   // Local mirror of Radix's open state. Always tracked (not just in
   // truncated mode) so the observeDispatch effect below has a stable
   // boolean to gate on and a setter to drive chain-reactive dismissal.
@@ -302,7 +305,7 @@ export function TugTooltip({
   return (
     <Tooltip.Root {...rootProps}>
       <Tooltip.Trigger asChild>{trigger}</Tooltip.Trigger>
-      <Tooltip.Portal>
+      <Tooltip.Portal container={overlayRoot}>
         <Tooltip.Content
           data-slot="tug-tooltip"
           className={cn("tug-tooltip-content")}

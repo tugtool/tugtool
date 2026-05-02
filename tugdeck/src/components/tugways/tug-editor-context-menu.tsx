@@ -85,6 +85,7 @@ import React, {
 import { createPortal } from "react-dom";
 import { playMenuItemBlink } from "./tug-menu-item-blink";
 import { useRequiredResponderChain } from "./responder-chain-provider";
+import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import type { TugAction } from "./action-vocabulary";
 
 // ---- Typed entry shapes ----
@@ -178,6 +179,7 @@ export function TugEditorContextMenu({
   onClose,
 }: TugEditorContextMenuProps) {
   const manager = useRequiredResponderChain();
+  const overlayRoot = useCanvasOverlay();
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Two-pass positioning: the JSX renders the menu off-screen with
@@ -610,6 +612,6 @@ export function TugEditorContextMenu({
         );
       })}
     </div>,
-    document.body,
+    overlayRoot,
   );
 }

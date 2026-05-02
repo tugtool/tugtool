@@ -37,9 +37,24 @@
  * Layout properties (position, inset, pointer-events) live on the
  * component's inline style; only z-index is here so it can read the
  * token defined above.
+ *
+ * The root has `pointer-events: none` (inline) so empty overlay area
+ * is transparent to clicks meant for the panes beneath. Direct
+ * children re-enable pointer events here so portaled popups receive
+ * input regardless of Radix's modal mode (Radix's DismissableLayer
+ * only sets `pointer-events: auto` inline for *modal* layers like
+ * AlertDialog or DropdownMenu modal=true; non-modal layers like
+ * Popover modal=false inherit `none` from the overlay root parent
+ * and become un-clickable). Inherited `auto` cascades to descendants,
+ * matching the completion menu's hand-rolled `pointer-events: auto`
+ * pattern.
  */
 .tug-canvas-overlay-root {
   z-index: var(--tug-z-overlay-base);
+}
+
+.tug-canvas-overlay-root > * {
+  pointer-events: auto;
 }
 
 /* ---- Resize handles: 8px hit area on each edge/corner ---- */

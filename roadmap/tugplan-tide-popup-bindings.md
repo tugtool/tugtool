@@ -913,21 +913,21 @@ Layer C — wire defaults:
 - New unit tests asserting each migrated primitive renders inside `[data-slot="tug-canvas-overlay-root"]` (or `document.body` in the no-root fallback).
 
 **Tasks:**
-- [ ] In each Radix-wrapping primitive, call `useCanvasOverlay()` once at the top of the component and pass the result to the Radix Portal's `container` prop.
-- [ ] In `tug-editor-context-menu.tsx`, replace `createPortal(content, document.body)` with `createPortal(content, useCanvasOverlay())`.
-- [ ] For `internal/tug-popup-menu.tsx`'s sub-menu portal (line 308), pass the same `container` to the nested `<DropdownMenuPrimitive.Portal>`.
-- [ ] No CSS changes — the existing `--tug-z-overlay-*` tokens (`tug-popover.css`, `tug-menu.css`, etc.) already produce the correct stacking.
+- [x] In each Radix-wrapping primitive, call `useCanvasOverlay()` once at the top of the component and pass the result to the Radix Portal's `container` prop.
+- [x] In `tug-editor-context-menu.tsx`, replace `createPortal(content, document.body)` with `createPortal(content, useCanvasOverlay())`.
+- [x] For `internal/tug-popup-menu.tsx`'s sub-menu portal (line 308), pass the same `container` to the nested `<DropdownMenuPrimitive.Portal>`.
+- [x] One CSS rule added to `styles/chrome.css`: `.tug-canvas-overlay-root > * { pointer-events: auto; }`. The overlay root has `pointer-events: none` (inline) so empty area is click-through, but Radix's DismissableLayer only sets `pointer-events: auto` inline for *modal* layers (AlertDialog, DropdownMenu modal=true). Non-modal layers (Popover modal=false, Tooltip) inherit `none` from the overlay root and become un-clickable. The direct-child opt-in mirrors the completion menu's inline `pointer-events: auto` pattern. Stacking is unchanged — the existing `--tug-z-overlay-*` tokens still produce the correct order.
 
 **Tests:**
-- [ ] Unit per primitive: mount with `<CanvasOverlayRoot />` present; assert content lands inside `[data-slot="tug-canvas-overlay-root"]`.
-- [ ] Unit per primitive: mount without `<CanvasOverlayRoot />`; assert content lands in `document.body` (the registry's fallback path).
-- [ ] Unit `TugPopupMenu` sub-menu: open root menu, hover sub trigger, assert sub-menu is also inside the canvas overlay root.
+- [x] Unit per primitive: mount with `<CanvasOverlayRoot />` present; assert content lands inside `[data-slot="tug-canvas-overlay-root"]`.
+- [x] Unit per primitive: mount without `<CanvasOverlayRoot />`; assert content lands in `document.body` (the registry's fallback path).
+- [x] Unit `TugPopupMenu` sub-menu: open root menu, hover sub trigger, assert sub-menu is also inside the canvas overlay root.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` green.
-- [ ] `bun test` green; new tests pass.
-- [ ] `bun run audit:tokens lint` exits 0.
-- [ ] `rg "createPortal\(.+document\.body\)" tugdeck/src/components/tugways` returns no popup-class hits (sheets and editor-context-menu are migrated).
+- [x] `bun x tsc --noEmit` green.
+- [x] `bun test` green; new tests pass.
+- [x] `bun run audit:tokens lint` exits 0.
+- [x] `rg "createPortal\(.+document\.body\)" tugdeck/src/components/tugways` returns no popup-class hits (sheets and editor-context-menu are migrated).
 - [ ] Manual smoke: open a font picker, a tooltip, a context menu — all work; visual unchanged from pre-step.
 
 ---
