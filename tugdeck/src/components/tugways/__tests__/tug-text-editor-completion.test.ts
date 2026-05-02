@@ -23,10 +23,13 @@ import { EditorSelection, EditorState, Text } from "@codemirror/state";
 
 import {
   completionField,
+  detectRejoin,
   detectTriggerInsertion,
   deriveQueryUpdate,
   lookupCompletionProvider,
+  scanBackForTrigger,
 } from "@/components/tugways/tug-text-editor/completion-extension";
+import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
 import type {
   CompletionItem,
   CompletionProvider,
@@ -168,6 +171,67 @@ describe("detectTriggerInsertion", () => {
 });
 
 // ---------------------------------------------------------------------------
+// scanBackForTrigger
+// ---------------------------------------------------------------------------
+
+describe("scanBackForTrigger", () => {
+  it("finds a trigger immediately before the caret", () => {
+    const doc = Text.of(["hello @"]);
+    const found = scanBackForTrigger(doc, 7, providers);
+    expect(found).toEqual({ trigger: "@", anchorOffset: 6 });
+  });
+
+  it("finds a trigger several characters back when the run has no spaces", () => {
+    // Doc: "hello @main" — caret at end (11). Walk back through
+    // 'n','i','a','m' and land on '@' at offset 6.
+    const doc = Text.of(["hello @main"]);
+    const found = scanBackForTrigger(doc, 11, providers);
+    expect(found).toEqual({ trigger: "@", anchorOffset: 6 });
+  });
+
+  it("returns null when the scan hits whitespace before any trigger", () => {
+    const doc = Text.of(["hello world"]);
+    const found = scanBackForTrigger(doc, 11, providers);
+    expect(found).toBeNull();
+  });
+
+  it("returns null when the scan hits the atom character before a trigger", () => {
+    // U+FFFC stands in for an accepted atom — never a rejoin target.
+    const doc = Text.of([`${TUG_ATOM_CHAR}foo`]);
+    const found = scanBackForTrigger(doc, 4, providers);
+    expect(found).toBeNull();
+  });
+
+  it("returns null at position 0", () => {
+    const doc = Text.of([""]);
+    const found = scanBackForTrigger(doc, 0, providers);
+    expect(found).toBeNull();
+  });
+
+  it("returns the closest trigger when multiple are present", () => {
+    // Doc: "@a @b" — caret at end. The first '@' is shielded by the
+    // intervening space, so the second '@' at offset 3 wins.
+    const doc = Text.of(["@a @b"]);
+    const found = scanBackForTrigger(doc, 5, providers);
+    expect(found).toEqual({ trigger: "@", anchorOffset: 3 });
+  });
+
+  it("finds the / trigger the same way as @", () => {
+    const doc = Text.of(["/com"]);
+    const found = scanBackForTrigger(doc, 4, providers);
+    expect(found).toEqual({ trigger: "/", anchorOffset: 0 });
+  });
+
+  it("treats tab as a stop character", () => {
+    const doc = Text.of(["@foo\tbar"]);
+    // Caret at end (8) — scan walks back through 'r','a','b' then
+    // hits '\t' at offset 4 → null.
+    const found = scanBackForTrigger(doc, 8, providers);
+    expect(found).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // deriveQueryUpdate
 // ---------------------------------------------------------------------------
 
@@ -251,6 +315,95 @@ describe("deriveQueryUpdate", () => {
     // Caret at position 7 — right after '@', empty query.
     const verdict = deriveQueryUpdate(state, doc, { from: 7, to: 7, head: 7 });
     expect(verdict.kind).toBe("unchanged");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// detectRejoin
+// ---------------------------------------------------------------------------
+
+describe("detectRejoin", () => {
+  /**
+   * Build a fresh `EditorState` seeded with a doc and a caret position
+   * so we can exercise selection-only and doc-change transactions
+   * against a known starting selection.
+   */
+  function seededState(doc: string, caret: number): EditorState {
+    return EditorState.create({
+      doc,
+      selection: EditorSelection.single(caret),
+      extensions: [completionField],
+    });
+  }
+
+  it("reactivates when the caret moves into a literal trigger run via selection change", () => {
+    const state = seededState("hello @main", 11);
+    // Move caret from end (11) to inside the @-run (position 9).
+    const tr = state.update({ selection: { anchor: 9 } });
+    const rejoin = detectRejoin(tr, providers);
+    expect(rejoin).not.toBeNull();
+    expect(rejoin!.trigger).toBe("@");
+    expect(rejoin!.anchorOffset).toBe(6);
+    expect(rejoin!.query).toBe("ma");
+    expect(rejoin!.provider).toBe(fileProvider);
+  });
+
+  it("reactivates when the user types an additional char inside an @-run", () => {
+    // Caret at end of "hello @ma"; user types 'i'.
+    const state = seededState("hello @ma", 9);
+    const tr = state.update({
+      changes: { from: 9, insert: "i" },
+      selection: { anchor: 10 },
+    });
+    const rejoin = detectRejoin(tr, providers);
+    expect(rejoin).not.toBeNull();
+    expect(rejoin!.query).toBe("mai");
+    expect(rejoin!.anchorOffset).toBe(6);
+  });
+
+  it("does not reactivate when the caret is past whitespace from the trigger", () => {
+    const state = seededState("hello @main world", 0);
+    const tr = state.update({ selection: { anchor: 17 } });
+    expect(detectRejoin(tr, providers)).toBeNull();
+  });
+
+  it("does not reactivate when the caret is past an accepted atom", () => {
+    const state = seededState(`${TUG_ATOM_CHAR}foo`, 0);
+    const tr = state.update({ selection: { anchor: 4 } });
+    expect(detectRejoin(tr, providers)).toBeNull();
+  });
+
+  it("does not reactivate on a transaction with no doc or selection change", () => {
+    const state = seededState("@main", 5);
+    const tr = state.update({});
+    expect(detectRejoin(tr, providers)).toBeNull();
+  });
+
+  it("does not reactivate when the selection becomes a non-empty range", () => {
+    const state = seededState("@main", 5);
+    const tr = state.update({ selection: { anchor: 1, head: 5 } });
+    expect(detectRejoin(tr, providers)).toBeNull();
+  });
+
+  it("activates the / trigger via rejoin the same way as @", () => {
+    const state = seededState("/com", 0);
+    const tr = state.update({ selection: { anchor: 4 } });
+    const rejoin = detectRejoin(tr, providers);
+    expect(rejoin).not.toBeNull();
+    expect(rejoin!.trigger).toBe("/");
+    expect(rejoin!.anchorOffset).toBe(0);
+    expect(rejoin!.query).toBe("com");
+  });
+
+  it("treats placing the caret on the trigger char itself as no rejoin (empty scan range)", () => {
+    // Caret at offset 6 — exactly on the '@'. The scan walks i = 5
+    // and back, never visits position 6, so it can't see the '@'.
+    // This matches `deriveQueryUpdate`'s "caret on anchor cancels"
+    // semantics — the caret is positioned *before* the trigger, not
+    // inside its run.
+    const state = seededState("hello @main", 0);
+    const tr = state.update({ selection: { anchor: 6 } });
+    expect(detectRejoin(tr, providers)).toBeNull();
   });
 });
 

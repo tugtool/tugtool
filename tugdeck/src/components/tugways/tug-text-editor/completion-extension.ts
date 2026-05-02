@@ -29,6 +29,15 @@
  *     adapter and manages the active provider's async-result
  *     subscription.
  *
+ *   - **Rejoin**: when inactive, a transaction that changed doc or
+ *     selection (and is not itself a cancel) scans backward from the
+ *     caret for a registered trigger char. The scan stops at
+ *     whitespace, U+FFFC, or doc start — so accepted atoms cannot
+ *     rejoin. If found, `activateEffect` fires with the existing
+ *     between-anchor-and-caret text as the query. This makes
+ *     clicking back into an unaccepted `@foo` (or typing more chars
+ *     within one) reopen the popup.
+ *
  *   - **Keys**: a `Prec.highest` `domEventHandlers` keymap intercepts
  *     Tab / Enter / Arrows / Page / Home / End / Escape only when
  *     typeahead is active. When inactive, every branch returns
@@ -287,6 +296,32 @@ export function detectTriggerInsertion(
 }
 
 /**
+ * Walk backward from `pos` looking for a registered trigger character
+ * at the head of an unbroken token. Stops at whitespace, the atom
+ * character (U+FFFC), or doc start. Returns the trigger char and its
+ * offset, or null if the scan hit a stop char before a trigger.
+ *
+ * The atom char is a stop because accepted completions occupy a
+ * single U+FFFC code point — once accepted, an `@…` is no longer a
+ * literal trigger run and must not rejoin.
+ */
+export function scanBackForTrigger(
+  doc: { sliceString: (from: number, to: number) => string },
+  pos: number,
+  providers: Record<string, CompletionProvider>,
+): { trigger: string; anchorOffset: number } | null {
+  for (let i = pos - 1; i >= 0; i--) {
+    const ch = doc.sliceString(i, i + 1);
+    if (ch === TUG_ATOM_CHAR) return null;
+    if (/\s/.test(ch)) return null;
+    if (lookupCompletionProvider(providers, ch) !== undefined) {
+      return { trigger: ch, anchorOffset: i };
+    }
+  }
+  return null;
+}
+
+/**
  * Compute the typeahead query from the active session and current
  * doc/caret state, returning either the new query string, `"cancel"`
  * if the session should end, or `"unchanged"` if nothing changed.
@@ -310,6 +345,50 @@ export function deriveQueryUpdate(
   if (query.includes("\n")) return { kind: "cancel" };
   if (query === state.query) return { kind: "unchanged" };
   return { kind: "query", value: query };
+}
+
+/**
+ * Inspect a transaction in the inactive state to decide whether the
+ * caret has landed inside a literal trigger…run that was never
+ * accepted as an atom — rejoining typeahead with the existing text as
+ * the query.
+ *
+ * Runs only on transactions that changed doc or selection (some
+ * caret-affecting work happened) and that aren't themselves cancel
+ * transactions. Pressing Escape leaves the caret in the same spot
+ * but produces a cancel — the next user-driven change re-evaluates
+ * rejoin per the same rules, so typing one more char or arrowing
+ * within the run reopens the popup, while sitting still does not.
+ */
+export function detectRejoin(
+  tr: Transaction,
+  providers: Record<string, CompletionProvider>,
+):
+  | {
+      provider: CompletionProvider;
+      trigger: string;
+      anchorOffset: number;
+      query: string;
+    }
+  | null {
+  for (const eff of tr.effects) {
+    if (eff.is(cancelEffect)) return null;
+  }
+  const selectionChanged = !tr.startState.selection.eq(tr.state.selection);
+  if (!tr.docChanged && !selectionChanged) return null;
+  const sel = tr.state.selection.main;
+  if (sel.from !== sel.to) return null;
+  const found = scanBackForTrigger(tr.state.doc, sel.head, providers);
+  if (!found) return null;
+  const provider = lookupCompletionProvider(providers, found.trigger);
+  if (!provider) return null;
+  const query = tr.state.doc.sliceString(found.anchorOffset + 1, sel.head);
+  return {
+    provider,
+    trigger: found.trigger,
+    anchorOffset: found.anchorOffset,
+    query,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -425,24 +504,43 @@ function completionExtender(
 ): { effects: StateEffect<unknown>[] } | null {
   const fieldState = tr.state.field(completionField);
 
-  // Activation: only when typeahead is currently inactive AND the
-  // user typed a registered trigger character in this transaction.
+  // Activation: typeahead is currently inactive. Two paths:
+  //   1. Trigger insertion — the user just typed `@` / `/` / etc.
+  //   2. Rejoin — the caret moved into (or typed within) an existing
+  //      literal trigger…run that was never accepted as an atom.
   if (!fieldState.active) {
     const providers = getProviders();
     const detected = detectTriggerInsertion(tr, providers);
-    if (detected === null) return null;
-    const filtered = detected.provider("");
-    return {
-      effects: [
-        activateEffect.of({
-          trigger: detected.trigger,
-          anchorOffset: detected.anchorOffset,
-          provider: detected.provider,
-          query: "",
-          filtered,
-        }),
-      ],
-    };
+    if (detected !== null) {
+      const filtered = detected.provider("");
+      return {
+        effects: [
+          activateEffect.of({
+            trigger: detected.trigger,
+            anchorOffset: detected.anchorOffset,
+            provider: detected.provider,
+            query: "",
+            filtered,
+          }),
+        ],
+      };
+    }
+    const rejoin = detectRejoin(tr, providers);
+    if (rejoin !== null) {
+      const filtered = rejoin.provider(rejoin.query);
+      return {
+        effects: [
+          activateEffect.of({
+            trigger: rejoin.trigger,
+            anchorOffset: rejoin.anchorOffset,
+            provider: rejoin.provider,
+            query: rejoin.query,
+            filtered,
+          }),
+        ],
+      };
+    }
+    return null;
   }
 
   // Active path: re-derive query from the post-transaction state.
