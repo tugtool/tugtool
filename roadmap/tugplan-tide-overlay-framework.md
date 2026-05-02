@@ -168,21 +168,23 @@ const presentSheet = useCallback(() => {
   void showSheet({
     title: "Open Project",
     content: ...,
-    cascadeTargetId: hostStackId,  // pane responder id, captured at open
+    cascadeTargetId: cardId,        // card-host responder id, captured at open
     onClosed: (result) => {
       if (result === "open" || result === "retry") return;
       // Dispatch to the target captured at open time.
-      manager?.sendToTarget(hostStackId, {
+      manager?.sendToTarget(cardId, {
         action: TUG_ACTIONS.CLOSE,
         sender: senderId,
         phase: "discrete",
       });
     },
   });
-}, [showSheet, hostStackId, manager, senderId]);
+}, [showSheet, cardId, manager, senderId]);
 ```
 
-`sendToTarget(hostStackId, ...)` walks via `parentId` from the pane responder. The pane has the `CLOSE` handler — it fires.
+`sendToTarget(cardId, ...)` walks via `parentId` from the card-host responder, which traverses one hop to its parent (the host pane's `stackId`). The pane has the `CLOSE` handler (`tug-pane.tsx`) — it fires.
+
+**Why `cardId`, not `hostStackId`** — Step 3's pinned choice (formalized after the [D02] code example was first drafted): the picker has `cardId` directly in scope (no extra plumbing), and `cardId` is stable across cross-pane moves while `hostStackId` is not (see `card-host.tsx`'s comment on `cardId` being the "stable identity content factories key their per-card state off; it survives detach/merge whereas hostStackId changes on cross-pane moves"). Both ids reach the same `CLOSE` handler at the pane via the chain walk; using the more stable starting node shortens the failure mode catalog. The general rule: **pick the cascade target id whose registration outlives the dispatch window, not the closest one to the handler**. For the sheet → pane cascade specifically, that's `cardId`; for a future modal whose cascade target is a sibling responder, the consumer picks accordingly.
 
 The key shift: **the cascade target is a *value* captured at open time, not a state lookup at close time.** No dependency on `firstResponderId` being correctly set at the moment `onClosed` fires.
 
@@ -193,8 +195,10 @@ The key shift: **the cascade target is a *value* captured at open time, not a st
 
 **Implications:**
 - `ShowSheetOptions` gains an optional `cascadeTargetId?: string` field. The hook stores it (read-only — currently just for documentation; consumers reference it from their own closure).
-- `tide-card.tsx` `presentSheet` is updated: passes `hostStackId` as `cascadeTargetId` and uses `manager.sendToTarget(hostStackId, ...)` in `onClosed` instead of `manager.sendToFirstResponder(...)`.
+- `tide-card.tsx` `presentSheet` is updated: passes `cardId` as `cascadeTargetId` and uses `manager.sendToTarget(cardId, ...)` in `onClosed` instead of `manager.sendToFirstResponder(...)`. (Earlier drafts of this decision named `hostStackId`; landed implementation uses `cardId` per the stability argument above.)
 - Cancel-cascade bug fixed: `CLOSE` reaches the pane regardless of focus state.
+
+**Sharp edge:** `sendToTarget(id, ...)` throws if `id` is not registered at dispatch time. For tide-card's picker, this is unreachable in practice — `cardId` registration outlives the picker's onClosed callback (the closure can't fire if the card has unmounted). Future consumers of this pattern should pick a `cascadeTargetId` whose lifetime envelopes the dispatch window, OR guard the dispatch with try/catch / a tolerant variant. If a class of consumers needs the tolerant variant, add `sendToTargetIfRegistered` rather than making `sendToTarget` itself silently swallow.
 
 **Tuglaws cross-check:** [L11] — controls dispatch actions; the chain delivers them. `sendToTarget` is the chain-native delivery mechanism for "named target dispatches" (vs `sendToFirstResponder` for "current focus dispatches"). [L19] — `useTugSheet` JSDoc updated.
 
