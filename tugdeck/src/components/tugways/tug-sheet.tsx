@@ -70,12 +70,14 @@ import React, {
 import { createPortal } from "react-dom";
 import * as FocusScopeRadix from "@radix-ui/react-focus-scope";
 import { TugPanePortalContext } from "@/components/chrome/tug-pane";
+import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { group } from "@/components/tugways/tug-animator";
 import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { suppressButtonFocusShift } from "./internal/safari-focus-shift";
 import { useComponentStatePreservation } from "./use-component-state-preservation";
+import { TugSheetStackingContext } from "./tug-sheet-stacking-context";
 
 /* ---------------------------------------------------------------------------
  * Internal context
@@ -334,6 +336,7 @@ export function TugSheetContent({
 }: TugSheetContentProps) {
   const { open, onOpenChange, contentId, responderId } = useTugSheetContext();
   const cardEl = useContext(TugPanePortalContext);
+  const overlayRoot = useCanvasOverlay();
 
   const titleId = `${contentId}-title`;
   const descriptionId = `${contentId}-desc`;
@@ -385,6 +388,21 @@ export function TugSheetContent({
   const [mounted, setMounted] = useState(false);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const sheetContentRef = useRef<HTMLDivElement | null>(null);
+  // Canvas-tier wrapper and clip elements. Their `top` / `left` /
+  // `width` / `height` are written via direct DOM mutation by the
+  // applier effect below per [L06]: anchor coords are appearance-zone
+  // state (only the renderer reads them, no non-rendering consumer
+  // cares about pixel values), so they belong in the DOM, not in
+  // React state. [L24]
+  //
+  // The wrapper is sized to the card body so the visible scrim is
+  // clipped to the pane. The clip is sized to extend from the card body
+  // top all the way to the viewport bottom — its `overflow: hidden`
+  // hides the panel during its `translateY(-100%) → 0` enter
+  // animation while letting the panel's natural height extend past the
+  // card's bottom edge per [Q01].
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const clipRef = useRef<HTMLDivElement | null>(null);
 
   // Stable access to the consumer's `onClosed` callback from inside
   // layout effects. Consumers may pass a fresh function identity each
@@ -466,6 +484,84 @@ export function TugSheetContent({
   // Track trigger element for focus restoration on close.
   const triggerElRef = useRef<Element | null>(null);
 
+  // Anchor applier: direct-DOM-write of the canvas-tier wrapper and
+  // clip's top/left/width/height from the owning card's bounding rect.
+  // Per [L06] these are appearance-zone DOM writes, not React state.
+  //
+  // Two elements, two responsibilities:
+  //   * `wrapper` covers exactly the card body (cardRect minus chrome
+  //     height). The scrim inside fills the wrapper via `inset: 0`, so
+  //     the visible dim is clipped to the pane.
+  //   * `clip` covers the same top/left/width but extends down to the
+  //     viewport bottom. Its `overflow: hidden` hides the sheet panel
+  //     during `translateY(-100%) → 0` enter animation, while still
+  //     letting the panel's natural height grow past the card's bottom
+  //     edge per [Q01] (option a — accept; sheet on canvas tier paints
+  //     past the card).
+  //
+  // The applier observes three geometry signals so the wrapper and
+  // clip track every kind of card geometry change ([L22]:
+  // store-observer-API for layout changes drives DOM writes directly):
+  //
+  //   1. ResizeObserver on cardEl — sash drag, programmatic resize.
+  //      Fires only when the card's *size* changes.
+  //   2. MutationObserver on cardEl AND its parent `.tug-pane` for
+  //      `style` mutations — pane drag updates `frame.style.left/top`
+  //      on the outer `.tug-pane` (`tug-pane.tsx`'s drag handler at
+  //      `frameRef`); these are position changes that ResizeObserver
+  //      does not see, and they happen on the parent of cardEl, not
+  //      cardEl itself. We observe both elements to catch any future
+  //      style-driven motion regardless of which level it lands on.
+  //   3. Window resize — viewport-relative coords shift even when the
+  //      card's own size and position attrs are unchanged.
+  //
+  // The effect only runs once the wrapper is actually mounted
+  // (`mounted`), so `wrapperRef.current` and `clipRef.current` are
+  // populated when `apply()` first reads them.
+  useLayoutEffect(() => {
+    if (!cardEl || !mounted) return;
+    const apply = (): void => {
+      const wrapper = wrapperRef.current;
+      const clip = clipRef.current;
+      if (!wrapper) return;
+      const r = cardEl.getBoundingClientRect();
+      const chromeH = parseFloat(
+        getComputedStyle(document.documentElement)
+          .getPropertyValue("--tug-chrome-height") || "36",
+      );
+      const top = r.top + chromeH;
+      // Wrapper: clipped to the card body — scrim must not bleed
+      // past the pane.
+      wrapper.style.top = `${top}px`;
+      wrapper.style.left = `${r.left}px`;
+      wrapper.style.width = `${r.width}px`;
+      wrapper.style.height = `${r.height - chromeH}px`;
+      // Clip: same top/left/width but extends to the viewport bottom
+      // so the sheet panel inside can paint past the card.
+      if (clip) {
+        clip.style.top = `${top}px`;
+        clip.style.left = `${r.left}px`;
+        clip.style.width = `${r.width}px`;
+        clip.style.height = `${window.innerHeight - top}px`;
+      }
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(cardEl);
+    const mo = new MutationObserver(apply);
+    mo.observe(cardEl, { attributes: true, attributeFilter: ["style"] });
+    const paneEl = cardEl.parentElement;
+    if (paneEl) {
+      mo.observe(paneEl, { attributes: true, attributeFilter: ["style"] });
+    }
+    window.addEventListener("resize", apply);
+    return () => {
+      ro.disconnect();
+      mo.disconnect();
+      window.removeEventListener("resize", apply);
+    };
+  }, [cardEl, mounted]);
+
   // Inertness management: set/remove `inert` on .tug-pane-body synchronized with open state [L03].
   useLayoutEffect(() => {
     if (!cardEl) return;
@@ -525,21 +621,47 @@ export function TugSheetContent({
   if (!mounted || !cardEl) return null;
 
   return createPortal(
-    <>
-      {/* Overlay (scrim) — positioned absolute within the card, below title bar.
-           No click-to-dismiss: sheets are card-modal and require explicit dismissal
-           via Cancel button, Escape, or Cmd+.
-           onPointerDown preventDefault stops the browser from clearing selection
-           or moving focus — the scrim is a dead zone that swallows all pointer events. */}
+    // Two siblings, both positioned via direct DOM writes in the applier
+    // effect above:
+    //   * `.tug-sheet-anchor` — the wrapper. Sized to the card body
+    //     so the visible scrim inside is clipped to the pane.
+    //   * `.tug-sheet-clip` — the panel container. Top/left/width
+    //     match the wrapper but it extends down to the viewport
+    //     bottom; its `overflow: hidden` hides the sliding panel
+    //     during enter animation while the panel's natural height
+    //     can grow past the card's bottom edge per [Q01].
+    // Inline `position: fixed` is the only inline style — coords come
+    // from the applier. `pointer-events: auto` is set inline as
+    // belt-and-suspenders alongside the overlay-root's
+    // `> * { pointer-events: auto }` rule.
+    <TugSheetStackingContext.Provider value={true}>
       <div
-        ref={overlayRef}
-        className="tug-sheet-overlay"
-        onPointerDown={(e) => e.preventDefault()}
-      />
+        ref={wrapperRef}
+        data-slot="tug-sheet-anchor"
+        className="tug-sheet-anchor"
+        style={{ position: "fixed", pointerEvents: "auto" }}
+      >
+        {/* Overlay (scrim) — fills the wrapper, dims the card body.
+             No click-to-dismiss: sheets are card-modal and require explicit
+             dismissal via Cancel button, Escape, or Cmd+.
+             onPointerDown preventDefault stops the browser from clearing
+             selection or moving focus — the scrim is a dead zone that
+             swallows all pointer events. */}
+        <div
+          ref={overlayRef}
+          className="tug-sheet-overlay"
+          onPointerDown={(e) => e.preventDefault()}
+        />
+      </div>
 
-      {/* Clip container: overflow hidden at title bar edge so sheet
-           visually emerges from UNDER the title bar, not above it */}
-      <div className="tug-sheet-clip">
+      {/* Clip container: separate sibling so its bottom edge can extend
+           past the wrapper. `overflow: hidden` clips the panel during
+           the slide-in `translateY(-100%) → 0` enter animation. */}
+      <div
+        ref={clipRef}
+        className="tug-sheet-clip"
+        style={{ position: "fixed", pointerEvents: "auto" }}
+      >
         {/* FocusScope wraps content to trap Tab/Shift-Tab */}
         <FocusScopeRadix.FocusScope
           trapped={open}
@@ -558,25 +680,25 @@ export function TugSheetContent({
             onKeyDown={handleKeyDown}
             onMouseDown={suppressButtonFocusShift}
           >
-          <ResponderScope>
-          {/* Sheet header: title only — no close button, sheets dismiss via Cancel/Escape */}
-          <div className="tug-sheet-header">
-            <h2 id={titleId} className="tug-sheet-title">{title}</h2>
+            <ResponderScope>
+              {/* Sheet header: title only — no close button, sheets dismiss via Cancel/Escape */}
+              <div className="tug-sheet-header">
+                <h2 id={titleId} className="tug-sheet-title">{title}</h2>
+              </div>
+
+              {/* Optional description */}
+              {description && (
+                <p id={descriptionId} className="tug-sheet-description">{description}</p>
+              )}
+
+              {/* Sheet body: arbitrary content */}
+              <div className="tug-sheet-body">{children}</div>
+            </ResponderScope>
           </div>
-
-          {/* Optional description */}
-          {description && (
-            <p id={descriptionId} className="tug-sheet-description">{description}</p>
-          )}
-
-          {/* Sheet body: arbitrary content */}
-          <div className="tug-sheet-body">{children}</div>
-          </ResponderScope>
-        </div>
         </FocusScopeRadix.FocusScope>
       </div>
-    </>,
-    cardEl,
+    </TugSheetStackingContext.Provider>,
+    overlayRoot,
   );
 }
 

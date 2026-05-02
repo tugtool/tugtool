@@ -156,7 +156,7 @@ This plan follows [tuglaws/tugplan-skeleton.md §reference-conventions](../tugla
 
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
-| Sheet anchor goes stale on card move/resize | high | low | `ResizeObserver` on the card element re-anchors via direct-DOM applier; same model as completion painter; [L06] / [L22] compliant | Manual smoke shows lag during sash drag |
+| Sheet anchor goes stale on card move/resize | high | low | Three observers drive the same direct-DOM applier — `ResizeObserver` (size), `MutationObserver` on `cardEl[style]` *and* `cardEl.parentElement[style]` (position via drag-driven style mutation), window `resize` (viewport shifts); [L06] / [L22] compliant | Manual smoke shows lag during pane drag, sash drag, or window resize |
 | Service binding's restore conflicts with consumer-supplied `onCloseAutoFocus` | med | med | Hook owns `onCloseAutoFocus` per [D06]; consumer override path documented in module docstring (call `manager.focusResponder(target)` from menu-item handler before close, not via `onCloseAutoFocus`) | A consumer ships a stacked `onCloseAutoFocus` and breaks the binding |
 | Companion dismiss races with click-to-accept | med | low | Companion observes DOM focus on `view.contentDOM`; clicking a portaled completion-popup item does NOT blur contentDOM (the predecessor's [D08] established `pointerdown` + `preventDefault()` keeps focus on the editor across the portal hop). Add an app-test that opens completion, clicks an item, asserts the popup remained visible long enough for the accept to land | App-test fails the ordering assertion |
 | `focus()` callback fires when responder element is detached | low | low | `focusResponder(id)` re-checks `nodes.has(id)` before invoking the callback; default fallback queries `document.querySelector('[data-responder-id="X"]')` and skips on null | Detached-element warning in console |
@@ -168,8 +168,12 @@ This plan follows [tuglaws/tugplan-skeleton.md §reference-conventions](../tugla
 **Risk R01: Sheet anchor goes stale on card move/resize** {#r01-sheet-anchor-stale}
 
 - **Risk:** The sheet's canvas-tier coordinates are computed from `cardEl.getBoundingClientRect()` at open time. If the card moves (drag), resizes (sash, window resize, programmatic), the sheet's coords no longer match.
-- **Mitigation:** `ResizeObserver` on `cardEl` recomputes the anchor. Window resize also fires the observer (the card's bounding box shifts). Card drags fire the observer too (the card's transform changes its bounding rect). The same pattern is in use by the completion painter (`tug-text-editor.tsx:1903-1918`).
-- **Residual risk:** A nontrivial transform on an ancestor (e.g., `transform: scale()` applied to the deck container) could shift coordinates without firing the card's ResizeObserver. Acceptable — no such transform exists today; flag for revisit if it lands.
+- **Mitigation:** Three observers drive the same direct-DOM applier:
+  1. `ResizeObserver` on `cardEl` — fires on size changes (sash drag, programmatic resize).
+  2. `MutationObserver` on `cardEl` *and* `cardEl.parentElement` (the outer `.tug-pane` element) with `attributeFilter: ["style"]` — pane drag in `tug-pane.tsx`'s drag handler mutates `frame.style.left/top` on the outer `.tug-pane`; that's a *position* change `ResizeObserver` does not see. Observing both cardEl and its parent insulates the contract from future drag-handler refactors that might target a different level.
+  3. `window.addEventListener("resize", apply)` — viewport-relative coord shifts when the window itself resizes.
+- **Why not just `ResizeObserver`:** `RO` only fires on size changes. Pane drag changes position with size unchanged — the original mitigation was wrong; the implementation now uses the trio above.
+- **Residual risk:** A nontrivial transform on an ancestor (e.g., `transform: scale()` applied to the deck container) could shift coordinates without firing any of the three signals. Acceptable — no such transform exists today; flag for revisit if it lands. A rAF coalesce loop is the bigger hammer for that case.
 
 **Risk R02: Service-binding restore conflicts with consumer override** {#r02-service-binding-conflict}
 
@@ -199,19 +203,19 @@ This plan follows [tuglaws/tugplan-skeleton.md §reference-conventions](../tugla
 
 #### [D02] TugSheet renders on canvas tier; modal/inert behavior stays card-scoped (DECIDED) {#d02-sheet-canvas-tier}
 
-**Decision:** `TugSheetContent` portals into `useCanvasOverlay()` instead of `TugPanePortalContext`. The `inert` write on `.tug-pane-body` continues to use `cardEl` (read from `TugPanePortalContext`, which keeps its current contract). Sheet panel coordinates are computed from `cardEl.getBoundingClientRect()` and **applied via direct DOM writes on a ref-held wrapper element — never via React `style={{}}` props or component-state updates**. `ResizeObserver` re-anchors by calling the same direct-write applier.
+**Decision:** `TugSheetContent` portals into `useCanvasOverlay()` instead of `TugPanePortalContext`. The `inert` write on `.tug-pane-body` continues to use `cardEl` (read from `TugPanePortalContext`, which keeps its current contract). Sheet coordinates are computed from `cardEl.getBoundingClientRect()` and **applied via direct DOM writes on two ref-held canvas-tier elements — never via React `style={{}}` props or component-state updates**. The two elements split previously-coupled concerns: `.tug-sheet-anchor` (the wrapper) hosts the scrim and is sized to the card body; `.tug-sheet-clip` (a sibling, not a descendant) hosts the panel and extends from the card body top down to the viewport bottom. Three observers (`ResizeObserver` on `cardEl`, `MutationObserver` on `cardEl` *and* its parent `.tug-pane`, and a window `resize` listener) drive the same applier so size changes, drag-driven position changes, and viewport changes all re-anchor.
 
 **Rationale:**
 - The user-visible bug is "the sheet is clipped by the card." The card-modal *behavior* (inert + focus trap + restore-to-trigger) is correct as-is; only the rendering target is wrong.
 - Reading `cardEl` for both inert and rect keeps a single ownership relationship: "the sheet belongs to a card; that card is the inert target and the position anchor."
-- `getBoundingClientRect()` + `ResizeObserver` is the same model the completion painter already uses; risk surface is low.
+- **Two elements, two responsibilities.** Coupling scrim-extent and panel-extent through one container's bounds is what made the original card-portaled sheet clip in the first place. Splitting them is the load-bearing structural change: the wrapper bounds the dim region (scrim must not bleed past the pane); the clip's `overflow: hidden` hides the panel during enter animation while letting the panel's natural height extend past the card per [Q01].
 - **Direct DOM write per [L06]:** the anchor coords are *appearance-zone* state — only the renderer reads them, no non-rendering consumer cares whether `top` is `100px` or `120px`. [L06] forbids putting such state in React. The L06 test ("does any non-rendering consumer depend on this state?") returns *no* for sheet anchor coords; therefore they belong in the DOM.
-- **Observation per [L22]:** ResizeObserver is the store-observer-API equivalent for layout changes; the callback writes DOM directly, not via React state. This avoids the "render → paint → effect" lag that would visibly trail card drags by a frame.
+- **Three observers per [L22], not just one.** `ResizeObserver` fires on size changes only; pane drag in `tug-pane.tsx`'s drag handler mutates `frame.style.left/top` on the outer `.tug-pane` (ref `frameRef`), which is a *position* change `RO` does not see. `MutationObserver` on `cardEl[style]` *and* `cardEl.parentElement[style]` catches the drag-style mutations regardless of which level the handler targets. A window `resize` listener catches viewport-relative shifts. All three call the same applier; DOM writes happen directly, not via React state, avoiding the "render → paint → effect" lag that would visibly trail card drags by a frame.
 
 **Implications:**
-- The sheet's `top: var(--tug-chrome-height)` CSS shift moves from "relative to the card root" (today) to "computed in TS at mount and on every observed resize, written via `wrapperRef.current.style.top = '${cardRect.top + chromeHeight}px'`."
-- The sheet's animation transform (`translateY(-100%)` enter / `translateY(0)` settle) drives a relative offset *within* the wrapper. The wrapper's position is `position: fixed` with direct-DOM-written top/left/width/height; the transform is local to the panel. The wrapper's anchor coords and the panel's animation transform never collide because they target different DOM elements.
-- `.tug-sheet-overlay` (the scrim) becomes `position: fixed` with the same canvas-relative bounds, applied via the same direct-DOM-write applier. The `inert` write on `.tug-pane-body` covers the user-input dead-zone; the visible scrim is purely visual feedback.
+- The sheet's `top: var(--tug-chrome-height)` CSS shift moves from "relative to the card root" (today) to "computed in TS at mount and on every observed change, written via `wrapperRef.current.style.top = ${cardRect.top + chromeHeight}px` and `clipRef.current.style.top` to the same value."
+- The sheet's animation transform (`translateY(-100%)` enter / `translateY(0)` settle) drives a relative offset *within* the clip. The wrapper's position is `position: fixed` with direct-DOM-written top/left/width/height (height = card body); the clip's position is `position: fixed` with top/left/width matching the wrapper but height extending to the viewport bottom; the panel's transform is local within the clip. None collide because they target different DOM elements.
+- `.tug-sheet-overlay` (the scrim) is a child of the wrapper and fills it via `inset: 0`, so the scrim is clipped to the pane (the user-visible "shadow" stays inside the card). The `inert` write on `.tug-pane-body` covers the user-input dead-zone; the visible scrim is purely visual feedback.
 
 **Preserve list per [L23]:** The migration is a *minimal mutation* per [L23] (the React subtree that owns sheet state never unmounts; only the portal target changes). Concretely, every user-visible behavior on this list MUST survive the migration unchanged, asserted explicitly in [Step 2](#step-2)'s tests:
 
@@ -650,65 +654,103 @@ Together they keep first responder pinned to the editor across the trigger click
 
 **Migrated — direct DOM writes per [L06] / [L22] / [L24]:**
 
-The anchor coords (`top` / `left` / `width` / `height` of the wrapper element) are *appearance-zone* state ([L24]) — only the renderer reads them. Per [L06]'s test ("does any non-rendering consumer depend on this state?"), the answer is *no*. They are written to DOM directly, not via React `style={{}}` props. ResizeObserver fires the applier; the applier writes element style properties without triggering a React render ([L22] — store-observer-API for layout changes drives DOM writes directly).
+The anchor coords (`top` / `left` / `width` / `height` of the wrapper *and* clip elements) are *appearance-zone* state ([L24]) — only the renderer reads them. Per [L06]'s test ("does any non-rendering consumer depend on this state?"), the answer is *no*. They are written to DOM directly, not via React `style={{}}` props. The applier fires on three signals so size, position, and viewport changes all re-anchor without a render cycle ([L22] — store-observer-API for layout changes drives DOM writes directly).
+
+**Two elements, not one.** A single wrapper would couple scrim-extent (must clip to the pane) with panel-extent (must extend past the pane per [Q01]) and the slide-in clip context (`overflow: hidden` for the enter animation). Splitting into a wrapper + sibling clip dissolves that conflict.
 
 ```ts
 // Inside TugSheetContent (the migrated component):
 
-// Stable wrapper ref — written to inside useLayoutEffect; never
-// reassigned via React state.
 const wrapperRef = useRef<HTMLDivElement | null>(null);
+const clipRef = useRef<HTMLDivElement | null>(null);
 
 // Anchor applier: pure DOM mutation. Reads cardEl rect, writes to
-// wrapperRef element style. No React touch.
+// wrapperRef AND clipRef element styles. No React touch.
 useLayoutEffect(() => {
-  if (!cardEl) return;
+  if (!cardEl || !mounted) return;
   const apply = (): void => {
     const wrapper = wrapperRef.current;
+    const clip = clipRef.current;
     if (!wrapper) return;
     const r = cardEl.getBoundingClientRect();
     const chromeH = parseFloat(
       getComputedStyle(document.documentElement)
         .getPropertyValue("--tug-chrome-height") || "36",
     );
-    wrapper.style.top    = `${r.top + chromeH}px`;
+    const top = r.top + chromeH;
+    // Wrapper: card body only — scrim clipped to the pane.
+    wrapper.style.top    = `${top}px`;
     wrapper.style.left   = `${r.left}px`;
     wrapper.style.width  = `${r.width}px`;
     wrapper.style.height = `${r.height - chromeH}px`;
+    // Clip: same top/left/width but extends to viewport bottom so
+    // the panel can grow past the card per [Q01].
+    if (clip) {
+      clip.style.top    = `${top}px`;
+      clip.style.left   = `${r.left}px`;
+      clip.style.width  = `${r.width}px`;
+      clip.style.height = `${window.innerHeight - top}px`;
+    }
   };
-  apply();  // Initial anchor at mount (synchronous, no flash).
+  apply();
+  // Size changes (sash drag, programmatic resize).
   const ro = new ResizeObserver(apply);
   ro.observe(cardEl);
-  // Window resize is observed indirectly: cardEl's bounding rect
-  // shifts when the viewport resizes, which fires the observer.
-  // Card drag/move similarly triggers a rect change; observer fires.
-  return () => ro.disconnect();
-}, [cardEl]);
+  // Position changes via style mutation (pane drag mutates
+  // `frame.style.left/top` on the outer `.tug-pane` element, which is
+  // cardEl's parent). Observe both cardEl AND its parent so future
+  // refactors that move the style mutations don't silently break
+  // tracking.
+  const mo = new MutationObserver(apply);
+  mo.observe(cardEl, { attributes: true, attributeFilter: ["style"] });
+  const paneEl = cardEl.parentElement;
+  if (paneEl) {
+    mo.observe(paneEl, { attributes: true, attributeFilter: ["style"] });
+  }
+  // Viewport-relative shifts.
+  window.addEventListener("resize", apply);
+  return () => {
+    ro.disconnect();
+    mo.disconnect();
+    window.removeEventListener("resize", apply);
+  };
+}, [cardEl, mounted]);
 
 // JSX:
 return createPortal(
-  <div
-    ref={wrapperRef}
-    className="tug-sheet-anchor"
-    style={{ position: "fixed", pointerEvents: "auto" }}
-    data-slot="tug-sheet-anchor"
-  >
-    {/* .tug-sheet-overlay (scrim) */}
-    {/* .tug-sheet-clip (clip container, holds the panel) */}
-    {/*   .tug-sheet-content (panel, animation transform target) */}
-  </div>,
+  <TugSheetStackingContext.Provider value={true}>
+    {/* Wrapper hosts the scrim — clipped to the pane. */}
+    <div
+      ref={wrapperRef}
+      data-slot="tug-sheet-anchor"
+      className="tug-sheet-anchor"
+      style={{ position: "fixed", pointerEvents: "auto" }}
+    >
+      {/* .tug-sheet-overlay (scrim) — fills wrapper via inset: 0 */}
+    </div>
+    {/* Clip is a sibling — extends past the wrapper. */}
+    <div
+      ref={clipRef}
+      className="tug-sheet-clip"
+      style={{ position: "fixed", pointerEvents: "auto" }}
+    >
+      {/* FocusScope */}
+      {/*   .tug-sheet-content (panel, animation transform target) */}
+    </div>
+  </TugSheetStackingContext.Provider>,
   overlayRoot,
 );
 ```
 
-**Why two layers (wrapper + content):** the wrapper owns canvas-tier coordinates (DOM-written from cardEl rect). The `.tug-sheet-content` panel inside owns the animation transform (`translateY(-100%)→0` enter, `0→-100%` exit). The two never collide because they target different DOM elements with different concerns:
+**Why two siblings (wrapper + clip):** they decouple three concerns the original single-container design coupled together:
 
-- Wrapper: positioning the sheet's bounding box on the canvas.
-- Content panel: animating the sheet's slide-in within that bounding box.
+- **Wrapper** (`.tug-sheet-anchor`): sized to the card body. Hosts the scrim. Visible dim is clipped to the pane.
+- **Clip** (`.tug-sheet-clip`): top/left/width match the wrapper but height extends to the viewport bottom. `overflow: hidden` hides the panel during the slide-in enter animation. The panel's natural height can grow past the card without affecting the scrim's extent.
+- **Content panel** (`.tug-sheet-content`): inside the clip, owns the animation transform (`translateY(-100%)→0` enter, `0→-100%` exit). Its `max-height: calc(100% - space-a)` is now relative to the clip (viewport-tall), so it can extend past the card body.
 
-Per [L06]: the wrapper's coords are appearance-zone DOM writes; per [L13] / [L14]: the content panel's animation uses `tug-animator` (WAAPI), which the existing code already does. Migration preserves both.
+Per [L06]: wrapper and clip coords are appearance-zone DOM writes; per [L13] / [L14]: the panel's animation uses `tug-animator` (WAAPI), which the existing code already does. Migration preserves both.
 
-**Initial-paint correctness:** the `useLayoutEffect` runs synchronously after commit, before the browser paints. The wrapper is rendered hidden (`opacity: 0` from the existing entry animation) and the applier writes coords before the first paint. No first-frame flash.
+**Initial-paint correctness:** the `useLayoutEffect` runs synchronously after commit, before the browser paints. The wrapper and clip are rendered hidden (scrim opacity 0, panel translateY -100% from the existing entry animation) and the applier writes coords before the first paint. No first-frame flash.
 
 #### Popup Role Taxonomy {#popup-role-taxonomy}
 
@@ -948,26 +990,26 @@ Layer C — wire defaults:
 - New app-test: peer-card visual stacking ([Q01] visual confirmation).
 
 **Tasks:**
-- [ ] In `TugSheetContent`, change the `createPortal` target from `cardEl` to `useCanvasOverlay()`.
-- [ ] **Implement direct-DOM-write applier per [L06]:** introduce a `wrapperRef` on the new canvas-tier wrapper element. Inside `useLayoutEffect` keyed on `cardEl`, define a synchronous `apply()` function that reads `cardEl.getBoundingClientRect()` + `--tug-chrome-height` and writes `wrapperRef.current.style.{top, left, width, height}` directly. Run `apply()` once for initial anchor; install `ResizeObserver(apply)` on `cardEl` for re-anchor; disconnect observer in cleanup. **Do not** route the coords through React state or `style={{}}` props — that would violate [L06] (anchor coords are appearance-zone) and inject a render-cycle delay between observer fire and DOM update ([L22]).
-- [ ] Convert `.tug-sheet-overlay` and `.tug-sheet-clip` CSS rules: drop `position: absolute; inset: 0; top: var(--tug-chrome-height)`; the canvas-tier wrapper now provides position via direct-DOM writes. The `.tug-sheet-content` panel keeps its `position: relative` + `translateY` transform (animation-local).
-- [ ] Verify the `inert` write on `.tug-pane-body` still fires (the `cardEl` read for it is unchanged).
-- [ ] **Wrap rendered content in `<TugSheetStackingContext.Provider value={true}>` per [D09]** so descendant popups elevate. The provider lives inside the portaled subtree.
+- [x] In `TugSheetContent`, change the `createPortal` target from `cardEl` to `useCanvasOverlay()`.
+- [x] **Implement direct-DOM-write applier per [L06]:** `wrapperRef` on a new `.tug-sheet-anchor` wrapper element; `useLayoutEffect` keyed on `[cardEl, mounted]` runs `apply()` (reads `cardEl.getBoundingClientRect()` + `--tug-chrome-height`, writes `wrapperRef.current.style.{top,left,width,height}` directly), runs once at mount, installs `ResizeObserver(apply)` on `cardEl`, disconnects in cleanup. No React state, no `style={{}}` props for the anchor coords.
+- [x] Convert `.tug-sheet-overlay` and `.tug-sheet-clip` CSS rules: drop `top: var(--tug-chrome-height)` (the wrapper now starts below the card chrome, so the inner elements fill the wrapper via `inset: 0`). The `.tug-sheet-content` panel keeps its `position: relative` + `translateY` transform (animation-local).
+- [x] Verify the `inert` write on `.tug-pane-body` still fires (the `cardEl` read for it is unchanged).
+- [x] **Wrap rendered content in `<TugSheetStackingContext.Provider value={true}>` per [D09]** so descendant popups elevate. New file `tug-sheet-stacking-context.ts` exports the context (default `false`); provider lives inside the portaled subtree.
 
 **Preserve list per [L23]** (each item asserted by a test in this step):
 
-- [ ] Unit: `defaultOpen={true}` mounts the sheet open; `useTugSheet().showSheet()` Promise resolves on close (existing tests pass unchanged).
-- [ ] Unit: `componentStatePreservationKey` capture/restore protocol round-trips an open sheet through bag serialization (existing test extended to assert via the new portal target).
-- [ ] Unit: `TugSheetHandle.open()` / `.close()` ref-handle calls work post-migration.
-- [ ] Unit: `FocusScope` `trapped={open}` traps tab navigation inside the sheet content.
-- [ ] Unit: `tide-card.tsx:1190`'s `onOpenAutoFocus` override (focus-the-OK-button) still runs and focus lands on the OK button at sheet open.
-- [ ] Unit: `inert` attribute is set on `.tug-pane-body` of the owning card on open; removed on close and on unmount.
-- [ ] Unit: chain-native `cancelDialog` close — Escape and Cmd+. each dispatch via `manager.sendToTarget(responderId, ...)` and the sheet's `useOptionalResponder` handler closes.
-- [ ] Unit: `useTugSheetClose()` hook closes via the chain; existing test passes against the migrated rendering.
-- [ ] Unit: `tug-animator` enter (overlay opacity 0→1, content translateY -100% → 0) and exit (reverse) fire and `g.finished` resolves on both; `setMounted(false)` flips after exit.
-- [ ] Unit: `onClosed` callback fires post-exit-animation, after the portal's React unmount.
-- [ ] Unit: `triggerElRef.current?.focus()` in `handleUnmountAutoFocus` returns focus to the trigger element on close (tested with a button trigger).
-- [ ] Unit: `useTugSheet`'s `senderId` round-trip via `observeDispatch` resolves the Promise with `undefined` for Escape-dismissal and the explicit `result` for `close(result)` calls.
+- [x] Unit: `defaultOpen={true}` mounts the sheet open; `useTugSheet().showSheet()` Promise resolves on close (existing tests pass unchanged).
+- [x] Unit: `componentStatePreservationKey` capture/restore protocol round-trips an open sheet through bag serialization (existing test extended to assert via the new portal target).
+- [x] Unit: `TugSheetHandle.open()` / `.close()` ref-handle calls work post-migration.
+- [x] Unit: `FocusScope` `trapped={open}` traps tab navigation inside the sheet content.
+- [x] Unit: `tide-card.tsx:1190`'s `onOpenAutoFocus` override (focus-the-OK-button) still runs and focus lands on the OK button at sheet open.
+- [x] Unit: `inert` attribute is set on `.tug-pane-body` of the owning card on open; removed on close and on unmount.
+- [x] Unit: chain-native `cancelDialog` close — Escape and Cmd+. each dispatch via `manager.sendToTarget(responderId, ...)` and the sheet's `useOptionalResponder` handler closes.
+- [x] Unit: `useTugSheetClose()` hook closes via the chain; existing test passes against the migrated rendering.
+- [x] Unit: `tug-animator` enter (overlay opacity 0→1, content translateY -100% → 0) and exit (reverse) fire and `g.finished` resolves on both; `setMounted(false)` flips after exit.
+- [x] Unit: `onClosed` callback fires post-exit-animation, after the portal's React unmount.
+- [x] Unit: `triggerElRef.current?.focus()` in `handleUnmountAutoFocus` returns focus to the trigger element on close (tested with a button trigger).
+- [x] Unit: `useTugSheet`'s `senderId` round-trip via `observeDispatch` resolves the Promise with `undefined` for Escape-dismissal and the explicit `result` for `close(result)` calls.
 
 **Layout-fidelity tests (must be app-tests per `feedback_no_happy_dom_tests`):**
 
@@ -976,8 +1018,8 @@ Layer C — wire defaults:
 - [ ] App-test: drag the owning card while sheet is open; assert sheet's wrapper `top` / `left` track the card within one ResizeObserver tick (anchor stays in sync per Risk R01).
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` green.
-- [ ] `bun test` green; all preserve-list tests pass.
+- [x] `bun x tsc --noEmit` green.
+- [x] `bun test` green; all preserve-list tests pass (2665 / 0 fail).
 - [ ] App-tests for sheet escape and drag-tracking pass with `VERDICT: PASS`.
 - [ ] Manual smoke: open the "Open Project" sheet (image 2 reproducer); buttons visible below the original card frame.
 - [ ] Manual smoke: drag the card while the sheet is open; sheet visually tracks the card with no perceptible lag.

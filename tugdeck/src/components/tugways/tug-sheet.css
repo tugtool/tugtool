@@ -27,33 +27,50 @@ body {
   --tugx-sheet-space-b: 1.5rem;
 }
 
+/* ---- Canvas-tier wrapper (scrim host) ----
+ *
+ * Positioned via direct-DOM writes in TugSheetContent's applier effect
+ * ([L06] / [L22]). `position: fixed` and `pointer-events: auto` are set
+ * inline; the dialog tier z-index is the only token reference here so
+ * the sheet stacks above peer popups (popup 9200 / menu 9300) and the
+ * canvas overlay base (9000) but below in-dialog elevations (9500/9600).
+ *
+ * Sized to the card body (cardRect minus chrome height) so the visible
+ * scrim is clipped to the pane. The sheet panel lives in a separate
+ * sibling `.tug-sheet-clip` that extends past the wrapper.
+ */
+.tug-sheet-anchor {
+  z-index: var(--tug-z-overlay-dialog);
+}
+
 /* ---- Overlay (scrim) ---- */
 
 .tug-sheet-overlay {
   /* @tug-renders-on: --tugx-sheet-overlay-bg */
   background-color: var(--tugx-sheet-overlay-bg);
-  /* Scoped to the card — absolute positioning within .tug-pane-chrome */
+  /* Fills the canvas-tier wrapper. Wrapper covers the card body, so
+     the scrim is clipped to the pane. */
   position: absolute;
   inset: 0;
-  /* Sit below the card title bar */
-  top: var(--tug-chrome-height, 36px);
   /* Above card content, below sheet panel */
   z-index: 10;
   /* Base state: hidden. TugAnimator's fill:forwards holds the final opacity after each animation. */
   opacity: 0;
 }
 
-/* ---- Clip container — hides the sheet above the title bar line ---- */
-
+/* ---- Clip container — sibling of the wrapper ----
+ *
+ * Separate `position: fixed` element, top/left/width match the wrapper
+ * but height extends from the card body top down to the viewport
+ * bottom (set via direct-DOM write). Its `overflow: hidden` clips the
+ * sheet panel during the slide-in enter animation; the panel can grow
+ * past the wrapper's bottom edge (i.e., past the card) without
+ * disturbing the scrim, which is hosted by the wrapper above.
+ */
 .tug-sheet-clip {
-  position: absolute;
-  top: var(--tug-chrome-height, 36px);
-  left: 0;
-  right: 0;
-  bottom: 0;
   overflow: hidden;
-  z-index: 11;
-  pointer-events: none;
+  /* Above the wrapper so the panel paints above the scrim. */
+  z-index: var(--tug-z-overlay-dialog);
 }
 
 /* ---- Content panel (the sheet itself) ---- */
