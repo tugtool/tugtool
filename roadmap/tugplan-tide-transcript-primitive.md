@@ -399,17 +399,16 @@ happy-dom is suitable for all units in this plan: no `getBoundingClientRect`-bas
 - Updated `tugdeck/styles/themes/harmony.css` mirror with appropriate harmony color values.
 
 **Tasks:**
-- [ ] Add the seventeen tokens to `brio.css`. Place under a `/* Transcript primitive */` comment block.
-- [ ] Add the four per-participant icon-color overrides via `[data-participant="user|code|shell|command"]` selectors.
-- [ ] Mirror in `harmony.css`. Color values may differ; structural names match exactly.
-- [ ] Run `bun run audit:tokens lint`; resolve any seven-slot naming complaints.
+- [x] Add the eighteen tokens to `brio.css` under a `/* Transcript primitive */` comment block. Includes the four per-participant icon-color flavor slots (`--tugx-transcript-icon-color-{user|code|shell|command}`); the `[data-participant]` cascade that maps a flavor onto the active token is a component-CSS concern (lives in [Step 2](#step-2)'s `tug-transcript-entry.css`).
+- [x] Mirror in `harmony.css`. Structural names match exactly; values reference the same `var(--tug7-...)` base tokens, so per-theme color differences fall out automatically.
+- [x] Run `bun run audit:tokens lint`; resolve any seven-slot naming complaints. (No complaints — `--tugx-` extension prefix is exempt from seven-slot enforcement.)
 
 **Tests:**
-- [ ] `bun run audit:tokens lint` exits 0.
+- [x] `bun run audit:tokens lint` exits 0.
 
 **Checkpoint:**
-- [ ] `bun run audit:tokens lint`
-- [ ] `bun x tsc --noEmit`
+- [x] `bun run audit:tokens lint` — ✓ Zero violations.
+- [x] `bun x tsc --noEmit` — exit 0.
 
 ---
 
