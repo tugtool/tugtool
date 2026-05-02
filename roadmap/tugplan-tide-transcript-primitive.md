@@ -469,19 +469,19 @@ happy-dom is suitable for all units in this plan: no `getBoundingClientRect`-bas
 - One `registerCard({ componentId: "gallery-transcript-entry", contentFactory: (_cardId) => <GalleryTranscriptEntry />, defaultMeta: { title: "TugTranscriptEntry", icon: "MessageSquare", closable: true }, family: "developer", acceptsFamilies: ["developer"], sizePolicy: ..., category: ... })` entry in `gallery-registrations.tsx`.
 
 **Tasks:**
-- [ ] Author the gallery card. Pick the `sizePolicy` and `category` to match other transcript-class gallery cards (likely `GALLERY_COMPONENT_SIZE` and a Text/Display category).
-- [ ] Author module docstring stating the data is mock; live wire lands in a follow-up plan.
-- [ ] Add the registration entry alongside other text/display gallery cards.
-- [ ] Manual visual review: open `gallery-transcript-entry` in tugdeck; all four variants render with distinct icons, identifiers, vertical rhythm. Confirm against [D01]: no rounded per-row container, no left-vs-right alignment by speaker, no chat bubbles.
+- [x] Author the gallery card. `GALLERY_COMPONENT_SIZE` + `CATEGORIES.textInput` (Text Input & Display) — same shape and category as `gallery-markdown-view`.
+- [x] Author module docstring stating the data is mock; live wire lands in a follow-up plan.
+- [x] Add the registration entry alongside other text/display gallery cards (immediately after `gallery-markdown-1kb`).
+- [ ] Manual visual review: open `gallery-transcript-entry` in tugdeck; confirm against [D01] — no rounded per-row container, no left-vs-right alignment by speaker, no chat bubbles. **(User-driven; HMR picks up the changes.)**
 
 **Tests:**
-- [ ] Render-only smoke test: `<GalleryTranscriptEntry />` mounts without throwing in a happy-dom test.
+- [x] Render-only smoke test: `<GalleryTranscriptEntry />` mounts without throwing in happy-dom and produces four `data-slot="tug-transcript-entry"` rows in `["user", "code", "shell", "command"]` order. WASM is initialized synchronously in `beforeAll` because the embedded `<TugMarkdownView>` calls into `tugmark-wasm` on mount; this mirrors the existing tugmark-wasm logic-test pattern in `src/__tests__/`.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit`
-- [ ] `bun test`
-- [ ] `bun run audit:tokens lint`
-- [ ] Manual: open `gallery-transcript-entry` in tugdeck and visually review.
+- [x] `bun x tsc --noEmit` — exit 0.
+- [x] `bun test` — 2744 pass / 0 fail / 10775 expect() calls across 165 files.
+- [x] `bun run audit:tokens lint` — ✓ Zero violations.
+- [ ] Manual: open `gallery-transcript-entry` in tugdeck and visually review. **(User-driven.)**
 
 ---
 
@@ -491,19 +491,19 @@ happy-dom is suitable for all units in this plan: no `getBoundingClientRect`-bas
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] `tug-transcript-entry.tsx` and `.css` exist and conform to [component-authoring.md](../tuglaws/component-authoring.md).
-- [ ] All four participants render in the gallery card with distinct icons and identifiers.
-- [ ] Per-participant differences come exclusively from `[data-participant]` selectors on tokens — verified by `grep` audit on the TSX.
-- [ ] No `code-session-store` / `TugMarkdownView`-streaming / `tide-card` import in the primitive.
-- [ ] `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run` green.
-- [ ] Parent plan §step-9 row flips to "shipped"; the parent plan's Plan Status table is updated in this plan's final commit (or a fixup commit on the same branch).
+- [x] `tug-transcript-entry.tsx` and `.css` exist and conform to [component-authoring.md](../tuglaws/component-authoring.md).
+- [x] All four participants render in the gallery card with distinct icons and identifiers (verified by smoke test; visual differentiation pending manual review).
+- [x] Per-participant differences come exclusively from `[data-participant]` selectors on tokens — TSX has zero participant-specific render branches outside the `PARTICIPANT_ICONS` registry.
+- [x] No `code-session-store` / `TugMarkdownView`-streaming / `tide-card` import in the primitive.
+- [x] `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint` green. (Workspace `cargo nextest run` is unaffected — no Rust touched.)
+- [ ] Parent plan §step-9 row flips to "shipped"; the parent plan's Plan Status table is updated in a follow-up commit on the same branch after manual visual review.
 
 **Acceptance tests:**
-- [ ] DOM snapshot tests for each of the four participants pass.
-- [ ] Slot pass-through tests (`body`, `controls`) pass.
-- [ ] Optional-slot omission (`timestamp`, `controls`) tests pass.
-- [ ] Gallery card render-only smoke test passes.
-- [ ] Manual gallery visual review confirms [D01].
+- [x] DOM snapshot tests for each of the four participants pass.
+- [x] Slot pass-through tests (`body`, `controls`) pass.
+- [x] Optional-slot omission (`timestamp`, `controls`) tests pass.
+- [x] Gallery card render-only smoke test passes.
+- [ ] Manual gallery visual review confirms [D01]. **(User-driven.)**
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 

@@ -64,6 +64,7 @@ import { GalleryAlert } from "./gallery-alert";
 import { GallerySheet } from "./gallery-sheet";
 import { GalleryBulletin } from "./gallery-bulletin";
 import { GalleryMarkdownView } from "./gallery-markdown-view";
+import { GalleryTranscriptEntry } from "./gallery-transcript-entry";
 import { GalleryAtom } from "./gallery-atom";
 import { GalleryPromptEntry } from "./gallery-prompt-entry";
 import { GalleryTextEditor } from "./gallery-text-editor";
@@ -407,6 +408,16 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.textInput,
+  });
+
+  registerCard({
+    componentId: "gallery-transcript-entry",
+    contentFactory: (_cardId) => <GalleryTranscriptEntry />,
+    defaultMeta: { title: "TugTranscriptEntry", icon: "MessagesSquare", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
     category: CATEGORIES.textInput,
   });
 
