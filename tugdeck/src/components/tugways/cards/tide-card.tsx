@@ -475,6 +475,21 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
 
     void showSheet({
       title: "Open Project",
+      // Capture the cascade target at sheet-open time per
+      // `tugplan-tide-overlay-framework.md` [D02]. `cardId` is the
+      // card-host's responder id; the chain walk from `cardId`
+      // traverses `parentId` → the host pane's `stackId`, where
+      // `TUG_ACTIONS.CLOSE` is registered (`tug-pane.tsx`). We use
+      // `cardId` rather than the pane's `stackId` because:
+      //   1. `cardId` is in scope here without extra plumbing.
+      //   2. `cardId` is stable across cross-pane moves; pane
+      //      `stackId` changes on move (see `card-host.tsx:1412`).
+      // The cascade walk is dynamic (re-reads `parentId` at dispatch
+      // time), so a moved card still reaches its current pane's
+      // CLOSE handler. The hook itself doesn't consume this option;
+      // the consumer reads `cardId` from its own closure inside
+      // `onClosed` below — that's what makes the dispatch robust.
+      cascadeTargetId: cardId,
       content: (close) => (
         <TideProjectPickerForm
           notice={noticeRef.current}
@@ -525,9 +540,16 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
       // fired a fresh `fireRestore` which registers a new
       // expectation, so `TideCardContent` will re-render into
       // `TideRestoring` and the close-chain must not fire.
+      //
+      // Cascade dispatch via `sendToTarget(cardId, …)` per [D02]:
+      // first-responder state at this moment is fragile (it settles
+      // via the unregister fallback after FocusScope unmount, focusin
+      // handlers, and stale-focus re-promotion) and was the source of
+      // the cancel-cascade bug fixed here. `sendToTarget` walks
+      // `parentId` from a known node, independent of focus settling.
       onClosed: (result) => {
         if (result === "open" || result === "retry") return;
-        manager?.sendToFirstResponder({
+        manager?.sendToTarget(cardId, {
           action: TUG_ACTIONS.CLOSE,
           sender: senderId,
           phase: "discrete",

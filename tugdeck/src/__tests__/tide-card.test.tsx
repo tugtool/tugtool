@@ -99,9 +99,16 @@ import {
   type CardSessionBinding,
 } from "@/lib/card-session-binding-store";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
+import {
+  ResponderChainContext,
+  ResponderChainManager,
+  type ActionEvent,
+} from "@/components/tugways/responder-chain";
 import { TugPanePortalContext } from "@/components/chrome/tug-pane";
 import { FeedId } from "@/protocol";
 import { CardLifecycle, CardLifecycleContext } from "@/lib/card-lifecycle";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+import { waitFor } from "@testing-library/react";
 
 const CARD_ID = "tide-4bc-test";
 
@@ -566,5 +573,285 @@ describe("TideCardContent – binding gate and project picker", () => {
     expect(payload.project_dir).toBe("/work/gamma");
     expect(typeof payload.tug_session_id).toBe("string");
     expect(payload.tug_session_id.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-TIDE-08: Cancel-cascade dispatches CLOSE via sendToTarget(cardId)
+// ---------------------------------------------------------------------------
+
+/**
+ * Regression test for the cancel-cascade bug surfaced after the
+ * `tugplan-tide-popup-bindings.md` Step 2 sheet portal migration:
+ * canceling the picker no longer reliably closed the host card.
+ *
+ * Per `tugplan-tide-overlay-framework.md` [D02], the cascade dispatch
+ * captures the target id at sheet-open time and dispatches via
+ * `sendToTarget(cardId, ...)` — independent of `firstResponderId`,
+ * which settles unpredictably after FocusScope unmount and the
+ * responder unregister fallback. This test asserts:
+ *
+ *   1. The picker's `onClosed("cancel")` path dispatches via
+ *      `manager.sendToTarget(CARD_ID, { action: CLOSE, ... })` — NOT
+ *      `sendToFirstResponder`.
+ *   2. The dispatched action lands on a registered handler in the
+ *      cardId → parent walk (proving the chain reaches the pane's
+ *      CLOSE handler in production where `parentId` re-parents
+ *      cardId onto the pane's `stackId`).
+ */
+
+/**
+ * Resolve every captured WAAPI animation. Mirrors the helper in
+ * tug-sheet.test.tsx — the shared mock in setup-rtl.ts records
+ * animations but does not auto-resolve `.finished`.
+ */
+function resolveAllWaapiAnimations() {
+  const mock = (
+    global as unknown as {
+      __waapi_mock__: { calls: Array<{ resolve: () => void }>; reset: () => void };
+    }
+  ).__waapi_mock__;
+  for (const call of mock.calls) {
+    call.resolve();
+  }
+}
+
+describe("TideProjectPicker – cancel-cascade dispatches via sendToTarget", () => {
+  afterEach(() => {
+    const mock = (
+      global as unknown as { __waapi_mock__: { reset: () => void } }
+    ).__waapi_mock__;
+    mock.reset();
+  });
+
+  it("T-TIDE-08: Cancel button fires manager.sendToTarget(cardId, { CLOSE }) after exit animation", async () => {
+    const cardEl = document.createElement("div");
+    cardEl.className = "tug-pane-chrome";
+    const cardBody = document.createElement("div");
+    cardBody.className = "tug-pane-body";
+    cardEl.appendChild(cardBody);
+    document.body.appendChild(cardEl);
+
+    // Custom manager so we can spy on sendToTarget. Pre-register the
+    // card responder with a stub CLOSE handler — the production
+    // CardHost would normally register it under `parentId =
+    // hostStackId`, and the chain walk from cardId would land on the
+    // pane's CLOSE handler. For this unit test we collapse that into a
+    // single registered responder so the dispatch's terminal handler
+    // fires inside the test.
+    const manager = new ResponderChainManager();
+    const closeHandlerCalls: Array<{ action: string }> = [];
+    manager.register({
+      id: CARD_ID,
+      parentId: null,
+      actions: {
+        [TUG_ACTIONS.CLOSE]: (event) => {
+          closeHandlerCalls.push({ action: event.action });
+        },
+      },
+    });
+
+    // Spy on sendToTarget. We wrap the bound method so we record every
+    // call and still delegate to the real implementation. This is the
+    // load-bearing assertion — pre-fix tide-card called
+    // `sendToFirstResponder`, post-fix it calls `sendToTarget(cardId, …)`.
+    const sendToTargetCalls: Array<{
+      targetId: string;
+      action: string;
+      sender: unknown;
+    }> = [];
+    const originalSendToTarget = manager.sendToTarget.bind(manager) as (
+      targetId: string,
+      event: Omit<ActionEvent, "phase">,
+    ) => boolean;
+    manager.sendToTarget = ((
+      targetId: string,
+      event: Omit<ActionEvent, "phase">,
+    ): boolean => {
+      sendToTargetCalls.push({
+        targetId,
+        action: event.action,
+        sender: event.sender,
+      });
+      return originalSendToTarget(targetId, event);
+    }) as typeof manager.sendToTarget;
+
+    // Spy on sendToFirstResponder too, so we can assert the picker
+    // does NOT use the pre-fix dispatch path.
+    const sendToFirstResponderCalls: Array<{ action: string; sender: unknown }> = [];
+    const originalSendToFR = manager.sendToFirstResponder.bind(manager) as (
+      event: Omit<ActionEvent, "phase">,
+    ) => boolean;
+    manager.sendToFirstResponder = ((
+      event: Omit<ActionEvent, "phase">,
+    ): boolean => {
+      sendToFirstResponderCalls.push({
+        action: event.action,
+        sender: event.sender,
+      });
+      return originalSendToFR(event);
+    }) as typeof manager.sendToFirstResponder;
+
+    // Lifecycle harness identical to renderTideCard's; needed because
+    // the picker only presents on `cardDidActivate`.
+    const lifecycleStore = {
+      focusCard() {},
+      getFocusedCardId: () => CARD_ID,
+      getFirstResponderCardId: () => CARD_ID,
+    };
+    const lifecycle = new CardLifecycle(lifecycleStore);
+    lifecycle.notifyCardDidFinishConstruction(CARD_ID);
+
+    const rtl = render(
+      <CardLifecycleContext.Provider value={lifecycle}>
+        <ResponderChainContext.Provider value={manager}>
+          <TugPanePortalContext value={cardEl}>
+            <TideCardContent cardId={CARD_ID} />
+          </TugPanePortalContext>
+        </ResponderChainContext.Provider>
+      </CardLifecycleContext.Provider>,
+    );
+
+    // The picker sheet must be mounted before we can click Cancel.
+    await waitFor(() => {
+      expect(document.querySelector(".tug-sheet-content")).not.toBeNull();
+    });
+
+    const cancelButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>("button"),
+    ).find((b) => b.textContent?.trim() === "Cancel");
+    expect(cancelButton).toBeDefined();
+
+    act(() => {
+      fireEvent.click(cancelButton!);
+    });
+
+    // The hook's close path resolves the promise immediately, then
+    // dispatches cancelDialog through the chain. The sheet's handler
+    // flips internal open false, the exit animation runs, and once
+    // `g.finished` resolves, `mounted` flips false and `onClosed`
+    // fires — which is where the cascade dispatch lives.
+    await act(async () => {
+      resolveAllWaapiAnimations();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(
+        sendToTargetCalls.some(
+          (c) => c.targetId === CARD_ID && c.action === TUG_ACTIONS.CLOSE,
+        ),
+      ).toBe(true);
+    });
+
+    // The CLOSE handler we registered fires — the walk reached its
+    // terminus inside the chain.
+    expect(
+      closeHandlerCalls.some((e) => e.action === TUG_ACTIONS.CLOSE),
+    ).toBe(true);
+
+    // Pre-fix path is gone: the consumer must not use
+    // sendToFirstResponder for this dispatch (per [D02]).
+    expect(
+      sendToFirstResponderCalls.some((c) => c.action === TUG_ACTIONS.CLOSE),
+    ).toBe(false);
+
+    rtl.unmount();
+    if (cardEl.parentNode) cardEl.parentNode.removeChild(cardEl);
+  });
+
+  it("T-TIDE-08b: 'open' result does NOT dispatch the cascade close", async () => {
+    // Sanity: the cascade must remain gated on result. Selecting a
+    // project ('open') leaves the card mounted so the binding can
+    // flip it into the split-pane body when `spawn_session_ok`
+    // arrives. Asserting via the same sendToTarget spy.
+    const cardEl = document.createElement("div");
+    cardEl.className = "tug-pane-chrome";
+    const cardBody = document.createElement("div");
+    cardBody.className = "tug-pane-body";
+    cardEl.appendChild(cardBody);
+    document.body.appendChild(cardEl);
+
+    const manager = new ResponderChainManager();
+    manager.register({
+      id: CARD_ID,
+      parentId: null,
+      actions: {
+        [TUG_ACTIONS.CLOSE]: () => {},
+      },
+    });
+
+    const sendToTargetCalls: Array<{ targetId: string; action: string }> = [];
+    const originalSendToTarget = manager.sendToTarget.bind(manager) as (
+      targetId: string,
+      event: Omit<ActionEvent, "phase">,
+    ) => boolean;
+    manager.sendToTarget = ((
+      targetId: string,
+      event: Omit<ActionEvent, "phase">,
+    ): boolean => {
+      sendToTargetCalls.push({ targetId, action: event.action });
+      return originalSendToTarget(targetId, event);
+    }) as typeof manager.sendToTarget;
+
+    const lifecycleStore = {
+      focusCard() {},
+      getFocusedCardId: () => CARD_ID,
+      getFirstResponderCardId: () => CARD_ID,
+    };
+    const lifecycle = new CardLifecycle(lifecycleStore);
+    lifecycle.notifyCardDidFinishConstruction(CARD_ID);
+
+    const rtl = render(
+      <CardLifecycleContext.Provider value={lifecycle}>
+        <ResponderChainContext.Provider value={manager}>
+          <TugPanePortalContext value={cardEl}>
+            <TideCardContent cardId={CARD_ID} />
+          </TugPanePortalContext>
+        </ResponderChainContext.Provider>
+      </CardLifecycleContext.Provider>,
+    );
+
+    await waitFor(() => {
+      expect(document.querySelector(".tug-sheet-content")).not.toBeNull();
+    });
+
+    // Type a project path and submit so the picker calls
+    // `close("open")`. The Open path requires a valid path; the
+    // submit button reads from the controlled input.
+    const input = document.querySelector<HTMLInputElement>("input[type='text']");
+    expect(input).not.toBeNull();
+    act(() => {
+      fireEvent.change(input!, { target: { value: "/work/test-open" } });
+    });
+
+    const openButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>("button"),
+    ).find((b) => b.textContent?.trim() === "Open");
+    expect(openButton).toBeDefined();
+
+    act(() => {
+      fireEvent.click(openButton!);
+    });
+
+    await act(async () => {
+      resolveAllWaapiAnimations();
+      await Promise.resolve();
+    });
+
+    // `open` must NOT trigger the cascade CLOSE — only "cancel"
+    // (and Escape/Cmd+. which arrive as undefined) do.
+    await waitFor(() => {
+      // wait long enough for any onClosed to have fired
+      expect(document.querySelector(".tug-sheet-content")).toBeNull();
+    });
+    expect(
+      sendToTargetCalls.some(
+        (c) => c.targetId === CARD_ID && c.action === TUG_ACTIONS.CLOSE,
+      ),
+    ).toBe(false);
+
+    rtl.unmount();
+    if (cardEl.parentNode) cardEl.parentNode.removeChild(cardEl);
   });
 });

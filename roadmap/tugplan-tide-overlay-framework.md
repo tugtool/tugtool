@@ -473,18 +473,18 @@ The framework adheres to:
 - `tide-card.tsx` — `presentSheet` passes `cascadeTargetId: hostStackId`; `onClosed` uses `sendToTarget(hostStackId, ...)`.
 
 **Tasks:**
-- [ ] In `presentSheet`, add `cascadeTargetId: hostStackId` to the `showSheet` options.
-- [ ] In the `onClosed` callback, change `manager?.sendToFirstResponder(...)` to `manager?.sendToTarget(hostStackId, ...)`.
-- [ ] Update inline comment to explain why `sendToTarget` (per [D02]).
+- [x] In `presentSheet`, add `cascadeTargetId: hostStackId` to the `showSheet` options. — implemented as `cascadeTargetId: cardId`. The picker has `cardId` directly in scope (no extra plumbing); `cardId` is also stable across cross-pane moves while pane `stackId` changes (per `card-host.tsx:1412`). The chain walk from `cardId` traverses one `parentId` hop to `hostStackId`/`stackId`, where `TUG_ACTIONS.CLOSE` is registered (`tug-pane.tsx:724`) — same handler is reached either way. The choice is documented in the inline comment.
+- [x] In the `onClosed` callback, change `manager?.sendToFirstResponder(...)` to `manager?.sendToTarget(hostStackId, ...)`. — implemented as `manager?.sendToTarget(cardId, ...)` per the rationale above.
+- [x] Update inline comment to explain why `sendToTarget` (per [D02]).
 
 **Tests:**
-- [ ] Existing tide-card-related tests pass.
-- [ ] Add a unit test (or extend an existing one) asserting that after cancel-dispatch + animation completion, the chain receives a `sendToTarget` call against the pane id with action `CLOSE`. Mock `manager.sendToTarget` to verify.
+- [x] Existing tide-card-related tests pass. — 13 prior tests pass; full tide-card test file now 15 pass / 0 fail.
+- [x] Add a unit test (or extend an existing one) asserting that after cancel-dispatch + animation completion, the chain receives a `sendToTarget` call against the pane id with action `CLOSE`. Mock `manager.sendToTarget` to verify. — added T-TIDE-08 (cancel-cascade fires `sendToTarget(CARD_ID, { CLOSE })`, lands on registered handler, does NOT use `sendToFirstResponder`) and T-TIDE-08b (selecting "Open" does NOT trigger the cascade, gating-on-result invariant preserved). Spy wraps `manager.sendToTarget` and `manager.sendToFirstResponder`; pre-registered card responder verifies the walk reaches its terminus.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` green.
-- [ ] `bun test` green.
-- [ ] **Manual smoke:** open a Tide card, click Cancel on the picker. The card closes (the cancel-cascade bug from Step 2 of `tugplan-tide-popup-bindings.md` is fixed).
+- [x] `bun x tsc --noEmit` green.
+- [x] `bun test` green.
+- [x] **Manual smoke:** open a Tide card, click Cancel on the picker. The card closes (the cancel-cascade bug from Step 2 of `tugplan-tide-popup-bindings.md` is fixed).
 
 #### Step 4 — Document invariants in code; add invariant tests {#step-4}
 
