@@ -22,9 +22,12 @@ import type { TugPushButtonProps } from "@/components/tugways/tug-push-button";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
+import { TugPopupButton } from "@/components/tugways/tug-popup-button";
+import type { TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
 const labelStyle: React.CSSProperties = {
   fontSize: "0.75rem",
@@ -181,6 +184,19 @@ export function GallerySheet() {
                     placeholder="Optional description"
                   />
                 </div>
+                {/*
+                 * SheetPopupContent — TugPopupButton inside this
+                 * sheet exercises [D09] popup-in-sheet z-tier
+                 * elevation. The menu portals to the canvas overlay
+                 * root just like the sheet itself, but consumes
+                 * TugSheetStackingContext (provided by TugSheetContent)
+                 * to apply `tug-menu-in-dialog` and swap to the
+                 * elevated --tug-z-overlay-menu-in-dialog token.
+                 *
+                 * Also serves as the deterministic fixture for the
+                 * at0057 / at0058 app-tests.
+                 */}
+                <SheetPopupContent />
               </div>
               <div className="tug-sheet-actions">
                 <SheetCloseButton emphasis="outlined">Cancel</SheetCloseButton>
@@ -298,7 +314,54 @@ export function GallerySheet() {
         </div>
       </div>
 
+      <TugSeparator />
+
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SheetPopupContent — TugPopupButton inside a sheet for [D09] demo.
+// ---------------------------------------------------------------------------
+
+const COLOR_OPTIONS: TugPopupButtonItem<string>[] = [
+  { action: TUG_ACTIONS.SET_VALUE, value: "red", label: "Red" },
+  { action: TUG_ACTIONS.SET_VALUE, value: "green", label: "Green" },
+  { action: TUG_ACTIONS.SET_VALUE, value: "blue", label: "Blue" },
+];
+
+function SheetPopupContent() {
+  const colorSenderId = React.useId();
+  const [color, setColor] = React.useState<string>("red");
+
+  const setValueStringBindings = useMemo(
+    () => ({
+      [colorSenderId]: (value: string) => setColor(value),
+    }),
+    [colorSenderId],
+  );
+
+  const { ResponderScope, responderRef } = useResponderForm({
+    setValueString: setValueStringBindings,
+  });
+
+  return (
+    <ResponderScope>
+      <div
+        style={fieldRowStyle}
+        ref={responderRef as (el: HTMLDivElement | null) => void}
+      >
+        <label style={fieldLabelStyle}>
+          Color (selected: <code data-testid="sheet-popup-color-readout">{color}</code>)
+        </label>
+        <TugPopupButton
+          label={color.charAt(0).toUpperCase() + color.slice(1)}
+          items={COLOR_OPTIONS}
+          senderId={colorSenderId}
+          size="sm"
+        />
+      </div>
+    </ResponderScope>
   );
 }
 

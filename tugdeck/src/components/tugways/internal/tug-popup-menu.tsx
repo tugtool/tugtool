@@ -48,11 +48,14 @@
 
 import "../tug-menu.css";
 
-import React, { useLayoutEffect, useRef, useState } from "react";
+import React, { useContext, useLayoutEffect, useRef, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import { animate } from "@/components/tugways/tug-animator";
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
+import { useServicePopupBinding } from "@/components/tugways/use-service-popup-binding";
+import { TugSheetStackingContext } from "@/components/tugways/tug-sheet-stacking-context";
+import { cn } from "@/lib/utils";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 
 // ---- Types ----
@@ -166,6 +169,20 @@ export function TugPopupMenu({
 }: TugPopupMenuProps) {
   const overlayRoot = useCanvasOverlay();
 
+  // Popup-in-sheet z-tier elevation per [D09]. When the menu's React
+  // tree is rendered inside a `<TugSheetContent>`, the sheet provides
+  // `TugSheetStackingContext` with value `true`; we tag the portaled
+  // content so its CSS class swaps to the elevated `--tug-z-overlay-
+  // menu-in-dialog` token. Outside any sheet the context is `false`
+  // (default) and stacking is unchanged.
+  const inDialog = useContext(TugSheetStackingContext);
+
+  // Service-popup close-focus binding per [D06]/[D07]. captureOnOpen
+  // snapshots first responder when the menu opens; onCloseAutoFocus
+  // restores it when the menu closes (unless the user clicked outside
+  // any popup, in which case Radix's default close-focus path runs).
+  const { captureOnOpen, onCloseAutoFocus } = useServicePopupBinding();
+
   // Tracks whether a blink animation is in progress to guard against re-entrant calls.
   const blinkingRef = useRef(false);
 
@@ -175,6 +192,14 @@ export function TugPopupMenu({
   // those all continue to flow through Radix's internal open handlers
   // back into our setOpen via onOpenChange.
   const [open, setOpen] = useState(defaultOpen);
+
+  // captureOnOpen() must run as soon as the menu is asked to open,
+  // before Radix's FocusScope grabs DOM focus and overwrites
+  // first-responder semantics. [D06] / [D07] / (#service-binding).
+  function handleOpenChange(next: boolean): void {
+    if (next) captureOnOpen();
+    setOpen(next);
+  }
 
   // Chain manager — null when rendered outside a ResponderChainProvider
   // (standalone previews, unit tests that don't mount a provider). In
@@ -310,7 +335,7 @@ export function TugPopupMenu({
             </DropdownMenuPrimitive.SubTrigger>
             <DropdownMenuPrimitive.Portal container={overlayRoot}>
               <DropdownMenuPrimitive.SubContent
-                className="tug-menu-content"
+                className={cn("tug-menu-content", inDialog && "tug-menu-in-dialog")}
                 sideOffset={4}
               >
                 {renderEntries(entry.items, `${keyPrefix}-sub-${idx}`)}
@@ -339,16 +364,17 @@ export function TugPopupMenu({
   }
 
   return (
-    <DropdownMenuPrimitive.Root open={open} onOpenChange={setOpen}>
+    <DropdownMenuPrimitive.Root open={open} onOpenChange={handleOpenChange}>
       <DropdownMenuPrimitive.Trigger asChild>
         {trigger}
       </DropdownMenuPrimitive.Trigger>
       <DropdownMenuPrimitive.Portal container={overlayRoot}>
         <DropdownMenuPrimitive.Content
-          className="tug-menu-content"
+          className={cn("tug-menu-content", inDialog && "tug-menu-in-dialog")}
           align={align}
           sideOffset={sideOffset}
           data-testid={dataTestId}
+          onCloseAutoFocus={onCloseAutoFocus}
         >
           {renderEntries(items, "root")}
         </DropdownMenuPrimitive.Content>

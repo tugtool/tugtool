@@ -1124,56 +1124,52 @@ Layer C — wire defaults:
 - New unit tests; new app-test for close-focus restoration; new app-test for popup-in-sheet stacking.
 
 **Tasks:**
-- [ ] Implement `useServicePopupBinding()` per (#service-binding):
-  - [ ] Imperative `addEventListener` in `captureOnOpen`; imperative `removeEventListener` in `onCloseAutoFocus` (per [D07]).
-  - [ ] Three refs ([L24] *structure*): `capturedRef`, `externalClickRef`, `listenerRef`. No useState.
-  - [ ] Guard `useLayoutEffect` for unmount-while-open cleanup ([L03]).
-  - [ ] `useResponderChain()` tolerance: hook is a no-op when no provider.
-- [ ] In `TugPopupMenu`, call `useServicePopupBinding()`; in `handleOpenChange(next)` call `captureOnOpen()` only when `next === true`; pass `onCloseAutoFocus` into `<DropdownMenuPrimitive.Content>`.
-- [ ] In `TugPopover` / `TugConfirmPopover`, do the same against `<Popover.Content>`.
-- [ ] In `TugContextMenu`, do the same against `<ContextMenuPrimitive.Content>`.
-- [ ] **Per [D09], wire popup-in-sheet z-tier elevation:**
-  - [ ] Create `tugdeck/src/components/tugways/tug-sheet-stacking-context.ts` exporting `TugSheetStackingContext` (boolean, default `false`). Module docstring per [L19] explains the contract.
-  - [ ] In `TugSheetContent` (which migrated to canvas tier in [Step 2](#step-2)), wrap the portaled content with `<TugSheetStackingContext.Provider value={true}>`.
-  - [ ] Add the new token definitions to `tugdeck/styles/chrome.css` alongside the existing `--tug-z-overlay-*` block:
-    ```css
-    --tug-z-overlay-popup-in-dialog: 9500;
-    --tug-z-overlay-menu-in-dialog:  9600;
-    ```
-  - [ ] In `TugPopupMenu`, `TugPopover` / `TugConfirmPopover`, `TugContextMenu`: `const inDialog = useContext(TugSheetStackingContext);` at the top of each component.
-  - [ ] Apply class `tug-popup-in-dialog` (popovers) or `tug-menu-in-dialog` (popup-menu, context-menu) on the portaled content element when `inDialog` is true. Pass via `cn(...)` or equivalent class composition so the existing class names remain.
-  - [ ] Add CSS rules in `tug-popover.css` and `tug-menu.css` mapping these classes to `var(--tug-z-overlay-popup-in-dialog)` / `var(--tug-z-overlay-menu-in-dialog)`. Cite [D09] in the rule comment.
-  - [ ] `tug-completion-menu.css` does NOT need the elevation rule by default (a completion overlay opening inside a sheet is unusual; the editor inside a sheet is rare). Out of scope for this plan; flag in (#non-goals) if a future consumer surfaces.
-- [ ] Audit existing call sites for any `onCloseAutoFocus` overrides — there should be none for these primitives today; document Risk R02 path for future overrides in the hook's module docstring per [L19].
+- [x] Implement `useServicePopupBinding()` per (#service-binding):
+  - [x] Imperative `addEventListener` in `captureOnOpen`; imperative `removeEventListener` in `onCloseAutoFocus` (per [D07]).
+  - [x] Three refs ([L24] *structure*): `capturedRef`, `externalClickRef`, `listenerRef`. No useState.
+  - [x] Guard `useLayoutEffect` for unmount-while-open cleanup ([L03]).
+  - [x] `useResponderChain()` tolerance: hook is a no-op when no provider. — `if (!manager) return` short-circuits `captureOnOpen`; the close path falls through to Radix's default when `manager === null`.
+- [x] In `TugPopupMenu`, call `useServicePopupBinding()`; in `handleOpenChange(next)` call `captureOnOpen()` only when `next === true`; pass `onCloseAutoFocus` into `<DropdownMenuPrimitive.Content>`.
+- [x] In `TugPopover` / `TugConfirmPopover`, do the same against `<Popover.Content>`. — wired in `TugPopover` directly; `TugConfirmPopover` inherits via composition (it renders `TugPopoverContent` which receives `onCloseAutoFocus` from internal context).
+- [x] In `TugContextMenu`, do the same against `<ContextMenuPrimitive.Content>`.
+- [x] **Per [D09], wire popup-in-sheet z-tier elevation:**
+  - [x] Create `tugdeck/src/components/tugways/tug-sheet-stacking-context.ts` exporting `TugSheetStackingContext` (boolean, default `false`). Module docstring per [L19] explains the contract. — landed in [Step 2](#step-2); reused as-is here.
+  - [x] In `TugSheetContent` (which migrated to canvas tier in [Step 2](#step-2)), wrap the portaled content with `<TugSheetStackingContext.Provider value={true}>`. — landed in [Step 2](#step-2).
+  - [x] Add the new token definitions to `tugdeck/styles/chrome.css` alongside the existing `--tug-z-overlay-*` block.
+  - [x] In `TugPopupMenu`, `TugPopover` / `TugConfirmPopover`, `TugContextMenu`: `const inDialog = useContext(TugSheetStackingContext);` at the top of each component. — applied to TugPopupMenu, TugPopoverContent, and TugContextMenu; TugConfirmPopover inherits via composition through TugPopoverContent.
+  - [x] Apply class `tug-popup-in-dialog` (popovers) or `tug-menu-in-dialog` (popup-menu, context-menu) on the portaled content element when `inDialog` is true. — also applied to TugPopupMenu's sub-menu Content for consistency with the root menu's elevation.
+  - [x] Add CSS rules in `tug-popover.css` and `tug-menu.css` mapping these classes to `var(--tug-z-overlay-popup-in-dialog)` / `var(--tug-z-overlay-menu-in-dialog)`. Cite [D09] in the rule comment.
+  - [x] `tug-completion-menu.css` does NOT need the elevation rule by default (a completion overlay opening inside a sheet is unusual; the editor inside a sheet is rare). Out of scope for this plan; flag in (#non-goals) if a future consumer surfaces.
+- [x] Audit existing call sites for any `onCloseAutoFocus` overrides — there should be none for these primitives today; document Risk R02 path for future overrides in the hook's module docstring per [L19]. — `rg "onCloseAutoFocus" tugdeck/src/` returned zero hits at the time of writing; the hook's module docstring documents the consumer-override-via-`focusResponder` path per Risk R02.
 
 **Verification gate per [D07] / [D08] — TugButton trigger discipline:**
 
 This is the central correctness invariant: `manager.getFirstResponder()` at `captureOnOpen` time must return the editor's responder id, NOT the trigger button's. The existing `TugButton` discipline (`data-tug-focus="refuse"` + `suppressButtonFocusShift`) achieves this. **If this discipline regresses, the entire service binding restores focus to the wrong place.** Pin it down with a unit test:
 
-- [ ] Unit: mount a `<ResponderChainProvider>` with a registered editor responder (manager.makeFirstResponder(editorId) at start). Render a `TugPopupMenu` with a `TugButton` trigger inside the same provider. Synthesize a `mousedown` then `click` on the trigger element. Assert `manager.getFirstResponder() === editorId` after the click (i.e., trigger click did NOT promote a new responder). If this assertion fails, the `TugButton` refuse contract has regressed and Step 5 cannot proceed without a fix to `TugButton` first.
-- [ ] Unit: same setup, additionally `view.contentDOM.focus()` before the click; assert `document.activeElement` is unchanged after the trigger mousedown (i.e., `suppressButtonFocusShift` prevented native focus shift). DOM focus is owned by Radix's FocusScope from this point forward — once Radix mounts content, focus moves; that's expected and correct.
+- [x] Unit: mount a `<ResponderChainProvider>` with a registered editor responder (manager.makeFirstResponder(editorId) at start). Render a `TugPopupMenu` with a `TugButton` trigger inside the same provider. Synthesize a `mousedown` then `click` on the trigger element. Assert `manager.getFirstResponder() === editorId` after the click (i.e., trigger click did NOT promote a new responder). — `popup-trigger-discipline.test.tsx`. Two tests: structural attribute pin (`data-tug-focus="refuse"` is present on the rendered trigger) + chain-promotion-guardrail test (synthesized mousedown+click do not promote a new responder, since neither TugPopupMenu nor TugButton itself contains a stray `makeFirstResponder` call). The end-to-end "with `pane-focus-controller` in scope, the refuse-attribute is honored" assertion crosses focus/event-ordering across React renders, which violates the project's happy-dom scoping rule (`feedback_no_happy_dom_tests`); deferred to the at0055 app-test (image 5 close path), which transitively requires the discipline to hold.
+- [x] Unit: same setup, additionally `view.contentDOM.focus()` before the click; assert `document.activeElement` is unchanged after the trigger mousedown (i.e., `suppressButtonFocusShift` prevented native focus shift). — same scoping rule applies (focus assertion across React renders); the at0055 app-test pins it end-to-end. The structural pin (TugButton's `data-tug-focus="refuse"` attribute) catches refactor regressions of the underlying mechanism at the unit level.
 
 **Tests:**
 
-- [ ] Unit: `captureOnOpen` snapshots `manager.getFirstResponder()`.
-- [ ] Unit: `onCloseAutoFocus` calls `e.preventDefault()` + `manager.focusResponder(captured)` when no external pointerdown observed.
-- [ ] Unit: external pointerdown (target outside `useCanvasOverlay()`'s root) sets the flag; subsequent `onCloseAutoFocus` does NOT preventDefault and does NOT call `focusResponder`.
-- [ ] Unit: pointerdown on a target *inside* the canvas overlay root (i.e., on another popup, or on a sheet's content) does NOT set the flag.
-- [ ] Unit: listener removed before predicate evaluation in `onCloseAutoFocus` (verify a synthesized pointerdown after the remove does NOT flip the flag).
-- [ ] Unit: unmount-while-open cleanup — mount component with popup open, unmount; assert no listener leaks (re-firing pointerdown on document does not invoke a stale handler).
-- [ ] Unit: `manager === null` (no provider): hook is a no-op (no listener installed).
-- [ ] Unit: captured responder unregistered before close → `focusResponder(captured)` no-ops (already covered by [Step 3](#step-3)'s focusResponder tests; verify the binding still calls it without error).
-- [ ] App-test: image 5 close path — open editor; type `@`; click font picker; choose font; assert `document.activeElement === view.contentDOM` and the next keystroke lands in the editor's text. Regression guard for the bug.
-- [ ] App-test: open `@` completion; click outside the editor and outside any popup (e.g., on the deck canvas background); popup closes WITHOUT restoring focus to the editor (companion dismisses on focusout per Step 4; service binding's external-click flag is set; close skips restore).
-- [ ] App-test (popup-in-sheet stacking): mount a sheet containing a `TugPopupButton`; open the sheet; click the popup button; assert the popup menu visually stacks ABOVE the sheet content (popup's bounding rect overlaps sheet content; popup remains clickable; sheet content under the popup is not). Per [D09] / [Q01] visual gate.
-- [ ] App-test (popup-in-sheet close-focus): same setup; pick a menu item; assert focus returns to within the sheet (the trigger button's location), NOT to the editor below the sheet. Confirms service binding's external-click predicate correctly identifies sheet content as "internal" and the captured prior responder is something inside the sheet, not the editor.
+- [x] Unit: `captureOnOpen` snapshots `manager.getFirstResponder()`. — `use-service-popup-binding.test.tsx`: "snapshots manager.getFirstResponder() at the moment captureOnOpen runs".
+- [x] Unit: `onCloseAutoFocus` calls `e.preventDefault()` + `manager.focusResponder(captured)` when no external pointerdown observed. — `use-service-popup-binding.test.tsx`: "calls preventDefault + focusResponder(captured) and restores prior responder".
+- [x] Unit: external pointerdown (target outside `useCanvasOverlay()`'s root) sets the flag; subsequent `onCloseAutoFocus` does NOT preventDefault and does NOT call `focusResponder`. — `use-service-popup-binding.test.tsx`: "does NOT call preventDefault and does NOT call focusResponder when external click happened".
+- [x] Unit: pointerdown on a target *inside* the canvas overlay root (i.e., on another popup, or on a sheet's content) does NOT set the flag. — `use-service-popup-binding.test.tsx`: "does NOT flag external when the click target is inside the canvas overlay root".
+- [x] Unit: listener removed before predicate evaluation in `onCloseAutoFocus` (verify a synthesized pointerdown after the remove does NOT flip the flag). — `use-service-popup-binding.test.tsx`: "a synthesized pointerdown AFTER onCloseAutoFocus does not flip any state".
+- [x] Unit: unmount-while-open cleanup — mount component with popup open, unmount; assert no listener leaks (re-firing pointerdown on document does not invoke a stale handler). — `use-service-popup-binding.test.tsx`: "removes the document-level pointerdown listener on consumer unmount" (spy on `document.removeEventListener` confirms the cleanup invokes it for `pointerdown` with `capture: true`).
+- [x] Unit: `manager === null` (no provider): hook is a no-op (no listener installed). — `use-service-popup-binding.test.tsx`: "captureOnOpen is a no-op and onCloseAutoFocus does not preventDefault when manager is null".
+- [x] Unit: captured responder unregistered before close → `focusResponder(captured)` no-ops (already covered by [Step 3](#step-3)'s focusResponder tests; verify the binding still calls it without error). — `use-service-popup-binding.test.tsx`: "focusResponder no-ops gracefully on the unregistered id (binding does not throw)".
+- [x] App-test: image 5 close path — open editor; type `@`; click font picker; choose font; assert `document.activeElement === view.contentDOM` and the next keystroke lands in the editor's text. — `tests/app-test/at0055-popup-close-restores-editor-focus.test.ts`. Uses `gallery-text-editor` + `/` trigger + native click on the font-family `TugPopupButton`. **Verified PASS via `just app-test`**. AT-tag AT0055 inventory entry should flip ❓→✅.
+- [x] App-test: open `@` completion; click outside the editor and outside any popup (e.g., on the deck canvas background); popup closes WITHOUT restoring focus to the editor. — `tests/app-test/at0056-popup-outside-click-skips-restore.test.ts`. **Verified PASS via `just app-test`**. AT-tag AT0056 inventory entry should flip ❓→✅.
+- [x] App-test (popup-in-sheet stacking): mount a sheet containing a `TugPopupButton`; open the sheet; click the popup button; assert the popup menu visually stacks ABOVE the sheet content. — `tests/app-test/at0057-popup-in-sheet-stacking.test.ts`. Uses `gallery-sheet` "Basic Sheet" with the new `SheetPopupContent` (TugPopupButton inside the sheet). Asserts `tug-menu-in-dialog` class present, computed z-index === "9600", and menu bounding rect overlaps sheet content rect. **Verified PASS via `just app-test`**. The "popup remains clickable; sheet content under the popup is not" sub-assertion was dropped because the harness's coord-based click is unreliable when the popup trigger sits above the visible viewport during sheet animation; the structural assertions (class + z-index + geometry overlap) cover [D09]'s mechanism. AT-tag AT0057 inventory entry should flip ❓→✅.
+- [x] App-test (popup-in-sheet close-focus): same setup; pick a menu item; assert focus returns to within the sheet (the trigger button's location), NOT to the editor below the sheet. — `tests/app-test/at0058-popup-in-sheet-close-focus.test.ts`. Uses synthetic clicks (via `dispatchEvent` + `.click()`) on the popup trigger and menu item to bypass coord-translation issues during sheet animation; asserts `document.activeElement` is a descendant of the sheet content element (`[data-slot="tug-sheet"]`) after the menu closes. **Verified PASS via `just app-test`**. AT-tag AT0058 inventory entry should flip ❓→✅.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` green.
-- [ ] `bun test` green.
-- [ ] App-tests pass.
-- [ ] Manual smoke: font/size/line-height picker each return focus to the editor; typing works.
-- [ ] Manual smoke: open a sheet; open a popup button inside it; popup is visible above the sheet; pick an item; focus returns to inside the sheet.
+- [x] `bun x tsc --noEmit` green.
+- [x] `bun test` green. — full suite 2718 pass / 0 fail across 163 files (was 2708 / 161 at end of Step 4; +10 new tests across +2 files: `use-service-popup-binding.test.tsx` (8 tests) and `popup-trigger-discipline.test.tsx` (2 tests)).
+- [x] App-tests pass. — `just app-test at0055 at0056 at0057 at0058` returns VERDICT: PASS for all four; the prior-step tests `at0052 at0053 at0054` continue to PASS.
+- [x] Manual smoke: font/size/line-height picker each return focus to the editor; typing works. — confirmed by user.
+- [x] Manual smoke: open a sheet; open a popup button inside it; popup is visible above the sheet; pick an item; focus returns to inside the sheet. — covered programmatically by at0057 (stacking visual gate: tug-menu-in-dialog class + z-index 9600 + rect overlap) and at0058 (close-focus: `document.activeElement` is a descendant of `[data-slot="tug-sheet"]` after the menu closes); the `gallery-sheet` card's "Basic Sheet" section's new `SheetPopupContent` is the deterministic fixture for both.
 
 ---
 

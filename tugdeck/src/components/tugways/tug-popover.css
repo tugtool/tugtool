@@ -52,6 +52,15 @@ body {
   transform-origin: var(--radix-popover-content-transform-origin);
 }
 
+/* Popup-in-sheet z-tier elevation per [D09]. When TugPopover is rendered
+   inside a `<TugSheetContent>`, the consumer (TugPopoverContent) reads
+   `TugSheetStackingContext` and adds `tug-popup-in-dialog` to the
+   portaled content. The class wins over the base z-index because it
+   appears later in the cascade for elements with the same specificity. */
+.tug-popover-content.tug-popup-in-dialog {
+  z-index: var(--tug-z-overlay-popup-in-dialog);
+}
+
 /* Enter animation */
 .tug-popover-content[data-state="open"] {
   animation: tug-popover-enter calc(150ms * var(--tug-timing, 1)) ease;

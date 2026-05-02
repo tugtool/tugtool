@@ -236,6 +236,17 @@ body {
   z-index: var(--tug-z-overlay-menu);
 }
 
+/* Popup-in-sheet z-tier elevation per [D09]. When TugPopupMenu /
+   TugContextMenu are rendered inside a `<TugSheetContent>`, they read
+   `TugSheetStackingContext` and add `tug-menu-in-dialog` to the
+   portaled content. The class wins over the base z-index because it
+   appears later in the cascade for elements with the same specificity.
+   Mirrors the menu-above-popup ordering for nested cases (a popover
+   that opens a menu inside a sheet keeps menu > popup). */
+.tug-menu-content.tug-menu-in-dialog {
+  z-index: var(--tug-z-overlay-menu-in-dialog);
+}
+
 /* ============================================================================
    Menu Items
    ============================================================================ */

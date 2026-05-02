@@ -42,10 +42,13 @@
 
 import "./tug-menu.css";
 
-import React, { useCallback, useId, useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useContext, useId, useLayoutEffect, useRef, useState } from "react";
 import * as ContextMenuPrimitive from "@radix-ui/react-context-menu";
 import { playMenuItemBlink } from "@/components/tugways/tug-menu-item-blink";
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
+import { useServicePopupBinding } from "@/components/tugways/use-service-popup-binding";
+import { TugSheetStackingContext } from "@/components/tugways/tug-sheet-stacking-context";
+import { cn } from "@/lib/utils";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import type { TugAction } from "./action-vocabulary";
 import { useControlDispatch } from "./use-control-dispatch";
@@ -166,6 +169,17 @@ export function TugContextMenu<V extends TugContextMenuItemPayload = never>({
 }: TugContextMenuProps<V>) {
   const overlayRoot = useCanvasOverlay();
 
+  // Popup-in-sheet z-tier elevation per [D09]. When the menu's React
+  // tree is rendered inside a `<TugSheetContent>`, the sheet provides
+  // `TugSheetStackingContext` with `true`; we tag the portaled content
+  // so its CSS class swaps to `--tug-z-overlay-menu-in-dialog`.
+  const inDialog = useContext(TugSheetStackingContext);
+
+  // Service-popup close-focus binding per [D06] / [D07]. captureOnOpen
+  // is called from `handleOpenChangeForBinding` when next is true;
+  // onCloseAutoFocus is passed to Radix's Content prop.
+  const { captureOnOpen, onCloseAutoFocus } = useServicePopupBinding();
+
   // Guards against re-entrant blink calls during animation. Also used by
   // the observeDispatch observer to skip dismissal while the menu is
   // dispatching its own action (so the blink can finish before close).
@@ -175,6 +189,16 @@ export function TugContextMenu<V extends TugContextMenuItemPayload = never>({
   // uncontrolled (no open/defaultOpen props), but onOpenChange still fires
   // so we can gate the observeDispatch effect on open.
   const [open, setOpen] = useState(false);
+
+  // Wrap setOpen so captureOnOpen() runs before Radix's FocusScope
+  // mounts. [D06] / [D07] / (#service-binding).
+  const handleOpenChangeForBinding = useCallback(
+    (next: boolean): void => {
+      if (next) captureOnOpen();
+      setOpen(next);
+    },
+    [captureOnOpen],
+  );
 
   // Chain manager for observeDispatch subscription. Null outside a provider.
   const manager = useResponderChain();
@@ -234,14 +258,15 @@ export function TugContextMenu<V extends TugContextMenuItemPayload = never>({
   );
 
   return (
-    <ContextMenuPrimitive.Root onOpenChange={setOpen}>
+    <ContextMenuPrimitive.Root onOpenChange={handleOpenChangeForBinding}>
       <ContextMenuPrimitive.Trigger asChild>
         {children}
       </ContextMenuPrimitive.Trigger>
       <ContextMenuPrimitive.Portal container={overlayRoot}>
         <ContextMenuPrimitive.Content
           data-slot="tug-context-menu"
-          className="tug-menu-content"
+          className={cn("tug-menu-content", inDialog && "tug-menu-in-dialog")}
+          onCloseAutoFocus={onCloseAutoFocus}
         >
           {items.map((entry, index) => {
             if (entry.type === "separator") {

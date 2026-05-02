@@ -14,21 +14,34 @@
  * (tug-banner.css uses 99000+) and bulletins so a connection-loss
  * banner visually outranks a completion menu.
  *
- * Members: tooltip < popup < menu < dialog. Numerically gapped so
- * future intermediate tiers can slot in without renumbering.
+ * Members: tooltip < popup < menu < dialog < popup-in-dialog <
+ * menu-in-dialog. Numerically gapped so future intermediate tiers
+ * can slot in without renumbering.
  *
- *   --tug-z-overlay-base    — the root <CanvasOverlayRoot /> div
- *   --tug-z-overlay-tooltip — TugTooltip
- *   --tug-z-overlay-popup   — TugPopover, TugCompletionMenu
- *   --tug-z-overlay-menu    — TugContextMenu, TugPopupMenu, TugMenu
- *   --tug-z-overlay-dialog  — modal-ish overlays (placeholder)
+ *   --tug-z-overlay-base             — the root <CanvasOverlayRoot /> div
+ *   --tug-z-overlay-tooltip          — TugTooltip
+ *   --tug-z-overlay-popup            — TugPopover, TugCompletionMenu
+ *   --tug-z-overlay-menu             — TugContextMenu, TugPopupMenu, TugMenu
+ *   --tug-z-overlay-dialog           — TugSheet (canvas-tier sheet)
+ *   --tug-z-overlay-popup-in-dialog  — TugPopover opened inside a sheet [D09]
+ *   --tug-z-overlay-menu-in-dialog   — TugPopupMenu / TugContextMenu inside a sheet [D09]
+ *
+ * The two `*-in-dialog` tiers preserve the menu-above-popup ordering
+ * inside dialogs (`menu-in-dialog` 9600 > `popup-in-dialog` 9500) and
+ * sit above the sheet's 9400 so a popup opened from a control inside a
+ * sheet visually stacks above the sheet content. Consumers opt in via
+ * `TugSheetStackingContext`; popup-class primitives apply the
+ * `tug-popup-in-dialog` / `tug-menu-in-dialog` class to their portaled
+ * content when the context is `true`.
  */
 :root {
-  --tug-z-overlay-base:    9000;
-  --tug-z-overlay-tooltip: 9100;
-  --tug-z-overlay-popup:   9200;
-  --tug-z-overlay-menu:    9300;
-  --tug-z-overlay-dialog:  9400;
+  --tug-z-overlay-base:            9000;
+  --tug-z-overlay-tooltip:         9100;
+  --tug-z-overlay-popup:           9200;
+  --tug-z-overlay-menu:            9300;
+  --tug-z-overlay-dialog:          9400;
+  --tug-z-overlay-popup-in-dialog: 9500;
+  --tug-z-overlay-menu-in-dialog:  9600;
 }
 
 /* ---- Canvas overlay root ----

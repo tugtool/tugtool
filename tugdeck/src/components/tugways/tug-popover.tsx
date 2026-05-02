@@ -125,6 +125,8 @@ import { cn } from "@/lib/utils";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
+import { useServicePopupBinding } from "./use-service-popup-binding";
+import { TugSheetStackingContext } from "./tug-sheet-stacking-context";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { suppressButtonFocusShift } from "./internal/safari-focus-shift";
 
@@ -156,6 +158,16 @@ interface TugPopoverInternalContextValue {
    *  menu selection inside the popover). Click-outside / Escape dismissal via
    *  Radix still work. Default true. */
   dismissOnChainActivity: boolean;
+  /**
+   * Service-popup close-focus restorer per [D06] / [D07]. Threaded
+   * from `TugPopover` (where `captureOnOpen` runs in `handleOpenChange`)
+   * down to `TugPopoverContent` so it can pass the same callback to
+   * Radix's `<Popover.Content onCloseAutoFocus>`. The two halves
+   * (capture / restore) are bound to the same hook instance, so the
+   * `capturedRef` and `externalClickRef` written by `captureOnOpen`
+   * are read by the same `onCloseAutoFocus`.
+   */
+  onCloseAutoFocus: (event: Event) => void;
 }
 
 const TugPopoverInternalContext =
@@ -251,6 +263,13 @@ export const TugPopover = React.forwardRef<TugPopoverHandle, TugPopoverProps>(
     // only fires when a manager is in scope.
     const manager = useResponderChain();
 
+    // Service-popup close-focus binding per [D06] / [D07]. captureOnOpen
+    // is called from `handleOpenChange` when next is true; the
+    // `onCloseAutoFocus` is threaded through the internal context to
+    // `TugPopoverContent` so it can be passed to Radix's Content prop.
+    // Tolerant of no-provider contexts (no-ops).
+    const { captureOnOpen, onCloseAutoFocus } = useServicePopupBinding();
+
     const fallbackSenderId = React.useId();
     const senderId = senderIdProp ?? fallbackSenderId;
 
@@ -317,13 +336,17 @@ export const TugPopover = React.forwardRef<TugPopoverHandle, TugPopoverProps>(
         }
         return;
       }
+      // Capture first responder + start watching for external
+      // pointerdown BEFORE Radix's FocusScope mounts and grabs DOM
+      // focus. [D06] / [D07] / (#service-binding).
+      captureOnOpen();
       if (!isControlled) setInternalOpen(nextOpen);
       onOpenChangeProp?.(nextOpen);
     }
 
     const contextValue = React.useMemo<TugPopoverInternalContextValue>(
-      () => ({ close, senderId, dismissOnChainActivity }),
-      [close, senderId, dismissOnChainActivity],
+      () => ({ close, senderId, dismissOnChainActivity, onCloseAutoFocus }),
+      [close, senderId, dismissOnChainActivity, onCloseAutoFocus],
     );
 
     return (
@@ -454,15 +477,28 @@ export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverCont
     forwardedRef,
   ) {
     const overlayRoot = useCanvasOverlay();
+    const ctx = React.useContext(TugPopoverInternalContext);
+    // Popup-in-sheet z-tier elevation per [D09]. When TugPopover is
+    // rendered inside a `<TugSheetContent>`, the sheet provides
+    // `TugSheetStackingContext` with value `true`; we tag the portaled
+    // content so its CSS class swaps to `--tug-z-overlay-popup-in-dialog`.
+    // Outside a sheet the context is `false` (default) and stacking is
+    // unchanged.
+    const inDialog = React.useContext(TugSheetStackingContext);
     return (
       <Popover.Portal container={overlayRoot}>
         <Popover.Content
           ref={forwardedRef}
           data-slot="tug-popover"
-          className={cn("tug-popover-content", className)}
+          className={cn(
+            "tug-popover-content",
+            inDialog && "tug-popup-in-dialog",
+            className,
+          )}
           side={side}
           align={align}
           sideOffset={sideOffset}
+          onCloseAutoFocus={ctx?.onCloseAutoFocus}
         >
           <TugPopoverContentShell>{children}</TugPopoverContentShell>
           {arrow && <Popover.Arrow className="tug-popover-arrow" />}

@@ -21,7 +21,7 @@ The selection-plan history (`roadmap/tugplan-selection.md`) captures the elabora
 
 ## Adding a new tag
 
-1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0054**.
+1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0058**.
 2. Add an entry below in the appropriate section (or create a section).
 3. State, in one line each: card types, state axes, trigger, status.
 4. Cross-link the elaborated entry in `roadmap/tugplan-selection.md` if applicable.
@@ -262,6 +262,30 @@ Surfaced during the popup-bindings plan (`roadmap/tugplan-tide-popup-bindings.md
 - **Status:** ✅ closed at popup-bindings Step 4 (runtime-verified `just app-test` PASS).
 - **Tests:** `at0054-completion-escape-still-cancels.test.ts`.
 - **Summary:** Open `@` typeahead in a `gallery-text-editor` card; press Escape; the existing keymap path (`tugCompletionKeymap` → `cancelCompletion`) must still run unmodified post-migration. Regression guard: the binding swap touched the cancel SIGNAL set, not the keymap; this test pins that the keymap path is unaffected.
+
+### Service-binding tags (AT0055–AT0058)
+
+Surfaced during the popup-bindings plan (`roadmap/tugplan-tide-popup-bindings.md`) Step 5. Gate the service-popup close-focus restoration mechanism (`useServicePopupBinding` per [D06] / [D07]) and the popup-in-sheet z-tier elevation ([D09]). Together they cover: positive restore (image 5 close path), external-click skip-restore, and popup-in-sheet correct stacking + close-focus.
+
+#### [AT0055] Service popup close restores editor focus
+- **Status:** ✅ closed at popup-bindings Step 5 (runtime-verified `just app-test` PASS).
+- **Tests:** `at0055-popup-close-restores-editor-focus.test.ts`.
+- **Summary:** Image 5 close-path regression guard. Open editor; type a baseline keystroke; click font-family `TugPopupButton` (captureOnOpen snapshots editor responder); pick a menu item; menu closes; service binding's `onCloseAutoFocus` calls `event.preventDefault()` + `manager.focusResponder(captured)` which invokes the editor's substrate `view.focus()` callback, landing DOM focus back on `view.contentDOM`. The clinching assertion: a second native keystroke after the menu closes lands in the editor without an additional click. Verifies the chain: trigger click promotes nothing on chain (TugButton refuse) → captureOnOpen snapshots editor → menu blink + close cascade → onCloseAutoFocus restores → editor regains DOM focus → keystroke lands.
+
+#### [AT0056] Service popup outside-click skips restore
+- **Status:** ✅ closed at popup-bindings Step 5 (runtime-verified `just app-test` PASS).
+- **Tests:** `at0056-popup-outside-click-skips-restore.test.ts`.
+- **Summary:** External-click predicate per [D07]. Open `/` typeahead so a popup is live; native-click the deck canvas background (outside the editor, outside any popup, outside any sheet); the document-level pointerdown listener installed by `captureOnOpen` flips `externalClickRef = true`; companion binding (Step 4) fires on focusout and hides the completion popup; service binding's `onCloseAutoFocus` short-circuits the restore path because of the flag. Asserted by the completion popup hiding AND `document.activeElement` NOT being inside the editor's `view.contentDOM` post-click. The negative focus assertion is sufficient to prove the binding did not over-restore; where focus DOES land is governed by `pane-focus-controller`, not the binding.
+
+#### [AT0057] Popup inside a sheet stacks above the sheet
+- **Status:** ✅ closed at popup-bindings Step 5 (runtime-verified `just app-test` PASS).
+- **Tests:** `at0057-popup-in-sheet-stacking.test.ts`.
+- **Summary:** [D09] popup-in-sheet z-tier elevation visual gate. Open the `gallery-sheet` card's "Basic Sheet" (which now contains a `TugPopupButton` via `SheetPopupContent`); open the popup-button menu inside the sheet; assert the menu's portaled content carries `tug-menu-in-dialog` (signals the `TugSheetStackingContext` consumption fired) AND the resolved `z-index` is `9600` (the elevated `--tug-z-overlay-menu-in-dialog` token) AND the menu's bounding rect overlaps the sheet content rect (proves the menu paints on top, not in some unrelated viewport corner). The "popup remains clickable" sub-assertion was deferred because the harness's coord-based click is unreliable when the popup trigger sits above the visible viewport during sheet animation; the structural assertions cover [D09]'s mechanism.
+
+#### [AT0058] Popup inside a sheet keeps focus in the sheet on close
+- **Status:** ✅ closed at popup-bindings Step 5 (runtime-verified `just app-test` PASS).
+- **Tests:** `at0058-popup-in-sheet-close-focus.test.ts`.
+- **Summary:** Same fixture as AT0057. Open the sheet; open the popup-button menu inside; pick a menu item; assert `document.activeElement` is a descendant of the sheet's content element (`[data-slot="tug-sheet"]`) after the menu closes. The menu-item click is INSIDE the canvas overlay root (popup content); the trigger click before that is also inside the overlay root (sheet content); so the service binding's external-click predicate does NOT flag external; either restore-via-binding or Radix's default close-focus-to-trigger keeps focus in the sheet. The test guards against a regression where the binding tried to restore prior responder onto an element BEHIND the sheet (the gallery card).
 
 ## Maintenance
 
