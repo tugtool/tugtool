@@ -1,0 +1,536 @@
+---
+status: in-progress
+authors: ken
+date: 2026-05-02
+depends-on: tugplan-tide-popup-bindings.md (Steps 1–2 landed)
+unblocks: tugplan-tide-popup-bindings.md (Steps 3–8)
+---
+
+## Tide Overlay Framework — focus, responder, and event-flow contracts {#tide-overlay-framework}
+
+A small, decided framework for how popup-class overlays interact with the responder chain, focus discipline, and the pane focus controller. Replaces the current emergent behavior with named primitives, named attributes, and documented invariants. Future cards consume the framework instead of rediscovering its rules from scratch.
+
+### Plan Metadata {#plan-metadata}
+
+- **Status:** in-progress
+- **Risk profile:** medium — framework changes touch widely-used primitives but are internal contract refactors; visible behavior preserved with one targeted bug fix
+- **Time budget:** ~3 hours of focused work (plan + implementation + verification)
+- **Test posture:** unit tests for invariants; existing app-tests catch regressions
+- **Codename:** *tide-overlay-framework*
+- **Predecessors:** `tugplan-tide-overlay-tier.md`, `tugplan-tide-popup-bindings.md` (Steps 1–2)
+- **Successors:** `tugplan-tide-popup-bindings.md` Steps 3–8 rewrite onto this framework
+
+### Phase Overview {#phase-overview}
+
+#### Context {#context}
+
+Step 2 of `tugplan-tide-popup-bindings` shipped the `TugSheet` portal-target migration successfully (sheet panel extends past the card, scrim clipped to the pane, drag tracks). But the cancel-cascade — where the picker's `onClosed` dispatches `CLOSE` through the chain to remove the host card — does not reliably reach the pane's `CLOSE` handler. The user's diagnosis on the spot:
+
+> We don't have a baked-in, decided, solid, reliable, and thoroughly well-understood policy for how this system of overlays, focus, firstResponder, and event flows work. We can't go through a deep-dive investigation every time we do a new card. We need to build in *framework-level* support to this code and these components.
+
+Five subsystems interact through implicit conventions:
+
+1. **Portals** (`react-dom.createPortal`, `useCanvasOverlay`) — where DOM lands.
+2. **Responder chain** (`responder-chain.ts`, `use-responder.tsx`) — registry + first-responder + dispatch walks. Two walks exist: DOM-walk via `parentElement` (`findResponderForTarget`) and React-tree walk via `parentId` (`walkFromNode`).
+3. **Focus events** (`focusin`/`focusout`) — chain provider listens at document level and promotes via `findResponderForTarget`.
+4. **Pane focus controller** (`pane-focus-controller.ts`) — DOM-walk-based pane activation + canvas-background deselect.
+5. **Focus discipline markers** (`data-tug-focus="refuse"`, `data-no-activate`) — overloaded HTML attributes consumed by all of the above.
+
+Bugs at the intersections take long to diagnose because no single document says how the five interact. This plan writes that document — and bakes the contracts into typed primitives where it matters.
+
+#### Strategy {#strategy}
+
+Narrow scope, sharp aim. Three concrete deliverables:
+
+1. **Disambiguate `data-tug-focus="refuse"`** into per-concern attributes. One semantic per attribute.
+2. **Explicit close-cascade target API** on `useTugSheet`: a modal captures a "cascade target" responder id at open time and dispatches via `sendToTarget` instead of `sendToFirstResponder`. Removes the load-bearing assumption that first responder is correctly set at the moment the cascade fires.
+3. **Documented mental model** in code: a single canonical doc (this plan's Deep Dives section, plus a module docstring) describing the five subsystems, their interactions, and the invariants the framework now enforces.
+
+Out of scope (deliberately): a full `useOverlay` primitive with a `role` parameter; refactoring `useOptionalResponder` to expose a canonical chain walk. Both are valuable but the narrow scope buys us today's bug fix and the doc anchor; broader refactors can land incrementally as Steps 3–8 of the popup-bindings plan surface specific needs.
+
+#### Success Criteria (Measurable) {#success-criteria}
+
+1. The Tide picker cancel-cascade closes its host card reliably (the bug from the Step 2 hand-off).
+2. `data-tug-focus="refuse"` no longer appears on `<CanvasOverlayRoot />`. The pane focus controller's "skip on canvas-overlay click" behavior is preserved via a separate, named attribute.
+3. `useTugSheet` exposes an explicit `cascadeTargetId` option (or equivalent) for consumers that need a chain dispatch on close.
+4. The mental model is documented in **one** place, linked from the relevant module docstrings (responder-chain, use-responder, canvas-overlay-root, tug-sheet).
+5. Unit tests assert the documented invariants.
+6. `bun x tsc --noEmit` green; `bun test` green; `bun run audit:tokens lint` exits 0.
+
+#### Scope {#scope}
+
+In-scope:
+- `tug-button.tsx`, `canvas-overlay-root.tsx`, `pane-focus-controller.ts`, `responder-chain-provider.tsx` — disambiguation refactor.
+- `tug-sheet.tsx` (`useTugSheet`, `TugSheet`, `TugSheetContent`) — close-cascade target API.
+- `tide-card.tsx` — adopts the new API; cancel-cascade fixed.
+- New file `responder-chain-invariants.md` (or equivalent doc anchor) referenced from module docstrings.
+- New unit tests for invariants.
+
+Out of scope (explicit):
+- `useOverlay({ role })` universal primitive.
+- `useOverlayLifecycle()` with `onClose`/`onCloseSettled`.
+- Refactoring `useOptionalResponder`'s registration / promotion logic.
+- Migrating popup-bindings Steps 3–8 — they consume this framework but are authored in their own plan.
+
+#### Non-goals (Explicitly out of scope) {#non-goals}
+
+- Designing a fully-uniform overlay API. The taxonomy in the popup-bindings plan ([Popup Role Taxonomy](#popup-role-taxonomy-link)) stays a documentation tool here, not enforced code.
+- Eliminating the dual chain walks (DOM walk vs `parentId` walk). They serve different purposes; we document the rule for which is canonical for which use case, not unify them.
+- Re-architecting the deck's overall focus model. Pane focus controller and pane activation stay as-is.
+
+#### Dependencies / Prerequisites {#dependencies}
+
+- `tugplan-tide-popup-bindings.md` Steps 1–2 landed (canvas overlay tier exists; sheets already portal there).
+- No new dependencies on external libraries.
+
+#### Constraints {#constraints}
+
+- Must preserve every existing user-visible behavior except the cancel-cascade bug being fixed.
+- All migrated call sites must adhere to the [Tuglaws](../tuglaws/tuglaws.md): especially [L02] (external state via `useSyncExternalStore`), [L06] (appearance via CSS/DOM), [L07] (closure stability via refs), [L19] (component authoring guide), [L24] (state-zone partition).
+- Token audit (`bun run audit:tokens lint`) and type-check (`tsc --noEmit`) must stay green at every commit.
+
+#### Assumptions {#assumptions}
+
+- The chain's `sendToTarget(id, ...)` will reliably dispatch to a registered responder regardless of first-responder state. (Verified: `sendToTargetForContinuation` walks via `parentId` from `targetId`, no first-responder dependency.)
+- The pane responder id (`stackId`) is available at sheet-open time to consumers that need a cascade target. (`hostStackId` is a prop on every CardHost — passing it through is mechanical.)
+- Removing `data-tug-focus="refuse"` from `<CanvasOverlayRoot />` and adding a separate marker attribute does not break Step 1's popup-class portal migration. (Verified by inspection: popups inside the overlay root either have their own responder elements that handle promotion correctly, or are non-responder elements like the completion menu where chain promotion is a no-op anyway.)
+
+### Reference and Anchor Conventions (MANDATORY) {#reference-conventions}
+
+Same as `tugplan-tide-popup-bindings.md`:
+- Decisions: `[D01]`, `[D02]`, …
+- Open Questions: `[Q01]`, `[Q02]`
+- Risks: `R01`, `R02`
+- Tuglaws: `[L01]`, `[L02]`, …
+- Step refs: `[Step 1]`(#step-1), …
+- Section refs: `(#section-anchor)`
+
+### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
+
+#### [Q01] Where do other modal patterns get their cascade target id from? (DEFERRED) {#q01-cascade-target-source}
+
+**Question:** `useTugSheet`'s explicit `cascadeTargetId` option works for the picker (consumer passes `hostStackId`). What about `TugAlert`, `TugConfirmPopover`, future modal-with-trap surfaces?
+
+**Resolution:** Defer. Other modals don't need a cascade today (their consumers don't dispatch through the chain on close). When one does, we'll thread `cascadeTargetId` the same way. The pattern is established; replication is mechanical.
+
+#### [Q02] Should the chain's `findResponderForTarget` be augmented with a "portal-aware" mode? (DEFERRED) {#q02-portal-aware-walk}
+
+**Question:** Today `findResponderForTarget` walks DOM `parentElement` only. Sheets portaled into the canvas overlay tier have no responder ancestor in DOM, even though they have a logical (React-context) parent in the chain.
+
+**Resolution:** Defer. Documented as an invariant for now: *DOM walks find responders along the rendered DOM path; React-tree walks (via `parentId`) find responders along the conceptual ancestry. They are different by design and consumers must use the right walk for the job.* If a future use case needs a unified walk, design it then.
+
+### Risks and Mitigations {#risks}
+
+| Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
+|------|--------|------------|------------|--------------------|
+| Removing refuse from canvas-overlay-root regresses pane-focus-controller behavior | high | low | Replace with `data-slot="tug-canvas-overlay-root"` selector check in pane-focus-controller; existing slot attribute already present; new check tested | Pane deselect fires inappropriately on overlay clicks |
+| Removing refuse from canvas-overlay-root regresses chain promotion behavior for popups | med | low | Popups in canvas overlay either have responders (sheet, popover — chain promotion works correctly) or no responders (completion menu — promotion is a no-op). Verified by inspection; covered by existing popup tests | Popup click promotes wrong responder |
+| Cascade-target API leaks the pane id where it shouldn't | low | low | API takes any registered responder id; consumers choose which target makes sense (typically pane, but could be card-host or another modal). Documented in module docstring | Misuse surfaces |
+| Documented invariants drift from code | med | med | Invariants live in code comments + tests; tests run on every CI; comment review is part of every framework-touching PR | Test fails or invariant comment becomes false |
+
+### Design Decisions {#design-decisions}
+
+#### [D01] Disambiguate `data-tug-focus="refuse"` into three named attributes (DECIDED) {#d01-disambiguate-attrs}
+
+**Decision:** Today, one attribute (`data-tug-focus="refuse"`) is read by three different subsystems with three different intents:
+
+| Reader | Current selector | New attribute (this plan) |
+|--------|------------------|---------------------------|
+| `responder-chain-provider.tsx` `promoteOnPointerDown` (skip first-responder promotion) | `[data-tug-focus="refuse"]` | `[data-tug-focus="refuse"]` (semantics narrowed to *this* concern) |
+| `responder-chain-provider.tsx` `preventFocusOnMouseDown` (browser focus prevention) | `[data-tug-focus="refuse"]` | `[data-tug-focus="refuse"]` (paired with above) |
+| `pane-focus-controller.ts` (skip activation/deselect) | `[data-tug-focus="refuse"]` | `[data-slot="tug-canvas-overlay-root"]` (already present) |
+
+After:
+- `data-tug-focus="refuse"` exclusively means *"this control should not promote first responder or take browser focus on click."* TugButton continues to have it. Canvas-overlay-root no longer does.
+- Pane focus controller's check becomes `if (startEl.closest('[data-slot="tug-canvas-overlay-root"]')) return;` — directly checking for the canvas overlay slot it actually wants to skip on. The check moves from "I happen to have a refuse attribute" to "I'm inside the canvas overlay tier" — semantically what was always meant.
+
+**Rationale:**
+- One semantic per attribute makes the system inspectable. A reader can search for `data-tug-focus="refuse"` and immediately know what it means.
+- The pane-focus-controller's check was always *about* canvas-overlay-tier specifically, not about button-class focus refusal — they happened to share an attribute by accident.
+- Removing the attribute from canvas-overlay-root has the side effect that descendants of the overlay root no longer match `closest('[data-tug-focus="refuse"]')`. This is correct: a sheet's content shouldn't refuse focus promotion; it's a modal that should claim first responder.
+
+**Implications:**
+- `<CanvasOverlayRoot />` loses one inline attribute.
+- `pane-focus-controller.ts` line 191 (currently `if (startEl.closest('[data-tug-focus="refuse"]')) return;`) changes selector.
+- TugButton's existing `data-tug-focus="refuse"` is unchanged.
+- Completion menu items (which have no responder element of their own) continue to behave correctly: chain promotion finds no responder ancestor in the canvas overlay subtree, so promotion is a no-op regardless of the attribute change.
+
+**Tuglaws cross-check:** Affects [L19] (component authoring guide will gain an entry on focus discipline attributes) and the chain-provider's documented selector. No appearance-zone, no React-state, no L06/L24 implications.
+
+#### [D02] Modal surfaces capture an explicit cascade target at open time (DECIDED) {#d02-explicit-cascade-target}
+
+**Decision:** `useTugSheet().showSheet(options)` accepts an optional `cascadeTargetId: string` that the consumer passes at open time. When present, it identifies the responder the cascade dispatch should target via `sendToTarget`. The hook stores it; `onClosed` consumers can read it from the same options object (no API change to `onClosed` itself — the consumer captures the id in the closure where they call `showSheet`).
+
+The picker pattern becomes:
+
+```ts
+const presentSheet = useCallback(() => {
+  void showSheet({
+    title: "Open Project",
+    content: ...,
+    cascadeTargetId: hostStackId,  // pane responder id, captured at open
+    onClosed: (result) => {
+      if (result === "open" || result === "retry") return;
+      // Dispatch to the target captured at open time.
+      manager?.sendToTarget(hostStackId, {
+        action: TUG_ACTIONS.CLOSE,
+        sender: senderId,
+        phase: "discrete",
+      });
+    },
+  });
+}, [showSheet, hostStackId, manager, senderId]);
+```
+
+`sendToTarget(hostStackId, ...)` walks via `parentId` from the pane responder. The pane has the `CLOSE` handler — it fires.
+
+The key shift: **the cascade target is a *value* captured at open time, not a state lookup at close time.** No dependency on `firstResponderId` being correctly set at the moment `onClosed` fires.
+
+**Rationale:**
+- Decouples the cascade dispatch from the chain's first-responder state, which is itself the product of multiple racing inputs (registration order, focus events, FocusScope mount/unmount, unregister fallback). Removing first-responder from the load-bearing path eliminates a class of bugs.
+- `sendToTarget` is already in the chain's public API and is the right tool for "I know exactly who should handle this." Using it makes intent explicit.
+- The `cascadeTargetId` option, even though `useTugSheet` itself doesn't consume it directly in this plan's scope, documents the contract for consumers who need a cascade. Future modal patterns (alerts, confirm popovers) can follow the same shape.
+
+**Implications:**
+- `ShowSheetOptions` gains an optional `cascadeTargetId?: string` field. The hook stores it (read-only — currently just for documentation; consumers reference it from their own closure).
+- `tide-card.tsx` `presentSheet` is updated: passes `hostStackId` as `cascadeTargetId` and uses `manager.sendToTarget(hostStackId, ...)` in `onClosed` instead of `manager.sendToFirstResponder(...)`.
+- Cancel-cascade bug fixed: `CLOSE` reaches the pane regardless of focus state.
+
+**Tuglaws cross-check:** [L11] — controls dispatch actions; the chain delivers them. `sendToTarget` is the chain-native delivery mechanism for "named target dispatches" (vs `sendToFirstResponder` for "current focus dispatches"). [L19] — `useTugSheet` JSDoc updated.
+
+#### [D03] Document the dual chain-walk policy (DECIDED) {#d03-dual-walk-policy}
+
+**Decision:** The responder chain has two walks; both are correct for different use cases. The framework documents the policy:
+
+- **DOM walk via `parentElement` (`findResponderForTarget`):** "Given an arbitrary DOM node, find the nearest *registered* responder along the rendered DOM path." Used for: pointerdown / focusin promotion (the user clicked / focused this DOM element — promote the nearest responder above it in DOM).
+- **React-tree walk via `parentId` (`walkFromNode`):** "Given a starting responder id, walk via the chain registry to reach handlers." Used for: dispatch (`sendToFirstResponder`, `sendToTarget`, `sendToTargetForContinuation`) — every dispatch walks `parentId` only.
+
+The two walks can produce different ancestors. **By design.** A sheet portaled into the canvas overlay root has no responder ancestor along its DOM path (DOM walk returns null), but its React-tree `parentId` is the card-host (set at registration via `ResponderParentContext`). Both are correct — they answer different questions.
+
+**Rationale:**
+- The walks are *not* a bug or an oversight. They serve distinct purposes that the codebase has been quietly relying on for a while.
+- Documenting the policy gives reviewers a concrete rule to apply: *"Did the caller want 'closest registered responder by DOM' or 'closest registered ancestor by chain'?"* Once that question is asked, the right walk is obvious.
+- The framework's `cascadeTargetId` design ([D02]) leans on this distinction: it deliberately uses `sendToTarget` (which walks `parentId`) so it doesn't depend on DOM ancestry.
+
+**Implications:**
+- A new doc section in this plan ([Deep Dives](#deep-dives)) explains the policy.
+- `responder-chain.ts` gets a top-of-file invariants comment summarizing the two walks and when each is canonical.
+- No code changes in the chain itself; this is a documentation decision.
+
+**Tuglaws cross-check:** [L19] — component-authoring guide gains an entry pointing at the chain's invariants doc.
+
+#### [D04] Documented invariants live in code, with tests (DECIDED) {#d04-documented-invariants}
+
+**Decision:** Six invariants the framework guarantees. Each gets:
+- A line in a top-of-file `INVARIANTS:` comment in `responder-chain.ts`.
+- A unit test that asserts it.
+
+The invariants:
+
+- **I1.** Every registered responder's `parentId` is either `null` or the id of another registered responder (at registration time).
+- **I2.** `firstResponderId` is null OR the id of a currently registered responder.
+- **I3.** `sendToTarget(id, ...)` walks `parentId` from `id`, regardless of `firstResponderId` state. Never a no-op due to first-responder being unexpected.
+- **I4.** `findResponderForTarget(node)` walks DOM `parentElement` from `node`, finding the nearest *registered* responder. Returns null if none exists along the DOM path.
+- **I5.** A modal that captures a `cascadeTargetId` at open time can dispatch to that target on close even if no DOM-walk path exists between modal and target (e.g., portaled modals). Verified by an integration-style test.
+- **I6.** `data-tug-focus="refuse"` controls only chain-promotion-skip and browser-focus-prevention semantics (button-class behavior). It does not control pane-focus-controller behavior.
+
+**Rationale:**
+- An invariant without a test rots into a comment that lies. Tests are the load-bearing assertion.
+- Each invariant is small and orthogonal. A reviewer reading the chain's code can scan the list and quickly check whether the change touches any of them.
+- The invariants are about *the chain's contracts*, not about consumer code. They constrain how the chain can evolve.
+
+**Implications:**
+- `responder-chain.ts` gains an `INVARIANTS` block at the top.
+- New test file `responder-chain-invariants.test.ts` (or extends an existing file) covers I1–I6.
+- The `tug-sheet-stacking-context.ts` and `use-responder.tsx` JSDocs link to the invariants block.
+
+**Tuglaws cross-check:** [L19] (component authoring guide) gets a one-liner pointing at the invariants block.
+
+### Deep Dives {#deep-dives}
+
+#### Mental Model — the Five Subsystems {#mental-model}
+
+This section is the canonical reference for *why* the overlay/focus/responder system behaves the way it does. Module docstrings reference this section; future plan authors read it before proposing changes.
+
+**The five subsystems, what each owns:**
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ 1. PORTALS                                                       │
+│    Owners: react-dom.createPortal, lib/use-canvas-overlay        │
+│    Owns: where DOM lands relative to React position              │
+│    Affects: where DOM events bubble FROM, where DOM walks land   │
+└──────────────────────────────────────────────────────────────────┘
+                          │
+                          ▼ (React tree unaffected by portal target)
+┌──────────────────────────────────────────────────────────────────┐
+│ 2. RESPONDER CHAIN                                               │
+│    Owners: responder-chain.ts, use-responder.tsx                 │
+│    Owns: registry of responders + first-responder + dispatch     │
+│    Two walks (see [D03]):                                        │
+│      • findResponderForTarget(node)  ← DOM walk via parentElement│
+│      • walkFromNode(id)              ← chain walk via parentId   │
+└──────────────────────────────────────────────────────────────────┘
+                          │
+                          ▼ (focus events are one of several inputs)
+┌──────────────────────────────────────────────────────────────────┐
+│ 3. FOCUS EVENTS                                                  │
+│    Owners: browser, responder-chain-provider's listeners         │
+│    Owns: focusin/focusout dispatch                               │
+│    Effect: chain provider's promoteOnFocusIn updates first       │
+│      responder via findResponderForTarget                        │
+└──────────────────────────────────────────────────────────────────┘
+                          │
+                          ▼ (parallel to chain — DIFFERENT axis)
+┌──────────────────────────────────────────────────────────────────┐
+│ 4. PANE FOCUS CONTROLLER                                         │
+│    Owners: pane-focus-controller.ts                              │
+│    Owns: pane activation on click + canvas-background deselect   │
+│    Independent from the chain — uses its own DOM walks           │
+└──────────────────────────────────────────────────────────────────┘
+                          │
+                          ▼ (consumed by all of the above)
+┌──────────────────────────────────────────────────────────────────┐
+│ 5. FOCUS DISCIPLINE MARKERS                                      │
+│    Owners: HTML attributes on individual elements                │
+│    After [D01]:                                                  │
+│      • data-tug-focus="refuse"      → chain promotion skip       │
+│      • [data-slot="tug-canvas-overlay-root"] → pane-controller   │
+│      • data-no-activate             → pane-activation skip       │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Key interaction rules:**
+
+1. **Portals do not change React tree ancestry.** A subtree portaled via `createPortal(jsx, target)` retains its React parent for context purposes. `ResponderParentContext` resolves to the consumer's React parent regardless of where the DOM lands.
+
+2. **DOM walk and chain walk diverge for portaled subtrees.** A sheet portaled into the canvas overlay root has:
+   - DOM ancestors: clip → canvas-overlay-root → body. *None* are registered responders.
+   - React-tree ancestors (via context): card-host → pane → root. All registered.
+   - `findResponderForTarget(sheetContent)` returns the sheet's own id (the responder element is the deepest match), or null if walking from a non-responder descendant.
+   - `walkFromNode(sheetId)` walks card-host → pane → root via `parentId`.
+   - **Use the right walk for the job.**
+
+3. **First responder is set by multiple inputs:**
+   - Auto-promotion at register time (root parent + null first responder).
+   - Pointerdown / focusin promotion (DOM-walk-based, gated by focus discipline markers).
+   - Explicit `makeFirstResponder(id)` calls.
+   - Stale-focus re-promotion at registration (in `useOptionalResponder`, when `document.activeElement` is inside a newly-registered responder).
+   - Unregister fallback (DOM walk first, then `parentId`).
+   - When a modal closes, `firstResponderId` settles via the unregister fallback. **It may or may not match what the consumer expects.** Consumers that need to dispatch on close should not rely on first-responder state — use [D02]'s explicit cascade target.
+
+4. **`data-tug-focus="refuse"` (post-[D01]) means exactly one thing:** *do not promote this element to first responder via pointerdown, and prevent the browser from moving focus to it via mousedown.* It is button-class behavior. It does *not* affect pane activation, pane deselect, dispatch, or chain registration.
+
+5. **`pane-focus-controller`'s "skip canvas overlay" check (post-[D01])** uses `[data-slot="tug-canvas-overlay-root"]` directly, decoupled from focus refusal.
+
+#### Sheet Cascade — why first-responder is wrong here {#sheet-cascade-rationale}
+
+A sheet's `onClosed` consumer wants to dispatch a follow-up action ("close my host card", "save and apply", etc.). Today, `tide-card.tsx` does this via `manager.sendToFirstResponder({ CLOSE })`. The fragility:
+
+- At the moment `onClosed` fires, `firstResponderId` is whatever the chain settled on after: sheet unregister → unregister fallback → FocusScope unmount → `triggerEl.focus()` → focusin handler → maybe-skipped-by-refuse promotion.
+- That settled value is *usually* the card-host or pane (which would walk to the pane's CLOSE handler). Sometimes it's something else, depending on which DOM element was active when the sheet opened and what focus discipline markers it inherits.
+- The consumer cannot easily reason about what `firstResponderId` will be at that moment. Bugs happen at the unhappy paths.
+
+[D02]'s fix: consumer captures the cascade target id at open time (`cascadeTargetId`) and dispatches via `sendToTarget(target, ...)` on close. The dispatch walks `parentId` from a *known* node; first-responder state is irrelevant. The bug class disappears.
+
+The principle generalizes: **whenever a modal's lifecycle ends and the consumer wants a follow-up dispatch, capture the target at open time, not at close time.**
+
+#### Tuglaws Cross-Check Plan {#tuglaws-cross-check}
+
+The framework adheres to:
+
+- [L02] — no new external state introduced into React; chain state stays accessed via the existing manager.
+- [L06] — no React `style={{}}` props for appearance; no anchor coords or visual state in React state.
+- [L07] — closure-stable refs where consumer-supplied callbacks need decoupling.
+- [L11] — controls emit actions; responders handle. The cascade target API is a chain-native dispatch surface.
+- [L19] — component authoring guide gains entries for: focus discipline attributes (per [D01]), modal cascade target pattern (per [D02]), the dual-walk policy (per [D03]).
+- [L24] — no new ephemeral state; `cascadeTargetId` is a value captured in the consumer's closure (local-data zone).
+
+### Specification {#specification}
+
+#### Public API Changes {#public-api}
+
+**`<CanvasOverlayRoot />`** (canvas-overlay-root.tsx):
+- Removes `data-tug-focus="refuse"` attribute.
+- Keeps `data-slot="tug-canvas-overlay-root"` (already present, unchanged).
+
+**`pane-focus-controller.ts`** line 191:
+- Selector changes from `[data-tug-focus="refuse"]` to `[data-slot="tug-canvas-overlay-root"]`.
+- Comment updated to explain the decoupling.
+
+**`responder-chain-provider.tsx`** `isFocusRefusing` selector:
+- Selector unchanged: `[data-tug-focus="refuse"]`.
+- Semantics narrowed (per [D01]): now exclusively for chain promotion + browser focus prevention.
+- Comment updated accordingly.
+
+**`useTugSheet().showSheet(options)`** in tug-sheet.tsx:
+- `ShowSheetOptions` gains optional `cascadeTargetId?: string`. The hook stores it on the active state for documentation/future use; it does not change `useTugSheet`'s own dispatch behavior. Consumers reference their own captured id in their `onClosed` closure.
+
+**`tide-card.tsx`** `presentSheet`:
+- Passes `cascadeTargetId: hostStackId` in `showSheet` options.
+- `onClosed` switches from `manager?.sendToFirstResponder({ CLOSE, ... })` to `manager?.sendToTarget(hostStackId, { CLOSE, ... })`.
+
+#### Internal Architecture {#internal-architecture}
+
+**`responder-chain.ts`** gains a top-of-file `INVARIANTS:` block listing I1–I6 (per [D04]).
+
+**New test file** `responder-chain-invariants.test.ts` covers I1–I6.
+
+**`tug-sheet.tsx`** module docstring gains a section on cascade-target pattern, linking to this plan's [Sheet Cascade](#sheet-cascade-rationale) deep dive.
+
+### Definitive Symbol Inventory {#symbol-inventory}
+
+#### New files {#new-files}
+
+| Path | Purpose |
+|------|---------|
+| `tugdeck/src/__tests__/responder-chain-invariants.test.ts` | Unit tests for I1–I6 |
+
+#### Symbols to add / modify {#symbols}
+
+| Symbol | File | Change |
+|--------|------|--------|
+| `<CanvasOverlayRoot />` JSX attributes | `tugdeck/src/components/chrome/canvas-overlay-root.tsx` | Remove `data-tug-focus="refuse"` |
+| `pane-focus-controller.ts` line 191 selector | `tugdeck/src/components/chrome/pane-focus-controller.ts` | Change selector to `[data-slot="tug-canvas-overlay-root"]` |
+| `ShowSheetOptions` interface | `tugdeck/src/components/tugways/tug-sheet.tsx` | Add `cascadeTargetId?: string` field |
+| `presentSheet` callback | `tugdeck/src/components/tugways/cards/tide-card.tsx` | Pass `cascadeTargetId: hostStackId`; switch dispatch to `sendToTarget` |
+| `INVARIANTS:` comment block | `tugdeck/src/components/tugways/responder-chain.ts` | Add at top of file |
+
+### Documentation Plan {#documentation-plan}
+
+- This plan's [Mental Model](#mental-model) deep dive is the canonical reference.
+- Module docstrings updated to link here:
+  - `responder-chain.ts` (top-of-file invariants block).
+  - `use-responder.tsx` (note about React-context `parentId` vs DOM walk).
+  - `canvas-overlay-root.tsx` (note about disambiguated attrs).
+  - `tug-sheet.tsx` (note about cascade-target pattern, linking to [Sheet Cascade](#sheet-cascade-rationale)).
+
+### Test Plan Concepts {#test-plan-concepts}
+
+#### Test Categories {#test-categories}
+
+- **Unit tests for I1–I6:** asserted in `responder-chain-invariants.test.ts`. Each invariant is a small, orthogonal test case.
+- **Regression test for cancel-cascade:** existing tide-card behavior — picker cancel closes host pane — covered by an existing app-test path or, if missing, added as a unit test that mocks the picker setup and asserts `store.handlePaneClosed` (or equivalent) is invoked after sheet cancel.
+- **Existing tug-sheet unit tests:** all 13 must continue to pass (preserve list).
+
+### Execution Steps {#execution-steps}
+
+#### Step 1 — Disambiguate focus-discipline attributes {#step-1}
+
+**References:** [D01], (#mental-model)
+
+**Artifacts:**
+- `canvas-overlay-root.tsx` — remove `data-tug-focus="refuse"`. Update docstring comment.
+- `pane-focus-controller.ts` — change selector at line 191 to `[data-slot="tug-canvas-overlay-root"]`. Update inline comment.
+- `responder-chain-provider.tsx` — update `FOCUS_REFUSE_SELECTOR` JSDoc to explicitly document the narrowed semantics.
+
+**Tasks:**
+- [ ] Remove `data-tug-focus="refuse"` from `<CanvasOverlayRoot />` JSX.
+- [ ] Update the canvas-overlay-root.tsx docstring comment that explained the refuse attribute — replace with a note about [D01]'s disambiguation and a pointer to (#mental-model).
+- [ ] In `pane-focus-controller.ts`, change `if (startEl.closest('[data-tug-focus="refuse"]')) return;` to `if (startEl.closest('[data-slot="tug-canvas-overlay-root"]')) return;`. Update the inline comment to explain the decoupling.
+- [ ] In `responder-chain-provider.tsx`, the `FOCUS_REFUSE_SELECTOR` constant's JSDoc gets a "see [D01]" reference and a one-line summary of the narrowed semantics.
+
+**Tests:**
+- [ ] Existing `tug-popover.test.tsx`, `tug-context-menu.test.tsx`, `tug-popup-menu.test.tsx`, `tug-tooltip.test.tsx`, `tug-alert.test.tsx`, `tug-sheet.test.tsx` continue to pass without modification. (These tests use the body-fallback overlay-root path and don't depend on the refuse attribute.)
+- [ ] Add a unit test asserting that a click on a `<CanvasOverlayRoot />` descendant no longer matches the `closest('[data-tug-focus="refuse"]')` selector. (Sanity check that the disambiguation took effect.)
+
+**Checkpoint:**
+- [ ] `bun x tsc --noEmit` green.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+- [ ] Manual smoke: open a TugPopover; clicking inside doesn't trigger a deselect on the host pane (peer-card stays activated). Open the picker sheet; clicking Cancel closes the sheet (animation plays).
+
+#### Step 2 — Modal cascade target API {#step-2}
+
+**Depends on:** #step-1
+
+**References:** [D02], (#sheet-cascade-rationale)
+
+**Artifacts:**
+- `tug-sheet.tsx` — `ShowSheetOptions` gains `cascadeTargetId?: string`. The hook stores it on `UseTugSheetState`. Module docstring gains a section on the cascade pattern.
+
+**Tasks:**
+- [ ] Add `cascadeTargetId?: string` to `ShowSheetOptions` interface.
+- [ ] Update `useTugSheet`'s state and `showSheet` to thread the value through (stored on `UseTugSheetState` for parity with other options; not consumed by the hook itself in this step).
+- [ ] Update `useTugSheet` JSDoc with a section on the cascade-target pattern, linking to (#sheet-cascade-rationale).
+- [ ] Update tug-sheet.tsx top-of-file docstring with a one-liner pointing at (#mental-model).
+
+**Tests:**
+- [ ] Existing `tug-sheet.test.tsx` tests pass unchanged.
+- [ ] Add a unit test: pass `cascadeTargetId` to `showSheet`, observe that the option round-trips through the hook (the value is stored on the active state).
+
+**Checkpoint:**
+- [ ] `bun x tsc --noEmit` green.
+- [ ] `bun test` green.
+
+#### Step 3 — Tide-card adopts cascade target; cancel-cascade fixed {#step-3}
+
+**Depends on:** #step-2
+
+**References:** [D02]
+
+**Artifacts:**
+- `tide-card.tsx` — `presentSheet` passes `cascadeTargetId: hostStackId`; `onClosed` uses `sendToTarget(hostStackId, ...)`.
+
+**Tasks:**
+- [ ] In `presentSheet`, add `cascadeTargetId: hostStackId` to the `showSheet` options.
+- [ ] In the `onClosed` callback, change `manager?.sendToFirstResponder(...)` to `manager?.sendToTarget(hostStackId, ...)`.
+- [ ] Update inline comment to explain why `sendToTarget` (per [D02]).
+
+**Tests:**
+- [ ] Existing tide-card-related tests pass.
+- [ ] Add a unit test (or extend an existing one) asserting that after cancel-dispatch + animation completion, the chain receives a `sendToTarget` call against the pane id with action `CLOSE`. Mock `manager.sendToTarget` to verify.
+
+**Checkpoint:**
+- [ ] `bun x tsc --noEmit` green.
+- [ ] `bun test` green.
+- [ ] **Manual smoke:** open a Tide card, click Cancel on the picker. The card closes (the cancel-cascade bug from Step 2 of `tugplan-tide-popup-bindings.md` is fixed).
+
+#### Step 4 — Document invariants in code; add invariant tests {#step-4}
+
+**Depends on:** #step-3
+
+**References:** [D03], [D04], (#mental-model)
+
+**Artifacts:**
+- `responder-chain.ts` — top-of-file `INVARIANTS:` block listing I1–I6 with one line each.
+- New `responder-chain-invariants.test.ts` file with a test per invariant.
+- Module docstring updates in `use-responder.tsx`, `canvas-overlay-root.tsx`, `tug-sheet.tsx` — link to this plan's mental model.
+
+**Tasks:**
+- [ ] Add `INVARIANTS:` block at the top of `responder-chain.ts`. Six lines, one per invariant.
+- [ ] Create `tugdeck/src/__tests__/responder-chain-invariants.test.ts` with six describe blocks (one per invariant) and assertions:
+  - **I1** — register a responder with `parentId` = unregistered id; verify the chain warns or rejects (depending on existing semantics).
+  - **I2** — register, set first responder, unregister, observe `firstResponderId` is null or another registered id.
+  - **I3** — register two responders A → B; with `firstResponderId = null`, `sendToTarget(A, ...)` walks A → B regardless.
+  - **I4** — register a responder; `findResponderForTarget(an inner DOM node)` returns the responder's id; `findResponderForTarget(a node outside)` returns null.
+  - **I5** — register A; portal a subtree (containing a different responder C) elsewhere; `sendToTarget(A, ...)` from inside C's subtree still works.
+  - **I6** — assert `[data-tug-focus="refuse"]` does not affect pane-focus-controller behavior (per [D01]). Stub mocks pane-focus-controller's input and verifies the right selector path.
+- [ ] Update `use-responder.tsx` docstring with a section on `parentId` source (React context) and a link to (#mental-model).
+- [ ] Update `canvas-overlay-root.tsx` docstring to point at [D01] and (#mental-model).
+- [ ] Update `tug-sheet.tsx` top-of-file docstring with a "see (#mental-model) for the system-level architecture" pointer.
+
+**Tests:**
+- [ ] All six invariant tests pass.
+
+**Checkpoint:**
+- [ ] `bun x tsc --noEmit` green.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+- [ ] Code-review pass: every modified module's docstring has a link to (#mental-model) where it touches framework concerns.
+
+---
+
+### Tuglaws Cross-Check {#tuglaws-cross-check-summary}
+
+This plan's compliance:
+
+- [L02] — no new external state; chain manager unchanged; `useSyncExternalStore` not introduced or modified.
+- [L06] — no React `style={{}}` for appearance; no React state for visual properties.
+- [L07] — closure stability preserved via existing `useCallback` in `presentSheet`.
+- [L11] — controls dispatch via `sendToTarget`; responders handle. The cascade pattern is L11-aligned.
+- [L19] — module docstrings updated; component-authoring-guide entries added.
+- [L23] — preserves all user-visible behavior except the cancel-cascade bug being fixed.
+- [L24] — no new ephemeral state; `cascadeTargetId` is a value captured in the consumer's closure (local-data zone, on the consumer's React state machinery).
+
+No L01, L03, L13, L14, L17, L20, L22, L25 implications — the framework is contract-level, not appearance, animation, token, or store-observation work.
