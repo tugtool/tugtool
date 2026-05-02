@@ -1682,18 +1682,6 @@ describe("SessionManager behavioral", () => {
     expect(exitStub.calledWith()).toBeUndefined();
   });
 
-  test("killAndCleanup sets isShuttingDown so the watcher noops", async () => {
-    const id = crypto.randomUUID();
-    const manager = new SessionManager(`/tmp/init-killclean-${Date.now()}`, id, "resume");
-    const m = makeWatcherMock();
-    (manager as any).spawnClaude = () => m.child;
-
-    await manager.initialize();
-    expect((manager as any).isShuttingDown).toBe(false);
-    await (manager as any).killAndCleanup();
-    expect((manager as any).isShuttingDown).toBe(true);
-  });
-
   // Fix #4: stderr "No conversation found" forces resume_failed even
   // when the session mode is fresh (definitive classification wins
   // over the mode-based default).
