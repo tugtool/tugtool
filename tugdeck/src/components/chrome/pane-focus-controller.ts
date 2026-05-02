@@ -175,20 +175,28 @@ export function usePaneFocusController(
       // outside the deck root and must not trigger classification.
       if (!root.contains(startEl)) return;
 
-      // Focus-refuse short-circuit. Lifted ABOVE the Branch A/B
-      // split so `data-tug-focus="refuse"` skips BOTH the in-pane
-      // activation path AND the canvas-background deselect path.
-      // The canvas-overlay tier (`<CanvasOverlayRoot />`) sets this
-      // attribute so a click on a portaled completion menu / popup
-      // — which is inside the deck root but OUTSIDE any pane —
-      // does not get treated as a canvas-background deselect that
-      // would demote the active editor's first-responder status.
-      // The popup item's own `pointerdown` + `preventDefault()`
-      // keeps `document.activeElement` on the editor's contentDOM;
-      // this short-circuit keeps the responder chain in sync.
-      // Same selector the chain provider uses, so the two surfaces
-      // stay aligned.
-      if (startEl.closest('[data-tug-focus="refuse"]')) return;
+      // Canvas-overlay short-circuit. Lifted ABOVE the Branch A/B
+      // split so a click inside `<CanvasOverlayRoot />` skips BOTH
+      // the in-pane activation path AND the canvas-background
+      // deselect path. The overlay tier hosts portaled popups,
+      // completion menus, and sheets — all sitting OUTSIDE any
+      // pane in the DOM tree. Without this short-circuit, a click
+      // on a completion item would land in the deck but outside
+      // every pane, and Branch B would treat it as a canvas-
+      // background deselect that demotes the active editor's
+      // first-responder status. The popup item's own `pointerdown`
+      // + `preventDefault()` keeps `document.activeElement` on the
+      // editor's contentDOM; this short-circuit keeps the
+      // responder chain in sync with that focus.
+      //
+      // The selector keys on the canvas overlay's `data-slot` —
+      // NOT on `data-tug-focus="refuse"`. Per `tugplan-tide-overlay-
+      // framework.md` [D01] (#mental-model), the two concerns are
+      // disambiguated: focus-refuse is button-class chain-promotion
+      // / browser-focus-prevention; the canvas-overlay short-circuit
+      // is structural ("am I inside the overlay tier?"). Selecting
+      // on the slot directly says what we mean.
+      if (startEl.closest('[data-slot="tug-canvas-overlay-root"]')) return;
 
       const paneEl = startEl.closest("[data-pane-id]");
 

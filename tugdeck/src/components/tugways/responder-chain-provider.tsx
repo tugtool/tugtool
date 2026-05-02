@@ -308,6 +308,16 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     //
     // Controls only need to add the attribute. Both behaviors are
     // handled here — no per-component onMouseDown handlers needed.
+    //
+    // Narrowed semantics. Per `tugplan-tide-overlay-framework.md`
+    // [D01] (#mental-model), `data-tug-focus="refuse"` controls
+    // exactly two behaviors and nothing else: chain-promotion-skip
+    // (here, in `promoteOnPointerDown`) and browser-focus-prevention
+    // (here, in `preventFocusOnMouseDown`). It does NOT gate
+    // pane-focus-controller activation/deselect — that subsystem
+    // keys on `[data-slot="tug-canvas-overlay-root"]` directly.
+    // One attribute, one semantic. See [D01] for the disambiguation
+    // rationale and (#mental-model) for the five-subsystem model.
     const FOCUS_REFUSE_SELECTOR = '[data-tug-focus="refuse"]';
 
     function isFocusRefusing(target: EventTarget | null): boolean {

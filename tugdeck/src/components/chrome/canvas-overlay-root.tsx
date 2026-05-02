@@ -106,24 +106,22 @@ export function CanvasOverlayRoot(_props: CanvasOverlayRootProps): React.ReactEl
   // can read the `--tug-z-overlay-base` token. One rule, no new
   // file. [D09 implementation note]
   //
-  // `data-tug-focus="refuse"` is critical: the overlay root sits
-  // outside every pane in the DOM tree, so a click on a child
-  // overlay (e.g., a completion menu item) targets an element with
-  // no `[data-pane-id]` ancestor. Without this attribute,
-  // `pane-focus-controller` would treat such a click as a
-  // "canvas-background deselect" and demote whichever card's
-  // editor is currently first responder. The refuse marker tells
-  // the controller to skip activation logic entirely, mirroring
-  // how `[data-no-activate]` and TugButton's own refuse marker
-  // protect in-pane controls. The completion popup's `pointerdown`
-  // + `preventDefault()` keeps `document.activeElement` on the
-  // editor's contentDOM (Q01 / D08); this attribute keeps the
-  // responder chain in sync with that focus.
+  // The pane-focus-controller's "skip canvas-overlay click" check
+  // keys on `data-slot="tug-canvas-overlay-root"` (the slot below) —
+  // not on a focus-discipline marker. Per `tugplan-tide-overlay-
+  // framework.md` [D01] (#mental-model), focus-discipline attributes
+  // (`data-tug-focus="refuse"`) are scoped to button-class chain-
+  // promotion / browser-focus-prevention semantics, decoupled from
+  // pane-focus-controller behavior. The slot attribute is the
+  // direct, unambiguous selector for "I'm inside the canvas overlay
+  // tier" — which is what the controller actually wants. Sheets,
+  // popups, completions etc. portaled here are free to claim first
+  // responder (e.g., a sheet's modal content) without inheriting an
+  // ill-fitting refuse marker.
   return (
     <div
       ref={elRef}
       data-slot="tug-canvas-overlay-root"
-      data-tug-focus="refuse"
       className="tug-canvas-overlay-root"
       style={{
         position: "fixed",

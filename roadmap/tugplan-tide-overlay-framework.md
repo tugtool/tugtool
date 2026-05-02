@@ -425,20 +425,20 @@ The framework adheres to:
 - `responder-chain-provider.tsx` — update `FOCUS_REFUSE_SELECTOR` JSDoc to explicitly document the narrowed semantics.
 
 **Tasks:**
-- [ ] Remove `data-tug-focus="refuse"` from `<CanvasOverlayRoot />` JSX.
-- [ ] Update the canvas-overlay-root.tsx docstring comment that explained the refuse attribute — replace with a note about [D01]'s disambiguation and a pointer to (#mental-model).
-- [ ] In `pane-focus-controller.ts`, change `if (startEl.closest('[data-tug-focus="refuse"]')) return;` to `if (startEl.closest('[data-slot="tug-canvas-overlay-root"]')) return;`. Update the inline comment to explain the decoupling.
-- [ ] In `responder-chain-provider.tsx`, the `FOCUS_REFUSE_SELECTOR` constant's JSDoc gets a "see [D01]" reference and a one-line summary of the narrowed semantics.
+- [x] Remove `data-tug-focus="refuse"` from `<CanvasOverlayRoot />` JSX.
+- [x] Update the canvas-overlay-root.tsx docstring comment that explained the refuse attribute — replace with a note about [D01]'s disambiguation and a pointer to (#mental-model).
+- [x] In `pane-focus-controller.ts`, change `if (startEl.closest('[data-tug-focus="refuse"]')) return;` to `if (startEl.closest('[data-slot="tug-canvas-overlay-root"]')) return;`. Update the inline comment to explain the decoupling.
+- [x] In `responder-chain-provider.tsx`, the `FOCUS_REFUSE_SELECTOR` constant's JSDoc gets a "see [D01]" reference and a one-line summary of the narrowed semantics.
 
 **Tests:**
-- [ ] Existing `tug-popover.test.tsx`, `tug-context-menu.test.tsx`, `tug-popup-menu.test.tsx`, `tug-tooltip.test.tsx`, `tug-alert.test.tsx`, `tug-sheet.test.tsx` continue to pass without modification. (These tests use the body-fallback overlay-root path and don't depend on the refuse attribute.)
-- [ ] Add a unit test asserting that a click on a `<CanvasOverlayRoot />` descendant no longer matches the `closest('[data-tug-focus="refuse"]')` selector. (Sanity check that the disambiguation took effect.)
+- [x] Existing `tug-popover.test.tsx`, `tug-context-menu.test.tsx`, `tug-popup-menu.test.tsx`, `tug-tooltip.test.tsx`, `tug-alert.test.tsx`, `tug-sheet.test.tsx` continue to pass without modification. (These tests use the body-fallback overlay-root path and don't depend on the refuse attribute.) Also reran `pane-focus-controller.test.tsx`, `responder-chain.test.ts`, `responder-chain-unregister-recovery.test.tsx`, `responder-chain-r1-invariant.test.tsx`, `use-responder.test.tsx` (98 tests) — all green.
+- [x] Add a unit test asserting that a click on a `<CanvasOverlayRoot />` descendant no longer matches the `closest('[data-tug-focus="refuse"]')` selector. (Sanity check that the disambiguation took effect.) — `src/__tests__/canvas-overlay-root-disambiguation.test.tsx`
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` green.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
-- [ ] Manual smoke: open a TugPopover; clicking inside doesn't trigger a deselect on the host pane (peer-card stays activated). Open the picker sheet; clicking Cancel closes the sheet (animation plays).
+- [x] `bun x tsc --noEmit` green.
+- [x] `bun test` green.
+- [x] `bun run audit:tokens lint` exits 0.
+- [x] Manual smoke: open a TugPopover; clicking inside doesn't trigger a deselect on the host pane (peer-card stays activated). Open the picker sheet; clicking Cancel closes the sheet (animation plays).
 
 #### Step 2 — Modal cascade target API {#step-2}
 
