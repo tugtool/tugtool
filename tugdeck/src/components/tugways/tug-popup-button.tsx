@@ -49,9 +49,37 @@
  * (label-above-control) — when `topLabel` is unset, no wrapping or styles
  * are applied and the composition stays pure.
  *
+ * ## Service-popup semantics via composition
+ *
+ * Per `tugplan-tide-popup-bindings.md` [D08] (#popup-button-defaults),
+ * TugPopupButton inherits the **service** popup role through
+ * composition. Activating the trigger opens a Radix dropdown that
+ * grabs DOM focus via `FocusScope`; on close, `useServicePopupBinding`
+ * (called once inside `TugPopupMenu` per [D06]) restores focus to the
+ * responder that owned it before the popup opened — typically the
+ * editor or form control the user was working in.
+ *
+ * Consumers do NOT pick a role at the call site and do NOT pass an
+ * `onCloseAutoFocus` override: the binding owns close-focus
+ * restoration. A consumer who needs custom close behavior calls
+ * `manager.focusResponder(targetId)` directly inside the menu-item
+ * handler before the menu closes (per Risk R02 in the popup-bindings
+ * plan). Stacking a second `onCloseAutoFocus` on top of the binding
+ * is unsupported.
+ *
+ * The trigger-discipline correctness invariant is satisfied by the
+ * underlying `TugButton`'s `data-tug-focus="refuse"` attribute, which
+ * `pane-focus-controller` reads to skip responder-chain promotion on
+ * trigger clicks. As a result, `manager.getFirstResponder()` at
+ * `captureOnOpen` time returns the prior responder (e.g., the
+ * editor), not the trigger button — and the close-restore lands on
+ * the right place.
+ *
  * Laws: [L11] controls emit actions, [L19] component authoring guide
  * Decisions: [D02] TugPopupMenu takes a single ReactNode trigger prop,
- *            [D04] TugPopupButton defaults are not configurable
+ *            [D04] TugPopupButton defaults are not configurable,
+ *            [D08] TugPopupButton inherits service semantics through
+ *                  TugPopupMenu (popup-bindings plan)
  */
 
 import "./tug-popup-button.css";

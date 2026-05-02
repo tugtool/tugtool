@@ -1187,17 +1187,17 @@ This is the central correctness invariant: `manager.getFirstResponder()` at `cap
 - No new tests if no overrides found; otherwise unit tests confirming the binding's default behavior is sufficient.
 
 **Tasks:**
-- [ ] `rg "onCloseAutoFocus" tugdeck/src/components --type ts --type tsx` — review each hit; remove any that the service binding now handles.
-- [ ] `rg "manager\.makeFirstResponder|view\.focus\(\)|el\.focus\(\)" tugdeck/src/components/tugways/cards/` — review each card-level focus hack; remove if the binding+focus contract subsumes it.
-- [ ] Add a paragraph to `TugPopupButton`'s docstring per [D08].
+- [x] `rg "onCloseAutoFocus" tugdeck/src/components --type ts --type tsx` — review each hit; remove any that the service binding now handles. — every hit comes from the new service-binding infrastructure landed in [Step 5](#step-5) (`use-service-popup-binding.ts`, `tug-popup-menu.tsx`, `tug-popover.tsx`, `tug-context-menu.tsx`). No consumer-level overrides exist; nothing to remove.
+- [x] `rg "manager\.makeFirstResponder|view\.focus\(\)|el\.focus\(\)" tugdeck/src/components/tugways/cards/` — review each card-level focus hack; remove if the binding+focus contract subsumes it. — zero hits. A wider `rg "\.focus\(\)" tugdeck/src/components/tugways/cards/` finds three concerns in `tide-card.tsx`, none of which are popup close-focus overrides: (a) `cardDidActivate: () => entryDelegateRef.current?.focus()` is structural focus delegation when the card activates (not popup-related); (b) `okButton?.focus()` inside `onOpenAutoFocus` is a sheet *open* focus override (lives at the modal-with-trap layer per the popup-role taxonomy, not service); (c) `[TUG_ACTIONS.FOCUS_PROMPT]: () => entryDelegateRef.current?.focus()` is a chain action handler. None are obsoleted by the service binding. Audit reports zero card-level popup close-focus overrides.
+- [x] Add a paragraph to `TugPopupButton`'s docstring per [D08]. — added a "Service-popup semantics via composition" section explaining that TugPopupButton inherits service role from TugPopupMenu's internal `useServicePopupBinding`, that consumers do NOT pass `onCloseAutoFocus` overrides, that the consumer-override-via-`focusResponder` path (Risk R02) is the supported escape hatch, and that the trigger-discipline correctness invariant rests on the underlying `TugButton`'s `data-tug-focus="refuse"` attribute. Cited [D02] / [D04] / [D08] in the trailing reference list.
 
 **Tests:**
-- [ ] No new tests unless a card lost a hand-rolled override; in that case, write a unit test asserting the binding fills the gap.
+- [x] No new tests unless a card lost a hand-rolled override; in that case, write a unit test asserting the binding fills the gap. — no overrides found by either audit grep, so no new tests required. The Step 5 unit + app-test coverage is sufficient as a regression net for the binding's behavior.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` green.
-- [ ] `bun test` green.
-- [ ] `rg` audit reports zero card-level focus-restore overrides remaining.
+- [x] `bun x tsc --noEmit` green.
+- [x] `bun test` green. — 2718 pass / 0 fail across 163 files (unchanged from end of Step 5; this step is documentation-only).
+- [x] `rg` audit reports zero card-level focus-restore overrides remaining. — confirmed by the two audit greps run during Tasks above.
 - [ ] Manual smoke: every popup-class call site behaves correctly.
 
 ---
