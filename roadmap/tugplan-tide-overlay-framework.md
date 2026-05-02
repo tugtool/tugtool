@@ -40,13 +40,13 @@ Bugs at the intersections take long to diagnose because no single document says 
 
 #### Strategy {#strategy}
 
-Narrow scope, sharp aim. Three concrete deliverables:
+Three concrete deliverables, each addressing a named bug class or framework gap:
 
-1. **Disambiguate `data-tug-focus="refuse"`** into per-concern attributes. One semantic per attribute.
+1. **Disambiguate `data-tug-focus="refuse"`** into per-concern attributes. One semantic per attribute. (See [D01]; the exact split is two attributes — overlay-tier vs. button-class — not three; [D07] formalizes that the two button-class behaviors stay bundled as one concept.)
 2. **Explicit close-cascade target API** on `useTugSheet`: a modal captures a "cascade target" responder id at open time and dispatches via `sendToTarget` instead of `sendToFirstResponder`. Removes the load-bearing assumption that first responder is correctly set at the moment the cascade fires.
 3. **Documented mental model** in code: a single canonical doc (this plan's Deep Dives section, plus a module docstring) describing the five subsystems, their interactions, and the invariants the framework now enforces.
 
-Out of scope (deliberately): a full `useOverlay` primitive with a `role` parameter; refactoring `useOptionalResponder` to expose a canonical chain walk. Both are valuable but the narrow scope buys us today's bug fix and the doc anchor; broader refactors can land incrementally as Steps 3–8 of the popup-bindings plan surface specific needs.
+Items not delivered as code primitives — and the reasons each is not a deferral but a recorded decision: see (#proposal-audit) and decisions [D05] (no universal `useOverlay({ role })`), [D06] (`onClosed` is already the close-settled boundary), [D07] (refuse-attribute behavior pair is intentionally bundled). The original proposal's six-item list is fully accounted for there: three items shipped in Steps 1–4, three are explicitly resolved as not-needed, and zero are deferred to "as consumer needs surface." Future contributors who want to revisit any of those decisions read the recorded analysis first.
 
 #### Success Criteria (Measurable) {#success-criteria}
 
@@ -246,6 +246,104 @@ The invariants:
 
 **Tuglaws cross-check:** [L19] (component authoring guide) gets a one-liner pointing at the invariants block.
 
+#### [D05] No universal `useOverlay({ role })` primitive (DECIDED) {#d05-no-useoverlay-primitive}
+
+**Decision:** Reject the proposal's `useOverlay({ role: "modal" | "companion" | "service" | "hint" })` universal primitive. Keep role-specific bindings (`useCompanionPopupBinding`, `useServicePopupBinding`, future variants) as the primary surface; the role taxonomy lives in documentation and component-authoring guidance, not in a shared hook signature.
+
+**Rationale:** The seven existing overlay primitives — `TugSheet`, `TugAlert`, `TugPopover`, `TugConfirmPopover`, `TugTooltip`, `TugPopupMenu`, `TugContextMenu` — have wildly different gesture surfaces:
+
+| Primitive | Trigger pattern |
+|---|---|
+| TugSheet | Imperative Promise hook (`showSheet().then(...)`) + ref handle + `<TugSheetTrigger>` |
+| TugAlert | Radix `AlertDialog` controlled `open` / `onOpenChange` |
+| TugPopover / TugConfirmPopover | Radix `Popover` `<Trigger asChild>` |
+| TugTooltip | Radix `Tooltip` hover/focus driven |
+| TugPopupMenu | Radix `DropdownMenu` `<Trigger asChild>` |
+| TugContextMenu | Radix `ContextMenu` right-click trigger |
+
+Forcing all of these through a single `useOverlay({ role })` signature would require the hook to internally dispatch between Promise-based, render-prop, hover-driven, and right-click patterns based on the role parameter. That is not abstraction — it is a switch statement masquerading as a primitive. The "abstraction" hides indirection costs (a layer to read past at every consumer) without simplifying any consumer.
+
+What IS already shared across all primitives, and what does *not* need a `useOverlay({ role })`:
+
+- **Portal target** — `useCanvasOverlay()` is the uniform answer.
+- **Chain registration** — `useOptionalResponder()` is the uniform answer for surfaces that handle chain actions.
+- **Refuse semantics on non-overlay markers** — already centralized in `responder-chain-provider.tsx`'s `FOCUS_REFUSE_SELECTOR` per [D01].
+- **Chain-dismissal subscription pattern** — repeated five times across non-modal primitives (`TugPopover`, `TugConfirmPopover`, `TugTooltip`, `TugPopupMenu`, `TugContextMenu`). This is the *only* place where a small focused helper (e.g. `useChainDismissOnAction(open, setOpen)`) might pay rent. Whether to extract it can be decided when a sixth consumer surfaces or when a popup-bindings step touches the duplication; the decision does not need to be made here.
+
+**The role taxonomy is documentation, not API.** A consumer authoring a new overlay primitive picks "modal" / "companion" / "service" / "hint" based on the question *"while this surface is open, where does the user expect their typing to go?"* (per [tugplan-tide-popup-bindings.md (#popup-role-taxonomy)]). That question selects a binding (`useCompanionPopupBinding`, `useServicePopupBinding`) and a portal target — not a shared hook signature.
+
+**Implications:**
+- `tugplan-tide-popup-bindings.md` Steps 4–5 land `useCompanionPopupBinding` and `useServicePopupBinding` as separate role-specific hooks. The framework plan does not introduce a unifying primitive.
+- Any future "small extract" of duplicated patterns (e.g., `useChainDismissOnAction`) is a tactical refactor, not a framework primitive.
+- The component-authoring guide names the four roles and points at the per-role binding for each — a documentation contract, not a code contract.
+
+**Tuglaws cross-check:** [L19] — component-authoring guide entry on overlay role selection. No code changes in this plan; the decision constrains future API design.
+
+#### [D06] `onClosed` is the close-settled boundary (DECIDED) {#d06-onclosed-is-settled}
+
+**Decision:** Reject the proposal's `useOverlayLifecycle()` with separate `onClose` (state flip) vs. `onCloseSettled` (chain reconciled, focus restored) callbacks. The existing `onClosed` in `TugSheetContent` and the equivalent in other modal primitives already fires AFTER the chain has reconciled; no second callback is needed.
+
+**Rationale:** Trace of the close sequence for `TugSheet` (the deepest case — exit animation + portal unmount + responder unregister + focus restore):
+
+1. `close("cancel")` — promise resolves; dispatches `cancelDialog` to the sheet's responder via `sendToTarget`.
+2. Sheet's `cancelDialog` handler — `setOpen(false)`.
+3. React commits the open=false render. `mounted` is still true; the portal stays in the tree for the exit animation.
+4. Exit-animation `useLayoutEffect` runs WAAPI: scrim fade + panel slide-out.
+5. `g.finished.then(() => setMounted(false))` fires after the animation completes.
+6. React commits the mounted=false render. The portal returns null; the sheet's DOM is removed.
+7. `useOptionalResponder`'s effect cleanup runs: `manager.unregister(id)`.
+8. `unregister`'s DOM-walk fallback promotes the nearest still-registered ancestor to first responder.
+9. Radix's `FocusScope.onUnmountAutoFocus` fires: `triggerEl.focus()` restores focus to the trigger.
+10. The `focusin` event fires; `ResponderChainProvider`'s `promoteOnFocusIn` runs; first responder is updated based on the trigger's DOM ancestry.
+11. The `prevMountedRef → !mounted` `useLayoutEffect` fires: `onClosed?.()`.
+
+By step 11 — when `onClosed` fires — every chain-relevant transition has completed: unregister, parentId-fallback promotion, focus restore, and focusin-driven first-responder update.
+
+**The cancel-cascade bug was NOT a timing problem.** It was a first-responder-reliance problem. The consumer assumed that at `onClosed` time, `firstResponderId` would be the host pane (so `sendToFirstResponder({ CLOSE })` would walk to the pane's CLOSE handler). In reality, `firstResponderId` settles to *whatever* the focus restore + focusin promotion produces — which depends on focus history, FocusScope's restore target, and DOM ancestry — and is often something OTHER than the host pane. The fix in [D02] sidestepped first-responder state entirely by capturing the cascade target id at open time and dispatching via `sendToTarget`. No `onCloseSettled` callback could have helped, because there is no value of `firstResponderId` that consistently matches what the consumer wants.
+
+**Implications:**
+- `TugSheet`'s `onClosed` keeps its current contract: fires after the exit animation and DOM removal; the chain has reconciled by this point.
+- Consumers that need a follow-up dispatch on close use the [D02] cascade-target pattern, NOT a hypothetical `onCloseSettled`.
+- The lifecycle-callback API stays as it is; the framework does not introduce a `useOverlayLifecycle()` primitive.
+
+**Tuglaws cross-check:** [L19] — module docstring for `TugSheet`'s `onClosed` is updated (in [Step 4](#step-4)) to cite [D06] / [D02] for the cascade pattern instead of suggesting consumers wait for a second callback.
+
+#### [D07] Refuse-attribute behavior pair is intentionally bundled (DECIDED) {#d07-refuse-bundled}
+
+**Decision:** Reject the proposal's third refuse-split (`data-tug-button-keep-editor-focus` separate from a chain-promotion-skip attribute). The two button-class behaviors that `data-tug-focus="refuse"` currently controls — chain-promotion-skip (`promoteOnPointerDown`) and browser-focus-prevention (`preventFocusOnMouseDown`) — are intentionally bundled. Every consumer wants both; splitting them would require every consumer to set both attributes, with no benefit.
+
+**Rationale:** Audit of refuse consumers in production code:
+
+| File | Use |
+|---|---|
+| `tug-button.tsx` | All chrome buttons |
+| `tug-switch.tsx` | Toggle switches |
+| `tug-checkbox.tsx` | Checkboxes |
+| `tug-slider.tsx` | Sliders |
+| `tug-option-group.tsx` | Option groups |
+| `tug-choice-group.tsx` | Choice groups |
+| `tug-tab-bar.tsx` | Tab buttons (×2 sites) |
+
+Every consumer is a chrome control whose click should not perturb the active editor's focus. Both behaviors serve that single concept:
+
+- *Chain-promotion-skip* prevents the click from making the button the chain's first responder (which would route subsequent keyboard shortcuts to the button instead of the editor).
+- *preventDefault on mousedown* prevents the browser from moving the DOM `activeElement` to the button (which would blur the editor's contenteditable / input).
+
+The two behaviors operate at two layers (chain registry vs. browser focus) but address one user goal: *"clicking a chrome control must not steal focus from where the user is typing."* Authoring an attribute that turns on only one half is incoherent — a button that takes browser focus but not chain promotion (or vice versa) is a bug, not a feature.
+
+**The proposal's three-way split collapses to two real concepts:**
+- *Structural overlay marker* — addressed by `data-slot="tug-canvas-overlay-root"` per [D01]. (Pane-focus-controller skip + canvas-overlay marker collapse to one attribute on one element.)
+- *Button-class focus discipline* — addressed by `data-tug-focus="refuse"` per [D01]. (Chain-promotion-skip and browser-focus-prevention bundle as one concept.)
+
+Both are done. No third attribute needs to exist.
+
+**Implications:**
+- `data-tug-focus="refuse"` keeps its dual-behavior semantics. Authors set the attribute and get both behaviors atomically.
+- The component-authoring guide describes refuse as *one* concept ("this control should not perturb editor focus on click"), with the two implementation behaviors as collapsed implementation detail.
+- Future contributors who notice the dual-behavior coupling and want to split it should re-read this decision and the audit before doing so.
+
+**Tuglaws cross-check:** [L19] — `responder-chain-provider.tsx`'s `FOCUS_REFUSE_SELECTOR` JSDoc (already updated in [Step 1](#step-1)) describes the two-layer behavior as "one concept, two layers"; no further code change required.
+
 ### Deep Dives {#deep-dives}
 
 #### Mental Model — the Five Subsystems {#mental-model}
@@ -334,6 +432,46 @@ A sheet's `onClosed` consumer wants to dispatch a follow-up action ("close my ho
 [D02]'s fix: consumer captures the cascade target id at open time (`cascadeTargetId`) and dispatches via `sendToTarget(target, ...)` on close. The dispatch walks `parentId` from a *known* node; first-responder state is irrelevant. The bug class disappears.
 
 The principle generalizes: **whenever a modal's lifecycle ends and the consumer wants a follow-up dispatch, capture the target at open time, not at close time.**
+
+#### Proposal Audit & Resolutions {#proposal-audit}
+
+After Steps 1–4 landed, the user pushed back on the framework's scope: of the six primitives the original proposal called out, three were marked done, two partial, one unbuilt — and the partial/unbuilt items had been deferred with an "incremental as needs surface" framing that hid scope choices behind language about future discovery. Per the user's correction, the deferrals were re-examined to determine which were *genuine knowledge gaps* (legitimate to defer until consumer-side discovery) vs. which were *scope choices we could and should resolve now*.
+
+The audit walks every original-proposal item, names the resolution, and records the analysis as decisions ([D05]–[D07]) so future contributors can argue against the recorded reasoning rather than re-litigating the same questions from scratch.
+
+**Original proposal (verbatim, six items):**
+
+> 1. `useOverlay({ role })` — universal hook for every overlay surface. role ∈ { "modal", "companion", "service", "hint" }. Returns the right portal target, refuse semantics, responder registration, focus discipline for that role.
+> 2. Chain-walk single source of truth. Today `findResponderForTarget` (DOM) and the `parentId` walk (React context) coexist. Decide which is canonical for which use case and document it.
+> 3. Disambiguated focus-discipline attributes. `data-tug-focus="refuse"` becomes three attributes with three names: `data-tug-pane-deselect-skip`, `data-tug-button-keep-editor-focus`, `data-tug-canvas-overlay-marker`.
+> 4. `useOverlayLifecycle()` — explicit `onClose` (state flip) vs. `onCloseSettled` (chain reconciled, focus restored, safe to dispatch follow-up actions).
+> 5. Modal close-cascade primitive. Modals that need to "close my consumer too" should hold a target id (passed at open time) and `sendToTarget(targetId, ...)`.
+> 6. Documented invariants with tests.
+
+**Resolutions:**
+
+| # | Item | Status | Where addressed |
+|---|------|--------|-----------------|
+| 1 | `useOverlay({ role })` | NOT NEEDED | [D05] — role taxonomy is documentation; per-role bindings (`useCompanionPopupBinding`, `useServicePopupBinding`) are the right surface |
+| 2 | Chain-walk single source of truth | NOT NEEDED | [D03] — the two walks answer different questions; both are canonical |
+| 3 | Disambiguated focus-discipline attributes | DONE | [D01] (Step 1) — overlay-tier vs. button-class split shipped; [D07] formalizes that the button-class behavior pair stays bundled |
+| 4 | `useOverlayLifecycle()` (onClose vs onCloseSettled) | NOT NEEDED | [D06] — `onClosed` already fires post-settle; the cancel-cascade bug was first-responder reliance, not timing |
+| 5 | Modal close-cascade primitive | DONE | [D02] (Step 2) + adoption (Step 3) — `cascadeTargetId` + `sendToTarget` shipped |
+| 6 | Documented invariants with tests | DONE | [D04] (Step 4) — I1–I6 documented in `responder-chain.ts` + 17 passing tests |
+
+**Why three "NOT NEEDED" verdicts hold up.** Each one comes from concrete examination, not from time-budget hedging:
+
+- *useOverlay({ role })* — see [D05]. The seven existing overlay primitives have wildly different gesture surfaces (Promise hook, render-prop trigger, hover, right-click). Forcing them through one signature would be a switch statement masquerading as a primitive. The shared parts (`useCanvasOverlay`, `useOptionalResponder`, refuse semantics) are already centralized; the unshared parts (per-role bindings) are intentionally separate.
+- *Chain-walk unification* — see [D03]. DOM walk answers "what responder owns this physical position?" Registry walk answers "what's the conceptual handler hierarchy?" Portals make these intentionally diverge. Unifying loses information.
+- *useOverlayLifecycle()* — see [D06]. The chain DOES reconcile by `onClosed` time. The bug class the proposal targeted is fixed by [D02]'s capture-at-open-time pattern, not by adding a second lifecycle callback.
+
+**Why one "DONE" item ([D07] / [D03]) was originally marked partial.** My earlier assessment of [D01] as a "partial" disambiguation was wrong — the proposal's three-way split collapses to two real concepts, both of which shipped. [D07] now formalizes that the two button-class behaviors are intentionally one concept.
+
+My earlier assessment of [D03] as a "partial" walk-unification was also wrong — the proposal asked us to *decide* which walk is canonical, and we did decide: *both, for different jobs*. That is a complete decision, not a deferral.
+
+**Conclusion.** Of the six proposal items, three shipped in Steps 1–4, three are explicitly resolved as not-needed in [D05]–[D07], and zero require new code primitives. The framework is functionally complete for `tugplan-tide-popup-bindings.md` Steps 3–8.
+
+`tugplan-tide-popup-bindings.md` Step 3 introduces `ResponderNode.focus` and `manager.focusResponder(id)` — chain-level capabilities that Steps 4–5 consume. Those additions live in the popup-bindings plan and grow the chain's surface there; the framework plan acknowledges them and points at popup-bindings Step 3 for design and tests. (The framework's [D04] invariants block does not re-state the focus-callback contract; popup-bindings Step 3's docstring discipline owns that surface.)
 
 #### Tuglaws Cross-Check Plan {#tuglaws-cross-check}
 
@@ -518,6 +656,37 @@ The framework adheres to:
 - [x] `bun test` green. — full suite 2690 pass / 0 fail across 159 files.
 - [x] `bun run audit:tokens lint` exits 0.
 - [x] Code-review pass: every modified module's docstring has a link to (#mental-model) where it touches framework concerns. — `responder-chain.ts` (INVARIANTS block + bottom pointer), `use-responder.tsx` (parentId section), `canvas-overlay-root.tsx` (focus-discipline section + framework decisions), `tug-sheet.tsx` (top-of-file `@see`).
+
+#### Step 5 — Proposal audit; record [D05]–[D07]; close out framework {#step-5}
+
+**Depends on:** #step-4
+
+**References:** [D05], [D06], [D07], (#proposal-audit)
+
+**Context:** After Steps 1–4 landed, the framework's scope was challenged: of the six primitives the original proposal called out, three shipped, three were marked partial/unbuilt with an "incremental as needs surface" framing. Per the user's correction (recorded in `feedback_no_time_budgets.md`), the deferrals were re-examined to determine which were genuine knowledge gaps vs. scope choices that could be resolved now. Step 5 records the resolution as durable decisions so the framework's scope is honestly accounted for.
+
+**Artifacts:**
+- `roadmap/tugplan-tide-overlay-framework.md` — three new design decisions [D05] (no `useOverlay({ role })`), [D06] (`onClosed` is the close-settled boundary), [D07] (refuse-attribute behavior pair stays bundled). New deep-dive section (#proposal-audit) walks every original-proposal item and records its resolution.
+
+**Tasks:**
+- [x] Audit `data-tug-focus="refuse"` consumers (8 chrome controls + the chain provider); confirm the two button-class behaviors (chain-promotion-skip + browser-focus-prevention) are intentionally bundled. Record as [D07].
+- [x] Audit the seven existing overlay primitives (`TugSheet`, `TugAlert`, `TugPopover`, `TugConfirmPopover`, `TugTooltip`, `TugPopupMenu`, `TugContextMenu`); confirm their gesture surfaces do not unify under one hook signature; record as [D05]. Note that the `observeDispatch` chain-dismissal pattern is duplicated five times across non-modal primitives — flag for possible future tactical extraction (`useChainDismissOnAction`) as a small focused helper, not a framework primitive.
+- [x] Trace the close sequence for `TugSheet`; confirm that `onClosed` fires AFTER unregister + parentId-fallback promotion + `FocusScope.onUnmountAutoFocus` + `focusin`-driven first-responder update. Confirm the cancel-cascade bug class was first-responder reliance (fixed by [D02]), not timing. Record as [D06].
+- [x] Re-examine [D03]'s "both walks are canonical" against the proposal's "decide which is canonical." Confirm DOM walk and `parentId` walk answer different questions and unifying loses information. No revision required; cite in (#proposal-audit) resolution table.
+- [x] Audit `tugplan-tide-popup-bindings.md` Steps 3–8 for any framework-primitive needs that Steps 1–4 did not cover. Confirm: Step 3's `ResponderNode.focus` + `manager.focusResponder` belong to popup-bindings (chain-capability addition with full design and tests in that plan); Steps 4–5's bindings (`useCompanionPopupBinding`, `useServicePopupBinding`) consume the framework but do not require new framework primitives.
+- [x] Author (#proposal-audit) deep dive: walks every original-proposal item with status (DONE / NOT NEEDED), resolution decision pointer, and analysis. Acknowledge the corrected scope-choice-vs-knowledge-gap framing.
+- [x] Add [D05]–[D07] to the Design Decisions section.
+- [x] Update Strategy section's "Out of scope" wording to point at (#proposal-audit) instead of the original "broader refactors can land incrementally" framing.
+
+**Tests:**
+- [x] No new tests. The audit produces decisions (text), not code.
+
+**Checkpoint:**
+- [x] `bun x tsc --noEmit` green (re-run; documentation-only changes preserve build).
+- [x] `bun test` green (re-run; documentation-only changes preserve tests).
+- [x] `bun run audit:tokens lint` exits 0 (re-run; no token changes).
+- [x] All six original-proposal items have a recorded resolution: three shipped (Steps 1–4), three explicitly NOT NEEDED ([D05], [D06], [D07]), zero deferred to "as needs surface."
+- [x] `tugplan-tide-popup-bindings.md` Step 3 footnoted in (#proposal-audit) — its `ResponderNode.focus` / `manager.focusResponder` additions are owned by that plan, not the framework.
 
 ---
 
