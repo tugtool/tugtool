@@ -1074,36 +1074,37 @@ Layer C — wire defaults:
 - New unit tests; new app-test for companion auto-dismiss.
 
 **Tasks:**
-- [ ] Implement `useCompanionPopupBinding({ ownerEl, onShouldDismiss })` per (#companion-binding):
-  - [ ] Document-level `focusout` and `focusin` listeners (capture phase) installed in `useLayoutEffect` ([L03]).
-  - [ ] Microtask-deferred `document.activeElement` read inside the handler so in-subtree focus transitions (focusout fires before focusin during sibling moves) don't spuriously fire dismiss.
-  - [ ] `onShouldDismiss` callback held in a ref per [L07] for closure stability.
-  - [ ] Last-value memoization (`isFocusedInside`) in a closure variable inside `useLayoutEffect`. *Structure-zone* per [L24].
-  - [ ] No useState; no React-state mirror of focus position. Per [L02] / [L06]: DOM focus is appearance state observed directly via DOM events, not mirrored into React.
-- [ ] In `CompletionOverlay`, remove the `cardDidDeactivate` subscription and `useContext(DeckManagerContext)` / `useCardId()` block; replace with:
+- [x] Implement `useCompanionPopupBinding({ ownerEl, onShouldDismiss })` per (#companion-binding):
+  - [x] Document-level `focusout` and `focusin` listeners (capture phase) installed in `useLayoutEffect` ([L03]).
+  - [x] Microtask-deferred `document.activeElement` read inside the handler so in-subtree focus transitions (focusout fires before focusin during sibling moves) don't spuriously fire dismiss.
+  - [x] `onShouldDismiss` callback held in a ref per [L07] for closure stability.
+  - [x] Last-value memoization (`isFocusedInside`) in a closure variable inside `useLayoutEffect`. *Structure-zone* per [L24].
+  - [x] No useState; no React-state mirror of focus position. Per [L02] / [L06]: DOM focus is appearance state observed directly via DOM events, not mirrored into React.
+- [x] In `CompletionOverlay`, remove the `cardDidDeactivate` subscription and `useContext(DeckManagerContext)` / `useCardId()` block; replace with:
   ```ts
   useCompanionPopupBinding({
     ownerEl: view.contentDOM,
     onShouldDismiss: () => cancelCompletion(view),
   });
   ```
-- [ ] Per [L23] strict-superset claim: keep the existing pane-collapse `cancelCompletion` branch in the ResizeObserver block (that's a different signal — a layout collapse, not a focus signal — and remains valid). The two signals coexist; both end at the same `cancelCompletion(view)` mutation.
-- [ ] Verify `view.contentDOM` is the right `ownerEl`: it's the contenteditable that loses focus when Radix's FocusScope grabs focus into a sibling popup. If a Step 4 unit test reveals an edge case where the editor's wrapper element is a better choice (e.g., subtle CM6 internal focus games), pivot to the wrapper at implementation time and document the rationale in the hook's docstring.
+  Imports `useContext` (no other consumer in `tug-text-editor.tsx`) and `DeckManagerContext` removed; `useCardId` import preserved (still used by the parent `TugTextEditor` component for an unrelated cardId ref).
+- [x] Per [L23] strict-superset claim: keep the existing pane-collapse `cancelCompletion` branch in the ResizeObserver block (that's a different signal — a layout collapse, not a focus signal — and remains valid). The two signals coexist; both end at the same `cancelCompletion(view)` mutation. — verified: ResizeObserver block intact; only the deactivate-cancel block is removed.
+- [x] Verify `view.contentDOM` is the right `ownerEl`: it's the contenteditable that loses focus when Radix's FocusScope grabs focus into a sibling popup. If a Step 4 unit test reveals an edge case where the editor's wrapper element is a better choice (e.g., subtle CM6 internal focus games), pivot to the wrapper at implementation time and document the rationale in the hook's docstring. — `contentDOM` is correct: focus assertions in `tug-text-editor-completion-overlay.test.tsx` confirm the strict-superset behavior using `view.contentDOM.focus()` as the in-subtree pre-condition.
 
 **Tests:**
-- [ ] Unit: companion fires `onShouldDismiss` exactly when DOM focus transitions out of the owner element's subtree.
-- [ ] Unit: an in-subtree focus transition (focus moves between two children of the owner) does NOT fire `onShouldDismiss`.
-- [ ] Unit: changing `ownerEl` re-subscribes; the old element's listeners are torn down; the new element's listeners take effect.
-- [ ] Unit: `ownerEl === null` no-ops (no listeners installed).
-- [ ] Integration (happy-dom + real CM6 view): mount editor + open `@` completion via `view.dispatch`; programmatically blur `view.contentDOM` (call `view.contentDOM.blur()`); assert `cancelCompletion` was called and the typeahead state went inactive.
-- [ ] App-test (the bug-reproducer): open `@` completion in the editor; click the font picker (`TugPopupButton`); assert completion popup is gone before the font menu has fully opened. Verifies the chain: trigger click → Radix mounts content → FocusScope grabs focus from contentDOM → focusout on contentDOM → microtask defer → companion fires → `cancelCompletion` runs.
-- [ ] App-test: open `@` completion; click into a peer card; assert completion popup is gone (the old `cardDidDeactivate` case, now subsumed by the focus signal). Per [L23] strict-superset.
-- [ ] App-test: open `@` completion; press Escape; assert popup closes (the existing keymap path is unaffected by the binding swap; this is a regression guard).
+- [x] Unit: companion fires `onShouldDismiss` exactly when DOM focus transitions out of the owner element's subtree. — `use-companion-popup-binding.test.tsx`: "fires onShouldDismiss when focus moves from inside to outside the owner" and "fires once per outside transition, re-arming when focus returns".
+- [x] Unit: an in-subtree focus transition (focus moves between two children of the owner) does NOT fire `onShouldDismiss`. — `use-companion-popup-binding.test.tsx`: "does NOT fire onShouldDismiss when focus moves between two siblings inside the owner".
+- [x] Unit: changing `ownerEl` re-subscribes; the old element's listeners are torn down; the new element's listeners take effect. — `use-companion-popup-binding.test.tsx`: "re-subscribes when ownerEl identity changes" — covers tear-down of ownerA's effect AND verifies ownerB's effect responds correctly.
+- [x] Unit: `ownerEl === null` no-ops (no listeners installed). — two tests: "installs no listeners when ownerEl is null" (spies on `document.addEventListener` to confirm no installs) and "recovers when ownerEl becomes non-null on a later render".
+- [x] Integration (happy-dom + real CM6 view): mount editor + open `@` completion via `view.dispatch`; programmatically blur `view.contentDOM` (call `view.contentDOM.blur()`); assert `cancelCompletion` was called and the typeahead state went inactive. — `tug-text-editor-completion-overlay.test.tsx`: "DOM focus leaving the editor's contentDOM cancels the typeahead session ([D05] strict-superset of [D06])" + "two editors' typeahead sessions are independent (each binds to its own contentDOM)" — both use real CM6 views and `view.contentDOM.focus()` to drive transitions.
+- [x] App-test (the bug-reproducer): open `@` completion in the editor; click the font picker (`TugPopupButton`); assert completion popup is gone before the font menu has fully opened. Verifies the chain: trigger click → Radix mounts content → FocusScope grabs focus from contentDOM → focusout on contentDOM → microtask defer → companion fires → `cancelCompletion` runs. — `tests/app-test/at0052-completion-cancels-on-sibling-popup.test.ts`. Uses `gallery-text-editor` (exposes the font-family `TugPopupButton`) and `/` trigger per the deterministic-fixture pattern. **Verified PASS via `just app-test`** (1/1 file green; 1/1 tests passed). AT-tag AT0052 inventory entry should flip ❓→✅.
+- [x] App-test: open `@` completion; click into a peer card; assert completion popup is gone (the old `cardDidDeactivate` case, now subsumed by the focus signal). Per [L23] strict-superset. — `tests/app-test/at0053-completion-cancels-on-peer-card-click.test.ts`. Two-pane / two-card deck; native-clicks card B's `data-pane-id="p2"` chrome to drive focus out of card A. **Verified PASS via `just app-test`** (1/1 file green). AT-tag AT0053 inventory entry should flip ❓→✅.
+- [x] App-test: open `@` completion; press Escape; assert popup closes (the existing keymap path is unaffected by the binding swap; this is a regression guard). — `tests/app-test/at0054-completion-escape-still-cancels.test.ts`. Activates `/` typeahead, presses Escape natively, asserts popup hidden. **Verified PASS via `just app-test`** (1/1 file green; 2/2 expect() calls). AT-tag AT0054 inventory entry should flip ❓→✅.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` green.
-- [ ] `bun test` green.
-- [ ] App-tests pass.
+- [x] `bun x tsc --noEmit` green. — both `tugdeck` and `tests/app-test` projects type-check cleanly.
+- [x] `bun test` green. — full suite 2708 pass / 0 fail across 161 files (was 2701 / 160 at end of Step 3; added 7 hook tests in `use-companion-popup-binding.test.tsx`; CompletionOverlay tests updated in place from 12 to 12).
+- [x] App-tests pass. — `just app-test at0052-* at0053-* at0054-*` returns VERDICT: PASS for all three.
 - [ ] Manual smoke: image 5 reproducer — open `@` completion, click font picker; completion popup vanishes; font menu opens.
 
 ---

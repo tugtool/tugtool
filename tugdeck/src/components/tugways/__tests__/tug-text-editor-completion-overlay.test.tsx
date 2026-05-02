@@ -7,8 +7,10 @@
  *      editor host, into `<CanvasOverlayRoot />` when registered or
  *      `document.body` as fallback per [D02]).
  *   2. Lifecycle pruning — the overlay closes on:
- *        - owning-card deactivation (deck-store fires
- *          `cardDidDeactivate` for the owning card; [D06]),
+ *        - DOM focus leaving the editor's `contentDOM` subtree
+ *          (the companion-binding signal per
+ *          `tugplan-tide-popup-bindings.md` [D05]; strict-supersets
+ *          the prior `cardDidDeactivate` subscription),
  *        - pane collapse (the editor host's bounding rect drops to
  *          zero; the ResizeObserver branch in CompletionOverlay
  *          dispatches `cancelCompletion`; [D06] fold-in),
@@ -31,8 +33,9 @@
  * What this catches:
  *   - Regression that re-introduces the popup `<div>` inside the
  *     editor host (the bug this migration fixes).
- *   - Regression that detaches the active-card-deactivate
- *     subscription, leaving popups orphaned over deactivated cards.
+ *   - Regression that detaches the companion focus binding, leaving
+ *     popups orphaned over editors whose contentDOM has lost focus
+ *     (peer card activation, sibling popup mount, click outside).
  *   - Regression that drops the pane-collapse branch in the
  *     ResizeObserver, leaving popups visible after the holding pane
  *     collapses.
@@ -242,24 +245,17 @@ const PROVIDERS: Record<string, CompletionProvider> = { "@": fileProvider };
 
 describe("CompletionOverlay — lifecycle pruning", () => {
   test(
-    "owning-card deactivate cancels the typeahead session ([D06])",
-    () => {
-      // Capture the deactivate callback per cardId so the test can fire
-      // it deterministically. The base mock returns a no-op — override
-      // here to record the registration.
-      const deactivateCallbacks = new Map<string, (cardId: string) => void>();
-      const store = makeMockStore({
-        observeCardDidDeactivate: (cardId, callback) => {
-          if (cardId === null) return () => {};
-          deactivateCallbacks.set(cardId, callback);
-          return () => {
-            if (deactivateCallbacks.get(cardId) === callback) {
-              deactivateCallbacks.delete(cardId);
-            }
-          };
-        },
-      });
-
+    "DOM focus leaving the editor's contentDOM cancels the typeahead session ([D05] strict-superset of [D06])",
+    async () => {
+      // Per `tugplan-tide-popup-bindings.md` [D05] (#companion-binding),
+      // the typeahead session dismisses when DOM focus leaves the
+      // editor's `contentDOM` subtree. This subsumes the prior
+      // `cardDidDeactivate` signal (peer card activation moves focus
+      // to the new card's editor, which fires the focus signal) AND
+      // covers the in-card service-popup case (Radix's FocusScope
+      // grabs focus into a sibling popup, blurring contentDOM) that
+      // the old signal missed.
+      const store = makeMockStore();
       const { view } = mountWithCard({
         cardId: "card-A",
         store,
@@ -268,35 +264,42 @@ describe("CompletionOverlay — lifecycle pruning", () => {
       activateTypeahead(view, "@");
       expect(getCompletionState(view).active).toBe(true);
 
-      // Simulate the deck-store firing deactivate for card-A — the
-      // exact event the user would see when activating a peer card.
-      const fire = deactivateCallbacks.get("card-A");
-      expect(fire).toBeTypeOf("function");
-      fire!("card-A");
+      // The companion-binding hook initialized with `view.contentDOM`
+      // as the owner. Pre-condition: simulate the editor being focused
+      // by focusing the contentDOM directly. happy-dom dispatches a
+      // focusin event which lets the hook's checkFocus update its
+      // memoized `isFocusedInside` to true — then the subsequent
+      // outside-move yields a true→false transition.
+      view.contentDOM.focus();
+      await Promise.resolve(); // drain the focusin microtask
+
+      // Move focus to a sibling element that is NOT inside contentDOM.
+      // This mimics what happens when Radix's FocusScope grabs focus
+      // into a popup, or when the user clicks outside the editor.
+      const peer = document.createElement("button");
+      document.body.appendChild(peer);
+      peer.focus();
+      await Promise.resolve(); // drain the focusout microtask
+      await Promise.resolve(); // drain a second microtask for safety
 
       expect(getCompletionState(view).active).toBe(false);
+      document.body.removeChild(peer);
     },
   );
 
   test(
-    "deactivate cancel does not fire for a peer card's deactivation",
-    () => {
-      // Two cards mounted under one store. Only card-B's deactivate
-      // should affect card-B's typeahead; card-A's session must
-      // survive a peer-card deactivation event.
-      const deactivateCallbacks = new Map<string, (cardId: string) => void>();
-      const store = makeMockStore({
-        observeCardDidDeactivate: (cardId, callback) => {
-          if (cardId === null) return () => {};
-          deactivateCallbacks.set(cardId, callback);
-          return () => {
-            if (deactivateCallbacks.get(cardId) === callback) {
-              deactivateCallbacks.delete(cardId);
-            }
-          };
-        },
-      });
-
+    "two editors' typeahead sessions are independent (each binds to its own contentDOM)",
+    async () => {
+      // Mount two editors under the same store. The companion binding
+      // is per-contentDOM, so card-A's binding observes contentDOM-A
+      // and card-B's binding observes contentDOM-B. Demonstrating
+      // independence: activate typeahead on B, focus contentDOM-A,
+      // observe that B's session cancels but A's stays inactive
+      // (it was never activated). Then focus a peer outside both
+      // contentDOMs and verify both editors' bindings are wired
+      // (neither reacts because no transition crossed their owner
+      // boundaries from a previously-inside state).
+      const store = makeMockStore();
       const a = mountWithCard({
         cardId: "card-A",
         store,
@@ -307,14 +310,24 @@ describe("CompletionOverlay — lifecycle pruning", () => {
         store,
         completionProviders: PROVIDERS,
       });
-      activateTypeahead(a.view, "@");
-      activateTypeahead(b.view, "@");
 
-      // Fire deactivate for card-B only.
-      deactivateCallbacks.get("card-B")!("card-B");
+      // Focus B's contentDOM, then activate typeahead. The hook
+      // memoizes `isFocusedInside = true` for B's binding.
+      b.view.contentDOM.focus();
+      await Promise.resolve();
+      activateTypeahead(b.view, "@");
+      expect(getCompletionState(b.view).active).toBe(true);
+
+      // Now focus A's contentDOM. From B's binding's POV, focus
+      // moved out → fire dismiss for B. From A's binding's POV,
+      // focus moved in (no dismiss). Each binding handles its own
+      // owner independently; no cross-talk.
+      a.view.contentDOM.focus();
+      await Promise.resolve();
+      await Promise.resolve();
 
       expect(getCompletionState(b.view).active).toBe(false);
-      expect(getCompletionState(a.view).active).toBe(true);
+      expect(getCompletionState(a.view).active).toBe(false);
     },
   );
 

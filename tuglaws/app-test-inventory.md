@@ -21,7 +21,7 @@ The selection-plan history (`roadmap/tugplan-selection.md`) captures the elabora
 
 ## Adding a new tag
 
-1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0051**.
+1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0054**.
 2. Add an entry below in the appropriate section (or create a section).
 3. State, in one line each: card types, state axes, trigger, status.
 4. Cross-link the elaborated entry in `roadmap/tugplan-selection.md` if applicable.
@@ -243,6 +243,25 @@ Surfaced during the canvas overlay-tier plan (`roadmap/tugplan-tide-overlay-tier
 - **Status:** ✅ closed at overlay-tier Step 1.
 - **Tests:** `at0051-completion-popup-escapes-card.test.ts` (4 cases: portal focus retention spike, structural placement, live click-to-accept, ResizeObserver re-anchor).
 - **Summary:** Typeahead popup is portaled into `<CanvasOverlayRoot />` (sibling of the pane container in `DeckCanvas`); painted at viewport coordinates with `position: fixed`; `pointerdown` + `e.preventDefault()` keeps `document.activeElement` on the editor across the portal hop ([D08] resolution); ResizeObserver on the editor host re-anchors on sash drag and cancels the session on pane collapse ([D06]).
+
+### Companion-binding tags (AT0052–AT0054)
+
+Surfaced during the popup-bindings plan (`roadmap/tugplan-tide-popup-bindings.md`) Step 4. Gate the companion-popup auto-dismiss signal — DOM focus on the editor's `contentDOM` per [D05] / (#companion-binding) — replacing the prior `cardDidDeactivate` subscription. Strict-superset coverage: every dismissal the deck-store signal triggered, the focus signal also triggers; the focus signal additionally catches the in-card service-popup case ("image 5" font-picker bug) the old signal missed.
+
+#### [AT0052] Companion auto-dismiss when sibling popup grabs focus
+- **Status:** ✅ closed at popup-bindings Step 4 (runtime-verified `just app-test` PASS).
+- **Tests:** `at0052-completion-cancels-on-sibling-popup.test.ts`.
+- **Summary:** Original "image 5" reproducer: open `@` typeahead in a `gallery-text-editor` card; native-click the font-family `TugPopupButton`; the `useCompanionPopupBinding` hook observes Radix's `FocusScope.onMountAutoFocus` blurring `view.contentDOM` and dispatches `cancelCompletion(view)`. Asserted by the completion menu transitioning to `display: none` and the typeahead state field clearing. Verifies the chain: trigger click → Radix mounts content → FocusScope grabs focus → focusout on contentDOM → microtask defer → companion fires → cancelCompletion runs.
+
+#### [AT0053] Companion auto-dismiss on peer-card click
+- **Status:** ✅ closed at popup-bindings Step 4 (runtime-verified `just app-test` PASS).
+- **Tests:** `at0053-completion-cancels-on-peer-card-click.test.ts`.
+- **Summary:** Strict-superset of the prior `cardDidDeactivate`-based dismissal. Open `@` typeahead in card-A; native-click the chrome of card-B; focus moves to card-B; card-A's contentDOM loses focus; companion binding fires `cancelCompletion`. Verified post-migration that the user-visible behavior of "popup vanishes when peer card activates" still holds — through the focus signal rather than the deck-store deactivate event.
+
+#### [AT0054] Escape keymap regression guard post companion-binding migration
+- **Status:** ✅ closed at popup-bindings Step 4 (runtime-verified `just app-test` PASS).
+- **Tests:** `at0054-completion-escape-still-cancels.test.ts`.
+- **Summary:** Open `@` typeahead in a `gallery-text-editor` card; press Escape; the existing keymap path (`tugCompletionKeymap` → `cancelCompletion`) must still run unmodified post-migration. Regression guard: the binding swap touched the cancel SIGNAL set, not the keymap; this test pins that the keymap path is unaffected.
 
 ## Maintenance
 

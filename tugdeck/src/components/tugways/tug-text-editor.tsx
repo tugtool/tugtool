@@ -72,7 +72,6 @@ import "./tug-completion-menu.css";
 
 import React, {
   useCallback,
-  useContext,
   useId,
   useImperativeHandle,
   useLayoutEffect,
@@ -139,7 +138,7 @@ import { deckTrace } from "@/deck-trace";
 import { selectionGuard } from "./selection-guard";
 import { TugEditorContextMenu, type TugEditorContextMenuEntry } from "./tug-editor-context-menu";
 import { useCardId } from "./use-card-state-preservation";
-import { DeckManagerContext } from "@/deck-manager-context";
+import { useCompanionPopupBinding } from "./use-companion-popup-binding";
 import { useOptionalResponder } from "./use-responder";
 import type { ActionHandler, ActionHandlerResult } from "./responder-chain";
 import { TUG_ACTIONS, type TugAction } from "./action-vocabulary";
@@ -1838,14 +1837,21 @@ interface CompletionOverlayProps {
  *      events and the pane-collapse path that would otherwise leave
  *      the popup orphaned. ([D06] pane-collapse fold-in.)
  *
- *   3. **Card-deactivate cancel** — subscribes via the deck-manager's
- *      `observeCardDidDeactivate(cardId, …)`. When the owning card
- *      transitions from active → not-active, dispatches
- *      `cancelCompletion(view)`. Tolerant of being rendered outside
- *      a `DeckManagerContext.Provider` or outside a `CardHost`
- *      (subscription is a no-op when either is absent), matching
- *      how `useCardId` and `useKeyCardId` handle out-of-tree mounts.
- *      ([D06].)
+ *   3. **Companion focus binding** — `useCompanionPopupBinding({
+ *      ownerEl: view.contentDOM, onShouldDismiss: () =>
+ *      cancelCompletion(view) })`. Observes DOM focus on the editor's
+ *      contentDOM. When focus leaves the contentDOM subtree (Radix
+ *      mounts a sibling popup and `FocusScope.onMountAutoFocus`
+ *      grabs focus into it; the user clicks outside the editor; a
+ *      peer card is activated and focus moves to it), dispatches
+ *      `cancelCompletion(view)`. Per `tugplan-tide-popup-bindings.md`
+ *      [D05] (#companion-binding), this signal strict-supersets the
+ *      former `cardDidDeactivate` subscription: every dismissal the
+ *      old signal triggered, the focus signal also triggers, AND the
+ *      focus signal additionally catches the in-card service-popup
+ *      case (the "image 5" font-picker bug) that the old signal
+ *      missed. The previous deck-manager / `cardDidDeactivate` /
+ *      `useCardId` plumbing for this concern is gone.
  *
  * The component itself reads no React state and renders no React
  * children apart from the portaled wrapper — it is structure-zone
@@ -1873,13 +1879,21 @@ function CompletionOverlay({
 }: CompletionOverlayProps): React.ReactElement {
   const overlayRoot = useCanvasOverlay();
   const popupRef = useRef<HTMLDivElement | null>(null);
-  // Tolerant context reads ([D02] body-fallback parallel): a standalone
-  // gallery test mount lacks both a `CardHost` (so `useCardId` returns
-  // null) and a `DeckManagerContext.Provider` (so `store` is null).
-  // The deactivate-cancel branch no-ops when either is absent — this
-  // matches how `useKeyCardId` is tolerant of out-of-provider mounts.
-  const cardId = useCardId();
-  const store = useContext(DeckManagerContext);
+
+  // Companion focus binding per `tugplan-tide-popup-bindings.md` [D05]
+  // (#companion-binding). The hook observes DOM focus on the editor's
+  // contentDOM and dispatches `cancelCompletion(view)` when focus
+  // leaves the subtree — strict-supersets the former
+  // `observeCardDidDeactivate` subscription per [L23] and additionally
+  // catches the in-card service-popup case (image 5 bug). The hook is
+  // tolerant of `view.contentDOM` not being attached yet (no-op until
+  // a non-null element is supplied). Listeners install at the document
+  // level in `useLayoutEffect` per [L03], ride past in-subtree focus
+  // transitions via a microtask defer, and tear down on unmount.
+  useCompanionPopupBinding({
+    ownerEl: view.contentDOM,
+    onShouldDismiss: () => cancelCompletion(view),
+  });
 
   useLayoutEffect(() => {
     const popup = popupRef.current;
@@ -1939,44 +1953,17 @@ function CompletionOverlay({
       resizeObserver.observe(host);
     }
 
-    // Card-deactivate cancel ([D06]). A typeahead session belongs to
-    // the card whose editor opened it. When the user activates a
-    // peer card, the deck-store fires `cardDidDeactivate(cardId)`
-    // for the owning card; we cancel so the popup does not float
-    // orphaned over the now-hidden editor.
-    //
-    // Tolerant of `cardId === null` (out-of-CardHost test mount) and
-    // `store === null` (out-of-provider test mount): both paths
-    // simply skip the subscription. This matches the existing
-    // `useKeyCardId` pattern and keeps the gallery / unit-test mounts
-    // working without a deck-manager harness.
-    let unobserveDeactivate: (() => void) | null = null;
-    if (store !== null && cardId !== null) {
-      unobserveDeactivate = store.observeCardDidDeactivate(cardId, () => {
-        cancelCompletion(view);
-      });
-    }
-
     return () => {
       unsubscribe();
       resizeObserver?.disconnect();
-      unobserveDeactivate?.();
     };
-    // `view`, `cardId`, and `store` are the externally-changing
-    // inputs; the refs are stable for the component's lifetime by
-    // construction. Re-running on view change is correct (a new view
-    // means we must re-subscribe against its plugin instance);
-    // re-running on cardId / store change is essentially never (the
-    // card identity is stable across the editor's life and the
-    // store is provider-scoped).
-  }, [
-    view,
-    hostRef,
-    onTypeaheadChangeRef,
-    completionDirectionRef,
-    cardId,
-    store,
-  ]);
+    // `view` is the externally-changing input; the refs are stable
+    // for the component's lifetime by construction. Re-running on
+    // view change is correct (a new view means we must re-subscribe
+    // against its plugin instance). The companion-focus binding is
+    // hoisted into its own `useCompanionPopupBinding` call above and
+    // owns its listener lifecycle independently of this effect.
+  }, [view, hostRef, onTypeaheadChangeRef, completionDirectionRef]);
 
   // Render the popup div via portal. Always rendered while the
   // overlay is mounted; visibility is controlled by the painter.
