@@ -631,3 +631,215 @@ describe("TugSheet – onClosed callback", () => {
     cleanupCard();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Cascade-target option (per tugplan-tide-overlay-framework [D02])
+// ---------------------------------------------------------------------------
+
+/**
+ * `cascadeTargetId` is a `ShowSheetOptions` field added in the tide-
+ * overlay-framework Step 2. The canonical [D02] pattern is for the
+ * consumer to capture the id in the same closure where they call
+ * `showSheet`, then read it from that closure inside `onClosed` and
+ * dispatch via `manager.sendToTarget(cascadeTargetId, ...)` — first-
+ * responder state at close time is fragile and using
+ * `sendToFirstResponder` from `onClosed` is a known bug class.
+ *
+ * Per Step 2 of the framework plan, `useTugSheet` itself does not
+ * consume the value; it stores it on `UseTugSheetState.options` for
+ * parity with the other fields. The tests here pin the contract:
+ *
+ *   - Passing `cascadeTargetId` to `showSheet` is accepted by the
+ *     `ShowSheetOptions` type (compile-time, enforced by tsc).
+ *   - The presence of the option does not perturb the showSheet /
+ *     renderSheet / close / onClosed lifecycle (runtime).
+ *   - The consumer's open-time closure capture round-trips into
+ *     `onClosed` — the canonical [D02] pattern works end-to-end and
+ *     the captured id is available for the cascade dispatch.
+ */
+describe("useTugSheet – cascadeTargetId option", () => {
+  afterEach(() => {
+    const mock = (global as unknown as { __waapi_mock__: { reset: () => void } }).__waapi_mock__;
+    mock.reset();
+  });
+
+  it("accepts cascadeTargetId without disturbing the lifecycle", async () => {
+    let capturedShow:
+      | ((opts: {
+          title: string;
+          content: (close: (result?: string) => void) => React.ReactNode;
+          cascadeTargetId?: string;
+        }) => Promise<string | undefined>)
+      | null = null;
+
+    function Consumer() {
+      const { showSheet, renderSheet } = useTugSheet();
+      capturedShow = showSheet;
+      return <>{renderSheet()}</>;
+    }
+
+    const { cleanupCard } = renderWithChainAndCard(<Consumer />);
+
+    let pending!: Promise<string | undefined>;
+    act(() => {
+      pending = capturedShow!({
+        title: "Open Project",
+        cascadeTargetId: "host-pane-id-A",
+        content: (close) => (
+          <button type="button" data-testid="primary" onClick={() => close("done")}>
+            Done
+          </button>
+        ),
+      });
+    });
+
+    expect(getSheetContent()).not.toBeNull();
+
+    const btn = document.querySelector<HTMLButtonElement>("[data-testid='primary']");
+    expect(btn).not.toBeNull();
+    act(() => {
+      fireEvent.click(btn!);
+    });
+
+    const result = await pending;
+    expect(result).toBe("done");
+    cleanupCard();
+  });
+
+  it("round-trips through the consumer's open-time closure (canonical [D02] pattern)", async () => {
+    // Mimics tide-card's presentSheet pattern: capture the cascade
+    // target in the consumer's closure at open time, and read it
+    // back inside onClosed for a follow-up dispatch.
+    const captured: Array<string | undefined> = [];
+    let closeFn: ((result?: string) => void) | null = null;
+
+    function Harness() {
+      const { showSheet, renderSheet } = useTugSheet();
+      React.useEffect(() => {
+        const cascadeTargetId = "host-pane-id-B";
+        void showSheet({
+          title: "Pick",
+          cascadeTargetId,
+          content: (close) => {
+            closeFn = close;
+            return <div>body</div>;
+          },
+          onClosed: (_result) => {
+            // The consumer reads its own captured id — this is the
+            // robust [D02] pattern. The id is in the consumer's
+            // closure, independent of first-responder state.
+            captured.push(cascadeTargetId);
+          },
+        });
+      }, [showSheet]);
+      return <>{renderSheet()}</>;
+    }
+
+    const { cleanupCard } = renderWithChainAndCard(<Harness />);
+
+    await waitFor(() => {
+      expect(closeFn).not.toBeNull();
+      expect(getSheetContent()).not.toBeNull();
+    });
+
+    act(() => {
+      closeFn!("cancel");
+    });
+
+    await act(async () => {
+      resolveAllWaapiAnimations();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(captured).toEqual(["host-pane-id-B"]);
+    });
+    cleanupCard();
+  });
+
+  it("hook state is replaced cleanly when a second showSheet uses a different cascadeTargetId", async () => {
+    // Two consecutive showSheet calls each pass a distinct
+    // cascadeTargetId. Because state.options is replaced wholesale
+    // on each call (callIdRef++ + setState), the second sheet's
+    // cascadeTargetId must not leak the first one's value into the
+    // second consumer's closure.
+    const seenInOnClosed: Array<string | undefined> = [];
+    let triggerSecond: (() => Promise<string | undefined>) | null = null;
+    let firstClose: ((result?: string) => void) | null = null;
+    let secondClose: ((result?: string) => void) | null = null;
+
+    function Harness() {
+      const { showSheet, renderSheet } = useTugSheet();
+      React.useEffect(() => {
+        const firstId = "host-A";
+        void showSheet({
+          title: "First",
+          cascadeTargetId: firstId,
+          content: (close) => {
+            firstClose = close;
+            return <div>first body</div>;
+          },
+          onClosed: () => {
+            seenInOnClosed.push(firstId);
+          },
+        });
+        triggerSecond = () => {
+          const secondId = "host-B";
+          return showSheet({
+            title: "Second",
+            cascadeTargetId: secondId,
+            content: (close) => {
+              secondClose = close;
+              return <div>second body</div>;
+            },
+            onClosed: () => {
+              seenInOnClosed.push(secondId);
+            },
+          });
+        };
+      }, [showSheet]);
+      return <>{renderSheet()}</>;
+    }
+
+    const { cleanupCard } = renderWithChainAndCard(<Harness />);
+
+    await waitFor(() => {
+      expect(firstClose).not.toBeNull();
+    });
+
+    // Close the first sheet.
+    act(() => {
+      firstClose!();
+    });
+    await act(async () => {
+      resolveAllWaapiAnimations();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(seenInOnClosed).toEqual(["host-A"]);
+    });
+
+    // Open the second sheet; it must replace state cleanly.
+    await waitFor(() => {
+      expect(triggerSecond).not.toBeNull();
+    });
+    act(() => {
+      void triggerSecond!();
+    });
+    await waitFor(() => {
+      expect(secondClose).not.toBeNull();
+    });
+
+    act(() => {
+      secondClose!();
+    });
+    await act(async () => {
+      resolveAllWaapiAnimations();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(seenInOnClosed).toEqual(["host-A", "host-B"]);
+    });
+    cleanupCard();
+  });
+});

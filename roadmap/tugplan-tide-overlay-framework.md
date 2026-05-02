@@ -450,18 +450,18 @@ The framework adheres to:
 - `tug-sheet.tsx` — `ShowSheetOptions` gains `cascadeTargetId?: string`. The hook stores it on `UseTugSheetState`. Module docstring gains a section on the cascade pattern.
 
 **Tasks:**
-- [ ] Add `cascadeTargetId?: string` to `ShowSheetOptions` interface.
-- [ ] Update `useTugSheet`'s state and `showSheet` to thread the value through (stored on `UseTugSheetState` for parity with other options; not consumed by the hook itself in this step).
-- [ ] Update `useTugSheet` JSDoc with a section on the cascade-target pattern, linking to (#sheet-cascade-rationale).
-- [ ] Update tug-sheet.tsx top-of-file docstring with a one-liner pointing at (#mental-model).
+- [x] Add `cascadeTargetId?: string` to `ShowSheetOptions` interface.
+- [x] Update `useTugSheet`'s state and `showSheet` to thread the value through (stored on `UseTugSheetState` for parity with other options; not consumed by the hook itself in this step). — `state.options` already typed as `ShowSheetOptions`, so the field threads automatically via the type extension; no behavioral code change needed in the hook.
+- [x] Update `useTugSheet` JSDoc with a section on the cascade-target pattern, linking to (#sheet-cascade-rationale).
+- [x] Update tug-sheet.tsx top-of-file docstring with a one-liner pointing at (#mental-model).
 
 **Tests:**
-- [ ] Existing `tug-sheet.test.tsx` tests pass unchanged.
-- [ ] Add a unit test: pass `cascadeTargetId` to `showSheet`, observe that the option round-trips through the hook (the value is stored on the active state).
+- [x] Existing `tug-sheet.test.tsx` tests pass unchanged. — 13 prior tests still pass; full suite now 16 pass / 0 fail.
+- [x] Add a unit test: pass `cascadeTargetId` to `showSheet`, observe that the option round-trips through the hook (the value is stored on the active state). — added 3 tests under `describe("useTugSheet – cascadeTargetId option")`: lifecycle preservation, canonical [D02] consumer-closure round-trip, and clean state replacement on a second `showSheet` with a different id.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` green.
-- [ ] `bun test` green.
+- [x] `bun x tsc --noEmit` green.
+- [x] `bun test` green.
 
 #### Step 3 — Tide-card adopts cascade target; cancel-cascade fixed {#step-3}
 

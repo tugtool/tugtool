@@ -53,6 +53,11 @@
  * @see ./internal/floating-surface-notes.ts for the cross-surface
  *      invariants table covering popover / confirm-popover / alert /
  *      sheet and the chain-reactive vs. modal semantic models.
+ * @see `roadmap/tugplan-tide-overlay-framework.md` (#mental-model)
+ *      for the system-level architecture covering portals, the
+ *      responder chain, focus events, the pane focus controller,
+ *      and focus-discipline markers — the five subsystems whose
+ *      interaction defines this surface's contract.
  */
 
 import "./tug-sheet.css";
@@ -784,6 +789,35 @@ export interface ShowSheetOptions {
    * diagram on this hook's JSDoc).
    */
   onClosed?: (result: string | undefined) => void;
+  /**
+   * Cascade-target responder id captured at sheet-open time.
+   *
+   * Per `tugplan-tide-overlay-framework.md` [D02]
+   * (#sheet-cascade-rationale), modal surfaces that need a follow-up
+   * chain dispatch on close (e.g., dispatching `CLOSE` to dismiss the
+   * host card after a picker cancel) capture the dispatch's target
+   * id at open time rather than relying on `firstResponderId` at
+   * close time. First-responder state is the product of multiple
+   * racing inputs (registration order, focus events, FocusScope
+   * mount/unmount, unregister fallback) and is fragile after a
+   * portaled modal closes — using it as the cascade dispatch target
+   * is a known bug class.
+   *
+   * The hook stores this value on its internal state for parity with
+   * the other `ShowSheetOptions` fields. It does not itself dispatch
+   * with the value: per [D02], the canonical pattern is for the
+   * consumer to capture the id in the same closure where they call
+   * `showSheet`, then read it from that closure inside their
+   * `onClosed` callback and dispatch via
+   * `manager.sendToTarget(cascadeTargetId, ...)`. The value travels
+   * with the rest of the options for the lifetime of the open sheet
+   * (and through the exit animation, since hook state is preserved
+   * until the next `showSheet()` call).
+   *
+   * Optional — sheets without a cascade need (most pickers, settings
+   * dialogs that don't dismiss their host card) leave it undefined.
+   */
+  cascadeTargetId?: string;
 }
 
 interface UseTugSheetState {
@@ -884,6 +918,46 @@ interface UseTugSheetState {
  *   this, a rapid `close() → showSheet()` sequence would try to
  *   "reopen" the same instance whose `defaultOpen` has already
  *   fired once.
+ *
+ * ## Cascade-target pattern (modal close → follow-up chain dispatch)
+ *
+ * When a sheet's `onClosed` consumer needs to dispatch a follow-up
+ * action through the responder chain — for example, the Tide picker
+ * canceling and dismissing its host card — it must capture the
+ * cascade dispatch's target id at sheet-open time, not at close time.
+ * Per `tugplan-tide-overlay-framework.md` [D02]
+ * (#sheet-cascade-rationale), `firstResponderId` at close time is
+ * fragile (it settles via the unregister fallback after FocusScope
+ * unmount, focusin handlers, etc.) and using
+ * `manager.sendToFirstResponder(...)` from inside `onClosed` is a
+ * known bug class.
+ *
+ * The canonical pattern:
+ *
+ * ```ts
+ * const presentSheet = useCallback(() => {
+ *   void showSheet({
+ *     title: "Open Project",
+ *     content: (close) => (...),
+ *     cascadeTargetId: hostStackId,            // captured at open
+ *     onClosed: (result) => {
+ *       if (result === "open") return;         // user did the thing — no cascade
+ *       manager?.sendToTarget(hostStackId, {   // captured in closure
+ *         action: TUG_ACTIONS.CLOSE,
+ *         sender: senderId,
+ *         phase: "discrete",
+ *       });
+ *     },
+ *   });
+ * }, [showSheet, hostStackId, manager, senderId]);
+ * ```
+ *
+ * The hook stores `cascadeTargetId` on its active state for parity
+ * with the other `ShowSheetOptions` fields; `useTugSheet` itself does
+ * NOT dispatch with the value. The consumer's own closure is where
+ * the id lives — that's why the pattern is robust regardless of
+ * focus settling. See [D02] for the rationale and (#mental-model)
+ * for the broader five-subsystem architecture this pattern lives in.
  *
  * ## Example
  *
