@@ -260,11 +260,17 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps>;
 #### DOM shape {#dom-shape}
 
 ```html
-<div data-slot="transcript-entry" data-participant="<participant>" class="tug-transcript-entry">
+<div
+  data-slot="tug-transcript-entry"
+  data-participant="<participant>"
+  role="article"
+  aria-labelledby="<id>"
+  class="tug-transcript-entry"
+>
   <div class="tug-transcript-entry__icon" aria-hidden="true">{icon}</div>
   <div class="tug-transcript-entry__body-column">
     <div class="tug-transcript-entry__header">
-      <strong class="tug-transcript-entry__identifier">{identifier}</strong>
+      <strong id="<id>" class="tug-transcript-entry__identifier">{identifier}</strong>
       <!-- timestamp emitted only when prop is provided -->
       <span class="tug-transcript-entry__timestamp">{timestamp}</span>
     </div>
@@ -275,7 +281,9 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps>;
 </div>
 ```
 
-Accessibility: the row root carries `role="article"` with `aria-label` synthesized from the identifier (and timestamp when present). Detailed labelling lives on whatever Step 11 wires in for live use; the primitive provides reasonable defaults.
+Accessibility: the row root carries `role="article"` with `aria-labelledby` pointing at the bold identifier (`<strong>`). This works regardless of whether the identifier is a plain string or a styled node — the rendered identifier serves as the article's accessible name verbatim. Detailed labelling beyond that is a Step 11 concern; the primitive provides reasonable defaults.
+
+Note: `data-slot="tug-transcript-entry"` follows the `tug-{name}` convention defined in [component-authoring.md](../tuglaws/component-authoring.md).
 
 #### Tokens {#tokens}
 
@@ -426,24 +434,21 @@ happy-dom is suitable for all units in this plan: no `getBoundingClientRect`-bas
 - New `__tests__/tug-transcript-entry.test.tsx` covering per-variant DOM, slot pass-through, and the timestamp-omitted case.
 
 **Tasks:**
-- [ ] Author the TSX per the component-authoring guide: module docstring, library imports, internal imports, props interface (exported), component (exported and `forwardRef`-less since no imperative API), `data-slot="transcript-entry"`, single `data-participant` attribute on the row root.
-- [ ] Implement the icon registry per [Q03]: `const PARTICIPANT_ICONS: Record<Participant, ReactNode> = { user: <ChevronGlyph />, code: <ChevronGlyph />, shell: <DollarGlyph />, command: <ColonGlyph /> }`. The three glyphs are `>`, `$`, `:` — no invented icons.
-- [ ] Author the CSS using only `--tugx-transcript-*` and base `--tug-*` tokens. Lay out as a CSS grid: `grid-template-columns: var(--tugx-transcript-icon-column-width) 1fr`. Header uses flex with `--tugx-transcript-header-gap`. Body and controls stack with `margin-top` from tokens.
-- [ ] Author unit tests:
-  - For each of the four participants, render the primitive with sentinel `identifier`, `body`, `controls` and assert the DOM shape, `data-participant` value, and that the icon registry's glyph is present.
-  - Verify `body` and `controls` slot pass-through by mounting unique sentinel children.
-  - Verify the `timestamp`-omitted case has no `tug-transcript-entry__timestamp` node in the DOM.
-  - Verify the `controls`-omitted case has no `tug-transcript-entry__controls` node.
+- [x] Author the TSX per the component-authoring guide: module docstring, library imports, internal imports, props interface (exported), component (exported, functional — no imperative API so no `forwardRef`), `data-slot="tug-transcript-entry"`, single `data-participant` attribute on the row root, `role="article"` + `aria-labelledby` pointing at the bold identifier.
+- [x] Implement the icon registry per [Q03]: `PARTICIPANT_ICONS = { user: ">", code: ">", shell: "$", command: ":" }`. Three glyphs total — no invented icons.
+- [x] Author the CSS using only `--tugx-transcript-*` and base `--tug-*` tokens. Two-column grid (`grid-template-columns: var(--tugx-transcript-icon-column-width) 1fr`). Header uses flex with `--tugx-transcript-header-gap`. Body and controls stack with `margin-top` from tokens. The `[data-participant]` cascade rules live here and map each flavor token onto the active `--tugx-transcript-icon-color`.
+- [x] Author unit tests covering: per-participant DOM shape (4 cases), slot pass-through (`body`, `controls`), optional-slot omission (`timestamp`, `controls`), and `className` forwarding.
 
 **Tests:**
-- [ ] DOM snapshot per participant.
-- [ ] Slot pass-through (`body`, `controls`) via sentinel children.
-- [ ] Optional-slot omission (`timestamp`, `controls`).
+- [x] DOM snapshot per participant — 4 tests, asserts `data-slot`, `data-participant`, `role`, `aria-labelledby` ↔ identifier id, glyph, identifier `<strong>`, timestamp, body, controls.
+- [x] Slot pass-through (`body`, `controls`) via sentinel children.
+- [x] Optional-slot omission (`timestamp`, `controls`).
+- [x] `className` forwarding.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit`
-- [ ] `bun test src/components/tugways/__tests__/tug-transcript-entry.test.tsx`
-- [ ] `bun run audit:tokens lint`
+- [x] `bun x tsc --noEmit` — exit 0.
+- [x] `bun test src/components/tugways/__tests__/tug-transcript-entry.test.tsx` — 9 pass / 0 fail / 58 expect() calls.
+- [x] `bun run audit:tokens lint` — ✓ Zero violations.
 
 ---
 

@@ -1,0 +1,89 @@
+/* tug-transcript-entry — Slot-based transcript-row primitive.
+ *
+ * Two-column grid: icon column + body column. The body column stacks
+ * header (bold identifier + optional timestamp), body, and (optional)
+ * controls vertically. Per-participant variants come from the
+ * [data-participant] cascade onto `--tugx-transcript-icon-color`; adding a
+ * participant is a token in styles/themes + a rule below. Token
+ * definitions live in styles/themes/brio.css and harmony.css.
+ */
+
+.tug-transcript-entry {
+  display: grid;
+  grid-template-columns: var(--tugx-transcript-icon-column-width) 1fr;
+  column-gap: var(--tug-space-sm);
+  color: var(--tugx-transcript-body-color);
+}
+
+.tug-transcript-entry__icon {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: var(--tugx-transcript-icon-column-width);
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tugx-transcript-icon-size);
+  line-height: var(--tug-line-height-normal);
+  color: var(--tugx-transcript-icon-color);
+  user-select: none;
+}
+
+/* Per-participant icon-flavor cascade. The active row's `data-participant`
+   selects which flavor token feeds the rendered `--tugx-transcript-icon-color`.
+   Adding a participant: extend `Participant` in tug-transcript-entry.tsx, add
+   a flavor token in styles/themes, and append a rule below. */
+.tug-transcript-entry[data-participant="user"] {
+  --tugx-transcript-icon-color: var(--tugx-transcript-icon-color-user);
+}
+.tug-transcript-entry[data-participant="code"] {
+  --tugx-transcript-icon-color: var(--tugx-transcript-icon-color-code);
+}
+.tug-transcript-entry[data-participant="shell"] {
+  --tugx-transcript-icon-color: var(--tugx-transcript-icon-color-shell);
+}
+.tug-transcript-entry[data-participant="command"] {
+  --tugx-transcript-icon-color: var(--tugx-transcript-icon-color-command);
+}
+
+.tug-transcript-entry__body-column {
+  display: flex;
+  flex-direction: column;
+  /* Allow this column to shrink below content min-width inside grid /
+     flex parents — keeps long unbroken tokens from forcing horizontal
+     overflow on the transcript surface. */
+  min-width: 0;
+}
+
+.tug-transcript-entry__header {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: var(--tugx-transcript-header-gap);
+}
+
+.tug-transcript-entry__identifier {
+  font-size: var(--tugx-transcript-identifier-font-size);
+  font-weight: var(--tugx-transcript-identifier-weight);
+  color: var(--tugx-transcript-identifier-color);
+}
+
+.tug-transcript-entry__timestamp {
+  font-size: var(--tugx-transcript-timestamp-font-size);
+  color: var(--tugx-transcript-timestamp-color);
+}
+
+.tug-transcript-entry__body {
+  margin-top: var(--tugx-transcript-body-margin-top);
+  line-height: var(--tugx-transcript-body-line-height);
+  color: var(--tugx-transcript-body-color);
+  /* Same min-width: 0 trick as the body column — body slot content (long
+     URLs, code spans, atoms) must not push the transcript surface wider. */
+  min-width: 0;
+}
+
+.tug-transcript-entry__controls {
+  margin-top: var(--tugx-transcript-controls-margin-top);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--tugx-transcript-controls-gap);
+}
