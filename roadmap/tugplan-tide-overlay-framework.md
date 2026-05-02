@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: completed
 authors: ken
 date: 2026-05-02
 depends-on: tugplan-tide-popup-bindings.md (Steps 1–2 landed)
@@ -12,7 +12,7 @@ A small, decided framework for how popup-class overlays interact with the respon
 
 ### Plan Metadata {#plan-metadata}
 
-- **Status:** in-progress
+- **Status:** completed
 - **Risk profile:** medium — framework changes touch widely-used primitives but are internal contract refactors; visible behavior preserved with one targeted bug fix
 - **Time budget:** ~3 hours of focused work (plan + implementation + verification)
 - **Test posture:** unit tests for invariants; existing app-tests catch regressions
