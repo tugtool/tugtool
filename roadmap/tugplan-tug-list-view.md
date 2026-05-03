@@ -935,17 +935,17 @@ happy-dom is suitable for all unit, component, reducer, adapter, and integration
 
 **Tasks:**
 
-- [ ] Author the file with: module docstring (cites [L02], [L03], [L06], [L11], [L19], [L20], [L22], [L23]); type definitions per [#public-api]; placeholder export `export const TugListView` with a `// Implementation lands in Step 3` marker that compiles to a no-op stub returning null.
-- [ ] Stub component is `forwardRef<TugListViewHandle, TugListViewProps>` with an empty handle — full implementation in [Step 3](#step-3).
+- [x] Author the file with: module docstring (cites [L02], [L03], [L06], [L11], [L19], [L20], [L22], [L23]); type definitions per [#public-api]; placeholder export `export const TugListView` with a `// Implementation lands in Step 3` marker that compiles to a no-op stub returning null.
+- [x] Stub component is `forwardRef<TugListViewHandle, TugListViewProps>` with an empty handle — full implementation in [Step 3](#step-3).
 
 **Tests:**
 
-- [ ] Type-only test (in the inline test file): the placeholder component accepts the right prop types; a synthetic data source satisfies the `TugListViewDataSource` contract; `cellRenderers` accepts a `Record<string, TugListViewCellRenderer>`.
+- [x] Type-only test (in the inline test file): the placeholder component accepts the right prop types; a synthetic data source satisfies the `TugListViewDataSource` contract; `cellRenderers` accepts a `Record<string, TugListViewCellRenderer>`.
 
 **Checkpoint:**
 
-- [ ] `bun x tsc --noEmit` — exit 0.
-- [ ] `bun test` — all green (existing tests undisturbed; new type test passes).
+- [x] `bun x tsc --noEmit` — exit 0.
+- [x] `bun test` — all green (existing tests undisturbed; new type test passes).
 
 ---
 

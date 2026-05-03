@@ -1,0 +1,22 @@
+/* @tug-pairings: none — layout primitive, no foreground-on-background contrast.
+   The list view paints no contrast pairings of its own. Cell renderers paint
+   their own; per-instance customization happens via cascade-scoped overrides
+   on `--tugx-list-view-*` tokens (see [L20] / [D12] in tugplan-tug-list-view).
+*/
+
+/**
+ * tug-list-view.css — TugListView windowed list primitive.
+ *
+ * Step 2 ships the file pair contract per [L19]: the file exists, the
+ * primitive's root class `.tug-list-view` paints no rules yet (the stub
+ * is an empty scroll container). The full styling — scroll container,
+ * spacers, cell wrapper, padding, row gap — lands alongside the
+ * implementation in subsequent steps.
+ *
+ * Token contract: only `--tugx-list-view-*` tokens drive this file
+ * ([L20]). Base `--tug-*` tokens are referenced from those component
+ * tokens via `var()`, never redefined here.
+ */
+
+/* No rules yet — the stub renders an unstyled container. Step 3 adds
+   the scroll container, spacer, and cell wrapper rules. */
