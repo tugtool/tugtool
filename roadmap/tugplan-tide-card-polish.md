@@ -180,7 +180,7 @@ Roughly half the steps shipped between the original 2026-04-19 draft and the 202
 | **7.5** | **Connection health checking and reconnect-aware tide cards** | **next — new in this rejoin** |
 | 8 | Canvas-level overlays: popups escape the card, constrained only by the canvas | **done** — split into three subordinate plans (overlay-tier, popup-bindings, overlay-framework); see [step](#step-8) |
 | 9 | Participant model + `TugTranscriptEntry` primitive | pending — refresh before starting |
-| 10 | Tugcast-side session ledger + full resume UX (placeholder) | placeholder — promotion still owed |
+| 10 | Tugcast-side session ledger + full resume UX | **shipped** — see [tugplan-tide-session-ledger.md](./tugplan-tide-session-ledger.md) |
 | 11 | Multi-turn transcript rendering with `TugTranscriptEntry` | pending — absorbs Step 6's Cmd+J behavior |
 | 12 | Markdown styling pass for assistant output | pending |
 | 13 | Wire thinking + tool surfaces | pending |
@@ -924,101 +924,9 @@ The component renders a `data-participant` attribute on its root for theme overr
 - Live `command` rows — needs Phase T10 (`:` surface built-ins) data. Gallery uses mock data for now.
 - Per-row reactions, threading, or message editing — Slack borrowings stop at the visual structure.
 
-#### Step 10 — Tugcast-side session ledger + full resume UX (placeholder; design before implementation) {#step-10}
+#### Step 10 — Tugcast-side session ledger + full resume UX {#step-10}
 
-**Status:** Design sketch only. Do NOT start implementation from these notes — they capture intent, not a landable plan. Carry-forward of [Step 4.6 of T3.4.c](./archive/tugplan-tide-card.md#step-4-6); promotion to a full plan (files, work, verification) happens in a dedicated document (e.g., `roadmap/tugplan-tide-session-ledger.md`) before any code commits, so the plumbing already in place from T3.4.c ([4.5](./archive/tugplan-tide-card.md#step-4-5)'s `sessionMode`, `resume_failed`, picker list shape; [4.5.5](./archive/tugplan-tide-card.md#step-4-5-5)'s post-implementation audit) is concrete before the richer UX and storage redesign are scoped.
-
-**Why this exists:** T3.4.c's [4.5](./archive/tugplan-tide-card.md#step-4-5) wires the user-facing choice but keeps storage inside the tugbank map — one id per workspace, no metadata, no branching. That is enough to make resume *work*; it is not enough to make it *right*. Users will hit every one of these the moment they have more than one session per workspace they care about:
-
-- "I have three sessions going in this repo — which one am I resuming?"
-- "I closed a card; did that throw away my session?"
-- "Two cards both resumed the same session — now the JSONL is corrupt."
-- "I want to forget one specific session without forgetting all of them."
-- "The resume timestamp is opaque; I want to see what the conversation was about."
-
-This step addresses all of these by moving session bookkeeping out of tugbank and into a purpose-built tugcast-side ledger, and by reshaping the picker around the richer data the ledger exposes.
-
-**Why a tugcast-side ledger (not tugbank):**
-- **Row-level queries with ordering:** N sessions per workspace, sorted by `last_used_at`, filtered by state, keyed on `workspace_key`. Tugbank is a KV store; modelling this as JSON blobs would push all the logic into the reader and re-parse on every picker paint.
-- **Write volume:** the ledger updates on every `turn_complete` frame (to tick `turn_count` and `last_used_at`), plus on every `spawn_session_ok` / `close_session` / `resume_failed`. Tugbank is not built for that cadence and the churn would pollute its change-notification stream.
-- **Ownership:** the ledger is tugcast-process-local state about tugcast-managed child processes. It has no meaning outside tugcast; routing it through tugbank spreads responsibility across a boundary that doesn't carry its weight.
-- **Lifecycle:** migration from T3.4.c 4.5's tugbank map is one-shot (read once, synthesize rows, delete the tugbank key). After migration, tugbank has no role in session bookkeeping.
-
-**Sketch of the ledger:**
-- **Location:** `tugrust/crates/tugcast/src/session_ledger.rs`, owned by the tugcast process. A single `SessionLedger` instance lives on the server, shared by the supervisor and the CONTROL handler.
-- **Storage backing:** preferred **`rusqlite` with a single-file database** under the user's data dir (`~/Library/Application Support/Tug/sessions.db` on macOS, `$XDG_DATA_HOME/tugcast/sessions.db` on Linux). Sqlite carries its weight because row-level queries with `ORDER BY last_used_at DESC` and concurrent reads while the supervisor writes are exactly what it's for. Alternative considered: JSONL per workspace. Cheaper to introduce, O(N) to query, no index, worse eviction. The promotion pass picks one; sqlite is the starting preference.
-- **Schema (sqlite sketch):**
-  ```sql
-  CREATE TABLE sessions (
-    session_id        TEXT PRIMARY KEY,
-    workspace_key     TEXT NOT NULL,
-    project_dir       TEXT NOT NULL,
-    created_at        INTEGER NOT NULL,  -- unix millis
-    last_used_at      INTEGER NOT NULL,
-    turn_count        INTEGER NOT NULL DEFAULT 0,
-    first_user_prompt TEXT,              -- first user_message, truncated to 256 chars
-    state             TEXT NOT NULL,     -- "live" | "closed" | "failed"
-    card_id_live      TEXT               -- set while a card is bound; NULL otherwise
-  );
-  CREATE INDEX sessions_workspace ON sessions(workspace_key, last_used_at DESC);
-  ```
-- **Ledger writes (driven by tugcast's supervisor, not tugcode):**
-  - On `spawn_session_ok`: `INSERT OR IGNORE`; set `state="live"`, `card_id_live=<card_id>`, `created_at=now`, `last_used_at=now`.
-  - On first `user_message` of a session: `UPDATE first_user_prompt` (only if NULL) with the trimmed body.
-  - On every `turn_complete`: `UPDATE turn_count = turn_count + 1, last_used_at = now`.
-  - On `close_session` / tugcode exit: `UPDATE state="closed", card_id_live=NULL`.
-  - On `resume_failed`: `UPDATE state="failed"` (ledger retains the crumb for diagnostics; Forget is the only path to full deletion).
-
-**CONTROL protocol additions:**
-- `list_sessions { workspace_key }` → `{ sessions: [{ session_id, created_at, last_used_at, turn_count, first_user_prompt, state, card_id_live }, ...] }`. Picker calls on mount and on path change.
-- `forget_session { session_id }` → deletes the row; kills the tugcode child if any; moves the underlying `~/.claude/projects/.../<id>.jsonl` to a trash subdir (recoverable for a week).
-- `forget_workspace_sessions { workspace_key }` → batch Forget for the picker's "Forget all sessions for this workspace" button.
-- `session_updated { session_id, fields... }` → broadcast on every write above; tugdeck's picker subscribes while open so turn counts tick and state indicators stay current without polling.
-
-**Migration from T3.4.c 4.5:**
-- On tugcast startup (one-time): read `dev.tugtool.tide / session-id-by-workspace` from tugbank, synthesize ledger rows (`state="closed"`, metadata defaulted), delete the tugbank key. Guard against partial failures with a single transaction.
-- tugcode stops reading/writing the tugbank map. The preferred shape: tugcast resolves the session id *before* spawning tugcode and passes it as a `--resume-session-id <id>` flag, so tugcode is entirely free of session bookkeeping. The alternative — tugcode calls out to tugcast over CONTROL for the id — keeps tugcode closer to its current shape but adds a round-trip on every spawn. Promotion picks one.
-
-**Sketch of the UX:**
-- Picker reshaped around the ledger's richer rows:
-  - Path input (unchanged).
-  - "Start fresh" row, always first.
-  - N "Resume session" rows, one per ledger entry for the typed workspace, ordered by `last_used_at DESC`. Each row shows: first_user_prompt snippet (or "No prompts yet" for empty sessions), turn count, relative timestamp ("2h ago"), and a state indicator. Rows with `state="failed"` render greyed with a diagnostic subtitle.
-  - Per-row "Forget" action (disabled when `card_id_live` is set). A confirmation sheet warns before deletion — this is destructive and user-visible.
-  - A footer "Forget all sessions for this workspace" button.
-- Live updates: picker subscribes to `session_updated` broadcasts while open. Turn counts and state change in place; no flash, no re-mount.
-- Keyboard: arrow keys navigate the whole list (Start fresh + all resume rows); Enter submits; Backspace on a row triggers Forget (with confirmation sheet).
-- Still no proper table component. The row shape is richer than T3.4.c 4.5's radio group; if a table primitive lands in tugdeck between T3.4.c and this step's promotion, reshape accordingly, but do **not** detour to build one inside this step. The list-with-rich-rows shape is sufficient for the session counts we expect (tens, not hundreds).
-
-**Lifecycle policies (decidable with ledger in hand):**
-- **Close semantics.** Closing a card sets `state="closed"`, `card_id_live=NULL`. Metadata preserved. Next card can resume. Explicit Forget is the only path to deletion.
-- **Concurrent-resume collision.** Picker greys out resume rows with `card_id_live != null && card_id_live != this.cardId`. Defense in depth: the CONTROL `spawn_session` handler in tugcast rejects `session_mode="resume"` with `session_id` already live on another card, returning `spawn_session_err { reason: "session_live_elsewhere" }`.
-- **Eviction.** Ledger cap: named constant `TIDE_LEDGER_MAX_PER_WORKSPACE` (initial: 20). On spawn, if the workspace has ≥ cap rows, evict the oldest `state="closed"` row by `last_used_at`. Age-based expiry: rows older than a named `TIDE_LEDGER_MAX_AGE` (initial: 90 days) with `state != "live"` evicted on startup. Both thresholds are named constants, not magic numbers. `state="live"` rows are never evicted.
-- **Recents↔ledger coherence.** When a recent-projects entry is evicted (per [4m of T3.4.c](./archive/tugplan-tide-card.md#step-4m)'s cap), evict all ledger rows for that workspace in the same transaction. The reverse — ledger eviction triggering recents eviction — is **not** automatic; a workspace with no stored sessions can still be a recent project.
-- **Explicit Forget.** Per-row Forget + per-workspace Forget-all, each with confirmation. Forget moves the session JSONL to a trash subdir (not `rm`), keyed on delete date, swept on a coarse schedule (weekly) or next startup if older than 7 days.
-
-**Non-goals even for the promoted plan:**
-- Server-side archival or search across prior sessions — requires an external index, out of this plan's scope.
-- Cross-machine sync — the ledger is tugcast-process-local, backed by a single file in the user's data dir.
-- Session branching ("fork from turn N") — that is a Claude-side feature, not a picker UX.
-- A purpose-built table / grid component for the session list. If one lands upstream, reshape; otherwise stick with the list.
-
-**Open design questions for the promotion pass:**
-- Sqlite vs JSONL backing. Starting preference: sqlite.
-- Whether tugcode reads the ledger via CONTROL round-trip, or tugcast resolves the id and passes it as a CLI flag. Starting preference: CLI flag (keeps tugcode stateless).
-- Whether `resume_failed` downgrades ledger state to `"failed"` (crumb for diagnostics) or deletes outright. Starting preference: `"failed"`.
-- Whether the ledger also tracks assistant response bytes / storage pressure for a future "trim old sessions" UX.
-- Whether any of [4m of T3.4.c](./archive/tugplan-tide-card.md#step-4m)'s recent-projects logic should move into the ledger itself (one store, two views) or stay separate (tugbank stays the source of truth for recents). Starting preference: keep separate — recents and sessions are different entities with different eviction policies.
-- Trash sweep cadence: on-demand during Forget, or background on tugcast startup? Starting preference: startup sweep of anything > 7 days old.
-
-**Promotion gate:**
-- Before a single commit lands against the ledger, author `roadmap/tugplan-tide-session-ledger.md` (or equivalent). The promoted plan enumerates: files, sub-steps (one commit each), schema + migration tests, picker tests, tugcast integration tests, and exit criteria. It resolves each open design question above.
-- Downstream steps in this polish plan ([Step 11](#step-11) onwards) do **not** depend on the ledger landing. They build on T3.4.c's existing session state (tugbank map + resume-vs-new picker) and gain ledger-backed behavior only after the promoted plan ships.
-
-**Verification (of the placeholder, not the eventual implementation):**
-- The "Open design questions" list above is complete and each question has a starting preference recorded.
-- The promotion-gate paragraph is explicit about the promoted-plan filename and exit criteria before any code lands.
-- No code change lands under this step's SHA. If a commit is needed against this plan file to record the placeholder, its diff is documentation-only.
+**Status: Shipped via [tugplan-tide-session-ledger.md](./tugplan-tide-session-ledger.md).** The placeholder design sketch that originally lived here was promoted into a full plan in 2026-05; the promoted plan landed in nine commits (one per step), each gated on green tests for both the Rust supervisor and the tugdeck client. See the promoted plan's [Phase Exit Criteria](./tugplan-tide-session-ledger.md#exit-criteria) for the verification record.
 
 #### Step 11 — Multi-turn transcript rendering with `TugTranscriptEntry` (absorbs Step 6's Cmd+J) {#step-11}
 

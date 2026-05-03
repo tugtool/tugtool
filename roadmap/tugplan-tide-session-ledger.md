@@ -11,7 +11,7 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | shipped |
 | Target branch | tugplan-tide-session-ledger |
 | Last updated | 2026-05-02 |
 | Roadmap anchor | [tugplan-tide-card-polish.md §step-10](./tugplan-tide-card-polish.md#step-10) — this plan executes that step |
@@ -903,22 +903,44 @@ The old tugbank keys are no longer written to (the bridge wires them out in [Ste
 **References:** [#tuglaws-cross-check], parent §step-10
 
 **Tasks:**
-- [ ] Walk every changed file in this plan against [tuglaws.md](../tuglaws/tuglaws.md). Record per-law disposition.
-- [ ] Add the "stores that observe CONTROL push frames" paragraph to `tuglaws/component-authoring.md` (per [#documentation-plan]).
-- [ ] Update `roadmap/tide.md` § code-session-store to reference the new ledger.
-- [ ] Update parent `roadmap/tugplan-tide-card-polish.md`:
-  - Plan Status table row for Step 10: `placeholder — promotion still owed` → `**shipped** — see tugplan-tide-session-ledger.md`.
-  - Step 10 body: trim the placeholder sketch to a marker pointing to this plan (mirrors how Step 8 closed out via three subordinate plans).
+- [x] Walk every changed file in this plan against [tuglaws.md](../tuglaws/tuglaws.md). Disposition table in [#tuglaws-disposition] below.
+- [x] Add the "Stores That Observe CONTROL Push Frames" paragraph to `tuglaws/component-authoring.md`. The ledger store is documented as the second consumer of the pattern (after the live-sessions broadcast that §step-4-5-5 introduced), with the six structural points: action-dispatch decode, pub/sub bus, store subscribe, `useSyncExternalStore` hook, imperative actions via the bus, reconnect re-fetch.
+- [~] Update `roadmap/tide.md` § code-session-store to reference the new ledger — checked. The §code-session-store section in `tide.md` covers the per-card `CodeSessionStore` (turn state machine), which is unrelated to session bookkeeping. The tugbank `sessions` map references the plan said to replace are not present in `tide.md`; no edit needed.
+- [x] Update parent `roadmap/tugplan-tide-card-polish.md`:
+  - Plan Status table row for Step 10: `placeholder — promotion still owed` → `**shipped** — see [tugplan-tide-session-ledger.md](./tugplan-tide-session-ledger.md)`.
+  - Step 10 body: trimmed the ~95-line placeholder sketch to a 3-line "shipped via the promoted plan" marker. (Mirrors how Step 8 closed out via three subordinate plans.)
 
 **Tests:**
-- [ ] All previous checkpoints still green.
-- [ ] Manual end-to-end smoke: full Forget → Restore-from-trash flow; concurrent-card live-elsewhere; resume-failed retains row; eviction triggers correctly when the cap is reached.
+- [x] `cargo nextest run` — 1197 tests passing across the workspace.
+- [x] `bun test` — 2767 tests passing in tugdeck.
+- [x] `bun x tsc --noEmit` — clean.
+- [x] `bun run audit:tokens lint` — zero violations.
+- [~] Manual end-to-end smoke (full Forget → Restore-from-trash flow; concurrent-card live-elsewhere; resume-failed retains row; eviction at cap) — deferred. The unit + integration coverage exercises each path in isolation; an end-to-end smoke would require a live Claude Code subprocess and a multi-card session, which doesn't run in the automated suite. The deferred smoke is documented as a follow-on rather than a blocker — every individual mechanism is independently tested.
 
 **Checkpoint:**
-- [ ] `cargo nextest run`
-- [ ] `bun x tsc --noEmit`
-- [ ] `bun test`
-- [ ] `bun run audit:tokens lint`
+- [x] `cargo nextest run`
+- [x] `bun x tsc --noEmit`
+- [x] `bun test`
+- [x] `bun run audit:tokens lint`
+
+#### Tuglaws Disposition Per Changed File {#tuglaws-disposition}
+
+| File | Touch | Tuglaws engaged | Disposition |
+|------|-------|-----------------|-------------|
+| `tugrust/crates/tugcast/src/session_ledger.rs` (new) | Sqlite ledger crate | n/a (Rust; tuglaws scope is tugdeck) | OK |
+| `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` | Trait + supervisor handlers | n/a | OK |
+| `tugrust/crates/tugcast/src/feeds/agent_bridge.rs` | session_init / result / resume_failed wiring | n/a | OK |
+| `tugrust/crates/tugcast/src/main.rs` | Ledger open + sweep wiring | n/a | OK |
+| `tugrust/crates/tugcast/src/router.rs` | Action interceptor list | n/a | OK |
+| `tugdeck/src/protocol.ts` | Encoders + types | [L19] (function of arg, no React state) | Pure functions; no state captured. OK |
+| `tugdeck/src/action-dispatch.ts` | Decode + publish to bus | [L19] (function of payload) | Handlers are pure decoders; no React state crosses. OK |
+| `tugdeck/src/lib/tide-session-ledger-events.ts` (new) | Pub/sub bus | [L19] | Module-level singletons; subscriber lifecycle is opt-in. OK |
+| `tugdeck/src/lib/tide-session-ledger-store.ts` (new) | Cache + push subscription + `useSessionLedger` hook | [L02], [L19], [L23] | `subscribe`/`getSnapshot` shape matches L02; `useSessionLedger` wraps `useSyncExternalStore`; `invalidateAll()` on `connectionDidReconnect` satisfies L23 (state survives reconnect via the on-disk ledger). OK |
+| `tugdeck/src/lib/card-services-store.ts` | Recents-eviction → ledger-eviction hook | [L19] | Side effect co-located with services construction; no React state mutation. OK |
+| `tugdeck/src/components/tugways/cards/tide-card.tsx` | Picker N+1 rows + Forget | [L02], [L06], [L07], [L11] | Picker reads ledger via `useSessionLedger`; row state pills via TugBadge (CSS, not React state) per L06; `handleForgetSession` reads `getTideSessionLedgerStore()` at call time per L07; row selection routes through TugRadioGroup's `selectValue` action per L11. OK |
+| `tugdeck/src/components/tugways/cards/tide-card.css` | Forget button + state pill styles | [L17], [L20] | Styles use `--tug7-*` base tokens directly (no new component-tier aliases needed); composed children (TugBadge, TugRadioItem) keep their own tokens per L20. OK |
+| `tuglaws/component-authoring.md` | Documentation extension | n/a | New "Stores That Observe CONTROL Push Frames" section. OK |
+| `roadmap/tugplan-tide-card-polish.md` | Step 10 close-out | n/a | Status row + body trimmed to marker. OK |
 
 ---
 
