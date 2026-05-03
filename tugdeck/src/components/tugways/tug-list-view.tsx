@@ -696,6 +696,17 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       }
     }, [windowResult.topSpacerHeight, windowResult.bottomSpacerHeight]);
 
+    // Prime the height-index Fenwick cache so the post-commit
+    // correction effect and the imperative handle's `scrollToIndex`
+    // read in O(log n) rather than walking linearly. Re-runs when
+    // either input changes — `itemCount` after a data-source grow,
+    // or `estimatedHeightForKindOnly` identity after a delegate /
+    // dataSource swap. ResizeObserver-driven `set()` calls patch the
+    // cache incrementally per the height index's contract.
+    React.useLayoutEffect(() => {
+      heightIndexRef.current.prepare(itemCount, estimatedHeightForKindOnly);
+    }, [itemCount, estimatedHeightForKindOnly]);
+
     // Auto-follow-bottom pin per [D07]. Runs after every commit so
     // both observable content-growth signals are covered:
     //
