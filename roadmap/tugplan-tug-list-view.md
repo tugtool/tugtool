@@ -966,30 +966,30 @@ happy-dom is suitable for all unit, component, reducer, adapter, and integration
 
 **Tasks:**
 
-- [ ] Implement `TugListView` per the [#dom-shape]: scroll container with `tabindex="0"` and `data-tug-scroll-key={scrollKey ?? "tug-list-view"}`; top spacer; window div hosting rendered cells; bottom spacer.
-- [ ] Subscribe to data source via `useSyncExternalStore(dataSource.subscribe, dataSource.getVersion)`.
-- [ ] Implement `RenderedWindow` math: given scroll container's `clientHeight`, current `scrollTop`, total height (sum of estimated heights), overscan rows → first/last rendered index. Spacer heights = total height of preceding/following unrendered cells.
-- [ ] React keys: `dataSource.idForIndex(i)` per cell. Render through `cellRenderers[dataSource.kindForIndex(i)]`.
-- [ ] Imperative handle skeleton: `scrollToIndex` writes `scrollTop` directly (no SmartScroll yet — that's Step 6); `getElementForIndex` reads from a ref map.
-- [ ] Author CSS file per the component-authoring guide: `@tug-pairings: none`; base block styles; spacer styles; cell-wrapper styles. All token references are `--tugx-list-view-*`.
-- [ ] Write unit tests: synthetic data source with N=20 items, kind="row", fixed height 40px each. Assert: rendering N rows at scrollTop=0 with viewport=100 renders ~3 cells + overscan; spacer heights sum to remaining unrendered.
+- [x] Implement `TugListView` per the [#dom-shape]: scroll container with `tabindex="0"` and `data-tug-scroll-key={scrollKey ?? "tug-list-view"}`; top spacer; window div hosting rendered cells; bottom spacer.
+- [x] Subscribe to data source via `useSyncExternalStore(dataSource.subscribe, dataSource.getVersion)`.
+- [x] Implement `RenderedWindow` math: given scroll container's `clientHeight`, current `scrollTop`, total height (sum of estimated heights), overscan rows → first/last rendered index. Spacer heights = total height of preceding/following unrendered cells.
+- [x] React keys: `dataSource.idForIndex(i)` per cell. Render through `cellRenderers[dataSource.kindForIndex(i)]`.
+- [x] Imperative handle skeleton: `scrollToIndex` writes `scrollTop` directly (no SmartScroll yet — that's Step 6); `getElementForIndex` reads from a ref map.
+- [x] Author CSS file per the component-authoring guide: `@tug-pairings: none`; base block styles; spacer styles; cell-wrapper styles. All token references are `--tugx-list-view-*`.
+- [x] Write unit tests: synthetic data source with N=20 items, kind="row", fixed height 40px each. Assert: rendering N rows at scrollTop=0 with viewport=100 renders ~3 cells + overscan; spacer heights sum to remaining unrendered.
 
 **Tests:**
 
-- [ ] Window math: `RenderedWindow` returns expected first/last indices for various viewport/scroll combinations.
-- [ ] Cell dispatch: `kindForIndex` routing works; calling the right renderer per kind.
-- [ ] Spacer math: spacer heights account for unrendered cells.
-- [ ] Edge — empty data source: `numberOfItems = 0` renders no cells, both spacers at zero height, no errors.
-- [ ] Edge — single-item data source: `numberOfItems = 1` renders the single cell, both spacers at zero height, no overscan into negative indices.
-- [ ] Edge — `getElementForIndex(out_of_range)`: returns `null` for `-1` and for `numberOfItems`, no throw.
-- [ ] Edge — `scrollToIndex(out_of_range)`: clamps to first / last item per [D03], no throw.
-- [ ] Edge — data-source shrink during scroll: synthetic data source removes items from the currently-rendered window; assert re-window completes without throwing and without rendering ghost cells from the removed range.
+- [x] Window math: `RenderedWindow` returns expected first/last indices for various viewport/scroll combinations.
+- [x] Cell dispatch: `kindForIndex` routing works; calling the right renderer per kind.
+- [x] Spacer math: spacer heights account for unrendered cells.
+- [x] Edge — empty data source: `numberOfItems = 0` renders no cells, both spacers at zero height, no errors.
+- [x] Edge — single-item data source: `numberOfItems = 1` renders the single cell, both spacers at zero height, no overscan into negative indices.
+- [x] Edge — `getElementForIndex(out_of_range)`: returns `null` for `-1` and for `numberOfItems`, no throw.
+- [x] Edge — `scrollToIndex(out_of_range)`: clamps to first / last item per [D03], no throw.
+- [x] Edge — data-source shrink during scroll: synthetic data source removes items from the currently-rendered window; assert re-window completes without throwing and without rendering ghost cells from the removed range.
 
 **Checkpoint:**
 
-- [ ] `bun x tsc --noEmit` — exit 0.
-- [ ] `bun test src/components/tugways/__tests__/tug-list-view.test.tsx` — all green.
-- [ ] `bun run audit:tokens lint` — zero violations.
+- [x] `bun x tsc --noEmit` — exit 0.
+- [x] `bun test src/components/tugways/__tests__/tug-list-view.test.tsx` — all green.
+- [x] `bun run audit:tokens lint` — zero violations.
 
 ---
 

@@ -7,16 +7,69 @@
 /**
  * tug-list-view.css — TugListView windowed list primitive.
  *
- * Step 2 ships the file pair contract per [L19]: the file exists, the
- * primitive's root class `.tug-list-view` paints no rules yet (the stub
- * is an empty scroll container). The full styling — scroll container,
- * spacers, cell wrapper, padding, row gap — lands alongside the
- * implementation in subsequent steps.
+ * Layout strategy (mirrors `TugMarkdownView`'s spacer model):
+ * - The scroll container (`.tug-list-view`) owns `overflow-y: auto`
+ *   and the user's scroll position.
+ * - `.tug-list-view-spacer--top` sits before the rendered window;
+ *   its height is written imperatively from JS (style.height) and
+ *   accounts for the cumulative height of all unrendered cells
+ *   above the window. [L06]
+ * - `.tug-list-view-window` hosts the rendered cells in normal
+ *   document flow. The window slides as the user scrolls.
+ * - `.tug-list-view-spacer--bottom` accounts for unrendered cells
+ *   below the window — same imperative-height pattern.
  *
  * Token contract: only `--tugx-list-view-*` tokens drive this file
  * ([L20]). Base `--tug-*` tokens are referenced from those component
  * tokens via `var()`, never redefined here.
  */
 
-/* No rules yet — the stub renders an unstyled container. Step 3 adds
-   the scroll container, spacer, and cell wrapper rules. */
+/* ---- Scroll container ---- */
+
+.tug-list-view {
+  /* Scroll container owns overflow + scroll position. */
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+  box-sizing: border-box;
+
+  /* Tokens drive padding so consumers tune per-instance via cascade. */
+  padding-block: var(--tugx-list-view-padding-block);
+  padding-inline: var(--tugx-list-view-padding-inline);
+
+  /* Scroll-padding-end keeps the last cell from sitting flush against
+     the container's edge (e.g. against an entry pane below). */
+  scroll-padding-block-end: var(--tugx-list-view-scroll-padding-end);
+
+  /* Smooth focus-ring suppression on the scroll container itself —
+     `tabindex="0"` makes it focusable for native arrow / page key
+     scroll, but we don't want a visible ring on the surface. Cell
+     content owns its own focus visuals. */
+  outline: none;
+}
+
+/* ---- Spacers ---- */
+
+.tug-list-view-spacer {
+  width: 100%;
+  /* Height set imperatively by the component via `style.height` to
+     match cumulative unrendered-cell height. Initial value is zero;
+     the post-mount `useLayoutEffect` writes the real values before
+     paint. */
+}
+
+/* ---- Rendered window ---- */
+
+.tug-list-view-window {
+  display: flex;
+  flex-direction: column;
+  row-gap: var(--tugx-list-view-row-gap);
+}
+
+/* ---- Cell wrapper ---- */
+
+.tug-list-view-cell {
+  /* Cells consume natural content height. Step 4's ResizeObserver
+     reads from these wrappers to populate the height index. */
+  display: block;
+}

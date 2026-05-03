@@ -48,6 +48,11 @@ import "./tug-list-view.css";
 
 import React from "react";
 
+import {
+  computeWindow,
+  offsetForIndex,
+} from "./internal/list-view-window";
+
 // ---------------------------------------------------------------------------
 // Data source — what consumers implement
 // ---------------------------------------------------------------------------
@@ -295,7 +300,7 @@ export interface TugListViewProps<
 }
 
 // ---------------------------------------------------------------------------
-// Component (Step 2 stub)
+// Component
 // ---------------------------------------------------------------------------
 
 // The inner type a generic `forwardRef` collapses into — exported so
@@ -307,43 +312,272 @@ type TugListViewComponent = <DS extends TugListViewDataSource>(
 ) => React.ReactElement | null;
 
 /**
- * Step 2 — public API ships as types plus a no-op stub. The full
- * implementation (windowing, height index, cell reuse pool, lifecycle
- * delegate, SmartScroll integration) lands in subsequent steps.
+ * Default per-kind estimated height used when the consumer's delegate
+ * omits `estimatedHeightForKind`. Matches the JSDoc on
+ * `TugListViewDelegate.estimatedHeightForKind`.
+ */
+const DEFAULT_ESTIMATED_HEIGHT = 60;
+
+/**
+ * Number of cells rendered above and below the visible viewport.
+ * Trades DOM weight for scroll smoothness — three cells of overscan
+ * is enough to absorb a frame of fast scrolling at typical row
+ * heights without keeping a giant subtree in memory.
  *
- * The stub:
- * - Mounts a scroll container with `data-slot="tug-list-view"`,
- *   `data-tug-scroll-key={scrollKey ?? "tug-list-view"}`, and
- *   `tabindex="0"` so [L23] state-preservation tests at later steps
- *   already see the right shape.
- * - Exposes the `TugListViewHandle` shape via `useImperativeHandle`,
- *   with both methods as no-ops.
- * - Renders no cells — the stub returns the empty container.
+ * Step 4 may surface this as a delegate option; for v1 it's a
+ * primitive-internal constant.
+ */
+const OVERSCAN_COUNT = 3;
+
+/**
+ * Step 3 implementation — fixed-height single-kind windowing.
  *
- * Consumers can mount the stub and exercise the type contract today.
- * Cell renderers and data sources written against the stub will be
- * picked up automatically when Step 3's implementation lands.
+ * The list view subscribes to the data source via
+ * `useSyncExternalStore` ([L02]). Scroll-position changes drive
+ * rerenders through a tick reducer (Step 4 will swap to RAF
+ * coalescing once `ResizeObserver` lands). Heights come from
+ * `delegate.estimatedHeightForKind` — measured heights via
+ * `ResizeObserver` arrive in Step 4. SmartScroll integration arrives
+ * in Step 6.
+ *
+ * What's stable today:
+ * - DOM shape per the plan's [#dom-shape]: scroll container,
+ *   top spacer, window div with one wrapper per rendered cell, bottom
+ *   spacer.
+ * - Cell wrapper carries `data-tug-list-cell-index` and
+ *   `data-tug-list-cell-kind` for test addressability and (later)
+ *   reuse-pool routing.
+ * - Spacer heights write directly to the DOM via `style.height`
+ *   ([L06], mirroring `TugMarkdownView`).
+ * - Imperative handle: `scrollToIndex` writes `scrollTop` directly;
+ *   out-of-range indices clamp to first/last; NaN is a no-op.
+ *   `getElementForIndex` reads from a ref map populated by cell
+ *   wrapper refs.
  */
 const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
-  function TugListView({ scrollKey, className }, ref) {
+  function TugListView(
+    { dataSource, delegate, cellRenderers, scrollKey, className },
+    ref,
+  ) {
+    const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
+    const topSpacerRef = React.useRef<HTMLDivElement | null>(null);
+    const bottomSpacerRef = React.useRef<HTMLDivElement | null>(null);
+
+    // Map<index, HTMLElement> populated by cell-wrapper ref callbacks.
+    // Used by `getElementForIndex` for direct DOM addressing without a
+    // querySelector roundtrip. Cleaned up by the ref callback when a
+    // cell unmounts.
+    const cellElementMapRef = React.useRef<Map<number, HTMLDivElement>>(
+      new Map(),
+    );
+
+    // Subscribe to the data source. The returned `version` token is a
+    // by-product — we don't use it directly. The hook's job is to
+    // re-run this component whenever the data source ticks per its
+    // `getVersion` contract ([L02], [#public-api]).
+    //
+    // Wrap each call so consumers can write `subscribe` / `getVersion`
+    // as regular methods (with `this` bindings) rather than arrow
+    // class-fields. `useSyncExternalStore` passes the callables around
+    // detached from any instance, which would break regular methods
+    // without these wrappers.
+    const subscribeWrapper = React.useCallback(
+      (listener: () => void) => dataSource.subscribe(listener),
+      [dataSource],
+    );
+    const versionWrapper = React.useCallback(
+      () => dataSource.getVersion(),
+      [dataSource],
+    );
+    React.useSyncExternalStore(subscribeWrapper, versionWrapper, versionWrapper);
+
+    // Force-rerender tick used by the scroll listener so windowing
+    // recomputes when the user scrolls. Step 4 swaps the listener for
+    // an rAF-coalesced one; for Step 3 the every-event cadence is
+    // tolerable because windowing is the only React-driven work.
+    const [, scrollTick] = React.useReducer((x: number) => x + 1, 0);
+
+    // Read scroll geometry from the live DOM at render time. On the
+    // first render `scrollContainerRef.current` is null (the ref
+    // attaches in the same commit), producing a degenerate window
+    // until the post-mount tick. The mount-tick effect below pokes
+    // `scrollTick` so the second render sees a real viewport height.
+    const scrollEl = scrollContainerRef.current;
+    const scrollTop = scrollEl?.scrollTop ?? 0;
+    const viewportHeight = scrollEl?.clientHeight ?? 0;
+
+    // Resolve the per-index height closure. Step 3 uses the kind-keyed
+    // estimate verbatim; Step 4 will compose it with the height-index
+    // measured-height accessor.
+    const itemCount = dataSource.numberOfItems();
+    const estimatedHeightForKind = delegate?.estimatedHeightForKind;
+    const estimatedHeightForIndex = React.useCallback(
+      (index: number): number => {
+        const kind = dataSource.kindForIndex(index);
+        return estimatedHeightForKind?.(kind) ?? DEFAULT_ESTIMATED_HEIGHT;
+      },
+      [dataSource, estimatedHeightForKind],
+    );
+
+    const window = computeWindow({
+      itemCount,
+      scrollTop,
+      viewportHeight,
+      overscanCount: OVERSCAN_COUNT,
+      estimatedHeightForIndex,
+    });
+
+    // Mount-tick: after the first commit attaches the scroll-container
+    // ref, force a rerender so the window math reads a real
+    // `clientHeight`. Without this, `viewportHeight` stays 0 until
+    // some other event (scroll, data source tick) triggers a render.
+    React.useLayoutEffect(() => {
+      // Trigger one rerender after first mount. Subsequent mounts of
+      // a stable component instance don't re-run this effect, so it
+      // doesn't loop.
+      scrollTick();
+    }, []);
+
+    // Install the scroll listener. Triggers a re-window on every
+    // scroll event ([L03] — `useLayoutEffect` so the listener is in
+    // place before the next paint). Step 4 may layer rAF coalescing
+    // on top.
+    React.useLayoutEffect(() => {
+      const el = scrollContainerRef.current;
+      if (el === null) return;
+      const onScroll = () => scrollTick();
+      el.addEventListener("scroll", onScroll, { passive: true });
+      return () => {
+        el.removeEventListener("scroll", onScroll);
+      };
+    }, []);
+
+    // Apply spacer heights directly to the DOM ([L06]). Mirrors the
+    // pattern in `TugMarkdownView`'s `applySpacers`. Runs in
+    // `useLayoutEffect` so the geometry is in place before the
+    // browser paints the freshly-rendered cells.
+    React.useLayoutEffect(() => {
+      if (topSpacerRef.current !== null) {
+        topSpacerRef.current.style.height = `${window.topSpacerHeight}px`;
+      }
+      if (bottomSpacerRef.current !== null) {
+        bottomSpacerRef.current.style.height = `${window.bottomSpacerHeight}px`;
+      }
+    }, [window.topSpacerHeight, window.bottomSpacerHeight]);
+
+    // Imperative handle. `scrollToIndex` writes `scrollTop` directly
+    // for Step 3 (SmartScroll integration arrives in Step 6).
     React.useImperativeHandle(
       ref,
       () => ({
-        scrollToIndex: () => {
-          // Implementation lands in Step 6 (SmartScroll integration).
+        scrollToIndex(index: number): void {
+          if (Number.isNaN(index)) return;
+          const total = dataSource.numberOfItems();
+          if (total === 0) return;
+          const clamped = Math.max(0, Math.min(total - 1, Math.floor(index)));
+          const targetTop = offsetForIndex(
+            clamped,
+            total,
+            estimatedHeightForIndex,
+          );
+          if (scrollContainerRef.current !== null) {
+            scrollContainerRef.current.scrollTop = targetTop;
+          }
         },
-        getElementForIndex: () => null,
+        getElementForIndex(index: number): HTMLElement | null {
+          return cellElementMapRef.current.get(index) ?? null;
+        },
       }),
-      [],
+      [dataSource, estimatedHeightForIndex],
     );
+
+    // Render the windowed slice. Cells are keyed by
+    // `dataSource.idForIndex(i)` per the [D04] item-stable contract so
+    // React reconciler matches identity across data-source updates.
+    const renderedRange: Array<{
+      index: number;
+      id: string;
+      kind: string;
+    }> = [];
+    // Defensive against a data-source shrink mid-render: if itemCount
+    // dropped below the previously-computed window, skip indices that
+    // are out of range now.
+    for (let i = window.firstIndex; i < window.lastIndex; i += 1) {
+      if (i >= itemCount) break;
+      renderedRange.push({
+        index: i,
+        id: dataSource.idForIndex(i),
+        kind: dataSource.kindForIndex(i),
+      });
+    }
 
     return (
       <div
+        ref={scrollContainerRef}
         data-slot="tug-list-view"
         data-tug-scroll-key={scrollKey ?? "tug-list-view"}
-        className={className === undefined ? "tug-list-view" : `tug-list-view ${className}`}
+        className={
+          className === undefined ? "tug-list-view" : `tug-list-view ${className}`
+        }
         tabIndex={0}
-      />
+      >
+        <div
+          ref={topSpacerRef}
+          className="tug-list-view-spacer tug-list-view-spacer--top"
+          aria-hidden="true"
+        />
+        <div className="tug-list-view-window">
+          {renderedRange.map(({ index, id, kind }) => {
+            const Renderer = cellRenderers[kind];
+            if (Renderer === undefined) {
+              // Unknown kind — no renderer registered. Render an
+              // empty placeholder so the windowing math still
+              // accounts for the slot, and warn in dev.
+              if (process.env.NODE_ENV !== "production") {
+                console.warn(
+                  `[TugListView] no cell renderer registered for kind "${kind}" at index ${index}`,
+                );
+              }
+              return (
+                <div
+                  key={id}
+                  className="tug-list-view-cell"
+                  data-tug-list-cell-index={index}
+                  data-tug-list-cell-kind={kind}
+                  ref={(el) => {
+                    if (el !== null) cellElementMapRef.current.set(index, el);
+                    else cellElementMapRef.current.delete(index);
+                  }}
+                />
+              );
+            }
+            return (
+              <div
+                key={id}
+                className="tug-list-view-cell"
+                data-tug-list-cell-index={index}
+                data-tug-list-cell-kind={kind}
+                ref={(el) => {
+                  if (el !== null) cellElementMapRef.current.set(index, el);
+                  else cellElementMapRef.current.delete(index);
+                }}
+              >
+                <Renderer
+                  index={index}
+                  id={id}
+                  kind={kind}
+                  dataSource={dataSource}
+                />
+              </div>
+            );
+          })}
+        </div>
+        <div
+          ref={bottomSpacerRef}
+          className="tug-list-view-spacer tug-list-view-spacer--bottom"
+          aria-hidden="true"
+        />
+      </div>
     );
   },
 );
