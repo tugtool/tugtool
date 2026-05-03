@@ -1,11 +1,13 @@
 /**
  * TideSessionLedgerStore — tugdeck-side cache for the tugcast session ledger.
  *
- * Backs the picker's session list view. Sources:
+ * Backs the picker's session list view. Cached by raw user-typed
+ * `projectDir` — the server matches the request against the ledger's
+ * `project_dir` column (no client-side canonicalization needed). Sources:
  *
- * 1. **Initial load** — first time `getSnapshot(workspaceKey)` is called for
- *    a workspace, the store dispatches a `list_sessions` CONTROL request
- *    and returns `{ status: "pending", rows: [] }`. The server's
+ * 1. **Initial load** — first time `getSnapshot(projectDir)` is called for
+ *    a path, the store dispatches a `list_sessions` CONTROL request and
+ *    returns `{ status: "pending", rows: [] }`. The server's
  *    `list_sessions_ok` ack settles the entry to `{ status: "ready", rows }`.
  *
  * 2. **Live updates** — the supervisor broadcasts `session_updated` push
@@ -67,12 +69,12 @@ type ForgetWorkspaceSessionsResult =
   | { error: { reason: string } };
 
 /**
- * Per-session-id index entry. Tracks which workspace currently holds the
- * row so a `session_updated` push can locate the workspace cache without
- * scanning every entry. Used during patch + remove paths.
+ * Per-session-id index entry. Tracks which `projectDir` cache currently
+ * holds the row so a `session_updated` push can locate the cached entry
+ * without scanning every workspace. Used during patch + remove paths.
  */
 interface RowLocation {
-  workspaceKey: string;
+  projectDir: string;
 }
 
 export class TideSessionLedgerStore {
@@ -114,8 +116,8 @@ export class TideSessionLedgerStore {
   };
 
   /**
-   * Return the cached snapshot for `workspaceKey`. The first call for a
-   * workspace key triggers a CONTROL `list_sessions` request and returns
+   * Return the cached snapshot for `projectDir`. The first call for a
+   * path triggers a CONTROL `list_sessions` request and returns
    * `{ status: "pending", rows: [] }`; the `list_sessions_ok` push settles
    * the entry to `{ status: "ready", rows }`.
    *
@@ -123,12 +125,12 @@ export class TideSessionLedgerStore {
    * stable when state hasn't changed — pending callers see the same frozen
    * snapshot until a settle happens.
    */
-  getSnapshot = (workspaceKey: string): WorkspaceSnapshot => {
-    const cached = this.snapshots.get(workspaceKey);
+  getSnapshot = (projectDir: string): WorkspaceSnapshot => {
+    const cached = this.snapshots.get(projectDir);
     if (cached !== undefined) return cached;
     // First observation: kick the request and seed pending.
-    this.snapshots.set(workspaceKey, PENDING_SNAPSHOT);
-    this.requestList(workspaceKey);
+    this.snapshots.set(projectDir, PENDING_SNAPSHOT);
+    this.requestList(projectDir);
     return PENDING_SNAPSHOT;
   };
 
@@ -165,33 +167,33 @@ export class TideSessionLedgerStore {
 
   // ── internals ───────────────────────────────────────────────────────────
 
-  private requestList(workspaceKey: string): void {
-    const frame = encodeListSessions(workspaceKey);
+  private requestList(projectDir: string): void {
+    const frame = encodeListSessions(projectDir);
     this.conn.send(frame.feedId, frame.payload);
   }
 
   private installSubscriptions(): void {
     this.disposers.push(
-      subscribeToListSessionsOk(({ workspace_key, sessions }) => {
+      subscribeToListSessionsOk(({ project_dir, sessions }) => {
         const sorted = [...sessions].sort(
           (a, b) => b.last_used_at - a.last_used_at,
         );
-        // Refresh the reverse index for this workspace: drop any stale ids
+        // Refresh the reverse index for this projectDir: drop any stale ids
         // that previously pointed here, then re-index the current rows.
         for (const [sid, loc] of this.rowLocations) {
-          if (loc.workspaceKey === workspace_key) this.rowLocations.delete(sid);
+          if (loc.projectDir === project_dir) this.rowLocations.delete(sid);
         }
         for (const row of sorted) {
-          this.rowLocations.set(row.session_id, { workspaceKey: workspace_key });
+          this.rowLocations.set(row.session_id, { projectDir: project_dir });
         }
-        this.snapshots.set(workspace_key, {
+        this.snapshots.set(project_dir, {
           status: "ready",
           rows: Object.freeze(sorted),
         });
         this.tick();
       }),
-      subscribeToListSessionsErr(({ workspace_key, reason }) => {
-        this.snapshots.set(workspace_key, {
+      subscribeToListSessionsErr(({ project_dir, reason }) => {
+        this.snapshots.set(project_dir, {
           status: "error",
           rows: EMPTY_ROWS,
           error: { reason },
@@ -247,23 +249,23 @@ export class TideSessionLedgerStore {
 
   /**
    * Patch a single row by id. The push carries the post-write row state;
-   * we drop into the matching workspace's snapshot, replace or insert by
-   * id, re-sort, and emit. If the workspace isn't cached yet, ignore — the
+   * we drop into the matching `projectDir` snapshot, replace or insert by
+   * id, re-sort, and emit. If the path isn't cached yet, ignore — the
    * picker will pick up the row when it next calls `getSnapshot`.
    */
   private patchRow(sessionId: string, row: SessionRow): void {
-    // Locate the workspace via the reverse index, falling back to the
-    // payload's `workspace_key` if the index doesn't yet know about this
+    // Locate the cache slot via the reverse index, falling back to the
+    // payload's `project_dir` if the index doesn't yet know about this
     // session (the row was created on the server before the picker ever
-    // fetched the workspace).
+    // fetched the path).
     const located = this.rowLocations.get(sessionId);
-    const workspaceKey = located?.workspaceKey ?? row.workspace_key;
-    const cached = this.snapshots.get(workspaceKey);
+    const projectDir = located?.projectDir ?? row.project_dir;
+    const cached = this.snapshots.get(projectDir);
     if (cached === undefined || cached.status !== "ready") {
-      // Workspace isn't cached yet; nothing to patch into. Update the
-      // reverse index opportunistically so a later patch with the same id
-      // can find its way home.
-      this.rowLocations.set(sessionId, { workspaceKey });
+      // Path isn't cached yet; nothing to patch into. Update the reverse
+      // index opportunistically so a later patch with the same id can
+      // find its way home.
+      this.rowLocations.set(sessionId, { projectDir });
       return;
     }
     const existingIdx = cached.rows.findIndex((r) => r.session_id === sessionId);
@@ -275,8 +277,8 @@ export class TideSessionLedgerStore {
       nextRows = [...cached.rows, row];
     }
     nextRows.sort((a, b) => b.last_used_at - a.last_used_at);
-    this.rowLocations.set(sessionId, { workspaceKey });
-    this.snapshots.set(workspaceKey, {
+    this.rowLocations.set(sessionId, { projectDir });
+    this.snapshots.set(projectDir, {
       status: "ready",
       rows: Object.freeze(nextRows),
     });
@@ -287,11 +289,11 @@ export class TideSessionLedgerStore {
     const located = this.rowLocations.get(sessionId);
     if (located === undefined) return;
     this.rowLocations.delete(sessionId);
-    const cached = this.snapshots.get(located.workspaceKey);
+    const cached = this.snapshots.get(located.projectDir);
     if (cached === undefined || cached.status !== "ready") return;
     const nextRows = cached.rows.filter((r) => r.session_id !== sessionId);
     if (nextRows.length === cached.rows.length) return;
-    this.snapshots.set(located.workspaceKey, {
+    this.snapshots.set(located.projectDir, {
       status: "ready",
       rows: Object.freeze(nextRows),
     });
@@ -331,10 +333,12 @@ export function _resetTideSessionLedgerStoreForTest(): void {
 
 /**
  * React hook: subscribe to the ledger store and return the snapshot for
- * `workspaceKey`. Returns the idle snapshot when no store is attached
- * (e.g., in a Storybook fixture or a minimal test renderer).
+ * `projectDir` (the user-typed path). Returns the idle snapshot when no
+ * store is attached (e.g., in a Storybook fixture or a minimal test
+ * renderer). Empty string short-circuits to the idle snapshot — the
+ * picker doesn't issue a request until the user has typed something.
  */
-export function useSessionLedger(workspaceKey: string): WorkspaceSnapshot {
+export function useSessionLedger(projectDir: string): WorkspaceSnapshot {
   return useSyncExternalStore(
     (listener) => {
       const store = _activeStore;
@@ -342,9 +346,10 @@ export function useSessionLedger(workspaceKey: string): WorkspaceSnapshot {
       return store.subscribe(listener);
     },
     () => {
+      if (projectDir.length === 0) return IDLE_SNAPSHOT;
       const store = _activeStore;
       if (store === null) return IDLE_SNAPSHOT;
-      return store.getSnapshot(workspaceKey);
+      return store.getSnapshot(projectDir);
     },
     () => IDLE_SNAPSHOT,
   );

@@ -877,6 +877,25 @@ fn parse_workspace_key_payload(payload: &[u8]) -> Result<String, ControlError> {
     Ok(ws)
 }
 
+/// Parse a CONTROL payload that carries `{ project_dir: "..." }`. The
+/// picker's `list_sessions` request uses this so the lookup matches the
+/// raw user-typed path (the value originally recorded by `record_spawn`).
+/// The error variant reuses `MissingWorkspaceKey` because the wire
+/// translation is the same — a missing identifier the lookup needs.
+fn parse_project_dir_payload(payload: &[u8]) -> Result<String, ControlError> {
+    let value: serde_json::Value =
+        serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
+    let pd = value
+        .get("project_dir")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::InvalidProjectDir {
+            reason: "missing_project_dir",
+        })?
+        .to_string();
+    Ok(pd)
+}
+
 fn parse_session_id_payload(payload: &[u8]) -> Result<String, ControlError> {
     let value: serde_json::Value =
         serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
@@ -1112,8 +1131,8 @@ impl AgentSupervisor {
                 Ok(())
             }
             "list_sessions" => {
-                let workspace_key = parse_workspace_key_payload(payload)?;
-                self.do_list_sessions(&workspace_key).await;
+                let project_dir = parse_project_dir_payload(payload)?;
+                self.do_list_sessions(&project_dir).await;
                 Ok(())
             }
             "forget_session" => {
@@ -1588,15 +1607,18 @@ impl AgentSupervisor {
     }
 
     /// Handle a `list_sessions` CONTROL request. Reads the ledger directly
-    /// (read-only) and broadcasts a `list_sessions_ok` response carrying the
-    /// rows for the workspace, ordered newest-first.
-    async fn do_list_sessions(&self, workspace_key: &str) {
+    /// (read-only) and broadcasts a `list_sessions_ok` response carrying
+    /// the rows whose `project_dir` matches the requested path, ordered
+    /// newest-first. The picker passes the user's typed path, which
+    /// matches the value originally recorded at `record_spawn` time —
+    /// so no client-side canonicalization is needed.
+    async fn do_list_sessions(&self, project_dir: &str) {
         let Some(ledger) = self.session_ledger.as_ref() else {
             // No ledger wired — emit an empty response so a confused client
             // doesn't sit on a pending state forever.
             let body = serde_json::json!({
                 "action": "list_sessions_ok",
-                "workspace_key": workspace_key,
+                "project_dir": project_dir,
                 "sessions": serde_json::Value::Array(Vec::new()),
             });
             let _ = self.control_tx.send(Frame::new(
@@ -1605,13 +1627,13 @@ impl AgentSupervisor {
             ));
             return;
         };
-        let rows = match ledger.list_for_workspace(workspace_key) {
+        let rows = match ledger.list_for_project_dir(project_dir) {
             Ok(r) => r,
             Err(err) => {
-                warn!(error = %err, workspace_key, "list_sessions failed");
+                warn!(error = %err, project_dir, "list_sessions failed");
                 let body = serde_json::json!({
                     "action": "list_sessions_err",
-                    "workspace_key": workspace_key,
+                    "project_dir": project_dir,
                     "reason": "ledger_read_failed",
                 });
                 let _ = self.control_tx.send(Frame::new(
@@ -1623,7 +1645,7 @@ impl AgentSupervisor {
         };
         let body = serde_json::json!({
             "action": "list_sessions_ok",
-            "workspace_key": workspace_key,
+            "project_dir": project_dir,
             "sessions": rows,
         });
         let _ = self.control_tx.send(Frame::new(
@@ -5299,26 +5321,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_sessions_returns_workspace_rows_newest_first() {
+    async fn list_sessions_returns_project_dir_rows_newest_first() {
         let store = Arc::new(InMemoryStore::default());
         let (sup, ledger, mut rx) = make_supervisor_with_ledger(store);
 
         ledger
-            .record_spawn("s-old", "ws-1", "/p", "c1", 1_000)
+            .record_spawn("s-old", "ws-1", "/proj/alpha", "c1", 1_000)
             .unwrap();
         ledger.mark_closed("s-old").unwrap();
         ledger
-            .record_spawn("s-new", "ws-1", "/p", "c2", 5_000)
+            .record_spawn("s-new", "ws-1", "/proj/alpha", "c2", 5_000)
             .unwrap();
         ledger.mark_closed("s-new").unwrap();
         ledger
-            .record_spawn("other", "ws-2", "/p", "c3", 3_000)
+            .record_spawn("other", "ws-2", "/proj/beta", "c3", 3_000)
             .unwrap();
         ledger.mark_closed("other").unwrap();
 
         let payload = serde_json::to_vec(&serde_json::json!({
             "action": "list_sessions",
-            "workspace_key": "ws-1",
+            "project_dir": "/proj/alpha",
         }))
         .unwrap();
 
@@ -5327,15 +5349,15 @@ mod tests {
             .unwrap();
 
         let response = drain_until_action(&mut rx, "list_sessions_ok");
-        assert_eq!(response["workspace_key"], "ws-1");
+        assert_eq!(response["project_dir"], "/proj/alpha");
         let sessions = response["sessions"].as_array().expect("sessions array");
-        assert_eq!(sessions.len(), 2, "ws-1 has exactly 2 rows");
+        assert_eq!(sessions.len(), 2, "/proj/alpha has exactly 2 rows");
         assert_eq!(sessions[0]["session_id"], "s-new");
         assert_eq!(sessions[1]["session_id"], "s-old");
     }
 
     #[tokio::test]
-    async fn list_sessions_missing_workspace_key_errors() {
+    async fn list_sessions_missing_project_dir_errors() {
         let store = Arc::new(InMemoryStore::default());
         let (sup, _ledger, _rx) = make_supervisor_with_ledger(store);
         let payload = serde_json::to_vec(&serde_json::json!({
@@ -5347,7 +5369,9 @@ mod tests {
             .handle_control("list_sessions", &payload, 10)
             .await
             .unwrap_err();
-        assert!(matches!(err, ControlError::MissingWorkspaceKey));
+        assert!(
+            matches!(err, ControlError::InvalidProjectDir { reason } if reason == "missing_project_dir")
+        );
     }
 
     #[tokio::test]

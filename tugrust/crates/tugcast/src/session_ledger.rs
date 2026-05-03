@@ -239,6 +239,31 @@ impl SessionLedger {
         rows.into_iter().collect()
     }
 
+    /// All rows whose `project_dir` matches `project_dir` literally,
+    /// ordered newest-first by `last_used_at`. The picker uses this for
+    /// its "what sessions did I have under this typed path?" query — the
+    /// raw user-typed path matches the value originally recorded at
+    /// `record_spawn` time, so no client-side canonicalization is needed.
+    /// `list_for_workspace` matches against the canonical key and stays
+    /// for the supervisor's resume-resolution path.
+    pub fn list_for_project_dir(
+        &self,
+        project_dir: &str,
+    ) -> Result<Vec<SessionRow>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(
+            "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
+                    turn_count, first_user_prompt, state, card_id_live
+             FROM sessions
+             WHERE project_dir = ?1
+             ORDER BY last_used_at DESC",
+        )?;
+        let rows = stmt
+            .query_map(params![project_dir], row_from_query)?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows.into_iter().collect()
+    }
+
     /// Most-recent non-live row for the workspace, suitable for the
     /// supervisor's "resume last session" path. `live` rows are excluded
     /// because the live-elsewhere check already runs against `card_id_live`

@@ -353,15 +353,16 @@ export function encodeResetSession(cardId: string, tugSessionId: string): Frame 
 /**
  * Build a `list_sessions` CONTROL request frame.
  *
- * The supervisor reads its sqlite-backed session ledger for the workspace
- * and broadcasts a `list_sessions_ok` CONTROL frame carrying
- * `{ workspace_key, sessions: SessionRow[] }`. Rows arrive ordered by
- * `last_used_at DESC` so the picker renders them newest-first without
- * re-sorting client-side.
+ * The picker passes the user's typed path (the value originally recorded
+ * at `record_spawn` time on the server). The supervisor matches against
+ * the ledger's `project_dir` column — no client-side canonicalization is
+ * needed. The response broadcasts `list_sessions_ok` carrying
+ * `{ project_dir, sessions: SessionRow[] }` ordered by `last_used_at
+ * DESC`. Errors broadcast `list_sessions_err { project_dir, reason }`.
  */
-export function encodeListSessions(workspaceKey: string): Frame {
+export function encodeListSessions(projectDir: string): Frame {
   return controlFrame(CONTROL_ACTION_LIST_SESSIONS, {
-    workspace_key: workspaceKey,
+    project_dir: projectDir,
   });
 }
 

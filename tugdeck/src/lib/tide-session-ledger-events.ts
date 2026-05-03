@@ -49,8 +49,8 @@ function makeBus<T>() {
 }
 
 const sessionUpdatedBus = makeBus<SessionUpdatedPush>();
-const listSessionsOkBus = makeBus<{ workspace_key: string; sessions: SessionRow[] }>();
-const listSessionsErrBus = makeBus<{ workspace_key: string; reason: string }>();
+const listSessionsOkBus = makeBus<{ project_dir: string; sessions: SessionRow[] }>();
+const listSessionsErrBus = makeBus<{ project_dir: string; reason: string }>();
 const forgetSessionOkBus = makeBus<{ session_id: string }>();
 const forgetSessionErrBus = makeBus<{ session_id: string; reason: string }>();
 const forgetWorkspaceSessionsOkBus = makeBus<{ workspace_key: string; count: number }>();

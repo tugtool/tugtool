@@ -451,25 +451,25 @@ export function initActionDispatch(
   // store consumer (step 4) resolves its pending workspace fetch with
   // the rows or surfaces the error.
   registerAction("list_sessions_ok", (payload) => {
-    const workspaceKey = payload.workspace_key;
+    const projectDir = payload.project_dir;
     const sessions = payload.sessions;
-    if (typeof workspaceKey !== "string" || !Array.isArray(sessions)) {
+    if (typeof projectDir !== "string" || !Array.isArray(sessions)) {
       console.warn("list_sessions_ok: missing or invalid fields", payload);
       return;
     }
     publishListSessionsOk({
-      workspace_key: workspaceKey,
+      project_dir: projectDir,
       sessions: sessions as SessionRow[],
     });
   });
   registerAction("list_sessions_err", (payload) => {
-    const workspaceKey = payload.workspace_key;
+    const projectDir = payload.project_dir;
     const reason = payload.reason;
-    if (typeof workspaceKey !== "string" || typeof reason !== "string") {
+    if (typeof projectDir !== "string" || typeof reason !== "string") {
       console.warn("list_sessions_err: missing or invalid fields", payload);
       return;
     }
-    publishListSessionsErr({ workspace_key: workspaceKey, reason });
+    publishListSessionsErr({ project_dir: projectDir, reason });
   });
 
   // forget_session_ok / _err

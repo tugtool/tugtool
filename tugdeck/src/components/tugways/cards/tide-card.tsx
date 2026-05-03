@@ -73,6 +73,7 @@ import { cardServicesStore, type CardServices } from "@/lib/card-services-store"
 import { useTideCardObserver } from "./use-tide-card-observer";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
+import { useSessionLedger } from "@/lib/tide-session-ledger-store";
 import type { TaggedValue } from "@/lib/tugbank-client";
 import { wrapPositionZero } from "./completion-providers/position-zero";
 
@@ -608,80 +609,6 @@ interface SessionRecord {
 }
 
 /**
- * Pure parser for the `dev.tugtool.tide / sessions` tagged-value entry.
- * Each entry is `{projectDir, createdAt}` keyed by the session id (the
- * single identifier claude uses as its own session id and tugcast
- * uses for feed routing). Returns `[]` for unset / malformed records.
- *
- * tugcode historically persisted the map as a JSON-stringified value
- * under `kind: "string"`; current writes go through tugbank as
- * `kind: "json"`. Both shapes are accepted.
- */
-function parseAllSessions(entry: TaggedValue | undefined): SessionRecord[] {
-  if (!entry) return [];
-  let map: unknown;
-  if (entry.kind === "json" && entry.value !== undefined) {
-    map = entry.value;
-  } else if (entry.kind === "string" && typeof entry.value === "string") {
-    try {
-      map = JSON.parse(entry.value);
-    } catch {
-      return [];
-    }
-  } else {
-    return [];
-  }
-  if (!map || typeof map !== "object" || Array.isArray(map)) return [];
-  const out: SessionRecord[] = [];
-  for (const [sessionId, raw] of Object.entries(map as Record<string, unknown>)) {
-    if (!raw || typeof raw !== "object") continue;
-    const rec = raw as { projectDir?: unknown; createdAt?: unknown };
-    if (typeof rec.projectDir !== "string" || rec.projectDir.length === 0) continue;
-    if (typeof rec.createdAt !== "number") continue;
-    out.push({
-      sessionId,
-      projectDir: rec.projectDir,
-      createdAt: rec.createdAt,
-    });
-  }
-  return out;
-}
-
-/**
- * Pure parser for the `dev.tugtool.tide / live-sessions` tagged-value
- * entry. Returns the set of session ids currently bound to a card on
- * any tab/process talking to this tugcast. Tugcast maintains the set
- * in-memory and broadcasts it via the DEFAULTS feed; tugcast clears
- * it on startup so leftover ids from a prior process never leak.
- *
- * The picker uses this to grey out a "Resume last" row whose
- * candidate id is already in use by another card. The supervisor's
- * `session_live_elsewhere` rejection is the safety net for any
- * race where the picker's view is stale.
- */
-function parseLiveSessions(entry: TaggedValue | undefined): Set<string> {
-  const out = new Set<string>();
-  if (!entry) return out;
-  let raw: unknown;
-  if (entry.kind === "json" && entry.value !== undefined) {
-    raw = entry.value;
-  } else if (entry.kind === "string" && typeof entry.value === "string") {
-    try {
-      raw = JSON.parse(entry.value);
-    } catch {
-      return out;
-    }
-  } else {
-    return out;
-  }
-  if (!Array.isArray(raw)) return out;
-  for (const id of raw) {
-    if (typeof id === "string" && id.length > 0) out.add(id);
-  }
-  return out;
-}
-
-/**
  * Pure parser for the `dev.tugtool.tide / recent-projects` tagged-value
  * entry. Mirrors `readTideRecentProjects` in shape — split out so the
  * picker can subscribe to live updates via `useTugbankValue` instead of
@@ -697,10 +624,6 @@ function parseRecents(entry: TaggedValue | undefined): string[] {
 
 /** Stable `[]` reference — useTugbankValue's `fallback` must be reference-stable. */
 const EMPTY_STRING_ARRAY: ReadonlyArray<string> = [];
-/** Stable empty `Set<string>` — same rationale. */
-const EMPTY_STRING_SET: ReadonlySet<string> = new Set<string>();
-/** Stable empty `SessionRecord[]` reference. */
-const EMPTY_SESSION_RECORDS: ReadonlyArray<SessionRecord> = [];
 
 /**
  * Map a picker notice to user-facing copy. `resume_failed` uses a
@@ -729,28 +652,19 @@ function noticeText(notice: PickerNotice): string {
 function TideProjectPickerForm({ notice, onOpen, onCancel, onRetryRestore }: TideProjectPickerFormProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // External state from tugbank reaches React via `useSyncExternalStore`
-  // (per [L02]). The hooks below subscribe to the matching domain and
-  // re-render on update. The picker is a short-lived sheet so live
-  // updates rarely matter in practice, but a one-shot `useState` read
-  // would copy external state into React state and violate L02.
+  // External state reaches React via `useSyncExternalStore` (per [L02]).
+  // - `recents` still rides on tugbank (a small, mostly-static set of
+  //   recent project paths).
+  // - The session list now flows through the tugcast-side
+  //   `TideSessionLedgerStore` via `useSessionLedger`. The store
+  //   dispatches a `list_sessions` request keyed on the user-typed
+  //   path; the response settles to a snapshot, and `session_updated`
+  //   pushes patch the cache in place.
   const recents = useTugbankValue(
     "dev.tugtool.tide",
     "recent-projects",
     parseRecents,
     EMPTY_STRING_ARRAY as string[],
-  );
-  const allSessions = useTugbankValue(
-    "dev.tugtool.tide",
-    "sessions",
-    parseAllSessions,
-    EMPTY_SESSION_RECORDS as SessionRecord[],
-  );
-  const liveSessions = useTugbankValue(
-    "dev.tugtool.tide",
-    "live-sessions",
-    parseLiveSessions,
-    EMPTY_STRING_SET as Set<string>,
   );
 
   // Live path state drives the resume-option visibility. The input
@@ -774,29 +688,54 @@ function TideProjectPickerForm({ notice, onOpen, onCancel, onRetryRestore }: Tid
     },
   });
 
-  // Resume is offered when the typed path has at least one record in
-  // the sessions map. The picker presents the newest session's id on
-  // the "Resume last session" row; the picker's Open handler forwards
-  // it as-is on `spawn_session`. No per-card identifier translation.
-  // Derives from `allSessions` (which is itself a `useSyncExternalStore`
-  // value) so a fresh sessions write while the picker is open updates
-  // the resume row without re-reading the tugbank cache here.
-  const resumeCandidate = useMemo<SessionRecord | null>(() => {
-    const trimmed = path.trim();
-    if (trimmed.length === 0) return null;
-    const candidates = allSessions
-      .filter((r) => r.projectDir === trimmed)
-      .sort((a, b) => b.createdAt - a.createdAt);
-    return candidates[0] ?? null;
-  }, [path, allSessions]);
+  // Subscribe the picker to the session-ledger store keyed on the
+  // user's typed path. Pre-typing: empty path → idle snapshot, no
+  // request. Post-typing: pending → ready as the server's
+  // `list_sessions_ok` lands. Live `session_updated` pushes during
+  // the picker's lifetime patch the snapshot in place.
+  const trimmedPath = path.trim();
+  const sessionLedger = useSessionLedger(trimmedPath);
 
-  // The candidate is "live elsewhere" when its id appears in the
-  // live-sessions broadcast from tugcast. The wire-side
-  // `session_live_elsewhere` rejection in the supervisor is the
-  // safety net if our read is stale.
-  const candidateLiveElsewhere =
-    resumeCandidate !== null && liveSessions.has(resumeCandidate.sessionId);
-  const resumeDisabled = resumeCandidate === null || candidateLiveElsewhere;
+  // Resume is offered when the ledger has at least one non-live row
+  // for the typed path. The picker presents the newest session's id
+  // on the "Resume last session" row; the picker's Open handler
+  // forwards it as-is on `spawn_session`. The resume row is derived
+  // directly from the snapshot — no intermediate React state, so a
+  // `session_updated` push immediately updates the picker.
+  const resumeCandidate = useMemo<SessionRecord | null>(() => {
+    if (trimmedPath.length === 0) return null;
+    if (sessionLedger.status !== "ready") return null;
+    // Newest-first ordering is already provided by the server; the
+    // first non-live row is the resume target.
+    for (const row of sessionLedger.rows) {
+      if (row.state === "live") continue;
+      return {
+        sessionId: row.session_id,
+        projectDir: row.project_dir,
+        createdAt: row.created_at,
+      };
+    }
+    return null;
+  }, [trimmedPath, sessionLedger]);
+
+  // The candidate is "live elsewhere" when the most-recent matching
+  // row in the ledger is in `state="live"` and bound to a different
+  // card. The wire-side `session_live_elsewhere` rejection in the
+  // supervisor is the safety net if our read is stale.
+  const candidateLiveElsewhere = useMemo(() => {
+    if (sessionLedger.status !== "ready") return false;
+    if (sessionLedger.rows.length === 0) return false;
+    const newest = sessionLedger.rows[0];
+    return newest.state === "live";
+  }, [sessionLedger]);
+
+  // Pending status means the request is in flight. Treat this as
+  // "no resume available yet" so the picker doesn't briefly disable
+  // a resume row whose existence we don't know yet. The server
+  // typically settles in <50ms, so users rarely see this state.
+  const resumePending = sessionLedger.status === "pending";
+  const resumeDisabled =
+    resumeCandidate === null || candidateLiveElsewhere || resumePending;
 
   // Revert the selection to "new" if the user edits the path into a
   // workspace with no resume candidate (or where the candidate is

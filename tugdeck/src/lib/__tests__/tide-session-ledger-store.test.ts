@@ -67,7 +67,7 @@ describe("TideSessionLedgerStore", () => {
     );
     expect(decoded).toEqual({
       action: "list_sessions",
-      workspace_key: "ws-1",
+      project_dir: "ws-1",
     });
     store.dispose();
   });
@@ -80,7 +80,7 @@ describe("TideSessionLedgerStore", () => {
     });
     store.getSnapshot("ws-1");
     publishListSessionsOk({
-      workspace_key: "ws-1",
+      project_dir: "ws-1",
       sessions: [
         makeRow({ session_id: "s1", last_used_at: 100 }),
         makeRow({ session_id: "s2", last_used_at: 200 }),
@@ -97,7 +97,7 @@ describe("TideSessionLedgerStore", () => {
   it("settles to error on list_sessions_err", () => {
     const { store } = newStore();
     store.getSnapshot("ws-1");
-    publishListSessionsErr({ workspace_key: "ws-1", reason: "ledger_read_failed" });
+    publishListSessionsErr({ project_dir: "ws-1", reason: "ledger_read_failed" });
     const snap = store.getSnapshot("ws-1");
     expect(snap.status).toBe("error");
     expect(snap.error).toEqual({ reason: "ledger_read_failed" });
@@ -108,7 +108,7 @@ describe("TideSessionLedgerStore", () => {
     const { store } = newStore();
     store.getSnapshot("ws-1");
     publishListSessionsOk({
-      workspace_key: "ws-1",
+      project_dir: "ws-1",
       sessions: [makeRow({ session_id: "s1" })],
     });
     const a = store.getSnapshot("ws-1");
@@ -121,7 +121,7 @@ describe("TideSessionLedgerStore", () => {
     const { store } = newStore();
     store.getSnapshot("ws-1");
     publishListSessionsOk({
-      workspace_key: "ws-1",
+      project_dir: "ws-1",
       sessions: [
         makeRow({ session_id: "s1", last_used_at: 100, turn_count: 0 }),
         makeRow({ session_id: "s2", last_used_at: 50, turn_count: 0 }),
@@ -141,7 +141,7 @@ describe("TideSessionLedgerStore", () => {
     const { store } = newStore();
     store.getSnapshot("ws-1");
     publishListSessionsOk({
-      workspace_key: "ws-1",
+      project_dir: "ws-1",
       sessions: [
         makeRow({ session_id: "s1" }),
         makeRow({ session_id: "s2" }),
@@ -156,7 +156,7 @@ describe("TideSessionLedgerStore", () => {
   it("session_updated for an uncached workspace is ignored", () => {
     const { store } = newStore();
     store.getSnapshot("ws-1");
-    publishListSessionsOk({ workspace_key: "ws-1", sessions: [] });
+    publishListSessionsOk({ project_dir: "ws-1", sessions: [] });
     // Push for a workspace we never subscribed to.
     publishSessionUpdated({
       session_id: "other",
@@ -170,7 +170,7 @@ describe("TideSessionLedgerStore", () => {
     const { store, conn } = newStore();
     store.getSnapshot("ws-1");
     publishListSessionsOk({
-      workspace_key: "ws-1",
+      project_dir: "ws-1",
       sessions: [makeRow({ session_id: "s1" })],
     });
     expect(store.getSnapshot("ws-1").status).toBe("ready");

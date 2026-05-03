@@ -106,9 +106,18 @@ import {
 } from "@/components/tugways/responder-chain";
 import { TugPanePortalContext } from "@/components/chrome/tug-pane";
 import { FeedId } from "@/protocol";
+import type { SessionRow } from "@/protocol";
 import { CardLifecycle, CardLifecycleContext } from "@/lib/card-lifecycle";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { waitFor } from "@testing-library/react";
+import {
+  attachTideSessionLedgerStore,
+  _resetTideSessionLedgerStoreForTest,
+} from "@/lib/tide-session-ledger-store";
+import {
+  _resetTideSessionLedgerEventsForTest,
+  publishListSessionsOk,
+} from "@/lib/tide-session-ledger-events";
 
 const CARD_ID = "tide-4bc-test";
 
@@ -128,8 +137,17 @@ function makeBinding(overrides: Partial<CardSessionBinding> = {}): CardSessionBi
  * element with a `.tug-pane-body` child (required by TugSheet's inert
  * lifecycle effect). The element is attached to document.body so
  * portaled content (the picker sheet) is queryable via the DOM.
+ *
+ * Also attaches the tide session-ledger store to the fake connection so
+ * `useSessionLedger` inside the picker has a live store the moment it
+ * subscribes; tests that exercise the picker's session-list view then
+ * push fixtures via `seedLedgerForPath` / `publishListSessionsOk`.
  */
 function renderTideCard(cardId: string) {
+  // Attach before render so the picker's useSyncExternalStore subscribe
+  // callback registers a real listener (rather than a no-op when the
+  // store would otherwise be null).
+  attachTideSessionLedgerStore(fakeConnection as never);
   const cardEl = document.createElement("div");
   cardEl.className = "tug-pane-chrome";
   const cardBody = document.createElement("div");
@@ -179,10 +197,44 @@ afterEach(() => {
   for (const domain of Object.keys(tugbankStore)) {
     delete tugbankStore[domain];
   }
+  _resetTideSessionLedgerStoreForTest();
+  _resetTideSessionLedgerEventsForTest();
   document.querySelectorAll(".tug-pane-chrome").forEach((el) => {
     if (el.parentNode) el.parentNode.removeChild(el);
   });
 });
+
+/**
+ * Build a `SessionRow` for picker tests with sensible defaults. Caller
+ * supplies the `session_id` + `project_dir` (the picker's lookup key) and
+ * any fields under test (state, last_used_at for ordering, etc.).
+ */
+function makeSessionRow(partial: Partial<SessionRow> & { session_id: string }): SessionRow {
+  return {
+    session_id: partial.session_id,
+    workspace_key: partial.workspace_key ?? partial.project_dir ?? "/proj",
+    project_dir: partial.project_dir ?? "/proj",
+    created_at: partial.created_at ?? 1000,
+    last_used_at: partial.last_used_at ?? partial.created_at ?? 1000,
+    turn_count: partial.turn_count ?? 0,
+    first_user_prompt: partial.first_user_prompt ?? null,
+    state: partial.state ?? "closed",
+    card_id_live: partial.card_id_live ?? null,
+  };
+}
+
+/**
+ * Seed the picker's ledger snapshot for a project_dir by simulating the
+ * server's `list_sessions_ok` push. Call after `clickRecent(path)` /
+ * typing the path so the picker's `useSessionLedger(path)` is already
+ * subscribed; the store's listener tick wakes React via
+ * `useSyncExternalStore`.
+ */
+function seedLedgerForPath(path: string, sessions: SessionRow[]): void {
+  act(() => {
+    publishListSessionsOk({ project_dir: path, sessions });
+  });
+}
 
 describe("TideCardContent – binding gate and project picker", () => {
   it("T-TIDE-01: renders the picker backdrop and sheet when unbound", () => {
@@ -304,7 +356,20 @@ describe("TideCardContent – binding gate and project picker", () => {
 
     // 4.5 replaced the single-click spawn with a fill-the-input gesture so
     // every path flows through the Start-fresh / Resume-last radio group.
-    expect(sentFrames.length).toBe(0);
+    // The picker's `useSessionLedger` does dispatch a `list_sessions`
+    // CONTROL request when the path becomes non-empty — that's expected;
+    // the regression we guard against is `spawn_session`.
+    const spawnFrames = sentFrames.filter((f) => {
+      try {
+        const decoded = JSON.parse(new TextDecoder().decode(f.payload)) as {
+          action?: string;
+        };
+        return decoded.action === "spawn_session";
+      } catch {
+        return false;
+      }
+    });
+    expect(spawnFrames.length).toBe(0);
     const input = document.querySelector<HTMLInputElement>(
       '.tug-sheet-content input[type="text"]',
     );
@@ -355,19 +420,17 @@ describe("TideCardContent – binding gate and project picker", () => {
   it("T-TIDE-RESUME-02: picker with a session record for the typed path renders both rows; Start-fresh is selected by default", () => {
     tugbankStore["dev.tugtool.tide"] = {
       "recent-projects": { kind: "json", value: { paths: ["/work/resumable"] } },
-      sessions: {
-        kind: "json",
-        value: {
-          "sess-old-id-abc12345": {
-            projectDir: "/work/resumable",
-            createdAt: 1000,
-          },
-        },
-      },
     };
 
     renderTideCard(CARD_ID);
     clickRecent("/work/resumable");
+    seedLedgerForPath("/work/resumable", [
+      makeSessionRow({
+        session_id: "sess-old-id-abc12345",
+        project_dir: "/work/resumable",
+        last_used_at: 1000,
+      }),
+    ]);
 
     const radios = document.querySelectorAll<HTMLButtonElement>(
       '.tug-sheet-content [role="radio"]',
@@ -386,19 +449,21 @@ describe("TideCardContent – binding gate and project picker", () => {
   it("T-TIDE-RESUME-03: selecting Resume-last + Open sends spawn_session with sessionMode=resume and the picked session id", () => {
     tugbankStore["dev.tugtool.tide"] = {
       "recent-projects": { kind: "json", value: { paths: ["/work/resumable"] } },
-      sessions: {
-        kind: "json",
-        value: {
-          "sess-resume-me": {
-            projectDir: "/work/resumable",
-            createdAt: 1000,
-          },
-        },
-      },
     };
 
     renderTideCard(CARD_ID);
     clickRecent("/work/resumable");
+    seedLedgerForPath("/work/resumable", [
+      makeSessionRow({
+        session_id: "sess-resume-me",
+        project_dir: "/work/resumable",
+        last_used_at: 1000,
+      }),
+    ]);
+    // The store's `list_sessions` request itself lands in sentFrames as
+    // a CONTROL frame. Tests that assert spawn-frame contents need to
+    // ignore the request frame.
+    sentFrames.length = 0;
 
     const resumeRadio = Array.from(
       document.querySelectorAll<HTMLButtonElement>(
@@ -434,23 +499,27 @@ describe("TideCardContent – binding gate and project picker", () => {
   it("T-TIDE-RESUME-04b: two sessions on the same project coexist; picker offers the newest", () => {
     // The session — not the project — is the primary identifier.
     // Two concurrent cards on the same project each hold their own
-    // session id; both records live in the sessions map; the picker's
-    // Resume row points at the newest (`createdAt` wins).
+    // session id; both rows live in the ledger; the picker's Resume
+    // row points at the newest (`last_used_at` wins).
     tugbankStore["dev.tugtool.tide"] = {
       "recent-projects": { kind: "json", value: { paths: ["/work/multi"] } },
-      sessions: {
-        kind: "json",
-        value: {
-          "sess-older": { projectDir: "/work/multi", createdAt: 1000 },
-          "sess-newer": { projectDir: "/work/multi", createdAt: 2000 },
-          // Different project — must not bleed into this picker.
-          "sess-elsewhere": { projectDir: "/other/project", createdAt: 9999 },
-        },
-      },
     };
 
     renderTideCard(CARD_ID);
     clickRecent("/work/multi");
+    seedLedgerForPath("/work/multi", [
+      makeSessionRow({
+        session_id: "sess-newer",
+        project_dir: "/work/multi",
+        last_used_at: 2000,
+      }),
+      makeSessionRow({
+        session_id: "sess-older",
+        project_dir: "/work/multi",
+        last_used_at: 1000,
+      }),
+    ]);
+    sentFrames.length = 0;
 
     const subtitle = document.querySelector(
       '[data-testid="tide-card-picker-resume-subtitle"]',
@@ -479,17 +548,11 @@ describe("TideCardContent – binding gate and project picker", () => {
     expect(payload.tug_session_id).toBe("sess-newer");
   });
 
-  it("T-TIDE-RESUME-04: switching paths re-reads the sessions record and enables/disables the Resume row", () => {
+  it("T-TIDE-RESUME-04: switching paths re-reads the ledger and enables/disables the Resume row", () => {
     tugbankStore["dev.tugtool.tide"] = {
       "recent-projects": {
         kind: "json",
         value: { paths: ["/work/resumable", "/work/nope"] },
-      },
-      sessions: {
-        kind: "json",
-        value: {
-          "sess-x": { projectDir: "/work/resumable", createdAt: 1000 },
-        },
       },
     };
 
@@ -503,12 +566,27 @@ describe("TideCardContent – binding gate and project picker", () => {
       return radios[1]!;
     }
 
-    // With a map entry for /work/resumable: Resume is enabled.
+    // With a ledger row for /work/resumable: Resume is enabled.
     clickRecent("/work/resumable");
+    act(() => {
+      publishListSessionsOk({
+        project_dir: "/work/resumable",
+        sessions: [
+          makeSessionRow({
+            session_id: "sess-x",
+            project_dir: "/work/resumable",
+            last_used_at: 1000,
+          }),
+        ],
+      });
+    });
     expect(resumeRow().disabled).toBe(false);
 
-    // Switch to a path without an entry: Resume becomes disabled.
+    // Switch to a path with no rows: Resume becomes disabled.
     clickRecent("/work/nope");
+    act(() => {
+      publishListSessionsOk({ project_dir: "/work/nope", sessions: [] });
+    });
     expect(resumeRow().disabled).toBe(true);
   });
 

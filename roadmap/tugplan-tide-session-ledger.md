@@ -748,27 +748,33 @@ The old tugbank keys are no longer written to (the bridge wires them out in [Ste
 **References:** [D02] control-ops, [D08] dual-id-preserved, (#picker-ux)
 
 **Artifacts:**
-- `tide-card.tsx` swaps `useTugbankValue("dev.tugtool.tide", "sessions", …)` and `useTugbankValue("dev.tugtool.tide", "live-sessions", …)` for `useSessionLedger(workspaceKey)`.
-- `resumeCandidate` derivation uses the ledger snapshot; `candidateLiveElsewhere` reads `state === "live"` + `card_id_live`.
-- The shape of the picker stays the same as today (one "Resume last session" row), with one new wrinkle: the snapshot's `status` is `"pending"` on first observation, so the picker shows a brief "…" placeholder under "Resume last session" until the response lands. The richer N-row UX arrives in [Step 6](#step-6).
+- `tide-card.tsx` drops `useTugbankValue("dev.tugtool.tide", "sessions", …)` and `…"live-sessions", …)` in favor of `useSessionLedger(trimmedPath)`.
+- `resumeCandidate` derivation reads the ready snapshot's first non-live row; `candidateLiveElsewhere` reads the newest row's `state === "live"` flag.
+- A `resumePending` flag derived from `sessionLedger.status === "pending"` collapses into `resumeDisabled` — the resume row is disabled (rather than flashing in then out) until the server's `list_sessions_ok` lands. Typical settle latency is ~10–50ms.
+- Wire-shape change: the `list_sessions` CONTROL request now carries `project_dir` instead of `workspace_key`. The server matches the ledger's `project_dir` column so the picker can use the user's typed path directly — no client-side canonicalization (the firmlink-resolved `workspace_key` is unknowable client-side without a server roundtrip).
+- New `SessionLedger::list_for_project_dir(project_dir)` method on the Rust side.
 
 **Tasks:**
-- [ ] Replace the two `useTugbankValue` calls with `useSessionLedger(workspaceKey)`.
-- [ ] Branch on snapshot `status`: `"pending"` → render placeholder text under the Resume row (or hide the row entirely for the first ~50ms — pick the less-flashy option in code review). `"ready"` → render the resume row from the snapshot. `"error"` → render the existing notice mechanism.
-- [ ] Update `parseAllSessions` and `parseLiveSessions` callers — they're no longer needed; delete.
-- [ ] Refactor `resumeCandidate` to pick the most recent row from the ledger snapshot's `rows`.
-- [ ] Refactor `candidateLiveElsewhere` to use `card_id_live`.
-- [ ] Remove obsolete imports.
+- [x] Replace the two `useTugbankValue` calls with `useSessionLedger(trimmedPath)`.
+- [x] Branch on snapshot `status`: `"pending"` collapses into `resumeDisabled` so the row isn't briefly enabled with no candidate; `"ready"` renders the resume row from the snapshot's first non-live row.
+- [x] Delete `parseAllSessions` and `parseLiveSessions` parsers + the matching empty-stable references (`EMPTY_SESSION_RECORDS`, `EMPTY_STRING_SET`).
+- [x] Refactor `resumeCandidate` to pick the most recent non-live row from the ledger snapshot's `rows`.
+- [x] Refactor `candidateLiveElsewhere` to use the newest row's `state === "live"`.
+- [x] Rename the `list_sessions` wire field from `workspace_key` to `project_dir`; update Rust handler, encoder, action-dispatch, events bus, store, and tests in lockstep.
+- [x] Add `SessionLedger::list_for_project_dir` method matching the new wire contract.
+- [x] Pre-attach the ledger store inside `renderTideCard` test fixture so existing picker tests can simulate `list_sessions_ok` via the events bus.
 
 **Tests:**
-- [ ] Existing picker tests in `tide-card.test.tsx` pass with the ledger-backed snapshot.
-- [ ] New test: picker mount with `status === "pending"` renders the placeholder; transition to `"ready"` renders the resume row.
-- [ ] New test: a `session_updated` push during picker mount updates the resume row's timestamp without re-mount.
+- [x] Existing 15 picker tests in `tide-card.test.tsx` pass against the ledger-backed snapshot. T-TIDE-RESUME-02/03/04/04b updated to seed via `seedLedgerForPath` instead of writing the legacy tugbank `sessions` map.
+- [x] T-TIDE-RESUME-06 (the no-spawn-on-recent-click regression) updated to filter for `spawn_session` frames specifically — the picker now also dispatches `list_sessions` on path change, which is expected.
+- [x] All tugdeck protocol + store tests pass against the renamed wire field.
+- [x] All 488 tugcast tests pass against the new `do_list_sessions` payload shape.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit`
-- [ ] `bun test`
-- [ ] `bun run audit:tokens lint`
+- [x] `bun x tsc --noEmit` — clean
+- [x] `bun test` — 2762 tests passing
+- [x] `bun run audit:tokens lint` — zero violations
+- [x] `cargo nextest run -p tugcast` — 488 tests passing
 
 ---
 

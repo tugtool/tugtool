@@ -210,14 +210,14 @@ describe("session ledger CONTROL encoders / decoders", () => {
     return JSON.parse(new TextDecoder().decode(frame.payload));
   }
 
-  test("encodeListSessions produces a CONTROL frame with workspace_key", async () => {
+  test("encodeListSessions produces a CONTROL frame with project_dir", async () => {
     const { encodeListSessions } = await import("../protocol");
-    const frame = encodeListSessions("ws-1");
+    const frame = encodeListSessions("/proj/alpha");
     expect(frame.feedId).toBe(FeedId.CONTROL);
     const payload = parsePayload(frame);
     expect(payload).toEqual({
       action: "list_sessions",
-      workspace_key: "ws-1",
+      project_dir: "/proj/alpha",
     });
   });
 
