@@ -51,6 +51,8 @@ import "./tug-list-view.css";
 
 import React from "react";
 
+import { SmartScroll } from "@/lib/smart-scroll";
+
 import { HeightIndex } from "./internal/list-view-height-index";
 import { computeWindow } from "./internal/list-view-window";
 
@@ -298,6 +300,22 @@ export interface TugListViewProps<
    * </div>
    */
   className?: string;
+
+  /**
+   * Initial auto-follow-bottom intent. When `true`, the list view
+   * pins to the bottom on mount and on every data-source growth /
+   * height-index update while the last item is in the rendered
+   * window — until the user scrolls up, at which point SmartScroll
+   * disengages and the user owns the scroll position. Idle-at-bottom
+   * re-engagement is also SmartScroll's job ([D07]).
+   *
+   * Default `false` — matches `UITableView`'s natural "start at top"
+   * behavior. Streaming/transcript consumers (where the user is
+   * meant to read the latest content) opt in by passing `true`.
+   *
+   * @default false
+   */
+  followBottom?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -331,22 +349,38 @@ const DEFAULT_ESTIMATED_HEIGHT = 60;
 const OVERSCAN_COUNT = 3;
 
 /**
+ * `scrollToIndex` two-pass correction threshold (CSS pixels). If the
+ * measured offset for the target row differs from the estimated
+ * offset used in pass 1 by more than this amount, pass 2 issues a
+ * corrective `scrollTo`. Below the threshold, sub-pixel rounding
+ * noise shouldn't trigger a second scroll write that the user might
+ * perceive as a small jump. Sourced from [D03].
+ */
+const SCROLL_CORRECTION_THRESHOLD_PX = 4;
+
+/**
  * `TugListView` implementation — windowing + cell reuse + delegate
- * lifecycle, layered on a sparse height index. SmartScroll
- * integration is the open seam (Step 6).
+ * lifecycle + SmartScroll-driven scroll-position writes, layered on
+ * a sparse height index.
  *
  * The list view subscribes to the data source via
- * `useSyncExternalStore` ([L02]). Scroll-position changes drive
- * rerenders through a force-tick reducer. Cell heights flow through
- * a `HeightIndex`: a single `ResizeObserver` instance observes every
- * rendered cell wrapper; observer callbacks update the index, queue
- * a single rAF flush, and force a re-window on flush. Unmeasured
- * indices fall back to `delegate.estimatedHeightForKind`. Cell-
- * lifecycle delegate dispatch (`willDisplay` / `didEndDisplaying` /
- * `onSelect`) sits on top: a per-commit layout effect diffs the
- * rendered index set against the previous commit and notifies the
- * delegate of transitions; the cell wrapper's `onClick` handler
- * fires `onSelect`.
+ * `useSyncExternalStore` ([L02]). A `SmartScroll` instance bound to
+ * the scroll container owns every programmatic scroll-position
+ * write per [D07]; its `onScroll` callback drives the re-window
+ * tick. Cell heights flow through a `HeightIndex`: a single
+ * `ResizeObserver` instance observes every rendered cell wrapper;
+ * observer callbacks update the index, queue a single rAF flush,
+ * and force a re-window on flush. Unmeasured indices fall back to
+ * `delegate.estimatedHeightForKind`. Cell-lifecycle delegate
+ * dispatch (`willDisplay` / `didEndDisplaying` / `onSelect`) sits on
+ * top: a per-commit layout effect diffs the rendered index set
+ * against the previous commit and notifies the delegate of
+ * transitions; the cell wrapper's `onClick` handler fires
+ * `onSelect`. Auto-follow-bottom is handled by a post-commit pin
+ * effect that calls `SmartScroll.pinToBottom` whenever the data
+ * source grew or the last item is in the rendered window AND
+ * SmartScroll's `isFollowingBottom` flag is set AND the user is not
+ * actively scrolling.
  *
  * What's stable today:
  * - DOM shape per the plan's [#dom-shape]: scroll container,
@@ -357,10 +391,13 @@ const OVERSCAN_COUNT = 3;
  *   index lookup, and (later) reuse-pool routing.
  * - Spacer heights write directly to the DOM via `style.height`
  *   ([L06], mirroring `TugMarkdownView`).
- * - Imperative handle: `scrollToIndex` writes `scrollTop` directly,
- *   computing the target offset from the height index (measured
- *   heights win; estimates fill the gaps); out-of-range indices
- *   clamp to first/last; NaN is a no-op. `getElementForIndex` reads
+ * - Imperative handle: `scrollToIndex` routes through SmartScroll
+ *   ([D07]). Rendered target → `scrollToElement`. Unrendered
+ *   target → two-pass precision protocol per [D03]: pass 1 is an
+ *   estimated `scrollTo` jump; pass 2 (post-commit correction
+ *   effect, threshold 4px) reconciles after the target row mounts
+ *   and is measured. Out-of-range indices clamp to first/last; NaN
+ *   and empty data sources are no-ops. `getElementForIndex` reads
  *   from a ref map populated by cell wrapper refs.
  * - `ResizeObserver` callbacks coalesce via `requestAnimationFrame`
  *   ([R01] mitigation): rapid sequential resize events from the
@@ -373,10 +410,15 @@ const OVERSCAN_COUNT = 3;
  *   Lifecycle dispatch is purely about visibility transitions inside
  *   a live list view — list-view unmount does not synthesise
  *   `didEndDisplaying`.
+ * - Auto-follow-bottom: pinning is gated by
+ *   `smartScroll.isFollowingBottom` and `!smartScroll.isUserScrolling`,
+ *   read from the live instance per [L07]. User scroll-up disengages
+ *   via SmartScroll's own scroll-event handling; idle-at-bottom
+ *   re-engagement is also SmartScroll's job.
  */
 const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
   function TugListView(
-    { dataSource, delegate, cellRenderers, scrollKey, className },
+    { dataSource, delegate, cellRenderers, scrollKey, className, followBottom },
     ref,
   ) {
     const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
@@ -421,6 +463,44 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // every render, then notifies the delegate on transitions.
     const prevRenderedIndicesRef = React.useRef<Set<number>>(new Set());
 
+    // The `SmartScroll` instance bound to the scroll container.
+    // Owns every programmatic scroll-position write per [D07] and
+    // tracks the user's auto-follow-bottom intent through pointer /
+    // wheel / keyboard / scroll-event signals. Created in a layout
+    // effect on mount, disposed on unmount. Held in a ref because
+    // the instance is a long-lived imperative object — not React
+    // state — and is read from refs at use time per [L07] so each
+    // call sees the live `isFollowingBottom` flag rather than a
+    // closed-over snapshot.
+    const smartScrollRef = React.useRef<SmartScroll | null>(null);
+
+    // Previous-commit `numberOfItems()` snapshot used to detect
+    // data-source growth. Any `itemCount > prev` qualifies as a
+    // "grow" and triggers the auto-follow-bottom pin (gated by
+    // `smartScroll.isFollowingBottom`). Initial value `0` so the
+    // first commit's "grew from 0 to N" classifies as growth — a
+    // freshly-mounted following-bottom list view that already has
+    // items pins itself to the bottom on first paint.
+    const prevItemCountRef = React.useRef<number>(0);
+
+    // Pending two-pass `scrollToIndex` correction state, or `null`
+    // when no correction is queued. When `scrollToIndex` is called
+    // for an unrendered target ([D03]):
+    //   1. Pass 1 — the list view jumps to the estimated offset and
+    //      records the index + estimated top here.
+    //   2. The target row mounts on the next windowing pass and
+    //      `ResizeObserver` measures it.
+    //   3. Pass 2 — the post-commit correction effect (below) reads
+    //      this ref, recomputes the offset against the now-measured
+    //      heights, and corrects `scrollTop` if the difference
+    //      exceeds the threshold. Clearing the ref ends the
+    //      protocol; subsequent commits do nothing until the next
+    //      `scrollToIndex` call.
+    const pendingScrollCorrectionRef = React.useRef<{
+      index: number;
+      estimatedTop: number;
+    } | null>(null);
+
     // Subscribe to the data source. The returned `version` token is a
     // by-product — we don't use it directly. The hook's job is to
     // re-run this component whenever the data source ticks per its
@@ -441,10 +521,12 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     );
     React.useSyncExternalStore(subscribeWrapper, versionWrapper, versionWrapper);
 
-    // Force-rerender tick used by the scroll listener so windowing
-    // recomputes when the user scrolls. Step 4 swaps the listener for
-    // an rAF-coalesced one; for Step 3 the every-event cadence is
-    // tolerable because windowing is the only React-driven work.
+    // Force-rerender tick called from SmartScroll's `onScroll`
+    // callback (re-window on user scroll), the `ResizeObserver` rAF
+    // flush (re-window after height updates), and the post-mount
+    // tick (so the second render reads a real `clientHeight`).
+    // Triggers a reducer increment which forces React to re-execute
+    // the component body and recompute the windowed slice.
     const [, scrollTick] = React.useReducer((x: number) => x + 1, 0);
 
     // Read scroll geometry from the live DOM at render time. On the
@@ -563,18 +645,42 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // rare (dataSource is usually stable for a card's lifetime).
     }, [dataSource]);
 
-    // Install the scroll listener. Triggers a re-window on every
-    // scroll event ([L03] — `useLayoutEffect` so the listener is in
-    // place before the next paint). Step 4 may layer rAF coalescing
-    // on top.
+    // Instantiate `SmartScroll` against the scroll container ([D07]).
+    // SmartScroll owns every programmatic scroll-position write the
+    // list view ever issues, attaches the scroll/pointer/wheel/key
+    // listeners that drive auto-follow-bottom intent, and exposes
+    // `isFollowingBottom` for the growth-pin gates below. Created in
+    // `useLayoutEffect` ([L03]) so the listeners are in place before
+    // paint; disposed on unmount.
+    //
+    // The `onScroll` callback drives the same `scrollTick` reducer
+    // the previous direct scroll listener did — re-windowing on each
+    // scroll event. Step 4's rAF-coalescing rides on the
+    // `ResizeObserver` flush; SmartScroll's own internal coalescing
+    // (phase machine + scrollend handling) takes care of the
+    // gesture-state tracking.
     React.useLayoutEffect(() => {
       const el = scrollContainerRef.current;
       if (el === null) return;
-      const onScroll = () => scrollTick();
-      el.addEventListener("scroll", onScroll, { passive: true });
+      const smartScroll = new SmartScroll({
+        scrollContainer: el,
+        followBottom: followBottom ?? false,
+        callbacks: {
+          onScroll: () => {
+            scrollTick();
+          },
+        },
+      });
+      smartScrollRef.current = smartScroll;
       return () => {
-        el.removeEventListener("scroll", onScroll);
+        smartScroll.dispose();
+        smartScrollRef.current = null;
       };
+      // `followBottom` is read once on mount — runtime changes to
+      // the prop don't tear down + recreate SmartScroll. Consumers
+      // that need to flip mid-life can do so via the imperative
+      // handle (a follow-on if the need arises) or by remounting.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Apply spacer heights directly to the DOM ([L06]). Mirrors the
@@ -589,6 +695,78 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         bottomSpacerRef.current.style.height = `${windowResult.bottomSpacerHeight}px`;
       }
     }, [windowResult.topSpacerHeight, windowResult.bottomSpacerHeight]);
+
+    // Auto-follow-bottom pin per [D07]. Runs after every commit so
+    // both observable content-growth signals are covered:
+    //
+    //   (a) Data-source ticks that grew `numberOfItems()` — detected
+    //       by comparing `itemCount` against `prevItemCountRef`.
+    //   (b) Height-index updates that changed total height while the
+    //       last item is in the rendered window — detected by
+    //       `lastIndex >= itemCount`.
+    //
+    // [L07] — `isFollowingBottom` and `isUserScrolling` are read
+    // from `smartScrollRef.current` at the moment of the call, not
+    // captured at effect creation. A stale closure here would yank
+    // the user back to bottom even after they scrolled up.
+    //
+    // The user-scrolling guard separates intent from action: a user
+    // mid-gesture (dragging, decelerating) owns the scroll position
+    // even if `isFollowingBottom` is still set; SmartScroll will
+    // either disengage on scroll-up or re-engage on scroll-down-to-
+    // bottom; the next post-gesture commit pins again. This mirrors
+    // `TugMarkdownView`'s `doSetRegion` invariant.
+    //
+    // No deps array — every commit re-checks growth and last-visible
+    // state. Steady-state commits hit the early return.
+    React.useLayoutEffect(() => {
+      const ss = smartScrollRef.current;
+      const prevItemCount = prevItemCountRef.current;
+      prevItemCountRef.current = itemCount;
+
+      if (ss === null) return;
+      if (!ss.isFollowingBottom) return;
+      if (ss.isUserScrolling) return;
+      if (itemCount <= 0) return;
+
+      const grew = itemCount > prevItemCount;
+      const lastVisible = windowResult.lastIndex >= itemCount;
+      if (!grew && !lastVisible) return;
+
+      ss.pinToBottom();
+    });
+
+    // Two-pass `scrollToIndex` correction per [D03]. Pass 1 lives in
+    // the imperative handle (estimated jump); this effect implements
+    // pass 2. Runs after every commit; no-ops when no correction is
+    // pending. When the target row has been measured (heightIndex
+    // entry exists), the corrected offset is recomputed and a
+    // single corrective `scrollTo` is issued if it differs from the
+    // estimated top by more than the threshold. Sub-threshold drifts
+    // skip the corrective write so a stable target produces exactly
+    // one `scrollTo` (the pass-1 jump).
+    //
+    // The pending state is cleared in BOTH the corrected and the
+    // sub-threshold branches — if the row has been measured, pass 2
+    // is finished regardless of whether a correction was issued.
+    // Until measurement arrives, the ref stays set and a later
+    // commit completes the protocol.
+    React.useLayoutEffect(() => {
+      const pending = pendingScrollCorrectionRef.current;
+      if (pending === null) return;
+      const ss = smartScrollRef.current;
+      if (ss === null) return;
+      if (!heightIndexRef.current.has(pending.index)) return;
+
+      const correctedTop = heightIndexRef.current.offsetForIndex(
+        pending.index,
+        estimatedHeightForKindOnly,
+      );
+      if (Math.abs(correctedTop - pending.estimatedTop) > SCROLL_CORRECTION_THRESHOLD_PX) {
+        ss.scrollTo({ top: correctedTop, animated: false });
+      }
+      pendingScrollCorrectionRef.current = null;
+    });
 
     // Cell-lifecycle delegate dispatch. Runs every commit ([L03] —
     // synchronous after commit, before paint) and diffs the rendered
@@ -655,25 +833,65 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       prevRenderedIndicesRef.current = currentSet;
     });
 
-    // Imperative handle. `scrollToIndex` writes `scrollTop` directly
-    // (SmartScroll integration arrives in Step 6). The target offset
-    // is computed from the height index, so measured heights produce
-    // a precise landing — Step 4's contribution.
+    // Imperative handle. `scrollToIndex` routes every scroll write
+    // through `SmartScroll` per [D07] and implements the [D03]
+    // two-pass precision protocol:
+    //
+    //   - Rendered target → `SmartScroll.scrollToElement(el, options)`.
+    //     The DOM rect is exact, no follow-up needed; `block` and
+    //     `animated` flow through to the underlying `scrollIntoView`.
+    //   - Unrendered target → pass 1: compute the estimated offset
+    //     from the height index (measured heights win, estimates
+    //     fill gaps) and call `SmartScroll.scrollTo({ top })`. The
+    //     re-windowing the scroll triggers mounts the target row;
+    //     `ResizeObserver` measures it; pass 2 (the post-commit
+    //     correction effect above) reconciles the offset.
+    //
+    // Out-of-range indices clamp to first/last per [D03]; `NaN` and
+    // empty data sources are no-ops with no scroll write.
     React.useImperativeHandle(
       ref,
       () => ({
-        scrollToIndex(index: number): void {
+        scrollToIndex(
+          index: number,
+          options?: { block?: ScrollLogicalPosition; animated?: boolean },
+        ): void {
           if (Number.isNaN(index)) return;
           const total = dataSource.numberOfItems();
           if (total === 0) return;
+          const ss = smartScrollRef.current;
+          if (ss === null) return;
           const clamped = Math.max(0, Math.min(total - 1, Math.floor(index)));
-          const targetTop = heightIndexRef.current.offsetForIndex(
+
+          const renderedEl = cellElementMapRef.current.get(clamped);
+          if (renderedEl !== undefined) {
+            // Pass-1-only path: the rect is already exact.
+            ss.scrollToElement(renderedEl, {
+              animated: options?.animated ?? false,
+              block: options?.block ?? "nearest",
+            });
+            // A pending correction from a prior call is invalidated
+            // by an exact-rect scroll — clear it so the post-commit
+            // effect doesn't issue a stale corrective write.
+            pendingScrollCorrectionRef.current = null;
+            return;
+          }
+
+          // Pass 1 — estimated jump. Pass 2 fires from the
+          // post-commit correction effect above once the target row
+          // mounts and is measured.
+          const estimatedTop = heightIndexRef.current.offsetForIndex(
             clamped,
             estimatedHeightForKindOnly,
           );
-          if (scrollContainerRef.current !== null) {
-            scrollContainerRef.current.scrollTop = targetTop;
-          }
+          ss.scrollTo({
+            top: estimatedTop,
+            animated: options?.animated ?? false,
+          });
+          pendingScrollCorrectionRef.current = {
+            index: clamped,
+            estimatedTop,
+          };
         },
         getElementForIndex(index: number): HTMLElement | null {
           return cellElementMapRef.current.get(index) ?? null;

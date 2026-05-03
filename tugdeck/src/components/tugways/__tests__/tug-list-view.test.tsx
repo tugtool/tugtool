@@ -25,6 +25,8 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act, cleanup, render } from "@testing-library/react";
 
+import { SmartScroll } from "@/lib/smart-scroll";
+
 import {
   TugListView,
   type TugListViewCellProps,
@@ -446,7 +448,13 @@ describe("TugListView (Step 3 — imperative handle)", () => {
   });
 
   test("scrollToIndex clamps negative indices to 0", () => {
-    const items: DemoItem[] = Array.from({ length: 5 }, (_, i) => ({
+    // Use 20 items + a deep scroll so cell 0 is OUT of the rendered
+    // window when `scrollToIndex(-5)` is called. The clamped index 0
+    // then routes through the unrendered branch (`SmartScroll.scrollTo`)
+    // which writes a real `scrollTop`. Rendered targets go through
+    // `scrollIntoView`, which happy-dom does not implement, so we
+    // can't observe them via a `scrollTop` assertion.
+    const items: DemoItem[] = Array.from({ length: 20 }, (_, i) => ({
       id: `id-${i}`,
       kind: "row" as const,
       label: `Row ${i}`,
@@ -464,7 +472,13 @@ describe("TugListView (Step 3 — imperative handle)", () => {
     const root = container.querySelector(
       '[data-slot="tug-list-view"]',
     ) as HTMLElement;
-    setScrollTop(root, 80);
+    setViewportHeight(root, 80);
+    setScrollTop(root, 400);
+    // Trigger re-window so cell 0 is no longer in the rendered map.
+    act(() => {
+      root.dispatchEvent(new Event("scroll"));
+    });
+    expect(handleRef.current?.getElementForIndex(0)).toBeNull();
 
     act(() => {
       handleRef.current?.scrollToIndex(-5);
@@ -1053,8 +1067,11 @@ describe("TugListView (Step 4 — ResizeObserver + HeightIndex)", () => {
 
   test("scrollToIndex uses measured heights when available", () => {
     // 10 items, default estimate 100. After measurement, items 0..2
-    // have actual height 50 each; index 3's offset should be 150
-    // (3 × 50), not 300 (3 × 100).
+    // have actual height 50 each; index 9's offset should be
+    // (3 × 50) + (6 × 100) = 750, not (9 × 100) = 900. Index 9 is
+    // outside the initial rendered window (overscan = 3 from index
+    // 0), so the call routes through the unrendered branch
+    // (`SmartScroll.scrollTo`) and writes an observable `scrollTop`.
     const items: DemoItem[] = Array.from({ length: 10 }, (_, i) => ({
       id: `id-${i}`,
       kind: "row" as const,
@@ -1090,11 +1107,12 @@ describe("TugListView (Step 4 — ResizeObserver + HeightIndex)", () => {
       flushRaf();
     });
 
-    // scrollToIndex(3): offset = measured 0..2 (3*50) = 150, not 300.
+    // scrollToIndex(9): unrendered target. Estimated offset =
+    // measured 0..2 (3 × 50) + estimated 3..8 (6 × 100) = 750.
     act(() => {
-      handleRef.current?.scrollToIndex(3);
+      handleRef.current?.scrollToIndex(9);
     });
-    expect(root.scrollTop).toBe(150);
+    expect(root.scrollTop).toBe(750);
   });
 
   test("disconnect on unmount: subsequent fires don't throw", () => {
@@ -1580,5 +1598,509 @@ describe("TugListView (Step 5 — delegate lifecycle)", () => {
       cell0?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(spy.onSelect).toEqual([0]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 6 — SmartScroll integration: auto-follow-bottom + scrollToIndex
+// ---------------------------------------------------------------------------
+//
+// `TugListView` instantiates a `SmartScroll` against its scroll
+// container and routes every programmatic scroll-position write
+// through it. happy-dom's `scrollIntoView` is a no-op, so the rendered
+// branch of `scrollToIndex` is verified by spying on the SmartScroll
+// prototype rather than by reading `scrollTop`. The unrendered branch
+// is verified by reading `scrollTop` directly (SmartScroll's
+// `scrollTo` writes the property synchronously).
+//
+// `pinToBottom` is also spied on the prototype so the auto-follow tests
+// can assert the call was/wasn't made on growth / scroll-up
+// independent of any scrollTop read.
+
+describe("TugListView (Step 6 — SmartScroll integration)", () => {
+  let originalRO: typeof globalThis.ResizeObserver;
+  let originalRAF: typeof globalThis.requestAnimationFrame;
+  let originalCancelRAF: typeof globalThis.cancelAnimationFrame;
+  let queuedRafCallbacks: FrameRequestCallback[];
+
+  let originalPinToBottom: SmartScroll["pinToBottom"];
+  let originalScrollTo: SmartScroll["scrollTo"];
+  let originalScrollToElement: SmartScroll["scrollToElement"];
+
+  let pinToBottomCallCount: number;
+  let scrollToCalls: Array<{ top?: number; animated?: boolean }>;
+  let scrollToElementCallCount: number;
+
+  beforeEach(() => {
+    CapturingResizeObserver.instances = [];
+    originalRO = globalThis.ResizeObserver;
+    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver =
+      CapturingResizeObserver;
+
+    queuedRafCallbacks = [];
+    originalRAF = globalThis.requestAnimationFrame;
+    originalCancelRAF = globalThis.cancelAnimationFrame;
+    (globalThis as unknown as {
+      requestAnimationFrame: (cb: FrameRequestCallback) => number;
+    }).requestAnimationFrame = (cb: FrameRequestCallback) => {
+      queuedRafCallbacks.push(cb);
+      return queuedRafCallbacks.length;
+    };
+    (globalThis as unknown as {
+      cancelAnimationFrame: (id: number) => void;
+    }).cancelAnimationFrame = () => undefined;
+
+    pinToBottomCallCount = 0;
+    scrollToCalls = [];
+    scrollToElementCallCount = 0;
+    originalPinToBottom = SmartScroll.prototype.pinToBottom;
+    originalScrollTo = SmartScroll.prototype.scrollTo;
+    originalScrollToElement = SmartScroll.prototype.scrollToElement;
+    SmartScroll.prototype.pinToBottom = function () {
+      pinToBottomCallCount += 1;
+      originalPinToBottom.call(this);
+    };
+    SmartScroll.prototype.scrollTo = function (opts) {
+      scrollToCalls.push({ ...opts });
+      originalScrollTo.call(this, opts);
+    };
+    SmartScroll.prototype.scrollToElement = function (el, opts) {
+      scrollToElementCallCount += 1;
+      originalScrollToElement.call(this, el, opts);
+    };
+  });
+
+  afterEach(() => {
+    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver =
+      originalRO;
+    (globalThis as unknown as {
+      requestAnimationFrame: typeof globalThis.requestAnimationFrame;
+    }).requestAnimationFrame = originalRAF;
+    (globalThis as unknown as {
+      cancelAnimationFrame: typeof globalThis.cancelAnimationFrame;
+    }).cancelAnimationFrame = originalCancelRAF;
+
+    SmartScroll.prototype.pinToBottom = originalPinToBottom;
+    SmartScroll.prototype.scrollTo = originalScrollTo;
+    SmartScroll.prototype.scrollToElement = originalScrollToElement;
+  });
+
+  /** Drain queued rAF callbacks (FIFO). */
+  function flushRaf(): void {
+    while (queuedRafCallbacks.length > 0) {
+      const cb = queuedRafCallbacks.shift();
+      cb?.(performance.now());
+    }
+  }
+
+  test("followBottom defaults to false — no auto-pin on mount", () => {
+    const items: DemoItem[] = Array.from({ length: 5 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={{ estimatedHeightForKind: () => 40 }}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    expect(pinToBottomCallCount).toBe(0);
+  });
+
+  test("followBottom=true pins on mount", () => {
+    const items: DemoItem[] = Array.from({ length: 5 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={{ estimatedHeightForKind: () => 40 }}
+        cellRenderers={CELL_RENDERERS}
+        followBottom
+      />,
+    );
+    expect(pinToBottomCallCount).toBeGreaterThan(0);
+  });
+
+  test("followBottom=true: data-source append pins again", () => {
+    const items: DemoItem[] = Array.from({ length: 3 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={{ estimatedHeightForKind: () => 40 }}
+        cellRenderers={CELL_RENDERERS}
+        followBottom
+      />,
+    );
+    const callsAfterMount = pinToBottomCallCount;
+
+    act(() => {
+      ds._setItemsForTest([
+        ...items,
+        { id: "id-3", kind: "row" as const, label: "Row 3" },
+      ]);
+    });
+
+    // At least one additional pin from the growth.
+    expect(pinToBottomCallCount).toBeGreaterThan(callsAfterMount);
+  });
+
+  test("followBottom=false: data-source append does NOT pin", () => {
+    const items: DemoItem[] = Array.from({ length: 3 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={{ estimatedHeightForKind: () => 40 }}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+
+    act(() => {
+      ds._setItemsForTest([
+        ...items,
+        { id: "id-3", kind: "row" as const, label: "Row 3" },
+      ]);
+    });
+
+    expect(pinToBottomCallCount).toBe(0);
+  });
+
+  test("scroll-up disengages auto-follow: subsequent growth does not pin", () => {
+    const items: DemoItem[] = Array.from({ length: 3 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={{ estimatedHeightForKind: () => 40 }}
+        cellRenderers={CELL_RENDERERS}
+        followBottom
+      />,
+    );
+    const root = container.querySelector(
+      '[data-slot="tug-list-view"]',
+    ) as HTMLElement;
+    const callsAfterMount = pinToBottomCallCount;
+
+    // Simulate keyboard scroll-up — SmartScroll's keydown handler
+    // disengages followBottom for `PageUp` / `Home` / `ArrowUp`.
+    act(() => {
+      root.dispatchEvent(
+        new KeyboardEvent("keydown", { code: "PageUp", bubbles: true }),
+      );
+    });
+
+    act(() => {
+      ds._setItemsForTest([
+        ...items,
+        { id: "id-3", kind: "row" as const, label: "Row 3" },
+      ]);
+    });
+
+    // The growth came after disengagement; no additional pin.
+    expect(pinToBottomCallCount).toBe(callsAfterMount);
+  });
+
+  test("scrollToIndex(rendered_index) routes through SmartScroll.scrollToElement", () => {
+    const items: DemoItem[] = Array.from({ length: 5 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    const handleRef = React.createRef<TugListViewHandle>();
+    render(
+      <TugListView<DemoDataSource>
+        ref={handleRef}
+        dataSource={ds}
+        delegate={{ estimatedHeightForKind: () => 40 }}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    // Index 1 is rendered (overscan covers 0..3). scrollToIndex must
+    // route through scrollToElement.
+    expect(handleRef.current?.getElementForIndex(1)).not.toBeNull();
+    const beforeElCalls = scrollToElementCallCount;
+    const beforeToCalls = scrollToCalls.length;
+
+    act(() => {
+      handleRef.current?.scrollToIndex(1);
+    });
+
+    expect(scrollToElementCallCount).toBe(beforeElCalls + 1);
+    // No `scrollTo` write — exact rect path.
+    expect(scrollToCalls.length).toBe(beforeToCalls);
+  });
+
+  test("scrollToIndex(unrendered_index) two-pass: estimated jump then measured correction", () => {
+    // Setup: 10 items, estimate 100. Render mounts cells 0..3 with
+    // overscan; observer fires for those at 50 each. heightIndex now
+    // has cells 0..3 measured at 50.
+    const items: DemoItem[] = Array.from({ length: 10 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    const handleRef = React.createRef<TugListViewHandle>();
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        ref={handleRef}
+        dataSource={ds}
+        delegate={{ estimatedHeightForKind: () => 100 }}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const observer = CapturingResizeObserver.instances[0];
+    const root = container.querySelector(
+      '[data-slot="tug-list-view"]',
+    ) as HTMLElement;
+    const initialCells = Array.from(
+      container.querySelectorAll(".tug-list-view-cell"),
+    ) as HTMLElement[];
+    setScrollTop(root, 0);
+
+    act(() => {
+      observer.fire(
+        initialCells.slice(0, 4).map((el) => ({ target: el, height: 50 })),
+      );
+      flushRaf();
+    });
+
+    // scrollToIndex(9) — pass 1: offset = measured 0..3 (4×50) +
+    // estimated 4..8 (5×100) = 700. Pass-2 hasn't fired yet — no
+    // measurements for cells around index 9 exist.
+    const callsBefore = scrollToCalls.length;
+    act(() => {
+      handleRef.current?.scrollToIndex(9);
+    });
+    expect(scrollToCalls.length).toBe(callsBefore + 1);
+    expect(scrollToCalls[scrollToCalls.length - 1]?.top).toBe(700);
+    expect(root.scrollTop).toBe(700);
+
+    // Trigger a re-window so the target row mounts. SmartScroll's
+    // scrollTo writes scrollTop directly; happy-dom doesn't fire a
+    // synthetic scroll event, so we dispatch one manually.
+    act(() => {
+      root.dispatchEvent(new Event("scroll"));
+    });
+
+    // Cell 9 should now be in the rendered window.
+    const cellsAfterScroll = Array.from(
+      container.querySelectorAll(".tug-list-view-cell"),
+    ) as HTMLElement[];
+    const cell9 = cellsAfterScroll.find(
+      (el) => el.getAttribute("data-tug-list-cell-index") === "9",
+    );
+    expect(cell9).toBeDefined();
+
+    // Fire ResizeObserver for the rendered cells around index 9.
+    // After the rAF flush, the post-commit correction effect
+    // recomputes offsetForIndex(9) using the new measurements.
+    // The rendered window after the pass-1 jump is [6..9] (overscan
+    // 3 from firstVisibleIndex 9); cells 4 and 5 stay unmeasured.
+    const cellsToMeasure = cellsAfterScroll.filter((el) => {
+      const i = Number.parseInt(
+        el.getAttribute("data-tug-list-cell-index") ?? "-1",
+        10,
+      );
+      return i >= 6 && i <= 9;
+    });
+    act(() => {
+      observer.fire(
+        cellsToMeasure.map((el) => ({ target: el, height: 50 })),
+      );
+      flushRaf();
+    });
+
+    // offsetForIndex(9) = measured 0..3 (4×50) + estimated 4..5 (2×100)
+    // + measured 6..8 (3×50) = 200 + 200 + 150 = 550.
+    // Differs from estimated 700 by 150 (>4) → corrective scrollTo.
+    const lastCall = scrollToCalls[scrollToCalls.length - 1];
+    expect(lastCall?.top).toBe(550);
+    expect(root.scrollTop).toBe(550);
+  });
+
+  test("scrollToIndex no-correction case: estimated matches measured to within threshold", () => {
+    // All cells uniformly at 100 — measurements match the estimate
+    // exactly. After scrollToIndex(9) and a follow-up ResizeObserver
+    // flush, the post-commit correction recomputes offsetForIndex(9)
+    // = same value, sub-threshold drift, no second scrollTo.
+    const items: DemoItem[] = Array.from({ length: 10 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    const handleRef = React.createRef<TugListViewHandle>();
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        ref={handleRef}
+        dataSource={ds}
+        delegate={{ estimatedHeightForKind: () => 100 }}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const observer = CapturingResizeObserver.instances[0];
+    const root = container.querySelector(
+      '[data-slot="tug-list-view"]',
+    ) as HTMLElement;
+    setScrollTop(root, 0);
+
+    const beforeCalls = scrollToCalls.length;
+    act(() => {
+      handleRef.current?.scrollToIndex(9);
+    });
+    expect(scrollToCalls.length).toBe(beforeCalls + 1);
+    expect(scrollToCalls[scrollToCalls.length - 1]?.top).toBe(900);
+
+    // Trigger re-window; cell 9 mounts.
+    act(() => {
+      root.dispatchEvent(new Event("scroll"));
+    });
+    const cell9 = container.querySelector(
+      '[data-tug-list-cell-index="9"]',
+    ) as HTMLElement | null;
+    expect(cell9).not.toBeNull();
+
+    // Measure cell 9 at the same height as the estimate. Offset is
+    // unchanged; correction skipped.
+    act(() => {
+      observer.fire([{ target: cell9!, height: 100 }]);
+      flushRaf();
+    });
+
+    expect(scrollToCalls.length).toBe(beforeCalls + 1);
+  });
+
+  test("scrollToIndex(NaN) is a no-op: no scroll write", () => {
+    const items: DemoItem[] = Array.from({ length: 5 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    const handleRef = React.createRef<TugListViewHandle>();
+    render(
+      <TugListView<DemoDataSource>
+        ref={handleRef}
+        dataSource={ds}
+        delegate={{ estimatedHeightForKind: () => 40 }}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const beforeCalls = scrollToCalls.length;
+    const beforeElCalls = scrollToElementCallCount;
+
+    act(() => {
+      handleRef.current?.scrollToIndex(Number.NaN);
+    });
+
+    expect(scrollToCalls.length).toBe(beforeCalls);
+    expect(scrollToElementCallCount).toBe(beforeElCalls);
+  });
+
+  test("scrollToIndex on empty data source is a no-op: no scroll write", () => {
+    const ds = new DemoDataSource([]);
+    const handleRef = React.createRef<TugListViewHandle>();
+    render(
+      <TugListView<DemoDataSource>
+        ref={handleRef}
+        dataSource={ds}
+        delegate={{ estimatedHeightForKind: () => 40 }}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const beforeCalls = scrollToCalls.length;
+    const beforeElCalls = scrollToElementCallCount;
+
+    act(() => {
+      handleRef.current?.scrollToIndex(0);
+    });
+
+    expect(scrollToCalls.length).toBe(beforeCalls);
+    expect(scrollToElementCallCount).toBe(beforeElCalls);
+  });
+
+  test("scrollToIndex(-1) clamps to 0", () => {
+    // Use 20 items + a deep scroll so cell 0 is unrendered when
+    // scrollToIndex(-1) is called; the clamped index 0 then writes a
+    // real scrollTop via the unrendered branch.
+    const items: DemoItem[] = Array.from({ length: 20 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    const handleRef = React.createRef<TugListViewHandle>();
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        ref={handleRef}
+        dataSource={ds}
+        delegate={{ estimatedHeightForKind: () => 40 }}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const root = container.querySelector(
+      '[data-slot="tug-list-view"]',
+    ) as HTMLElement;
+    setViewportHeight(root, 80);
+    setScrollTop(root, 400);
+    act(() => {
+      root.dispatchEvent(new Event("scroll"));
+    });
+
+    act(() => {
+      handleRef.current?.scrollToIndex(-1);
+    });
+    expect(root.scrollTop).toBe(0);
+  });
+
+  test("scrollToIndex(numberOfItems) clamps to last item", () => {
+    const items: DemoItem[] = Array.from({ length: 10 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    const handleRef = React.createRef<TugListViewHandle>();
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        ref={handleRef}
+        dataSource={ds}
+        delegate={{ estimatedHeightForKind: () => 40 }}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const root = container.querySelector(
+      '[data-slot="tug-list-view"]',
+    ) as HTMLElement;
+    setScrollTop(root, 0);
+
+    // numberOfItems = 10 → clamped to 9. Cell 9 is unrendered (initial
+    // window covers 0..3 with overscan). Offset = 9 × 40 = 360.
+    act(() => {
+      handleRef.current?.scrollToIndex(10);
+    });
+    expect(root.scrollTop).toBe(360);
   });
 });
