@@ -22,7 +22,7 @@
 import "../../../__tests__/setup-rtl";
 
 import React from "react";
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act, cleanup, render } from "@testing-library/react";
 
 import {
@@ -735,5 +735,393 @@ describe("TugListView (Step 3 — edges)", () => {
     expect(firstIdx).toBeGreaterThanOrEqual(2);
     // The window should not start at 0 anymore.
     expect(firstIdx).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 4 — variable heights via ResizeObserver + height index
+// ---------------------------------------------------------------------------
+//
+// happy-dom doesn't ship `ResizeObserver`; tugdeck's setup-rtl.ts
+// installs a no-op stub. Tests in this section install a capturing
+// variant per the existing `tug-text-editor-completion-overlay.test.tsx`
+// precedent (the "CapturingResizeObserver" pattern documented in the
+// plan's Step 4 test-environment note).
+//
+// The variant exposes a synchronous `fire(entries)` method that
+// invokes the captured callback exactly as a real `ResizeObserver`
+// would deliver entries. Tests that need to control rAF coalescing
+// also override `requestAnimationFrame` to capture queued callbacks
+// and drive them manually.
+
+type CapturedEntry = { target: Element; height: number };
+
+class CapturingResizeObserver {
+  static instances: CapturingResizeObserver[] = [];
+
+  readonly cb: ResizeObserverCallback;
+  readonly observed = new Set<Element>();
+
+  constructor(cb: ResizeObserverCallback) {
+    this.cb = cb;
+    CapturingResizeObserver.instances.push(this);
+  }
+
+  observe(target: Element): void {
+    this.observed.add(target);
+  }
+  unobserve(target: Element): void {
+    this.observed.delete(target);
+  }
+  disconnect(): void {
+    this.observed.clear();
+  }
+
+  /** Synchronously invoke the captured callback with synthetic entries. */
+  fire(entries: CapturedEntry[]): void {
+    const synthetic: ResizeObserverEntry[] = entries.map(
+      (e) =>
+        ({
+          target: e.target,
+          contentRect: {
+            x: 0,
+            y: 0,
+            width: 0,
+            height: e.height,
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: e.height,
+            toJSON: () => ({}),
+          } as DOMRectReadOnly,
+          borderBoxSize: [],
+          contentBoxSize: [],
+          devicePixelContentBoxSize: [],
+        }) as unknown as ResizeObserverEntry,
+    );
+    this.cb(synthetic, this as unknown as ResizeObserver);
+  }
+}
+
+describe("TugListView (Step 4 — ResizeObserver + HeightIndex)", () => {
+  let originalRO: typeof globalThis.ResizeObserver;
+  let originalRAF: typeof globalThis.requestAnimationFrame;
+  let originalCancelRAF: typeof globalThis.cancelAnimationFrame;
+  let queuedRafCallbacks: FrameRequestCallback[];
+  let rafCallCount: number;
+
+  beforeEach(() => {
+    CapturingResizeObserver.instances = [];
+    originalRO = globalThis.ResizeObserver;
+    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver =
+      CapturingResizeObserver;
+
+    queuedRafCallbacks = [];
+    rafCallCount = 0;
+    originalRAF = globalThis.requestAnimationFrame;
+    originalCancelRAF = globalThis.cancelAnimationFrame;
+    (globalThis as unknown as {
+      requestAnimationFrame: (cb: FrameRequestCallback) => number;
+    }).requestAnimationFrame = (cb: FrameRequestCallback) => {
+      rafCallCount += 1;
+      queuedRafCallbacks.push(cb);
+      return queuedRafCallbacks.length;
+    };
+    (globalThis as unknown as {
+      cancelAnimationFrame: (id: number) => void;
+    }).cancelAnimationFrame = () => undefined;
+  });
+
+  afterEach(() => {
+    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver =
+      originalRO;
+    (globalThis as unknown as {
+      requestAnimationFrame: typeof globalThis.requestAnimationFrame;
+    }).requestAnimationFrame = originalRAF;
+    (globalThis as unknown as {
+      cancelAnimationFrame: typeof globalThis.cancelAnimationFrame;
+    }).cancelAnimationFrame = originalCancelRAF;
+  });
+
+  /** Drain queued rAF callbacks (FIFO). */
+  function flushRaf(): void {
+    while (queuedRafCallbacks.length > 0) {
+      const cb = queuedRafCallbacks.shift();
+      cb?.(performance.now());
+    }
+  }
+
+  test("ResizeObserver instance is created on mount and observes rendered cells", () => {
+    const items: DemoItem[] = Array.from({ length: 5 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={{ estimatedHeightForKind: () => 40 }}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    // Exactly one observer per list-view instance.
+    expect(CapturingResizeObserver.instances.length).toBe(1);
+    const observer = CapturingResizeObserver.instances[0];
+    // Each rendered cell should be observed.
+    expect(observer.observed.size).toBeGreaterThan(0);
+    // Every observed element carries the cell-index attribute.
+    for (const el of observer.observed) {
+      expect(el.getAttribute("data-tug-list-cell-index")).not.toBeNull();
+    }
+  });
+
+  test("measured heights replace estimates: scrollToIndex offset reflects measurement", () => {
+    // 10 items, default estimate 100. After cell 0 measures at 50,
+    // the offset for any later index should drop accordingly.
+    // (Spacer heights only change if the measured cell is OUTSIDE the
+    // rendered window — for cells inside the window, the height-index
+    // change manifests through subsequent offset queries, which is
+    // what we assert here.)
+    const items: DemoItem[] = Array.from({ length: 10 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    const handleRef = React.createRef<TugListViewHandle>();
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        ref={handleRef}
+        dataSource={ds}
+        delegate={{ estimatedHeightForKind: () => 100 }}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const root = container.querySelector(
+      '[data-slot="tug-list-view"]',
+    ) as HTMLElement;
+    setScrollTop(root, 0);
+
+    // Pre-measurement: scrollToIndex(5) uses estimates → offset = 500.
+    act(() => {
+      handleRef.current?.scrollToIndex(5);
+    });
+    const offsetBefore = root.scrollTop;
+    expect(offsetBefore).toBe(500);
+
+    // Fire measurements for cells 0..2 at 50px each.
+    const observer = CapturingResizeObserver.instances[0];
+    const cells = Array.from(
+      container.querySelectorAll(".tug-list-view-cell"),
+    ) as HTMLElement[];
+    setScrollTop(root, 0);
+    act(() => {
+      observer.fire([
+        { target: cells[0], height: 50 },
+        { target: cells[1], height: 50 },
+        { target: cells[2], height: 50 },
+      ]);
+      flushRaf();
+    });
+
+    // Post-measurement: scrollToIndex(5) sums measured 0..2 + estimated
+    // 3..4 = 3*50 + 2*100 = 350. The offset reflects the new heights.
+    act(() => {
+      handleRef.current?.scrollToIndex(5);
+    });
+    expect(root.scrollTop).toBe(350);
+    expect(root.scrollTop).not.toBe(offsetBefore);
+  });
+
+  test("rapid sequential fires coalesce into one rAF flush", () => {
+    const items: DemoItem[] = Array.from({ length: 10 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={{ estimatedHeightForKind: () => 40 }}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const observer = CapturingResizeObserver.instances[0];
+    const cells = Array.from(
+      container.querySelectorAll(".tug-list-view-cell"),
+    ) as HTMLElement[];
+
+    const beforeRafCalls = rafCallCount;
+    // Fire several callbacks in rapid succession (no rAF flushes in
+    // between). Each fire updates the height index but only the
+    // first one schedules a rAF; subsequent fires see the queued id
+    // and skip scheduling.
+    act(() => {
+      observer.fire([{ target: cells[0], height: 80 }]);
+      observer.fire([{ target: cells[1], height: 90 }]);
+      observer.fire([{ target: cells[2], height: 100 }]);
+    });
+    expect(rafCallCount - beforeRafCalls).toBe(1);
+
+    // Drain the rAF — clears the pending flush, and the next fire
+    // schedules a fresh rAF.
+    act(() => flushRaf());
+
+    act(() => {
+      observer.fire([{ target: cells[0], height: 110 }]);
+    });
+    expect(rafCallCount - beforeRafCalls).toBe(2);
+  });
+
+  test("no-op resize updates (within 0.5px) do not schedule a rAF", () => {
+    const items: DemoItem[] = Array.from({ length: 5 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={{ estimatedHeightForKind: () => 40 }}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const observer = CapturingResizeObserver.instances[0];
+    const cell0 = container.querySelector(
+      '[data-tug-list-cell-index="0"]',
+    ) as HTMLElement;
+
+    // First fire establishes the measured height.
+    act(() => {
+      observer.fire([{ target: cell0, height: 80 }]);
+      flushRaf();
+    });
+    const beforeRafCalls = rafCallCount;
+
+    // Second fire with the same height — should be a no-op (no rAF
+    // scheduled, no rerender).
+    act(() => {
+      observer.fire([{ target: cell0, height: 80 }]);
+    });
+    expect(rafCallCount).toBe(beforeRafCalls);
+
+    // Sub-pixel change (under 0.5px) — also no-op.
+    act(() => {
+      observer.fire([{ target: cell0, height: 80.3 }]);
+    });
+    expect(rafCallCount).toBe(beforeRafCalls);
+  });
+
+  test("entries for cells outside the current item range are dropped silently", () => {
+    const items: DemoItem[] = Array.from({ length: 10 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={{ estimatedHeightForKind: () => 40 }}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const observer = CapturingResizeObserver.instances[0];
+    const someCell = container.querySelector(
+      ".tug-list-view-cell",
+    ) as HTMLElement;
+
+    // Synthesize a stale entry by spoofing data-tug-list-cell-index
+    // to an out-of-range value. (In real usage this happens when a
+    // cell unmounts after a data-source shrink but the entry was
+    // already queued by the browser.)
+    const ghost = document.createElement("div");
+    ghost.setAttribute("data-tug-list-cell-index", "99");
+    expect(() => {
+      act(() => {
+        observer.fire([
+          { target: someCell, height: 80 },
+          { target: ghost, height: 50 },
+        ]);
+        flushRaf();
+      });
+    }).not.toThrow();
+  });
+
+  test("scrollToIndex uses measured heights when available", () => {
+    // 10 items, default estimate 100. After measurement, items 0..2
+    // have actual height 50 each; index 3's offset should be 150
+    // (3 × 50), not 300 (3 × 100).
+    const items: DemoItem[] = Array.from({ length: 10 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    const handleRef = React.createRef<TugListViewHandle>();
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        ref={handleRef}
+        dataSource={ds}
+        delegate={{ estimatedHeightForKind: () => 100 }}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const observer = CapturingResizeObserver.instances[0];
+    const cells = Array.from(
+      container.querySelectorAll(".tug-list-view-cell"),
+    ) as HTMLElement[];
+    const root = container.querySelector(
+      '[data-slot="tug-list-view"]',
+    ) as HTMLElement;
+    setScrollTop(root, 0);
+
+    // Measure cells 0, 1, 2 at 50px each (smaller than the 100px
+    // estimate). Cells 3+ remain unmeasured.
+    act(() => {
+      observer.fire([
+        { target: cells[0], height: 50 },
+        { target: cells[1], height: 50 },
+        { target: cells[2], height: 50 },
+      ]);
+      flushRaf();
+    });
+
+    // scrollToIndex(3): offset = measured 0..2 (3*50) = 150, not 300.
+    act(() => {
+      handleRef.current?.scrollToIndex(3);
+    });
+    expect(root.scrollTop).toBe(150);
+  });
+
+  test("disconnect on unmount: subsequent fires don't throw", () => {
+    const items: DemoItem[] = Array.from({ length: 5 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    const { container, unmount } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={{ estimatedHeightForKind: () => 40 }}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const observer = CapturingResizeObserver.instances[0];
+    const cells = Array.from(
+      container.querySelectorAll(".tug-list-view-cell"),
+    ) as HTMLElement[];
+    expect(observer.observed.size).toBeGreaterThan(0);
+
+    unmount();
+    // After unmount the observer is disconnected; firing a stale
+    // entry shouldn't throw or update any React state.
+    expect(() => {
+      observer.fire([{ target: cells[0], height: 99 }]);
+    }).not.toThrow();
   });
 });

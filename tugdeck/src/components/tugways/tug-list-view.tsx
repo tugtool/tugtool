@@ -48,10 +48,8 @@ import "./tug-list-view.css";
 
 import React from "react";
 
-import {
-  computeWindow,
-  offsetForIndex,
-} from "./internal/list-view-window";
+import { HeightIndex } from "./internal/list-view-height-index";
+import { computeWindow } from "./internal/list-view-window";
 
 // ---------------------------------------------------------------------------
 // Data source — what consumers implement
@@ -330,29 +328,37 @@ const DEFAULT_ESTIMATED_HEIGHT = 60;
 const OVERSCAN_COUNT = 3;
 
 /**
- * Step 3 implementation — fixed-height single-kind windowing.
+ * Step 4 implementation — variable heights via `ResizeObserver` +
+ * sparse height index, layered on Step 3's fixed-height windowing.
  *
  * The list view subscribes to the data source via
  * `useSyncExternalStore` ([L02]). Scroll-position changes drive
- * rerenders through a tick reducer (Step 4 will swap to RAF
- * coalescing once `ResizeObserver` lands). Heights come from
- * `delegate.estimatedHeightForKind` — measured heights via
- * `ResizeObserver` arrive in Step 4. SmartScroll integration arrives
- * in Step 6.
+ * rerenders through a force-tick reducer. Cell heights flow through
+ * a `HeightIndex`: a single `ResizeObserver` instance observes every
+ * rendered cell wrapper; observer callbacks update the index, queue
+ * a single rAF flush, and force a re-window on flush. Unmeasured
+ * indices fall back to `delegate.estimatedHeightForKind`. SmartScroll
+ * integration arrives in Step 6.
  *
  * What's stable today:
  * - DOM shape per the plan's [#dom-shape]: scroll container,
  *   top spacer, window div with one wrapper per rendered cell, bottom
  *   spacer.
  * - Cell wrapper carries `data-tug-list-cell-index` and
- *   `data-tug-list-cell-kind` for test addressability and (later)
- *   reuse-pool routing.
+ *   `data-tug-list-cell-kind` for test addressability, observer
+ *   index lookup, and (later) reuse-pool routing.
  * - Spacer heights write directly to the DOM via `style.height`
  *   ([L06], mirroring `TugMarkdownView`).
- * - Imperative handle: `scrollToIndex` writes `scrollTop` directly;
- *   out-of-range indices clamp to first/last; NaN is a no-op.
- *   `getElementForIndex` reads from a ref map populated by cell
- *   wrapper refs.
+ * - Imperative handle: `scrollToIndex` writes `scrollTop` directly,
+ *   computing the target offset from the height index (measured
+ *   heights win; estimates fill the gaps); out-of-range indices
+ *   clamp to first/last; NaN is a no-op. `getElementForIndex` reads
+ *   from a ref map populated by cell wrapper refs.
+ * - `ResizeObserver` callbacks coalesce via `requestAnimationFrame`
+ *   ([R01] mitigation): rapid sequential resize events from the
+ *   browser fold into one rerender per paint frame. [L05] forbids
+ *   RAF for state-commit-dependent ops; this RAF is callback-
+ *   coalescing, not commit-waiting.
  */
 const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
   function TugListView(
@@ -370,6 +376,26 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     const cellElementMapRef = React.useRef<Map<number, HTMLDivElement>>(
       new Map(),
     );
+
+    // Sparse height index — measured cells override the estimate.
+    // Held in a ref so the same instance survives every render; the
+    // measurements are not React state ([L06] — appearance derived
+    // from data, not React's render cycle).
+    const heightIndexRef = React.useRef<HeightIndex>(new HeightIndex());
+
+    // Single `ResizeObserver` per list-view instance — created in
+    // `useLayoutEffect` so the constructor runs after the global
+    // (potentially test-overridden) `ResizeObserver` is in place. Cell
+    // wrapper refs observe / unobserve via this instance.
+    const observerRef = React.useRef<ResizeObserver | null>(null);
+
+    // Pending rAF id for height-flush coalescing, or `null` when no
+    // flush is queued. The first observer callback in a burst
+    // schedules the rAF; subsequent callbacks within the same burst
+    // see the queued id and skip the schedule. The rAF clears the id
+    // and forces a rerender, which reads the now-updated height
+    // index.
+    const pendingFlushRef = React.useRef<number | null>(null);
 
     // Subscribe to the data source. The returned `version` token is a
     // by-product — we don't use it directly. The hook's job is to
@@ -406,25 +432,36 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     const scrollTop = scrollEl?.scrollTop ?? 0;
     const viewportHeight = scrollEl?.clientHeight ?? 0;
 
-    // Resolve the per-index height closure. Step 3 uses the kind-keyed
-    // estimate verbatim; Step 4 will compose it with the height-index
-    // measured-height accessor.
+    // Resolve the per-index height closure. Measured heights from
+    // the `HeightIndex` win; unmeasured indices fall back to
+    // `delegate.estimatedHeightForKind`. The composed accessor flows
+    // through to `computeWindow`, the height-index lookup helpers,
+    // and the imperative-handle `scrollToIndex` so every height read
+    // sees the same fallback chain.
     const itemCount = dataSource.numberOfItems();
     const estimatedHeightForKind = delegate?.estimatedHeightForKind;
-    const estimatedHeightForIndex = React.useCallback(
+    const estimatedHeightForKindOnly = React.useCallback(
       (index: number): number => {
         const kind = dataSource.kindForIndex(index);
         return estimatedHeightForKind?.(kind) ?? DEFAULT_ESTIMATED_HEIGHT;
       },
       [dataSource, estimatedHeightForKind],
     );
+    const heightForIndex = React.useCallback(
+      (index: number): number => {
+        const measured = heightIndexRef.current.get(index);
+        if (measured !== undefined) return measured;
+        return estimatedHeightForKindOnly(index);
+      },
+      [estimatedHeightForKindOnly],
+    );
 
-    const window = computeWindow({
+    const windowResult = computeWindow({
       itemCount,
       scrollTop,
       viewportHeight,
       overscanCount: OVERSCAN_COUNT,
-      estimatedHeightForIndex,
+      estimatedHeightForIndex: heightForIndex,
     });
 
     // Mount-tick: after the first commit attaches the scroll-container
@@ -437,6 +474,70 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // doesn't loop.
       scrollTick();
     }, []);
+
+    // Install the `ResizeObserver` once per list-view instance.
+    // Created in `useLayoutEffect` ([L03]) so the constructor runs
+    // synchronously after commit, and any cell ref callback that
+    // fires during the same commit sees `observerRef.current`
+    // populated and observes itself.
+    React.useLayoutEffect(() => {
+      const observer = new ResizeObserver((entries) => {
+        const total = dataSource.numberOfItems();
+        let anyChanged = false;
+        const heightIndex = heightIndexRef.current;
+        for (const entry of entries) {
+          const target = entry.target as HTMLElement;
+          const indexAttr = target.getAttribute("data-tug-list-cell-index");
+          if (indexAttr === null) continue;
+          const index = Number.parseInt(indexAttr, 10);
+          if (Number.isNaN(index) || index < 0 || index >= total) {
+            // Stale entry — the cell unmounted or the data source
+            // shrank below this index between observation and
+            // callback. Drop quietly; the height index doesn't carry
+            // entries for indices that don't exist.
+            continue;
+          }
+          const newHeight = entry.contentRect.height;
+          const currentHeight = heightIndex.get(index);
+          // Skip no-op updates — sub-pixel ResizeObserver noise
+          // shouldn't force a re-window.
+          if (
+            currentHeight !== undefined &&
+            Math.abs(currentHeight - newHeight) < 0.5
+          ) {
+            continue;
+          }
+          heightIndex.set(index, newHeight);
+          anyChanged = true;
+        }
+        if (anyChanged && pendingFlushRef.current === null) {
+          pendingFlushRef.current = requestAnimationFrame(() => {
+            pendingFlushRef.current = null;
+            scrollTick();
+          });
+        }
+      });
+      observerRef.current = observer;
+      // Observe any cells already in the cellElementMap (mounted
+      // before the observer was created on this same commit). React
+      // ref callbacks ran during commit, populating the map; this
+      // effect runs after them, so we sweep up to ensure observation.
+      for (const el of cellElementMapRef.current.values()) {
+        observer.observe(el);
+      }
+      return () => {
+        if (pendingFlushRef.current !== null) {
+          cancelAnimationFrame(pendingFlushRef.current);
+          pendingFlushRef.current = null;
+        }
+        observer.disconnect();
+        observerRef.current = null;
+      };
+      // dataSource is referenced inside the callback for itemCount
+      // bounds — re-running the effect on dataSource identity change
+      // installs a fresh observer that sees the new bound. This is
+      // rare (dataSource is usually stable for a card's lifetime).
+    }, [dataSource]);
 
     // Install the scroll listener. Triggers a re-window on every
     // scroll event ([L03] — `useLayoutEffect` so the listener is in
@@ -458,15 +559,17 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // browser paints the freshly-rendered cells.
     React.useLayoutEffect(() => {
       if (topSpacerRef.current !== null) {
-        topSpacerRef.current.style.height = `${window.topSpacerHeight}px`;
+        topSpacerRef.current.style.height = `${windowResult.topSpacerHeight}px`;
       }
       if (bottomSpacerRef.current !== null) {
-        bottomSpacerRef.current.style.height = `${window.bottomSpacerHeight}px`;
+        bottomSpacerRef.current.style.height = `${windowResult.bottomSpacerHeight}px`;
       }
-    }, [window.topSpacerHeight, window.bottomSpacerHeight]);
+    }, [windowResult.topSpacerHeight, windowResult.bottomSpacerHeight]);
 
     // Imperative handle. `scrollToIndex` writes `scrollTop` directly
-    // for Step 3 (SmartScroll integration arrives in Step 6).
+    // (SmartScroll integration arrives in Step 6). The target offset
+    // is computed from the height index, so measured heights produce
+    // a precise landing — Step 4's contribution.
     React.useImperativeHandle(
       ref,
       () => ({
@@ -475,10 +578,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           const total = dataSource.numberOfItems();
           if (total === 0) return;
           const clamped = Math.max(0, Math.min(total - 1, Math.floor(index)));
-          const targetTop = offsetForIndex(
+          const targetTop = heightIndexRef.current.offsetForIndex(
             clamped,
-            total,
-            estimatedHeightForIndex,
+            estimatedHeightForKindOnly,
           );
           if (scrollContainerRef.current !== null) {
             scrollContainerRef.current.scrollTop = targetTop;
@@ -488,7 +590,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           return cellElementMapRef.current.get(index) ?? null;
         },
       }),
-      [dataSource, estimatedHeightForIndex],
+      [dataSource, estimatedHeightForKindOnly],
     );
 
     // Render the windowed slice. Cells are keyed by
@@ -502,7 +604,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // Defensive against a data-source shrink mid-render: if itemCount
     // dropped below the previously-computed window, skip indices that
     // are out of range now.
-    for (let i = window.firstIndex; i < window.lastIndex; i += 1) {
+    for (let i = windowResult.firstIndex; i < windowResult.lastIndex; i += 1) {
       if (i >= itemCount) break;
       renderedRange.push({
         index: i,
@@ -510,6 +612,27 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         kind: dataSource.kindForIndex(i),
       });
     }
+
+    // Cell-wrapper ref handler: registers the element in the map and
+    // attaches the `ResizeObserver` on mount; unobserves and removes
+    // the entry on unmount. Centralized so the two render paths
+    // (renderer-present and renderer-missing) share the same
+    // semantics.
+    const handleCellRef = (
+      index: number,
+      el: HTMLDivElement | null,
+    ): void => {
+      if (el !== null) {
+        cellElementMapRef.current.set(index, el);
+        observerRef.current?.observe(el);
+      } else {
+        const old = cellElementMapRef.current.get(index);
+        if (old !== undefined) {
+          observerRef.current?.unobserve(old);
+          cellElementMapRef.current.delete(index);
+        }
+      }
+    };
 
     return (
       <div
@@ -544,10 +667,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                   className="tug-list-view-cell"
                   data-tug-list-cell-index={index}
                   data-tug-list-cell-kind={kind}
-                  ref={(el) => {
-                    if (el !== null) cellElementMapRef.current.set(index, el);
-                    else cellElementMapRef.current.delete(index);
-                  }}
+                  ref={(el) => handleCellRef(index, el)}
                 />
               );
             }
@@ -557,10 +677,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                 className="tug-list-view-cell"
                 data-tug-list-cell-index={index}
                 data-tug-list-cell-kind={kind}
-                ref={(el) => {
-                  if (el !== null) cellElementMapRef.current.set(index, el);
-                  else cellElementMapRef.current.delete(index);
-                }}
+                ref={(el) => handleCellRef(index, el)}
               >
                 <Renderer
                   index={index}

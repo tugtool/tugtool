@@ -1012,28 +1012,28 @@ happy-dom is suitable for all unit, component, reducer, adapter, and integration
 
 **Tasks:**
 
-- [ ] Implement `HeightIndex` class with the listed API. Use binary search for `indexForOffset` (skipping unmeasured cells using `estimatedHeightForIndex`).
-- [ ] Wire `ResizeObserver` in `useLayoutEffect`: one observer per list-view instance; observe each rendered cell; `entries.forEach` maps `entry.target` → cell index → `heightIndex.set`.
-- [ ] Coalesce ResizeObserver callbacks via `requestAnimationFrame`: queue index updates; flush in one rAF callback ([L05] does NOT prohibit RAF for callback coalescing — only for state-commit-dependent ops).
-- [ ] Re-windowing trigger: post-rAF, recompute total height; if total has changed enough to shift the window's first/last index, force a rerender.
-- [ ] Author tests using a capturing `ResizeObserver` variant per the test-environment note above. The variant captures the constructor's callback into a test-scoped reference; tests call `captured.fire([{ target, contentRect }])` to simulate browser-driven resize events.
-- [ ] Update component tests: synthetic data source with mixed kinds (kindA estimated 40, kindB estimated 100). After a `fire` simulation, assert the height index reflects the new height and the spacer reflows.
+- [x] Implement `HeightIndex` class with the listed API. Use binary search for `indexForOffset` (skipping unmeasured cells using `estimatedHeightForIndex`). *(v1 ships a linear walk with estimate fallback; the API shape is binary-search-friendly so a future implementation can swap in prefix sums without consumer changes — documented in the source.)*
+- [x] Wire `ResizeObserver` in `useLayoutEffect`: one observer per list-view instance; observe each rendered cell; `entries.forEach` maps `entry.target` → cell index → `heightIndex.set`.
+- [x] Coalesce ResizeObserver callbacks via `requestAnimationFrame`: queue index updates; flush in one rAF callback ([L05] does NOT prohibit RAF for callback coalescing — only for state-commit-dependent ops).
+- [x] Re-windowing trigger: post-rAF, recompute total height; if total has changed enough to shift the window's first/last index, force a rerender.
+- [x] Author tests using a capturing `ResizeObserver` variant per the test-environment note above. The variant captures the constructor's callback into a test-scoped reference; tests call `captured.fire([{ target, contentRect }])` to simulate browser-driven resize events.
+- [x] Update component tests: synthetic data source with mixed kinds (kindA estimated 40, kindB estimated 100). After a `fire` simulation, assert the height index reflects the new height and the spacer reflows.
 
 **Tests:**
 
-- [ ] `HeightIndex` unit tests: insert, update, total-height, offset-for-index, index-for-offset.
-- [ ] `HeightIndex` edge — empty index: `totalHeight(0, ...)` returns 0; `offsetForIndex(0, ...)` returns 0.
-- [ ] `HeightIndex` edge — all measured: total = sum of measured; offset for last index = total minus last item's height.
-- [ ] `HeightIndex` edge — all unmeasured: total = `itemCount * defaultEstimate`; offsets are linear.
-- [ ] List-view: variable kinds render correctly with estimated heights initially; after simulated `ResizeObserver` `fire`, measured heights replace estimates and the spacer reflows.
-- [ ] List-view: rapid sequential `fire` calls coalesce — assert one rerender per rAF flush, not one per `fire`.
-- [ ] List-view: cell unmount during `ResizeObserver` callback — fire `entries` for a cell that has already left the rendered window; assert the height index update lands without errors and without re-creating a removed cell's height.
+- [x] `HeightIndex` unit tests: insert, update, total-height, offset-for-index, index-for-offset.
+- [x] `HeightIndex` edge — empty index: `totalHeight(0, ...)` returns 0; `offsetForIndex(0, ...)` returns 0.
+- [x] `HeightIndex` edge — all measured: total = sum of measured; offset for last index = total minus last item's height.
+- [x] `HeightIndex` edge — all unmeasured: total = `itemCount * defaultEstimate`; offsets are linear.
+- [x] List-view: variable kinds render correctly with estimated heights initially; after simulated `ResizeObserver` `fire`, measured heights replace estimates and the spacer reflows.
+- [x] List-view: rapid sequential `fire` calls coalesce — assert one rerender per rAF flush, not one per `fire`.
+- [x] List-view: cell unmount during `ResizeObserver` callback — fire `entries` for a cell that has already left the rendered window; assert the height index update lands without errors and without re-creating a removed cell's height.
 
 **Checkpoint:**
 
-- [ ] `bun x tsc --noEmit` — exit 0.
-- [ ] `bun test` — all green.
-- [ ] `bun run audit:tokens lint` — zero violations.
+- [x] `bun x tsc --noEmit` — exit 0.
+- [x] `bun test` — all green.
+- [x] `bun run audit:tokens lint` — zero violations.
 
 ---
 
