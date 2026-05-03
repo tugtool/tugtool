@@ -665,29 +665,35 @@ The old tugbank keys are no longer written to (the bridge wires them out in [Ste
 **References:** [D02] control-ops, [#control-ops], [Q02] session-updated-mechanism
 
 **Artifacts:**
-- `actions.rs` adds `ListSessions`, `ForgetSession`, `ForgetWorkspaceSessions` request enums plus `SessionUpdated` push enum.
-- `router.rs` routes the new actions to handlers backed by `SessionLedger`.
-- `tugdeck/src/protocol.ts` adds encoders for the three requests + a decoder for the push.
-- `tugdeck/src/action-dispatch.ts` learns to decode `session_updated` push frames (still no consumer yet — that arrives in [Step 4](#step-4)).
+- `agent_supervisor.rs` extends `AgentSupervisor` with `Option<Arc<SessionLedger>>` and adds `do_list_sessions`, `do_forget_session`, `do_forget_workspace_sessions` handlers + `parse_workspace_key_payload` / `parse_session_id_payload` helpers + `MissingWorkspaceKey` `ControlError` variant.
+- `LedgerSessionsRecorder::with_broadcast(ledger, control_tx)` constructor: every successful write (record/record_turn/mark_closed/mark_failed/remove) emits a `session_updated` push frame on the CONTROL feed.
+- `build_session_updated_frame(row)` and `build_session_removed_frame(session_id)` helpers shared by the recorder and the supervisor's batch Forget paths.
+- `router.rs` extends `SUPERVISOR_SESSION_ACTIONS` with `list_sessions`, `forget_session`, `forget_workspace_sessions` and maps `MissingWorkspaceKey` to its CONTROL error detail.
+- `tugdeck/src/protocol.ts` adds `encodeListSessions`, `encodeForgetSession`, `encodeForgetWorkspaceSessions`, `decodeSessionUpdated`, plus `SessionRow` and `SessionUpdatedPush` interfaces.
+- New `tugdeck/src/lib/tide-session-ledger-events.ts` — process-global pub/sub for the response/push frames so the action dispatcher publishes events that the (step-4) store will subscribe to.
+- `tugdeck/src/action-dispatch.ts` registers handlers for `session_updated`, `list_sessions_ok/err`, `forget_session_ok/err`, `forget_workspace_sessions_ok/err`, each forwarding to the events module.
 
 **Tasks:**
-- [ ] Define `SessionRow` in `actions.rs` with serde derive. Mirror in `protocol.ts`.
-- [ ] Implement the three request handlers in tugcast: each calls the matching `SessionLedger` API, serializes the response, returns. `forget_session` rejects when `state="live" && card_id_live != requesting card`.
-- [ ] Implement the broadcast: every `SessionLedger` write that successfully transactions emits a `SessionUpdated` push to all connected clients (the existing per-connection feed mechanism is the delivery path; sessions are global, not per-card-feed).
-- [ ] Encoders in `protocol.ts` mirror the existing `encodeSpawnSession` style.
-- [ ] `action-dispatch.ts` decode-side identifies `session_updated` and routes it to a new dispatch target (placeholder until [Step 4](#step-4) wires the store).
+- [x] Define `SessionRow` in the ledger crate with serde derive. Mirror in `protocol.ts`.
+- [x] Implement the three request handlers in tugcast: each calls the matching `SessionLedger` API, serializes the response, returns. `forget_session` rejects when `state="live"` (mapped to `forget_session_err { reason: "session_is_live" }`).
+- [x] Implement the broadcast: every successful recorder write emits a `session_updated` push to all CONTROL subscribers via `LedgerSessionsRecorder::with_broadcast`. Batch Forget paths emit one push per dropped row.
+- [x] Encoders in `protocol.ts` mirror the existing `encodeSpawnSession` style.
+- [x] `action-dispatch.ts` decode-side identifies `session_updated` plus the six ack frames and routes them through `tide-session-ledger-events`. Step 4 wires the store as the subscriber.
 
 **Tests:**
-- [ ] Rust integration test: send `list_sessions { workspace_key }`, assert response shape against a seeded ledger.
-- [ ] Rust integration test: send `forget_session`, assert ledger row removed and a `session_updated { removed: true }` is broadcast.
-- [ ] Rust integration test: `forget_session` on a live row returns the right error.
-- [ ] Rust integration test: a `record_turn` write produces a `session_updated` push with `fields: { turn_count, last_used_at }`.
-- [ ] Tugdeck unit test: encoders produce the documented JSON shape.
+- [x] Rust integration test: send `list_sessions { workspace_key }`, assert `list_sessions_ok` response carries the rows in `last_used_at DESC` order; rows from other workspaces are excluded.
+- [x] Rust integration test: send `forget_session`, assert ledger row removed and both `session_updated { removed: true }` and `forget_session_ok` are broadcast.
+- [x] Rust integration test: `forget_session` on a live row returns `forget_session_err { reason: "session_is_live" }` and the row is retained.
+- [x] Rust integration test: `forget_workspace_sessions` drops every non-live row in the workspace, leaves live and other-workspace rows intact, broadcasts `forget_workspace_sessions_ok { count }`.
+- [x] Rust integration test: a `record` followed by a `record_turn` against the recorder produces two `session_updated` pushes with `turn_count` 0 and 1 respectively.
+- [x] Rust integration test: `list_sessions` with a missing `workspace_key` returns `ControlError::MissingWorkspaceKey`.
+- [x] Tugdeck unit test: each new encoder produces the documented JSON shape; `decodeSessionUpdated` round-trips full updates and removed markers and rejects malformed payloads.
 
 **Checkpoint:**
-- [ ] `cargo nextest run`
-- [ ] `bun x tsc --noEmit`
-- [ ] `bun test`
+- [x] `cargo nextest run` — 488 tugcast tests passing
+- [x] `bun x tsc --noEmit` — clean
+- [x] `bun test` — 2750 tugdeck tests passing
+- [x] `bun run audit:tokens lint` — zero violations
 
 ---
 

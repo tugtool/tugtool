@@ -204,3 +204,93 @@ describe("session CONTROL frame builders", () => {
     });
   });
 });
+
+describe("session ledger CONTROL encoders / decoders", () => {
+  function parsePayload(frame: { feedId: number; payload: Uint8Array }) {
+    return JSON.parse(new TextDecoder().decode(frame.payload));
+  }
+
+  test("encodeListSessions produces a CONTROL frame with workspace_key", async () => {
+    const { encodeListSessions } = await import("../protocol");
+    const frame = encodeListSessions("ws-1");
+    expect(frame.feedId).toBe(FeedId.CONTROL);
+    const payload = parsePayload(frame);
+    expect(payload).toEqual({
+      action: "list_sessions",
+      workspace_key: "ws-1",
+    });
+  });
+
+  test("encodeForgetSession produces a CONTROL frame with session_id", async () => {
+    const { encodeForgetSession } = await import("../protocol");
+    const frame = encodeForgetSession("sess-abc");
+    expect(frame.feedId).toBe(FeedId.CONTROL);
+    const payload = parsePayload(frame);
+    expect(payload).toEqual({
+      action: "forget_session",
+      session_id: "sess-abc",
+    });
+  });
+
+  test("encodeForgetWorkspaceSessions produces a CONTROL frame with workspace_key", async () => {
+    const { encodeForgetWorkspaceSessions } = await import("../protocol");
+    const frame = encodeForgetWorkspaceSessions("ws-1");
+    expect(frame.feedId).toBe(FeedId.CONTROL);
+    const payload = parsePayload(frame);
+    expect(payload).toEqual({
+      action: "forget_workspace_sessions",
+      workspace_key: "ws-1",
+    });
+  });
+
+  test("decodeSessionUpdated returns row payload for full update", async () => {
+    const { decodeSessionUpdated } = await import("../protocol");
+    const decoded = decodeSessionUpdated({
+      action: "session_updated",
+      session_id: "sess-abc",
+      fields: {
+        session_id: "sess-abc",
+        workspace_key: "ws-1",
+        project_dir: "/proj",
+        created_at: 1,
+        last_used_at: 2,
+        turn_count: 0,
+        first_user_prompt: null,
+        state: "live",
+        card_id_live: "card-1",
+      },
+    });
+    expect(decoded).toEqual({
+      session_id: "sess-abc",
+      fields: {
+        session_id: "sess-abc",
+        workspace_key: "ws-1",
+        project_dir: "/proj",
+        created_at: 1,
+        last_used_at: 2,
+        turn_count: 0,
+        first_user_prompt: null,
+        state: "live",
+        card_id_live: "card-1",
+      },
+    });
+  });
+
+  test("decodeSessionUpdated returns removed marker for delete push", async () => {
+    const { decodeSessionUpdated } = await import("../protocol");
+    const decoded = decodeSessionUpdated({
+      action: "session_updated",
+      session_id: "sess-abc",
+      removed: true,
+    });
+    expect(decoded).toEqual({ session_id: "sess-abc", removed: true });
+  });
+
+  test("decodeSessionUpdated returns null for wrong action", async () => {
+    const { decodeSessionUpdated } = await import("../protocol");
+    expect(decodeSessionUpdated({ action: "spawn_session_ok" })).toBeNull();
+    expect(decodeSessionUpdated({ session_id: "sess-abc" })).toBeNull();
+    expect(decodeSessionUpdated(null)).toBeNull();
+    expect(decodeSessionUpdated({ action: "session_updated" })).toBeNull();
+  });
+});

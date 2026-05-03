@@ -382,8 +382,9 @@ async fn main() {
         Err(e) => warn!(error = %e, "failed to demote stale live ledger rows"),
     }
 
-    let sessions_recorder: Arc<dyn SessionsRecorder> =
-        Arc::new(LedgerSessionsRecorder::new(Arc::clone(&ledger)));
+    let sessions_recorder: Arc<dyn SessionsRecorder> = Arc::new(
+        LedgerSessionsRecorder::with_broadcast(Arc::clone(&ledger), client_action_tx.clone()),
+    );
 
     let supervisor_config = AgentSupervisorConfig {
         tugcode_path: tugcode_path.clone(),
@@ -391,13 +392,14 @@ async fn main() {
     };
     let spawner_factory: SpawnerFactory = default_spawner_factory(&supervisor_config);
 
-    let (supervisor, merger_register_rx) = AgentSupervisor::new(
+    let (supervisor, merger_register_rx) = AgentSupervisor::new_with_ledger(
         session_state_tx.clone(),
         session_metadata_tx.clone(),
         code_tx.clone(),
         client_action_tx.clone(),
         session_keys_store,
         sessions_recorder,
+        Some(Arc::clone(&ledger)),
         spawner_factory,
         supervisor_config,
         Arc::clone(&registry),

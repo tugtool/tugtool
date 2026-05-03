@@ -60,6 +60,26 @@ export const FEED_ID_SESSION_STATE = FeedId.SESSION_STATE;
 export const CONTROL_ACTION_SPAWN_SESSION = "spawn_session";
 export const CONTROL_ACTION_CLOSE_SESSION = "close_session";
 export const CONTROL_ACTION_RESET_SESSION = "reset_session";
+export const CONTROL_ACTION_LIST_SESSIONS = "list_sessions";
+export const CONTROL_ACTION_FORGET_SESSION = "forget_session";
+export const CONTROL_ACTION_FORGET_WORKSPACE_SESSIONS = "forget_workspace_sessions";
+
+/**
+ * Wire shape for one row of the tugcast-side session ledger.
+ * Mirrors `tugrust/crates/tugcast/src/session_ledger.rs::SessionRow` —
+ * keep the fields in lockstep when the schema evolves.
+ */
+export interface SessionRow {
+  session_id: string;
+  workspace_key: string;
+  project_dir: string;
+  created_at: number;
+  last_used_at: number;
+  turn_count: number;
+  first_user_prompt: string | null;
+  state: "live" | "closed" | "failed";
+  card_id_live: string | null;
+}
 
 /** Frame flags */
 export const FrameFlags = {
@@ -328,4 +348,75 @@ export function encodeResetSession(cardId: string, tugSessionId: string): Frame 
     card_id: cardId,
     tug_session_id: tugSessionId,
   });
+}
+
+/**
+ * Build a `list_sessions` CONTROL request frame.
+ *
+ * The supervisor reads its sqlite-backed session ledger for the workspace
+ * and broadcasts a `list_sessions_ok` CONTROL frame carrying
+ * `{ workspace_key, sessions: SessionRow[] }`. Rows arrive ordered by
+ * `last_used_at DESC` so the picker renders them newest-first without
+ * re-sorting client-side.
+ */
+export function encodeListSessions(workspaceKey: string): Frame {
+  return controlFrame(CONTROL_ACTION_LIST_SESSIONS, {
+    workspace_key: workspaceKey,
+  });
+}
+
+/**
+ * Build a `forget_session` CONTROL request frame.
+ *
+ * The supervisor deletes the matching ledger row, broadcasts a
+ * `session_updated { removed: true }` push, and emits a
+ * `forget_session_ok` (or `_err`) ack. Refused for `state="live"` rows —
+ * the user must close the card first.
+ */
+export function encodeForgetSession(sessionId: string): Frame {
+  return controlFrame(CONTROL_ACTION_FORGET_SESSION, {
+    session_id: sessionId,
+  });
+}
+
+/**
+ * Build a `forget_workspace_sessions` CONTROL request frame.
+ *
+ * Drops every non-live row in the workspace in a single transaction.
+ * Live rows are preserved (the user must close their cards first).
+ * Emits one `session_updated { removed: true }` per dropped row plus
+ * `forget_workspace_sessions_ok { workspace_key, count }` on success.
+ */
+export function encodeForgetWorkspaceSessions(workspaceKey: string): Frame {
+  return controlFrame(CONTROL_ACTION_FORGET_WORKSPACE_SESSIONS, {
+    workspace_key: workspaceKey,
+  });
+}
+
+/**
+ * Decoded `session_updated` push payload. The supervisor emits these on
+ * every successful ledger write. `removed: true` means the row was
+ * deleted; otherwise `fields` holds the post-write row state.
+ */
+export interface SessionUpdatedPush {
+  session_id: string;
+  fields?: SessionRow;
+  removed?: boolean;
+}
+
+/**
+ * Type guard + decoder for `session_updated` push frames. Returns `null`
+ * if the payload is missing its `action` discriminant or the wrong action.
+ * Validation is shape-only — fields' structural correctness is the caller's
+ * responsibility (the type assertion is the contract).
+ */
+export function decodeSessionUpdated(payload: unknown): SessionUpdatedPush | null {
+  if (typeof payload !== "object" || payload === null) return null;
+  const obj = payload as Record<string, unknown>;
+  if (obj.action !== "session_updated") return null;
+  const sessionId = obj.session_id;
+  if (typeof sessionId !== "string" || sessionId.length === 0) return null;
+  const removed = obj.removed === true ? true : undefined;
+  const fields = (obj.fields as SessionRow | undefined) ?? undefined;
+  return removed ? { session_id: sessionId, removed: true } : { session_id: sessionId, fields };
 }

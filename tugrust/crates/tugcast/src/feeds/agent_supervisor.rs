@@ -490,13 +490,56 @@ pub trait SessionsRecorder: Send + Sync {
 }
 
 /// Production implementation backed by a shared [`SessionLedger`].
+///
+/// Optionally broadcasts a `session_updated` push frame on the CONTROL feed
+/// after each successful write so connected clients can patch their local
+/// caches without re-fetching. Production uses the broadcast-enabled
+/// constructor; tests use the no-broadcast variant.
 pub struct LedgerSessionsRecorder {
     ledger: Arc<crate::session_ledger::SessionLedger>,
+    control_tx: Option<broadcast::Sender<Frame>>,
 }
 
 impl LedgerSessionsRecorder {
     pub fn new(ledger: Arc<crate::session_ledger::SessionLedger>) -> Self {
-        Self { ledger }
+        Self {
+            ledger,
+            control_tx: None,
+        }
+    }
+
+    pub fn with_broadcast(
+        ledger: Arc<crate::session_ledger::SessionLedger>,
+        control_tx: broadcast::Sender<Frame>,
+    ) -> Self {
+        Self {
+            ledger,
+            control_tx: Some(control_tx),
+        }
+    }
+
+    /// Broadcast the current state of `session_id`'s ledger row, if a
+    /// control feed is configured. No-op if the row was already deleted by
+    /// the time we look it up (eviction race) — the deletion path emits its
+    /// own `session_updated { removed: true }` push.
+    fn broadcast_row(&self, session_id: &str) {
+        let Some(tx) = self.control_tx.as_ref() else {
+            return;
+        };
+        match self.ledger.get(session_id) {
+            Ok(Some(row)) => {
+                let _ = tx.send(build_session_updated_frame(&row));
+            }
+            Ok(None) => {}
+            Err(err) => warn!(error = %err, session_id, "ledger get for broadcast failed"),
+        }
+    }
+
+    fn broadcast_removed(&self, session_id: &str) {
+        let Some(tx) = self.control_tx.as_ref() else {
+            return;
+        };
+        let _ = tx.send(build_session_removed_frame(session_id));
     }
 }
 
@@ -521,6 +564,7 @@ impl SessionsRecorder for LedgerSessionsRecorder {
             project_dir = record.project_dir,
             card_id = record.card_id,
         );
+        self.broadcast_row(record.session_id);
     }
 
     fn record_turn(&self, session_id: &str) {
@@ -534,6 +578,7 @@ impl SessionsRecorder for LedgerSessionsRecorder {
             event = "ledger.record_turn",
             session_id,
         );
+        self.broadcast_row(session_id);
     }
 
     fn mark_closed(&self, session_id: &str) {
@@ -546,6 +591,7 @@ impl SessionsRecorder for LedgerSessionsRecorder {
             event = "ledger.mark_closed",
             session_id,
         );
+        self.broadcast_row(session_id);
     }
 
     fn mark_failed(&self, session_id: &str) {
@@ -558,6 +604,7 @@ impl SessionsRecorder for LedgerSessionsRecorder {
             event = "ledger.mark_failed",
             session_id,
         );
+        self.broadcast_row(session_id);
     }
 
     fn remove(&self, session_id: &str) {
@@ -568,10 +615,49 @@ impl SessionsRecorder for LedgerSessionsRecorder {
                     event = "ledger.remove",
                     session_id,
                 );
+                self.broadcast_removed(session_id);
             }
             Err(err) => warn!(error = %err, session_id, "ledger forget failed"),
         }
     }
+}
+
+/// Build the `session_updated` push payload for a row's current state.
+/// Public so the `do_forget_session` / `do_forget_workspace_sessions`
+/// handlers can emit the matching frame after their batch writes.
+pub fn build_session_updated_frame(row: &crate::session_ledger::SessionRow) -> Frame {
+    let body = serde_json::json!({
+        "action": "session_updated",
+        "session_id": row.session_id,
+        "fields": {
+            "session_id": row.session_id,
+            "workspace_key": row.workspace_key,
+            "project_dir": row.project_dir,
+            "created_at": row.created_at,
+            "last_used_at": row.last_used_at,
+            "turn_count": row.turn_count,
+            "first_user_prompt": row.first_user_prompt,
+            "state": row.state,
+            "card_id_live": row.card_id_live,
+        },
+    });
+    Frame::new(
+        FeedId::CONTROL,
+        serde_json::to_vec(&body).expect("session_updated serializes"),
+    )
+}
+
+/// Build the `session_updated { removed: true }` push for a deleted row.
+pub fn build_session_removed_frame(session_id: &str) -> Frame {
+    let body = serde_json::json!({
+        "action": "session_updated",
+        "session_id": session_id,
+        "removed": true,
+    });
+    Frame::new(
+        FeedId::CONTROL,
+        serde_json::to_vec(&body).expect("session_updated removed serializes"),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -643,6 +729,8 @@ pub enum ControlError {
     MissingCardId,
     #[error("control payload missing tug_session_id")]
     MissingSessionId,
+    #[error("control payload missing workspace_key")]
+    MissingWorkspaceKey,
     #[error("control payload is not valid JSON")]
     Malformed,
     #[error("tugbank persistence failed: {0}")]
@@ -691,6 +779,14 @@ pub struct AgentSupervisor {
     /// in-memory `LedgerEntry::card_id_live`; the ledger row's
     /// `card_id_live` mirrors that for cross-card picker visibility.
     pub sessions_recorder: Arc<dyn SessionsRecorder>,
+    /// Read handle to the same [`SessionLedger`] the recorder writes to.
+    /// Used for the read-side CONTROL ops (`list_sessions`, the picker's
+    /// query path) and the batch Forget paths. Named `session_ledger` to
+    /// avoid colliding with the in-memory `ledger` field above. Optional
+    /// so unit tests that pass a `NoopSessionsRecorder` aren't forced to
+    /// wire a ledger they won't read from. `None` makes the new ledger
+    /// CONTROL ops short-circuit with an empty / no-op response.
+    pub session_ledger: Option<Arc<crate::session_ledger::SessionLedger>>,
     /// Per-spawn factory for the backing subprocess. Swapped for a mock in
     /// tests so unit tests do not need a real tugcode binary.
     pub spawner_factory: SpawnerFactory,
@@ -767,6 +863,32 @@ fn parse_control_payload_owned(payload: &[u8]) -> Result<OwnedControlPayload, Co
         project_dir,
         session_mode,
     })
+}
+
+fn parse_workspace_key_payload(payload: &[u8]) -> Result<String, ControlError> {
+    let value: serde_json::Value =
+        serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
+    let ws = value
+        .get("workspace_key")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::MissingWorkspaceKey)?
+        .to_string();
+    Ok(ws)
+}
+
+fn parse_session_id_payload(payload: &[u8]) -> Result<String, ControlError> {
+    let value: serde_json::Value =
+        serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
+    // Reuse the `MissingSessionId` variant — semantically the same shape:
+    // a CONTROL action that needs an id and didn't get one.
+    let id = value
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::MissingSessionId)?
+        .to_string();
+    Ok(id)
 }
 
 /// Canonical constructor for `SESSION_STATE` wire frames. Shared between
@@ -888,6 +1010,39 @@ impl AgentSupervisor {
         registry: Arc<WorkspaceRegistry>,
         cancel: CancellationToken,
     ) -> (Self, mpsc::Receiver<MergerRegistration>) {
+        Self::new_with_ledger(
+            session_state_tx,
+            session_metadata_tx,
+            code_output_tx,
+            control_tx,
+            store,
+            sessions_recorder,
+            None,
+            spawner_factory,
+            config,
+            registry,
+            cancel,
+        )
+    }
+
+    /// Construct a supervisor with an explicit `Arc<SessionLedger>` for the
+    /// read-side CONTROL ops. Production wires this in `main.rs`; unit tests
+    /// that don't exercise the ledger CONTROL paths use [`Self::new`] and
+    /// get `None`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_ledger(
+        session_state_tx: broadcast::Sender<Frame>,
+        session_metadata_tx: broadcast::Sender<Frame>,
+        code_output_tx: broadcast::Sender<Frame>,
+        control_tx: broadcast::Sender<Frame>,
+        store: Arc<dyn SessionKeysStore>,
+        sessions_recorder: Arc<dyn SessionsRecorder>,
+        session_ledger: Option<Arc<crate::session_ledger::SessionLedger>>,
+        spawner_factory: SpawnerFactory,
+        config: AgentSupervisorConfig,
+        registry: Arc<WorkspaceRegistry>,
+        cancel: CancellationToken,
+    ) -> (Self, mpsc::Receiver<MergerRegistration>) {
         let (merger_register_tx, merger_register_rx) = mpsc::channel(64);
         let sup = Self {
             ledger: Arc::new(Mutex::new(HashMap::new())),
@@ -898,6 +1053,7 @@ impl AgentSupervisor {
             control_tx,
             store,
             sessions_recorder,
+            session_ledger,
             spawner_factory,
             merger_register_tx,
             config,
@@ -953,6 +1109,21 @@ impl AgentSupervisor {
                 // workspace and (potentially) tear down its feeds.
                 self.do_reset_session(&parsed.card_id, &parsed.tug_session_id, client_id)
                     .await;
+                Ok(())
+            }
+            "list_sessions" => {
+                let workspace_key = parse_workspace_key_payload(payload)?;
+                self.do_list_sessions(&workspace_key).await;
+                Ok(())
+            }
+            "forget_session" => {
+                let session_id = parse_session_id_payload(payload)?;
+                self.do_forget_session(&session_id).await;
+                Ok(())
+            }
+            "forget_workspace_sessions" => {
+                let workspace_key = parse_workspace_key_payload(payload)?;
+                self.do_forget_workspace_sessions(&workspace_key).await;
                 Ok(())
             }
             other => {
@@ -1413,6 +1584,187 @@ impl AgentSupervisor {
         // `claude_session_id` snapshot is `None` — nothing to mark closed.
         if let Some(claude_id) = claude_session_id {
             self.sessions_recorder.mark_closed(&claude_id);
+        }
+    }
+
+    /// Handle a `list_sessions` CONTROL request. Reads the ledger directly
+    /// (read-only) and broadcasts a `list_sessions_ok` response carrying the
+    /// rows for the workspace, ordered newest-first.
+    async fn do_list_sessions(&self, workspace_key: &str) {
+        let Some(ledger) = self.session_ledger.as_ref() else {
+            // No ledger wired — emit an empty response so a confused client
+            // doesn't sit on a pending state forever.
+            let body = serde_json::json!({
+                "action": "list_sessions_ok",
+                "workspace_key": workspace_key,
+                "sessions": serde_json::Value::Array(Vec::new()),
+            });
+            let _ = self.control_tx.send(Frame::new(
+                FeedId::CONTROL,
+                serde_json::to_vec(&body).expect("list_sessions_ok serializes"),
+            ));
+            return;
+        };
+        let rows = match ledger.list_for_workspace(workspace_key) {
+            Ok(r) => r,
+            Err(err) => {
+                warn!(error = %err, workspace_key, "list_sessions failed");
+                let body = serde_json::json!({
+                    "action": "list_sessions_err",
+                    "workspace_key": workspace_key,
+                    "reason": "ledger_read_failed",
+                });
+                let _ = self.control_tx.send(Frame::new(
+                    FeedId::CONTROL,
+                    serde_json::to_vec(&body).expect("list_sessions_err serializes"),
+                ));
+                return;
+            }
+        };
+        let body = serde_json::json!({
+            "action": "list_sessions_ok",
+            "workspace_key": workspace_key,
+            "sessions": rows,
+        });
+        let _ = self.control_tx.send(Frame::new(
+            FeedId::CONTROL,
+            serde_json::to_vec(&body).expect("list_sessions_ok serializes"),
+        ));
+    }
+
+    /// Handle a `forget_session` CONTROL request. Refuses if the row is
+    /// currently live (per [D03] / picker UX). Emits `session_updated
+    /// { removed: true }` on success — the recorder broadcasts that frame
+    /// internally; this handler emits the matching `forget_session_ok`
+    /// response so the requesting client can resolve its pending action.
+    async fn do_forget_session(&self, session_id: &str) {
+        let Some(ledger) = self.session_ledger.as_ref() else {
+            let body = serde_json::json!({
+                "action": "forget_session_err",
+                "session_id": session_id,
+                "reason": "no_ledger",
+            });
+            let _ = self.control_tx.send(Frame::new(
+                FeedId::CONTROL,
+                serde_json::to_vec(&body).expect("forget_session_err serializes"),
+            ));
+            return;
+        };
+        match ledger.forget(session_id) {
+            Ok(_) => {
+                let _ = self
+                    .control_tx
+                    .send(build_session_removed_frame(session_id));
+                let body = serde_json::json!({
+                    "action": "forget_session_ok",
+                    "session_id": session_id,
+                });
+                let _ = self.control_tx.send(Frame::new(
+                    FeedId::CONTROL,
+                    serde_json::to_vec(&body).expect("forget_session_ok serializes"),
+                ));
+            }
+            Err(crate::session_ledger::LedgerError::InvalidState(_)) => {
+                let body = serde_json::json!({
+                    "action": "forget_session_err",
+                    "session_id": session_id,
+                    "reason": "session_is_live",
+                });
+                let _ = self.control_tx.send(Frame::new(
+                    FeedId::CONTROL,
+                    serde_json::to_vec(&body).expect("forget_session_err serializes"),
+                ));
+            }
+            Err(crate::session_ledger::LedgerError::NotFound(_)) => {
+                let body = serde_json::json!({
+                    "action": "forget_session_err",
+                    "session_id": session_id,
+                    "reason": "not_found",
+                });
+                let _ = self.control_tx.send(Frame::new(
+                    FeedId::CONTROL,
+                    serde_json::to_vec(&body).expect("forget_session_err serializes"),
+                ));
+            }
+            Err(err) => {
+                warn!(error = %err, session_id, "forget_session ledger error");
+                let body = serde_json::json!({
+                    "action": "forget_session_err",
+                    "session_id": session_id,
+                    "reason": "ledger_write_failed",
+                });
+                let _ = self.control_tx.send(Frame::new(
+                    FeedId::CONTROL,
+                    serde_json::to_vec(&body).expect("forget_session_err serializes"),
+                ));
+            }
+        }
+    }
+
+    /// Handle a `forget_workspace_sessions` CONTROL request. Drops every
+    /// non-live row in the workspace in a single transaction. Live rows are
+    /// preserved (the user must close the card first). Emits one
+    /// `session_updated { removed: true }` per dropped row plus the
+    /// `forget_workspace_sessions_ok` response carrying the count.
+    async fn do_forget_workspace_sessions(&self, workspace_key: &str) {
+        let Some(ledger) = self.session_ledger.as_ref() else {
+            let body = serde_json::json!({
+                "action": "forget_workspace_sessions_err",
+                "workspace_key": workspace_key,
+                "reason": "no_ledger",
+            });
+            let _ = self.control_tx.send(Frame::new(
+                FeedId::CONTROL,
+                serde_json::to_vec(&body).expect("forget_workspace_sessions_err serializes"),
+            ));
+            return;
+        };
+        // Capture the doomed-row ids before deletion so the per-row
+        // broadcasts can fire afterwards. List-then-delete is racy w.r.t. a
+        // concurrent recorder.write; a more careful implementation would
+        // return the deleted ids from `forget_workspace`. Acceptable for
+        // step 3 — the supervisor's write cadence makes a real race vanishly
+        // unlikely. Revisit if a test ever flakes on this path.
+        let doomed: Vec<String> = match ledger.list_for_workspace(workspace_key) {
+            Ok(rows) => rows
+                .into_iter()
+                .filter(|r| r.state != crate::session_ledger::SessionState::Live)
+                .map(|r| r.session_id)
+                .collect(),
+            Err(err) => {
+                warn!(error = %err, workspace_key, "forget_workspace pre-list failed");
+                Vec::new()
+            }
+        };
+        match ledger.forget_workspace(workspace_key) {
+            Ok(outcome) => {
+                for sid in &doomed {
+                    let _ = self.control_tx.send(build_session_removed_frame(sid));
+                }
+                let body = serde_json::json!({
+                    "action": "forget_workspace_sessions_ok",
+                    "workspace_key": workspace_key,
+                    "count": outcome.count,
+                });
+                let _ = self.control_tx.send(Frame::new(
+                    FeedId::CONTROL,
+                    serde_json::to_vec(&body)
+                        .expect("forget_workspace_sessions_ok serializes"),
+                ));
+            }
+            Err(err) => {
+                warn!(error = %err, workspace_key, "forget_workspace ledger error");
+                let body = serde_json::json!({
+                    "action": "forget_workspace_sessions_err",
+                    "workspace_key": workspace_key,
+                    "reason": "ledger_write_failed",
+                });
+                let _ = self.control_tx.send(Frame::new(
+                    FeedId::CONTROL,
+                    serde_json::to_vec(&body)
+                        .expect("forget_workspace_sessions_err serializes"),
+                ));
+            }
         }
     }
 
@@ -4879,5 +5231,245 @@ mod tests {
         let row = ledger.get("claude-1").unwrap().expect("row");
         assert_eq!(row.state, LedgerState::Closed);
         assert_eq!(row.card_id_live, None);
+    }
+
+    // ── CONTROL ledger ops ───────────────────────────────────────────────────
+    //
+    // These tests exercise the new `list_sessions`, `forget_session`, and
+    // `forget_workspace_sessions` actions end-to-end through the supervisor's
+    // `handle_control` path. The supervisor is built with a real
+    // `SessionLedger` in scope; the tests assert the broadcast frames the
+    // CONTROL feed emits and the ledger row state after each action.
+
+    /// Build a supervisor with a real ledger + a recorder that emits push
+    /// frames on writes. Returns the supervisor, ledger, and the CONTROL
+    /// receiver so tests can read the broadcast traffic.
+    fn make_supervisor_with_ledger(
+        store: Arc<dyn SessionKeysStore>,
+    ) -> (
+        Arc<AgentSupervisor>,
+        Arc<SessionLedger>,
+        broadcast::Receiver<Frame>,
+    ) {
+        let ledger = Arc::new(SessionLedger::open_in_memory().expect("ledger open"));
+        let (state_tx, _state_rx) = broadcast::channel(64);
+        let (meta_tx, _meta_rx) = broadcast::channel(8);
+        let (code_tx, _code_rx) = broadcast::channel(8);
+        let (control_tx, control_rx) = broadcast::channel(128);
+        let recorder: Arc<dyn SessionsRecorder> = Arc::new(LedgerSessionsRecorder::with_broadcast(
+            Arc::clone(&ledger),
+            control_tx.clone(),
+        ));
+        let registry = Arc::new(WorkspaceRegistry::new());
+        let cancel = CancellationToken::new();
+        let (sup, mut register_rx) = AgentSupervisor::new_with_ledger(
+            state_tx,
+            meta_tx,
+            code_tx,
+            control_tx,
+            store,
+            recorder,
+            Some(Arc::clone(&ledger)),
+            stall_spawner_factory(),
+            AgentSupervisorConfig::default(),
+            registry,
+            cancel,
+        );
+        tokio::spawn(async move { while register_rx.recv().await.is_some() {} });
+        (Arc::new(sup), ledger, control_rx)
+    }
+
+    fn drain_until_action(
+        rx: &mut broadcast::Receiver<Frame>,
+        action: &str,
+    ) -> serde_json::Value {
+        // Pull frames off the broadcast until we find one whose `action`
+        // matches; ignore the others. Bounded loop so a missing frame
+        // surfaces as a panic on the receiver's empty error rather than a
+        // hang.
+        for _ in 0..64 {
+            let Ok(frame) = rx.try_recv() else { break };
+            if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&frame.payload) {
+                if v.get("action").and_then(|a| a.as_str()) == Some(action) {
+                    return v;
+                }
+            }
+        }
+        panic!("CONTROL frame with action `{action}` not observed");
+    }
+
+    #[tokio::test]
+    async fn list_sessions_returns_workspace_rows_newest_first() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, ledger, mut rx) = make_supervisor_with_ledger(store);
+
+        ledger
+            .record_spawn("s-old", "ws-1", "/p", "c1", 1_000)
+            .unwrap();
+        ledger.mark_closed("s-old").unwrap();
+        ledger
+            .record_spawn("s-new", "ws-1", "/p", "c2", 5_000)
+            .unwrap();
+        ledger.mark_closed("s-new").unwrap();
+        ledger
+            .record_spawn("other", "ws-2", "/p", "c3", 3_000)
+            .unwrap();
+        ledger.mark_closed("other").unwrap();
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "list_sessions",
+            "workspace_key": "ws-1",
+        }))
+        .unwrap();
+
+        sup.handle_control("list_sessions", &payload, 10)
+            .await
+            .unwrap();
+
+        let response = drain_until_action(&mut rx, "list_sessions_ok");
+        assert_eq!(response["workspace_key"], "ws-1");
+        let sessions = response["sessions"].as_array().expect("sessions array");
+        assert_eq!(sessions.len(), 2, "ws-1 has exactly 2 rows");
+        assert_eq!(sessions[0]["session_id"], "s-new");
+        assert_eq!(sessions[1]["session_id"], "s-old");
+    }
+
+    #[tokio::test]
+    async fn list_sessions_missing_workspace_key_errors() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, _ledger, _rx) = make_supervisor_with_ledger(store);
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "list_sessions",
+        }))
+        .unwrap();
+
+        let err = sup
+            .handle_control("list_sessions", &payload, 10)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ControlError::MissingWorkspaceKey));
+    }
+
+    #[tokio::test]
+    async fn forget_session_drops_row_and_broadcasts_removed() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, ledger, mut rx) = make_supervisor_with_ledger(store);
+
+        ledger
+            .record_spawn("s1", "ws-1", "/p", "c1", 1_000)
+            .unwrap();
+        ledger.mark_closed("s1").unwrap();
+        // Drain whatever the seed wrote.
+        while rx.try_recv().is_ok() {}
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "forget_session",
+            "session_id": "s1",
+        }))
+        .unwrap();
+        sup.handle_control("forget_session", &payload, 10)
+            .await
+            .unwrap();
+
+        // session_updated push first, then forget_session_ok ack.
+        let push = drain_until_action(&mut rx, "session_updated");
+        assert_eq!(push["session_id"], "s1");
+        assert_eq!(push["removed"], true);
+
+        // The receiver was reset by drain_until_action consuming the push;
+        // re-drain to find the ok frame.
+        let ack = drain_until_action(&mut rx, "forget_session_ok");
+        assert_eq!(ack["session_id"], "s1");
+        assert!(ledger.get("s1").unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn forget_session_on_live_row_returns_error() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, ledger, mut rx) = make_supervisor_with_ledger(store);
+        ledger
+            .record_spawn("live1", "ws-1", "/p", "c1", 1_000)
+            .unwrap();
+        while rx.try_recv().is_ok() {}
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "forget_session",
+            "session_id": "live1",
+        }))
+        .unwrap();
+        sup.handle_control("forget_session", &payload, 10)
+            .await
+            .unwrap();
+
+        let err = drain_until_action(&mut rx, "forget_session_err");
+        assert_eq!(err["session_id"], "live1");
+        assert_eq!(err["reason"], "session_is_live");
+        assert!(ledger.get("live1").unwrap().is_some(), "row retained");
+    }
+
+    #[tokio::test]
+    async fn forget_workspace_sessions_drops_non_live_only() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, ledger, mut rx) = make_supervisor_with_ledger(store);
+
+        ledger
+            .record_spawn("live1", "ws-1", "/p", "c1", 1_000)
+            .unwrap();
+        ledger
+            .record_spawn("c1", "ws-1", "/p", "c1", 2_000)
+            .unwrap();
+        ledger.mark_closed("c1").unwrap();
+        ledger
+            .record_spawn("f1", "ws-1", "/p", "c1", 3_000)
+            .unwrap();
+        ledger.mark_failed("f1").unwrap();
+        // unrelated workspace — must not be touched.
+        ledger
+            .record_spawn("o1", "ws-2", "/p", "c2", 4_000)
+            .unwrap();
+        ledger.mark_closed("o1").unwrap();
+        while rx.try_recv().is_ok() {}
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "forget_workspace_sessions",
+            "workspace_key": "ws-1",
+        }))
+        .unwrap();
+        sup.handle_control("forget_workspace_sessions", &payload, 10)
+            .await
+            .unwrap();
+
+        let ack = drain_until_action(&mut rx, "forget_workspace_sessions_ok");
+        assert_eq!(ack["workspace_key"], "ws-1");
+        assert_eq!(ack["count"], 2);
+
+        assert!(ledger.get("live1").unwrap().is_some(), "live retained");
+        assert!(ledger.get("c1").unwrap().is_none(), "closed dropped");
+        assert!(ledger.get("f1").unwrap().is_none(), "failed dropped");
+        assert!(ledger.get("o1").unwrap().is_some(), "other ws untouched");
+    }
+
+    #[tokio::test]
+    async fn recorder_writes_emit_session_updated_pushes() {
+        // A `record` followed by a `record_turn` against the supervisor's
+        // recorder must each emit a `session_updated` push on the same
+        // CONTROL feed the picker subscribes to. Verifies the broadcast
+        // pipeline wired up in `LedgerSessionsRecorder::with_broadcast`.
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, _ledger, mut rx) = make_supervisor_with_ledger(store);
+
+        sup.sessions_recorder.record(SessionRecord {
+            session_id: "s1",
+            workspace_key: "ws-1",
+            project_dir: "/p",
+            card_id: "c1",
+        });
+        let first = drain_until_action(&mut rx, "session_updated");
+        assert_eq!(first["fields"]["turn_count"].as_i64(), Some(0));
+        assert_eq!(first["fields"]["state"], "live");
+
+        sup.sessions_recorder.record_turn("s1");
+        let second = drain_until_action(&mut rx, "session_updated");
+        assert_eq!(second["fields"]["turn_count"].as_i64(), Some(1));
     }
 }

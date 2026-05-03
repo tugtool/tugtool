@@ -493,7 +493,20 @@ enum ControlIntercept {
 /// Session-lifecycle action names intercepted by the supervisor ([D09]).
 /// Non-session actions (`relaunch`, `eval-response`, etc.) fall through
 /// to [`crate::actions::dispatch_action`].
-const SUPERVISOR_SESSION_ACTIONS: &[&str] = &["spawn_session", "close_session", "reset_session"];
+///
+/// Includes the session-ledger CONTROL ops added in step 3 of
+/// `tugplan-tide-session-ledger.md`: the picker queries the ledger via
+/// `list_sessions`, and Forget actions go through `forget_session` /
+/// `forget_workspace_sessions`. The supervisor handles all of them so the
+/// ledger remains the single source of truth.
+const SUPERVISOR_SESSION_ACTIONS: &[&str] = &[
+    "spawn_session",
+    "close_session",
+    "reset_session",
+    "list_sessions",
+    "forget_session",
+    "forget_workspace_sessions",
+];
 
 /// Intercept session-lifecycle CONTROL actions and route them to the
 /// supervisor. Non-session actions return `PassThrough` so the caller
@@ -519,6 +532,9 @@ async fn intercept_session_control(
         },
         Err(ControlError::MissingSessionId) => ControlIntercept::HandledError {
             detail: "missing_tug_session_id",
+        },
+        Err(ControlError::MissingWorkspaceKey) => ControlIntercept::HandledError {
+            detail: "missing_workspace_key",
         },
         Err(ControlError::Malformed) => ControlIntercept::HandledError {
             detail: "malformed_payload",

@@ -45,6 +45,17 @@ import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
 import { getAppLifecycle } from "./lib/app-lifecycle";
+import { decodeSessionUpdated } from "./protocol";
+import type { SessionRow } from "./protocol";
+import {
+  publishSessionUpdated,
+  publishListSessionsOk,
+  publishListSessionsErr,
+  publishForgetSessionOk,
+  publishForgetSessionErr,
+  publishForgetWorkspaceSessionsOk,
+  publishForgetWorkspaceSessionsErr,
+} from "./lib/tide-session-ledger-events";
 
 /**
  * Ordered list of all shipped themes.
@@ -420,6 +431,84 @@ export function initActionDispatch(
       projectDir: projectDirResolved,
       sessionMode: sessionModeResolved,
     });
+  });
+
+  // session_updated: tugcast supervisor broadcasts these on every
+  // ledger write (`record_spawn`, `record_turn`, `mark_closed`,
+  // `mark_failed`, `forget`). Routed through the
+  // `tide-session-ledger-events` bus so the picker's session-ledger
+  // store (step 4) can patch its in-memory cache without re-fetching.
+  registerAction("session_updated", (payload) => {
+    const decoded = decodeSessionUpdated(payload);
+    if (decoded === null) {
+      console.warn("session_updated: invalid payload shape", payload);
+      return;
+    }
+    publishSessionUpdated(decoded);
+  });
+
+  // list_sessions_ok / _err: response to a `list_sessions` request. The
+  // store consumer (step 4) resolves its pending workspace fetch with
+  // the rows or surfaces the error.
+  registerAction("list_sessions_ok", (payload) => {
+    const workspaceKey = payload.workspace_key;
+    const sessions = payload.sessions;
+    if (typeof workspaceKey !== "string" || !Array.isArray(sessions)) {
+      console.warn("list_sessions_ok: missing or invalid fields", payload);
+      return;
+    }
+    publishListSessionsOk({
+      workspace_key: workspaceKey,
+      sessions: sessions as SessionRow[],
+    });
+  });
+  registerAction("list_sessions_err", (payload) => {
+    const workspaceKey = payload.workspace_key;
+    const reason = payload.reason;
+    if (typeof workspaceKey !== "string" || typeof reason !== "string") {
+      console.warn("list_sessions_err: missing or invalid fields", payload);
+      return;
+    }
+    publishListSessionsErr({ workspace_key: workspaceKey, reason });
+  });
+
+  // forget_session_ok / _err
+  registerAction("forget_session_ok", (payload) => {
+    const sessionId = payload.session_id;
+    if (typeof sessionId !== "string") {
+      console.warn("forget_session_ok: missing session_id", payload);
+      return;
+    }
+    publishForgetSessionOk({ session_id: sessionId });
+  });
+  registerAction("forget_session_err", (payload) => {
+    const sessionId = payload.session_id;
+    const reason = payload.reason;
+    if (typeof sessionId !== "string" || typeof reason !== "string") {
+      console.warn("forget_session_err: missing or invalid fields", payload);
+      return;
+    }
+    publishForgetSessionErr({ session_id: sessionId, reason });
+  });
+
+  // forget_workspace_sessions_ok / _err
+  registerAction("forget_workspace_sessions_ok", (payload) => {
+    const workspaceKey = payload.workspace_key;
+    const count = payload.count;
+    if (typeof workspaceKey !== "string" || typeof count !== "number") {
+      console.warn("forget_workspace_sessions_ok: missing or invalid fields", payload);
+      return;
+    }
+    publishForgetWorkspaceSessionsOk({ workspace_key: workspaceKey, count });
+  });
+  registerAction("forget_workspace_sessions_err", (payload) => {
+    const workspaceKey = payload.workspace_key;
+    const reason = payload.reason;
+    if (typeof workspaceKey !== "string" || typeof reason !== "string") {
+      console.warn("forget_workspace_sessions_err: missing or invalid fields", payload);
+      return;
+    }
+    publishForgetWorkspaceSessionsErr({ workspace_key: workspaceKey, reason });
   });
 
   // app-lifecycle: route macOS `NSApplicationDelegate` events into the
