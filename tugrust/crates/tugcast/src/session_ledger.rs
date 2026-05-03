@@ -501,6 +501,22 @@ impl SessionLedger {
         Ok(removed)
     }
 
+    /// Demote any rows still marked `live` (and bound to a card) into the
+    /// `closed` state. Called once at tugcast startup: a previous tugcast
+    /// process that crashed without cleanly closing its sessions will have
+    /// left `state="live"` rows behind that no longer reflect any running
+    /// subprocess. Returns the number of rows demoted.
+    pub fn demote_live_to_closed(&self) -> Result<usize, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let count = conn.execute(
+            "UPDATE sessions
+             SET state = 'closed', card_id_live = NULL
+             WHERE state = 'live'",
+            [],
+        )?;
+        Ok(count)
+    }
+
     /// Remove every non-live row whose `last_used_at` is older than
     /// `now - max_age_ms`. Returns the number of rows removed.
     pub fn sweep_expired(&self, max_age_ms: i64, now: i64) -> Result<usize, LedgerError> {
@@ -931,6 +947,48 @@ mod tests {
         let removed = l.sweep_expired(max_age_ms, now).unwrap();
         assert_eq!(removed, 1);
         assert!(l.get("stale").unwrap().is_none());
+    }
+
+    // ── demote_live_to_closed ────────────────────────────────────────────────
+
+    #[test]
+    fn demote_live_to_closed_transitions_only_live_rows() {
+        let l = fresh();
+        seed_live(&l, "live1", WS_A, "c1", millis(0));
+        seed_live(&l, "live2", WS_A, "c2", millis(0));
+        seed_live(&l, "closed1", WS_A, "c3", millis(1));
+        l.mark_closed("closed1").unwrap();
+        seed_live(&l, "failed1", WS_A, "c4", millis(2));
+        l.mark_failed("failed1").unwrap();
+
+        let demoted = l.demote_live_to_closed().unwrap();
+        assert_eq!(demoted, 2);
+
+        let r = l.get("live1").unwrap().unwrap();
+        assert_eq!(r.state, SessionState::Closed);
+        assert_eq!(r.card_id_live, None);
+
+        let r = l.get("live2").unwrap().unwrap();
+        assert_eq!(r.state, SessionState::Closed);
+        assert_eq!(r.card_id_live, None);
+
+        // Already-closed and failed rows untouched.
+        assert_eq!(
+            l.get("closed1").unwrap().unwrap().state,
+            SessionState::Closed
+        );
+        assert_eq!(
+            l.get("failed1").unwrap().unwrap().state,
+            SessionState::Failed
+        );
+    }
+
+    #[test]
+    fn demote_live_to_closed_no_op_when_no_live_rows() {
+        let l = fresh();
+        seed_live(&l, "s1", WS_A, "c", millis(0));
+        l.mark_closed("s1").unwrap();
+        assert_eq!(l.demote_live_to_closed().unwrap(), 0);
     }
 
     // ── idempotent open ──────────────────────────────────────────────────────

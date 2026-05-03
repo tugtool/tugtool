@@ -432,206 +432,144 @@ impl SessionKeysStore for TugbankClient {
 }
 
 // ---------------------------------------------------------------------------
-// SessionsRecorder — writer trait for the sessions-record tugbank entry
+// SessionsRecorder — writer trait for the per-session ledger
 // ---------------------------------------------------------------------------
 
-/// Tugbank domain for the sessions record.
-pub const SESSIONS_DOMAIN: &str = "dev.tugtool.tide";
-/// Tugbank key (within `SESSIONS_DOMAIN`) for the sessions record.
-pub const SESSIONS_KEY: &str = "sessions";
-/// Tugbank key (within `SESSIONS_DOMAIN`) for the live-sessions list.
-/// Tugcast publishes the set of session ids currently bound to a
-/// card (state in `Spawning` or `Live`) so the tugdeck picker can
-/// grey out a resume row that points at a session already held by
-/// another card. Cleared on tugcast startup.
-pub const LIVE_SESSIONS_KEY: &str = "live-sessions";
-
-/// Writer for the sessions record — one entry per session, keyed by
-/// the session id (which is also claude's own id and the id the feed
-/// routes under).
+/// Per-session metadata captured at session_init time.
 ///
-/// The record shape is `{[sessionId]: {projectDir, createdAt}}`. The
-/// picker in tugdeck reads this record to surface resume candidates;
-/// tugcast writes it from the bridge on `session_init` and removes
-/// entries on `resume_failed`. Centralizing the write here — instead of
-/// tugcode reaching into the sqlite file directly — means every write
-/// goes through the Rust `TugbankClient`, which broadcasts
-/// `domain-changed` notifications automatically. No subprocess shim.
-pub trait SessionsRecorder: Send + Sync {
-    /// Upsert the record for `session_id`. Preserves an existing
-    /// `createdAt` if the record already exists; uses `now` otherwise.
-    fn record(&self, session_id: &str, project_dir: &str);
+/// The recorder uses `session_id` as the row key (the claude session id —
+/// also the JSONL file name on disk). `card_id` populates the row's
+/// `card_id_live` while the session is live; `mark_closed` and
+/// `mark_failed` clear it on lifecycle transitions.
+#[derive(Debug, Clone, Copy)]
+pub struct SessionRecord<'a> {
+    pub session_id: &'a str,
+    pub workspace_key: &'a str,
+    pub project_dir: &'a str,
+    pub card_id: &'a str,
+}
 
-    /// Remove the record for `session_id`. No-op if the id is absent.
+/// Writer for the per-session ledger.
+///
+/// Replaces the pre-ledger pair of `TugbankSessionsRecorder` (sessions
+/// record) and `TugbankLiveSessionsTracker` (live-sessions broadcast). One
+/// trait now expresses the full lifecycle: `record` (insert/promote to
+/// live), `record_turn` (assistant turn complete), `mark_closed`
+/// (close_session / clean exit), `mark_failed` (resume_failed / crash
+/// budget exhausted), and `remove` (Forget UX in step 6).
+///
+/// No method has a default impl. Adding a method to this trait must force
+/// every implementor to opt in explicitly — silently inheriting an old
+/// behavior was the regression-shape that motivated the redesign.
+pub trait SessionsRecorder: Send + Sync {
+    /// Insert a fresh row, or transition an existing row back to `live` and
+    /// rebind it to `record.card_id`. Called from the bridge on
+    /// `session_init`, when the claude session id is first known.
+    fn record(&self, record: SessionRecord<'_>);
+
+    /// Increment turn count and bump `last_used_at`. No-op if the row is
+    /// missing or not in `live` state — see the forget-vs-late-turn race
+    /// note in the plan's risk table.
+    fn record_turn(&self, session_id: &str);
+
+    /// Transition the row to `closed` and clear the live-card binding.
+    /// Called on `close_session` and on bridge teardown after a successful
+    /// `result` event.
+    fn mark_closed(&self, session_id: &str);
+
+    /// Transition the row to `failed` and clear the live-card binding.
+    /// Called on `resume_failed` and crash-budget exhaustion. Replaces the
+    /// pre-ledger semantic of removing the row entirely; the row survives
+    /// as a diagnostic crumb until age eviction or explicit Forget.
+    fn mark_failed(&self, session_id: &str);
+
+    /// Delete the row for `session_id`. Used by the Forget UX (step 6).
+    /// The bridge does not call this; lifecycle endings use `mark_closed` or
+    /// `mark_failed` instead.
     fn remove(&self, session_id: &str);
 }
 
-/// Production implementation backed by a shared [`TugbankClient`].
-pub struct TugbankSessionsRecorder {
-    pub client: Arc<TugbankClient>,
+/// Production implementation backed by a shared [`SessionLedger`].
+pub struct LedgerSessionsRecorder {
+    ledger: Arc<crate::session_ledger::SessionLedger>,
 }
 
-impl TugbankSessionsRecorder {
-    pub fn new(client: Arc<TugbankClient>) -> Self {
-        Self { client }
+impl LedgerSessionsRecorder {
+    pub fn new(ledger: Arc<crate::session_ledger::SessionLedger>) -> Self {
+        Self { ledger }
     }
+}
 
-    fn read_map(&self) -> serde_json::Map<String, serde_json::Value> {
-        let existing = self
-            .client
-            .get(SESSIONS_DOMAIN, SESSIONS_KEY)
-            .ok()
-            .flatten();
-        match existing {
-            Some(Value::Json(serde_json::Value::Object(m))) => m,
-            Some(Value::String(s)) => {
-                // Tugcode historically wrote the value as a JSON-stringified
-                // map under `Value::String`. Accept both shapes on read so
-                // pre-refactor records keep working; writes always use Json.
-                match serde_json::from_str::<serde_json::Value>(&s) {
-                    Ok(serde_json::Value::Object(m)) => m,
-                    _ => serde_json::Map::new(),
-                }
-            }
-            _ => serde_json::Map::new(),
-        }
-    }
-
-    fn write_map(&self, map: serde_json::Map<String, serde_json::Value>) {
-        if let Err(err) = self.client.set(
-            SESSIONS_DOMAIN,
-            SESSIONS_KEY,
-            Value::Json(serde_json::Value::Object(map)),
+impl SessionsRecorder for LedgerSessionsRecorder {
+    fn record(&self, record: SessionRecord<'_>) {
+        let now = crate::session_ledger::now_millis();
+        if let Err(err) = self.ledger.record_spawn(
+            record.session_id,
+            record.workspace_key,
+            record.project_dir,
+            record.card_id,
+            now,
         ) {
-            warn!(error = %err, "failed to write sessions record");
-        }
-    }
-}
-
-/// Writer for the live-sessions broadcast under `dev.tugtool.tide /
-/// live-sessions`. The tugdeck picker subscribes via the existing
-/// DEFAULTS pipe and disables the "Resume last" row when the
-/// candidate id is in the broadcast set.
-///
-/// The set is in-memory authoritative: tugcast updates it via
-/// `set_live(id, true|false)` from the supervisor on bind / close
-/// and from the bridge on errored / crash. On tugcast startup the
-/// implementor calls `clear()` to wipe stale ids that don't reflect
-/// any actual live subprocess.
-pub trait LiveSessionsTracker: Send + Sync {
-    /// Mark `session_id` as live (`true`) or inactive (`false`). Idempotent.
-    fn set_live(&self, session_id: &str, is_live: bool);
-    /// Clear the entire set. Called on tugcast startup so a previous
-    /// run's stale entries never leak into a fresh process.
-    fn clear(&self);
-}
-
-/// Production [`LiveSessionsTracker`] backed by a shared
-/// [`TugbankClient`]. Maintains an in-memory `HashSet` and writes
-/// the JSON list to tugbank on every change.
-pub struct TugbankLiveSessionsTracker {
-    pub client: Arc<TugbankClient>,
-    live: StdMutex<HashSet<String>>,
-}
-
-impl TugbankLiveSessionsTracker {
-    pub fn new(client: Arc<TugbankClient>) -> Self {
-        Self {
-            client,
-            live: StdMutex::new(HashSet::new()),
-        }
-    }
-
-    fn write(&self, set: &HashSet<String>) {
-        let mut ids: Vec<String> = set.iter().cloned().collect();
-        ids.sort();
-        let json =
-            serde_json::Value::Array(ids.into_iter().map(serde_json::Value::String).collect());
-        if let Err(err) = self
-            .client
-            .set(SESSIONS_DOMAIN, LIVE_SESSIONS_KEY, Value::Json(json))
-        {
-            warn!(error = %err, "failed to write live-sessions record");
-        }
-    }
-}
-
-impl LiveSessionsTracker for TugbankLiveSessionsTracker {
-    fn set_live(&self, session_id: &str, is_live: bool) {
-        let mut set = self.live.lock().expect("live-sessions mutex");
-        let changed = if is_live {
-            set.insert(session_id.to_owned())
-        } else {
-            set.remove(session_id)
-        };
-        if !changed {
+            warn!(error = %err, session_id = record.session_id, "ledger record_spawn failed");
             return;
         }
-        let snap = set.clone();
-        drop(set);
         tracing::info!(
             target: "tide::session-lifecycle",
-            event = if is_live { "live_sessions.add" } else { "live_sessions.remove" },
-            session_id = session_id,
-            count = snap.len(),
+            event = "ledger.record_spawn",
+            session_id = record.session_id,
+            workspace_key = record.workspace_key,
+            project_dir = record.project_dir,
+            card_id = record.card_id,
         );
-        self.write(&snap);
     }
 
-    fn clear(&self) {
-        let mut set = self.live.lock().expect("live-sessions mutex");
-        if set.is_empty() {
-            // Always write on startup so a previous run's stale array
-            // is overwritten with `[]` even if the in-memory set was
-            // already empty.
-            drop(set);
-            self.write(&HashSet::new());
+    fn record_turn(&self, session_id: &str) {
+        let now = crate::session_ledger::now_millis();
+        if let Err(err) = self.ledger.record_turn(session_id, now) {
+            warn!(error = %err, session_id, "ledger record_turn failed");
             return;
         }
-        set.clear();
-        drop(set);
-        self.write(&HashSet::new());
-    }
-}
-
-impl SessionsRecorder for TugbankSessionsRecorder {
-    fn record(&self, session_id: &str, project_dir: &str) {
-        let mut map = self.read_map();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
-        let existing_created_at = map
-            .get(session_id)
-            .and_then(|v| v.get("createdAt"))
-            .and_then(|v| v.as_u64());
-        let created_at = existing_created_at.unwrap_or(now);
-        map.insert(
-            session_id.to_owned(),
-            serde_json::json!({
-                "projectDir": project_dir,
-                "createdAt": created_at,
-            }),
+        tracing::debug!(
+            target: "tide::session-lifecycle",
+            event = "ledger.record_turn",
+            session_id,
         );
-        self.write_map(map);
+    }
+
+    fn mark_closed(&self, session_id: &str) {
+        if let Err(err) = self.ledger.mark_closed(session_id) {
+            warn!(error = %err, session_id, "ledger mark_closed failed");
+            return;
+        }
         tracing::info!(
             target: "tide::session-lifecycle",
-            event = "sessions.record",
-            session_id = session_id,
-            project_dir = project_dir,
-            created_at = created_at,
+            event = "ledger.mark_closed",
+            session_id,
+        );
+    }
+
+    fn mark_failed(&self, session_id: &str) {
+        if let Err(err) = self.ledger.mark_failed(session_id) {
+            warn!(error = %err, session_id, "ledger mark_failed failed");
+            return;
+        }
+        tracing::info!(
+            target: "tide::session-lifecycle",
+            event = "ledger.mark_failed",
+            session_id,
         );
     }
 
     fn remove(&self, session_id: &str) {
-        let mut map = self.read_map();
-        if map.remove(session_id).is_some() {
-            self.write_map(map);
-            tracing::info!(
-                target: "tide::session-lifecycle",
-                event = "sessions.remove",
-                session_id = session_id,
-            );
+        match self.ledger.forget(session_id) {
+            Ok(_) => {
+                tracing::info!(
+                    target: "tide::session-lifecycle",
+                    event = "ledger.remove",
+                    session_id,
+                );
+            }
+            Err(err) => warn!(error = %err, session_id, "ledger forget failed"),
         }
     }
 }
@@ -745,17 +683,14 @@ pub struct AgentSupervisor {
     pub control_tx: broadcast::Sender<Frame>,
     /// Narrow persistence surface for card↔session bindings.
     pub store: Arc<dyn SessionKeysStore>,
-    /// Writer for the per-session record under
-    /// `dev.tugtool.tide / sessions`. The bridge calls `record` on
-    /// `session_init` and `remove` on `resume_failed`. Tugcode has no
-    /// direct tugbank access for this domain.
+    /// Writer for the per-session ledger. The bridge calls `record` on
+    /// `session_init`, `record_turn` on each tugcode `result` event, and
+    /// `mark_failed` on `resume_failed` / crash exhaustion. The supervisor
+    /// calls `mark_closed` on `do_close_session`. The Forget UX (step 6)
+    /// uses `remove`. The live-elsewhere check during spawn reads the
+    /// in-memory `LedgerEntry::card_id_live`; the ledger row's
+    /// `card_id_live` mirrors that for cross-card picker visibility.
     pub sessions_recorder: Arc<dyn SessionsRecorder>,
-    /// Writer for the live-sessions broadcast under
-    /// `dev.tugtool.tide / live-sessions`. The supervisor calls
-    /// `set_live(true)` on `do_spawn_session` Phase 3 and `set_live(false)`
-    /// on `do_close_session`; the bridge calls `set_live(false)` on
-    /// terminal teardown paths (resume_failed, crash budget).
-    pub live_sessions: Arc<dyn LiveSessionsTracker>,
     /// Per-spawn factory for the backing subprocess. Swapped for a mock in
     /// tests so unit tests do not need a real tugcode binary.
     pub spawner_factory: SpawnerFactory,
@@ -948,17 +883,12 @@ impl AgentSupervisor {
         control_tx: broadcast::Sender<Frame>,
         store: Arc<dyn SessionKeysStore>,
         sessions_recorder: Arc<dyn SessionsRecorder>,
-        live_sessions: Arc<dyn LiveSessionsTracker>,
         spawner_factory: SpawnerFactory,
         config: AgentSupervisorConfig,
         registry: Arc<WorkspaceRegistry>,
         cancel: CancellationToken,
     ) -> (Self, mpsc::Receiver<MergerRegistration>) {
         let (merger_register_tx, merger_register_rx) = mpsc::channel(64);
-        // Clear stale live-sessions on startup so a previous tugcast
-        // process's leftover ids don't make the picker grey out rows
-        // whose subprocesses no longer exist.
-        live_sessions.clear();
         let sup = Self {
             ledger: Arc::new(Mutex::new(HashMap::new())),
             session_state_tx,
@@ -968,7 +898,6 @@ impl AgentSupervisor {
             control_tx,
             store,
             sessions_recorder,
-            live_sessions,
             spawner_factory,
             merger_register_tx,
             config,
@@ -1306,11 +1235,10 @@ impl AgentSupervisor {
             entry.card_id_live = Some(card_id.to_owned());
             entry.latest_metadata.clone()
         };
-        // Broadcast that this session is live so any other tab's
-        // picker greys out a "Resume last" row that points at it.
-        // Done outside the per-entry lock so the tugbank write
-        // doesn't extend the critical section.
-        self.live_sessions.set_live(tug_session_id.as_str(), true);
+        // Live-elsewhere visibility for cross-card pickers is now driven by
+        // the ledger row that the bridge writes on `session_init` (with
+        // `state="live"` and `card_id_live`). Pre-handshake spawns don't
+        // appear in any picker — by then the user has already chosen.
 
         let _ =
             self.session_state_tx
@@ -1434,9 +1362,10 @@ impl AgentSupervisor {
         // Spawning { return }`) catch the close and skip its publish,
         // preserving frame order on the wire.
         //
-        // Also snapshot the `workspace_key` under this same lock so Phase 3
-        // can call `registry.release` without re-acquiring it.
-        let workspace_key = {
+        // Also snapshot the `workspace_key` and `claude_session_id` under
+        // this same lock so Phase 3 can call `registry.release` and Phase 5
+        // can mark the ledger row closed without re-acquiring it.
+        let (workspace_key, claude_session_id) = {
             let mut entry = entry_arc.lock().await;
             entry.cancel.cancel();
             // Bare assignment (not `try_transition`) because the entry is
@@ -1446,7 +1375,7 @@ impl AgentSupervisor {
             // Release the live-card binding so a future resume from
             // any card is allowed.
             entry.card_id_live = None;
-            entry.workspace_key.clone()
+            (entry.workspace_key.clone(), entry.claude_session_id.clone())
         };
 
         // Phase 3: release the workspace refcount. Errors on this path
@@ -1478,9 +1407,13 @@ impl AgentSupervisor {
         let _ =
             self.session_state_tx
                 .send(build_session_state_frame(tug_session_id, "closed", None));
-        // Drop the session from the live broadcast so any picker
-        // waiting on this id can offer it for resume again.
-        self.live_sessions.set_live(tug_session_id.as_str(), false);
+
+        // Phase 6: transition the ledger row to `closed`. Pre-handshake
+        // sessions never reached `session_init` and have no row, so the
+        // `claude_session_id` snapshot is `None` — nothing to mark closed.
+        if let Some(claude_id) = claude_session_id {
+            self.sessions_recorder.mark_closed(&claude_id);
+        }
     }
 
     /// Handle a `reset_session` CONTROL action.
@@ -1856,14 +1789,13 @@ impl AgentSupervisor {
         // each session's tugcode subprocess gets its own cwd. Also
         // thread `session_mode` so the tugcode subprocess receives
         // `--session-mode new|resume`. The sessions recorder lets the
-        // bridge upsert/remove the per-session record in tugbank when
-        // it sees `session_init` / `resume_failed` on the IPC stream.
+        // bridge transition the ledger row when it sees `session_init`,
+        // `result`, `resume_failed`, or terminal teardown on the IPC stream.
         let (project_dir, session_mode) = {
             let entry = entry_arc.lock().await;
             (entry.project_dir.clone(), entry.session_mode)
         };
         let sessions_recorder = self.sessions_recorder.clone();
-        let live_sessions = self.live_sessions.clone();
         tokio::spawn(async move {
             run_session_bridge(
                 tug_session_id_owned,
@@ -1875,7 +1807,6 @@ impl AgentSupervisor {
                 project_dir,
                 session_mode,
                 sessions_recorder,
-                live_sessions,
                 cancel_for_bridge,
                 DEFAULT_RETRY_DELAY,
             )
@@ -2022,25 +1953,17 @@ impl AgentSupervisor {
 // ---------------------------------------------------------------------------
 
 /// Minimal no-op [`SessionsRecorder`] for tests that don't care about the
-/// per-session record. Production uses [`TugbankSessionsRecorder`].
+/// per-session record. Production uses [`LedgerSessionsRecorder`].
 #[cfg(test)]
 pub(crate) struct NoopSessionsRecorder;
 
 #[cfg(test)]
 impl SessionsRecorder for NoopSessionsRecorder {
-    fn record(&self, _session_id: &str, _project_dir: &str) {}
+    fn record(&self, _record: SessionRecord<'_>) {}
+    fn record_turn(&self, _session_id: &str) {}
+    fn mark_closed(&self, _session_id: &str) {}
+    fn mark_failed(&self, _session_id: &str) {}
     fn remove(&self, _session_id: &str) {}
-}
-
-/// Minimal no-op [`LiveSessionsTracker`] for tests that don't care about
-/// the live broadcast. Production uses [`TugbankLiveSessionsTracker`].
-#[cfg(test)]
-pub(crate) struct NoopLiveSessionsTracker;
-
-#[cfg(test)]
-impl LiveSessionsTracker for NoopLiveSessionsTracker {
-    fn set_live(&self, _session_id: &str, _is_live: bool) {}
-    fn clear(&self) {}
 }
 
 /// Minimal in-memory [`SessionKeysStore`] used by cross-module router tests.
@@ -2103,7 +2026,6 @@ pub(crate) fn test_minimal_supervisor() -> (Arc<AgentSupervisor>, mpsc::Receiver
         Arc::new(|| Arc::new(MinimalStallSpawner) as Arc<dyn ChildSpawner>);
     let store: Arc<dyn SessionKeysStore> = Arc::new(NoopSessionKeysStore);
     let recorder: Arc<dyn SessionsRecorder> = Arc::new(NoopSessionsRecorder);
-    let live: Arc<dyn LiveSessionsTracker> = Arc::new(NoopLiveSessionsTracker);
     let registry = Arc::new(WorkspaceRegistry::new());
     let cancel = CancellationToken::new();
     let (sup, register_rx) = AgentSupervisor::new(
@@ -2113,7 +2035,6 @@ pub(crate) fn test_minimal_supervisor() -> (Arc<AgentSupervisor>, mpsc::Receiver
         control_tx,
         store,
         recorder,
-        live,
         factory,
         AgentSupervisorConfig::default(),
         registry,
@@ -2361,7 +2282,6 @@ mod tests {
         let registry = Arc::new(WorkspaceRegistry::new());
         let cancel = CancellationToken::new();
         let recorder: Arc<dyn SessionsRecorder> = Arc::new(NoopSessionsRecorder);
-        let live: Arc<dyn LiveSessionsTracker> = Arc::new(NoopLiveSessionsTracker);
         let (sup, register_rx) = AgentSupervisor::new(
             state_tx,
             meta_tx,
@@ -2369,7 +2289,6 @@ mod tests {
             control_tx,
             store,
             recorder,
-            live,
             spawner_factory,
             config,
             registry,
@@ -4192,7 +4111,6 @@ mod tests {
         let retry_delay = Duration::from_micros(100);
 
         let recorder: Arc<dyn SessionsRecorder> = Arc::new(NoopSessionsRecorder);
-        let live: Arc<dyn LiveSessionsTracker> = Arc::new(NoopLiveSessionsTracker);
         let a_handle = tokio::spawn(run_session_bridge(
             id_a.clone(),
             entry_a.clone(),
@@ -4203,7 +4121,6 @@ mod tests {
             PathBuf::from("/tmp/test-workspace-a"),
             SessionMode::New,
             recorder.clone(),
-            live.clone(),
             cancel_a,
             retry_delay,
         ));
@@ -4217,7 +4134,6 @@ mod tests {
             PathBuf::from("/tmp/test-workspace-b"),
             SessionMode::New,
             recorder,
-            live,
             cancel_b.clone(),
             retry_delay,
         ));
@@ -4791,5 +4707,177 @@ mod tests {
         assert!(!entry.workspace_key.as_ref().is_empty());
         // Registry holds exactly one entry for the rebound workspace.
         assert_eq!(registry_map_len(&sup), 1);
+    }
+
+    // ── LedgerSessionsRecorder lifecycle ─────────────────────────────────────
+    //
+    // These tests exercise the recorder against a real in-memory
+    // [`SessionLedger`] — no mocks, no call-count assertions. The contract
+    // under test is "when the trait method runs, the ledger row reaches the
+    // expected state." Each test traces one CRUD trajectory.
+
+    use crate::session_ledger::{SessionLedger, SessionState as LedgerState};
+
+    fn fresh_ledger_recorder() -> (Arc<SessionLedger>, Arc<dyn SessionsRecorder>) {
+        let ledger = Arc::new(SessionLedger::open_in_memory().expect("ledger open"));
+        let recorder: Arc<dyn SessionsRecorder> =
+            Arc::new(LedgerSessionsRecorder::new(Arc::clone(&ledger)));
+        (ledger, recorder)
+    }
+
+    #[test]
+    fn ledger_recorder_record_inserts_live_row() {
+        let (ledger, recorder) = fresh_ledger_recorder();
+        recorder.record(SessionRecord {
+            session_id: "claude-abc",
+            workspace_key: "ws-1",
+            project_dir: "/proj/x",
+            card_id: "card-1",
+        });
+        let row = ledger.get("claude-abc").unwrap().expect("row");
+        assert_eq!(row.workspace_key, "ws-1");
+        assert_eq!(row.project_dir, "/proj/x");
+        assert_eq!(row.card_id_live.as_deref(), Some("card-1"));
+        assert_eq!(row.state, LedgerState::Live);
+        assert_eq!(row.turn_count, 0);
+    }
+
+    #[test]
+    fn ledger_recorder_record_turn_then_close_full_lifecycle() {
+        let (ledger, recorder) = fresh_ledger_recorder();
+        recorder.record(SessionRecord {
+            session_id: "claude-abc",
+            workspace_key: "ws-1",
+            project_dir: "/proj/x",
+            card_id: "card-1",
+        });
+        recorder.record_turn("claude-abc");
+        recorder.record_turn("claude-abc");
+        recorder.record_turn("claude-abc");
+        recorder.mark_closed("claude-abc");
+
+        let row = ledger.get("claude-abc").unwrap().expect("row");
+        assert_eq!(row.turn_count, 3);
+        assert_eq!(row.state, LedgerState::Closed);
+        assert_eq!(row.card_id_live, None);
+    }
+
+    #[test]
+    fn ledger_recorder_mark_failed_retains_row() {
+        let (ledger, recorder) = fresh_ledger_recorder();
+        recorder.record(SessionRecord {
+            session_id: "claude-abc",
+            workspace_key: "ws-1",
+            project_dir: "/proj/x",
+            card_id: "card-1",
+        });
+        recorder.mark_failed("claude-abc");
+
+        let row = ledger.get("claude-abc").unwrap().expect("row retained");
+        assert_eq!(row.state, LedgerState::Failed);
+        assert_eq!(row.card_id_live, None);
+    }
+
+    #[test]
+    fn ledger_recorder_remove_drops_closed_row() {
+        let (ledger, recorder) = fresh_ledger_recorder();
+        recorder.record(SessionRecord {
+            session_id: "claude-abc",
+            workspace_key: "ws-1",
+            project_dir: "/proj/x",
+            card_id: "card-1",
+        });
+        recorder.mark_closed("claude-abc");
+        recorder.remove("claude-abc");
+
+        assert!(ledger.get("claude-abc").unwrap().is_none());
+    }
+
+    #[test]
+    fn ledger_recorder_record_turn_no_op_after_close() {
+        // Late `result` events that arrive after the user closes the card
+        // must not mutate the ledger row — the row is "done."
+        let (ledger, recorder) = fresh_ledger_recorder();
+        recorder.record(SessionRecord {
+            session_id: "claude-abc",
+            workspace_key: "ws-1",
+            project_dir: "/proj/x",
+            card_id: "card-1",
+        });
+        recorder.mark_closed("claude-abc");
+        recorder.record_turn("claude-abc");
+        let row = ledger.get("claude-abc").unwrap().expect("row");
+        assert_eq!(row.turn_count, 0);
+        assert_eq!(row.state, LedgerState::Closed);
+    }
+
+    // ── do_close_session ↔ ledger integration ────────────────────────────────
+
+    /// `do_close_session` reads `entry.claude_session_id` and dispatches
+    /// `mark_closed` to the recorder. With a real ledger plugged in, the
+    /// row's state must transition.
+    #[tokio::test]
+    async fn close_session_marks_ledger_row_closed_when_claude_id_present() {
+        let store = Arc::new(InMemoryStore::default());
+        let ledger = Arc::new(SessionLedger::open_in_memory().expect("ledger open"));
+        let recorder: Arc<dyn SessionsRecorder> =
+            Arc::new(LedgerSessionsRecorder::new(Arc::clone(&ledger)));
+
+        let (state_tx, _state_rx) = broadcast::channel(64);
+        let (meta_tx, _meta_rx) = broadcast::channel(8);
+        let (code_tx, _code_rx) = broadcast::channel(8);
+        let (control_tx, _control_rx) = broadcast::channel(64);
+        let registry = Arc::new(WorkspaceRegistry::new());
+        let cancel = CancellationToken::new();
+        let (sup, mut register_rx) = AgentSupervisor::new(
+            state_tx,
+            meta_tx,
+            code_tx,
+            control_tx,
+            store as Arc<dyn SessionKeysStore>,
+            recorder,
+            stall_spawner_factory(),
+            AgentSupervisorConfig::default(),
+            registry,
+            cancel,
+        );
+        // Drain merger registrations like make_supervisor_with_store does.
+        tokio::spawn(async move { while register_rx.recv().await.is_some() {} });
+
+        // Spawn the session through the normal CONTROL path so the entry is
+        // populated correctly. Then manually set `claude_session_id` to
+        // simulate that `session_init` was observed (which the bridge would
+        // have done in production).
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .unwrap();
+        // Pre-seed the ledger so `mark_closed` has a row to transition.
+        ledger
+            .record_spawn(
+                "claude-1",
+                "/some/workspace",
+                "/some/workspace",
+                "card-1",
+                1_700_000_000_000,
+            )
+            .unwrap();
+        {
+            let outer = sup.ledger.lock().await;
+            let entry_arc = outer
+                .get(&TugSessionId::new("sess-1"))
+                .expect("entry")
+                .clone();
+            drop(outer);
+            let mut entry = entry_arc.lock().await;
+            entry.claude_session_id = Some("claude-1".to_owned());
+        }
+
+        sup.handle_control("close_session", &close_payload("card-1", "sess-1"), 10)
+            .await
+            .unwrap();
+
+        let row = ledger.get("claude-1").unwrap().expect("row");
+        assert_eq!(row.state, LedgerState::Closed);
+        assert_eq!(row.card_id_live, None);
     }
 }

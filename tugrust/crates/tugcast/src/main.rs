@@ -30,10 +30,10 @@ use tugcast_core::{FeedId, Frame, StreamFeed};
 
 use crate::auth::new_shared_auth_state;
 use crate::feeds::agent_supervisor::{
-    AgentSupervisor, AgentSupervisorConfig, LiveSessionsTracker, SessionKeysStore,
-    SessionsRecorder, SpawnerFactory, TugbankLiveSessionsTracker, TugbankSessionsRecorder,
-    default_spawner_factory,
+    AgentSupervisor, AgentSupervisorConfig, LedgerSessionsRecorder, SessionKeysStore,
+    SessionsRecorder, SpawnerFactory, default_spawner_factory,
 };
+use crate::session_ledger::SessionLedger;
 use crate::feeds::filetree::FileTreeQuery;
 #[cfg(debug_assertions)]
 use crate::feeds::stats::BuildStatusCollector;
@@ -342,10 +342,48 @@ async fn main() {
     };
     let session_keys_store: Arc<dyn SessionKeysStore> =
         Arc::clone(bank_client_ref) as Arc<dyn SessionKeysStore>;
+
+    // Open the session ledger. The data dir is created on demand. A failure
+    // here is fatal: the supervisor depends on the ledger to track session
+    // lifecycle, and limping along with no session metadata would make every
+    // future picker open misleading.
+    let ledger_path = SessionLedger::default_path().unwrap_or_else(|| {
+        eprintln!("tugcast: error: cannot resolve user data dir for session ledger");
+        std::process::exit(1);
+    });
+    if let Some(parent) = ledger_path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            eprintln!(
+                "tugcast: error: failed to create ledger data dir {}: {}",
+                parent.display(),
+                e
+            );
+            std::process::exit(1);
+        }
+    }
+    let ledger = match SessionLedger::open(&ledger_path) {
+        Ok(l) => Arc::new(l),
+        Err(e) => {
+            eprintln!(
+                "tugcast: error: failed to open session ledger at {}: {}",
+                ledger_path.display(),
+                e
+            );
+            std::process::exit(1);
+        }
+    };
+
+    // Demote any rows still marked `live` from a previous run that didn't
+    // shut down cleanly. The subprocesses they pointed at are gone; their
+    // ledger state is stale.
+    match ledger.demote_live_to_closed() {
+        Ok(0) => {}
+        Ok(n) => info!(count = n, "demoted stale live ledger rows on startup"),
+        Err(e) => warn!(error = %e, "failed to demote stale live ledger rows"),
+    }
+
     let sessions_recorder: Arc<dyn SessionsRecorder> =
-        Arc::new(TugbankSessionsRecorder::new(Arc::clone(bank_client_ref)));
-    let live_sessions: Arc<dyn LiveSessionsTracker> =
-        Arc::new(TugbankLiveSessionsTracker::new(Arc::clone(bank_client_ref)));
+        Arc::new(LedgerSessionsRecorder::new(Arc::clone(&ledger)));
 
     let supervisor_config = AgentSupervisorConfig {
         tugcode_path: tugcode_path.clone(),
@@ -360,7 +398,6 @@ async fn main() {
         client_action_tx.clone(),
         session_keys_store,
         sessions_recorder,
-        live_sessions,
         spawner_factory,
         supervisor_config,
         Arc::clone(&registry),

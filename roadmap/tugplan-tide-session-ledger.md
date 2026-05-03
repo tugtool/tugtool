@@ -629,27 +629,30 @@ The old tugbank keys are no longer written to (the bridge wires them out in [Ste
 **References:** [D01] sqlite-ledger, [D03] failed-retention, [D08] dual-id-preserved, (#scope)
 
 **Artifacts:**
-- `LedgerSessionsRecorder` struct in `agent_supervisor.rs` implementing the existing `SessionsRecorder` trait against `Arc<SessionLedger>`.
-- Removed `TugbankSessionsRecorder` and `TugbankLiveSessionsTracker` impls (kept the traits as abstractions; new impls drop in).
-- `tugrust/crates/tugcast/src/main.rs` opens the ledger on startup (no migration; just `SessionLedger::open(...)` per [D09]) and constructs `LedgerSessionsRecorder`.
-- `agent_bridge.rs` swap: `sessions_recorder.remove(stale)` → `sessions_recorder.mark_failed(stale)` for `resume_failed`. (Trait grows a `mark_failed` method to express the new semantic.)
+- `SessionRecord<'_>` struct + redesigned `SessionsRecorder` trait (`record`, `record_turn`, `mark_closed`, `mark_failed`, `remove` — no default impls).
+- `LedgerSessionsRecorder` struct in `agent_supervisor.rs` backed by `Arc<SessionLedger>`.
+- `TugbankSessionsRecorder`, `TugbankLiveSessionsTracker`, and the `LiveSessionsTracker` trait removed entirely. The live broadcast that those owned now lives in the ledger row's `state="live"` + `card_id_live` columns.
+- `tugrust/crates/tugcast/src/main.rs` opens the ledger via `SessionLedger::open(SessionLedger::default_path())` on startup, runs `demote_live_to_closed()` (the new equivalent of the old `LiveSessionsTracker.clear()`), and constructs `LedgerSessionsRecorder`.
+- `agent_bridge.rs` swap: `sessions_recorder.remove(stale)` → `sessions_recorder.mark_failed(stale)` for `resume_failed`. New: bridge detects `{"type":"result"}` lines and calls `record_turn`. New: bridge captures `workspace_key` + `card_id` from the entry under the `session_init` lock so the recorder gets the full `SessionRecord<'_>`.
+- `do_close_session` snapshots `claude_session_id` under the entry lock (alongside `workspace_key`) and dispatches `mark_closed` after Phase 5's wire publish.
+- New `demote_live_to_closed()` method on `SessionLedger`.
 
 **Tasks:**
-- [ ] Extend `SessionsRecorder` trait with `mark_failed(session_id: &str)` — **no default impl**. Every implementor must provide one explicitly. (A default forwarding to `remove` would silently preserve the exact behavior this plan replaces; the compile error from a missing impl is the regression-protection.)
-- [ ] Author `LedgerSessionsRecorder` implementing `record`, `remove` (= forget without trash; for compat), `mark_failed`. Each method dispatches to the right `SessionLedger` API.
-- [ ] Update `main.rs` to open the ledger (`SessionLedger::open(...)`), construct the new recorder, hand it to the supervisor. No migration step.
-- [ ] Drop `TugbankLiveSessionsTracker` — its responsibility (live-set broadcasting) becomes a function of `state="live"` queries against the ledger.
-- [ ] Update the bridge call site for `resume_failed` to use `mark_failed`.
-- [ ] Verify existing supervisor tests still green; rewrite any that mocked `TugbankSessionsRecorder` directly to use `LedgerSessionsRecorder` against an in-memory ledger.
+- [x] Extend `SessionsRecorder` trait with `record_turn`, `mark_closed`, `mark_failed` — **no default impls**. Every implementor must provide them explicitly. (A default forwarding to `remove` would silently preserve the exact behavior this plan replaces; the compile error from a missing impl is the regression-protection.)
+- [x] Author `LedgerSessionsRecorder` implementing all five trait methods. Each dispatches to the right `SessionLedger` API.
+- [x] Update `main.rs` to open the ledger (`SessionLedger::open(...)`), call `demote_live_to_closed()`, construct the new recorder, hand it to the supervisor. No migration step.
+- [x] Drop `TugbankLiveSessionsTracker` (and the `LiveSessionsTracker` trait) — its responsibility (live-set broadcasting) is now a function of `state="live"` queries against the ledger.
+- [x] Update the bridge call site for `resume_failed` to use `mark_failed`. Wire `record_turn` to `{"type":"result"}` lines. Wire `mark_closed`/`mark_failed` to the bridge's terminal teardown paths (close, crash exhaustion).
+- [x] Update test stubs (`NoopSessionsRecorder` to new shape; drop `NoopLiveSessionsTracker`).
 
 **Tests:**
-- [ ] Existing `agent_bridge` / `agent_supervisor` tests pass against the new recorder.
-- [ ] New integration test: simulate `session_init` → `turn_complete × 3` → `close_session`, verify ledger row reflects each transition.
-- [ ] New integration test: simulate `resume_failed`, verify row transitions to `state="failed"` (not deleted).
+- [x] Existing `agent_bridge` / `agent_supervisor` tests pass against the new recorder (482 tugcast tests green; 1183 workspace-wide).
+- [x] New unit tests covering `LedgerSessionsRecorder` lifecycle: `record` inserts a live row; `record → record_turn × 3 → mark_closed` reflects each transition; `mark_failed` retains the row as failed; `remove` deletes; `record_turn` no-ops on a closed row.
+- [x] New integration test: `do_close_session` calls `mark_closed` on the ledger when the entry has a `claude_session_id`.
 
 **Checkpoint:**
-- [ ] `cargo nextest run`
-- [ ] `cargo build`
+- [x] `cargo nextest run` — 1183 passed
+- [x] `cargo build` — no warnings
 
 ---
 

@@ -27,7 +27,7 @@ use tracing::{error, info, warn};
 use tugcast_core::protocol::{FeedId, Frame, TugSessionId};
 
 use super::agent_supervisor::{
-    LedgerEntry, LiveSessionsTracker, SessionsRecorder, SpawnState, build_session_state_frame,
+    LedgerEntry, SessionRecord, SessionsRecorder, SpawnState, build_session_state_frame,
 };
 use super::code::{parse_code_input, splice_tug_session_id};
 
@@ -423,7 +423,6 @@ pub async fn run_session_bridge(
     project_dir: PathBuf,
     session_mode: SessionMode,
     sessions_recorder: Arc<dyn SessionsRecorder>,
-    live_sessions: Arc<dyn LiveSessionsTracker>,
     cancel: CancellationToken,
     retry_delay: Duration,
 ) {
@@ -449,8 +448,15 @@ pub async fn run_session_bridge(
                 // Release the live-card binding so a future resume
                 // from any card is allowed.
                 entry.card_id_live = None;
+                let claude_id = entry.claude_session_id.clone();
                 drop(entry);
-                live_sessions.set_live(tug_session_id.as_str(), false);
+                // Crash exhaustion is a `failed` lifecycle ending: the
+                // session row stays in the ledger as a diagnostic crumb so
+                // the picker can show what happened. Sessions that never
+                // reached `session_init` have no row yet — nothing to mark.
+                if let Some(id) = claude_id {
+                    sessions_recorder.mark_failed(&id);
+                }
                 if !already_closed {
                     error!(session = %tug_session_id, "crash budget exhausted");
                     let _ = state_tx.send(build_session_state_frame(
@@ -553,7 +559,9 @@ pub async fn run_session_bridge(
                 // so mark the session errored and return without
                 // retrying. The bridge has already forwarded the
                 // `resume_failed` CODE_OUTPUT frame to the card, and
-                // `sessions_recorder` removed the stale record.
+                // `relay_session_io` already called `mark_failed` on the
+                // stale session id (so its ledger row is retained as a
+                // `failed` diagnostic crumb).
                 let mut entry = ledger_entry.lock().await;
                 let already_closed = entry.spawn_state == SpawnState::Closed;
                 if !already_closed {
@@ -564,7 +572,6 @@ pub async fn run_session_bridge(
                 // from any card is allowed.
                 entry.card_id_live = None;
                 drop(entry);
-                live_sessions.set_live(tug_session_id.as_str(), false);
                 if !already_closed {
                     info!(
                         session = %tug_session_id,
@@ -683,29 +690,39 @@ pub async fn relay_session_io(
                                 tug_session_id = %tug_session_id,
                                 claude_session_id = claude_id.as_deref().unwrap_or(""),
                             );
-                            let mut entry = ledger_entry.lock().await;
-                            if let Some(id) = &claude_id {
-                                entry.claude_session_id = Some(id.clone());
-                            }
-                            if entry.spawn_state == SpawnState::Spawning {
-                                entry.spawn_state.try_transition(SpawnState::Live).ok();
-                                if let Some(tx) = entry.input_tx.clone() {
-                                    while let Some(queued) = entry.queue.pop() {
-                                        if tx.try_send(queued).is_err() {
-                                            break;
+                            // Snapshot the per-session bookkeeping fields the
+                            // ledger needs (workspace key + bound card id) under
+                            // the same lock that promotes Spawning→Live. These
+                            // are populated by `do_spawn_session` before the
+                            // bridge starts, so they're guaranteed present.
+                            let (workspace_key, card_id) = {
+                                let mut entry = ledger_entry.lock().await;
+                                if let Some(id) = &claude_id {
+                                    entry.claude_session_id = Some(id.clone());
+                                }
+                                if entry.spawn_state == SpawnState::Spawning {
+                                    entry.spawn_state.try_transition(SpawnState::Live).ok();
+                                    if let Some(tx) = entry.input_tx.clone() {
+                                        while let Some(queued) = entry.queue.pop() {
+                                            if tx.try_send(queued).is_err() {
+                                                break;
+                                            }
                                         }
                                     }
+                                    // broadcast::Sender::send is synchronous,
+                                    // so we can publish the wire frame while
+                                    // the ledger lock is still held.
+                                    let _ = state_tx.send(build_session_state_frame(
+                                        tug_session_id,
+                                        "live",
+                                        None,
+                                    ));
                                 }
-                                // broadcast::Sender::send is synchronous,
-                                // so we can publish the wire frame while
-                                // the ledger lock is still held.
-                                let _ = state_tx.send(build_session_state_frame(
-                                    tug_session_id,
-                                    "live",
-                                    None,
-                                ));
-                            }
-                            drop(entry);
+                                (
+                                    entry.workspace_key.as_ref().to_owned(),
+                                    entry.card_id_live.clone(),
+                                )
+                            };
 
                             // Record under claude's own session id — that
                             // is the on-disk file name, the only thing
@@ -734,15 +751,46 @@ pub async fn relay_session_io(
                                     tug_session_id.as_str()
                                 }
                             };
-                            sessions_recorder.record(record_id, project_dir);
+                            // `card_id_live` is `None` only if `do_spawn_session`
+                            // didn't populate it (which only happens for ledger
+                            // entries rebound from tugbank at startup). The
+                            // ledger column tolerates that — the row tracks
+                            // "live, no current card" and a later real bind
+                            // overwrites it.
+                            let card_id_for_ledger = card_id.as_deref().unwrap_or("");
+                            sessions_recorder.record(SessionRecord {
+                                session_id: record_id,
+                                workspace_key: &workspace_key,
+                                project_dir,
+                                card_id: card_id_for_ledger,
+                            });
+                        }
+
+                        // `result` events mark the end of an assistant turn.
+                        // Each one bumps the ledger row's `turn_count` and
+                        // `last_used_at`. Tugcode emits this once per
+                        // turn — substring match is sufficient given the
+                        // surrounding stream-json shape; a more careful
+                        // parser would be `serde_json::from_str` over the
+                        // whole line, but that pays the deserialize cost on
+                        // every output line for negligible benefit.
+                        if line.contains("\"type\":\"result\"") {
+                            let claude_id = {
+                                let entry = ledger_entry.lock().await;
+                                entry.claude_session_id.clone()
+                            };
+                            if let Some(id) = claude_id {
+                                sessions_recorder.record_turn(&id);
+                            }
                         }
 
                         // `resume_failed` peek: tugcode emits this when
                         // a `--resume` attempt aborts before `session_init`.
-                        // The stale id is no longer usable; remove its
-                        // sessions record so the next picker doesn't
-                        // re-offer it. The frame still gets forwarded to
-                        // the card so `lastError` surfaces a notice.
+                        // The stale id is no longer usable; the ledger row
+                        // for it transitions to `failed` as a diagnostic
+                        // crumb the picker can show. The frame still gets
+                        // forwarded to the card so `lastError` surfaces a
+                        // notice.
                         if line.contains("\"type\":\"resume_failed\"") {
                             let reason = parse_resume_failed_reason(line.as_bytes())
                                 .unwrap_or_else(|| "resume failed".to_string());
@@ -754,7 +802,7 @@ pub async fn relay_session_io(
                                     stale_session_id = stale.as_str(),
                                     reason = reason.as_str(),
                                 );
-                                sessions_recorder.remove(&stale);
+                                sessions_recorder.mark_failed(&stale);
                                 resume_failed = Some((stale, reason));
                             }
                         }
