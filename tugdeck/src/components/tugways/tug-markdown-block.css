@@ -1,0 +1,42 @@
+/* @tug-pairings: none — content-flow primitive; no own contrast surface.
+   `TugMarkdownBlock` renders sanitized markdown blocks in natural
+   document flow. Foreground-on-background pairings are inherited from
+   the surrounding card surface; the block primitive itself paints no
+   contrast that consumers should override.
+
+   `--tugx-md-*` tokens (block padding, code blocks, etc.) are reused
+   directly from `tug-markdown-view.css`'s declarations — both
+   primitives style their per-block content with the same token
+   vocabulary, mirroring the [D09] sibling-primitive decomposition.
+*/
+
+/**
+ * tug-markdown-block.css — `TugMarkdownBlock` natural-flow renderer.
+ *
+ * No internal scroll container, no virtualization, no spacers. The
+ * primitive renders one `<div class="tugx-md-block">` per parsed
+ * markdown block, in document order, sized by their natural content
+ * height. The host (e.g. a list-view cell) owns scroll and layout.
+ *
+ * Block-level styling (`.tugx-md-block` padding, headings, code
+ * blocks, etc.) is shared with `TugMarkdownView` — the same class
+ * names and tokens style the same content shapes regardless of
+ * which primitive rendered them.
+ *
+ * Tuglaw cross-check:
+ *   - [L06] appearance via CSS / DOM, not React state. Rendering is
+ *     a `useLayoutEffect` DOM write of sanitized HTML; no React
+ *     rerender per block.
+ *   - [L20] component-token sovereignty — `TugMarkdownBlock` does
+ *     not introduce its own tokens. It reuses `--tugx-md-*` and
+ *     consumers customize via cascade-scoped overrides on
+ *     `.tug-markdown-block` or any wrapping selector.
+ *   - [L22] streaming-binding mode observes a `PropertyStore`
+ *     directly and writes the DOM imperatively — no React round-trip
+ *     per delta.
+ */
+
+.tug-markdown-block {
+  box-sizing: border-box;
+  width: 100%;
+}

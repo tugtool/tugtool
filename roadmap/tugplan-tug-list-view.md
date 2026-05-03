@@ -1138,29 +1138,33 @@ happy-dom is suitable for all unit, component, reducer, adapter, and integration
 
 **Tasks:**
 
-- [ ] Extract `parseMarkdownToSanitizedBlocks(text)` from `TugMarkdownView`'s `lexParseAndRender`. The helper: calls `tugmark-wasm`'s `lex_blocks(text)` + `parse_to_html(...)` per block, sanitizes each block's HTML via `getDOMPurify().sanitize(...)`, returns `SanitizedMarkdownBlock[]`.
-- [ ] Refactor `TugMarkdownView` to call the helper. Run `bun test src/components/tugways/__tests__/tug-markdown-view.*.test.tsx` and confirm all existing tests pass — this is the regression gate.
-- [ ] Author `tug-markdown-block.tsx` per the component-authoring guide: docstring (cites [L03], [L06], [L19], [L20], [L22]); props interface; functional component with `data-slot="tug-markdown-block"`.
-- [ ] Author `tug-markdown-block.css`: `@tug-pairings` block listing the markdown-text-on-content-surface pairing; references `--tugx-md-*` tokens. No internal scroll; no spacer; just block rendering.
-- [ ] Implement static `initialText` mode in `useLayoutEffect`: call the helper synchronously, render the block list to the DOM before paint per [#md-block-api]. Subsequent `initialText` prop changes are ignored (mount-once semantics).
-- [ ] Implement streaming mode in `useLayoutEffect`: read the **current** `streamingStore.get(streamingPath)` value synchronously and render before paint (G1); then subscribe to `streamingStore.observe(streamingPath, ...)` for subsequent updates; on each emission, re-parse and re-render via the helper. Coalesce updates via rAF.
-- [ ] Tests cover the four mount-render and streaming behaviors below.
+- [x] Extract `parseMarkdownToSanitizedBlocks(text)` from `TugMarkdownView`'s `lexParseAndRender`. The helper: calls `tugmark-wasm`'s `lex_blocks(text)` + `parse_to_html(...)` per block, sanitizes each block's HTML via `getDOMPurify().sanitize(...)`, returns `SanitizedMarkdownBlock[]`. **Implementation:** new `tugdeck/src/lib/markdown/parse-markdown-to-sanitized-blocks.ts`. The returned `SanitizedMarkdownBlock` shape carries the lex metadata (`type`, `startChar`, `endChar`, `depth`, `itemCount`, `rowCount`) alongside `html` so `TugMarkdownView` can compute heights without re-lexing — the [D09] example interface is a simplification of the real shape, not a constraint.
+- [x] Refactor `TugMarkdownView` to call the helper. Run `bun test src/components/tugways/__tests__/tug-markdown-view.*.test.tsx` and confirm all existing tests pass — this is the regression gate. **Note:** there are no direct `tug-markdown-view.test.tsx` tests; the regression gate is the full `bun test` suite (2894 pass / 0 fail) plus the helper-shared decoders (`decodeBlocks`, `buildByteToCharMap`) being exported so the existing `incremental-tail-update`, `region-block-ranges`, and `fence-propagation` tests continue to pass against the same byte-decoding logic.
+- [x] Cache contract change: `htmlCache` now stores SANITIZED HTML on every code path (full-rebuild via the helper, incremental updates via inline `getDOMPurify().sanitize(parse_to_html(raw), SANITIZE_CONFIG)`). `addBlockNode` writes `el.innerHTML = cachedHtml` directly with no second sanitize pass. This reverses the prior "DOMPurify at render time only" pattern in favor of uniform sanitize-on-cache.
+- [x] Author `tug-markdown-block.tsx` per the component-authoring guide: docstring (cites [L03], [L06], [L19], [L20], [L22]); props interface; functional component with `data-slot="tug-markdown-block"`.
+- [x] Author `tug-markdown-block.css`: `@tug-pairings` block; references `--tugx-md-*` tokens. No internal scroll; no spacer; just block rendering.
+- [x] Implement static `initialText` mode in `useLayoutEffect`: call the helper synchronously, render the block list to the DOM before paint per [#md-block-api]. Subsequent `initialText` prop changes are ignored (mount-once semantics).
+- [x] Implement streaming mode in `useLayoutEffect`: read the **current** `streamingStore.get(streamingPath)` value synchronously and render before paint (G1); then subscribe to `streamingStore.observe(streamingPath, ...)` for subsequent updates; on each emission, re-parse and re-render via the helper. Coalesce updates via rAF.
+- [x] Tests cover the four mount-render and streaming behaviors below.
+
+**Design addition:** new shared module `lib/markdown/dompurify-instance.ts` exports `getDOMPurify()` and `SANITIZE_CONFIG`. `TugMarkdownView`, `TugMarkdownBlock`, and the `parseMarkdownToSanitizedBlocks` helper all consume from it so the allowlist / blocklist is one piece of code. The strategy mirrors `lib/markdown.ts` — same allowlist, same jsdom fallback in Bun/Node test environments where happy-dom's DOMPurify interaction has known divergences. `lib/markdown.ts` itself is left in place (not refactored to use the new module) to limit Step 7 scope; a follow-on can converge the two getDOMPurify implementations.
 
 **Tests:**
 
-- [ ] Static — basic markdown: `<TugMarkdownBlock initialText="**bold** and *italic*" />` renders strong + em DOM.
-- [ ] Static — synchronous mount render (G2): mount the component inside a `useLayoutEffect`-styled assertion harness; assert content is in the DOM before any paint or microtask boundary. Concretely: render, immediately query for the rendered block content, assert non-empty.
-- [ ] Streaming — initial value on mount (G1): pre-populate a `PropertyStore` with content, then mount `<TugMarkdownBlock streamingStore={store} streamingPath="text" />`; assert the cell mounts non-empty (renders the current store value), without waiting for any subsequent emission.
-- [ ] Streaming — subsequent updates: dispatch updates to the store; the block's DOM updates (re-parses via the helper).
-- [ ] No internal scroll: querying for `[data-slot="tug-markdown-block"]` does not find a `tugx-md-scroll-container`.
-- [ ] Helper unit tests: `parseMarkdownToSanitizedBlocks("# h\n\npara")` returns two blocks with sanitized HTML; `parseMarkdownToSanitizedBlocks("")` returns empty array.
-- [ ] Refactor regression: full existing `TugMarkdownView` test file passes.
+- [x] Static — basic markdown: `<TugMarkdownBlock initialText="**bold** and *italic*" />` renders strong + em DOM.
+- [x] Static — synchronous mount render (G2): render, immediately query for the rendered block content, assert non-empty.
+- [x] Streaming — initial value on mount (G1): pre-populate a `PropertyStore` with content, then mount `<TugMarkdownBlock streamingStore={store} streamingPath="text" />`; assert the cell mounts non-empty.
+- [x] Streaming — subsequent updates: dispatch updates to the store; the block's DOM updates (re-parses via the helper).
+- [x] Streaming — rapid emissions coalesce into one rAF flush.
+- [x] No internal scroll: querying for `[data-slot="tug-markdown-block"]` does not find a `tugx-md-scroll-container`.
+- [x] Helper unit tests: `parseMarkdownToSanitizedBlocks("# h\n\npara")` returns two blocks with sanitized HTML; `parseMarkdownToSanitizedBlocks("")` returns empty array; dangerous markup is sanitized; char offsets line up.
+- [x] Refactor regression: full bun suite passes (2894 / 0).
 
 **Checkpoint:**
 
-- [ ] `bun x tsc --noEmit` — exit 0.
-- [ ] `bun test` — all green (existing TugMarkdownView tests + new TugMarkdownBlock tests).
-- [ ] `bun run audit:tokens lint` — zero violations.
+- [x] `bun x tsc --noEmit` — exit 0.
+- [x] `bun test` — all green (2894 pass / 0 fail).
+- [x] `bun run audit:tokens lint` — zero violations.
 
 ---
 

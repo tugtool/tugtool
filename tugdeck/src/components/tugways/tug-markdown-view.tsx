@@ -47,7 +47,16 @@
 import "./tug-markdown-view.css";
 
 import React, { useCallback, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
-import DOMPurifyModule from "dompurify";
+import {
+  getDOMPurify,
+  SANITIZE_CONFIG,
+} from "@/lib/markdown/dompurify-instance";
+import {
+  buildByteToCharMap,
+  decodeBlocks,
+  parseMarkdownToSanitizedBlocks,
+  type SanitizedMarkdownBlock,
+} from "@/lib/markdown/parse-markdown-to-sanitized-blocks";
 import { cn } from "@/lib/utils";
 import { BlockHeightIndex } from "@/lib/block-height-index";
 import { RenderedBlockWindow } from "@/lib/rendered-block-window";
@@ -63,116 +72,48 @@ import { useCardId, useCardStatePreservation } from "@/components/tugways/use-ca
 import { lex_blocks, parse_to_html } from "../../../crates/tugmark-wasm/pkg/tugmark_wasm.js";
 
 // ---------------------------------------------------------------------------
-// DOMPurify initialization (mirrors lib/markdown.ts strategy)
+// DOMPurify + lex/parse pipeline
 // ---------------------------------------------------------------------------
-
-const SANITIZE_CONFIG = {
-  ALLOWED_TAGS: [
-    "h1", "h2", "h3", "h4", "h5", "h6",
-    "p", "br", "hr",
-    "strong", "em", "del", "sup", "sub",
-    "a", "code", "pre",
-    "ul", "ol", "li",
-    "blockquote",
-    "table", "thead", "tbody", "tr", "th", "td",
-    "img",
-  ],
-  ALLOWED_ATTR: ["href", "src", "alt", "title", "class", "id"],
-  FORBID_TAGS: ["script", "iframe", "object", "embed", "form", "style", "link", "meta", "base", "svg", "math"],
-  FORBID_ATTR: ["onerror", "onload", "onclick", "onmouseover", "onfocus", "onblur"],
-};
-
-let _dompurify: ReturnType<typeof DOMPurifyModule> | null = null;
-
-function getDOMPurify(): ReturnType<typeof DOMPurifyModule> {
-  if (_dompurify && _dompurify.isSupported) return _dompurify;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const win: any = typeof window !== "undefined" ? window : (global as any).window;
-  _dompurify = DOMPurifyModule(win);
-  return _dompurify;
-}
-
-// ---------------------------------------------------------------------------
-// Block decoding helpers — translate packed Uint32Array from lex_blocks() [D05]
-// ---------------------------------------------------------------------------
-
-const STRIDE = 4;
-const BLOCK_TYPES = ['?','heading','paragraph','code','blockquote','list','table','hr','html','other'];
-
-// ---------------------------------------------------------------------------
-// UTF-8 byte offset → JS string char index conversion
 //
-// pulldown-cmark returns BYTE offsets into the UTF-8 encoding of the input.
-// JS String.slice() uses UTF-16 code unit indices. For ASCII they coincide,
-// but any multi-byte codepoint (e.g. em-dash, emoji) would produce a wrong
-// slice without this conversion.
+// `getDOMPurify` and `SANITIZE_CONFIG` are imported from
+// `@/lib/markdown/dompurify-instance` so the same allowlist /
+// blocklist governs every markdown render path in tugdeck. The full
+// lex/parse/sanitize pipeline lives in
+// `parseMarkdownToSanitizedBlocks` per [D09]; this module's
+// `lexParseAndRender` (the full-rebuild path) consumes that helper
+// directly. The incremental update paths still call `parse_to_html`
+// + `getDOMPurify().sanitize(...)` per-block since they don't re-lex
+// the whole document — they patch in already-known block boundaries.
 //
-// We build the map once per content string and reuse it for all block slices.
-// ---------------------------------------------------------------------------
-
-const _encoder = new TextEncoder();
-
-/**
- * Build a Uint32Array mapping UTF-8 byte index → JS string char index.
- * Index i holds the JS char index that starts at UTF-8 byte i.
- * The array length is byteLength + 1 (last entry = string.length).
- */
-function buildByteToCharMap(text: string): Uint32Array {
-  const encoded = _encoder.encode(text);
-  const byteLen = encoded.length;
-  const map = new Uint32Array(byteLen + 1);
-  let bytePos = 0;
-  let charPos = 0;
-  while (charPos < text.length) {
-    map[bytePos] = charPos;
-    const cp = text.codePointAt(charPos)!;
-    // UTF-8 byte width of this codepoint
-    const byteWidth = cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
-    // UTF-16 code unit width (surrogate pair = 2 units)
-    const charWidth = cp >= 0x10000 ? 2 : 1;
-    for (let b = 0; b < byteWidth; b++) {
-      map[bytePos + b] = charPos;
-    }
-    bytePos += byteWidth;
-    charPos += charWidth;
-  }
-  map[byteLen] = charPos;
-  return map;
-}
-
-interface BlockMeta {
-  type: string;
-  start: number;
-  end: number;
-  depth: number;
-  itemCount: number;
-  rowCount: number;
-}
-
-function decodeBlocks(buf: Uint32Array): BlockMeta[] {
-  const count = buf.length / STRIDE;
-  const blocks: BlockMeta[] = new Array(count);
-  for (let i = 0, j = 0; i < buf.length; i += STRIDE, j++) {
-    const w0 = buf[i];
-    blocks[j] = {
-      type: BLOCK_TYPES[w0 & 0xFF] ?? 'other',
-      start: buf[i + 1],
-      end: buf[i + 2],
-      depth: (w0 >> 8) & 0xFF,
-      itemCount: buf[i + 3] & 0xFFFF,
-      rowCount: (buf[i + 3] >> 16) & 0xFFFF,
-    };
-  }
-  return blocks;
-}
+// Sanitization is now eager (cache stores SANITIZED HTML), reversing
+// the prior "DOMPurify at render time only" pattern. The shared
+// helper sanitizes during parse so `TugMarkdownBlock` (which has no
+// render-time hook) sees safe HTML as it does, and so the cache
+// contract is uniform between full-rebuild and incremental paths.
 
 const LINE_HEIGHT = 24;
 const CODE_LINE_HEIGHT = 20;
 const CODE_HEADER_HEIGHT = 36;
 const HR_HEIGHT = 33;
 
-function estimateBlockHeight(block: BlockMeta): number {
-  const rawLen = block.end - block.start;
+/**
+ * Heuristic block height for the windowing engine. Accepts both the
+ * char-indexed `SanitizedMarkdownBlock` produced by the full-pass
+ * helper and the byte-indexed `BlockMeta` produced by the incremental
+ * path's region-scoped re-lex; the discriminator picks the right
+ * `rawLen` source. For ASCII content the two are identical; for
+ * multi-byte text the byte length is slightly larger, which shifts
+ * height estimates by a few pixels — well within the
+ * `ResizeObserver`-driven correction we apply on first measure.
+ */
+type EstimateBlockShape =
+  | { type: string; depth: number; itemCount: number; rowCount: number; startChar: number; endChar: number }
+  | { type: string; depth: number; itemCount: number; rowCount: number; startByte: number; endByte: number };
+
+function estimateBlockHeight(block: EstimateBlockShape): number {
+  const rawLen = "endChar" in block
+    ? block.endChar - block.startChar
+    : block.endByte - block.startByte;
   switch (block.type) {
     case 'heading': return [0, 56, 48, 40, 36, 32, 28][block.depth] ?? LINE_HEIGHT * 2;
     case 'code': {
@@ -379,7 +320,10 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
   }
 
   // ---- Add a single block DOM node ----
-  // Cache stores unsanitized HTML; DOMPurify runs here [D04].
+  // Cache stores SANITIZED HTML (Step 7 refactor — `parseMarkdownTo
+  // SanitizedBlocks` and the incremental sanitize call sites both
+  // hand DOMPurify-clean HTML to the cache). `addBlockNode` writes
+  // it straight to `el.innerHTML` with no additional sanitize pass.
   // If the block is not yet in the HTML cache, skip it (no placeholder).
   //
   // Blocks are always inserted in ascending block index order so the document
@@ -397,12 +341,11 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
       console.warn(`[TugMarkdownView] cache miss for block ${index} — all blocks should be pre-parsed`);
       return;
     }
-    const sanitized = getDOMPurify().sanitize(cachedHtml, SANITIZE_CONFIG);
 
     const el = document.createElement("div");
     el.className = "tugx-md-block";
     el.dataset.blockIndex = String(index);
-    el.innerHTML = sanitized;
+    el.innerHTML = cachedHtml;
 
     // Find the first child with a higher block index to insert before it.
     // This preserves ascending document order regardless of insertion sequence.
@@ -637,26 +580,30 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     engine.regionBlockRanges.clear();
     applySpacers(0, 0);
 
-    // Lex + parse: synchronous WASM calls (~29ms for 1MB)
-    const lexStart = performance.now();
-    const packed = lex_blocks(text);
-    const lexMs = performance.now() - lexStart;
-    const blocks = decodeBlocks(packed);
-    const byteToChar = buildByteToCharMap(text);
+    // Lex + parse + sanitize via the shared pipeline ([D09]).
+    // Timing for the full pass — `parseMarkdownToSanitizedBlocks`
+    // does lex + per-block parse + per-block DOMPurify sanitize in
+    // one call, so we report it as a single `parseMs`. `lexMs` keeps
+    // the legacy field name; the lex sub-step is now embedded in the
+    // helper and not separately observable. Setting `lexMs = 0`
+    // keeps the timing struct shape stable for any consumer
+    // depending on the field; the more meaningful `parseMs` covers
+    // the wall-clock cost of the whole pipeline.
+    const lexMs = 0;
+    const parseStart = performance.now();
+    const blocks = parseMarkdownToSanitizedBlocks(text);
+    const parseMs = performance.now() - parseStart;
+
     engine.blockCount = blocks.length;
-    engine.blockStarts = blocks.map(b => byteToChar[b.start] ?? b.start);
-    engine.blockEnds = blocks.map(b => byteToChar[b.end] ?? b.end);
+    engine.blockStarts = blocks.map(b => b.startChar);
+    engine.blockEnds = blocks.map(b => b.endChar);
 
     for (const block of blocks) {
       engine.heightIndex.appendBlock(estimateBlockHeight(block));
     }
-
-    const parseStart = performance.now();
     for (let i = 0; i < blocks.length; i++) {
-      const raw = text.slice(engine.blockStarts[i], engine.blockEnds[i]);
-      engine.htmlCache.set(i, parse_to_html(raw));
+      engine.htmlCache.set(i, blocks[i].html);
     }
-    const parseMs = performance.now() - parseStart;
 
     // Populate regionBlockRanges by mapping each block to its region via char offset.
     // Iterate blocks in order; for each block, look up its region and accumulate.
@@ -727,17 +674,17 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     const lexMs = performance.now() - lexStart;
 
     const rawBlocks = decodeBlocks(packed);
-    // Filter out blocks that belong to the 2-byte prefix (start < 2)
+    // Filter out blocks that belong to the 2-byte prefix (startByte < 2)
     const newRegionBlocks = rawBlocks
-      .filter(b => b.start >= 2)
-      .map(b => ({ ...b, start: b.start - 2, end: b.end - 2 }));
+      .filter(b => b.startByte >= 2)
+      .map(b => ({ ...b, startByte: b.startByte - 2, endByte: b.endByte - 2 }));
 
     // Build byte-to-char map for the region slice.
     const byteToChar = buildByteToCharMap(regionText);
 
     // Translate WASM byte offsets (region-local) to document-global char offsets.
-    const newStarts = newRegionBlocks.map(b => regionCharStart + (byteToChar[b.start] ?? b.start));
-    const newEnds = newRegionBlocks.map(b => regionCharStart + (byteToChar[b.end] ?? b.end));
+    const newStarts = newRegionBlocks.map(b => regionCharStart + (byteToChar[b.startByte] ?? b.startByte));
+    const newEnds = newRegionBlocks.map(b => regionCharStart + (byteToChar[b.endByte] ?? b.endByte));
 
     // For a new region (range === undefined): S = blockCount (append after all existing
     // blocks), P = 0 (no prior blocks for this region), oldTypes = [] (no prior types).
@@ -766,12 +713,15 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
       if (newStarts[i] !== engine.blockStarts[globalIdx] || newEnds[i] !== engine.blockEnds[globalIdx]) {
         const raw = engine.regionMap.text.slice(newStarts[i], newEnds[i]);
         const parseStart = performance.now();
-        const html = parse_to_html(raw);
+        // Sanitize before caching — Step 7 made the cache contract
+        // store DOMPurify-clean HTML uniformly across full-rebuild
+        // and incremental paths.
+        const sanitized = getDOMPurify().sanitize(parse_to_html(raw), SANITIZE_CONFIG);
         parseMs += performance.now() - parseStart;
-        engine.htmlCache.set(globalIdx, html);
+        engine.htmlCache.set(globalIdx, sanitized);
         const existingEl = engine.blockNodes.get(globalIdx);
         if (existingEl) {
-          existingEl.innerHTML = getDOMPurify().sanitize(html, SANITIZE_CONFIG);
+          existingEl.innerHTML = sanitized;
           // Store estimate here; real measurement happens in doSetRegion's
           // consolidated measurement pass (one forced layout for all blocks).
           engine.heightIndex.setHeight(globalIdx, estimateBlockHeight(newRegionBlocks[i]));
@@ -882,7 +832,10 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
           const globalIdx = S + i;
           const raw = engine.regionMap.text.slice(newStarts[i], newEnds[i]);
           const parseStart = performance.now();
-          engine.htmlCache.set(globalIdx, parse_to_html(raw));
+          engine.htmlCache.set(
+            globalIdx,
+            getDOMPurify().sanitize(parse_to_html(raw), SANITIZE_CONFIG),
+          );
           parseMs += performance.now() - parseStart;
         }
       } else {
@@ -947,7 +900,10 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
           const globalIdx = S + i;
           const raw = engine.regionMap.text.slice(newStarts[i], newEnds[i]);
           const parseStart = performance.now();
-          engine.htmlCache.set(globalIdx, parse_to_html(raw));
+          engine.htmlCache.set(
+            globalIdx,
+            getDOMPurify().sanitize(parse_to_html(raw), SANITIZE_CONFIG),
+          );
           parseMs += performance.now() - parseStart;
           engine.heightIndex.setHeight(globalIdx, estimateBlockHeight(newRegionBlocks[i]));
         }
