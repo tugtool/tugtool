@@ -552,10 +552,10 @@ The old tugbank keys are no longer written to (the bridge wires them out in [Ste
 
 ### Documentation Plan {#documentation-plan}
 
-- [ ] Module docstring on `session_ledger.rs` per the schema and state-machine in [#schema].
-- [ ] Module docstring on `tide-session-ledger-store.ts` describing the cache + push-update model.
-- [ ] Update `tide.md` § code-session-store to point at the new ledger (replacing the tugbank `sessions` map references).
-- [ ] Add a brief paragraph to `tuglaws/component-authoring.md` on "stores that observe CONTROL push frames" — the ledger store is the second consumer (after the live-sessions broadcast handling that §step-4-5-5 introduced).
+- [x] Module docstring on `session_ledger.rs` per the schema and state-machine in [#schema].
+- [x] Module docstring on `tide-session-ledger-store.ts` describing the cache + push-update model.
+- [x] Update `tide.md` § code-session-store to point at the new ledger (replacing the tugbank `sessions` map references).
+- [x] Add a brief paragraph to `tuglaws/component-authoring.md` on "stores that observe CONTROL push frames" — the ledger store is the second consumer (after the live-sessions broadcast handling that §step-4-5-5 introduced).
 
 ---
 
@@ -950,21 +950,21 @@ The old tugbank keys are no longer written to (the bridge wires them out in [Ste
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] `SessionLedger` exists with full CRUD + eviction + sweep, schema per [#schema], all unit tests green.
-- [ ] Migration completes on a fresh `tugcast` start; old tugbank keys are gone (verified by `tugbank-cli get`).
-- [ ] Picker renders rich rows from the ledger store; live updates land via `session_updated`.
-- [ ] Per-row Forget moves the JSONL to trash and removes the ledger row; Forget All works for the workspace.
-- [ ] Eviction triggers at cap (20) and age (90 days); live rows are never evicted.
-- [ ] Recents eviction triggers ledger eviction in the same code path.
-- [ ] `resume_failed` retains the row with `state="failed"` and shows it greyed in the picker.
-- [ ] All grep gates: no remaining references to `TugbankSessionsRecorder` / `TugbankLiveSessionsTracker` / `dev.tugtool.tide / sessions` / `dev.tugtool.tide / live-sessions` in production code.
-- [ ] `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run` green.
-- [ ] Parent plan §step-10 row flips to "**shipped** — see tugplan-tide-session-ledger.md".
+- [x] `SessionLedger` exists with full CRUD + eviction + sweep, schema per [#schema], all unit tests green.
+- [x] No data migration per [D09]; the old `dev.tugtool.tide / sessions` and `dev.tugtool.tide / live-sessions` tugbank keys receive no writes after this lands (grep audit confirms only doc-comment references remain). Manual cleanup via `tugbank-cli get` is available if anyone cares.
+- [x] Picker renders rich rows from the ledger store; live updates land via `session_updated`.
+- [x] Per-row Forget moves the JSONL to trash and removes the ledger row; Forget All works (per-row dispatch loop, since the picker keys on `project_dir` not canonical `workspace_key`).
+- [x] Eviction triggers at cap (20) and age (90 days); live rows are never evicted.
+- [x] Recents eviction triggers ledger eviction via `forget_project_dir_sessions` in the same code path.
+- [x] `resume_failed` retains the row with `state="failed"` and shows it greyed in the picker (subtitle "Couldn't resume — JSONL missing").
+- [x] All grep gates: no remaining production references to `TugbankSessionsRecorder` / `TugbankLiveSessionsTracker` / writes to `dev.tugtool.tide / sessions` / `dev.tugtool.tide / live-sessions`. Only doc-comment references survive in `agent_supervisor.rs` and `session_ledger.rs` describing what was replaced.
+- [x] `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run` green.
+- [x] Parent plan §step-10 row flips to "**shipped** — see tugplan-tide-session-ledger.md".
 
 **Acceptance tests:**
-- [ ] All `R-CHAIN-*` chain tests from §step-4-5-5 still green against the ledger-backed flow.
-- [ ] New `R-LEDGER-*` integration tests cover: Forget → trash; concurrent card live-elsewhere via ledger `card_id_live`; eviction at cap; eviction at age; recents-eviction → ledger-eviction.
-- [ ] Manual end-to-end: spawn 3 sessions in `/u/src/tugtool`, close each, reopen the picker, see 3 rows; Forget the middle one; reopen picker, see 2 rows; restore the JSONL from trash (`mv` back), startup tugcast, picker again shows 3 rows.
+- [x] All `R-CHAIN-*` chain tests from §step-4-5-5 still green against the ledger-backed flow (`session-chain.integration.test.ts`, 5 tests).
+- [x] New `R-LEDGER-*`-equivalent integration tests cover: Forget → trash (Rust unit `forget_moves_jsonl_to_trash`); cap eviction (`evict_oldest_closed_*`, `evict_for_workspace_emits_removed_pushes`); age eviction (`sweep_expired_*`); recents-eviction → ledger-eviction (tugdeck `recents-eviction-ledger.test.tsx`); orphan-recovery sweep (`sweep_trash_recovers_orphaned_project_dirs`). Live-elsewhere coverage was kept in the existing `R-CHAIN-*` flow that already uses `card_id_live`.
+- [~] Manual end-to-end (spawn 3 sessions, Forget the middle, restore via `mv` back) — deferred. Each individual mechanism is independently tested; an end-to-end run requires a live Claude Code subprocess and is the subject of the deferred-smoke task at the top of this section.
 
 #### Roadmap / Follow-ons (Not Required for Phase Close) {#roadmap}
 
