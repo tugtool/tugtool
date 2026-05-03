@@ -586,7 +586,15 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // synchronously after commit, and any cell ref callback that
     // fires during the same commit sees `observerRef.current`
     // populated and observes itself.
+    //
+    // Re-runs when `dataSource` identity changes (rare). On swap, the
+    // height index is cleared first — measurements from the old data
+    // source's cells are not valid for the new data source's cells
+    // at the same indices. Without the clear, a cell at index 5 in
+    // the new data source would inherit the old data source's index-
+    // 5 measurement until `ResizeObserver` reported the real height.
     React.useLayoutEffect(() => {
+      heightIndexRef.current.clear();
       const observer = new ResizeObserver((entries) => {
         const total = dataSource.numberOfItems();
         let anyChanged = false;
@@ -681,6 +689,30 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // that need to flip mid-life can do so via the imperative
       // handle (a follow-on if the need arises) or by remounting.
       // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // ResizeObserver on the scroll container itself. Without this,
+    // `viewportHeight` (read inline from `clientHeight` at render
+    // time) only updates when something else triggers a re-render —
+    // a card resize that grows the container leaves a too-tall
+    // bottom spacer and an under-populated rendered window because
+    // nothing notices the new viewport. Mirrors the
+    // `TugMarkdownView` pattern that observes its own scroll
+    // container.
+    //
+    // ResizeObserver coalesces multiple layout shifts in a frame
+    // into one delivery, so calling `scrollTick` per fire is enough
+    // — no extra rAF coalescing needed.
+    React.useLayoutEffect(() => {
+      const el = scrollContainerRef.current;
+      if (el === null) return;
+      const observer = new ResizeObserver(() => {
+        scrollTick();
+      });
+      observer.observe(el);
+      return () => {
+        observer.disconnect();
+      };
     }, []);
 
     // Apply spacer heights directly to the DOM ([L06]). Mirrors the
@@ -931,42 +963,61 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       });
     }
 
-    // Cell-wrapper ref handler: registers the element in the map and
-    // attaches the `ResizeObserver` on mount; unobserves and removes
-    // the entry on unmount. Centralized so the two render paths
-    // (renderer-present and renderer-missing) share the same
-    // semantics.
-    const handleCellRef = (
-      index: number,
-      el: HTMLDivElement | null,
-    ): void => {
-      if (el !== null) {
-        cellElementMapRef.current.set(index, el);
-        observerRef.current?.observe(el);
-      } else {
-        const old = cellElementMapRef.current.get(index);
-        if (old !== undefined) {
-          observerRef.current?.unobserve(old);
-          cellElementMapRef.current.delete(index);
-        }
-      }
-    };
-
-    // Cell-wrapper click handler: fires `delegate.onSelect(index)`.
-    // The handler is always attached (not gated on `delegate?.onSelect`
-    // existing) so consumers that swap delegates between renders
-    // don't see lost clicks during the swap; the inline arrow reads
-    // the current render's `delegate` from closure each time and
-    // no-ops if `onSelect` is absent.
+    // Per-index ref + click callback registry. React's ref protocol
+    // fires the OLD callback with `null` and the NEW callback with
+    // the element whenever the callback identity changes between
+    // renders, even if the element is the same DOM node. Inline
+    // arrow functions (`ref={(el) => ...}`) create fresh identities
+    // every render and force an unobserve+observe churn cycle on
+    // every cell. Caching one stable callback per index keeps
+    // identity stable across re-renders so a steady-state window
+    // produces zero observer churn.
     //
-    // Consumers whose cell renderers contain their own clickable
-    // elements (buttons, links) should call `event.stopPropagation()`
-    // in their handlers if they don't want the wrapper's click to
-    // also fire `onSelect`. This matches UIKit's `selectionStyle =
-    // .none` semantics for cells with embedded controls.
-    const handleCellClick = (index: number): void => {
-      delegate?.onSelect?.(index);
-    };
+    // The Map grows with the largest index ever rendered; entries
+    // for indices that scroll out are kept (and reused on scroll-
+    // back) since the closure cost is small and memoization is the
+    // simpler path. A future data-source-shrink-aware pruner can be
+    // added if list cardinality ever crosses a threshold where the
+    // bookkeeping matters.
+    //
+    // The click handler reads `delegate?.onSelect` from a ref so
+    // consumers swapping delegates between renders don't see lost
+    // clicks during the swap, and so the cached closure stays
+    // identity-stable while still routing to the current delegate.
+    const delegateRef = React.useRef(delegate);
+    delegateRef.current = delegate;
+
+    interface CellCallbacks {
+      readonly ref: (el: HTMLDivElement | null) => void;
+      readonly click: () => void;
+    }
+    const cellCallbacksRef = React.useRef<Map<number, CellCallbacks>>(
+      new Map(),
+    );
+
+    function getCellCallbacks(index: number): CellCallbacks {
+      const registry = cellCallbacksRef.current;
+      const cached = registry.get(index);
+      if (cached !== undefined) return cached;
+      const refCb = (el: HTMLDivElement | null): void => {
+        if (el !== null) {
+          cellElementMapRef.current.set(index, el);
+          observerRef.current?.observe(el);
+        } else {
+          const old = cellElementMapRef.current.get(index);
+          if (old !== undefined) {
+            observerRef.current?.unobserve(old);
+            cellElementMapRef.current.delete(index);
+          }
+        }
+      };
+      const clickCb = (): void => {
+        delegateRef.current?.onSelect?.(index);
+      };
+      const callbacks: CellCallbacks = { ref: refCb, click: clickCb };
+      registry.set(index, callbacks);
+      return callbacks;
+    }
 
     return (
       <div
@@ -1001,8 +1052,8 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                   className="tug-list-view-cell"
                   data-tug-list-cell-index={index}
                   data-tug-list-cell-kind={kind}
-                  ref={(el) => handleCellRef(index, el)}
-                  onClick={() => handleCellClick(index)}
+                  ref={getCellCallbacks(index).ref}
+                  onClick={getCellCallbacks(index).click}
                 />
               );
             }
@@ -1012,8 +1063,8 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                 className="tug-list-view-cell"
                 data-tug-list-cell-index={index}
                 data-tug-list-cell-kind={kind}
-                ref={(el) => handleCellRef(index, el)}
-                onClick={() => handleCellClick(index)}
+                ref={getCellCallbacks(index).ref}
+                onClick={getCellCallbacks(index).click}
               >
                 <Renderer
                   index={index}

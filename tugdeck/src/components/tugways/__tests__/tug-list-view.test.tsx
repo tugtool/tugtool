@@ -879,15 +879,26 @@ describe("TugListView (Step 4 — ResizeObserver + HeightIndex)", () => {
         cellRenderers={CELL_RENDERERS}
       />,
     );
-    // Exactly one observer per list-view instance.
-    expect(CapturingResizeObserver.instances.length).toBe(1);
-    const observer = CapturingResizeObserver.instances[0];
-    // Each rendered cell should be observed.
-    expect(observer.observed.size).toBeGreaterThan(0);
-    // Every observed element carries the cell-index attribute.
-    for (const el of observer.observed) {
+    // Two observers per list-view instance, in source order:
+    //   instances[0] — cell observer (created in the [dataSource]
+    //                  layout effect; observes every rendered cell
+    //                  wrapper).
+    //   instances[1] — scroll-container observer (created in the
+    //                  no-deps layout effect; watches the scroll
+    //                  container itself so card resize triggers a
+    //                  re-window).
+    expect(CapturingResizeObserver.instances.length).toBe(2);
+    const cellObserver = CapturingResizeObserver.instances[0];
+    const containerObserver = CapturingResizeObserver.instances[1];
+    // Cell observer watches every rendered cell.
+    expect(cellObserver.observed.size).toBeGreaterThan(0);
+    for (const el of cellObserver.observed) {
       expect(el.getAttribute("data-tug-list-cell-index")).not.toBeNull();
     }
+    // Container observer watches exactly the scroll container.
+    expect(containerObserver.observed.size).toBe(1);
+    const observed = Array.from(containerObserver.observed)[0];
+    expect(observed.getAttribute("data-slot")).toBe("tug-list-view");
   });
 
   test("measured heights replace estimates: scrollToIndex offset reflects measurement", () => {
@@ -1113,6 +1124,99 @@ describe("TugListView (Step 4 — ResizeObserver + HeightIndex)", () => {
       handleRef.current?.scrollToIndex(9);
     });
     expect(root.scrollTop).toBe(750);
+  });
+
+  test("steady-state re-renders do not churn the cell observer (stable ref callbacks)", () => {
+    // Regression pin for the per-cell ref-callback identity bug:
+    // every render used to create a fresh `ref={(el) => ...}` arrow,
+    // which fired the old ref with `null` and the new with the
+    // element on every commit — causing N unobserves + N observes
+    // per re-render across the visible cells. The fix is a stable
+    // per-index callback registry; this test asserts a re-render
+    // that doesn't change the rendered set produces zero new
+    // unobserve calls beyond the initial mount.
+    const items: DemoItem[] = Array.from({ length: 5 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={{ estimatedHeightForKind: () => 40 }}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    expect(CapturingResizeObserver.instances.length).toBe(2);
+    const cellObserver = CapturingResizeObserver.instances[0];
+
+    // Wrap unobserve to count calls — ref churn would call it once
+    // per visible cell on every re-render.
+    let unobserveCallsAfterMount = 0;
+    const originalUnobserve = cellObserver.unobserve.bind(cellObserver);
+    cellObserver.unobserve = (target: Element): void => {
+      unobserveCallsAfterMount += 1;
+      originalUnobserve(target);
+    };
+
+    // Force a steady-state re-render via a no-op data-source tick.
+    // The rendered set is unchanged; ref callbacks should reuse
+    // their cached identity, so React fires no detach/reattach
+    // cycle and `unobserve` is never called.
+    act(() => {
+      ds._tickForTest();
+    });
+    act(() => {
+      ds._tickForTest();
+    });
+
+    expect(unobserveCallsAfterMount).toBe(0);
+  });
+
+  test("container resize triggers a re-window via the scroll-container observer", () => {
+    // Grow the rendered viewport via the container observer (rather
+    // than dispatching a scroll event). Without an observer on the
+    // scroll container itself, a card resize would leave the bottom
+    // spacer too tall — the rendered window stays at the previous
+    // viewport's count even though more cells should fit.
+    const items: DemoItem[] = Array.from({ length: 30 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={{ estimatedHeightForKind: () => 40 }}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const root = container.querySelector(
+      '[data-slot="tug-list-view"]',
+    ) as HTMLElement;
+    expect(CapturingResizeObserver.instances.length).toBe(2);
+    const containerObserver = CapturingResizeObserver.instances[1];
+
+    const renderedBefore = container.querySelectorAll(
+      ".tug-list-view-cell",
+    ).length;
+
+    // Grow the container's viewport. Real browsers fire the
+    // ResizeObserver after layout; happy-dom doesn't, so the test
+    // does it manually by setting `clientHeight` and firing the
+    // captured observer with a synthetic entry.
+    setViewportHeight(root, 400);
+    setScrollTop(root, 0);
+    act(() => {
+      containerObserver.fire([{ target: root, height: 400 }]);
+    });
+
+    const renderedAfter = container.querySelectorAll(
+      ".tug-list-view-cell",
+    ).length;
+    expect(renderedAfter).toBeGreaterThan(renderedBefore);
   });
 
   test("disconnect on unmount: subsequent fires don't throw", () => {

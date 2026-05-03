@@ -36,7 +36,7 @@ The Tide canvas accumulates list-shaped surfaces by design:
 
 Building each list surface as a one-off accumulates divergent implementations. The picker is already evidence — its rich rows exist as bespoke flexbox under `<div role="radiogroup">`. UIKit's `UITableView` is the battle-tested organizing principle for this shape: a table view that owns scroll/windowing/reuse, a data source that enumerates items, a delegate that opinionates on heights/lifecycle/selection, and prefetching that warms soon-to-be-visible work. We crib the design — it is genuinely the right answer — and adapt it to the web. The transcript becomes the proving ground.
 
-The plan ships in two phases. **Phase A (Steps 1–8) builds the primitive + a companion `TugMarkdownBlock` + a gallery card** that exercises the basic features end-to-end against synthetic data. **Phase B (Steps 9–11) wires the transcript** on top of the primitive, with cell renderers for `user`, `code-committed`, and `code-streaming` rows. **Phase C (Step 12)** is the tuglaws walkthrough and parent close-out.
+The plan ships in two phases. **Phase A (Steps 1–8 + 8.5) builds the primitive + a companion `TugMarkdownBlock` + a gallery card** that exercises the basic features end-to-end against synthetic data. **Phase B (Steps 9–11) wires the transcript** on top of the primitive, with cell renderers for `user`, `code-committed`, and `code-streaming` rows. **Phase C (Step 12)** is the tuglaws walkthrough and parent close-out.
 
 #### Strategy {#strategy}
 
@@ -1208,6 +1208,47 @@ happy-dom is suitable for all unit, component, reducer, adapter, and integration
 - [x] `bun test` — all green (2907 pass / 0 fail).
 - [x] `bun run audit:tokens lint` — zero violations.
 - [ ] Manual: open `gallery-list-view` in tugdeck and visually review. **(User-driven; HMR picks up the changes.)**
+
+---
+
+#### Step 8.5: TugListView v1 polish — keyboard activation, scroll-block default, focusable-child guard {#step-8-5}
+
+**Depends on:** #step-8
+
+**Commit:** `tug-list-view: keyboard activation + a11y + scrollToIndex polish`
+
+**References:** [D03] imperative-api, [Q06] selection-model, [#dom-shape]
+
+**Artifacts:**
+
+- `tug-list-view.tsx`: cell wrapper gains a `keydown` handler that fires `delegate.onSelect(index)` on `Enter` / `Space` when the wrapper is `document.activeElement`. The list-view scroll container's `keydown` is already handled by `SmartScroll`; cell-level keydown coexists by checking `event.target` is the cell wrapper itself, not a descendant.
+- `tug-list-view.tsx`: cell wrappers gain `role="listitem"` and the scroll container gains `role="list"` (or `role="grid"` / `row` if a future variant needs tabular semantics — leave at `list` for v1). Cells also get `tabIndex={0}` so keyboard focus traversal includes them.
+- SmartScroll-side: skip the keydown handler when `event.target` is a focusable descendant of the scroll container (an `<input>`, `<textarea>`, `[contenteditable]`, etc.). Today, arrow-key presses inside a cell's editable child bubble up and disengage `followBottom`. Either gate `SmartScroll`'s handler on `event.target === scrollContainer` or have `TugListView` install a capture-phase keydown that calls `event.stopPropagation()` for keys originating in editable descendants.
+- `scrollToIndex(index, options)` default: change `block` default from `"nearest"` to `"start"` so the row lands aligned to the viewport top — matches `UITableView.scrollToRow(at:atScrollPosition: .top)` and is the more useful default for "scroll this specific row into focus" use cases. `"nearest"` stays available via the explicit option.
+- Tests pinning each behavior: keyboard `Enter` / `Space` on a focused cell fires `onSelect`; arrow keys inside an `<input>` descendant don't disengage `followBottom`; `scrollToIndex(N)` with no `block` lands the row at the viewport top.
+
+**Tasks:**
+
+- [ ] Cell wrapper keydown handler. Guard on `event.target === currentTarget` so a child input's keydown doesn't double-fire.
+- [ ] `role="list"` / `role="listitem"` and per-cell `tabIndex`.
+- [ ] Editable-descendant guard for SmartScroll keydown — pick the cleaner of "stopPropagation in TugListView's capture-phase handler" vs "exit early in SmartScroll's keydown when `event.target !== this._container`". Document the chosen approach.
+- [ ] Default `block` change in `scrollToIndex`.
+- [ ] Plan note in `tugways/component-authoring.md` (if relevant) about cell-level keyboard activation.
+
+**Tests:**
+
+- [ ] `Enter` on a focused cell fires `onSelect(index)`; `Space` does the same; other keys don't.
+- [ ] Arrow-key keydown inside an `<input>` descendant of a cell does not disengage `followBottom` (spy on `SmartScroll.disengageFollowBottom` or `pinToBottom` count after a subsequent growth event).
+- [ ] `scrollToIndex(rendered_index)` with no `block` option calls `SmartScroll.scrollToElement` with `block: "start"`.
+- [ ] `getElementForIndex(index)` returns an element with `role="listitem"`.
+
+**Checkpoint:**
+
+- [ ] `bun x tsc --noEmit` — exit 0.
+- [ ] `bun test` — all green.
+- [ ] `bun run audit:tokens lint` — zero violations.
+
+**Origin:** these items were called out during the post-Step-8 audit as deferred follow-ups — accessibility (no `role` / no keyboard activation), the SmartScroll-keydown / focusable-child interaction, and the `scrollToIndex` default. None block the transcript wire-up (Steps 9–11), but all three are paper-cuts that should be cleared before any v1.x consumer outside the transcript ships against the primitive.
 
 ---
 
