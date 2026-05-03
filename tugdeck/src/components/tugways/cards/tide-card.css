@@ -196,6 +196,44 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
+/* Rich resume row: snippet title + subtitle take the leading edge,
+   the Forget button (or state pill) anchors to the trailing edge.
+   The session option block is the leading flex child; the Forget
+   button gets `margin-inline-start: auto` to push to the trailing edge.
+   Inherited from each TugRadioItem's child layout. */
+.tide-card-picker-session-forget {
+  margin-inline-start: auto;
+  /* Hidden by default so closed-state rows read as clean snippets;
+     surfaced on row hover/focus + on direct keyboard focus. The radio
+     row's keyboard reachability is unchanged. */
+  opacity: 0;
+  font-size: var(--tug-font-size-xs, 0.75rem);
+  background: transparent;
+  border: 1px solid var(--tug7-element-field-border-normal-muted-rest);
+  border-radius: var(--tug-radius-xs, 4px);
+  padding: 2px 8px;
+  cursor: pointer;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* Reveal Forget on row hover or focus-within. Either of those signals
+   "user is engaging with this row" — surfacing the destructive action
+   then keeps the closed-state read clean. */
+.tide-card-picker-form [role="radio"]:hover .tide-card-picker-session-forget,
+.tide-card-picker-form [role="radio"]:focus-within .tide-card-picker-session-forget,
+.tide-card-picker-session-forget:focus,
+.tide-card-picker-session-forget:hover {
+  opacity: 1;
+}
+
+/* Footer Forget All button — full-width-ish ghost, distinct from the
+   primary Open button. */
+.tide-card-picker-forget-all {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: var(--tug-space-xs, 4px);
+}
+
 /* ----------------------------------------------------------------------------
    .tide-card-settings — body of the editor-settings sheet
    ----------------------------------------------------------------------------

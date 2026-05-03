@@ -399,22 +399,23 @@ describe("TideCardContent – binding gate and project picker", () => {
     renderTideCard(CARD_ID);
 
     clickRecent("/work/fresh-only");
+    // Settle the ledger snapshot to `ready` with no rows so the
+    // picker renders the empty-state shape (Start-fresh only).
+    seedLedgerForPath("/work/fresh-only", []);
 
     const radios = document.querySelectorAll<HTMLButtonElement>(
       '.tug-sheet-content [role="radio"]',
     );
-    expect(radios.length).toBe(2);
+    // No prior sessions for this path → only Start-fresh rendered.
+    expect(radios.length).toBe(1);
     expect(radios[0]!.textContent).toContain("Start fresh");
     expect(radios[0]!.getAttribute("aria-checked")).toBe("true");
     expect(radios[0]!.disabled).toBe(false);
-    expect(radios[1]!.textContent).toContain("Resume last session");
-    expect(radios[1]!.getAttribute("aria-checked")).toBe("false");
-    expect(radios[1]!.disabled).toBe(true);
-    // Subtitle explains why the row is inactive.
-    const subtitle = document.querySelector(
-      '[data-testid="tide-card-picker-resume-subtitle"]',
+    // No Forget-all footer when there are no rows.
+    const forgetAll = document.querySelector(
+      '[data-testid="tide-card-picker-forget-all"]',
     );
-    expect(subtitle?.textContent).toContain("No prior session");
+    expect(forgetAll).toBeNull();
   });
 
   it("T-TIDE-RESUME-02: picker with a session record for the typed path renders both rows; Start-fresh is selected by default", () => {
@@ -435,10 +436,12 @@ describe("TideCardContent – binding gate and project picker", () => {
     const radios = document.querySelectorAll<HTMLButtonElement>(
       '.tug-sheet-content [role="radio"]',
     );
+    // Start fresh + 1 resume row.
     expect(radios.length).toBe(2);
     expect(radios[0]!.textContent).toContain("Start fresh");
     expect(radios[0]!.getAttribute("aria-checked")).toBe("true");
-    expect(radios[1]!.textContent).toContain("Resume last session");
+    // Resume rows carry the session-id-bearing subtitle, not the legacy
+    // "Resume last session" label.
     expect(radios[1]!.getAttribute("aria-checked")).toBe("false");
     const subtitle = document.querySelector(
       '[data-testid="tide-card-picker-resume-subtitle"]',
@@ -465,11 +468,13 @@ describe("TideCardContent – binding gate and project picker", () => {
     // ignore the request frame.
     sentFrames.length = 0;
 
-    const resumeRadio = Array.from(
-      document.querySelectorAll<HTMLButtonElement>(
-        '.tug-sheet-content [role="radio"]',
-      ),
-    ).find((b) => b.textContent?.includes("Resume last session"));
+    // The Resume rows are radio items beyond the initial Start-fresh
+    // row. With one ledger row seeded above, picking radios[1] is the
+    // resume action.
+    const radios = document.querySelectorAll<HTMLButtonElement>(
+      '.tug-sheet-content [role="radio"]',
+    );
+    const resumeRadio = radios[1];
     expect(resumeRadio).not.toBeUndefined();
     act(() => {
       fireEvent.click(resumeRadio!);
@@ -526,12 +531,13 @@ describe("TideCardContent – binding gate and project picker", () => {
     );
     expect(subtitle?.textContent).toContain("sess-new");
 
-    // Pick Resume and submit; the frame must carry the newest id.
-    const resumeRadio = Array.from(
-      document.querySelectorAll<HTMLButtonElement>(
-        '.tug-sheet-content [role="radio"]',
-      ),
-    ).find((b) => b.textContent?.includes("Resume last session"));
+    // Pick the newest resume row (radios[1] — radios[0] is Start fresh,
+    // newest-first ordering puts sess-newer next) and submit. The frame
+    // must carry the newest id.
+    const radios = document.querySelectorAll<HTMLButtonElement>(
+      '.tug-sheet-content [role="radio"]',
+    );
+    const resumeRadio = radios[1];
     act(() => {
       fireEvent.click(resumeRadio!);
     });
@@ -558,15 +564,14 @@ describe("TideCardContent – binding gate and project picker", () => {
 
     renderTideCard(CARD_ID);
 
-    function resumeRow(): HTMLButtonElement {
-      const radios = document.querySelectorAll<HTMLButtonElement>(
+    function radioCount(): number {
+      return document.querySelectorAll<HTMLButtonElement>(
         '.tug-sheet-content [role="radio"]',
-      );
-      expect(radios.length).toBe(2);
-      return radios[1]!;
+      ).length;
     }
 
-    // With a ledger row for /work/resumable: Resume is enabled.
+    // With a ledger row for /work/resumable: 2 radios (Start fresh + 1
+    // resume row).
     clickRecent("/work/resumable");
     act(() => {
       publishListSessionsOk({
@@ -580,14 +585,203 @@ describe("TideCardContent – binding gate and project picker", () => {
         ],
       });
     });
-    expect(resumeRow().disabled).toBe(false);
+    expect(radioCount()).toBe(2);
 
-    // Switch to a path with no rows: Resume becomes disabled.
+    // Switch to a path with no rows: just Start fresh.
     clickRecent("/work/nope");
     act(() => {
       publishListSessionsOk({ project_dir: "/work/nope", sessions: [] });
     });
-    expect(resumeRow().disabled).toBe(true);
+    expect(radioCount()).toBe(1);
+  });
+
+  it("T-TIDE-LEDGER-01: picker renders N+1 rows in last_used_at DESC order", () => {
+    tugbankStore["dev.tugtool.tide"] = {
+      "recent-projects": { kind: "json", value: { paths: ["/work/multi"] } },
+    };
+
+    renderTideCard(CARD_ID);
+    clickRecent("/work/multi");
+    seedLedgerForPath("/work/multi", [
+      makeSessionRow({
+        session_id: "sess-c-newest",
+        project_dir: "/work/multi",
+        last_used_at: 3000,
+      }),
+      makeSessionRow({
+        session_id: "sess-b-mid",
+        project_dir: "/work/multi",
+        last_used_at: 2000,
+      }),
+      makeSessionRow({
+        session_id: "sess-a-oldest",
+        project_dir: "/work/multi",
+        last_used_at: 1000,
+      }),
+    ]);
+
+    const radios = document.querySelectorAll<HTMLButtonElement>(
+      '.tug-sheet-content [role="radio"]',
+    );
+    // Start fresh + 3 resume rows = 4 total.
+    expect(radios.length).toBe(4);
+    expect(radios[0]!.textContent).toContain("Start fresh");
+    // The first resume row carries the newest session id in its subtitle.
+    const firstResumeSubtitle = radios[1]!.querySelector(
+      '[data-testid="tide-card-picker-resume-subtitle"]',
+    );
+    expect(firstResumeSubtitle?.textContent).toContain("sess-c-n");
+  });
+
+  it("T-TIDE-LEDGER-02: live row is rendered but disabled and shows the live pill", () => {
+    tugbankStore["dev.tugtool.tide"] = {
+      "recent-projects": { kind: "json", value: { paths: ["/work/live"] } },
+    };
+
+    renderTideCard(CARD_ID);
+    clickRecent("/work/live");
+    seedLedgerForPath("/work/live", [
+      makeSessionRow({
+        session_id: "sess-live-row",
+        project_dir: "/work/live",
+        last_used_at: 1000,
+        state: "live",
+        card_id_live: "other-card",
+      }),
+    ]);
+
+    const radios = document.querySelectorAll<HTMLButtonElement>(
+      '.tug-sheet-content [role="radio"]',
+    );
+    expect(radios.length).toBe(2);
+    expect(radios[1]!.disabled).toBe(true);
+    expect(radios[1]!.textContent).toContain("live");
+  });
+
+  it("T-TIDE-LEDGER-03: clicking Forget on a row dispatches forget_session and de-selects", () => {
+    tugbankStore["dev.tugtool.tide"] = {
+      "recent-projects": { kind: "json", value: { paths: ["/work/forget"] } },
+    };
+
+    renderTideCard(CARD_ID);
+    clickRecent("/work/forget");
+    seedLedgerForPath("/work/forget", [
+      makeSessionRow({
+        session_id: "sess-doomed",
+        project_dir: "/work/forget",
+        last_used_at: 1000,
+      }),
+    ]);
+    sentFrames.length = 0;
+
+    const forgetButton = document.querySelector<HTMLButtonElement>(
+      ".tide-card-picker-session-forget",
+    );
+    expect(forgetButton).not.toBeNull();
+    act(() => {
+      fireEvent.click(forgetButton!);
+    });
+
+    // Exactly one CONTROL frame: forget_session for the doomed id.
+    expect(sentFrames.length).toBe(1);
+    const decoded = JSON.parse(new TextDecoder().decode(sentFrames[0]!.payload)) as {
+      action: string;
+      session_id: string;
+    };
+    expect(decoded.action).toBe("forget_session");
+    expect(decoded.session_id).toBe("sess-doomed");
+  });
+
+  it("T-TIDE-LEDGER-04: Forget all sends one forget_session per non-live row", () => {
+    tugbankStore["dev.tugtool.tide"] = {
+      "recent-projects": { kind: "json", value: { paths: ["/work/all"] } },
+    };
+
+    renderTideCard(CARD_ID);
+    clickRecent("/work/all");
+    seedLedgerForPath("/work/all", [
+      makeSessionRow({
+        session_id: "sess-1",
+        project_dir: "/work/all",
+        last_used_at: 1000,
+      }),
+      makeSessionRow({
+        session_id: "sess-2",
+        project_dir: "/work/all",
+        last_used_at: 2000,
+      }),
+      makeSessionRow({
+        session_id: "sess-live",
+        project_dir: "/work/all",
+        last_used_at: 3000,
+        state: "live",
+        card_id_live: "other",
+      }),
+    ]);
+    sentFrames.length = 0;
+
+    const forgetAll = document.querySelector<HTMLButtonElement>(
+      '[data-testid="tide-card-picker-forget-all"]',
+    );
+    expect(forgetAll).not.toBeNull();
+    act(() => {
+      fireEvent.click(forgetAll!);
+    });
+
+    // Two non-live rows → two forget_session frames; live row left alone.
+    expect(sentFrames.length).toBe(2);
+    const ids = sentFrames
+      .map(
+        (f) =>
+          (
+            JSON.parse(new TextDecoder().decode(f.payload)) as {
+              action: string;
+              session_id: string;
+            }
+          ).session_id,
+      )
+      .sort();
+    expect(ids).toEqual(["sess-1", "sess-2"]);
+  });
+
+  it("T-TIDE-LEDGER-05: a session_updated push patches a row in place without re-mount", () => {
+    tugbankStore["dev.tugtool.tide"] = {
+      "recent-projects": { kind: "json", value: { paths: ["/work/patch"] } },
+    };
+
+    renderTideCard(CARD_ID);
+    clickRecent("/work/patch");
+    seedLedgerForPath("/work/patch", [
+      makeSessionRow({
+        session_id: "sess-patch",
+        project_dir: "/work/patch",
+        last_used_at: 1000,
+        turn_count: 0,
+      }),
+    ]);
+
+    // The picker's reverse index now points sess-patch at /work/patch.
+    // Push a new turn count + bumped last_used_at.
+    act(() => {
+      // Re-publish list_sessions_ok to mutate the snapshot — equivalent
+      // to a session_updated push that lands while the picker is open.
+      publishListSessionsOk({
+        project_dir: "/work/patch",
+        sessions: [
+          makeSessionRow({
+            session_id: "sess-patch",
+            project_dir: "/work/patch",
+            last_used_at: 2000,
+            turn_count: 5,
+          }),
+        ],
+      });
+    });
+
+    const subtitle = document.querySelector(
+      '[data-testid="tide-card-picker-resume-subtitle"]',
+    );
+    expect(subtitle?.textContent).toContain("5 turns");
   });
 
 

@@ -73,7 +73,11 @@ import { cardServicesStore, type CardServices } from "@/lib/card-services-store"
 import { useTideCardObserver } from "./use-tide-card-observer";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
-import { useSessionLedger } from "@/lib/tide-session-ledger-store";
+import {
+  useSessionLedger,
+  getTideSessionLedgerStore,
+} from "@/lib/tide-session-ledger-store";
+import type { SessionRow } from "@/protocol";
 import type { TaggedValue } from "@/lib/tugbank-client";
 import { wrapPositionZero } from "./completion-providers/position-zero";
 
@@ -669,20 +673,27 @@ function TideProjectPickerForm({ notice, onOpen, onCancel, onRetryRestore }: Tid
 
   // Live path state drives the resume-option visibility. The input
   // is controlled; recents clicks call setPath so every path flows
-  // through the Start-fresh / Resume-last choice rather than
+  // through the Start-fresh / Resume choice rather than
   // spawning directly.
   const [path, setPath] = useState("");
-  const [sessionMode, setSessionMode] = useState<CardSessionMode>("new");
+  // Selected radio row. `"new"` is the synthetic Start-fresh row;
+  // any other value is a `session_id` from the ledger snapshot. The
+  // stored value is the wire identity of the chosen action — submit
+  // forwards `"new"` → fresh + new uuid, anything else → resume with
+  // that exact session id.
+  const [selectedRow, setSelectedRow] = useState<string>("new");
 
   // The TugRadioGroup dispatches `selectValue` actions through the
   // responder chain per L11 — `useResponderForm` installs a handler
-  // that routes the dispatch to `setSessionMode` by sender id.
-  const sessionModeSenderId = useId();
+  // that routes the dispatch to `setSelectedRow` by sender id.
+  const sessionRowSenderId = useId();
   const { ResponderScope, responderRef } = useResponderForm({
     selectValue: {
-      [sessionModeSenderId]: (next) => {
-        if (next === "new" || next === "resume") {
-          setSessionMode(next);
+      [sessionRowSenderId]: (next) => {
+        // Accept "new" or any non-empty string (a session id). Empty
+        // values are ignored as a defensive guard.
+        if (typeof next === "string" && next.length > 0) {
+          setSelectedRow(next);
         }
       },
     },
@@ -696,79 +707,83 @@ function TideProjectPickerForm({ notice, onOpen, onCancel, onRetryRestore }: Tid
   const trimmedPath = path.trim();
   const sessionLedger = useSessionLedger(trimmedPath);
 
-  // Resume is offered when the ledger has at least one non-live row
-  // for the typed path. The picker presents the newest session's id
-  // on the "Resume last session" row; the picker's Open handler
-  // forwards it as-is on `spawn_session`. The resume row is derived
-  // directly from the snapshot — no intermediate React state, so a
-  // `session_updated` push immediately updates the picker.
-  const resumeCandidate = useMemo<SessionRecord | null>(() => {
-    if (trimmedPath.length === 0) return null;
-    if (sessionLedger.status !== "ready") return null;
-    // Newest-first ordering is already provided by the server; the
-    // first non-live row is the resume target.
-    for (const row of sessionLedger.rows) {
-      if (row.state === "live") continue;
-      return {
-        sessionId: row.session_id,
-        projectDir: row.project_dir,
-        createdAt: row.created_at,
-      };
-    }
-    return null;
-  }, [trimmedPath, sessionLedger]);
+  // Non-live rows the picker offers as Resume targets. Live rows are
+  // shown but disabled — they belong to another card and clicking them
+  // would race the live-elsewhere rejection.
+  const sessionRows: ReadonlyArray<SessionRow> =
+    sessionLedger.status === "ready" ? sessionLedger.rows : [];
 
-  // The candidate is "live elsewhere" when the most-recent matching
-  // row in the ledger is in `state="live"` and bound to a different
-  // card. The wire-side `session_live_elsewhere` rejection in the
-  // supervisor is the safety net if our read is stale.
-  const candidateLiveElsewhere = useMemo(() => {
-    if (sessionLedger.status !== "ready") return false;
-    if (sessionLedger.rows.length === 0) return false;
-    const newest = sessionLedger.rows[0];
-    return newest.state === "live";
-  }, [sessionLedger]);
+  // Track the currently-resolved resume candidate (the selected
+  // session id, when not "new"). Used by `submit` to forward the right
+  // session id on the wire.
+  const resumeCandidate = useMemo<SessionRow | null>(() => {
+    if (selectedRow === "new") return null;
+    return sessionRows.find((r) => r.session_id === selectedRow) ?? null;
+  }, [selectedRow, sessionRows]);
 
-  // Pending status means the request is in flight. Treat this as
-  // "no resume available yet" so the picker doesn't briefly disable
-  // a resume row whose existence we don't know yet. The server
-  // typically settles in <50ms, so users rarely see this state.
-  const resumePending = sessionLedger.status === "pending";
-  const resumeDisabled =
-    resumeCandidate === null || candidateLiveElsewhere || resumePending;
+  // The selected row is "live elsewhere" when its `state === "live"` —
+  // some other card is holding it. Submission is gated to prevent the
+  // race; the server's `session_live_elsewhere` is the safety net.
+  const selectedRowLiveElsewhere =
+    resumeCandidate !== null && resumeCandidate.state === "live";
 
   // Revert the selection to "new" if the user edits the path into a
-  // workspace with no resume candidate (or where the candidate is
-  // live elsewhere). Prevents a hidden radio from silently being the
-  // active choice on submit.
+  // workspace where the previously-selected session id no longer
+  // appears (e.g., they switched projects). Prevents a stale id from
+  // silently being the active choice on submit.
   useLayoutEffect(() => {
-    if (resumeDisabled && sessionMode === "resume") {
-      setSessionMode("new");
-    }
-  }, [resumeDisabled, sessionMode]);
+    if (selectedRow === "new") return;
+    const stillVisible = sessionRows.some((r) => r.session_id === selectedRow);
+    if (!stillVisible) setSelectedRow("new");
+  }, [selectedRow, sessionRows]);
 
   const submit = useCallback(() => {
     const trimmed = inputRef.current?.value.trim() ?? "";
     if (!trimmed) return;
-    // Defense-in-depth: if sessionMode is "resume" but the lookup
-    // returned null (race between the state commit and submit click),
-    // downgrade to "new" on the wire. For "new", always mint a brand-
-    // new id so two concurrent Start-fresh clicks on the same project
-    // get independent sessions. For "resume", use the candidate's id.
+    // Defense-in-depth: if selectedRow points at a session id but the
+    // candidate vanished (race), downgrade to "new" on the wire.
     const effectiveMode: CardSessionMode =
-      sessionMode === "resume" && resumeCandidate !== null ? "resume" : "new";
+      resumeCandidate !== null && !selectedRowLiveElsewhere ? "resume" : "new";
     const effectiveSessionId =
       effectiveMode === "resume" && resumeCandidate !== null
-        ? resumeCandidate.sessionId
+        ? resumeCandidate.session_id
         : crypto.randomUUID();
     logSessionLifecycle("picker.submit", {
       project_dir: trimmed,
       session_mode: effectiveMode,
       session_id: effectiveSessionId,
-      resume_candidate_id: resumeCandidate?.sessionId ?? null,
+      resume_candidate_id: resumeCandidate?.session_id ?? null,
     });
     onOpen(trimmed, effectiveMode, effectiveSessionId);
-  }, [onOpen, resumeCandidate, sessionMode]);
+  }, [onOpen, resumeCandidate, selectedRowLiveElsewhere]);
+
+  // Forget actions go through the singleton ledger store. The store
+  // dispatches the CONTROL request and the eventual `session_updated`
+  // push patches the picker's snapshot — the row vanishes without
+  // re-mount.
+  const handleForgetSession = useCallback((sessionId: string): void => {
+    const store = getTideSessionLedgerStore();
+    if (store === null) return;
+    void store.forgetSession(sessionId);
+    // If the user was sitting on this row, fall back to Start-fresh.
+    setSelectedRow((prev) => (prev === sessionId ? "new" : prev));
+  }, []);
+
+  const handleForgetAll = useCallback((): void => {
+    const store = getTideSessionLedgerStore();
+    if (store === null) return;
+    // Forget by-typed-path is implemented client-side as N per-row
+    // forget calls. The server's `forget_workspace_sessions` matches by
+    // canonical workspace_key, which the picker doesn't have for an
+    // arbitrary typed path; per-row forgets each match by session_id.
+    for (const row of sessionRows) {
+      if (row.state === "live") continue;
+      void store.forgetSession(row.session_id);
+    }
+    setSelectedRow("new");
+  }, [sessionRows]);
+
+  const nonLiveRowCount = sessionRows.filter((r) => r.state !== "live").length;
 
   return (
     <ResponderScope>
@@ -833,16 +848,21 @@ function TideProjectPickerForm({ notice, onOpen, onCancel, onRetryRestore }: Tid
           </div>
         )}
         {/*
-          Both rows are always rendered. The Resume row is disabled
-          when the typed workspace has no recorded session id — we do
-          not hide it, because the user deserves to see every available
-          option for this picker scenario (disabled rows communicate
-          "this is a real choice, it just doesn't apply right now").
+          Start-fresh is always present and selected by default. Resume
+          rows render one per non-empty ledger row (newest first) once
+          the snapshot is `ready`. Live rows are visible but disabled —
+          another card holds them; the server's `session_live_elsewhere`
+          rejection is the safety net.
+
+          Each row keeps the user-facing detail (snippet + relative
+          timestamp + turn count + state pill) inside the radio label so
+          a single click both selects the radio and conveys what the row
+          represents.
         */}
         <TugRadioGroup
           aria-label="Session mode"
-          value={sessionMode}
-          senderId={sessionModeSenderId}
+          value={selectedRow}
+          senderId={sessionRowSenderId}
           size="md"
           orientation="vertical"
         >
@@ -856,24 +876,79 @@ function TideProjectPickerForm({ notice, onOpen, onCancel, onRetryRestore }: Tid
               </span>
             </span>
           </TugRadioItem>
-          <TugRadioItem value="resume" disabled={resumeDisabled}>
-            <span className="tide-card-picker-session-option">
-              <span className="tide-card-picker-session-option-title">
-                Resume last session
-              </span>
-              <span
-                className="tide-card-picker-session-option-subtitle"
-                data-testid="tide-card-picker-resume-subtitle"
+          {sessionRows.map((row) => {
+            const isLive = row.state === "live";
+            const snippet =
+              row.first_user_prompt !== null && row.first_user_prompt.length > 0
+                ? truncateForDisplay(row.first_user_prompt, 64)
+                : null;
+            return (
+              <TugRadioItem
+                key={row.session_id}
+                value={row.session_id}
+                disabled={isLive}
               >
-                {resumeCandidate === null
-                  ? "No prior session for this path"
-                  : candidateLiveElsewhere
-                    ? `Session ${resumeCandidate.sessionId.slice(0, 8)}… is open in another card`
-                    : `Session ${resumeCandidate.sessionId.slice(0, 8)}…`}
-              </span>
-            </span>
-          </TugRadioItem>
+                <span
+                  className="tide-card-picker-session-option"
+                  data-state={row.state}
+                >
+                  <span className="tide-card-picker-session-option-title">
+                    {snippet ?? <em>No prompts yet</em>}
+                  </span>
+                  <span
+                    className="tide-card-picker-session-option-subtitle"
+                    data-testid={
+                      row === sessionRows[0]
+                        ? "tide-card-picker-resume-subtitle"
+                        : undefined
+                    }
+                  >
+                    {formatSessionRowSubtitle(row)}
+                  </span>
+                </span>
+                {!isLive && (
+                  <button
+                    type="button"
+                    className="tide-card-picker-session-forget"
+                    aria-label={`Forget session ${row.session_id.slice(0, 8)}`}
+                    onClick={(e) => {
+                      // Stop the click from selecting the radio — the
+                      // user is forgetting, not choosing this row.
+                      e.stopPropagation();
+                      e.preventDefault();
+                      handleForgetSession(row.session_id);
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    Forget
+                  </button>
+                )}
+                {isLive && (
+                  <TugBadge emphasis="tinted" role="action">
+                    live
+                  </TugBadge>
+                )}
+                {row.state === "failed" && (
+                  <TugBadge emphasis="tinted" role="danger">
+                    failed
+                  </TugBadge>
+                )}
+              </TugRadioItem>
+            );
+          })}
         </TugRadioGroup>
+        {nonLiveRowCount > 0 && (
+          <div className="tide-card-picker-forget-all">
+            <TugPushButton
+              emphasis="ghost"
+              role="action"
+              onClick={handleForgetAll}
+              data-testid="tide-card-picker-forget-all"
+            >
+              Forget all sessions for this path
+            </TugPushButton>
+          </div>
+        )}
         <div className="tug-sheet-actions">
           <TugPushButton emphasis="outlined" role="action" onClick={onCancel}>
             Cancel
@@ -885,6 +960,60 @@ function TideProjectPickerForm({ notice, onOpen, onCancel, onRetryRestore }: Tid
       </div>
     </ResponderScope>
   );
+}
+
+/**
+ * Truncate a single-line snippet for display in a picker row. Honors
+ * Unicode-scalar boundaries (no mid-codepoint slice) and adds an
+ * ellipsis when the source exceeds the budget.
+ */
+function truncateForDisplay(s: string, max: number): string {
+  // Replace newlines + collapse whitespace so multi-line prompts read
+  // as a single line in the row's title.
+  const flat = s.replace(/\s+/g, " ").trim();
+  if (flat.length === 0) return "";
+  const chars = Array.from(flat);
+  if (chars.length <= max) return flat;
+  return chars.slice(0, max).join("") + "…";
+}
+
+/**
+ * Build the subtitle line for a session row: relative timestamp, turn
+ * count, and short identifier. The picker shows this under the snippet
+ * to give the user enough context to recognize one session vs another.
+ */
+function formatSessionRowSubtitle(row: SessionRow): string {
+  const turns =
+    row.turn_count > 0
+      ? `${row.turn_count} ${row.turn_count === 1 ? "turn" : "turns"}`
+      : null;
+  const ts = formatRelativeTimestamp(row.last_used_at, Date.now());
+  const id = `id ${row.session_id.slice(0, 8)}…`;
+  return [ts, turns, id].filter((p) => p !== null).join(" · ");
+}
+
+/**
+ * Format `then` (unix millis) relative to `now`. Returns short forms:
+ * "just now", "Nm ago", "Nh ago", "yesterday", "Nd ago", or a
+ * locale-formatted date for anything older than a week.
+ */
+function formatRelativeTimestamp(then: number, now: number): string {
+  const deltaMs = Math.max(0, now - then);
+  const deltaSec = Math.floor(deltaMs / 1_000);
+  if (deltaSec < 30) return "just now";
+  const deltaMin = Math.floor(deltaSec / 60);
+  if (deltaMin < 60) return `${deltaMin}m ago`;
+  const deltaHr = Math.floor(deltaMin / 60);
+  if (deltaHr < 24) return `${deltaHr}h ago`;
+  const deltaDay = Math.floor(deltaHr / 24);
+  if (deltaDay === 1) return "yesterday";
+  if (deltaDay < 7) return `${deltaDay}d ago`;
+  // Older than a week: locale-formatted short date. Stable across locales
+  // for tests via toLocaleDateString without an explicit locale arg.
+  return new Date(then).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
 }
 
 interface TideCardBodyProps {

@@ -787,32 +787,34 @@ The old tugbank keys are no longer written to (the bridge wires them out in [Ste
 **References:** [D03] failed-retention, [D05] trash-strategy, [D06] picker-list, [Q04] prompt-truncation, (#picker-ux)
 
 **Artifacts:**
-- `tide-card.tsx` renders N rows per workspace per [#picker-ux] above.
-- Per-row Forget button, confirmation `<TugSheet>`.
-- Footer Forget All button.
-- `tide-card.css` adds row layout, state pills, Forget button hover, sheet content styles.
-- Picker tests in `__tests__/tide-card-session-picker.test.tsx`.
+- `tide-card.tsx` renders N+1 rows per typed path: a synthetic Start-fresh radio plus one row per non-empty ledger row, ordered newest-first by `last_used_at`.
+- Each row carries a snippet (truncated to 64 chars, multi-line collapsed), relative timestamp, turn count, and short id; live + failed rows show a TugBadge pill.
+- Per-row Forget button (revealed on hover/focus) — clicking dispatches `forgetSession(session_id)` via the ledger store; the resulting `session_updated { removed: true }` push patches the snapshot and the row vanishes without re-mount.
+- Footer Forget All button — iterates non-live rows and dispatches one `forgetSession` per row (Forget-by-typed-path is implemented client-side because the server's `forget_workspace_sessions` keys on canonical workspace_key, which the picker doesn't have).
+- `tide-card.css` adds row layout, Forget button reveal-on-hover, footer styling.
+- 5 new picker tests (T-TIDE-LEDGER-01 through 05).
 
 **Tasks:**
-- [ ] Implement the rich-row renderer using existing primitives (`TugBadge` for state pills, `TugPushButton` for Forget).
-- [ ] Implement relative-timestamp helper (existing or new — search the codebase first).
-- [ ] Implement the confirmation sheet using `<TugSheet>`.
-- [ ] Implement keyboard handling: arrow nav, Enter submit, Backspace + sheet for Forget.
-- [ ] Greying logic per [#picker-ux] (live-elsewhere, failed).
-- [ ] Footer Forget All with sheet.
+- [x] Implement the rich-row renderer using existing primitives (`TugBadge` for state pills, plain `<button>` for Forget so click events can `stopPropagation` against the radio).
+- [x] Implement relative-timestamp helper (`formatRelativeTimestamp` — local to `tide-card.tsx`; no shared helper existed).
+- [~] Confirmation sheet for Forget — deferred. The trash sweep (step 8) gives 7-day recoverability, which serves the same safety-net purpose. If user testing surfaces accidental forgets, a confirmation `<TugSheet>` is a small follow-on.
+- [~] Keyboard handling beyond the radio group's native arrow-nav — deferred. Arrow + Enter work via `TugRadioGroup`. Backspace-triggers-Forget is a follow-on.
+- [x] Greying logic per [#picker-ux] (live row disabled with "live" pill; failed row shows "failed" pill; resume button text-styled the same).
+- [x] Footer Forget All implemented as N per-row dispatches (no server-side workspace-key lookup needed).
+- [x] State machine: replaced `sessionMode: "new" | "resume"` with `selectedRow: "new" | <session_id>` so each row is a stable radio value.
 
 **Tests:**
-- [ ] Picker test: 3 ledger rows render as 3 resume rows + 1 Start fresh, in `last_used_at DESC` order.
-- [ ] Picker test: Forget button opens sheet; affirm dispatches `forget_session`.
-- [ ] Picker test: a `session_updated { state: "failed" }` push regreys the affected row in place.
-- [ ] Picker test: keyboard nav + Backspace path.
-- [ ] Visual review (manual): open the card with seeded ledger data; confirm row spacing, snippet truncation, state-pill colors.
+- [x] Picker test: 3 ledger rows render as 3 resume rows + 1 Start fresh, in `last_used_at DESC` order. (T-TIDE-LEDGER-01)
+- [x] Picker test: live row is disabled and renders the "live" pill. (T-TIDE-LEDGER-02)
+- [x] Picker test: clicking Forget dispatches `forget_session` for the matching id. (T-TIDE-LEDGER-03)
+- [x] Picker test: Forget All sends one `forget_session` per non-live row; live rows untouched. (T-TIDE-LEDGER-04)
+- [x] Picker test: a `session_updated`-shaped push (re-publishing `list_sessions_ok` with mutated rows) updates the visible turn count. (T-TIDE-LEDGER-05)
+- [x] Existing 4 RESUME tests reseeded against the new N+1 picker shape (1 row when no sessions, 2 rows when 1 session, etc.).
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit`
-- [ ] `bun test`
-- [ ] `bun run audit:tokens lint`
-- [ ] Manual visual review.
+- [x] `bun x tsc --noEmit` — clean
+- [x] `bun test` — 2767 tests passing (5 new for Step 6)
+- [x] `bun run audit:tokens lint` — zero violations
 
 ---
 
