@@ -55,6 +55,8 @@ const forgetSessionOkBus = makeBus<{ session_id: string }>();
 const forgetSessionErrBus = makeBus<{ session_id: string; reason: string }>();
 const forgetWorkspaceSessionsOkBus = makeBus<{ workspace_key: string; count: number }>();
 const forgetWorkspaceSessionsErrBus = makeBus<{ workspace_key: string; reason: string }>();
+const forgetProjectDirSessionsOkBus = makeBus<{ project_dir: string; count: number }>();
+const forgetProjectDirSessionsErrBus = makeBus<{ project_dir: string; reason: string }>();
 
 export const subscribeToSessionUpdated = sessionUpdatedBus.subscribe;
 export const publishSessionUpdated = sessionUpdatedBus.publish;
@@ -77,6 +79,12 @@ export const publishForgetWorkspaceSessionsOk = forgetWorkspaceSessionsOkBus.pub
 export const subscribeToForgetWorkspaceSessionsErr = forgetWorkspaceSessionsErrBus.subscribe;
 export const publishForgetWorkspaceSessionsErr = forgetWorkspaceSessionsErrBus.publish;
 
+export const subscribeToForgetProjectDirSessionsOk = forgetProjectDirSessionsOkBus.subscribe;
+export const publishForgetProjectDirSessionsOk = forgetProjectDirSessionsOkBus.publish;
+
+export const subscribeToForgetProjectDirSessionsErr = forgetProjectDirSessionsErrBus.subscribe;
+export const publishForgetProjectDirSessionsErr = forgetProjectDirSessionsErrBus.publish;
+
 export function _resetTideSessionLedgerEventsForTest(): void {
   sessionUpdatedBus.reset();
   listSessionsOkBus.reset();
@@ -85,4 +93,6 @@ export function _resetTideSessionLedgerEventsForTest(): void {
   forgetSessionErrBus.reset();
   forgetWorkspaceSessionsOkBus.reset();
   forgetWorkspaceSessionsErrBus.reset();
+  forgetProjectDirSessionsOkBus.reset();
+  forgetProjectDirSessionsErrBus.reset();
 }

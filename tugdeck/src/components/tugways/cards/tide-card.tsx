@@ -41,6 +41,7 @@ import { TugPopupButton } from "../tug-popup-button";
 import type { TugPopupButtonItem } from "../tug-popup-button";
 import { TugSwitch } from "../tug-switch";
 import { TugSeparator } from "../tug-separator";
+import { Trash2 } from "lucide-react";
 import { useTugSheet } from "../tug-sheet";
 import { useResponderChain } from "../responder-chain-provider";
 import { useResponderForm } from "../use-responder-form";
@@ -713,6 +714,13 @@ function TideProjectPickerForm({ notice, onOpen, onCancel, onRetryRestore }: Tid
   const sessionRows: ReadonlyArray<SessionRow> =
     sessionLedger.status === "ready" ? sessionLedger.rows : [];
 
+  // True while the ledger request is in flight (after the user types or
+  // selects a recent, before `list_sessions_ok` lands). The picker shows
+  // a subdued placeholder so the empty row list during pending doesn't
+  // falsely advertise "no sessions to resume".
+  const resumePending =
+    trimmedPath.length > 0 && sessionLedger.status === "pending";
+
   // Track the currently-resolved resume candidate (the selected
   // session id, when not "new"). Used by `submit` to forward the right
   // session id on the wire.
@@ -858,7 +866,23 @@ function TideProjectPickerForm({ notice, onOpen, onCancel, onRetryRestore }: Tid
           timestamp + turn count + state pill) inside the radio label so
           a single click both selects the radio and conveys what the row
           represents.
+
+          Loading state: while the ledger request is in flight (typically
+          <50ms after the user types or selects a recent), render a
+          subdued "checking…" placeholder under the radio group. An empty
+          row list during pending would falsely advertise "no sessions
+          to resume"; the placeholder makes the loading state legible.
         */}
+        {resumePending && (
+          <div
+            className="tide-card-picker-pending-placeholder"
+            data-testid="tide-card-picker-pending-placeholder"
+            role="status"
+            aria-live="polite"
+          >
+            checking…
+          </div>
+        )}
         <TugRadioGroup
           aria-label="Session mode"
           value={selectedRow}
@@ -878,10 +902,23 @@ function TideProjectPickerForm({ notice, onOpen, onCancel, onRetryRestore }: Tid
           </TugRadioItem>
           {sessionRows.map((row) => {
             const isLive = row.state === "live";
-            const snippet =
+            const isFailed = row.state === "failed";
+            const fullPrompt =
               row.first_user_prompt !== null && row.first_user_prompt.length > 0
-                ? truncateForDisplay(row.first_user_prompt, 64)
+                ? row.first_user_prompt
                 : null;
+            const snippet =
+              fullPrompt !== null ? truncateForDisplay(fullPrompt, 64) : null;
+            // Subtitle copy is state-driven so the user always understands
+            // why a row is unavailable. Closed rows show the contextual
+            // metadata (timestamp · turns · short id); live and failed
+            // rows show the diagnostic from the plan's picker UX spec.
+            const subtitleText = isLive
+              ? "Live in another card"
+              : isFailed
+                ? "Couldn't resume — JSONL missing"
+                : formatSessionRowSubtitle(row);
+            const idShort = row.session_id.slice(0, 8);
             return (
               <TugRadioItem
                 key={row.session_id}
@@ -892,7 +929,17 @@ function TideProjectPickerForm({ notice, onOpen, onCancel, onRetryRestore }: Tid
                   className="tide-card-picker-session-option"
                   data-state={row.state}
                 >
-                  <span className="tide-card-picker-session-option-title">
+                  {/* Title carries the truncated snippet for the row's
+                      visual; the full text lives on `title` so a hover
+                      tooltip reveals long prompts the truncation hid.
+                      `aria-label` on the title lets screen readers
+                      announce the full prompt rather than the truncated
+                      span text. */}
+                  <span
+                    className="tide-card-picker-session-option-title"
+                    title={fullPrompt ?? undefined}
+                    aria-label={fullPrompt ?? undefined}
+                  >
                     {snippet ?? <em>No prompts yet</em>}
                   </span>
                   <span
@@ -903,14 +950,15 @@ function TideProjectPickerForm({ notice, onOpen, onCancel, onRetryRestore }: Tid
                         : undefined
                     }
                   >
-                    {formatSessionRowSubtitle(row)}
+                    {subtitleText}
                   </span>
                 </span>
                 {!isLive && (
                   <button
                     type="button"
                     className="tide-card-picker-session-forget"
-                    aria-label={`Forget session ${row.session_id.slice(0, 8)}`}
+                    aria-label={`Forget session ${idShort}`}
+                    title={`Forget session ${idShort}`}
                     onClick={(e) => {
                       // Stop the click from selecting the radio — the
                       // user is forgetting, not choosing this row.
@@ -920,7 +968,10 @@ function TideProjectPickerForm({ notice, onOpen, onCancel, onRetryRestore }: Tid
                     }}
                     onPointerDown={(e) => e.stopPropagation()}
                   >
-                    Forget
+                    {/* Icon-only Forget per the plan's picker UX. The
+                        accessible label is on the button itself; the
+                        glyph is decorative. */}
+                    <Trash2 size={14} aria-hidden="true" />
                   </button>
                 )}
                 {isLive && (
@@ -928,7 +979,7 @@ function TideProjectPickerForm({ notice, onOpen, onCancel, onRetryRestore }: Tid
                     live
                   </TugBadge>
                 )}
-                {row.state === "failed" && (
+                {isFailed && (
                   <TugBadge emphasis="tinted" role="danger">
                     failed
                   </TugBadge>

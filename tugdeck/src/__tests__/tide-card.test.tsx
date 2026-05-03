@@ -784,6 +784,117 @@ describe("TideCardContent – binding gate and project picker", () => {
     expect(subtitle?.textContent).toContain("5 turns");
   });
 
+  // ── Stricter picker-UX coverage (B2/B3/B4/B5/B6) ─────────────────────────
+
+  it("T-TIDE-LEDGER-06: live row subtitle reads 'Live in another card'", () => {
+    tugbankStore["dev.tugtool.tide"] = {
+      "recent-projects": { kind: "json", value: { paths: ["/work/live"] } },
+    };
+    renderTideCard(CARD_ID);
+    clickRecent("/work/live");
+    seedLedgerForPath("/work/live", [
+      makeSessionRow({
+        session_id: "sess-live",
+        project_dir: "/work/live",
+        last_used_at: 1000,
+        state: "live",
+        card_id_live: "other-card",
+      }),
+    ]);
+
+    const subtitle = document.querySelector(
+      '[data-testid="tide-card-picker-resume-subtitle"]',
+    );
+    expect(subtitle?.textContent).toBe("Live in another card");
+  });
+
+  it("T-TIDE-LEDGER-07: failed row subtitle reads 'Couldn't resume — JSONL missing'", () => {
+    tugbankStore["dev.tugtool.tide"] = {
+      "recent-projects": { kind: "json", value: { paths: ["/work/failed"] } },
+    };
+    renderTideCard(CARD_ID);
+    clickRecent("/work/failed");
+    seedLedgerForPath("/work/failed", [
+      makeSessionRow({
+        session_id: "sess-failed",
+        project_dir: "/work/failed",
+        last_used_at: 1000,
+        state: "failed",
+      }),
+    ]);
+
+    const subtitle = document.querySelector(
+      '[data-testid="tide-card-picker-resume-subtitle"]',
+    );
+    expect(subtitle?.textContent).toBe("Couldn't resume — JSONL missing");
+  });
+
+  it("T-TIDE-LEDGER-08: pending status renders the 'checking…' placeholder under the path field", () => {
+    tugbankStore["dev.tugtool.tide"] = {
+      "recent-projects": { kind: "json", value: { paths: ["/work/pending"] } },
+    };
+    renderTideCard(CARD_ID);
+    // Click a recent to fill the path; do NOT seed list_sessions_ok yet
+    // so the snapshot stays in `pending`.
+    clickRecent("/work/pending");
+
+    const placeholder = document.querySelector(
+      '[data-testid="tide-card-picker-pending-placeholder"]',
+    );
+    expect(placeholder).not.toBeNull();
+    expect(placeholder?.textContent).toContain("checking");
+
+    // Once the response settles, the placeholder disappears.
+    seedLedgerForPath("/work/pending", []);
+    expect(
+      document.querySelector('[data-testid="tide-card-picker-pending-placeholder"]'),
+    ).toBeNull();
+  });
+
+  it("T-TIDE-LEDGER-09: forget button is icon-only with an aria-label, and the snippet has a title attribute carrying the full prompt", () => {
+    tugbankStore["dev.tugtool.tide"] = {
+      "recent-projects": { kind: "json", value: { paths: ["/work/long-prompt"] } },
+    };
+    renderTideCard(CARD_ID);
+    clickRecent("/work/long-prompt");
+    const longPrompt = "a".repeat(120);
+    seedLedgerForPath("/work/long-prompt", [
+      makeSessionRow({
+        session_id: "sess-1234abcd",
+        project_dir: "/work/long-prompt",
+        last_used_at: 1000,
+        first_user_prompt: longPrompt,
+      }),
+    ]);
+
+    // Forget button: the visible text must be empty (icon-only), and
+    // the aria-label must carry the action verb + short id.
+    const forgetButton = document.querySelector<HTMLButtonElement>(
+      ".tide-card-picker-session-forget",
+    );
+    expect(forgetButton).not.toBeNull();
+    // The visible text excludes the SVG content; we read aria-label.
+    // session_id "sess-1234abcd".slice(0, 8) = "sess-123" (8 chars).
+    expect(forgetButton!.getAttribute("aria-label")).toBe(
+      "Forget session sess-123",
+    );
+    // SVG glyph present — this is the icon (aria-hidden so SR reads only the button label).
+    expect(forgetButton!.querySelector("svg")).not.toBeNull();
+
+    // Snippet's title attribute on the RESUME row (not Start fresh)
+    // carries the full (untruncated) prompt for hover-tooltip reveal of
+    // long inputs. The first `.tide-card-picker-session-option-title`
+    // belongs to Start fresh, which has no full-prompt to expose; the
+    // second is the resume row.
+    const titleSpans = document.querySelectorAll<HTMLElement>(
+      ".tide-card-picker-session-option-title",
+    );
+    expect(titleSpans.length).toBe(2);
+    const resumeTitle = titleSpans[1]!;
+    expect(resumeTitle.getAttribute("title")).toBe(longPrompt);
+    expect(resumeTitle.getAttribute("aria-label")).toBe(longPrompt);
+  });
+
 
   it("T-TIDE-07: bind success persists the project path to recent-projects", () => {
     tugbankStore["dev.tugtool.tide"] = {

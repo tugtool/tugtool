@@ -207,13 +207,29 @@
      surfaced on row hover/focus + on direct keyboard focus. The radio
      row's keyboard reachability is unchanged. */
   opacity: 0;
-  font-size: var(--tug-font-size-xs, 0.75rem);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
   background: transparent;
   border: 1px solid var(--tug7-element-field-border-normal-muted-rest);
   border-radius: var(--tug-radius-xs, 4px);
-  padding: 2px 8px;
+  padding: 0;
   cursor: pointer;
   color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* Pending placeholder shown under the path field while the session
+   ledger request is in flight. Subdued copy so an empty-rows render
+   never falsely advertises "no sessions to resume" during the ~10–50ms
+   the server takes to settle. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
+.tide-card-picker-pending-placeholder {
+  padding: var(--tug-space-sm, 8px) 0;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: var(--tug-font-size-xs, 0.75rem);
+  font-style: italic;
 }
 
 /* Reveal Forget on row hover or focus-within. Either of those signals

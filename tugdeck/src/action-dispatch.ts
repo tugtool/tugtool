@@ -55,6 +55,8 @@ import {
   publishForgetSessionErr,
   publishForgetWorkspaceSessionsOk,
   publishForgetWorkspaceSessionsErr,
+  publishForgetProjectDirSessionsOk,
+  publishForgetProjectDirSessionsErr,
 } from "./lib/tide-session-ledger-events";
 
 /**
@@ -509,6 +511,29 @@ export function initActionDispatch(
       return;
     }
     publishForgetWorkspaceSessionsErr({ workspace_key: workspaceKey, reason });
+  });
+
+  // forget_project_dir_sessions_ok / _err: response to a recents-eviction
+  // → ledger-eviction dispatch from `card-services-store.ts`. The caller
+  // is fire-and-forget (no UX surface waits on the ack), but registering
+  // the handlers keeps the unknown-action warning out of the console.
+  registerAction("forget_project_dir_sessions_ok", (payload) => {
+    const projectDir = payload.project_dir;
+    const count = payload.count;
+    if (typeof projectDir !== "string" || typeof count !== "number") {
+      console.warn("forget_project_dir_sessions_ok: missing or invalid fields", payload);
+      return;
+    }
+    publishForgetProjectDirSessionsOk({ project_dir: projectDir, count });
+  });
+  registerAction("forget_project_dir_sessions_err", (payload) => {
+    const projectDir = payload.project_dir;
+    const reason = payload.reason;
+    if (typeof projectDir !== "string" || typeof reason !== "string") {
+      console.warn("forget_project_dir_sessions_err: missing or invalid fields", payload);
+      return;
+    }
+    publishForgetProjectDirSessionsErr({ project_dir: projectDir, reason });
   });
 
   // app-lifecycle: route macOS `NSApplicationDelegate` events into the
