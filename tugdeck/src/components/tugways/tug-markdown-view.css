@@ -89,14 +89,14 @@
   box-sizing: border-box;
 }
 
-/* ---- Individual block ---- */
-
-.tugx-md-block {
-  box-sizing: border-box;
-  width: 100%;
-  padding: 0 var(--tugx-md-block-padding-x, 1rem);
-  contain: content;
-}
+/* ---- Individual block ----
+ *
+ * The base `.tugx-md-block` rule lives in `tug-markdown-block.css`,
+ * which `tug-markdown-view.tsx` imports alongside this file so the
+ * shared per-block layout stays in one place ([D09] sibling-primitive
+ * decomposition). View-specific block rules (the select-all paint
+ * below, etc.) layer on top here.
+ */
 
 /* ---- Select-all highlight ---- */
 /*

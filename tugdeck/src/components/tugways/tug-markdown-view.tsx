@@ -44,6 +44,7 @@
  * @module components/tugways/tug-markdown-view
  */
 
+import "./tug-markdown-block.css";
 import "./tug-markdown-view.css";
 
 import React, { useCallback, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";

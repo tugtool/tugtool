@@ -40,3 +40,23 @@
   box-sizing: border-box;
   width: 100%;
 }
+
+/* ---- Per-block element ----
+ *
+ * `.tugx-md-block` is the per-block class shared by both
+ * `TugMarkdownBlock` (each rendered block) and `TugMarkdownView`
+ * (each block in its windowing engine). Owning the canonical rule
+ * here — and importing this file from `tug-markdown-view.tsx` —
+ * means a consumer that ships only `TugMarkdownBlock` still gets
+ * the padding and sizing without the larger view's CSS.
+ *
+ * `--tugx-md-block-padding-x` keeps a soft default (1rem) so the
+ * rule renders sensibly even before any theme declares the token,
+ * and consumers can override via a wrapping selector per [L20].
+ */
+.tugx-md-block {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0 var(--tugx-md-block-padding-x, 1rem);
+  contain: content;
+}
