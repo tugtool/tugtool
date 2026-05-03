@@ -13,7 +13,7 @@ This plan supersedes [`tugplan-tide-transcript-rendering.md`](./tugplan-tide-tra
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | draft (post-review fixups applied 2026-05-03) |
 | Target branch | tugplan-tug-list-view |
 | Last updated | 2026-05-03 |
 | Roadmap anchor | [tugplan-tide-card-polish.md §step-11](./tugplan-tide-card-polish.md#step-11) — this plan executes that step (Cmd+J deferred separately) |
@@ -83,6 +83,7 @@ The plan ships in two phases. **Phase A (Steps 1–8) builds the primitive + a c
 - **Sections** (multi-section list, section headers/footers). v1 is single-section flat list. Tracked in [#roadmap].
 - **Insert/delete/move animations.** v1 just rerenders on data-source updates. Tracked in [#roadmap].
 - **Imperative DOM cell pooling.** v1 cell reuse is React item-keyed mount/unmount; the conceptual API (`kindForIndex` → reuse pool) is in place for a future imperative-DOM upgrade without consumer churn. Tracked in [#roadmap].
+- **Native text selection survival across scroll-out.** Per [D13]: selecting text inside a cell, then scrolling far enough that the cell unmounts, then scrolling back, will leave the cell with no selection on the new mount. v1 limitation; v2 imperative-pool resolves it. Tracked in [#roadmap].
 - **Selection beyond `delegate.onSelect(index)`.** Multi-select, swipe-to-edit, drag-to-reorder, and chain-driven selection commands are all out of scope. Tracked in [#roadmap].
 - **Pull-to-refresh, header/footer views, editable cells.** UITableView ships these; we do not. Tracked in [#roadmap].
 - **Picker migration.** The session picker (parent §step-10) keeps its existing radiogroup implementation. Migration onto `TugListView` is its own follow-on plan. Tracked in [#roadmap].
@@ -100,7 +101,7 @@ The plan ships in two phases. **Phase A (Steps 1–8) builds the primitive + a c
 - `SessionMetadataStore.SessionMetadataSnapshot.model: string | null` for the dynamic `code` row identifier.
 - `SmartScroll` (`tugdeck/src/lib/smart-scroll.ts` — existing).
 - `TugMarkdownView`'s WASM pipeline + region map (existing; `TugMarkdownBlock` shares the pipeline but skips the virtualization layer).
-- `ResizeObserver` API (browser-native; happy-dom supports it for tests).
+- `ResizeObserver` API (browser-native). happy-dom does NOT provide it; tugdeck's `setup-rtl.ts` installs a no-op global stub. Tests that need to drive observer callbacks install a capturing variant per the existing `tug-text-editor-completion-overlay.test.tsx` pattern. Live `ResizeObserver` integration is verified by the gallery card and the live transcript manual smoke (Step 8 / Step 11) — see [Step 4](#step-4)'s test-environment note.
 - `useSyncExternalStore` is the only path React state enters from external stores ([L02]).
 - Existing token audit machinery (`bun run audit:tokens lint`) and the seven-slot naming convention.
 
@@ -110,7 +111,7 @@ The plan ships in two phases. **Phase A (Steps 1–8) builds the primitive + a c
 - **Warnings are errors.** `cargo build` / `cargo nextest run` enforce `-D warnings` (CLAUDE.md build policy). Frontend type-check + tests treat warnings as errors equivalently.
 - **HMR is always running**: never run a manual tugdeck build (`feedback_hmr` memory).
 - **Use bun, not npm**: every tooling invocation is `bun ...` (`feedback_use_bun` memory).
-- **happy-dom test scoping**: most tests in this plan exercise rendered DOM shape, data-source contract behavior, and reducer-shape lifecycle — happy-dom is suitable. The auto-follow-bottom and ResizeObserver-driven height-index tests inspect scroll position and post-resize layout; if happy-dom's scroll/observer model is too thin for any specific test, that test moves to a real-DOM harness rather than mocking SmartScroll or ResizeObserver (`feedback_no_happy_dom_tests`, `feedback_harness_purpose`).
+- **happy-dom test scoping**: all unit, component, reducer, adapter, and integration tests in this plan run in happy-dom. happy-dom does NOT provide `ResizeObserver` natively; tugdeck's `setup-rtl.ts` installs a no-op global stub. Tests that need to drive observer callbacks install a capturing variant (constructor stores the callback; tests invoke it manually) per the existing `tug-text-editor-completion-overlay.test.tsx` precedent. Live `ResizeObserver` integration is verified by the gallery card (manual review) and the live transcript smoke (manual). No real-DOM test harness is introduced — the layered coverage is enough. Mocking `SmartScroll` is forbidden per `feedback_no_happy_dom_tests` / `feedback_harness_purpose` — auto-follow-bottom tests drive the real `SmartScroll` via simulated scroll events on the container.
 - **No mock-store assertion tests**: tests render through real `CodeSessionStore` instances driven by golden fixtures or synthetic dispatches, not hand-rolled mock stores (`feedback_no_mock_store_tests`).
 - **No plan numbers in code**: no `step-N`, `T3.4.d`, `D01`, etc. in code, comments, or docstrings (`feedback_no_plan_numbers_in_code`).
 - **Cross-check tuglaws**: read [tuglaws.md](../tuglaws/tuglaws.md), [pane-model.md](../tuglaws/pane-model.md), [component-authoring.md](../tuglaws/component-authoring.md), [responder-chain.md](../tuglaws/responder-chain.md), [state-preservation.md](../tuglaws/state-preservation.md), [token-naming.md](../tuglaws/token-naming.md) before TSX changes (`feedback_tuglaws_cross_check`).
@@ -289,8 +290,13 @@ This plan follows [tuglaws/tugplan-skeleton.md §reference-conventions](../tugla
 
 **Implications:**
 
-- `scrollToIndex` delegates to `SmartScroll.scrollToElement` when the row is rendered; otherwise it computes the target offset from the height index and uses `SmartScroll.scrollTo({ top })` to jump first, letting the row mount, then optionally re-scrolls for precise alignment.
+- `scrollToIndex` for a **rendered** target delegates to `SmartScroll.scrollToElement` — the DOM rect is exact, no further work needed.
+- `scrollToIndex` for an **unrendered** target follows a two-pass precision protocol:
+  1. **Pass 1 — estimated jump.** Compute the target offset from `heightIndex.offsetForIndex(index, estimatedHeightForIndex)` (mixing measured heights for already-known cells with estimates for unmeasured ones). Call `SmartScroll.scrollTo({ top: estimatedOffset })`. The list view re-windows around the new scroll position; the target row mounts.
+  2. **Pass 2 — measurement correction.** On the next `ResizeObserver` flush after the target row mounts, recompute `heightIndex.offsetForIndex(index, ...)` with the now-measured height. If it differs from the pre-mount estimate by more than a small threshold (e.g., 4px), call `SmartScroll.scrollTo({ top: correctedOffset })` once more. The threshold avoids correction loops on sub-pixel rounding noise.
+- The two-pass protocol is invisible to consumers — they call `scrollToIndex(i)` once and get a row that lands at the requested position regardless of whether intervening rows were measured.
 - `getElementForIndex` returns `null` when the row is outside the rendered window (consumer can call `scrollToIndex` first to bring it on-screen).
+- Out-of-range indices: `scrollToIndex(-1)` and `scrollToIndex(numberOfItems)` clamp to first / last item respectively (not throw); `getElementForIndex` for out-of-range returns `null`. Clamping rather than throwing matches `UITableView`'s tolerance for stale index paths during update transitions.
 
 ---
 
@@ -310,6 +316,12 @@ This plan follows [tuglaws/tugplan-skeleton.md §reference-conventions](../tugla
 - Public API: data sources implement `kindForIndex`; consumers register cell renderers as `Record<string, TugListViewCellRenderer>`.
 - React keys: cells use `dataSource.idForIndex(index)` so React reconciler matches identity across data-source updates.
 - v2 upgrade path: replace the React-cell render pipeline with an imperative DOM pool that dequeues per kind, while keeping the public API stable.
+
+**Caveat — v1 → v2 lifecycle semantics differ for stateful cell renderers.** v1 (item-keyed React mount/unmount) tears down a cell's React component instance whenever it scrolls out, which destroys any local state held in `useState` / `useRef` / mid-flight `useEffect` work. v2 (imperative DOM pool) keeps the component instance alive across scroll-out and rebinds it to new props. Renderers that hold local state will see different lifecycle semantics across the upgrade — `useState` values that v2 preserves would reset in v1, an in-flight `setTimeout` v1 cancelled would survive in v2, etc.
+
+For *stateless presentational* renderers (text + markdown body, the v1 transcript cell shapes), there is no observable difference. For *stateful* renderers, the upgrade is observable and may require renderer-level changes to handle both lifecycle modes.
+
+This plan ships only stateless cell renderers (user / code-committed / code-streaming). Future cell renderers that need to hold local state should opt into the [A9] state-preservation protocol via `useComponentStatePreservation` so their state survives the v1 lifecycle, which makes them automatically forward-compatible with v2's preservation-by-instance behavior.
 
 ---
 
@@ -362,6 +374,7 @@ This plan follows [tuglaws/tugplan-skeleton.md §reference-conventions](../tugla
 
 - The list view does not write `scrollTop` directly except via `SmartScroll.scrollTo({ top })`.
 - `scrollToIndex` delegates to `SmartScroll.scrollToElement` (when rendered) or `SmartScroll.scrollTo({ top: heightIndex.offsetForIndex(index) })` (when not).
+- **`pinToBottom` is guarded by `isFollowingBottom`.** `SmartScroll.pinToBottom()` is a raw `scrollTop` slam — it does NOT internally check `isFollowingBottom`. The list view's growth-event handlers must check `smartScrollRef.current?.isFollowingBottom` before calling `pinToBottom`; otherwise auto-follow would drag the user back to the bottom even after they scrolled up. Equivalent to: `if (smartScrollRef.current?.isFollowingBottom) smartScrollRef.current.pinToBottom();`. Use `pinToBottom` (not `scrollToBottom`) because `scrollToBottom` flips `_isFollowingBottom = true`, which would re-engage auto-follow against the user's expressed intent.
 - Auto-follow-bottom test: simulate scroll-up during streaming, assert no further `pinToBottom` writes; simulate scroll-down to bottom, assert auto-follow re-engages on the next data-source tick.
 
 ---
@@ -400,6 +413,27 @@ This plan follows [tuglaws/tugplan-skeleton.md §reference-conventions](../tugla
 - `tug-markdown-block.tsx` + `.css` are new files (Step 7 of Phase A).
 - `TugMarkdownBlock` exposes `initialText?: string` (static) and `streamingStore?` + `streamingPath?` (dynamic) props. `setRegion` / `removeRegion` are not exposed — the use case (per-cell markdown) doesn't need region-keyed updates.
 - `TugMarkdownView` is not modified by this plan.
+
+**Shared helper — `parseMarkdownToSanitizedBlocks`.** Both primitives go through the same WASM lex/parse + DOMPurify sanitize path. Step 7 extracts this into a shared helper:
+
+```ts
+// tugdeck/src/lib/markdown/parse-markdown-to-sanitized-blocks.ts (new)
+export interface SanitizedMarkdownBlock {
+  /** Sanitized HTML for one parser block (paragraph, code-fence, list, etc.). */
+  html: string;
+  /** Block kind from the lex pass (e.g., "paragraph", "code", "list"). */
+  type: string;
+}
+
+export function parseMarkdownToSanitizedBlocks(text: string): SanitizedMarkdownBlock[];
+```
+
+The helper wraps `tugmark-wasm`'s `lex_blocks()` + `parse_to_html()` + `getDOMPurify().sanitize()` pipeline that lives inside `TugMarkdownView`'s `lexParseAndRender` today. Both primitives consume the helper:
+
+- `TugMarkdownView`: feeds the result into its block-height-index / windowing engine (existing behavior, refactored to call the helper instead of inlining the calls).
+- `TugMarkdownBlock`: appends each sanitized HTML block as a `<div class="tugx-md-block">` child, no windowing, no spacers.
+
+This is a refactor inside `TugMarkdownView` plus a fresh consumer in `TugMarkdownBlock`. The refactor is in-scope for Step 7 because the duplication-vs-extraction call has to be made when Step 7 lands; deferring to a follow-on means writing the helper twice. Step 7's checkpoint includes "all existing `TugMarkdownView` tests pass" to gate the refactor.
 
 ---
 
@@ -464,6 +498,24 @@ This is per-instance customization via cascade, not global token override. Per [
 
 ---
 
+#### [D13] Selection across scroll-out is a known v1 limitation (DECIDED) {#d13-selection-scroll-out}
+
+**Decision:** v1 does not preserve text selection inside a cell across scroll-out + scroll-back. Item-keyed React mount/unmount unmounts the cell's DOM when it leaves the rendered window; any active text selection inside that DOM is gone, and a fresh mount on scroll-back has no selection. Documented as a v1 limitation; the v2 imperative-DOM-pool upgrade resolves it as a side-effect (cell DOM survives scroll-out).
+
+**Rationale:**
+
+- The native browser pattern is "selection persists while DOM persists." Restoring selection after a remount would require capturing the selection range before unmount, encoding it in a card-state-bag axis, and reapplying it on the new mount — significant infrastructure for a v1 use case that isn't yet a documented user complaint.
+- The transcript user that wants to copy a long response can scroll until the response fits in the viewport, select, and copy without scrolling further. The need for "select while scrolling far" is not pressing in v1.
+- v2 imperative pooling resolves the issue by keeping the cell's DOM alive across scroll-out; native selection persists naturally.
+
+**Implications:**
+
+- v1 transcript users who select inside a code row, scroll up far enough to unmount the cell, then scroll back, will see no selection on return.
+- Documented in [#non-goals]; tracked in [#roadmap] as resolved-by-v2.
+- `SelectionGuard`'s card-boundary clamp is unaffected — the limitation is about DOM lifecycle, not boundary clamping.
+
+---
+
 ### Specification {#specification}
 
 #### Public API {#public-api}
@@ -474,15 +526,37 @@ This is per-instance customization via cascade, not global token override. Per [
 export interface TugListViewDataSource {
   /** Total item count. The list view re-windows whenever this value changes. */
   numberOfItems(): number;
-  /** Stable identity for the item at `index`. Used as React key — must be stable across data-source updates. */
+  /**
+   * Stable identity for the item at `index`. Used as the React key for the cell wrapper.
+   *
+   * **Contract — item-stable, not slot-stable.** When the data source mutates (insert,
+   * remove, reorder), the same logical item retains the same id at its new index. React's
+   * reconciler uses this to match cells across data-source updates so a cell at position
+   * 5 that becomes position 7 (because two items were inserted before it) keeps its
+   * component instance and its DOM. Returning slot-positional ids (`"row-0"`, `"row-1"`)
+   * defeats reconciliation and is incorrect.
+   */
   idForIndex(index: number): string;
-  /** Cell-renderer kind for the item at `index`. Drives reuse-pool routing and renderer dispatch. */
+  /**
+   * Cell-renderer kind for the item at `index`. Drives renderer dispatch (and, in a future
+   * imperative-pool implementation, reuse-pool routing). Same item may change kind across
+   * updates (e.g., `code-streaming` → `code-committed` on `turn_complete`); React reconciler
+   * sees this as a prop change if the id is stable, or a remount if the id also changes.
+   */
   kindForIndex(index: number): string;
   /** Subscribe to data-source changes. Listener fires on every change that should re-window. Returns unsubscribe. */
   subscribe(listener: () => void): () => void;
   /**
-   * Stable version token. Identity changes whenever any data has changed. Used by the list view's
-   * `useSyncExternalStore` to detect updates without comparing the full snapshot.
+   * Stable version token. The list view's `useSyncExternalStore` uses this to detect updates.
+   *
+   * **Contract — `Object.is` equality.** React's `useSyncExternalStore` compares snapshots
+   * with `Object.is`. Returning `===`-identical values means "no update"; any change in
+   * identity means "re-render." Acceptable shapes: a monotonically incrementing version
+   * number, an object reference that the data source replaces on each change (e.g., the
+   * underlying store's snapshot reference), or a string token whose identity is stable
+   * (NOT a string concatenation re-built on each call — `Object.is` is reference-based).
+   * The transcript adapter returns `codeSessionStore.getSnapshot()` directly, since that
+   * snapshot is identity-stable per `CodeSessionStore`'s contract.
    */
   getVersion(): unknown;
 }
@@ -548,6 +622,16 @@ export interface TugListViewProps<DS extends TugListViewDataSource = TugListView
   delegate?: TugListViewDelegate;
   /** Map of kind → cell renderer component. */
   cellRenderers: Record<string, TugListViewCellRenderer<DS>>;
+  /**
+   * Scroll-region key for the [A9] state-preservation protocol ([L23]). Written to
+   * `data-tug-scroll-key` on the scroll container so cold-boot / cross-pane move
+   * restores scroll position into `bag.regionScroll[scrollKey]`. Must be unique within
+   * the enclosing card subtree; cards mounting two `TugListView` instances pass
+   * distinct keys (e.g., `"tide-card-transcript"` vs `"tide-card-history"`).
+   *
+   * @default "tug-list-view"
+   */
+  scrollKey?: string;
   /** Forwarded class name for cascade-scoped customization. */
   className?: string;
 }
@@ -576,6 +660,14 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps>;
 
 Either `initialText` xor `streamingStore` is set, not both. The component renders all blocks in natural document flow, no internal scroll container, no virtualization.
 
+**Mount-render contract — both modes paint synchronously before first paint:**
+
+- **`initialText` mode.** Lex / parse / sanitize / DOM-write happen inside `useLayoutEffect` on mount, before the browser paints the freshly-mounted DOM. There is no intermediate empty render. This matters for the in-flight → committed transition (Step 11): when the streaming cell unmounts and the committed cell mounts in the same React commit, the committed cell's `initialText` content must be visible on the same paint, not the next one. Test ([Step 11](#step-11)) explicitly asserts no empty `code-committed` cell appears at the transition boundary.
+
+- **`streamingStore` mode.** On mount, the component reads `streamingStore.get(streamingPath)` synchronously and renders that current value before paint — `PropertyStore.observe` does NOT fire on subscribe, only on subsequent `set` calls, so a cell that mounts while content already exists in the store would otherwise render empty until the next delta arrives. This case occurs every time a streaming cell scrolls out of the rendered window and back in: the new mount has to display the cumulative text the store already holds, not wait. Test ([Step 7](#step-7)) explicitly asserts a streaming cell mounts non-empty when the store already has content.
+
+Both behaviors mirror `TugMarkdownView`'s pattern; `TugMarkdownBlock` inherits them deliberately rather than by accident.
+
 #### CodeSessionSnapshot extension {#snapshot-extension}
 
 ```ts
@@ -599,7 +691,7 @@ export interface CodeSessionSnapshot {
 ```html
 <div
   data-slot="tug-list-view"
-  data-tug-scroll-key="tug-list-view"
+  data-tug-scroll-key="<scrollKey>"
   class="tug-list-view"
   tabindex="0"
 >
@@ -615,7 +707,7 @@ export interface CodeSessionSnapshot {
 </div>
 ```
 
-The scroll container has `tabindex="0"` to receive keyboard focus for native arrow / page key scroll. `data-tug-scroll-key="tug-list-view"` opts the inner scroll into the [A9] state-preservation protocol per [L23]. Spacer heights are written directly to the DOM via `style.height` ([L06], same pattern as `TugMarkdownView`).
+The scroll container has `tabindex="0"` to receive keyboard focus for native arrow / page key scroll. The `data-tug-scroll-key` value is read from the `scrollKey` prop (defaults to `"tug-list-view"`); it opts the inner scroll into the [A9] state-preservation protocol per [L23]. Consumers that mount more than one `TugListView` inside the same card supply distinct values to avoid the per-card-subtree key uniqueness violation. Spacer heights are written directly to the DOM via `style.height` ([L06], same pattern as `TugMarkdownView`).
 
 #### Tokens {#tokens}
 
@@ -751,25 +843,30 @@ function TideTranscriptHost({ codeSessionStore, sessionMetadataStore }: Props) {
 
 | Category | Purpose | When |
 |-|-|-|
-| Unit (height index) | `HeightIndex` data structure: insert, update, sum, offset-for-index, index-for-offset | [Step 4](#step-4) |
+| Unit (height index) | `HeightIndex` data structure: insert, update, sum, offset-for-index, index-for-offset, edge cases (empty, all-measured, all-unmeasured) | [Step 4](#step-4) |
 | Unit (windowing math) | `RenderedWindow`: given viewport, height index, overscan → which indices render | [Step 4](#step-4) |
+| Unit (markdown helper) | `parseMarkdownToSanitizedBlocks` returns sanitized HTML blocks for valid input; empty array for empty input | [Step 7](#step-7) |
 | Component (skeleton) | Synthetic data source, fixed heights, single kind: cells render in correct order, spacers correct | [Step 3](#step-3) |
-| Component (variable heights) | Mixed kinds, ResizeObserver fires, height index updates, spacers reflow | [Step 4](#step-4) |
+| Component (skeleton edge) | Empty data source, single-item, out-of-range scrollToIndex, mid-window data shrink | [Step 3](#step-3) |
+| Component (variable heights) | Mixed kinds, simulated ResizeObserver fires via capturing variant, height index updates, spacers reflow | [Step 4](#step-4) |
 | Component (reuse contract) | Two kinds, two renderers — each kind dispatches to the right renderer | [Step 5](#step-5) |
 | Component (lifecycle) | `willDisplay` fires on enter, `didEndDisplaying` on exit, `onSelect` on click | [Step 5](#step-5) |
-| Component (SmartScroll) | Auto-pin on data-source ticks; user scroll-up disengages; idle re-engagement | [Step 6](#step-6) |
-| Component (TugMarkdownBlock initial) | Static initial text renders all blocks in natural flow | [Step 7](#step-7) |
-| Component (TugMarkdownBlock streaming) | Streaming-bound block: store updates → DOM updates without React rerender | [Step 7](#step-7) |
+| Component (SmartScroll) | Auto-pin on data-source ticks; `pinToBottom` guarded by `isFollowingBottom`; user scroll-up disengages; idle re-engagement; two-pass `scrollToIndex` precision | [Step 6](#step-6) |
+| Component (SmartScroll edge) | `scrollToIndex` clamps to first/last for out-of-range; no-op for `NaN` and empty data source | [Step 6](#step-6) |
+| Component (TugMarkdownBlock initial) | Static `initialText` renders all blocks in natural flow synchronously on mount (G2) | [Step 7](#step-7) |
+| Component (TugMarkdownBlock streaming) | Streaming-bound block: mount with pre-populated store renders non-empty (G1); subsequent store updates → DOM updates without React rerender | [Step 7](#step-7) |
+| Refactor regression (TugMarkdownView) | All existing TugMarkdownView tests pass after the helper extraction | [Step 7](#step-7) |
 | Visual (gallery) | All features showcased in `gallery-list-view`; manual review | [Step 8](#step-8) |
 | Reducer (snapshot extension) | `inflightUserMessage` lifecycle across send / turn_complete(success) / interrupt | [Step 9](#step-9) |
-| Adapter | `TideTranscriptDataSource` reads `CodeSessionStore` snapshots, maps committed turns + in-flight to (user, code) row pairs with correct kinds | [Step 10](#step-10) |
+| Adapter | `TideTranscriptDataSource` reads `CodeSessionStore` snapshots, maps committed turns + in-flight to (user, code) row pairs with correct kinds; id-stability protocol verified | [Step 10](#step-10) |
 | Integration (multi-turn) | Render Tide card with multi-turn fixture, assert row pairs and order | [Step 11](#step-11) |
 | Integration (immediate user row) | Submit `> hi`, assert user row in DOM before any assistant delta | [Step 11](#step-11) |
 | Integration (streaming-to-commit) | Drive deltas, assert streaming code row body updates; on commit, assert committed pair holds final text without empty intermediate render | [Step 11](#step-11) |
 | Integration (no sticky last) | After turn_complete, assert no element bound to `streamingPath` survives | [Step 11](#step-11) |
+| Integration (persistence axis) | Assert scroll container has `data-tug-scroll-key="tide-card-transcript"` for [L23] correctness | [Step 11](#step-11) |
 | Tuglaws walkthrough | Per-step compliance | [Step 12](#step-12) |
 
-happy-dom is suitable for windowing-shape, lifecycle, reducer, and adapter tests. The auto-follow-bottom test (Step 6) and the ResizeObserver-driven height-index test (Step 4) inspect post-scroll layout — if happy-dom's scroll/observer model is too thin, those tests move to a real-DOM harness rather than mocking.
+happy-dom is suitable for all unit, component, reducer, adapter, and integration tests in this plan. happy-dom does NOT provide `ResizeObserver` natively (tugdeck stubs a no-op global in `setup-rtl.ts`); component tests that need to drive `ResizeObserver` callbacks install a capturing variant per the existing `tug-text-editor-completion-overlay.test.tsx` precedent — the pattern is well-established in tugdeck. Live `ResizeObserver` integration is verified by the gallery card (manual; [Step 8](#step-8)) and the live transcript smoke (manual; [Step 11](#step-11)). No real-DOM test harness is introduced in this plan.
 
 ---
 
@@ -782,11 +879,11 @@ happy-dom is suitable for windowing-shape, lifecycle, reducer, and adapter tests
 - **L05** — Never use RAF for state-commit-dependent ops. RAF is used only for coalescing high-frequency `ResizeObserver` callbacks; not for waiting on React commits. ✓
 - **L06** — Appearance via CSS / DOM. Spacer heights and scroll-position writes go to the DOM directly, not through React state. The rendered window itself is React state (which cells are mounted) — that is structural, not appearance. ✓
 - **L07** — Action handlers via refs. The list view registers no chain handlers in v1 ([D08]); cell renderers that register handlers follow [L07] in their own implementations. ✓
-- **L11** — Controls emit, responders own state. The list view does not own state that scroll-actions would mutate; `SmartScroll` owns scroll position. The list view is not a chain participant in v1. Cells may be controls or responders depending on their content. ✓ ([D08])
+- **L11** — Controls emit, responders own state. **v1 deferred scope.** No chain action exists today that would mutate state owned by `TugListView` (no `SCROLL_TO_TOP`, no `SCROLL_TO_BOTTOM` in the action vocabulary), so [L11] is satisfied vacuously — there is no action to register a handler for. This is *deferred* not *exempt*: if a future plan introduces scroll-control actions in the chain, `TugListView` becomes the responder for them and registers via `useResponder`. v1 punts because browser-native keyboard scroll on a `tabindex="0"` overflow-auto container handles in-list keyboard navigation correctly without chain involvement; `SmartScroll`'s existing keyboard listeners track user scroll intent for follow-bottom semantics. Cell renderers may be controls or responders depending on their content. ✓ ([D08])
 - **L19** — Component authoring guide. File pair (`tug-list-view.tsx` + `.css`); module docstring; props interfaces (exported); `data-slot="tug-list-view"`; `@tug-pairings: none — layout primitive, no foreground-on-background contrast` since the list view is a structural surface that doesn't paint contrast pairings itself. ✓
 - **L20** — Token sovereignty. List view CSS references only `--tugx-list-view-*` tokens; consumers customize via cascade scoping ([D12]). The Tide card's CSS overrides list-view tokens within `.tide-card-transcript` only — local to the instance. ✓
 - **L22** — Store observers may write DOM. `TugMarkdownBlock`'s streaming binding uses the same direct-observer pattern as `TugMarkdownView` (store change → DOM write). `ResizeObserver`-driven height-index updates write spacer heights directly to the DOM. ✓
-- **L23** — User-visible state preserved. Scroll position is preserved via `data-tug-scroll-key="tug-list-view"` on the scroll container — opts the surface into the [A9] state-preservation protocol's `bag.regionScroll`. Cell-internal state (e.g., expand/collapse on a future cell type) preserves via `useComponentStatePreservation` in the cell renderer. ✓
+- **L23** — User-visible state preserved across DOM-down transitions. **Scroll position** is preserved via the consumer-supplied `scrollKey` on `data-tug-scroll-key` — opts the surface into the [A9] state-preservation protocol's `bag.regionScroll`. **Cell-internal preservable state** (form values, focus, selection, expand/collapse, etc.) is the *cell renderer's* responsibility, not the list view's: cells whose state must survive cold-boot / cross-pane move opt in via `useComponentStatePreservation` (with appropriate keys) or via `data-tug-state-key` / `data-tug-focus-key` markers per the protocol. The list view does not pre-empt these axes — it just provides a stable scroll surface and lets cells own their own preservation. **Known v1 limitation per [D13]:** native text selection inside a cell does not survive scroll-out + scroll-back (item-keyed mount/unmount tears down cell DOM). This is a v1 gap, not an [L23] violation — the user's selection is data they put there, but its non-preservation across an in-session scroll-out is a design choice with a documented v2 resolution. Tracked in [#non-goals] and [#roadmap]. ✓
 - **L24** — State zones. Appearance zone: spacer heights, `tabindex` writes via DOM. Local-data zone: minimal — height index is a ref, not React state. Structure zone: which cells are in the rendered window (React state, derived from data source + height index). Each axis stays in its zone. ✓
 
 ---
@@ -869,7 +966,7 @@ happy-dom is suitable for windowing-shape, lifecycle, reducer, and adapter tests
 
 **Tasks:**
 
-- [ ] Implement `TugListView` per the [#dom-shape]: scroll container with `tabindex="0"` and `data-tug-scroll-key="tug-list-view"`; top spacer; window div hosting rendered cells; bottom spacer.
+- [ ] Implement `TugListView` per the [#dom-shape]: scroll container with `tabindex="0"` and `data-tug-scroll-key={scrollKey ?? "tug-list-view"}`; top spacer; window div hosting rendered cells; bottom spacer.
 - [ ] Subscribe to data source via `useSyncExternalStore(dataSource.subscribe, dataSource.getVersion)`.
 - [ ] Implement `RenderedWindow` math: given scroll container's `clientHeight`, current `scrollTop`, total height (sum of estimated heights), overscan rows → first/last rendered index. Spacer heights = total height of preceding/following unrendered cells.
 - [ ] React keys: `dataSource.idForIndex(i)` per cell. Render through `cellRenderers[dataSource.kindForIndex(i)]`.
@@ -882,6 +979,11 @@ happy-dom is suitable for windowing-shape, lifecycle, reducer, and adapter tests
 - [ ] Window math: `RenderedWindow` returns expected first/last indices for various viewport/scroll combinations.
 - [ ] Cell dispatch: `kindForIndex` routing works; calling the right renderer per kind.
 - [ ] Spacer math: spacer heights account for unrendered cells.
+- [ ] Edge — empty data source: `numberOfItems = 0` renders no cells, both spacers at zero height, no errors.
+- [ ] Edge — single-item data source: `numberOfItems = 1` renders the single cell, both spacers at zero height, no overscan into negative indices.
+- [ ] Edge — `getElementForIndex(out_of_range)`: returns `null` for `-1` and for `numberOfItems`, no throw.
+- [ ] Edge — `scrollToIndex(out_of_range)`: clamps to first / last item per [D03], no throw.
+- [ ] Edge — data-source shrink during scroll: synthetic data source removes items from the currently-rendered window; assert re-window completes without throwing and without rendering ghost cells from the removed range.
 
 **Checkpoint:**
 
@@ -906,18 +1008,26 @@ happy-dom is suitable for windowing-shape, lifecycle, reducer, and adapter tests
 - `RenderedWindow` math now consumes the `HeightIndex` plus `estimatedHeightForKind` to compute precise offsets.
 - Unit tests for `HeightIndex` (the data structure) plus integration tests for the list-view component using ResizeObserver simulation.
 
+**Test environment note — `ResizeObserver` in happy-dom.** happy-dom does not natively provide `ResizeObserver`. tugdeck's `setup-rtl.ts` installs a no-op stub at the global level (its `observe` / `unobserve` / `disconnect` methods do nothing and never fire callbacks). Tests that need to drive `ResizeObserver`-fed code paths install a **capturing variant** at the start of the test, exposing a manual `fire(entries)` method to invoke the captured callback synchronously — the same pattern used in `tug-text-editor-completion-overlay.test.tsx` (`CapturingResizeObserver`). Step 4's tests adopt this pattern. The gallery card (Step 8) and the manual smoke against the live transcript (Step 11) cover the live `ResizeObserver` integration that happy-dom can't simulate. We do NOT introduce a real-DOM test harness in this plan; the layered coverage (capturing-variant unit tests + gallery manual review + live transcript manual smoke) is enough.
+
 **Tasks:**
 
 - [ ] Implement `HeightIndex` class with the listed API. Use binary search for `indexForOffset` (skipping unmeasured cells using `estimatedHeightForIndex`).
 - [ ] Wire `ResizeObserver` in `useLayoutEffect`: one observer per list-view instance; observe each rendered cell; `entries.forEach` maps `entry.target` → cell index → `heightIndex.set`.
 - [ ] Coalesce ResizeObserver callbacks via `requestAnimationFrame`: queue index updates; flush in one rAF callback ([L05] does NOT prohibit RAF for callback coalescing — only for state-commit-dependent ops).
 - [ ] Re-windowing trigger: post-rAF, recompute total height; if total has changed enough to shift the window's first/last index, force a rerender.
-- [ ] Update tests: synthetic data source with mixed kinds (kindA estimated 40, kindB estimated 100). After a "ResizeObserver fires" simulation, assert the height index reflects the new height and the spacer reflows.
+- [ ] Author tests using a capturing `ResizeObserver` variant per the test-environment note above. The variant captures the constructor's callback into a test-scoped reference; tests call `captured.fire([{ target, contentRect }])` to simulate browser-driven resize events.
+- [ ] Update component tests: synthetic data source with mixed kinds (kindA estimated 40, kindB estimated 100). After a `fire` simulation, assert the height index reflects the new height and the spacer reflows.
 
 **Tests:**
 
 - [ ] `HeightIndex` unit tests: insert, update, total-height, offset-for-index, index-for-offset.
-- [ ] List-view: variable kinds render correctly with estimated heights initially; after simulated ResizeObserver fires, measured heights replace estimates.
+- [ ] `HeightIndex` edge — empty index: `totalHeight(0, ...)` returns 0; `offsetForIndex(0, ...)` returns 0.
+- [ ] `HeightIndex` edge — all measured: total = sum of measured; offset for last index = total minus last item's height.
+- [ ] `HeightIndex` edge — all unmeasured: total = `itemCount * defaultEstimate`; offsets are linear.
+- [ ] List-view: variable kinds render correctly with estimated heights initially; after simulated `ResizeObserver` `fire`, measured heights replace estimates and the spacer reflows.
+- [ ] List-view: rapid sequential `fire` calls coalesce — assert one rerender per rAF flush, not one per `fire`.
+- [ ] List-view: cell unmount during `ResizeObserver` callback — fire `entries` for a cell that has already left the rendered window; assert the height index update lands without errors and without re-creating a removed cell's height.
 
 **Checkpoint:**
 
@@ -974,15 +1084,16 @@ happy-dom is suitable for windowing-shape, lifecycle, reducer, and adapter tests
 
 **Artifacts:**
 
-- `tug-list-view.tsx`: instantiate a `SmartScroll` against the scroll container in `useLayoutEffect`. Hook `pinToBottom()` to: (a) data-source ticks that grow `numberOfItems()`; (b) height-index updates while the in-flight row (last item) is at the bottom and `isFollowingBottom`.
-- `scrollToIndex` upgrades: delegates to `SmartScroll.scrollToElement` when the row is rendered; falls back to `SmartScroll.scrollTo({ top: heightIndex.offsetForIndex(index) })` when not, then re-windows to render the target row, then optionally re-scrolls for precise alignment.
-- Tests for follow-bottom semantics.
+- `tug-list-view.tsx`: instantiate a `SmartScroll` against the scroll container in `useLayoutEffect`. Hook `pinToBottom()` to: (a) data-source ticks that grow `numberOfItems()`; (b) height-index updates while the last item is in the rendered window. Both call sites guard on `smartScroll.isFollowingBottom` per [D07] before invoking `pinToBottom`.
+- `scrollToIndex` upgrades: implements the two-pass precision protocol per [D03] — delegates to `SmartScroll.scrollToElement` when the row is rendered; otherwise computes an estimated offset, jumps via `SmartScroll.scrollTo`, lets the row mount, and on the next `ResizeObserver` flush re-checks the offset and corrects if it's drifted by more than ~4px.
+- Tests for follow-bottom semantics, scroll-to-index for rendered + unrendered targets, two-pass correction, and out-of-range clamping.
 
 **Tasks:**
 
 - [ ] Add the SmartScroll instantiation in a `useLayoutEffect`; dispose on unmount.
-- [ ] Hook `pinToBottom()` invocation: in the data-source-tick effect, after rerender, if `numberOfItems()` grew and `isFollowingBottom`, call `pinToBottom()`. In the ResizeObserver coalesce callback, if the last item is in the rendered window and `isFollowingBottom`, call `pinToBottom()`.
-- [ ] `scrollToIndex` fixture: write tests that target both the rendered-row case (delegates to scrollToElement) and the not-rendered case (computes offset, scrolls there, re-windows, the row mounts).
+- [ ] Hook `pinToBottom()` invocation: in the data-source-tick effect, after rerender, if `numberOfItems()` grew and `smartScroll.isFollowingBottom`, call `pinToBottom()`. In the ResizeObserver coalesce callback, if the last item is in the rendered window and `smartScroll.isFollowingBottom`, call `pinToBottom()`. Both checks read `isFollowingBottom` at the moment of the call (not from a closed-over snapshot) per [L07].
+- [ ] Implement the two-pass `scrollToIndex` precision protocol per [D03]: estimated jump → row mounts → measurement correction on next `ResizeObserver` flush. Threshold for correction: 4px.
+- [ ] Out-of-range clamping: `scrollToIndex(-1)` clamps to first item; `scrollToIndex(numberOfItems)` clamps to last; `scrollToIndex(NaN)` is a no-op.
 - [ ] Auto-follow tests: simulate scroll-up disengages auto-follow (assert no further pinToBottom on next data-source tick); simulate scroll-back-to-bottom re-engages (assert next tick pins).
 
 **Tests:**
@@ -990,8 +1101,12 @@ happy-dom is suitable for windowing-shape, lifecycle, reducer, and adapter tests
 - [ ] Auto-follow on append: data source grows, scroll position pins to bottom.
 - [ ] User scroll-up disengages: scroll up; data source grows; scroll position does not advance.
 - [ ] Idle re-engagement: scroll back to bottom manually; next append pins again.
+- [ ] `pinToBottom` is guarded by `isFollowingBottom`: spy on `SmartScroll.pinToBottom`; manually flip `_isFollowingBottom = false`; trigger a growth event; assert `pinToBottom` was NOT called.
 - [ ] `scrollToIndex(rendered_index)`: scrolls to that row.
-- [ ] `scrollToIndex(unrendered_index)`: scrolls to estimated offset, row mounts on rerender.
+- [ ] `scrollToIndex(unrendered_index)` two-pass: assert scroll lands at estimated offset on first tick, corrects to measured offset after `ResizeObserver` flush.
+- [ ] `scrollToIndex` no-correction case: when estimated offset matches measured to within threshold, only one scroll write happens (assert spy count).
+- [ ] Edge — `scrollToIndex(-1)`: clamps to 0; `scrollToIndex(numberOfItems)`: clamps to last; `scrollToIndex(NaN)`: no-op (no scroll write).
+- [ ] Edge — empty data source `scrollToIndex(0)`: no-op (no scroll write, no throw).
 
 **Checkpoint:**
 
@@ -1011,32 +1126,38 @@ happy-dom is suitable for windowing-shape, lifecycle, reducer, and adapter tests
 
 **Artifacts:**
 
+- New `tugdeck/src/lib/markdown/parse-markdown-to-sanitized-blocks.ts` exporting the shared helper per [D09]. Contains the WASM lex/parse + DOMPurify sanitize pipeline that previously lived inline inside `TugMarkdownView`'s `lexParseAndRender`.
+- Refactored `TugMarkdownView` to call `parseMarkdownToSanitizedBlocks` instead of inlining the WASM/DOMPurify calls. All existing `TugMarkdownView` tests must pass post-refactor — this is the gate that catches the extraction breaking the virtualized renderer.
 - New `tug-markdown-block.tsx` + `.css` + tests per the component-authoring guide.
-- The block primitive shares `TugMarkdownView`'s WASM lex/parse pipeline through a small extracted helper module. (Where to extract: TBD during implementation — likely a function `parseMarkdownToBlocks(text): Block[]` that both primitives consume.)
 - No internal scroll container, no virtualization, no `BlockHeightIndex`, no spacers. All blocks render in document flow.
-- `initialText` prop sets content once on mount; subsequent prop changes don't re-render content (consumers don't update initialText after mount).
-- `streamingStore` + `streamingPath` props attach a store observer in `useLayoutEffect` ([L22]); observer writes new content directly to the DOM (recomputes blocks via the WASM pipeline).
-- Tests cover both modes.
+- `initialText` prop sets content once on mount per the [#md-block-api] mount-render contract; subsequent prop changes don't re-render content (consumers don't update initialText after mount).
+- `streamingStore` + `streamingPath` props attach a store observer in `useLayoutEffect` ([L22]); observer writes new content directly to the DOM (re-runs the helper on each emission). Mount-render reads `streamingStore.get(streamingPath)` synchronously per [#md-block-api].
+- Tests cover both modes plus the mount-render contract.
 
 **Tasks:**
 
-- [ ] Audit `TugMarkdownView` to find the lex/parse pipeline boundary that can be cleanly extracted. Either: extract into a shared helper module, or implement the pipeline call freshly inside `TugMarkdownBlock` (smaller surface area, modest duplication). Choose the path of least regression risk.
-- [ ] Author `tug-markdown-block.tsx` per the component-authoring guide: docstring (cites [L06], [L19], [L20], [L22]); props interface; functional component with `data-slot="tug-markdown-block"`.
+- [ ] Extract `parseMarkdownToSanitizedBlocks(text)` from `TugMarkdownView`'s `lexParseAndRender`. The helper: calls `tugmark-wasm`'s `lex_blocks(text)` + `parse_to_html(...)` per block, sanitizes each block's HTML via `getDOMPurify().sanitize(...)`, returns `SanitizedMarkdownBlock[]`.
+- [ ] Refactor `TugMarkdownView` to call the helper. Run `bun test src/components/tugways/__tests__/tug-markdown-view.*.test.tsx` and confirm all existing tests pass — this is the regression gate.
+- [ ] Author `tug-markdown-block.tsx` per the component-authoring guide: docstring (cites [L03], [L06], [L19], [L20], [L22]); props interface; functional component with `data-slot="tug-markdown-block"`.
 - [ ] Author `tug-markdown-block.css`: `@tug-pairings` block listing the markdown-text-on-content-surface pairing; references `--tugx-md-*` tokens. No internal scroll; no spacer; just block rendering.
-- [ ] Implement static `initialText` mode: parse on mount, render blocks; no observers.
-- [ ] Implement streaming mode: subscribe to `streamingStore` in `useLayoutEffect`; on each emission, re-parse and re-render. Coalesce via rAF if needed.
-- [ ] Tests: static mode renders expected blocks; streaming mode updates on store emissions; no internal scroll container.
+- [ ] Implement static `initialText` mode in `useLayoutEffect`: call the helper synchronously, render the block list to the DOM before paint per [#md-block-api]. Subsequent `initialText` prop changes are ignored (mount-once semantics).
+- [ ] Implement streaming mode in `useLayoutEffect`: read the **current** `streamingStore.get(streamingPath)` value synchronously and render before paint (G1); then subscribe to `streamingStore.observe(streamingPath, ...)` for subsequent updates; on each emission, re-parse and re-render via the helper. Coalesce updates via rAF.
+- [ ] Tests cover the four mount-render and streaming behaviors below.
 
 **Tests:**
 
-- [ ] Static: `<TugMarkdownBlock initialText="**bold** and *italic*" />` renders strong + em DOM.
-- [ ] Streaming: dispatch updates to a fake `PropertyStore`; the block's DOM updates.
+- [ ] Static — basic markdown: `<TugMarkdownBlock initialText="**bold** and *italic*" />` renders strong + em DOM.
+- [ ] Static — synchronous mount render (G2): mount the component inside a `useLayoutEffect`-styled assertion harness; assert content is in the DOM before any paint or microtask boundary. Concretely: render, immediately query for the rendered block content, assert non-empty.
+- [ ] Streaming — initial value on mount (G1): pre-populate a `PropertyStore` with content, then mount `<TugMarkdownBlock streamingStore={store} streamingPath="text" />`; assert the cell mounts non-empty (renders the current store value), without waiting for any subsequent emission.
+- [ ] Streaming — subsequent updates: dispatch updates to the store; the block's DOM updates (re-parses via the helper).
 - [ ] No internal scroll: querying for `[data-slot="tug-markdown-block"]` does not find a `tugx-md-scroll-container`.
+- [ ] Helper unit tests: `parseMarkdownToSanitizedBlocks("# h\n\npara")` returns two blocks with sanitized HTML; `parseMarkdownToSanitizedBlocks("")` returns empty array.
+- [ ] Refactor regression: full existing `TugMarkdownView` test file passes.
 
 **Checkpoint:**
 
 - [ ] `bun x tsc --noEmit` — exit 0.
-- [ ] `bun test` — all green.
+- [ ] `bun test` — all green (existing TugMarkdownView tests + new TugMarkdownBlock tests).
 - [ ] `bun run audit:tokens lint` — zero violations.
 
 ---
@@ -1134,26 +1255,61 @@ happy-dom is suitable for windowing-shape, lifecycle, reducer, and adapter tests
 - The adapter:
   - Subscribes to `codeSessionStore` for snapshot updates.
   - `numberOfItems()` returns `transcript.length * 2 + (inflightUserMessage ? 2 : 0)`.
-  - `idForIndex(index)` returns a stable id derived from the underlying turn's `msgId` plus a `-user` / `-code` suffix; for the in-flight pair, returns `"inflight-user"` / `"inflight-code"`.
+  - `idForIndex(index)` returns a stable id per the **id-stability protocol** below.
   - `kindForIndex(index)` returns `"user"` for even indices in the committed range, `"code-committed"` for odd; for the in-flight pair, returns `"user"` and `"code-streaming"`.
   - Exposes `rowAt(index)` returning a typed descriptor (`{ kind, turn?, inflight? }`) so cell renderers can read content without round-tripping back through the snapshot.
   - `subscribe(listener)` proxies to `codeSessionStore.subscribe`.
-  - `getVersion()` returns the `codeSessionStore` snapshot reference (changes on every reducer dispatch).
+  - `getVersion()` returns the `codeSessionStore` snapshot reference (changes on every reducer dispatch). The reference is `Object.is`-stable across non-mutating dispatches per `CodeSessionStore`'s contract, satisfying `TugListViewDataSource.getVersion`'s equality requirement.
 - New `__tests__/tide-transcript-data-source.test.ts` covering the adapter.
+
+**Id-stability protocol (G8 in plan-review).** The naïve approach mints `"inflight-user"` / `"inflight-code"` for the in-flight pair and `${msgId}-user` / `${msgId}-code` for committed pairs. The id changes at the in-flight → committed transition, forcing React to unmount the streaming cell and mount a fresh committed cell — which destroys the streaming cell's `TugMarkdownBlock` instance and forces a fresh lex/parse from `initialText`. The cleaner protocol uses `activeMsgId` from the moment the reducer assigns it:
+
+```ts
+function idForIndex(index: number): string {
+  const inflight = snap.inflightUserMessage;
+  const committedCount = snap.transcript.length;
+
+  // In-flight pair (when present, occupies the last two positions).
+  if (inflight !== null && index >= committedCount * 2) {
+    // `activeMsgId` is null between submit and first delta; fall back to a
+    // stable sentinel so the React mount survives the transition where it
+    // becomes set. Once `activeMsgId` is set, the id is stable through commit.
+    const seed = snap.activeMsgId ?? "inflight";
+    return index === committedCount * 2 ? `${seed}-user` : `${seed}-code`;
+  }
+
+  // Committed pair.
+  const turn = snap.transcript[Math.floor(index / 2)];
+  return index % 2 === 0 ? `${turn.msgId}-user` : `${turn.msgId}-code`;
+}
+```
+
+The transition flow:
+
+1. `send("hi")` → `inflightUserMessage` set, `activeMsgId = null`. Pair ids: `"inflight-user"`, `"inflight-code"`.
+2. First delta → `activeMsgId = "msg-42"`. Pair ids change to `"msg-42-user"`, `"msg-42-code"`. **One remount** here (the seed transition); a future optimization could maintain a sticky id across this gap, but a single remount during the awaiting-first-token → streaming transition is acceptable.
+3. Streaming continues → ids stable, `TugMarkdownBlock` instance survives, observer-driven content updates.
+4. `turn_complete(success)` → `inflightUserMessage` cleared, transcript appends. Pair ids `"msg-42-user"`, `"msg-42-code"` are now derived from `transcript[N-1].msgId` instead of `activeMsgId` — same value. **Kind changes** from `code-streaming` to `code-committed` (a prop change, not a remount).
+
+The kind change at commit is a prop change to the cell wrapper, which rerenders the wrapper with a different cell renderer. React reconciliation: same wrapper key, different renderer component → new mount of the renderer (the wrapper component is `<div data-tug-list-cell-index>` etc., a stable host; the renderer underneath is the part that swaps). This is acceptable — the `code-committed` cell mounts with `initialText` and renders synchronously per the [#md-block-api] mount-render contract, no flicker.
 
 **Tasks:**
 
-- [ ] Author the adapter class.
+- [ ] Author the adapter class with the id-stability protocol above.
 - [ ] Author the hook that constructs/disposes against a `codeSessionStore`.
-- [ ] Tests against fixture-driven `CodeSessionStore`: empty transcript + idle → `numberOfItems = 0`; submit "hi" → `numberOfItems = 2`, kinds `["user", "code-streaming"]`; `turn_complete(success)` → `numberOfItems = 2`, kinds `["user", "code-committed"]`; second submit during idle → grows to 4, etc.
+- [ ] Tests against fixture-driven `CodeSessionStore`: empty transcript + idle → `numberOfItems = 0`; submit "hi" → `numberOfItems = 2`, kinds `["user", "code-streaming"]`, ids start with seed `"inflight"`; first delta → ids transition to `${activeMsgId}-...`; `turn_complete(success)` → kinds `["user", "code-committed"]`, ids stable through commit; second submit during idle → grows to 4, etc.
 - [ ] Test ids are stable across snapshot ticks for committed turns (so React reconciler matches).
+- [ ] Test the seed → activeMsgId id transition: assert exactly one id change per turn (at first-delta), zero at commit.
 
 **Tests:**
 
 - [ ] Empty state: `numberOfItems = 0`.
 - [ ] In-flight pair appears on `send`, kind transitions on commit.
+- [ ] Id stability: `idForIndex(i)` for committed turns is stable across snapshot ticks.
+- [ ] Id transition: in-flight pair's id changes once when `activeMsgId` becomes set; stable through commit.
 - [ ] Multi-turn: kinds and ids are correct across N committed turns.
 - [ ] Subscribe fires on snapshot ticks.
+- [ ] Edge: data source removes a row mid-window (e.g., a future "forget turn" flow) — the adapter handles a mid-array transcript shrink without throwing; current rendered cells re-key correctly.
 
 **Checkpoint:**
 
@@ -1173,7 +1329,7 @@ happy-dom is suitable for windowing-shape, lifecycle, reducer, and adapter tests
 
 **Artifacts:**
 
-- `tide-card.tsx` — replace `<TugMarkdownView streamingPath=... />` at the top pane with `<TugListView dataSource={dataSource} cellRenderers={cellRenderers} delegate={delegate} />`.
+- `tide-card.tsx` — replace `<TugMarkdownView streamingPath=... />` at the top pane with `<TugListView dataSource={dataSource} cellRenderers={cellRenderers} delegate={delegate} scrollKey="tide-card-transcript" />`. The explicit `scrollKey` makes the [A9] persistence axis self-documenting and avoids future card-level conflicts if a second list view ever lands inside the Tide card ([L23], per [#public-api]).
 - Cell renderers (in `tide-card.tsx` or a small co-located `tide-card-transcript-cells.tsx`):
   - `UserRowCell` — `<TugTranscriptEntry participant="user" identifier="You" body={<span>{text}</span>} />`
   - `CodeCommittedRowCell` — `<TugTranscriptEntry participant="code" identifier={modelName ?? "Code"} body={<TugMarkdownBlock initialText={entry.assistant} />} />`
@@ -1186,7 +1342,7 @@ happy-dom is suitable for windowing-shape, lifecycle, reducer, and adapter tests
 **Tasks:**
 
 - [ ] Add `.tide-card-transcript` to `tide-card.css` with cascade-scoped token overrides.
-- [ ] Replace the single `<TugMarkdownView>` at the top pane with the new render-shape per [#render-shape].
+- [ ] Replace the single `<TugMarkdownView>` at the top pane with the new render-shape per [#render-shape], passing `scrollKey="tide-card-transcript"`.
 - [ ] Implement cell renderer components.
 - [ ] Implement `useSessionModelName` and `formatTranscriptTimestamp`.
 - [ ] Author multi-turn integration tests using the existing golden-catalog fixtures: assert `(user, code)` row pair count and order; in-flight user row appears immediately; streaming code row body reflects deltas; on commit, committed pair holds final text without empty intermediate render; no element bound to `streamingPath` survives `turn_complete`.
@@ -1197,9 +1353,11 @@ happy-dom is suitable for windowing-shape, lifecycle, reducer, and adapter tests
 - [ ] Multi-turn rendering: load a multi-turn fixture, assert N `(user, code)` row pairs in correct order.
 - [ ] Immediate user row: `submit("hi")`, assert user row in DOM before any assistant delta dispatch.
 - [ ] Streaming-to-commit: drive deltas, assert in-flight code row body updates; on `turn_complete(success)`, assert committed pair holds final text and no in-flight pair survives.
+- [ ] Streaming-to-commit — no empty intermediate render: at the transition, query the rendered DOM for the committed `code` cell and assert its body content is non-empty in the same paint as the streaming cell's removal (the [#md-block-api] mount-render contract).
 - [ ] Identifier source: when `SessionMetadataStore.model` is set, `code` row identifier matches; when null, identifier is `"Code"`.
 - [ ] No sticky last: query for any element bound via `streamingPath` after `turn_complete`; assert empty.
 - [ ] User body plain text: assert `<span>` children equal `userMessage.text` verbatim.
+- [ ] Persistence axis: assert the rendered scroll container has `data-tug-scroll-key="tide-card-transcript"` for [L23] correctness.
 
 **Checkpoint:**
 
@@ -1279,7 +1437,9 @@ happy-dom is suitable for windowing-shape, lifecycle, reducer, and adapter tests
 - [ ] **Prefetching protocol** (`UITableViewDataSourcePrefetching` analogue). Adds `delegate.prefetchForIndices(indices)` and `delegate.cancelPrefetchForIndices(indices)` plus a viewport-prediction window. Earned once a real consumer has perf data showing it matters.
 - [ ] **Sections.** `numberOfSections`, `numberOfItemsInSection`, `IndexPath`-shaped data source, optional `sectionHeaderRenderer` / `sectionFooterRenderer`. Earned when a consumer needs section semantics.
 - [ ] **Insert/delete/move animations.** Data-source ticks tag the delta (added / removed / moved); list view animates the affected cells. Earned when a consumer surfaces a real animation requirement.
-- [ ] **Imperative DOM cell pooling.** Replace React item-keyed mount/unmount with imperative DOM ownership + per-kind pools. Public API unchanged. Earned when long-N transcripts / lists show React reconcile cost dominating.
+- [ ] **Imperative DOM cell pooling.** Replace React item-keyed mount/unmount with imperative DOM ownership + per-kind pools. Public API unchanged. Earned when long-N transcripts / lists show React reconcile cost dominating. **Resolves [D13]'s native-text-selection-across-scroll-out limitation as a side effect** — preserving cell DOM keeps the browser's native selection alive.
+- [ ] **Native-selection survival across scroll-out** — explicitly resolved by the imperative-DOM-pool upgrade above. v1 documented limitation per [D13] and [#non-goals].
+- [ ] **Stable in-flight ↔ committed id** — the adapter's id-stability protocol ([Step 10](#step-10)) accepts one remount per turn at the awaiting-first-token transition (when `activeMsgId` becomes set). A future optimization could mint a synthetic stable seed and patch it to match `activeMsgId` once known, eliminating the remount entirely. Earned when the gallery / live smoke shows the remount produces user-visible flicker.
 - [ ] **Picker migration onto `TugListView`.** The session picker (parent §step-10) keeps its existing radiogroup implementation. Migration becomes meaningful once we want richer behaviors (variable-height session rows with previews, prefetched detail views, animated insert/delete on session creation). Authored as its own plan.
 - [ ] **Atom-aware rendering for `user` rows.** Once `userMessage.attachments` evolves into `AtomSegment[]` and the prompt entry's atom flow reaches transcript form, replace the plain-text `<span>` body with an atom-aware renderer.
 - [ ] **Markdown styling pass for assistant output** (parent §step-12).
