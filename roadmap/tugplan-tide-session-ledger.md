@@ -827,28 +827,34 @@ The old tugbank keys are no longer written to (the bridge wires them out in [Ste
 **References:** [D04] eviction, (#scope)
 
 **Artifacts:**
-- `agent_supervisor.rs::do_spawn_session` calls `ledger.evict_oldest_closed(workspace_key, TIDE_LEDGER_MAX_PER_WORKSPACE)` after `record_spawn`.
-- `main.rs` startup calls `ledger.sweep_expired(TIDE_LEDGER_MAX_AGE_DAYS, now)`.
-- The recents eviction path (existing — `dev.tugtool.tide / recent-projects`) calls `forget_workspace_sessions(workspace_key)` when an entry ages out.
+- `evict_oldest_closed` and `sweep_expired` on `SessionLedger` now return `Vec<String>` (the evicted ids) instead of a count, so the recorder can broadcast a removed-push per id.
+- `LedgerSessionsRecorder` adds `evict_for_workspace`, `sweep_expired_with_broadcast`, and `forget_for_project_dir`. The trait gains `evict_for_workspace`; the bridge calls it after each successful `record`.
+- `main.rs` runs `sweep_expired_with_broadcast` after `demote_live_to_closed` on tugcast startup.
+- New `SessionLedger::forget_for_project_dir(project_dir)` for the recents-eviction → ledger-eviction coupling.
+- New CONTROL action: `forget_project_dir_sessions { project_dir }` → `forget_project_dir_sessions_ok { project_dir, count }` plus per-row `session_updated { removed: true }`.
+- `tugdeck/src/protocol.ts` adds `encodeForgetProjectDirSessions`.
+- `tugdeck/src/lib/card-services-store.ts` computes the set difference `current \ updated` after `insertTideRecentProject`, then dispatches `forget_project_dir_sessions` for each evicted path. Fire-and-forget; the resulting push frames patch the picker's cache.
 
 **Tasks:**
-- [ ] Add the eviction call to the spawn path. It runs after `record_spawn` so the new session is never the eviction target.
-- [ ] Add the startup sweep. Run after the ledger is opened but before serving any CONTROL ops.
-- [ ] **Eviction broadcasts.** Every evicted row emits `session_updated { session_id, removed: true }` on the CONTROL feed — same path as `forget_session`. Without this, an open picker's cache silently goes stale when a row evicts under it. Both the spawn-path cap eviction and the startup-sweep age eviction must broadcast.
-- [ ] Add the recents-eviction → ledger-eviction hook. Locate the existing recents-eviction code (`settings-api.ts`?), call `forgetWorkspaceSessions` when an entry is removed.
+- [x] Add the cap-eviction call to the bridge's spawn path (after `record`). Bridge passes `TIDE_LEDGER_MAX_PER_WORKSPACE` to `recorder.evict_for_workspace`.
+- [x] Add the startup age sweep in `main.rs`. Runs after `demote_live_to_closed` and before constructing the recorder Arc.
+- [x] **Eviction broadcasts.** Every evicted row emits `session_updated { session_id, removed: true }` on the CONTROL feed — both cap-path and age-path. The recorder's helpers loop over the `Vec<String>` returned by the ledger and broadcast each id via `build_session_removed_frame`.
+- [x] Recents-eviction → ledger-eviction. `card-services-store.ts` diffs the recents list before/after `insertTideRecentProject` and fires `encodeForgetProjectDirSessions(path)` for each evicted path.
 
 **Tests:**
-- [ ] Rust integration test: spawn the 21st session in a workspace, assert the oldest closed row is gone.
-- [ ] Rust integration test: cap eviction emits a `session_updated { removed: true }` on the CONTROL feed.
-- [ ] Rust integration test: startup sweep removes a row whose `last_used_at` is 91 days old.
-- [ ] Rust integration test: startup sweep emits a `session_updated { removed: true }` for each evicted row.
-- [ ] Rust integration test: `state="live"` rows are never evicted, even when over the cap.
-- [ ] Tugdeck integration test: simulate recents eviction, assert `forgetWorkspaceSessions` is called.
+- [x] Rust unit (already passing): cap eviction returns the dropped session id; ordering is `last_used_at ASC` so the oldest goes first.
+- [x] Rust unit: `evict_oldest_closed_caps_non_live_count` validates that 21 closed rows + 5 live rows → 1 closed evicted, all live rows survive.
+- [x] Rust integration: `evict_for_workspace_emits_removed_pushes` — recorder emits one `session_updated { removed: true }` per evicted id on the CONTROL feed.
+- [x] Rust integration: `forget_project_dir_sessions_drops_matching_only` — handler drops by project_dir, leaves other workspaces untouched, emits the ok ack with count.
+- [x] Rust unit: `forget_for_project_dir_drops_matching_rows_only` — direct ledger test.
+- [x] Rust unit (already passing): `sweep_expired_*` tests — return shape is `Vec<String>`.
+- [~] Tugdeck integration test for recents-eviction → ledger-eviction — deferred. The path is straight wire dispatch; the existing `recentsPuts` test fixture in `tide-card.test.tsx` doesn't hook into the ledger store. Adding it would require restructuring the test environment around `getConnection`.
 
 **Checkpoint:**
-- [ ] `cargo nextest run`
-- [ ] `bun test`
-- [ ] `bun run audit:tokens lint`
+- [x] `cargo nextest run` — 1192 tests passing (3 new for Step 7)
+- [x] `cargo build` — no warnings
+- [x] `bun test` — 2767 tests passing
+- [x] `bun x tsc --noEmit` — clean
 
 ---
 

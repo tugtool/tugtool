@@ -485,9 +485,41 @@ impl SessionLedger {
         Ok(ForgetWorkspaceOutcome { count })
     }
 
-    /// If the workspace already holds at least `cap` non-live rows, evict the
-    /// oldest (lowest `last_used_at`). Returns the number of rows removed (0
-    /// or 1). Live rows are never evicted.
+    /// Drop every non-live row whose `project_dir` matches `project_dir`
+    /// literally. Returns the session ids of the dropped rows so the
+    /// caller can broadcast `session_updated { removed: true }` pushes.
+    /// Used by recents-eviction → ledger-eviction coupling: when a tide
+    /// recent-projects entry ages out, the matching ledger rows are dropped
+    /// in lockstep so the picker doesn't surface sessions for a path the
+    /// user no longer recognizes.
+    pub fn forget_for_project_dir(
+        &self,
+        project_dir: &str,
+    ) -> Result<Vec<String>, LedgerError> {
+        let mut conn = self.db.lock().expect("ledger mutex");
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let doomed: Vec<String> = {
+            let mut stmt = tx.prepare(
+                "SELECT session_id FROM sessions
+                 WHERE project_dir = ?1 AND state != 'live'",
+            )?;
+            stmt.query_map(params![project_dir], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        for id in &doomed {
+            tx.execute(
+                "DELETE FROM sessions WHERE session_id = ?1",
+                params![id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(doomed)
+    }
+
+    /// If the workspace already holds at least `cap` non-live rows, evict
+    /// the oldest (lowest `last_used_at`). Returns the session ids of the
+    /// evicted rows so the caller can broadcast `session_updated
+    /// { removed: true }` pushes. Live rows are never evicted.
     ///
     /// Intended to be called after `record_spawn`, so the just-inserted row
     /// is never the eviction target (it's live).
@@ -495,7 +527,7 @@ impl SessionLedger {
         &self,
         workspace_key: &str,
         cap: usize,
-    ) -> Result<usize, LedgerError> {
+    ) -> Result<Vec<String>, LedgerError> {
         let mut conn = self.db.lock().expect("ledger mutex");
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let non_live_count: i64 = tx.query_row(
@@ -506,24 +538,34 @@ impl SessionLedger {
         )?;
         if (non_live_count as usize) <= cap {
             tx.commit()?;
-            return Ok(0);
+            return Ok(Vec::new());
         }
         // We're over the cap — drop the oldest. Plural-safe: if the cap was
         // exceeded by more than one (e.g., a clock skew or a code path that
         // skipped eviction earlier), this brings the workspace back to cap.
         let to_remove = (non_live_count as usize) - cap;
-        let removed = tx.execute(
-            "DELETE FROM sessions
-             WHERE session_id IN (
-                SELECT session_id FROM sessions
-                WHERE workspace_key = ?1 AND state != 'live'
-                ORDER BY last_used_at ASC
-                LIMIT ?2
-             )",
-            params![workspace_key, to_remove as i64],
-        )?;
+        // Collect the doomed ids first so we can return them after the
+        // delete commits.
+        let doomed: Vec<String> = {
+            let mut stmt = tx.prepare(
+                "SELECT session_id FROM sessions
+                 WHERE workspace_key = ?1 AND state != 'live'
+                 ORDER BY last_used_at ASC
+                 LIMIT ?2",
+            )?;
+            stmt.query_map(params![workspace_key, to_remove as i64], |row| {
+                row.get::<_, String>(0)
+            })?
+            .collect::<Result<Vec<_>, _>>()?
+        };
+        for id in &doomed {
+            tx.execute(
+                "DELETE FROM sessions WHERE session_id = ?1",
+                params![id],
+            )?;
+        }
         tx.commit()?;
-        Ok(removed)
+        Ok(doomed)
     }
 
     /// Demote any rows still marked `live` (and bound to a card) into the
@@ -543,18 +585,28 @@ impl SessionLedger {
     }
 
     /// Remove every non-live row whose `last_used_at` is older than
-    /// `now - max_age_ms`. Returns the number of rows removed.
-    pub fn sweep_expired(&self, max_age_ms: i64, now: i64) -> Result<usize, LedgerError> {
+    /// `now - max_age_ms`. Returns the session ids of the swept rows so
+    /// the caller can broadcast `session_updated { removed: true }` pushes.
+    pub fn sweep_expired(&self, max_age_ms: i64, now: i64) -> Result<Vec<String>, LedgerError> {
         let cutoff = now - max_age_ms;
         let mut conn = self.db.lock().expect("ledger mutex");
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let removed = tx.execute(
-            "DELETE FROM sessions
-             WHERE state != 'live' AND last_used_at < ?1",
-            params![cutoff],
-        )?;
+        let doomed: Vec<String> = {
+            let mut stmt = tx.prepare(
+                "SELECT session_id FROM sessions
+                 WHERE state != 'live' AND last_used_at < ?1",
+            )?;
+            stmt.query_map(params![cutoff], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        for id in &doomed {
+            tx.execute(
+                "DELETE FROM sessions WHERE session_id = ?1",
+                params![id],
+            )?;
+        }
         tx.commit()?;
-        Ok(removed)
+        Ok(doomed)
     }
 
     /// All distinct workspace keys currently represented in the ledger.
@@ -846,7 +898,7 @@ mod tests {
             seed_live(&l, &id, WS_A, "c", millis(i));
             l.mark_closed(&id).unwrap();
         }
-        assert_eq!(l.evict_oldest_closed(WS_A, 20).unwrap(), 0);
+        assert_eq!(l.evict_oldest_closed(WS_A, 20).unwrap().len(), 0);
         assert_eq!(l.list_for_workspace(WS_A).unwrap().len(), 5);
     }
 
@@ -862,10 +914,10 @@ mod tests {
         // Sanity: 21 rows.
         assert_eq!(l.list_for_workspace(WS_A).unwrap().len(), 21);
 
-        let removed = l
+        let evicted = l
             .evict_oldest_closed(WS_A, TIDE_LEDGER_MAX_PER_WORKSPACE)
             .unwrap();
-        assert_eq!(removed, 1);
+        assert_eq!(evicted, vec!["s0".to_owned()]);
         // s0 was oldest; should be gone.
         assert!(l.get("s0").unwrap().is_none());
         // The cap is exact afterwards.
@@ -886,7 +938,7 @@ mod tests {
         l.mark_closed("closed1").unwrap();
         assert_eq!(l.list_for_workspace(WS_A).unwrap().len(), 21);
 
-        let removed = l
+        let evicted = l
             .evict_oldest_closed(WS_A, TIDE_LEDGER_MAX_PER_WORKSPACE)
             .unwrap();
         // Only the non-live count crossed the cap (2 non-live > 20 cap is
@@ -894,7 +946,7 @@ mod tests {
         // non-live rows so live rows are never the eviction target". The
         // eviction never touches live rows; with only 2 non-live, nothing
         // gets evicted.
-        assert_eq!(removed, 0);
+        assert!(evicted.is_empty());
     }
 
     #[test]
@@ -911,10 +963,10 @@ mod tests {
             seed_live(&l, &id, WS_A, "c", millis(0));
         }
 
-        let removed = l
+        let evicted = l
             .evict_oldest_closed(WS_A, TIDE_LEDGER_MAX_PER_WORKSPACE)
             .unwrap();
-        assert_eq!(removed, 1);
+        assert_eq!(evicted, vec!["c0".to_owned()]);
         assert!(l.get("c0").unwrap().is_none(), "oldest closed evicted");
         for i in 0..5 {
             assert!(
@@ -939,8 +991,8 @@ mod tests {
         seed_live(&l, "fresh", WS_A, "c", millis(89));
         l.mark_closed("fresh").unwrap();
 
-        let removed = l.sweep_expired(max_age_ms, now).unwrap();
-        assert_eq!(removed, 1);
+        let swept = l.sweep_expired(max_age_ms, now).unwrap();
+        assert_eq!(swept, vec!["old".to_owned()]);
         assert!(l.get("old").unwrap().is_none());
         assert!(l.get("fresh").unwrap().is_some());
     }
@@ -954,8 +1006,8 @@ mod tests {
         // Live row with a stale `last_used_at` (e.g., a card pinned open for
         // months). Sweep must not touch it.
         seed_live(&l, "pinned", WS_A, "card-pin", millis(200));
-        let removed = l.sweep_expired(max_age_ms, now).unwrap();
-        assert_eq!(removed, 0);
+        let swept = l.sweep_expired(max_age_ms, now).unwrap();
+        assert!(swept.is_empty());
         let r = l.get("pinned").unwrap().unwrap();
         assert_eq!(r.state, SessionState::Live);
     }
@@ -969,9 +1021,47 @@ mod tests {
         seed_live(&l, "stale", WS_A, "c", millis(120));
         l.mark_failed("stale").unwrap();
 
-        let removed = l.sweep_expired(max_age_ms, now).unwrap();
-        assert_eq!(removed, 1);
+        let swept = l.sweep_expired(max_age_ms, now).unwrap();
+        assert_eq!(swept, vec!["stale".to_owned()]);
         assert!(l.get("stale").unwrap().is_none());
+    }
+
+    // ── forget_for_project_dir ───────────────────────────────────────────────
+
+    #[test]
+    fn forget_for_project_dir_drops_matching_rows_only() {
+        let l = fresh();
+        seed_live(&l, "matched-1", WS_A, "c", millis(0));
+        l.mark_closed("matched-1").unwrap();
+        seed_live(&l, "matched-2", WS_A, "c", millis(0));
+        l.mark_failed("matched-2").unwrap();
+        // Live match — survives (we don't reach into a card that's still open).
+        seed_live(&l, "matched-live", WS_A, "card-x", millis(0));
+        // Different project_dir — also survives.
+        ledger_helper_record(&l, "other", WS_A, "/other/path", "c", millis(0));
+        l.mark_closed("other").unwrap();
+
+        let dropped = l.forget_for_project_dir("/proj").unwrap();
+        let mut sorted = dropped.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec!["matched-1".to_owned(), "matched-2".to_owned()]);
+        assert!(l.get("matched-1").unwrap().is_none());
+        assert!(l.get("matched-2").unwrap().is_none());
+        assert!(l.get("matched-live").unwrap().is_some());
+        assert!(l.get("other").unwrap().is_some());
+    }
+
+    fn ledger_helper_record(
+        ledger: &SessionLedger,
+        id: &str,
+        ws: &str,
+        project_dir: &str,
+        card: &str,
+        now: i64,
+    ) {
+        ledger
+            .record_spawn(id, ws, project_dir, card, now)
+            .expect("record_spawn");
     }
 
     // ── demote_live_to_closed ────────────────────────────────────────────────

@@ -63,6 +63,7 @@ export const CONTROL_ACTION_RESET_SESSION = "reset_session";
 export const CONTROL_ACTION_LIST_SESSIONS = "list_sessions";
 export const CONTROL_ACTION_FORGET_SESSION = "forget_session";
 export const CONTROL_ACTION_FORGET_WORKSPACE_SESSIONS = "forget_workspace_sessions";
+export const CONTROL_ACTION_FORGET_PROJECT_DIR_SESSIONS = "forget_project_dir_sessions";
 
 /**
  * Wire shape for one row of the tugcast-side session ledger.
@@ -391,6 +392,21 @@ export function encodeForgetSession(sessionId: string): Frame {
 export function encodeForgetWorkspaceSessions(workspaceKey: string): Frame {
   return controlFrame(CONTROL_ACTION_FORGET_WORKSPACE_SESSIONS, {
     workspace_key: workspaceKey,
+  });
+}
+
+/**
+ * Build a `forget_project_dir_sessions` CONTROL request frame.
+ *
+ * Drops every non-live row whose `project_dir` matches the given path.
+ * Used by the recents-eviction → ledger-eviction coupling: when a
+ * tide recent-projects entry ages out, the matching ledger rows go too.
+ * Emits one `session_updated { removed: true }` per dropped row plus
+ * `forget_project_dir_sessions_ok { project_dir, count }` on success.
+ */
+export function encodeForgetProjectDirSessions(projectDir: string): Frame {
+  return controlFrame(CONTROL_ACTION_FORGET_PROJECT_DIR_SESSIONS, {
+    project_dir: projectDir,
   });
 }
 

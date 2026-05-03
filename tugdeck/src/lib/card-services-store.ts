@@ -39,6 +39,7 @@ import { FeedStore, type FeedStoreFilter } from "./feed-store";
 import { FeedId } from "../protocol";
 import type { CompletionProvider } from "./tug-text-types";
 import { getConnection } from "./connection-singleton";
+import { encodeForgetProjectDirSessions } from "../protocol";
 import { getConnectionLifecycle } from "./connection-lifecycle";
 import { getTugbankClient } from "./tugbank-singleton";
 import {
@@ -251,6 +252,16 @@ class CardServicesStore {
       const updated = insertTideRecentProject(current, binding.projectDir);
       if (updated[0] !== current[0] || updated.length !== current.length) {
         putTideRecentProjects(updated);
+        // Recents↔ledger coherence: any path that fell off the recents
+        // tail also has its ledger rows dropped so the picker doesn't
+        // surface sessions for a path the user no longer recognizes.
+        // Computed as the set difference (current \ updated) — a path is
+        // evicted when it was in `current` but not in `updated`.
+        const updatedSet = new Set(updated);
+        const evicted = current.filter((p) => !updatedSet.has(p));
+        if (evicted.length > 0) {
+          forgetLedgerForEvictedRecents(evicted);
+        }
       }
     }
 
@@ -343,3 +354,29 @@ class CardServicesStore {
 }
 
 export const cardServicesStore = new CardServicesStore();
+
+/**
+ * Send `forget_project_dir_sessions` for each path that fell off the
+ * recents tail. The supervisor matches by `project_dir` (literal user
+ * path) and broadcasts a `session_updated { removed: true }` for each
+ * dropped row. The store cache then patches itself.
+ *
+ * Fire-and-forget: there's no UX surface for the result of this batch
+ * action (the user is just spawning a fresh card; the recents-cap
+ * eviction is invisible). Errors are warnings, not blockers.
+ */
+function forgetLedgerForEvictedRecents(paths: ReadonlyArray<string>): void {
+  const connection = getConnection();
+  if (!connection) return;
+  for (const path of paths) {
+    const frame = encodeForgetProjectDirSessions(path);
+    try {
+      connection.send(frame.feedId, frame.payload);
+    } catch (err) {
+      console.warn(
+        `[recents-eviction] forget_project_dir_sessions for ${path} failed:`,
+        err,
+      );
+    }
+  }
+}

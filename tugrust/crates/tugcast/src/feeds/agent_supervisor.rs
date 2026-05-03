@@ -487,6 +487,12 @@ pub trait SessionsRecorder: Send + Sync {
     /// The bridge does not call this; lifecycle endings use `mark_closed` or
     /// `mark_failed` instead.
     fn remove(&self, session_id: &str);
+
+    /// Cap-evict the oldest non-live row in `workspace_key` if the cap is
+    /// exceeded. The bridge calls this after each successful `record` so a
+    /// fresh spawn never pushes the workspace's non-live row count above
+    /// the cap. No-op if under cap.
+    fn evict_for_workspace(&self, workspace_key: &str, cap: usize);
 }
 
 /// Production implementation backed by a shared [`SessionLedger`].
@@ -540,6 +546,70 @@ impl LedgerSessionsRecorder {
             return;
         };
         let _ = tx.send(build_session_removed_frame(session_id));
+    }
+
+    /// Internal helper used by the trait method; kept inline here so the
+    /// supervisor's broadcast path can be exercised by integration tests.
+    fn evict_for_workspace_impl(&self, workspace_key: &str, cap: usize) {
+        match self.ledger.evict_oldest_closed(workspace_key, cap) {
+            Ok(evicted) => {
+                for id in &evicted {
+                    self.broadcast_removed(id);
+                    tracing::info!(
+                        target: "tide::session-lifecycle",
+                        event = "ledger.evict_cap",
+                        session_id = id.as_str(),
+                        workspace_key,
+                    );
+                }
+            }
+            Err(err) => warn!(error = %err, workspace_key, "ledger evict_oldest_closed failed"),
+        }
+    }
+
+    /// Age-sweep the ledger, dropping every non-live row whose
+    /// `last_used_at` is older than `max_age_ms`. Broadcasts
+    /// `session_updated { removed: true }` for each dropped id.
+    /// Called from `main.rs` at tugcast startup.
+    pub fn sweep_expired_with_broadcast(&self, max_age_ms: i64, now: i64) {
+        match self.ledger.sweep_expired(max_age_ms, now) {
+            Ok(swept) => {
+                for id in &swept {
+                    self.broadcast_removed(id);
+                    tracing::info!(
+                        target: "tide::session-lifecycle",
+                        event = "ledger.evict_age",
+                        session_id = id.as_str(),
+                    );
+                }
+            }
+            Err(err) => warn!(error = %err, "ledger sweep_expired failed"),
+        }
+    }
+
+    /// Drop every non-live row whose `project_dir` matches the given path.
+    /// Used by the recents-eviction → ledger-eviction coupling: when a
+    /// path falls off the tide recent-projects tail, the matching ledger
+    /// rows go too. Broadcasts a removed push per dropped id.
+    pub fn forget_for_project_dir(&self, project_dir: &str) -> usize {
+        match self.ledger.forget_for_project_dir(project_dir) {
+            Ok(dropped) => {
+                for id in &dropped {
+                    self.broadcast_removed(id);
+                    tracing::info!(
+                        target: "tide::session-lifecycle",
+                        event = "ledger.forget_project_dir",
+                        session_id = id.as_str(),
+                        project_dir,
+                    );
+                }
+                dropped.len()
+            }
+            Err(err) => {
+                warn!(error = %err, project_dir, "ledger forget_for_project_dir failed");
+                0
+            }
+        }
     }
 }
 
@@ -619,6 +689,10 @@ impl SessionsRecorder for LedgerSessionsRecorder {
             }
             Err(err) => warn!(error = %err, session_id, "ledger forget failed"),
         }
+    }
+
+    fn evict_for_workspace(&self, workspace_key: &str, cap: usize) {
+        self.evict_for_workspace_impl(workspace_key, cap);
     }
 }
 
@@ -1143,6 +1217,11 @@ impl AgentSupervisor {
             "forget_workspace_sessions" => {
                 let workspace_key = parse_workspace_key_payload(payload)?;
                 self.do_forget_workspace_sessions(&workspace_key).await;
+                Ok(())
+            }
+            "forget_project_dir_sessions" => {
+                let project_dir = parse_project_dir_payload(payload)?;
+                self.do_forget_project_dir_sessions(&project_dir).await;
                 Ok(())
             }
             other => {
@@ -1790,6 +1869,56 @@ impl AgentSupervisor {
         }
     }
 
+    /// Handle a `forget_project_dir_sessions` CONTROL request. Drops every
+    /// non-live row whose `project_dir` matches the request, broadcasts a
+    /// `session_updated { removed: true }` per dropped id, and returns a
+    /// count via `forget_project_dir_sessions_ok`. Used by the recents-
+    /// eviction → ledger-eviction coupling.
+    async fn do_forget_project_dir_sessions(&self, project_dir: &str) {
+        let Some(ledger) = self.session_ledger.as_ref() else {
+            let body = serde_json::json!({
+                "action": "forget_project_dir_sessions_err",
+                "project_dir": project_dir,
+                "reason": "no_ledger",
+            });
+            let _ = self.control_tx.send(Frame::new(
+                FeedId::CONTROL,
+                serde_json::to_vec(&body).expect("forget_project_dir_sessions_err serializes"),
+            ));
+            return;
+        };
+        match ledger.forget_for_project_dir(project_dir) {
+            Ok(dropped) => {
+                for id in &dropped {
+                    let _ = self.control_tx.send(build_session_removed_frame(id));
+                }
+                let body = serde_json::json!({
+                    "action": "forget_project_dir_sessions_ok",
+                    "project_dir": project_dir,
+                    "count": dropped.len(),
+                });
+                let _ = self.control_tx.send(Frame::new(
+                    FeedId::CONTROL,
+                    serde_json::to_vec(&body)
+                        .expect("forget_project_dir_sessions_ok serializes"),
+                ));
+            }
+            Err(err) => {
+                warn!(error = %err, project_dir, "forget_for_project_dir failed");
+                let body = serde_json::json!({
+                    "action": "forget_project_dir_sessions_err",
+                    "project_dir": project_dir,
+                    "reason": "ledger_write_failed",
+                });
+                let _ = self.control_tx.send(Frame::new(
+                    FeedId::CONTROL,
+                    serde_json::to_vec(&body)
+                        .expect("forget_project_dir_sessions_err serializes"),
+                ));
+            }
+        }
+    }
+
     /// Handle a `reset_session` CONTROL action.
     ///
     /// [D11]: reset preserves the workspace binding. We kill the current
@@ -2338,6 +2467,7 @@ impl SessionsRecorder for NoopSessionsRecorder {
     fn mark_closed(&self, _session_id: &str) {}
     fn mark_failed(&self, _session_id: &str) {}
     fn remove(&self, _session_id: &str) {}
+    fn evict_for_workspace(&self, _workspace_key: &str, _cap: usize) {}
 }
 
 /// Minimal in-memory [`SessionKeysStore`] used by cross-module router tests.
@@ -5471,6 +5601,102 @@ mod tests {
         assert!(ledger.get("c1").unwrap().is_none(), "closed dropped");
         assert!(ledger.get("f1").unwrap().is_none(), "failed dropped");
         assert!(ledger.get("o1").unwrap().is_some(), "other ws untouched");
+    }
+
+    #[tokio::test]
+    async fn evict_for_workspace_emits_removed_pushes() {
+        let store = Arc::new(InMemoryStore::default());
+        let (_sup, ledger, mut rx) = make_supervisor_with_ledger(store);
+
+        // 21 closed rows in ws-1; cap eviction should drop the oldest.
+        for i in 0..21 {
+            let id = format!("s{i}");
+            ledger
+                .record_spawn(&id, "ws-1", "/p", "c", 1_000_000 - i as i64)
+                .unwrap();
+            ledger.mark_closed(&id).unwrap();
+        }
+        while rx.try_recv().is_ok() {}
+
+        // Build a fresh recorder bound to the same ledger + the
+        // supervisor's existing CONTROL channel — re-using the inline
+        // recorder is harder than constructing a peer one for this case.
+        // The supervisor's control_tx isn't directly exposed, so we
+        // verify via the store's own recorder by triggering eviction.
+        let fresh_recorder = LedgerSessionsRecorder::with_broadcast(
+            Arc::clone(&ledger),
+            // Re-create a control channel and a receiver that sees the
+            // same broadcast — the receiver from `make_supervisor_with_ledger`
+            // is wired to the supervisor's tx, not this fresh recorder.
+            broadcast::channel::<Frame>(64).0,
+        );
+        // Drop the supervisor's rx; we don't use it here.
+        drop(rx);
+        // Listen on the fresh recorder's tx via a fresh subscriber.
+        let mut local_rx = {
+            let (tx, rx2) = broadcast::channel::<Frame>(64);
+            // Replace fresh_recorder's control_tx with this fresh tx.
+            let recorder_with_local_tx =
+                LedgerSessionsRecorder::with_broadcast(Arc::clone(&ledger), tx);
+            recorder_with_local_tx.evict_for_workspace_impl("ws-1", 20);
+            rx2
+        };
+        // 21 → 20 = 1 evicted; expect exactly one removed push.
+        let _ = fresh_recorder; // silence unused warning
+        let mut removed_ids = Vec::new();
+        while let Ok(frame) = local_rx.try_recv() {
+            if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&frame.payload) {
+                if v.get("action").and_then(|a| a.as_str()) == Some("session_updated")
+                    && v.get("removed").and_then(|r| r.as_bool()) == Some(true)
+                {
+                    if let Some(id) = v.get("session_id").and_then(|s| s.as_str()) {
+                        removed_ids.push(id.to_owned());
+                    }
+                }
+            }
+        }
+        assert_eq!(removed_ids.len(), 1);
+        // The oldest closed row is s20 (we recorded with last_used_at =
+        // 1_000_000 - i, so s20 has the smallest timestamp).
+        assert_eq!(removed_ids[0], "s20");
+    }
+
+    #[tokio::test]
+    async fn forget_project_dir_sessions_drops_matching_only() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, ledger, mut rx) = make_supervisor_with_ledger(store);
+
+        ledger
+            .record_spawn("matched-1", "ws-1", "/proj/x", "c1", 1_000)
+            .unwrap();
+        ledger.mark_closed("matched-1").unwrap();
+        ledger
+            .record_spawn("matched-2", "ws-1", "/proj/x", "c2", 2_000)
+            .unwrap();
+        ledger.mark_closed("matched-2").unwrap();
+        // Different project_dir — survives.
+        ledger
+            .record_spawn("other", "ws-2", "/proj/y", "c3", 3_000)
+            .unwrap();
+        ledger.mark_closed("other").unwrap();
+        while rx.try_recv().is_ok() {}
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "forget_project_dir_sessions",
+            "project_dir": "/proj/x",
+        }))
+        .unwrap();
+        sup.handle_control("forget_project_dir_sessions", &payload, 10)
+            .await
+            .unwrap();
+
+        let ack = drain_until_action(&mut rx, "forget_project_dir_sessions_ok");
+        assert_eq!(ack["project_dir"], "/proj/x");
+        assert_eq!(ack["count"], 2);
+
+        assert!(ledger.get("matched-1").unwrap().is_none());
+        assert!(ledger.get("matched-2").unwrap().is_none());
+        assert!(ledger.get("other").unwrap().is_some(), "/proj/y untouched");
     }
 
     #[tokio::test]

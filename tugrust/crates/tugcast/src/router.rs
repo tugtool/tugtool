@@ -506,6 +506,7 @@ const SUPERVISOR_SESSION_ACTIONS: &[&str] = &[
     "list_sessions",
     "forget_session",
     "forget_workspace_sessions",
+    "forget_project_dir_sessions",
 ];
 
 /// Intercept session-lifecycle CONTROL actions and route them to the

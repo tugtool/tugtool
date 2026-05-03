@@ -382,9 +382,22 @@ async fn main() {
         Err(e) => warn!(error = %e, "failed to demote stale live ledger rows"),
     }
 
-    let sessions_recorder: Arc<dyn SessionsRecorder> = Arc::new(
-        LedgerSessionsRecorder::with_broadcast(Arc::clone(&ledger), client_action_tx.clone()),
-    );
+    let ledger_recorder = Arc::new(LedgerSessionsRecorder::with_broadcast(
+        Arc::clone(&ledger),
+        client_action_tx.clone(),
+    ));
+
+    // Age sweep: drop every non-live row whose `last_used_at` is older
+    // than the configured cap. Runs after `demote_live_to_closed` so the
+    // demoted rows have a chance to be swept too if they're already old.
+    // Broadcasts go nowhere yet — there are no clients connected — but
+    // the recorder's broadcast call is harmless against an empty
+    // subscriber set.
+    let max_age_ms = crate::session_ledger::TIDE_LEDGER_MAX_AGE_DAYS * 86_400_000;
+    ledger_recorder
+        .sweep_expired_with_broadcast(max_age_ms, crate::session_ledger::now_millis());
+
+    let sessions_recorder: Arc<dyn SessionsRecorder> = ledger_recorder;
 
     let supervisor_config = AgentSupervisorConfig {
         tugcode_path: tugcode_path.clone(),
