@@ -397,6 +397,16 @@ async fn main() {
     ledger_recorder
         .sweep_expired_with_broadcast(max_age_ms, crate::session_ledger::now_millis());
 
+    // Trash sweep: walk every workspace's `.tug-trash/<deletedAt>/`
+    // under `~/.claude/projects/` and remove any deletedAt subdir older
+    // than 7 days. Runs after the age sweep so freshly-trashed JSONLs
+    // (recoverable for 7 days) aren't immediately lost.
+    let trash_max_age_ms = crate::session_ledger::TIDE_TRASH_SWEEP_AGE_DAYS * 86_400_000;
+    let trash_swept = ledger.sweep_trash(trash_max_age_ms, crate::session_ledger::now_millis());
+    if trash_swept > 0 {
+        info!(count = trash_swept, "swept stale trash directories on startup");
+    }
+
     let sessions_recorder: Arc<dyn SessionsRecorder> = ledger_recorder;
 
     let supervisor_config = AgentSupervisorConfig {

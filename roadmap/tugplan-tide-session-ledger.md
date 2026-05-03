@@ -867,25 +867,30 @@ The old tugbank keys are no longer written to (the bridge wires them out in [Ste
 **References:** [D05] trash-strategy, (#scope)
 
 **Artifacts:**
-- `SessionLedger::forget` moves the JSONL to `<workspace>/.tug-trash/<deletedAt>/<sessionId>.jsonl`.
-- `main.rs` startup calls a new `sweep_trash(workspace_dirs, max_age_ms)` helper.
-- `ForgetOutcome` returns the trash path (used in trace logs; not surfaced to the picker).
+- `SessionLedger` gains a `claude_projects_root: PathBuf` field. `open` resolves the default (`~/.claude/projects/`); `open_with_claude_root` lets tests inject a tempdir.
+- `forget`, `forget_workspace`, and `forget_for_project_dir` all read `project_dir` for each doomed row and move `<root>/<encoded>/<sessionId>.jsonl` to `<root>/<encoded>/.tug-trash/<deletedAt>/<sessionId>.jsonl`. Best-effort: a missing JSONL or failed rename logs a warning but doesn't fail the row delete.
+- `ForgetOutcome::jsonl_moved_to: Option<PathBuf>` — `Some(...)` when the file was moved, `None` when there was nothing to move (or the move failed).
+- New `SessionLedger::sweep_trash(max_age_ms, now) -> usize` walks every distinct project_dir's `.tug-trash/<deletedAt>/` and removes subdirs older than the cap. Returns the count.
+- New helpers: `default_claude_projects_root()`, `encode_claude_project_name(project_dir)` (claude's `/`-and-`.`-to-`-` substitution), and the private `move_jsonl_to_trash` / `sweep_trash_dir`.
+- `main.rs` calls `ledger.sweep_trash(TIDE_TRASH_SWEEP_AGE_DAYS * 86_400_000, now_millis())` at startup, after the age sweep.
 
 **Tasks:**
-- [ ] Implement the JSONL move. Atomic rename when source and dest are on the same filesystem (always true for in-place trash). Create the `<deletedAt>` subdir on demand.
-- [ ] Implement `sweep_trash` — for each known workspace dir (from the ledger's distinct `workspace_key` set), enumerate `.tug-trash/<deletedAt>/`, delete dirs whose `<deletedAt>` is older than 7 days.
-- [ ] Hook startup sweep into `main.rs` after the ledger is opened.
-- [ ] Manual: Forget a session, verify the JSONL appears in `.tug-trash/...`. Roll back the system clock and restart, verify sweep removes old entries.
+- [x] Implement the JSONL move using `std::fs::rename` (atomic on the same filesystem; in-place trash always satisfies this). Create the `<deletedAt>` subdir on demand via `create_dir_all`.
+- [x] Implement `sweep_trash` — walks distinct `project_dir` values from the ledger, encodes each, enumerates `<root>/<encoded>/.tug-trash/`, and removes any `<deletedAt>` subdir older than the cutoff.
+- [x] Hook startup sweep into `main.rs` after the ledger is opened (and after the age-row sweep so freshly-trashed JSONLs aren't immediately swept).
+- [x] Forget paths (`forget`, `forget_workspace`, `forget_for_project_dir`) all move JSONLs to trash. Eviction paths (cap, age) intentionally don't (per [D05] — the JSONL stays, only the row drops).
 
 **Tests:**
-- [ ] Rust integration test: `forget` moves the JSONL; the file is at the expected trash path.
-- [ ] Rust integration test: sweep removes a trash entry > 7 days old.
-- [ ] Rust integration test: sweep is a no-op if `.tug-trash/` doesn't exist.
+- [x] Rust unit: `encode_claude_project_name` substitutes `/` and `.` correctly.
+- [x] Rust unit: `forget_moves_jsonl_to_trash` — JSONL ends up at the expected `.tug-trash/<stamp>/<id>.jsonl` path; original is gone.
+- [x] Rust unit: `forget_succeeds_even_when_jsonl_is_missing` — row deletion still commits when there's no source file (e.g., already manually deleted).
+- [x] Rust unit: `sweep_trash_removes_subdirs_older_than_cutoff` — 8-day-old and 30-day-old subdirs swept, 6-day-old kept.
+- [x] Rust unit: `sweep_trash_no_op_when_root_missing` — fresh project_dir without any trash subdir → 0 removed, no error.
 
 **Checkpoint:**
-- [ ] `cargo nextest run`
-- [ ] `bun test`
-- [ ] Manual: Forget then inspect trash dir.
+- [x] `cargo nextest run` — 1197 tests passing (5 new for Step 8)
+- [x] `cargo build` — no warnings
+- [x] `bun test` — 2767 tests passing (no tugdeck changes for Step 8)
 
 ---
 

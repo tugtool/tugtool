@@ -149,26 +149,45 @@ pub struct ForgetWorkspaceOutcome {
 /// SQLite-backed per-session metadata store.
 pub struct SessionLedger {
     db: Mutex<Connection>,
+    /// Root directory where claude code stores per-project session JSONLs:
+    /// `<root>/<encoded-project-dir>/<sessionId>.jsonl`. Production defaults
+    /// to `~/.claude/projects/`; tests inject a tempdir so trash mechanics
+    /// don't touch the real filesystem.
+    claude_projects_root: PathBuf,
 }
 
 impl SessionLedger {
     /// Open or create the ledger at `path`. Applies pragmas and runs the
     /// idempotent schema bootstrap. Safe to call against an existing file.
+    /// Uses the default claude projects root (`~/.claude/projects/`).
     pub fn open(path: impl AsRef<Path>) -> Result<Self, LedgerError> {
+        Self::open_with_claude_root(path, default_claude_projects_root())
+    }
+
+    /// Open the ledger with an explicit `claude_projects_root`. Tests pass
+    /// a tempdir; production uses the default.
+    pub fn open_with_claude_root(
+        path: impl AsRef<Path>,
+        claude_projects_root: PathBuf,
+    ) -> Result<Self, LedgerError> {
         let conn = Connection::open(path)?;
         Self::configure(&conn)?;
         Ok(Self {
             db: Mutex::new(conn),
+            claude_projects_root,
         })
     }
 
     /// Open an in-memory ledger. Test-only convenience; never used by
-    /// production callers.
+    /// production callers. Uses a placeholder claude root that no test
+    /// should write through (tests using trash should use
+    /// `open_with_claude_root` against a tempdir).
     pub fn open_in_memory() -> Result<Self, LedgerError> {
         let conn = Connection::open_in_memory()?;
         Self::configure(&conn)?;
         Ok(Self {
             db: Mutex::new(conn),
+            claude_projects_root: PathBuf::from("/tmp/tugcast-tests-no-trash"),
         })
     }
 
@@ -188,6 +207,12 @@ impl SessionLedger {
         #[cfg(not(target_os = "macos"))]
         let dir = base.join("tugcast");
         Some(dir.join("sessions.db"))
+    }
+
+    /// Configured claude projects root. Exposed so the supervisor's batch
+    /// trash sweep can iterate `<root>/*/.tug-trash/` without re-resolving.
+    pub fn claude_projects_root(&self) -> &Path {
+        &self.claude_projects_root
     }
 
     fn configure(conn: &Connection) -> Result<(), LedgerError> {
@@ -432,66 +457,99 @@ impl SessionLedger {
         Ok(())
     }
 
-    /// Delete the ledger row for `session_id`. The JSONL trash move lands in
-    /// step 8; until then `jsonl_moved_to` is always `None`.
+    /// Delete the ledger row for `session_id` and move its claude-side
+    /// JSONL to in-place trash so the user can recover for 7 days.
     ///
     /// Refuses if the row is currently live — callers must close the card
-    /// first.
+    /// first. JSONL move is best-effort: if the file is missing or the
+    /// trash directory cannot be created, the row deletion still
+    /// succeeds; `jsonl_moved_to` is `None` in that case and the caller
+    /// can read tracing logs to understand why.
     pub fn forget(&self, session_id: &str) -> Result<ForgetOutcome, LedgerError> {
         let mut conn = self.db.lock().expect("ledger mutex");
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let state: Option<String> = tx
+        // Read state + project_dir under the same lock so the JSONL move
+        // afterwards has the canonical project_dir we recorded at spawn.
+        let row: Option<(String, String)> = tx
             .query_row(
-                "SELECT state FROM sessions WHERE session_id = ?1",
+                "SELECT state, project_dir FROM sessions WHERE session_id = ?1",
                 params![session_id],
-                |row| row.get(0),
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
             )
             .optional()?;
-        match state.as_deref() {
+        let project_dir = match row {
             None => return Err(LedgerError::NotFound(session_id.to_owned())),
-            Some("live") => {
+            Some((state, _)) if state == "live" => {
                 return Err(LedgerError::InvalidState(
                     "cannot forget a live session".to_owned(),
                 ));
             }
-            Some(_) => {}
-        }
+            Some((_, pd)) => pd,
+        };
         tx.execute(
             "DELETE FROM sessions WHERE session_id = ?1",
             params![session_id],
         )?;
         tx.commit()?;
+        drop(conn);
+
+        let trash_path = move_jsonl_to_trash(
+            &self.claude_projects_root,
+            &project_dir,
+            session_id,
+            now_millis(),
+        );
         Ok(ForgetOutcome {
             session_id: session_id.to_owned(),
-            jsonl_moved_to: None,
+            jsonl_moved_to: trash_path,
         })
     }
 
-    /// Drop every non-live row in the workspace. Reports how many rows were
-    /// removed; live rows in the workspace are left in place (the user must
-    /// close the card first).
+    /// Drop every non-live row in the workspace and move each row's
+    /// JSONL to trash so the user can recover. Reports how many rows
+    /// were removed; live rows are left in place.
     pub fn forget_workspace(
         &self,
         workspace_key: &str,
     ) -> Result<ForgetWorkspaceOutcome, LedgerError> {
         let mut conn = self.db.lock().expect("ledger mutex");
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let count = tx.execute(
-            "DELETE FROM sessions
-             WHERE workspace_key = ?1 AND state != 'live'",
-            params![workspace_key],
-        )?;
+        // Snapshot (session_id, project_dir) tuples for the doomed rows so
+        // we can move their JSONLs after the row delete commits.
+        let doomed: Vec<(String, String)> = {
+            let mut stmt = tx.prepare(
+                "SELECT session_id, project_dir FROM sessions
+                 WHERE workspace_key = ?1 AND state != 'live'",
+            )?;
+            stmt.query_map(params![workspace_key], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?
+        };
+        for (id, _) in &doomed {
+            tx.execute(
+                "DELETE FROM sessions WHERE session_id = ?1",
+                params![id],
+            )?;
+        }
         tx.commit()?;
-        Ok(ForgetWorkspaceOutcome { count })
+        drop(conn);
+
+        let now = now_millis();
+        for (id, project_dir) in &doomed {
+            move_jsonl_to_trash(&self.claude_projects_root, project_dir, id, now);
+        }
+        Ok(ForgetWorkspaceOutcome { count: doomed.len() })
     }
 
     /// Drop every non-live row whose `project_dir` matches `project_dir`
-    /// literally. Returns the session ids of the dropped rows so the
-    /// caller can broadcast `session_updated { removed: true }` pushes.
-    /// Used by recents-eviction → ledger-eviction coupling: when a tide
-    /// recent-projects entry ages out, the matching ledger rows are dropped
-    /// in lockstep so the picker doesn't surface sessions for a path the
-    /// user no longer recognizes.
+    /// literally and move each row's JSONL to trash. Returns the session
+    /// ids of the dropped rows so the caller can broadcast `session_updated
+    /// { removed: true }` pushes. Used by recents-eviction → ledger-eviction
+    /// coupling: when a tide recent-projects entry ages out, the matching
+    /// ledger rows are dropped in lockstep so the picker doesn't surface
+    /// sessions for a path the user no longer recognizes. The JSONLs go to
+    /// trash so the user can `mv` them back if they recognize the loss.
     pub fn forget_for_project_dir(
         &self,
         project_dir: &str,
@@ -513,7 +571,54 @@ impl SessionLedger {
             )?;
         }
         tx.commit()?;
+        drop(conn);
+
+        let now = now_millis();
+        for id in &doomed {
+            move_jsonl_to_trash(&self.claude_projects_root, project_dir, id, now);
+        }
         Ok(doomed)
+    }
+
+    /// Walk `<claude_projects_root>/<encoded>/.tug-trash/` for every
+    /// known workspace and remove any `<deletedAt>` subdirectory whose
+    /// timestamp is older than `max_age_ms`. Called from `main.rs` at
+    /// tugcast startup.
+    ///
+    /// Returns the count of subdirectories removed across all workspaces.
+    /// IO errors are logged via tracing and swallowed — a partial sweep
+    /// is preferable to bringing tugcast startup down.
+    pub fn sweep_trash(&self, max_age_ms: i64, now: i64) -> usize {
+        let cutoff = now.saturating_sub(max_age_ms);
+        let workspaces = match self.distinct_workspaces() {
+            Ok(ws) => ws,
+            Err(err) => {
+                tracing::warn!(error = %err, "sweep_trash distinct_workspaces failed");
+                return 0;
+            }
+        };
+        // Also include any project_dir we've ever seen — workspace_key is
+        // not the JSONL-encoded key; the ledger column the trash mover
+        // uses is `project_dir`. Pull distinct project_dir values too.
+        let mut count = 0usize;
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        seen.extend(workspaces);
+        // Best-effort: also include rows currently in the ledger.
+        if let Ok(conn) = self.db.lock() {
+            if let Ok(mut stmt) = conn.prepare("SELECT DISTINCT project_dir FROM sessions") {
+                if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
+                    for r in rows.flatten() {
+                        seen.insert(r);
+                    }
+                }
+            }
+        }
+        for project_dir in seen {
+            let encoded = encode_claude_project_name(&project_dir);
+            let trash_root = self.claude_projects_root.join(&encoded).join(".tug-trash");
+            count += sweep_trash_dir(&trash_root, cutoff);
+        }
+        count
     }
 
     /// If the workspace already holds at least `cap` non-live rows, evict
@@ -670,6 +775,137 @@ pub fn now_millis() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
+}
+
+/// Default location of claude code's per-project session JSONLs:
+/// `~/.claude/projects/`. Production callers pass this to
+/// `SessionLedger::open_with_claude_root` (or rely on `open` which
+/// resolves it implicitly).
+pub fn default_claude_projects_root() -> PathBuf {
+    let home = dirs::home_dir().unwrap_or_else(|| {
+        PathBuf::from(std::env::var("HOME").unwrap_or_default())
+    });
+    home.join(".claude").join("projects")
+}
+
+/// Encode a project_dir into the directory name claude code uses under
+/// `~/.claude/projects/`. claude's convention replaces `/` and `.` in the
+/// absolute path with `-`, producing a flat name that's filesystem-safe
+/// and hashable. Mirrors what's been observed on macOS installs.
+pub fn encode_claude_project_name(project_dir: &str) -> String {
+    project_dir
+        .chars()
+        .map(|c| if c == '/' || c == '.' { '-' } else { c })
+        .collect()
+}
+
+/// Move `<root>/<encoded>/<sessionId>.jsonl` to
+/// `<root>/<encoded>/.tug-trash/<deletedAt>/<sessionId>.jsonl`. Best-
+/// effort: returns the destination path on success or `None` if the
+/// source file is missing or the move fails. Logs at warn-level on
+/// error but never propagates — the row deletion that motivates this
+/// move has already committed and shouldn't roll back over a filesystem
+/// hiccup.
+fn move_jsonl_to_trash(
+    claude_projects_root: &Path,
+    project_dir: &str,
+    session_id: &str,
+    deleted_at_ms: i64,
+) -> Option<PathBuf> {
+    let encoded = encode_claude_project_name(project_dir);
+    let project_root = claude_projects_root.join(&encoded);
+    let source = project_root.join(format!("{session_id}.jsonl"));
+    if !source.exists() {
+        // Nothing to move — the JSONL was never created or already
+        // disappeared. Not an error; the row was the last reference.
+        return None;
+    }
+    let trash_dir = project_root
+        .join(".tug-trash")
+        .join(deleted_at_ms.to_string());
+    if let Err(err) = std::fs::create_dir_all(&trash_dir) {
+        tracing::warn!(
+            error = %err,
+            session_id,
+            project_dir,
+            trash_dir = %trash_dir.display(),
+            "failed to create trash dir; leaving JSONL in place",
+        );
+        return None;
+    }
+    let dest = trash_dir.join(format!("{session_id}.jsonl"));
+    if let Err(err) = std::fs::rename(&source, &dest) {
+        tracing::warn!(
+            error = %err,
+            session_id,
+            project_dir,
+            dest = %dest.display(),
+            "failed to move JSONL to trash; leaving in place",
+        );
+        return None;
+    }
+    tracing::info!(
+        target: "tide::session-lifecycle",
+        event = "ledger.trash_jsonl",
+        session_id,
+        project_dir,
+        dest = %dest.display(),
+    );
+    Some(dest)
+}
+
+/// Walk `<trash_root>/*/` and remove any subdirectory whose name (a
+/// `<deletedAt>` unix-millis stamp) is older than `cutoff`. Returns the
+/// count of removed subdirs. Best-effort: missing root, missing entries,
+/// or rmdir failures are logged but never propagated.
+fn sweep_trash_dir(trash_root: &Path, cutoff: i64) -> usize {
+    let entries = match std::fs::read_dir(trash_root) {
+        Ok(it) => it,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return 0,
+        Err(err) => {
+            tracing::warn!(
+                error = %err,
+                trash_root = %trash_root.display(),
+                "sweep_trash_dir read_dir failed",
+            );
+            return 0;
+        }
+    };
+    let mut count = 0usize;
+    for entry_result in entries {
+        let entry = match entry_result {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let name = match entry.file_name().to_str().map(|s| s.to_owned()) {
+            Some(n) => n,
+            None => continue,
+        };
+        let stamp: i64 = match name.parse() {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        if stamp >= cutoff {
+            continue;
+        }
+        let path = entry.path();
+        if let Err(err) = std::fs::remove_dir_all(&path) {
+            tracing::warn!(
+                error = %err,
+                path = %path.display(),
+                "sweep_trash remove_dir_all failed",
+            );
+            continue;
+        }
+        count += 1;
+        tracing::info!(
+            target: "tide::session-lifecycle",
+            event = "ledger.trash_swept",
+            path = %path.display(),
+            stamp_ms = stamp,
+        );
+    }
+    count
 }
 
 #[cfg(test)]
@@ -1149,5 +1385,124 @@ mod tests {
     fn truncate_first_prompt_returns_short_inputs_unchanged() {
         let s = "Hello, world";
         assert_eq!(truncate_first_prompt(s), s);
+    }
+
+    #[test]
+    fn encode_claude_project_name_replaces_slashes_and_dots() {
+        assert_eq!(
+            encode_claude_project_name("/Users/ken/src/foo.bar"),
+            "-Users-ken-src-foo-bar"
+        );
+        assert_eq!(
+            encode_claude_project_name("/u/src/tugtool"),
+            "-u-src-tugtool"
+        );
+    }
+
+    // ── trash mechanics (move + sweep) ───────────────────────────────────────
+    //
+    // Trash tests use a tempdir as the claude-projects-root so the move
+    // operations don't touch `~/.claude/projects/` on the dev machine.
+
+    fn fresh_ledger_with_root(root: &Path) -> SessionLedger {
+        // Use an in-memory db but explicit claude root.
+        let conn = Connection::open_in_memory().expect("open_in_memory");
+        SessionLedger::configure(&conn).expect("configure");
+        SessionLedger {
+            db: Mutex::new(conn),
+            claude_projects_root: root.to_path_buf(),
+        }
+    }
+
+    fn write_jsonl(root: &Path, project_dir: &str, session_id: &str) -> PathBuf {
+        let encoded = encode_claude_project_name(project_dir);
+        let project_root = root.join(encoded);
+        std::fs::create_dir_all(&project_root).expect("mkdir project root");
+        let path = project_root.join(format!("{session_id}.jsonl"));
+        std::fs::write(&path, b"{\"type\":\"placeholder\"}\n").expect("write jsonl");
+        path
+    }
+
+    #[test]
+    fn forget_moves_jsonl_to_trash() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let l = fresh_ledger_with_root(tmp.path());
+        write_jsonl(tmp.path(), "/proj/x", "sess-doomed");
+
+        l.record_spawn("sess-doomed", "ws-1", "/proj/x", "c1", millis(0))
+            .unwrap();
+        l.mark_closed("sess-doomed").unwrap();
+
+        let outcome = l.forget("sess-doomed").unwrap();
+        let dest = outcome.jsonl_moved_to.expect("moved to trash");
+        assert!(dest.exists(), "trashed jsonl should exist at {dest:?}");
+        // Source must be gone.
+        let original = tmp
+            .path()
+            .join(encode_claude_project_name("/proj/x"))
+            .join("sess-doomed.jsonl");
+        assert!(!original.exists());
+        // Trash structure: `<encoded>/.tug-trash/<deletedAt>/<sessionId>.jsonl`.
+        assert!(dest.to_string_lossy().contains(".tug-trash"));
+    }
+
+    #[test]
+    fn forget_succeeds_even_when_jsonl_is_missing() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let l = fresh_ledger_with_root(tmp.path());
+        // No JSONL on disk — only the ledger row.
+        l.record_spawn("ghost", "ws-1", "/proj/x", "c1", millis(0))
+            .unwrap();
+        l.mark_closed("ghost").unwrap();
+
+        let outcome = l.forget("ghost").unwrap();
+        assert!(outcome.jsonl_moved_to.is_none());
+        // Row deletion still committed.
+        assert!(l.get("ghost").unwrap().is_none());
+    }
+
+    #[test]
+    fn sweep_trash_removes_subdirs_older_than_cutoff() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let l = fresh_ledger_with_root(tmp.path());
+        // Seed a row so distinct_workspaces returns ws-1, ensuring sweep
+        // walks /proj/x's trash dir even though we then forget the row.
+        l.record_spawn("seed", "ws-1", "/proj/x", "c1", millis(0))
+            .unwrap();
+
+        let trash_root = tmp
+            .path()
+            .join(encode_claude_project_name("/proj/x"))
+            .join(".tug-trash");
+        // Create three subdirs: 8 days ago (sweep), 6 days ago (keep),
+        // 30 days ago (sweep).
+        let now = millis(0);
+        let day = 86_400_000_i64;
+        let stale_old = now - 30 * day;
+        let stale_mid = now - 8 * day;
+        let fresh = now - 6 * day;
+        for stamp in [stale_old, stale_mid, fresh] {
+            let dir = trash_root.join(stamp.to_string());
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("placeholder.jsonl"), b"x").unwrap();
+        }
+
+        let removed = l.sweep_trash(7 * day, now);
+        assert_eq!(removed, 2, "expected 8d and 30d dirs swept, 6d kept");
+        assert!(!trash_root.join(stale_old.to_string()).exists());
+        assert!(!trash_root.join(stale_mid.to_string()).exists());
+        assert!(trash_root.join(fresh.to_string()).exists());
+    }
+
+    #[test]
+    fn sweep_trash_no_op_when_root_missing() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let l = fresh_ledger_with_root(tmp.path());
+        // No rows seeded → distinct_workspaces returns empty. Even with
+        // a fresh project_dir row, the trash dir doesn't exist yet.
+        l.record_spawn("seed", "ws-x", "/proj/never-trashed", "c", millis(0))
+            .unwrap();
+        let removed = l.sweep_trash(7 * 86_400_000, millis(0));
+        assert_eq!(removed, 0);
     }
 }
