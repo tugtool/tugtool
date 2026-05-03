@@ -1271,23 +1271,23 @@ happy-dom is suitable for all unit, component, reducer, adapter, and integration
 
 **Tasks:**
 
-- [ ] Add the field to `CodeSessionSnapshot` per [#snapshot-extension].
-- [ ] Populate in `getSnapshot()`.
-- [ ] Module docstring update.
-- [ ] New tests against `test-01-round-trip.jsonl`: `inflightUserMessage` is non-null after `send`, null after `turn_complete(success)`.
-- [ ] New tests against `test-06-interrupt.jsonl`: cleared on `interrupted → idle`.
-- [ ] Update existing snapshot-shape tests to assert the new field is present (default `null`).
+- [x] Add the field to `CodeSessionSnapshot` per [#snapshot-extension]. Imports `AtomSegment` from `../tug-atom-img`. Field shape `{ text: string; atoms: ReadonlyArray<AtomSegment> } | null` matches the reducer's `pendingUserMessage` exactly so the snapshot can pass the reference through.
+- [x] Populate in `getSnapshot()`. **Pass-through assignment** (`inflightUserMessage: this.state.pendingUserMessage`) so the reference stays identity-stable across snapshot rebuilds while the same pending message is in flight — `useSyncExternalStore` consumers ([L02]) get `Object.is` stability.
+- [x] Module docstring update. `types.ts` header now cites [D10]; the field's JSDoc explains the reducer-mirror semantics, the in-flight transcript role (Step 10's `transcript.length * 2 + 2` accounting), and the identity-stability contract.
+- [x] New tests against `test-01-round-trip.jsonl` (in `code-session-store.round-trip.test.ts`): `inflightUserMessage` is null on idle, non-null after `send`, identity-stable across same-state snapshot reads, and back to null after `turn_complete(success)`.
+- [x] New tests against `test-06-interrupt-mid-stream.jsonl` (in `code-session-store.interrupt.test.ts`): pending message survives mid-stream `interrupt()` until `turn_complete(error)` commits the interrupted entry, then clears.
+- [x] Update existing scaffold snapshot test (`code-session-store.scaffold.test.ts`) to assert `inflightUserMessage` defaults to `null` on a fresh store. The `tug-prompt-entry.test.tsx`'s `defaultSnapshot()` factory was also extended with the new field so the existing TugPromptEntry tests still typecheck.
 
 **Tests:**
 
-- [ ] Reducer lifecycle tests pass.
-- [ ] Existing snapshot tests still pass.
+- [x] Reducer lifecycle tests pass (the existing reducer tests already exercised `state.pendingUserMessage` directly; the new tests pin the SNAPSHOT-level mirror).
+- [x] Existing snapshot tests still pass (125 / 0 in `code-session-store/__tests__`; full bun suite 2927 / 0).
 
 **Checkpoint:**
 
-- [ ] `bun x tsc --noEmit` — exit 0.
-- [ ] `bun test` — all green.
-- [ ] `cargo nextest run` — all green.
+- [x] `bun x tsc --noEmit` — exit 0.
+- [x] `bun test` — all green (2927 pass / 0 fail).
+- [x] `cargo nextest run` — all green (1200 passed / 9 skipped).
 
 ---
 

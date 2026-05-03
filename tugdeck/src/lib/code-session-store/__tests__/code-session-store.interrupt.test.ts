@@ -97,6 +97,59 @@ describe("CodeSessionStore — interrupt mid-stream on test-06 (Step 7)", () => 
   });
 });
 
+describe("CodeSessionStore — inflightUserMessage cleared on interrupt (Step 9)", () => {
+  it("clears inflightUserMessage when the turn is interrupted via test-06", () => {
+    // [D10] / Step 9 — the in-flight pending message is set on
+    // `send`, mirrored through the snapshot for the duration of the
+    // turn, and cleared when the reducer commits the TurnEntry —
+    // including the interrupt path that produces
+    // `result: "interrupted"`. This pins the cleanup-on-interrupt
+    // contract end-to-end through test-06's mid-stream stop.
+    const probe = loadGoldenProbe("v2.1.105", "test-06-interrupt-mid-stream");
+    const conn = new TestFrameChannel();
+    const store = constructStore(conn);
+
+    expect(store.getSnapshot().inflightUserMessage).toBeNull();
+
+    store.send("please run forever", []);
+    expect(store.getSnapshot().inflightUserMessage?.text).toBe(
+      "please run forever",
+    );
+
+    // Drive into mid-stream (per the existing test-06 layout).
+    const K = 3;
+    for (let i = 0; i <= K; i++) {
+      conn.dispatchDecoded(FeedId.CODE_OUTPUT, probe.events[i]);
+    }
+    // Mid-stream — pending still in flight.
+    expect(store.getSnapshot().inflightUserMessage?.text).toBe(
+      "please run forever",
+    );
+
+    store.interrupt();
+    // `interrupt()` does NOT immediately clear the pending message —
+    // the reducer waits for `turn_complete(error)` to commit the
+    // interrupted entry before clearing. Until then the in-flight
+    // pair still belongs in the transcript.
+    expect(store.getSnapshot().inflightUserMessage?.text).toBe(
+      "please run forever",
+    );
+
+    // Drain the rest of the fixture (which includes the
+    // `turn_complete(error)` that commits the interrupted entry).
+    for (let i = K + 1; i < probe.events.length; i++) {
+      conn.dispatchDecoded(FeedId.CODE_OUTPUT, probe.events[i]);
+    }
+
+    const final = store.getSnapshot();
+    expect(final.phase).toBe("idle");
+    expect(final.inflightUserMessage).toBeNull();
+    expect(final.transcript.length).toBe(1);
+    expect(final.transcript[0].result).toBe("interrupted");
+    expect(final.transcript[0].userMessage.text).toBe("please run forever");
+  });
+});
+
 describe("CodeSessionStore — synthetic queue clear on interrupt (Step 7)", () => {
   it("discards queued sends and emits only the original user_message + interrupt", () => {
     const conn = new TestFrameChannel();

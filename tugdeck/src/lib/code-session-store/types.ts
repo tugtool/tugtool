@@ -4,8 +4,14 @@
  *
  * [D03] three-identifier model
  * [D04] transcript + streaming
+ * [D10] `inflightUserMessage` mirror — the snapshot exposes the
+ *       reducer's `pendingUserMessage` as `inflightUserMessage` so the
+ *       transcript's in-flight `user` row enters React via
+ *       `useSyncExternalStore` without card-level shadow state ([L02]).
  * [D11] effect-list reducer
  */
+
+import type { AtomSegment } from "../tug-atom-img";
 
 /**
  * Discrete phases of the Claude Code turn state machine. Terminal
@@ -128,6 +134,30 @@ export interface CodeSessionSnapshot {
   queuedSends: number;
 
   transcript: ReadonlyArray<TurnEntry>;
+
+  /**
+   * The in-flight user message — set the moment `send()` is dispatched
+   * and cleared exactly when the matching `TurnEntry` is committed to
+   * `transcript` (`turn_complete(success)`) or the turn is interrupted
+   * (`turn_complete(error)` / `interrupted`). Mirrors the reducer's
+   * `pendingUserMessage`; the field name change to `inflightUserMessage`
+   * matches the `inflight.*` streaming-path naming so the in-flight
+   * vocabulary is consistent at the snapshot surface.
+   *
+   * Drives the in-flight `user` row in the Tide card transcript: the
+   * `TideTranscriptDataSource` (Step 10) reports `transcript.length * 2
+   * + (inflightUserMessage ? 2 : 0)` items, with the last two indices
+   * representing the in-flight pair when the field is non-null.
+   *
+   * The reference is shared with the reducer's `pendingUserMessage`,
+   * so identity is stable across snapshot rebuilds while the same
+   * pending message is in flight — `useSyncExternalStore` consumers
+   * downstream get the `Object.is` stability they need ([D10]).
+   */
+  inflightUserMessage: {
+    text: string;
+    atoms: ReadonlyArray<AtomSegment>;
+  } | null;
 
   streamingPaths: {
     readonly assistant: "inflight.assistant";

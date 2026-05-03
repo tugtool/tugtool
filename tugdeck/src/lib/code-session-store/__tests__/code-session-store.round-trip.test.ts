@@ -82,6 +82,52 @@ describe("CodeSessionStore — basic round-trip (Step 3)", () => {
     expect(store.streamingDocument.get("inflight.tools")).toBe("[]");
   });
 
+  it("populates inflightUserMessage on send and clears it on turn_complete(success)", () => {
+    // [D10] / Step 9 — the snapshot mirrors the reducer's
+    // `pendingUserMessage` so the transcript's in-flight `user` row
+    // can render via `useSyncExternalStore`. The field is non-null
+    // for the duration of the turn (`send` → `turn_complete`) and
+    // returns to `null` once the matching `TurnEntry` lands.
+    const probe = loadGoldenProbe("v2.1.105", "test-01-basic-round-trip");
+    const conn = new TestFrameChannel();
+    const store = new CodeSessionStore({
+      conn: conn as unknown as TugConnection,
+      lifecycle: new ConnectionLifecycle(),
+      tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
+    });
+
+    // Idle store: no pending message.
+    expect(store.getSnapshot().inflightUserMessage).toBeNull();
+
+    // After `send`: the text + atoms appear on the snapshot.
+    store.send("hello", []);
+    const submittingSnap = store.getSnapshot();
+    expect(submittingSnap.phase).toBe("submitting");
+    expect(submittingSnap.inflightUserMessage).not.toBeNull();
+    expect(submittingSnap.inflightUserMessage?.text).toBe("hello");
+    expect(submittingSnap.inflightUserMessage?.atoms).toEqual([]);
+
+    // Identity stable across snapshots while the same message is in
+    // flight — `useSyncExternalStore` consumers depend on `Object.is`
+    // equality to avoid spurious rerenders ([L02]).
+    const a = store.getSnapshot().inflightUserMessage;
+    const b = store.getSnapshot().inflightUserMessage;
+    expect(Object.is(a, b)).toBe(true);
+
+    // Drive the turn to completion.
+    for (const event of probe.events) {
+      conn.dispatchDecoded(FeedId.CODE_OUTPUT, event);
+    }
+
+    // After `turn_complete(success)`: the committed `TurnEntry`
+    // takes over, and `inflightUserMessage` is back to `null`.
+    const finalSnap = store.getSnapshot();
+    expect(finalSnap.phase).toBe("idle");
+    expect(finalSnap.inflightUserMessage).toBeNull();
+    expect(finalSnap.transcript.length).toBe(1);
+    expect(finalSnap.transcript[0].userMessage.text).toBe("hello");
+  });
+
   it("captures the final assistant text on the committed TurnEntry", () => {
     const probe = loadGoldenProbe("v2.1.105", "test-01-basic-round-trip");
     const conn = new TestFrameChannel();

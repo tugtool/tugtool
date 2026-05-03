@@ -458,6 +458,7 @@ function defaultSnapshot(): CodeSessionSnapshot {
     pendingQuestion: null,
     queuedSends: 0,
     transcript: [],
+    inflightUserMessage: null,
     streamingPaths: STREAMING_PATHS,
     lastCost: null,
     lastError: null,

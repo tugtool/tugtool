@@ -239,6 +239,13 @@ export class CodeSessionStore {
       pendingQuestion: this.state.pendingQuestion,
       queuedSends: this.state.queuedSends.length,
       transcript: this._transcript,
+      // [D10] Mirror the reducer's `pendingUserMessage` onto the
+      // snapshot as `inflightUserMessage`. Pass the reference through
+      // unchanged so its identity is stable across snapshot rebuilds
+      // while the same pending message is in flight — downstream
+      // `useSyncExternalStore` consumers ([L02]) need `Object.is`
+      // stability to avoid spurious re-renders.
+      inflightUserMessage: this.state.pendingUserMessage,
       streamingPaths: STREAMING_PATHS,
       lastCost: this.state.lastCost,
       lastError: this.state.lastError,
