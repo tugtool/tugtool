@@ -774,15 +774,16 @@ pub async fn relay_session_io(
                             );
                         }
 
-                        // `result` events mark the end of an assistant turn.
-                        // Each one bumps the ledger row's `turn_count` and
-                        // `last_used_at`. Tugcode emits this once per
-                        // turn — substring match is sufficient given the
-                        // surrounding stream-json shape; a more careful
-                        // parser would be `serde_json::from_str` over the
-                        // whole line, but that pays the deserialize cost on
-                        // every output line for negligible benefit.
-                        if line.contains("\"type\":\"result\"") {
+                        // `turn_complete` events mark the end of an
+                        // assistant turn. Each one bumps the ledger row's
+                        // `turn_count` and `last_used_at`. Tugcode emits
+                        // this once per turn — substring match is
+                        // sufficient given the surrounding stream-json
+                        // shape; a more careful parser would be
+                        // `serde_json::from_str` over the whole line, but
+                        // that pays the deserialize cost on every output
+                        // line for negligible benefit.
+                        if line.contains("\"type\":\"turn_complete\"") {
                             let claude_id = {
                                 let entry = ledger_entry.lock().await;
                                 entry.claude_session_id.clone()
@@ -861,6 +862,24 @@ pub async fn relay_session_io(
                     return RelayOutcome::Cancelled;
                 };
                 if let Some(json) = parse_code_input(&frame) {
+                    // Capture the first user-message text before forwarding
+                    // it to claude. Claude does not echo user inputs back
+                    // through stream-json (the assistant turn arrives
+                    // alone), so this branch is the only place the picker's
+                    // first-prompt snippet can be recorded. The ledger's
+                    // `record_first_prompt` is idempotent — only the first
+                    // user message survives across resumes.
+                    if let Some(text) = parse_user_message_text(json.as_bytes()) {
+                        let claude_id = {
+                            let entry = ledger_entry.lock().await;
+                            entry.claude_session_id.clone()
+                        };
+                        if let Some(id) = claude_id {
+                            let truncated = crate::session_ledger::truncate_first_prompt(&text);
+                            sessions_recorder.record_first_prompt(&id, &truncated);
+                        }
+                    }
+
                     let mut line = json;
                     line.push('\n');
                     if let Err(e) = stdin.write_all(line.as_bytes()).await {
@@ -906,6 +925,23 @@ fn parse_resume_failed_reason(line: &[u8]) -> Option<String> {
     value
         .get("reason")
         .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
+/// Extract the user's text from a CODE_INPUT frame's JSON payload, when
+/// it is a `user_message`. Returns `None` for any other inbound message
+/// shape (interrupt, tool_approval, etc.) so the ledger only sees the
+/// first prompt's actual content. The picker uses this snippet to label
+/// resume rows.
+fn parse_user_message_text(json: &[u8]) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_slice(json).ok()?;
+    if value.get("type").and_then(|v| v.as_str()) != Some("user_message") {
+        return None;
+    }
+    value
+        .get("text")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
         .map(|s| s.to_string())
 }
 
@@ -1149,5 +1185,32 @@ mod tests {
             "SessionChild drop must terminate the underlying subprocess within {MAX_WAIT:?} \
              (kill_on_drop(true) is load-bearing for tugcode cleanup)"
         );
+    }
+
+    // ── parse_user_message_text ──────────────────────────────────────────────
+
+    #[test]
+    fn parse_user_message_text_extracts_text_field() {
+        let json = br#"{"tug_session_id":"abc","type":"user_message","text":"hello","attachments":[]}"#;
+        assert_eq!(parse_user_message_text(json), Some("hello".to_owned()));
+    }
+
+    #[test]
+    fn parse_user_message_text_returns_none_for_other_types() {
+        let json = br#"{"tug_session_id":"abc","type":"interrupt"}"#;
+        assert_eq!(parse_user_message_text(json), None);
+        let json = br#"{"tug_session_id":"abc","type":"tool_approval","request_id":"r","decision":"allow"}"#;
+        assert_eq!(parse_user_message_text(json), None);
+    }
+
+    #[test]
+    fn parse_user_message_text_returns_none_for_empty_text() {
+        let json = br#"{"tug_session_id":"abc","type":"user_message","text":"","attachments":[]}"#;
+        assert_eq!(parse_user_message_text(json), None);
+    }
+
+    #[test]
+    fn parse_user_message_text_returns_none_for_malformed_json() {
+        assert_eq!(parse_user_message_text(b"not json"), None);
     }
 }

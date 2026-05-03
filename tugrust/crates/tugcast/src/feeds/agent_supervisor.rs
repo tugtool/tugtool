@@ -472,6 +472,13 @@ pub trait SessionsRecorder: Send + Sync {
     /// note in the plan's risk table.
     fn record_turn(&self, session_id: &str);
 
+    /// Capture the first user-message text for a session, truncated to
+    /// the picker-snippet length. Idempotent: only the first call per
+    /// session_id sets the field (so the original prompt survives across
+    /// resumes — a later turn doesn't clobber the snippet the user
+    /// recognizes).
+    fn record_first_prompt(&self, session_id: &str, prompt: &str);
+
     /// Transition the row to `closed` and clear the live-card binding.
     /// Called on `close_session` and on bridge teardown after a successful
     /// `result` event.
@@ -647,6 +654,26 @@ impl SessionsRecorder for LedgerSessionsRecorder {
             target: "tide::session-lifecycle",
             event = "ledger.record_turn",
             session_id,
+        );
+        self.broadcast_row(session_id);
+    }
+
+    fn record_first_prompt(&self, session_id: &str, prompt: &str) {
+        if let Err(err) = self.ledger.record_first_prompt(session_id, prompt) {
+            // `NotFound` means the row was never created (claude_session_id
+            // was missing from `session_init`). Other errors are real
+            // sqlite failures worth logging at warn level.
+            match err {
+                crate::session_ledger::LedgerError::NotFound(_) => {}
+                _ => warn!(error = %err, session_id, "ledger record_first_prompt failed"),
+            }
+            return;
+        }
+        tracing::info!(
+            target: "tide::session-lifecycle",
+            event = "ledger.record_first_prompt",
+            session_id,
+            len = prompt.chars().count(),
         );
         self.broadcast_row(session_id);
     }
@@ -2464,6 +2491,7 @@ pub(crate) struct NoopSessionsRecorder;
 impl SessionsRecorder for NoopSessionsRecorder {
     fn record(&self, _record: SessionRecord<'_>) {}
     fn record_turn(&self, _session_id: &str) {}
+    fn record_first_prompt(&self, _session_id: &str, _prompt: &str) {}
     fn mark_closed(&self, _session_id: &str) {}
     fn mark_failed(&self, _session_id: &str) {}
     fn remove(&self, _session_id: &str) {}
@@ -5244,6 +5272,25 @@ mod tests {
         assert_eq!(row.card_id_live.as_deref(), Some("card-1"));
         assert_eq!(row.state, LedgerState::Live);
         assert_eq!(row.turn_count, 0);
+    }
+
+    #[test]
+    fn ledger_recorder_record_first_prompt_sets_snippet() {
+        let (ledger, recorder) = fresh_ledger_recorder();
+        recorder.record(SessionRecord {
+            session_id: "claude-abc",
+            workspace_key: "ws-1",
+            project_dir: "/proj/x",
+            card_id: "card-1",
+        });
+        recorder.record_first_prompt("claude-abc", "hello world");
+        let row = ledger.get("claude-abc").unwrap().unwrap();
+        assert_eq!(row.first_user_prompt.as_deref(), Some("hello world"));
+
+        // Idempotent: a second prompt does not clobber the first.
+        recorder.record_first_prompt("claude-abc", "second turn");
+        let row = ledger.get("claude-abc").unwrap().unwrap();
+        assert_eq!(row.first_user_prompt.as_deref(), Some("hello world"));
     }
 
     #[test]
