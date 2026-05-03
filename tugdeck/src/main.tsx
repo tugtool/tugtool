@@ -12,6 +12,7 @@ import { DeckManager } from "./deck-manager";
 import { initActionDispatch } from "./action-dispatch";
 import { cardServicesStore } from "./lib/card-services-store";
 import { restoreTideSessions } from "./lib/tide-session-restore";
+import { attachTideSessionLedgerStore } from "./lib/tide-session-ledger-store";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import {
   ConnectionLifecycle,
@@ -231,6 +232,12 @@ if (!container) {
   // user-close gestures flow through deck-manager.removeCard, and the
   // services store reacts on its own.
   cardServicesStore.attachDeckManager(deck);
+
+  // Wire the tide session-ledger store to the connection. The store
+  // dispatches `list_sessions` requests on first observation, subscribes
+  // to `session_updated` push frames, and invalidates on reconnect. The
+  // picker reads via `useSessionLedger(workspaceKey)` (step 5).
+  attachTideSessionLedgerStore(connection);
 
   // Re-assert session bindings for tide cards that were alive before
   // this page reload. The tugbank cache is already populated (we awaited

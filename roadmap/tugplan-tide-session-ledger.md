@@ -706,31 +706,36 @@ The old tugbank keys are no longer written to (the bridge wires them out in [Ste
 **References:** [D02] control-ops, [Q02] session-updated-mechanism, [#public-api], [L02]
 
 **Artifacts:**
-- New `tugdeck/src/lib/tide-session-ledger-store.ts` implementing `TideSessionLedgerStore`.
-- `useSessionLedger(workspaceKey)` hook wrapping `useSyncExternalStore`.
-- `tugdeck/src/action-dispatch.ts` routes `session_updated` push frames into the store.
+- New `tugdeck/src/lib/tide-session-ledger-store.ts` — `TideSessionLedgerStore` class, `useSessionLedger(workspaceKey)` hook, `attachTideSessionLedgerStore(connection)` singleton wire-up.
+- `tugdeck/src/main.tsx` calls `attachTideSessionLedgerStore(connection)` after the deck manager is wired.
+- The events bus from step 3 (`tide-session-ledger-events.ts`) is the channel through which the store receives push + ack frames.
 
 **Tasks:**
-- [ ] Author the store: an in-memory `Map<workspaceKey, WorkspaceSnapshot>` cache. Each entry tracks `status` (`"idle" | "pending" | "ready" | "error"`) alongside `rows`.
-- [ ] First-observation flow: when `getSnapshot(workspace)` is called and the cache has no entry, return `{ status: "pending", rows: [] }`, dispatch a `list_sessions` request, and on response settle the entry to `{ status: "ready", rows }`. Subsequent calls return the cached snapshot.
-- [ ] Patch logic: when `session_updated { session_id, fields }` arrives, locate the row in the cache by id (across all workspaces), merge fields, re-sort by `last_used_at DESC`, emit the listener tick. Ignore the push if the workspace isn't cached yet.
-- [ ] When `session_updated { removed: true }` arrives, drop the row from whichever workspace holds it.
-- [ ] Implement `forgetSession` and `forgetWorkspaceSessions` as imperative actions: dispatch the CONTROL request, await the ack, return the result. The cache update arrives via the broadcast.
-- [ ] Implement `invalidateAll()`: walk the cache, set every entry's `status` back to `"idle"`, drop rows. The next `getSnapshot` for each workspace re-issues `list_sessions`. Subscribe to the connection's `transport_settled` signal (per Step 7.5's transport-state lifecycle) and call `invalidateAll()` on every settle after the first — this catches any `session_updated` push that landed during a connection bounce.
-- [ ] `useSessionLedger(workspaceKey)` hook calls `getSnapshot` via `useSyncExternalStore` and returns the `WorkspaceSnapshot` (status + rows). Picker consumers branch on status.
+- [x] Author the store: in-memory `Map<workspaceKey, WorkspaceSnapshot>` cache plus a reverse `session_id → workspace_key` index for O(1) push routing.
+- [x] First-observation flow: `getSnapshot(workspace)` returns `{ status: "pending", rows: [] }` and dispatches a `list_sessions` request. `list_sessions_ok` settles the snapshot to `{ status: "ready", rows }`.
+- [x] Patch logic: `session_updated { session_id, fields }` locates the workspace via the reverse index (or the payload's `workspace_key` for never-seen ids), replaces the row, re-sorts by `last_used_at DESC`, emits a tick. Ignores pushes for uncached workspaces (with index update).
+- [x] `session_updated { removed: true }` drops the row from whichever workspace holds it.
+- [x] `forgetSession` / `forgetWorkspaceSessions` dispatch CONTROL requests and resolve with the ack via the events bus subscriptions.
+- [x] `invalidateAll()` clears every cached entry; next `getSnapshot` per workspace re-issues `list_sessions`. Hooked to `connectionDidReconnect` from `connection-lifecycle` (the meaningful "transport recovered after a close" signal).
+- [x] `useSessionLedger(workspaceKey)` hook wraps `useSyncExternalStore` with a frozen idle snapshot for the no-store / SSR fallback path.
 
 **Tests:**
-- [ ] Unit test: first call returns `pending`; settling on response transitions to `ready`.
-- [ ] Unit test: snapshot-stability when no changes (same `rows` array reference until a push lands).
-- [ ] Unit test: `session_updated` patch updates the row in place.
-- [ ] Unit test: `session_updated { removed: true }` removes the row.
-- [ ] Unit test: `session_updated` for a workspace not in the cache is ignored.
-- [ ] Unit test: `invalidateAll()` flips ready entries to idle; the next `getSnapshot` re-fetches.
-- [ ] Unit test: `forgetSession` resolves with the CONTROL ack shape.
+- [x] Unit test: first call returns `pending`; `list_sessions_ok` transitions to `ready`.
+- [x] Unit test: snapshot-stability when no changes (same reference returned).
+- [x] Unit test: `session_updated` patch updates the row in place + re-sorts.
+- [x] Unit test: `session_updated { removed: true }` removes the row.
+- [x] Unit test: `session_updated` for an uncached workspace is ignored (but indexed for later).
+- [x] Unit test: `invalidateAll()` flips ready entries to idle; the next `getSnapshot` re-issues the request.
+- [x] Unit test: `forgetSession` resolves `{ ok: true }` on `_ok` and `{ error: { reason } }` on `_err`.
+- [x] Unit test: `forgetWorkspaceSessions` resolves with `count` from the ack.
+- [x] Unit test: `list_sessions_err` flips snapshot to `error` with the wire reason.
+- [x] Unit test: encoders + `decodeSessionUpdated` (covered in step 3 protocol tests).
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit`
-- [ ] `bun test src/lib/__tests__/tide-session-ledger-store.test.ts`
+- [x] `bun x tsc --noEmit` — clean
+- [x] `bun test src/lib/__tests__/tide-session-ledger-store.test.ts` — 12 passed
+- [x] `bun test` — 2762 tests passing (12 net new)
+- [x] `bun run audit:tokens lint` — zero violations
 
 ---
 
