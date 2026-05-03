@@ -64,6 +64,7 @@ import { GalleryAlert } from "./gallery-alert";
 import { GallerySheet } from "./gallery-sheet";
 import { GalleryBulletin } from "./gallery-bulletin";
 import { GalleryMarkdownView } from "./gallery-markdown-view";
+import { GalleryListView } from "./gallery-list-view";
 import { GalleryTranscriptEntry } from "./gallery-transcript-entry";
 import { GalleryAtom } from "./gallery-atom";
 import { GalleryPromptEntry } from "./gallery-prompt-entry";
@@ -418,6 +419,16 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.textInput,
+  });
+
+  registerCard({
+    componentId: "gallery-list-view",
+    contentFactory: (_cardId) => <GalleryListView />,
+    defaultMeta: { title: "TugListView", icon: "List", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
     category: CATEGORIES.textInput,
   });
 

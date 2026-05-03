@@ -33,6 +33,15 @@
   position: relative;
   box-sizing: border-box;
 
+  /* Fill the parent — the primitive is itself the scroll container,
+     so its height needs to be bounded by something for `overflow-y:
+     auto` to engage. Consumers give it space by sizing the parent
+     (e.g. a flex item with `flex: 1; min-height: 0`); the list view
+     then fills that allotment, and content beyond it scrolls. This
+     matches the `.tugx-md-scroll-container` pattern in
+     `tug-markdown-view.css`. */
+  height: 100%;
+
   /* Tokens drive padding so consumers tune per-instance via cascade. */
   padding-block: var(--tugx-list-view-padding-block);
   padding-inline: var(--tugx-list-view-padding-inline);

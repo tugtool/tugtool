@@ -1190,23 +1190,23 @@ happy-dom is suitable for all unit, component, reducer, adapter, and integration
 
 **Tasks:**
 
-- [ ] Author the gallery card. Module docstring states data is mock; live wire is the transcript.
-- [ ] Wire the synthetic data source as a class with subscribe/getVersion + numberOfItems/idForIndex/kindForIndex.
-- [ ] Implement the cell renderers per kind.
-- [ ] Implement the streaming-document tick (setInterval, dispose on unmount).
-- [ ] Add the registration entry to `gallery-registrations.tsx`.
-- [ ] Render-only smoke test.
-- [ ] Manual visual review: open `gallery-list-view` in tugdeck; verify all four kinds, scroll behavior, follow-bottom, insert/remove buttons, console logs.
+- [x] Author the gallery card. Module docstring states data is mock; live wire is the transcript.
+- [x] Wire the synthetic data source as a class with subscribe/getVersion + numberOfItems/idForIndex/kindForIndex.
+- [x] Implement the cell renderers per kind. **Five kinds shipped:** `short` / `tall` (40 / 200px estimated, plain text), `streaming-text` (uses `useSyncExternalStore` against the shared store — React-render-cycle binding is fine for the small text payload), `markdown-static` (`<TugMarkdownBlock initialText={...} />`), `markdown-streaming` (`<TugMarkdownBlock streamingStore streamingPath />`, [L22] direct-DOM internally). All five kinds intermixed across the 50-item seed via a sparse "specials" map; the gallery shows every shape without burying it in identical rows.
+- [x] Implement the streaming-document tick (setInterval, dispose on unmount). 200ms tick × 50 ticks per ~10s cycle; resets and replays for continuous demo.
+- [x] Add the registration entry to `gallery-registrations.tsx`. `componentId: "gallery-list-view"`, `family: "developer"`, `GALLERY_COMPLEX_SIZE`, `category: textInput`.
+- [x] Render-only smoke test. Three assertions: documented `data-slot` shape, at least one rendered cell, four mutator buttons present.
+- [ ] Manual visual review: open `gallery-list-view` in tugdeck; verify all five kinds, scroll behavior, follow-bottom, insert/remove buttons, console logs. **(User-driven.)**
 
 **Tests:**
 
-- [ ] Render-only smoke: gallery card mounts without throwing in happy-dom and produces the expected `data-slot="tug-list-view"` root.
+- [x] Render-only smoke: gallery card mounts without throwing in happy-dom and produces the expected `data-slot="tug-list-view"` root.
 
 **Checkpoint:**
 
-- [ ] `bun x tsc --noEmit` — exit 0.
-- [ ] `bun test` — all green.
-- [ ] `bun run audit:tokens lint` — zero violations.
+- [x] `bun x tsc --noEmit` — exit 0.
+- [x] `bun test` — all green (2907 pass / 0 fail).
+- [x] `bun run audit:tokens lint` — zero violations.
 - [ ] Manual: open `gallery-list-view` in tugdeck and visually review. **(User-driven; HMR picks up the changes.)**
 
 ---
