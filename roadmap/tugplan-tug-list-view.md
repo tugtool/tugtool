@@ -905,18 +905,18 @@ happy-dom is suitable for all unit, component, reducer, adapter, and integration
 
 **Tasks:**
 
-- [ ] Add the four tokens to `brio.css` per [#tokens].
-- [ ] Mirror in `harmony.css`.
-- [ ] Run `bun run audit:tokens lint`; resolve any seven-slot naming complaints (none expected — `--tugx-` extension prefix is exempt from seven-slot enforcement).
+- [x] Add the four tokens to `brio.css` per [#tokens].
+- [x] Mirror in `harmony.css`.
+- [x] Run `bun run audit:tokens lint`; resolve any seven-slot naming complaints (none expected — `--tugx-` extension prefix is exempt from seven-slot enforcement).
 
 **Tests:**
 
-- [ ] `bun run audit:tokens lint` exits 0.
+- [x] `bun run audit:tokens lint` exits 0.
 
 **Checkpoint:**
 
-- [ ] `bun run audit:tokens lint` — zero violations.
-- [ ] `bun x tsc --noEmit` — exit 0.
+- [x] `bun run audit:tokens lint` — zero violations.
+- [x] `bun x tsc --noEmit` — exit 0.
 
 ---
 

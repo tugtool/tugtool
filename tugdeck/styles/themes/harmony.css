@@ -859,4 +859,16 @@ body {
   --tugx-transcript-icon-color-code: var(--tug7-element-tone-icon-normal-agent-rest);
   --tugx-transcript-icon-color-shell: var(--tug7-element-tone-icon-normal-data-rest);
   --tugx-transcript-icon-color-command: var(--tug7-element-tone-icon-normal-active-rest);
+
+  /* TugListView — windowed list primitive. Layout-only tokens; the
+     primitive paints no contrast pairings of its own. Consumers customize
+     per-instance via cascade scoping (e.g. `.tide-card-transcript
+     .tug-list-view { --tugx-list-view-row-gap: ... }`); they never reach
+     into the primitive's CSS. Per-card-subtree uniqueness of the
+     `data-tug-scroll-key` attribute is the consumer's concern via the
+     `scrollKey` prop. */
+  --tugx-list-view-padding-block: var(--tug-space-md);
+  --tugx-list-view-padding-inline: var(--tug-space-md);
+  --tugx-list-view-row-gap: var(--tug-space-sm);
+  --tugx-list-view-scroll-padding-end: var(--tug-space-lg);
 }
