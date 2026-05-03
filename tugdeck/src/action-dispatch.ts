@@ -53,8 +53,6 @@ import {
   publishListSessionsErr,
   publishForgetSessionOk,
   publishForgetSessionErr,
-  publishForgetWorkspaceSessionsOk,
-  publishForgetWorkspaceSessionsErr,
   publishForgetProjectDirSessionsOk,
   publishForgetProjectDirSessionsErr,
 } from "./lib/tide-session-ledger-events";
@@ -491,26 +489,6 @@ export function initActionDispatch(
       return;
     }
     publishForgetSessionErr({ session_id: sessionId, reason });
-  });
-
-  // forget_workspace_sessions_ok / _err
-  registerAction("forget_workspace_sessions_ok", (payload) => {
-    const workspaceKey = payload.workspace_key;
-    const count = payload.count;
-    if (typeof workspaceKey !== "string" || typeof count !== "number") {
-      console.warn("forget_workspace_sessions_ok: missing or invalid fields", payload);
-      return;
-    }
-    publishForgetWorkspaceSessionsOk({ workspace_key: workspaceKey, count });
-  });
-  registerAction("forget_workspace_sessions_err", (payload) => {
-    const workspaceKey = payload.workspace_key;
-    const reason = payload.reason;
-    if (typeof workspaceKey !== "string" || typeof reason !== "string") {
-      console.warn("forget_workspace_sessions_err: missing or invalid fields", payload);
-      return;
-    }
-    publishForgetWorkspaceSessionsErr({ workspace_key: workspaceKey, reason });
   });
 
   // forget_project_dir_sessions_ok / _err: response to a recents-eviction

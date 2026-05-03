@@ -62,7 +62,6 @@ export const CONTROL_ACTION_CLOSE_SESSION = "close_session";
 export const CONTROL_ACTION_RESET_SESSION = "reset_session";
 export const CONTROL_ACTION_LIST_SESSIONS = "list_sessions";
 export const CONTROL_ACTION_FORGET_SESSION = "forget_session";
-export const CONTROL_ACTION_FORGET_WORKSPACE_SESSIONS = "forget_workspace_sessions";
 export const CONTROL_ACTION_FORGET_PROJECT_DIR_SESSIONS = "forget_project_dir_sessions";
 
 /**
@@ -378,20 +377,6 @@ export function encodeListSessions(projectDir: string): Frame {
 export function encodeForgetSession(sessionId: string): Frame {
   return controlFrame(CONTROL_ACTION_FORGET_SESSION, {
     session_id: sessionId,
-  });
-}
-
-/**
- * Build a `forget_workspace_sessions` CONTROL request frame.
- *
- * Drops every non-live row in the workspace in a single transaction.
- * Live rows are preserved (the user must close their cards first).
- * Emits one `session_updated { removed: true }` per dropped row plus
- * `forget_workspace_sessions_ok { workspace_key, count }` on success.
- */
-export function encodeForgetWorkspaceSessions(workspaceKey: string): Frame {
-  return controlFrame(CONTROL_ACTION_FORGET_WORKSPACE_SESSIONS, {
-    workspace_key: workspaceKey,
   });
 }
 

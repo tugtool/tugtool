@@ -724,7 +724,7 @@ impl SessionsRecorder for LedgerSessionsRecorder {
 }
 
 /// Build the `session_updated` push payload for a row's current state.
-/// Public so the `do_forget_session` / `do_forget_workspace_sessions`
+/// Public so the `do_forget_session` / `do_forget_project_dir_sessions`
 /// handlers can emit the matching frame after their batch writes.
 pub fn build_session_updated_frame(row: &crate::session_ledger::SessionRow) -> Frame {
     let body = serde_json::json!({
@@ -830,8 +830,6 @@ pub enum ControlError {
     MissingCardId,
     #[error("control payload missing tug_session_id")]
     MissingSessionId,
-    #[error("control payload missing workspace_key")]
-    MissingWorkspaceKey,
     #[error("control payload is not valid JSON")]
     Malformed,
     #[error("tugbank persistence failed: {0}")]
@@ -966,23 +964,11 @@ fn parse_control_payload_owned(payload: &[u8]) -> Result<OwnedControlPayload, Co
     })
 }
 
-fn parse_workspace_key_payload(payload: &[u8]) -> Result<String, ControlError> {
-    let value: serde_json::Value =
-        serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
-    let ws = value
-        .get("workspace_key")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-        .ok_or(ControlError::MissingWorkspaceKey)?
-        .to_string();
-    Ok(ws)
-}
-
 /// Parse a CONTROL payload that carries `{ project_dir: "..." }`. The
 /// picker's `list_sessions` request uses this so the lookup matches the
 /// raw user-typed path (the value originally recorded by `record_spawn`).
-/// The error variant reuses `MissingWorkspaceKey` because the wire
-/// translation is the same — a missing identifier the lookup needs.
+/// `MissingSessionId`-shaped error semantics: a missing identifier the
+/// lookup needs.
 fn parse_project_dir_payload(payload: &[u8]) -> Result<String, ControlError> {
     let value: serde_json::Value =
         serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
@@ -1239,11 +1225,6 @@ impl AgentSupervisor {
             "forget_session" => {
                 let session_id = parse_session_id_payload(payload)?;
                 self.do_forget_session(&session_id).await;
-                Ok(())
-            }
-            "forget_workspace_sessions" => {
-                let workspace_key = parse_workspace_key_payload(payload)?;
-                self.do_forget_workspace_sessions(&workspace_key).await;
                 Ok(())
             }
             "forget_project_dir_sessions" => {
@@ -1824,73 +1805,6 @@ impl AgentSupervisor {
                 let _ = self.control_tx.send(Frame::new(
                     FeedId::CONTROL,
                     serde_json::to_vec(&body).expect("forget_session_err serializes"),
-                ));
-            }
-        }
-    }
-
-    /// Handle a `forget_workspace_sessions` CONTROL request. Drops every
-    /// non-live row in the workspace in a single transaction. Live rows are
-    /// preserved (the user must close the card first). Emits one
-    /// `session_updated { removed: true }` per dropped row plus the
-    /// `forget_workspace_sessions_ok` response carrying the count.
-    async fn do_forget_workspace_sessions(&self, workspace_key: &str) {
-        let Some(ledger) = self.session_ledger.as_ref() else {
-            let body = serde_json::json!({
-                "action": "forget_workspace_sessions_err",
-                "workspace_key": workspace_key,
-                "reason": "no_ledger",
-            });
-            let _ = self.control_tx.send(Frame::new(
-                FeedId::CONTROL,
-                serde_json::to_vec(&body).expect("forget_workspace_sessions_err serializes"),
-            ));
-            return;
-        };
-        // Capture the doomed-row ids before deletion so the per-row
-        // broadcasts can fire afterwards. List-then-delete is racy w.r.t. a
-        // concurrent recorder.write; a more careful implementation would
-        // return the deleted ids from `forget_workspace`. Acceptable for
-        // step 3 — the supervisor's write cadence makes a real race vanishly
-        // unlikely. Revisit if a test ever flakes on this path.
-        let doomed: Vec<String> = match ledger.list_for_workspace(workspace_key) {
-            Ok(rows) => rows
-                .into_iter()
-                .filter(|r| r.state != crate::session_ledger::SessionState::Live)
-                .map(|r| r.session_id)
-                .collect(),
-            Err(err) => {
-                warn!(error = %err, workspace_key, "forget_workspace pre-list failed");
-                Vec::new()
-            }
-        };
-        match ledger.forget_workspace(workspace_key) {
-            Ok(outcome) => {
-                for sid in &doomed {
-                    let _ = self.control_tx.send(build_session_removed_frame(sid));
-                }
-                let body = serde_json::json!({
-                    "action": "forget_workspace_sessions_ok",
-                    "workspace_key": workspace_key,
-                    "count": outcome.count,
-                });
-                let _ = self.control_tx.send(Frame::new(
-                    FeedId::CONTROL,
-                    serde_json::to_vec(&body)
-                        .expect("forget_workspace_sessions_ok serializes"),
-                ));
-            }
-            Err(err) => {
-                warn!(error = %err, workspace_key, "forget_workspace ledger error");
-                let body = serde_json::json!({
-                    "action": "forget_workspace_sessions_err",
-                    "workspace_key": workspace_key,
-                    "reason": "ledger_write_failed",
-                });
-                let _ = self.control_tx.send(Frame::new(
-                    FeedId::CONTROL,
-                    serde_json::to_vec(&body)
-                        .expect("forget_workspace_sessions_err serializes"),
                 ));
             }
         }
@@ -5606,48 +5520,6 @@ mod tests {
         assert_eq!(err["session_id"], "live1");
         assert_eq!(err["reason"], "session_is_live");
         assert!(ledger.get("live1").unwrap().is_some(), "row retained");
-    }
-
-    #[tokio::test]
-    async fn forget_workspace_sessions_drops_non_live_only() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, ledger, mut rx) = make_supervisor_with_ledger(store);
-
-        ledger
-            .record_spawn("live1", "ws-1", "/p", "c1", 1_000)
-            .unwrap();
-        ledger
-            .record_spawn("c1", "ws-1", "/p", "c1", 2_000)
-            .unwrap();
-        ledger.mark_closed("c1").unwrap();
-        ledger
-            .record_spawn("f1", "ws-1", "/p", "c1", 3_000)
-            .unwrap();
-        ledger.mark_failed("f1").unwrap();
-        // unrelated workspace — must not be touched.
-        ledger
-            .record_spawn("o1", "ws-2", "/p", "c2", 4_000)
-            .unwrap();
-        ledger.mark_closed("o1").unwrap();
-        while rx.try_recv().is_ok() {}
-
-        let payload = serde_json::to_vec(&serde_json::json!({
-            "action": "forget_workspace_sessions",
-            "workspace_key": "ws-1",
-        }))
-        .unwrap();
-        sup.handle_control("forget_workspace_sessions", &payload, 10)
-            .await
-            .unwrap();
-
-        let ack = drain_until_action(&mut rx, "forget_workspace_sessions_ok");
-        assert_eq!(ack["workspace_key"], "ws-1");
-        assert_eq!(ack["count"], 2);
-
-        assert!(ledger.get("live1").unwrap().is_some(), "live retained");
-        assert!(ledger.get("c1").unwrap().is_none(), "closed dropped");
-        assert!(ledger.get("f1").unwrap().is_none(), "failed dropped");
-        assert!(ledger.get("o1").unwrap().is_some(), "other ws untouched");
     }
 
     #[tokio::test]

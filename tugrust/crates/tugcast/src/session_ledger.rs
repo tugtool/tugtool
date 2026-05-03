@@ -140,12 +140,6 @@ pub struct ForgetOutcome {
     pub jsonl_moved_to: Option<PathBuf>,
 }
 
-/// Result of `forget_workspace` — reports how many rows were dropped.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ForgetWorkspaceOutcome {
-    pub count: usize,
-}
-
 /// SQLite-backed per-session metadata store.
 pub struct SessionLedger {
     db: Mutex<Connection>,
@@ -287,32 +281,6 @@ impl SessionLedger {
             .query_map(params![project_dir], row_from_query)?
             .collect::<Result<Vec<_>, _>>()?;
         rows.into_iter().collect()
-    }
-
-    /// Most-recent non-live row for the workspace, suitable for the
-    /// supervisor's "resume last session" path. `live` rows are excluded
-    /// because the live-elsewhere check already runs against `card_id_live`
-    /// at the supervisor; resuming a live row from another card is rejected.
-    pub fn find_for_resume(
-        &self,
-        workspace_key: &str,
-    ) -> Result<Option<SessionRow>, LedgerError> {
-        let conn = self.db.lock().expect("ledger mutex");
-        let mut stmt = conn.prepare(
-            "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
-                    turn_count, first_user_prompt, state, card_id_live
-             FROM sessions
-             WHERE workspace_key = ?1 AND state != 'live'
-             ORDER BY last_used_at DESC
-             LIMIT 1",
-        )?;
-        let row = stmt
-            .query_row(params![workspace_key], row_from_query)
-            .optional()?;
-        match row {
-            Some(r) => Ok(Some(r?)),
-            None => Ok(None),
-        }
     }
 
     /// Look up a single row by session id.
@@ -505,43 +473,6 @@ impl SessionLedger {
         })
     }
 
-    /// Drop every non-live row in the workspace and move each row's
-    /// JSONL to trash so the user can recover. Reports how many rows
-    /// were removed; live rows are left in place.
-    pub fn forget_workspace(
-        &self,
-        workspace_key: &str,
-    ) -> Result<ForgetWorkspaceOutcome, LedgerError> {
-        let mut conn = self.db.lock().expect("ledger mutex");
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        // Snapshot (session_id, project_dir) tuples for the doomed rows so
-        // we can move their JSONLs after the row delete commits.
-        let doomed: Vec<(String, String)> = {
-            let mut stmt = tx.prepare(
-                "SELECT session_id, project_dir FROM sessions
-                 WHERE workspace_key = ?1 AND state != 'live'",
-            )?;
-            stmt.query_map(params![workspace_key], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            })?
-            .collect::<Result<Vec<_>, _>>()?
-        };
-        for (id, _) in &doomed {
-            tx.execute(
-                "DELETE FROM sessions WHERE session_id = ?1",
-                params![id],
-            )?;
-        }
-        tx.commit()?;
-        drop(conn);
-
-        let now = now_millis();
-        for (id, project_dir) in &doomed {
-            move_jsonl_to_trash(&self.claude_projects_root, project_dir, id, now);
-        }
-        Ok(ForgetWorkspaceOutcome { count: doomed.len() })
-    }
-
     /// Drop every non-live row whose `project_dir` matches `project_dir`
     /// literally and move each row's JSONL to trash. Returns the session
     /// ids of the dropped rows so the caller can broadcast `session_updated
@@ -580,42 +511,51 @@ impl SessionLedger {
         Ok(doomed)
     }
 
-    /// Walk `<claude_projects_root>/<encoded>/.tug-trash/` for every
-    /// known workspace and remove any `<deletedAt>` subdirectory whose
-    /// timestamp is older than `max_age_ms`. Called from `main.rs` at
-    /// tugcast startup.
+    /// Walk every project subdirectory under `claude_projects_root`,
+    /// looking for `.tug-trash/<deletedAt>/` subdirs whose timestamp is
+    /// older than `max_age_ms`. Called from `main.rs` at tugcast startup.
     ///
-    /// Returns the count of subdirectories removed across all workspaces.
+    /// Returns the count of subdirectories removed across all projects.
     /// IO errors are logged via tracing and swallowed — a partial sweep
     /// is preferable to bringing tugcast startup down.
+    ///
+    /// Filesystem-driven (not ledger-driven) so the sweep finds trash
+    /// dirs even when their parent project's last ledger row was forgotten
+    /// — that's the path that creates the orphan in the first place. The
+    /// scan touches at most a few dozen subdirs (one per claude project),
+    /// so the cost is negligible compared to the alternative of leaking
+    /// trash dirs forever.
     pub fn sweep_trash(&self, max_age_ms: i64, now: i64) -> usize {
         let cutoff = now.saturating_sub(max_age_ms);
-        let workspaces = match self.distinct_workspaces() {
-            Ok(ws) => ws,
+        let entries = match std::fs::read_dir(&self.claude_projects_root) {
+            Ok(it) => it,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return 0,
             Err(err) => {
-                tracing::warn!(error = %err, "sweep_trash distinct_workspaces failed");
+                tracing::warn!(
+                    error = %err,
+                    root = %self.claude_projects_root.display(),
+                    "sweep_trash: read_dir failed",
+                );
                 return 0;
             }
         };
-        // Also include any project_dir we've ever seen — workspace_key is
-        // not the JSONL-encoded key; the ledger column the trash mover
-        // uses is `project_dir`. Pull distinct project_dir values too.
         let mut count = 0usize;
-        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-        seen.extend(workspaces);
-        // Best-effort: also include rows currently in the ledger.
-        if let Ok(conn) = self.db.lock() {
-            if let Ok(mut stmt) = conn.prepare("SELECT DISTINCT project_dir FROM sessions") {
-                if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
-                    for r in rows.flatten() {
-                        seen.insert(r);
-                    }
-                }
+        for entry_result in entries {
+            let Ok(entry) = entry_result else {
+                continue;
+            };
+            // Only descend into directories (each project root is a dir).
+            // file_type() avoids one syscall per stat() call when the
+            // dirent already carries the type, which it does on macOS +
+            // Linux APFS/ext.
+            let is_dir = entry
+                .file_type()
+                .map(|ft| ft.is_dir())
+                .unwrap_or(false);
+            if !is_dir {
+                continue;
             }
-        }
-        for project_dir in seen {
-            let encoded = encode_claude_project_name(&project_dir);
-            let trash_root = self.claude_projects_root.join(&encoded).join(".tug-trash");
+            let trash_root = entry.path().join(".tug-trash");
             count += sweep_trash_dir(&trash_root, cutoff);
         }
         count
@@ -1042,7 +982,7 @@ mod tests {
         assert_eq!(r.card_id_live.as_deref(), Some("card-2"));
     }
 
-    // ── list_for_workspace + find_for_resume ─────────────────────────────────
+    // ── list_for_workspace ───────────────────────────────────────────────────
 
     #[test]
     fn list_for_workspace_orders_newest_first() {
@@ -1057,26 +997,7 @@ mod tests {
         assert_eq!(ids, vec!["s2", "s3", "s1"]);
     }
 
-    #[test]
-    fn find_for_resume_skips_live_rows() {
-        let l = fresh();
-        // Live row most recent; a closed row is the resume candidate.
-        seed_live(&l, "live1", WS_A, "c-live", millis(0));
-        seed_live(&l, "closed1", WS_A, "c1", millis(2));
-        l.mark_closed("closed1").unwrap();
-
-        let r = l.find_for_resume(WS_A).unwrap().unwrap();
-        assert_eq!(r.session_id, "closed1");
-    }
-
-    #[test]
-    fn find_for_resume_returns_none_when_only_live_rows_exist() {
-        let l = fresh();
-        seed_live(&l, "live1", WS_A, "c-live", millis(0));
-        assert!(l.find_for_resume(WS_A).unwrap().is_none());
-    }
-
-    // ── forget / forget_workspace ────────────────────────────────────────────
+    // ── forget ───────────────────────────────────────────────────────────────
 
     #[test]
     fn forget_removes_closed_row() {
@@ -1104,24 +1025,6 @@ mod tests {
         let l = fresh();
         let err = l.forget("nope").unwrap_err();
         assert!(matches!(err, LedgerError::NotFound(ref id) if id == "nope"));
-    }
-
-    #[test]
-    fn forget_workspace_drops_only_non_live_rows() {
-        let l = fresh();
-        seed_live(&l, "live1", WS_A, "c-live", millis(0));
-        seed_live(&l, "closed1", WS_A, "c1", millis(1));
-        l.mark_closed("closed1").unwrap();
-        seed_live(&l, "failed1", WS_A, "c2", millis(2));
-        l.mark_failed("failed1").unwrap();
-        seed_live(&l, "other", WS_B, "cb", millis(0));
-
-        let outcome = l.forget_workspace(WS_A).unwrap();
-        assert_eq!(outcome.count, 2);
-        assert!(l.get("live1").unwrap().is_some());
-        assert!(l.get("closed1").unwrap().is_none());
-        assert!(l.get("failed1").unwrap().is_none());
-        assert!(l.get("other").unwrap().is_some());
     }
 
     // ── eviction ─────────────────────────────────────────────────────────────
@@ -1465,10 +1368,6 @@ mod tests {
     fn sweep_trash_removes_subdirs_older_than_cutoff() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let l = fresh_ledger_with_root(tmp.path());
-        // Seed a row so distinct_workspaces returns ws-1, ensuring sweep
-        // walks /proj/x's trash dir even though we then forget the row.
-        l.record_spawn("seed", "ws-1", "/proj/x", "c1", millis(0))
-            .unwrap();
 
         let trash_root = tmp
             .path()
@@ -1496,13 +1395,55 @@ mod tests {
 
     #[test]
     fn sweep_trash_no_op_when_root_missing() {
+        // Root path does not exist on disk at all.
         let tmp = tempfile::tempdir().expect("tempdir");
-        let l = fresh_ledger_with_root(tmp.path());
-        // No rows seeded → distinct_workspaces returns empty. Even with
-        // a fresh project_dir row, the trash dir doesn't exist yet.
-        l.record_spawn("seed", "ws-x", "/proj/never-trashed", "c", millis(0))
-            .unwrap();
+        let nonexistent_root = tmp.path().join("does-not-exist");
+        let l = fresh_ledger_with_root(&nonexistent_root);
         let removed = l.sweep_trash(7 * 86_400_000, millis(0));
         assert_eq!(removed, 0);
+    }
+
+    #[test]
+    fn sweep_trash_no_op_when_no_project_dirs_have_trash() {
+        // Project dirs exist under the root, but none of them has a
+        // `.tug-trash/` subdir. Sweep is a no-op.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let l = fresh_ledger_with_root(tmp.path());
+        std::fs::create_dir_all(tmp.path().join("-proj-clean")).unwrap();
+        std::fs::create_dir_all(tmp.path().join("-proj-also-clean")).unwrap();
+        let removed = l.sweep_trash(7 * 86_400_000, millis(0));
+        assert_eq!(removed, 0);
+    }
+
+    /// Regression: A4 from the post-ship audit. Trash subdirs must be
+    /// swept even when the ledger has no rows referencing the project_dir
+    /// — the very path that creates the orphan (Forget every row for a
+    /// project) leaves no ledger trace pointing back at the trash dir.
+    #[test]
+    fn sweep_trash_recovers_orphaned_project_dirs() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let l = fresh_ledger_with_root(tmp.path());
+
+        // Build a trash subdir under a project_dir that the ledger has
+        // NO rows for — simulating the post-Forget-everything state.
+        let orphan_root = tmp
+            .path()
+            .join(encode_claude_project_name("/proj/orphan"))
+            .join(".tug-trash");
+        let now = millis(0);
+        let day = 86_400_000_i64;
+        let stale = now - 30 * day;
+        let stale_dir = orphan_root.join(stale.to_string());
+        std::fs::create_dir_all(&stale_dir).unwrap();
+        std::fs::write(stale_dir.join("ghost.jsonl"), b"orphan").unwrap();
+
+        // Sanity: the ledger knows nothing about /proj/orphan.
+        let workspaces = l.distinct_workspaces().unwrap();
+        assert!(!workspaces.contains(&"/proj/orphan".to_owned()));
+
+        // Sweep finds and removes the orphaned dir anyway.
+        let removed = l.sweep_trash(7 * day, now);
+        assert_eq!(removed, 1);
+        assert!(!stale_dir.exists());
     }
 }

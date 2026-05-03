@@ -496,16 +496,16 @@ enum ControlIntercept {
 ///
 /// Includes the session-ledger CONTROL ops added in step 3 of
 /// `tugplan-tide-session-ledger.md`: the picker queries the ledger via
-/// `list_sessions`, and Forget actions go through `forget_session` /
-/// `forget_workspace_sessions`. The supervisor handles all of them so the
-/// ledger remains the single source of truth.
+/// `list_sessions`, per-row Forget goes through `forget_session`, and
+/// the recents-eviction → ledger-eviction coupling uses
+/// `forget_project_dir_sessions`. The supervisor handles all of them so
+/// the ledger remains the single source of truth.
 const SUPERVISOR_SESSION_ACTIONS: &[&str] = &[
     "spawn_session",
     "close_session",
     "reset_session",
     "list_sessions",
     "forget_session",
-    "forget_workspace_sessions",
     "forget_project_dir_sessions",
 ];
 
@@ -533,9 +533,6 @@ async fn intercept_session_control(
         },
         Err(ControlError::MissingSessionId) => ControlIntercept::HandledError {
             detail: "missing_tug_session_id",
-        },
-        Err(ControlError::MissingWorkspaceKey) => ControlIntercept::HandledError {
-            detail: "missing_workspace_key",
         },
         Err(ControlError::Malformed) => ControlIntercept::HandledError {
             detail: "malformed_payload",

@@ -19,7 +19,6 @@ import {
   _resetTideSessionLedgerEventsForTest,
   publishForgetSessionErr,
   publishForgetSessionOk,
-  publishForgetWorkspaceSessionsOk,
   publishListSessionsErr,
   publishListSessionsOk,
   publishSessionUpdated,
@@ -210,24 +209,6 @@ describe("TideSessionLedgerStore", () => {
     publishForgetSessionErr({ session_id: "live1", reason: "session_is_live" });
     const result = await promise;
     expect(result).toEqual({ error: { reason: "session_is_live" } });
-    store.dispose();
-  });
-
-  it("forgetWorkspaceSessions resolves with the count from the ack", async () => {
-    const { store, conn } = newStore();
-    const promise = store.forgetWorkspaceSessions("ws-1");
-    const frames = conn.recordedFrames.filter((f) => f.feedId === FeedId.CONTROL);
-    expect(frames.length).toBe(1);
-    const decoded = JSON.parse(
-      new TextDecoder().decode(frames[0].decoded as Uint8Array),
-    );
-    expect(decoded).toEqual({
-      action: "forget_workspace_sessions",
-      workspace_key: "ws-1",
-    });
-    publishForgetWorkspaceSessionsOk({ workspace_key: "ws-1", count: 3 });
-    const result = await promise;
-    expect(result).toEqual({ ok: true, count: 3 });
     store.dispose();
   });
 

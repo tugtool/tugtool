@@ -232,16 +232,6 @@ describe("session ledger CONTROL encoders / decoders", () => {
     });
   });
 
-  test("encodeForgetWorkspaceSessions produces a CONTROL frame with workspace_key", async () => {
-    const { encodeForgetWorkspaceSessions } = await import("../protocol");
-    const frame = encodeForgetWorkspaceSessions("ws-1");
-    expect(frame.feedId).toBe(FeedId.CONTROL);
-    const payload = parsePayload(frame);
-    expect(payload).toEqual({
-      action: "forget_workspace_sessions",
-      workspace_key: "ws-1",
-    });
-  });
 
   test("decodeSessionUpdated returns row payload for full update", async () => {
     const { decodeSessionUpdated } = await import("../protocol");

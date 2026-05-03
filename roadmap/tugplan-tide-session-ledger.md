@@ -69,7 +69,7 @@ This plan delivers each of those. The tugbank `sessions` map and `live-sessions`
 
 1. **Ledger crate.** Sqlite schema (idempotent DDL — `CREATE TABLE IF NOT EXISTS`), CRUD API, eviction helpers. In-memory test fallback.
 2. **Bridge / supervisor wiring.** New `LedgerSessionsRecorder` and the live-state collapse into ledger rows. Stops writing to the old tugbank keys; resume-failed flips `state="failed"` instead of deleting the row.
-3. **CONTROL ops.** `list_sessions`, `forget_session`, `forget_workspace_sessions`, `session_updated` broadcast. Encoders/decoders in tugdeck and tugcast.
+3. **CONTROL ops.** `list_sessions`, `forget_session`, `forget_project_dir_sessions`, `session_updated` broadcast. Encoders/decoders in tugdeck and tugcast. (`forget_workspace_sessions` was authored as part of the original sketch but found dead in post-ship cleanup — the picker uses per-row `forget_session` and recents-eviction uses `forget_project_dir_sessions`. The action was removed.)
 4. **Tugdeck client store.** `tideSessionLedgerStore` — observes `session_updated` broadcasts, caches the workspace's session list.
 5. **Picker rewires + UX.** Drop tugbank reads; render rich rows; Forget actions.
 6. **Eviction + recents coherence.** Cap, age, recents↔ledger coupling.

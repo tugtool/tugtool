@@ -31,14 +31,11 @@ import type { TugConnection } from "../connection";
 import type { SessionRow } from "../protocol";
 import {
   encodeForgetSession,
-  encodeForgetWorkspaceSessions,
   encodeListSessions,
 } from "../protocol";
 import {
   subscribeToForgetSessionErr,
   subscribeToForgetSessionOk,
-  subscribeToForgetWorkspaceSessionsErr,
-  subscribeToForgetWorkspaceSessionsOk,
   subscribeToListSessionsErr,
   subscribeToListSessionsOk,
   subscribeToSessionUpdated,
@@ -64,9 +61,6 @@ const PENDING_SNAPSHOT: WorkspaceSnapshot = Object.freeze({
 });
 
 type ForgetSessionResult = { ok: true } | { error: { reason: string } };
-type ForgetWorkspaceSessionsResult =
-  | { ok: true; count: number }
-  | { error: { reason: string } };
 
 /**
  * Per-session-id index entry. Tracks which `projectDir` cache currently
@@ -86,11 +80,6 @@ export class TideSessionLedgerStore {
 
   /** Resolves attached to in-flight `forget_session` calls, keyed by id. */
   private readonly pendingForget = new Map<string, (r: ForgetSessionResult) => void>();
-  /** Resolves attached to in-flight `forget_workspace_sessions` calls. */
-  private readonly pendingForgetWorkspace = new Map<
-    string,
-    (r: ForgetWorkspaceSessionsResult) => void
-  >();
 
   private readonly disposers: Array<() => void> = [];
 
@@ -138,14 +127,6 @@ export class TideSessionLedgerStore {
     return new Promise((resolve) => {
       this.pendingForget.set(sessionId, resolve);
       const frame = encodeForgetSession(sessionId);
-      this.conn.send(frame.feedId, frame.payload);
-    });
-  }
-
-  forgetWorkspaceSessions(workspaceKey: string): Promise<ForgetWorkspaceSessionsResult> {
-    return new Promise((resolve) => {
-      this.pendingForgetWorkspace.set(workspaceKey, resolve);
-      const frame = encodeForgetWorkspaceSessions(workspaceKey);
       this.conn.send(frame.feedId, frame.payload);
     });
   }
@@ -219,18 +200,6 @@ export class TideSessionLedgerStore {
         const resolve = this.pendingForget.get(session_id);
         if (resolve === undefined) return;
         this.pendingForget.delete(session_id);
-        resolve({ error: { reason } });
-      }),
-      subscribeToForgetWorkspaceSessionsOk(({ workspace_key, count }) => {
-        const resolve = this.pendingForgetWorkspace.get(workspace_key);
-        if (resolve === undefined) return;
-        this.pendingForgetWorkspace.delete(workspace_key);
-        resolve({ ok: true, count });
-      }),
-      subscribeToForgetWorkspaceSessionsErr(({ workspace_key, reason }) => {
-        const resolve = this.pendingForgetWorkspace.get(workspace_key);
-        if (resolve === undefined) return;
-        this.pendingForgetWorkspace.delete(workspace_key);
         resolve({ error: { reason } });
       }),
     );

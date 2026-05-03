@@ -53,8 +53,6 @@ const listSessionsOkBus = makeBus<{ project_dir: string; sessions: SessionRow[] 
 const listSessionsErrBus = makeBus<{ project_dir: string; reason: string }>();
 const forgetSessionOkBus = makeBus<{ session_id: string }>();
 const forgetSessionErrBus = makeBus<{ session_id: string; reason: string }>();
-const forgetWorkspaceSessionsOkBus = makeBus<{ workspace_key: string; count: number }>();
-const forgetWorkspaceSessionsErrBus = makeBus<{ workspace_key: string; reason: string }>();
 const forgetProjectDirSessionsOkBus = makeBus<{ project_dir: string; count: number }>();
 const forgetProjectDirSessionsErrBus = makeBus<{ project_dir: string; reason: string }>();
 
@@ -73,12 +71,6 @@ export const publishForgetSessionOk = forgetSessionOkBus.publish;
 export const subscribeToForgetSessionErr = forgetSessionErrBus.subscribe;
 export const publishForgetSessionErr = forgetSessionErrBus.publish;
 
-export const subscribeToForgetWorkspaceSessionsOk = forgetWorkspaceSessionsOkBus.subscribe;
-export const publishForgetWorkspaceSessionsOk = forgetWorkspaceSessionsOkBus.publish;
-
-export const subscribeToForgetWorkspaceSessionsErr = forgetWorkspaceSessionsErrBus.subscribe;
-export const publishForgetWorkspaceSessionsErr = forgetWorkspaceSessionsErrBus.publish;
-
 export const subscribeToForgetProjectDirSessionsOk = forgetProjectDirSessionsOkBus.subscribe;
 export const publishForgetProjectDirSessionsOk = forgetProjectDirSessionsOkBus.publish;
 
@@ -91,8 +83,6 @@ export function _resetTideSessionLedgerEventsForTest(): void {
   listSessionsErrBus.reset();
   forgetSessionOkBus.reset();
   forgetSessionErrBus.reset();
-  forgetWorkspaceSessionsOkBus.reset();
-  forgetWorkspaceSessionsErrBus.reset();
   forgetProjectDirSessionsOkBus.reset();
   forgetProjectDirSessionsErrBus.reset();
 }
