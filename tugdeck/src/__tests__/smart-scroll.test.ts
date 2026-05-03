@@ -370,6 +370,94 @@ describe("SmartScroll", () => {
   });
 
   // -------------------------------------------------------------------------
+  // Editable-target gate — keys typed into an `<input>` / `<textarea>` /
+  // `[contenteditable]` descendant of the scroll container should NOT
+  // be interpreted as scroll intent. Without the gate, arrow-key
+  // cursor movement inside a focused cell input would disengage
+  // followBottom and enter the dragging phase.
+  // -------------------------------------------------------------------------
+
+  describe("editable-target gate: keydown from editable descendants is ignored", () => {
+    function dispatchKeyDownFromTarget(
+      container: HTMLElement,
+      target: HTMLElement,
+      code: string,
+    ): void {
+      // Append the target so events bubble through the container.
+      container.appendChild(target);
+      target.dispatchEvent(
+        new KeyboardEvent("keydown", { code, bubbles: true }),
+      );
+    }
+
+    it("ArrowUp inside an <input> does NOT enter DRAGGING", () => {
+      const { ss, container } = makeSmartScroll();
+      const input = document.createElement("input");
+      dispatchKeyDownFromTarget(container, input, "ArrowUp");
+      expect(ss.phase).toBe<ScrollPhase>("idle");
+      ss.dispose();
+    });
+
+    it("ArrowUp inside an <input> does NOT disengage follow-bottom", () => {
+      const { ss, container } = makeSmartScroll();
+      // Default constructor leaves follow-bottom engaged (true).
+      expect(ss.isFollowingBottom).toBe(true);
+      const input = document.createElement("input");
+      dispatchKeyDownFromTarget(container, input, "ArrowUp");
+      expect(ss.isFollowingBottom).toBe(true);
+      ss.dispose();
+    });
+
+    it("ArrowDown inside a <textarea> does NOT enter DRAGGING", () => {
+      const { ss, container } = makeSmartScroll();
+      const textarea = document.createElement("textarea");
+      dispatchKeyDownFromTarget(container, textarea, "ArrowDown");
+      expect(ss.phase).toBe<ScrollPhase>("idle");
+      ss.dispose();
+    });
+
+    it("Space inside an <input> does NOT enter DRAGGING", () => {
+      const { ss, container } = makeSmartScroll();
+      const input = document.createElement("input");
+      dispatchKeyDownFromTarget(container, input, "Space");
+      expect(ss.phase).toBe<ScrollPhase>("idle");
+      ss.dispose();
+    });
+
+    it("PageUp inside a contentEditable element does NOT enter DRAGGING", () => {
+      const { ss, container } = makeSmartScroll();
+      const editable = document.createElement("div");
+      editable.setAttribute("contenteditable", "true");
+      dispatchKeyDownFromTarget(container, editable, "PageUp");
+      expect(ss.phase).toBe<ScrollPhase>("idle");
+      ss.dispose();
+    });
+
+    it("ArrowUp on the container itself (no editable target) DOES enter DRAGGING", () => {
+      // Sanity: the gate only suppresses keys from editable
+      // descendants. Keys originating from the scroll container
+      // (the user actually focusing the list) still register.
+      const { ss, container } = makeSmartScroll();
+      dispatchKeyDown(container, "ArrowUp");
+      expect(ss.phase).toBe<ScrollPhase>("dragging");
+      ss.dispose();
+    });
+
+    it("ArrowUp on a non-editable focusable descendant (a div with tabindex) DOES enter DRAGGING", () => {
+      // A tabbable but non-editable cell wrapper bubbles keydowns
+      // up to SmartScroll like the container itself — the user is
+      // navigating the list, and arrow keys should drive the scroll
+      // intent the same way they do when the container is focused.
+      const { ss, container } = makeSmartScroll();
+      const cell = document.createElement("div");
+      cell.tabIndex = 0;
+      dispatchKeyDownFromTarget(container, cell, "ArrowUp");
+      expect(ss.phase).toBe<ScrollPhase>("dragging");
+      ss.dispose();
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Settling phase (Issue 2)
   // -------------------------------------------------------------------------
 

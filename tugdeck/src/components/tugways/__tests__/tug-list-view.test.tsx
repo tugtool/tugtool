@@ -2208,3 +2208,355 @@ describe("TugListView (Step 6 — SmartScroll integration)", () => {
     expect(root.scrollTop).toBe(360);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Step 8.5 — keyboard activation, ARIA roles, scrollToIndex default block,
+// focusable-child guard.
+// ---------------------------------------------------------------------------
+//
+// Cells are now `tabIndex={0}` and `role="listitem"`; the scroll
+// container is `role="list"`. Keyboard activation routes Enter and
+// Space on a focused cell to `delegate.onSelect`. SmartScroll's
+// keydown handler ignores keys originating from editable
+// descendants (verified at the SmartScroll layer; pinned end-to-end
+// here via a list view containing an `<input>` cell). The
+// imperative `scrollToIndex` default `block` changed from
+// `"nearest"` to `"start"`.
+
+describe("TugListView (Step 8.5 — keyboard activation + ARIA + block default)", () => {
+  test("scroll container carries role='list'", () => {
+    const ds = new DemoDataSource([
+      { id: "a", kind: "row", label: "Alpha" },
+    ]);
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const root = container.querySelector('[data-slot="tug-list-view"]');
+    expect(root?.getAttribute("role")).toBe("list");
+  });
+
+  test("each cell wrapper carries role='listitem' and tabIndex=0", () => {
+    const ds = new DemoDataSource([
+      { id: "a", kind: "row", label: "Alpha" },
+      { id: "b", kind: "row", label: "Beta" },
+    ]);
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const cells = container.querySelectorAll(".tug-list-view-cell");
+    expect(cells.length).toBe(2);
+    for (const cell of cells) {
+      expect(cell.getAttribute("role")).toBe("listitem");
+      expect(cell.getAttribute("tabindex")).toBe("0");
+    }
+  });
+
+  test("getElementForIndex returns a role='listitem' element", () => {
+    const ds = new DemoDataSource([
+      { id: "a", kind: "row", label: "Alpha" },
+    ]);
+    const handleRef = React.createRef<TugListViewHandle>();
+    render(
+      <TugListView<DemoDataSource>
+        ref={handleRef}
+        dataSource={ds}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const el = handleRef.current?.getElementForIndex(0);
+    expect(el?.getAttribute("role")).toBe("listitem");
+  });
+
+  test("Enter on a focused cell fires delegate.onSelect(index)", () => {
+    const ds = new DemoDataSource([
+      { id: "a", kind: "row", label: "Alpha" },
+      { id: "b", kind: "row", label: "Beta" },
+    ]);
+    const onSelectCalls: number[] = [];
+    const delegate: TugListViewDelegate = {
+      onSelect: (i) => {
+        onSelectCalls.push(i);
+      },
+    };
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={delegate}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const cell1 = container.querySelector(
+      '[data-tug-list-cell-index="1"]',
+    ) as HTMLElement | null;
+    expect(cell1).not.toBeNull();
+
+    act(() => {
+      cell1?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
+    });
+    expect(onSelectCalls).toEqual([1]);
+  });
+
+  test("Space on a focused cell fires delegate.onSelect(index)", () => {
+    const ds = new DemoDataSource([
+      { id: "a", kind: "row", label: "Alpha" },
+    ]);
+    const onSelectCalls: number[] = [];
+    const delegate: TugListViewDelegate = {
+      onSelect: (i) => {
+        onSelectCalls.push(i);
+      },
+    };
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={delegate}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const cell0 = container.querySelector(
+      '[data-tug-list-cell-index="0"]',
+    ) as HTMLElement | null;
+    act(() => {
+      cell0?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: " ", bubbles: true }),
+      );
+    });
+    expect(onSelectCalls).toEqual([0]);
+  });
+
+  test("other keys (e.g. ArrowUp, Tab) do NOT fire delegate.onSelect", () => {
+    const ds = new DemoDataSource([
+      { id: "a", kind: "row", label: "Alpha" },
+    ]);
+    const onSelectCalls: number[] = [];
+    const delegate: TugListViewDelegate = {
+      onSelect: (i) => {
+        onSelectCalls.push(i);
+      },
+    };
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={delegate}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const cell0 = container.querySelector(
+      '[data-tug-list-cell-index="0"]',
+    ) as HTMLElement | null;
+    for (const key of ["ArrowUp", "ArrowDown", "Tab", "Escape", "a"]) {
+      act(() => {
+        cell0?.dispatchEvent(
+          new KeyboardEvent("keydown", { key, bubbles: true }),
+        );
+      });
+    }
+    expect(onSelectCalls).toEqual([]);
+  });
+
+  test("keydown on an interactive child does NOT fire onSelect (event.target guard)", () => {
+    // A cell renderer with a focusable child (button, input). When
+    // the child receives the keydown, `event.target` is the child
+    // and `event.currentTarget` is the cell wrapper — the guard
+    // skips the wrapper's handler so onSelect doesn't double-fire
+    // alongside the child's own activation behavior.
+    interface EditableItem {
+      readonly id: string;
+      readonly kind: "editable";
+    }
+    class EditableDataSource implements TugListViewDataSource {
+      private items: EditableItem[];
+      private readonly listeners = new Set<() => void>();
+      constructor(items: EditableItem[]) {
+        this.items = items;
+      }
+      numberOfItems(): number {
+        return this.items.length;
+      }
+      idForIndex(i: number): string {
+        return this.items[i].id;
+      }
+      kindForIndex(i: number): string {
+        return this.items[i].kind;
+      }
+      subscribe(listener: () => void): () => void {
+        this.listeners.add(listener);
+        return () => {
+          this.listeners.delete(listener);
+        };
+      }
+      getVersion(): unknown {
+        return 0;
+      }
+    }
+    const EditableCell: TugListViewCellRenderer<EditableDataSource> = () => (
+      <input data-testid="cell-input" />
+    );
+
+    const ds = new EditableDataSource([{ id: "x", kind: "editable" }]);
+    const onSelectCalls: number[] = [];
+    const delegate: TugListViewDelegate = {
+      onSelect: (i) => {
+        onSelectCalls.push(i);
+      },
+    };
+    const { container } = render(
+      <TugListView<EditableDataSource>
+        dataSource={ds}
+        delegate={delegate}
+        cellRenderers={{ editable: EditableCell }}
+      />,
+    );
+    const input = container.querySelector(
+      '[data-testid="cell-input"]',
+    ) as HTMLInputElement | null;
+    expect(input).not.toBeNull();
+
+    act(() => {
+      input?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
+    });
+    expect(onSelectCalls).toEqual([]);
+  });
+
+  test("scrollToIndex(rendered) defaults to block:'start' (was 'nearest')", () => {
+    // Spy on SmartScroll.prototype.scrollToElement to capture the
+    // options arg. The rendered branch is exercised by indexing a
+    // cell that's in the initial overscan window.
+    const items: DemoItem[] = Array.from({ length: 5 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    const handleRef = React.createRef<TugListViewHandle>();
+
+    const captured: Array<{ block?: ScrollLogicalPosition; animated?: boolean }> = [];
+    const original = SmartScroll.prototype.scrollToElement;
+    SmartScroll.prototype.scrollToElement = function (el, opts) {
+      captured.push({ ...opts });
+      original.call(this, el, opts);
+    };
+
+    try {
+      render(
+        <TugListView<DemoDataSource>
+          ref={handleRef}
+          dataSource={ds}
+          delegate={{ estimatedHeightForKind: () => 40 }}
+          cellRenderers={CELL_RENDERERS}
+        />,
+      );
+      act(() => {
+        handleRef.current?.scrollToIndex(1);
+      });
+      expect(captured.length).toBe(1);
+      expect(captured[0].block).toBe("start");
+
+      // Explicit `block` still wins.
+      captured.length = 0;
+      act(() => {
+        handleRef.current?.scrollToIndex(2, { block: "nearest" });
+      });
+      expect(captured[0].block).toBe("nearest");
+    } finally {
+      SmartScroll.prototype.scrollToElement = original;
+    }
+  });
+
+  test("ArrowUp keydown inside a cell's <input> does NOT disengage followBottom", () => {
+    // Pin the SmartScroll-side editable-target gate end-to-end. A
+    // list view with `followBottom` and a cell containing an
+    // `<input>` that receives an ArrowUp keydown: the gate keeps
+    // SmartScroll's `_isFollowingBottom` engaged, so a subsequent
+    // data-source growth still triggers a `pinToBottom` call.
+    interface EditableItem {
+      readonly id: string;
+      readonly kind: "editable";
+    }
+    class EditableDataSource implements TugListViewDataSource {
+      private items: EditableItem[];
+      private readonly listeners = new Set<() => void>();
+      private version = 0;
+      constructor(items: EditableItem[]) {
+        this.items = items;
+      }
+      numberOfItems(): number {
+        return this.items.length;
+      }
+      idForIndex(i: number): string {
+        return this.items[i].id;
+      }
+      kindForIndex(i: number): string {
+        return this.items[i].kind;
+      }
+      subscribe(listener: () => void): () => void {
+        this.listeners.add(listener);
+        return () => {
+          this.listeners.delete(listener);
+        };
+      }
+      getVersion(): unknown {
+        return this.version;
+      }
+      _appendForTest(item: EditableItem): void {
+        this.items = [...this.items, item];
+        this.version += 1;
+        for (const l of this.listeners) l();
+      }
+    }
+    const EditableCell: TugListViewCellRenderer<EditableDataSource> = () => (
+      <input data-testid="cell-input" />
+    );
+
+    let pinCount = 0;
+    const originalPin = SmartScroll.prototype.pinToBottom;
+    SmartScroll.prototype.pinToBottom = function () {
+      pinCount += 1;
+      originalPin.call(this);
+    };
+
+    try {
+      const ds = new EditableDataSource([{ id: "a", kind: "editable" }]);
+      const { container } = render(
+        <TugListView<EditableDataSource>
+          dataSource={ds}
+          cellRenderers={{ editable: EditableCell }}
+          followBottom
+        />,
+      );
+      const input = container.querySelector(
+        '[data-testid="cell-input"]',
+      ) as HTMLInputElement | null;
+      expect(input).not.toBeNull();
+
+      // ArrowUp inside the input would have entered SmartScroll's
+      // dragging phase + disengaged followBottom before the gate.
+      act(() => {
+        input?.dispatchEvent(
+          new KeyboardEvent("keydown", { code: "ArrowUp", bubbles: true }),
+        );
+      });
+
+      const pinsBeforeGrow = pinCount;
+      act(() => {
+        ds._appendForTest({ id: "b", kind: "editable" });
+      });
+      // The list view's growth-pin gate runs after each commit; if
+      // `followBottom` survived the ArrowUp, the new item triggers
+      // a fresh pinToBottom call.
+      expect(pinCount).toBeGreaterThan(pinsBeforeGrow);
+    } finally {
+      SmartScroll.prototype.pinToBottom = originalPin;
+    }
+  });
+});

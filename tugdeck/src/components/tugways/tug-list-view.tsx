@@ -909,9 +909,16 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           const renderedEl = cellElementMapRef.current.get(clamped);
           if (renderedEl !== undefined) {
             // Pass-1-only path: the rect is already exact.
+            // Default `block: "start"` aligns the row to the top of
+            // the viewport — matches `UITableView.scrollToRow(at:at
+            // ScrollPosition: .top)` and is the more useful default
+            // for "scroll this specific row into focus" use cases
+            // than `"nearest"` (which leaves an already-partially-
+            // visible row where it is). Consumers that want minimum
+            // disturbance pass `block: "nearest"` explicitly.
             ss.scrollToElement(renderedEl, {
               animated: options?.animated ?? false,
-              block: options?.block ?? "nearest",
+              block: options?.block ?? "start",
             });
             // A pending correction from a prior call is invalidated
             // by an exact-rect scroll — clear it so the post-commit
@@ -990,6 +997,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     interface CellCallbacks {
       readonly ref: (el: HTMLDivElement | null) => void;
       readonly click: () => void;
+      readonly keyDown: (e: React.KeyboardEvent<HTMLDivElement>) => void;
     }
     const cellCallbacksRef = React.useRef<Map<number, CellCallbacks>>(
       new Map(),
@@ -1014,7 +1022,33 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       const clickCb = (): void => {
         delegateRef.current?.onSelect?.(index);
       };
-      const callbacks: CellCallbacks = { ref: refCb, click: clickCb };
+      // Keyboard activation per [Q06] — cell wrappers are
+      // `tabIndex={0}` and `role="listitem"` (see render below), so
+      // a focused cell receives keydowns directly. Enter and Space
+      // fire `delegate.onSelect(index)` and stop propagation so
+      // SmartScroll's keydown handler does not also see Space (which
+      // it interprets as a scroll key).
+      //
+      // The `event.target === event.currentTarget` guard prevents
+      // double-fire when a cell renderer holds a focusable child.
+      // A button inside a cell, focused, then activated by Space:
+      // the browser fires a synthetic click on the button which
+      // bubbles up to the wrapper's `onClick` (which already routes
+      // to `onSelect`). Without the guard, the keydown ALSO fires
+      // before the synthetic click, and the consumer sees two
+      // selections per activation.
+      const keyDownCb = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault();
+        e.stopPropagation();
+        delegateRef.current?.onSelect?.(index);
+      };
+      const callbacks: CellCallbacks = {
+        ref: refCb,
+        click: clickCb,
+        keyDown: keyDownCb,
+      };
       registry.set(index, callbacks);
       return callbacks;
     }
@@ -1027,6 +1061,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         className={
           className === undefined ? "tug-list-view" : `tug-list-view ${className}`
         }
+        role="list"
         tabIndex={0}
       >
         <div
@@ -1052,8 +1087,11 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                   className="tug-list-view-cell"
                   data-tug-list-cell-index={index}
                   data-tug-list-cell-kind={kind}
+                  role="listitem"
+                  tabIndex={0}
                   ref={getCellCallbacks(index).ref}
                   onClick={getCellCallbacks(index).click}
+                  onKeyDown={getCellCallbacks(index).keyDown}
                 />
               );
             }
@@ -1063,8 +1101,11 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                 className="tug-list-view-cell"
                 data-tug-list-cell-index={index}
                 data-tug-list-cell-kind={kind}
+                role="listitem"
+                tabIndex={0}
                 ref={getCellCallbacks(index).ref}
                 onClick={getCellCallbacks(index).click}
+                onKeyDown={getCellCallbacks(index).keyDown}
               >
                 <Renderer
                   index={index}

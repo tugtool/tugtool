@@ -1229,24 +1229,27 @@ happy-dom is suitable for all unit, component, reducer, adapter, and integration
 
 **Tasks:**
 
-- [ ] Cell wrapper keydown handler. Guard on `event.target === currentTarget` so a child input's keydown doesn't double-fire.
-- [ ] `role="list"` / `role="listitem"` and per-cell `tabIndex`.
-- [ ] Editable-descendant guard for SmartScroll keydown — pick the cleaner of "stopPropagation in TugListView's capture-phase handler" vs "exit early in SmartScroll's keydown when `event.target !== this._container`". Document the chosen approach.
-- [ ] Default `block` change in `scrollToIndex`.
-- [ ] Plan note in `tugways/component-authoring.md` (if relevant) about cell-level keyboard activation.
+- [x] Cell wrapper keydown handler. Guard on `event.target === currentTarget` so a child input's keydown doesn't double-fire. Implementation: cached per-index in the existing `cellCallbacksRef` registry. Enter / Space call `preventDefault` (stop native scroll on Space) AND `stopPropagation` (so SmartScroll's keydown — which treats Space as a scroll key — doesn't also see the event), then fire `delegate.onSelect(index)`.
+- [x] `role="list"` / `role="listitem"` and per-cell `tabIndex`. Scroll container keeps its existing `tabIndex={0}` for native scroll (focusable lists are valid ARIA); cells gain both `role="listitem"` and `tabIndex={0}`.
+- [x] Editable-descendant guard for SmartScroll keydown. **Chose option B (gate inside SmartScroll itself).** New module-private `_isEditableEventTarget(target)` helper checks `INPUT` / `TEXTAREA` / `SELECT` tags and `isContentEditable`; `_handleKeyDown` early-returns when the target is editable. Less invasive than a capture-phase listener in TugListView; benefits every SmartScroll consumer (TugMarkdownView, TugListView, future) the same way. Non-editable focusable descendants (a tabbable cell wrapper, a button) are explicitly NOT gated — keys from a focused cell still register as scroll intent the way keys from the container do.
+- [x] Default `block` change in `scrollToIndex` from `"nearest"` to `"start"`. Explicit `block: "nearest"` still works.
+- [ ] Plan note in `tugways/component-authoring.md`. **Skipped** — `component-authoring.md` is a general primitive-authoring guide, not a list-pattern reference. Cell-level keyboard activation is documented in `tug-list-view.tsx`'s docstring + the keydown comment block; downstream consumers see it via the `delegate.onSelect` JSDoc.
 
 **Tests:**
 
-- [ ] `Enter` on a focused cell fires `onSelect(index)`; `Space` does the same; other keys don't.
-- [ ] Arrow-key keydown inside an `<input>` descendant of a cell does not disengage `followBottom` (spy on `SmartScroll.disengageFollowBottom` or `pinToBottom` count after a subsequent growth event).
-- [ ] `scrollToIndex(rendered_index)` with no `block` option calls `SmartScroll.scrollToElement` with `block: "start"`.
-- [ ] `getElementForIndex(index)` returns an element with `role="listitem"`.
+- [x] `Enter` on a focused cell fires `onSelect(index)`; `Space` does the same; other keys don't (`ArrowUp`, `ArrowDown`, `Tab`, `Escape`, `a` all asserted as no-ops).
+- [x] Keydown on an interactive child does NOT fire `onSelect` (`event.target` guard exercised via a cell renderer with an `<input>` descendant).
+- [x] Arrow-key keydown inside an `<input>` descendant of a cell does not disengage `followBottom` (spies on `SmartScroll.prototype.pinToBottom`; asserts `pinToBottom` count grows on a subsequent data-source append).
+- [x] `scrollToIndex(rendered_index)` with no `block` option calls `SmartScroll.scrollToElement` with `block: "start"`. Explicit `block: "nearest"` still wins.
+- [x] `getElementForIndex(index)` returns an element with `role="listitem"`.
+- [x] Scroll container carries `role="list"`; every cell carries `role="listitem"` + `tabindex="0"`.
+- [x] SmartScroll-layer tests (`smart-scroll.test.ts`): keydown from `<input>` / `<textarea>` / `<contenteditable>` does NOT enter dragging or disengage follow-bottom. Keydown from the container or a tabbable non-editable child still does.
 
 **Checkpoint:**
 
-- [ ] `bun x tsc --noEmit` — exit 0.
-- [ ] `bun test` — all green.
-- [ ] `bun run audit:tokens lint` — zero violations.
+- [x] `bun x tsc --noEmit` — exit 0.
+- [x] `bun test` — all green (2925 pass / 0 fail).
+- [x] `bun run audit:tokens lint` — zero violations.
 
 **Origin:** these items were called out during the post-Step-8 audit as deferred follow-ups — accessibility (no `role` / no keyboard activation), the SmartScroll-keydown / focusable-child interaction, and the `scrollToIndex` default. None block the transcript wire-up (Steps 9–11), but all three are paper-cuts that should be cleared before any v1.x consumer outside the transcript ships against the primitive.
 

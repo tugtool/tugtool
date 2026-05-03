@@ -95,6 +95,24 @@ const SCROLL_KEYS = new Set(['PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'Ar
 const SCROLL_UP_KEYS = new Set(['PageUp', 'Home', 'ArrowUp']);
 
 /**
+ * True when the keydown event's target is an editable element —
+ * `<input>`, `<textarea>`, `<select>`, or any element with
+ * `contenteditable`. SmartScroll skips its keydown handling for
+ * these so cursor-movement keys typed into a cell's input do not
+ * register as scroll intent.
+ *
+ * Module-private; not part of the public surface.
+ */
+function _isEditableEventTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.tagName === 'INPUT') return true;
+  if (target.tagName === 'TEXTAREA') return true;
+  if (target.tagName === 'SELECT') return true;
+  if (target.isContentEditable) return true;
+  return false;
+}
+
+/**
  * After pointerup, wait this long for continued scroll events before deciding
  * that no momentum deceleration is happening. This is a state machine
  * transition guard — not a timing hack for filtering scroll events.
@@ -447,6 +465,16 @@ export class SmartScroll {
   private _handleKeyDown(e: KeyboardEvent): void {
     if (this._disposed) return;
     if (!SCROLL_KEYS.has(e.code)) return;
+
+    // Skip when the keydown originates inside an editable descendant
+    // — typing in an `<input>` / `<textarea>` / `[contenteditable]`
+    // shouldn't be interpreted as scroll intent. Without this guard,
+    // arrow-key cursor movement inside a cell's input would
+    // disengage `_isFollowingBottom` and enter the dragging phase
+    // even though the user never gestured at the scroll container.
+    // The keydown still bubbles to any other listener; this only
+    // affects SmartScroll's intent tracking.
+    if (_isEditableEventTarget(e.target)) return;
 
     // All scroll keys enter DRAGGING directly (keyboard has no pointer).
     if (this._phase !== 'dragging') {
