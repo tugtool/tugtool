@@ -20,13 +20,16 @@
  * Laws:
  * - [L02] external state enters React via `useSyncExternalStore` — the
  *   list view subscribes to the data source through that contract.
- * - [L03] registrations events depend on (SmartScroll, ResizeObserver)
- *   land in `useLayoutEffect`.
+ * - [L03] registrations events depend on (SmartScroll, ResizeObserver,
+ *   lifecycle delegate) land in `useLayoutEffect` so they're in place
+ *   before paint.
  * - [L06] appearance changes via CSS / DOM — spacer heights and scroll
  *   position writes go directly to the DOM, not through React state.
  * - [L11] the list view holds no chain handlers in v1; no scroll-action
  *   vocabulary exists yet for it to register against. Cell renderers
  *   may be controls or responders depending on their content.
+ *   `delegate.onSelect` is a control-style action emitted on cell click;
+ *   selection state lives with the consumer ([Q06] / [D03]).
  * - [L19] component authoring guide — file pair, module docstring,
  *   exported props interface, `data-slot="tug-list-view"`.
  * - [L20] component-token sovereignty — `--tugx-list-view-*` only;
@@ -328,8 +331,9 @@ const DEFAULT_ESTIMATED_HEIGHT = 60;
 const OVERSCAN_COUNT = 3;
 
 /**
- * Step 4 implementation — variable heights via `ResizeObserver` +
- * sparse height index, layered on Step 3's fixed-height windowing.
+ * `TugListView` implementation — windowing + cell reuse + delegate
+ * lifecycle, layered on a sparse height index. SmartScroll
+ * integration is the open seam (Step 6).
  *
  * The list view subscribes to the data source via
  * `useSyncExternalStore` ([L02]). Scroll-position changes drive
@@ -337,8 +341,12 @@ const OVERSCAN_COUNT = 3;
  * a `HeightIndex`: a single `ResizeObserver` instance observes every
  * rendered cell wrapper; observer callbacks update the index, queue
  * a single rAF flush, and force a re-window on flush. Unmeasured
- * indices fall back to `delegate.estimatedHeightForKind`. SmartScroll
- * integration arrives in Step 6.
+ * indices fall back to `delegate.estimatedHeightForKind`. Cell-
+ * lifecycle delegate dispatch (`willDisplay` / `didEndDisplaying` /
+ * `onSelect`) sits on top: a per-commit layout effect diffs the
+ * rendered index set against the previous commit and notifies the
+ * delegate of transitions; the cell wrapper's `onClick` handler
+ * fires `onSelect`.
  *
  * What's stable today:
  * - DOM shape per the plan's [#dom-shape]: scroll container,
@@ -359,6 +367,12 @@ const OVERSCAN_COUNT = 3;
  *   browser fold into one rerender per paint frame. [L05] forbids
  *   RAF for state-commit-dependent ops; this RAF is callback-
  *   coalescing, not commit-waiting.
+ * - Delegate lifecycle: `willDisplay` fires before
+ *   `didEndDisplaying` for transitions in the same commit; both
+ *   fire in numeric-ascending order; `onSelect` fires on cell click.
+ *   Lifecycle dispatch is purely about visibility transitions inside
+ *   a live list view — list-view unmount does not synthesise
+ *   `didEndDisplaying`.
  */
 const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
   function TugListView(
@@ -396,6 +410,16 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // and forces a rerender, which reads the now-updated height
     // index.
     const pendingFlushRef = React.useRef<number | null>(null);
+
+    // The set of indices the list view rendered on the previous
+    // commit. Diffed against the current rendered set in a layout
+    // effect to compute `entered` (currently-rendered minus
+    // previous) and `left` (previous minus currently-rendered),
+    // which drive `delegate.willDisplay` / `didEndDisplaying`. Held
+    // in a ref because lifecycle bookkeeping is not React state —
+    // the list view derives the rendered set from windowing math
+    // every render, then notifies the delegate on transitions.
+    const prevRenderedIndicesRef = React.useRef<Set<number>>(new Set());
 
     // Subscribe to the data source. The returned `version` token is a
     // by-product — we don't use it directly. The hook's job is to
@@ -566,6 +590,71 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       }
     }, [windowResult.topSpacerHeight, windowResult.bottomSpacerHeight]);
 
+    // Cell-lifecycle delegate dispatch. Runs every commit ([L03] —
+    // synchronous after commit, before paint) and diffs the rendered
+    // index set against the previous commit's set. Indices that just
+    // entered the rendered window fire `delegate.willDisplay`;
+    // indices that just left fire `delegate.didEndDisplaying`. Empty
+    // diffs (the steady-state case where the window didn't move) cost
+    // two empty Set walks and no callback invocations.
+    //
+    // Order pinning: `willDisplay` fires for every entered index
+    // (ascending), THEN `didEndDisplaying` fires for every left index
+    // (ascending). This matches UIKit's effective order during a
+    // scroll/reuse pass — new cells are dequeued and configured
+    // (`willDisplay`) before old cells are signalled gone
+    // (`didEndDisplaying`). Documenting it here lets consumers depend
+    // on the order; the test "fires willDisplay before didEndDisplaying"
+    // pins it.
+    //
+    // Each entered/left list is built by iterating its source set in
+    // numeric-ascending order — both `currentSet` and `prev` are
+    // populated by `for (let i = first; i < last; ...)`, so their
+    // iteration order is already ascending.
+    //
+    // The closure captures the current render's `delegate`
+    // identity, which is the freshest reference available — a
+    // consumer that recreates `delegate` on every render gets fresh
+    // closures every commit, with no missed transitions and no
+    // re-fires (the diff is empty when the rendered set didn't
+    // move). No deps array is correct here: every commit must run
+    // the diff so that data-source ticks, scrolls, and viewport
+    // changes are all captured.
+    //
+    // Unmount: the layout-effect's lifecycle does not call
+    // `didEndDisplaying` on unmount in v1. Consumers that need
+    // teardown signals beyond cell-level scroll-out should attach
+    // them to the cell-renderer's own `useEffect` cleanup, which is
+    // what UIKit-style imperative-pool reuse would surface
+    // identically (cells stay mounted across the pool's lifetime;
+    // only the table-view destruction would tear them down). This
+    // keeps the lifecycle delegate purely about *visibility
+    // transitions inside a live list view*, not list-view teardown.
+    React.useLayoutEffect(() => {
+      const currentSet = new Set<number>();
+      for (let i = windowResult.firstIndex; i < windowResult.lastIndex; i += 1) {
+        if (i >= itemCount) break;
+        currentSet.add(i);
+      }
+
+      const prev = prevRenderedIndicesRef.current;
+      const willDisplayCb = delegate?.willDisplay;
+      const didEndDisplayingCb = delegate?.didEndDisplaying;
+
+      if (willDisplayCb !== undefined) {
+        for (const i of currentSet) {
+          if (!prev.has(i)) willDisplayCb(i);
+        }
+      }
+      if (didEndDisplayingCb !== undefined) {
+        for (const i of prev) {
+          if (!currentSet.has(i)) didEndDisplayingCb(i);
+        }
+      }
+
+      prevRenderedIndicesRef.current = currentSet;
+    });
+
     // Imperative handle. `scrollToIndex` writes `scrollTop` directly
     // (SmartScroll integration arrives in Step 6). The target offset
     // is computed from the height index, so measured heights produce
@@ -634,6 +723,22 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       }
     };
 
+    // Cell-wrapper click handler: fires `delegate.onSelect(index)`.
+    // The handler is always attached (not gated on `delegate?.onSelect`
+    // existing) so consumers that swap delegates between renders
+    // don't see lost clicks during the swap; the inline arrow reads
+    // the current render's `delegate` from closure each time and
+    // no-ops if `onSelect` is absent.
+    //
+    // Consumers whose cell renderers contain their own clickable
+    // elements (buttons, links) should call `event.stopPropagation()`
+    // in their handlers if they don't want the wrapper's click to
+    // also fire `onSelect`. This matches UIKit's `selectionStyle =
+    // .none` semantics for cells with embedded controls.
+    const handleCellClick = (index: number): void => {
+      delegate?.onSelect?.(index);
+    };
+
     return (
       <div
         ref={scrollContainerRef}
@@ -668,6 +773,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                   data-tug-list-cell-index={index}
                   data-tug-list-cell-kind={kind}
                   ref={(el) => handleCellRef(index, el)}
+                  onClick={() => handleCellClick(index)}
                 />
               );
             }
@@ -678,6 +784,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                 data-tug-list-cell-index={index}
                 data-tug-list-cell-kind={kind}
                 ref={(el) => handleCellRef(index, el)}
+                onClick={() => handleCellClick(index)}
               >
                 <Renderer
                   index={index}

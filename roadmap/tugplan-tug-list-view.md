@@ -1053,24 +1053,24 @@ happy-dom is suitable for all unit, component, reducer, adapter, and integration
 
 **Tasks:**
 
-- [ ] Track `prevRenderedIndices: Set<number>` in a ref.
-- [ ] On each rerender after windowing, compute `entered = currentSet \ prevSet` and `left = prevSet \ currentSet`; fire delegate callbacks for each.
-- [ ] Use `useLayoutEffect` so callbacks fire synchronously after commit, before paint ([L03]).
-- [ ] Click handling on cell wrapper: `onClick={() => delegate?.onSelect?.(index)}`.
-- [ ] Tests: synthetic delegate with mock fns, drive scroll, assert correct callback sequences. Click test: fire onClick, assert `onSelect` called with right index.
+- [x] Track `prevRenderedIndices: Set<number>` in a ref.
+- [x] On each rerender after windowing, compute `entered = currentSet \ prevSet` and `left = prevSet \ currentSet`; fire delegate callbacks for each.
+- [x] Use `useLayoutEffect` so callbacks fire synchronously after commit, before paint ([L03]).
+- [x] Click handling on cell wrapper: `onClick={() => delegate?.onSelect?.(index)}`.
+- [x] Tests: synthetic delegate with mock fns, drive scroll, assert correct callback sequences. Click test: fire onClick, assert `onSelect` called with right index.
 
 **Tests:**
 
-- [ ] `willDisplay` fires for each entering index.
-- [ ] `didEndDisplaying` fires for each leaving index.
-- [ ] `onSelect` fires on click with the right index.
-- [ ] Order: `willDisplay` before `didEndDisplaying` for the same render frame? Document the order chosen and pin in tests.
+- [x] `willDisplay` fires for each entering index.
+- [x] `didEndDisplaying` fires for each leaving index.
+- [x] `onSelect` fires on click with the right index.
+- [x] Order: `willDisplay` before `didEndDisplaying` for the same render frame? Document the order chosen and pin in tests. **Decision: `willDisplay` first, then `didEndDisplaying`, both in numeric-ascending index order.** Rationale: matches UIKit's effective order during a scroll/reuse pass — new cells are dequeued and configured (`willDisplay`) before old cells are signalled gone (`didEndDisplaying`); pinned by the test "willDisplay fires before didEndDisplaying when both happen on the same commit".
 
 **Checkpoint:**
 
-- [ ] `bun x tsc --noEmit` — exit 0.
-- [ ] `bun test` — all green.
-- [ ] `bun run audit:tokens lint` — zero violations.
+- [x] `bun x tsc --noEmit` — exit 0.
+- [x] `bun test` — all green. (2859 pass / 0 fail.)
+- [x] `bun run audit:tokens lint` — zero violations.
 
 ---
 

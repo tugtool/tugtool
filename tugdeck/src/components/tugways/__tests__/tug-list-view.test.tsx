@@ -1125,3 +1125,460 @@ describe("TugListView (Step 4 — ResizeObserver + HeightIndex)", () => {
     }).not.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Step 5 — Cell reuse contract + delegate lifecycle
+// ---------------------------------------------------------------------------
+//
+// The list view fires three lifecycle callbacks on the consumer-supplied
+// delegate:
+//
+//  - `willDisplay(index)` for each index that just entered the rendered
+//    window on this commit.
+//  - `didEndDisplaying(index)` for each index that just left the
+//    rendered window on this commit.
+//  - `onSelect(index)` when the cell wrapper at `index` is clicked.
+//
+// Order pinned by the implementation: `willDisplay` fires before
+// `didEndDisplaying` for any given commit; both fire in numeric-
+// ascending order. The tests below validate each callback in
+// isolation, plus the order pin and a few edge cases.
+
+interface LifecycleSpy {
+  delegate: TugListViewDelegate;
+  willDisplay: number[];
+  didEndDisplaying: number[];
+  onSelect: number[];
+  /** Combined call log: "will:N" / "end:N" / "sel:N" in fire order. */
+  log: string[];
+}
+
+function makeLifecycleSpy(
+  extra?: Pick<TugListViewDelegate, "estimatedHeightForKind">,
+): LifecycleSpy {
+  const spy: LifecycleSpy = {
+    delegate: {} as TugListViewDelegate,
+    willDisplay: [],
+    didEndDisplaying: [],
+    onSelect: [],
+    log: [],
+  };
+  spy.delegate = {
+    ...(extra ?? {}),
+    willDisplay: (i: number) => {
+      spy.willDisplay.push(i);
+      spy.log.push(`will:${i}`);
+    },
+    didEndDisplaying: (i: number) => {
+      spy.didEndDisplaying.push(i);
+      spy.log.push(`end:${i}`);
+    },
+    onSelect: (i: number) => {
+      spy.onSelect.push(i);
+      spy.log.push(`sel:${i}`);
+    },
+  };
+  return spy;
+}
+
+function renderedIndices(container: HTMLElement | ParentNode): number[] {
+  return Array.from(container.querySelectorAll(".tug-list-view-cell"))
+    .map((el) =>
+      Number.parseInt(
+        el.getAttribute("data-tug-list-cell-index") ?? "-1",
+        10,
+      ),
+    )
+    .filter((n) => n >= 0)
+    .sort((a, b) => a - b);
+}
+
+describe("TugListView (Step 5 — delegate lifecycle)", () => {
+  test("willDisplay fires for every index in the initial rendered window", () => {
+    const items: DemoItem[] = Array.from({ length: 5 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    const spy = makeLifecycleSpy({ estimatedHeightForKind: () => 40 });
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={spy.delegate}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+
+    const rendered = renderedIndices(container);
+    expect(rendered.length).toBeGreaterThan(0);
+    // Every rendered index appears in willDisplay exactly once. (The
+    // mount-tick may produce two commits, but the rendered set on the
+    // second commit equals the first, so the diff is empty.)
+    expect(spy.willDisplay.slice().sort((a, b) => a - b)).toEqual(rendered);
+    expect(spy.willDisplay.length).toBe(rendered.length);
+    expect(spy.didEndDisplaying).toEqual([]);
+  });
+
+  test("didEndDisplaying fires for every index that leaves on data-source shrink", () => {
+    const items: DemoItem[] = Array.from({ length: 5 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    const spy = makeLifecycleSpy({ estimatedHeightForKind: () => 40 });
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={spy.delegate}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+
+    const renderedBefore = renderedIndices(container);
+    spy.willDisplay = [];
+    spy.didEndDisplaying = [];
+    spy.log = [];
+
+    // Shrink to 2 items. Indices ≥ 2 must fire didEndDisplaying.
+    act(() => {
+      ds._setItemsForTest([
+        { id: "id-0", kind: "row", label: "Row 0" },
+        { id: "id-1", kind: "row", label: "Row 1" },
+      ]);
+    });
+
+    const renderedAfter = renderedIndices(container);
+    const left = renderedBefore.filter((i) => !renderedAfter.includes(i));
+    const entered = renderedAfter.filter((i) => !renderedBefore.includes(i));
+    expect(spy.didEndDisplaying.slice().sort((a, b) => a - b)).toEqual(
+      left.slice().sort((a, b) => a - b),
+    );
+    expect(spy.willDisplay.slice().sort((a, b) => a - b)).toEqual(
+      entered.slice().sort((a, b) => a - b),
+    );
+  });
+
+  test("scrolling fires didEndDisplaying for cells leaving the viewport and willDisplay for cells entering", () => {
+    const items: DemoItem[] = Array.from({ length: 30 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    const spy = makeLifecycleSpy({ estimatedHeightForKind: () => 40 });
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={spy.delegate}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const root = container.querySelector(
+      '[data-slot="tug-list-view"]',
+    ) as HTMLElement;
+
+    const renderedBefore = renderedIndices(container);
+    spy.willDisplay = [];
+    spy.didEndDisplaying = [];
+    spy.log = [];
+
+    // Scroll deep into the list — items 5..14 should be visible
+    // (rows at offsets 200..560 with viewport [200, 360]); with
+    // overscan 3, rendered range becomes [2, 14).
+    setViewportHeight(root, 160);
+    setScrollTop(root, 200);
+    act(() => {
+      root.dispatchEvent(new Event("scroll"));
+    });
+
+    const renderedAfter = renderedIndices(container);
+    const left = renderedBefore.filter((i) => !renderedAfter.includes(i));
+    const entered = renderedAfter.filter((i) => !renderedBefore.includes(i));
+
+    expect(left.length).toBeGreaterThan(0);
+    expect(entered.length).toBeGreaterThan(0);
+    expect(spy.didEndDisplaying.slice().sort((a, b) => a - b)).toEqual(
+      left.slice().sort((a, b) => a - b),
+    );
+    expect(spy.willDisplay.slice().sort((a, b) => a - b)).toEqual(
+      entered.slice().sort((a, b) => a - b),
+    );
+  });
+
+  test("[order pin] willDisplay fires before didEndDisplaying when both happen on the same commit", () => {
+    // Set up a viewport offset so the initial render covers a
+    // narrow band of cells, then scroll far enough that the new
+    // window has no overlap with the old. Both `entered` and `left`
+    // are non-empty; the log order pins the contract.
+    const items: DemoItem[] = Array.from({ length: 30 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    const spy = makeLifecycleSpy({ estimatedHeightForKind: () => 40 });
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={spy.delegate}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const root = container.querySelector(
+      '[data-slot="tug-list-view"]',
+    ) as HTMLElement;
+
+    spy.willDisplay = [];
+    spy.didEndDisplaying = [];
+    spy.log = [];
+
+    // Force a window jump that has both leaves and enters.
+    setViewportHeight(root, 80);
+    setScrollTop(root, 800);
+    act(() => {
+      root.dispatchEvent(new Event("scroll"));
+    });
+
+    expect(spy.willDisplay.length).toBeGreaterThan(0);
+    expect(spy.didEndDisplaying.length).toBeGreaterThan(0);
+
+    // Every "will:" log entry precedes every "end:" log entry.
+    const firstEnd = spy.log.findIndex((s) => s.startsWith("end:"));
+    const lastWill = spy.log
+      .map((s, i) => (s.startsWith("will:") ? i : -1))
+      .filter((i) => i !== -1)
+      .pop()!;
+    expect(firstEnd).toBeGreaterThan(lastWill);
+  });
+
+  test("willDisplay and didEndDisplaying lists are emitted in numeric-ascending order", () => {
+    const items: DemoItem[] = Array.from({ length: 30 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    const spy = makeLifecycleSpy({ estimatedHeightForKind: () => 40 });
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={spy.delegate}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const root = container.querySelector(
+      '[data-slot="tug-list-view"]',
+    ) as HTMLElement;
+
+    spy.willDisplay = [];
+    spy.didEndDisplaying = [];
+    spy.log = [];
+
+    setViewportHeight(root, 80);
+    setScrollTop(root, 600);
+    act(() => {
+      root.dispatchEvent(new Event("scroll"));
+    });
+
+    // Each list is monotonically non-decreasing.
+    for (let i = 1; i < spy.willDisplay.length; i += 1) {
+      expect(spy.willDisplay[i]).toBeGreaterThan(spy.willDisplay[i - 1]);
+    }
+    for (let i = 1; i < spy.didEndDisplaying.length; i += 1) {
+      expect(spy.didEndDisplaying[i]).toBeGreaterThan(
+        spy.didEndDisplaying[i - 1],
+      );
+    }
+  });
+
+  test("steady-state rerenders (data-source tick that doesn't change the rendered set) fire no lifecycle callbacks", () => {
+    const items: DemoItem[] = Array.from({ length: 5 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    const spy = makeLifecycleSpy({ estimatedHeightForKind: () => 40 });
+    render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={spy.delegate}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+
+    spy.willDisplay = [];
+    spy.didEndDisplaying = [];
+    spy.log = [];
+
+    // Tick without changing items. Same rendered set → empty diff.
+    act(() => {
+      ds._tickForTest();
+    });
+
+    expect(spy.willDisplay).toEqual([]);
+    expect(spy.didEndDisplaying).toEqual([]);
+  });
+
+  test("onSelect fires on cell click with the clicked index", () => {
+    const items: DemoItem[] = Array.from({ length: 5 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    const spy = makeLifecycleSpy({ estimatedHeightForKind: () => 40 });
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={spy.delegate}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+
+    const cell2 = container.querySelector(
+      '[data-tug-list-cell-index="2"]',
+    ) as HTMLElement | null;
+    expect(cell2).not.toBeNull();
+    act(() => {
+      cell2?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(spy.onSelect).toEqual([2]);
+  });
+
+  test("onSelect does nothing when delegate omits onSelect (no throw)", () => {
+    const items: DemoItem[] = Array.from({ length: 3 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    const delegate: TugListViewDelegate = {
+      estimatedHeightForKind: () => 40,
+      // willDisplay / didEndDisplaying / onSelect intentionally omitted.
+    };
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={delegate}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const cell0 = container.querySelector(
+      '[data-tug-list-cell-index="0"]',
+    ) as HTMLElement | null;
+    expect(cell0).not.toBeNull();
+    expect(() => {
+      act(() => {
+        cell0?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+    }).not.toThrow();
+  });
+
+  test("no delegate at all is a no-op (no throw on mount, scroll, click)", () => {
+    const items: DemoItem[] = Array.from({ length: 5 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const root = container.querySelector(
+      '[data-slot="tug-list-view"]',
+    ) as HTMLElement;
+
+    expect(() => {
+      setViewportHeight(root, 80);
+      setScrollTop(root, 100);
+      act(() => {
+        root.dispatchEvent(new Event("scroll"));
+      });
+      const cell0 = container.querySelector(
+        '[data-tug-list-cell-index="0"]',
+      ) as HTMLElement | null;
+      act(() => {
+        cell0?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+    }).not.toThrow();
+  });
+
+  test("delegate identity changes mid-life don't refire lifecycle for the steady-state window", () => {
+    // A consumer that recreates its delegate object on each render
+    // shouldn't see spurious willDisplay/didEndDisplaying fires.
+    const items: DemoItem[] = Array.from({ length: 5 }, (_, i) => ({
+      id: `id-${i}`,
+      kind: "row" as const,
+      label: `Row ${i}`,
+    }));
+    const ds = new DemoDataSource(items);
+    let willCount = 0;
+    let endCount = 0;
+    function makeDelegate(): TugListViewDelegate {
+      return {
+        estimatedHeightForKind: () => 40,
+        willDisplay: () => {
+          willCount += 1;
+        },
+        didEndDisplaying: () => {
+          endCount += 1;
+        },
+      };
+    }
+
+    function Host(): React.ReactElement {
+      // New delegate identity on every render of Host.
+      const delegate = makeDelegate();
+      return (
+        <TugListView<DemoDataSource>
+          dataSource={ds}
+          delegate={delegate}
+          cellRenderers={CELL_RENDERERS}
+        />
+      );
+    }
+
+    const { rerender } = render(<Host />);
+    const willAfterMount = willCount;
+    const endAfterMount = endCount;
+
+    // Force a parent rerender → fresh delegate identity, same data,
+    // same window. Diff is empty; counts must not advance.
+    rerender(<Host />);
+    expect(willCount).toBe(willAfterMount);
+    expect(endCount).toBe(endAfterMount);
+  });
+
+  test("click on a kind without a registered renderer still fires onSelect", () => {
+    // The empty-placeholder branch (Step 3) also wires onClick. A
+    // consumer relying on selection through unregistered kinds would
+    // be unusual, but the wrapper's click contract should be uniform
+    // regardless of which render branch produced it.
+    const ds = new DemoDataSource([
+      { id: "a", kind: "header", label: "Alpha" },
+    ]);
+    const spy = makeLifecycleSpy({ estimatedHeightForKind: () => 40 });
+    // Register only the row renderer — header has no entry.
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={spy.delegate}
+        cellRenderers={{ row: RowCell }}
+      />,
+    );
+    const cell0 = container.querySelector(
+      '[data-tug-list-cell-index="0"]',
+    ) as HTMLElement | null;
+    expect(cell0).not.toBeNull();
+    act(() => {
+      cell0?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(spy.onSelect).toEqual([0]);
+  });
+});
