@@ -765,37 +765,157 @@ function TideProjectPickerForm({ notice, onOpen, onCancel, onRetryRestore }: Tid
     onOpen(trimmed, effectiveMode, effectiveSessionId);
   }, [onOpen, resumeCandidate, selectedRowLiveElsewhere]);
 
+  // Forget is destructive — the JSONL is preserved in trash for 7 days
+  // but the row drops from the picker immediately. The plan's picker UX
+  // requires a confirmation step on click and on the Backspace shortcut.
+  // `pendingForget` holds the in-flight intent; rendering swaps the
+  // picker for a confirmation panel inside the same TugSheet body so
+  // there's no nested overlay.
+  type PendingForget =
+    | { kind: "session"; sessionId: string; firstPrompt: string | null }
+    | { kind: "all"; count: number };
+  const [pendingForget, setPendingForget] = useState<PendingForget | null>(null);
+
+  const requestForgetSession = useCallback(
+    (sessionId: string): void => {
+      const row = sessionRows.find((r) => r.session_id === sessionId);
+      if (row === undefined || row.state === "live") return;
+      setPendingForget({
+        kind: "session",
+        sessionId,
+        firstPrompt: row.first_user_prompt,
+      });
+    },
+    [sessionRows],
+  );
+
+  const requestForgetAll = useCallback((): void => {
+    const count = sessionRows.filter((r) => r.state !== "live").length;
+    if (count === 0) return;
+    setPendingForget({ kind: "all", count });
+  }, [sessionRows]);
+
+  const cancelPendingForget = useCallback((): void => {
+    setPendingForget(null);
+  }, []);
+
   // Forget actions go through the singleton ledger store. The store
   // dispatches the CONTROL request and the eventual `session_updated`
   // push patches the picker's snapshot — the row vanishes without
   // re-mount.
-  const handleForgetSession = useCallback((sessionId: string): void => {
+  const confirmPendingForget = useCallback((): void => {
     const store = getTideSessionLedgerStore();
-    if (store === null) return;
-    void store.forgetSession(sessionId);
-    // If the user was sitting on this row, fall back to Start-fresh.
-    setSelectedRow((prev) => (prev === sessionId ? "new" : prev));
-  }, []);
-
-  const handleForgetAll = useCallback((): void => {
-    const store = getTideSessionLedgerStore();
-    if (store === null) return;
-    // Forget by-typed-path is implemented client-side as N per-row
-    // forget calls. The server's `forget_workspace_sessions` matches by
-    // canonical workspace_key, which the picker doesn't have for an
-    // arbitrary typed path; per-row forgets each match by session_id.
-    for (const row of sessionRows) {
-      if (row.state === "live") continue;
-      void store.forgetSession(row.session_id);
+    if (store === null || pendingForget === null) {
+      setPendingForget(null);
+      return;
     }
-    setSelectedRow("new");
-  }, [sessionRows]);
+    if (pendingForget.kind === "session") {
+      void store.forgetSession(pendingForget.sessionId);
+      setSelectedRow((prev) =>
+        prev === pendingForget.sessionId ? "new" : prev,
+      );
+    } else {
+      // Forget all: by-typed-path is implemented client-side as N
+      // per-row forget calls. The server's `forget_workspace_sessions`
+      // matches by canonical workspace_key, which the picker doesn't
+      // have for an arbitrary typed path; per-row forgets each match
+      // by session_id.
+      for (const row of sessionRows) {
+        if (row.state === "live") continue;
+        void store.forgetSession(row.session_id);
+      }
+      setSelectedRow("new");
+    }
+    setPendingForget(null);
+  }, [pendingForget, sessionRows]);
+
+  // Backspace on a focused row triggers Forget — but flows through the
+  // confirmation panel, not directly. The form-level handler reads the
+  // focused element's `value` attribute (Radix passes the radio's value
+  // through to the DOM) to find the row's session_id; "new" is ignored
+  // because Start-fresh has nothing to forget.
+  const handleFormKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>): void => {
+      if (e.key !== "Backspace") return;
+      const target = e.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (target.getAttribute("role") !== "radio") return;
+      const value = target.getAttribute("value");
+      if (value === null || value === "new" || value.length === 0) return;
+      e.preventDefault();
+      requestForgetSession(value);
+    },
+    [requestForgetSession],
+  );
 
   const nonLiveRowCount = sessionRows.filter((r) => r.state !== "live").length;
 
+  // Confirmation panel renders in place of the picker form when a Forget
+  // action is pending, so the user gets a single-screen affirm/cancel
+  // gesture without nested overlays. Cancel returns to the picker; the
+  // typed path and selected row are preserved (the picker state is held
+  // in the same component instance).
+  if (pendingForget !== null) {
+    const fullPrompt =
+      pendingForget.kind === "session" ? pendingForget.firstPrompt : null;
+    const previewSnippet =
+      fullPrompt !== null && fullPrompt.length > 0
+        ? truncateForDisplay(fullPrompt, 80)
+        : null;
+    return (
+      <ResponderScope>
+        <div
+          className="tide-card-picker-form tide-card-picker-confirm"
+          data-testid="tide-card-picker-forget-confirm"
+        >
+          <div className="tide-card-picker-confirm-title">
+            {pendingForget.kind === "session"
+              ? "Forget session"
+              : `Forget all ${pendingForget.count} session${
+                  pendingForget.count === 1 ? "" : "s"
+                }`}
+          </div>
+          {pendingForget.kind === "session" && previewSnippet !== null && (
+            <div
+              className="tide-card-picker-confirm-preview"
+              title={fullPrompt ?? undefined}
+            >
+              <em>{previewSnippet}</em>
+            </div>
+          )}
+          <div className="tide-card-picker-confirm-body">
+            This is destructive but recoverable for 7 days. Continue?
+          </div>
+          <div className="tug-sheet-actions">
+            <TugPushButton
+              emphasis="outlined"
+              role="action"
+              onClick={cancelPendingForget}
+              data-testid="tide-card-picker-forget-cancel"
+            >
+              Cancel
+            </TugPushButton>
+            <TugPushButton
+              emphasis="filled"
+              role="danger"
+              onClick={confirmPendingForget}
+              data-testid="tide-card-picker-forget-confirm-button"
+            >
+              Forget
+            </TugPushButton>
+          </div>
+        </div>
+      </ResponderScope>
+    );
+  }
+
   return (
     <ResponderScope>
-      <div className="tide-card-picker-form" ref={responderRef}>
+      <div
+        className="tide-card-picker-form"
+        ref={responderRef}
+        onKeyDown={handleFormKeyDown}
+      >
         {notice !== null && (
           <div
             className="tide-card-picker-notice"
@@ -964,7 +1084,7 @@ function TideProjectPickerForm({ notice, onOpen, onCancel, onRetryRestore }: Tid
                       // user is forgetting, not choosing this row.
                       e.stopPropagation();
                       e.preventDefault();
-                      handleForgetSession(row.session_id);
+                      requestForgetSession(row.session_id);
                     }}
                     onPointerDown={(e) => e.stopPropagation()}
                   >
@@ -993,7 +1113,7 @@ function TideProjectPickerForm({ notice, onOpen, onCancel, onRetryRestore }: Tid
             <TugPushButton
               emphasis="ghost"
               role="action"
-              onClick={handleForgetAll}
+              onClick={requestForgetAll}
               data-testid="tide-card-picker-forget-all"
             >
               Forget all sessions for this path

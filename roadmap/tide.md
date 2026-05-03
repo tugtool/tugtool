@@ -2290,6 +2290,8 @@ Test updates:
 ##### T3.4.a — CodeSessionStore (turn state machine) ✓ LANDED {#t3-4-a-code-session-store}
 
 > **Status:** ✓ LANDED. Implemented per [`tugplan-code-session-store.md`](tugplan-code-session-store.md) (Steps 1–10). `tugdeck/src/lib/code-session-store.ts` exports `CodeSessionStore`, `CodeSessionSnapshot`, `TurnEntry`, `ToolCallState`, `ControlRequestForward`, `CostSnapshot`, and `CodeSessionPhase`. 91 store tests green (2039 full-suite).
+>
+> **Companion store: TideSessionLedgerStore.** The CodeSessionStore is per-card and owns one in-flight session's turn state. The cross-card metadata that used to live in the tugbank `sessions` map and `live-sessions` set — timestamps, turn count, first-user-prompt snippets, lifecycle state, current card binding — moved into a tugcast-side sqlite ledger and a tugdeck client store at `tugdeck/src/lib/tide-session-ledger-store.ts`. The picker reads that store via `useSessionLedger(projectDir)` instead of `useTugbankValue("dev.tugtool.tide", "sessions", …)`. See [`tugplan-tide-session-ledger.md`](tugplan-tide-session-ledger.md) for the full design (schema, CONTROL ops, eviction, trash mechanics).
 
 **Goal:** A new L02 store that owns everything the Tide card needs to know about a Claude Code session in flight. Nothing about turn state lives in React components, in `tug-prompt-input`, or in `tug-prompt-entry`. One instance per Tide card, one backing Claude session per instance, no shared state between cards.
 

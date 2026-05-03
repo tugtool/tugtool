@@ -797,8 +797,8 @@ The old tugbank keys are no longer written to (the bridge wires them out in [Ste
 **Tasks:**
 - [x] Implement the rich-row renderer using existing primitives (`TugBadge` for state pills, plain `<button>` for Forget so click events can `stopPropagation` against the radio).
 - [x] Implement relative-timestamp helper (`formatRelativeTimestamp` — local to `tide-card.tsx`; no shared helper existed).
-- [~] Confirmation sheet for Forget — deferred. The trash sweep (step 8) gives 7-day recoverability, which serves the same safety-net purpose. If user testing surfaces accidental forgets, a confirmation `<TugSheet>` is a small follow-on.
-- [~] Keyboard handling beyond the radio group's native arrow-nav — deferred. Arrow + Enter work via `TugRadioGroup`. Backspace-triggers-Forget is a follow-on.
+- [x] Confirmation sheet for Forget — implemented. The picker form swaps to a confirmation panel (in the same TugSheet body so there's no nested overlay) carrying the plan's exact copy: "This is destructive but recoverable for 7 days. Continue?" Cancel returns to the picker with path + selected-row preserved; Forget dispatches `forget_session`. Same panel handles Forget All.
+- [x] Keyboard handling: arrow + Enter work via `TugRadioGroup`. Backspace on a focused resume row routes through the same confirmation panel; Backspace on Start-fresh is a no-op.
 - [x] Greying logic per [#picker-ux] (live row disabled with "live" pill; failed row shows "failed" pill; resume button text-styled the same).
 - [x] Footer Forget All implemented as N per-row dispatches (no server-side workspace-key lookup needed).
 - [x] State machine: replaced `sessionMode: "new" | "resume"` with `selectedRow: "new" | <session_id>` so each row is a stable radio value.
@@ -848,7 +848,7 @@ The old tugbank keys are no longer written to (the bridge wires them out in [Ste
 - [x] Rust integration: `forget_project_dir_sessions_drops_matching_only` — handler drops by project_dir, leaves other workspaces untouched, emits the ok ack with count.
 - [x] Rust unit: `forget_for_project_dir_drops_matching_rows_only` — direct ledger test.
 - [x] Rust unit (already passing): `sweep_expired_*` tests — return shape is `Vec<String>`.
-- [~] Tugdeck integration test for recents-eviction → ledger-eviction — deferred. The path is straight wire dispatch; the existing `recentsPuts` test fixture in `tide-card.test.tsx` doesn't hook into the ledger store. Adding it would require restructuring the test environment around `getConnection`.
+- [x] Tugdeck integration test for recents-eviction → ledger-eviction — `tugdeck/src/__tests__/recents-eviction-ledger.test.tsx` covers three cases: cap-eviction dispatches `forget_project_dir_sessions` for the dropped path; under-cap binding does not; dedup-promotion of an existing path also does not.
 
 **Checkpoint:**
 - [x] `cargo nextest run` — 1192 tests passing (3 new for Step 7)
@@ -905,7 +905,7 @@ The old tugbank keys are no longer written to (the bridge wires them out in [Ste
 **Tasks:**
 - [x] Walk every changed file in this plan against [tuglaws.md](../tuglaws/tuglaws.md). Disposition table in [#tuglaws-disposition] below.
 - [x] Add the "Stores That Observe CONTROL Push Frames" paragraph to `tuglaws/component-authoring.md`. The ledger store is documented as the second consumer of the pattern (after the live-sessions broadcast that §step-4-5-5 introduced), with the six structural points: action-dispatch decode, pub/sub bus, store subscribe, `useSyncExternalStore` hook, imperative actions via the bus, reconnect re-fetch.
-- [~] Update `roadmap/tide.md` § code-session-store to reference the new ledger — checked. The §code-session-store section in `tide.md` covers the per-card `CodeSessionStore` (turn state machine), which is unrelated to session bookkeeping. The tugbank `sessions` map references the plan said to replace are not present in `tide.md`; no edit needed.
+- [x] Update `roadmap/tide.md` § code-session-store to reference the new ledger. Added a "Companion store: TideSessionLedgerStore" paragraph immediately after the status line, calling out the per-card vs cross-card split and pointing at the promoted plan + the `useSessionLedger(projectDir)` hook.
 - [x] Update parent `roadmap/tugplan-tide-card-polish.md`:
   - Plan Status table row for Step 10: `placeholder — promotion still owed` → `**shipped** — see [tugplan-tide-session-ledger.md](./tugplan-tide-session-ledger.md)`.
   - Step 10 body: trimmed the ~95-line placeholder sketch to a 3-line "shipped via the promoted plan" marker. (Mirrors how Step 8 closed out via three subordinate plans.)

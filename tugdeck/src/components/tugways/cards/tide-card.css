@@ -232,6 +232,37 @@
   font-style: italic;
 }
 
+/* Forget confirmation — replaces the picker form's body when the user
+   clicks Forget on a row, presses Backspace on a row, or clicks Forget
+   All. Renders inside the same TugSheet body as the picker form so the
+   user sees a single-screen affirm/cancel rather than a nested overlay.
+   Cancel returns to the picker with path + selected-row preserved. */
+.tide-card-picker-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-md, 12px);
+}
+
+.tide-card-picker-confirm-title {
+  font-size: var(--tug-font-size-md, 1rem);
+  font-weight: 600;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
+.tide-card-picker-confirm-preview {
+  padding: var(--tug-space-sm, 8px) var(--tug-space-md, 12px);
+  border-radius: var(--tug-radius-xs, 4px);
+  background-color: var(--tug7-surface-field-primary-normal-plain-rest);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  font-size: var(--tug-font-size-sm, 0.875rem);
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
+.tide-card-picker-confirm-body {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: var(--tug-font-size-sm, 0.875rem);
+}
+
 /* Reveal Forget on row hover or focus-within. Either of those signals
    "user is engaging with this row" — surfacing the destructive action
    then keeps the closed-state read clean. */
