@@ -10,6 +10,7 @@ mod migration;
 mod resources;
 mod router;
 mod server;
+mod session_ledger;
 
 #[cfg(test)]
 mod integration_tests;

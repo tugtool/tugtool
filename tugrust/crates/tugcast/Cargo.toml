@@ -41,13 +41,13 @@ uuid = { workspace = true }
 base64 = { workspace = true }
 dirs = { workspace = true }
 tokio-stream = { workspace = true }
+rusqlite = { workspace = true }
 
 [dev-dependencies]
 tower = { workspace = true }
 tokio-tungstenite = { workspace = true }
 http-body-util = { workspace = true }
 tempfile = { workspace = true }
-rusqlite = { workspace = true }
 
 # Feature flag for real-claude integration tests. These tests spawn a
 # real `claude` (tugcode) subprocess and must NEVER run in standard

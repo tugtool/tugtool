@@ -167,7 +167,7 @@ This plan follows [tuglaws/tugplan-skeleton.md §reference-conventions](../tugla
 
 **Plan to resolve:** Resolve in [Step 1](#step-1). The schema is small enough that idempotent in-code DDL is the simpler choice; a `migrations` table earns its keep only when there are multiple historical schemas to track. Reconsider if the schema gains a column post-launch.
 
-**Resolution:** OPEN. Starting preference: idempotent in-code DDL for v1. Add a `migrations` table on the second schema change, not preemptively.
+**Resolution:** DECIDED — idempotent in-code DDL for v1 (`CREATE TABLE IF NOT EXISTS` + `CREATE INDEX IF NOT EXISTS`). A `migrations` table will be introduced on the second schema variant, not preemptively. Step 1 ships this.
 
 ---
 
@@ -597,25 +597,26 @@ The old tugbank keys are no longer written to (the bridge wires them out in [Ste
 **References:** [D01] sqlite-ledger, [D04] eviction, [D09] no-migration, [#schema], [#bootstrap], [Q05] migrations strategy
 
 **Artifacts:**
-- New `tugrust/crates/tugcast/src/session_ledger.rs` exporting `SessionLedger`, `SessionRow`, `LedgerError`, `ForgetOutcome`, plus the three `TIDE_LEDGER_*` constants.
-- New `tugrust/crates/tugcast/tests/session_ledger.rs` covering CRUD + eviction + sweep.
+- New `tugrust/crates/tugcast/src/session_ledger.rs` exporting `SessionLedger`, `SessionRow`, `LedgerError`, `ForgetOutcome`, `ForgetWorkspaceOutcome`, `SessionState`, plus the `TIDE_LEDGER_*` and `FIRST_USER_PROMPT_MAX_CHARS` constants.
+- Inline `#[cfg(test)] mod tests` covering CRUD + eviction + sweep + idempotent open + helpers. (Tugcast is a binary crate without a `lib.rs`, so an integration test file at `tests/session_ledger.rs` cannot import the module; the inline pattern matches the rest of the crate — `actions.rs`, `router.rs`, `agent_supervisor.rs`.)
+- `rusqlite` promoted from dev-dep to runtime dep on tugcast.
 
 **Tasks:**
-- [ ] Author the schema and state machine per [#schema]. Use `CREATE TABLE IF NOT EXISTS` + `CREATE INDEX IF NOT EXISTS` (resolves [Q05] in favor of in-code DDL for v1).
-- [ ] Implement the public API surface from [#public-api]. Each method is a single transaction.
-- [ ] Configure WAL mode + `busy_timeout` on connection open.
-- [ ] Author Rust tests:
+- [x] Author the schema and state machine per [#schema]. Use `CREATE TABLE IF NOT EXISTS` + `CREATE INDEX IF NOT EXISTS` (resolves [Q05] in favor of in-code DDL for v1).
+- [x] Implement the public API surface from [#public-api]. Each method is a single transaction.
+- [x] Configure WAL mode + `busy_timeout` on connection open.
+- [x] Author Rust tests:
   - CRUD round-trip per state transition.
   - Eviction: insert 21 rows, verify oldest closed evicted on the 21st.
   - Sweep: insert a row with `last_used_at` = 91 days ago, verify swept on `sweep_expired`.
   - Idempotent open: open the same ledger file twice, verify the second open is a no-op (no DDL re-run failures).
 
 **Tests:**
-- [ ] `cargo nextest run -p tugcast --test session_ledger` green.
+- [x] `cargo nextest run -p tugcast session_ledger` green (26 tests).
 
 **Checkpoint:**
-- [ ] `cargo nextest run` (workspace-wide; new tests + no regressions)
-- [ ] `cargo build` (no warnings)
+- [x] `cargo nextest run` (workspace-wide; new tests + no regressions — 1175 passed)
+- [x] `cargo build` (no warnings)
 
 ---
 
