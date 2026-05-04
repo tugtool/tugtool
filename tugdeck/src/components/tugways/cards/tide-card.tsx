@@ -329,22 +329,6 @@ export function TideCardContent({ cardId }: TideCardContentProps) {
  * happens while transportState is in flight (rare; this is defensive
  * against the single notify per `setBinding`).
  */
-/**
- * Soft-budget threshold per [D10]. Once `phase === "replaying"` has
- * been held for this long, the placeholder switches from
- * "Loading conversation…" to "Loading conversation… (N turns)" so
- * the user gets progress signal during a long replay.
- */
-const REPLAY_SOFT_BUDGET_MS = 2000;
-/**
- * Hard-budget timeout dwell. After `lastReplayResult.kind ===
- * "replay_timeout"` lands, the card holds the placeholder with the
- * timeout copy for this long before dropping into the (empty) live
- * transcript. Long enough to read; short enough not to feel like a
- * stall on top of a stall.
- */
-const REPLAY_TIMEOUT_DWELL_MS = 1500;
-
 function TideCardServicesGate({
   cardId,
   services,
@@ -361,9 +345,20 @@ function TideCardServicesGate({
     services.codeSessionStore.subscribe,
     () => services.codeSessionStore.getSnapshot().transcript.length,
   );
-  const lastReplayResult = useSyncExternalStore(
+  // The replay-clock fields live on the snapshot ([L02], [L22]). The
+  // gate reads them through the same useSyncExternalStore path it
+  // uses for `phase` and `transportState` — no useEffect mirror, no
+  // local timer state. The reducer + dispatch loop in
+  // `code-session-store.ts` schedules the underlying setTimeouts and
+  // dispatches the tick events that flip these flags; the gate
+  // consumes the result.
+  const replaySoftBudgetElapsed = useSyncExternalStore(
     services.codeSessionStore.subscribe,
-    () => services.codeSessionStore.getSnapshot().lastReplayResult,
+    () => services.codeSessionStore.getSnapshot().replaySoftBudgetElapsed,
+  );
+  const replayTimeoutDwellActive = useSyncExternalStore(
+    services.codeSessionStore.subscribe,
+    () => services.codeSessionStore.getSnapshot().replayTimeoutDwellActive,
   );
   const projectDir = useSyncExternalStore(
     cardSessionBindingStore.subscribe,
@@ -372,45 +367,6 @@ function TideCardServicesGate({
       [cardId],
     ),
   );
-
-  // Soft-budget — flips true once `replaying` has been held for
-  // [D10]'s 2s window. Reset back to false whenever the phase leaves
-  // `replaying` so the next replay starts clean.
-  const [softBudget, setSoftBudget] = useState(false);
-  useEffect(() => {
-    if (phase !== "replaying") {
-      setSoftBudget(false);
-      return;
-    }
-    const t = setTimeout(() => setSoftBudget(true), REPLAY_SOFT_BUDGET_MS);
-    return () => clearTimeout(t);
-  }, [phase]);
-
-  // Timeout grace — when `replaying` exits to `idle` carrying a
-  // `replay_timeout` result, hold the placeholder briefly so the user
-  // sees the failure copy instead of a flash to an empty transcript.
-  // Tracking the previous phase via ref keeps the effect dependency
-  // list narrow (no transient renders triggered by storing the prior
-  // value in state).
-  const [timeoutGrace, setTimeoutGrace] = useState(false);
-  const prevPhaseRef = useRef<typeof phase>(phase);
-  useEffect(() => {
-    const prev = prevPhaseRef.current;
-    prevPhaseRef.current = phase;
-    if (
-      prev === "replaying" &&
-      phase !== "replaying" &&
-      lastReplayResult?.kind === "replay_timeout"
-    ) {
-      setTimeoutGrace(true);
-      const t = setTimeout(
-        () => setTimeoutGrace(false),
-        REPLAY_TIMEOUT_DWELL_MS,
-      );
-      return () => clearTimeout(t);
-    }
-    return undefined;
-  }, [phase, lastReplayResult]);
 
   if (transportState === "restoring") {
     return (
@@ -426,11 +382,11 @@ function TideCardServicesGate({
       <TideRestoring
         variant="replay-loading"
         projectDir={projectDir}
-        turnsCount={softBudget ? transcriptCount : null}
+        turnsCount={replaySoftBudgetElapsed ? transcriptCount : null}
       />
     );
   }
-  if (timeoutGrace) {
+  if (replayTimeoutDwellActive) {
     return (
       <TideRestoring
         variant="replay-timeout"

@@ -1073,11 +1073,11 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
   - [x] Update `cardServicesStore._construct` to call `notifyResumeBindingLanded()` for resume bindings.
   - [x] Tests in `tugdeck/src/lib/code-session-store/__tests__/code-session-store.replay-clock.test.ts` (NEW): each new field's lifecycle, snapshot identity stability, dispose cancels timers, transport_close clears preflight.
   - [x] All existing CodeSessionStore tests stay green (no new test breaks; the new fields are additive).
-- [ ] **Commit 2 — gate uses store fields:**
-  - [ ] Delete `useState` (`softBudget`, `timeoutGrace`), `useEffect` blocks, and `prevPhaseRef` from `TideCardServicesGate`.
-  - [ ] Read the three new fields off the existing snapshot via the existing `useSyncExternalStore` pattern.
-  - [ ] Existing tests in `tide-card-replay-placeholder.test.tsx` continue to pass — rendering behavior preserved (variants still rendered).
-  - [ ] Grep `tide-card.tsx` gate scope for `useEffect` / `useState`: zero hits attributable to Step 4.
+- [x] **Commit 2 — gate uses store fields:**
+  - [x] Delete `useState` (`softBudget`, `timeoutGrace`), `useEffect` blocks, and `prevPhaseRef` from `TideCardServicesGate`.
+  - [x] Read the three new fields off the existing snapshot via the existing `useSyncExternalStore` pattern.
+  - [x] Existing tests in `tide-card-replay-placeholder.test.tsx` continue to pass — rendering behavior preserved (variants still rendered).
+  - [x] Grep `tide-card.tsx` gate scope for `useEffect` / `useState`: zero hits attributable to Step 4.
 - [ ] **Commit 3 — consolidate banners in `TideCardBody`:**
   - [ ] Author `deriveTideCardBannerSpec(snap)` as a pure helper alongside `TideCardBody`.
   - [ ] Replace the two existing `<TugPaneBanner>` instances with one driven by the spec; ensure the precedence chain `error > transport > replay-timeout > replay-loading > none` produces the same UI for currently-exercised cases.
