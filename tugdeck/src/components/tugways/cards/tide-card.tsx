@@ -51,6 +51,7 @@ import type { ActionEvent } from "../responder-chain";
 import { useCardDelegate, useCardLifecycle } from "@/lib/card-lifecycle";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import type { CodeSessionSnapshot, CodeSessionStore } from "@/lib/code-session-store";
+import { deriveTideCardBannerSpec } from "./tide-card-banner-spec";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
 import type { EditorSettingsStore } from "@/lib/editor-settings-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
@@ -1301,6 +1302,69 @@ interface TideCardBodyProps {
   services: TideCardServices;
 }
 
+/**
+ * Render the consolidated `<TugPaneBanner>` from a derived spec.
+ * The body calls this once with the spec from
+ * `deriveTideCardBannerSpec` and the `setDismissedAt` setter the
+ * Dismiss footer wires up for the `error` kind. Centralized here so
+ * the JSX stays close to its presentation siblings without burying
+ * the precedence-chain mapping inside the body's render tree.
+ *
+ * `kind === "none"` still renders the banner with `visible: false`
+ * — the component runs its exit animation and unmounts via its
+ * internal `mounted` state, so a switch from kind="error" to "none"
+ * (e.g. from a successful retry) animates out cleanly.
+ */
+function renderTideCardBanner(
+  spec: ReturnType<typeof deriveTideCardBannerSpec>,
+  setDismissedAt: (at: number) => void,
+): React.ReactElement {
+  if (spec.kind === "error") {
+    return (
+      <TugPaneBanner
+        visible={true}
+        variant="error"
+        tone="danger"
+        label={CAUSE_LABELS[spec.cause]}
+        message={spec.message}
+        detailIcon="unplug"
+        detailTitle={CAUSE_LABELS[spec.cause]}
+        footer={
+          <TugPushButton
+            emphasis="outlined"
+            role="danger"
+            onClick={() => setDismissedAt(spec.at)}
+          >
+            Dismiss
+          </TugPushButton>
+        }
+      >
+        <p>The card can&apos;t reach its session. Dismiss to continue; close and reopen the card to retry.</p>
+      </TugPaneBanner>
+    );
+  }
+  if (spec.kind === "transport") {
+    const isOffline = spec.state === "offline";
+    return (
+      <TugPaneBanner
+        visible={true}
+        variant="status"
+        tone="caution"
+        icon="unplug"
+        label={isOffline ? "Reconnecting" : "Restoring session"}
+        message={
+          isOffline
+            ? "Lost the connection to tugcast. Trying to reconnect…"
+            : "The connection is back. Re-acknowledging your session…"
+        }
+      />
+    );
+  }
+  // kind === "none" — banner runs its exit animation if it was
+  // previously visible, then unmounts.
+  return <TugPaneBanner visible={false} message="" />;
+}
+
 export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   const { codeSessionStore, sessionMetadataStore, historyStore, completionProviders, editorStore, entryDelegateRef } = services;
 
@@ -1313,22 +1377,16 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
     codeSessionStore.getSnapshot,
   );
 
-  // --- lastError banner state. ---
+  // --- Banner derivation. ---
   // UI-only dismiss: track the `at` timestamp of the last-dismissed error.
   // A new error (different `at`) naturally reappears. The store owns the
   // clear semantics — on retry submit or turn_complete(success) the snapshot
   // transitions to `lastError: null` and the derivation drops the banner.
-  // `resume_failed` is filtered out here because `useTideCardObserver` is
-  // about to clear the binding and route that cause through the picker.
+  // `resume_failed` is filtered out by the helper because
+  // `useTideCardObserver` is about to clear the binding and route that
+  // cause through the picker.
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
-  const bannerError =
-    codeSnap.lastError !== null &&
-    codeSnap.lastError.cause !== "resume_failed" &&
-    codeSnap.lastError.at !== dismissedAt
-      ? (codeSnap.lastError as NonNullable<CodeSessionSnapshot["lastError"]> & {
-          cause: BannerErrorCause;
-        })
-      : null;
+  const bannerSpec = deriveTideCardBannerSpec(codeSnap, { dismissedAt });
 
   // Once the session hits any non-recoverable error, disable the entry —
   // the dismiss gesture only hides the banner, the underlying session is
@@ -1338,26 +1396,6 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   const sessionErrored =
     codeSnap.lastError !== null &&
     codeSnap.lastError.cause !== "resume_failed";
-
-  // Transport-state banner — covers the case where the wire dropped on
-  // an idle card. Non-idle phases set `lastError.cause = "transport_closed"`
-  // ([D06]), which the error banner above already surfaces with full
-  // detail; idle stays `lastError: null` so without this branch an idle
-  // offline card would show no UI at all (just a disabled send button).
-  // The error banner takes precedence to avoid two banners stacking;
-  // restoring is unreachable here because `TideCardServicesGate`
-  // routes that case to `TideRestoring`, but covering it keeps the
-  // computation total.
-  const showTransportBanner =
-    bannerError === null && codeSnap.transportState !== "online";
-  const transportBannerLabel =
-    codeSnap.transportState === "offline"
-      ? "Reconnecting"
-      : "Restoring session";
-  const transportBannerMessage =
-    codeSnap.transportState === "offline"
-      ? "Lost the connection to tugcast. Trying to reconnect…"
-      : "The connection is back. Re-acknowledging your session…";
 
   const editorSettings = useSyncExternalStore(
     editorStore.subscribe,
@@ -1705,50 +1743,21 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
           </ResponderScope>
         </TugSplitPanel>
       </TugSplitPane>
-      <TugPaneBanner
-        visible={bannerError !== null}
-        variant="error"
-        tone="danger"
-        label={bannerError ? CAUSE_LABELS[bannerError.cause] : undefined}
-        message={bannerError?.message ?? ""}
-        detailIcon="unplug"
-        detailTitle={bannerError ? CAUSE_LABELS[bannerError.cause] : undefined}
-        footer={
-          bannerError !== null ? (
-            <TugPushButton
-              emphasis="outlined"
-              role="danger"
-              onClick={() => setDismissedAt(bannerError.at)}
-            >
-              Dismiss
-            </TugPushButton>
-          ) : undefined
-        }
-      >
-        <p>The card can&apos;t reach its session. Dismiss to continue; close and reopen the card to retry.</p>
-      </TugPaneBanner>
       {/*
-        Transport-state status banner. Shown when the wire is dropped
-        on an idle card (where lastError stays null per [D06]) — non-
-        idle phases already get the error banner above with cause
-        `transport_closed`. The two banners are mutually exclusive at
-        the source (see `showTransportBanner`); only one ever has
-        `visible: true` at a time.
+        Single TugPaneBanner driven by `deriveTideCardBannerSpec`.
+        The precedence chain (error > transport > none) is enforced
+        in the helper; this JSX maps the spec's discriminated kind
+        to TugPaneBanner props. Mutual exclusion by construction —
+        no two visible flags racing on the portal slot.
 
-        The status variant + caution tone signal "transient,
-        recoverable" rather than "errored, action required". No
-        Dismiss button: the banner clears itself once the wire is
-        back ([D04] reconnect path → store flips transportState back
-        to `online` → banner unmounts via the visible flip).
+        The error variant carries the Dismiss footer + detail
+        copy ("The card can't reach its session…"). Status variants
+        are strip-only with copy keyed off the transport state.
+        When `kind === "none"` the banner renders with `visible:
+        false`; the component runs its exit animation and then
+        unmounts via its internal `mounted` state.
       */}
-      <TugPaneBanner
-        visible={showTransportBanner}
-        variant="status"
-        tone="caution"
-        icon="unplug"
-        label={transportBannerLabel}
-        message={transportBannerMessage}
-      />
+      {renderTideCardBanner(bannerSpec, setDismissedAt)}
       </div>
     </CardContentResponderScope>
   );

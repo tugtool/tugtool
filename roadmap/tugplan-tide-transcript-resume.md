@@ -1078,11 +1078,11 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
   - [x] Read the three new fields off the existing snapshot via the existing `useSyncExternalStore` pattern.
   - [x] Existing tests in `tide-card-replay-placeholder.test.tsx` continue to pass — rendering behavior preserved (variants still rendered).
   - [x] Grep `tide-card.tsx` gate scope for `useEffect` / `useState`: zero hits attributable to Step 4.
-- [ ] **Commit 3 — consolidate banners in `TideCardBody`:**
-  - [ ] Author `deriveTideCardBannerSpec(snap)` as a pure helper alongside `TideCardBody`.
-  - [ ] Replace the two existing `<TugPaneBanner>` instances with one driven by the spec; ensure the precedence chain `error > transport > replay-timeout > replay-loading > none` produces the same UI for currently-exercised cases.
-  - [ ] Existing tests for the error banner and the transport-state banner (`tide-card-transport-state.test.tsx`, `tide-card-last-error.test.tsx`) pass with no behavioral change.
-  - [ ] Add unit tests for `deriveTideCardBannerSpec` covering each precedence-chain branch.
+- [x] **Commit 3 — consolidate banners in `TideCardBody`:**
+  - [x] Author `deriveTideCardBannerSpec(snap)` as a pure helper alongside `TideCardBody`.
+  - [x] Replace the two existing `<TugPaneBanner>` instances with one driven by the spec; ensure the precedence chain `error > transport > replay-timeout > replay-loading > none` produces the same UI for currently-exercised cases.
+  - [x] Existing tests for the error banner and the transport-state banner (`tide-card-transport-state.test.tsx`, `tide-card-last-error.test.tsx`) pass with no behavioral change.
+  - [x] Add unit tests for `deriveTideCardBannerSpec` covering each precedence-chain branch.
 - [ ] **Commit 4 — banner replaces backdrop for replay; add preflight beat:**
   - [ ] Add `replay-loading` and `replay-timeout` cases to `deriveTideCardBannerSpec`.
   - [ ] Remove the `replay-loading` and `replay-timeout` variants from `TideRestoring`'s discriminated union.
