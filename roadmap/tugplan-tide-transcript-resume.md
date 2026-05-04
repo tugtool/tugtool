@@ -1266,18 +1266,18 @@ The two awaits are sequential, but they're not actually dependent: replay only n
 
 **Tasks:**
 
-- [ ] Define the wire shape: CONTROL frame `{ "action": "request_replay", "tug_session_id": "<id>" }`. Document in the supervisor's CONTROL action enumeration comments.
-- [ ] Extend the supervisor's CONTROL handler (`handle_control` switch on `action`) to recognize `"request_replay"`. Reject payloads without `tug_session_id` with `ControlError::InvalidPayload`.
-- [ ] Look up ledger entry; if `Live`, send `{"type":"request_replay"}` Frame to `input_tx`. If not Live, skip + log.
-- [ ] Add structured `tide::session-lifecycle event=request_replay.dispatched` log line on the success path; `event=request_replay.skipped` on the no-op branches with a `reason` field naming the spawn_state.
-- [ ] Tests: control_request_replay frame for a Live session → tugcode child mock observes `{"type":"request_replay"}` on its stdin.
-- [ ] Tests: control_request_replay frame for an Idle session → no stdin write, no error frame, log line matches.
+- [x] Define the wire shape: CONTROL frame `{ "action": "request_replay", "tug_session_id": "<id>" }`. Document in the supervisor's CONTROL action enumeration comments.
+- [x] Extend the supervisor's CONTROL handler (`handle_control` switch on `action`) to recognize `"request_replay"`. Reject payloads without `tug_session_id` with `ControlError::MissingSessionId`. *Note: `MissingSessionId` is the existing variant the parser layer uses for the same shape ([`parse_control_payload_owned`] returns it for the spawn/close payload). The plan's earlier `InvalidPayload` reference was abstract; the right variant for this wire-side condition is `MissingSessionId`.*
+- [x] Look up ledger entry; if `Live`, send `{"type":"request_replay"}` Frame to `input_tx`. If not Live, skip + log.
+- [x] Add structured `tide::session-lifecycle event=request_replay.dispatched` log line on the success path; `event=request_replay.skipped` on the no-op branches with a `reason` field naming the spawn_state (`unknown`, `idle`, `spawning`, `errored`, `closed`, `no_input_tx`).
+- [x] Tests: control_request_replay frame for a Live session → tugcode child mock observes `{"type":"request_replay"}` on its stdin.
+- [x] Tests: control_request_replay frame for an Idle session → no stdin write, no error frame, log line matches.
 
 **Tests:**
 
-- [ ] CONTROL `request_replay` for a Live session writes the JSON-line to tugcode's stdin (use the existing test child-spawner mock).
-- [ ] CONTROL `request_replay` for an Idle / unknown / Closed session is a no-op + logged.
-- [ ] CONTROL `request_replay` with a missing `tug_session_id` returns a `ControlError` and logs.
+- [x] CONTROL `request_replay` for a Live session writes the JSON-line to tugcode's stdin (use the existing test child-spawner mock). *Asserts the frame lands on the captured `input_tx` mpsc — the same channel the bridge's input loop reads and writes verbatim to tugcode's stdin. Spinning a real bridge here would test agent_bridge.rs, not the supervisor; the boundary is the supervisor's contribution.*
+- [x] CONTROL `request_replay` for an Idle / unknown / Closed session is a no-op + logged.
+- [x] CONTROL `request_replay` with a missing `tug_session_id` returns a `ControlError` and logs. Plus malformed-JSON and empty-string variants for parser-edge coverage.
 
 **Tuglaws cross-check:**
 
@@ -1286,7 +1286,7 @@ The two awaits are sequential, but they're not actually dependent: replay only n
 
 **Checkpoint:**
 
-- [ ] `cargo nextest run` (tugcast) — green.
+- [x] `cargo nextest run` (tugcast) — green. *513 tests pass (506 baseline + 7 new R1b: live forwards, idle/closed/unknown noop, missing/empty/malformed payload errors). Workspace-wide 1214 pass; `cargo clippy -D warnings` and `cargo fmt --check` clean.*
 
 ---
 

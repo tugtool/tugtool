@@ -1000,6 +1000,27 @@ fn parse_session_id_payload(payload: &[u8]) -> Result<String, ControlError> {
     Ok(id)
 }
 
+/// Parse a CONTROL payload that carries `{ tug_session_id: "..." }` only.
+/// `request_replay` per [D12] uses this shape: a verb that addresses a
+/// specific Live session by its tug-side id and carries no other state
+/// (no card_id — the verb is dispatch-side bookkeeping; no project_dir —
+/// the supervisor already knows the workspace from the ledger entry).
+///
+/// Returning `MissingSessionId` matches the variant `parse_control_payload_owned`
+/// uses when its `tug_session_id` field is absent — same semantics, same
+/// wire-side error category.
+fn parse_tug_session_id_payload(payload: &[u8]) -> Result<TugSessionId, ControlError> {
+    let value: serde_json::Value =
+        serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
+    let id = value
+        .get("tug_session_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::MissingSessionId)?
+        .to_string();
+    Ok(TugSessionId::new(id))
+}
+
 /// Canonical constructor for `SESSION_STATE` wire frames. Shared between
 /// `agent_supervisor` (pending/spawning/closed/errored on control events)
 /// and `agent_bridge` (live after session_init, errored on crash-budget
@@ -1173,9 +1194,28 @@ impl AgentSupervisor {
         (sup, merger_register_rx)
     }
 
-    /// Handle a CONTROL frame's spawn/close/reset action. `client_id` is the
-    /// WebSocket connection id (see [D09]); it is distinct from `card_id` and
-    /// is used only for the per-client session affinity map in [D14].
+    /// Handle a CONTROL frame's action. `client_id` is the WebSocket
+    /// connection id (see [D09]); it is distinct from `card_id` and is
+    /// used only for the per-client session affinity map in [D14].
+    ///
+    /// Actions:
+    /// * `spawn_session` — register intent + start the per-session
+    ///   subprocess if Idle. Payload: `{card_id, tug_session_id,
+    ///   project_dir, session_mode?}`.
+    /// * `close_session` — stop the subprocess and drop the ledger
+    ///   entry. Payload: `{card_id, tug_session_id}`.
+    /// * `reset_session` — invalidate the persisted resume id and
+    ///   re-arm the entry for a fresh spawn, preserving the workspace.
+    ///   Payload: `{card_id, tug_session_id}`.
+    /// * `list_sessions` — picker query. Payload: `{project_dir}`.
+    /// * `forget_session` — drop a non-live persisted record.
+    ///   Payload: `{session_id}`.
+    /// * `forget_project_dir_sessions` — drop every non-live record
+    ///   under a workspace. Payload: `{project_dir}`.
+    /// * `request_replay` — recovery verb per [D12]. Forward
+    ///   `{"type":"request_replay"}` to the live tugcode subprocess so
+    ///   a freshly-mounted `CodeSessionStore` rehydrates from JSONL.
+    ///   No-op if the entry is not Live. Payload: `{tug_session_id}`.
     pub async fn handle_control(
         &self,
         action: &str,
@@ -1233,6 +1273,13 @@ impl AgentSupervisor {
             "forget_project_dir_sessions" => {
                 let project_dir = parse_project_dir_payload(payload)?;
                 self.do_forget_project_dir_sessions(&project_dir).await;
+                Ok(())
+            }
+            "request_replay" => {
+                let tug_session_id = parse_tug_session_id_payload(payload).inspect_err(|e| {
+                    warn!(action, error = %e, "handle_control: rejected request_replay");
+                })?;
+                self.do_request_replay(&tug_session_id).await;
                 Ok(())
             }
             other => {
@@ -1761,6 +1808,92 @@ impl AgentSupervisor {
             FeedId::CONTROL,
             serde_json::to_vec(&body).expect("list_sessions_ok serializes"),
         ));
+    }
+
+    /// Handle a `request_replay` CONTROL request per [D12]. Forwards
+    /// `{"type":"request_replay"}` to the per-session tugcode subprocess
+    /// over its existing CODE_INPUT channel (the same `input_tx` the
+    /// dispatcher uses for `user_message`). Tugcode's IPC loop dispatches
+    /// the verb to its `runReplay()` method, whose re-entrancy guard
+    /// (Step R1a) drops a redundant request that arrives mid-replay.
+    ///
+    /// No-op if the entry's spawn state is anything other than `Live`:
+    /// `Idle` / `Spawning` mean tugcode hasn't reached `session_init`
+    /// yet (the cold-boot startup-replay path will run when it does);
+    /// `Errored` / `Closed` mean the subprocess is gone and a replay
+    /// would have nowhere to land.
+    async fn do_request_replay(&self, tug_session_id: &TugSessionId) {
+        let entry_arc = {
+            let ledger = self.ledger.lock().await;
+            match ledger.get(tug_session_id) {
+                Some(e) => e.clone(),
+                None => {
+                    tracing::info!(
+                        target: "tide::session-lifecycle",
+                        event = "request_replay.skipped",
+                        tug_session_id = %tug_session_id,
+                        reason = "unknown",
+                    );
+                    return;
+                }
+            }
+        };
+
+        // Snapshot state + input_tx under one lock acquire so the wire
+        // send below isn't holding the entry mutex (avoids stalling the
+        // dispatcher if `input_tx`'s mpsc is at capacity).
+        let (state, input_tx) = {
+            let entry = entry_arc.lock().await;
+            (entry.spawn_state, entry.input_tx.clone())
+        };
+
+        if state != SpawnState::Live {
+            let reason = match state {
+                SpawnState::Idle => "idle",
+                SpawnState::Spawning => "spawning",
+                SpawnState::Live => unreachable!(),
+                SpawnState::Errored => "errored",
+                SpawnState::Closed => "closed",
+            };
+            tracing::info!(
+                target: "tide::session-lifecycle",
+                event = "request_replay.skipped",
+                tug_session_id = %tug_session_id,
+                reason = reason,
+            );
+            return;
+        }
+
+        // Live but no `input_tx` is a programming error — `Live` means
+        // the bridge promoted the entry past `session_init` and the
+        // worker installs `input_tx` before that promotion. Treat as
+        // a skip on the user-visible path and warn loudly so the
+        // condition surfaces in tracing.
+        let Some(tx) = input_tx else {
+            tracing::warn!(
+                target: "tide::session-lifecycle",
+                event = "request_replay.skipped",
+                tug_session_id = %tug_session_id,
+                reason = "no_input_tx",
+            );
+            return;
+        };
+
+        let body = b"{\"type\":\"request_replay\"}";
+        let frame = Frame::new(FeedId::CODE_INPUT, body.to_vec());
+        if let Err(e) = tx.send(frame).await {
+            warn!(
+                tug_session_id = %tug_session_id,
+                error = %e,
+                "request_replay: send to input_tx failed",
+            );
+            return;
+        }
+        tracing::info!(
+            target: "tide::session-lifecycle",
+            event = "request_replay.dispatched",
+            tug_session_id = %tug_session_id,
+        );
     }
 
     /// Handle a `forget_session` CONTROL request. Refuses if the row is
@@ -2860,6 +2993,14 @@ mod tests {
         .unwrap()
     }
 
+    fn request_replay_payload(tug_session_id: &str) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "action": "request_replay",
+            "tug_session_id": tug_session_id,
+        }))
+        .unwrap()
+    }
+
     fn session_state_of(frame: &Frame) -> (String, String) {
         assert_eq!(frame.feed_id, FeedId::SESSION_STATE);
         let v: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
@@ -3333,6 +3474,166 @@ mod tests {
         let second = session_state_of(&state_rx.try_recv().unwrap());
         assert_eq!(first, ("sess-1".into(), "closed".into()));
         assert_eq!(second, ("sess-1".into(), "pending".into()));
+    }
+
+    // ---- handle_control: request_replay ([D12], Phase A-R1 / Step R1b) ----
+
+    /// Live session: request_replay forwards `{"type":"request_replay"}`
+    /// to the per-session `input_tx`. The bridge's input loop writes
+    /// payloads from this channel verbatim to tugcode's stdin (with a
+    /// trailing `\n`); we observe the frame on the receiving end of the
+    /// installed `input_tx` to verify the supervisor's contribution
+    /// without spinning a real bridge.
+    #[tokio::test]
+    async fn test_request_replay_live_session_forwards_to_input_tx() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+
+        let tug_id = TugSessionId::new("sess-live");
+        let entry_arc = insert_ledger_entry(&sup, &tug_id).await;
+
+        // Install a Live state + a captured input_tx so we can observe
+        // the frame. Mirrors what `relay_session_io`'s session_init
+        // promote path would have done in production.
+        let (input_tx_for_ledger, mut input_rx_for_assert) = mpsc::channel::<Frame>(4);
+        {
+            let mut entry = entry_arc.lock().await;
+            entry.spawn_state = SpawnState::Live;
+            entry.input_tx = Some(input_tx_for_ledger.clone());
+        }
+        drop(input_tx_for_ledger);
+
+        sup.handle_control("request_replay", &request_replay_payload("sess-live"), 10)
+            .await
+            .unwrap();
+
+        let frame = input_rx_for_assert
+            .try_recv()
+            .expect("request_replay payload reached input_tx");
+        assert_eq!(frame.feed_id, FeedId::CODE_INPUT);
+        let parsed: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+        assert_eq!(parsed["type"], "request_replay");
+    }
+
+    /// Idle session: request_replay no-ops. No frame on input_tx (none
+    /// exists at Idle anyway), no error, and `handle_control` returns
+    /// Ok. The cold-boot startup-replay path will fire when the
+    /// dispatcher's first CODE_INPUT promotes Idle→Spawning.
+    #[tokio::test]
+    async fn test_request_replay_idle_session_is_noop() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+
+        let tug_id = TugSessionId::new("sess-idle");
+        insert_ledger_entry(&sup, &tug_id).await;
+
+        let result = sup
+            .handle_control("request_replay", &request_replay_payload("sess-idle"), 10)
+            .await;
+        assert!(result.is_ok());
+
+        // Sanity: state remains Idle, no input_tx installed.
+        let entry_arc = {
+            let ledger = sup.ledger.lock().await;
+            ledger.get(&tug_id).cloned().unwrap()
+        };
+        let entry = entry_arc.lock().await;
+        assert_eq!(entry.spawn_state, SpawnState::Idle);
+        assert!(entry.input_tx.is_none());
+    }
+
+    /// Closed session: request_replay no-ops. Mirrors the Idle case;
+    /// behavior must be uniform across non-Live states so a stale
+    /// dispatch (e.g. tugdeck reconstructed services for a binding
+    /// that has since been closed) cannot resurrect a dead session.
+    #[tokio::test]
+    async fn test_request_replay_closed_session_is_noop() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+
+        let tug_id = TugSessionId::new("sess-closed");
+        let entry_arc = insert_ledger_entry(&sup, &tug_id).await;
+        // An input_tx left over from a prior Live phase MUST NOT receive
+        // the request_replay frame once the entry is Closed.
+        let (input_tx_for_ledger, mut input_rx_for_assert) = mpsc::channel::<Frame>(4);
+        {
+            let mut entry = entry_arc.lock().await;
+            entry.spawn_state = SpawnState::Closed;
+            entry.input_tx = Some(input_tx_for_ledger.clone());
+        }
+        drop(input_tx_for_ledger);
+
+        sup.handle_control("request_replay", &request_replay_payload("sess-closed"), 10)
+            .await
+            .unwrap();
+
+        // input_tx receives nothing — the no-op branch fired.
+        assert!(
+            input_rx_for_assert.try_recv().is_err(),
+            "no request_replay frame for a Closed entry"
+        );
+    }
+
+    /// Unknown tug_session_id: no-op, no error. Matches the
+    /// `close_session` "unknown is noop" contract — the supervisor's
+    /// surface treats stale dispatches uniformly.
+    #[tokio::test]
+    async fn test_request_replay_unknown_session_is_noop() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+
+        let result = sup
+            .handle_control(
+                "request_replay",
+                &request_replay_payload("sess-unknown"),
+                10,
+            )
+            .await;
+        assert!(result.is_ok());
+    }
+
+    /// Missing tug_session_id: parse_tug_session_id_payload returns
+    /// `MissingSessionId`. The `?` in handle_control propagates.
+    #[tokio::test]
+    async fn test_request_replay_missing_tug_session_id_is_error() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+
+        // Payload missing `tug_session_id`.
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "request_replay",
+        }))
+        .unwrap();
+        let result = sup.handle_control("request_replay", &payload, 10).await;
+        assert_eq!(result.unwrap_err(), ControlError::MissingSessionId);
+    }
+
+    /// Empty tug_session_id: same as missing (the parser filters empty
+    /// strings). Pins the wire-side validator's contract.
+    #[tokio::test]
+    async fn test_request_replay_empty_tug_session_id_is_error() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "request_replay",
+            "tug_session_id": "",
+        }))
+        .unwrap();
+        let result = sup.handle_control("request_replay", &payload, 10).await;
+        assert_eq!(result.unwrap_err(), ControlError::MissingSessionId);
+    }
+
+    /// Malformed JSON payload: parser returns `Malformed`.
+    #[tokio::test]
+    async fn test_request_replay_malformed_payload_is_error() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+
+        let result = sup
+            .handle_control("request_replay", b"not-json-at-all", 10)
+            .await;
+        assert_eq!(result.unwrap_err(), ControlError::Malformed);
     }
 
     // ---- P13: spawn budget (concurrent cap + rate limit) ----
