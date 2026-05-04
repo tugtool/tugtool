@@ -24,6 +24,9 @@
 // JSONL-on-disk path resolves to fixtures.
 
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, mkdirSync, symlinkSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   type JsonlReadResult,
@@ -254,6 +257,150 @@ describe("jsonlPathFor", () => {
       "abc-123",
     );
     expect(path).toBe("/tmp/projects/-Users-foo-work/abc-123.jsonl");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runReplay — symlink canonicalization regression (Step R0b)
+// ---------------------------------------------------------------------------
+//
+// Smoke C cold-boot revealed that `runReplay` was encoding the raw
+// `projectDir` (a symlink path) when it should encode the resolved
+// path — claude itself canonicalizes `cwd` when computing where to
+// write the JSONL, so the encoding has to match. This test sets up
+// a symlinked project dir on a tmp filesystem, points
+// `claudeProjectsRoot` at a fake dir whose entries are keyed by the
+// *resolved* encoding, and asserts `jsonlReader` is called with the
+// resolved-encoded path.
+
+describe("runReplay — symlink canonicalization", () => {
+  test("encodes the resolved path of projectDir, not the symlink form", async () => {
+    // Build a tmp tree:
+    //   <tmpRoot>/real/work       — real dir we'll point projectDir at via a symlink
+    //   <tmpRoot>/link            — symlink to <tmpRoot>/real/work
+    //   <tmpRoot>/projects        — fake claudeProjectsRoot (no actual JSONLs needed
+    //                                — we observe the path the reader is called with)
+    const tmpRoot = mkdtempSync(join(tmpdir(), "tugcode-realpath-"));
+    try {
+      const realDir = join(tmpRoot, "real", "work");
+      mkdirSync(realDir, { recursive: true });
+      const symPath = join(tmpRoot, "link");
+      symlinkSync(realDir, symPath);
+
+      const observedPaths: string[] = [];
+      const sessionId = "abc-canonicalize";
+      const claudeId = "claude-canon";
+
+      const manager = new SessionManager(
+        symPath, // projectDir IS the symlink — mirrors what tugcast hands tugcode
+        sessionId,
+        "resume",
+        claudeId,
+        {
+          claudeProjectsRoot: join(tmpRoot, "projects"),
+          jsonlReader: async (path) => {
+            observedPaths.push(path);
+            return { kind: "missing", message: "fixture" };
+          },
+        },
+      );
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (manager as any).spawnClaude = () => ({
+        stdout: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.close();
+          },
+        }),
+        stderr: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.close();
+          },
+        }),
+        stdin: { write: () => {}, end: () => {}, flush: () => {} },
+        exited: new Promise<number>(() => {}),
+        kill: () => {},
+      });
+
+      // Capture stdout to absorb writeLine output during initialize +
+      // runReplay; we don't assert on it here.
+      const originalWrite = Bun.write;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (Bun as any).write = () => Promise.resolve(0);
+      try {
+        await manager.initialize();
+        await manager.runReplay();
+      } finally {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (Bun as any).write = originalWrite;
+      }
+
+      expect(observedPaths).toHaveLength(1);
+      const observed = observedPaths[0];
+
+      // The resolved encoding is what claude uses; the symlink
+      // encoding is what the bug previously produced. Assert the
+      // observed path matches the resolved encoding.
+      const resolvedEncoded = encodeProjectDir(realDir);
+      const symEncoded = encodeProjectDir(symPath);
+      expect(observed).toContain(resolvedEncoded);
+      expect(observed).not.toContain(`/${symEncoded}/`);
+      expect(observed.endsWith(`${claudeId}.jsonl`)).toBe(true);
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("falls back to raw projectDir when realpath fails (synthetic test path)", async () => {
+    // Synthetic path that doesn't exist on disk — realpath rejects,
+    // runReplay continues with the raw form. The downstream
+    // `jsonlReader` reports `missing`, the bracket pair lands cleanly,
+    // and the card stays interactive (matches the existing happy-path
+    // behavior — no regression for tests that point at non-existent
+    // tmp paths).
+    const observed: string[] = [];
+    const manager = new SessionManager(
+      "/tmp/nonexistent-path-for-realpath-fallback-test",
+      "abc",
+      "resume",
+      "claude-id",
+      {
+        claudeProjectsRoot: "/tmp/projects",
+        jsonlReader: async (path) => {
+          observed.push(path);
+          return { kind: "missing", message: "fixture" };
+        },
+      },
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (manager as any).spawnClaude = () => ({
+      stdout: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.close();
+        },
+      }),
+      stderr: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.close();
+        },
+      }),
+      stdin: { write: () => {}, end: () => {}, flush: () => {} },
+      exited: new Promise<number>(() => {}),
+      kill: () => {},
+    });
+    const originalWrite = Bun.write;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (Bun as any).write = () => Promise.resolve(0);
+    try {
+      await manager.initialize();
+      await manager.runReplay();
+    } finally {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (Bun as any).write = originalWrite;
+    }
+    expect(observed).toHaveLength(1);
+    expect(observed[0]).toBe(
+      "/tmp/projects/-tmp-nonexistent-path-for-realpath-fallback-test/claude-id.jsonl",
+    );
   });
 });
 

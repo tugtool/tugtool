@@ -901,25 +901,21 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 
 **Tasks:**
 
-- [ ] Run a fresh Smoke C with `just tail-replay` open in a separate terminal.
-- [ ] Capture the following log lines in order: `[rebind.entry]`, `[spawn.effective_mode]`, `[supervisor.eager_spawn]`, `[session_init.parse]`, `[tide::replay::started]`, `[tide::replay::progress]`, `[tide::replay::complete]`, `[tide::replay::error]`.
-- [ ] Cross-reference with the on-disk JSONL at `~/.claude/projects/<encoded-project-dir>/<claude_session_id>.jsonl` — confirm the file exists, has the expected turn count, and the encoded path matches the binding's `projectDir`.
-- [ ] Cross-reference with the tugbank session-keys record for the bound card (use `tugbank` CLI or sqlite browser); confirm `claude_session_id` and `session_mode` values match what was last live.
-- [ ] Identify the failure mode against this candidate list:
-  - **Candidate 1**: `claude_session_id` not persisted from tugcode → tugcast → tugbank in the original session ([Step 0](#step-0) wiring gap).
-  - **Candidate 2**: `session_mode` persisted as `"new"` instead of `"resume"` and rebind defaulted accordingly ([Q01]-shape regression).
-  - **Candidate 3**: JSONL path resolution mismatch (encoded-project-dir bug — verify `encodeProjectDir` against the actual on-disk path).
-  - **Candidate 4**: WS-connect / rebind-spawn / replay-emit timing race — replay events emitted before tugdeck's WS reconnect drained.
-  - **Candidate 5**: Reducer drops frames silently — `tug_session_id` filter mismatch.
-- [ ] If a one-line fix lands the candidate, file it inline as a sub-task here. If it requires the request_replay verb to land first, push it to [Phase A-R1](#phase-a-r1) or call it a follow-on.
+- [x] Run a fresh Smoke C with `just tail-replay` open in a separate terminal.
+- [x] Capture the following log lines in order: `[rebind.entry]`, `[spawn.effective_mode]`, `[supervisor.eager_spawn]`, `[session_init.parse]`, `[tide::replay::started]`, `[tide::replay::progress]`, `[tide::replay::complete]`, `[tide::replay::error]`.
+- [x] Cross-reference with the on-disk JSONL at `~/.claude/projects/<encoded-project-dir>/<claude_session_id>.jsonl` — confirm the file exists, has the expected turn count, and the encoded path matches the binding's `projectDir`.
+- [x] Cross-reference with the tugbank session-keys record for the bound card (use `tugbank` CLI or sqlite browser); confirm `claude_session_id` and `session_mode` values match what was last live.
+- [x] Identify the failure mode against this candidate list:
+  - **Candidate 3 confirmed**: JSONL path resolution mismatch. `tugbank.project_dir` is the symlinked path `/u/src/tugtool`; claude wrote the JSONL under the canonical encoding `-Users-<user>-Mounts-u-src-tugtool/<claude_id>.jsonl`. tugcode encoded the symlink form, found nothing, fired `replay_complete{count:0}` in 1ms.
+- [x] If a one-line fix lands the candidate, file it inline as a sub-task here. If it requires the request_replay verb to land first, push it to [Phase A-R1](#phase-a-r1) or call it a follow-on. *Fix landed inline (one line + two regression tests in `tugcode/src/session.ts` + `tugcode/src/__tests__/replay-spawn.test.ts`): `runReplay` now `await realpath(this.projectDir)` before `jsonlPathFor`. Smoke C cold boot now reaches a populated transcript — but exposes two separate bugs (Bug X — blank card with no feedback during the bind→replay wait, and Bug Y — 5–10s wall-clock from claude's `--resume` cold-start). Those move into new [Step R0c](#step-r0c) (UX placeholder) and [Step R0d](#step-r0d) (startup-order refactor).*
 
-**Tests:** observational; no automated tests.
+**Tests:** observational; no automated tests in this step. Two regression tests added in [`replay-spawn.test.ts`](../tugcode/src/__tests__/replay-spawn.test.ts) for the `realpath` canonicalization (symlinked tmpdir + non-existent fallback).
 
 **Checkpoint:**
 
-- [ ] Smoke C log capture appended to the smoke checklist.
-- [ ] Root cause(s) named explicitly.
-- [ ] Fix-slot decided: inline here, or pushed to [Phase A-R1](#phase-a-r1) if it's wrapped up by the verb.
+- [x] Smoke C log capture appended to the smoke checklist.
+- [x] Root cause(s) named explicitly.
+- [x] Fix-slot decided: inline here, or pushed to [Phase A-R1](#phase-a-r1) if it's wrapped up by the verb.
 
 ---
 

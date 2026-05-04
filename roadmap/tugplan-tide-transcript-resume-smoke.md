@@ -132,3 +132,306 @@ tellurium for replay-window behavior.
 
 If any smoke fails, it blocks the [phase exit
 criteria](./tugplan-tide-transcript-resume.md#exit-criteria).
+
+---
+
+## Appendix — Smoke C Diagnostic Capture (Step R0b) {#smoke-c-diagnostic}
+
+Structured run for `tugplan-tide-transcript-resume.md` [Step R0b](./tugplan-tide-transcript-resume.md#step-r0b).
+The goal is to observe **what tugcast actually does** during cold boot so we
+can name the specific bug that breaks Smoke C, before authoring the
+`request_replay` verb in [Phase A-R1](./tugplan-tide-transcript-resume.md#phase-a-r1).
+
+### Pre-flight (one terminal, one editor)
+
+- [ ] Build fresh + install:
+      ```
+      just install
+      ```
+- [ ] Confirm `tugbank` CLI is on PATH:
+      ```
+      tugbank --version
+      ```
+- [ ] Confirm Claude is reachable:
+      ```
+      claude --version
+      ```
+
+### Static inspection (before launching Tug.app)
+
+Snapshot the existing tugbank records and on-disk JSONL layout so we have
+a baseline:
+
+- [ ] List all session-keys records:
+      ```
+      tugbank read dev.tugtool.tide.session-keys
+      ```
+      Note the count of records, how many carry `claude_session_id` non-null,
+      how many carry `session_mode`. Existing records in this user's bank as of
+      Step R0b authoring: 33 records, 6 with `claude_session_id` set, 6 with
+      `session_mode`. If your numbers diverge wildly, write them down here.
+
+- [ ] List existing on-disk JSONL project directories:
+      ```
+      ls ~/.claude/projects/ | head -20
+      ```
+      Note especially: does any directory match the *encoded form* of the
+      `project_dir` your test will use, or does it match the *resolved
+      symlink* form?
+
+- [ ] **Path-encoding hypothesis check.** Pick a session-keys record whose
+      `claude_session_id` is non-null and `project_dir` points at a path
+      you reach via symlink (e.g. `/u/src/tugtool` symlinks to
+      `/Users/<user>/Mounts/u/src/tugtool`). Compute both forms and check
+      which exists:
+      ```bash
+      P="/u/src/tugtool"   # adjust to your record's project_dir
+      ENCODED="$(printf '%s' "$P" | tr / -)"
+      RESOLVED="$(cd "$P" && pwd -P)"
+      ENCODED_RES="$(printf '%s' "$RESOLVED" | tr / -)"
+      echo "encoded(symlink)  = ~/.claude/projects/$ENCODED"
+      echo "encoded(resolved) = ~/.claude/projects/$ENCODED_RES"
+      [ -d "$HOME/.claude/projects/$ENCODED" ] && echo "  symlink form  EXISTS" || echo "  symlink form  MISSING"
+      [ -d "$HOME/.claude/projects/$ENCODED_RES" ] && echo "  resolved form EXISTS" || echo "  resolved form MISSING"
+      ```
+      Record the output below.
+
+      Result:
+      ```
+      <paste here>
+      ```
+
+### Live capture
+
+- [ ] Open a fresh terminal and start the replay-filtered tail:
+      ```
+      just tail-replay
+      ```
+- [ ] In another terminal, launch Tug.app cleanly:
+      ```
+      just app
+      ```
+- [ ] Open a Tide card; submit ≥3 turns; let the last one settle. Note
+      its tug_session_id from the dev-tools console, or grep the tail for
+      the most recent `card_id`/`tug_session_id` values.
+
+      Recorded card_id / tug_session_id:
+      ```
+      card_id        = <paste>
+      tug_session_id = <paste>
+      project_dir    = <paste>
+      ```
+
+- [ ] Quit Tug.app entirely (Cmd-Q).
+- [ ] Confirm tugcast also exited:
+      ```
+      pgrep tugcast || echo "(no tugcast process; ok)"
+      ```
+
+### Tugbank inspection (after Tug.app exit, before relaunch)
+
+- [ ] Read the just-closed card's record:
+      ```
+      tugbank read dev.tugtool.tide.session-keys <card_id>
+      ```
+      Capture the JSON. Specifically:
+
+      ```
+      claude_session_id : <paste>
+      session_mode      : <paste>
+      project_dir       : <paste>
+      tug_session_id    : <paste>
+      ```
+
+- [ ] **Candidate 1 (claude_session_id persistence) check.** Did the record
+      carry a non-null `claude_session_id`? **Yes / No:** _____
+- [ ] **Candidate 2 (session_mode persistence) check.** Did the record
+      carry `session_mode: "resume"` (or "new")? **Yes / No / MISSING:** _____
+
+### On-disk JSONL inspection
+
+- [ ] Compute the JSONL path the *current code* would resolve from the
+      record's `project_dir`:
+      ```bash
+      P="<paste project_dir from record>"
+      ENCODED="$(printf '%s' "$P" | tr / -)"
+      CLAUDE_ID="<paste claude_session_id from record>"
+      ls -la "$HOME/.claude/projects/$ENCODED/$CLAUDE_ID.jsonl" 2>&1
+      ```
+      Result:
+      ```
+      <paste here>
+      ```
+
+- [ ] Check the resolved-symlink encoding (if `project_dir` is a symlinked
+      path):
+      ```bash
+      RESOLVED="$(cd "$P" && pwd -P)"
+      ENCODED_RES="$(printf '%s' "$RESOLVED" | tr / -)"
+      ls -la "$HOME/.claude/projects/$ENCODED_RES/$CLAUDE_ID.jsonl" 2>&1
+      ```
+      Result:
+      ```
+      <paste here>
+      ```
+
+- [ ] **Candidate 3 (JSONL path encoding mismatch) check.** Does the JSONL
+      live under the symlink-encoded path, the resolved-encoded path, or
+      both? Or neither? Circle one:
+      `symlink-encoded` / `resolved-encoded` / `both` / `neither`
+
+### Cold-boot relaunch and live tail
+
+- [ ] Relaunch Tug.app:
+      ```
+      just app
+      ```
+- [ ] Watch `just tail-replay` for the resume sequence. Capture the lines
+      in order. The first three should always appear; the rest depend on
+      the bug:
+
+      ```
+      [rebind.entry]                     <paste line>
+      [spawn.effective_mode]             <paste>
+      [supervisor.eager_spawn]           <paste>
+      [session_init.parse]               <paste>
+      [tide::replay::started]            <paste>
+      [tide::replay::progress] (any?)    <paste>
+      [tide::replay::complete]           <paste>
+      [tide::replay::error] (if any)     <paste>
+      ```
+
+- [ ] **Candidate 4 (timing race) check.** Did `[tide::replay::started]`
+      land before tugdeck's WS established? Compare the timestamps:
+      tugdeck's WS connect log line vs. the replay-started line. **Race
+      observed?** Yes / No: _____
+
+- [ ] **Candidate 5 (reducer filter mismatch) check.** Did the
+      `replay_complete` line carry the same `tug_session_id` as the
+      card's binding? Cross-reference with the `card_id` / `tug_session_id`
+      captured above. **Filter mismatch?** Yes / No: _____
+
+### UI observation
+
+- [ ] What does the Tide card show after relaunch? Circle one or more:
+      `empty transcript` / `loading conversation… (stuck)` /
+      `loading conversation… briefly, then empty` / `transcript repaints
+      with all turns` / `picker shown (binding lost)` / `error banner` /
+      `other` (describe): __________
+
+- [ ] Was the new turn submittable afterward? **Yes / No:** _____
+
+### Findings
+
+Based on the captures above, the broken-smoke-C root cause(s) are:
+
+- [ ] **Candidate 1** confirmed (claude_session_id null in the record):
+      Reason: __________
+- [ ] **Candidate 2** confirmed (session_mode missing or "new"):
+      Reason: __________
+- [ ] **Candidate 3** confirmed (JSONL path encoding mismatch):
+      Reason: __________
+- [ ] **Candidate 4** confirmed (timing race):
+      Reason: __________
+- [ ] **Candidate 5** confirmed (reducer filter mismatch):
+      Reason: __________
+- [ ] **Other / unanticipated:** describe: __________
+
+### Confirmed findings (Step R0b run)
+
+**Candidate 3 — JSONL path encoding mismatch — confirmed.**
+
+Cold-boot smoke run captured 2026-05-04. Card `7b4599cc-…` /
+tug_session_id `c563ebb5-…` populated with a fresh session, then
+Tug.app cold-booted.
+
+Tugbank record (post-quit, pre-relaunch):
+
+```json
+{
+  "claude_session_id": "c563ebb5-f9f7-4807-8a1e-5e9e35faae50",
+  "project_dir": "/u/src/tugtool",
+  "session_mode": "new",
+  "tug_session_id": "c563ebb5-f9f7-4807-8a1e-5e9e35faae50"
+}
+```
+
+JSONL path resolution:
+
+```
+symlink form  = ~/.claude/projects/-u-src-tugtool/c563ebb5-…jsonl                  → MISSING
+resolved form = ~/.claude/projects/-Users-kocienda-Mounts-u-src-tugtool/c563ebb5-…jsonl → EXISTS (15943 bytes)
+```
+
+Cold-boot log:
+
+```
+[rebind.entry]              card_id=7b4599cc-…  rebound_mode="new"  mode_source="persisted"
+                            claude_session_id="c563ebb5-…"
+[spawn.supervisor_recv]     session_mode="resume"
+[spawn.effective_mode]      effective_mode="resume"  inserted=false  mode_mismatch=false
+[supervisor.eager_spawn]    →
+[bridge.tugcode_spawn]      args=["--dir", "/u/src/tugtool", "--session-mode", "resume",
+                                  "--resume-session", "c563ebb5-…"]
+[session_init.parse]        claude_session_id="c563ebb5-…"
+[session_init.persist]      → tugbank record updated
+[ledger.record_spawn]       workspace_key="/Users/kocienda/Mounts/u/src/tugtool"
+                            project_dir="/u/src/tugtool"     ← supervisor knows the canonical form
+[tide::replay::started]     jsonl_path=/Users/kocienda/.claude/projects/-u-src-tugtool/c563ebb5-…jsonl
+                                       ────────────────  ↑ tugcode used the SYMLINK encoding
+[tide::replay::complete]    count=0  elapsed_ms=1   ← `jsonl_missing` (file at symlink form not on disk)
+```
+
+**Note also:** the `[rebind.entry]` line for record `e0ccd472-…` shows
+`rebound_mode="resume" claude_session_id=""` — a pre-fix legacy
+record where session_mode was persisted as "resume" but claude_id was
+not. That's a pre-Step-0 artifact, distinct from Candidate 3, but
+worth a future cleanup pass on stale records.
+
+**Other candidates ruled out for this run:**
+
+- **Candidate 1** (claude_session_id persistence): NOT the bug here.
+  The record carried `claude_session_id="c563ebb5-…"`. Step 0's
+  persistence works for fresh records.
+- **Candidate 2** (session_mode persistence): NOT the bug here.
+  The record carried `session_mode="new"` (the user's last spawn was
+  fresh-mode). The supervisor's defense-in-depth path correctly
+  upgraded the rebound entry to `effective_mode="resume"` per the
+  client's request.
+- **Candidate 4** (timing race): NOT the bug here. The replay sequence
+  fires inline with `session_init` — no observed race against WS
+  drain.
+- **Candidate 5** (reducer filter mismatch): NOT exercised — `replay`
+  bracket events did reach tugdeck's reducer (the placeholder dismisses
+  cleanly), they just carry an empty count because no JSONL was
+  found upstream.
+
+### Resolution (one-line fix landed in this step)
+
+`tugcode/src/session.ts` `SessionManager.runReplay()` now resolves
+symlinks via `fs/promises.realpath` on `this.projectDir` before
+passing to `jsonlPathFor`. Claude itself canonicalizes its `cwd`
+when computing where to write the JSONL, so the encoding rule has
+to match. Falling back to the raw path on `realpath` failure is
+safe — downstream `jsonlReader` reports `missing` exactly as
+before, and tests that point at synthetic non-existent paths
+continue to work.
+
+Two regression tests added in
+`tugcode/src/__tests__/replay-spawn.test.ts`:
+
+- A symlinked tmp project dir → `jsonlReader` is invoked with the
+  resolved-encoded path, not the symlink-encoded path.
+- A non-existent path → fallback path is the raw-encoded form
+  (no behavior change for the existing test fixtures).
+
+Verification: re-run cold-boot Smoke C after this fix and confirm:
+
+- [ ] `[tide::replay::path_canonicalized]` log line fires with
+      `raw=/u/src/tugtool` and
+      `canonical=/Users/<user>/Mounts/u/src/tugtool`.
+- [ ] `[tide::replay::started]` `jsonl_path` ends in
+      `-Users-<user>-Mounts-u-src-tugtool/<claude_id>.jsonl`.
+- [ ] `[tide::replay::complete]` `count` matches the prior turn count
+      (not 0); no `error` field.
+- [ ] Tide card transcript repaints with all prior turns.

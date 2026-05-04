@@ -27,6 +27,7 @@ import type {
   Attachment,
 } from "./types.ts";
 import { join, dirname, resolve } from "node:path";
+import { realpath } from "node:fs/promises";
 import { logSessionLifecycle } from "./session-lifecycle-log.ts";
 import {
   type ReplayInput,
@@ -1347,11 +1348,6 @@ export class SessionManager {
     }
 
     const claudeSessionId = this.resumeSessionId ?? this.sessionId;
-    const jsonlPath = jsonlPathFor(
-      this.claudeProjectsRoot,
-      this.projectDir,
-      claudeSessionId,
-    );
 
     // Mark replay active *before* the first await so a claude crash
     // during the JSONL read can't slip past the early-exit watcher
@@ -1361,6 +1357,41 @@ export class SessionManager {
     // `replay_complete { claude_exited_during_replay }` then
     // `resume_failed` order.
     this.replayActive = true;
+
+    // Resolve symlinks on `projectDir` so the encoded form matches
+    // the encoding claude itself uses when writing the per-session
+    // JSONL. Claude canonicalizes its cwd internally (getcwd()
+    // returns the resolved path), so its on-disk directory is named
+    // after the canonical absolute path. Without this resolve step,
+    // a project the user reaches via symlink (e.g.
+    // `/u/src/tugtool` → `/Users/<u>/Mounts/u/src/tugtool`)
+    // produces an `encodeProjectDir(...)` form that has no directory
+    // under `~/.claude/projects/`, and `runReplay` fires
+    // `replay_complete{jsonl_missing}` for what's actually a
+    // populated session — the cold-boot Smoke C failure mode
+    // surfaced in [Step R0b]. The fallback to the raw path is safe:
+    // if the directory doesn't exist (test fixtures, edge cases),
+    // `jsonlReader` reports `kind: "missing"` downstream, which is
+    // the same behavior the raw form already produces.
+    let canonicalProjectDir = this.projectDir;
+    try {
+      canonicalProjectDir = await realpath(this.projectDir);
+    } catch {
+      // Path doesn't resolve (test fixture, deleted dir, etc.).
+      // Keep the raw form; downstream reader reports missing.
+    }
+    if (canonicalProjectDir !== this.projectDir) {
+      logReplay("path_canonicalized", {
+        session_id: this.sessionId,
+        raw: this.projectDir,
+        canonical: canonicalProjectDir,
+      });
+    }
+    const jsonlPath = jsonlPathFor(
+      this.claudeProjectsRoot,
+      canonicalProjectDir,
+      claudeSessionId,
+    );
 
     logReplay("started", {
       session_id: this.sessionId,
