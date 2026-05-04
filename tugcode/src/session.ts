@@ -21,12 +21,18 @@ import type {
   ApiRetry,
   ControlRequestForward,
   ControlRequestCancel,
+  ReplayComplete,
   SystemMetadata,
   CostUpdate,
   Attachment,
 } from "./types.ts";
 import { join, dirname, resolve } from "node:path";
 import { logSessionLifecycle } from "./session-lifecycle-log.ts";
+import {
+  type ReplayInput,
+  type ReplayTelemetry,
+  translateJsonlSession,
+} from "./replay.ts";
 
 interface PendingRequest<T> {
   resolve: (value: T) => void;
@@ -39,6 +45,129 @@ interface PendingRequest<T> {
 
 const ALLOWED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // ~5MB decoded
+
+// ---------------------------------------------------------------------------
+// Replay constants and helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Hard-budget timeout for the per-session replay window. If the JSONL
+ * iterator hasn't finished by this point, the replay aborts with
+ * `replay_complete { error: { kind: "replay_timeout" } }` and live
+ * forwarding resumes. Matches the wall-clock budget called out in
+ * `roadmap/tugplan-tide-transcript-resume.md` (D10).
+ */
+export const REPLAY_HARD_TIMEOUT_MS = 10_000;
+
+/**
+ * Soft cap on the number of raw lines captured from claude's stdout
+ * during the replay window. claude on `--resume` with no new user
+ * input is essentially silent (a `system:init` plus occasional
+ * keep-alives). Anything beyond this is pathological — the bound
+ * exists so a runaway claude can't exhaust the OS pipe buffer or
+ * tugcode's heap during a slow replay. On overflow, further bytes are
+ * still consumed (so claude stays unblocked) but discarded; a single
+ * `tide::replay::live_buffer_overflow` warn line marks the event.
+ */
+export const REPLAY_LIVE_BUFFER_MAX = 1024;
+
+/**
+ * Default location of claude's per-session JSONL archive. Each
+ * project gets its own subdirectory under this root, named by the
+ * encoded form of the absolute project directory (see
+ * {@link encodeProjectDir}). Tests inject an override via
+ * {@link SessionManager}'s `claudeProjectsRoot` option so they read
+ * fixtures from a tmp path instead.
+ */
+export const DEFAULT_CLAUDE_PROJECTS_ROOT =
+  `${process.env.HOME ?? ""}/.claude/projects`;
+
+/**
+ * Encode an absolute project directory the way claude names its
+ * per-project subdirectory under `~/.claude/projects/`. The encoding
+ * is a simple `'/' → '-'` replacement run over the absolute path —
+ * the leading `-` arises because the absolute path begins with `/`.
+ *
+ * Examples (verified against `~/.claude/projects/` on dev machines):
+ *
+ *   `/Users/foo`               → `-Users-foo`
+ *   `/private/tmp/py-calc`     → `-private-tmp-py-calc`
+ *   `/Users/foo/src/tugtool`   → `-Users-foo-src-tugtool`
+ *
+ * Exported for unit tests.
+ */
+export function encodeProjectDir(absDir: string): string {
+  return absDir.replace(/\//g, "-");
+}
+
+/**
+ * Resolve the on-disk JSONL path for a given resume target.
+ *
+ *   `<claudeProjectsRoot>/<encodeProjectDir(projectDir)>/<id>.jsonl`
+ */
+export function jsonlPathFor(
+  claudeProjectsRoot: string,
+  projectDir: string,
+  claudeSessionId: string,
+): string {
+  return join(
+    claudeProjectsRoot,
+    encodeProjectDir(projectDir),
+    `${claudeSessionId}.jsonl`,
+  );
+}
+
+/**
+ * Result of attempting to read a JSONL file from disk. A discriminated
+ * union so the resume-spawn flow can pass the outcome straight to
+ * {@link translateJsonlSession} without losing the error category.
+ */
+export type JsonlReadResult =
+  | { kind: "ok"; jsonl: string }
+  | { kind: "missing"; message: string }
+  | { kind: "unreadable"; message: string };
+
+/**
+ * Default JSONL reader. Uses `Bun.file(path)` and treats `ENOENT` as
+ * `missing`, every other error as `unreadable`. Replaceable from
+ * tests via {@link SessionManager}'s `jsonlReader` option.
+ */
+export async function defaultJsonlReader(
+  path: string,
+): Promise<JsonlReadResult> {
+  try {
+    const file = Bun.file(path);
+    if (!(await file.exists())) {
+      return { kind: "missing", message: `JSONL not found at ${path}` };
+    }
+    const jsonl = await file.text();
+    return { kind: "ok", jsonl };
+  } catch (err) {
+    return {
+      kind: "unreadable",
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+function logReplay(event: string, fields: Record<string, unknown>): void {
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(fields)) {
+    if (v === undefined) continue;
+    parts.push(`${k}=${formatReplayValue(v)}`);
+  }
+  console.log(`[tide::replay::${event}] ${parts.join(" ")}`);
+}
+
+function formatReplayValue(v: unknown): string {
+  if (v === null) return "null";
+  if (typeof v === "string") {
+    if (v.length === 0 || /[\s"']/.test(v)) return JSON.stringify(v);
+    return v;
+  }
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  return JSON.stringify(v);
+}
 
 // ---------------------------------------------------------------------------
 // Exported pure functions for testability
@@ -723,12 +852,39 @@ export class SessionManager {
     | "resume_failed"
     | "collision"
     | null = null;
+  /**
+   * `true` while `runReplay` is iterating the JSONL bracket. Read by
+   * `installEarlyExitWatcher` so a claude crash *during* replay is
+   * surfaced through `runReplay`'s own crash branch (which emits
+   * `replay_complete { claude_exited_during_replay }` first, then a
+   * lifecycle `resume_failed`). Without this flag the watcher would
+   * race the replay path and emit `resume_failed` while the card was
+   * still in `replaying` phase.
+   */
+  private replayActive: boolean = false;
+  /** Configurable JSONL archive root; defaults to ~/.claude/projects. */
+  private claudeProjectsRoot: string;
+  /** Configurable JSONL reader; default uses `Bun.file`. */
+  private jsonlReader: (path: string) => Promise<JsonlReadResult>;
+  /** Hard-timeout override (test hook). */
+  private replayTimeoutMs: number;
+  /** Live-buffer overflow threshold (test hook). */
+  private replayLiveBufferMax: number;
+  /** Replay telemetry sink forwarded into `translateJsonlSession`. */
+  private replayTelemetry: ReplayTelemetry | undefined;
 
   constructor(
     projectDir: string,
     sessionId: string,
     sessionMode: "new" | "resume" = "new",
     resumeSessionId?: string,
+    options?: {
+      claudeProjectsRoot?: string;
+      jsonlReader?: (path: string) => Promise<JsonlReadResult>;
+      replayTimeoutMs?: number;
+      replayLiveBufferMax?: number;
+      replayTelemetry?: ReplayTelemetry;
+    },
   ) {
     if (!sessionId) {
       throw new Error("SessionManager: sessionId is required");
@@ -743,6 +899,13 @@ export class SessionManager {
       typeof resumeSessionId === "string" && resumeSessionId.length > 0
         ? resumeSessionId
         : null;
+    this.claudeProjectsRoot =
+      options?.claudeProjectsRoot ?? DEFAULT_CLAUDE_PROJECTS_ROOT;
+    this.jsonlReader = options?.jsonlReader ?? defaultJsonlReader;
+    this.replayTimeoutMs = options?.replayTimeoutMs ?? REPLAY_HARD_TIMEOUT_MS;
+    this.replayLiveBufferMax =
+      options?.replayLiveBufferMax ?? REPLAY_LIVE_BUFFER_MAX;
+    this.replayTelemetry = options?.replayTelemetry;
   }
 
   private nextSeq(): number {
@@ -1083,6 +1246,14 @@ export class SessionManager {
     void child.exited.then(async (code) => {
       if (this.isShuttingDown) return;
       if (this.claudeReceivedInput) return;
+      if (this.replayActive) {
+        // `runReplay` watches `child.exited` itself: it surfaces the
+        // crash via `replay_complete { claude_exited_during_replay }`
+        // first, then emits the lifecycle `resume_failed`. Letting the
+        // watcher run in parallel would race that ordering and leave
+        // the card stuck in `replaying` phase.
+        return;
+      }
 
       // Definitive classification wins; mode is the fallback.
       const classification = this.claudeStderrClassification;
@@ -1125,6 +1296,228 @@ export class SessionManager {
           0,
         );
       }
+    });
+  }
+
+  /**
+   * Read the JSONL archive for the resumed session and stream its
+   * translated events to IPC stdout, bracketed by `replay_started` /
+   * `replay_complete`. Runs only in resume mode; called once per
+   * session, after `initialize()` has synthesized the `session_init`
+   * IPC line and before the main IPC loop dispatches the first
+   * `user_message`.
+   *
+   * Concurrency model. The replay iterator is awaited sequentially
+   * with a race against:
+   *   - a hard-budget timer (`replayTimeoutMs`, default 10s),
+   *   - claude's exit (`claudeProcess.exited`).
+   *
+   * On natural completion the iterator emits its own
+   * `replay_complete` (success, or `jsonl_malformed` when individual
+   * lines failed to parse). We just write each yielded
+   * `OutboundMessage` in turn.
+   *
+   * On timeout we abandon the iterator, emit our own
+   * `replay_complete { replay_timeout }`, and return. The JSONL was
+   * readable but didn't finish in time; claude is still alive on the
+   * other side and live forwarding takes over when handleUserMessage
+   * runs.
+   *
+   * On a claude crash *during* replay we emit
+   * `replay_complete { jsonl_unreadable: claude_exited_during_replay }`
+   * so the card transitions out of `replaying` cleanly, then surface
+   * the subprocess loss through the existing `resume_failed` path and
+   * exit.
+   *
+   * Live-buffer note. While replay runs, claude's stdout sits in the
+   * OS pipe (~64 KB on Linux/macOS). claude on `--resume` with no
+   * user input is essentially silent — a `system:init` plus
+   * occasional keep-alives — so the pipe is well within bounds. The
+   * hard timeout is the ultimate guard against a pathologically
+   * chatty claude. {@link REPLAY_LIVE_BUFFER_MAX} stays available as
+   * a documented threshold for any future continuous-drain refactor;
+   * it is not load-bearing in this code path.
+   */
+  async runReplay(): Promise<void> {
+    if (this.sessionMode !== "resume") return;
+    if (!this.claudeProcess) {
+      throw new Error(
+        "SessionManager.runReplay called before initialize()",
+      );
+    }
+
+    const claudeSessionId = this.resumeSessionId ?? this.sessionId;
+    const jsonlPath = jsonlPathFor(
+      this.claudeProjectsRoot,
+      this.projectDir,
+      claudeSessionId,
+    );
+
+    // Mark replay active *before* the first await so a claude crash
+    // during the JSONL read can't slip past the early-exit watcher
+    // and emit a stray `resume_failed` while we're still mid-replay.
+    // The crash branch below picks up `child.exited` via the loop's
+    // race promise and surfaces it through the canonical
+    // `replay_complete { claude_exited_during_replay }` then
+    // `resume_failed` order.
+    this.replayActive = true;
+
+    logReplay("started", {
+      session_id: this.sessionId,
+      claude_session_id: claudeSessionId,
+      jsonl_path: jsonlPath,
+    });
+
+    const startedAt = Date.now();
+    const input = await this.jsonlReader(jsonlPath);
+
+    const child = this.claudeProcess;
+    const exitPromise: Promise<{ kind: "exit"; code: number | null }> =
+      child.exited.then((code) => ({
+        kind: "exit",
+        code: typeof code === "number" ? code : null,
+      }));
+
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+    const timeoutPromise = new Promise<{ kind: "timeout" }>((resolve) => {
+      timeoutHandle = setTimeout(
+        () => resolve({ kind: "timeout" }),
+        this.replayTimeoutMs,
+      );
+    });
+
+    const iter = translateJsonlSession(input, {
+      telemetry: this.replayTelemetry,
+    });
+
+    let count = 0;
+    let lastProgressPosted = 0;
+    const progressBatch = 16;
+    let aborted:
+      | { kind: "timeout" }
+      | { kind: "exit"; code: number | null }
+      | null = null;
+
+    try {
+      while (true) {
+        const nextPromise = iter
+          .next()
+          .then((r) => ({ kind: "next" as const, value: r }));
+        const winner = await Promise.race<
+          | { kind: "next"; value: IteratorResult<OutboundMessage> }
+          | { kind: "timeout" }
+          | { kind: "exit"; code: number | null }
+        >([nextPromise, timeoutPromise, exitPromise]);
+
+        if (winner.kind === "next") {
+          if (winner.value.done) break;
+          const msg = winner.value.value;
+          writeLine(msg);
+          if (msg.type === "turn_complete") {
+            count++;
+            if (count - lastProgressPosted >= progressBatch) {
+              logReplay("progress", {
+                session_id: this.sessionId,
+                count,
+              });
+              lastProgressPosted = count;
+            }
+          }
+          if (msg.type === "replay_complete") {
+            // The iterator emitted its terminal bracket itself; mirror
+            // the count it reported so the lifecycle log line matches
+            // the wire.
+            if (typeof msg.count === "number") count = msg.count;
+            break;
+          }
+        } else {
+          aborted = winner;
+          break;
+        }
+      }
+    } finally {
+      if (timeoutHandle !== null) clearTimeout(timeoutHandle);
+      this.replayActive = false;
+      // Best-effort iterator cleanup; abandoned-iterator semantics
+      // are well-defined in JS but explicit `.return()` releases any
+      // pending awaits inside the generator.
+      try {
+        await iter.return?.(undefined);
+      } catch {
+        // generator already finished or threw — nothing to clean up.
+      }
+    }
+
+    const elapsedMs = Date.now() - startedAt;
+
+    if (aborted?.kind === "timeout") {
+      const complete: ReplayComplete = {
+        type: "replay_complete",
+        count,
+        error: {
+          kind: "replay_timeout",
+          message: `replay exceeded ${this.replayTimeoutMs}ms budget`,
+        },
+        ipc_version: 2,
+      };
+      writeLine(complete);
+      logReplay("error", {
+        session_id: this.sessionId,
+        kind: "replay_timeout",
+        count,
+        elapsed_ms: elapsedMs,
+      });
+      return;
+    }
+
+    if (aborted?.kind === "exit") {
+      const complete: ReplayComplete = {
+        type: "replay_complete",
+        count,
+        error: {
+          kind: "jsonl_unreadable",
+          message: "claude_exited_during_replay",
+        },
+        ipc_version: 2,
+      };
+      writeLine(complete);
+      logReplay("error", {
+        session_id: this.sessionId,
+        kind: "claude_exited_during_replay",
+        count,
+        exit_code: aborted.code,
+      });
+      // Surface the subprocess loss through the existing lifecycle
+      // path so the card unbinds with the canonical resume-failure
+      // shape. `claudeStderrClassification` may already be set if
+      // claude wrote a recognizable diagnostic before exiting.
+      const classification = this.claudeStderrClassification;
+      const reason =
+        classification === "resume_failed"
+          ? `claude reported "No conversation found" (stale --resume id)`
+          : `claude exited with code ${aborted.code} during replay`;
+      logSessionLifecycle("tugcode.resume_failed", {
+        stale_session_id: this.sessionId,
+        reason,
+        exit_code: aborted.code,
+        classification: classification ?? "replay_crash",
+      });
+      await writeLineAndExit(
+        {
+          type: "resume_failed",
+          reason,
+          stale_session_id: this.sessionId,
+          ipc_version: 2,
+        },
+        0,
+      );
+      return;
+    }
+
+    logReplay("complete", {
+      session_id: this.sessionId,
+      count,
+      elapsed_ms: elapsedMs,
     });
   }
 

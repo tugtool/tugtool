@@ -214,6 +214,24 @@ async function main() {
         });
         process.exit(1);
       }
+
+      // Resume mode: replay the on-disk JSONL through CODE_OUTPUT
+      // before the first user message so the card's transcript
+      // rehydrates. No-op for fresh spawns (`session-mode new`). Any
+      // crash, missing-file, or unreadable-file outcome is surfaced
+      // through the bracket pair itself + the existing lifecycle
+      // path, so we don't need to catch here.
+      try {
+        await sessionManager.runReplay();
+      } catch (err) {
+        console.error("Replay failed:", err);
+        writeLine({
+          type: "error",
+          message: `Replay failed: ${err}`,
+          recoverable: true,
+          ipc_version: 2,
+        });
+      }
     } else if (isUserMessage(msg)) {
       // Stub mode: dispatch the next recorded turn. Out-of-bounds
       // produces an error event from the engine and asks us to
