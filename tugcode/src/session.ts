@@ -61,6 +61,27 @@ const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // ~5MB decoded
 export const REPLAY_HARD_TIMEOUT_MS = 10_000;
 
 /**
+ * Hard-fault threshold for the resume-mode spawn-and-init handshake
+ * per Step R0d of the transcript-resume plan. The cold-boot resume
+ * flow runs `prepareSession()` → `runReplay()` → `spawnClaudeAndWatch()`,
+ * with the spawn happening in the background after replay completes.
+ * If claude hangs silently after Bun.spawn (no exit, no input
+ * accepted) the user sees a typeable-looking card whose first submit
+ * would block forever. This timer catches that case: when the
+ * deadline elapses without claude having been seen alive end-to-end
+ * (`claudeReceivedInput`) and without the process having exited
+ * (which the early-exit watcher covers separately), the session
+ * surfaces `resume_failed { reason: "spawn_timeout" }` and exits.
+ *
+ * Pre-R0d the same hang showed up as the user stuck on "Loading
+ * conversation…" because replay was blocked behind claude's spawn.
+ * Post-R0d we lose that natural failure surface; this timer puts it
+ * back deliberately. Resume mode only — fresh-mode failures are
+ * typically immediate exits and the watcher catches them.
+ */
+export const SPAWN_TIMEOUT_MS = 30_000;
+
+/**
  * Soft cap on the number of raw lines captured from claude's stdout
  * during the replay window. claude on `--resume` with no new user
  * input is essentially silent (a `system:init` plus occasional
@@ -873,6 +894,37 @@ export class SessionManager {
   private replayLiveBufferMax: number;
   /** Replay telemetry sink forwarded into `translateJsonlSession`. */
   private replayTelemetry: ReplayTelemetry | undefined;
+  /**
+   * Spawn-and-init handshake timeout (resume mode only). See
+   * {@link SPAWN_TIMEOUT_MS} for rationale. Tests override to drive
+   * the timeout deterministically without a 30s wall-clock wait.
+   */
+  private spawnTimeoutMs: number;
+  /**
+   * Pending spawn-timeout handle. Armed by
+   * {@link armSpawnTimeout} in resume mode at the start of
+   * {@link spawnClaudeAndWatch}; cleared on `claudeReceivedInput`
+   * transitioning true (handleUserMessage), on shutdown, or on
+   * timeout fire.
+   */
+  private spawnTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Promise that resolves once {@link spawnClaudeAndWatch} has
+   * finished its synchronous setup (claude process handle assigned,
+   * watchers installed). {@link handleUserMessage} awaits this before
+   * any claude stdin write so a user submit that lands during the
+   * cold-boot replay window — between `prepareSession()` and the
+   * background `spawnClaudeAndWatch()` — blocks until claude is
+   * ready, rather than throwing "Session not initialized".
+   *
+   * `null` until {@link prepareSession} or {@link spawnClaudeAndWatch}
+   * sets it. New-mode `initialize()` resolves it eagerly inside the
+   * spawn step (no preceding gate); resume-mode flows establish the
+   * gate in `prepareSession()` and resolve it in
+   * `spawnClaudeAndWatch()`.
+   */
+  private claudeReadyPromise: Promise<void> | null = null;
+  private claudeReadyResolve: (() => void) | null = null;
 
   constructor(
     projectDir: string,
@@ -885,6 +937,13 @@ export class SessionManager {
       replayTimeoutMs?: number;
       replayLiveBufferMax?: number;
       replayTelemetry?: ReplayTelemetry;
+      /**
+       * Spawn-and-init handshake timeout override (resume mode only).
+       * Tests pass small values to drive the deterministic
+       * spawn-times-out path without a 30s wall-clock wait; production
+       * defaults to {@link SPAWN_TIMEOUT_MS}.
+       */
+      spawnTimeoutMs?: number;
     },
   ) {
     if (!sessionId) {
@@ -907,6 +966,7 @@ export class SessionManager {
     this.replayLiveBufferMax =
       options?.replayLiveBufferMax ?? REPLAY_LIVE_BUFFER_MAX;
     this.replayTelemetry = options?.replayTelemetry;
+    this.spawnTimeoutMs = options?.spawnTimeoutMs ?? SPAWN_TIMEOUT_MS;
   }
 
   private nextSeq(): number {
@@ -994,6 +1054,13 @@ export class SessionManager {
     // Mark shutdown so the early-exit watcher ignores the exit code
     // from our kill rather than surfacing a phantom resume_failed.
     this.isShuttingDown = true;
+    // Disarm the spawn timeout: if we're tearing down before the
+    // timer fired, we don't want a phantom `resume_failed` after the
+    // process is already on its way down.
+    if (this.spawnTimeoutHandle !== null) {
+      clearTimeout(this.spawnTimeoutHandle);
+      this.spawnTimeoutHandle = null;
+    }
     if (this.claudeProcess) {
       try {
         // Close stdin to signal EOF (graceful shutdown).
@@ -1099,27 +1166,239 @@ export class SessionManager {
   }
 
   /**
-   * Initialize session — single codepath for fresh and resume.
+   * Pick the claude session id this session will spawn / resume
+   * against. For new mode it's the tug session id. For resume mode
+   * the persisted claude id wins (the two diverge after a fork; for
+   * un-forked sessions they're equal, so the fallback to `sessionId`
+   * is safe and preserves legacy behavior for older tugbank records).
+   */
+  private resolveClaudeId(): string {
+    return this.sessionMode === "resume"
+      ? (this.resumeSessionId ?? this.sessionId)
+      : this.sessionId;
+  }
+
+  /**
+   * Emit the synthesized `session_init` IPC line.
    *
-   * Both modes spawn claude with stream-json IPC; the only mode-specific
-   * thing is the claude flag (`--session-id` vs `--resume`). Empirically
-   * verified: claude in stream-json mode does NOT emit `system:init`
-   * until it receives input, regardless of mode. Waiting for one would
-   * deadlock — both modes would hang for the full timeout. Instead we
-   * synthesize the `session_init` IPC line immediately (we already know
-   * the session id; it's the same one we just spawned claude with) and
-   * install a background watcher that surfaces fast claude failures:
+   * The synthesized init carries the same id we'll spawn claude with
+   * (`claudeId`), not always `this.sessionId`. For fresh spawns the
+   * two are equal. For resume spawns whose claude id has diverged
+   * from the tug id (forked session, or a resume of a session whose
+   * claude id was already different), the distinction matters:
+   * tugcast's `relay_session_io` atomic-promote block reads this id
+   * and persists it as `LedgerEntry::claude_session_id`, so emitting
+   * the wrong id here would briefly corrupt the on-disk record until
+   * the real `system:init` from claude's stream-json arrives on the
+   * first user message and overwrites it.
+   */
+  private writeSyntheticSessionInit(claudeId: string): void {
+    writeLine({
+      type: "session_init",
+      session_id: claudeId,
+      ipc_version: 2,
+    });
+  }
+
+  /**
+   * Resume-only: emit the synthetic `session_init` and arm the
+   * `claudeReadyPromise` gate, all *before* claude has been spawned.
+   * The cold-boot resume flow (Step R0d) is:
    *
-   *   - resume with stale id: claude exits in ~1s with stderr
-   *     `No conversation found with session ID: <id>`.
-   *   - fresh with id collision: claude exits in ~135ms with stderr
-   *     `Session ID <id> is already in use`.
+   *   1. `prepareSession()` — emit the init synchronously so tugcast
+   *      sees the session as live and broadcasts `spawn_session_ok`;
+   *      tugdeck constructs services and the user sees the card open.
+   *   2. `await runReplay()` — read the JSONL and stream replay
+   *      events. claude is not yet spawned; replay reads only the
+   *      filesystem. Finishes in ~50ms instead of the 5–10s the
+   *      pre-R0d order took (which awaited claude's binary load
+   *      first).
+   *   3. `void spawnClaudeAndWatch()` — spawn claude in the
+   *      background. The returned Promise resolves once the spawn
+   *      handle is wired up; `handleUserMessage` awaits it.
    *
-   * The watcher catches those signatures and emits `resume_failed`
-   * (resume) or `error` (fresh). The bridge then promotes the
-   * subsequent stdout EOF to a terminal outcome and surfaces it to
-   * the card. Past the watcher window claude is alive and waiting
-   * for input — the happy path.
+   * Wire-semantic note. Pre-R0d, `spawn_session_ok` reaching tugdeck
+   * meant "claude is alive on the other side". Post-R0d, it means
+   * "tugcode has accepted ownership of this id, and claude is being
+   * spawned in the background." The wire bytes are identical; only
+   * the timing relative to the claude spawn changes. Future code
+   * must not silently rely on `spawn_session_ok` as a "claude alive"
+   * signal — use the `claudeReadyPromise` gate instead.
+   *
+   * Throws on `sessionMode === "new"`. New-mode spawns retain the
+   * historical eager path through `initialize()`.
+   */
+  prepareSession(): void {
+    if (this.sessionMode !== "resume") {
+      throw new Error(
+        "SessionManager.prepareSession(): resume-mode only; " +
+          "new-mode callers should call initialize() directly.",
+      );
+    }
+    const claudeId = this.resolveClaudeId();
+
+    // Establish the readiness gate. handleUserMessage awaits it;
+    // spawnClaudeAndWatch resolves it. Order:
+    // prepareSession → runReplay → spawnClaudeAndWatch — and any
+    // user_message that lands during replay is gated until claude
+    // is ready instead of throwing "Session not initialized".
+    this.claudeReadyPromise = new Promise<void>((resolve) => {
+      this.claudeReadyResolve = resolve;
+    });
+
+    logSessionLifecycle("tugcode.prepare_session", {
+      session_id: this.sessionId,
+      claude_session_id: claudeId,
+      session_mode: "resume",
+    });
+
+    this.writeSyntheticSessionInit(claudeId);
+  }
+
+  /**
+   * Spawn claude with `--session-id` (new mode) or `--resume` (resume
+   * mode), wire up the stdout reader, and install the stderr reader
+   * + early-exit watcher. Resolves the `claudeReadyPromise` so any
+   * subsequent `handleUserMessage` may proceed.
+   *
+   * Used by both modes. New mode calls this from `initialize()`
+   * (eager). Resume mode (Step R0d) calls it directly from `main.ts`
+   * after `runReplay()` so claude's 5–10s binary load happens in the
+   * background while the user is already looking at the populated
+   * transcript.
+   *
+   * Behavior split by mode:
+   *   - **resume** — arms the {@link spawnTimeoutMs} timer. If
+   *     `claudeReceivedInput` is still false after the deadline (and
+   *     claude hasn't exited — the watcher covers that branch), fires
+   *     `resume_failed{reason:"spawn_timeout"}`. This catches the
+   *     "claude is hung silently" failure mode that pre-R0d showed up
+   *     as "Loading conversation…" forever (because replay was
+   *     blocked behind the spawn).
+   *   - **new** — no spawn timeout. Fresh-mode init failures are
+   *     typically immediate exits, and the early-exit watcher catches
+   *     them via stderr classification.
+   *
+   * Empirically (kept from the pre-R0d notes): claude in stream-json
+   * mode does NOT emit `system:init` until it receives input,
+   * regardless of mode. Waiting for one would deadlock; we
+   * synthesized the init in `prepareSession()` (or
+   * `initialize()`). The early-exit watcher handles the failure
+   * cases — stale `--resume` id, `--session-id` collision — by
+   * pattern-matching claude's stderr.
+   */
+  spawnClaudeAndWatch(): Promise<void> {
+    const claudeFlag = this.sessionMode === "resume" ? "resume" : "session-id";
+    const claudeId = this.resolveClaudeId();
+
+    this.claudeProcess = this.spawnClaude(claudeId, claudeFlag);
+    this.stdoutReader = (
+      this.claudeProcess.stdout as ReadableStream<Uint8Array>
+    ).getReader();
+    this.stdoutBuffer = "";
+
+    this.startStderrReader();
+    this.installEarlyExitWatcher();
+
+    if (this.sessionMode === "resume") {
+      this.armSpawnTimeout();
+    }
+
+    logSessionLifecycle("tugcode.spawn_claude_async", {
+      session_id: this.sessionId,
+      session_mode: this.sessionMode,
+      claude_session_id: claudeId,
+    });
+
+    // Resolve (or freshly satisfy) the readiness gate. If
+    // `prepareSession()` set it up, callers awaiting on it can now
+    // proceed. Otherwise we install an already-resolved promise so
+    // `handleUserMessage`'s `await` is a clean no-op for the
+    // new-mode `initialize()` path.
+    if (this.claudeReadyResolve !== null) {
+      this.claudeReadyResolve();
+      this.claudeReadyResolve = null;
+    } else {
+      this.claudeReadyPromise = Promise.resolve();
+    }
+
+    return this.claudeReadyPromise!;
+  }
+
+  /**
+   * Arm the spawn-and-init handshake timeout (resume mode only). On
+   * expiry, if claude hasn't been seen alive end-to-end and hasn't
+   * exited, fires `resume_failed{reason:"spawn_timeout"}` and exits.
+   * Otherwise it's a no-op — `claudeReceivedInput` going true means
+   * the happy path is in flight; `isShuttingDown` means we're tearing
+   * down anyway; a null process means the early-exit watcher already
+   * tore claude down.
+   */
+  private armSpawnTimeout(): void {
+    if (this.spawnTimeoutHandle !== null) {
+      clearTimeout(this.spawnTimeoutHandle);
+    }
+    const ms = this.spawnTimeoutMs;
+    this.spawnTimeoutHandle = setTimeout(() => {
+      this.spawnTimeoutHandle = null;
+      if (this.isShuttingDown) return;
+      if (this.claudeReceivedInput) return;
+      if (!this.claudeProcess) return;
+
+      // Claude is still around but has been silently unresponsive
+      // for the deadline. Tear it down so the early-exit watcher
+      // doesn't double-fire on the kill, then surface the failure
+      // through the canonical resume_failed lifecycle.
+      this.isShuttingDown = true;
+      try {
+        this.claudeProcess.kill();
+      } catch {
+        // Already gone — nothing to clean up.
+      }
+
+      const reason = `claude did not respond within ${ms}ms (spawn timeout)`;
+      logSessionLifecycle("tugcode.spawn_timeout", {
+        session_id: this.sessionId,
+        timeout_ms: ms,
+      });
+      logSessionLifecycle("tugcode.resume_failed", {
+        stale_session_id: this.sessionId,
+        reason,
+        classification: "spawn_timeout",
+      });
+      void writeLineAndExit(
+        {
+          type: "resume_failed",
+          reason,
+          stale_session_id: this.sessionId,
+          ipc_version: 2,
+        },
+        0,
+      );
+    }, ms);
+  }
+
+  /**
+   * Initialize session — single entry point for new mode and the
+   * legacy (eager) resume path.
+   *
+   * Resume mode (cold-boot, Step R0d): `main.ts` does NOT call
+   * `initialize()`; it calls `prepareSession()` →
+   * `await runReplay()` → `void spawnClaudeAndWatch()` so the
+   * 5–10s claude spawn runs in the background after the populated
+   * transcript is already on the user's screen. `initialize()`
+   * remains for non-cold-boot callers (and tests that don't care to
+   * exercise the cold-boot order); for resume mode it composes
+   * `prepareSession()` + `await spawnClaudeAndWatch()` to keep the
+   * wire bytes bytes-identical.
+   *
+   * New mode: spawns claude eagerly via `spawnClaudeAndWatch()`,
+   * then emits the synthetic `session_init`. Same wire shape as
+   * pre-R0d.
+   *
+   * The empirical "claude doesn't emit system:init until input
+   * arrives" fact, plus the early-exit watcher's stderr pattern-
+   * matching, is documented on `spawnClaudeAndWatch`.
    */
   async initialize(): Promise<void> {
     const inputSessionId = this.sessionId;
@@ -1130,39 +1409,22 @@ export class SessionManager {
       resume_session_id: this.resumeSessionId ?? "",
     });
 
-    const claudeFlag = this.sessionMode === "resume" ? "resume" : "session-id";
-    // In resume mode, prefer the persisted claude session id
-    // (`resumeSessionId`) over the tug session id when it differs.
-    // The two diverge after a fork; for un-forked sessions they're
-    // equal, so the fallback to `sessionId` is safe and preserves
-    // legacy behavior for older tugbank records.
-    const claudeId =
-      claudeFlag === "resume"
-        ? (this.resumeSessionId ?? this.sessionId)
-        : this.sessionId;
-    this.claudeProcess = this.spawnClaude(claudeId, claudeFlag);
-    this.stdoutReader = (this.claudeProcess.stdout as ReadableStream<Uint8Array>).getReader();
-    this.stdoutBuffer = "";
+    if (this.sessionMode === "resume") {
+      // Legacy / non-cold-boot order: synthesize the init, then spawn
+      // claude eagerly. Bytes-identical to the pre-R0d wire shape;
+      // tests that prime via `initialize()` continue to see the same
+      // observable outcome.
+      this.prepareSession();
+      await this.spawnClaudeAndWatch();
+    } else {
+      // New mode: spawn first, then synthesize the init. Order
+      // matches the pre-R0d code; the only refactor here is the
+      // helper extraction.
+      await this.spawnClaudeAndWatch();
+      this.writeSyntheticSessionInit(this.resolveClaudeId());
+    }
 
-    this.startStderrReader();
-    this.installEarlyExitWatcher();
-
-    // The synthesized `session_init` carries the same id we just
-    // spawned claude with (`claudeId`), not always `this.sessionId`.
-    // For fresh spawns the two are equal. For resume spawns whose
-    // claude id has diverged from the tug id (forked session, or a
-    // resume of a session whose claude id was already different), the
-    // distinction matters: tugcast's `relay_session_io` atomic-promote
-    // block reads this id and persists it as `LedgerEntry::claude_session_id`,
-    // so emitting the wrong id here would briefly corrupt the on-disk
-    // record until the real `system:init` from claude's stream-json
-    // arrives on the first user message and overwrites it.
-    writeLine({
-      type: "session_init",
-      session_id: claudeId,
-      ipc_version: 2,
-    });
-
+    const claudeId = this.resolveClaudeId();
     logSessionLifecycle("tugcode.init.end", {
       session_mode: inputMode,
       session_id_in: inputSessionId,
@@ -1341,12 +1603,14 @@ export class SessionManager {
    */
   async runReplay(): Promise<void> {
     if (this.sessionMode !== "resume") return;
-    if (!this.claudeProcess) {
-      throw new Error(
-        "SessionManager.runReplay called before initialize()",
-      );
-    }
-
+    // Step R0d cold-boot order calls runReplay before claude has been
+    // spawned — `claudeProcess` is null and the JSONL is read straight
+    // from disk. Step R0c's pre-spawn flow and any future
+    // `request_replay` (Phase A-R1) that runs against an already-live
+    // claude both pass through this method; whether `claudeProcess`
+    // exists determines only whether we race the JSONL iterator
+    // against `child.exited`. Both flows still use the hard-budget
+    // timer.
     const claudeSessionId = this.resumeSessionId ?? this.sessionId;
 
     // Mark replay active *before* the first await so a claude crash
@@ -1409,12 +1673,22 @@ export class SessionManager {
       ? { ...rawInput, claudeSessionId }
       : rawInput;
 
+    // Exit race only applies when claude is alive. In Step R0d's
+    // cold-boot order, claude hasn't been spawned yet — there's
+    // nothing to crash. In the future request_replay path (Phase
+    // A-R1), claude IS alive and a crash mid-replay must surface as
+    // `replay_complete{claude_exited_during_replay}` followed by
+    // `resume_failed`. Skipping this branch when there's no process
+    // keeps `Promise.race` total without inventing a never-resolving
+    // exit promise.
     const child = this.claudeProcess;
-    const exitPromise: Promise<{ kind: "exit"; code: number | null }> =
-      child.exited.then((code) => ({
-        kind: "exit",
-        code: typeof code === "number" ? code : null,
-      }));
+    const exitPromise: Promise<{ kind: "exit"; code: number | null }> | null =
+      child !== null
+        ? child.exited.then((code) => ({
+            kind: "exit" as const,
+            code: typeof code === "number" ? code : null,
+          }))
+        : null;
 
     let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
     const timeoutPromise = new Promise<{ kind: "timeout" }>((resolve) => {
@@ -1441,11 +1715,15 @@ export class SessionManager {
         const nextPromise = iter
           .next()
           .then((r) => ({ kind: "next" as const, value: r }));
-        const winner = await Promise.race<
-          | { kind: "next"; value: IteratorResult<OutboundMessage> }
-          | { kind: "timeout" }
-          | { kind: "exit"; code: number | null }
-        >([nextPromise, timeoutPromise, exitPromise]);
+        const racers: Array<
+          Promise<
+            | { kind: "next"; value: IteratorResult<OutboundMessage> }
+            | { kind: "timeout" }
+            | { kind: "exit"; code: number | null }
+          >
+        > = [nextPromise, timeoutPromise];
+        if (exitPromise !== null) racers.push(exitPromise);
+        const winner = await Promise.race(racers);
 
         if (winner.kind === "next") {
           if (winner.value.done) break;
@@ -1564,6 +1842,18 @@ export class SessionManager {
    * and process events with two-tier routing.
    */
   async handleUserMessage(msg: UserMessage): Promise<void> {
+    // Step R0d cold-boot order may dispatch handleUserMessage before
+    // `spawnClaudeAndWatch()` has finished its synchronous setup —
+    // i.e., the user typed and submitted while replay was still
+    // streaming events. The readiness gate established in
+    // `prepareSession()` blocks until the spawn has completed, so the
+    // first claude stdin write here is sequenced correctly. After
+    // the gate resolves it stays resolved; subsequent submits await
+    // it as a no-op.
+    if (this.claudeReadyPromise !== null) {
+      await this.claudeReadyPromise;
+    }
+
     if (!this.claudeProcess) {
       throw new Error("Session not initialized");
     }
@@ -1595,8 +1885,15 @@ export class SessionManager {
     // end-to-end. The early-exit watcher uses this flag to gate its
     // init-failure classification: any exit from this point on is a
     // runtime crash (handled by the stream-end branch below), not a
-    // resume_failed.
+    // resume_failed. The spawn-timeout watcher also reads this flag;
+    // disarm explicitly so the timer doesn't sit pending until its
+    // scheduled fire (which would be a no-op now, but a clean disarm
+    // keeps the event loop quiet).
     this.claudeReceivedInput = true;
+    if (this.spawnTimeoutHandle !== null) {
+      clearTimeout(this.spawnTimeoutHandle);
+      this.spawnTimeoutHandle = null;
+    }
 
     try {
       while (true) {

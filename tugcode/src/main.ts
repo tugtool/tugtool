@@ -197,40 +197,91 @@ async function main() {
         ipc_version: 2,
       });
 
-      // Initialize session. Synchronous in both modes: spawns claude,
-      // installs the early-exit watcher, and emits the synthetic
-      // session_init IPC line. Any subsequent claude startup failure
-      // surfaces via the watcher's IPC emit + process.exit, not via a
-      // throw here.
-      try {
-        await sessionManager.initialize();
-      } catch (err) {
-        console.error("Session initialization failed:", err);
-        writeLine({
-          type: "error",
-          message: `Session initialization failed: ${err}`,
-          recoverable: false,
-          ipc_version: 2,
-        });
-        process.exit(1);
-      }
+      // Step R0d cold-boot order. Resume mode runs replay BEFORE
+      // spawning claude so the populated transcript paints within
+      // ~100ms of card mount instead of the 5–10s the eager
+      // (pre-R0d) order took (claude's binary load blocked
+      // everything). The synthetic `session_init` is emitted in
+      // `prepareSession()` so tugcast can broadcast
+      // `spawn_session_ok` and tugdeck can construct services
+      // immediately; the spawn itself happens in the background after
+      // replay completes. `handleUserMessage` awaits the readiness
+      // gate established in `prepareSession()` so any user submit
+      // that lands during replay blocks until claude is ready.
+      //
+      // New mode keeps the historical eager path:
+      // `initialize()` spawns claude and emits the synthetic init
+      // synchronously. There's no JSONL to replay and no
+      // user-perceived dead window to fix.
+      if (sessionMode === "resume") {
+        try {
+          sessionManager.prepareSession();
+        } catch (err) {
+          console.error("Session prepare failed:", err);
+          writeLine({
+            type: "error",
+            message: `Session prepare failed: ${err}`,
+            recoverable: false,
+            ipc_version: 2,
+          });
+          process.exit(1);
+        }
 
-      // Resume mode: replay the on-disk JSONL through CODE_OUTPUT
-      // before the first user message so the card's transcript
-      // rehydrates. No-op for fresh spawns (`session-mode new`). Any
-      // crash, missing-file, or unreadable-file outcome is surfaced
-      // through the bracket pair itself + the existing lifecycle
-      // path, so we don't need to catch here.
-      try {
-        await sessionManager.runReplay();
-      } catch (err) {
-        console.error("Replay failed:", err);
-        writeLine({
-          type: "error",
-          message: `Replay failed: ${err}`,
-          recoverable: true,
-          ipc_version: 2,
+        // Replay the on-disk JSONL through CODE_OUTPUT. Crash /
+        // missing / unreadable outcomes are surfaced through the
+        // bracket pair itself + the existing lifecycle path; no need
+        // to catch here.
+        try {
+          await sessionManager.runReplay();
+        } catch (err) {
+          console.error("Replay failed:", err);
+          writeLine({
+            type: "error",
+            message: `Replay failed: ${err}`,
+            recoverable: true,
+            ipc_version: 2,
+          });
+        }
+
+        // Background claude spawn. The IPC loop continues; the
+        // returned Promise is the readiness gate that
+        // `handleUserMessage` awaits. We don't await it here —
+        // awaiting would defeat the point of the refactor (the user
+        // would still wait 5–10s before the IPC loop processes
+        // anything).
+        const claudeReady = sessionManager.spawnClaudeAndWatch();
+        // Surface unhandled rejection from the spawn promise to
+        // stderr so a synchronous exception inside `spawnClaude`
+        // (e.g. a missing claude binary) doesn't go silent. The
+        // typical failure surfaces through the early-exit watcher
+        // or the spawn-timeout watcher, both of which write
+        // their own IPC lines and call process.exit; this catch
+        // is for the unexpected synchronous-throw case.
+        claudeReady.catch((err) => {
+          console.error("Background claude spawn failed:", err);
+          writeLine({
+            type: "error",
+            message: `Background claude spawn failed: ${err}`,
+            recoverable: false,
+            ipc_version: 2,
+          });
+          process.exit(1);
         });
+      } else {
+        // New mode: eager spawn + emit init via the historical
+        // single-call entry point. Behavior unchanged from pre-R0d.
+        try {
+          await sessionManager.initialize();
+        } catch (err) {
+          console.error("Session initialization failed:", err);
+          writeLine({
+            type: "error",
+            message: `Session initialization failed: ${err}`,
+            recoverable: false,
+            ipc_version: 2,
+          });
+          process.exit(1);
+        }
       }
     } else if (isUserMessage(msg)) {
       // Stub mode: dispatch the next recorded turn. Out-of-bounds

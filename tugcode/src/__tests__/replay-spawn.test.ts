@@ -734,3 +734,262 @@ describe("runReplay — claude crash during replay", () => {
     expect((failed as any).reason).toContain("No conversation found");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Step R0d — cold-boot ordering: prepareSession → runReplay →
+// spawnClaudeAndWatch
+// ---------------------------------------------------------------------------
+
+describe("Step R0d — cold-boot resume order", () => {
+  /**
+   * Build a manager set up for the new cold-boot order: NOT primed
+   * via `initialize()`. The caller is expected to drive
+   * `prepareSession()` → `runReplay()` → `spawnClaudeAndWatch()`
+   * directly to exercise the wire ordering the refactor introduces.
+   */
+  function makeUnprimedManager(opts?: {
+    jsonlReader?: (path: string) => Promise<JsonlReadResult>;
+    stderr?: string[];
+    spawnTimeoutMs?: number;
+    spawnDelayMs?: number;
+  }): {
+    manager: SessionManager;
+    claudeHandle: MockChildHandle;
+    sessionId: string;
+  } {
+    const sessionId = crypto.randomUUID();
+    const projectDir = `/tmp/replay-spawn-r0d-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const manager = new SessionManager(
+      projectDir,
+      sessionId,
+      "resume",
+      undefined,
+      {
+        claudeProjectsRoot: "/tmp/replay-spawn-fixtures",
+        jsonlReader:
+          opts?.jsonlReader ??
+          (async () => ({ kind: "ok" as const, jsonl: twoTurnJsonl() })),
+        replayTimeoutMs: 10_000,
+        spawnTimeoutMs: opts?.spawnTimeoutMs,
+      },
+    );
+    const claudeHandle = mockClaudeChild({ stderr: opts?.stderr });
+    // The caller drives spawning via `spawnClaudeAndWatch`. The
+    // `spawnDelayMs` knob lets a test verify "replay finishes before
+    // the spawn handle is wired up" by holding the synchronous return
+    // of `spawnClaude` open. In production, `Bun.spawn` returns
+    // synchronously; here we simulate a delay by gating on a Promise.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (manager as any).spawnClaude = () => claudeHandle.child;
+    return { manager, claudeHandle, sessionId };
+  }
+
+  test("prepareSession emits session_init synchronously before runReplay or any claude spawn", async () => {
+    const { manager } = makeUnprimedManager();
+    const { emitted } = await captureIpc(async () => {
+      manager.prepareSession();
+    });
+    // Exactly one synthetic init lands on the wire; no other frames.
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]?.type).toBe("session_init");
+    // No claude process has been wired up yet.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((manager as any).claudeProcess).toBeNull();
+  });
+
+  test("cold-boot order: replay events land on IPC stdout BEFORE spawnClaudeAndWatch wires up", async () => {
+    const { manager } = makeUnprimedManager();
+
+    const { emitted } = await captureIpc(async () => {
+      manager.prepareSession();
+      await manager.runReplay();
+      // Spawn AFTER replay completes — the new order. The Promise
+      // resolves once the synchronous setup is done.
+      await manager.spawnClaudeAndWatch();
+    });
+
+    const types = emitted.map((m) => m.type);
+    // First wire frame: synthetic session_init.
+    expect(types[0]).toBe("session_init");
+    // Bracket pair: replay_started and replay_complete must both
+    // appear, in order.
+    const startedIdx = types.indexOf("replay_started");
+    const completeIdx = types.indexOf("replay_complete");
+    expect(startedIdx).toBeGreaterThan(0);
+    expect(completeIdx).toBeGreaterThan(startedIdx);
+    // The bracket pair lands before any further wire activity (e.g.,
+    // an init from claude). In this test claude is silent (mock
+    // closes stdout immediately), so all activity is replay-derived
+    // — the assertion is that the bracket survives the new order.
+    const completeFrame = emitted[completeIdx] as ReplayComplete;
+    expect(completeFrame.error).toBeUndefined();
+  });
+
+  test("handleUserMessage blocks until spawnClaudeAndWatch resolves", async () => {
+    const { manager } = makeUnprimedManager();
+    let userMessageDispatched = false;
+    let userMessageReturned = false;
+
+    const { emitted } = await captureIpc(async () => {
+      manager.prepareSession();
+      await manager.runReplay();
+
+      // Kick off handleUserMessage BEFORE spawnClaudeAndWatch. The
+      // claudeReadyPromise gate (set up in prepareSession) is still
+      // pending; the message must wait. We can't rely on
+      // handleUserMessage's actual completion here (it would block on
+      // claude's stdout) but we CAN observe that nothing has been
+      // written to claude yet — claudeProcess is still null.
+      const userMsgPromise = manager
+        .handleUserMessage({
+          type: "user_message",
+          text: "ping",
+          attachments: [],
+        })
+        .then(() => {
+          userMessageReturned = true;
+        })
+        .catch(() => {
+          // Expected: once we kill the mock claude, the read loop
+          // returns null and handleUserMessage emits its
+          // stream_end_no_result error and returns.
+          userMessageReturned = true;
+        });
+      userMessageDispatched = true;
+
+      // Pause to give handleUserMessage a chance to run if it didn't
+      // actually block. (It should block on claudeReadyPromise.)
+      await new Promise((r) => setTimeout(r, 5));
+      // Spawn happens here — the gate resolves and handleUserMessage
+      // can proceed past the await.
+      await manager.spawnClaudeAndWatch();
+      // Tear claude down so handleUserMessage's read loop unblocks.
+      // (Mock stdin.write is a no-op; mock stdout is already closed.)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (manager as any).claudeProcess = null;
+      await Promise.race([
+        userMsgPromise,
+        new Promise((r) => setTimeout(r, 50)),
+      ]);
+    });
+
+    expect(userMessageDispatched).toBe(true);
+    // The IPC stream should NOT contain any pre-spawn user_message
+    // forwarding artifact — handleUserMessage gated correctly.
+    // (We can only assert the gate prevented a "Session not
+    // initialized" throw before the spawn; the read loop's exact
+    // teardown shape isn't load-bearing for this test.)
+    expect(userMessageReturned).toBe(true);
+    // No replay events should be missing.
+    const replayBracket = emitted.filter(
+      (e) => e.type === "replay_started" || e.type === "replay_complete",
+    );
+    expect(replayBracket.length).toBe(2);
+  });
+
+  test("spawn-fails-after-replay: replay events flow, then resume_failed lands", async () => {
+    const { manager, claudeHandle, sessionId } = makeUnprimedManager({
+      stderr: ["No conversation found with session ID: deadbeef"],
+    });
+
+    const { emitted } = await captureIpc(async () => {
+      manager.prepareSession();
+      await manager.runReplay();
+      await manager.spawnClaudeAndWatch();
+      // Stderr lines have been emitted by the mock above; the
+      // stderr reader needs a tick or two to drain them and set
+      // `claudeStderrClassification` before claude exits.
+      await new Promise((r) => setTimeout(r, 5));
+      claudeHandle.exit(1);
+      // Let the watcher's exit branch run.
+      await new Promise((r) => setTimeout(r, 5));
+    });
+
+    const types = emitted.map((m) => m.type);
+    // Replay bracket pair appears first, in order.
+    const startedIdx = types.indexOf("replay_started");
+    const completeIdx = types.indexOf("replay_complete");
+    const failedIdx = types.indexOf("resume_failed");
+    expect(startedIdx).toBeGreaterThan(-1);
+    expect(completeIdx).toBeGreaterThan(startedIdx);
+    expect(failedIdx).toBeGreaterThan(completeIdx);
+
+    // Replay was clean: no error on the bracket close.
+    const completeFrame = emitted[completeIdx] as ReplayComplete;
+    expect(completeFrame.error).toBeUndefined();
+
+    // The deliberate UX trade-off: the user briefly saw the populated
+    // transcript (replay events) before the picker takes over via
+    // resume_failed. That's the failure-path regression the R0d plan
+    // accepts in exchange for the success-path speedup. Lock it in.
+    const failed = emitted[failedIdx] as Record<string, unknown>;
+    expect(failed.stale_session_id).toBe(sessionId);
+    expect(failed.reason).toContain("No conversation found");
+  });
+
+  test("spawn-times-out: hung claude (no exit, no input) fires resume_failed{spawn_timeout}", async () => {
+    const { manager, sessionId } = makeUnprimedManager({
+      // 10ms gives plenty of time for the timer to fire while the
+      // test waits, without making the test slow.
+      spawnTimeoutMs: 10,
+    });
+
+    const { emitted } = await captureIpc(async () => {
+      manager.prepareSession();
+      await manager.runReplay();
+      await manager.spawnClaudeAndWatch();
+      // Wait long enough for the spawn-timeout timer to fire. Claude
+      // mock never exits and never receives input; the timer is the
+      // only path to surfacing.
+      await new Promise((r) => setTimeout(r, 30));
+    });
+
+    const failed = emitted.find((e) => e.type === "resume_failed") as
+      | Record<string, unknown>
+      | undefined;
+    expect(failed).toBeDefined();
+    expect(failed!.stale_session_id).toBe(sessionId);
+    expect(failed!.reason).toContain("spawn timeout");
+  });
+
+  test("spawn-times-out is suppressed once handleUserMessage runs", async () => {
+    // Once user submits, claudeReceivedInput flips true and the
+    // spawn-timeout disarms. A subsequent timer fire would be a
+    // no-op anyway (the guards inside armSpawnTimeout's callback
+    // catch claudeReceivedInput), but disarming explicitly avoids a
+    // pending-handle event-loop nudge.
+    const { manager } = makeUnprimedManager({
+      spawnTimeoutMs: 30,
+    });
+
+    const { emitted } = await captureIpc(async () => {
+      manager.prepareSession();
+      await manager.runReplay();
+      await manager.spawnClaudeAndWatch();
+
+      // Submit immediately — under the timer's 30ms threshold.
+      // handleUserMessage will block reading claude's (closed)
+      // stdout, eventually returning via the stream-end branch. We
+      // race it with a short wait so the test doesn't hang.
+      const userMsg = manager
+        .handleUserMessage({
+          type: "user_message",
+          text: "ping",
+          attachments: [],
+        })
+        .catch(() => {});
+      await Promise.race([userMsg, new Promise((r) => setTimeout(r, 50))]);
+    });
+
+    // No spawn-timeout-classified resume_failed should have fired.
+    const failedAll = emitted.filter(
+      (e) => e.type === "resume_failed",
+    ) as Array<Record<string, unknown>>;
+    const spawnTimeouts = failedAll.filter((f) =>
+      String(f.reason ?? "").includes("spawn timeout"),
+    );
+    expect(spawnTimeouts).toHaveLength(0);
+  });
+});

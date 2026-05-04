@@ -1172,25 +1172,26 @@ The two awaits are sequential, but they're not actually dependent: replay only n
 
 **Tasks:**
 
-- [ ] Refactor `SessionManager.initialize()` into `prepareSession()` + `spawnClaudeAndWatch()` (or equivalent shape). The split must not change the wire bytes of the synthetic `session_init` for resume mode — same fields, same `claude_session_id` value (the persisted resume id), same shape.
-- [ ] Branch on `sessionMode === "resume"` at the call site in `main.ts`. Resume runs `prepareSession()` → `runReplay()` → `spawnClaudeAndWatch()`; new mode runs `spawnClaudeAndWatch()` directly (the historical eager path). Both paths converge on the IPC loop.
-- [ ] Store the spawn Promise on `SessionManager` (e.g., `this.claudeReadyPromise`). `handleUserMessage` awaits it before any claude stdin write — the very first user submit on resume blocks until claude is up; subsequent submits land instantly.
-- [ ] Add the spawn timeout. Recommended ~30s hard-fault threshold on the resume `spawnClaudeAndWatch()` path. On expiry, fire `resume_failed` with `reason="spawn_timeout"`. New-mode spawn paths inherit whatever timeout they have today; the new timeout is resume-specific.
-- [ ] Update `runReplay()` so the claude-exit race is conditional: when `claudeProcess` is null (cold-boot resume order), only the hard-budget timer applies. The crash-during-replay branch lives only on the request_replay path going forward.
-- [ ] Update existing tests in `tugcode/src/__tests__/replay-spawn.test.ts` that primed a mock subprocess inside `initialize()`. They should now prime via `spawnClaudeAndWatch()` (or run replay against a null claude).
-- [ ] Add a cold-boot ordering test: `prepareSession()` → `runReplay()` emits the bracket pair plus per-turn events on IPC stdout *before* a delayed mock `spawnClaudeAndWatch()` resolves. Assert: synthetic `session_init` precedes any frame the mock claude would have routed.
-- [ ] Add a "spawn-fails-after-replay-succeeds" test: mock `spawnClaudeAndWatch()` to fail (e.g., immediate exit-code-1) after a clean `runReplay()`. Assert the wire emits replay bracket pair + per-turn events first, then `resume_failed` + `session_state_errored`. This is the new failure mode introduced by the refactor; the test is what locks in the deliberate UX trade-off described above.
-- [ ] Add a "spawn-times-out" test: mock claude to never emit `system_init`; advance clocks to 30s; assert the spawn watcher fires `resume_failed` with `reason="spawn_timeout"`.
-- [ ] Telemetry: keep the existing `[tide::replay::started|complete]` lines; add `[tide::session-lifecycle event=tugcode.spawn_claude_async]` at the moment `spawnClaudeAndWatch()` kicks off, and `[tide::session-lifecycle event=tugcode.spawn_timeout]` if the new timeout fires. A smoke can grep for the spawn_async marker to confirm ordering in production.
+- [x] Refactor `SessionManager.initialize()` into `prepareSession()` + `spawnClaudeAndWatch()` (or equivalent shape). The split must not change the wire bytes of the synthetic `session_init` for resume mode — same fields, same `claude_session_id` value (the persisted resume id), same shape.
+- [x] Branch on `sessionMode === "resume"` at the call site in `main.ts`. Resume runs `prepareSession()` → `runReplay()` → `spawnClaudeAndWatch()`; new mode runs `spawnClaudeAndWatch()` directly (the historical eager path). Both paths converge on the IPC loop.
+- [x] Store the spawn Promise on `SessionManager` (e.g., `this.claudeReadyPromise`). `handleUserMessage` awaits it before any claude stdin write — the very first user submit on resume blocks until claude is up; subsequent submits land instantly.
+- [x] Add the spawn timeout. Recommended ~30s hard-fault threshold on the resume `spawnClaudeAndWatch()` path. On expiry, fire `resume_failed` with `reason="spawn_timeout"`. New-mode spawn paths inherit whatever timeout they have today; the new timeout is resume-specific.
+- [x] Update `runReplay()` so the claude-exit race is conditional: when `claudeProcess` is null (cold-boot resume order), only the hard-budget timer applies. The crash-during-replay branch lives only on the request_replay path going forward.
+- [x] Existing tests in `tugcode/src/__tests__/replay-spawn.test.ts` that primed a mock subprocess via `initialize()` continue to pass unchanged: `initialize()` now composes `prepareSession()` + `spawnClaudeAndWatch()` internally, preserving wire bytes and observable behavior. No mock-subprocess plumbing rewrite needed.
+- [x] Add a cold-boot ordering test: `prepareSession()` → `runReplay()` emits the bracket pair plus per-turn events on IPC stdout *before* a delayed mock `spawnClaudeAndWatch()` resolves. Assert: synthetic `session_init` precedes any frame the mock claude would have routed.
+- [x] Add a "spawn-fails-after-replay-succeeds" test: mock `spawnClaudeAndWatch()` to fail (e.g., immediate exit-code-1) after a clean `runReplay()`. Assert the wire emits replay bracket pair + per-turn events first, then `resume_failed` + `session_state_errored`. This is the new failure mode introduced by the refactor; the test is what locks in the deliberate UX trade-off described above.
+- [x] Add a "spawn-times-out" test: mock claude to never emit `system_init`; advance clocks to 30s; assert the spawn watcher fires `resume_failed` with `reason="spawn_timeout"`.
+- [x] Telemetry: keep the existing `[tide::replay::started|complete]` lines; add `[tide::session-lifecycle event=tugcode.spawn_claude_async]` at the moment `spawnClaudeAndWatch()` kicks off, and `[tide::session-lifecycle event=tugcode.spawn_timeout]` if the new timeout fires. A smoke can grep for the spawn_async marker to confirm ordering in production. (Also adds `tugcode.prepare_session` for parity with the synthetic-init emission.)
 
 **Tests:**
 
-- [ ] All existing `replay-spawn.test.ts` tests pass with the new ordering (they exercise the post-replay path; only the mock-subprocess plumbing shifts to the new spawn function).
-- [ ] New: deterministic ordering — `runReplay` finishes before `spawnClaudeAndWatch` resolves, given a delayed mock claude.
-- [ ] New: cold-boot integration — synthetic `session_init` lands on IPC stdout before any claude-routed stream-json event.
-- [ ] New: spawn-fails-after-replay — replay events flow, then `resume_failed` lands; existing post-failure plumbing (card observer → picker) unaffected.
-- [ ] New: spawn-times-out — 30s hang on claude triggers `resume_failed{reason:"spawn_timeout"}` rather than leaving the session in limbo.
-- [ ] Existing: `handleUserMessage` awaits the spawn promise before the first claude stdin write — exercises the Promise-coordination seam directly.
+- [x] All existing `replay-spawn.test.ts` tests pass with the new ordering (they exercise the post-replay path; only the mock-subprocess plumbing shifts to the new spawn function).
+- [x] New: deterministic ordering — `runReplay` finishes before `spawnClaudeAndWatch` resolves, given a delayed mock claude.
+- [x] New: cold-boot integration — synthetic `session_init` lands on IPC stdout before any claude-routed stream-json event.
+- [x] New: spawn-fails-after-replay — replay events flow, then `resume_failed` lands; existing post-failure plumbing (card observer → picker) unaffected.
+- [x] New: spawn-times-out — 30s hang on claude triggers `resume_failed{reason:"spawn_timeout"}` rather than leaving the session in limbo.
+- [x] New: spawn-times-out is suppressed once `handleUserMessage` runs (claudeReceivedInput disarms the timer).
+- [x] Existing: `handleUserMessage` awaits the spawn promise before the first claude stdin write — exercises the Promise-coordination seam directly.
 
 **Tuglaws cross-check:**
 
@@ -1199,9 +1200,9 @@ The two awaits are sequential, but they're not actually dependent: replay only n
 
 **Checkpoint:**
 
-- [ ] `bun x tsc --noEmit` exit 0.
-- [ ] `bun test` (tugcode) green, including the four new test cases (ordering, cold-boot integration, spawn-fails-after-replay, spawn-times-out).
-- [ ] `cargo nextest run` green.
+- [x] `bun x tsc --noEmit` exit 0.
+- [x] `bun test` (tugcode) green: 260 pass / 0 fail (was 254; +5 new R0d cases + 1 spawn-timeout-disarm case).
+- [x] `cargo nextest run` green: 1207 passed / 9 skipped.
 - [ ] Manual cold-boot smoke: on resume, the transcript paints within ~1s of card mount (down from 5–10s); claude finishes its spawn in the background; the first new submit lands without an additional wait. New mode still spawns eagerly with no observable change.
 
 ---
