@@ -30,11 +30,43 @@
   min-width: 0;
 }
 
-/* Streaming markdown surface fills the top pane. TugMarkdownView's
-   scroll container needs a parent-supplied height; this class is
-   passed via its `className` prop. */
-.tide-card-stream {
+/* Top-pane transcript host. Wraps a `TugListView` that renders
+   committed turns + the in-flight pair as alternating (user, code)
+   rows. The wrapper takes the full top-pane height; the inner list
+   view handles its own scroll geometry. Cascade-scoped overrides
+   adjust the list view's layout tokens for this consumer per [D12] —
+   the primitive's tokens are read, never redefined globally ([L20]).
+   No new tokens are introduced here; the overrides reuse existing
+   `--tug-space-*` and `--tugx-list-view-*` tokens. */
+.tide-card-transcript {
   height: 100%;
+  width: 100%;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tide-card-transcript .tug-list-view {
+  /* Snug the rows in toward each other and pad the scroll-bottom
+     so the last row's controls don't kiss the prompt-entry pane. */
+  --tugx-list-view-row-gap: var(--tug-space-md);
+  --tugx-list-view-padding-block: var(--tug-space-md);
+  --tugx-list-view-scroll-padding-end: var(--tug-space-2xl);
+}
+
+/* User-row body — plain text per [D11]. Wraps long lines, preserves
+   user-typed whitespace inside the prompt verbatim. */
+.tide-card-transcript-user-body {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Code-row body — `TugMarkdownBlock`. Width-100% so streaming text
+   wraps inside the row column; rest of the markdown styling lives
+   in `tug-markdown-block.css`. */
+.tide-card-transcript-code-body {
   width: 100%;
 }
 

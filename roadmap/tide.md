@@ -2474,6 +2474,15 @@ interface CodeSessionSnapshot {
   // Transcript (append-only).
   transcript: ReadonlyArray<TurnEntry>;
 
+  // In-flight user submission. Set the moment `send()` dispatches and
+  // cleared exactly when the matching `TurnEntry` lands on `transcript`
+  // (`turn_complete(success)`) or the turn is interrupted. Mirrors the
+  // reducer's `pendingUserMessage`; identity is stable across snapshot
+  // rebuilds while the same submission is in flight. Drives the in-flight
+  // `user` row in the Tide card transcript via `TideTranscriptDataSource`
+  // (Step 10 of `tugplan-tug-list-view.md`).
+  inflightUserMessage: { text: string; atoms: ReadonlyArray<AtomSegment> } | null;
+
   // Streaming paths (the PropertyStore instance lives on the store, not the snapshot).
   streamingPaths: {
     assistant: "inflight.assistant";
@@ -2674,7 +2683,7 @@ Substitutions to make on the copy:
 | Fixture file completion provider | Real `FILETREE`-backed file completion provider. |
 | Fixture slash command provider | Real provider merging `SessionMetadataStore.slashCommands` and skills. |
 | `"Project path /gallery/demo"` `TugBadge` | `TugBadge` showing the card's actual `project_dir`. |
-| Card-frame placeholder split (gallery's top panel is an empty rectangle) | `TugMarkdownView` bound to the per-card streaming target. |
+| Card-frame placeholder split (gallery's top panel is an empty rectangle) | `TideTranscriptHost` mounting `TugListView` over a `TideTranscriptDataSource` — multi-turn `(user, code)` row pairs plus the live in-flight pair when `inflightUserMessage !== null`. (Originally a single-region `TugMarkdownView`; replaced by [`tugplan-tug-list-view.md`](tugplan-tug-list-view.md) Step 11.) |
 | `storageKey="gallery.prompt-entry"` on `TugSplitPane` | `storageKey={\`tide.card.${cardId}\`}`. |
 | Gallery `data-testid="gallery-prompt-entry"` | Tide-appropriate test id (or remove). |
 
@@ -2697,9 +2706,9 @@ export function TideCardContent({ cardId }: { cardId: string }) {
       storageKey={`tide.card.${cardId}`}
     >
       <TugSplitPanel id="tide-output" defaultSize="70%" minSize="30%">
-        <TugMarkdownView
-          streamingStore={services.codeSessionStore.streamingStore}
-          streamingPath={services.codeSessionStore.streamingPath}
+        <TideTranscriptHost
+          codeSessionStore={services.codeSessionStore}
+          sessionMetadataStore={services.sessionMetadataStore}
         />
       </TugSplitPanel>
       <TugSplitPanel

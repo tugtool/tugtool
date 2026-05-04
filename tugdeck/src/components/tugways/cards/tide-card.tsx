@@ -2,7 +2,8 @@
  * tide-card.tsx — Tide card (Unified Command Surface).
  *
  * Mounts `TugPromptEntry` inside a horizontal `TugSplitPane` (top 70% —
- * placeholder; bottom 30% — entry, clamped at 90%). The card wires:
+ * `TideTranscriptHost` rendering the multi-turn transcript; bottom 30% —
+ * entry, clamped at 90%). The card wires:
  *
  *   • A live `CodeSessionStore` bound to the supervisor-issued
  *     `tugSessionId` via the card-session binding store.
@@ -28,7 +29,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 
 import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry";
-import { TugMarkdownView } from "../tug-markdown-view";
+import { TideTranscriptHost } from "./tide-card-transcript";
 import { TugPaneBanner } from "../tug-pane-banner";
 import { TugSplitPane, TugSplitPanel, type TugSplitPanelHandle } from "../tug-split-pane";
 import { useContentDrivenPanelSize } from "../use-content-driven-panel-size";
@@ -1539,11 +1540,21 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
         disabled={maximized}
         storageKey="tide.prompt-entry"
       >
+        {/*
+          Top pane: multi-turn transcript. `TideTranscriptHost` mounts a
+          `TugListView` over a `TideTranscriptDataSource` that maps
+          `codeSessionStore.transcript` (committed turns) and
+          `inflightUserMessage` (the live submission) onto pairs of
+          `(user, code)` rows. The streaming `code` cell observes
+          `codeSessionStore.streamingDocument` directly per [D06] /
+          [L22] — deltas don't round-trip through the data source. The
+          old `TugMarkdownView` single-region wire-up is gone; the
+          "sticky last turn" emergent side-effect goes with it.
+        */}
         <TugSplitPanel id="tide-card-top" defaultSize="70%" minSize="10%">
-          <TugMarkdownView
-            className="tide-card-stream"
-            streamingStore={codeSessionStore.streamingDocument}
-            streamingPath={codeSnap.streamingPaths.assistant}
+          <TideTranscriptHost
+            codeSessionStore={codeSessionStore}
+            sessionMetadataStore={sessionMetadataStore}
           />
         </TugSplitPanel>
         <TugSplitPanel
