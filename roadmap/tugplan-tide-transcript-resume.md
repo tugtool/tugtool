@@ -15,7 +15,7 @@
 | Target branch | tugplan-tide-transcript-resume |
 | Last updated | 2026-05-03 |
 | Roadmap anchor | [tugplan-tug-list-view.md #roadmap](./tugplan-tug-list-view.md#roadmap) — this plan executes the resume gap surfaced post-shipping plus the right-away polish items |
-| Predecessors | [tugplan-tug-list-view.md](./tugplan-tug-list-view.md) (shipped 2026-05-03), [tugplan-tide-session-ledger.md](./tugplan-tide-session-ledger.md) (shipped — owns the binding-record + resume-spawn machinery this plan extends) |
+| Predecessors | [tugplan-tug-list-view.md](./tugplan-tug-list-view.md) (shipped 2026-05-03); [tugplan-tide-session-ledger.md](./tugplan-tide-session-ledger.md) (shipped — owns the binding-record + resume-spawn machinery this plan extends). [§P14](./tide.md#p14-claude-resume) `claude_session_id` persistence is **absorbed as Step 0** of this plan — historically a separate roadmap item, brought in here because it's the load-bearing prerequisite for JSONL replay |
 | Successors | parent [tugplan-tide-card-polish.md](./tugplan-tide-card-polish.md) §step-12 (markdown styling) and §step-13 (thinking + tool surfaces) build on the resumed transcript surface; an eventual `tugplan-tug-list-view-v2-imperative-pool.md` resolves the imperative-DOM-pool follow-on noted in #roadmap |
 
 ---
@@ -42,40 +42,48 @@ After the resume work, the `Roadmap: right away` list from the parent plan has e
 
 #### Strategy {#strategy}
 
+- **Persist `claude_session_id` first.** The Path A wire-replay machinery is gated on the supervisor knowing which JSONL to read for each card on resume. Today, `claude_session_id` is captured in-memory but never persisted — the [§P14](./tide.md#p14-claude-resume) work absorbed as Step 0 closes that gap. Without it, every reload spawns a fresh Claude subprocess and there is no JSONL to replay.
 - **Disk is the source of truth.** Claude's per-session JSONL is the canonical conversation archive. tugdeck and the supervisor are downstream consumers. We add no new persistence layer; we read what's already there.
 - **The wire is the seam.** Replay events ride `CODE_OUTPUT` in the same shape live events use, with a small bracket protocol (`replay_started` → events → `replay_complete`) so tugdeck's reducer can gate phase transitions and id-stability heuristics correctly. No new feed.
-- **The reducer is the ingestion path.** No client-side rehydration method on `CodeSessionStore`, no parallel "snapshot rehydrate" code path. The reducer that handles live turns handles replayed ones — it just sees them arrive in a tighter time window.
-- **Replay is bounded and synchronous w.r.t. live frames.** Replay frames flush before the freshly-spawned tugcode subprocess is allowed to produce live frames for this `tug_session_id`. No interleaving; no race. The supervisor already gates frame flow per session.
-- **Translation is a tugcode concern, not a tugcast concern.** `tugcode/src/session.ts` is the canonical translator from Claude's wire shapes (and JSONL is one of those shapes, lightly different from live stream-json) to the `CODE_OUTPUT` IPC outbound messages. Adding JSONL handling there keeps one translation table in one place.
+- **The reducer is the ingestion path.** No client-side rehydration method on `CodeSessionStore`, no parallel "snapshot rehydrate" code path. The reducer that handles live turns handles replayed ones — it just sees them arrive in a tighter time window, gated by a new `replaying` phase ([D11]).
+- **Replay is bounded and synchronous w.r.t. live frames.** Replay frames flush on tugcode's IPC stdout *before* tugcode forwards live events translated from Claude's stdout for the same session. The boundary is at tugcode's IPC stdout, not at Claude's pipe — Claude can be running, emitting stream-json, and tugcode buffers its translated output until `replay_complete` has been written to IPC. No interleaving; no race.
+- **Translation is a tugcode concern, not a tugcast concern.** `tugcode/src/session.ts` already owns the live stream-json → `OutboundMessage` translation. JSONL handling (a sibling shape, lightly different from live stream-json) lives in `tugcode/src/replay.ts`. One translation vocabulary in one language. The Rust supervisor stays a lifecycle/ledger/binding manager.
 - **Replay does not write to disk.** Replay reads the JSONL but does not append to it. The freshly-resumed Claude subprocess does its own JSONL appends as the user submits new turns. We do not double-write.
-- **Replay is best-effort, not load-bearing.** A missing or malformed JSONL surfaces as an empty transcript on resume, not a hard error. The card still works; the conversation is gone (well, still on Claude's side, but the historical view is gone). Logged with structured telemetry; never crashes the resume.
-- **Tuglaws cross-checked at every step.** [L02], [L03], [L06], [L19], [L20], [L21], [L22], [L23] all apply. See [#tuglaws-cross-check].
+- **Replay is best-effort, not load-bearing.** A missing, unreadable, or malformed JSONL surfaces as an empty transcript on resume, not a hard error. The card still works; the conversation history is gone for that card (the bytes are still on Claude's side). Logged with structured telemetry; the hard time budget per [D10] guarantees the card becomes interactive within 10s of binding regardless of JSONL state.
+- **Honest replay accuracy trade-offs.** Per-row historical model name is *not* preserved in v1 ([D09]); orphan turns at reload synthesize as interrupted ([D08]); claude_session_id mismatches in tugbank vs. on-disk JSONL produce empty transcripts (handled cleanly). Each is documented; each has a follow-on path if it becomes a real complaint.
+- **Tuglaws cross-checked at every step.** [L02], [L03], [L06], [L10], [L11], [L19], [L20], [L22], [L23], [L24] apply. See [#tuglaws-cross-check]. L23 in particular is satisfied by a third preservation mechanism — external archive replay — distinct from in-session minimal mutation and cross-session [A9] save/restore.
 - **Build stays green at every commit.** `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run` pass on every step. Warnings are errors.
 
 #### Success Criteria (Measurable) {#success-criteria}
 
-- A Tide card with N committed turns survives HMR with all N turns visible in the transcript pane after the next render. (Verified: dev-mode smoke against a multi-turn session.)
-- A Tide card with N committed turns survives Developer > Reload with the transcript intact. (Verified: manual smoke.)
-- A cold-boot of Tug.app with a previously-bound card restores the transcript pane to its prior content. (Verified: manual smoke against a real session.)
+- `claude_session_id` is persisted to tugbank in `relay_session_io`'s atomic-promote block and rehydrated on startup; subsequent `spawn_session(mode=resume)` invocations spawn the tugcode subprocess with `--resume <id>` and Claude reloads its conversation context. (Verified: Step 0 unit tests + real-claude integration test `test_close_then_reopen_preserves_history`.)
+- A Tide card with N committed turns survives HMR with all N turns visible in the transcript pane after the next render. (Verified: dev-mode Smoke A against a multi-turn session.)
+- A Tide card with N committed turns survives Developer > Reload with the transcript intact. (Verified: Smoke B.)
+- A cold-boot of Tug.app with a previously-bound card restores the transcript pane to its prior content. (Verified: Smoke C against a real session.)
+- A reload mid-stream produces a transcript with the orphan turn committed as interrupted ([D08]). (Verified: Smoke D + integration test.)
 - Replay events flow through the existing `CODE_OUTPUT` reducer path; no `CodeSessionStore` method is added that bypasses the dispatcher. (Verified: code review; reducer-level tests.)
-- The replayed transcript content is byte-identical to the live transcript for the same session, modulo timestamp formatting. (Verified: golden-fixture round-trip — record a session live, then replay its JSONL through the supervisor and assert the resulting `transcript` arrays match.)
-- A missing JSONL or unreadable record produces an empty replay (transcript starts empty for this resume) plus a structured log line; the card still mounts and accepts new turns. (Verified: synthetic test that points the supervisor at a non-existent JSONL.)
-- The in-flight `code` row's React key transitions exactly **zero** times across the awaiting-first-token → streaming → committed lifecycle for a turn whose `activeMsgId` is known at submit time. (Verified: adapter test asserts id stability across the seed transition.)
+- The replayed transcript content is byte-identical to a live recording of the same session, modulo timestamp formatting and the [D09] current-model-on-all-rows trade-off. (Verified: golden-fixture round-trip — record a session live, then replay its JSONL through the supervisor and assert the resulting `transcript` arrays match.)
+- A missing or unreadable JSONL produces an empty replay (transcript starts empty for this resume) plus a `lastReplayResult.kind === "jsonl_missing" | "jsonl_unreadable"` snapshot field; the card still mounts and accepts new turns within 10s. (Verified: integration test pointing the supervisor at a non-existent JSONL.)
+- A long JSONL replay respects [D10]'s budget thresholds: the placeholder transitions to a count-aware variant after 2s and the card becomes interactive within 10s regardless of JSONL size. (Verified: integration test with a synthetic-delay fixture.)
+- The replay-committed `code` row's React key transitions exactly **zero** times across the row's lifetime — the JSONL-derived `msg_id` is the row's id from frame zero ([D07]). (Verified: adapter test asserts id stability for replay turns.)
+- Live-turn flicker is unchanged from v1 ([D07]'s honest scope) — the seed transition for live in-flight turns continues to remount once at first delta and is documented as a follow-on resolved by imperative DOM pooling.
 - The `TugListView` prefetching protocol exposes `delegate.prefetchForIndices` and `delegate.cancelPrefetchForIndices` and dispatches them based on a viewport-prediction window; a delegate that opts in observes prefetch / cancel calls in correct order on scroll. (Verified: `TugListView` unit tests.)
 - The `user` cell renderer accepts `AtomSegment[]` content and renders atoms inline alongside text once `userMessage.attachments` carries the typed shape. (Verified: cell-renderer unit test against a fixture turn whose `attachments` is `AtomSegment[]`.)
 - `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run` green at every step.
 
 #### Scope {#scope}
 
-1. **JSONL → `CODE_OUTPUT` translator** in tugcode (TypeScript). Pure module; unit-testable against fixture JSONLs.
-2. **Replay bracket events** (`replay_started`, `replay_complete`) on `CODE_OUTPUT`. Small additive shape; the reducer recognizes them and uses them to gate id-stability + phase transitions.
-3. **Resume-spawn replay wire-up** in tugcode (the bridge subprocess). On `--session-mode resume`, before Claude's stdin is opened, the bridge reads the JSONL, translates, emits.
-4. **Reducer handling for replay frames** in tugdeck. Idempotent commits; phase remains `idle` during replay; `inflightUserMessage` is not set; replay-frame events do not echo back as `user_message` CODE_INPUT writes.
-5. **Tide card "restoring" UX** — the `TideRestoring` placeholder already exists for the binding-restore window; extend it with a small "loading conversation…" beat for the replay window so a slow JSONL parse doesn't look like a stuck card.
-6. **Stable in-flight ↔ committed id** in `TideTranscriptDataSource`. Synthetic seed minted at `send` time, patched to `activeMsgId` once known — eliminates the one-remount-per-turn the v1 protocol accepted.
-7. **Atom-aware user rows.** `UserRowCell` switches from a plain `<span>` body to a body that renders `userMessage.attachments` as inline atoms when present, falling back to plain text for legacy or attachment-empty turns.
-8. **`TugListView` prefetching protocol.** `delegate.prefetchForIndices(indices)` / `delegate.cancelPrefetchForIndices(indices)` plus a viewport-prediction window. Delegate-only — `TugListView` does not assume any specific prefetch behavior; consumers decide.
-9. **Tuglaws walkthrough + plan close-out**, mirroring the parent plan's pattern.
+1. **`claude_session_id` persistence + resume threading** ([§P14](./tide.md#p14-claude-resume) absorbed). Persists in the atomic-promote block; `rebind_from_tugbank` rehydrates; `TugcodeSpawner` threads `--resume <id>`; `do_reset_session` invalidates. Step 0.
+2. **JSONL → `CODE_OUTPUT` translator** in tugcode (TypeScript). Pure module; unit-testable against fixture JSONLs. Surveyed shape coverage per [D06]; orphan-turn synthesis per [D08]; batched async iteration per [D10].
+3. **Replay bracket events** (`replay_started`, `replay_complete`) on `CODE_OUTPUT` per [D05]. Small additive shape; the reducer recognizes them and uses them to gate phase transitions.
+4. **`replaying` phase value** on `CodeSessionSnapshot.phase` per [D11]. Drives `canSubmit: false` and the `TideRestoring` placeholder via `data-phase` cascade.
+5. **Reducer handling for replay frames** in tugdeck. Idempotent commits via msg-id dedupe ([D04]); phase transitions to `replaying` during replay; `inflightUserMessage` is cleared defensively; replay-frame events do not echo back as `user_message` CODE_INPUT writes.
+6. **Resume-spawn replay wire-up** in tugcode. On `--resume-session <id>`, tugcode emits replay events on its IPC stdout *before* it forwards live events from Claude's stdout for the same session. Live events from Claude during the replay window are buffered and flushed after `replay_complete`.
+7. **Tide card "Loading conversation…" UX** — the `TideRestoring` placeholder gains a count-aware variant for [D10]'s soft-budget state and a timeout-state variant for the hard-budget cutoff.
+8. **Sticky id for replay-committed turns** in `TideTranscriptDataSource` per [D07]. The replay-committed turn's `msg_id` is the row's id from frame zero — no seed transition. Live-turn flicker is unchanged.
+9. **Atom-aware user rows.** `UserRowCell` switches from a plain `<span>` body to a body that renders `userMessage.attachments` as inline atoms when present, falling back to plain text for legacy or attachment-empty turns.
+10. **`TugListView` prefetching protocol.** `delegate.prefetchForIndices(indices)` / `delegate.cancelPrefetchForIndices(indices)` plus a viewport-prediction window. Delegate-only — `TugListView` does not assume any specific prefetch behavior; consumers decide.
+11. **Tuglaws walkthrough + plan close-out**, mirroring the parent plan's pattern.
 
 Out of scope:
 - New persistence layer in tugdeck or in the supervisor's sqlite (Path B / C from the diagnosis — explicit non-starter).
@@ -92,11 +100,15 @@ Listed in [#design-decisions]. The major calls are summarized here; rationale is
 
 - [D01] JSONL parsing lives in **tugcode (TypeScript bridge)**, not tugcast (Rust supervisor) — the translation table is already there; one place; one set of tests.
 - [D02] Replay frames ride **`CODE_OUTPUT`** with the same event shapes live frames use — no new feed.
-- [D03] Replay flushes **synchronously before live frames** for the same `tug_session_id` — no interleaving.
-- [D04] Replay is **idempotent at the reducer level** via `msg_id` deduping, but the contract is "the supervisor never replays the same turn twice in one resume" — defense-in-depth, not a load-bearing dedupe.
+- [D03] Replay flushes **synchronously before live frames** for the same `tug_session_id` on tugcode's IPC stdout — Claude's stream-json output is buffered and flushed after `replay_complete`.
+- [D04] Replay is **idempotent at the reducer level** via `msg_id` deduping; defense-in-depth against supervisor double-replay.
 - [D05] Bracket events are **first-class** — `replay_started` / `replay_complete` are decoded events the reducer handles, not protocol-level metadata.
-- [D06] Translation is **direct JSONL → `CODE_OUTPUT`** — bypassing the live stream-json shape because JSONL has its own format and going through stream-json would require synthesizing tokens that don't exist.
-- [D07] **Sticky seed** for the in-flight ↔ committed id — the data source mints a synthetic `inflight-<nonce>` seed at `send` time and rewrites it to `${activeMsgId}` once the first delta lands, eliminating the v1 remount.
+- [D06] Translation is **direct JSONL → `CODE_OUTPUT`** with the surveyed shape inventory; unknown shapes log + skip per `tide::replay::unknown_shape`.
+- [D07] **Sticky id for replay-committed turns only** — the JSONL-derived `msg_id` is the row's id from frame zero; no remount on replay. Live-turn flicker remains unchanged from v1 (resolved by imperative DOM pooling, tracked in #roadmap).
+- [D08] **Orphan turns at replay boundary synthesize as `turn_complete(error)`** — interrupted, matching live `interrupt()` semantics; user's submission stays visible with the accumulated assistant text and an interrupted marker.
+- [D09] **No SESSION_METADATA replay in v1** — replay-committed code rows show the *current* model name; per-row historical model tracked as a follow-on.
+- [D10] **Replay performance budget** — soft 2s (placeholder gains count-aware copy), hard 10s (truncate replay; resume with empty transcript); incremental batched commit so the UI stays responsive.
+- [D11] **`replaying` phase value** on `CodeSessionSnapshot.phase` — drives `canSubmit: false` and the placeholder via the existing `data-phase` cascade.
 
 ---
 
@@ -201,7 +213,7 @@ These are decoded events the reducer handles, not protocol-level metadata. The r
 
 - Tugcode emits the bracket events around the JSONL-derived stream.
 - The reducer adds two cases to its event-handler switch.
-- `CodeSessionSnapshot` does not gain a new field; the bracket signal stays internal to the reducer. (Open: see [Q01] below.)
+- `CodeSessionSnapshot` exposes the bracket signal via the new `replaying` phase value per [D11], plus the `lastReplayResult` field for telemetry / dev surface.
 
 ---
 
@@ -215,10 +227,38 @@ These are decoded events the reducer handles, not protocol-level metadata. The r
 - Going JSONL → stream-json → `OutboundMessage` would require synthesizing stream-json tokens (`stream_event` wrappers, `delta` annotations, `is_partial` flags) that don't exist in the JSONL — fabricating events.
 - Going direct produces complete `OutboundMessage`s for committed turns: a single `assistant_text` with `is_partial: false`, no streaming partials. Replay should land a turn at a time, not stream it character-by-character — the user is resuming, not watching a fresh response.
 
+**Surveyed JSONL shapes (real `~/.claude/projects/<dir>/*.jsonl` files on this machine).** Top-level entry types observed across 30+ files:
+
+| Top-level `type` | Frequency | Translator action |
+|---|---|---|
+| `assistant` | high — most lines after `user` | translate per `message.content[]` block (text → `assistant_text`, `tool_use` → `tool_use`, `thinking` → `thinking_text`); `stop_reason: "end_turn"` marks the turn boundary and triggers `turn_complete(success)` |
+| `user` | high | distinguish: a `user` entry whose `message.content[]` carries `text` blocks is a user submission → `user_message`; one whose content is `tool_result` blocks is a tool response → `tool_result` event(s) keyed on `tool_use_id` |
+| `attachment` | medium — bracketing user messages | skip (Claude bookkeeping; tool listings, skill listings, file references — not transcript-visible) |
+| `queue-operation` | low | skip (Claude's internal scheduling marker) |
+| `last-prompt` | low | skip (bookmark for `--continue`; not transcript content) |
+| `file-history-snapshot` | low — long sessions only | skip (Claude's file-tracking metadata) |
+| `ai-title` | low | skip (Claude's auto-generated session title; not transcript) |
+| `system` | low — once per session | skip (`system_init`-style bookkeeping; live `session_init` from the resumed Claude subprocess populates `SessionMetadataStore`, see [D09]) |
+| `permission-mode` | low — on permission changes | skip (UI-visible at the chrome layer, not the transcript) |
+
+Content blocks observed inside `message.content[]`:
+
+| Block `type` | Translator action |
+|---|---|
+| `text` | `assistant_text(is_partial: false)` (when on `assistant`); included verbatim in user submission text (when on `user`) |
+| `tool_use` | `tool_use` event with the block's `id`, `name`, `input` |
+| `tool_result` | `tool_result` event keyed on `tool_use_id`; `is_error` and content carried through |
+| `thinking` | `thinking_text(is_partial: false)` |
+| `image` | translator emits the `user_message` with an attachment; no `image` is shown in the v1 user-row body (out of scope per [D11] from the parent plan) |
+
+**Open shape policy.** Claude's JSONL format evolves with new releases — the inventory above is "what we observed, when we surveyed." Unknown top-level types and unknown content-block types are **logged via `tide::replay::unknown_shape` telemetry and skipped**. The drift signal is observable; the transcript stays best-effort. A future P15-style version-gate could promote unknown shapes to a structured divergence event, but v1 picks the simpler "log + skip" path.
+
+**Turn-boundary detection.** A turn's terminal event is the `assistant` entry with `message.stop_reason: "end_turn"`. All `assistant` entries with `stop_reason: "tool_use"` or `null` are intermediate — emit their content blocks but don't fire `turn_complete` yet. The translator carries a small per-turn buffer (`current_msg_id`, accumulated text, accumulated tool-call set) that's flushed as a `turn_complete(success)` when the terminal `end_turn` lands.
+
 **Implications:**
 
-- Translator: `function translateJsonlEntry(entry, ctx): OutboundMessage[]` where `ctx` carries the per-session id, msg-id sequencing, etc.
-- Per-turn output is a small fixed sequence: `user_message` (echoing the user's submission, optional — the reducer needs it for the in-flight pair only on live turns; for replay it can land directly as part of the committed `TurnEntry`'s `userMessage`), then any `tool_use` / `tool_result` / `tool_use_structured` events, then a single `assistant_text(is_partial: false)`, then `turn_complete(success)`.
+- Translator: `function translateJsonlEntry(entry, ctx): OutboundMessage[]` where `ctx` carries the per-session id, msg-id sequencing, the per-turn buffer, and the current `current_msg_id`.
+- Per-turn output is a fixed sequence: `user_message` (echoing the user's submission), then any `tool_use` / `tool_result` events interleaved per `tool_use_id`, then `thinking_text` (if any) before the terminal text, then a single `assistant_text(is_partial: false)`, then `turn_complete(success)`.
 - Replayed turns thus look to the reducer like very fast live turns: open, possibly some tool work, terminal text, complete. The reducer's existing turn-commit machinery handles them.
 
 **Alternative considered:**
@@ -227,35 +267,113 @@ These are decoded events the reducer handles, not protocol-level metadata. The r
 
 ---
 
-#### [D07] Sticky seed for the in-flight ↔ committed id (DECIDED) {#d07-sticky-seed}
+#### [D07] Sticky seed for replay-committed turns (DECIDED) {#d07-sticky-seed}
 
-**Decision:** The `TideTranscriptDataSource` mints a synthetic `inflight-<nonce>` seed at the moment a `send` is dispatched, stamps it onto the in-flight row's id, and rewrites it to `${activeMsgId}` once the reducer learns `activeMsgId`. Cell wrapper React keys reference the *current* seed, so the React reconciler matches the same wrapper across the seed-rewrite — no remount.
+**Decision:** For turns landing via replay, the `TideTranscriptDataSource` reads `msg_id` from the JSONL-derived `turn_complete` event and uses `${msgId}-{user|code}` as the row's id from frame zero. No seed rewrite, no remount. **Live-turn flicker (the v1 awaiting-first-token remount) is unaffected by this step** and remains a tracked follow-on, naturally resolved by the imperative-DOM-pool plan.
 
 **Rationale:**
 
-- The v1 protocol accepted one remount per turn at the awaiting-first-token transition (when `activeMsgId` becomes set), as documented in [tugplan-tug-list-view.md §step-10 id-stability protocol](./tugplan-tug-list-view.md#step-10). Live smoke shows the remount produces a brief flicker on the streaming `code` cell — small but noticeable, and avoidable.
-- A synthetic seed minted at `send` time and patched to the real `activeMsgId` once known eliminates the remount entirely. The wrapper key stays stable; only the underlying `kindForIndex` changes (`code-streaming` → `code-committed`) at commit, which is a prop change, not a remount.
+- The v1 protocol's seed transition exists because, on a live submit, `activeMsgId` is unknown until the first `assistant_text` partial lands. Replay-committed turns don't have this gap — the JSONL carries the full `msg_id` up front, so the data source mints a stable id at commit time.
+- Trying to "fix" live-turn flicker via the same sticky-seed mechanism doesn't actually work: any rewrite of the React wrapper's key string identity is a remount, regardless of how cleverly the data source tracks the seed-to-real transition. The honest win is replay-correctness; live flicker needs DOM that survives wrapper-key changes (imperative pool), not a smarter id protocol.
 - The patch happens inside the data source's id-resolution function — not inside React state. The reducer is unaffected.
 
 **Implications:**
 
-- `TideTranscriptDataSource` gains an internal `inflightSeedRef` that holds the synthetic seed for the current in-flight pair; cleared on `inflightUserMessage = null`.
-- `idForIndex(index)` for in-flight indices reads the seed: if `activeMsgId` is set, returns `${activeMsgId}-{user|code}`; otherwise returns the synthetic `${seed}-{user|code}`.
-- The seed survives the seed-to-real transition because the seed is per-turn and the lookup naturally picks the real msg-id once it's known — no React remount because the wrapper's key stays the same string identity from one render to the next.
+- `TideTranscriptDataSource.idForIndex(index)` for replay-committed indices reads `transcript[k].msgId` directly and returns `${msgId}-{user|code}`. No seed; no rewrite path engaged.
+- For live in-flight indices, the v1 protocol stays: `${INFLIGHT_ID_SEED}-{user|code}` until `activeMsgId` is set, then `${activeMsgId}-{user|code}`. The single remount per live turn is preserved as a documented follow-on, not a regression.
+- Tests assert: replay-committed turns produce id stability across the entire turn lifecycle (no seed transition observed); live turns continue to exhibit the v1 single-remount behavior.
 
-Wait — that's actually wrong. If the key changes string identity, React remounts. The fix is subtler: the seed must be stamped onto a per-turn lookup so that `idForIndex` returns the same string before and after `activeMsgId` is set. Concretely: the seed is the **stamp the data source remembers for this turn**, and `idForIndex` returns `${seed}-{user|code}` until `replay_complete` for the matching `msg_id` lands and the seed is rewritten *globally for all future renders* to `${msgId}`. React then sees keys change identity exactly once — at the seed-rewrite point — but at that moment the wrapper unmounts the old render and mounts a new one with the new key, which is a remount. So the v1 protocol's caveat stands: one remount per turn, just earlier in the lifecycle.
-
-**The actual decision:** keep the v1 protocol unchanged for live submits; what this step *can* eliminate is the remount **for committed turns landing via replay** — those have `msgId` known up front, so the seed is the real msgId from frame zero, and there's no rewrite. The "right away" bullet's framing of this work was slightly optimistic about live turns; the realistic win is replay-correctness. Live-turn flicker stays as a follow-on (with imperative DOM pooling as the natural resolution).
+**Corrects the parent plan's optimistic framing.** The `Roadmap: right away` bullet in [tugplan-tug-list-view.md #roadmap](./tugplan-tug-list-view.md#roadmap) implied a more general "stable in-flight ↔ committed id" win is possible. That implication is wrong without a DOM-survives-key-changes mechanism (imperative pool). This step ships the genuine, scoped win.
 
 ---
 
-#### [Q01] Snapshot-level `replaying` phase (OPEN) {#q01-replay-phase}
+#### [D08] In-flight turn at replay boundary (DECIDED) {#d08-orphan-turn}
 
-**Question:** Should `CodeSessionSnapshot.phase` gain a `replaying` value alongside `idle / submitting / awaiting_first_token / streaming / tool_work / awaiting_approval / errored`? Or stay with the bracket events as the only signal, and let the snapshot phase remain `idle` during replay?
+**Decision:** When the JSONL ends mid-turn — the last `assistant` entry has `stop_reason: "tool_use"` or `null`, or the last entry is a `user` submission with no answering `assistant` — the translator synthesizes a `turn_complete(error)` (interrupted) for the orphaned turn. The accumulated text is preserved, matching what the reducer does on a live `interrupt()` ([tugplan-code-session-store.md test-06 path](../tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.105/test-06-interrupt-mid-stream.jsonl)).
 
-**Tension:** A new phase value is a public surface change — every consumer reading `phase` sees it. But it also lets the prompt entry know "don't accept input yet, replay is in progress" without reaching into bracket-event internals.
+**Rationale:**
 
-**Resolution slot:** Resolve in Step 4 (Tugdeck reducer wiring) once we see whether `canSubmit` derived from the bracket-internal state is enough.
+- A reload mid-stream is a real, common case (user closes laptop while a response is generating; HMR fires while a tool is running). The orphan turn is on disk; it has user-visible content the user *put there*.
+- Three options exist: (a) skip orphans entirely (last user_message visible-but-unanswered, jarring); (b) synthesize `turn_complete(success)` (lies — Claude didn't finish); (c) synthesize `turn_complete(error)` (matches Claude's own "interrupted" semantics). (c) is correct.
+- The reducer already handles `turn_complete(error)` cleanly via the interrupt path. The committed `TurnEntry.result` is `"interrupted"`, which is the truthful state of what happened.
+
+**Implications:**
+
+- The translator carries a per-turn buffer; at end-of-file, if the buffer holds a turn that hasn't seen its terminal `end_turn`, it emits the synthesized `turn_complete(error)` before `replay_complete`.
+- An orphan turn with no `assistant` content at all (user submitted, page reloaded before Claude responded) lands as a `TurnEntry` with `assistant: ""` and `result: "interrupted"`. The cell renderer handles empty assistant text gracefully.
+- A test in Step 1 covers this: a fixture JSONL that ends mid-turn produces a transcript with the orphan committed as interrupted.
+
+**Alternative considered:**
+
+- Skip orphans: rejected because the user's submission visibly disappears, which is a different kind of regression than the one we're fixing.
+
+---
+
+#### [D09] SESSION_METADATA replay policy (DECIDED) {#d09-metadata-policy}
+
+**Decision:** v1 does **not** replay `SESSION_METADATA` events. The live `system_init` / `system_metadata` from the resumed Claude subprocess populates `SessionMetadataStore.model` for the current session. All replay-committed `code` rows display the **current** model name in their identifier line, even if the historical session spanned model changes.
+
+**Rationale:**
+
+- Replaying SESSION_METADATA per-turn would produce flicker as different replayed rows commit with different historical models. UI ergonomics > strict accuracy for v1.
+- The Tide card's chrome shows the current model — the transcript inheriting that name is consistent with the rest of the surface.
+- The historical model is observable in the JSONL (each `assistant` entry's `message.model` field). A future refinement could surface per-row historical model when a session is known to span versions, but that's a polish item, not a v1 concern.
+
+**Implications:**
+
+- The translator does not emit any `SESSION_METADATA` events; it only emits CODE_OUTPUT events.
+- `useSessionModelName(sessionMetadataStore)` returns the same value for every code row in the rendered transcript — which is what users will expect.
+- Documented as a known-trade-off in [#roadmap]: "per-row historical model in transcripts."
+
+**Alternative considered:**
+
+- Replay per-turn `SESSION_METADATA`: rejected for v1 because the UI consequence (model-name flicker on resume scroll) is worse than the accuracy gain.
+
+---
+
+#### [D10] Replay performance budget (DECIDED) {#d10-perf-budget}
+
+**Decision:** Replay runs incrementally with two budget thresholds:
+
+- **Soft budget — 2 seconds.** If `replay_complete` hasn't landed by 2s after `replay_started`, the `TideRestoring` placeholder updates from "Loading conversation…" to "Loading conversation… (N turns)" with a live count. The placeholder remains visible; the user sees progress.
+- **Hard budget — 10 seconds.** If `replay_complete` hasn't landed by 10s, the placeholder switches to "Conversation history unavailable; resuming with empty transcript" and the supervisor truncates remaining replay output. Live frames flow normally afterward; the user can submit new turns.
+
+**Implementation:**
+
+- The translator emits replay events in batches (e.g. 16 turns per `await new Promise(setImmediate)`) so the IPC pipe stays responsive and the per-turn `turn_complete` lands at the reducer with enough yield for the React layer to repaint.
+- The supervisor times the replay window per session and includes timing in the structured `tide::replay::complete` log line.
+- The hard timeout fires from the supervisor side; the translator drops remaining JSONL lines and emits `replay_complete { error: { kind: "replay_timeout", message: "..." } }`.
+
+**Rationale:**
+
+- Real machines have JSONLs of 37K+ lines (largest on this dev machine). Synchronous parse-and-emit of that whole file blocks the IPC pipe for seconds.
+- Without a budget, a slow disk or a corrupted JSONL produces a stuck "Loading conversation…" pane with no recovery. The hard cutoff guarantees a Tide card always becomes interactive within 10s of binding.
+- The soft-budget count update is cheap and gives the user a sense of "still working."
+
+**Implications:**
+
+- A new `tide::replay::progress` structured log line fires every batch with the running count.
+- The placeholder copy in `TideRestoring` gains a count-aware variant for the soft-budget state.
+- A Step 5 test covers the hard-budget path: a fixture JSONL with synthetic delay produces the truncated state.
+
+---
+
+#### [D11] Snapshot `replaying` phase (DECIDED — supersedes prior open question) {#d11-replaying-phase}
+
+**Decision:** `CodeSessionSnapshot.phase` gains a `replaying` value. The reducer enters `replaying` on `replay_started` and leaves on `replay_complete`. `canSubmit` is `false` while `replaying`. `canInterrupt` is `false`. The prompt entry's existing `data-phase` cascade picks up the new value automatically.
+
+**Rationale:**
+
+- The alternative — keeping replay state internal and deriving `canSubmit` from a private flag — leaks every consumer that wants to know about replay through a separate channel. A single phase value is the canonical signal the snapshot already uses.
+- `phase` is a discriminated union; adding a value is additive. Existing consumers that switch on `phase` get a TypeScript exhaustiveness error if they forget the new case — surfaces the change at build time, which is exactly what we want.
+- The prompt entry already disables submit while `phase` is non-idle; the new value rides that path with zero new wiring.
+
+**Implications:**
+
+- `CodeSessionPhase` union extended with `"replaying"`.
+- Reducer's `canSubmit` derivation: `phase === "idle" && transportState === "online"` becomes `(phase === "idle" || phase === "errored") && transportState === "online"` (the existing form) — `replaying` naturally falls outside the OR.
+- `canInterrupt` derivation excludes `replaying`.
+- Existing exhaustiveness checks at consumer sites flag the new case at compile time — fix-forward.
 
 ---
 
@@ -276,13 +394,46 @@ interface ReplayCompleteEvent {
   tug_session_id: string;
   count: number;          // number of turns committed during this replay
   error?: {
-    kind: "jsonl_missing" | "jsonl_unreadable" | "jsonl_malformed";
+    kind:
+      | "jsonl_missing"        // file does not exist at expected path
+      | "jsonl_unreadable"     // file exists but cannot be read (permissions, etc.)
+      | "jsonl_malformed"      // file exists, partial parse failures
+      | "replay_timeout";      // [D10] hard-budget timeout
     message: string;
   };
 }
 ```
 
 Between `replay_started` and `replay_complete`, the bridge emits the same event shapes the live wire produces — but with `is_partial: false` on every text event (replay is per-turn, not per-token, see [D06]).
+
+#### `CodeSessionPhase` extension per [D11] {#code-session-phase}
+
+```ts
+type CodeSessionPhase =
+  | "idle"
+  | "submitting"
+  | "awaiting_first_token"
+  | "streaming"
+  | "tool_work"
+  | "awaiting_approval"
+  | "replaying"           // NEW — set on `replay_started`, cleared on `replay_complete`
+  | "errored";
+```
+
+`canSubmit` is false during `replaying`; `canInterrupt` is false during `replaying`. The Tide card's existing `data-phase` cascade picks up the new value automatically.
+
+#### `CodeSessionSnapshot.lastReplayResult` (NEW) {#last-replay-result}
+
+```ts
+interface LastReplayResult {
+  kind: "success" | "jsonl_missing" | "jsonl_unreadable" | "jsonl_malformed" | "replay_timeout";
+  message: string;
+  count: number;            // turns committed before the result was determined
+  at: number;               // Date.now() at `replay_complete`
+}
+```
+
+`null` until the first `replay_complete` lands. The `TideRestoring` placeholder reads this for the timeout-state copy. Cleared back to `null` only on a fresh `replay_started` for the next resume.
 
 #### `TideRowDescriptor` change for atom-aware user rows {#atom-aware-row}
 
@@ -328,17 +479,19 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 ### Tuglaws Cross-Check {#tuglaws-cross-check}
 
 - **L01** — One `root.render()`. No new component-level renders. ✓
-- **L02** — External state via `useSyncExternalStore`. Replay events reach React via the existing reducer-snapshot path. ✓
-- **L03** — `useLayoutEffect` for registrations events depend on. The "loading conversation…" placeholder mounts in the existing `TideRestoring` flow — no new layout-effect work. ✓
+- **L02** — External state via `useSyncExternalStore`. Replay events reach React via the existing reducer-snapshot path; the new `replaying` phase value flows through the same snapshot subscription. ✓
+- **L03** — `useLayoutEffect` for registrations events depend on. The "loading conversation…" placeholder mounts via the existing `TideRestoring` flow — no new layout-effect work. ✓
 - **L04** — Never measure child DOM inline. Replay does not touch DOM directly. ✓
-- **L06** — Appearance via CSS / DOM. The "loading" beat reuses the `TideRestoring` styles. ✓
+- **L06** — Appearance via CSS / DOM. The "loading" beat reuses the `TideRestoring` styles plus a count-aware variant for [D10]'s soft-budget state. ✓
+- **L10** — One responsibility per layer. Translator lives in tugcode (where the live stream-json → `OutboundMessage` translation already lives, per [D01]); session lifecycle stays in tugcast supervisor; UI placeholder stays in the Tide card. No layer reaches across. ✓
 - **L11** — Controls emit, responders own state. Prefetch dispatch fires `delegate.prefetchForIndices`; consumer responders handle as appropriate. ✓
 - **L19** — Component authoring guide. No new tugways primitives in this plan. ✓
 - **L20** — Token sovereignty. No new tokens introduced. ✓
-- **L21** — Vite-specific surfaces (`import.meta.hot`) stay in `hmr-bridge.ts`. No new HMR coupling. ✓
 - **L22** — Store observers may write DOM. The streaming `code` cell's observer pattern is unaffected — replay produces only committed cells. ✓
-- **L23** — User-visible state preserved across DOM-down transitions. **This plan exists to make this true for the transcript content.** Replay reads the JSONL on every resume and re-emits the events the reducer needs to reconstitute `transcript`. ✓ (after Phase A lands)
-- **L24** — State zones. No new state-zone violations. ✓
+- **L23** — User-visible state preserved across DOM-down transitions. **This plan satisfies L23 via a third preservation mechanism — external archive replay.** The two mechanisms named in L23 are *in-session minimal mutation* (DOM stays alive across pane moves / activations / cmd-tab) and *cross-session [A9] save/restore* (DOM comes down, bag captures and restores user-visible state to tugbank). The transcript content is preserved by neither: it lives on Claude's per-session JSONL on disk, written by Claude itself as the session progresses. On resume, the supervisor reads the JSONL and replays its events through the wire so the reducer reconstitutes `transcript`. This is a third valid mechanism for the same law — the data is preserved by an external system that is the canonical source of truth, and we read it back at the same moment the protocol calls for restoration. L23's intent ("user data must survive transitions; pick the mechanism that matches the transition class") is met. ✓ (after Phase A lands)
+- **L24** — State zones. No new state-zone violations. The `replaying` phase value lives in the structure zone (snapshot field, drives `data-phase` cascade); the placeholder text is appearance zone (CSS-driven via `data-phase`). ✓
+
+**Note on L21.** L21 governs third-party code licensing, not Vite's `import.meta.hot` surface (an earlier plan draft conflated the two). This plan uses no new third-party libraries; L21 has no application here.
 
 ---
 
@@ -347,6 +500,50 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 > Each step is its own commit. `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, and `cargo nextest run` pass at the end of every step.
 
 #### Phase A — Resume from JSONL {#phase-a}
+
+#### Step 0: Persist `claude_session_id` and thread it through resume (absorbs [§P14](./tide.md#p14-claude-resume)) {#step-0}
+
+**Commit:** `tide(resume): persist claude_session_id; thread --resume on rebound spawns`
+
+**References:** [tide.md §P14](./tide.md#p14-claude-resume), [tide.md §T0.5 P14 entry-point table](./tide.md#p2-integration-reference), [agent_supervisor.rs:1484](../tugrust/crates/tugcast/src/feeds/agent_supervisor.rs)
+
+**Why this is Step 0.** The rest of Phase A reads `~/.claude/projects/<encoded-project-dir>/<claude_session_id>.jsonl`. Today, `claude_session_id` is captured in-memory in `relay_session_io`'s atomic-promote block but never persisted — `agent_supervisor.rs:1484` writes `claude_session_id: None` on every `spawn_session_ok`, and `rebind_from_tugbank` rehydrates with `None`. Without this step, the subsequent steps have no claude_session_id to key the JSONL lookup on, and Claude itself spawns fresh on every reload (no `--resume` flag is passed). This step is exactly the [§P14](./tide.md#p14-claude-resume) work, absorbed here because it's the load-bearing prerequisite for everything else in Phase A.
+
+**Artifacts:**
+
+- `tugrust/crates/tugcast/src/feeds/agent_bridge.rs` — extend `relay_session_io`'s atomic-promote block (the lock-held section that captures `claude_session_id` from `session_init`) to also write `claude_session_id` into tugbank under `dev.tugtool.tide.session-keys`. The write happens in the same critical section as the in-memory ledger update so persistence and in-memory state can never diverge per [tide.md §P14 Step 1](./tide.md#p14-claude-resume).
+- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — `do_spawn_session`'s Phase 2 tugbank write at line 1481-1486 currently emits `claude_session_id: None` always. Update so a reconnect (existing ledger entry) preserves the persisted `claude_session_id` instead of clobbering it with `None`. New ledger entries continue to write `None` until `session_init` lands and the atomic-promote block updates the record.
+- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — `rebind_from_tugbank` reads `SessionKeyRecord.claude_session_id` from the tugbank blob and rehydrates the `LedgerEntry::claude_session_id` field. The `--resume` flag in the spawn args path (built around line 1517 of [tide.md §P14 Step 2](./tide.md#p14-claude-resume)) then sees `Some(id)` and threads it into `TugcodeSpawner`.
+- `tugrust/crates/tugcast/src/feeds/agent_bridge.rs` — `TugcodeSpawner` (or its config builder) gains an optional `resume_claude_session_id` field. `spawn_session_worker` reads `entry.claude_session_id` after rebind populates it; if `Some`, the spawned tugcode subprocess gets `--resume <id>` (or an env var); if `None`, fresh spawn.
+- `tugcode/src/session.ts` — replace the legacy resume-id read from the `dev.tugtool.app / session-id` singleton path (carried over from before multi-session) with a read from the new `--resume-session <id>` CLI flag (or env var) the supervisor passes on spawn. tugcode's own singleton tugbank write goes away — supervisor owns persistence ([tide.md §P14 Step 3](./tide.md#p14-claude-resume)).
+- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — `do_reset_session` invalidates `claude_session_id` (tugbank delete + in-memory clear) **before** killing the subprocess so the next spawn is fresh per [tide.md §P14 Step 4](./tide.md#p14-claude-resume). `do_close_session` does **not** invalidate — a closed card can be reopened with history.
+
+**Tasks:**
+
+- [ ] Extend `agent_bridge.rs::relay_session_io` atomic-promote block with the tugbank persistence write.
+- [ ] Update `do_spawn_session`'s Phase 2 record write to preserve persisted `claude_session_id` on reconnects.
+- [ ] Wire `rebind_from_tugbank` to read `claude_session_id` back into the rehydrated `LedgerEntry`.
+- [ ] Add `resume_claude_session_id` to `TugcodeSpawner` config; thread through spawn args.
+- [ ] Update tugcode to read the resume id from CLI/env (drop the legacy singleton tugbank path).
+- [ ] Wire `do_reset_session` to invalidate `claude_session_id` in tugbank + in-memory before subprocess restart.
+
+**Tests:**
+
+- [ ] `test_session_init_persists_claude_session_id` — drives `relay_session_io` via duplex streams; asserts tugbank gets the write atomically with the ledger update ([tide.md §P14 Step 5](./tide.md#p14-claude-resume)).
+- [ ] `test_spawn_session_resumes_persisted_claude_session_id` — unit test with an `InMemorySessionKeysStore` pre-populated with `(card_id, tug_session_id, claude_session_id)`; asserts the spawner receives the resume id.
+- [ ] `test_reset_session_clears_persisted_claude_session_id` — asserts `reset_session` deletes the claude_session_id binding before the subprocess restart.
+- [ ] `test_close_session_preserves_claude_session_id` — asserts a `close_session` followed by a `spawn_session(mode=resume)` rehydrates the persisted id.
+- [ ] Real-claude integration test: `test_close_then_reopen_preserves_history` — open a session, exchange a turn that establishes known context ("remember the word gazebo"), close the WebSocket, reopen, send a probe ("what word did I tell you to remember?"), assert the response contains "gazebo". Pins the resume path end-to-end.
+
+**Checkpoint:**
+
+- [ ] `bun x tsc --noEmit` — exit 0.
+- [ ] `bun test` — green.
+- [ ] `cargo nextest run` — green.
+
+**Note:** This step ships the `--resume` plumbing without any JSONL-replay UI work. After Step 0 lands, a card that reloads will *resume Claude itself* (Claude reads its own JSONL into context), but tugdeck's transcript pane will still show empty until Step 3 — Claude has the conversation context, but the wire is silent on history. Steps 1–5 close the remaining gap.
+
+---
 
 #### Step 1: tugcode JSONL → `CODE_OUTPUT` translator (pure module) {#step-1}
 
@@ -357,32 +554,45 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 **Artifacts:**
 
 - New `tugcode/src/replay.ts` exporting:
-  - `interface JsonlEntry` — a permissive shape covering the variants we observed in `~/.claude/projects/<dir>/<id>.jsonl`: `user`, `assistant`, `attachment`, `tool_result`, `summary`, plus the `queue-operation` filler entries that should be skipped.
-  - `function translateJsonlEntry(entry: JsonlEntry, ctx: TranslateContext): OutboundMessage[]` — takes one entry, returns 0..N outbound messages.
-  - `function translateJsonlSession(jsonl: string, tugSessionId: string): { messages: OutboundMessage[]; turnCount: number; error?: { kind: string; message: string } }` — top-level function: lex the JSONL, accumulate translated messages, count committed turns, surface fatal-parse errors.
+  - `interface JsonlEntry` — a permissive shape covering the surveyed variants per [D06]: top-level `user`, `assistant`, `attachment`, `queue-operation`, `last-prompt`, `file-history-snapshot`, `ai-title`, `system`, `permission-mode`. Content-block types inside `message.content[]`: `text`, `tool_use`, `tool_result`, `thinking`, `image`. Unknown shapes are accepted at parse time and dispatched to a skip-with-telemetry path at translate time.
+  - `interface TranslateContext` — per-translation state: `tug_session_id`, msg-id sequencing, the per-turn buffer (`current_msg_id`, accumulated text, accumulated `Map<tool_use_id, ToolCallState>`), and a counter of committed turns.
+  - `function translateJsonlEntry(entry: JsonlEntry, ctx: TranslateContext): OutboundMessage[]` — takes one entry, returns 0..N outbound messages, mutates `ctx`'s per-turn buffer.
+  - `function translateJsonlSession(jsonl: string, tugSessionId: string, opts?: { batchSize?: number }): AsyncIterable<OutboundMessage>` — top-level async iterator that lexes the JSONL line by line, drives `translateJsonlEntry`, yields outbound messages in batches per [D10]'s incremental commit policy, emits `replay_started` at the start, the synthesized `turn_complete(error)` for any orphan turn per [D08], and `replay_complete` at the end.
 - Unit tests in `tugcode/src/__tests__/replay.test.ts` against fixture JSONLs — at minimum:
-  - A simple two-turn session (user → assistant → user → assistant).
-  - A turn with one `Bash` tool call (user → assistant(tool_use) → tool_result → assistant(text) → ...).
-  - A turn with concurrent tool calls.
-  - An attachment-only entry (the one bracketing the user message).
-  - A malformed line (skipped with a warning, not fatal).
+  - A simple two-turn session (user → assistant(end_turn) → user → assistant(end_turn)).
+  - A turn with one `Bash` tool call (user → assistant(tool_use, stop_reason=tool_use) → user(tool_result) → assistant(end_turn)).
+  - A turn with concurrent tool calls (multiple tool_use blocks in one assistant entry, then multiple tool_result entries before the terminal assistant).
+  - A turn with `thinking` content blocks before the terminal text.
+  - A turn with an `image` content block in the user submission.
+  - An attachment-only entry (`hook_success`, `task_reminder`, `skill_listing`, `file`) — skipped silently.
+  - A `queue-operation` / `last-prompt` / `file-history-snapshot` / `ai-title` / `system` / `permission-mode` entry — each skipped silently with telemetry.
+  - An unknown top-level type — skipped via `tide::replay::unknown_shape` log.
+  - An orphan turn at end-of-file (last `assistant.stop_reason: "tool_use"` or last entry is `user`) — synthesizes `turn_complete(error)` per [D08].
+  - A malformed JSON line — skipped with a warning, not fatal; surrounding turns still commit.
 
 **Tasks:**
 
-- [ ] Read 5–10 representative JSONL files under `~/.claude/projects/<dir>/` to enumerate the entry shapes the translator must handle. Document the shape coverage in `replay.ts`'s module docstring.
-- [ ] Author the per-entry translator with explicit handling for each `type` value observed; unknown types log and skip.
-- [ ] Author the session-level translator that drives `translateJsonlEntry` over each line and emits `replay_started` / `replay_complete` brackets around the body.
-- [ ] Convert one or more representative JSONLs into a test fixture under `tugcode/src/__tests__/fixtures/jsonl/`. Anonymize any identifying content.
+- [ ] Author the per-entry translator with explicit handling for each surveyed `type` value; unknown types log to `tide::replay::unknown_shape` and skip.
+- [ ] Implement the per-turn buffer + boundary detection: an `assistant` entry with `message.stop_reason: "end_turn"` triggers `turn_complete(success)`; entries with `stop_reason: "tool_use"` accumulate into the buffer.
+- [ ] Implement [D08]'s orphan-turn synthesis at end-of-file.
+- [ ] Author the session-level async iterator with batched yields per [D10].
+- [ ] Convert representative JSONLs into anonymized test fixtures under `tugcode/src/__tests__/fixtures/jsonl/`. Use the survey output to ensure coverage of every observed shape.
 - [ ] Author unit tests covering the cases above.
 
 **Tests:**
 
-- [ ] Two-turn smoke: translator output, when fed line-by-line through the existing `OutboundMessage` reducer (in test mode), produces a `transcript` array with two `TurnEntry` records carrying the expected `userMessage.text` and `assistant` content.
-- [ ] Tool-call turn: emits `tool_use` + `tool_result` + (optional) `tool_use_structured` events in the right order; the resulting `TurnEntry.toolCalls` is non-empty.
-- [ ] Concurrent tools: msgs interleave by `tool_use_id` correctly.
-- [ ] Malformed line: skipped; the surrounding turns are still committed; a warn line is emitted.
+- [ ] Two-turn smoke: translator output, when fed through the existing `OutboundMessage` reducer (in test mode), produces a `transcript` array with two `TurnEntry` records carrying the expected `userMessage.text` and `assistant` content.
+- [ ] Tool-call turn: emits `user_message` + `tool_use` + `tool_result` + terminal `assistant_text(is_partial: false)` + `turn_complete(success)` in the right order; the resulting `TurnEntry.toolCalls` is non-empty.
+- [ ] Concurrent tools: tool_use and tool_result events interleave by `tool_use_id` correctly; `TurnEntry.toolCalls` contains both.
+- [ ] Thinking content: `thinking_text(is_partial: false)` lands before the terminal `assistant_text` in the same turn; `TurnEntry.thinking` is non-empty.
+- [ ] Image content in user submission: `user_message` carries the image attachment; `TurnEntry.userMessage.attachments` is non-empty.
+- [ ] Skipped shapes (`attachment` / `queue-operation` / `last-prompt` / `file-history-snapshot` / `ai-title` / `system` / `permission-mode`): produce zero outbound messages each; surrounding turns still commit.
+- [ ] Unknown top-level type: produces zero outbound messages and a structured log line at `tide::replay::unknown_shape`.
+- [ ] Orphan turn at end-of-file: synthesizes `turn_complete(error)` with accumulated text preserved; `TurnEntry.result === "interrupted"`.
+- [ ] Malformed JSON line: skipped; the surrounding turns are still committed; a warn line is emitted.
 - [ ] Empty JSONL: produces `replay_started` immediately followed by `replay_complete` with `count: 0`.
-- [ ] Missing JSONL: returned as `error: { kind: "jsonl_missing", ... }` from `translateJsonlSession`; no events between brackets.
+- [ ] Missing JSONL: `translateJsonlSession` yields `replay_started` then `replay_complete` with `error: { kind: "jsonl_missing", ... }`; no transcript events between brackets.
+- [ ] Batched commit per [D10]: the iterator yields in batches with a `setImmediate` between batches; the IPC pipe stays responsive (a sentinel test asserts the iterator is awaitable mid-replay).
 
 **Checkpoint:**
 
@@ -398,33 +608,37 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 
 **Commit:** `tide(transcript): reducer handles replay bracket events`
 
-**References:** [D04] idempotency, [D05] bracket-events, [Q01] replay-phase
+**References:** [D04] idempotency, [D05] bracket-events, [D11] replaying-phase
 
 **Artifacts:**
 
 - `tugdeck/src/lib/code-session-store/events.ts` — extend the discriminated-union event type with `ReplayStartedEvent` and `ReplayCompleteEvent`.
+- `tugdeck/src/lib/code-session-store/types.ts` — extend `CodeSessionPhase` with `"replaying"` per [D11]. Update the `canSubmit` and `canInterrupt` derivations in the snapshot builder so `replaying` excludes both.
 - `tugdeck/src/lib/code-session-store/reducer.ts` — handle both events:
-  - `replay_started`: snapshot `phase` if not `idle`; flip an internal `_replaying: boolean` flag; clear `pendingUserMessage` defensively (replay should never see one).
-  - `replay_complete`: clear `_replaying`; restore the snapshot phase if it was non-idle; on `error`, append a structured note to a new `lastReplayResult` field on the snapshot OR (per [Q01]) gate via the phase value.
-- `tugdeck/src/lib/code-session-store/__tests__/code-session-store.replay.test.ts` — new file:
-  - Synthetic `replay_started` / events / `replay_complete` against a fresh store; assert `transcript` shape post-`replay_complete`.
-  - Idempotency: send the same `turn_complete` twice with the same `msg_id`; the second is a no-op.
-  - Error path: `replay_started` immediately followed by `replay_complete` with `error: { kind: "jsonl_missing" }`; assert the card's snapshot reflects "no replay happened" cleanly.
+  - `replay_started`: transition `phase: idle → replaying`. Clear `pendingUserMessage` defensively (replay should never see one). Snapshot the prior phase only as a sanity invariant — replay must only run from `idle` per [D03], so `replay_started` from a non-idle phase is a logged warning + drop.
+  - `replay_complete`: transition `phase: replaying → idle`. If `error` is set, populate a new `lastReplayResult: { kind, message, count }` field on the snapshot for telemetry / dev surface.
+- Snapshot dedupe: `committedMsgIds: Set<string>` derived from `transcript.map(t => t.msgId)` (lazy, recomputed when transcript changes). `turn_complete` with a `msg_id` already in the set is a no-op + debug log per [D04].
+- `tugdeck/src/lib/code-session-store/__tests__/code-session-store.replay.test.ts` — new file covering the cases listed under Tests below.
 
 **Tasks:**
 
-- [ ] Extend the event type union.
+- [ ] Extend the event type union with `ReplayStartedEvent` / `ReplayCompleteEvent`.
+- [ ] Extend `CodeSessionPhase` with `"replaying"` per [D11]; fix exhaustiveness errors at consumer sites.
+- [ ] Update `canSubmit` / `canInterrupt` derivations to exclude `replaying`.
 - [ ] Implement the two new handlers in the reducer.
-- [ ] Decide [Q01]: surface `replaying` as a phase value? Resolve in this commit.
-- [ ] Add `committedMsgIds` (or equivalent) to dedupe `turn_complete`s by msg-id (defense-in-depth per [D04]).
+- [ ] Add `committedMsgIds` derivation + `turn_complete` dedupe per [D04].
+- [ ] Add `lastReplayResult` snapshot field for the error-surface case.
 - [ ] Author the new test file.
 
 **Tests:**
 
-- [ ] Bracket round-trip: `replay_started` + 2 turns + `replay_complete` produces a transcript of length 2.
-- [ ] Mid-turn live-frame skip: a live `assistant_text` partial that arrives during a replay window is dropped (or not — depends on [D03] strictness) with a warn.
-- [ ] Dedupe: two `turn_complete`s with the same `msg_id` produce a transcript of length 1.
-- [ ] Phase preservation: `replay_started` while `phase: idle` keeps the post-replay phase as `idle`.
+- [ ] Bracket round-trip: `replay_started` + 2 turns + `replay_complete` produces `phase: idle` and a transcript of length 2; `lastReplayResult` is `null`.
+- [ ] Phase exposure: between `replay_started` and `replay_complete`, `phase === "replaying"`, `canSubmit === false`, `canInterrupt === false`.
+- [ ] `send` while replaying: the reducer drops the action (synthetic test calls `store.send("hi")` mid-replay; assert no `user_message` frame is written, no `pendingUserMessage` set).
+- [ ] Mid-turn live-frame during replay: a live `assistant_text` partial that arrives while `phase === "replaying"` is dropped with a warn (the supervisor's [D03] guarantee should prevent this; the reducer treats it as defense-in-depth).
+- [ ] Dedupe: two `turn_complete`s with the same `msg_id` produce a transcript of length 1; the second commit is a debug-logged no-op.
+- [ ] Error surface: `replay_started` followed by `replay_complete` with `error: { kind: "jsonl_missing" }` produces `phase: idle`, transcript length 0, `lastReplayResult.kind === "jsonl_missing"`.
+- [ ] Replay timeout: `replay_complete` with `error: { kind: "replay_timeout" }` per [D10] sets `lastReplayResult` and lets the card become interactive (regression test for the hard-budget UX).
 
 **Checkpoint:**
 
@@ -444,24 +658,32 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 
 **Artifacts:**
 
-- `tugcode/src/session.ts` — branch on `--session-mode` at the top of the per-session start path:
-  - `resume` mode: locate the JSONL at `<claude_projects_root>/<encoded-project-dir>/<claude_session_id>.jsonl`, call `translateJsonlSession` from Step 1, emit each `OutboundMessage` to IPC, then start the Claude subprocess and resume normal live ingestion. The bracket events flank the replay.
-  - `new` mode: current path; no replay.
-- The resume path *gates* the Claude subprocess's stdout pipe: replay must flush before any live `OutboundMessage` is allowed for this session.
-- Telemetry: structured logs at `tide::replay` for `replay.started` / `replay.complete` / `replay.error` with timing.
+- `tugcode/src/session.ts` — branch on `--session-mode` at the top of the per-session start path. **Frame-emission boundary:** tugcode owns its own IPC stdout (the pipe to tugcast); Claude owns Claude's stdout (the pipe to tugcode's stream-json reader). The "gate" is at tugcode's *IPC stdout* — tugcode emits replay-derived `OutboundMessage`s to its IPC stdout *before* it begins forwarding live events translated from Claude's stdout. Concretely:
+  - `resume` mode:
+    1. Locate the JSONL at `<claude_projects_root>/<encoded-project-dir>/<claude_session_id>.jsonl` (path passed in via the new `--resume-session <id>` CLI flag from Step 0; `claude_projects_root` defaults to `~/.claude/projects/` and is overridable for tests).
+    2. Spawn the Claude subprocess with `--resume <claude_session_id>` so Claude internally rehydrates its context. Claude's stdout reader is created but its translated events are buffered (not yet forwarded to IPC stdout).
+    3. Iterate `translateJsonlSession(...)` from Step 1; emit each yielded `OutboundMessage` to IPC stdout. The `replay_started` bracket lands first; per-turn events stream in batched flushes per [D10]; `replay_complete` lands last.
+    4. Once `replay_complete` has been written to IPC stdout, drain the buffered live events from Claude's stdout reader and resume normal live forwarding.
+  - `new` mode: current path; Claude spawns fresh, no replay.
+- Telemetry: structured logs at `tide::replay` for `replay.started` / `replay.progress` (every batch with running count, per [D10]) / `replay.complete` / `replay.error` with timing and turn count.
+- Hard-timeout enforcement: a wall-clock timer per [D10]; on expiry, abort the iterator, write `replay_complete { error: { kind: "replay_timeout", ... } }`, drop remaining JSONL lines, and resume live forwarding.
 
 **Tasks:**
 
-- [ ] Identify the encoded-project-dir naming used by Claude (the leading `-` plus path-with-slashes-replaced-by-dashes form).
-- [ ] Wire the resume branch in tugcode session start.
-- [ ] Gate live-frame emission until `replay_complete` has been written.
-- [ ] Add the structured telemetry.
-- [ ] If the JSONL is missing or unreadable, emit `replay_started` then `replay_complete` with `error`, and proceed to live ingestion.
+- [ ] Identify the encoded-project-dir naming used by Claude (the leading `-` plus path-with-slashes-replaced-by-dashes form). Document the encoding in the module docstring.
+- [ ] Wire the resume branch in tugcode session start with the buffer-then-flush flow described above.
+- [ ] Gate live-frame *forwarding* (not Claude subprocess startup) until `replay_complete` has been written to IPC stdout.
+- [ ] Add the structured telemetry (`replay.started` / `replay.progress` / `replay.complete` / `replay.error`).
+- [ ] Implement [D10]'s hard-timeout enforcement.
+- [ ] If the JSONL is missing or unreadable, emit `replay_started` then `replay_complete` with `error: { kind: "jsonl_missing" | "jsonl_unreadable" }`, and proceed to live ingestion.
 
 **Tests:**
 
-- [ ] Tugcode-level integration test: pre-stage a fixture JSONL, start the session in resume mode against a stub Claude process, assert replay events flow first.
-- [ ] Tugcode-level integration test: missing JSONL → resume flow still completes; live frames flow normally afterward.
+- [ ] Tugcode-level integration test: pre-stage a fixture JSONL, start the session in resume mode against a stub Claude process, assert replay events flow on IPC stdout first, live events flow second.
+- [ ] Missing JSONL: resume flow still completes; the bracket pair lands with `error: { kind: "jsonl_missing" }`; live frames flow normally afterward.
+- [ ] Unreadable JSONL (e.g. permission denied): same as missing, with `error: { kind: "jsonl_unreadable" }`.
+- [ ] Hard timeout: a fixture JSONL with synthetic delay (a wrapper that throttles iteration past 10s) produces `replay_complete { error: { kind: "replay_timeout" } }` and the card-side reducer transitions to `idle`.
+- [ ] Buffer-then-flush ordering: live events emitted by Claude during the replay window are buffered in tugcode and forwarded to IPC stdout only after `replay_complete`; an integration test asserts the wire ordering.
 
 **Checkpoint:**
 
@@ -477,24 +699,30 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 
 **Commit:** `tide(transcript): TideRestoring beat for replay window`
 
-**References:** [Q01] replay-phase
+**References:** [D10] perf-budget, [D11] replaying-phase
 
 **Artifacts:**
 
-- `tugdeck/src/components/tugways/cards/tide-card.tsx` — extend the `TideRestoring` placeholder to render through the replay window in addition to the binding-restore window. The two windows share a placeholder; the wording changes from "Restoring session…" to "Loading conversation…" once binding-restore has completed but replay hasn't.
-- `tugdeck/src/components/tugways/cards/tide-card.css` — minor styling adjustments if the wording wraps differently; otherwise no change.
-- A small derivation: the Tide card observes `_replaying` (or the `replaying` phase if [Q01] resolves that way) and selects the wording accordingly.
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` — extend the `TideRestoring` placeholder to render through the replay window in addition to the binding-restore window. The Tide card observes `phase === "replaying"` (per [D11]) and selects placeholder wording:
+  - **Initial state (0–2s after `replay_started`):** "Loading conversation…"
+  - **Soft-budget state (>2s):** "Loading conversation… (N turns)" where N is updated from `tide::replay::progress` telemetry forwarded as a snapshot field (or, simpler for v1, a derived count from the in-progress transcript length — the reducer commits replayed turns incrementally per [D10]).
+  - **Hard-budget timeout state:** when `lastReplayResult.kind === "replay_timeout"`, the placeholder briefly shows "Conversation history unavailable; resuming with empty transcript" before dismissing into the empty live transcript.
+- `tugdeck/src/components/tugways/cards/tide-card.css` — minor styling for the count-aware placeholder variant; otherwise no change.
 
 **Tasks:**
 
-- [ ] Wire the replay-state derivation into the `TideRestoring` selector.
-- [ ] Update the placeholder text per the chosen wording.
-- [ ] Verify the placeholder dismisses on `replay_complete`.
+- [ ] Wire the `phase === "replaying"` derivation into the `TideRestoring` selector.
+- [ ] Implement the three placeholder copy variants (initial / soft-budget with count / hard-budget timeout).
+- [ ] Decide how the count surfaces — derived from `transcript.length` during replay is simplest; an explicit `replayInProgress: { count }` snapshot field is cleaner if the count needs to differ from `transcript.length`. Pick simplest that works.
+- [ ] Verify the placeholder dismisses on `replay_complete` (success path).
+- [ ] Verify the timeout-state copy renders briefly then dismisses on hard-budget timeout.
 
 **Tests:**
 
-- [ ] Component test: render the Tide card mid-replay (driven via reducer dispatch); assert `TideRestoring` is mounted with the replay wording.
-- [ ] Component test: the placeholder dismisses on `replay_complete` and the transcript appears in the same render commit (no flash of empty pane).
+- [ ] Component test: render the Tide card with `phase: "replaying"`; assert `TideRestoring` is mounted with the replay wording.
+- [ ] Component test: simulate the soft-budget state — `phase: "replaying"` for >2s with `transcript.length === 7`; assert the count "(7 turns)" appears in the placeholder.
+- [ ] Component test: simulate the hard-budget timeout — `replay_complete` arrives with `error: { kind: "replay_timeout" }`; assert the placeholder shows the timeout copy briefly, then dismisses to an empty live transcript with `phase: idle`.
+- [ ] Component test: the placeholder dismisses on `replay_complete` (success) and the transcript appears in the same render commit (no flash of empty pane).
 
 **Checkpoint:**
 
@@ -521,28 +749,51 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
   - Replay frames flow, transcript fills.
   - `replay_complete` lands; placeholder dismisses; transcript renders all turns.
   - User submits a new turn live; it appends correctly.
-- Manual smoke checklist in this step's commit body:
-  - Open a Tide card with several turns.
-  - HMR (save a tugdeck file).
-  - Verify the transcript repaints with all prior turns.
-  - Submit a new turn; verify it appends.
-  - Developer > Reload.
-  - Verify the transcript repaints.
-  - Cold-boot: quit Tug.app, relaunch, open the same card.
-  - Verify the transcript repaints.
+- Manual smoke checklists differentiated by transition class — these hit different code paths and need separate verification:
+
+  **Smoke A — HMR (Vite module replacement, page stays alive).**
+   - Open a Tide card; submit several turns to populate `transcript`.
+   - In your editor, save a tugdeck source file (e.g. `tide-card-transcript.tsx`).
+   - Vite HMR replaces the module(s); React fast-refresh remounts affected components.
+   - Expected: `cardSessionBindingStore` survives in module memory (the binding module typically isn't HMR-replaced); `tide-session-restore` may or may not fire depending on which modules HMR'd. If it does fire, replay flows; if not, the existing CodeSessionStore (which survived) keeps the transcript.
+   - Verify: the transcript repaints with all prior turns.
+   - Verify: submit a new turn; it appends.
+
+  **Smoke B — Developer > Reload (page destroys, app stays alive).**
+   - Open a Tide card with several turns; ensure at least one terminal-state turn (`turn_complete(success)`) is on the wire.
+   - Cmd-R / Developer > Reload.
+   - Expected: the page tears down; tugbank rehydrates; `cardSessionBindingStore` reads its persisted record; `tide-session-restore` walks each Tide card and fires `spawn_session(mode=resume)`; replay flows; placeholder shows briefly; transcript repaints.
+   - Verify: transcript content is byte-identical to pre-reload (modulo timestamp formatting).
+   - Verify: submit a new turn; it appends.
+
+  **Smoke C — Cold boot (Tug.app destroys, supervisor restarts from disk).**
+   - Open a Tide card with several turns.
+   - Quit Tug.app entirely.
+   - Relaunch Tug.app.
+   - Expected: tugcast supervisor reads its sqlite ledger + `dev.tugtool.tide.session-keys` tugbank domain; `rebind_from_tugbank` rehydrates the `LedgerEntry` with persisted `claude_session_id`; the deck restores; the active Tide card's binding record is read; `tide-session-restore` fires; replay flows.
+   - Verify: transcript repaints with all prior turns.
+   - Verify: submit a new turn; it appends.
+
+  **Smoke D — Mid-turn reload (orphan turn synthesis).**
+   - Open a Tide card; submit a turn that produces a long response (e.g. "summarize the last 10 commits in detail").
+   - Mid-stream — while the assistant is still generating — Cmd-R / Developer > Reload.
+   - Expected: replay reads the JSONL; the orphan in-flight turn synthesizes per [D08] as a `turn_complete(error)` (interrupted); the transcript shows the user's submission and whatever assistant text was captured before reload, with an interrupted marker.
+   - Verify: transcript shows the orphan turn as interrupted, not as in-flight.
+   - Verify: card is interactive afterward; submit a fresh turn; it appends after the interrupted one.
 
 **Tasks:**
 
 - [ ] Author the integration test file using the existing `setup-rtl` + WASM init harness.
-- [ ] Add the manual smoke checklist to the commit body.
-- [ ] Run the manual smoke against a real session.
+- [ ] Add the manual smoke checklists A/B/C/D to the commit body.
+- [ ] Run all four manual smokes against a real session.
 
 **Tests:**
 
 - [ ] Integration: resume → replay → transcript matches fixture turn count.
-- [ ] Integration: resume with missing JSONL → empty transcript + card still functional + structured log captured.
-- [ ] Integration: live submit after replay-complete works; new turn appears at the end.
-- [ ] Integration: live submit during replay window is blocked (or queued — per [Q01] / [D03] resolution).
+- [ ] Integration: resume with missing JSONL → empty transcript + `lastReplayResult.kind === "jsonl_missing"` + card still functional.
+- [ ] Integration: orphan-turn JSONL (last `assistant.stop_reason: "tool_use"`) → transcript carries the orphan as `result: "interrupted"` per [D08].
+- [ ] Integration: live submit after `replay_complete` — `phase: idle`, `canSubmit: true`; new turn flows live.
+- [ ] Integration: live submit during replay window — `phase: replaying`, `canSubmit: false`; the prompt entry's submit button is disabled.
 
 **Checkpoint:**
 
@@ -708,26 +959,28 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] `tugcode/src/replay.ts` exists; pure translator unit tests green against fixture JSONLs.
-- [ ] Reducer handles `replay_started` / `replay_complete` and dedupes by msg_id.
-- [ ] Resume-mode session start in tugcode reads JSONL and emits replay before live.
-- [ ] Tide card surfaces a "Loading conversation…" beat during replay; placeholder dismisses on `replay_complete`.
-- [ ] HMR / Developer-Reload / cold-boot manual smoke verified against a multi-turn session.
-- [ ] Sticky seed eliminates the seed-transition remount for replay-committed turns.
+- [ ] `claude_session_id` persisted and threaded through resume (Step 0); real-claude integration test confirms `--resume` end-to-end.
+- [ ] `tugcode/src/replay.ts` exists; pure translator unit tests green against fixture JSONLs covering the surveyed shape inventory + orphan-turn synthesis.
+- [ ] Reducer handles `replay_started` / `replay_complete`, exposes `replaying` phase, dedupes by msg_id, surfaces `lastReplayResult`.
+- [ ] Resume-mode session start in tugcode emits replay events on IPC stdout before forwarding live events from Claude's stdout; respects [D10] hard-timeout.
+- [ ] Tide card surfaces "Loading conversation…" / "Loading conversation… (N turns)" / timeout-state copy via `phase === "replaying"` + `lastReplayResult`; placeholder dismisses on `replay_complete`.
+- [ ] Smokes A (HMR), B (Reload), C (cold boot), D (mid-turn reload) all verified against a real session.
+- [ ] Sticky id eliminates the seed-transition remount for replay-committed turns; live-turn flicker documented as a follow-on.
 - [ ] `UserRowCell` renders inline atoms when `attachments` is non-empty.
 - [ ] `TugListView` dispatches `prefetchForIndices` / `cancelPrefetchForIndices` on a working window.
 - [ ] Tuglaws cross-check passes per-step.
-- [ ] `tugplan-tug-list-view.md #roadmap` rows for absorbed items flipped to "shipped".
+- [ ] `tugplan-tug-list-view.md #roadmap` rows for absorbed items flipped to "shipped"; [§P14](./tide.md#p14-claude-resume) flipped to shipped via this plan's Step 0.
 - [ ] All check commands green: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`.
 
 **Acceptance tests:**
 
-- [ ] tugcode replay-translator unit tests (Step 1).
-- [ ] Reducer replay-bracket tests (Step 2).
-- [ ] tugcode resume-flow integration tests (Step 3).
-- [ ] Tide card replay-UX component tests (Step 4).
-- [ ] Tide card resume-integration tests (Step 5).
-- [ ] Adapter sticky-seed tests (Step 6).
+- [ ] `claude_session_id` persistence + threading tests (Step 0) — including the real-claude `test_close_then_reopen_preserves_history` integration.
+- [ ] tugcode replay-translator unit tests (Step 1) — covers all surveyed shapes, orphan-turn synthesis, batched yields.
+- [ ] Reducer replay-bracket + `replaying` phase + `lastReplayResult` tests (Step 2).
+- [ ] tugcode resume-flow integration tests (Step 3) — ordering, missing JSONL, hard timeout.
+- [ ] Tide card replay-UX component tests (Step 4) — three placeholder copy variants, dismiss timing.
+- [ ] Tide card resume-integration tests (Step 5) — including orphan-turn smoke.
+- [ ] Adapter sticky-id tests (Step 6).
 - [ ] Atom-aware user-row tests (Step 7).
 - [ ] `TugListView` prefetch tests (Step 8).
 
@@ -739,18 +992,20 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 - [ ] **Cross-machine session export / import** — the JSONL is per-machine. "Open this conversation on another laptop" requires a much larger design (sync, encryption, schema-stable export shape). Not in scope for this plan or near-term follow-ons.
 - [ ] **Replay performance review** — long sessions (≥ 100 turns) may take observable time to translate + commit. If the user-perceived "Loading conversation…" beat exceeds a small budget, profile the translator and the reducer's commit loop. Earned when the manual smoke surfaces real lag.
 - [ ] **Replay-while-live (interleaved replay)** — [D03] commits to synchronous-before-live ordering. If a future use case wants to splice replay into a live session (e.g. a compaction summary delivered alongside live frames), revisit the dedupe contract and the bracket protocol. Not earned today.
-- [ ] **JSONL drift telemetry** — Claude's JSONL format may evolve across versions. A version-gate similar to the stream-json catalog drift test ([P15](./tide.md#p15-stream-json-version-gate)) would catch silent format changes. Earned when a version bump produces a real translation regression.
+- [ ] **JSONL drift telemetry** — Claude's JSONL format may evolve across versions. A version-gate similar to the stream-json catalog drift test ([P15](./tide.md#p15-stream-json-version-gate)) would catch silent format changes. v1 logs unknown shapes via `tide::replay::unknown_shape` per [D06], which is the observability seed; promote to a structured divergence event when the count starts to matter.
+- [ ] **Per-row historical model name** — [D09] commits to "current model wins for all replay-committed rows" in v1. A future refinement could surface per-row historical model when the JSONL records different models across the session's lifetime. Earned when sessions routinely span model versions and users notice.
 
 | Checkpoint | Verification |
 |-|-|
 | Tokens lint clean | `bun run audit:tokens lint` |
+| Supervisor + bridge tests | `cargo nextest run` (covers Step 0's persistence + threading + real-claude integration) |
 | Translator unit tests | `cd tugcode && bun test src/__tests__/replay.test.ts` |
 | Reducer replay tests | `bun test src/lib/code-session-store/__tests__/code-session-store.replay.test.ts` |
 | Tide card replay UX | `bun test src/__tests__/tide-card-resume.test.tsx` |
-| Adapter seed tests | `bun test src/lib/__tests__/tide-transcript-data-source.test.ts` |
+| Adapter sticky-id tests | `bun test src/lib/__tests__/tide-transcript-data-source.test.ts` |
 | List-view prefetch tests | `bun test src/components/tugways/__tests__/tug-list-view.test.tsx` |
 | TS clean | `bun x tsc --noEmit` |
-| Workspace tests | `cargo nextest run` |
-| HMR smoke | Manual: open a Tide card with N turns, save a tugdeck file, observe transcript repaints intact |
-| Developer > Reload smoke | Manual: open a Tide card with N turns, Developer > Reload, observe transcript repaints intact |
-| Cold-boot smoke | Manual: quit Tug.app, relaunch, open the same card, observe transcript repaints intact |
+| Smoke A — HMR | Manual per Step 5; transcript repaints intact across module replacement |
+| Smoke B — Developer > Reload | Manual per Step 5; transcript repaints from JSONL replay |
+| Smoke C — Cold boot | Manual per Step 5; quit-and-relaunch restores transcript |
+| Smoke D — Mid-turn reload | Manual per Step 5; orphan turn commits as interrupted |
