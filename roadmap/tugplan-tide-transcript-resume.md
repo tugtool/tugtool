@@ -81,7 +81,9 @@ After the resume work, the `Roadmap: right away` list from the parent plan has e
 5. **Reducer handling for replay frames** in tugdeck. Idempotent commits via msg-id dedupe ([D04]); phase transitions to `replaying` during replay; `inflightUserMessage` is cleared defensively; replay-frame events do not echo back as `user_message` CODE_INPUT writes.
 6. **Resume-spawn replay wire-up** in tugcode. On `--resume-session <id>`, tugcode emits replay events on its IPC stdout *before* it forwards live events from Claude's stdout for the same session. Live events from Claude during the replay window are buffered and flushed after `replay_complete`.
 7. **Tide card "Loading conversation…" UX** — the `TideRestoring` placeholder gains a count-aware variant for [D10]'s soft-budget state and a timeout-state variant for the hard-budget cutoff.
-7a. **Recovery: cold-boot diagnostic capture** ([Phase A-R0](#phase-a-r0)). Add `just tail-tugcast` + `just tail-replay` recipes; capture Smoke C telemetry; root-cause whatever distinct bug it surfaces. Pre-condition for [Phase A-R1](#phase-a-r1) so the verb implementation isn't masking a separate bug.
+7a. **Recovery: cold-boot diagnostic capture** ([Phase A-R0](#phase-a-r0)). Add `just tail-tugcast` + `just tail-replay` recipes; capture Smoke C telemetry; root-cause Candidate 3 (path encoding mismatch); land the realpath fix.
+7a'. **Recovery: cold-boot UX placeholder** ([Step R0c](#step-r0c)). Once Candidate 3 is fixed, cold boot reaches a populated transcript but exposes Bug X — a 5–10s blank-card window with no feedback. The gate routes a preflight `TideRestoring` placeholder for resume bindings whose replay events haven't yet arrived.
+7a''. **Recovery: tugcode startup-order refactor** ([Step R0d](#step-r0d)). Address Bug Y — the 5–10s wait itself. Run `runReplay()` before spawning claude; spawn claude asynchronously in the background. Replay events flow within ~100ms; claude is ready by the time the user submits a new turn.
 7b. **Recovery: `request_replay` IPC verb** across tugcode / tugcast / tugdeck per [D12] ([Phase A-R1](#phase-a-r1)). Closes the Smoke A/B gap exposed by [Step 5](#step-5)'s manual smokes. Tugdeck dispatches on services construction for resume bindings; tugcast forwards via CONTROL action; tugcode handles inbound and re-runs `runReplay()` re-entrancy-safely.
 7c. **Recovery: smoke verification + telemetry capture** ([Phase A-R2](#phase-a-r2)). Manual run of Smokes A/B/C with the new verb in place; mark off the smoke checklist with telemetry quotes.
 7d. **Recovery: Smoke D mid-turn ordering** ([Phase A-R3](#phase-a-r3)). Pick D-1 (pause-live), D-2 (skip-orphan), or D-3 (defer) and either implement or document the limitation.
@@ -919,6 +921,226 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 
 ---
 
+#### Step R0c: Cold-boot UX placeholder during the bind→replay wait {#step-r0c}
+
+**Why this step.** [Step R0b](#step-r0b) reaching green exposed a UX bug
+("Bug X"): once the realpath fix lets cold-boot Smoke C populate the
+transcript, the user sees a fully blank card body for the entire
+5–10s while tugcode boots claude and runs replay. The card has
+services (binding rehydrated, `transportState === "online"`,
+`phase === "idle"`), so the gate routes to `TideCardBody`, which
+renders an empty transcript pane and the prompt entry. Replay events
+haven't arrived yet because tugcode is still spawning claude. There
+is no signal between "binding rehydrated for a resume session" and
+"`replay_started` landed", so the card looks broken even though the
+plumbing is working. This step adds that missing signal: when a
+resume binding is fresh and no replay has fired yet, show the
+existing `TideRestoring` placeholder with the replay-loading copy.
+
+**Commit:** `tide(transcript): preflight replay placeholder on cold boot`
+
+**Depends on:** [Step R0b](#step-r0b)
+
+**References:** [D11], [D12], [Phase A-R0](#phase-a-r0)
+
+**Artifacts:**
+
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` — extend
+  `TideCardServicesGate`'s routing precedence: when the binding's
+  `sessionMode === "resume"` AND the snapshot has not yet observed
+  any replay event for this session (`phase === "idle"` AND
+  `lastReplayResult === null` AND `transcript.length === 0`), route
+  to `TideRestoring` with `variant="replay-loading"` instead of
+  rendering `TideCardBody`. The state is the "preflight" beat — the
+  card knows replay is coming but hasn't seen its bracket yet.
+- The placeholder dismisses on either of:
+  - `phase` flipping to `"replaying"` (real replay started — the
+    existing routing branch handles it from there), or
+  - `replay_complete` landing with any outcome (`lastReplayResult`
+    becomes non-null). For success, the gate falls through to
+    `TideCardBody`. For an error (e.g. `jsonl_missing`), the
+    timeout-grace branch already covers `replay_timeout`; for
+    `jsonl_missing` / `jsonl_unreadable` we keep the existing
+    immediate-dismiss behavior — the card is interactive without
+    history.
+- A bounded timeout safety net mirroring [D10]'s hard-budget budget:
+  if no replay event has arrived within `REPLAY_PREFLIGHT_TIMEOUT_MS`
+  (default 12s — claude `--resume` cold-start plus margin), dismiss
+  the placeholder and let the body show. The user gets feedback that
+  *something is happening even though it's stuck*; matches the
+  hard-budget escape hatch.
+
+**Tasks:**
+
+- [ ] Add a `preflightReplay` boolean derivation in
+      `TideCardServicesGate` from `sessionMode === "resume"`, `phase
+      === "idle"`, `lastReplayResult === null`, `transcript.length
+      === 0`. The binding's `sessionMode` is read from
+      `cardSessionBindingStore` (already subscribed in the gate
+      for `projectDir`).
+- [ ] Add a `useEffect` timer that flips an internal "preflight
+      timed out" flag after `REPLAY_PREFLIGHT_TIMEOUT_MS`. The flag
+      forces dismissal of the placeholder if no replay event has
+      arrived yet (the safety net).
+- [ ] Update routing precedence so the preflight placeholder fires
+      AFTER `transportState === "restoring"` and BEFORE the regular
+      `phase === "replaying"` branch. The two replay-window beats
+      (preflight + active-replaying) feel continuous to the user.
+- [ ] Update CSS / data-variant attribute if any visual distinction
+      is needed. Default: same wording ("Loading conversation…")
+      until real replay events arrive.
+- [ ] Document the new constant + the gate's full routing precedence
+      in the file's header comment.
+
+**Tests:**
+
+- [ ] Component test: render a Tide card with a fresh
+      `sessionMode: "resume"` binding; assert the
+      `TideRestoring` placeholder mounts with
+      `data-variant="replay-loading"` immediately, before any
+      replay event flows.
+- [ ] Component test: emit `replay_started` to the store; assert the
+      placeholder remains (the active-replaying branch takes over,
+      rendering the same variant — visual continuity).
+- [ ] Component test: emit `replay_complete` with `count > 0`;
+      assert the placeholder dismisses and the body mounts.
+- [ ] Component test: emit `replay_complete` with
+      `error.kind === "jsonl_missing"`; assert the placeholder
+      dismisses immediately (no dwell — no value in showing
+      timeout copy when there's no JSONL to load).
+- [ ] Component test: timeout safety net — `phase === "idle"` for
+      `REPLAY_PREFLIGHT_TIMEOUT_MS + 100ms` with no replay event;
+      assert placeholder dismisses to body so the card is
+      interactive.
+- [ ] Component test: a `sessionMode: "new"` binding does NOT
+      preflight — the body renders immediately so a fresh-spawn
+      card never sees a stray "Loading conversation…" message.
+
+**Checkpoint:**
+
+- [ ] `bun x tsc --noEmit` exit 0.
+- [ ] `bun test` (tugdeck) green.
+- [ ] `bun run audit:tokens lint` zero violations.
+- [ ] Manual cold-boot smoke shows the placeholder during the wait
+      and dismisses cleanly to the populated transcript.
+
+---
+
+#### Step R0d: tugcode startup-order refactor — replay before claude spawn {#step-r0d}
+
+**Why this step.** [Step R0b](#step-r0b)'s smoke also exposed Bug Y:
+the 5–10s cold-boot wait is dominated by claude's `--resume` binary
+load. Today tugcode's `main.ts` runs:
+
+```
+await sessionManager.initialize();   // spawns claude (~5s)
+await sessionManager.runReplay();    // reads JSONL (~50ms)
+```
+
+claude's spawn blocks the replay read even though replay reads only
+the JSONL on disk — claude doesn't need to be alive for replay to
+emit events. By reordering, replay events flow within ~100ms of
+cold boot and the user sees the populated transcript while claude
+loads in the background, ready for the first user submit.
+
+**Commit:** `tugcode(replay): run replay before spawning claude on cold boot`
+
+**Depends on:** [Step R0c](#step-r0c)
+
+**References:** [D03], [D08], [D10]
+
+**Artifacts:**
+
+- `tugcode/src/session.ts` — split `initialize()` into two
+  responsibilities:
+  - **Pre-spawn synchronous work** (rename to `prepareSession()` or
+    inline at call site): emit synthetic `session_init` (the IPC
+    line that tells tugcast the session is alive), wire up
+    `claudeStderrClassification` placeholder, but do NOT spawn
+    claude yet.
+  - **Async claude spawn** (rename to `spawnClaudeAndWatch()`):
+    spawn claude with `--resume <claude_id>`, install the early-exit
+    watcher, start the stderr reader. Returns a Promise that the
+    caller can `await` later (e.g., before `handleUserMessage`).
+- `tugcode/src/main.ts` — new startup order on `protocol_init`:
+  1. `prepareSession()` — emits synthetic `session_init` immediately.
+  2. `runReplay()` — reads JSONL, emits replay events. Replay events
+     flow in ~50ms because there's no claude bootup blocking them.
+  3. `spawnClaudeAndWatch()` — spawns claude in the background. The
+     returned Promise is held; `handleUserMessage` awaits it before
+     forwarding the first user_message to claude's stdin.
+  4. IPC loop runs as before.
+- Resume-failure handling: if claude's spawn fails (`resume_failed`,
+  `collision`), the existing watcher fires → `writeLineAndExit`. The
+  user has already seen the replayed transcript by that point. The
+  card surfaces the failure via `lastError`.
+- Mid-turn / Smoke D coordination: out of scope for this step;
+  [Phase A-R3](#phase-a-r3) handles request_replay during a live
+  turn. With the new order, cold boot is genuinely "replay first,
+  claude second" so the in-flight orphan synthesis on cold boot is
+  unaffected by claude's bootup state.
+
+**Tasks:**
+
+- [ ] Refactor `SessionManager.initialize()` into
+      `prepareSession()` + `spawnClaudeAndWatch()` (or equivalent
+      shape). The split must not change the wire shape on the
+      synthetic `session_init` — bytes-identical to today.
+- [ ] Update `main.ts` to run `prepareSession()` →
+      `runReplay()` → `spawnClaudeAndWatch()` in that order on
+      `protocol_init`. The Promise from `spawnClaudeAndWatch()` is
+      stored on `SessionManager` and awaited in
+      `handleUserMessage` before any claude stdin write.
+- [ ] Update `runReplay()`'s race against
+      `claudeProcess.exited`: when run pre-spawn, `claudeProcess` is
+      `null`; the race omits the exit branch and the only abort is
+      the hard-budget timer. The crash-during-replay branch
+      ([D03]) still applies once claude has spawned via
+      `spawnClaudeAndWatch()`'s background promise.
+- [ ] Update tests: existing tests in
+      `tugcode/src/__tests__/replay-spawn.test.ts` that prime a
+      mock subprocess in `initialize()` will need to switch to
+      priming via `spawnClaudeAndWatch()` (or accept a null claude
+      during replay).
+- [ ] Add a new test: cold-boot ordering — `prepareSession()` →
+      `runReplay()` emits replay events to IPC stdout BEFORE the
+      mock `spawnClaudeAndWatch()` resolves. Assert wire ordering:
+      `session_init` → `replay_started` → ... → `replay_complete`
+      lands before any frame from the (slow) mock claude.
+- [ ] Tide-side telemetry: the existing
+      `[tide::replay::started|complete]` lines stay; add a
+      `[tide::session-lifecycle event=tugcode.spawn_claude_async]`
+      line so a smoke can confirm the new order.
+
+**Tests:**
+
+- [ ] All existing `replay-spawn.test.ts` tests pass with the new
+      ordering (they primarily exercise the post-replay path; only
+      the mock-subprocess plumbing changes).
+- [ ] New: `runReplay` runs to completion before
+      `spawnClaudeAndWatch` resolves (deterministic ordering test
+      with a delayed mock claude).
+- [ ] New: cold-boot integration — synthetic `session_init` lands on
+      IPC stdout before any claude-routed stream-json event. (The
+      existing `replay-spawn.test.ts` happy-path already verifies
+      the bracket ordering; this test adds claude as a secondary,
+      explicit observation.)
+- [ ] Existing: `handleUserMessage` test that awaits
+      `spawnClaudeAndWatch`'s promise before the first claude
+      write — exercise the Promise-coordination seam.
+
+**Checkpoint:**
+
+- [ ] `bun x tsc --noEmit` exit 0.
+- [ ] `bun test` (tugcode) green.
+- [ ] `cargo nextest run` green.
+- [ ] Manual cold-boot smoke shows the transcript appearing within
+      ~1s of card mount (instead of 5–10s); claude completes its
+      spawn in the background; first new submit works without
+      additional wait.
+
+---
+
 #### Phase A-R1: `request_replay` IPC verb across all three layers {#phase-a-r1}
 
 **Why this phase.** Per [D12]: tugdeck dispatches a CONTROL `request_replay` frame whenever it constructs services for a resume binding; tugcast forwards the verb to tugcode's stdin; tugcode invokes its existing `runReplay()` method. Idempotent at the reducer level via [D04] msg_id dedupe; runs alongside the existing startup-replay path. Closes the gap exposed by Smokes A and B without touching session lifecycle.
@@ -927,7 +1149,7 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 
 **Commit:** `tugcode(replay): handle request_replay inbound verb`
 
-**Depends on:** [Step R0b](#step-r0b)
+**Depends on:** [Step R0d](#step-r0d)
 
 **References:** [D12]
 
@@ -1296,6 +1518,8 @@ For cold boot, both fire (startup runs replay; tugdeck dispatches request_replay
 - [ ] Resume-mode session start in tugcode emits replay events on IPC stdout before forwarding live events from Claude's stdout; respects [D10] hard-timeout.
 - [ ] Tide card surfaces "Loading conversation…" / "Loading conversation… (N turns)" / timeout-state copy via `phase === "replaying"` + `lastReplayResult`; placeholder dismisses on `replay_complete`.
 - [ ] Smoke C (cold boot) root cause identified and fixed (per [Phase A-R0](#phase-a-r0)).
+- [ ] Cold-boot UX surfaces feedback during the bind→replay wait via [Step R0c](#step-r0c)'s preflight placeholder.
+- [ ] Cold-boot wall-clock cut from ~5–10s to ~1s via [Step R0d](#step-r0d)'s startup-order refactor (replay-before-claude).
 - [ ] `request_replay` IPC verb ([D12]) implemented across tugcode/tugcast/tugdeck (per [Phase A-R1](#phase-a-r1)); a fresh `CodeSessionStore` for a resume binding receives replay events without needing a tugcode respawn.
 - [ ] Smokes A (HMR), B (Reload), C (cold boot) all verified against a real session via [Phase A-R2](#phase-a-r2).
 - [ ] Smoke D (mid-turn reload) resolved per [Phase A-R3](#phase-a-r3) — either green via the chosen design (D-1/D-2) or documented as a known limitation (D-3) with explicit graduation criteria in [#roadmap].
