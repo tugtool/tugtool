@@ -1478,10 +1478,24 @@ impl AgentSupervisor {
         // actually uses, and writing that here closes the persistence
         // gap so the next `rebind_from_tugbank` reads the correct mode
         // back without needing the defense-in-depth path again.
+        //
+        // [P14]: preserve the persisted `claude_session_id` on reconnects.
+        // A fresh insert (`inserted == true`) has `entry.claude_session_id
+        // == None` by construction, so the record carries `None` — the
+        // bridge will fill it in via `relay_session_io`'s atomic-promote
+        // block on the next `session_init`. A reconnect (`inserted ==
+        // false`) for an entry that was either rebound from tugbank or
+        // already promoted to `Live` carries `Some(...)`; reading from the
+        // entry preserves the persisted id across the rewrite instead of
+        // clobbering it back to `None`.
+        let preserved_claude_session_id = {
+            let entry = entry_arc.lock().await;
+            entry.claude_session_id.clone()
+        };
         let record = SessionKeyRecord {
             tug_session_id: tug_session_id.as_str().to_string(),
             project_dir: Some(project_dir_str.clone()),
-            claude_session_id: None,
+            claude_session_id: preserved_claude_session_id,
             session_mode: Some(effective_session_mode.as_wire_str().to_string()),
         };
         if let Err(e) = self.store.set_session_record(card_id, &record) {
@@ -1668,16 +1682,21 @@ impl AgentSupervisor {
             );
         }
 
-        // Phase 4: best-effort tugbank delete per [D12]. Lingering entries
-        // are benign; a warn! is the loudest signal we want on this path.
-        if let Err(e) = self.store.delete_session_key(card_id) {
-            warn!(
-                card_id,
-                session = %tug_session_id,
-                error = %e.0,
-                "close_session: tugbank delete failed, continuing"
-            );
-        }
+        // Phase 4: persistence is preserved across close per [P14]. A
+        // closed card can be reopened with history — either via in-process
+        // re-spawn (the persisted record's `claude_session_id` is
+        // available via tugbank lookup) or via cold-boot rebind (the
+        // record is what `rebind_from_tugbank` reads at startup). The
+        // explicit `reset_session` flow is the only path that invalidates
+        // the persisted id; close is a "stop the subprocess but keep the
+        // history pointer" operation.
+        //
+        // The historical close-time `delete_session_key` call lived here
+        // before P14; removing it shifts the cleanup responsibility to
+        // explicit reset and to a future age-sweep on tugbank. Lingering
+        // closed-card records are benign — they only consume a few
+        // hundred bytes per card and contribute nothing to the bridge or
+        // dispatcher hot paths.
 
         // Phase 5: publish `closed`. (The `Arc<Mutex<LedgerEntry>>` we hold
         // is dropped at the end of this scope.)
@@ -1877,7 +1896,7 @@ impl AgentSupervisor {
     /// `Idle → Spawning`.
     async fn do_reset_session(
         &self,
-        _card_id: &str,
+        card_id: &str,
         tug_session_id: &TugSessionId,
         _client_id: ClientId,
     ) {
@@ -1894,6 +1913,18 @@ impl AgentSupervisor {
         // workspace_key, project_dir, crash_budget, and latest_metadata
         // fields are intentionally preserved.
         //
+        // [P14] reset invalidates `claude_session_id` (in-memory clear +
+        // tugbank delete) and flips `session_mode` back to `New` so the
+        // next spawn is fresh. Without the mode flip, a card whose
+        // session_mode was `Resume` would still spawn `--session-mode
+        // resume`, and tugcode would fall back to `--resume <session_id>`
+        // — finding the JSONL still on disk and restoring the
+        // conversation the user explicitly asked to discard. The
+        // invalidate-then-cancel ordering closes the persistence gap
+        // before the bridge can be re-spawned: even if the cancel races
+        // an overlapping CODE_INPUT, the next spawn sees `New` mode and
+        // no claude_session_id, so it spawns truly fresh.
+        //
         // Terminal-state guard: if a concurrent `close_session` won the
         // race and flipped the entry to `Closed`, reset must not
         // resurrect it. Bail out silently — the caller's reset is
@@ -1904,6 +1935,8 @@ impl AgentSupervisor {
             if entry.spawn_state == SpawnState::Closed {
                 false
             } else {
+                entry.claude_session_id = None;
+                entry.session_mode = super::agent_bridge::SessionMode::New;
                 entry.cancel.cancel();
                 entry.cancel = CancellationToken::new();
                 entry.spawn_state = SpawnState::Idle;
@@ -1913,6 +1946,32 @@ impl AgentSupervisor {
         };
         if !resurrected {
             return;
+        }
+
+        // Best-effort tugbank delete: the persisted record is the
+        // canonical source of truth for cold-boot rebinds, so a stale
+        // record left behind would let a Tug.app restart restore the
+        // very session the user just reset. A failure here is logged
+        // loudly but does not fail the reset — the in-memory state is
+        // already correct, and the next successful `spawn_session` will
+        // rewrite the record with cleared fields. Idempotent: a retry of
+        // reset_session on an already-reset session sees no row to
+        // delete and proceeds to the (already-canceled) cancel step,
+        // which is itself idempotent.
+        if let Err(e) = self.store.delete_session_key(card_id) {
+            warn!(
+                card_id,
+                session = %tug_session_id,
+                error = %e.0,
+                "reset_session: tugbank delete failed, continuing"
+            );
+        } else {
+            tracing::info!(
+                target: "tide::session-lifecycle",
+                event = "reset_session.persist_cleared",
+                card_id = card_id,
+                tug_session_id = %tug_session_id,
+            );
         }
 
         let _ =
@@ -2240,6 +2299,7 @@ impl AgentSupervisor {
             (entry.project_dir.clone(), entry.session_mode)
         };
         let sessions_recorder = self.sessions_recorder.clone();
+        let store = self.store.clone();
         tokio::spawn(async move {
             run_session_bridge(
                 tug_session_id_owned,
@@ -2251,6 +2311,7 @@ impl AgentSupervisor {
                 project_dir,
                 session_mode,
                 sessions_recorder,
+                store,
                 cancel_for_bridge,
                 DEFAULT_RETRY_DELAY,
             )
@@ -2364,13 +2425,22 @@ impl AgentSupervisor {
                 let _ = self.registry.release(&workspace_key);
                 continue;
             }
-            let entry = LedgerEntry::new(
+            let mut entry = LedgerEntry::new(
                 tug_session_id.clone(),
                 workspace_key,
                 project_dir,
                 rebound_mode,
                 CrashBudget::new(3, Duration::from_secs(60)),
             );
+            // [P14] rehydrate the persisted `claude_session_id` so the
+            // first spawn after rebind threads `--resume-session <id>`
+            // through the spawner. Without this, the rebind would hand
+            // back an entry with `claude_session_id = None`, the spawner
+            // would fall back to `--resume <tug_session_id>`, and any
+            // session whose claude id has diverged from its tug id (e.g.
+            // a forked session) would try to read a non-existent JSONL
+            // and resume_failed.
+            entry.claude_session_id = record.claude_session_id.clone();
             // Trace the rebound mode + its source so [Q01]-shaped
             // regressions (a missing or mis-parsed `session_mode` field
             // turning into a New-default rebound entry that the bridge
@@ -2384,6 +2454,7 @@ impl AgentSupervisor {
                 tug_session_id = %tug_session_id,
                 rebound_mode = rebound_mode.as_wire_str(),
                 mode_source,
+                claude_session_id = entry.claude_session_id.as_deref().unwrap_or(""),
             );
             ledger.insert(tug_session_id, Arc::new(Mutex::new(entry)));
             inserted += 1;
@@ -2462,6 +2533,7 @@ pub(crate) fn test_minimal_supervisor() -> (Arc<AgentSupervisor>, mpsc::Receiver
             _project_dir: &std::path::Path,
             _session_id: &str,
             _session_mode: SessionMode,
+            _resume_claude_session_id: Option<&str>,
         ) -> super::agent_bridge::SpawnFuture {
             Box::pin(async {
                 std::future::pending::<std::io::Result<super::agent_bridge::SessionChild>>().await
@@ -2517,6 +2589,7 @@ mod tests {
             _project_dir: &std::path::Path,
             _session_id: &str,
             _session_mode: SessionMode,
+            _resume_claude_session_id: Option<&str>,
         ) -> SpawnFuture {
             Box::pin(async { pending::<std::io::Result<SessionChild>>().await })
         }
@@ -3130,8 +3203,13 @@ mod tests {
         assert!(sup.ledger.lock().await.is_empty());
     }
 
+    /// [P14] close preserves the persisted `SessionKeyRecord` so a
+    /// later cold-boot rebind (or in-process re-spawn) can resume with
+    /// the captured `claude_session_id`. The historical close-time
+    /// tugbank delete was removed when P14 landed; the only path that
+    /// invalidates the record is `reset_session`.
     #[tokio::test]
-    async fn test_close_session_deletes_tugbank_entry() {
+    async fn test_close_session_preserves_tugbank_entry() {
         let store = Arc::new(InMemoryStore::default());
         let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
 
@@ -3143,8 +3221,17 @@ mod tests {
         sup.handle_control("close_session", &close_payload("card-1", "sess-1"), 10)
             .await
             .unwrap();
-        assert!(store.entries_snapshot().is_empty());
-        assert_eq!(store.delete_call_count(), 1);
+        // The record persists across close. delete_session_key must NOT
+        // have been called — close is the "stop the subprocess but keep
+        // the history pointer" operation; only `reset_session` deletes.
+        assert_eq!(store.entries_snapshot().len(), 1);
+        assert_eq!(store.delete_call_count(), 0);
+        let rec = store
+            .entries_snapshot()
+            .get("card-1")
+            .cloned()
+            .expect("card-1 record preserved across close");
+        assert_eq!(rec.tug_session_id, "sess-1");
     }
 
     #[tokio::test]
@@ -3182,8 +3269,14 @@ mod tests {
         assert_eq!(store.delete_call_count(), 0);
     }
 
+    /// [P14] close no longer touches tugbank — `delete_session_key` is
+    /// not called on the close path. A `FailingDeleteStore` that would
+    /// have triggered the historical warn-and-continue branch can no
+    /// longer reach it, so this test pins the new contract by verifying
+    /// the in-memory cleanup proceeds without the store being asked to
+    /// delete anything.
     #[tokio::test]
-    async fn test_close_session_logs_on_tugbank_delete_failure_and_continues() {
+    async fn test_close_session_does_not_call_tugbank_delete() {
         let store = Arc::new(FailingDeleteStore::new());
         let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
 
@@ -3197,22 +3290,20 @@ mod tests {
             .or_default()
             .insert(tug_id.clone());
 
-        // Close must succeed in spite of the delete failure.
+        // Close succeeds even though the store's delete path would have
+        // failed — because close no longer calls delete at all.
         let result = sup
             .handle_control("close_session", &close_payload("card-1", "sess-1"), 10)
             .await;
         assert!(result.is_ok());
 
-        // In-memory cleanup proceeded regardless.
+        // In-memory cleanup proceeded.
         assert!(sup.ledger.lock().await.is_empty());
         let cs = sup.client_sessions.lock().await;
         assert!(!cs.get(&10).unwrap().contains(&tug_id));
         let (id, state) = session_state_of(&state_rx.try_recv().unwrap());
         assert_eq!(id, "sess-1");
         assert_eq!(state, "closed");
-        // (Note: log-capture of the warn! is handled by tracing in production;
-        // this test pins the functional best-effort behavior which is the
-        // load-bearing assertion for [D12].)
     }
 
     // ---- handle_control: reset_session ----
@@ -3810,6 +3901,7 @@ mod tests {
             std::path::Path::new("/workspace-B-from-per-call"),
             "sess-per-call",
             SessionMode::New,
+            None,
         );
         assert!(
             args.iter().any(|a| a == "/workspace-B-from-per-call"),
@@ -4141,6 +4233,7 @@ mod tests {
             _project_dir: &std::path::Path,
             _session_id: &str,
             _session_mode: SessionMode,
+            _resume_claude_session_id: Option<&str>,
         ) -> SpawnFuture {
             Box::pin(async { Err(std::io::Error::other("injected crash")) })
         }
@@ -4381,6 +4474,7 @@ mod tests {
         let lines = BufReader::new(stdout_box).lines();
 
         let recorder = NoopSessionsRecorder;
+        let persist_store = NoopSessionKeysStore;
         let outcome = relay_session_io(
             &tug_id,
             &entry_arc,
@@ -4391,6 +4485,7 @@ mod tests {
             lines,
             "/tmp/test-relay-project",
             &recorder,
+            &persist_store,
             &cancel,
         )
         .await;
@@ -4433,6 +4528,347 @@ mod tests {
         let (id, state) = session_state_of(&live_frame);
         assert_eq!(id, "sess-1");
         assert_eq!(state, "live");
+    }
+
+    /// [P14] After `do_spawn_session` writes the initial record (with
+    /// `claude_session_id: None`) and the bridge captures the real
+    /// claude id from `session_init`, `relay_session_io` writes the
+    /// updated record back to tugbank inside the same lock-held
+    /// critical section that captures the id in-memory. Without this,
+    /// a cold-boot rebind would see `claude_session_id: None` on disk
+    /// and the next resume spawn would have no JSONL to point at.
+    #[tokio::test]
+    async fn test_session_init_persists_claude_session_id() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
+
+        // Drive the public spawn path so the Phase 2 tugbank write
+        // populates the record (claude_session_id == None initially)
+        // and `card_id_live` is set on the entry. Without `card_id_live`,
+        // `relay_session_io` would skip the persist write — the
+        // atomic-promote block has no card_id to key the write under.
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .unwrap();
+        let initial = store
+            .entries_snapshot()
+            .get("card-1")
+            .cloned()
+            .expect("Phase 2 wrote initial record");
+        assert_eq!(initial.claude_session_id, None);
+
+        let tug_id = TugSessionId::new("sess-1");
+        let entry_arc = sup.ledger.lock().await.get(&tug_id).unwrap().clone();
+
+        // Pre-arrange so the bridge's session_init promote path has
+        // something to drain (mirrors what production goes through
+        // before the bridge flips Spawning→Live).
+        let (input_tx_for_ledger, _input_rx_for_assert) = mpsc::channel::<Frame>(16);
+        {
+            let mut entry = entry_arc.lock().await;
+            entry.spawn_state = SpawnState::Spawning;
+            entry.input_tx = Some(input_tx_for_ledger.clone());
+        }
+        drop(input_tx_for_ledger);
+
+        // Drive the relay with a synthetic child that emits the
+        // protocol handshake and a session_init carrying claude's
+        // (post-resume) session id.
+        let (bridge_stdin, mut child_stdin_read) = tokio::io::duplex(4096);
+        let (mut child_stdout_write, bridge_stdout) = tokio::io::duplex(4096);
+        let claude_id_emitted = "claude-internal-id-from-resume-jsonl";
+        let claude_id_emitted_owned = claude_id_emitted.to_string();
+        let child_task = tokio::spawn(async move {
+            let mut reader = BufReader::new(&mut child_stdin_read);
+            let mut line = String::new();
+            reader.read_line(&mut line).await.unwrap();
+            assert!(line.contains("protocol_init"));
+
+            child_stdout_write
+                .write_all(b"{\"type\":\"protocol_ack\",\"version\":1}\n")
+                .await
+                .unwrap();
+            let init = format!(
+                "{{\"type\":\"session_init\",\"session_id\":\"{claude_id_emitted_owned}\"}}\n"
+            );
+            child_stdout_write.write_all(init.as_bytes()).await.unwrap();
+            drop(child_stdout_write);
+        });
+
+        let (_input_tx_bridge, mut input_rx_bridge) = mpsc::channel::<Frame>(4);
+        let (merger_tx, _merger_rx) = mpsc::channel::<Frame>(4);
+        let state_tx = sup.session_state_tx.clone();
+        let cancel = CancellationToken::new();
+
+        let stdin_box: Box<dyn tokio::io::AsyncWrite + Send + Unpin> = Box::new(bridge_stdin);
+        let stdout_box: Box<dyn tokio::io::AsyncRead + Send + Unpin> = Box::new(bridge_stdout);
+        let lines = BufReader::new(stdout_box).lines();
+
+        let recorder = NoopSessionsRecorder;
+        let _outcome = relay_session_io(
+            &tug_id,
+            &entry_arc,
+            &mut input_rx_bridge,
+            &merger_tx,
+            &state_tx,
+            stdin_box,
+            lines,
+            test_project_dir(),
+            &recorder,
+            store.as_ref(),
+            &cancel,
+        )
+        .await;
+        child_task.await.unwrap();
+
+        // The on-disk record now carries the captured claude_session_id.
+        // The atomic-promote block performed exactly one persist call
+        // for this session_init line, in addition to the original
+        // `do_spawn_session` Phase 2 write — total 2 set calls.
+        let after = store
+            .entries_snapshot()
+            .get("card-1")
+            .cloned()
+            .expect("record still present after session_init");
+        assert_eq!(
+            after.claude_session_id.as_deref(),
+            Some(claude_id_emitted),
+            "session_init's atomic-promote block must rewrite the record \
+             with the captured claude_session_id"
+        );
+        assert_eq!(after.tug_session_id, "sess-1");
+        // Sanity: the in-memory entry agrees with disk.
+        let in_memory = entry_arc.lock().await.claude_session_id.clone();
+        assert_eq!(in_memory.as_deref(), Some(claude_id_emitted));
+    }
+
+    /// [P14] On a fresh supervisor whose store contains a previously
+    /// persisted record carrying `claude_session_id`, `rebind_from_tugbank`
+    /// must read the id back into the rehydrated `LedgerEntry`. Without
+    /// this the next resume spawn would forward `--resume <tug_session_id>`
+    /// to claude — the legacy fallback that only works when claude
+    /// hasn't forked, leaving forked sessions unreachable.
+    #[tokio::test]
+    async fn test_rebind_rehydrates_claude_session_id() {
+        let store = Arc::new(InMemoryStore::default());
+        store
+            .set_session_record(
+                "card-resumed",
+                &SessionKeyRecord {
+                    tug_session_id: "sess-resumed".to_string(),
+                    project_dir: Some(test_project_dir().to_string()),
+                    claude_session_id: Some("claude-fork-target-9".to_string()),
+                    session_mode: Some("resume".to_string()),
+                },
+            )
+            .unwrap();
+
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let inserted = sup.rebind_from_tugbank().await.unwrap();
+        assert_eq!(inserted, 1);
+
+        let ledger = sup.ledger.lock().await;
+        let entry_arc = ledger
+            .get(&TugSessionId::new("sess-resumed"))
+            .cloned()
+            .expect("rebound entry present");
+        drop(ledger);
+        let entry = entry_arc.lock().await;
+        assert_eq!(
+            entry.claude_session_id.as_deref(),
+            Some("claude-fork-target-9"),
+            "rebind must seed claude_session_id from the persisted record"
+        );
+        assert_eq!(entry.session_mode, SessionMode::Resume);
+    }
+
+    /// [P14] On a reconnect (`spawn_session` for an entry already in
+    /// the ledger), the Phase 2 tugbank write must preserve the
+    /// previously persisted `claude_session_id` rather than clobber it
+    /// back to `None`. Without this, every reload of an in-memory
+    /// supervisor would silently delete the resume key on disk, making
+    /// a subsequent cold-boot rebind hand back `None` and the next
+    /// resume spawn fall back to `--resume <tug_session_id>`.
+    #[tokio::test]
+    async fn test_spawn_session_preserves_persisted_claude_session_id_on_reconnect() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
+
+        // First spawn populates the record (claude id None initially).
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .unwrap();
+
+        // Simulate the bridge having captured the claude_session_id at
+        // session_init time by writing it directly into the in-memory
+        // entry (real flow exercised by
+        // `test_session_init_persists_claude_session_id`).
+        let tug_id = TugSessionId::new("sess-1");
+        let entry_arc = sup.ledger.lock().await.get(&tug_id).unwrap().clone();
+        {
+            let mut entry = entry_arc.lock().await;
+            entry.claude_session_id = Some("claude-captured-mid-life".to_string());
+        }
+
+        // A second spawn (reconnect: same card, same id) must not
+        // clobber the persisted claude_session_id back to None.
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .unwrap();
+        let after = store
+            .entries_snapshot()
+            .get("card-1")
+            .cloned()
+            .expect("record present after reconnect");
+        assert_eq!(
+            after.claude_session_id.as_deref(),
+            Some("claude-captured-mid-life"),
+            "reconnect must preserve the in-memory claude_session_id \
+             when re-writing the record"
+        );
+    }
+
+    /// [P14] `reset_session` invalidates the persisted claude id (tugbank
+    /// delete + in-memory clear) and flips `session_mode` back to `New`
+    /// so the next spawn is fresh. The invalidate-then-cancel ordering
+    /// ensures even a racing CODE_INPUT would observe a freshly cleared
+    /// entry, not a half-reset one.
+    #[tokio::test]
+    async fn test_reset_session_clears_persisted_claude_session_id() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
+
+        // Spawn (mode=resume) so the entry's session_mode is `Resume`.
+        sup.handle_control("spawn_session", &resume_payload("card-1", "sess-1"), 10)
+            .await
+            .unwrap();
+        // Simulate session_init having captured a claude id.
+        let tug_id = TugSessionId::new("sess-1");
+        let entry_arc = sup.ledger.lock().await.get(&tug_id).unwrap().clone();
+        {
+            let mut entry = entry_arc.lock().await;
+            entry.claude_session_id = Some("claude-pre-reset".to_string());
+            // Persist directly so the on-disk record reflects the
+            // captured id (matches the production flow's
+            // session_init.persist write).
+            let rec = SessionKeyRecord {
+                tug_session_id: tug_id.as_str().to_string(),
+                project_dir: Some(test_project_dir().to_string()),
+                claude_session_id: entry.claude_session_id.clone(),
+                session_mode: Some(entry.session_mode.as_wire_str().to_string()),
+            };
+            store.set_session_record("card-1", &rec).unwrap();
+        }
+        assert_eq!(
+            store
+                .entries_snapshot()
+                .get("card-1")
+                .and_then(|r| r.claude_session_id.clone())
+                .as_deref(),
+            Some("claude-pre-reset")
+        );
+
+        // Reset must invalidate persistence and in-memory state.
+        sup.handle_control("reset_session", &reset_payload("card-1", "sess-1"), 10)
+            .await
+            .unwrap();
+
+        // On-disk record is gone.
+        assert!(
+            store.entries_snapshot().get("card-1").is_none(),
+            "reset_session must delete the tugbank record"
+        );
+        // In-memory entry has the id cleared and session_mode flipped to New.
+        let entry = entry_arc.lock().await;
+        assert!(
+            entry.claude_session_id.is_none(),
+            "reset_session must clear in-memory claude_session_id"
+        );
+        assert_eq!(entry.session_mode, SessionMode::New);
+        assert_eq!(entry.spawn_state, SpawnState::Idle);
+    }
+
+    /// [P14] close preserves the persisted record so a later cold-boot
+    /// rebind + resume spawn rehydrates the captured `claude_session_id`.
+    /// Simulates the cold-boot path explicitly: shut down supervisor A,
+    /// build a fresh supervisor B over the same store, rebind, send
+    /// `spawn_session(mode=resume)`, and assert the new entry carries
+    /// the persisted claude id.
+    #[tokio::test]
+    async fn test_close_session_preserves_claude_session_id() {
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+
+        // Phase A: supervisor A spawns, captures a claude_session_id,
+        // closes the card. Persistence carries the captured id forward.
+        {
+            let (sup_a, _state_rx, _meta_rx, _control_rx) =
+                make_supervisor_with_store(store.clone());
+            sup_a
+                .handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+                .await
+                .unwrap();
+            let entry_arc = sup_a
+                .ledger
+                .lock()
+                .await
+                .get(&TugSessionId::new("sess-1"))
+                .unwrap()
+                .clone();
+            {
+                let mut entry = entry_arc.lock().await;
+                entry.claude_session_id = Some("claude-cross-restart".to_string());
+                let rec = SessionKeyRecord {
+                    tug_session_id: "sess-1".to_string(),
+                    project_dir: Some(test_project_dir().to_string()),
+                    claude_session_id: entry.claude_session_id.clone(),
+                    session_mode: Some(entry.session_mode.as_wire_str().to_string()),
+                };
+                store.set_session_record("card-1", &rec).unwrap();
+            }
+            // Close: persistence is preserved.
+            sup_a
+                .handle_control("close_session", &close_payload("card-1", "sess-1"), 10)
+                .await
+                .unwrap();
+            // Sanity: record still on disk.
+            let in_memory_store = store
+                .as_ref()
+                .list_session_records()
+                .expect("list ok")
+                .into_iter()
+                .find(|(c, _)| c == "card-1")
+                .expect("record preserved across close");
+            assert_eq!(
+                in_memory_store.1.claude_session_id.as_deref(),
+                Some("claude-cross-restart")
+            );
+        } // sup_a drops here
+
+        // Phase B: fresh supervisor over the same store rebinds from
+        // tugbank, then accepts `spawn_session(mode=resume)`. The
+        // resulting in-memory entry must carry the persisted
+        // claude_session_id so the next bridge spawn can thread
+        // `--resume-session <id>` through to claude.
+        let (sup_b, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
+        let inserted = sup_b.rebind_from_tugbank().await.unwrap();
+        assert_eq!(inserted, 1);
+        sup_b
+            .handle_control("spawn_session", &resume_payload("card-1", "sess-1"), 11)
+            .await
+            .unwrap();
+        let entry_arc = sup_b
+            .ledger
+            .lock()
+            .await
+            .get(&TugSessionId::new("sess-1"))
+            .unwrap()
+            .clone();
+        let entry = entry_arc.lock().await;
+        assert_eq!(
+            entry.claude_session_id.as_deref(),
+            Some("claude-cross-restart"),
+            "rebind+spawn(resume) must rehydrate claude_session_id from tugbank"
+        );
     }
 
     /// When tugcode emits `resume_failed` and then exits (closes
@@ -4490,6 +4926,7 @@ mod tests {
         let lines = BufReader::new(stdout_box).lines();
 
         let recorder = NoopSessionsRecorder;
+        let persist_store = NoopSessionKeysStore;
         let outcome = relay_session_io(
             &tug_id,
             &entry_arc,
@@ -4500,6 +4937,7 @@ mod tests {
             lines,
             "/tmp/test-relay-resume-fail",
             &recorder,
+            &persist_store,
             &cancel,
         )
         .await;
@@ -4557,6 +4995,7 @@ mod tests {
         let retry_delay = Duration::from_micros(100);
 
         let recorder: Arc<dyn SessionsRecorder> = Arc::new(NoopSessionsRecorder);
+        let persist_store: Arc<dyn SessionKeysStore> = Arc::new(NoopSessionKeysStore);
         let a_handle = tokio::spawn(run_session_bridge(
             id_a.clone(),
             entry_a.clone(),
@@ -4567,6 +5006,7 @@ mod tests {
             PathBuf::from("/tmp/test-workspace-a"),
             SessionMode::New,
             recorder.clone(),
+            persist_store.clone(),
             cancel_a,
             retry_delay,
         ));
@@ -4580,6 +5020,7 @@ mod tests {
             PathBuf::from("/tmp/test-workspace-b"),
             SessionMode::New,
             recorder,
+            persist_store,
             cancel_b.clone(),
             retry_delay,
         ));

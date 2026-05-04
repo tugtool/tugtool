@@ -27,7 +27,8 @@ use tracing::{error, info, warn};
 use tugcast_core::protocol::{FeedId, Frame, TugSessionId};
 
 use super::agent_supervisor::{
-    LedgerEntry, SessionRecord, SessionsRecorder, SpawnState, build_session_state_frame,
+    LedgerEntry, SessionKeyRecord, SessionKeysStore, SessionRecord, SessionsRecorder, SpawnState,
+    build_session_state_frame,
 };
 use super::code::{parse_code_input, splice_tug_session_id};
 
@@ -216,11 +217,21 @@ pub trait ChildSpawner: Send + Sync + 'static {
     ///
     /// `session_mode` is the user's new-vs-resume choice from the Tide
     /// picker. Forwarded to tugcode as `--session-mode new|resume`.
+    ///
+    /// `resume_claude_session_id` is the persisted claude session id for
+    /// resume spawns whose claude id has diverged from `session_id` (e.g.,
+    /// after a fork). When `Some`, tugcode forwards it to claude as
+    /// `--resume <id>` instead of falling back to `session_id`. `None`
+    /// for fresh spawns and for resume spawns whose claude id was never
+    /// captured (in which case tugcode still uses `session_id` for
+    /// `--resume` — the legacy fallback that works for un-forked
+    /// sessions because their tug and claude ids match).
     fn spawn_child(
         &self,
         project_dir: &Path,
         session_id: &str,
         session_mode: SessionMode,
+        resume_claude_session_id: Option<&str>,
     ) -> SpawnFuture;
 }
 
@@ -247,13 +258,17 @@ impl TugcodeSpawner {
 /// - Paths ending in `.ts` are run via `bun run <path>` (dev fallback).
 /// - Anything else is invoked directly.
 ///
-/// In both cases the returned args vector ends with
-/// `["--dir", <project_dir>, "--session-id", <uuid>, "--session-mode", <new|resume>]`.
+/// The returned args vector always carries
+/// `["--dir", <project_dir>, "--session-id", <uuid>, "--session-mode", <new|resume>]`,
+/// and additionally `["--resume-session", <claude_session_id>]` when
+/// `resume_claude_session_id` is `Some` (only emitted for resume spawns
+/// whose claude session id has diverged from `session_id`).
 pub(crate) fn build_tugcode_command(
     tugcode_path: &Path,
     project_dir: &Path,
     session_id: &str,
     session_mode: SessionMode,
+    resume_claude_session_id: Option<&str>,
 ) -> (String, Vec<String>) {
     let (program, mut args): (String, Vec<String>) =
         if tugcode_path.extension().and_then(|s| s.to_str()) == Some("ts") {
@@ -276,6 +291,10 @@ pub(crate) fn build_tugcode_command(
     args.push(session_id.to_string());
     args.push("--session-mode".to_string());
     args.push(session_mode.as_flag_value().to_string());
+    if let Some(id) = resume_claude_session_id {
+        args.push("--resume-session".to_string());
+        args.push(id.to_string());
+    }
     (program, args)
 }
 
@@ -285,18 +304,26 @@ impl ChildSpawner for TugcodeSpawner {
         project_dir: &Path,
         session_id: &str,
         session_mode: SessionMode,
+        resume_claude_session_id: Option<&str>,
     ) -> SpawnFuture {
         let tugcode_path = self.tugcode_path.clone();
         let project_dir = project_dir.to_path_buf();
         let session_id = session_id.to_string();
+        let resume_claude_session_id = resume_claude_session_id.map(|s| s.to_string());
         Box::pin(async move {
-            let (cmd, args) =
-                build_tugcode_command(&tugcode_path, &project_dir, &session_id, session_mode);
+            let (cmd, args) = build_tugcode_command(
+                &tugcode_path,
+                &project_dir,
+                &session_id,
+                session_mode,
+                resume_claude_session_id.as_deref(),
+            );
             tracing::info!(
                 target: "tide::session-lifecycle",
                 event = "bridge.tugcode_spawn",
                 tug_session_id = %session_id,
                 session_mode = session_mode.as_wire_str(),
+                resume_claude_session_id = resume_claude_session_id.as_deref().unwrap_or(""),
                 cmd = %cmd,
                 args = ?args,
                 cwd = %project_dir.display(),
@@ -423,6 +450,7 @@ pub async fn run_session_bridge(
     project_dir: PathBuf,
     session_mode: SessionMode,
     sessions_recorder: Arc<dyn SessionsRecorder>,
+    store: Arc<dyn SessionKeysStore>,
     cancel: CancellationToken,
     retry_delay: Duration,
 ) {
@@ -469,6 +497,20 @@ pub async fn run_session_bridge(
             }
         }
 
+        // Read the persisted claude_session_id off the ledger entry
+        // before each spawn iteration. On the first iteration after
+        // rebind, this carries the value that `rebind_from_tugbank` read
+        // from tugbank. On a crash-loop retry mid-life, it carries the
+        // value the previous `relay_session_io` captured at session_init.
+        // For fresh `do_spawn_session(mode=new)` flows the entry's id is
+        // `None`, so the spawner falls back to the legacy `--resume
+        // <session_id>` path that works because tug and claude ids are
+        // equal for un-forked sessions.
+        let resume_claude_session_id = {
+            let entry = ledger_entry.lock().await;
+            entry.claude_session_id.clone()
+        };
+
         // Spawn subprocess — interruptible by cancel so
         // `close_session` can tear down a stalled spawner.
         tracing::info!(
@@ -476,6 +518,7 @@ pub async fn run_session_bridge(
             event = "spawn.child_invoke",
             tug_session_id = %tug_session_id,
             session_mode = session_mode.as_wire_str(),
+            resume_claude_session_id = resume_claude_session_id.as_deref().unwrap_or(""),
             project_dir = %project_dir_str,
         );
         let spawn_result = tokio::select! {
@@ -483,6 +526,7 @@ pub async fn run_session_bridge(
                 project_dir.as_path(),
                 session_id_str.as_str(),
                 session_mode,
+                resume_claude_session_id.as_deref(),
             ) => result,
             _ = cancel.cancelled() => return,
         };
@@ -510,6 +554,7 @@ pub async fn run_session_bridge(
             lines,
             &project_dir_str,
             sessions_recorder.as_ref(),
+            store.as_ref(),
             &cancel,
         )
         .await;
@@ -613,6 +658,7 @@ pub async fn relay_session_io(
     mut lines: Lines<BufReader<Box<dyn AsyncRead + Send + Unpin>>>,
     project_dir: &str,
     sessions_recorder: &dyn SessionsRecorder,
+    store: &dyn SessionKeysStore,
     cancel: &CancellationToken,
 ) -> RelayOutcome {
     // Captured when tugcode emits `resume_failed`. tugcode then
@@ -695,7 +741,16 @@ pub async fn relay_session_io(
                             // the same lock that promotes Spawning→Live. These
                             // are populated by `do_spawn_session` before the
                             // bridge starts, so they're guaranteed present.
-                            let (workspace_key, card_id) = {
+                            //
+                            // [P14] also persist `claude_session_id` to tugbank
+                            // inside this same critical section so the
+                            // `(card_id → SessionKeyRecord)` mapping on disk
+                            // matches the in-memory ledger. Without this, a
+                            // cold boot's `rebind_from_tugbank` would hand back
+                            // a `LedgerEntry` with `claude_session_id = None`
+                            // and the next resume spawn would have no JSONL to
+                            // replay against.
+                            let (workspace_key, card_id, persist_record) = {
                                 let mut entry = ledger_entry.lock().await;
                                 if let Some(id) = &claude_id {
                                     entry.claude_session_id = Some(id.clone());
@@ -718,11 +773,70 @@ pub async fn relay_session_io(
                                         None,
                                     ));
                                 }
+                                // Build the persistence write payload while we
+                                // hold the lock; the actual `set_session_record`
+                                // call happens immediately after the lock is
+                                // released so the (very brief) blocking sqlite
+                                // write doesn't extend the lock window beyond
+                                // what's strictly required for atomicity with
+                                // the in-memory state mutation above.
+                                let persist_record =
+                                    entry.card_id_live.clone().map(|cid| {
+                                        (
+                                            cid,
+                                            SessionKeyRecord {
+                                                tug_session_id: tug_session_id
+                                                    .as_str()
+                                                    .to_string(),
+                                                project_dir: Some(project_dir.to_string()),
+                                                claude_session_id: entry
+                                                    .claude_session_id
+                                                    .clone(),
+                                                session_mode: Some(
+                                                    entry.session_mode.as_wire_str().to_string(),
+                                                ),
+                                            },
+                                        )
+                                    });
                                 (
                                     entry.workspace_key.as_ref().to_owned(),
                                     entry.card_id_live.clone(),
+                                    persist_record,
                                 )
                             };
+
+                            // Persist the updated record. Best-effort with a
+                            // loud warn on failure: a tugbank write that races
+                            // a disk-full or sqlite-locked condition leaves
+                            // in-memory ahead of disk for this session, but
+                            // the next session_init (or the next
+                            // do_spawn_session reconnect) will rewrite the
+                            // record. Skip when no card has bound this entry
+                            // yet (Idle entries from `rebind_from_tugbank`
+                            // before any client spawn_session arrives) — there
+                            // is no card_id to key the write under.
+                            if let Some((card_id, record)) = persist_record {
+                                if let Err(e) = store.set_session_record(&card_id, &record) {
+                                    warn!(
+                                        card_id = card_id.as_str(),
+                                        session = %tug_session_id,
+                                        error = %e.0,
+                                        "session_init: persist of claude_session_id failed; \
+                                         in-memory state ahead of disk until next rewrite"
+                                    );
+                                } else {
+                                    tracing::info!(
+                                        target: "tide::session-lifecycle",
+                                        event = "session_init.persist",
+                                        card_id = card_id.as_str(),
+                                        tug_session_id = %tug_session_id,
+                                        claude_session_id = record
+                                            .claude_session_id
+                                            .as_deref()
+                                            .unwrap_or(""),
+                                    );
+                                }
+                            }
 
                             // Record under claude's own session id — that
                             // is the on-disk file name, the only thing
@@ -1008,6 +1122,7 @@ mod tests {
             Path::new("/work/alpha"),
             "sess-alpha-uuid",
             SessionMode::New,
+            None,
         );
         assert_eq!(program, "/opt/tugtool/tugcode");
         assert_eq!(
@@ -1030,6 +1145,7 @@ mod tests {
             Path::new("/work/beta"),
             "sess-beta-uuid",
             SessionMode::New,
+            None,
         );
         assert_eq!(program, "bun");
         assert_eq!(
@@ -1058,12 +1174,14 @@ mod tests {
             Path::new("/work/a"),
             "sess-a",
             SessionMode::New,
+            None,
         );
         let (_p2, args2) = build_tugcode_command(
             &spawner.tugcode_path,
             Path::new("/work/b"),
             "sess-b",
             SessionMode::New,
+            None,
         );
         assert!(args1.iter().any(|a| a == "/work/a"));
         assert!(args1.iter().any(|a| a == "sess-a"));
@@ -1080,12 +1198,60 @@ mod tests {
             Path::new("/work/x"),
             "sess-x",
             SessionMode::Resume,
+            None,
         );
         let i = args
             .iter()
             .position(|a| a == "--session-mode")
             .expect("--session-mode flag must be present");
         assert_eq!(args.get(i + 1).map(String::as_str), Some("resume"));
+    }
+
+    /// [P14] When `resume_claude_session_id` is `Some`, the helper
+    /// appends `--resume-session <id>` after `--session-mode`. When
+    /// `None`, the flag is omitted entirely (legacy fallback path —
+    /// tugcode then uses `--session-id` for its `--resume <id>` claude
+    /// invocation, which works for un-forked sessions whose tug and
+    /// claude ids are equal).
+    #[test]
+    fn test_build_tugcode_command_emits_resume_session_when_id_is_some() {
+        let (_, args) = build_tugcode_command(
+            Path::new("/opt/tugtool/tugcode"),
+            Path::new("/work/y"),
+            "sess-y-tug-uuid",
+            SessionMode::Resume,
+            Some("claude-internal-id-7"),
+        );
+        let i = args
+            .iter()
+            .position(|a| a == "--resume-session")
+            .expect("--resume-session must be present when id is Some");
+        assert_eq!(
+            args.get(i + 1).map(String::as_str),
+            Some("claude-internal-id-7")
+        );
+        // `--session-id` still carries the tug id; `--resume-session`
+        // carries the claude id. They're distinct fields by design.
+        let j = args
+            .iter()
+            .position(|a| a == "--session-id")
+            .expect("--session-id still emitted alongside --resume-session");
+        assert_eq!(args.get(j + 1).map(String::as_str), Some("sess-y-tug-uuid"));
+    }
+
+    #[test]
+    fn test_build_tugcode_command_omits_resume_session_when_id_is_none() {
+        let (_, args) = build_tugcode_command(
+            Path::new("/opt/tugtool/tugcode"),
+            Path::new("/work/z"),
+            "sess-z",
+            SessionMode::Resume,
+            None,
+        );
+        assert!(
+            !args.iter().any(|a| a == "--resume-session"),
+            "--resume-session must be absent when id is None"
+        );
     }
 
     #[test]

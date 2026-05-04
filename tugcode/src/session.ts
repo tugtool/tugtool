@@ -681,6 +681,20 @@ export class SessionManager {
    */
   private sessionMode: "new" | "resume";
   /**
+   * [P14] The persisted claude session id, threaded in from tugcast via
+   * `--resume-session <id>`. Set when tugcast's tugbank record carries a
+   * `claude_session_id` for this card; `null` for fresh spawns and for
+   * resume spawns whose claude id was never captured (pre-`session_init`
+   * crash, pre-P14 record).
+   *
+   * In resume mode, this id wins over `sessionId` for the claude
+   * `--resume <id>` invocation: when claude has rotated its internal id
+   * (e.g., after a fork) the JSONL on disk is keyed by the claude id,
+   * not the tug id. The fallback to `sessionId` covers un-forked
+   * sessions whose tug and claude ids happen to match.
+   */
+  private resumeSessionId: string | null;
+  /**
    * Set true the first time `handleUserMessage` successfully writes a
    * user message to claude's stdin. After that, claude has been seen
    * alive end-to-end and any subsequent exit is a runtime crash, not
@@ -714,6 +728,7 @@ export class SessionManager {
     projectDir: string,
     sessionId: string,
     sessionMode: "new" | "resume" = "new",
+    resumeSessionId?: string,
   ) {
     if (!sessionId) {
       throw new Error("SessionManager: sessionId is required");
@@ -721,6 +736,13 @@ export class SessionManager {
     this.projectDir = projectDir;
     this.sessionId = sessionId;
     this.sessionMode = sessionMode;
+    // Coerce `undefined` / empty string to `null` so the fallback
+    // logic in `initialize()` has a single test (`!= null`) rather
+    // than two (`!== undefined && !== ""`).
+    this.resumeSessionId =
+      typeof resumeSessionId === "string" && resumeSessionId.length > 0
+        ? resumeSessionId
+        : null;
   }
 
   private nextSeq(): number {
@@ -941,26 +963,46 @@ export class SessionManager {
     logSessionLifecycle("tugcode.init.start", {
       session_id: inputSessionId,
       session_mode: inputMode,
+      resume_session_id: this.resumeSessionId ?? "",
     });
 
     const claudeFlag = this.sessionMode === "resume" ? "resume" : "session-id";
-    this.claudeProcess = this.spawnClaude(this.sessionId, claudeFlag);
+    // [P14] In resume mode, prefer the persisted claude session id
+    // (`resumeSessionId`) over the tug session id when it differs.
+    // The two diverge after a fork; for un-forked sessions they're
+    // equal, so the fallback to `sessionId` is safe and preserves
+    // legacy behavior for pre-P14 tugbank records.
+    const claudeId =
+      claudeFlag === "resume"
+        ? (this.resumeSessionId ?? this.sessionId)
+        : this.sessionId;
+    this.claudeProcess = this.spawnClaude(claudeId, claudeFlag);
     this.stdoutReader = (this.claudeProcess.stdout as ReadableStream<Uint8Array>).getReader();
     this.stdoutBuffer = "";
 
     this.startStderrReader();
     this.installEarlyExitWatcher();
 
+    // [P14] The synthesized `session_init` carries the same id we just
+    // spawned claude with (`claudeId`), not always `this.sessionId`.
+    // For fresh spawns the two are equal. For resume spawns whose
+    // claude id has diverged from the tug id (forked session, or a
+    // resume of a session whose claude id was already different), the
+    // distinction matters: tugcast's `relay_session_io` atomic-promote
+    // block reads this id and persists it as `LedgerEntry::claude_session_id`,
+    // so emitting the wrong id here would briefly corrupt the on-disk
+    // record until the real `system:init` from claude's stream-json
+    // arrives on the first user message and overwrites it.
     writeLine({
       type: "session_init",
-      session_id: this.sessionId,
+      session_id: claudeId,
       ipc_version: 2,
     });
 
     logSessionLifecycle("tugcode.init.end", {
       session_mode: inputMode,
       session_id_in: inputSessionId,
-      session_id_out: this.sessionId,
+      session_id_out: claudeId,
       fallback_taken: false,
     });
   }

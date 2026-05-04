@@ -126,3 +126,77 @@ describe("main.ts inbound message type guard routing", () => {
     expect(isModelChange(msg as any)).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// [P14] --resume-session argv parsing
+// ---------------------------------------------------------------------------
+
+/**
+ * Spawn main.ts with the given argv and capture its first stderr line
+ * that starts with `Starting tugcode (`. main.ts logs argv state there
+ * before claude is even consulted, so this is a tugcode-only assertion
+ * that doesn't depend on a real claude binary being on PATH.
+ */
+async function readStartupLine(args: string[]): Promise<string> {
+  const mainPath = join(import.meta.dir, "..", "main.ts");
+  const proc = spawn(["bun", "run", mainPath, ...args], {
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const reader = proc.stderr.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let line: string | null = null;
+  try {
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const newlineIdx = buf.indexOf("\n");
+      if (newlineIdx >= 0) {
+        line = buf.slice(0, newlineIdx);
+        break;
+      }
+    }
+  } finally {
+    reader.releaseLock();
+    proc.stdin.end();
+    proc.kill();
+  }
+  return line ?? "";
+}
+
+describe("[P14] main.ts --resume-session argv", () => {
+  test("--resume-session <id> appears in startup log when provided", async () => {
+    const line = await readStartupLine([
+      "--dir",
+      "/tmp/p14-argv",
+      "--session-id",
+      "tug-uuid-1",
+      "--session-mode",
+      "resume",
+      "--resume-session",
+      "claude-resume-id-99",
+    ]);
+    expect(line).toContain("Starting tugcode");
+    expect(line).toContain("resumeSessionId: claude-resume-id-99");
+    expect(line).toContain("sessionId: tug-uuid-1");
+    expect(line).toContain("sessionMode: resume");
+  });
+
+  test("--resume-session is omitted from startup log when not provided", async () => {
+    const line = await readStartupLine([
+      "--dir",
+      "/tmp/p14-argv",
+      "--session-id",
+      "tug-uuid-2",
+      "--session-mode",
+      "new",
+    ]);
+    expect(line).toContain("Starting tugcode");
+    // Logs the resumeSessionId field only when set; absence is silent.
+    expect(line).not.toContain("resumeSessionId:");
+  });
+});

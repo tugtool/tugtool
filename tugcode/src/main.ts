@@ -42,6 +42,22 @@ let sessionId: string | undefined;
 // claims `sessionId` as its own id) and resuming an existing
 // conversation. Absent / unknown values fall through to "new".
 let sessionMode: "new" | "resume" = "new";
+// `--resume-session <id>` is [P14]'s persisted claude session id —
+// the canonical key for the on-disk JSONL at
+// `~/.claude/projects/<encoded-dir>/<id>.jsonl`. When tugcast has a
+// persisted record for this card with `claude_session_id != null`,
+// it passes the id through this flag so resume mode forwards
+// `--resume <id>` to claude using the *claude* id rather than the
+// tug session id (which only matches when no fork has occurred).
+//
+// Absent in two cases:
+//   - Fresh spawns (`--session-mode new`): no resume id needed.
+//   - Resume spawns whose claude id was never captured (a previous
+//     session crashed pre-`session_init`, or a pre-P14 tugbank
+//     record). In both cases `SessionManager` falls back to using
+//     `sessionId` for the claude `--resume <id>` flag — the legacy
+//     path that works for un-forked sessions.
+let resumeSessionId: string | undefined;
 // `--stub-transcript=<path>` (or `--stub-transcript <path>`) routes
 // the IPC loop through the deterministic replay engine in
 // `stub-replay.ts` instead of spawning claude. Test-only;
@@ -59,6 +75,9 @@ for (let i = 0; i < args.length; i++) {
     const raw = args[i + 1];
     sessionMode = raw === "resume" ? "resume" : "new";
     i++;
+  } else if (args[i] === "--resume-session" && i + 1 < args.length) {
+    resumeSessionId = args[i + 1];
+    i++;
   } else if (args[i].startsWith("--stub-transcript=")) {
     stubTranscriptPath = args[i].slice("--stub-transcript=".length);
   } else if (args[i] === "--stub-transcript" && i + 1 < args.length) {
@@ -74,7 +93,7 @@ if (!sessionId) {
 }
 
 console.log(
-  `Starting tugcode (projectDir: ${projectDir}, sessionId: ${sessionId}, sessionMode: ${sessionMode}${stubTranscriptPath ? `, stubTranscript: ${stubTranscriptPath}` : ""})`,
+  `Starting tugcode (projectDir: ${projectDir}, sessionId: ${sessionId}, sessionMode: ${sessionMode}${resumeSessionId ? `, resumeSessionId: ${resumeSessionId}` : ""}${stubTranscriptPath ? `, stubTranscript: ${stubTranscriptPath}` : ""})`,
 );
 
 // Session manager (initialized after protocol handshake). Only
@@ -162,7 +181,12 @@ async function main() {
       }
 
       // Create session manager and initialize claude process
-      sessionManager = new SessionManager(projectDir, sessionId, sessionMode);
+      sessionManager = new SessionManager(
+        projectDir,
+        sessionId,
+        sessionMode,
+        resumeSessionId,
+      );
 
       // Send protocol_ack first (with placeholder session_id)
       writeLine({

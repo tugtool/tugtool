@@ -3101,3 +3101,51 @@ describe("protocol audit: §2f permission response format", () => {
     expect("decision" in parsed.response.response).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// [P14] SessionManager resumeSessionId plumbing
+// ---------------------------------------------------------------------------
+
+describe("[P14] SessionManager resumeSessionId", () => {
+  test("constructor without fourth arg leaves resumeSessionId null", () => {
+    const m = new SessionManager(
+      "/tmp/p14-default-" + Date.now(),
+      crypto.randomUUID(),
+    );
+    expect((m as any).resumeSessionId).toBe(null);
+  });
+
+  test("constructor with fourth arg captures the value", () => {
+    const m = new SessionManager(
+      "/tmp/p14-set-" + Date.now(),
+      crypto.randomUUID(),
+      "resume",
+      "claude-internal-id-42",
+    );
+    expect((m as any).resumeSessionId).toBe("claude-internal-id-42");
+  });
+
+  test("constructor coerces empty-string resumeSessionId to null", () => {
+    // tugcast spawning with an unset field could pass an empty string
+    // through CLI argv; the field's `null`-or-non-empty contract gives
+    // the resume-id-selection logic in `initialize()` a single test
+    // (`!= null`) instead of two.
+    const m = new SessionManager(
+      "/tmp/p14-empty-" + Date.now(),
+      crypto.randomUUID(),
+      "resume",
+      "",
+    );
+    expect((m as any).resumeSessionId).toBe(null);
+  });
+
+  test("constructor coerces undefined resumeSessionId to null", () => {
+    const m = new SessionManager(
+      "/tmp/p14-undef-" + Date.now(),
+      crypto.randomUUID(),
+      "resume",
+      undefined,
+    );
+    expect((m as any).resumeSessionId).toBe(null);
+  });
+});

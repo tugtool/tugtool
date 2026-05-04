@@ -522,26 +522,29 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 
 **Tasks:**
 
-- [ ] Extend `agent_bridge.rs::relay_session_io` atomic-promote block with the tugbank persistence write.
-- [ ] Update `do_spawn_session`'s Phase 2 record write to preserve persisted `claude_session_id` on reconnects.
-- [ ] Wire `rebind_from_tugbank` to read `claude_session_id` back into the rehydrated `LedgerEntry`.
-- [ ] Add `resume_claude_session_id` to `TugcodeSpawner` config; thread through spawn args.
-- [ ] Update tugcode to read the resume id from CLI/env (drop the legacy singleton tugbank path).
-- [ ] Wire `do_reset_session` to invalidate `claude_session_id` in tugbank + in-memory before subprocess restart.
+- [x] Extend `agent_bridge.rs::relay_session_io` atomic-promote block with the tugbank persistence write.
+- [x] Update `do_spawn_session`'s Phase 2 record write to preserve persisted `claude_session_id` on reconnects.
+- [x] Wire `rebind_from_tugbank` to read `claude_session_id` back into the rehydrated `LedgerEntry`.
+- [x] Add `resume_claude_session_id` to `TugcodeSpawner` config; thread through spawn args. *Implemented as a per-call parameter on `ChildSpawner::spawn_child` (with `build_tugcode_command` appending `--resume-session <id>` when `Some`); `run_session_bridge` reads `entry.claude_session_id` before each spawn iteration and threads it through. Cleaner than per-instance state because the resume id is tied to the session, not the spawner.*
+- [x] Update tugcode to read the resume id from CLI/env (drop the legacy singleton tugbank path). *No legacy singleton path existed in production tugcode (`getTugbankClient` was unused outside of test setup), so this work reduced to the canonical change: `main.ts` parses `--resume-session <id>`, threads through `SessionManager` constructor's optional fourth arg, `initialize()` prefers the persisted id over `sessionId` for the claude `--resume <id>` invocation. The synthesized `session_init` IPC line also carries the actual claude id we spawned with so tugcast's atomic-promote block doesn't briefly persist the wrong value.*
+- [x] Wire `do_reset_session` to invalidate `claude_session_id` in tugbank + in-memory before subprocess restart. *Also flips `entry.session_mode` back to `New` so the next spawn is truly fresh — without this, a `Resume`-mode entry whose claude_session_id was just cleared would still tell tugcode `--session-mode resume`, and tugcode's fallback path (`resumeSessionId ?? sessionId`) would tell claude to resume the JSONL still on disk.*
 
 **Tests:**
 
-- [ ] `test_session_init_persists_claude_session_id` — drives `relay_session_io` via duplex streams; asserts tugbank gets the write atomically with the ledger update ([tide.md §P14 Step 5](./tide.md#p14-claude-resume)).
-- [ ] `test_spawn_session_resumes_persisted_claude_session_id` — unit test with an `InMemorySessionKeysStore` pre-populated with `(card_id, tug_session_id, claude_session_id)`; asserts the spawner receives the resume id.
-- [ ] `test_reset_session_clears_persisted_claude_session_id` — asserts `reset_session` deletes the claude_session_id binding before the subprocess restart.
-- [ ] `test_close_session_preserves_claude_session_id` — asserts a `close_session` followed by a `spawn_session(mode=resume)` rehydrates the persisted id.
-- [ ] Real-claude integration test: `test_close_then_reopen_preserves_history` — open a session, exchange a turn that establishes known context ("remember the word gazebo"), close the WebSocket, reopen, send a probe ("what word did I tell you to remember?"), assert the response contains "gazebo". Pins the resume path end-to-end. **CI gating:** matches the existing tugcast real-claude convention — `#[cfg(feature = "real-claude-tests")]` + `#[ignore]` + `TUG_REAL_CLAUDE=1` env gate (see `tugrust/crates/tugcast/Cargo.toml` lines 52–70 and the `multi_session_real_claude` test for the canonical pattern). Default `cargo nextest run` does not enumerate it. Local invocation: `TUG_REAL_CLAUDE=1 cargo test -p tugcast --features real-claude-tests test_close_then_reopen_preserves_history -- --ignored`. The test lives either in the existing `multi_session_real_claude.rs` integration target or a sibling `resume_real_claude.rs` if it grows enough fixtures to warrant its own. Step 0's automated checkpoint runs the default suite; this test is run manually as part of Smoke B / C in Step 5.
+- [x] `test_session_init_persists_claude_session_id` — drives `relay_session_io` via duplex streams; asserts tugbank gets the write atomically with the ledger update ([tide.md §P14 Step 5](./tide.md#p14-claude-resume)).
+- [x] `test_spawn_session_preserves_persisted_claude_session_id_on_reconnect` — covers the reconnect path (`!inserted` branch) by mid-life setting `entry.claude_session_id`, calling `spawn_session` again, and asserting the persisted record still carries the id. *Renamed from the plan's tentative `test_spawn_session_resumes_persisted_claude_session_id` to better describe what it actually pins (the reconnect-time preserve, not the spawn-time read).*
+- [x] `test_rebind_rehydrates_claude_session_id` — asserts a fresh supervisor over a tugbank record carrying `claude_session_id: Some(...)` rebinds the entry with that id populated, so the next spawn after rebind threads `--resume-session <id>` through correctly.
+- [x] `test_reset_session_clears_persisted_claude_session_id` — asserts `reset_session` deletes the claude_session_id binding before the subprocess restart.
+- [x] `test_close_session_preserves_claude_session_id` — asserts a `close_session` followed by (cold-boot rebind +) `spawn_session(mode=resume)` rehydrates the persisted id. The cold-boot path is simulated by spinning up a fresh `AgentSupervisor` over the same store after the close-side dropped its supervisor.
+- [x] Existing `test_close_session_deletes_tugbank_entry` flipped to `test_close_session_preserves_tugbank_entry` and `test_close_session_logs_on_tugbank_delete_failure_and_continues` flipped to `test_close_session_does_not_call_tugbank_delete` to match the new contract (close preserves; only `reset_session` deletes).
+- [x] tugcode unit tests: `[P14] SessionManager resumeSessionId` describe-block covers the constructor's fourth arg (set / undefined / empty-string coercion); `[P14] main.ts --resume-session argv` covers the CLI parsing end-to-end via spawned `bun run main.ts`.
+- [ ] Real-claude integration test: `test_close_then_reopen_preserves_history` — open a session, exchange a turn that establishes known context ("remember the word gazebo"), close the WebSocket, reopen, send a probe ("what word did I tell you to remember?"), assert the response contains "gazebo". Pins the resume path end-to-end. **CI gating:** matches the existing tugcast real-claude convention — `#[cfg(feature = "real-claude-tests")]` + `#[ignore]` + `TUG_REAL_CLAUDE=1` env gate (see `tugrust/crates/tugcast/Cargo.toml` lines 52–70 and the `multi_session_real_claude` test for the canonical pattern). Default `cargo nextest run` does not enumerate it. Local invocation: `TUG_REAL_CLAUDE=1 cargo test -p tugcast --features real-claude-tests test_close_then_reopen_preserves_history -- --ignored`. The test lives either in the existing `multi_session_real_claude.rs` integration target or a sibling `resume_real_claude.rs` if it grows enough fixtures to warrant its own. Step 0's automated checkpoint runs the default suite; **this test is deferred to Step 5 as part of Smoke B / C verification** — Step 0 ships the plumbing and the unit tests that pin each link in the chain; the real-claude end-to-end runs once when the JSONL replay UI lands and we can observe both the Step 0 resume of Claude's own context and the Step 5 wire-side replay together.
 
 **Checkpoint:**
 
-- [ ] `bun x tsc --noEmit` — exit 0.
-- [ ] `bun test` — green.
-- [ ] `cargo nextest run` — green.
+- [x] `bun x tsc --noEmit` — exit 0.
+- [x] `bun test` — green (210 tugcode tests + 2945 tugdeck tests).
+- [x] `cargo nextest run` — green (1207 workspace tests, 9 skipped).
 
 **Note:** This step ships the `--resume` plumbing without any JSONL-replay UI work. After Step 0 lands, a card that reloads will *resume Claude itself* (Claude reads its own JSONL into context), but tugdeck's transcript pane will still show empty until Step 3 — Claude has the conversation context, but the wire is silent on history. Steps 1–5 close the remaining gap.
 
