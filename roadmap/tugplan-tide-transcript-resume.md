@@ -52,6 +52,7 @@ After the resume work, the `Roadmap: right away` list from the parent plan has e
 - **Replay is best-effort, not load-bearing.** A missing, unreadable, or malformed JSONL surfaces as an empty transcript on resume, not a hard error. The card still works; the conversation history is gone for that card (the bytes are still on Claude's side). Logged with structured telemetry; the hard time budget per [D10] guarantees the card becomes interactive within 10s of binding regardless of JSONL state.
 - **Honest replay accuracy trade-offs.** Per-row historical model name is *not* preserved in v1 ([D09]); orphan turns at reload synthesize as interrupted ([D08]); claude_session_id mismatches in tugbank vs. on-disk JSONL produce empty transcripts (handled cleanly). Each is documented; each has a follow-on path if it becomes a real complaint.
 - **Tuglaws cross-checked at every step.** [L02], [L03], [L06], [L10], [L11], [L19], [L20], [L22], [L23], [L24] apply. See [#tuglaws-cross-check]. L23 in particular is satisfied by a third preservation mechanism — external archive replay — distinct from in-session minimal mutation and cross-session [A9] save/restore.
+- **Replay is a request-driven event, not a once-per-subprocess one** (per [D12], added during the recovery phases). Tugdeck dispatches a `request_replay` CONTROL frame whenever it constructs services for a resume binding; tugcast forwards to tugcode; tugcode invokes its existing `runReplay()`. This is the load-bearing flow for Smokes A (HMR) and B (Reload), where tugcode survives the user-visible event but tugdeck's `CodeSessionStore` does not. Smoke C (cold boot) goes through the same verb after rebind. See [Phase A-R1](#phase-a-r1).
 - **Build stays green at every commit.** `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run` pass on every step. Warnings are errors.
 
 #### Success Criteria (Measurable) {#success-criteria}
@@ -80,6 +81,11 @@ After the resume work, the `Roadmap: right away` list from the parent plan has e
 5. **Reducer handling for replay frames** in tugdeck. Idempotent commits via msg-id dedupe ([D04]); phase transitions to `replaying` during replay; `inflightUserMessage` is cleared defensively; replay-frame events do not echo back as `user_message` CODE_INPUT writes.
 6. **Resume-spawn replay wire-up** in tugcode. On `--resume-session <id>`, tugcode emits replay events on its IPC stdout *before* it forwards live events from Claude's stdout for the same session. Live events from Claude during the replay window are buffered and flushed after `replay_complete`.
 7. **Tide card "Loading conversation…" UX** — the `TideRestoring` placeholder gains a count-aware variant for [D10]'s soft-budget state and a timeout-state variant for the hard-budget cutoff.
+7a. **Recovery: cold-boot diagnostic capture** ([Phase A-R0](#phase-a-r0)). Add `just tail-tugcast` + `just tail-replay` recipes; capture Smoke C telemetry; root-cause whatever distinct bug it surfaces. Pre-condition for [Phase A-R1](#phase-a-r1) so the verb implementation isn't masking a separate bug.
+7b. **Recovery: `request_replay` IPC verb** across tugcode / tugcast / tugdeck per [D12] ([Phase A-R1](#phase-a-r1)). Closes the Smoke A/B gap exposed by [Step 5](#step-5)'s manual smokes. Tugdeck dispatches on services construction for resume bindings; tugcast forwards via CONTROL action; tugcode handles inbound and re-runs `runReplay()` re-entrancy-safely.
+7c. **Recovery: smoke verification + telemetry capture** ([Phase A-R2](#phase-a-r2)). Manual run of Smokes A/B/C with the new verb in place; mark off the smoke checklist with telemetry quotes.
+7d. **Recovery: Smoke D mid-turn ordering** ([Phase A-R3](#phase-a-r3)). Pick D-1 (pause-live), D-2 (skip-orphan), or D-3 (defer) and either implement or document the limitation.
+7e. **Recovery: convergence cleanup** ([Phase A-R4](#phase-a-r4)). Decide whether the startup-replay path collapses into request-driven, or both stay (with [D04] dedupe as the safety net).
 8. **Sticky id for replay-committed turns** in `TideTranscriptDataSource` per [D07]. The replay-committed turn's `msg_id` is the row's id from frame zero — no seed transition. Live-turn flicker is unchanged.
 9. **Atom-aware user rows.** `UserRowCell` switches from a plain `<span>` body to a body that renders `userMessage.attachments` as inline atoms when present, falling back to plain text for legacy or attachment-empty turns.
 10. **`TugListView` prefetching protocol.** `delegate.prefetchForIndices(indices)` / `delegate.cancelPrefetchForIndices(indices)` plus a viewport-prediction window. Delegate-only — `TugListView` does not assume any specific prefetch behavior; consumers decide.
@@ -109,6 +115,7 @@ Listed in [#design-decisions]. The major calls are summarized here; rationale is
 - [D09] **No SESSION_METADATA replay in v1** — replay-committed code rows show the *current* model name; per-row historical model tracked as a follow-on.
 - [D10] **Replay performance budget** — soft 2s (placeholder gains count-aware copy), hard 10s (truncate replay; resume with empty transcript); incremental batched commit so the UI stays responsive.
 - [D11] **`replaying` phase value** on `CodeSessionSnapshot.phase` — drives `canSubmit: false` and the placeholder via the existing `data-phase` cascade.
+- [D12] **Request-driven replay** (recovery) — tugcode handles an inbound `request_replay` verb that re-runs `runReplay()` on an already-live subprocess. Closes the gap [Step 5](#step-5)'s smokes exposed: a fresh tugdeck `CodeSessionStore` for a session whose tugcode is still up has no replay events to consume without this verb. See [Phase A-R1](#phase-a-r1).
 
 ---
 
@@ -376,6 +383,32 @@ Content blocks observed inside `message.content[]`:
 - Reducer's `canSubmit` derivation: `phase === "idle" && transportState === "online"` becomes `(phase === "idle" || phase === "errored") && transportState === "online"` (the existing form) — `replaying` naturally falls outside the OR.
 - `canInterrupt` derivation excludes `replaying`.
 - Existing exhaustiveness checks at consumer sites flag the new case at compile time — fix-forward.
+
+---
+
+#### [D12] Request-driven replay (DECIDED — recovery) {#d12-request-driven-replay}
+
+**Decision:** In addition to the startup-replay path ([D03] / [Step 3](#step-3)), tugcode supports an inbound IPC verb `request_replay` that re-runs `SessionManager.runReplay()` on demand. Tugcast forwards the verb from a wire CONTROL frame to tugcode's stdin. Tugdeck dispatches the verb whenever `cardServicesStore` constructs services for a binding with `sessionMode === "resume"` and the wire is online.
+
+**Rationale (recovery context).** [Step 5](#step-5)'s manual smokes exposed that v1's "replay fires when tugcode starts in resume mode, exactly once per subprocess lifetime" assumption is too narrow to carry the feature's user-visible promise. Three of the four transition classes — HMR, Reload, mid-turn — keep tugcode alive across the user-observed event; tugdeck's `CodeSessionStore` is rebuilt fresh and receives no replay because `do_spawn_session` for an already-`Live` ledger entry returns `should_spawn=false` ([`agent_supervisor.rs:1555`](../tugrust/crates/tugcast/src/feeds/agent_supervisor.rs)) and never restarts tugcode. A request-driven verb closes the gap without touching the supervisor's session-lifecycle ([Q01]) state machine.
+
+**Why a verb (and not subprocess respawn).** Respawning tugcode on every reconnect would kill in-flight turns mid-stream ([D08] mid-turn reload becomes lossy by construction). A verb runs alongside the existing live-forwarding loop and lets the same tugcode subprocess emit replay events while continuing to serve subsequent input.
+
+**Why it's safe to fire idempotently.** [D04]'s msg_id dedupe at the reducer makes a redundant replay (e.g. cold boot's startup-replay followed by tugdeck's request_replay) commit the transcript exactly once. Tugcode's `runReplay` ([Step 3](#step-3)) already exists and has full unit-test coverage; the new verb is wiring, not new logic.
+
+**Implications:**
+
+- New tugcode `InboundMessage` type `{type: "request_replay"}` (plus type guard).
+- New tugcast bridge handler that recognizes a CONTROL action `request_replay {tug_session_id}` and writes the JSON-line to tugcode's stdin via the existing per-session `input_tx` channel.
+- New tugdeck session-lifecycle helper `sendRequestReplay(tugSessionId)`; dispatch hook in `cardServicesStore._construct`.
+- `runReplay` becomes re-entrancy-safe: a second invocation while replay is in flight is dropped with telemetry (the original replay's events satisfy the request).
+- Two replay-trigger paths coexist (startup + request-driven) until [Phase A-R4](#phase-a-r4) decides whether to converge them.
+
+**Alternatives considered:**
+
+- **Always respawn tugcode on `spawn_session(resume)`.** Rejected — kills in-flight turns; bad mid-turn UX.
+- **Persist transcript in tugbank.** Rejected — explicit non-starter per [#scope] (parallel persistence layer).
+- **Cache CODE_OUTPUT events in tugcast and replay on WS reconnect.** Rejected — tugcast becomes responsible for an in-memory event log per session that grows unbounded; the JSONL on disk is already canonical.
 
 ---
 
@@ -752,6 +785,8 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 
 #### Step 5: Tide card resume integration tests + manual smoke {#step-5}
 
+**STATUS: SUPERSEDED.** Manual smoke verification of this step (commit `64d02cfe`) surfaced a structural gap: v1's resume design fires replay only on tugcode subprocess startup ([Step 3](#step-3)'s `runReplay`), but Smokes A (HMR), B (Reload), and D (mid-turn) all keep the tugcode subprocess alive while tugdeck rebuilds its `CodeSessionStore` from scratch — so the fresh store receives no replay events and the transcript stays empty. Smoke C (cold boot) was also reported broken; root-cause investigation moved into [Phase A-R0](#phase-a-r0). The integration tests added in this step (`tide-card-resume.test.tsx`) remain valid — they exercise the reducer-side replay vocabulary, which is unchanged. Step 5's own "Manual smoke checklist verified by user" checkpoint is deferred until [Phase A-R2](#phase-a-r2). The recovery phases [A-R0](#phase-a-r0) through [A-R4](#phase-a-r4) supersede this step's "phase done" claim.
+
 **Depends on:** #step-4
 
 **Commit:** `tide(transcript): resume-from-JSONL integration tests`
@@ -800,25 +835,308 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 
 **Tasks:**
 
-- [ ] Author the integration test file using the existing `setup-rtl` + WASM init harness.
-- [ ] Add the manual smoke checklists A/B/C/D to the commit body.
+- [x] Author the integration test file using the existing `setup-rtl` + WASM init harness.
+- [x] Add the manual smoke checklists A/B/C/D to the commit body. *Promoted to a standalone checklist at [`roadmap/tugplan-tide-transcript-resume-smoke.md`](./tugplan-tide-transcript-resume-smoke.md) so the user can drive each smoke and tick boxes inline.*
 - [ ] Run all four manual smokes against a real session.
 
 **Tests:**
 
-- [ ] Integration: resume → replay → transcript matches fixture turn count.
-- [ ] Integration: resume with missing JSONL → empty transcript + `lastReplayResult.kind === "jsonl_missing"` + card still functional.
-- [ ] Integration: orphan-turn JSONL (last `assistant.stop_reason: "tool_use"`) → transcript carries the orphan as `result: "interrupted"` per [D08].
-- [ ] Integration: live submit after `replay_complete` — `phase: idle`, `canSubmit: true`; new turn flows live.
-- [ ] Integration: live submit during replay window — `phase: replaying`, `canSubmit: false`; the prompt entry's submit button is disabled.
+- [x] Integration: resume → replay → transcript matches fixture turn count.
+- [x] Integration: resume with missing JSONL → empty transcript + `lastReplayResult.kind === "jsonl_missing"` + card still functional.
+- [x] Integration: orphan-turn JSONL (last `assistant.stop_reason: "tool_use"`) → transcript carries the orphan as `result: "interrupted"` per [D08].
+- [x] Integration: live submit after `replay_complete` — `phase: idle`, `canSubmit: true`; new turn flows live.
+- [x] Integration: live submit during replay window — `phase: replaying`, `canSubmit: false`; the prompt entry's submit button is disabled. *Implemented as the stronger contract: while `phase === "replaying"` the gate routes to the placeholder so the prompt-entry submit button is unmounted entirely. The snapshot's `canSubmit === false` and `canInterrupt === false` are asserted alongside.*
 
 **Checkpoint:**
 
-- [ ] `bun x tsc --noEmit` — exit 0.
-- [ ] `bun test` — green.
-- [ ] `bun run audit:tokens lint` — zero violations.
-- [ ] `cargo nextest run` — green.
-- [ ] Manual smoke checklist verified by user.
+- [x] `bun x tsc --noEmit` — exit 0.
+- [x] `bun test` — green.
+- [x] `bun run audit:tokens lint` — zero violations.
+- [x] `cargo nextest run` — green.
+- [ ] Manual smoke checklist verified by user. *Deferred to [Phase A-R2](#phase-a-r2); see Step 5's SUPERSEDED notice above.*
+
+---
+
+#### Phase A-R0: Diagnose Smoke C with telemetry capture {#phase-a-r0}
+
+**Why this phase.** [Step 5](#step-5)'s manual smokes uncovered that v1's "replay fires when tugcode starts in resume mode, exactly once per subprocess lifetime" assumption is too narrow to carry the feature's user-visible promise. Smokes A (HMR), B (Reload), and D (mid-turn reload) keep tugcode alive across the user-observed event; tugdeck rebuilds its `CodeSessionStore` from scratch and receives no replay because the supervisor's `do_spawn_session` for an already-`Live` ledger entry returns `should_spawn=false`. The architectural fix lives in [Phase A-R1](#phase-a-r1) — the `request_replay` IPC verb per [D12]. **Smoke C (cold boot)** *should* work as designed (its ledger entries rebind at `SpawnState::Idle`, so `spawn_session_worker` runs and tugcode does fire its startup-replay) but is reported broken; this phase isolates that distinct root cause before [Phase A-R1](#phase-a-r1) ships, so the verb implementation isn't masking a separate bug.
+
+#### Step R0a: `just tail-tugcast` recipe + replay-filtered alias {#step-r0a}
+
+**Commit:** `tide(transcript): just tail-tugcast recipe`
+
+**Depends on:** none (recovery entry point)
+
+**Artifacts:**
+
+- `Justfile` — add a `tail-tugcast` recipe alongside the existing `logs`. The new recipe is a discoverability alias (it tails the same `~/Library/Application Support/Tug/Logs/tugcast.log.<date>` file the existing `logs` recipe targets) but with a name that makes intent obvious when grepping `just --list`.
+- Optional companion `tail-replay` recipe that pipes the same `tail -F` through `grep -E "tide::replay::|tide::session-lifecycle"` so a smoke run produces a focused capture without the full firehose.
+
+**Tasks:**
+
+- [ ] Add `tail-tugcast` recipe in `Justfile`. Body identical to `logs`; recipe doc-comment explains what's in scope.
+- [ ] Add `tail-replay` recipe that pre-greps for `tide::replay::` and `tide::session-lifecycle` log targets.
+- [ ] Verify both recipes run cleanly against a real launched Tug.app (they should print log lines until `Ctrl-C`).
+
+**Tests:** none — Justfile recipes are infrastructure.
+
+**Checkpoint:**
+
+- [ ] `just --list` shows both recipes with their doc-comments.
+- [ ] `just tail-tugcast` exits cleanly on `Ctrl-C` and prints log lines as expected.
+- [ ] `just tail-replay` filters to the replay/lifecycle targets.
+
+---
+
+#### Step R0b: Capture cold-boot smoke and root-cause investigation {#step-r0b}
+
+**Commit:** `roadmap(transcript): record Smoke C root-cause findings`
+
+**Depends on:** [Step R0a](#step-r0a)
+
+**Artifacts:**
+
+- `roadmap/tugplan-tide-transcript-resume-smoke.md` — extend the existing smoke checklist with a "Smoke C diagnostic capture" appendix recording the run's observations: which `[tide::replay::]` and `[tide::session-lifecycle]` lines appeared, what the tugbank record looked like, what the rebound `LedgerEntry` carried, and what the on-disk JSONL looked like.
+- A findings paragraph at the bottom of the smoke file naming the specific bug(s) that broke Smoke C.
+
+**Tasks:**
+
+- [ ] Run a fresh Smoke C with `just tail-replay` open in a separate terminal.
+- [ ] Capture the following log lines in order: `[rebind.entry]`, `[spawn.effective_mode]`, `[supervisor.eager_spawn]`, `[session_init.parse]`, `[tide::replay::started]`, `[tide::replay::progress]`, `[tide::replay::complete]`, `[tide::replay::error]`.
+- [ ] Cross-reference with the on-disk JSONL at `~/.claude/projects/<encoded-project-dir>/<claude_session_id>.jsonl` — confirm the file exists, has the expected turn count, and the encoded path matches the binding's `projectDir`.
+- [ ] Cross-reference with the tugbank session-keys record for the bound card (use `tugbank` CLI or sqlite browser); confirm `claude_session_id` and `session_mode` values match what was last live.
+- [ ] Identify the failure mode against this candidate list:
+  - **Candidate 1**: `claude_session_id` not persisted from tugcode → tugcast → tugbank in the original session ([Step 0](#step-0) wiring gap).
+  - **Candidate 2**: `session_mode` persisted as `"new"` instead of `"resume"` and rebind defaulted accordingly ([Q01]-shape regression).
+  - **Candidate 3**: JSONL path resolution mismatch (encoded-project-dir bug — verify `encodeProjectDir` against the actual on-disk path).
+  - **Candidate 4**: WS-connect / rebind-spawn / replay-emit timing race — replay events emitted before tugdeck's WS reconnect drained.
+  - **Candidate 5**: Reducer drops frames silently — `tug_session_id` filter mismatch.
+- [ ] If a one-line fix lands the candidate, file it inline as a sub-task here. If it requires the request_replay verb to land first, push it to [Phase A-R1](#phase-a-r1) or call it a follow-on.
+
+**Tests:** observational; no automated tests.
+
+**Checkpoint:**
+
+- [ ] Smoke C log capture appended to the smoke checklist.
+- [ ] Root cause(s) named explicitly.
+- [ ] Fix-slot decided: inline here, or pushed to [Phase A-R1](#phase-a-r1) if it's wrapped up by the verb.
+
+---
+
+#### Phase A-R1: `request_replay` IPC verb across all three layers {#phase-a-r1}
+
+**Why this phase.** Per [D12]: tugdeck dispatches a CONTROL `request_replay` frame whenever it constructs services for a resume binding; tugcast forwards the verb to tugcode's stdin; tugcode invokes its existing `runReplay()` method. Idempotent at the reducer level via [D04] msg_id dedupe; runs alongside the existing startup-replay path. Closes the gap exposed by Smokes A and B without touching session lifecycle.
+
+#### Step R1a: tugcode handles inbound `request_replay` {#step-r1a}
+
+**Commit:** `tugcode(replay): handle request_replay inbound verb`
+
+**Depends on:** [Step R0b](#step-r0b)
+
+**References:** [D12]
+
+**Artifacts:**
+
+- `tugcode/src/types.ts` — new `RequestReplay` inbound type, type guard `isRequestReplay`, registered in the `InboundMessage` discriminated union.
+- `tugcode/src/main.ts` — IPC dispatch branch: `isRequestReplay(msg)` → fire-and-forget `sessionManager.runReplay()` (do not block the IPC loop on it).
+- `tugcode/src/session.ts` — make `runReplay`'s `replayActive` flag a re-entrancy guard. If a request arrives while replay is in flight, drop with a `tide::replay::request_dropped` warn telemetry line (the original replay's events satisfy the request).
+
+**Tasks:**
+
+- [ ] Add `RequestReplay` to `InboundMessage` discriminated union and `isInboundMessage` type-guard table.
+- [ ] Add `isRequestReplay` type guard.
+- [ ] Wire dispatch in `main.ts` after the existing `isInterrupt` / `isPermissionMode` branches; structure as fire-and-forget so replay's iteration doesn't block subsequent IPC reads.
+- [ ] Add a `tide::replay::request` info telemetry line when the verb is received and accepted, plus `tide::replay::request_dropped` when it's rejected by the re-entrancy guard.
+- [ ] Make `runReplay` re-entrancy-safe: if `replayActive` is true at entry, log + return immediately.
+
+**Tests:**
+
+- [ ] Inbound type guard accepts `{type:"request_replay"}` and rejects malformed shapes.
+- [ ] `SessionManager.runReplay()` is callable multiple times in sequence; each call emits a complete `replay_started`/`replay_complete` bracket.
+- [ ] Re-entrancy: a second `runReplay()` started while the first is in flight is dropped (no overlap on IPC stdout); the `request_dropped` telemetry line is emitted.
+- [ ] Integration: send `request_replay` over the IPC loop to a primed `SessionManager`; assert replay events flow and the IPC loop accepts subsequent messages.
+
+**Checkpoint:**
+
+- [ ] `bun test` (tugcode) — green.
+
+---
+
+#### Step R1b: tugcast forwards `request_replay` to tugcode stdin {#step-r1b}
+
+**Commit:** `tugcast(replay): forward request_replay CONTROL action to tugcode`
+
+**Depends on:** [Step R1a](#step-r1a)
+
+**References:** [D12]
+
+**Artifacts:**
+
+- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — extend the CONTROL frame handler (alongside `spawn_session`, `close_session`, etc.) to recognize `action == "request_replay"`. Body looks up the ledger entry; if `spawn_state == Live`, write `{"type":"request_replay"}\n` to tugcode's stdin via the existing per-session `input_tx` channel. If `spawn_state` is not Live (Idle, Spawning, Errored, Closed), no-op with a `tide::session-lifecycle event=request_replay.skipped` log line.
+- `tugrust/crates/tugcast/src/feeds/agent_bridge.rs` — minor; the new frame rides the existing per-session `input_tx` queue, so the bridge needs no behavior change beyond a recognized payload landing on the existing path.
+
+**Tasks:**
+
+- [ ] Define the wire shape: CONTROL frame `{ "action": "request_replay", "tug_session_id": "<id>" }`. Document in the supervisor's CONTROL action enumeration comments.
+- [ ] Extend the supervisor's CONTROL handler (`handle_control` switch on `action`) to recognize `"request_replay"`. Reject payloads without `tug_session_id` with `ControlError::InvalidPayload`.
+- [ ] Look up ledger entry; if `Live`, send `{"type":"request_replay"}` Frame to `input_tx`. If not Live, skip + log.
+- [ ] Add structured `tide::session-lifecycle event=request_replay.dispatched` log line on the success path; `event=request_replay.skipped` on the no-op branches with a `reason` field naming the spawn_state.
+- [ ] Tests: control_request_replay frame for a Live session → tugcode child mock observes `{"type":"request_replay"}` on its stdin.
+- [ ] Tests: control_request_replay frame for an Idle session → no stdin write, no error frame, log line matches.
+
+**Tests:**
+
+- [ ] CONTROL `request_replay` for a Live session writes the JSON-line to tugcode's stdin (use the existing test child-spawner mock).
+- [ ] CONTROL `request_replay` for an Idle / unknown / Closed session is a no-op + logged.
+- [ ] CONTROL `request_replay` with a missing `tug_session_id` returns a `ControlError` and logs.
+
+**Checkpoint:**
+
+- [ ] `cargo nextest run` (tugcast) — green.
+
+---
+
+#### Step R1c: tugdeck dispatches `request_replay` on services construction {#step-r1c}
+
+**Commit:** `tide(transcript): dispatch request_replay on services bind`
+
+**Depends on:** [Step R1b](#step-r1b)
+
+**References:** [D12]
+
+**Artifacts:**
+
+- `tugdeck/src/lib/session-lifecycle.ts` — new helper `sendRequestReplay(tugSessionId)` that emits a CONTROL frame with `{action: "request_replay", tug_session_id}`. Mirrors the existing `sendSpawnSession` / `sendCloseSession` pattern.
+- `tugdeck/src/lib/card-services-store.ts` — at the end of `_construct`, after services are wired and the `CodeSessionStore` subscribes to CODE_OUTPUT, dispatch `sendRequestReplay(binding.tugSessionId)` iff `binding.sessionMode === "resume"` and `getConnection()` is online. The fresh `CodeSessionStore` will subscribe before this dispatch's reply arrives, so no race against the inbound replay frames.
+- `tugdeck/src/lib/code-session-store.ts` — already handles `replay_started` / `replay_complete` / `turn_complete` events idempotently per [D04]; no reducer change.
+
+**Tasks:**
+
+- [ ] Add `sendRequestReplay` helper with a clear docstring naming [D12].
+- [ ] Wire dispatch in `cardServicesStore._construct` after the services bag is constructed and before the function returns.
+- [ ] Gate dispatch on `binding.sessionMode === "resume"`. Document why fresh-spawn bindings don't need it (no JSONL exists yet for a fresh-spawn until claude writes its first turn).
+- [ ] Gate dispatch on `getConnection()` non-null so test harnesses without a wire don't try to send.
+- [ ] Add a structured `tide::session-lifecycle event=request_replay.dispatch` log line for end-to-end observability.
+- [ ] Component test: render a Tide card; setBinding with `sessionMode: "resume"`; assert the test connection observed a CONTROL frame with `action=request_replay` and the right `tug_session_id`.
+- [ ] Integration test: simulate the HMR-shaped sequence — fresh `cardServicesStore` (test re-constructs), existing binding, replay frames flow through CODE_OUTPUT, transcript fills.
+
+**Tests:**
+
+- [ ] `sendRequestReplay` emits a CONTROL frame with the documented shape.
+- [ ] `cardServicesStore._construct` dispatches request_replay for a resume binding when the wire is online.
+- [ ] No dispatch for a fresh-spawn binding (`sessionMode: "new"`).
+- [ ] No dispatch when `getConnection()` is null.
+- [ ] End-to-end replay-after-construct: fresh services + replay frames + reducer commits to transcript matching a fixture.
+
+**Checkpoint:**
+
+- [ ] `bun x tsc --noEmit` exit 0.
+- [ ] `bun test` green.
+- [ ] `cargo nextest run` green.
+- [ ] `bun run audit:tokens lint` zero violations.
+
+---
+
+#### Phase A-R2: Re-verify Smokes A, B, C end-to-end {#phase-a-r2}
+
+**Why this phase.** With [Phase A-R1](#phase-a-r1) landed, Smokes A and B should both populate the transcript via the new request_replay path. Smoke C's outcome depends on what [Phase A-R0](#phase-a-r0) found — if a separate bug, that fix lands here or in a sibling step; if request_replay alone closes it, this phase verifies. Manual verification beat with telemetry capture so regressions later are easy to diagnose.
+
+#### Step R2: Re-run smoke checklist and verify {#step-r2}
+
+**Commit:** `roadmap(transcript): mark smokes A/B/C verified`
+
+**Depends on:** [Step R1c](#step-r1c)
+
+**Artifacts:**
+
+- `roadmap/tugplan-tide-transcript-resume-smoke.md` — checked boxes for Smokes A/B/C with telemetry transcripts inline, reflecting the new request_replay path.
+
+**Tasks:**
+
+- [ ] Run Smoke A (HMR) end-to-end against a real session with `just tail-replay` open. Capture the `[tide::session-lifecycle event=request_replay.dispatch]`, `[event=request_replay.dispatched]`, `[tide::replay::started/complete]` log sequence.
+- [ ] Run Smoke B (Developer > Reload). Same capture pattern.
+- [ ] Run Smoke C (Cold boot). Confirm whether the [Phase A-R0](#phase-a-r0) candidate fix landed or whether the new verb path on its own closes Smoke C.
+- [ ] For each smoke, mark the corresponding boxes in the smoke checklist with a brief telemetry quote and the elapsed time-to-rehydrate.
+- [ ] If any smoke fails, file a tracked failure with the exact log slice and assign it to a follow-on step (or to a next-iteration phase).
+
+**Tests:** none automated — manual verification beat.
+
+**Checkpoint:**
+
+- [ ] Smokes A/B/C all pass with the request_replay path.
+- [ ] No `[tide::replay::error]` lines (other than expected `jsonl_missing` for fresh project paths during Smoke A on a brand-new card).
+- [ ] Smoke checklist file reflects current state with telemetry.
+- [ ] Step 5's "Manual smoke checklist verified by user" checkbox is now checked.
+
+---
+
+#### Phase A-R3: Smoke D — mid-turn ordering semantics {#phase-a-r3}
+
+**Why this phase.** Mid-turn reload (Smoke D) has a coordination problem [Phase A-R1](#phase-a-r1) does not solve on its own. When `request_replay` arrives at tugcode while a `handleUserMessage` turn is in flight (claude is mid-stream), three things compete on tugcode's IPC stdout:
+
+  - replay events being emitted by `runReplay` (translator output for committed turns + orphan synthesis for the in-flight turn, per [D08])
+  - live `assistant_text` deltas that `handleUserMessage` is still forwarding from claude's stdout
+  - the eventual `turn_complete` for that live turn
+
+Without explicit coordination, the live deltas land at the fresh tugdeck `CodeSessionStore` with no preceding `user_message` context (a wire violation), the orphan synthesis commits the same turn as `result: "interrupted"` (per [D08]), and the live `turn_complete` is silently no-op'd by [D04] msg_id dedupe — so the transcript shows the user's submission marked interrupted while the actual completion lands in the JSONL on disk and never on screen.
+
+**Possible designs (pick one in the step body):**
+
+- **Design D-1 — pause live, drain replay, resume live.** tugcode holds claude's stdout reader during replay; live deltas buffer in the OS pipe (small) or in tugcode's accumulator (bounded). After `replay_complete`, resume forwarding. The reducer must learn a new path: "in-flight turn previously committed as interrupted now upgrades to completed" (not currently supported; shape TBD).
+- **Design D-2 — replay completed turns only; live carries the in-flight turn.** Translator skips the trailing in-flight turn from the JSONL (no orphan synthesis on `request_replay`, only on startup-replay). Live forwarding picks up where it left off; the fresh tugdeck reducer needs a new path: "attach to a turn already in flight" (ingest a partial assistant_text stream without a preceding `send`). Cleaner reducer story but requires new tugcode state — it must know which turn is in flight when the verb arrives.
+- **Design D-3 — defer Smoke D; document as known limitation.** Mid-turn reload is rare enough relative to A/B/C that shipping A/B/C and documenting D as "transcript shows committed turns; in-flight turn appears interrupted; user can re-submit" may be acceptable for v1. Graduates when imperative-DOM-cell-pooling or a follow-on plan addresses both halves of the problem.
+
+#### Step R3: Pick D-design, implement or defer {#step-r3}
+
+**Commit:** TBD (depends on design pick).
+
+**Depends on:** [Step R2](#step-r2)
+
+**Tasks:**
+
+- [ ] Choose between D-1, D-2, and D-3 with explicit rationale recorded in this step.
+- [ ] If D-1 or D-2: author a sub-plan describing wire-protocol and reducer changes; commit the sub-plan as a separate file under `roadmap/tugplan-tide-transcript-resume-mid-turn.md`.
+- [ ] If D-3: add the limitation to the [#roadmap] follow-ons section with explicit reason and acceptance criteria for graduation.
+- [ ] Update [#exit-criteria] accordingly.
+
+**Checkpoint:**
+
+- [ ] Design pick is recorded.
+- [ ] Smoke D either passes, or its known-limitation entry is explicit and time-bound in the roadmap.
+
+---
+
+#### Phase A-R4: Cleanup — converge startup-replay and request_replay paths {#phase-a-r4}
+
+**Why this phase.** After [Phase A-R1](#phase-a-r1)/[A-R2](#phase-a-r2), two replay-trigger paths coexist:
+
+  - tugcode's `runReplay()` at `initialize()` end ([Step 3](#step-3) / [D03])
+  - tugcode's `runReplay()` on inbound `request_replay` ([Step R1a](#step-r1a) / [D12])
+
+For cold boot, both fire (startup runs replay; tugdeck dispatches request_replay shortly after WS handshake). The reducer's [D04] msg_id dedupe makes this idempotent at the transcript level, but two paths is one too many for long-term clarity. This phase decides whether to collapse them.
+
+#### Step R4: Decide whether startup-replay stays {#step-r4}
+
+**Commit:** `tugcode(replay): collapse startup-replay into request-driven` (if cleanup is taken; otherwise `roadmap(transcript): record dual-path replay rationale`)
+
+**Depends on:** [Step R2](#step-r2)
+
+**Options:**
+
+- **Keep both.** Defensive: cold boot continues to work even if tugdeck's request_replay dispatch is delayed or lost. Cost: two paths to reason about; double-replay on cold boot (idempotent but log-noisy).
+- **Collapse to request-driven only.** tugcode's `initialize()` no longer runs replay. tugdeck always dispatches `request_replay` on services construction. Single path. Cost: a dropped CONTROL frame on cold boot leaves the card with an empty transcript (mitigated by retry on the tugdeck side or by tugcast's queue-on-Spawning behavior).
+
+**Tasks:**
+
+- [ ] Pick "keep both" or "collapse" based on the smoke evidence from [Step R2](#step-r2). If cold boot is reliable via request_replay alone, prefer collapse.
+- [ ] If collapsing: remove tugcode's `runReplay()` call from `main.ts`'s post-`initialize` path; tugdeck's dispatch becomes load-bearing for cold boot. Update tugcode tests that asserted startup-replay emission.
+- [ ] If keeping both: document the rationale + the [D04] dedupe contract in [D03] and [D12]. Remove the log noise by quieting the second replay's `tide::replay::*` lines (e.g. tag them with `source=request_replay` so they're greppable but not mistaken for the startup pass).
+
+**Checkpoint:**
+
+- [ ] Decision recorded in this step + cross-referenced in [D12].
+- [ ] All check commands green: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`.
+- [ ] Smokes A/B/C green via the chosen path.
 
 ---
 
@@ -981,7 +1299,11 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 - [ ] Reducer handles `replay_started` / `replay_complete`, exposes `replaying` phase, dedupes by msg_id, surfaces `lastReplayResult`.
 - [ ] Resume-mode session start in tugcode emits replay events on IPC stdout before forwarding live events from Claude's stdout; respects [D10] hard-timeout.
 - [ ] Tide card surfaces "Loading conversation…" / "Loading conversation… (N turns)" / timeout-state copy via `phase === "replaying"` + `lastReplayResult`; placeholder dismisses on `replay_complete`.
-- [ ] Smokes A (HMR), B (Reload), C (cold boot), D (mid-turn reload) all verified against a real session.
+- [ ] Smoke C (cold boot) root cause identified and fixed (per [Phase A-R0](#phase-a-r0)).
+- [ ] `request_replay` IPC verb ([D12]) implemented across tugcode/tugcast/tugdeck (per [Phase A-R1](#phase-a-r1)); a fresh `CodeSessionStore` for a resume binding receives replay events without needing a tugcode respawn.
+- [ ] Smokes A (HMR), B (Reload), C (cold boot) all verified against a real session via [Phase A-R2](#phase-a-r2).
+- [ ] Smoke D (mid-turn reload) resolved per [Phase A-R3](#phase-a-r3) — either green via the chosen design (D-1/D-2) or documented as a known limitation (D-3) with explicit graduation criteria in [#roadmap].
+- [ ] Convergence decision between startup-replay and request-driven replay recorded per [Phase A-R4](#phase-a-r4).
 - [ ] Sticky id eliminates the seed-transition remount for replay-committed turns; live-turn flicker documented as a follow-on.
 - [ ] `UserRowCell` renders inline atoms when `attachments` is non-empty.
 - [ ] `TugListView` dispatches `prefetchForIndices` / `cancelPrefetchForIndices` on a working window.
@@ -997,6 +1319,10 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 - [ ] tugcode resume-flow integration tests (Step 3) — ordering, missing JSONL, hard timeout.
 - [ ] Tide card replay-UX component tests (Step 4) — three placeholder copy variants, dismiss timing.
 - [ ] Tide card resume-integration tests (Step 5) — including orphan-turn smoke.
+- [ ] tugcode `request_replay` re-entrancy + dispatch tests (Step R1a).
+- [ ] tugcast CONTROL `request_replay` forward tests for Live / Idle / unknown sessions (Step R1b).
+- [ ] tugdeck `request_replay` dispatch on services construction + end-to-end fresh-store-replay test (Step R1c).
+- [ ] Manual smoke verification of A/B/C with telemetry capture (Step R2).
 - [ ] Adapter sticky-id tests (Step 6).
 - [ ] Atom-aware user-row tests (Step 7).
 - [ ] `TugListView` prefetch tests (Step 8).

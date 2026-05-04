@@ -33,7 +33,7 @@
  * cascade-scoped overrides live in `tide-card.css` per [D12]. The
  * primitive's token surface stays untouched.
  */
-
+ 
 import React, {
   useCallback,
   useMemo,
