@@ -61,27 +61,6 @@ const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // ~5MB decoded
 export const REPLAY_HARD_TIMEOUT_MS = 10_000;
 
 /**
- * Hard-fault threshold for the resume-mode spawn-and-init handshake
- * per Step R0d of the transcript-resume plan. The cold-boot resume
- * flow runs `prepareSession()` → `runReplay()` → `spawnClaudeAndWatch()`,
- * with the spawn happening in the background after replay completes.
- * If claude hangs silently after Bun.spawn (no exit, no input
- * accepted) the user sees a typeable-looking card whose first submit
- * would block forever. This timer catches that case: when the
- * deadline elapses without claude having been seen alive end-to-end
- * (`claudeReceivedInput`) and without the process having exited
- * (which the early-exit watcher covers separately), the session
- * surfaces `resume_failed { reason: "spawn_timeout" }` and exits.
- *
- * Pre-R0d the same hang showed up as the user stuck on "Loading
- * conversation…" because replay was blocked behind claude's spawn.
- * Post-R0d we lose that natural failure surface; this timer puts it
- * back deliberately. Resume mode only — fresh-mode failures are
- * typically immediate exits and the watcher catches them.
- */
-export const SPAWN_TIMEOUT_MS = 30_000;
-
-/**
  * Soft cap on the number of raw lines captured from claude's stdout
  * during the replay window. claude on `--resume` with no new user
  * input is essentially silent (a `system:init` plus occasional
@@ -895,20 +874,6 @@ export class SessionManager {
   /** Replay telemetry sink forwarded into `translateJsonlSession`. */
   private replayTelemetry: ReplayTelemetry | undefined;
   /**
-   * Spawn-and-init handshake timeout (resume mode only). See
-   * {@link SPAWN_TIMEOUT_MS} for rationale. Tests override to drive
-   * the timeout deterministically without a 30s wall-clock wait.
-   */
-  private spawnTimeoutMs: number;
-  /**
-   * Pending spawn-timeout handle. Armed by
-   * {@link armSpawnTimeout} in resume mode at the start of
-   * {@link spawnClaudeAndWatch}; cleared on `claudeReceivedInput`
-   * transitioning true (handleUserMessage), on shutdown, or on
-   * timeout fire.
-   */
-  private spawnTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
-  /**
    * Promise that resolves once {@link spawnClaudeAndWatch} has
    * finished its synchronous setup (claude process handle assigned,
    * watchers installed). {@link handleUserMessage} awaits this before
@@ -937,13 +902,6 @@ export class SessionManager {
       replayTimeoutMs?: number;
       replayLiveBufferMax?: number;
       replayTelemetry?: ReplayTelemetry;
-      /**
-       * Spawn-and-init handshake timeout override (resume mode only).
-       * Tests pass small values to drive the deterministic
-       * spawn-times-out path without a 30s wall-clock wait; production
-       * defaults to {@link SPAWN_TIMEOUT_MS}.
-       */
-      spawnTimeoutMs?: number;
     },
   ) {
     if (!sessionId) {
@@ -966,7 +924,6 @@ export class SessionManager {
     this.replayLiveBufferMax =
       options?.replayLiveBufferMax ?? REPLAY_LIVE_BUFFER_MAX;
     this.replayTelemetry = options?.replayTelemetry;
-    this.spawnTimeoutMs = options?.spawnTimeoutMs ?? SPAWN_TIMEOUT_MS;
   }
 
   private nextSeq(): number {
@@ -1054,13 +1011,6 @@ export class SessionManager {
     // Mark shutdown so the early-exit watcher ignores the exit code
     // from our kill rather than surfacing a phantom resume_failed.
     this.isShuttingDown = true;
-    // Disarm the spawn timeout: if we're tearing down before the
-    // timer fired, we don't want a phantom `resume_failed` after the
-    // process is already on its way down.
-    if (this.spawnTimeoutHandle !== null) {
-      clearTimeout(this.spawnTimeoutHandle);
-      this.spawnTimeoutHandle = null;
-    }
     if (this.claudeProcess) {
       try {
         // Close stdin to signal EOF (graceful shutdown).
@@ -1267,25 +1217,36 @@ export class SessionManager {
    * background while the user is already looking at the populated
    * transcript.
    *
-   * Behavior split by mode:
-   *   - **resume** — arms the {@link spawnTimeoutMs} timer. If
-   *     `claudeReceivedInput` is still false after the deadline (and
-   *     claude hasn't exited — the watcher covers that branch), fires
-   *     `resume_failed{reason:"spawn_timeout"}`. This catches the
-   *     "claude is hung silently" failure mode that pre-R0d showed up
-   *     as "Loading conversation…" forever (because replay was
-   *     blocked behind the spawn).
-   *   - **new** — no spawn timeout. Fresh-mode init failures are
-   *     typically immediate exits, and the early-exit watcher catches
-   *     them via stderr classification.
+   * Failure-detection posture (post-R1d):
    *
-   * Empirically (kept from the pre-R0d notes): claude in stream-json
-   * mode does NOT emit `system:init` until it receives input,
-   * regardless of mode. Waiting for one would deadlock; we
-   * synthesized the init in `prepareSession()` (or
-   * `initialize()`). The early-exit watcher handles the failure
-   * cases — stale `--resume` id, `--session-id` collision — by
-   * pattern-matching claude's stderr.
+   * The early-exit watcher (`installEarlyExitWatcher`) catches the
+   * common cases — claude exits during init for any reason (stale
+   * `--resume` id, `--session-id` collision, missing binary, immediate
+   * crash) — by pattern-matching claude's stderr and surfacing
+   * `resume_failed`. That is the only observable "claude failed"
+   * signal tugcode has at startup.
+   *
+   * R0d originally introduced a 30s spawn-watchdog timer on top of
+   * the watcher to catch a "claude is hung silently — running but
+   * unresponsive" failure mode. That timer was removed in
+   * [Step R1d](roadmap/tugplan-tide-transcript-resume.md#step-r1d):
+   * the proxy it used (`claudeReceivedInput`) only flips on user
+   * input, so its actual semantic was "user idle for 30s," not
+   * "claude is hung." Smoke B exposed this — Developer>Reload doesn't
+   * trigger a `user_message`, the timer fired regardless of claude's
+   * health, and a healthy claude got killed at the 30-second mark.
+   *
+   * The trade-off the removal accepts: a genuinely-hung claude
+   * (running but never emits, never exits) leaves the user with a
+   * populated transcript that doesn't react to the first submit.
+   * That failure mode is rare; the user's recourse is to close the
+   * card and reopen. The false-positive on user idle was the larger
+   * cost. Empirically (kept from the pre-R0d notes): claude in
+   * stream-json mode does NOT emit `system:init` until it receives
+   * input, regardless of mode — so absence-of-stdout is
+   * indistinguishable from absence-of-input, and there is no
+   * observable signal we could plumb that would distinguish "hung"
+   * from "idle" without sending a probe.
    */
   spawnClaudeAndWatch(): Promise<void> {
     const claudeFlag = this.sessionMode === "resume" ? "resume" : "session-id";
@@ -1299,10 +1260,6 @@ export class SessionManager {
 
     this.startStderrReader();
     this.installEarlyExitWatcher();
-
-    if (this.sessionMode === "resume") {
-      this.armSpawnTimeout();
-    }
 
     logSessionLifecycle("tugcode.spawn_claude_async", {
       session_id: this.sessionId,
@@ -1323,59 +1280,6 @@ export class SessionManager {
     }
 
     return this.claudeReadyPromise!;
-  }
-
-  /**
-   * Arm the spawn-and-init handshake timeout (resume mode only). On
-   * expiry, if claude hasn't been seen alive end-to-end and hasn't
-   * exited, fires `resume_failed{reason:"spawn_timeout"}` and exits.
-   * Otherwise it's a no-op — `claudeReceivedInput` going true means
-   * the happy path is in flight; `isShuttingDown` means we're tearing
-   * down anyway; a null process means the early-exit watcher already
-   * tore claude down.
-   */
-  private armSpawnTimeout(): void {
-    if (this.spawnTimeoutHandle !== null) {
-      clearTimeout(this.spawnTimeoutHandle);
-    }
-    const ms = this.spawnTimeoutMs;
-    this.spawnTimeoutHandle = setTimeout(() => {
-      this.spawnTimeoutHandle = null;
-      if (this.isShuttingDown) return;
-      if (this.claudeReceivedInput) return;
-      if (!this.claudeProcess) return;
-
-      // Claude is still around but has been silently unresponsive
-      // for the deadline. Tear it down so the early-exit watcher
-      // doesn't double-fire on the kill, then surface the failure
-      // through the canonical resume_failed lifecycle.
-      this.isShuttingDown = true;
-      try {
-        this.claudeProcess.kill();
-      } catch {
-        // Already gone — nothing to clean up.
-      }
-
-      const reason = `claude did not respond within ${ms}ms (spawn timeout)`;
-      logSessionLifecycle("tugcode.spawn_timeout", {
-        session_id: this.sessionId,
-        timeout_ms: ms,
-      });
-      logSessionLifecycle("tugcode.resume_failed", {
-        stale_session_id: this.sessionId,
-        reason,
-        classification: "spawn_timeout",
-      });
-      void writeLineAndExit(
-        {
-          type: "resume_failed",
-          reason,
-          stale_session_id: this.sessionId,
-          ipc_version: 2,
-        },
-        0,
-      );
-    }, ms);
   }
 
   /**
@@ -1894,18 +1798,11 @@ export class SessionManager {
     stdin.write(userInput);
     stdin.flush();
     // Claude has now received input from us, so it has been seen alive
-    // end-to-end. The early-exit watcher uses this flag to gate its
+    // end-to-end. The early-exit watcher reads this flag to gate its
     // init-failure classification: any exit from this point on is a
     // runtime crash (handled by the stream-end branch below), not a
-    // resume_failed. The spawn-timeout watcher also reads this flag;
-    // disarm explicitly so the timer doesn't sit pending until its
-    // scheduled fire (which would be a no-op now, but a clean disarm
-    // keeps the event loop quiet).
+    // resume_failed.
     this.claudeReceivedInput = true;
-    if (this.spawnTimeoutHandle !== null) {
-      clearTimeout(this.spawnTimeoutHandle);
-      this.spawnTimeoutHandle = null;
-    }
 
     try {
       while (true) {

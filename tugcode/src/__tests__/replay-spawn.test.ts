@@ -750,7 +750,6 @@ describe("Step R0d — cold-boot resume order", () => {
   function makeUnprimedManager(opts?: {
     jsonlReader?: (path: string) => Promise<JsonlReadResult>;
     stderr?: string[];
-    spawnTimeoutMs?: number;
     spawnDelayMs?: number;
   }): {
     manager: SessionManager;
@@ -772,7 +771,6 @@ describe("Step R0d — cold-boot resume order", () => {
           opts?.jsonlReader ??
           (async () => ({ kind: "ok" as const, jsonl: twoTurnJsonl() })),
         replayTimeoutMs: 10_000,
-        spawnTimeoutMs: opts?.spawnTimeoutMs,
       },
     );
     const claudeHandle = mockClaudeChild({ stderr: opts?.stderr });
@@ -929,68 +927,58 @@ describe("Step R0d — cold-boot resume order", () => {
     expect(failed.reason).toContain("No conversation found");
   });
 
-  test("spawn-times-out: hung claude (no exit, no input) fires resume_failed{spawn_timeout}", async () => {
-    const { manager, sessionId } = makeUnprimedManager({
-      // 10ms gives plenty of time for the timer to fire while the
-      // test waits, without making the test slow.
-      spawnTimeoutMs: 10,
-    });
+  // ---------------------------------------------------------------------------
+  // Step R1d — absence-of-spawn-timer regression
+  // ---------------------------------------------------------------------------
+  //
+  // The R0d 30s spawn-watchdog was removed in [Step R1d] after Smoke B
+  // exposed it firing on user idle: its proxy `claudeReceivedInput`
+  // only flips on the user's first submit, so any session where the
+  // user paused for 30s after spawn was wrongly classified as a hang
+  // and resume_failed. The fix is "no timer at all" — claude in
+  // stream-json mode emits nothing on stdout until input, so there is
+  // no observable signal that distinguishes "hung" from "idle"
+  // without sending a probe (which would cost API tokens and pollute
+  // the JSONL).
+  //
+  // This test pins the new contract: a primed resume-mode manager
+  // with a healthy mock claude and no user input emits NO
+  // `resume_failed` frame, and the claude process stays alive.
+  // The timer's prior 30s window has elapsed many times over by the
+  // 1500ms wait — pre-R1d (with the timer's threshold knob set low)
+  // this would have fired the timer; post-R1d the absence is total.
+
+  test("Step R1d: no spawn timer fires under user idle (claude stays alive past former timeout window)", async () => {
+    const { manager, claudeHandle } = makeUnprimedManager();
 
     const { emitted } = await captureIpc(async () => {
       manager.prepareSession();
       await manager.runReplay();
       await manager.spawnClaudeAndWatch();
-      // Wait long enough for the spawn-timeout timer to fire. Claude
-      // mock never exits and never receives input; the timer is the
-      // only path to surfacing.
-      await new Promise((r) => setTimeout(r, 30));
+      // Hold the manager idle past any plausible timeout window.
+      // 1500ms is well past 1s and clearly distinct from the 30s the
+      // R0d timer used; the absence at this scale is what we lock in.
+      await new Promise((r) => setTimeout(r, 1500));
     });
 
-    const failed = emitted.find((e) => e.type === "resume_failed") as
-      | Record<string, unknown>
-      | undefined;
-    expect(failed).toBeDefined();
-    expect(failed!.stale_session_id).toBe(sessionId);
-    expect(failed!.reason).toContain("spawn timeout");
-  });
+    // No resume_failed of any kind should have landed on the wire.
+    const failedAll = emitted.filter((e) => e.type === "resume_failed");
+    expect(failedAll).toHaveLength(0);
 
-  test("spawn-times-out is suppressed once handleUserMessage runs", async () => {
-    // Once user submits, claudeReceivedInput flips true and the
-    // spawn-timeout disarms. A subsequent timer fire would be a
-    // no-op anyway (the guards inside armSpawnTimeout's callback
-    // catch claudeReceivedInput), but disarming explicitly avoids a
-    // pending-handle event-loop nudge.
-    const { manager } = makeUnprimedManager({
-      spawnTimeoutMs: 30,
+    // And the claude mock was never killed (no .exit() called by us
+    // and no internal timer should have called .kill()). The test
+    // doesn't have direct visibility into kill calls, but if a kill
+    // had happened, the early-exit watcher path would have surfaced
+    // a resume_failed — already asserted absent above. Belt-and-
+    // suspenders: confirm the mock's exit promise is still pending
+    // (resolves only when claudeHandle.exit(code) is called, which
+    // we did not do).
+    let mockExited = false;
+    void claudeHandle.child.exited.then(() => {
+      mockExited = true;
     });
-
-    const { emitted } = await captureIpc(async () => {
-      manager.prepareSession();
-      await manager.runReplay();
-      await manager.spawnClaudeAndWatch();
-
-      // Submit immediately — under the timer's 30ms threshold.
-      // handleUserMessage will block reading claude's (closed)
-      // stdout, eventually returning via the stream-end branch. We
-      // race it with a short wait so the test doesn't hang.
-      const userMsg = manager
-        .handleUserMessage({
-          type: "user_message",
-          text: "ping",
-          attachments: [],
-        })
-        .catch(() => {});
-      await Promise.race([userMsg, new Promise((r) => setTimeout(r, 50))]);
-    });
-
-    // No spawn-timeout-classified resume_failed should have fired.
-    const failedAll = emitted.filter(
-      (e) => e.type === "resume_failed",
-    ) as Array<Record<string, unknown>>;
-    const spawnTimeouts = failedAll.filter((f) =>
-      String(f.reason ?? "").includes("spawn timeout"),
-    );
-    expect(spawnTimeouts).toHaveLength(0);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockExited).toBe(false);
   });
 });
 

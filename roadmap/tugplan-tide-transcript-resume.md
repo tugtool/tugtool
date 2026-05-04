@@ -1394,17 +1394,17 @@ The two awaits are sequential, but they're not actually dependent: replay only n
 
 **Tasks:**
 
-- [ ] Delete the timer code per Artifacts.
-- [ ] Verify by grep that `spawnTimeout`, `armSpawnTimeout`, `SPAWN_TIMEOUT_MS` produce zero matches across `tugcode/src/`.
-- [ ] Verify by grep that `claudeReceivedInput` retains exactly one writer (`handleUserMessage`) and one reader (`installEarlyExitWatcher`).
-- [ ] Update R0d plan-section status note.
-- [ ] Add a code comment at the deletion site naming the trade-off ("rare hung-claude is the user's responsibility to recognize and close; the false-positive on user idle was the larger cost").
+- [x] Delete the timer code per Artifacts.
+- [x] Verify by grep that `spawnTimeout`, `armSpawnTimeout`, `SPAWN_TIMEOUT_MS` produce zero matches across `tugcode/src/`. *Confirmed.*
+- [x] Verify by grep that `claudeReceivedInput` retains exactly one writer (`handleUserMessage`) and one reader (`installEarlyExitWatcher`). *Confirmed: 1 field decl, 1 writer at handleUserMessage, 1 reader in installEarlyExitWatcher, plus 2 doc references.*
+- [x] Update R0d plan-section status note. *Already added in the Phase A-R1.5 plan-authoring commit.*
+- [x] Add a code comment at the deletion site naming the trade-off. *Folded into the rewritten `spawnClaudeAndWatch` docstring (failure-detection posture block) — names both the false-positive that drove the removal and the rare hung-claude trade-off the removal accepts.*
 
 **Tests:**
 
-- [ ] Remove the two superseded tests.
-- [ ] Existing tests that exercise the early-exit watcher (`replay-spawn.test.ts`'s "claude crash mid-replay" and the spawn-fails-after-replay scenarios) continue to pass — the watcher still owns `claudeReceivedInput`, that contract is unchanged.
-- [ ] Add one new regression test to lock in "no spawn timer fires under user idle": `bun test`-level test that drives `prepareSession → runReplay → spawnClaudeAndWatch`, holds a mock claude alive for `1500ms` (well past any prior timeout window for a configured-fast variant), asserts no `resume_failed` frame is emitted, asserts the claude process is still alive. This test would have failed pre-R1d (with the timer's `spawnTimeoutMs` knob set low) and passes post-R1d unconditionally.
+- [x] Remove the two superseded tests.
+- [x] Existing tests that exercise the early-exit watcher (`replay-spawn.test.ts`'s "claude crash mid-replay" and the spawn-fails-after-replay scenarios) continue to pass — the watcher still owns `claudeReceivedInput`, that contract is unchanged.
+- [x] Add one new regression test to lock in "no spawn timer fires under user idle": `bun test`-level test that drives `prepareSession → runReplay → spawnClaudeAndWatch`, holds a mock claude alive for `1500ms` (well past any prior timeout window), asserts no `resume_failed` frame is emitted, asserts the claude process is still alive. **Failure-first proven**: temporarily reintroduced a 500ms timer skeleton in `spawnClaudeAndWatch`; the new test failed with `Expected length: 0 / Received length: 1` exactly where it should. Skeleton then removed.
 
 **Tuglaws cross-check:**
 
@@ -1412,10 +1412,10 @@ The two awaits are sequential, but they're not actually dependent: replay only n
 
 **Checkpoint:**
 
-- [ ] `bun test` (tugcode) — green.
-- [ ] `cargo nextest run` (workspace) — green.
-- [ ] `just lint` — clean.
-- [ ] Manual: Smoke B passes (transcript fills via request_replay, no "Couldn't resume" dialog after 30s of idle). Capture telemetry slice. *This is R1d's load-bearing user-visible verification; the automated regression test pins the absence-of-timer at the unit level.*
+- [x] `bun test` (tugcode) — green. *264 pass (was 265 — net −1 from removing 2 superseded tests + adding 1 regression test).*
+- [x] `cargo nextest run` (workspace) — green. *1215 pass.*
+- [x] `just lint` — clean.
+- [x] Manual: Smoke B passes (transcript fills via request_replay, no "Couldn't resume" dialog after 30s of idle). Capture telemetry slice. *Verified by user 2026-05-04. Telemetry shows claude spawned at `22:21:12.190` and 41 seconds of post-spawn idle with zero `tugcode.spawn_timeout` events on the wire — the R1d-removed timer would have fired at the 30s mark pre-removal. R1c request_replay dispatch landed at `22:21:11.901` with `request_replay.skipped reason="spawning"` (correct no-op for an entry still in Spawning state — the cold-boot startup-replay covers that case).*
 
 ---
 
