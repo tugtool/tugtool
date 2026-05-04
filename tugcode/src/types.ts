@@ -66,6 +66,21 @@ export interface StopTask {
   task_id: string;
 }
 
+/**
+ * Inbound `request_replay` verb per [D12]. Tugdeck dispatches a
+ * CONTROL frame on services construction for a resume binding;
+ * tugcast forwards the verb to tugcode's stdin as this shape;
+ * tugcode invokes its existing `runReplay()` so a freshly-mounted
+ * `CodeSessionStore` receives the JSONL bracket without needing a
+ * tugcode respawn. Idempotent at the reducer via [D04] msg_id dedupe;
+ * the receiving side's re-entrancy guard drops a request that arrives
+ * while a replay is already in flight (the in-flight replay's events
+ * satisfy the request).
+ */
+export interface RequestReplay {
+  type: "request_replay";
+}
+
 export type InboundMessage =
   | ProtocolInit
   | UserMessage
@@ -75,7 +90,8 @@ export type InboundMessage =
   | PermissionModeMessage
   | ModelChange
   | SessionCommand
-  | StopTask;
+  | StopTask
+  | RequestReplay;
 
 // Outbound message types (tugcode stdout → tugcast)
 // ipc_version is required per D15 (#d15-ipc-version). Always set to 2.
@@ -390,7 +406,8 @@ export function isInboundMessage(msg: unknown): msg is InboundMessage {
     typed.type === "permission_mode" ||
     typed.type === "model_change" ||
     typed.type === "session_command" ||
-    typed.type === "stop_task"
+    typed.type === "stop_task" ||
+    typed.type === "request_replay"
   );
 }
 
@@ -428,4 +445,8 @@ export function isSessionCommand(msg: InboundMessage): msg is SessionCommand {
 
 export function isStopTask(msg: InboundMessage): msg is StopTask {
   return msg.type === "stop_task";
+}
+
+export function isRequestReplay(msg: InboundMessage): msg is RequestReplay {
+  return msg.type === "request_replay";
 }

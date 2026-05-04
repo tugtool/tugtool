@@ -993,3 +993,152 @@ describe("Step R0d — cold-boot resume order", () => {
     expect(spawnTimeouts).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase A-R1 — request_replay re-entrancy and sequential callability
+// ---------------------------------------------------------------------------
+//
+// `runReplay()` is now invoked from two paths:
+//   - cold-boot order (Step R0d): once per protocol_init, before claude
+//     spawns
+//   - request_replay verb ([D12]): on demand, against an already-live
+//     SessionManager whenever tugdeck constructs services for a resume
+//     binding (HMR, reload, future card mounts)
+//
+// These tests lock in the contract the second path needs:
+//   1. Calling runReplay() twice in sequence emits two complete bracket
+//      pairs — each replay is independent and idempotent at the wire.
+//   2. Calling runReplay() while a replay is already in flight is
+//      dropped at the entry guard and emits a single `request_dropped`
+//      telemetry line; no overlapping output on IPC stdout.
+
+describe("Phase A-R1 — runReplay sequential and re-entrant calls", () => {
+  test("two sequential runReplay() calls each emit a full bracket pair", async () => {
+    const { manager } = await makePrimedManager({});
+
+    const { emitted } = await captureIpc(async () => {
+      await manager.runReplay();
+      await manager.runReplay();
+    });
+
+    const types = emitted.map((m) => m.type);
+    const startedCount = types.filter((t) => t === "replay_started").length;
+    const completeCount = types.filter((t) => t === "replay_complete").length;
+    expect(startedCount).toBe(2);
+    expect(completeCount).toBe(2);
+
+    // Order: started, complete, started, complete (no overlap).
+    const bracketOrder = types.filter(
+      (t) => t === "replay_started" || t === "replay_complete",
+    );
+    expect(bracketOrder).toEqual([
+      "replay_started",
+      "replay_complete",
+      "replay_started",
+      "replay_complete",
+    ]);
+
+    // Each bracket close has the same successful count.
+    const completes = emitted.filter(
+      (e) => e.type === "replay_complete",
+    ) as ReplayComplete[];
+    expect(completes[0].count).toBe(2);
+    expect(completes[0].error).toBeUndefined();
+    expect(completes[1].count).toBe(2);
+    expect(completes[1].error).toBeUndefined();
+  });
+
+  test("re-entrant runReplay() while another is in flight is dropped; no overlapping bracket on the wire", async () => {
+    // Use a gated reader so the first runReplay is provably mid-flight
+    // when we kick off the second one. Without the gate the first call
+    // can race to completion before the second starts, defeating the
+    // re-entrancy assertion.
+    let resolveRead: ((r: JsonlReadResult) => void) | null = null;
+    let resolveStarted: (() => void) | null = null;
+    const startedPromise = new Promise<void>((r) => {
+      resolveStarted = r;
+    });
+    const gatedRead = (_path: string): Promise<JsonlReadResult> =>
+      new Promise<JsonlReadResult>((resolve) => {
+        resolveRead = resolve;
+        resolveStarted!();
+      });
+
+    const { manager } = await makePrimedManager({
+      jsonlReader: gatedRead,
+    });
+
+    // Capture stderr so we can verify the request_dropped telemetry
+    // line. The wrapped console.log in main.ts goes to stderr in
+    // production; here `logReplay` calls `console.log` which is
+    // unwrapped under the test runner. Either way we need an
+    // independent capture.
+    const droppedLogs: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      const joined = args.map(String).join(" ");
+      if (joined.includes("tide::replay::request_dropped")) {
+        droppedLogs.push(joined);
+      }
+    };
+
+    const { emitted } = await captureIpc(async () => {
+      try {
+        const firstReplay = manager.runReplay();
+        // First runReplay is now awaiting the gated reader.
+        await startedPromise;
+        // Second call while the first is still in flight. The
+        // re-entrancy guard (replayActive flag) must drop this one.
+        await manager.runReplay();
+        // Release the first reader so the in-flight replay can
+        // complete and the test can finish.
+        resolveRead!({ kind: "ok", jsonl: twoTurnJsonl() });
+        await firstReplay;
+      } finally {
+        console.log = originalLog;
+      }
+    });
+
+    const types = emitted.map((m) => m.type);
+    const startedCount = types.filter((t) => t === "replay_started").length;
+    const completeCount = types.filter((t) => t === "replay_complete").length;
+
+    // Exactly one bracket pair lands on the wire — the first replay's.
+    // The second call returned without writing anything.
+    expect(startedCount).toBe(1);
+    expect(completeCount).toBe(1);
+
+    // The dropped second call emitted its telemetry line.
+    expect(droppedLogs).toHaveLength(1);
+    expect(droppedLogs[0]).toContain("tide::replay::request_dropped");
+    expect(droppedLogs[0]).toContain("reason=replay_in_flight");
+  });
+
+  test("sequential runReplay() works after a previous replay completed (validates replayActive flag clears)", async () => {
+    // Regression: if the re-entrancy guard accidentally left
+    // replayActive=true after a normal completion, the second call
+    // would be silently dropped. The first sequential test above
+    // covers the happy path; this test verifies it explicitly via the
+    // ordering on the wire — the second bracket must appear AFTER the
+    // first bracket completes, not be dropped.
+    const { manager } = await makePrimedManager({});
+
+    const { emitted } = await captureIpc(async () => {
+      await manager.runReplay();
+      // Between calls: nothing else on the wire — the first call must
+      // have cleared replayActive in its `finally` block.
+      await manager.runReplay();
+    });
+
+    // Replay-related frames in order.
+    const replayFrames = emitted.filter(
+      (e) => e.type === "replay_started" || e.type === "replay_complete",
+    );
+    expect(replayFrames.map((f) => f.type)).toEqual([
+      "replay_started",
+      "replay_complete",
+      "replay_started",
+      "replay_complete",
+    ]);
+  });
+});

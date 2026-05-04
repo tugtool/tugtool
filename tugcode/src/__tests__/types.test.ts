@@ -10,6 +10,7 @@ import {
   isModelChange,
   isSessionCommand,
   isStopTask,
+  isRequestReplay,
 } from "../types.ts";
 import type {
   AssistantText,
@@ -93,6 +94,21 @@ describe("types.ts type guards", () => {
     const msg = { type: "stop_task" as const, task_id: "task-abc" };
     expect(isStopTask(msg)).toBe(true);
     expect(isSessionCommand(msg)).toBe(false);
+  });
+
+  test("isInboundMessage accepts request_replay per [D12]", () => {
+    expect(isInboundMessage({ type: "request_replay" })).toBe(true);
+    // Malformed shapes still rejected: type guard is type-only,
+    // arbitrary extra fields don't cause acceptance changes.
+    expect(isInboundMessage({ type: "request_replay_typo" })).toBe(false);
+    expect(isInboundMessage({})).toBe(false);
+  });
+
+  test("isRequestReplay discriminates request_replay", () => {
+    const msg = { type: "request_replay" as const };
+    expect(isRequestReplay(msg)).toBe(true);
+    expect(isInterrupt(msg)).toBe(false);
+    expect(isStopTask(msg as never)).toBe(false);
   });
 
   test("PermissionModeMessage accepts dontAsk mode", () => {

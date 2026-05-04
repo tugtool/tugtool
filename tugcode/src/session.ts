@@ -1603,14 +1603,26 @@ export class SessionManager {
    */
   async runReplay(): Promise<void> {
     if (this.sessionMode !== "resume") return;
+    // Re-entrancy guard for the request_replay verb (Phase A-R1 /
+    // [D12]). Cold-boot replay and request-driven replay share this
+    // method. If a request lands while a replay is already in flight,
+    // drop it: the in-flight bracket's events satisfy the request, and
+    // overlapping output would interleave on IPC stdout, producing
+    // out-of-order frames that violate L23 (user-visible state
+    // preservation) at tugdeck.
+    if (this.replayActive) {
+      logReplay("request_dropped", {
+        session_id: this.sessionId,
+        reason: "replay_in_flight",
+      });
+      return;
+    }
     // Step R0d cold-boot order calls runReplay before claude has been
     // spawned — `claudeProcess` is null and the JSONL is read straight
-    // from disk. Step R0c's pre-spawn flow and any future
-    // `request_replay` (Phase A-R1) that runs against an already-live
-    // claude both pass through this method; whether `claudeProcess`
-    // exists determines only whether we race the JSONL iterator
-    // against `child.exited`. Both flows still use the hard-budget
-    // timer.
+    // from disk. The Phase A-R1 request_replay path runs against an
+    // already-live claude. Whether `claudeProcess` exists determines
+    // only whether we race the JSONL iterator against `child.exited`;
+    // both flows still use the hard-budget timer.
     const claudeSessionId = this.resumeSessionId ?? this.sessionId;
 
     // Mark replay active *before* the first await so a claude crash

@@ -12,6 +12,7 @@ import {
   isModelChange,
   isSessionCommand,
   isStopTask,
+  isRequestReplay,
 } from "./types.ts";
 import { SessionManager } from "./session.ts";
 import { loadTranscript, StubReplayEngine } from "./stub-replay.ts";
@@ -319,6 +320,23 @@ async function main() {
       sessionManager?.handleModelChange(msg.model);
     } else if (isStopTask(msg)) {
       sessionManager?.handleStopTask(msg.task_id);
+    } else if (isRequestReplay(msg)) {
+      // Phase A-R1 / [D12]. Tugdeck dispatched a request_replay
+      // CONTROL frame on services construction for a resume binding;
+      // tugcast forwarded it here. Fire-and-forget: runReplay's
+      // re-entrancy guard drops a request that arrives while another
+      // replay is in flight, and the iterator is async — awaiting it
+      // here would block the IPC loop from reading subsequent frames
+      // (a user_message that lands during replay would queue behind
+      // the replay tail).
+      if (sessionManager) {
+        console.log(`[tide::replay::request] session_id=${sessionId}`);
+        sessionManager.runReplay().catch((err) => {
+          console.error("request_replay failed:", err);
+        });
+      } else {
+        console.error("request_replay received before session initialized");
+      }
     } else if (isSessionCommand(msg)) {
       if (sessionManager) {
         sessionManager.handleSessionCommand(msg.command).catch((err) => {
