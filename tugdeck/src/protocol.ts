@@ -63,6 +63,7 @@ export const CONTROL_ACTION_RESET_SESSION = "reset_session";
 export const CONTROL_ACTION_LIST_SESSIONS = "list_sessions";
 export const CONTROL_ACTION_FORGET_SESSION = "forget_session";
 export const CONTROL_ACTION_FORGET_PROJECT_DIR_SESSIONS = "forget_project_dir_sessions";
+export const CONTROL_ACTION_REQUEST_REPLAY = "request_replay";
 
 /**
  * Wire shape for one row of the tugcast-side session ledger.
@@ -392,6 +393,35 @@ export function encodeForgetSession(sessionId: string): Frame {
 export function encodeForgetProjectDirSessions(projectDir: string): Frame {
   return controlFrame(CONTROL_ACTION_FORGET_PROJECT_DIR_SESSIONS, {
     project_dir: projectDir,
+  });
+}
+
+/**
+ * Build a `request_replay` CONTROL frame per [D12].
+ *
+ * The supervisor's handler looks up the live tugcode subprocess for the
+ * given `tugSessionId` and forwards `{"type":"request_replay"}` to its
+ * stdin. Tugcode's IPC loop runs `runReplay()` against the on-disk JSONL,
+ * which streams `replay_started` / `user_message_replay` / `assistant_text`
+ * / `turn_complete` / `replay_complete` frames back through CODE_OUTPUT.
+ *
+ * Idempotent at three layers:
+ *   1. Supervisor — no-op if the entry isn't `Live`.
+ *   2. Tugcode — `runReplay`'s re-entrancy guard drops a request that
+ *      arrives mid-replay; the in-flight bracket's events satisfy it.
+ *   3. Reducer ([D04]) — `msg_id` dedupe means a redundant replay's
+ *      `turn_complete` events fold into the same `TurnEntry` rather than
+ *      duplicating transcript.
+ *
+ * Used by `cardServicesStore._construct` whenever a fresh
+ * `CodeSessionStore` is built for an existing resume binding (HMR,
+ * Developer > Reload, future card mounts). The fresh store has no
+ * replay history of its own; this verb tells the supervisor "send me
+ * the JSONL again so I can rehydrate."
+ */
+export function encodeRequestReplay(tugSessionId: string): Frame {
+  return controlFrame(CONTROL_ACTION_REQUEST_REPLAY, {
+    tug_session_id: tugSessionId,
   });
 }
 

@@ -46,7 +46,7 @@ import {
   cardSessionBindingStore,
   type CardSessionBinding,
 } from "./card-session-binding-store";
-import { sendCloseSession } from "./session-lifecycle";
+import { sendCloseSession, sendRequestReplay } from "./session-lifecycle";
 import {
   readTideRecentProjects,
   insertTideRecentProject,
@@ -279,8 +279,28 @@ class CardServicesStore {
     // the banner clears on the first of `replay_started`,
     // `replay_complete`, `transport_close`, or the 12s tick. New-mode
     // bindings get no preflight — there's nothing to restore.
+    //
+    // Recovery dispatch ([D12], Phase A-R1 / Step R1c). Whenever fresh
+    // services are constructed for a resume binding, ask the supervisor
+    // to forward a `request_replay` verb to the live tugcode subprocess.
+    // The supervisor no-ops if the entry isn't `Live` (cold boot —
+    // tugcode's startup-replay path covers that case); when the entry
+    // IS Live (HMR, Developer > Reload, future card mounts that find
+    // their session already alive on the supervisor side), the verb
+    // tells tugcode to re-run `runReplay` so the freshly-mounted
+    // `CodeSessionStore` rehydrates its transcript. Fresh-spawn
+    // bindings don't need this — there's no JSONL to replay until
+    // claude writes its first turn. Idempotent at three layers per
+    // [D04] msg_id dedupe + tugcode's re-entrancy guard +
+    // supervisor's Live-only forward.
+    //
+    // The dispatch runs AFTER `codeSessionStore` is constructed, so the
+    // store is already subscribed to CODE_OUTPUT before the supervisor
+    // starts streaming reply frames — no race between subscription and
+    // first inbound `replay_started`.
     if (binding.sessionMode === "resume") {
       codeSessionStore.notifyResumeBindingLanded();
+      sendRequestReplay(connection, binding.tugSessionId);
     }
 
     return {

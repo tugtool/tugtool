@@ -25,6 +25,7 @@
 import type { TugConnection } from "../connection";
 import {
   encodeCloseSession,
+  encodeRequestReplay,
   encodeSpawnSession,
   type SpawnSessionMode,
 } from "../protocol";
@@ -84,5 +85,34 @@ export function sendCloseSession(
   });
   cardSessionBindingStore.clearBinding(cardId);
   const frame = encodeCloseSession(cardId, tugSessionId);
+  connection.send(frame.feedId, frame.payload);
+}
+
+/**
+ * Send a `request_replay` CONTROL frame for `tugSessionId` per [D12].
+ *
+ * Asks the supervisor to forward a `request_replay` verb to the live
+ * tugcode subprocess, which re-runs `runReplay()` against the on-disk
+ * JSONL and streams the transcript back through CODE_OUTPUT. The
+ * fresh `CodeSessionStore` that triggered this dispatch is already
+ * subscribed to CODE_OUTPUT before this helper returns, so no race
+ * against the inbound replay frames.
+ *
+ * Used by `cardServicesStore._construct` for resume bindings (HMR,
+ * Developer > Reload, future card mounts that find their session
+ * already Live on the supervisor). Fresh-spawn bindings don't need
+ * this — there's no JSONL to replay until claude writes its first turn.
+ *
+ * Bindings, the binding store, and React state are unchanged; this
+ * helper is pure wire emission.
+ */
+export function sendRequestReplay(
+  connection: TugConnection,
+  tugSessionId: string,
+): void {
+  logSessionLifecycle("request_replay.dispatch", {
+    tug_session_id: tugSessionId,
+  });
+  const frame = encodeRequestReplay(tugSessionId);
   connection.send(frame.feedId, frame.payload);
 }

@@ -7,7 +7,10 @@
  */
 
 import { describe, test, expect } from "bun:test";
-import { sendCloseSession } from "../lib/session-lifecycle";
+import {
+  sendCloseSession,
+  sendRequestReplay,
+} from "../lib/session-lifecycle";
 import { cardSessionBindingStore } from "../lib/card-session-binding-store";
 import { FeedId } from "../protocol";
 
@@ -60,5 +63,38 @@ describe("sendCloseSession", () => {
     // Still sends the frame even if there was nothing to clear.
     expect(conn.sent.length).toBe(1);
     expect(cardSessionBindingStore.getBinding("card-unbound")).toBeUndefined();
+  });
+});
+
+describe("sendRequestReplay", () => {
+  test("emits a request_replay CONTROL frame with the given tug_session_id ([D12])", () => {
+    const conn = makeMockConnection();
+    sendRequestReplay(conn as never, "sess-replay-1");
+    expect(conn.sent.length).toBe(1);
+    expect(conn.sent[0].feedId).toBe(FeedId.CONTROL);
+    const payload = JSON.parse(new TextDecoder().decode(conn.sent[0].payload));
+    expect(payload).toEqual({
+      action: "request_replay",
+      tug_session_id: "sess-replay-1",
+    });
+  });
+
+  test("does not touch cardSessionBindingStore", () => {
+    // request_replay is pure wire emission — it must not mutate the
+    // binding store. Pre-seed a binding and verify it survives the
+    // dispatch (in contrast to sendCloseSession, which clears).
+    cardSessionBindingStore.setBinding("card-rr", {
+      tugSessionId: "sess-rr",
+      workspaceKey: "/work/rr",
+      projectDir: "/work/rr",
+      sessionMode: "resume",
+    });
+
+    const conn = makeMockConnection();
+    sendRequestReplay(conn as never, "sess-rr");
+
+    const binding = cardSessionBindingStore.getBinding("card-rr");
+    expect(binding).toBeDefined();
+    expect(binding?.tugSessionId).toBe("sess-rr");
   });
 });
