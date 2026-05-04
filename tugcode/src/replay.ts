@@ -40,6 +40,7 @@ import type {
   OutboundMessage,
   ReplayComplete,
   ReplayStarted,
+  SystemMetadata,
   ThinkingText,
   ToolResult,
   ToolUse,
@@ -644,7 +645,18 @@ function flushTurn(
  * any filesystem awareness itself.
  */
 export type ReplayInput =
-  | { kind: "ok"; jsonl: string }
+  | {
+      kind: "ok";
+      jsonl: string;
+      /**
+       * Claude's per-session id (matches the JSONL filename). Threaded
+       * through so the synthesized `system_metadata` IPC emitted at the
+       * top of replay can carry the right `session_id`. Optional —
+       * tests that don't care about the synthesized frame can omit it
+       * and the field defaults to "" downstream.
+       */
+      claudeSessionId?: string;
+    }
   | { kind: "missing"; message?: string }
   | { kind: "unreadable"; message: string };
 
@@ -723,6 +735,18 @@ export async function* translateJsonlSession(
 
   // OK branch: parse + translate line by line.
   const ctx = makeTranslateContext(telemetry);
+  const claudeSessionId = input.claudeSessionId ?? "";
+  // Synthesize a `system_metadata` IPC the first time we encounter an
+  // `assistant` entry that carries a `message.model`. The JSONL's
+  // top-level `system` entries are skipped (they mirror live
+  // session_init and aren't surveyed in current Claude Code JSONLs);
+  // the model field is duplicated on every assistant message via
+  // `message.model`. A single emission at the top of replay populates
+  // tugdeck's `SessionMetadataStore` so replayed turns render with
+  // the right model identifier and badge from the start, rather than
+  // the "Code" placeholder until claude's live session_init lands
+  // post-replay.
+  let emittedSystemMetadata = false;
   let sawAnyMalformed = false;
   let emittedSinceYield = 0;
 
@@ -745,6 +769,34 @@ export async function* translateJsonlSession(
         preview: line.slice(0, 80),
       });
       continue;
+    }
+
+    if (
+      !emittedSystemMetadata &&
+      parsed.type === "assistant" &&
+      typeof parsed.message?.model === "string" &&
+      parsed.message.model.length > 0
+    ) {
+      const sysMeta: SystemMetadata = {
+        type: "system_metadata",
+        session_id: claudeSessionId,
+        cwd: "",
+        tools: [],
+        model: parsed.message.model,
+        permissionMode: "",
+        slash_commands: [],
+        plugins: [],
+        agents: [],
+        skills: [],
+        mcp_servers: [],
+        version: "",
+        output_style: "",
+        fast_mode_state: "",
+        apiKeySource: "",
+        ipc_version: IPC_VERSION,
+      };
+      yield sysMeta;
+      emittedSystemMetadata = true;
     }
 
     const messages = translateJsonlEntry(parsed, ctx);

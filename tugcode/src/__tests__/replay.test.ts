@@ -171,45 +171,49 @@ describe("translateJsonlSession — happy path", () => {
     expect(out.at(0)?.type).toBe("replay_started");
     expect(out.at(-1)?.type).toBe("replay_complete");
 
-    // Two turns × {user_message_replay, assistant_text, turn_complete}
-    // = 6 inner messages + 2 brackets = 8 total.
-    expect(out.length).toBe(8);
+    // system_metadata synthesized once at the top of replay (between
+    // replay_started and the first turn) so SessionMetadataStore picks
+    // up the model name. Two turns × {user_message_replay,
+    // assistant_text, turn_complete} = 6 inner messages + 2 brackets +
+    // 1 system_metadata = 9 total.
+    expect(out.length).toBe(9);
+    expect(out[1]?.type).toBe("system_metadata");
 
     // Turn 1
-    const um1 = out[1];
+    const um1 = out[2];
     expect(isUserMessageReplay(um1)).toBe(true);
     if (!isUserMessageReplay(um1)) throw new Error("type-guard");
     expect(um1.text).toBe("first user prompt");
     expect(um1.msg_id).toBe("msg_aaa");
     expect(um1.attachments).toEqual([]);
 
-    const at1 = out[2];
+    const at1 = out[3];
     expect(isAssistantText(at1)).toBe(true);
     if (!isAssistantText(at1)) throw new Error("type-guard");
     expect(at1.text).toBe("first assistant reply");
     expect(at1.msg_id).toBe("msg_aaa");
     expect(at1.is_partial).toBe(false);
 
-    const tc1 = out[3];
+    const tc1 = out[4];
     expect(isTurnComplete(tc1)).toBe(true);
     if (!isTurnComplete(tc1)) throw new Error("type-guard");
     expect(tc1.msg_id).toBe("msg_aaa");
     expect(tc1.result).toBe("success");
 
     // Turn 2
-    const um2 = out[4];
+    const um2 = out[5];
     expect(isUserMessageReplay(um2)).toBe(true);
     if (!isUserMessageReplay(um2)) throw new Error("type-guard");
     expect(um2.msg_id).toBe("msg_bbb");
     expect(um2.text).toBe("second user prompt");
 
-    const at2 = out[5];
+    const at2 = out[6];
     expect(isAssistantText(at2)).toBe(true);
     if (!isAssistantText(at2)) throw new Error("type-guard");
     expect(at2.msg_id).toBe("msg_bbb");
     expect(at2.text).toBe("second assistant reply");
 
-    const tc2 = out[6];
+    const tc2 = out[7];
     expect(isTurnComplete(tc2)).toBe(true);
     if (!isTurnComplete(tc2)) throw new Error("type-guard");
     expect(tc2.msg_id).toBe("msg_bbb");
@@ -290,10 +294,12 @@ describe("translateJsonlSession — tool calls", () => {
     const out = await collectSession({ kind: "ok", jsonl });
 
     expect(out.at(0)?.type).toBe("replay_started");
-    // Inner sequence: user_message_replay, tool_use, tool_result,
-    // assistant_text, turn_complete (5).
+    // Inner sequence: system_metadata (synthesized once at top of
+    // replay), user_message_replay, tool_use, tool_result,
+    // assistant_text, turn_complete (6).
     const inner = out.slice(1, -1);
     expect(inner.map((m) => m.type)).toEqual([
+      "system_metadata",
       "user_message_replay",
       "tool_use",
       "tool_result",
@@ -302,7 +308,7 @@ describe("translateJsonlSession — tool calls", () => {
     ]);
 
     // tool_use payload sanity.
-    const tu = inner[1] as ToolUse;
+    const tu = inner[2] as ToolUse;
     expect(tu.tool_use_id).toBe("toolu_01");
     expect(tu.tool_name).toBe("Bash");
     expect(tu.input).toEqual({ command: "ls" });
@@ -312,13 +318,13 @@ describe("translateJsonlSession — tool calls", () => {
     expect(tu.msg_id).toBe("msg_terminal");
 
     // tool_result payload sanity.
-    const tr = inner[2] as ToolResult;
+    const tr = inner[3] as ToolResult;
     expect(tr.tool_use_id).toBe("toolu_01");
     expect(tr.output).toBe("file1\nfile2\n");
     expect(tr.is_error).toBe(false);
 
     // turn_complete msg_id matches.
-    const tc = inner[4] as TurnComplete;
+    const tc = inner[5] as TurnComplete;
     expect(tc.msg_id).toBe("msg_terminal");
     expect(tc.result).toBe("success");
   });
@@ -481,16 +487,18 @@ describe("translateJsonlSession — thinking + image + degenerate", () => {
     ]);
     const out = await collectSession({ kind: "ok", jsonl });
 
-    // Inner sequence: user_message_replay, thinking_text,
-    // assistant_text, turn_complete.
+    // Inner sequence: system_metadata (synthesized once at top of
+    // replay), user_message_replay, thinking_text, assistant_text,
+    // turn_complete.
     const inner = out.slice(1, -1);
     expect(inner.map((m) => m.type)).toEqual([
+      "system_metadata",
       "user_message_replay",
       "thinking_text",
       "assistant_text",
       "turn_complete",
     ]);
-    const thinking = inner[1] as ThinkingText;
+    const thinking = inner[2] as ThinkingText;
     expect(thinking.text).toBe("let me consider...");
     expect(thinking.is_partial).toBe(false);
     expect(thinking.msg_id).toBe("m_t");
@@ -554,6 +562,89 @@ describe("translateJsonlSession — thinking + image + degenerate", () => {
 });
 
 // ---------------------------------------------------------------------------
+// translateJsonlSession — synthesized system_metadata
+// ---------------------------------------------------------------------------
+
+describe("translateJsonlSession — synthesized system_metadata", () => {
+  test("model from the first assistant entry produces a single system_metadata at top of replay", async () => {
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "u1" }]),
+      assistantEntry({
+        msgId: "m1",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "a1" }],
+      }),
+      userEntry([{ type: "text", text: "u2" }]),
+      assistantEntry({
+        msgId: "m2",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "a2" }],
+      }),
+    ]);
+    const out = await collectSession({
+      kind: "ok",
+      jsonl,
+      claudeSessionId: "sess-fixture-1",
+    });
+    const sysMetas = out.filter((m) => m.type === "system_metadata");
+    expect(sysMetas.length).toBe(1);
+    const sm = sysMetas[0] as { model: string; session_id: string };
+    expect(sm.model).toBe("claude-opus-4-6");
+    expect(sm.session_id).toBe("sess-fixture-1");
+    // Position: between replay_started and the first user_message_replay.
+    const startIdx = out.findIndex((m) => m.type === "replay_started");
+    const sysIdx = out.findIndex((m) => m.type === "system_metadata");
+    const firstUmIdx = out.findIndex((m) => m.type === "user_message_replay");
+    expect(startIdx).toBeGreaterThanOrEqual(0);
+    expect(sysIdx).toBe(startIdx + 1);
+    expect(firstUmIdx).toBe(sysIdx + 1);
+  });
+
+  test("claudeSessionId omitted defaults the synthesized session_id to empty string", async () => {
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "u" }]),
+      assistantEntry({
+        msgId: "m",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "a" }],
+      }),
+    ]);
+    const out = await collectSession({ kind: "ok", jsonl });
+    const sm = out.find((m) => m.type === "system_metadata") as
+      | { session_id: string }
+      | undefined;
+    expect(sm).toBeDefined();
+    expect(sm!.session_id).toBe("");
+  });
+
+  test("JSONL with no model on any assistant emits no system_metadata", async () => {
+    // Unusual but possible if the JSONL is from a fixture or a future
+    // Claude version that omits the model field. Replay still works;
+    // the renderer falls back to the 'Code' default identifier.
+    const jsonlEntries: JsonlEntry[] = [
+      userEntry([{ type: "text", text: "u" }]),
+      {
+        type: "assistant",
+        message: {
+          id: "m",
+          role: "assistant",
+          stop_reason: "end_turn",
+          content: [{ type: "text", text: "a" }],
+          // model omitted on purpose
+        },
+      },
+    ];
+    const out = await collectSession({
+      kind: "ok",
+      jsonl: makeJsonl(jsonlEntries),
+    });
+    expect(out.find((m) => m.type === "system_metadata")).toBeUndefined();
+    // Turn still commits.
+    expect(out.find((m) => m.type === "turn_complete")).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // translateJsonlSession — skipped / unknown / orphan / malformed
 // ---------------------------------------------------------------------------
 
@@ -587,9 +678,12 @@ describe("translateJsonlSession — skipped top-level types", () => {
       { telemetry: tel },
     );
     // Inner sequence is just one turn — all skipped entries produced
-    // zero outbound messages.
+    // zero outbound messages. system_metadata is synthesized once at
+    // the top of replay (from the assistant entry's `message.model`)
+    // so the renderer's identifier and badge populate from the start.
     const inner = out.slice(1, -1);
     expect(inner.map((m) => m.type)).toEqual([
+      "system_metadata",
       "user_message_replay",
       "assistant_text",
       "turn_complete",
@@ -619,9 +713,11 @@ describe("translateJsonlSession — unknown shapes", () => {
     expect(tel.unknownShapes).toEqual([
       { kind: "top_level", type: "frobnicate-future-2026" },
     ]);
-    // The surrounding turn still committed.
+    // The surrounding turn still committed; system_metadata is
+    // synthesized once at the top of replay.
     const inner = out.slice(1, -1);
     expect(inner.map((m) => m.type)).toEqual([
+      "system_metadata",
       "user_message_replay",
       "assistant_text",
       "turn_complete",
@@ -690,12 +786,13 @@ describe("translateJsonlSession — orphan turn at EOF", () => {
 
     const inner = out.slice(1, -1);
     expect(inner.map((m) => m.type)).toEqual([
+      "system_metadata",
       "user_message_replay",
       "tool_use",
       "thinking_text",
       "turn_complete",
     ]);
-    const tc = inner[3] as TurnComplete;
+    const tc = inner[4] as TurnComplete;
     expect(tc.result).toBe("error");
     expect(tc.msg_id).toBe("m_orphan");
     // count is bumped on every flush — orphan included.
@@ -845,9 +942,9 @@ describe("translateJsonlSession — batched yields", () => {
       iterCount += 1;
     }
 
-    // We saw all 14 messages (replay_started + 4 * 3 inner +
-    // replay_complete = 14).
-    expect(iterCount).toBe(14);
+    // We saw all 15 messages (replay_started + system_metadata +
+    // 4 * 3 inner + replay_complete = 15).
+    expect(iterCount).toBe(15);
     // The setTimeout we scheduled fired before iteration completed —
     // proving the iterator yielded the loop at least once.
     expect(microtaskFiredMidStream).toBe(true);

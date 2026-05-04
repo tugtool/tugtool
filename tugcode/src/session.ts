@@ -1400,7 +1400,14 @@ export class SessionManager {
     });
 
     const startedAt = Date.now();
-    const input = await this.jsonlReader(jsonlPath);
+    const rawInput = await this.jsonlReader(jsonlPath);
+    // Thread the claude session id into the replay input so the
+    // synthesized `system_metadata` IPC at the top of replay carries
+    // the right session_id field. Only the `ok` variant carries
+    // payload; missing/unreadable variants pass through unchanged.
+    const input: typeof rawInput = rawInput.kind === "ok"
+      ? { ...rawInput, claudeSessionId }
+      : rawInput;
 
     const child = this.claudeProcess;
     const exitPromise: Promise<{ kind: "exit"; code: number | null }> =
