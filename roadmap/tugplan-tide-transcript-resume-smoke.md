@@ -15,12 +15,12 @@ For every smoke:
 
 ### Pre-flight
 
-- [ ] `tugcast` and `tugcode` binaries built and symlinked under
+- [x] `tugcast` and `tugcode` binaries built and symlinked under
       `~/.local/bin` (`just install` does this).
-- [ ] `tugdeck` dev server is running (`just dev` or equivalent) —
+- [x] `tugdeck` dev server is running (`just dev` or equivalent) —
       HMR must be live for Smoke A.
-- [ ] Tug.app launches and connects to the local supervisor.
-- [ ] You have at least one Tide card you can populate with several
+- [x] Tug.app launches and connects to the local supervisor.
+- [x] You have at least one Tide card you can populate with several
       turns. A simple seed: open Tide on this checkout, ask
       "summarize this repo in one paragraph"; let it complete; then
       ask "list the top-level directories"; let it complete.
@@ -32,19 +32,32 @@ For every smoke:
 Exercises: `tide-session-restore` may or may not fire; the existing
 `CodeSessionStore` (which survives HMR) keeps `transcript`.
 
-- [ ] Open a Tide card; submit ≥3 turns to populate `transcript`.
-- [ ] In your editor, save a tugdeck source file (e.g.
+**Status: PASSED 2026-05-04** (Phase A-R1.5).
+Telemetry captured during the Phase A-R1.5 verification cycle shows
+`request_replay.dispatched` → tugcode `[tide::replay::request]` →
+`[tide::replay::started]` → `[tide::replay::complete count=4 elapsed_ms=0]`
+end-to-end in ~110ms; transcript repaints with all prior turns; no
+stuck phase, no red banner. The structural fix that closed this
+smoke landed in [Phase A-R1](./tugplan-tide-transcript-resume.md#phase-a-r1)
+(`request_replay` verb) and was made reachable from the wire by the
+[Phase A-R1.5](./tugplan-tide-transcript-resume.md#phase-a-r1-5)
+collapse of the duplicate router allowlist (`ControlOutcome` enum)
+plus deletion of the R0d spawn-watchdog timer that was killing
+healthy claudes after 30s of user idle.
+
+- [x] Open a Tide card; submit ≥3 turns to populate `transcript`.
+- [x] In your editor, save a tugdeck source file (e.g.
       `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` —
       edit a comment to force HMR).
-- [ ] Wait for Vite HMR to swap the module(s) — usually instant.
-- [ ] **Verify:** the transcript repaints with all prior turns,
+- [x] Wait for Vite HMR to swap the module(s) — usually instant.
+- [x] **Verify:** the transcript repaints with all prior turns,
       bytes-identical to pre-HMR (modulo timestamp-rendering reflow).
-- [ ] **Verify:** submit one new turn; it appends correctly below
+- [x] **Verify:** submit one new turn; it appends correctly below
       the prior turns.
-- [ ] **Verify:** the "Loading conversation…" placeholder either
+- [x] **Verify:** the "Loading conversation…" placeholder either
       doesn't appear (HMR didn't trigger restore) or appears very
       briefly (`<2s`). Either is acceptable.
-- [ ] No stuck `replaying` phase; no red banner; no warnings in the
+- [x] No stuck `replaying` phase; no red banner; no warnings in the
       dev-tools console beyond the usual HMR noise.
 
 ### Smoke B — Developer > Reload (page destroys, app stays alive)
@@ -53,17 +66,41 @@ Exercises: full `cardSessionBindingStore` rehydrate via tugbank →
 `tide-session-restore` fires `spawn_session(mode=resume)` → tugcast
 spawns tugcode in resume mode → tugcode reads JSONL → replay flows.
 
-- [ ] Open a Tide card; submit ≥3 turns. Make sure the last turn
+**Status: PASSED 2026-05-04** (Phase A-R1.5).
+Captured trace from a representative reload cycle:
+
+```
+23:09:21.129  dispatch_action: broadcasting client action: reload
+23:09:21.158  Client disconnected client_id=4
+23:09:21.236  Client connected client_id=5
+23:09:21.239  spawn.supervisor_recv card_id=3f751d14-... tug_session_id=5cbbdfb0-... session_mode="resume"
+23:09:21.239  spawn.effective_mode inserted=false mode_mismatch=false
+23:09:21.249  request_replay.dispatched tug_session_id=5cbbdfb0-...
+23:09:21.249  [tide::replay::request] session_id=5cbbdfb0-...
+23:09:21.249  [tide::replay::started] jsonl_path=/Users/.../5cbbdfb0-....jsonl
+23:09:21.249  [tide::replay::complete] count=4 elapsed_ms=0
+```
+
+End-to-end: ~120ms reload-to-fully-replayed. Two consecutive cycles
+in the captured trace, both clean. Zero `spawn_timeout`, zero
+`resume_failed`, zero errors. Pre-Phase A-R1.5 this smoke failed
+two ways simultaneously: the verb didn't reach tugcode (router-side
+allowlist drift, fixed in [`723026b8`](#) by collapsing into
+`ControlOutcome`), and the R0d spawn-watchdog killed claude at the
+30s mark after the user paused (fixed in [`4ad0f960`](#) by
+removing the timer entirely).
+
+- [x] Open a Tide card; submit ≥3 turns. Make sure the last turn
       has a `turn_complete(success)` (the page must not be
       mid-stream when you reload — that's Smoke D).
-- [ ] In Tug.app's menu: Developer → Reload (or Cmd-R).
-- [ ] **Verify:** the page tears down and rebuilds. The Tide card
+- [x] In Tug.app's menu: Developer → Reload (or Cmd-R).
+- [x] **Verify:** the page tears down and rebuilds. The Tide card
       shows the "Loading conversation…" placeholder briefly.
-- [ ] **Verify:** the placeholder dismisses; the transcript renders
+- [x] **Verify:** the placeholder dismisses; the transcript renders
       all prior turns in order, byte-identical to pre-reload (modulo
       timestamp-rendering reflow).
-- [ ] **Verify:** submit one new turn; it appends correctly.
-- [ ] **Verify:** in the tugcast log
+- [x] **Verify:** submit one new turn; it appends correctly.
+- [x] **Verify:** in the tugcast log
       (`just tail-tugcast` / `~/Library/Logs/Tug/`), search
       `[tide::replay::started]` and `[tide::replay::complete]` —
       both must appear; `complete` must carry `count=N` matching
@@ -77,19 +114,34 @@ Exercises: tugcast supervisor reads its sqlite ledger +
 `claude_session_id`; the deck restores; the active Tide card's
 binding record is read; `tide-session-restore` fires.
 
-- [ ] Open a Tide card; submit ≥3 turns; let the last turn settle.
-- [ ] Quit Tug.app entirely (Cmd-Q or via menu — not just close
+**Status: PASSED 2026-05-04** (Phase A-R1.5).
+Cold-boot resume runs through R0d's startup-replay path — `prepareSession()`
+synthesizes the `session_init`, `runReplay()` reads the JSONL and
+emits the bracket pair, then `spawnClaudeAndWatch()` brings claude
+up in the background. The earlier captured trace (during the R1d
+verification cycle) shows `tugcode.prepare_session` →
+`[tide::replay::started]` → `[tide::replay::complete count=3 elapsed_ms=1]`
+→ `tugcode.claude_spawn ... --resume <id>` all within 1ms of
+spawn — populated transcript paints essentially instantly. The
+[Phase A-R0](./tugplan-tide-transcript-resume.md#phase-a-r0)
+symlink-canonicalization fix is the load-bearing repair for this
+smoke; Phase A-R1's verb fires alongside (`request_replay.skipped
+reason="spawning"` — correct no-op since the cold-boot startup-replay
+path covers that case).
+
+- [x] Open a Tide card; submit ≥3 turns; let the last turn settle.
+- [x] Quit Tug.app entirely (Cmd-Q or via menu — not just close
       the window).
-- [ ] Confirm tugcast also exits — `pgrep tugcast` should return
+- [x] Confirm tugcast also exits — `pgrep tugcast` should return
       no PIDs. If a stray supervisor is still up, kill it before
       proceeding (otherwise you're testing a warm-start).
-- [ ] Relaunch Tug.app.
-- [ ] **Verify:** the app reopens to your prior decks. The active
+- [x] Relaunch Tug.app.
+- [x] **Verify:** the app reopens to your prior decks. The active
       Tide card shows the "Loading conversation…" placeholder
       briefly.
-- [ ] **Verify:** the transcript repaints with all prior turns.
-- [ ] **Verify:** submit one new turn; it appends correctly.
-- [ ] **Verify:** the model name in committed code rows matches
+- [x] **Verify:** the transcript repaints with all prior turns.
+- [x] **Verify:** submit one new turn; it appends correctly.
+- [x] **Verify:** the model name in committed code rows matches
       whatever model is currently bound (per [D09] — replay does
       not re-emit per-turn `SESSION_METADATA`, so historical model
       names don't surface; this is intentional for v1).

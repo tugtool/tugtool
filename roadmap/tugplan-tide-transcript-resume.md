@@ -855,7 +855,7 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 - [x] `bun test` — green.
 - [x] `bun run audit:tokens lint` — zero violations.
 - [x] `cargo nextest run` — green.
-- [ ] Manual smoke checklist verified by user. *Deferred to [Phase A-R2](#phase-a-r2); see Step 5's SUPERSEDED notice above.*
+- [x] Manual smoke checklist verified by user. *Verified during [Phase A-R2](#phase-a-r2) on 2026-05-04 — Smokes A/B/C all pass with the new `request_replay` path through Phase A-R1.5's collapsed router gate and post-spawn-watchdog tugcode. Telemetry citations recorded inline in the [smoke checklist file](./tugplan-tide-transcript-resume-smoke.md).*
 
 ---
 
@@ -1498,20 +1498,20 @@ The two awaits are sequential, but they're not actually dependent: replay only n
 
 **Tasks:**
 
-- [ ] Run Smoke A (HMR) end-to-end against a real session with `just tail-replay` open. Capture the `[tide::session-lifecycle event=request_replay.dispatch]`, `[event=request_replay.dispatched]`, `[tide::replay::started/complete]` log sequence.
-- [ ] Run Smoke B (Developer > Reload). Same capture pattern.
-- [ ] Run Smoke C (Cold boot). Confirm whether the [Phase A-R0](#phase-a-r0) candidate fix landed or whether the new verb path on its own closes Smoke C.
-- [ ] For each smoke, mark the corresponding boxes in the smoke checklist with a brief telemetry quote and the elapsed time-to-rehydrate.
-- [ ] If any smoke fails, file a tracked failure with the exact log slice and assign it to a follow-on step (or to a next-iteration phase).
+- [x] Run Smoke A (HMR) end-to-end against a real session with `just tail-replay` open. Capture the `[tide::session-lifecycle event=request_replay.dispatch]`, `[event=request_replay.dispatched]`, `[tide::replay::started/complete]` log sequence. *Verified by user during Phase A-R1.5; representative cycle ~110ms reload-to-replayed with `count=4 elapsed_ms=0`.*
+- [x] Run Smoke B (Developer > Reload). Same capture pattern. *Verified by user during Phase A-R1.5; trace at `23:09:21` captures the full chain `dispatch_action: reload` → `Client connected` → `spawn.supervisor_recv inserted=false` → `request_replay.dispatched` → tugcode `[tide::replay::request]` → `replay::started` → `replay::complete count=4 elapsed_ms=0`. End-to-end ~120ms, two consecutive cycles, both clean.*
+- [x] Run Smoke C (Cold boot). Confirm whether the [Phase A-R0](#phase-a-r0) candidate fix landed or whether the new verb path on its own closes Smoke C. *Verified by user (cold-boot trace captured during R1d verification; populated transcript paints within ~1ms of `tugcode.prepare_session`). The [Phase A-R0](#phase-a-r0) symlink-canonicalization fix is the load-bearing repair; the [Phase A-R1](#phase-a-r1) verb fires alongside as `request_replay.skipped reason="spawning"` — a correct no-op because the entry is still in Spawning state and the cold-boot startup-replay path covers it.*
+- [x] For each smoke, mark the corresponding boxes in the smoke checklist with a brief telemetry quote and the elapsed time-to-rehydrate.
+- [x] If any smoke fails, file a tracked failure with the exact log slice and assign it to a follow-on step (or to a next-iteration phase). *N/A — no failures.*
 
 **Tests:** none automated — manual verification beat.
 
 **Checkpoint:**
 
-- [ ] Smokes A/B/C all pass with the request_replay path.
-- [ ] No `[tide::replay::error]` lines (other than expected `jsonl_missing` for fresh project paths during Smoke A on a brand-new card).
-- [ ] Smoke checklist file reflects current state with telemetry.
-- [ ] Step 5's "Manual smoke checklist verified by user" checkbox is now checked.
+- [x] Smokes A/B/C all pass with the request_replay path.
+- [x] No `[tide::replay::error]` lines (other than expected `jsonl_missing` for fresh project paths during Smoke A on a brand-new card).
+- [x] Smoke checklist file reflects current state with telemetry.
+- [x] Step 5's "Manual smoke checklist verified by user" checkbox is now checked.
 
 ---
 
