@@ -138,24 +138,57 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
     // the exit animation's `.finished` resolves.
     const [mounted, setMounted] = useState(false);
 
-    // Stable variant/tone through the exit animation. When the parent
-    // flips `visible` from true → false, it commonly drops the
-    // matching variant/tone props at the same render — either because
-    // it consolidated the banner kind to "no banner" (parent has
-    // nothing left to say) or because the kind transitioned. If we
-    // honor the new props mid-exit, the strip's `data-tone` flips
-    // (e.g. status/default → error/danger via component defaults)
-    // and the user sees a red flash as the strip slides up. Hold the
-    // variant/tone the banner had on its last visible render so the
-    // exit animation runs with the colors the user saw a frame ago.
-    const lastVisibleVariantRef = useRef(variant);
-    const lastVisibleToneRef = useRef(tone);
+    // Stable renderable props through the exit animation. When the
+    // parent flips `visible` from true → false, it commonly drops
+    // the matching content props at the same render — message, icon,
+    // iconSlot, label, detail children, footer — either because it
+    // consolidated to "no banner" (nothing left to say) or because
+    // the kind transitioned. If we honor the new (empty) props
+    // mid-exit, the strip's content vanishes in one frame and the
+    // empty strip slides off invisibly; user sees a hop, not an
+    // animation. Hold every renderable prop the banner had on its
+    // last visible render so the exit slide carries the content the
+    // user saw a frame ago.
+    const lastVisiblePropsRef = useRef({
+      variant,
+      tone,
+      label,
+      message,
+      icon,
+      iconSlot,
+      detailIcon,
+      detailTitle,
+      children,
+      footer,
+    });
     if (visible) {
-      lastVisibleVariantRef.current = variant;
-      lastVisibleToneRef.current = tone;
+      lastVisiblePropsRef.current = {
+        variant,
+        tone,
+        label,
+        message,
+        icon,
+        iconSlot,
+        detailIcon,
+        detailTitle,
+        children,
+        footer,
+      };
     }
-    const renderVariant = visible ? variant : lastVisibleVariantRef.current;
-    const renderTone = visible ? tone : lastVisibleToneRef.current;
+    const r = visible
+      ? {
+          variant,
+          tone,
+          label,
+          message,
+          icon,
+          iconSlot,
+          detailIcon,
+          detailTitle,
+          children,
+          footer,
+        }
+      : lastVisiblePropsRef.current;
 
     // Combined ref: internal rootRef + caller's forwarded ref.
     const setRef = useCallback(
@@ -260,15 +293,15 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
     // Shared strip markup used by both variants.
     const strip = (
       <div ref={stripRef} className="tug-pane-banner-strip">
-        {iconSlot !== undefined ? (
-          <span className="tug-pane-banner-icon">{iconSlot}</span>
-        ) : icon ? (
+        {r.iconSlot !== undefined ? (
+          <span className="tug-pane-banner-icon">{r.iconSlot}</span>
+        ) : r.icon ? (
           <span className="tug-pane-banner-icon" aria-hidden="true">
-            <BannerIcon name={icon} />
+            <BannerIcon name={r.icon} />
           </span>
         ) : null}
-        {label && <span className="tug-pane-banner-label">{label}</span>}
-        <span className="tug-pane-banner-message">{message}</span>
+        {r.label && <span className="tug-pane-banner-label">{r.label}</span>}
+        <span className="tug-pane-banner-message">{r.message}</span>
       </div>
     );
 
@@ -278,7 +311,7 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
         data-slot="tug-pane-banner"
         data-variant="status"
         data-visible={String(visible)}
-        data-tone={renderTone}
+        data-tone={r.tone}
         data-contained={contained ? "true" : undefined}
         role="status"
         aria-live="polite"
@@ -289,13 +322,17 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
     );
 
     const errorContent = (
+      // FocusScope `trapped` reads the live `visible` prop (not the
+      // held value): focus must be released the moment the parent
+      // dismisses, even though the rest of the banner content keeps
+      // rendering for the exit animation.
       <FocusScopeRadix.FocusScope trapped={visible} loop>
         <div
           ref={setRef}
           data-slot="tug-pane-banner"
           data-variant="error"
           data-visible={String(visible)}
-          data-tone={renderTone}
+          data-tone={r.tone}
           data-contained={contained ? "true" : undefined}
           role="alert"
           aria-live="assertive"
@@ -305,22 +342,22 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
             {strip}
             <div ref={detailRef} className="tug-pane-banner-detail-panel">
               <div className="tug-pane-banner-detail-body">
-                {detailIcon && (
+                {r.detailIcon && (
                   <div className="tug-pane-banner-detail-icon" aria-hidden="true">
-                    <DetailIcon name={detailIcon} />
+                    <DetailIcon name={r.detailIcon} />
                   </div>
                 )}
                 <div className="tug-pane-banner-detail-text">
-                  {detailTitle && (
-                    <h2 className="tug-pane-banner-detail-title">{detailTitle}</h2>
+                  {r.detailTitle && (
+                    <h2 className="tug-pane-banner-detail-title">{r.detailTitle}</h2>
                   )}
-                  {children !== undefined && (
-                    <div className="tug-pane-banner-detail-message">{children}</div>
+                  {r.children !== undefined && (
+                    <div className="tug-pane-banner-detail-message">{r.children}</div>
                   )}
                 </div>
               </div>
-              {footer !== undefined && (
-                <div className="tug-pane-banner-detail-actions">{footer}</div>
+              {r.footer !== undefined && (
+                <div className="tug-pane-banner-detail-actions">{r.footer}</div>
               )}
             </div>
           </div>
@@ -331,7 +368,7 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
     // Pick the layout shape from the variant the banner had on its
     // last visible render so an exit doesn't swap from `error` (with
     // detail panel + FocusScope) to `status` (strip-only) mid-flight.
-    const content = renderVariant === "status" ? statusContent : errorContent;
+    const content = r.variant === "status" ? statusContent : errorContent;
     if (contained) return content;
     return createPortal(content, cardEl!);
   },
