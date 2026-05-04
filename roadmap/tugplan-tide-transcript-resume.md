@@ -1132,24 +1132,24 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 
 ---
 
-#### Step R0d: tugcode startup-order refactor — replay before claude spawn {#step-r0d}
+#### Step R0d: tugcode startup-order refactor — replay before claude spawn (resume mode only) {#step-r0d}
 
-**Why this step.** [Step R0b](#step-r0b)'s smoke also exposed Bug Y:
-the 5–10s cold-boot wait is dominated by claude's `--resume` binary
-load. Today tugcode's `main.ts` runs:
+**Why this step.** [Step R0b](#step-r0b)'s smoke exposed Bug Y: the 5–10s cold-boot wait on resume is dominated by claude's `--resume` binary load. Today tugcode's `main.ts` runs:
 
 ```
 await sessionManager.initialize();   // spawns claude (~5s)
 await sessionManager.runReplay();    // reads JSONL (~50ms)
 ```
 
-claude's spawn blocks the replay read even though replay reads only
-the JSONL on disk — claude doesn't need to be alive for replay to
-emit events. By reordering, replay events flow within ~100ms of
-cold boot and the user sees the populated transcript while claude
-loads in the background, ready for the first user submit.
+The two awaits are sequential, but they're not actually dependent: replay only needs the JSONL on disk, not a live claude process. Reordering the resume path so replay runs before the spawn lets the populated transcript appear within ~100ms of card mount, while claude finishes loading in the background and is ready by the time the user submits their first new turn. Combined with [Step R0c](#step-r0c)'s preflight banner — which now bridges a ~100ms gap instead of a 5–10s one — and [Step R0c](#step-r0c)'s synthetic `system_metadata` at the top of replay, the resumed transcript renders fully attributed (model name, badges) without claude needing to be alive yet.
 
-**Commit:** `tugcode(replay): run replay before spawning claude on cold boot`
+**Scope: resume mode only.** This refactor changes behavior exclusively for `sessionMode === "resume"`. New-mode spawns retain the current "spawn claude → emit session_init → IPC loop" sequence: there's no JSONL to replay, no claude id to forward early, and no user-perceived dead window to fix. Branching on `sessionMode` keeps the new-mode happy path untouched and minimizes surface area.
+
+**Wire-semantic shift to call out.** Today, `spawn_session_ok` arrives only after claude has actually started up — so a tugdeck client treating `spawn_session_ok` as proof of "claude is alive" works by accident. Post-R0d, tugcode emits the synthetic `session_init` early (with the resume's persisted `claude_session_id`); the supervisor sees the session as live and broadcasts `spawn_session_ok` while claude is still spawning in the background. The new contract: **`spawn_session_ok` means "tugcode has accepted ownership of this session id," not "claude is alive on the other side."** In normal flow this is invisible — the spawn promise resolves long before any user submit — but it's a real semantic shift that future work should not silently rely on. Documented here so it doesn't surprise anyone later.
+
+**Failure-path UX trade-off.** With the new order, a `resume_failed` outcome surfaces *after* the user has already seen the populated transcript: replay completes (~100ms), then claude fails to spawn (a few seconds later), then the card observer routes `resume_failed` to the picker, which drops in over the populated transcript. Pre-R0d the same failure went straight from the binding-restore backdrop to the picker — no visible transcript. We accept this trade-off: the success path is an order of magnitude faster, the failure path is rare (a stale id or a binary problem), and the picker's "couldn't restore" notice carries the explanation. Worth flagging because it *is* a regression on the failure path, just one we're choosing.
+
+**Commit:** `tugcode(replay): run replay before spawning claude on cold-boot resume`
 
 **Depends on:** [Step R0c](#step-r0c)
 
@@ -1157,98 +1157,52 @@ loads in the background, ready for the first user submit.
 
 **Artifacts:**
 
-- `tugcode/src/session.ts` — split `initialize()` into two
-  responsibilities:
-  - **Pre-spawn synchronous work** (rename to `prepareSession()` or
-    inline at call site): emit synthetic `session_init` (the IPC
-    line that tells tugcast the session is alive), wire up
-    `claudeStderrClassification` placeholder, but do NOT spawn
-    claude yet.
-  - **Async claude spawn** (rename to `spawnClaudeAndWatch()`):
-    spawn claude with `--resume <claude_id>`, install the early-exit
-    watcher, start the stderr reader. Returns a Promise that the
-    caller can `await` later (e.g., before `handleUserMessage`).
-- `tugcode/src/main.ts` — new startup order on `protocol_init`:
-  1. `prepareSession()` — emits synthetic `session_init` immediately.
-  2. `runReplay()` — reads JSONL, emits replay events. Replay events
-     flow in ~50ms because there's no claude bootup blocking them.
-  3. `spawnClaudeAndWatch()` — spawns claude in the background. The
-     returned Promise is held; `handleUserMessage` awaits it before
-     forwarding the first user_message to claude's stdin.
+- `tugcode/src/session.ts` — split `initialize()` into two responsibilities, gated on session mode:
+  - **Pre-spawn synchronous work** (`prepareSession()` or inline at the call site): emit the synthetic `session_init` IPC carrying the resume's persisted `claude_session_id`, wire up the stderr classification placeholder, but don't spawn claude yet. Runs only on resume mode.
+  - **Async claude spawn** (`spawnClaudeAndWatch()`): spawn claude with `--resume <claude_id>`, install the early-exit watcher and stderr reader, and return a Promise the caller can `await` later. Runs on both modes; new mode keeps spawning eagerly inside `initialize()` as today.
+- `tugcode/src/main.ts` — new startup order on `protocol_init` for resume mode only:
+  1. `prepareSession()` — emits the synthetic `session_init` immediately.
+  2. `runReplay()` — reads the JSONL and emits replay events; flows in ~50ms with no claude bootup blocking it.
+  3. `spawnClaudeAndWatch()` — spawns claude in the background. The returned Promise is stored on `SessionManager` (e.g., `claudeReadyPromise`) and `handleUserMessage` awaits it before forwarding any `user_message` to claude's stdin.
   4. IPC loop runs as before.
-- Resume-failure handling: if claude's spawn fails (`resume_failed`,
-  `collision`), the existing watcher fires → `writeLineAndExit`. The
-  user has already seen the replayed transcript by that point. The
-  card surfaces the failure via `lastError`.
-- Mid-turn / Smoke D coordination: out of scope for this step;
-  [Phase A-R3](#phase-a-r3) handles request_replay during a live
-  turn. With the new order, cold boot is genuinely "replay first,
-  claude second" so the in-flight orphan synthesis on cold boot is
-  unaffected by claude's bootup state.
+- **Spawn timeout.** `spawnClaudeAndWatch()` arms a hard timeout (recommended: ~30s) on the spawn-and-init handshake. If claude hasn't emitted its real `system_init` by then, the watcher fires `resume_failed` with a `spawn_timeout` reason. Without this, a hung claude leaves the user submitting into a black hole — pre-R0d the same hang surfaced as "Loading conversation…" forever, which was at least honest. The R0c card observer already routes `resume_failed` to the picker, so no new failure plumbing is needed; we just need a real fault to fire.
+- **`runReplay()` and the claude-exit race.** Pre-R0d, `runReplay()` raced its hard-budget timer against `claudeProcess.exited` to detect a crash mid-replay. In the new cold-boot order, claude isn't spawned yet when replay runs — `claudeProcess` is `null` and the exit branch is omitted. Crash-during-replay protection moves entirely to the [Phase A-R1](#phase-a-r1) `request_replay` path, which runs against an already-live claude; cold-boot replay needs only the hard-budget timer.
+- **Resume-failure handling.** Unchanged plumbing: the existing watcher catches resume failures (`resume_failed`, `collision`) and emits the right IPC, which tugcast surfaces as `session_state_errored`. The R0c card observer reads `lastError.cause === "resume_failed"`, clears the binding, and routes the user to the picker with a notice. The only new contributor is the spawn-timeout branch above.
+- **Mid-turn / Smoke D.** Out of scope here; [Phase A-R3](#phase-a-r3) handles `request_replay` during a live turn. With the new resume-mode order, cold boot is genuinely "replay first, claude second" — orphan-turn synthesis at end-of-JSONL is unaffected by claude's bootup state.
 
 **Tasks:**
 
-- [ ] Refactor `SessionManager.initialize()` into
-      `prepareSession()` + `spawnClaudeAndWatch()` (or equivalent
-      shape). The split must not change the wire shape on the
-      synthetic `session_init` — bytes-identical to today.
-- [ ] Update `main.ts` to run `prepareSession()` →
-      `runReplay()` → `spawnClaudeAndWatch()` in that order on
-      `protocol_init`. The Promise from `spawnClaudeAndWatch()` is
-      stored on `SessionManager` and awaited in
-      `handleUserMessage` before any claude stdin write.
-- [ ] Update `runReplay()`'s race against
-      `claudeProcess.exited`: when run pre-spawn, `claudeProcess` is
-      `null`; the race omits the exit branch and the only abort is
-      the hard-budget timer. The crash-during-replay branch
-      ([D03]) still applies once claude has spawned via
-      `spawnClaudeAndWatch()`'s background promise.
-- [ ] Update tests: existing tests in
-      `tugcode/src/__tests__/replay-spawn.test.ts` that prime a
-      mock subprocess in `initialize()` will need to switch to
-      priming via `spawnClaudeAndWatch()` (or accept a null claude
-      during replay).
-- [ ] Add a new test: cold-boot ordering — `prepareSession()` →
-      `runReplay()` emits replay events to IPC stdout BEFORE the
-      mock `spawnClaudeAndWatch()` resolves. Assert wire ordering:
-      `session_init` → `replay_started` → ... → `replay_complete`
-      lands before any frame from the (slow) mock claude.
-- [ ] Tide-side telemetry: the existing
-      `[tide::replay::started|complete]` lines stay; add a
-      `[tide::session-lifecycle event=tugcode.spawn_claude_async]`
-      line so a smoke can confirm the new order.
+- [ ] Refactor `SessionManager.initialize()` into `prepareSession()` + `spawnClaudeAndWatch()` (or equivalent shape). The split must not change the wire bytes of the synthetic `session_init` for resume mode — same fields, same `claude_session_id` value (the persisted resume id), same shape.
+- [ ] Branch on `sessionMode === "resume"` at the call site in `main.ts`. Resume runs `prepareSession()` → `runReplay()` → `spawnClaudeAndWatch()`; new mode runs `spawnClaudeAndWatch()` directly (the historical eager path). Both paths converge on the IPC loop.
+- [ ] Store the spawn Promise on `SessionManager` (e.g., `this.claudeReadyPromise`). `handleUserMessage` awaits it before any claude stdin write — the very first user submit on resume blocks until claude is up; subsequent submits land instantly.
+- [ ] Add the spawn timeout. Recommended ~30s hard-fault threshold on the resume `spawnClaudeAndWatch()` path. On expiry, fire `resume_failed` with `reason="spawn_timeout"`. New-mode spawn paths inherit whatever timeout they have today; the new timeout is resume-specific.
+- [ ] Update `runReplay()` so the claude-exit race is conditional: when `claudeProcess` is null (cold-boot resume order), only the hard-budget timer applies. The crash-during-replay branch lives only on the request_replay path going forward.
+- [ ] Update existing tests in `tugcode/src/__tests__/replay-spawn.test.ts` that primed a mock subprocess inside `initialize()`. They should now prime via `spawnClaudeAndWatch()` (or run replay against a null claude).
+- [ ] Add a cold-boot ordering test: `prepareSession()` → `runReplay()` emits the bracket pair plus per-turn events on IPC stdout *before* a delayed mock `spawnClaudeAndWatch()` resolves. Assert: synthetic `session_init` precedes any frame the mock claude would have routed.
+- [ ] Add a "spawn-fails-after-replay-succeeds" test: mock `spawnClaudeAndWatch()` to fail (e.g., immediate exit-code-1) after a clean `runReplay()`. Assert the wire emits replay bracket pair + per-turn events first, then `resume_failed` + `session_state_errored`. This is the new failure mode introduced by the refactor; the test is what locks in the deliberate UX trade-off described above.
+- [ ] Add a "spawn-times-out" test: mock claude to never emit `system_init`; advance clocks to 30s; assert the spawn watcher fires `resume_failed` with `reason="spawn_timeout"`.
+- [ ] Telemetry: keep the existing `[tide::replay::started|complete]` lines; add `[tide::session-lifecycle event=tugcode.spawn_claude_async]` at the moment `spawnClaudeAndWatch()` kicks off, and `[tide::session-lifecycle event=tugcode.spawn_timeout]` if the new timeout fires. A smoke can grep for the spawn_async marker to confirm ordering in production.
 
 **Tests:**
 
-- [ ] All existing `replay-spawn.test.ts` tests pass with the new
-      ordering (they primarily exercise the post-replay path; only
-      the mock-subprocess plumbing changes).
-- [ ] New: `runReplay` runs to completion before
-      `spawnClaudeAndWatch` resolves (deterministic ordering test
-      with a delayed mock claude).
-- [ ] New: cold-boot integration — synthetic `session_init` lands on
-      IPC stdout before any claude-routed stream-json event. (The
-      existing `replay-spawn.test.ts` happy-path already verifies
-      the bracket ordering; this test adds claude as a secondary,
-      explicit observation.)
-- [ ] Existing: `handleUserMessage` test that awaits
-      `spawnClaudeAndWatch`'s promise before the first claude
-      write — exercise the Promise-coordination seam.
+- [ ] All existing `replay-spawn.test.ts` tests pass with the new ordering (they exercise the post-replay path; only the mock-subprocess plumbing shifts to the new spawn function).
+- [ ] New: deterministic ordering — `runReplay` finishes before `spawnClaudeAndWatch` resolves, given a delayed mock claude.
+- [ ] New: cold-boot integration — synthetic `session_init` lands on IPC stdout before any claude-routed stream-json event.
+- [ ] New: spawn-fails-after-replay — replay events flow, then `resume_failed` lands; existing post-failure plumbing (card observer → picker) unaffected.
+- [ ] New: spawn-times-out — 30s hang on claude triggers `resume_failed{reason:"spawn_timeout"}` rather than leaving the session in limbo.
+- [ ] Existing: `handleUserMessage` awaits the spawn promise before the first claude stdin write — exercises the Promise-coordination seam directly.
 
 **Tuglaws cross-check:**
 
-- **L01–L25** — N/A. This step is entirely inside the tugcode bridge subprocess (TypeScript bridge between tugcast and Claude). Tuglaws govern tugways/tugdeck (React UI). No React, no DOM, no rendering involved here.
-- **L23** considered explicitly (cross-cutting): user-visible state (transcript) flows downstream through the same IPC wire as before; the refactor reorders WHEN replay events flow but does not lose, drop, or reorder any of them at the wire level. Synthetic `session_init` is bytes-identical to today; replay events flow before any claude-routed stream-json event; live forwarding picks up after the background spawn resolves. ✓
+- **L01–L25** — Not applicable in the strict sense. This step lives entirely inside the tugcode bridge subprocess; tuglaws govern the tugways/tugdeck React UI. There's no rendering, no DOM, no React state machinery to satisfy or violate here.
+- **L23 cross-cut.** User-visible state — the transcript — flows downstream through the same IPC wire as before; the refactor changes *when* replay events appear, not *whether* they do or *what* they carry. The synthetic `session_init` is bytes-identical to claude's real one for the resume case (same `claude_session_id`, same shape), so tugdeck consumers (`SessionMetadataStore`, `CodeSessionStore`'s lifecycle log) see no semantic change. ✓
 
 **Checkpoint:**
 
 - [ ] `bun x tsc --noEmit` exit 0.
-- [ ] `bun test` (tugcode) green.
+- [ ] `bun test` (tugcode) green, including the four new test cases (ordering, cold-boot integration, spawn-fails-after-replay, spawn-times-out).
 - [ ] `cargo nextest run` green.
-- [ ] Manual cold-boot smoke shows the transcript appearing within
-      ~1s of card mount (instead of 5–10s); claude completes its
-      spawn in the background; first new submit works without
-      additional wait.
+- [ ] Manual cold-boot smoke: on resume, the transcript paints within ~1s of card mount (down from 5–10s); claude finishes its spawn in the background; the first new submit lands without an additional wait. New mode still spawns eagerly with no observable change.
 
 ---
 
