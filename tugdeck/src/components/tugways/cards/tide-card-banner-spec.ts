@@ -8,25 +8,34 @@
  *
  * Precedence (highest first):
  *
- *   1. **error** — `lastError` is set, the cause is banner-routable
+ *   1. **replay-loading via preflight** — `replayPreflightActive` is
+ *      true. The cold-boot bridge between binding rehydrate and the
+ *      first `replay_started` event is informational; the user
+ *      explicitly asked to resume a session and is waiting for it.
+ *      During this window we suppress transient errors and transport
+ *      blips so the banner stays a stable "Loading conversation"
+ *      beat instead of flashing through error / transport / loading
+ *      kinds during a noisy startup. Preflight clears on the first
+ *      of `replay_started` / `replay_complete` / `transport_close` /
+ *      a 12s last-resort tick — at which point normal precedence
+ *      resumes.
+ *   2. **error** — `lastError` is set, the cause is banner-routable
  *      (i.e. not `resume_failed`), and the error has not been
  *      user-dismissed by `at` timestamp.
- *   2. **transport** — `transportState !== "online"`. Covers
+ *   3. **transport** — `transportState !== "online"`. Covers
  *      idle-offline (and, defensively, restoring; the gate already
  *      routes restoring to a backdrop, so this branch is a no-op
  *      in production).
- *   3. **replay-timeout** — the most recent replay completed with a
+ *   4. **replay-timeout** — the most recent replay completed with a
  *      `replay_timeout` outcome and the dwell window (1.5s) is still
  *      active. Surfaces the failure copy briefly before dismissing.
- *   4. **replay-loading** — either `phase === "replaying"` (live
- *      replay window) OR `replayPreflightActive` (cold-boot wait
- *      between binding rehydrate and `replay_started`). The
- *      soft-budget flag promotes the banner copy from the generic
- *      "Loading conversation…" to the count-aware
- *      "Loading conversation… (N turns)" once the wait has lasted
- *      long enough that progress detail reads as reassurance rather
- *      than noise.
- *   5. **none** — no banner.
+ *   5. **replay-loading via active phase** — `phase === "replaying"`
+ *      (live replay window). The soft-budget flag promotes the
+ *      banner copy from the generic "Loading conversation…" to the
+ *      count-aware "Loading conversation… (N turns)" once the wait
+ *      has lasted long enough that progress detail reads as
+ *      reassurance rather than noise.
+ *   6. **none** — no banner.
  *
  * Why a separate module: the helper is pure, takes a snapshot, and
  * returns a discriminated union. Testing it in isolation
@@ -95,19 +104,23 @@ export interface TideCardBannerCtx {
 
 /**
  * Pure derivation. Mutually exclusive by construction:
- * - error wins when present and not dismissed
+ * - preflight wins over everything (cold-boot bridge — see module
+ *   docstring for why we suppress transient errors here)
+ * - error wins next when present and not dismissed
  * - transport wins when no error is showing and the wire is not online
- * - replay-timeout wins over replay-loading (the dwell is brief and
- *   stamps the most-recent outcome before any new window opens)
- * - replay-loading covers the live replay window AND the cold-boot
- *   preflight beat (no live window yet, but the binding has landed
- *   and a replay is expected); the latter shows turnsCount=null
+ * - replay-timeout wins over the active-phase replay-loading (the
+ *   dwell is brief and stamps the most-recent outcome before any new
+ *   window opens)
+ * - replay-loading covers the live replay window
  * - none otherwise
  */
 export function deriveTideCardBannerSpec(
   snap: CodeSessionSnapshot,
   ctx: TideCardBannerCtx,
 ): TideCardBannerSpec {
+  if (snap.replayPreflightActive) {
+    return { kind: "replay-loading", turnsCount: null };
+  }
   if (
     snap.lastError !== null &&
     snap.lastError.cause !== "resume_failed" &&
@@ -131,9 +144,6 @@ export function deriveTideCardBannerSpec(
       kind: "replay-loading",
       turnsCount: snap.replaySoftBudgetElapsed ? snap.transcript.length : null,
     };
-  }
-  if (snap.replayPreflightActive) {
-    return { kind: "replay-loading", turnsCount: null };
   }
   return { kind: "none" };
 }

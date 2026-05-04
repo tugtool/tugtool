@@ -167,4 +167,59 @@ describe("deriveTideCardBannerSpec — precedence chain", () => {
     );
     expect(spec).toEqual({ kind: "transport", state: "restoring" });
   });
+
+  it("preflight wins over a transient error during the cold-boot bridge", () => {
+    // Even if a stale frame replays an error into the new store
+    // during cold boot, the preflight beat keeps the banner stable.
+    // Once preflight clears (replay_started / replay_complete /
+    // transport_close / 12s tick) normal precedence resumes and the
+    // error surfaces if still set.
+    const spec = deriveTideCardBannerSpec(
+      baseSnap({
+        replayPreflightActive: true,
+        lastError: {
+          cause: "session_state_errored",
+          message: "stale flash",
+          at: 1_700_000_000_000,
+        },
+      }),
+      { dismissedAt: null },
+    );
+    expect(spec).toEqual({ kind: "replay-loading", turnsCount: null });
+  });
+
+  it("preflight wins over a transient transport blip during the cold-boot bridge", () => {
+    // Same logic as the error case: a brief offline/restoring blip
+    // during cold boot shouldn't flash a transport banner over the
+    // resume UX.
+    const spec = deriveTideCardBannerSpec(
+      baseSnap({
+        replayPreflightActive: true,
+        transportState: "offline",
+      }),
+      { dismissedAt: null },
+    );
+    expect(spec).toEqual({ kind: "replay-loading", turnsCount: null });
+  });
+
+  it("once preflight clears, suppressed errors surface naturally", () => {
+    const at = 1_700_000_000_000;
+    const spec = deriveTideCardBannerSpec(
+      baseSnap({
+        replayPreflightActive: false,
+        lastError: {
+          cause: "session_state_errored",
+          message: "real error",
+          at,
+        },
+      }),
+      { dismissedAt: null },
+    );
+    expect(spec).toEqual({
+      kind: "error",
+      cause: "session_state_errored",
+      message: "real error",
+      at,
+    });
+  });
 });
