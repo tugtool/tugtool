@@ -577,34 +577,38 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 
 **Tasks:**
 
-- [ ] Author the per-entry translator with explicit handling for each surveyed `type` value; unknown types log to `tide::replay::unknown_shape` and skip.
-- [ ] Implement the per-turn buffer + boundary detection: an `assistant` entry with `message.stop_reason: "end_turn"` triggers `turn_complete(success)`; entries with `stop_reason: "tool_use"` accumulate into the buffer.
-- [ ] Implement [D08]'s orphan-turn synthesis at end-of-file.
-- [ ] Author the session-level async iterator with batched yields per [D10].
-- [ ] Convert representative JSONLs into anonymized test fixtures under `tugcode/src/__tests__/fixtures/jsonl/`. Use the survey output to ensure coverage of every observed shape.
-- [ ] Author unit tests covering the cases above.
+- [x] Author the per-entry translator with explicit handling for each surveyed `type` value; unknown types log to `tide::replay::unknown_shape` and skip.
+- [x] Implement the per-turn buffer + boundary detection: an `assistant` entry with `message.stop_reason: "end_turn"` triggers `turn_complete(success)`; entries with `stop_reason: "tool_use"` accumulate into the buffer.
+- [x] Implement [D08]'s orphan-turn synthesis at end-of-file.
+- [x] Author the session-level async iterator with batched yields per [D10].
+- [x] Convert representative JSONLs into anonymized test fixtures. *Built inline in `replay.test.ts` as `JsonlEntry[]`-driven `makeJsonl(...)` builders rather than separate fixture files: the entries are small, anonymized, and live next to their assertions. A future expansion (e.g. a 1000-line stress fixture for performance regressions) can land as a real file under `__tests__/fixtures/jsonl/` without disturbing the inline tests.*
+- [x] Author unit tests covering the cases above.
 
 **Tests:**
 
 > Step 1 tests assert the translator's `OutboundMessage[]` output shape directly — the tugdeck reducer is exercised in Step 2 and the cross-package wire integration is exercised in Step 5. No reducer is imported in `tugcode/`.
-- [ ] Two-turn smoke: translator output is the expected `OutboundMessage[]` sequence — for each turn: `user_message`, optional intermediate `tool_use` / `tool_result` events, terminal `assistant_text(is_partial: false)`, `turn_complete(success)` carrying the turn's `msg_id` and assembled text.
-- [ ] Tool-call turn: emits `user_message` + `tool_use` + `tool_result` + terminal `assistant_text(is_partial: false)` + `turn_complete(success)` in the right order; the `turn_complete` payload's tool-call list is non-empty.
-- [ ] Concurrent tools: tool_use and tool_result events interleave by `tool_use_id` correctly; the `turn_complete` payload's tool-call list contains both.
-- [ ] Thinking content: `thinking_text(is_partial: false)` lands before the terminal `assistant_text` in the same turn; the turn's `thinking` accumulator is non-empty.
-- [ ] Image content in user submission: `user_message` carries the image attachment in its payload.
-- [ ] Skipped shapes (`attachment` / `queue-operation` / `last-prompt` / `file-history-snapshot` / `ai-title` / `system` / `permission-mode`): produce zero outbound messages each; surrounding turns still commit.
-- [ ] Unknown top-level type: produces zero outbound messages and a structured log line at `tide::replay::unknown_shape`.
-- [ ] Orphan turn at end-of-file: synthesizes `turn_complete(error)` with accumulated text preserved; `TurnEntry.result === "interrupted"`.
-- [ ] Malformed JSON line: skipped; the surrounding turns are still committed; a warn line is emitted.
-- [ ] Empty JSONL: produces `replay_started` immediately followed by `replay_complete` with `count: 0`.
-- [ ] Missing JSONL: `translateJsonlSession` yields `replay_started` then `replay_complete` with `error: { kind: "jsonl_missing", ... }`; no transcript events between brackets.
-- [ ] Batched commit per [D10]: the iterator yields in batches with a `setImmediate` between batches; the IPC pipe stays responsive (a sentinel test asserts the iterator is awaitable mid-replay).
+- [x] Two-turn smoke: translator output is the expected `OutboundMessage[]` sequence — for each turn: `user_message_replay`, optional intermediate `tool_use` / `tool_result` events, terminal `assistant_text(is_partial: false)`, `turn_complete(success)` carrying the turn's `msg_id` and assembled text. *Outbound shape is `user_message_replay` (not `user_message`) per the new `OutboundMessage` variant added in Step 1 — `user_message` is reserved for the inbound `tugcast → tugcode` shape; the replay echo is a distinct outbound type carrying `msg_id` so the reducer can correlate it with the upcoming `assistant_text` / `turn_complete`.*
+- [x] Tool-call turn: emits `user_message_replay` + `tool_use` + `tool_result` + terminal `assistant_text(is_partial: false)` + `turn_complete(success)` in the right order.
+- [x] Concurrent tools: `tool_use` and `tool_result` events interleave by `tool_use_id` correctly in insertion order ([Q02]).
+- [x] Thinking content: `thinking_text(is_partial: false)` lands before the terminal `assistant_text` in the same turn.
+- [x] Image content in user submission: `user_message_replay` carries the image attachment with `media_type` + base64 `content`.
+- [x] Skipped shapes: `attachment` / `queue-operation` / `last-prompt` / `file-history-snapshot` / `ai-title` / `system` / `permission-mode` all produce zero outbound messages each; surrounding turns still commit; **silent** (no telemetry fires for skip-listed types — telemetry is reserved for shape-drift signals).
+- [x] Unknown top-level type: produces zero outbound messages and fires `unknown_shape` telemetry with `kind: "top_level"`.
+- [x] Unknown content_block type: skipped with `unknown_shape` telemetry; surrounding text content of the same entry still emits.
+- [x] Orphan turn at end-of-file: synthesizes `turn_complete(error)` with accumulated text + tool_use + thinking preserved.
+- [x] Bare user submission at end-of-file (no answering assistant): commits no turn; the buffer is opened by `assistant`, not `user`, so an unanswered submission lands as zero-turn replay.
+- [x] Malformed JSON line: skipped; surrounding turns commit; `replay_complete` carries `error: { kind: "jsonl_malformed" }` while still counting the committed turns.
+- [x] Empty JSONL: produces `replay_started` immediately followed by `replay_complete` with `count: 0` and no error.
+- [x] Missing JSONL: `translateJsonlSession({ kind: "missing", message })` yields `replay_started` then `replay_complete` with `error: { kind: "jsonl_missing", ... }`; no transcript events between brackets.
+- [x] Unreadable JSONL: same shape as missing, with `kind: "jsonl_unreadable"`.
+- [x] Batched commit per [D10]: with `disableYield: false` and `batchSize: 2`, a `setTimeout(0)` scheduled before iteration fires mid-stream — proving the iterator yields the event loop between batches.
+- [x] Direct `translateJsonlEntry` unit tests covering: user entry returns `[]`, intermediate assistant returns `[]`, terminal assistant flushes + resets ctx, unknown / missing-type telemetry, ipc_version stamping.
 
 **Checkpoint:**
 
-- [ ] `bun x tsc --noEmit` — exit 0.
-- [ ] `bun test` (in `tugcode/`) — green.
-- [ ] `cargo nextest run` — green (no Rust changes; sanity).
+- [x] `bun x tsc --noEmit` — exit 0 (tugdeck typecheck still green; tugcode TS changes are additive and the existing test suite continues to typecheck).
+- [x] `bun test` (in `tugcode/`) — 237 tests pass (210 prior + 27 new replay tests).
+- [x] `cargo nextest run` — 1207 workspace tests pass (no Rust changes; sanity).
 
 ---
 

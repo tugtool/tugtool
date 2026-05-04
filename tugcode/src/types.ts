@@ -289,6 +289,72 @@ export interface ResumeFailed {
   ipc_version: number;
 }
 
+// ---------------------------------------------------------------------------
+// [P14] Replay event types
+// ---------------------------------------------------------------------------
+
+/**
+ * [P14] Replay user-message echo. Emitted by the JSONL replay
+ * translator at the start of each replayed turn, carrying the
+ * original user submission text + attachments + the upcoming turn's
+ * `msg_id` (claude's id for the *terminal* assistant entry of the
+ * turn — the same id `turn_complete` will carry).
+ *
+ * Distinct from the inbound `user_message` (`tugcast → tugcode`
+ * submission shape) because:
+ *   - It rides CODE_OUTPUT (`tugcode → tugcast`), not CODE_INPUT.
+ *   - It carries `msg_id` (the inbound shape doesn't — msg_id is
+ *     minted by claude per turn, not by the submitter).
+ *   - The reducer treats it as a synthetic `send` action so the
+ *     subsequent `assistant_text` / `turn_complete` for the same
+ *     `msg_id` commit a `TurnEntry` into `transcript` exactly as if
+ *     the turn had been live.
+ */
+export interface UserMessageReplay {
+  type: "user_message_replay";
+  msg_id: string;
+  text: string;
+  attachments: Attachment[];
+  ipc_version: number;
+}
+
+/**
+ * [P14] Bracket marker emitted by the replay translator at the start
+ * of a JSONL replay window. The reducer transitions
+ * `phase: idle → replaying` on this event and gates `canSubmit` /
+ * `canInterrupt` to `false` for the duration. See [D05] / [D11] in
+ * `roadmap/tugplan-tide-transcript-resume.md`.
+ */
+export interface ReplayStarted {
+  type: "replay_started";
+  ipc_version: number;
+}
+
+/**
+ * [P14] Bracket marker emitted by the replay translator at end-of-
+ * JSONL (or on a hard-budget timeout in Step 3). The reducer
+ * transitions `phase: replaying → idle` and populates
+ * `lastReplayResult` per [D10].
+ *
+ * `count` is the number of `turn_complete` events emitted during this
+ * replay window. `error` is set when replay terminated abnormally;
+ * `kind` matches tugdeck's `LastReplayResult.kind` enum exactly so
+ * the reducer can pass it through without translation.
+ */
+export interface ReplayComplete {
+  type: "replay_complete";
+  count: number;
+  error?: {
+    kind:
+      | "jsonl_missing"
+      | "jsonl_unreadable"
+      | "jsonl_malformed"
+      | "replay_timeout";
+    message: string;
+  };
+  ipc_version: number;
+}
+
 export type OutboundMessage =
   | ProtocolAck
   | SessionInit
@@ -308,7 +374,10 @@ export type OutboundMessage =
   | ApiRetry
   | ToolUseStructured
   | ControlRequestCancel
-  | ResumeFailed;
+  | ResumeFailed
+  | UserMessageReplay
+  | ReplayStarted
+  | ReplayComplete;
 
 // Type guards
 export function isInboundMessage(msg: unknown): msg is InboundMessage {
