@@ -2,6 +2,8 @@
 
 ## Tide Card Polish — Multi-Turn Transcript Rendering {#tide-transcript-rendering}
 
+> **Status: SUPERSEDED — see [tugplan-tug-list-view.md](./tugplan-tug-list-view.md).** The transcript wire-up was reframed mid-design when the missing windowed-list primitive surfaced as the architectural blocker. The successor plan ships `TugListView` first (Phase A) and consumes it for the Tide card transcript (Phase B) — the rendering shape this plan describes is preserved verbatim there as the Phase B target. The original draft below is retained as historical context only; do not execute it.
+
 **Purpose:** Replace the single-region `TugMarkdownView` wire-up at the top pane of a Tide card with a transcript-aware rendering path that mounts one `TugTranscriptEntry` row per participant per turn. Committed turns from `CodeSessionStore.snap.transcript` render as `(user, code)` pairs; the in-flight turn renders the user row immediately on submit and streams the code row's body from `streamingDocument.inflight.assistant`. Auto-scroll-to-bottom flows through `SmartScroll`, honoring user scroll-up. Cmd+J is **deferred** to a follow-up plan; this plan is rendering-only.
 
 ---
@@ -11,7 +13,7 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | superseded — see [tugplan-tug-list-view.md](./tugplan-tug-list-view.md) |
 | Target branch | tugplan-tide-transcript-rendering |
 | Last updated | 2026-05-03 |
 | Roadmap anchor | [tugplan-tide-card-polish.md §step-11](./tugplan-tide-card-polish.md#step-11) — this plan executes that step (Cmd+J deferred) |

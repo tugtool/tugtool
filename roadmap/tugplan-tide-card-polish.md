@@ -181,7 +181,7 @@ Roughly half the steps shipped between the original 2026-04-19 draft and the 202
 | 8 | Canvas-level overlays: popups escape the card, constrained only by the canvas | **done** — split into three subordinate plans (overlay-tier, popup-bindings, overlay-framework); see [step](#step-8) |
 | 9 | Participant model + `TugTranscriptEntry` primitive | pending — refresh before starting |
 | 10 | Tugcast-side session ledger + full resume UX | **shipped** — see [tugplan-tide-session-ledger.md](./tugplan-tide-session-ledger.md) |
-| 11 | Multi-turn transcript rendering with `TugTranscriptEntry` | pending — absorbs Step 6's Cmd+J behavior |
+| 11 | Multi-turn transcript rendering with `TugTranscriptEntry` | **shipped** — see [tugplan-tug-list-view.md](./tugplan-tug-list-view.md); Cmd+J deferred to its own follow-up plan |
 | 12 | Markdown styling pass for assistant output | pending |
 | 13 | Wire thinking + tool surfaces | pending |
 | 14 | Mid-stream behaviors end-to-end (Stop, queued sends, tool sub-state) | pending |
@@ -195,7 +195,7 @@ Roughly half the steps shipped between the original 2026-04-19 draft and the 202
 | 22 | Compliance close-out | pending |
 | 23 | Tuglaws walkthrough | pending |
 
-**Refresh-before-resume note.** Steps 9, 11, 12, 13, 14, 15, 21, 22, 23 were authored 2026-04-19. Before resuming each, re-read its Files and Work sections against the current code — `tug-prompt-entry`'s migration to `tug-text-editor` (Step 15 of `roadmap/text-editing-base.md`), the editor-settings sheet, and the tide card's panel-growth wiring all landed in the interim and may have moved file paths, renamed delegates, or changed seams the original step text assumed.
+**Refresh-before-resume note.** Steps 9, 12, 13, 14, 15, 21, 22, 23 were authored 2026-04-19. Before resuming each, re-read its Files and Work sections against the current code — `tug-prompt-entry`'s migration to `tug-text-editor` (Step 15 of `roadmap/text-editing-base.md`), the editor-settings sheet, and the tide card's panel-growth wiring all landed in the interim and may have moved file paths, renamed delegates, or changed seams the original step text assumed.
 
 ---
 
@@ -930,41 +930,7 @@ The component renders a `data-participant` attribute on its root for theme overr
 
 #### Step 11 — Multi-turn transcript rendering with `TugTranscriptEntry` (absorbs Step 6's Cmd+J) {#step-11}
 
-**Status: Pending — refresh required, and absorbs [Step 6](#step-6).** Step 6's Cmd+J handler is folded into this step so the keybinding ships next to the transcript it scrolls. Authored 2026-04-19; refresh against the current `tug-text-editor`-based prompt entry and `TideCardContent` structure before starting.
-
-**Files:**
-- `tugdeck/src/components/tugways/cards/tide-card.tsx` (replace top-pane wire-up; add Cmd+J card-level handler).
-- `tugdeck/src/lib/code-session-store.ts` (no behavior change expected; consume `snap.transcript` here).
-- `tugdeck/src/components/tugways/tug-text-editor.tsx` / its delegate (expose currently-selected history entry's identifier — likely now lives on `TugTextEditorDelegate` post-Step-15-of-text-editing-base).
-- `tugdeck/src/components/tugways/cards/tide-card.css` (scroll target styles if needed).
-- `tugdeck/src/components/tugways/__tests__/tide-card.test.tsx` (transcript + Cmd+J coverage).
-
-**Work:**
-
-*Transcript rendering (original Step 11):*
-- Replace the single-region wire-up (only `streamingPaths.assistant`) with a transcript-aware rendering path that uses `TugTranscriptEntry` from [Step 9](#step-9):
-  - For each entry in `snap.transcript`, render two `TugTranscriptEntry` rows: a `participant: "user"` row carrying the submitted prompt, then a `participant: "code"` row carrying the assistant response.
-  - For the in-flight turn, render the `user` row immediately on submit (so the user sees their own submission appear in the transcript flow at the moment they hit Enter), and render a `code` row whose body is bound to `streamingPaths.assistant` via `TugMarkdownView`.
-- The user's submitted text appears in the transcript above the assistant response — the conversation reads as a back-and-forth, not a stream of disembodied assistant outputs.
-- Use `TugMarkdownView`'s imperative `setRegion` handle (one region per `code` row) per the architecture in [tide.md §T3.4.a](./tide.md#code-session-store) line 2406. The React snapshot exposes path strings only.
-- Identifier on `code` rows reads "Code" (or the active model's display name when available from `SessionMetadataStore`); identifier on `user` rows reads "You". Timestamps come from each turn's submit time.
-- The "sticky last turn" Step 5 fallback becomes redundant once transcript rendering lands. Remove it as part of this commit, with a code comment pointing here.
-- Append-and-scroll-to-bottom on new rows; use existing `SmartScroll` infra in `tugdeck/src/lib/smart-scroll.ts` so the user opting out of auto-scroll (by scrolling up) is honored.
-
-*Cmd+J keybinding (absorbed from [Step 6](#step-6)):*
-- Extend the prompt-entry / text-editor delegate to expose the currently-selected history entry's identifier (e.g., `getSelectedHistoryEntryId(): string | null`) — `null` when no history navigation is active.
-- Add a card-level Cmd+J keydown handler:
-  1. Read the entry id from the delegate.
-  2. If non-null and the corresponding `TugTranscriptEntry` row is rendered, scroll that row into view (`scrollIntoView({ block: "center" })`, or the equivalent imperative on the transcript scroll container if exposed).
-  3. If null or no matching row, scroll the transcript to the bottom — same path the streaming view uses on `turn_complete`.
-- Cmd+J fires regardless of which element holds focus inside the card (chrome, prompt input, transcript) — the card-level handler claims the chord. Honor `event.defaultPrevented` so completion-menu / dialog handlers that already consumed the key win.
-
-**Verification:**
-- `bun x tsc --noEmit` + `bun test` green.
-- New test (transcript): load a recorded multi-turn session fixture into `CodeSessionStore` → render Tide card → assert N pairs of (`user`, `code`) `TugTranscriptEntry` rows present + an active streaming region while a turn is in flight; on `turn_complete(success)`, the streaming region's body finalizes into the corresponding `code` row.
-- New test (transcript): simulate submit of `> hi` → assert a `user` `TugTranscriptEntry` row carrying `> hi` appears in the transcript *immediately* (before any assistant deltas arrive).
-- New test (Cmd+J): render with a recorded transcript fixture, set the prompt-entry's selected history entry → simulate Cmd+J → assert the transcript scroll position changes to that entry's row. Then clear the selection → simulate Cmd+J → assert scroll-to-bottom.
-- Manual: open a Tide card, submit `> tell me a haiku`; observe the `user` row appear immediately, then the `code` row stream in beneath it. Submit `> now another`; both prior rows stay visible above the new pair. Scroll up while a new turn streams; auto-scroll defers per `SmartScroll`. With multiple turns visible, navigate history with Cmd+Up to a past entry; Cmd+J jumps the transcript to that turn's `user`/`code` pair. Press Esc to clear history navigation; Cmd+J scrolls to bottom.
+**Status: Shipped via [tugplan-tug-list-view.md](./tugplan-tug-list-view.md).** The transcript rendering work was promoted into a full plan that ships `TugListView` (a windowed list primitive modeled on `UITableView`) and consumes it via `TideTranscriptDataSource`; the Tide card's top pane now renders `(user, code)` row pairs through that adapter. Cmd+J is explicitly deferred to its own follow-up plan (tracked in the promoted plan's [#roadmap]). See the promoted plan's [Phase Exit Criteria](./tugplan-tug-list-view.md#exit-criteria) for the verification record.
 
 #### Step 12 — Markdown styling pass for assistant output {#step-12}
 

@@ -13,7 +13,7 @@ This plan supersedes [`tugplan-tide-transcript-rendering.md`](./tugplan-tide-tra
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft (post-review fixups applied 2026-05-03) |
+| Status | shipped (2026-05-03) — all 12 steps landed; phase exit criteria met |
 | Target branch | tugplan-tug-list-view |
 | Last updated | 2026-05-03 |
 | Roadmap anchor | [tugplan-tide-card-polish.md §step-11](./tugplan-tide-card-polish.md#step-11) — this plan executes that step (Cmd+J deferred separately) |
@@ -828,14 +828,14 @@ function TideTranscriptHost({ codeSessionStore, sessionMetadataStore }: Props) {
 
 ### Documentation Plan {#documentation-plan}
 
-- [ ] Module docstring on `tug-list-view.tsx` per the component-authoring guide. Opening line: "TugListView — windowed list primitive modeled on UIKit's UITableView." Cite [L02], [L03], [L06], [L11], [L19], [L20], [L22], [L23] in the laws block.
-- [ ] Module docstring on `tug-markdown-block.tsx` clarifying its role: per-cell markdown rendering, no internal scroll, shares the WASM pipeline with `TugMarkdownView`.
-- [ ] Module docstring on `gallery-list-view.tsx` stating that data is mock; live wire is the transcript.
-- [ ] Module docstring on `tide-transcript-data-source.ts` explaining the adapter shape and the (user-row, code-row) pair mapping.
-- [ ] Module docstring update on `code-session-store/types.ts` mentioning `inflightUserMessage` and its lifecycle.
-- [ ] `roadmap/tide.md §T3.4.a` snapshot shape gets the new field; §T3.4.c gets a "Companion primitive: TugListView" paragraph.
-- [ ] `tugplan-tide-card-polish.md §step-11` row flips to "shipped" with the Cmd+J deferral noted.
-- [ ] `tugplan-tide-transcript-rendering.md` marked as superseded with a forward link.
+- [x] Module docstring on `tug-list-view.tsx` per the component-authoring guide. Opening line: "TugListView — windowed list primitive modeled on UIKit's UITableView." Cite [L02], [L03], [L06], [L11], [L19], [L20], [L22], [L23] in the laws block.
+- [x] Module docstring on `tug-markdown-block.tsx` clarifying its role: per-cell markdown rendering, no internal scroll, shares the WASM pipeline with `TugMarkdownView`.
+- [x] Module docstring on `gallery-list-view.tsx` stating that data is mock; live wire is the transcript.
+- [x] Module docstring on `tide-transcript-data-source.ts` explaining the adapter shape and the (user-row, code-row) pair mapping.
+- [x] Module docstring update on `code-session-store/types.ts` mentioning `inflightUserMessage` and its lifecycle.
+- [x] `roadmap/tide.md §T3.4.a` snapshot shape gets the new field; §T3.4.c gets the `TideTranscriptHost` mention via the substitutions table.
+- [x] `tugplan-tide-card-polish.md §step-11` row flips to "shipped" with the Cmd+J deferral noted.
+- [x] `tugplan-tide-transcript-rendering.md` marked as superseded with a forward link.
 
 ---
 
@@ -1391,30 +1391,30 @@ The kind change at commit is a prop change to the cell wrapper, which rerenders 
 
 **Tasks:**
 
-- [ ] Add `.tide-card-transcript` to `tide-card.css` with cascade-scoped token overrides.
-- [ ] Replace the single `<TugMarkdownView>` at the top pane with the new render-shape per [#render-shape], passing `scrollKey="tide-card-transcript"`.
-- [ ] Implement cell renderer components.
-- [ ] Implement `useSessionModelName` and `formatTranscriptTimestamp`.
-- [ ] Author multi-turn integration tests using the existing golden-catalog fixtures: assert `(user, code)` row pair count and order; in-flight user row appears immediately; streaming code row body reflects deltas; on commit, committed pair holds final text without empty intermediate render; no element bound to `streamingPath` survives `turn_complete`.
-- [ ] Update the section comment / module docstring on `tide-card.tsx`'s top-pane rendering to describe the new structure.
+- [x] Add `.tide-card-transcript` to `tide-card.css` with cascade-scoped token overrides.
+- [x] Replace the single `<TugMarkdownView>` at the top pane with the new render-shape per [#render-shape], passing `scrollKey="tide-card-transcript"`.
+- [x] Implement cell renderer components.
+- [x] Implement `useSessionModelName` and `formatTranscriptTimestamp`.
+- [x] Author multi-turn integration tests using the existing golden-catalog fixtures: assert `(user, code)` row pair count and order; in-flight user row appears immediately; streaming code row body reflects deltas; on commit, committed pair holds final text without empty intermediate render; no element bound to `streamingPath` survives `turn_complete`.
+- [x] Update the section comment / module docstring on `tide-card.tsx`'s top-pane rendering to describe the new structure.
 
 **Tests:**
 
-- [ ] Multi-turn rendering: load a multi-turn fixture, assert N `(user, code)` row pairs in correct order.
-- [ ] Immediate user row: `submit("hi")`, assert user row in DOM before any assistant delta dispatch.
-- [ ] Streaming-to-commit: drive deltas, assert in-flight code row body updates; on `turn_complete(success)`, assert committed pair holds final text and no in-flight pair survives.
-- [ ] Streaming-to-commit — no empty intermediate render: at the transition, query the rendered DOM for the committed `code` cell and assert its body content is non-empty in the same paint as the streaming cell's removal (the [#md-block-api] mount-render contract).
-- [ ] Identifier source: when `SessionMetadataStore.model` is set, `code` row identifier matches; when null, identifier is `"Code"`.
-- [ ] No sticky last: query for any element bound via `streamingPath` after `turn_complete`; assert empty.
-- [ ] User body plain text: assert `<span>` children equal `userMessage.text` verbatim.
-- [ ] Persistence axis: assert the rendered scroll container has `data-tug-scroll-key="tide-card-transcript"` for [L23] correctness.
+- [x] Multi-turn rendering: load a multi-turn fixture, assert N `(user, code)` row pairs in correct order.
+- [x] Immediate user row: `submit("hi")`, assert user row in DOM before any assistant delta dispatch.
+- [x] Streaming-to-commit: drive deltas, assert in-flight code row body updates; on `turn_complete(success)`, assert committed pair holds final text and no in-flight pair survives.
+- [x] Streaming-to-commit — no empty intermediate render: at the transition, query the rendered DOM for the committed `code` cell and assert its body content is non-empty in the same paint as the streaming cell's removal (the [#md-block-api] mount-render contract).
+- [x] Identifier source: when `SessionMetadataStore.model` is set, `code` row identifier matches; when null, identifier is `"Code"`.
+- [x] No sticky last: query for any element bound via `streamingPath` after `turn_complete`; assert empty.
+- [x] User body plain text: assert `<span>` children equal `userMessage.text` verbatim.
+- [x] Persistence axis: assert the rendered scroll container has `data-tug-scroll-key="tide-card-transcript"` for [L23] correctness.
 
 **Checkpoint:**
 
-- [ ] `bun x tsc --noEmit` — exit 0.
-- [ ] `bun test` — all green.
-- [ ] `bun run audit:tokens lint` — zero violations.
-- [ ] `cargo nextest run` — all green.
+- [x] `bun x tsc --noEmit` — exit 0.
+- [x] `bun test` — all green.
+- [x] `bun run audit:tokens lint` — zero violations.
+- [x] `cargo nextest run` — all green.
 
 ---
 
@@ -1436,18 +1436,25 @@ The kind change at commit is a prop change to the cell wrapper, which rerenders 
 
 **Tasks:**
 
-- [ ] Walk each tuglaw against this plan's diff. For any flagged item, either fix in this commit or document why deferred.
-- [ ] Update `tide.md §T3.4.a`.
-- [ ] Update parent plan's `§step-11` row + body.
-- [ ] Add the supersede marker to `tugplan-tide-transcript-rendering.md`.
+- [x] Walk each tuglaw against this plan's diff. For any flagged item, either fix in this commit or document why deferred.
+- [x] Update `tide.md §T3.4.a`. *(landed in Step 11's commit alongside the Tide card wire-up.)*
+- [x] Update parent plan's `§step-11` row + body.
+- [x] Add the supersede marker to `tugplan-tide-transcript-rendering.md`.
 
 **Tests:**
 
-- [ ] Full-suite green: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`.
+- [x] Full-suite green: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`.
 
 **Checkpoint:**
 
-- [ ] All commands above exit clean.
+- [x] All commands above exit clean.
+
+**Tuglaws walkthrough findings.** Per-step compliance ran against [tuglaws.md], [pane-model.md], [component-authoring.md], [responder-chain.md], [state-preservation.md], [token-naming.md]. The §[#tuglaws-cross-check] table covers L01–L24 in detail; Step 12's pass surfaced two small fix-in-place items, both landed in this commit:
+
+1. **Step 11's "no sticky last" test was checking a non-existent attribute** (`data-streaming-path`, which `TugMarkdownBlock` does not write). Strengthened to assert against `data-tug-list-cell-kind="code-streaming"` — an attribute the list view actually writes — and added a positive assertion that a `code-committed` cell exists post-commit.
+2. **`TideTranscriptHost` was reading `streamingPath` via `codeSessionStore.getSnapshot().streamingPaths.assistant` on every render.** Stabilized via `useMemo([codeSessionStore])` so the value participates in the `cellRenderers` memo without churning identity on snapshot ticks.
+
+No deferred-with-rationale findings; the [#non-goals] (D13 native-selection-across-scroll-out) and [#roadmap] entries (Cmd+J, picker migration, prefetching, sections, animations, imperative DOM pooling, atom-aware user rows) were already explicitly logged in earlier steps.
 
 ---
 
@@ -1457,29 +1464,29 @@ The kind change at commit is a prop change to the cell wrapper, which rerenders 
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] `TugListView` primitive exists at the listed file path and exports the public API.
-- [ ] `TugMarkdownBlock` companion primitive exists.
-- [ ] Gallery card mounts and visually exercises: heterogeneous kinds, variable heights, dynamic insert/delete, streaming-bound cell with auto-follow, selection.
-- [ ] `CodeSessionSnapshot.inflightUserMessage` exists and tests cover its lifecycle.
-- [ ] `TideTranscriptDataSource` adapter exists and tests cover its mapping shape.
-- [ ] The Tide card top pane renders `(user, code)` row pairs via `TugListView`.
-- [ ] In-flight user row appears immediately on `send()`.
-- [ ] In-flight code row body streams from `streamingDocument.inflight.assistant`; on `turn_complete`, the committed pair holds the final text without an intermediate empty render.
-- [ ] No element bound to `streamingPath` survives `turn_complete` — sticky last is gone.
-- [ ] Auto-follow-bottom honors `SmartScroll` user-opt-out.
-- [ ] Tuglaws cross-check passes per-step.
-- [ ] Parent plan §step-11 row flipped to "shipped"; Cmd+J explicitly logged as deferred follow-on.
-- [ ] All check commands green: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`.
+- [x] `TugListView` primitive exists at the listed file path and exports the public API.
+- [x] `TugMarkdownBlock` companion primitive exists.
+- [x] Gallery card mounts and visually exercises: heterogeneous kinds, variable heights, dynamic insert/delete, streaming-bound cell with auto-follow, selection.
+- [x] `CodeSessionSnapshot.inflightUserMessage` exists and tests cover its lifecycle.
+- [x] `TideTranscriptDataSource` adapter exists and tests cover its mapping shape.
+- [x] The Tide card top pane renders `(user, code)` row pairs via `TugListView`.
+- [x] In-flight user row appears immediately on `send()`.
+- [x] In-flight code row body streams from `streamingDocument.inflight.assistant`; on `turn_complete`, the committed pair holds the final text without an intermediate empty render.
+- [x] No element bound to `streamingPath` survives `turn_complete` — sticky last is gone.
+- [x] Auto-follow-bottom honors `SmartScroll` user-opt-out.
+- [x] Tuglaws cross-check passes per-step.
+- [x] Parent plan §step-11 row flipped to "shipped"; Cmd+J explicitly logged as deferred follow-on.
+- [x] All check commands green: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`.
 
 **Acceptance tests:**
 
-- [ ] `HeightIndex` unit tests (Step 4).
-- [ ] List-view component tests across windowing, heights, reuse, lifecycle, SmartScroll (Steps 3–6).
-- [ ] `TugMarkdownBlock` tests for static and streaming modes (Step 7).
-- [ ] Gallery render-only smoke (Step 8).
-- [ ] `inflightUserMessage` reducer-lifecycle tests (Step 9).
+- [x] `HeightIndex` unit tests (Step 4).
+- [x] List-view component tests across windowing, heights, reuse, lifecycle, SmartScroll (Steps 3–6).
+- [x] `TugMarkdownBlock` tests for static and streaming modes (Step 7).
+- [x] Gallery render-only smoke (Step 8).
+- [x] `inflightUserMessage` reducer-lifecycle tests (Step 9).
 - [x] `TideTranscriptDataSource` adapter tests (Step 10).
-- [ ] Tide card multi-turn integration tests (Step 11).
+- [x] Tide card multi-turn integration tests (Step 11).
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
