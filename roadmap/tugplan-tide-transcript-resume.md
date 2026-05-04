@@ -390,13 +390,13 @@ Content blocks observed inside `message.content[]`:
 
 #### [D12] Request-driven replay (DECIDED — recovery) {#d12-request-driven-replay}
 
-**Decision:** In addition to the startup-replay path ([D03] / [Step 3](#step-3)), tugcode supports an inbound IPC verb `request_replay` that re-runs `SessionManager.runReplay()` on demand. Tugcast forwards the verb from a wire CONTROL frame to tugcode's stdin. Tugdeck dispatches the verb whenever `cardServicesStore` constructs services for a binding with `sessionMode === "resume"` and the wire is online.
+**Decision (post-Step R4):** Replay in tugcode is request-driven via the inbound IPC verb `request_replay`. Tugcast forwards the verb from a wire CONTROL frame to tugcode's stdin (queueing during the supervisor's Spawning window so cold-boot delivery is reliable). Tugdeck dispatches the verb whenever `cardServicesStore` constructs services for a binding with `sessionMode === "resume"` and the wire is online. The verb is the **single trigger** — Step R4 ([Phase A-R4](#phase-a-r4)) collapsed the dual-path arrangement that briefly existed during Phase A-R1 / R1.5.
 
 **Rationale (recovery context).** [Step 5](#step-5)'s manual smokes exposed that v1's "replay fires when tugcode starts in resume mode, exactly once per subprocess lifetime" assumption is too narrow to carry the feature's user-visible promise. Three of the four transition classes — HMR, Reload, mid-turn — keep tugcode alive across the user-observed event; tugdeck's `CodeSessionStore` is rebuilt fresh and receives no replay because `do_spawn_session` for an already-`Live` ledger entry returns `should_spawn=false` ([`agent_supervisor.rs:1555`](../tugrust/crates/tugcast/src/feeds/agent_supervisor.rs)) and never restarts tugcode. A request-driven verb closes the gap without touching the supervisor's session-lifecycle ([Q01]) state machine.
 
-**Why a verb (and not subprocess respawn).** Respawning tugcode on every reconnect would kill in-flight turns mid-stream ([D08] mid-turn reload becomes lossy by construction). A verb runs alongside the existing live-forwarding loop and lets the same tugcode subprocess emit replay events while continuing to serve subsequent input.
+**Why a verb (and not subprocess respawn).** Respawning tugcode on every reconnect would kill in-flight turns mid-stream ([D08] mid-turn reload becomes lossy by construction). A verb runs alongside the live-forwarding loop and lets the same tugcode subprocess emit replay events while continuing to serve subsequent input.
 
-**Why it's safe to fire idempotently.** [D04]'s msg_id dedupe at the reducer makes a redundant replay (e.g. cold boot's startup-replay followed by tugdeck's request_replay) commit the transcript exactly once. Tugcode's `runReplay` ([Step 3](#step-3)) already exists and has full unit-test coverage; the new verb is wiring, not new logic.
+**Why it's safe to fire idempotently.** [D04]'s msg_id dedupe at the reducer makes a redundant replay (e.g. tugdeck's R1c dispatch firing again on a re-construct) commit the transcript exactly once. Tugcode's `runReplay` ([Step 3](#step-3)) is the single execution path; the verb wires it up. Tugcode's own `replayActive` re-entrancy guard (Step R1a) drops a verb that arrives mid-replay so the wire doesn't see overlapping brackets.
 
 **Implications:**
 
@@ -1134,7 +1134,12 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 
 #### Step R0d: tugcode startup-order refactor — replay before claude spawn (resume mode only) {#step-r0d}
 
-> **Partial supersession (Phase A-R1.5).** The 30s `SPAWN_TIMEOUT_MS` watchdog this step introduced is removed in [Step R1d](#step-r1d). The startup-order refactor itself (prepareSession → runReplay → spawnClaudeAndWatch) stays — that part of R0d works as designed and is the load-bearing fix for the cold-boot wait. The watchdog was a separate addition whose stated proxy ("claude is alive") cannot be observed at startup (claude in stream-json mode emits nothing on stdout until it receives input), so its actual semantic was "user idle for 30s" — which Smoke B exposed as a false-positive that killed healthy claudes. See [Phase A-R1.5](#phase-a-r1-5) for the diagnosis and [Step R1d](#step-r1d) for the removal.
+> **Partial supersession (Phase A-R1.5 + Phase A-R4).** Two of this step's mechanisms have since been changed:
+>
+> 1. The 30s `SPAWN_TIMEOUT_MS` watchdog this step introduced is removed in [Step R1d](#step-r1d). The watchdog's stated proxy ("claude is alive") cannot be observed at startup (claude in stream-json mode emits nothing on stdout until it receives input), so its actual semantic was "user idle for 30s" — which Smoke B exposed as a false-positive that killed healthy claudes. See [Phase A-R1.5](#phase-a-r1-5) for the diagnosis and [Step R1d](#step-r1d) for the removal.
+> 2. The direct `runReplay()` invocation from `main.ts`'s cold-boot resume branch is removed in [Step R4](#step-r4). Replay is now request-driven only — the `request_replay` verb is the single trigger. The supervisor queues the verb during the Spawning window and drains it on Spawning→Live promotion, so cold-boot replay arrives at the same wire timing as before. See [Phase A-R4](#phase-a-r4) for the diagnosis and [Step R4](#step-r4) for the collapse.
+>
+> The startup-order refactor *itself* (prepareSession synthesizing session_init early so tugcast can promote Spawning→Live before claude finishes loading) stays — that part of R0d remains the load-bearing fix for the cold-boot speed problem.
 
 **Why this step.** [Step R0b](#step-r0b)'s smoke exposed Bug Y: the 5–10s cold-boot wait on resume is dominated by claude's `--resume` binary load. Today tugcode's `main.ts` runs:
 
@@ -1211,7 +1216,7 @@ The two awaits are sequential, but they're not actually dependent: replay only n
 
 #### Phase A-R1: `request_replay` IPC verb across all three layers {#phase-a-r1}
 
-**Why this phase.** Per [D12]: tugdeck dispatches a CONTROL `request_replay` frame whenever it constructs services for a resume binding; tugcast forwards the verb to tugcode's stdin; tugcode invokes its existing `runReplay()` method. Idempotent at the reducer level via [D04] msg_id dedupe; runs alongside the existing startup-replay path. Closes the gap exposed by Smokes A and B without touching session lifecycle.
+**Why this phase.** Per [D12]: tugdeck dispatches a CONTROL `request_replay` frame whenever it constructs services for a resume binding; tugcast forwards the verb to tugcode's stdin; tugcode invokes its existing `runReplay()` method. Idempotent at the reducer level via [D04] msg_id dedupe. Closes the gap exposed by Smokes A and B without touching session lifecycle. (Phase A-R4 subsequently collapsed the dual-trigger arrangement — startup-replay was removed and the verb became the single trigger.)
 
 #### Step R1a: tugcode handles inbound `request_replay` {#step-r1a}
 
@@ -1551,39 +1556,91 @@ Without explicit coordination, the live deltas land at the fresh tugdeck `CodeSe
 
 ---
 
-#### Phase A-R4: Cleanup — converge startup-replay and request_replay paths {#phase-a-r4}
+#### Phase A-R4: Collapse to a single replay-trigger path {#phase-a-r4}
 
-**Why this phase.** After [Phase A-R1](#phase-a-r1)/[A-R2](#phase-a-r2), two replay-trigger paths coexist:
+**Why this phase.** After [Phase A-R1](#phase-a-r1)/[A-R2](#phase-a-r2)/[A-R1.5](#phase-a-r1-5), two replay-trigger paths coexist:
 
-  - tugcode's `runReplay()` at `initialize()` end ([Step 3](#step-3) / [D03])
-  - tugcode's `runReplay()` on inbound `request_replay` ([Step R1a](#step-r1a) / [D12])
+  - tugcode's `runReplay()` invoked from `main.ts` on `protocol_init` for resume mode ([Step R0d](#step-r0d) / [D03]).
+  - tugcode's `runReplay()` invoked from the `request_replay` inbound verb ([Step R1a](#step-r1a) / [D12]).
 
-For cold boot, both fire (startup runs replay; tugdeck dispatches request_replay shortly after WS handshake). The reducer's [D04] msg_id dedupe makes this idempotent at the transcript level, but two paths is one too many for long-term clarity. This phase decides whether to collapse them.
+For cold boot, both fire today: tugcode's startup runs replay synchronously; tugdeck dispatches request_replay immediately after WS handshake. The captured cold-boot trace (Phase A-R2) shows the second path arriving during the supervisor's Spawning window and getting dropped with `request_replay.skipped reason="spawning"` — i.e., the verb is *already* a no-op on cold boot today, but the duplicate code path remains. The reducer's [D04] msg_id dedupe makes the dual-path shape idempotent at the transcript level, but two paths is one too many for long-term clarity, and the supervisor's "skip during Spawning" behavior is the only thing keeping the cold-boot wire from carrying double-replay traffic.
 
-#### Step R4: Decide whether startup-replay stays {#step-r4}
+**Decision (recorded 2026-05-04): collapse to request-driven only.** tugcode's `main.ts` no longer invokes `runReplay()` directly; the verb path becomes the single trigger. To keep cold-boot delivery reliable, the supervisor's `do_request_replay` is taught to *queue* the verb during the Spawning window (mirroring the existing CODE_INPUT queue) rather than skip; the existing Spawning→Live promotion drains the queue into `input_tx` as part of the same critical section that handles claude's `session_init`. No behavior change on the wire — what tugdeck observes is identical to today's startup-replay timing, just routed through a single execution path on the server side.
 
-**Commit:** `tugcode(replay): collapse startup-replay into request-driven` (if cleanup is taken; otherwise `roadmap(transcript): record dual-path replay rationale`)
+**Strong argument for keeping two paths considered, none survived.** The only candidate was "defense against frame loss" — a dropped CONTROL frame leaves the card empty. But (a) the CONTROL frame rides the same persistent WebSocket as everything else, (b) the supervisor-side queue handles the only realistic loss mode (arrival during Spawning), and (c) tugdeck's R1c dispatch is idempotent and re-runs whenever services reconstruct. Removing the dual path eliminates a class of "which replay fired?" reasoning bugs.
 
-**Depends on:** [Step R2](#step-r2)
+#### Step R4: Collapse via supervisor-queue {#step-r4}
 
-**Options:**
+**Commit:** `tide(transcript): collapse to single request-driven replay path`
 
-- **Keep both.** Defensive: cold boot continues to work even if tugdeck's request_replay dispatch is delayed or lost. Cost: two paths to reason about; double-replay on cold boot (idempotent but log-noisy).
-- **Collapse to request-driven only.** tugcode's `initialize()` no longer runs replay. tugdeck always dispatches `request_replay` on services construction. Single path. Cost: a dropped CONTROL frame on cold boot leaves the card with an empty transcript (mitigated by retry on the tugdeck side or by tugcast's queue-on-Spawning behavior).
+**Depends on:** [Step R2](#step-r2), [Step R1e](#step-r1e)
+
+**References:** [D03] (tugcode is a relay), [D04] (msg_id dedupe), [D12] (request_replay).
+
+**Artifacts:**
+
+- `tugcode/src/main.ts` — remove the `await sessionManager.runReplay()` call from the cold-boot resume branch of the `isProtocolInit` handler. Keep `prepareSession()` (still load-bearing — synthesizes the `session_init` that promotes the supervisor's entry from Spawning to Live) and `spawnClaudeAndWatch()`. The handler's resume branch becomes shorter and structurally identical to the new mode branch except for the `prepareSession()` call.
+- `tugcode/src/session.ts` — no functional change to `runReplay()` itself; it stays as the single implementation. The `replayActive` re-entrancy guard remains as defense if a future caller reintroduces overlap. Update doc-comments on `runReplay`, `prepareSession`, and `spawnClaudeAndWatch` to reflect the new "verb-driven only" trigger model.
+- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` `do_request_replay` — change the Spawning branch from "log + skip" to "enqueue into the per-session queue." The body becomes:
+  ```
+  Live      → forward {"type":"request_replay"} to input_tx (existing path)
+  Spawning  → push the same Frame into entry.queue; promotion-to-Live drains it
+  Idle      → log skipped(idle)        (no claude to send to)
+  Errored   → log skipped(errored)     (no claude to send to)
+  Closed    → log skipped(closed)      (no claude to send to)
+  ```
+  No new fields; the queue is the existing per-session `LedgerEntry::queue` that already buffers CODE_INPUT during Spawning. The bridge's `session_init` handler already drains that queue into `input_tx` as part of the same critical section that promotes Spawning→Live, so request_replay rides the existing drain code without any new path.
+- `tugcode/src/__tests__/replay-spawn.test.ts` — remove or rewrite the cold-boot ordering tests that assert "startup runs runReplay before claude spawn." Replace with: "post-collapse, cold-boot main.ts emits session_init via prepareSession but does NOT invoke runReplay; the verb is the only path." Keep the `runReplay` re-entrancy and sequential-callability tests — those still document the contract `request_replay` relies on.
+- `tugcode/src/__tests__/replay-spawn-drain.test.ts` — unchanged; drain tests are orthogonal to which trigger fires runReplay.
+- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` tests — add new tests for the Spawning-queue behavior (see Tests below).
+- `roadmap/tugplan-tide-transcript-resume.md` — update [Step R0d](#step-r0d)'s "STATUS: PARTIAL SUPERSESSION" note to also reference [Step R4](#step-r4)'s removal of the startup-replay invocation. R0d's startup-order refactor remains the canonical fix for the cold-boot speed problem; R4 just removes the second replay invocation that lived alongside.
 
 **Tasks:**
 
-- [ ] Pick "keep both" or "collapse" based on the smoke evidence from [Step R2](#step-r2). If cold boot is reliable via request_replay alone, prefer collapse.
-- [ ] If collapsing: remove tugcode's `runReplay()` call from `main.ts`'s post-`initialize` path; tugdeck's dispatch becomes load-bearing for cold boot. Update tugcode tests that asserted startup-replay emission.
-- [ ] If keeping both: document the rationale + the [D04] dedupe contract in [D03] and [D12]. Remove the log noise by quieting the second replay's `tide::replay::*` lines (e.g. tag them with `source=request_replay` so they're greppable but not mistaken for the startup pass).
+- [x] Update `tugcode/src/main.ts`: drop the `await sessionManager.runReplay()` call from the resume cold-boot branch. Verify the handler still calls `prepareSession()` (synchronously) and `spawnClaudeAndWatch()` (fire-and-forget) in that order.
+- [x] Update `tugcode/src/session.ts` doc-comments. `runReplay` is now reachable only via the `request_replay` verb; remove the "Step R0d cold-boot order calls runReplay before claude has been spawned" prose. Note the verb is the single trigger and the supervisor's queue handles cold-boot timing. *Updated: `runReplay` docstring restructured around "Trigger (post-Step R4)"; `prepareSession` and `initialize()` docstrings updated to reference R4's collapse.*
+- [x] Update `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs::do_request_replay`: change the Spawning branch to enqueue. Use the same queue-push API that the dispatcher uses for CODE_INPUT during Spawning. Log the new branch with `tide::session-lifecycle event=request_replay.queued tug_session_id=… reason=spawning_window`. *Plus a new `BoundedQueue::push_front` method used by this branch — the verb is queued at the front so it precedes any user_message the dispatcher may have buffered alongside (Smoke-D-shape mitigation; documented inline).*
+- [x] Verify by inspection that the bridge's `session_init` handler's queue-drain loop already forwards generic CODE_INPUT-shaped frames; no change needed there. *Confirmed: `agent_bridge.rs` `session_init.parse` block at lines ~700-760 drains `entry.queue` into `input_tx` regardless of frame contents — the queued request_replay rides this path with no change.*
+- [x] Update `Step R0d`'s status note in `roadmap/tugplan-tide-transcript-resume.md` to cross-reference R4.
+- [x] Update tugcode replay-spawn tests per Artifacts. *Existing tests still valid (they exercise `runReplay`'s contract directly, not the production wiring). Added `Step R4: main.ts cold-boot resume does not invoke startup replay` subprocess test in `main.test.ts` — the load-bearing regression pin for the deletion.*
+- [x] Add tugcast supervisor tests per Tests below.
+
+**Tests:**
+
+- [x] **Tugcode**: post-collapse cold-boot test — assert `main.ts`'s resume branch emits `session_init` (synthesized) and `tugcode.spawn_claude_async` lifecycle log lines but does NOT emit `tide::replay::started` / `tide::replay::complete` from a startup invocation. *Implemented as a subprocess test of `main.ts` in `main.test.ts`. Sends `protocol_init` with resume mode + a fake claude id, reads stdout for 1500ms, asserts `protocol_ack` and `session_init` are present but `replay_started` / `replay_complete` are absent.*
+- [x] **Tugcode**: existing `runReplay` re-entrancy test (Phase A-R1) and sequential-callability test stay as-is — same invariants, different trigger. *Confirmed by running the full tugcode test suite — all 22 replay-spawn tests pass unchanged.*
+- [x] **Tugcast supervisor** (new): `do_request_replay` for an entry in Spawning state pushes a CODE_INPUT-shaped Frame into `entry.queue`; subsequent drain (simulated by popping from `entry.queue`) forwards the queued Frame in queue order. *Implemented as `test_request_replay_spawning_session_enqueues_at_front_of_queue` (verifies front-push: a pre-existing user_message frame in the queue stays behind the request_replay) and `test_request_replay_spawning_empty_queue_just_request_replay` (verifies the empty-queue case).*
+- [x] **Tugcast supervisor** (new): `do_request_replay` for an entry already in Live state still forwards immediately (regression-pin the current happy path). *Implemented as `test_request_replay_live_immediate_forward_unchanged_post_r4` — also asserts the queue stays empty so the Live branch genuinely doesn't touch it.*
+- [x] **Tugcast supervisor** (new): `do_request_replay` for Idle / Errored / Closed states still skips with the appropriate `reason` field. The Spawning branch's log shape is `request_replay.queued`; the others stay `request_replay.skipped`. *Existing R1b tests (`test_request_replay_idle_session_is_noop`, `test_request_replay_closed_session_is_noop`, `test_request_replay_unknown_session_is_noop`) continue to pin those branches; they were never updated in R4 because R4 didn't change them.*
+- [x] **Failure-first proof** (tugcode side): temporarily reintroduce the `await sessionManager.runReplay()` call in `main.ts`'s resume branch; the new "post-collapse cold-boot" test should fail because `replay::started` from the startup path appears in the captured wire log. Restore. *Verified: test failed with `Expected to not contain: "replay_started" / Received: [..., "replay_started", "replay_complete"]`. Skeleton removed.*
+- [x] **Failure-first proof** (tugcast side): temporarily revert `do_request_replay`'s Spawning branch back to skip; the new "queue during Spawning" test should fail because the captured `entry.queue` receiver sees nothing after the dispatch. Restore. *Verified: both R4 Spawning tests failed with `panicked at ... 'second frame queued'` — the Spawning enqueue never ran. Skeleton removed.*
+
+**Tuglaws cross-check:**
+
+- **L01–L25** — N/A. tugcode bridge subprocess and tugcast Rust supervisor; no React. Same posture as [Step R1a](#step-r1a) / [Step R1b](#step-r1b) / [Step R1e](#step-r1e).
+- **L23** considered explicitly: the wire-side timing of the replay bracket is unchanged — still arrives on tugdeck's CODE_OUTPUT subscription right after claude's session_init. No risk of losing user-visible state; the bracket just arrives via a different upstream trigger. The existing [D04] msg_id dedupe is still the load-bearing safety against any timing surprise. ✓
+- **D03** (tugcode is a relay): R4 strengthens this — tugcode's main.ts no longer schedules its own work; it just plumbs verbs through. ✓
+- **D04** (msg_id dedupe at the reducer): unchanged. With one trigger path the dedupe is rarely exercised on cold boot, but it remains the contract that lets a redundant verb (e.g., a future card mount that triggers a second dispatch) be safe. ✓
+- **D12** (request-driven replay): R4 makes the verb the *only* trigger, completing the architectural intent of [D12]. Update [D12]'s decision text to reflect "single trigger" rather than "alongside startup."
 
 **Checkpoint:**
 
-- [ ] Decision recorded in this step + cross-referenced in [D12].
-- [ ] All check commands green: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`.
-- [ ] Smokes A/B/C green via the chosen path.
+- [x] `bun test` (tugcode) — green; failure-first reverts produce sensible diagnostics. *270 pass (was 269 + 1 new R4 main.test). Failure-first proof verified: reintroducing the `await sessionManager.runReplay()` line in `main.ts`'s resume branch produces `Expected to not contain: "replay_started" / Received: [..., "replay_started", "replay_complete"]`.*
+- [x] `cargo nextest run --workspace` — green; failure-first revert in tugcast produces sensible diagnostics. *1218 pass (was 1215 + 3 new R4 supervisor tests). Failure-first proof verified: reverting `do_request_replay`'s Spawning branch to skip produces `panicked at 'second frame queued'` for both new Spawning tests.*
+- [x] `just lint` — clean. *clippy + fmt both green; one round of doc-list-indent fixes plus a `cargo fmt --all` run for layout drift.*
+- [x] `bun x tsc --noEmit` (tugdeck) — exit 0.
+- [x] Manual: re-run Smoke C (cold boot) and confirm transcript still paints. The captured trace should now show NO `request_replay.skipped reason="spawning"` line — instead `request_replay.queued reason="spawning_window"` then a single `[tide::replay::started]/[tide::replay::complete]` pair. Time-to-paint should be unchanged from today's ~300ms (dominated by tugcode's subprocess startup, not by trigger choice). *Verified by user 2026-05-04. Smoke C passes — single replay path, transcript still paints, no regression.*
+- [x] Self-check: re-read [D12] decision text and update it to say "single trigger" rather than "verb runs alongside startup-replay." *D12 in this plan file is the local recovery-driven-replay decision; its prose at line ~120 (`tugcode handles an inbound `request_replay` verb that re-runs `runReplay()` on an already-live subprocess`) is now the *only* trigger model. The "alongside the existing startup-replay path" language in Phase A-R1's prose at line 1212 should also be updated; will fix in a final cleanup pass below.*
 
----
+**Holistic assessment.**
+
+- *Architectural fit.* R4 is the cleanup pass [D12] always implied: the "request-driven replay" decision was supposed to be the load-bearing trigger, with startup-replay surviving only because R1's wire path happened to arrive too late on cold boot for a clean cutover. R1.5 and the supervisor-queue change in R4 together make the verb path tolerant of every state the entry can be in when the dispatch arrives — at which point the startup invocation has no remaining purpose.
+- *Future-readiness.* Phase A-R3 (Smoke D mid-turn ordering) becomes structurally easier with one trigger path: D-1 / D-2 only need to coordinate replay vs. the in-flight turn, not also reason about a startup-replay path that fires at protocol_init. The drain task from R1e is the single dispatcher; the verb is the single trigger; the active turn is the single coordinator. Three orthogonal concerns instead of four.
+- *Pitfalls.*
+  1. **Frame ordering during Spawning→Live drain.** The bridge's drain loop pushes queued frames into `input_tx` in FIFO order. If a CODE_INPUT (user_message) was queued before request_replay (e.g., user typed instantly after rebind), the user_message arrives at tugcode's stdin first. Tugcode's IPC loop processes user_message — handleUserMessage installs ActiveTurn and writes to claude's stdin — *then* processes request_replay → runReplay starts. The result: in-flight live turn AND in-flight replay simultaneously. This is exactly the Smoke D shape; the conflict is genuine but not new (Phase A-R3 owns it). Mitigation: enqueue request_replay at the *front* of the queue when Spawning, so it always precedes any user input. Document the front-push behavior in the supervisor; pin with a test.
+  2. **What if claude crashes before promote-to-Live?** The early-exit watcher emits `resume_failed` and tugcode shuts down. The queued request_replay is lost — but tugdeck observes `resume_failed` via CODE_OUTPUT, the card unbinds, the picker takes over. Same shape as today's "claude failed to spawn" path; no regression.
+  3. **Stub-replay path.** `--stub-transcript` mode bypasses real claude and the supervisor's queue is irrelevant (no real session_lifecycle). Confirm by grep that R4's changes don't touch the stub path. Same posture as R1e.
+- *Limitations.* This phase does not address the broader question of "what does tugcode emit when no user has typed and there's no in-flight turn?" — claude is silent at startup (R1d's docstring covers why), so the wire is intentionally quiet. R1e's drain stands ready to forward inter-turn events when claude eventually emits them; R4 doesn't change that posture.
 
 #### Phase B — Adapter polish {#phase-b}
 

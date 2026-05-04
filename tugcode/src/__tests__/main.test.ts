@@ -168,6 +168,92 @@ async function readStartupLine(args: string[]): Promise<string> {
   return line ?? "";
 }
 
+describe("Step R4: main.ts cold-boot resume does not invoke startup replay", () => {
+  test("resume-mode protocol_init emits synthetic session_init but NO replay bracket", async () => {
+    // Step R4 (Phase A-R4) collapsed the dual replay-trigger paths.
+    // Pre-R4: main.ts's resume branch ran `await sessionManager.runReplay()`
+    // immediately after `prepareSession()`, so a startup-replay bracket
+    // (`replay_started` + `replay_complete`) appeared on the wire even
+    // when no claude was on PATH.
+    // Post-R4: main.ts only emits the synthetic `session_init` and kicks
+    // off `spawnClaudeAndWatch`. Replay is request-driven only — the
+    // `request_replay` verb is the single trigger.
+    //
+    // This test is the load-bearing regression pin for the deletion.
+    // Failure-first: reintroducing `await sessionManager.runReplay()`
+    // in main.ts's resume branch makes the second assertion fail
+    // (replay frames appear).
+
+    const mainPath = join(import.meta.dir, "..", "main.ts");
+    const proc = spawn([
+      "bun",
+      "run",
+      mainPath,
+      "--dir",
+      "/tmp/r4-cold-boot-no-startup-replay",
+      "--session-id",
+      "r4-tug-id",
+      "--session-mode",
+      "resume",
+      "--resume-session",
+      "r4-claude-id",
+    ], {
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    // Send protocol_init and let main.ts run for a brief window.
+    // We intentionally don't wait for claude to spawn — that fails
+    // because /tmp/r4-cold-boot-no-startup-replay doesn't have a JSONL
+    // and there's no claude on the test PATH. We're measuring what
+    // tugcode emits between protocol_init and the inevitable
+    // resume_failed.
+    proc.stdin.write(JSON.stringify({ type: "protocol_init", version: 1 }) + "\n");
+
+    // Read all stdout for ~1500ms — enough for any startup-replay
+    // bracket to have landed if it were going to.
+    const reader = proc.stdout.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    const deadline = Date.now() + 1500;
+    try {
+      while (Date.now() < deadline) {
+        const readPromise = reader.read();
+        const timeoutPromise = new Promise<{ done: true; value: undefined }>(
+          (resolve) => setTimeout(() => resolve({ done: true, value: undefined }), 100),
+        );
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result: any = await Promise.race([readPromise, timeoutPromise]);
+        if (result.done) break;
+        buf += decoder.decode(result.value, { stream: true });
+      }
+    } finally {
+      reader.releaseLock();
+      proc.stdin.end();
+      proc.kill();
+    }
+
+    const lines = buf.split("\n").filter((l) => l.trim().length > 0);
+    const frames = lines.map((l) => {
+      try { return JSON.parse(l); } catch { return null; }
+    }).filter((f): f is Record<string, unknown> => f !== null);
+
+    // Sanity: we got at least the protocol_ack + synthetic session_init.
+    const types = frames.map((f) => f.type as string);
+    expect(types).toContain("protocol_ack");
+    expect(types).toContain("session_init");
+
+    // Load-bearing assertion: NO replay frames in this window.
+    // Pre-R4 the synthetic session_init was followed by replay_started
+    // and replay_complete (the latter with `error: jsonl_missing`
+    // since the directory we point at has no JSONL). Post-R4 those
+    // never appear — replay is verb-driven only.
+    expect(types).not.toContain("replay_started");
+    expect(types).not.toContain("replay_complete");
+  });
+});
+
 describe("main.ts --resume-session argv", () => {
   test("--resume-session <id> appears in startup log when provided", async () => {
     const line = await readStartupLine([

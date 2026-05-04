@@ -1161,19 +1161,24 @@ export class SessionManager {
   /**
    * Resume-only: emit the synthetic `session_init` and arm the
    * `claudeReadyPromise` gate, all *before* claude has been spawned.
-   * The cold-boot resume flow (Step R0d) is:
+   * The cold-boot resume flow (Step R0d / R4) is:
    *
    *   1. `prepareSession()` — emit the init synchronously so tugcast
    *      sees the session as live and broadcasts `spawn_session_ok`;
-   *      tugdeck constructs services and the user sees the card open.
-   *   2. `await runReplay()` — read the JSONL and stream replay
-   *      events. claude is not yet spawned; replay reads only the
-   *      filesystem. Finishes in ~50ms instead of the 5–10s the
-   *      pre-R0d order took (which awaited claude's binary load
-   *      first).
-   *   3. `void spawnClaudeAndWatch()` — spawn claude in the
+   *      tugdeck constructs services and dispatches `request_replay`
+   *      (Step R1c). The user sees the card open.
+   *   2. `void spawnClaudeAndWatch()` — spawn claude in the
    *      background. The returned Promise resolves once the spawn
-   *      handle is wired up; `handleUserMessage` awaits it.
+   *      handle is wired up; `handleUserMessage` awaits it. The
+   *      stdout drain (Step R1e) starts here.
+   *
+   * The replay step is no longer in this list. Step R4 (Phase A-R4)
+   * removed the direct `runReplay()` invocation from cold-boot:
+   * replay is request-driven only, triggered by the `request_replay`
+   * inbound verb. The supervisor queues the verb during the Spawning
+   * window and drains it into tugcode's stdin during the same
+   * critical section that promotes Spawning→Live, so replay arrives
+   * at the same wire timing as the pre-collapse startup-replay path.
    *
    * Wire-semantic note. Pre-R0d, `spawn_session_ok` reaching tugdeck
    * meant "claude is alive on the other side". Post-R0d, it means
@@ -1290,15 +1295,17 @@ export class SessionManager {
    * Initialize session — single entry point for new mode and the
    * legacy (eager) resume path.
    *
-   * Resume mode (cold-boot, Step R0d): `main.ts` does NOT call
+   * Resume mode (cold-boot, Step R0d / R4): `main.ts` does NOT call
    * `initialize()`; it calls `prepareSession()` →
-   * `await runReplay()` → `void spawnClaudeAndWatch()` so the
-   * 5–10s claude spawn runs in the background after the populated
-   * transcript is already on the user's screen. `initialize()`
+   * `void spawnClaudeAndWatch()` so the claude spawn runs in the
+   * background while tugdeck dispatches the `request_replay` verb
+   * (Step R1c) that — queued during Spawning, drained on
+   * Spawning→Live (Step R4) — drives the actual replay. `initialize()`
    * remains for non-cold-boot callers (and tests that don't care to
    * exercise the cold-boot order); for resume mode it composes
-   * `prepareSession()` + `await spawnClaudeAndWatch()` to keep the
-   * wire bytes bytes-identical.
+   * `prepareSession()` + `await spawnClaudeAndWatch()`. It does NOT
+   * invoke `runReplay()` itself; replay is request-driven only
+   * post-R4.
    *
    * New mode: spawns claude eagerly via `spawnClaudeAndWatch()`,
    * then emits the synthetic `session_init`. Same wire shape as
@@ -1473,10 +1480,25 @@ export class SessionManager {
   /**
    * Read the JSONL archive for the resumed session and stream its
    * translated events to IPC stdout, bracketed by `replay_started` /
-   * `replay_complete`. Runs only in resume mode; called once per
-   * session, after `initialize()` has synthesized the `session_init`
-   * IPC line and before the main IPC loop dispatches the first
-   * `user_message`.
+   * `replay_complete`. Runs only in resume mode.
+   *
+   * **Trigger** (post-Step R4 / Phase A-R4): `request_replay` inbound
+   * verb only. The verb is dispatched by tugdeck's
+   * `cardServicesStore` whenever fresh services are constructed for
+   * a resume binding (cold boot, HMR, Developer > Reload), forwarded
+   * by tugcast's supervisor through tugcode's stdin via the existing
+   * CODE_INPUT path, and dispatched to this method by tugcode's IPC
+   * loop (`main.ts` `isRequestReplay` branch). The supervisor queues
+   * the verb during the Spawning window and drains it on
+   * Spawning→Live promotion, so cold-boot replay arrives at the same
+   * wire timing as the pre-collapse startup-replay path.
+   *
+   * The legacy direct invocation from `main.ts` and `initialize()`
+   * was removed in [Step R4](roadmap/tugplan-tide-transcript-resume.md#step-r4)
+   * to eliminate dual replay-trigger paths. The `replayActive`
+   * re-entrancy guard remains as defense-in-depth: a future caller
+   * that reintroduces overlap is dropped at the entry rather than
+   * producing interleaved replay output on IPC stdout.
    *
    * Concurrency model. The replay iterator is awaited sequentially
    * with a race against:
@@ -1491,8 +1513,8 @@ export class SessionManager {
    * On timeout we abandon the iterator, emit our own
    * `replay_complete { replay_timeout }`, and return. The JSONL was
    * readable but didn't finish in time; claude is still alive on the
-   * other side and live forwarding takes over when handleUserMessage
-   * runs.
+   * other side and live forwarding takes over via the stdout drain
+   * (Step R1e) once handleUserMessage runs.
    *
    * On a claude crash *during* replay we emit
    * `replay_complete { jsonl_unreadable: claude_exited_during_replay }`
@@ -1506,8 +1528,7 @@ export class SessionManager {
    * occasional keep-alives — so the pipe is well within bounds. The
    * hard timeout is the ultimate guard against a pathologically
    * chatty claude. {@link REPLAY_LIVE_BUFFER_MAX} stays available as
-   * a documented threshold for any future continuous-drain refactor;
-   * it is not load-bearing in this code path.
+   * a documented threshold; it is not load-bearing post-R1e.
    */
   async runReplay(): Promise<void> {
     if (this.sessionMode !== "resume") return;

@@ -198,22 +198,28 @@ async function main() {
         ipc_version: 2,
       });
 
-      // Step R0d cold-boot order. Resume mode runs replay BEFORE
-      // spawning claude so the populated transcript paints within
-      // ~100ms of card mount instead of the 5–10s the eager
-      // (pre-R0d) order took (claude's binary load blocked
-      // everything). The synthetic `session_init` is emitted in
-      // `prepareSession()` so tugcast can broadcast
-      // `spawn_session_ok` and tugdeck can construct services
-      // immediately; the spawn itself happens in the background after
-      // replay completes. `handleUserMessage` awaits the readiness
-      // gate established in `prepareSession()` so any user submit
-      // that lands during replay blocks until claude is ready.
+      // Step R0d cold-boot order. Resume mode emits the synthetic
+      // `session_init` via `prepareSession()` so tugcast can promote
+      // the supervisor's entry from Spawning to Live and broadcast
+      // `spawn_session_ok` immediately; tugdeck constructs services
+      // and dispatches `request_replay` (Phase A-R1 / Step R1c). The
+      // claude spawn happens in the background — `handleUserMessage`
+      // awaits the readiness gate established in `prepareSession()`
+      // so any user submit that lands before claude is ready blocks
+      // until it is.
       //
-      // New mode keeps the historical eager path:
-      // `initialize()` spawns claude and emits the synthetic init
-      // synchronously. There's no JSONL to replay and no
-      // user-perceived dead window to fix.
+      // Step R4 (Phase A-R4): the cold-boot path no longer invokes
+      // `runReplay()` directly. Replay is request-driven only — the
+      // `request_replay` verb is the single trigger. The supervisor
+      // queues the verb during the Spawning window and drains it
+      // into tugcode's stdin during the same critical section that
+      // promotes Spawning→Live, so replay still arrives at the same
+      // wire timing as the pre-collapse startup-replay path.
+      //
+      // New mode keeps the historical eager path: `initialize()`
+      // spawns claude and emits the synthetic init synchronously.
+      // There's no JSONL to replay and no user-perceived dead window
+      // to fix.
       if (sessionMode === "resume") {
         try {
           sessionManager.prepareSession();
@@ -228,36 +234,16 @@ async function main() {
           process.exit(1);
         }
 
-        // Replay the on-disk JSONL through CODE_OUTPUT. Crash /
-        // missing / unreadable outcomes are surfaced through the
-        // bracket pair itself + the existing lifecycle path; no need
-        // to catch here.
-        try {
-          await sessionManager.runReplay();
-        } catch (err) {
-          console.error("Replay failed:", err);
-          writeLine({
-            type: "error",
-            message: `Replay failed: ${err}`,
-            recoverable: true,
-            ipc_version: 2,
-          });
-        }
-
         // Background claude spawn. The IPC loop continues; the
         // returned Promise is the readiness gate that
-        // `handleUserMessage` awaits. We don't await it here —
-        // awaiting would defeat the point of the refactor (the user
-        // would still wait 5–10s before the IPC loop processes
-        // anything).
+        // `handleUserMessage` awaits.
         const claudeReady = sessionManager.spawnClaudeAndWatch();
         // Surface unhandled rejection from the spawn promise to
         // stderr so a synchronous exception inside `spawnClaude`
         // (e.g. a missing claude binary) doesn't go silent. The
-        // typical failure surfaces through the early-exit watcher
-        // or the spawn-timeout watcher, both of which write
-        // their own IPC lines and call process.exit; this catch
-        // is for the unexpected synchronous-throw case.
+        // typical failure surfaces through the early-exit watcher,
+        // which writes its own IPC lines and calls process.exit;
+        // this catch is for the unexpected synchronous-throw case.
         claudeReady.catch((err) => {
           console.error("Background claude spawn failed:", err);
           writeLine({

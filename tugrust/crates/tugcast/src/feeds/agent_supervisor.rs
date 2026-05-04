@@ -188,6 +188,29 @@ impl<T> BoundedQueue<T> {
         }
     }
 
+    /// Push an item at the **front** of the queue; returns
+    /// [`QueuePush::Overflow`] if at capacity.
+    ///
+    /// Used by [`AgentSupervisor::do_request_replay`] (Step R4 / [D12])
+    /// to ensure a `request_replay` verb queued during the Spawning
+    /// window drains *before* any CODE_INPUT (user_message) the
+    /// dispatcher may have buffered. This makes the verb's
+    /// "rehydrate the freshly-mounted store" semantics precede any
+    /// user input arriving in the same window — relevant for the
+    /// Smoke D mid-turn case where the user types instantly after
+    /// rebind. See [Phase A-R3](roadmap/tugplan-tide-transcript-resume.md#phase-a-r3)
+    /// for the broader coordination story; R4's front-push is the
+    /// minimum needed to keep cold-boot Spawning-window ordering
+    /// sane without solving Smoke D end-to-end.
+    pub fn push_front(&mut self, item: T) -> QueuePush {
+        if self.inner.len() >= self.cap {
+            QueuePush::Overflow
+        } else {
+            self.inner.push_front(item);
+            QueuePush::Ok
+        }
+    }
+
     /// Pop the oldest item.
     pub fn pop(&mut self) -> Option<T> {
         self.inner.pop_front()
@@ -1931,11 +1954,29 @@ impl AgentSupervisor {
     /// the verb to its `runReplay()` method, whose re-entrancy guard
     /// (Step R1a) drops a redundant request that arrives mid-replay.
     ///
-    /// No-op if the entry's spawn state is anything other than `Live`:
-    /// `Idle` / `Spawning` mean tugcode hasn't reached `session_init`
-    /// yet (the cold-boot startup-replay path will run when it does);
-    /// `Errored` / `Closed` mean the subprocess is gone and a replay
-    /// would have nowhere to land.
+    /// State-dependent delivery:
+    ///
+    /// * `Live` — forward immediately to `input_tx`.
+    /// * `Spawning` — push at the **front** of `entry.queue`; the
+    ///   bridge's `session_init` promote-and-drain critical section
+    ///   forwards it to `input_tx` before any user input that may
+    ///   have been buffered alongside (Step R4 / [D12]).
+    /// * `Idle` — log skipped(idle); no claude to send to.
+    /// * `Errored` — log skipped(errored); subprocess gone.
+    /// * `Closed` — log skipped(closed); subprocess gone.
+    ///
+    /// **Front-push rationale**: cold boot races a `request_replay`
+    /// dispatch against the user's first submit. If the dispatch
+    /// arrives during the Spawning window and the user types
+    /// instantly afterward, the dispatcher will queue the user's
+    /// CODE_INPUT into the same per-session queue. FIFO drain would
+    /// deliver the user_message first, putting tugcode in an
+    /// in-flight turn that races with the request_replay — exactly
+    /// the Smoke D shape that [Phase A-R3](roadmap/tugplan-tide-transcript-resume.md#phase-a-r3)
+    /// owns. Front-push ensures replay always precedes user input
+    /// from the same Spawning window — the natural ordering since
+    /// the verb is "rehydrate the freshly-mounted store" and the
+    /// store should be rehydrated before user-facing work begins.
     async fn do_request_replay(&self, tug_session_id: &TugSessionId) {
         let entry_arc = {
             let ledger = self.ledger.lock().await;
@@ -1953,37 +1994,75 @@ impl AgentSupervisor {
             }
         };
 
-        // Snapshot state + input_tx under one lock acquire so the wire
-        // send below isn't holding the entry mutex (avoids stalling the
-        // dispatcher if `input_tx`'s mpsc is at capacity).
-        let (state, input_tx) = {
-            let entry = entry_arc.lock().await;
-            (entry.spawn_state, entry.input_tx.clone())
+        // Build the wire frame once; the body is the same regardless of
+        // whether we forward immediately (Live) or queue (Spawning).
+        let body = b"{\"type\":\"request_replay\"}";
+        let frame = Frame::new(FeedId::CODE_INPUT, body.to_vec());
+
+        // For the Spawning branch we need the entry mutex held while we
+        // mutate `queue`. For the Live branch we want to release the
+        // mutex before the (potentially blocking) mpsc send. Branch
+        // inside the lock: Spawning enqueues here; Live takes a snapshot
+        // of `input_tx` and sends after dropping the lock.
+        let snapshot = {
+            let mut entry = entry_arc.lock().await;
+            match entry.spawn_state {
+                SpawnState::Spawning => {
+                    let push_result = entry.queue.push_front(frame);
+                    if push_result == QueuePush::Overflow {
+                        // Per-session queue capacity is bounded; an
+                        // overflowing front-push means the dispatcher
+                        // already crammed the queue with user input
+                        // during the Spawning window. Log loudly — this
+                        // is rare and indicates the user is typing
+                        // faster than tugcode can spawn. The verb is
+                        // dropped; the cold-boot transcript may show
+                        // empty until the next dispatch (e.g. a
+                        // subsequent reload).
+                        tracing::warn!(
+                            target: "tide::session-lifecycle",
+                            event = "request_replay.skipped",
+                            tug_session_id = %tug_session_id,
+                            reason = "spawning_queue_overflow",
+                        );
+                        return;
+                    }
+                    tracing::info!(
+                        target: "tide::session-lifecycle",
+                        event = "request_replay.queued",
+                        tug_session_id = %tug_session_id,
+                        reason = "spawning_window",
+                    );
+                    return;
+                }
+                SpawnState::Live => entry.input_tx.clone(),
+                SpawnState::Idle | SpawnState::Errored | SpawnState::Closed => {
+                    let reason = match entry.spawn_state {
+                        SpawnState::Idle => "idle",
+                        SpawnState::Errored => "errored",
+                        SpawnState::Closed => "closed",
+                        _ => unreachable!(),
+                    };
+                    tracing::info!(
+                        target: "tide::session-lifecycle",
+                        event = "request_replay.skipped",
+                        tug_session_id = %tug_session_id,
+                        reason = reason,
+                    );
+                    return;
+                }
+            }
         };
 
-        if state != SpawnState::Live {
-            let reason = match state {
-                SpawnState::Idle => "idle",
-                SpawnState::Spawning => "spawning",
-                SpawnState::Live => unreachable!(),
-                SpawnState::Errored => "errored",
-                SpawnState::Closed => "closed",
-            };
-            tracing::info!(
-                target: "tide::session-lifecycle",
-                event = "request_replay.skipped",
-                tug_session_id = %tug_session_id,
-                reason = reason,
-            );
-            return;
-        }
-
+        // Live branch continues here with the entry lock released.
+        // `snapshot` is `Option<mpsc::Sender<Frame>>`.
+        //
         // Live but no `input_tx` is a programming error — `Live` means
         // the bridge promoted the entry past `session_init` and the
         // worker installs `input_tx` before that promotion. Treat as
         // a skip on the user-visible path and warn loudly so the
         // condition surfaces in tracing.
-        let Some(tx) = input_tx else {
+        let Some(tx) = snapshot else {
             tracing::warn!(
                 target: "tide::session-lifecycle",
                 event = "request_replay.skipped",
@@ -1993,8 +2072,6 @@ impl AgentSupervisor {
             return;
         };
 
-        let body = b"{\"type\":\"request_replay\"}";
-        let frame = Frame::new(FeedId::CODE_INPUT, body.to_vec());
         if let Err(e) = tx.send(frame).await {
             warn!(
                 tug_session_id = %tug_session_id,
@@ -3787,6 +3864,135 @@ mod tests {
             .handle_control("request_replay", b"not-json-at-all", 10)
             .await;
         assert_eq!(result.expect_error(), ControlError::Malformed);
+    }
+
+    // ---- handle_control: request_replay during Spawning (Step R4 / [D12]) ----
+
+    /// Spawning: request_replay is enqueued at the front of the
+    /// per-session queue. The bridge's session_init promote-and-drain
+    /// (separately tested) forwards queued frames to input_tx in
+    /// queue order — so a request_replay queued during Spawning lands
+    /// at tugcode's stdin before any user input that may have been
+    /// queued behind it.
+    ///
+    /// This test simulates the production drain by popping from
+    /// `entry.queue` and asserting the popped frame is the
+    /// request_replay payload.
+    #[tokio::test]
+    async fn test_request_replay_spawning_session_enqueues_at_front_of_queue() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+
+        // Pre-load an entry in the Spawning state. Some other code path
+        // (e.g., the dispatcher buffering a CODE_INPUT user_message
+        // while claude is still booting) has already pushed a frame
+        // onto the queue.
+        let tug_id = TugSessionId::new("sess-r4-spawning");
+        let entry_arc = insert_ledger_entry(&sup, &tug_id).await;
+        let user_input_payload = serde_json::to_vec(&serde_json::json!({
+            "tug_session_id": "sess-r4-spawning",
+            "type": "user_message",
+            "text": "hi",
+        }))
+        .unwrap();
+        let user_frame = Frame::new(FeedId::CODE_INPUT, user_input_payload.clone());
+        {
+            let mut entry = entry_arc.lock().await;
+            entry.spawn_state = SpawnState::Spawning;
+            assert_eq!(entry.queue.push(user_frame.clone()), QueuePush::Ok);
+        }
+
+        // Now the request_replay verb arrives. The Spawning branch
+        // front-pushes it — so it precedes the user_message in the
+        // queue.
+        sup.handle_control(
+            "request_replay",
+            &request_replay_payload("sess-r4-spawning"),
+            10,
+        )
+        .await
+        .expect_handled();
+
+        // Verify the queue contents in drain order: request_replay
+        // first, user_message second.
+        let mut entry = entry_arc.lock().await;
+        let first = entry.queue.pop().expect("first frame queued");
+        let second = entry.queue.pop().expect("second frame queued");
+        assert!(entry.queue.is_empty(), "exactly two frames in queue");
+
+        let first_body: serde_json::Value = serde_json::from_slice(&first.payload).unwrap();
+        assert_eq!(first_body["type"], "request_replay");
+
+        let second_body: serde_json::Value = serde_json::from_slice(&second.payload).unwrap();
+        assert_eq!(second_body["type"], "user_message");
+    }
+
+    /// Spawning with an empty queue: request_replay is the only
+    /// resident; pop returns it; nothing else.
+    #[tokio::test]
+    async fn test_request_replay_spawning_empty_queue_just_request_replay() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+
+        let tug_id = TugSessionId::new("sess-r4-spawning-empty");
+        let entry_arc = insert_ledger_entry(&sup, &tug_id).await;
+        {
+            let mut entry = entry_arc.lock().await;
+            entry.spawn_state = SpawnState::Spawning;
+        }
+
+        sup.handle_control(
+            "request_replay",
+            &request_replay_payload("sess-r4-spawning-empty"),
+            10,
+        )
+        .await
+        .expect_handled();
+
+        let mut entry = entry_arc.lock().await;
+        let frame = entry.queue.pop().expect("request_replay queued");
+        assert!(entry.queue.is_empty());
+        let body: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+        assert_eq!(body["type"], "request_replay");
+    }
+
+    /// Live session: request_replay is forwarded immediately to
+    /// input_tx (no queue interaction). Regression-pin for the
+    /// pre-existing happy path — R4's branch refactor must not break
+    /// this.
+    #[tokio::test]
+    async fn test_request_replay_live_immediate_forward_unchanged_post_r4() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+
+        let tug_id = TugSessionId::new("sess-r4-live");
+        let entry_arc = insert_ledger_entry(&sup, &tug_id).await;
+
+        let (input_tx_for_ledger, mut input_rx_for_assert) = mpsc::channel::<Frame>(4);
+        {
+            let mut entry = entry_arc.lock().await;
+            entry.spawn_state = SpawnState::Live;
+            entry.input_tx = Some(input_tx_for_ledger.clone());
+        }
+        drop(input_tx_for_ledger);
+
+        sup.handle_control(
+            "request_replay",
+            &request_replay_payload("sess-r4-live"),
+            10,
+        )
+        .await
+        .expect_handled();
+
+        let frame = input_rx_for_assert
+            .try_recv()
+            .expect("Live forwards immediately");
+        let body: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+        assert_eq!(body["type"], "request_replay");
+
+        // And nothing landed on the queue (Spawning path didn't fire).
+        let entry = entry_arc.lock().await;
+        assert!(entry.queue.is_empty());
     }
 
     // ---- P13: spawn budget (concurrent cap + rate limit) ----
