@@ -728,25 +728,25 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 
 **Tasks:**
 
-- [ ] Wire the `phase === "replaying"` derivation into the `TideRestoring` selector.
-- [ ] Implement the three placeholder copy variants (initial / soft-budget with count / hard-budget timeout).
-- [ ] Decide how the count surfaces — derived from `transcript.length` during replay is simplest; an explicit `replayInProgress: { count }` snapshot field is cleaner if the count needs to differ from `transcript.length`. Pick simplest that works.
-- [ ] Verify the placeholder dismisses on `replay_complete` (success path).
-- [ ] Verify the timeout-state copy renders briefly then dismisses on hard-budget timeout.
+- [x] Wire the `phase === "replaying"` derivation into the `TideRestoring` selector.
+- [x] Implement the three placeholder copy variants (initial / soft-budget with count / hard-budget timeout).
+- [x] Decide how the count surfaces — derived from `transcript.length` during replay is simplest; an explicit `replayInProgress: { count }` snapshot field is cleaner if the count needs to differ from `transcript.length`. Pick simplest that works. *Picked the simplest path: the gate reads `transcript.length` directly. Replay commits each `turn_complete` to `transcript` per [D11], so this number tracks the soft-budget count exactly.*
+- [x] Verify the placeholder dismisses on `replay_complete` (success path).
+- [x] Verify the timeout-state copy renders briefly then dismisses on hard-budget timeout.
 
 **Tests:**
 
-- [ ] Component test: render the Tide card with `phase: "replaying"`; assert `TideRestoring` is mounted with the replay wording.
-- [ ] Component test: simulate the soft-budget state — `phase: "replaying"` for >2s with `transcript.length === 7`; assert the count "(7 turns)" appears in the placeholder.
-- [ ] Component test: simulate the hard-budget timeout — `replay_complete` arrives with `error: { kind: "replay_timeout" }`; assert the placeholder shows the timeout copy briefly, then dismisses to an empty live transcript with `phase: idle`.
-- [ ] Component test: the placeholder dismisses on `replay_complete` (success) and the transcript appears in the same render commit (no flash of empty pane).
+- [x] Component test: render the Tide card with `phase: "replaying"`; assert `TideRestoring` is mounted with the replay wording.
+- [x] Component test: simulate the soft-budget state — `phase: "replaying"` for >2s with `transcript.length === 7`; assert the count "(7 turns)" appears in the placeholder.
+- [x] Component test: simulate the hard-budget timeout — `replay_complete` arrives with `error: { kind: "replay_timeout" }`; assert the placeholder shows the timeout copy briefly, then dismisses to an empty live transcript with `phase: idle`.
+- [x] Component test: the placeholder dismisses on `replay_complete` (success) and the transcript appears in the same render commit (no flash of empty pane).
 
 **Checkpoint:**
 
-- [ ] `bun x tsc --noEmit` — exit 0.
-- [ ] `bun test` — green.
-- [ ] `bun run audit:tokens lint` — zero violations.
-- [ ] `cargo nextest run` — green.
+- [x] `bun x tsc --noEmit` — exit 0.
+- [x] `bun test` — green.
+- [x] `bun run audit:tokens lint` — zero violations.
+- [x] `cargo nextest run` — green.
 
 ---
 

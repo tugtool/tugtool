@@ -295,6 +295,7 @@ export function TideCardContent({ cardId }: TideCardContentProps) {
   if (expectation !== undefined) {
     return (
       <TideRestoring
+        variant="binding"
         cardId={cardId}
         projectDir={expectation.projectDir}
       />
@@ -328,6 +329,22 @@ export function TideCardContent({ cardId }: TideCardContentProps) {
  * happens while transportState is in flight (rare; this is defensive
  * against the single notify per `setBinding`).
  */
+/**
+ * Soft-budget threshold per [D10]. Once `phase === "replaying"` has
+ * been held for this long, the placeholder switches from
+ * "Loading conversation…" to "Loading conversation… (N turns)" so
+ * the user gets progress signal during a long replay.
+ */
+const REPLAY_SOFT_BUDGET_MS = 2000;
+/**
+ * Hard-budget timeout dwell. After `lastReplayResult.kind ===
+ * "replay_timeout"` lands, the card holds the placeholder with the
+ * timeout copy for this long before dropping into the (empty) live
+ * transcript. Long enough to read; short enough not to feel like a
+ * stall on top of a stall.
+ */
+const REPLAY_TIMEOUT_DWELL_MS = 1500;
+
 function TideCardServicesGate({
   cardId,
   services,
@@ -335,6 +352,18 @@ function TideCardServicesGate({
   const transportState = useSyncExternalStore(
     services.codeSessionStore.subscribe,
     () => services.codeSessionStore.getSnapshot().transportState,
+  );
+  const phase = useSyncExternalStore(
+    services.codeSessionStore.subscribe,
+    () => services.codeSessionStore.getSnapshot().phase,
+  );
+  const transcriptCount = useSyncExternalStore(
+    services.codeSessionStore.subscribe,
+    () => services.codeSessionStore.getSnapshot().transcript.length,
+  );
+  const lastReplayResult = useSyncExternalStore(
+    services.codeSessionStore.subscribe,
+    () => services.codeSessionStore.getSnapshot().lastReplayResult,
   );
   const projectDir = useSyncExternalStore(
     cardSessionBindingStore.subscribe,
@@ -344,8 +373,70 @@ function TideCardServicesGate({
     ),
   );
 
+  // Soft-budget — flips true once `replaying` has been held for
+  // [D10]'s 2s window. Reset back to false whenever the phase leaves
+  // `replaying` so the next replay starts clean.
+  const [softBudget, setSoftBudget] = useState(false);
+  useEffect(() => {
+    if (phase !== "replaying") {
+      setSoftBudget(false);
+      return;
+    }
+    const t = setTimeout(() => setSoftBudget(true), REPLAY_SOFT_BUDGET_MS);
+    return () => clearTimeout(t);
+  }, [phase]);
+
+  // Timeout grace — when `replaying` exits to `idle` carrying a
+  // `replay_timeout` result, hold the placeholder briefly so the user
+  // sees the failure copy instead of a flash to an empty transcript.
+  // Tracking the previous phase via ref keeps the effect dependency
+  // list narrow (no transient renders triggered by storing the prior
+  // value in state).
+  const [timeoutGrace, setTimeoutGrace] = useState(false);
+  const prevPhaseRef = useRef<typeof phase>(phase);
+  useEffect(() => {
+    const prev = prevPhaseRef.current;
+    prevPhaseRef.current = phase;
+    if (
+      prev === "replaying" &&
+      phase !== "replaying" &&
+      lastReplayResult?.kind === "replay_timeout"
+    ) {
+      setTimeoutGrace(true);
+      const t = setTimeout(
+        () => setTimeoutGrace(false),
+        REPLAY_TIMEOUT_DWELL_MS,
+      );
+      return () => clearTimeout(t);
+    }
+    return undefined;
+  }, [phase, lastReplayResult]);
+
   if (transportState === "restoring") {
-    return <TideRestoring cardId={cardId} projectDir={projectDir} />;
+    return (
+      <TideRestoring
+        variant="binding"
+        cardId={cardId}
+        projectDir={projectDir}
+      />
+    );
+  }
+  if (phase === "replaying") {
+    return (
+      <TideRestoring
+        variant="replay-loading"
+        projectDir={projectDir}
+        turnsCount={softBudget ? transcriptCount : null}
+      />
+    );
+  }
+  if (timeoutGrace) {
+    return (
+      <TideRestoring
+        variant="replay-timeout"
+        projectDir={projectDir}
+      />
+    );
   }
 
   return <TideCardBody cardId={cardId} services={services} />;
@@ -356,31 +447,84 @@ function TideCardServicesGate({
 // ---------------------------------------------------------------------------
 
 /**
- * Renders inline in the card body while `tide-session-restore` has a
- * pending restore expectation for this card. Replaces the project
- * picker so the picker sheet never gets a chance to half-drop during
- * the restore → binding hand-off. The Cancel button clears the
- * expectation and drops to the picker with a `restore_canceled`
- * notice; server state is preserved so the next reload will retry.
+ * The placeholder routed in three structural states ([D11]):
+ *
+ *   - `binding` — `tide-session-restore` has a pending restore
+ *     expectation, OR `transportState === "restoring"`. Project label,
+ *     spinner, Cancel.
+ *   - `replay-loading` — `phase === "replaying"`. Replay-window copy.
+ *     Spinner, no Cancel. After the soft-budget threshold ([D10],
+ *     ~2s) the title gains a "(N turns)" count.
+ *   - `replay-timeout` — held briefly when the most recent replay
+ *     finished with `lastReplayResult.kind === "replay_timeout"`. Hard-
+ *     budget copy, no spinner, no Cancel. Dismissed by the gate's
+ *     timer once the user has had a moment to read it.
+ *
+ * The variant is a structural prop ([L24]: structure zone) — not a
+ * styling toggle. CSS reads `data-variant` for any visual variation
+ * but the wording, presence of Cancel, and presence of the spinner
+ * are owned by this component, not the cascade.
  */
+type TideRestoringVariant = "binding" | "replay-loading" | "replay-timeout";
+
+interface TideRestoringProps {
+  variant: TideRestoringVariant;
+  /** Required for `binding`; the Cancel button calls
+   * `cancelTideRestore(cardId)`. Optional for replay variants. */
+  cardId?: string;
+  /** Path label rendered under the title. Always shown. */
+  projectDir: string;
+  /** For `replay-loading` only: turns committed so far. `null` keeps
+   * the title at its plain "Loading conversation…" form (used during
+   * the soft-budget pre-window); a non-null number appends
+   * "(N turns)". */
+  turnsCount?: number | null;
+}
+
 function TideRestoring({
+  variant,
   cardId,
   projectDir,
-}: {
-  cardId: string;
-  projectDir: string;
-}) {
+  turnsCount,
+}: TideRestoringProps) {
   const handleCancel = useCallback(() => {
-    cancelTideRestore(cardId);
+    if (cardId) cancelTideRestore(cardId);
   }, [cardId]);
+
+  let title: string;
+  let spinnerLabel = "";
+  if (variant === "binding") {
+    title = "Restoring session";
+    spinnerLabel = `Restoring session from ${projectDir}`;
+  } else if (variant === "replay-loading") {
+    if (typeof turnsCount === "number" && turnsCount > 0) {
+      title = `Loading conversation… (${turnsCount} ${turnsCount === 1 ? "turn" : "turns"})`;
+    } else {
+      title = "Loading conversation…";
+    }
+    spinnerLabel = `Loading conversation from ${projectDir}`;
+  } else {
+    title = "Conversation history unavailable; resuming with empty transcript";
+  }
+
+  const showSpinner = variant === "binding" || variant === "replay-loading";
+  const showCancel = variant === "binding";
+  const showFooter = showSpinner || showCancel;
+
   return (
     <div
       className="tide-card-restoring-backdrop"
       data-slot="tide-card-restoring"
       data-testid="tide-card-restoring"
+      data-variant={variant}
     >
       <div className="tide-card-restoring-panel" role="status" aria-live="polite">
-        <h2 className="tide-card-restoring-title">Restoring session</h2>
+        <h2
+          className="tide-card-restoring-title"
+          data-testid="tide-card-restoring-title"
+        >
+          {title}
+        </h2>
         <p
           className="tide-card-restoring-project"
           title={projectDir}
@@ -388,22 +532,30 @@ function TideRestoring({
         >
           {projectDir}
         </p>
-        <div className="tide-card-restoring-footer">
-          <span className="tide-card-restoring-spinner">
-            <TugProgress
-              variant="spinner"
-              size="sm"
-              aria-label={`Restoring session from ${projectDir}`}
-            />
-          </span>
-          <TugPushButton
-            emphasis="outlined"
-            onClick={handleCancel}
-            data-testid="tide-card-restoring-cancel"
-          >
-            Cancel
-          </TugPushButton>
-        </div>
+        {showFooter ? (
+          <div className="tide-card-restoring-footer">
+            {showSpinner ? (
+              <span className="tide-card-restoring-spinner">
+                <TugProgress
+                  variant="spinner"
+                  size="sm"
+                  aria-label={spinnerLabel}
+                />
+              </span>
+            ) : (
+              <span />
+            )}
+            {showCancel ? (
+              <TugPushButton
+                emphasis="outlined"
+                onClick={handleCancel}
+                data-testid="tide-card-restoring-cancel"
+              >
+                Cancel
+              </TugPushButton>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );
