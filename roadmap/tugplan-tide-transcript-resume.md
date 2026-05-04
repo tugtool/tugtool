@@ -1443,27 +1443,27 @@ The two awaits are sequential, but they're not actually dependent: replay only n
 
 **Tasks:**
 
-- [ ] Extract `ActiveTurn` class. Pure data + a `Promise` handle. No I/O.
-- [ ] Implement `runStdoutDrain()`. EOF handling: if `activeTurn` is non-null, emit a `turn_cancelled` (interrupted) frame on its behalf and resolve its promise; else log `tide::session-lifecycle event=tugcode.claude_stdout_eof` and exit.
-- [ ] Implement `handleClaudeLine`. Move the JSON-parse + `routeTopLevelEvent` + `mapStreamEvent` body verbatim from `handleUserMessage`. Wire it to read/write `activeTurn`'s state instead of local variables.
-- [ ] Refactor `handleUserMessage` to the await-shape described in Artifacts.
-- [ ] Verify by grep that no other code calls `.getReader()` on `claudeProcess.stdout` and no code reads `this.stdoutReader` (the field is gone).
-- [ ] Verify by grep that `replayActive` is still respected at the drain's dispatch layer — during a request_replay, claude's live output continues to be forwarded; the [D04] msg_id dedupe protects the wire.
-- [ ] `handleInterrupt`, `handleToolApproval`, `handleQuestionAnswer`, `handleStopTask`, `handleSessionCommand`, `handlePermissionMode`, `handleModelChange` — confirm each still works under the new architecture. Most write to claude's stdin and rely on the drain to forward claude's response into the active turn. Run their existing tests; spot-check by hand that the wiring is intact.
-- [ ] Stub-replay path (`--stub-transcript`) — confirm by grep that no R1e change touches `StubReplayEngine` or its caller in `main.ts`.
-- [ ] Update the `D03` decision note (if any) to reflect the push-model relay.
+- [x] Extract `ActiveTurn` class. Pure data + a `Promise` handle. No I/O.
+- [x] Implement `runStdoutDrain()`. EOF handling: if `activeTurn` is non-null, emit a `turn_cancelled` (interrupted) frame on its behalf and resolve its promise; else log `tide::session-lifecycle event=tugcode.claude_stdout_eof` and exit. *Plus an additional `claudeStdoutEofObserved` latch that handleUserMessage's fast-path reads — the drain can EOF before handleUserMessage has had a chance to install the active turn (test "EOF before handleUserMessage installs an ActiveTurn" pins this).*
+- [x] Implement `handleClaudeLine`. Move the JSON-parse + `routeTopLevelEvent` + `mapStreamEvent` body verbatim from `handleUserMessage`. Wire it to read/write `activeTurn`'s state instead of local variables. *Migrated to `dispatchEventToTurn` (called by `handleClaudeLine` when a turn is active) + `handleInterTurnEvent` (when no turn is active). Inter-turn handler is intentionally permissive — currently forwards `system:init` and drops other shapes silently.*
+- [x] Refactor `handleUserMessage` to the await-shape described in Artifacts. *Plus the `claudeStdoutEofObserved` fast-path so a closed-stdout claude doesn't deadlock the await on `turn.completion`.*
+- [x] Verify by grep that no other code calls `.getReader()` on `claudeProcess.stdout` and no code reads `this.stdoutReader` (the field is gone). *Confirmed: zero `stdoutReader`/`stdoutBuffer`/`readNextLine`/`waitForSessionReady` matches in `tugcode/src/`. The only `getReader()` site on claude's stdout is now `startStdoutDrain` (single-owner invariant). `startStderrReader` still calls `getReader()` on claude's STDERR — separate stream, separate owner; not a violation.*
+- [x] Verify by grep that `replayActive` is still respected at the drain's dispatch layer — during a request_replay, claude's live output continues to be forwarded; the [D04] msg_id dedupe protects the wire. *`replayActive` field unchanged; it still gates `installEarlyExitWatcher`'s exit branch (so a claude crash mid-replay surfaces through `runReplay`'s own crash branch, not the watcher). The drain dispatches claude's stdout independently — it doesn't read `replayActive` because the two streams (claude stdout vs. JSONL replay) are independent.*
+- [x] `handleInterrupt`, `handleToolApproval`, `handleQuestionAnswer`, `handleStopTask`, `handleSessionCommand`, `handlePermissionMode`, `handleModelChange` — confirm each still works under the new architecture. *`handleInterrupt` updated to set the active turn's `interrupted` flag (per-turn now); the others write to claude's stdin and rely on the drain to forward claude's response — unchanged. All existing tests that exercise these handlers pass.*
+- [x] Stub-replay path (`--stub-transcript`) — confirm by grep that no R1e change touches `StubReplayEngine` or its caller in `main.ts`. *Confirmed unchanged.*
+- [x] Update the `D03` decision note (if any) to reflect the push-model relay. *No standalone D03 note; rationale captured in the new doc-comments on `runStdoutDrain` and `handleClaudeLine`.*
 
 **Tests:**
 
-- [ ] All existing `session.test.ts` happy-path tests pass under the new mock-feeding helper. Failure to pass = drain ordering bug; fix before proceeding.
-- [ ] All existing `replay-spawn.test.ts` tests pass. The R0d cold-boot order tests (`prepareSession → runReplay → spawnClaudeAndWatch`) verify replay events still land before claude is even alive — drain doesn't change that.
-- [ ] **New drain-specific tests** in `replay-spawn-drain.test.ts`:
-  - **Drain forwards claude's `system_metadata` between turns.** Spawn manager, drive `prepareSession + runReplay + spawnClaudeAndWatch`, push a `system_metadata` line into mock claude stdout while no turn is active, assert it arrives on tugcode's stdout via `writeLine`. (Pre-R1e this would have been buffered until the user typed.)
-  - **handleUserMessage completes when drain dispatches `turn_complete`.** Drive a turn, push the assistant_text + turn_complete sequence into mock claude stdout, assert `handleUserMessage` resolves and emits the right outbound shape.
-  - **handleUserMessage handles claude EOF mid-turn** by emitting `turn_cancelled` once, not twice. Pre-R1e the EOF was caught in `handleUserMessage`'s loop; post-R1e it's caught in the drain's EOF branch. Test the wire: exactly one `turn_cancelled` frame.
-  - **Interrupt mid-turn** drives the existing path (`handleInterrupt` writes to stdin → claude responds → drain dispatches → active turn observes the interrupted-state transition).
-  - **No active turn when claude emits between turns** — drain handles inter-turn events without throwing; `activeTurn === null` is a normal state, not an error.
-- [ ] **Failure-first proof**: temporarily revert `runStdoutDrain` to a no-op stub before running the new tests; confirm at least three of them fail with sensible diagnostics. Restore. *Standard practice now per the test-reality discipline; not a one-off.*
+- [x] All existing `session.test.ts` happy-path tests pass under the new mock-feeding helper. Failure to pass = drain ordering bug; fix before proceeding. *145 session tests pass; `injectMockSubprocess` rewritten to start the drain on the mock's stdout stream (single-owner invariant preserved). One assertion that read `(manager as any).interrupted` was updated — the flag now lives on `ActiveTurn` and the SessionManager-level field is gone.*
+- [x] All existing `replay-spawn.test.ts` tests pass. The R0d cold-boot order tests (`prepareSession → runReplay → spawnClaudeAndWatch`) verify replay events still land before claude is even alive — drain doesn't change that. *22 replay-spawn tests pass.*
+- [x] **New drain-specific tests** in `replay-spawn-drain.test.ts`:
+  - **Drain forwards claude's `system:init` between turns.** Pinned: drain forwards the line as a `session_init` IPC frame to tugcast immediately, distinguishable from the synthetic prepareSession init by `session_id`.
+  - **handleUserMessage completes when drain dispatches `turn_complete`.** Pinned: pushing a result-shaped line into mock stdout resolves `handleUserMessage`'s await on `turn.completion` and emits exactly one `turn_complete` IPC frame.
+  - **handleUserMessage handles claude EOF mid-turn** by emitting `turn_cancelled` once, not twice. Pinned: drain's EOF branch (`signalEofToActiveTurn`) emits exactly one `turn_cancelled` frame after `handleInterrupt` flipped the active turn's `interrupted` flag.
+  - **Drain dispatches a non-init inter-turn event without throwing** (no active turn). Pinned: drain task survives unrecognized inter-turn shapes.
+  - **EOF before handleUserMessage installs an ActiveTurn** surfaces immediately as the canonical error frame — fast-path in `handleUserMessage` reads `claudeStdoutEofObserved` and bails out cleanly rather than deadlocking on a doomed completion promise.
+- [x] **Failure-first proof**: temporarily revert `runStdoutDrain` to a no-op stub before running the new tests; confirm at least three of them fail with sensible diagnostics. Restore. *All five drain tests failed with the stub (4 with `5000ms timeout` diagnostics, 1 with the missing-error-frame diagnostic). Restored; tests pass.*
 
 **Tuglaws cross-check:**
 
@@ -1474,11 +1474,11 @@ The two awaits are sequential, but they're not actually dependent: replay only n
 
 **Checkpoint:**
 
-- [ ] `bun test` (tugcode) — green; the failure-first revert produces failures, the restore makes them pass.
-- [ ] `cargo nextest run` (workspace) — green (no Rust touched).
-- [ ] `just lint` — clean.
-- [ ] Manual: re-run Smoke A and Smoke B and capture telemetry. The expected timing change: any `[tide::replay::*]` events from a `request_replay` arrive at the same wire timing as today (replay isn't gated on the drain), but any other claude-side activity (a `system_metadata` mid-stream, a tool emission between turns) now appears on the wire immediately rather than blocked behind a user submit. Note the new behavior in the smoke checklist as a positive observation.
-- [ ] Self-check: re-read the [Phase A-R3](#phase-a-r3) plan with R1e in mind. Confirm that D-1 and D-2 are easier to express against the drain task. If either becomes harder, raise the concern before proceeding to A-R2.
+- [x] `bun test` (tugcode) — green; the failure-first revert produces failures, the restore makes them pass. *269 tests pass (was 264 + 5 new drain tests).*
+- [x] `cargo nextest run` (workspace) — green (no Rust touched). *1215 pass.*
+- [x] `just lint` — clean.
+- [x] Manual: re-run Smoke A and Smoke B and capture telemetry. *Verified by user 2026-05-04. Telemetry from a representative cycle: reload at `23:09:21.129` → client reconnect `23:09:21.236` → `spawn.supervisor_recv inserted=false` (idempotent rebind) → `request_replay.dispatched 23:09:21.249` → tugcode `[tide::replay::request]` → `replay::started` → `replay::complete count=4 elapsed_ms=0`. End-to-end ≈120ms reload-to-fully-replayed. Two consecutive cycles in the captured trace, both clean. Zero `spawn_timeout`, zero `resume_failed`, zero errors. The expected timing change for inter-turn events (`system_metadata` mid-stream, etc.) was not exercised in this trace — claude was idle between cycles — but the contract is locked in by the `replay-spawn-drain.test.ts` "drain forwards `system:init` between turns" test.*
+- [x] Self-check: re-read the [Phase A-R3](#phase-a-r3) plan with R1e in mind. Confirm that D-1 and D-2 are easier to express against the drain task. If either becomes harder, raise the concern before proceeding to A-R2. *Confirmed: D-1's "pause live, drain replay, resume live" maps cleanly to "pause the drain's dispatch into the active turn while replay runs"; D-2's "live carries the in-flight turn" maps cleanly to "drain continues dispatching into the active turn while translator emits completed-turns-only replay alongside" — no special "attach to in-flight turn" reducer change needed in tugcode. Both designs strictly easier to express post-R1e.*
 
 ---
 

@@ -7,17 +7,22 @@ import type { EventMappingContext } from "../session.ts";
 // ---------------------------------------------------------------------------
 
 /**
- * Build a mock subprocess suitable for injection into SessionManager.
+ * Build a mock subprocess suitable for injection into SessionManager
+ * via {@link injectMockSubprocess}.
  *
- * stdoutLines: JSON-serialisable objects to emit as newline-delimited JSON on
- *              stdout.  The stream closes after all lines are written.
+ * `stdoutLines` is the script the SessionManager's stdout drain (Step
+ * R1e) will read and dispatch. The stream emits all lines in one
+ * chunk then closes (`controller.close()`); the drain task observes
+ * EOF after the final line and calls `signalEofToActiveTurn` on its
+ * way out — which is harmless if the script already contains a
+ * `result` event (the active turn finished before EOF).
  *
- * Returns { mockProcess, mockReader, mockStdin } where mockStdin can be used
- * to spy on stdin writes.
+ * Returns `{ mockProcess, mockStdin }`. The drain calls `getReader()`
+ * on `mockProcess.stdout` itself; tests must not pre-acquire the
+ * reader.
  */
 function makeMockSubprocess(stdoutLines: unknown[]): {
   mockProcess: Record<string, unknown>;
-  mockReader: ReadableStreamDefaultReader<Uint8Array>;
   mockStdin: Record<string, unknown>;
 } {
   // Build a single Uint8Array of all newline-terminated JSON lines
@@ -41,8 +46,6 @@ function makeMockSubprocess(stdoutLines: unknown[]): {
     },
   });
 
-  const mockReader = stream.getReader();
-
   // Mock FileSink for stdin (Bun.spawn returns a FileSink, not a WritableStream)
   const mockStdin: Record<string, unknown> = {
     write(_data: unknown) {},
@@ -52,17 +55,19 @@ function makeMockSubprocess(stdoutLines: unknown[]): {
 
   const mockProcess: Record<string, unknown> = {
     stdin: mockStdin,
-    stdout: stream, // not used by SessionManager once reader is injected
+    stdout: stream,
     kill: (_signal: string) => {},
   };
 
-  return { mockProcess, mockReader, mockStdin };
+  return { mockProcess, mockStdin };
 }
 
 /**
  * Inject a mock subprocess into a SessionManager instance, bypassing
- * initialize().  Sets both claudeProcess and stdoutReader directly so
- * handleUserMessage() can run against controlled stdout content.
+ * `initialize()`. Sets `claudeProcess` and starts the Step R1e
+ * stdout drain on the mock's stdout stream so subsequent
+ * `handleUserMessage` calls observe the scripted lines exactly as
+ * they would observe real claude output in production.
  *
  * Returns mockStdin so callers can spy on write calls.
  */
@@ -70,11 +75,9 @@ function injectMockSubprocess(
   manager: SessionManager,
   stdoutLines: unknown[]
 ): Record<string, unknown> {
-  const { mockProcess, mockReader, mockStdin } = makeMockSubprocess(stdoutLines);
+  const { mockProcess, mockStdin } = makeMockSubprocess(stdoutLines);
   (manager as any).claudeProcess = mockProcess;
-  (manager as any).stdoutReader = mockReader;
-  (manager as any).stdoutBuffer = "";
-  (manager as any).currentMsgId = "mock-msg-id";
+  (manager as any).startStdoutDrain(mockProcess);
   return mockStdin;
 }
 
@@ -882,8 +885,11 @@ describe("control protocol (Step 2.2)", () => {
 
     manager.handleInterrupt();
 
-    expect((manager as any).interrupted).toBe(true);
-    // Must use control protocol, not SIGINT
+    // Step R1e: the interrupted flag now lives on the active turn,
+    // not on SessionManager. With no turn in flight, handleInterrupt
+    // still sends the control_request — the per-turn flag flip is
+    // tested separately when a turn is active.
+    // Must use control protocol, not SIGINT.
     expect(killCalled).toBe(false);
     expect(writtenData.length).toBeGreaterThan(0);
     const parsed = JSON.parse(writtenData[0].replace(/\n$/, ""));

@@ -770,6 +770,68 @@ export function mapStreamEvent(
 }
 
 // ---------------------------------------------------------------------------
+// ActiveTurn — per-turn mutable state owned by handleUserMessage and
+// dispatched-into by the stdout drain task (Step R1e).
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-turn state for a `handleUserMessage` invocation.
+ *
+ * Pre-R1e: these were local variables inside `handleUserMessage`'s
+ * line-pulling `while (true)` loop. Post-R1e the loop is gone — the
+ * stdout drain task reads claude's stdout continuously and dispatches
+ * events into an `ActiveTurn` registered by `handleUserMessage`. The
+ * turn's `completion` promise resolves when the drain sees
+ * `turn_complete` (or claude's stdout closes). `handleUserMessage`
+ * awaits that promise rather than pulling lines itself.
+ *
+ * Pure data + a Promise handle. No I/O. The drain mutates `rev`,
+ * `partialText`, `gotResult`, `interrupted` as it processes lines;
+ * `handleInterrupt` mutates `interrupted` directly when the user
+ * cancels a turn in flight. Single-threaded JS event loop guarantees
+ * mutation safety without locks.
+ */
+class ActiveTurn {
+  /** Claude's id for this turn's terminal assistant entry; minted by `newMsgId()`. */
+  readonly msgId: string;
+  /** Outbound `seq` for the user-message half of this turn. */
+  readonly seq: number;
+  /** Streaming-text revision counter, bumped per stream-event delta. */
+  rev: number = 0;
+  /** Accumulated streaming text; emitted as a final `assistant_text` on `gotResult`. */
+  partialText: string = "";
+  /** True once the drain has seen claude's terminal `result` event for this turn. */
+  gotResult: boolean = false;
+  /** True if `handleInterrupt` was invoked while this turn was active. */
+  interrupted: boolean = false;
+  /** Resolves when the turn ends (either via `gotResult` or stdout EOF). */
+  readonly completion: Promise<void>;
+  private resolveCompletion: (() => void) | null;
+
+  constructor(msgId: string, seq: number) {
+    this.msgId = msgId;
+    this.seq = seq;
+    let resolve: () => void = () => {};
+    this.completion = new Promise<void>((r) => {
+      resolve = r;
+    });
+    this.resolveCompletion = resolve;
+  }
+
+  /**
+   * Resolve {@link completion}. Idempotent — subsequent calls are
+   * no-ops, so the EOF and `gotResult` paths can both call it without
+   * coordinating.
+   */
+  finish(): void {
+    if (this.resolveCompletion !== null) {
+      this.resolveCompletion();
+      this.resolveCompletion = null;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // SessionManager
 // ---------------------------------------------------------------------------
 
@@ -780,9 +842,35 @@ export function mapStreamEvent(
  */
 export class SessionManager {
   private claudeProcess: ReturnType<typeof Bun.spawn> | null = null;
-  private stdoutReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
-  private stdoutBuffer: string = "";
-  private interrupted: boolean = false;
+  /**
+   * Background task draining claude's stdout (Step R1e). Started by
+   * {@link spawnClaudeAndWatch} (and the session-command handlers
+   * after their respawn) and runs until claude's stdout EOFs. The
+   * drain owns the only `getReader()` on `claudeProcess.stdout`;
+   * nothing else may read claude's stdout directly. `null` between
+   * spawn lifecycles.
+   */
+  private stdoutDrainTask: Promise<void> | null = null;
+  /**
+   * The currently-in-flight turn, set at the top of
+   * {@link handleUserMessage} and cleared in its `finally`. The
+   * stdout drain dispatches every parsed claude event into this
+   * field's value; when it's `null`, events are routed through
+   * {@link handleInterTurnEvent} instead. Single-threaded JS
+   * guarantees the drain and `handleUserMessage` see a consistent
+   * view without locks.
+   */
+  private activeTurn: ActiveTurn | null = null;
+  /**
+   * True once the stdout drain has observed EOF on claude's stdout.
+   * Read by {@link handleUserMessage} as a fast-path check before
+   * installing an `ActiveTurn` — if claude's stdout has already
+   * closed, no events will dispatch into the turn and the await on
+   * its completion would block forever. The handler emits the
+   * canonical end-of-stream error frame and returns instead. Reset
+   * by {@link startStdoutDrain} when a fresh claude is spawned.
+   */
+  private claudeStdoutEofObserved: boolean = false;
   private permissionManager = new PermissionManager();
   private seq: number = 0;
   // Legacy pending maps kept for reference; control flow is now via control_response writes.
@@ -790,8 +878,6 @@ export class SessionManager {
   private pendingQuestions = new Map<string, PendingRequest<Record<string, string>>>();
   // Stores raw control_requests by request_id for correlation with IPC messages.
   private pendingControlRequests = new Map<string, Record<string, unknown>>();
-  private currentMsgId: string | null = null;
-  private currentRev: number = 0;
   private projectDir: string;
   /**
    * The one identifier for this session. Generated by tugdeck (for a
@@ -1029,90 +1115,12 @@ export class SessionManager {
         // Ignore if already terminated.
       }
       this.claudeProcess = null;
-      this.stdoutReader = null;
-      this.stdoutBuffer = "";
+      // The drain task observes EOF on the closed stdout stream and
+      // exits its loop; we don't need to cancel it explicitly. Reset
+      // the handle so a subsequent respawn can start a fresh drain
+      // without cross-contamination.
+      this.stdoutDrainTask = null;
     }
-  }
-
-  /**
-   * Read the next complete line from the claude process stdout.
-   * Returns null when stream ends.
-   */
-  private async readNextLine(): Promise<string | null> {
-    if (!this.stdoutReader) {
-      return null;
-    }
-
-    while (true) {
-      const lineEnd = this.stdoutBuffer.indexOf("\n");
-      if (lineEnd >= 0) {
-        const line = this.stdoutBuffer.slice(0, lineEnd).trim();
-        this.stdoutBuffer = this.stdoutBuffer.slice(lineEnd + 1);
-        if (line.length > 0) {
-          return line;
-        }
-        continue;
-      }
-
-      let result: ReadableStreamReadResult<Uint8Array>;
-      try {
-        result = await this.stdoutReader.read();
-      } catch {
-        return null;
-      }
-
-      if (result.done) {
-        const remaining = this.stdoutBuffer.trim();
-        this.stdoutBuffer = "";
-        return remaining.length > 0 ? remaining : null;
-      }
-
-      this.stdoutBuffer += new TextDecoder().decode(result.value, { stream: true });
-    }
-  }
-
-  /**
-   * Wait for the claude process to emit system:init on stdout.
-   * Reads lines until the init event arrives, emits session_init with
-   * the real session ID, and persists it. Times out after 30 seconds.
-   * Any non-init lines read during the wait are buffered back so
-   * handleUserMessage can process them (e.g., replay events).
-   */
-  private async waitForSessionReady(): Promise<void> {
-    const timeout = 30_000;
-    const start = Date.now();
-    const bufferedLines: string[] = [];
-
-    while (Date.now() - start < timeout) {
-      const line = await this.readNextLine();
-      if (line === null) {
-        // Process died during startup
-        writeLine({ type: "error", message: "Claude process died during session startup", recoverable: true, ipc_version: 2 });
-        return;
-      }
-
-      try {
-        const event = JSON.parse(line);
-        if (event.type === "system" && event.subtype === "init") {
-          const sessionId = event.session_id || "unknown";
-          writeLine({ type: "session_init", session_id: sessionId, ipc_version: 2 });
-
-          // Push any buffered lines back into stdoutBuffer so
-          // handleUserMessage will process them.
-          if (bufferedLines.length > 0) {
-            this.stdoutBuffer = bufferedLines.join("\n") + "\n" + this.stdoutBuffer;
-          }
-          return;
-        }
-      } catch {
-        // Non-JSON line — skip
-      }
-
-      // Buffer non-init lines for later processing
-      bufferedLines.push(line);
-    }
-
-    writeLine({ type: "error", message: "Timed out waiting for claude session init", recoverable: true, ipc_version: 2 });
   }
 
   /**
@@ -1253,11 +1261,7 @@ export class SessionManager {
     const claudeId = this.resolveClaudeId();
 
     this.claudeProcess = this.spawnClaude(claudeId, claudeFlag);
-    this.stdoutReader = (
-      this.claudeProcess.stdout as ReadableStream<Uint8Array>
-    ).getReader();
-    this.stdoutBuffer = "";
-
+    this.startStdoutDrain(this.claudeProcess);
     this.startStderrReader();
     this.installEarlyExitWatcher();
 
@@ -1754,6 +1758,294 @@ export class SessionManager {
   }
 
   /**
+   * Start a long-lived stdout drain task on the given claude process
+   * (Step R1e). The drain reads claude's stdout line-by-line until
+   * EOF, parses each line as JSON, and dispatches it via
+   * {@link handleClaudeLine}. On EOF, signals the active turn (if
+   * any) before exiting.
+   *
+   * Single-owner invariant: nothing else in this class may call
+   * `getReader()` on `claudeProcess.stdout`. The drain is the only
+   * reader for claude's stdout for the lifetime of `claudeProcess`.
+   */
+  private startStdoutDrain(claudeProcess: ReturnType<typeof Bun.spawn>): void {
+    // Reset the EOF flag — a fresh claude means a fresh stdout
+    // stream that hasn't EOF'd yet. Without this reset, a respawn
+    // (fork / continue / new) after a prior EOF would leave
+    // handleUserMessage on the fast-path "claude is dead" branch
+    // forever.
+    this.claudeStdoutEofObserved = false;
+    const reader = (
+      claudeProcess.stdout as ReadableStream<Uint8Array>
+    ).getReader();
+    this.stdoutDrainTask = this.runStdoutDrain(reader);
+  }
+
+  /**
+   * Drain loop. Reads claude's stdout one chunk at a time, splits on
+   * newlines, dispatches each non-empty line to
+   * {@link handleClaudeLine}. Exits cleanly on EOF (claude closed
+   * its stdout, e.g., on exit) or on read error.
+   *
+   * The drain decodes incrementally (TextDecoder with `{stream: true}`)
+   * so multi-byte UTF-8 sequences split across chunks are handled
+   * correctly. Lines longer than a single chunk are accumulated in
+   * `buffer` until a newline is seen.
+   */
+  private async runStdoutDrain(
+    reader: ReadableStreamDefaultReader<Uint8Array>,
+  ): Promise<void> {
+    const decoder = new TextDecoder();
+    let buffer = "";
+    try {
+      while (true) {
+        let result: ReadableStreamReadResult<Uint8Array>;
+        try {
+          result = await reader.read();
+        } catch {
+          break;
+        }
+        if (result.done) {
+          const remaining = buffer.trim();
+          if (remaining.length > 0) this.handleClaudeLine(remaining);
+          buffer = "";
+          break;
+        }
+        buffer += decoder.decode(result.value, { stream: true });
+        let lineEnd = buffer.indexOf("\n");
+        while (lineEnd >= 0) {
+          const line = buffer.slice(0, lineEnd).trim();
+          buffer = buffer.slice(lineEnd + 1);
+          if (line.length > 0) this.handleClaudeLine(line);
+          lineEnd = buffer.indexOf("\n");
+        }
+      }
+    } finally {
+      // EOF: surface to the active turn (if any) so a turn that was
+      // mid-stream when claude died doesn't hang `handleUserMessage`'s
+      // await on the turn's completion promise.
+      this.signalEofToActiveTurn();
+    }
+  }
+
+  /**
+   * Dispatch a parsed claude stdout line. If a turn is currently
+   * active (`handleUserMessage` registered an `ActiveTurn`), route
+   * the event into it via {@link dispatchEventToTurn}. Otherwise the
+   * event is between turns — forward init-shaped events through
+   * {@link handleInterTurnEvent} so `session_init` and
+   * `system_metadata` arrive at tugcast immediately rather than
+   * waiting for a user submit to drain the pipe (the pre-R1e
+   * blocker).
+   *
+   * Bad JSON is logged and skipped (preserves the pre-R1e
+   * `handleUserMessage` shape).
+   */
+  private handleClaudeLine(line: string): void {
+    let event: Record<string, unknown>;
+    try {
+      event = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      console.log(`Skipping non-JSON line: ${line}`);
+      return;
+    }
+    if (this.activeTurn !== null) {
+      this.dispatchEventToTurn(this.activeTurn, event);
+    } else {
+      this.handleInterTurnEvent(event);
+    }
+  }
+
+  /**
+   * Forward init-shaped events that arrive when no turn is active.
+   * Pre-R1e these were stuck in the OS pipe between claude and
+   * tugcode until a user submit ran the per-turn reader. Post-R1e
+   * the drain forwards them as soon as they arrive — improving
+   * tugcast/tugdeck observability without changing the wire shape.
+   *
+   * Currently handles `system:init` (forwarded as `session_init`)
+   * which is the only shape a fresh-mode session-command respawn
+   * relies on. Other inter-turn shapes (a hypothetical
+   * `system_metadata` between turns) drop here and never reach the
+   * wire. As more inter-turn events become real, this is the spot
+   * to handle them.
+   */
+  private handleInterTurnEvent(event: Record<string, unknown>): void {
+    if (event.type === "system" && event.subtype === "init") {
+      const sessionId = (event.session_id as string) || "unknown";
+      writeLine({ type: "session_init", session_id: sessionId, ipc_version: 2 });
+    }
+    // Other inter-turn event types are currently no-ops. The drain
+    // is intentionally permissive here — it must not throw, since
+    // unhandled-but-syntactically-valid lines from claude (a future
+    // `system_metadata` between turns, etc.) shouldn't kill the
+    // drain task.
+  }
+
+  /**
+   * Per-turn dispatcher. Migrates the body of pre-R1e
+   * `handleUserMessage`'s line-pulling loop verbatim, with one
+   * substitution: per-turn mutable state lives on `turn` instead of
+   * SessionManager fields. The two-tier routing (`routeTopLevelEvent`
+   * + `mapStreamEvent`) is unchanged; control_request/cancel
+   * handling is unchanged; turn-end emission of the final
+   * `assistant_text` + `turn_complete` is unchanged.
+   *
+   * On `gotResult`, calls `turn.finish()` to resolve the completion
+   * promise so `handleUserMessage`'s await returns.
+   */
+  private dispatchEventToTurn(
+    turn: ActiveTurn,
+    event: Record<string, unknown>,
+  ): void {
+    const ctx: EventMappingContext = {
+      msgId: turn.msgId,
+      seq: turn.seq,
+      rev: turn.rev,
+    };
+
+    // Tier 1: route the top-level message type.
+    const routeResult = routeTopLevelEvent(event, ctx);
+
+    for (const ipcMsg of routeResult.messages) {
+      if (routeResult.parentToolUseId) {
+        (ipcMsg as Record<string, unknown>).parent_tool_use_id =
+          routeResult.parentToolUseId;
+      }
+      writeLine(ipcMsg);
+    }
+
+    // Tier 2: delegate stream_event inner payload to mapStreamEvent().
+    if (routeResult.streamEvent) {
+      const streamResult = mapStreamEvent(
+        routeResult.streamEvent,
+        ctx,
+        turn.partialText,
+      );
+      for (const ipcMsg of streamResult.messages) {
+        if (routeResult.parentToolUseId) {
+          (ipcMsg as Record<string, unknown>).parent_tool_use_id =
+            routeResult.parentToolUseId;
+        }
+        writeLine(ipcMsg);
+      }
+      turn.rev = streamResult.newRev;
+      turn.partialText = streamResult.partialText;
+    }
+
+    // Handle control_request: emit ControlRequestForward and store for
+    // correlation.
+    if (routeResult.controlRequest) {
+      const cr = routeResult.controlRequest;
+      const requestId = cr.request_id as string;
+      const request = cr.request as Record<string, unknown> | undefined;
+      const subtype = request?.subtype as string | undefined;
+
+      if (subtype === "can_use_tool" && requestId && request) {
+        this.pendingControlRequests.set(requestId, cr);
+
+        const toolName = (request.tool_name as string) || "";
+        const isQuestion = toolName === "AskUserQuestion";
+
+        const forward: ControlRequestForward = {
+          type: "control_request_forward",
+          request_id: requestId,
+          tool_name: toolName,
+          input: (request.input as Record<string, unknown>) || {},
+          decision_reason: request.decision_reason as string | undefined,
+          permission_suggestions: request.permission_suggestions as
+            | unknown[]
+            | undefined,
+          blocked_path: request.blocked_path as string | undefined,
+          tool_use_id: request.tool_use_id as string | undefined,
+          is_question: isQuestion,
+          ipc_version: 2,
+        };
+        writeLine(forward);
+      } else {
+        console.log(`Unhandled control_request subtype=${subtype ?? "unknown"}`);
+      }
+    }
+
+    // Handle control_cancel_request: clean up pending entry.
+    if (routeResult.cancelledRequestId) {
+      this.pendingControlRequests.delete(routeResult.cancelledRequestId);
+    }
+
+    if (routeResult.gotResult) {
+      turn.gotResult = true;
+      // Emit final complete assistant_text only if there was streamed
+      // text. Slash commands (local commands) deliver output via the
+      // user/isReplay handler, not via streaming — partialText stays
+      // empty for those.
+      if (turn.partialText.length > 0) {
+        const completeSeq = this.nextSeq();
+        writeLine({
+          type: "assistant_text",
+          msg_id: turn.msgId,
+          seq: completeSeq,
+          rev: 0,
+          text: turn.partialText,
+          is_partial: false,
+          status: "complete",
+          ipc_version: 2,
+        });
+      }
+
+      const turnSeq = this.nextSeq();
+      const resultValue =
+        (routeResult.resultMetadata?.resultValue as string) || "success";
+      writeLine({
+        type: "turn_complete",
+        msg_id: turn.msgId,
+        seq: turnSeq,
+        result: resultValue,
+        ipc_version: 2,
+      });
+      turn.finish();
+    }
+  }
+
+  /**
+   * Drain-EOF handler. Called once when claude's stdout closes (EOF
+   * or read error). If no turn was active, nothing is emitted — the
+   * `early-exit watcher` covers process-exit lifecycle separately.
+   * If a turn was active, emit the canonical end-of-stream IPC frame
+   * (`turn_cancelled` if the user had interrupted, `error` otherwise)
+   * and resolve the turn's completion promise so `handleUserMessage`
+   * returns.
+   */
+  private signalEofToActiveTurn(): void {
+    // Latch the flag before any branch — handleUserMessage's
+    // fast-path read after this point must see "EOF observed."
+    this.claudeStdoutEofObserved = true;
+    const turn = this.activeTurn;
+    if (turn === null) {
+      logSessionLifecycle("tugcode.claude_stdout_eof", {
+        session_id: this.sessionId,
+      });
+      return;
+    }
+    if (turn.interrupted) {
+      writeLine({
+        type: "turn_cancelled",
+        msg_id: turn.msgId,
+        seq: turn.seq,
+        partial_result: turn.partialText || "User interrupted",
+        ipc_version: 2,
+      });
+    } else if (!turn.gotResult) {
+      writeLine({
+        type: "error",
+        message: "Claude process stream ended unexpectedly",
+        recoverable: true,
+        ipc_version: 2,
+      });
+    }
+    turn.finish();
+  }
+
+  /**
    * Handle user_message: convert attachments to content blocks, write to stdin,
    * and process events with two-tier routing.
    */
@@ -1774,13 +2066,21 @@ export class SessionManager {
       throw new Error("Session not initialized");
     }
 
-    this.currentMsgId = this.newMsgId();
-    this.currentRev = 0;
-    const seq = this.nextSeq();
-    this.interrupted = false;
-
-    let partialText = "";
-    let gotResult = false;
+    // Fast-path: the drain already observed claude's stdout
+    // closing. Installing an `ActiveTurn` here would block on a
+    // completion promise nothing will ever resolve. Emit the
+    // canonical end-of-stream error frame and return — same shape
+    // pre-R1e's read-loop emitted when its `readNextLine` returned
+    // null on the first iteration.
+    if (this.claudeStdoutEofObserved) {
+      writeLine({
+        type: "error",
+        message: "Claude process stream ended unexpectedly",
+        recoverable: true,
+        ipc_version: 2,
+      });
+      return;
+    }
 
     // Build content blocks from text and attachments per PN-12.
     const contentBlocks = buildContentBlocks(msg.text, msg.attachments || []);
@@ -1800,139 +2100,19 @@ export class SessionManager {
     // Claude has now received input from us, so it has been seen alive
     // end-to-end. The early-exit watcher reads this flag to gate its
     // init-failure classification: any exit from this point on is a
-    // runtime crash (handled by the stream-end branch below), not a
-    // resume_failed.
+    // runtime crash (handled by the stream-end branch in
+    // `signalEofToActiveTurn`), not a resume_failed.
     this.claudeReceivedInput = true;
 
+    // Step R1e: install the active turn and let the stdout drain
+    // dispatch claude's response into it. The turn's completion
+    // promise resolves when the drain sees `turn_complete`
+    // (via `dispatchEventToTurn`'s `gotResult` branch) or when
+    // claude's stdout EOFs (via `signalEofToActiveTurn`).
+    const turn = new ActiveTurn(this.newMsgId(), this.nextSeq());
+    this.activeTurn = turn;
     try {
-      while (true) {
-        const line = await this.readNextLine();
-
-        if (line === null) {
-          if (this.interrupted) {
-            writeLine({
-              type: "turn_cancelled",
-              msg_id: this.currentMsgId!,
-              seq,
-              partial_result: partialText || "User interrupted",
-              ipc_version: 2,
-            });
-          } else if (!gotResult) {
-            writeLine({
-              type: "error",
-              message: "Claude process stream ended unexpectedly",
-              recoverable: true,
-              ipc_version: 2,
-            });
-          }
-          break;
-        }
-
-        let event: Record<string, unknown>;
-        try {
-          event = JSON.parse(line) as Record<string, unknown>;
-        } catch {
-          console.log(`Skipping non-JSON line: ${line}`);
-          continue;
-        }
-
-        const ctx: EventMappingContext = {
-          msgId: this.currentMsgId!,
-          seq,
-          rev: this.currentRev,
-        };
-
-        // Tier 1: route the top-level message type.
-        const routeResult = routeTopLevelEvent(event, ctx);
-
-        // Emit IPC messages from router, stamping parent_tool_use_id per §15.
-        for (const ipcMsg of routeResult.messages) {
-          if (routeResult.parentToolUseId) {
-            (ipcMsg as Record<string, unknown>).parent_tool_use_id = routeResult.parentToolUseId;
-          }
-          writeLine(ipcMsg);
-        }
-
-        // Tier 2: delegate stream_event inner payload to mapStreamEvent().
-        if (routeResult.streamEvent) {
-          const streamResult = mapStreamEvent(routeResult.streamEvent, ctx, partialText);
-          for (const ipcMsg of streamResult.messages) {
-            if (routeResult.parentToolUseId) {
-              (ipcMsg as Record<string, unknown>).parent_tool_use_id = routeResult.parentToolUseId;
-            }
-            writeLine(ipcMsg);
-          }
-          this.currentRev = streamResult.newRev;
-          partialText = streamResult.partialText;
-        }
-
-        // Handle control_request: emit ControlRequestForward and store for correlation.
-        if (routeResult.controlRequest) {
-          const cr = routeResult.controlRequest;
-          const requestId = cr.request_id as string;
-          const request = cr.request as Record<string, unknown> | undefined;
-          const subtype = request?.subtype as string | undefined;
-
-          if (subtype === "can_use_tool" && requestId && request) {
-            this.pendingControlRequests.set(requestId, cr);
-
-            const toolName = (request.tool_name as string) || "";
-            const isQuestion = toolName === "AskUserQuestion";
-
-            const forward: ControlRequestForward = {
-              type: "control_request_forward",
-              request_id: requestId,
-              tool_name: toolName,
-              input: (request.input as Record<string, unknown>) || {},
-              decision_reason: request.decision_reason as string | undefined,
-              permission_suggestions: request.permission_suggestions as unknown[] | undefined,
-              blocked_path: request.blocked_path as string | undefined,
-              tool_use_id: request.tool_use_id as string | undefined,
-              is_question: isQuestion,
-              ipc_version: 2,
-            };
-            writeLine(forward);
-          } else {
-            console.log(`Unhandled control_request subtype=${subtype ?? "unknown"}`);
-          }
-        }
-
-        // Handle control_cancel_request: clean up pending entry.
-        if (routeResult.cancelledRequestId) {
-          this.pendingControlRequests.delete(routeResult.cancelledRequestId);
-        }
-
-        gotResult = routeResult.gotResult;
-        if (gotResult) {
-          // Emit final complete assistant_text only if there was streamed text.
-          // Slash commands (local commands) deliver output via the user/isReplay
-          // handler, not via streaming — partialText stays empty for those.
-          if (partialText.length > 0) {
-            const completeSeq = this.nextSeq();
-            writeLine({
-              type: "assistant_text",
-              msg_id: this.currentMsgId!,
-              seq: completeSeq,
-              rev: 0,
-              text: partialText,
-              is_partial: false,
-              status: "complete",
-              ipc_version: 2,
-            });
-          }
-
-          const turnSeq = this.nextSeq();
-          const resultValue = routeResult.resultMetadata?.resultValue as string || "success";
-          writeLine({
-            type: "turn_complete",
-            msg_id: this.currentMsgId!,
-            seq: turnSeq,
-            result: resultValue,
-            ipc_version: 2,
-          });
-          break;
-        }
-      }
+      await turn.completion;
     } catch (err) {
       writeLine({
         type: "error",
@@ -1940,6 +2120,8 @@ export class SessionManager {
         recoverable: true,
         ipc_version: 2,
       });
+    } finally {
+      this.activeTurn = null;
     }
   }
 
@@ -2001,6 +2183,12 @@ export class SessionManager {
 
   /**
    * Handle interrupt: send interrupt control_request per D07.
+   *
+   * Marks the active turn (if any) as interrupted so the stdout
+   * drain's `signalEofToActiveTurn` path emits `turn_cancelled`
+   * rather than `error` if claude tears down before responding.
+   * The flag is per-turn (lives on `ActiveTurn`); a stale interrupt
+   * arriving when no turn is active is a no-op.
    */
   handleInterrupt(): void {
     if (!this.claudeProcess) {
@@ -2009,7 +2197,9 @@ export class SessionManager {
     }
 
     console.log("Interrupting current turn via control_request interrupt");
-    this.interrupted = true;
+    if (this.activeTurn !== null) {
+      this.activeTurn.interrupted = true;
+    }
     const stdin = this.claudeProcess.stdin;
     sendControlRequest(stdin, generateRequestId(), { subtype: "interrupt" });
   }
@@ -2082,10 +2272,16 @@ export class SessionManager {
       stderr: "inherit",
       cwd: this.projectDir,
     });
-    this.stdoutReader = (this.claudeProcess.stdout as ReadableStream<Uint8Array>).getReader();
-    this.stdoutBuffer = "";
-
-    await this.waitForSessionReady();
+    this.startStdoutDrain(this.claudeProcess);
+    // Post-R1e: the drain task forwards claude's `system:init` to
+    // tugcast as a `session_init` IPC frame as soon as it arrives
+    // (see {@link handleInterTurnEvent}). The handler does not
+    // synchronously await readiness — `claudeProcess.stdin` buffers
+    // any bytes the next `handleUserMessage` writes before claude
+    // finishes its handshake, and the drain catches up in the
+    // background. Pre-R1e the legacy `waitForSessionReady` await
+    // existed because the pull-based reader could not run in the
+    // background; that constraint is gone.
   }
 
   /**
@@ -2112,10 +2308,9 @@ export class SessionManager {
       stderr: "inherit",
       cwd: this.projectDir,
     });
-    this.stdoutReader = (this.claudeProcess.stdout as ReadableStream<Uint8Array>).getReader();
-    this.stdoutBuffer = "";
-
-    await this.waitForSessionReady();
+    this.startStdoutDrain(this.claudeProcess);
+    // See `handleSessionFork` — the drain forwards claude's
+    // `system:init` asynchronously; no synchronous await needed.
   }
 
   /**
@@ -2130,9 +2325,10 @@ export class SessionManager {
     // stable identifier from spawn time forward.
     this.sessionId = crypto.randomUUID();
     this.claudeProcess = this.spawnClaude(this.sessionId, "session-id");
-    this.stdoutReader = (this.claudeProcess.stdout as ReadableStream<Uint8Array>).getReader();
-    this.stdoutBuffer = "";
-
+    this.startStdoutDrain(this.claudeProcess);
+    // Synthesize a session_init for tugcast immediately — the
+    // claude id is known synchronously here (we minted it above), so
+    // no need to wait for claude's own emission.
     writeLine({ type: "session_init", session_id: this.sessionId, ipc_version: 2 });
   }
 
