@@ -463,6 +463,9 @@ function defaultSnapshot(): CodeSessionSnapshot {
     lastCost: null,
     lastError: null,
     lastReplayResult: null,
+    replayPreflightActive: false,
+    replaySoftBudgetElapsed: false,
+    replayTimeoutDwellActive: false,
   };
 }
 

@@ -1064,15 +1064,15 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 
 **Tasks:**
 
-- [ ] **Commit 1 — fold replay clock into `CodeSessionStore`:**
-  - [ ] Add the three new snapshot fields with default values (`false` each); thread through `getSnapshot` memoization.
-  - [ ] Add the three new internal events (`bind_resume_acknowledged`, `tick_soft_budget`, `tick_timeout_dwell_done`, `tick_preflight_done`) to the reducer's event union.
-  - [ ] Add the new effect kinds (`schedule_timer`, `cancel_timer`); extend the dispatch loop to manage the `Map<string, TimeoutHandle>`.
-  - [ ] Implement reducer transitions per the spec above (preflight, replay_started, replay_complete, ticks, transport_close, dispose).
-  - [ ] Add `notifyResumeBindingLanded()` public method.
-  - [ ] Update `cardServicesStore._construct` to call `notifyResumeBindingLanded()` for resume bindings.
-  - [ ] Tests in `tugdeck/src/lib/code-session-store/__tests__/code-session-store.replay-clock.test.ts` (NEW): each new field's lifecycle, snapshot identity stability, dispose cancels timers, transport_close clears preflight.
-  - [ ] All existing CodeSessionStore tests stay green (no new test breaks; the new fields are additive).
+- [x] **Commit 1 — fold replay clock into `CodeSessionStore`:**
+  - [x] Add the three new snapshot fields with default values (`false` each); thread through `getSnapshot` memoization.
+  - [x] Add the three new internal events (`bind_resume_acknowledged`, `tick_soft_budget`, `tick_timeout_dwell_done`, `tick_preflight_done`) to the reducer's event union.
+  - [x] Add the new effect kinds (`schedule_timer`, `cancel_timer`); extend the dispatch loop to manage the `Map<string, TimeoutHandle>`.
+  - [x] Implement reducer transitions per the spec above (preflight, replay_started, replay_complete, ticks, transport_close, dispose).
+  - [x] Add `notifyResumeBindingLanded()` public method.
+  - [x] Update `cardServicesStore._construct` to call `notifyResumeBindingLanded()` for resume bindings.
+  - [x] Tests in `tugdeck/src/lib/code-session-store/__tests__/code-session-store.replay-clock.test.ts` (NEW): each new field's lifecycle, snapshot identity stability, dispose cancels timers, transport_close clears preflight.
+  - [x] All existing CodeSessionStore tests stay green (no new test breaks; the new fields are additive).
 - [ ] **Commit 2 — gate uses store fields:**
   - [ ] Delete `useState` (`softBudget`, `timeoutGrace`), `useEffect` blocks, and `prevPhaseRef` from `TideCardServicesGate`.
   - [ ] Read the three new fields off the existing snapshot via the existing `useSyncExternalStore` pattern.

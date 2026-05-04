@@ -218,6 +218,37 @@ export interface CodeSessionSnapshot {
    * recent window's outcome rather than accumulating history.
    */
   lastReplayResult: LastReplayResult | null;
+
+  /**
+   * True from the moment a resume binding is acknowledged via
+   * `CodeSessionStore.notifyResumeBindingLanded()` until the *first
+   * of*: `phase` becomes `"replaying"`, `lastReplayResult` lands,
+   * `transportState` changes away from `"online"`, or
+   * `REPLAY_PREFLIGHT_TIMEOUT_MS` elapses. Drives the cold-boot
+   * preflight banner copy that bridges the wait between binding
+   * rehydrate and the first `replay_started` event.
+   */
+  replayPreflightActive: boolean;
+
+  /**
+   * True after `REPLAY_SOFT_BUDGET_MS` while `phase === "replaying"`
+   * without leaving the phase. Reset when phase leaves replaying
+   * (or on the next `replay_started`). Drives count-aware banner
+   * copy per [D10] — the banner can promote from generic
+   * "Loading conversation…" to "Loading conversation… (N turns)"
+   * once the user has been waiting long enough that progress detail
+   * is reassuring rather than noisy.
+   */
+  replaySoftBudgetElapsed: boolean;
+
+  /**
+   * True for `REPLAY_TIMEOUT_DWELL_MS` after `phase` transitions out
+   * of `"replaying"` while `lastReplayResult.kind === "replay_timeout"`.
+   * Drives the timeout-state banner copy. The dwell exists so the
+   * timeout reason has a moment to register with the user before
+   * the banner dismisses.
+   */
+  replayTimeoutDwellActive: boolean;
 }
 
 /**

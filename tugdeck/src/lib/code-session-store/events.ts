@@ -347,6 +347,52 @@ export interface ReplayCompleteEvent {
   [key: string]: unknown;
 }
 
+/**
+ * Internal action injected by `CodeSessionStore.notifyResumeBindingLanded()`.
+ * Not a wire event. The reducer flips `replayPreflightActive` to `true`
+ * (only from idle + not-already-active) and emits a `schedule_timer`
+ * effect for `REPLAY_PREFLIGHT_TIMEOUT_MS`. Idempotent — a second
+ * `bind_resume_acknowledged` while preflight is already active is a
+ * reducer no-op (no second timer is scheduled).
+ */
+export interface BindResumeAcknowledgedEvent {
+  type: "bind_resume_acknowledged";
+}
+
+/**
+ * Internal action dispatched by the soft-budget timer
+ * (`REPLAY_SOFT_BUDGET_MS` after `replay_started`). The reducer flips
+ * `replaySoftBudgetElapsed` to `true`. Dropped if not currently in
+ * the `replaying` phase (defensive — the timer is canceled on phase
+ * exit, but a race in dispatch ordering could still deliver a stale
+ * tick).
+ */
+export interface TickSoftBudgetEvent {
+  type: "tick_soft_budget";
+}
+
+/**
+ * Internal action dispatched by the timeout-dwell timer
+ * (`REPLAY_TIMEOUT_DWELL_MS` after `replay_complete{replay_timeout}`).
+ * The reducer flips `replayTimeoutDwellActive` back to `false`,
+ * dismissing the timeout banner.
+ */
+export interface TickTimeoutDwellDoneEvent {
+  type: "tick_timeout_dwell_done";
+}
+
+/**
+ * Internal action dispatched by the preflight last-resort timer
+ * (`REPLAY_PREFLIGHT_TIMEOUT_MS` after `bind_resume_acknowledged`).
+ * The reducer flips `replayPreflightActive` to `false`. The 12s timer
+ * is the escape hatch for the case where `replay_started` never
+ * lands — the banner dismisses on its own rather than hanging
+ * forever.
+ */
+export interface TickPreflightDoneEvent {
+  type: "tick_preflight_done";
+}
+
 /** Discriminated union of events the reducer accepts. */
 export type CodeSessionEvent =
   | SendActionEvent
@@ -373,4 +419,8 @@ export type CodeSessionEvent =
   | ResumeFailedEvent
   | UserMessageReplayEvent
   | ReplayStartedEvent
-  | ReplayCompleteEvent;
+  | ReplayCompleteEvent
+  | BindResumeAcknowledgedEvent
+  | TickSoftBudgetEvent
+  | TickTimeoutDwellDoneEvent
+  | TickPreflightDoneEvent;

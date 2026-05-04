@@ -4,10 +4,20 @@
  * Step 3 implements the basic `idle → submitting → awaiting_first_token
  * → streaming → idle` round-trip. Later steps extend this with streaming
  * delta accumulation (4), tool lifecycle (5), control forwards (6),
- * interrupt + queue (7), and errored triggers (8).
+ * interrupt + queue (7), errored triggers (8), JSONL replay bracketing,
+ * and the cold-boot replay-clock derivations
+ * (`replayPreflightActive` / `replaySoftBudgetElapsed` /
+ * `replayTimeoutDwellActive`) that drive the resume placeholder /
+ * banner UX.
  *
  * `transcript` intentionally does NOT live here — the class wrapper
  * owns it and appends via `AppendTranscript` effects ([D04] / [D11]).
+ *
+ * Timers are also outside the reducer: the `schedule_timer` /
+ * `cancel_timer` effects are processed by the dispatch loop, which
+ * keeps a `Map<string, TimerHandle>` and dispatches the named tick
+ * event back into the reducer when a timer fires. The reducer stays
+ * pure and time-independent.
  */
 
 import type { AtomSegment } from "../tug-atom-img";
@@ -96,7 +106,42 @@ export interface CodeSessionState {
    * `CodeSessionSnapshot.lastReplayResult`.
    */
   lastReplayResult: LastReplayResult | null;
+  /**
+   * Replay-clock derived flags. Exposed through the snapshot identically-
+   * named (`replayPreflightActive`, `replaySoftBudgetElapsed`,
+   * `replayTimeoutDwellActive`); see `types.ts` for semantics. Driven
+   * by `bind_resume_acknowledged` / `replay_started` / `replay_complete` /
+   * `transport_close` / `tick_*` events; the dispatch loop manages the
+   * actual `setTimeout` handles via `schedule_timer` / `cancel_timer`
+   * effects so the reducer stays pure.
+   */
+  replayPreflightActive: boolean;
+  replaySoftBudgetElapsed: boolean;
+  replayTimeoutDwellActive: boolean;
 }
+
+/**
+ * Replay-clock millisecond constants. Re-exported from
+ * `code-session-store.ts` as the public surface; the reducer uses
+ * them inline where it emits `schedule_timer` effects.
+ *
+ * - `REPLAY_SOFT_BUDGET_MS` — once `phase === "replaying"` has been
+ *   held for this long without leaving, `replaySoftBudgetElapsed`
+ *   flips true. Drives the count-aware banner copy per [D10].
+ * - `REPLAY_TIMEOUT_DWELL_MS` — after a `replay_complete` carrying a
+ *   `replay_timeout` outcome, `replayTimeoutDwellActive` stays true
+ *   for this long so the user has a chance to read the failure copy
+ *   before the banner dismisses.
+ * - `REPLAY_PREFLIGHT_TIMEOUT_MS` — last-resort escape hatch for the
+ *   preflight window: if `replay_started` somehow never lands (e.g.
+ *   a tugcode that didn't run replay at all), the preflight banner
+ *   dismisses on its own at this mark instead of hanging forever.
+ *   Sized large enough to easily cover a normal cold boot's 5–10s
+ *   wait while still bounding the worst case.
+ */
+export const REPLAY_SOFT_BUDGET_MS = 2000;
+export const REPLAY_TIMEOUT_DWELL_MS = 1500;
+export const REPLAY_PREFLIGHT_TIMEOUT_MS = 12_000;
 
 /** Build the initial state for a freshly constructed store. */
 export function createInitialState(
@@ -120,6 +165,9 @@ export function createInitialState(
     lastCost: null,
     committedMsgIds: new Set(),
     lastReplayResult: null,
+    replayPreflightActive: false,
+    replaySoftBudgetElapsed: false,
+    replayTimeoutDwellActive: false,
   };
 }
 
@@ -873,14 +921,28 @@ function handleTransportClose(
     return { state, effects: [] };
   }
 
+  // Transport-state takes precedence over the cold-boot preflight
+  // beat: if the wire goes down (or starts restoring) the preflight
+  // banner has nothing left to bridge to, so cancel and clear. The
+  // dwell and soft-budget timers are scoped to the active replay
+  // window itself; they survive a transport blip and let the live
+  // replay outcome (or a subsequent replay_started) clear them.
+  const wasPreflightActive = state.replayPreflightActive;
+  const cancelPreflightEffect: Effect[] = wasPreflightActive
+    ? [{ kind: "cancel_timer", name: "preflight" }]
+    : [];
+  const preflightCleared = wasPreflightActive
+    ? { replayPreflightActive: false }
+    : {};
+
   // Transport close from `idle` no longer drops silently — per [D06]
   // the offline transportState gates submit even for cards that had
   // nothing in flight. Phase stays `idle` (there is nothing to error
   // on); `lastError` is left untouched for the same reason.
   if (state.phase === "idle") {
     return {
-      state: { ...state, transportState: "offline" },
-      effects: [],
+      state: { ...state, transportState: "offline", ...preflightCleared },
+      effects: cancelPreflightEffect,
     };
   }
 
@@ -898,8 +960,9 @@ function handleTransportClose(
         message: "transport closed",
         at: Date.now(),
       },
+      ...preflightCleared,
     },
-    effects: [],
+    effects: cancelPreflightEffect,
   };
 }
 
@@ -1056,8 +1119,25 @@ function handleReplayStarted(
       prevPhase: null,
       // Clear lastReplayResult — the new window is the new outcome.
       lastReplayResult: null,
+      // Replay-clock: opening a replay window clears preflight (its
+      // job is done) and the prior window's timeout-dwell (the new
+      // window supersedes the prior outcome). Soft-budget starts
+      // false and the dispatch loop schedules the soft-budget timer
+      // via the effect below.
+      replayPreflightActive: false,
+      replaySoftBudgetElapsed: false,
+      replayTimeoutDwellActive: false,
     },
-    effects: [],
+    effects: [
+      { kind: "cancel_timer", name: "preflight" },
+      { kind: "cancel_timer", name: "timeout_dwell" },
+      {
+        kind: "schedule_timer",
+        name: "soft_budget",
+        ms: REPLAY_SOFT_BUDGET_MS,
+        fire: { type: "tick_soft_budget" },
+      },
+    ],
   };
 }
 
@@ -1090,6 +1170,23 @@ function handleReplayComplete(
         count: event.count,
         at: Date.now(),
       };
+  // Replay-clock: closing the window cancels preflight (defensive — it
+  // would already be cleared by the preceding replay_started) and the
+  // soft-budget timer. A timeout outcome opens the timeout-dwell timer
+  // so the banner copy lingers briefly before dismissing.
+  const isTimeout = lastReplayResult.kind === "replay_timeout";
+  const effects: Effect[] = [
+    { kind: "cancel_timer", name: "preflight" },
+    { kind: "cancel_timer", name: "soft_budget" },
+  ];
+  if (isTimeout) {
+    effects.push({
+      kind: "schedule_timer",
+      name: "timeout_dwell",
+      ms: REPLAY_TIMEOUT_DWELL_MS,
+      fire: { type: "tick_timeout_dwell_done" },
+    });
+  }
   return {
     state: {
       ...state,
@@ -1102,8 +1199,11 @@ function handleReplayComplete(
       prevPhase: null,
       pendingUserMessage: null,
       lastReplayResult,
+      replayPreflightActive: false,
+      replaySoftBudgetElapsed: false,
+      replayTimeoutDwellActive: isTimeout,
     },
-    effects: [],
+    effects,
   };
 }
 
@@ -1137,6 +1237,102 @@ function handleUserMessageReplay(
       },
       activeMsgId: event.msg_id,
     },
+    effects: [],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Replay-clock handlers (preflight + soft-budget + timeout-dwell)
+// ---------------------------------------------------------------------------
+
+/**
+ * `bind_resume_acknowledged` — emitted once by `cardServicesStore`
+ * after constructing services for a `sessionMode === "resume"`
+ * binding. Opens the preflight window. Idempotent: a second call
+ * while preflight is already active is a no-op (no second timer
+ * scheduled). Also a no-op if not in `idle` (e.g. mid-replay) — the
+ * downstream `replay_started` will populate the live replay copy
+ * directly without a redundant preflight beat.
+ */
+function handleBindResumeAcknowledged(
+  state: CodeSessionState,
+): { state: CodeSessionState; effects: Effect[] } {
+  if (state.replayPreflightActive) {
+    return { state, effects: [] };
+  }
+  if (state.phase !== "idle") {
+    return { state, effects: [] };
+  }
+  if (state.transportState !== "online") {
+    // Transport-state takes precedence: there's no point opening a
+    // preflight banner over a transport restoring/offline backdrop.
+    return { state, effects: [] };
+  }
+  return {
+    state: { ...state, replayPreflightActive: true },
+    effects: [
+      {
+        kind: "schedule_timer",
+        name: "preflight",
+        ms: REPLAY_PREFLIGHT_TIMEOUT_MS,
+        fire: { type: "tick_preflight_done" },
+      },
+    ],
+  };
+}
+
+/**
+ * `tick_soft_budget` — scheduled by `replay_started`, fires
+ * `REPLAY_SOFT_BUDGET_MS` later. Drops if not currently replaying
+ * (the `replay_complete` cancel path should already have cleared
+ * the timer; this is defense-in-depth against a stale tick racing
+ * the cancel).
+ */
+function handleTickSoftBudget(
+  state: CodeSessionState,
+): { state: CodeSessionState; effects: Effect[] } {
+  if (state.phase !== "replaying") {
+    return { state, effects: [] };
+  }
+  if (state.replaySoftBudgetElapsed) {
+    return { state, effects: [] };
+  }
+  return {
+    state: { ...state, replaySoftBudgetElapsed: true },
+    effects: [],
+  };
+}
+
+/**
+ * `tick_timeout_dwell_done` — scheduled by `replay_complete` when
+ * the outcome is `replay_timeout`. Dismisses the timeout banner
+ * after the dwell window.
+ */
+function handleTickTimeoutDwellDone(
+  state: CodeSessionState,
+): { state: CodeSessionState; effects: Effect[] } {
+  if (!state.replayTimeoutDwellActive) {
+    return { state, effects: [] };
+  }
+  return {
+    state: { ...state, replayTimeoutDwellActive: false },
+    effects: [],
+  };
+}
+
+/**
+ * `tick_preflight_done` — last-resort 12s timer expiring. Clears the
+ * preflight banner if it somehow survived `replay_started` /
+ * `replay_complete` / `transport_close` (none of which lit up).
+ */
+function handleTickPreflightDone(
+  state: CodeSessionState,
+): { state: CodeSessionState; effects: Effect[] } {
+  if (!state.replayPreflightActive) {
+    return { state, effects: [] };
+  }
+  return {
+    state: { ...state, replayPreflightActive: false },
     effects: [],
   };
 }
@@ -1205,6 +1401,14 @@ export function reduce(
       return handleReplayComplete(state, event);
     case "user_message_replay":
       return handleUserMessageReplay(state, event);
+    case "bind_resume_acknowledged":
+      return handleBindResumeAcknowledged(state);
+    case "tick_soft_budget":
+      return handleTickSoftBudget(state);
+    case "tick_timeout_dwell_done":
+      return handleTickTimeoutDwellDone(state);
+    case "tick_preflight_done":
+      return handleTickPreflightDone(state);
     default:
       return { state, effects: [] };
   }

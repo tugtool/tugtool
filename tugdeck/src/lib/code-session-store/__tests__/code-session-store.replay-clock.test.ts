@@ -1,0 +1,388 @@
+/**
+ * Replay-clock tests for `CodeSessionStore`.
+ *
+ * The store owns three time-derived snapshot fields used by the
+ * Tide card's resume UX:
+ *
+ *   - `replayPreflightActive` — opens on `notifyResumeBindingLanded()`,
+ *     closes on the first of `replay_started`, `replay_complete`,
+ *     `transport_close`, or `REPLAY_PREFLIGHT_TIMEOUT_MS` (12s).
+ *   - `replaySoftBudgetElapsed` — opens `REPLAY_SOFT_BUDGET_MS` (2s)
+ *     after `replay_started` if the window is still open; resets
+ *     when the window closes.
+ *   - `replayTimeoutDwellActive` — opens on `replay_complete{
+ *     replay_timeout}`, closes `REPLAY_TIMEOUT_DWELL_MS` (1.5s)
+ *     later or on the next `replay_started`.
+ *
+ * Tests use an injected `TimerSource` so the store can be advanced
+ * deterministically without racing real wall-clock delays. Each
+ * scheduled timer lands in a captured table keyed by the order of
+ * scheduling; `advance(ms)` fires every captured timer whose
+ * deadline lands in the window. This mirrors the manual-table
+ * pattern in `connection.test.ts` for `setInterval` fakes — the
+ * abstractions are different but the principle (deterministic time
+ * via captured callbacks) is shared.
+ */
+
+import { describe, it, expect } from "bun:test";
+
+import {
+  CodeSessionStore,
+  REPLAY_PREFLIGHT_TIMEOUT_MS,
+  REPLAY_SOFT_BUDGET_MS,
+  REPLAY_TIMEOUT_DWELL_MS,
+  type TimerSource,
+} from "@/lib/code-session-store";
+import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
+import type { TugConnection } from "@/connection";
+import { TestFrameChannel } from "@/lib/code-session-store/testing/mock-feed-store";
+import { FIXTURE_IDS } from "@/lib/code-session-store/testing/golden-catalog";
+import { FeedId } from "@/protocol";
+
+const TUG = FIXTURE_IDS.TUG_SESSION_ID;
+const IPC_VERSION = 2;
+
+interface FakeTimerEntry {
+  id: number;
+  cb: () => void;
+  fireAt: number;
+  cleared: boolean;
+}
+
+/**
+ * A captured-table fake timer source. `now` advances only when the
+ * test calls `advance(ms)`; each call fires every callback whose
+ * `fireAt` lands in the window in scheduling order. Callbacks that
+ * schedule new timers during their fire are picked up on subsequent
+ * iterations of the same `advance` call.
+ */
+class FakeTimers {
+  private now = 0;
+  private nextId = 1;
+  private entries: FakeTimerEntry[] = [];
+
+  readonly source: TimerSource = {
+    setTimeout: (cb, ms) => {
+      const id = this.nextId++;
+      this.entries.push({ id, cb, fireAt: this.now + ms, cleared: false });
+      return id;
+    },
+    clearTimeout: (handle) => {
+      if (typeof handle !== "number") return;
+      const entry = this.entries.find((e) => e.id === handle);
+      if (entry) entry.cleared = true;
+    },
+  };
+
+  advance(ms: number): void {
+    const target = this.now + ms;
+    while (true) {
+      const due = this.entries
+        .filter((e) => !e.cleared && e.fireAt <= target)
+        .sort((a, b) => a.fireAt - b.fireAt);
+      if (due.length === 0) break;
+      const next = due[0];
+      this.now = next.fireAt;
+      next.cleared = true; // a fired timer is one-shot
+      next.cb();
+    }
+    this.now = target;
+  }
+
+  /** Number of pending (not-yet-fired, not-cleared) timers. */
+  pendingCount(): number {
+    return this.entries.filter((e) => !e.cleared).length;
+  }
+}
+
+interface StoreFixture {
+  store: CodeSessionStore;
+  conn: TestFrameChannel;
+  timers: FakeTimers;
+}
+
+function makeStore(): StoreFixture {
+  const conn = new TestFrameChannel();
+  const timers = new FakeTimers();
+  const store = new CodeSessionStore({
+    conn: conn as unknown as TugConnection,
+    lifecycle: new ConnectionLifecycle(),
+    tugSessionId: TUG,
+    timerSource: timers.source,
+  });
+  return { store, conn, timers };
+}
+
+function emit(conn: TestFrameChannel, evt: Record<string, unknown>): void {
+  conn.dispatchDecoded(FeedId.CODE_OUTPUT, { ...evt, tug_session_id: TUG });
+}
+
+const replayStarted = () => ({ type: "replay_started", ipc_version: IPC_VERSION });
+const replayComplete = (
+  count: number,
+  error?: { kind: "replay_timeout"; message: string },
+) =>
+  error
+    ? { type: "replay_complete", count, error, ipc_version: IPC_VERSION }
+    : { type: "replay_complete", count, ipc_version: IPC_VERSION };
+
+// ---------------------------------------------------------------------------
+// replaySoftBudgetElapsed
+// ---------------------------------------------------------------------------
+
+describe("CodeSessionStore — replaySoftBudgetElapsed lifecycle", () => {
+  it("flips true REPLAY_SOFT_BUDGET_MS after replay_started, clears on next replay_started", () => {
+    const { store, conn, timers } = makeStore();
+
+    expect(store.getSnapshot().replaySoftBudgetElapsed).toBe(false);
+
+    emit(conn, replayStarted());
+    expect(store.getSnapshot().replaySoftBudgetElapsed).toBe(false);
+
+    timers.advance(REPLAY_SOFT_BUDGET_MS - 1);
+    expect(store.getSnapshot().replaySoftBudgetElapsed).toBe(false);
+
+    timers.advance(1);
+    expect(store.getSnapshot().replaySoftBudgetElapsed).toBe(true);
+
+    // Closing the window clears the flag.
+    emit(conn, replayComplete(0));
+    expect(store.getSnapshot().replaySoftBudgetElapsed).toBe(false);
+
+    // A fresh window starts clean.
+    emit(conn, replayStarted());
+    expect(store.getSnapshot().replaySoftBudgetElapsed).toBe(false);
+    timers.advance(REPLAY_SOFT_BUDGET_MS);
+    expect(store.getSnapshot().replaySoftBudgetElapsed).toBe(true);
+  });
+
+  it("clears on replay_complete before the soft-budget timer fires", () => {
+    const { store, conn, timers } = makeStore();
+    emit(conn, replayStarted());
+    timers.advance(REPLAY_SOFT_BUDGET_MS / 2); // mid-budget
+    emit(conn, replayComplete(0));
+    expect(store.getSnapshot().replaySoftBudgetElapsed).toBe(false);
+    // Advancing past the original deadline must not flip it back.
+    timers.advance(REPLAY_SOFT_BUDGET_MS);
+    expect(store.getSnapshot().replaySoftBudgetElapsed).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// replayTimeoutDwellActive
+// ---------------------------------------------------------------------------
+
+describe("CodeSessionStore — replayTimeoutDwellActive lifecycle", () => {
+  it("flips true on replay_complete{replay_timeout}; clears REPLAY_TIMEOUT_DWELL_MS later", () => {
+    const { store, conn, timers } = makeStore();
+    emit(conn, replayStarted());
+    emit(
+      conn,
+      replayComplete(1, { kind: "replay_timeout", message: "timed out" }),
+    );
+    expect(store.getSnapshot().replayTimeoutDwellActive).toBe(true);
+
+    timers.advance(REPLAY_TIMEOUT_DWELL_MS - 1);
+    expect(store.getSnapshot().replayTimeoutDwellActive).toBe(true);
+
+    timers.advance(1);
+    expect(store.getSnapshot().replayTimeoutDwellActive).toBe(false);
+  });
+
+  it("does NOT fire for non-timeout replay errors", () => {
+    const { store, conn, timers } = makeStore();
+    emit(conn, replayStarted());
+    emit(conn, {
+      type: "replay_complete",
+      count: 0,
+      error: { kind: "jsonl_missing", message: "no JSONL" },
+      ipc_version: IPC_VERSION,
+    });
+    expect(store.getSnapshot().replayTimeoutDwellActive).toBe(false);
+    timers.advance(REPLAY_TIMEOUT_DWELL_MS * 2);
+    expect(store.getSnapshot().replayTimeoutDwellActive).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// replayPreflightActive
+// ---------------------------------------------------------------------------
+
+describe("CodeSessionStore — replayPreflightActive lifecycle", () => {
+  it("flips true on notifyResumeBindingLanded() from idle", () => {
+    const { store } = makeStore();
+    expect(store.getSnapshot().replayPreflightActive).toBe(false);
+    store.notifyResumeBindingLanded();
+    expect(store.getSnapshot().replayPreflightActive).toBe(true);
+  });
+
+  it("clears on replay_started", () => {
+    const { store, conn } = makeStore();
+    store.notifyResumeBindingLanded();
+    expect(store.getSnapshot().replayPreflightActive).toBe(true);
+    emit(conn, replayStarted());
+    expect(store.getSnapshot().replayPreflightActive).toBe(false);
+  });
+
+  it("clears on replay_complete (replay landed without observable replay_started)", () => {
+    // Synthetic — would require a supervisor bug — but the reducer
+    // is total, so verify a stray replay_complete inside the
+    // preflight beat clears the flag.
+    const { store, conn } = makeStore();
+    store.notifyResumeBindingLanded();
+    // Force into replaying first (the reducer requires it for
+    // replay_complete to take effect), then close.
+    emit(conn, replayStarted());
+    emit(conn, replayComplete(0));
+    expect(store.getSnapshot().replayPreflightActive).toBe(false);
+  });
+
+  it("clears on transport_close", () => {
+    const { store } = makeStore();
+    const lifecycle = new ConnectionLifecycle();
+    const conn = new TestFrameChannel();
+    const timers = new FakeTimers();
+    const store2 = new CodeSessionStore({
+      conn: conn as unknown as TugConnection,
+      lifecycle,
+      tugSessionId: TUG,
+      timerSource: timers.source,
+    });
+    store2.notifyResumeBindingLanded();
+    expect(store2.getSnapshot().replayPreflightActive).toBe(true);
+    lifecycle.notifyConnectionDidClose();
+    expect(store2.getSnapshot().replayPreflightActive).toBe(false);
+    expect(store2.getSnapshot().transportState).toBe("offline");
+    // No leaked pending preflight timer.
+    expect(timers.pendingCount()).toBe(0);
+    // Pin to silence unused-var lint.
+    expect(store).toBeDefined();
+  });
+
+  it("clears on REPLAY_PREFLIGHT_TIMEOUT_MS escape-hatch tick", () => {
+    const { store, timers } = makeStore();
+    store.notifyResumeBindingLanded();
+    expect(store.getSnapshot().replayPreflightActive).toBe(true);
+    timers.advance(REPLAY_PREFLIGHT_TIMEOUT_MS - 1);
+    expect(store.getSnapshot().replayPreflightActive).toBe(true);
+    timers.advance(1);
+    expect(store.getSnapshot().replayPreflightActive).toBe(false);
+  });
+
+  it("a second notifyResumeBindingLanded() while preflight is active is a reducer no-op (no second timer scheduled)", () => {
+    const { store, timers } = makeStore();
+    store.notifyResumeBindingLanded();
+    const pendingAfterFirst = timers.pendingCount();
+    expect(pendingAfterFirst).toBe(1);
+    store.notifyResumeBindingLanded();
+    store.notifyResumeBindingLanded();
+    expect(timers.pendingCount()).toBe(pendingAfterFirst);
+    expect(store.getSnapshot().replayPreflightActive).toBe(true);
+  });
+
+  it("notifyResumeBindingLanded() while not idle (mid-replay) is a no-op", () => {
+    const { store, conn, timers } = makeStore();
+    emit(conn, replayStarted());
+    expect(store.getSnapshot().phase).toBe("replaying");
+    const pendingMidReplay = timers.pendingCount(); // soft_budget timer
+    store.notifyResumeBindingLanded();
+    expect(store.getSnapshot().replayPreflightActive).toBe(false);
+    expect(timers.pendingCount()).toBe(pendingMidReplay);
+  });
+
+  it("notifyResumeBindingLanded() while transport offline is a no-op", () => {
+    const lifecycle = new ConnectionLifecycle();
+    const conn = new TestFrameChannel();
+    const timers = new FakeTimers();
+    const store = new CodeSessionStore({
+      conn: conn as unknown as TugConnection,
+      lifecycle,
+      tugSessionId: TUG,
+      timerSource: timers.source,
+    });
+    lifecycle.notifyConnectionDidClose();
+    expect(store.getSnapshot().transportState).toBe("offline");
+    store.notifyResumeBindingLanded();
+    expect(store.getSnapshot().replayPreflightActive).toBe(false);
+    expect(timers.pendingCount()).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Snapshot identity stability
+// ---------------------------------------------------------------------------
+
+describe("CodeSessionStore — snapshot identity stability with replay-clock fields", () => {
+  it("a no-op tick (e.g. tick_soft_budget while not replaying) preserves snapshot identity", () => {
+    // Drive the store into a state where the soft_budget tick is
+    // queued but the phase has already left replaying. The reducer
+    // returns the same state ref on a no-op tick; the wrapper sees
+    // `prev === state` and effects empty, so the cached snapshot
+    // stays.
+    const { store, conn, timers } = makeStore();
+    emit(conn, replayStarted());
+    const snapDuringReplay = store.getSnapshot();
+    // Close the window before the soft-budget would fire. The
+    // reducer emits a `cancel_timer "soft_budget"` effect, which
+    // marks our captured timer as cleared; advancing past the
+    // original deadline is a no-op.
+    emit(conn, replayComplete(0));
+    const snapAfterComplete = store.getSnapshot();
+    expect(snapAfterComplete).not.toBe(snapDuringReplay);
+
+    // Advance past the original soft-budget deadline. Nothing fires.
+    timers.advance(REPLAY_SOFT_BUDGET_MS);
+    expect(store.getSnapshot()).toBe(snapAfterComplete);
+  });
+
+  it("replay-clock field changes invalidate the cached snapshot", () => {
+    const { store, conn, timers } = makeStore();
+    emit(conn, replayStarted());
+    const before = store.getSnapshot();
+    timers.advance(REPLAY_SOFT_BUDGET_MS);
+    const after = store.getSnapshot();
+    expect(after).not.toBe(before);
+    expect(after.replaySoftBudgetElapsed).toBe(true);
+    expect(before.replaySoftBudgetElapsed).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dispose: timers cancelled, no listener fires post-dispose
+// ---------------------------------------------------------------------------
+
+describe("CodeSessionStore — dispose cancels all replay-clock timers", () => {
+  it("dispose() clears every in-flight replay-clock timer", () => {
+    const { store, conn, timers } = makeStore();
+    store.notifyResumeBindingLanded();
+    emit(conn, replayStarted());
+    // After replay_started: preflight cancelled, soft_budget scheduled.
+    // After replay_complete{replay_timeout}: soft_budget cancelled,
+    // timeout_dwell scheduled.
+    emit(
+      conn,
+      replayComplete(0, { kind: "replay_timeout", message: "t/o" }),
+    );
+    expect(timers.pendingCount()).toBe(1); // timeout_dwell
+    store.dispose();
+    expect(timers.pendingCount()).toBe(0);
+  });
+
+  it("a stray timer fire post-dispose does not notify listeners", () => {
+    // Real `setTimeout` cancellation is reliable so this case is
+    // synthetic, but the dispose guard is what protects us either
+    // way: even if the fake timer were to fire after dispose, the
+    // `_disposed` guard inside the schedule_timer callback drops the
+    // dispatch.
+    const { store, timers } = makeStore();
+    let notifyCount = 0;
+    store.subscribe(() => {
+      notifyCount += 1;
+    });
+    store.notifyResumeBindingLanded();
+    notifyCount = 0;
+    store.dispose();
+    timers.advance(REPLAY_PREFLIGHT_TIMEOUT_MS * 2);
+    expect(notifyCount).toBe(0);
+  });
+});

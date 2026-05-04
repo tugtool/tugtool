@@ -269,6 +269,20 @@ class CardServicesStore {
       card_id: cardId,
       tug_session_id: binding.tugSessionId,
     });
+
+    // Cold-boot preflight beat: a resume-mode binding has just landed
+    // and the card is about to face a 5–10s wait while tugcode boots
+    // claude and runs JSONL replay. Open the preflight banner now so
+    // the user sees an indication that the system is restoring their
+    // conversation rather than a blank card. The reducer flips
+    // `replayPreflightActive` and schedules a 12s last-resort timer;
+    // the banner clears on the first of `replay_started`,
+    // `replay_complete`, `transport_close`, or the 12s tick. New-mode
+    // bindings get no preflight — there's nothing to restore.
+    if (binding.sessionMode === "resume") {
+      codeSessionStore.notifyResumeBindingLanded();
+    }
+
     return {
       codeSessionStore,
       editorStore,

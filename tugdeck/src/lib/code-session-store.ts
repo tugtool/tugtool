@@ -53,7 +53,35 @@ export type {
   ToolCallState,
   ControlRequestForward,
   CostSnapshot,
+  LastReplayResult,
 } from "./code-session-store/types";
+
+export {
+  REPLAY_PREFLIGHT_TIMEOUT_MS,
+  REPLAY_SOFT_BUDGET_MS,
+  REPLAY_TIMEOUT_DWELL_MS,
+} from "./code-session-store/reducer";
+
+/**
+ * Timer source injected into `CodeSessionStore` for the replay-clock
+ * `schedule_timer` / `cancel_timer` effects. Defaults to globalThis
+ * timers in production; tests inject a fake source so they can
+ * deterministically advance time without racing real wall-clock
+ * delays.
+ */
+export interface TimerSource {
+  setTimeout: (cb: () => void, ms: number) => unknown;
+  clearTimeout: (handle: unknown) => void;
+}
+
+const DEFAULT_TIMER_SOURCE: TimerSource = {
+  setTimeout: (cb, ms) =>
+    (globalThis as { setTimeout: (cb: () => void, ms: number) => unknown })
+      .setTimeout(cb, ms),
+  clearTimeout: (handle) =>
+    (globalThis as { clearTimeout: (handle: unknown) => void })
+      .clearTimeout(handle),
+};
 
 const STREAM_SOURCE_TAG = "code-session-store";
 
@@ -99,6 +127,12 @@ export interface CodeSessionStoreOptions {
   lifecycle: ConnectionLifecycle;
   tugSessionId: string;
   displayLabel?: string;
+  /**
+   * Test seam — defaults to globalThis `setTimeout` / `clearTimeout`.
+   * Production callers omit this. Tests inject a captured-table
+   * timer source so they can advance time deterministically.
+   */
+  timerSource?: TimerSource;
 }
 
 /**
@@ -113,6 +147,15 @@ export class CodeSessionStore {
   private readonly tugSessionId: string;
   private readonly displayLabel: string;
   private readonly feedStore: FeedStore;
+  private readonly timerSource: TimerSource;
+  /**
+   * Active replay-clock timers keyed by their effect `name`
+   * (`"preflight"`, `"soft_budget"`, `"timeout_dwell"`). Populated by
+   * `schedule_timer` effects from the reducer; cleared by
+   * `cancel_timer` effects, by the timer's own callback after it
+   * dispatches the named tick event, and by `dispose()`.
+   */
+  private readonly _replayTimers: Map<string, unknown> = new Map();
 
   private state: CodeSessionState;
   private _transcript: ReadonlyArray<TurnEntry> = [];
@@ -135,6 +178,7 @@ export class CodeSessionStore {
     this.lifecycle = options.lifecycle;
     this.tugSessionId = options.tugSessionId;
     this.displayLabel = options.displayLabel ?? options.tugSessionId.slice(0, 8);
+    this.timerSource = options.timerSource ?? DEFAULT_TIMER_SOURCE;
 
     const descriptors: PropertyDescriptor[] = [
       {
@@ -263,6 +307,9 @@ export class CodeSessionStore {
       lastCost: this.state.lastCost,
       lastError: this.state.lastError,
       lastReplayResult: this.state.lastReplayResult,
+      replayPreflightActive: this.state.replayPreflightActive,
+      replaySoftBudgetElapsed: this.state.replaySoftBudgetElapsed,
+      replayTimeoutDwellActive: this.state.replayTimeoutDwellActive,
     };
     this._cachedSnapshot = snap;
     return snap;
@@ -296,6 +343,33 @@ export class CodeSessionStore {
   notifyTransportSettled(): void {
     if (this._disposed) return;
     this.dispatch({ type: "transport_settled" });
+  }
+
+  /**
+   * System notification: the per-card binding for a resume-mode
+   * session has just been (re-)constructed and the wire is online.
+   * Called by `cardServicesStore._construct` once, immediately after
+   * the binding for `sessionMode === "resume"` lands. The reducer
+   * opens the cold-boot preflight beat — `replayPreflightActive`
+   * flips true and a 12s last-resort timer is scheduled. The
+   * preflight clears on the first of: `replay_started`,
+   * `replay_complete`, `transport_close`, or the 12s tick.
+   *
+   * Idempotent — re-calling while preflight is already active is a
+   * reducer no-op (no second timer is scheduled). A no-op when
+   * not in `idle` (e.g. mid-replay) since the live replay is what
+   * the banner would otherwise be reflecting anyway.
+   *
+   * Public rather than internal because the dispatch source lives
+   * outside this class — `cardServicesStore` is the single signal
+   * point for "resume binding landed". Routing through a named
+   * method here keeps `dispatch` private and the binding subscriber
+   * free of any knowledge of the reducer event vocabulary, mirroring
+   * the existing `notifyTransportSettled()` precedent.
+   */
+  notifyResumeBindingLanded(): void {
+    if (this._disposed) return;
+    this.dispatch({ type: "bind_resume_acknowledged" });
   }
 
   /**
@@ -367,6 +441,16 @@ export class CodeSessionStore {
     }
     this._lifecycleUnsubs = [];
     this.feedStore.dispose();
+    // Cancel every in-flight replay-clock timer. After dispose, even
+    // if a callback fires before the cancel takes effect (timer
+    // sources without instant cancellation guarantees), the
+    // `_disposed` guard inside the schedule_timer callback drops the
+    // dispatch — listeners are already cleared and the reducer
+    // wouldn't observe its tick anyway.
+    for (const handle of this._replayTimers.values()) {
+      this.timerSource.clearTimeout(handle);
+    }
+    this._replayTimers.clear();
     this._listeners = [];
     this.state.queuedSends = [];
     this.streamingDocument.set(
@@ -536,6 +620,31 @@ export class CodeSessionStore {
           // useSyncExternalStore consumers.
           this._transcript = [...this._transcript, effect.entry];
           break;
+        case "schedule_timer": {
+          // Re-entry on the same name cancels the prior timer first
+          // so neither callback can race with the new one.
+          const prior = this._replayTimers.get(effect.name);
+          if (prior !== undefined) {
+            this.timerSource.clearTimeout(prior);
+          }
+          const fire = effect.fire;
+          const name = effect.name;
+          const handle = this.timerSource.setTimeout(() => {
+            this._replayTimers.delete(name);
+            if (this._disposed) return;
+            this.dispatch(fire);
+          }, effect.ms);
+          this._replayTimers.set(effect.name, handle);
+          break;
+        }
+        case "cancel_timer": {
+          const handle = this._replayTimers.get(effect.name);
+          if (handle !== undefined) {
+            this.timerSource.clearTimeout(handle);
+            this._replayTimers.delete(effect.name);
+          }
+          break;
+        }
       }
     }
   }
