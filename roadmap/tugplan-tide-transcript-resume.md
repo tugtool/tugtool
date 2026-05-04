@@ -82,7 +82,7 @@ After the resume work, the `Roadmap: right away` list from the parent plan has e
 6. **Resume-spawn replay wire-up** in tugcode. On `--resume-session <id>`, tugcode emits replay events on its IPC stdout *before* it forwards live events from Claude's stdout for the same session. Live events from Claude during the replay window are buffered and flushed after `replay_complete`.
 7. **Tide card "Loading conversation…" UX** — the `TideRestoring` placeholder gains a count-aware variant for [D10]'s soft-budget state and a timeout-state variant for the hard-budget cutoff.
 7a. **Recovery: cold-boot diagnostic capture** ([Phase A-R0](#phase-a-r0)). Add `just tail-tugcast` + `just tail-replay` recipes; capture Smoke C telemetry; root-cause Candidate 3 (path encoding mismatch); land the realpath fix.
-7a'. **Recovery: replay-clock store + banner-style UX** ([Step R0c](#step-r0c)). Two faults, one fix-shape: (1) [Step 4](#step-4) shipped `useEffect` timers in `TideCardServicesGate` that violate the [L02] / [L24] zone boundary; (2) cold-boot Bug X — 5–10s blank-card window with no feedback. Both resolved by introducing a tuglaws-compliant `ReplayClockStore` (per-card sibling, `useSyncExternalStore` API), ripping the Step 4 timer pattern out, and surfacing replay status as a `TugPaneBanner` instead of the heavier `TideRestoring` backdrop.
+7a'. **Recovery: fold replay clock into `CodeSessionStore`; consolidate banner; preflight UX** ([Step R0c](#step-r0c)). Three faults, one fix-shape: (1) [Step 4](#step-4) shipped `useEffect` timers in `TideCardServicesGate` that violate the [L02] / [L24] zone boundary; (2) cold-boot Bug X — 5–10s blank-card window with no feedback; (3) `TideCardBody` already mounts two independent `<TugPaneBanner>` instances and adding a third would race on the portal slot. Resolved by folding the time-derived flags into `CodeSessionStore`'s reducer + effect-list (one `useSyncExternalStore` subscription, no `useEffect` timers anywhere), consolidating the three banners into one driven by a precedence chain (`error > transport > replay-timeout > replay-loading > none`), and surfacing replay status as a banner instead of the heavier `TideRestoring` backdrop.
 7a''. **Recovery: tugcode startup-order refactor** ([Step R0d](#step-r0d)). Address Bug Y — the 5–10s wait itself. Run `runReplay()` before spawning claude; spawn claude asynchronously in the background. Replay events flow within ~100ms; claude is ready by the time the user submits a new turn.
 7b. **Recovery: `request_replay` IPC verb** across tugcode / tugcast / tugdeck per [D12] ([Phase A-R1](#phase-a-r1)). Closes the Smoke A/B gap exposed by [Step 5](#step-5)'s manual smokes. Tugdeck dispatches on services construction for resume bindings; tugcast forwards via CONTROL action; tugcode handles inbound and re-runs `runReplay()` re-entrancy-safely.
 7c. **Recovery: smoke verification + telemetry capture** ([Phase A-R2](#phase-a-r2)). Manual run of Smokes A/B/C with the new verb in place; mark off the smoke checklist with telemetry quotes.
@@ -921,125 +921,214 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 
 ---
 
-#### Step R0c: Replay-clock store + banner-style UX (supersedes Step 4 timer pattern) {#step-r0c}
+#### Step R0c: Fold replay clock into `CodeSessionStore`; consolidate banner; preflight UX (supersedes Step 4 timer pattern) {#step-r0c}
 
-**Why this step.** Two faults must be corrected together:
+**Why this step.** Three faults must be corrected together:
 
-1. **Step 4 design mistake** ([Step 4](#step-4), commit `64d02cfe`). The shipped `TideCardServicesGate` carries two `useEffect` timers — `softBudget` (2s soft-budget elapsed) and `timeoutGrace` (1.5s post-replay-timeout dwell) — that drive local React state (`useState` booleans) from external state changes (`phase`, `lastReplayResult`). This violates [L02] in spirit and the L24 zone boundary in practice: the booleans are time-derived observations of structure-zone state, not local user-interaction data. They have no business living in component-local React state. **This step rips that pattern out.** No `useEffect`-driven booleans remain in `TideCardServicesGate`.
+1. **Step 4 design mistake** ([Step 4](#step-4), commit `64d02cfe`). The shipped `TideCardServicesGate` carries two `useEffect` timers — `softBudget` (2s soft-budget elapsed) and `timeoutGrace` (1.5s post-replay-timeout dwell) — that drive local React state (`useState` booleans) from external state changes (`phase`, `lastReplayResult`). This violates [L02] and the L24 zone boundary: the booleans are time-derived observations of structure-zone state, not local user-interaction data. They have no business living in component-local React state. **This step rips that pattern out.** No `useEffect`-driven booleans remain in `TideCardServicesGate`.
 
-2. **Bug X** ([Step R0b](#step-r0b)). With the realpath fix in tree, cold-boot Smoke C populates the transcript — but the user sees a fully blank card body for the 5–10s while tugcode boots claude and runs replay. The card has services (binding rehydrated, `transportState === "online"`, `phase === "idle"`), so the gate routes to `TideCardBody`, which renders an empty transcript pane and the prompt entry. Replay events haven't arrived yet. There is no signal between "binding rehydrated for a resume session" and "`replay_started` landed". **This step adds the missing signal as a banner** (less intrusive than a full backdrop; matches the existing transport-state status banner pattern).
+2. **Bug X** ([Step R0b](#step-r0b)). With the realpath fix in tree, cold-boot Smoke C populates the transcript — but the user sees a fully blank card body for the 5–10s while tugcode boots claude and runs replay. The card has services (binding rehydrated, `transportState === "online"`, `phase === "idle"`), and the gate routes to `TideCardBody`, which renders an empty transcript pane and the prompt entry. Replay events haven't arrived yet. There is no signal between "binding rehydrated for a resume session" and "`replay_started` landed". This step adds the missing signal.
 
-The fix-shape is one architectural move that does both. Introduce `ReplayClockStore` — a per-card sibling store that exposes time-derived flags (`softBudgetElapsed`, `timeoutDwellActive`, `preflightActive`) via `subscribe` / `getSnapshot`, owned and disposed by `cardServicesStore`. The store internally manages `setTimeout` and dispatches snapshot changes to its listeners; React subscribes via `useSyncExternalStore`. The component sees only snapshot reads — no `useEffect`, no `useState` for time-derived state.
+3. **Banner pile-up risk.** `TideCardBody` already mounts two independent `<TugPaneBanner>` instances (an `error` banner from `lastError`; a `status` banner for transport reconnecting). Adding a third, independently-`visible` instance for the replay window would make three flags racing on a single portal slot — undefined visual outcome on overlap. **This step consolidates** the three into one `<TugPaneBanner>` driven by a precedence chain.
 
-The banner UI piece is then a structural rendering decision: while `phase === "replaying"` OR `preflightActive`, mount a `TugPaneBanner` ("Loading conversation…", with optional turn count once `softBudgetElapsed`) inside the card body. The body itself stays mounted. The `replay-timeout` dwell continues to use the existing copy variant. The full-card `TideRestoring` backdrop remains for the **binding** variant only — that's a different beat (transport / restore-registry), not a replay beat.
+**The architecture (decided after [the R0c review](#step-r0c)):**
 
-**Commit:** This step lands as three commits to keep the diff readable and reverts surgical:
+- **Fold replay-clock state into `CodeSessionStore`**, not a sibling store. The flags are functionally derived from the same inputs `CodeSessionStore` already owns (`phase`, `lastReplayResult`, plus a single explicit "resume binding landed" notification). The reducer's existing [D11] effect-list pattern handles "schedule a timer" cleanly as one new effect kind; the dispatch loop manages a `Map<string, TimeoutHandle>` and dispatches `tick_*` actions back to the reducer when timers expire. The reducer itself stays pure. The gate then has **one** `useSyncExternalStore` subscription against `CodeSessionStore`'s snapshot, not two.
+- **Single `<TugPaneBanner>` in `TideCardBody`** driven by a `tideCardBannerSpec(snapshot, lastError)` derivation. Precedence chain: `error > transport-status > replay-status > none`. Each level renders only when higher levels aren't active; the visibility predicates are mutually exclusive by construction.
+- **Preflight clears on first-of:** `phase` becomes `"replaying"`, `lastReplayResult` lands (any kind), `transportState` changes (offline / restoring takes precedence), or `REPLAY_PREFLIGHT_TIMEOUT_MS` elapses. The 12s timer is the last-resort escape hatch, not the primary clear path.
 
-1. `tide(transcript): introduce ReplayClockStore for time-derived replay flags`
-2. `tide(transcript): rip useEffect timers from TideCardServicesGate; use ReplayClockStore`
-3. `tide(transcript): switch replay-loading from backdrop to TugPaneBanner; add preflight beat`
+**Commit sequence.** This step lands as four commits — small, reversible, each green at HEAD:
+
+1. `tide(transcript): fold replay clock into CodeSessionStore`
+2. `tide(transcript): rip useEffect timers from TideCardServicesGate`
+3. `tide(transcript): consolidate TideCardBody banners into one derived banner`
+4. `tide(transcript): switch replay-loading from backdrop to banner; add preflight beat`
 
 **Depends on:** [Step R0b](#step-r0b)
 
-**References:** [D11], [D12], [L02], [L22], [L24], [Step 4](#step-4) (cleanup target)
+**References:** [D04], [D10], [D11], [D12], [L02], [L10], [L22], [L24], [Step 4](#step-4) (cleanup target)
 
 **Artifacts:**
 
-- `tugdeck/src/lib/replay-clock-store.ts` (NEW). Per-card sibling store. Subscribes once at construction to `CodeSessionStore` (for `phase`, `lastReplayResult`) and `cardSessionBindingStore` (for binding presence and `sessionMode`); manages its own `setTimeout` table. Exposes `subscribe(listener)` + `getSnapshot()` returning:
+**1. `CodeSessionStore` extension** (`tugdeck/src/lib/code-session-store.ts`, `code-session-store/types.ts`, `code-session-store/reducer.ts`, `code-session-store/events.ts` — new fields, new internal events, new effect kind):
+
+- New snapshot fields (flat — match existing `lastReplayResult` naming convention):
   ```ts
-  interface ReplayClockSnapshot {
-    /** True after REPLAY_SOFT_BUDGET_MS has elapsed since `phase`
-     *  first became "replaying" without leaving. Reset when phase
-     *  leaves "replaying". Drives the count-aware banner copy
-     *  per [D10]. */
-    softBudgetElapsed: boolean;
-    /** True for REPLAY_TIMEOUT_DWELL_MS after `phase` transitions
-     *  out of "replaying" while `lastReplayResult.kind ===
-     *  "replay_timeout"`. Drives the timeout-state banner copy. */
-    timeoutDwellActive: boolean;
-    /** True from the moment a fresh resume binding lands until
-     *  either `phase` becomes "replaying" OR
-     *  REPLAY_PREFLIGHT_TIMEOUT_MS elapses OR `lastReplayResult`
-     *  transitions to non-null. Drives the preflight banner copy
-     *  during the cold-boot wait window. */
-    preflightActive: boolean;
+  /** True after REPLAY_SOFT_BUDGET_MS in `phase === "replaying"` without
+   *  leaving. Reset when phase leaves replaying. Drives count-aware
+   *  banner copy per [D10]. */
+  replaySoftBudgetElapsed: boolean;
+  /** True for REPLAY_TIMEOUT_DWELL_MS after phase transitions out of
+   *  "replaying" while `lastReplayResult.kind === "replay_timeout"`.
+   *  Drives the timeout-state banner copy. */
+  replayTimeoutDwellActive: boolean;
+  /** True from the moment a resume binding is acknowledged via
+   *  `notifyResumeBindingLanded()` until the *first of*: phase becomes
+   *  "replaying", `lastReplayResult` lands, transportState changes
+   *  away from "online", or REPLAY_PREFLIGHT_TIMEOUT_MS elapses. */
+  replayPreflightActive: boolean;
+  ```
+- New public method on `CodeSessionStore`:
+  ```ts
+  /** Called by cardServicesStore at construction time when the
+   *  binding's sessionMode === "resume". Dispatches a
+   *  `bind_resume_acknowledged` action; the reducer flips
+   *  replayPreflightActive=true and emits a `schedule_timer` effect
+   *  for REPLAY_PREFLIGHT_TIMEOUT_MS. Idempotent — re-calling is a
+   *  reducer no-op once preflight has cleared. */
+  notifyResumeBindingLanded(): void;
+  ```
+- New reducer-internal events (events.ts):
+  - `bind_resume_acknowledged` — entry point for preflight.
+  - `tick_soft_budget` — fires at REPLAY_SOFT_BUDGET_MS after `replay_started`.
+  - `tick_timeout_dwell_done` — fires at REPLAY_TIMEOUT_DWELL_MS after dwell start.
+  - `tick_preflight_done` — fires at REPLAY_PREFLIGHT_TIMEOUT_MS after preflight start.
+- New effect kind in the dispatch loop:
+  - `schedule_timer { name: string; ms: number; dispatch: TimerDispatch }` — calls `setTimeout`, stores the handle in a `Map<string, TimeoutHandle>` keyed by `name`. On expiry, dispatches the named action; on a second `schedule_timer` with the same `name`, the prior is `clearTimeout`'d first.
+  - `cancel_timer { name }` — clears a scheduled timer.
+- Reducer state transitions affecting the new fields (additive; existing transitions unchanged):
+  - On `bind_resume_acknowledged`: if `phase === "idle"` AND `replayPreflightActive === false` → set `replayPreflightActive=true`; emit `schedule_timer "preflight" REPLAY_PREFLIGHT_TIMEOUT_MS dispatch=tick_preflight_done`.
+  - On `replay_started`: clear `replayPreflightActive=false`, `replaySoftBudgetElapsed=false`; emit `cancel_timer "preflight"` and `schedule_timer "soft_budget" REPLAY_SOFT_BUDGET_MS dispatch=tick_soft_budget`.
+  - On `replay_complete` (any outcome): clear `replayPreflightActive=false`; emit `cancel_timer "preflight"` and `cancel_timer "soft_budget"`. If the result is `replay_timeout`, set `replayTimeoutDwellActive=true` and emit `schedule_timer "timeout_dwell" REPLAY_TIMEOUT_DWELL_MS dispatch=tick_timeout_dwell_done`.
+  - On `tick_soft_budget`: set `replaySoftBudgetElapsed=true`.
+  - On `tick_timeout_dwell_done`: set `replayTimeoutDwellActive=false`.
+  - On `tick_preflight_done`: set `replayPreflightActive=false`.
+  - On `transport_close`: clear `replayPreflightActive=false`; emit `cancel_timer "preflight"`. (Transport-state takes precedence over preflight.)
+  - On store dispose: emit `cancel_timer` for all three timer names.
+- Constants exported from `code-session-store.ts`:
+  ```ts
+  export const REPLAY_SOFT_BUDGET_MS = 2000;
+  export const REPLAY_TIMEOUT_DWELL_MS = 1500;
+  export const REPLAY_PREFLIGHT_TIMEOUT_MS = 12_000;
+  ```
+- Snapshot identity stays `Object.is`-stable across no-op dispatches (existing memoization contract is unchanged; new fields participate in the same equality check).
+
+**2. `cardServicesStore`** (`tugdeck/src/lib/card-services-store.ts`):
+
+- After `CodeSessionStore` construction in `_construct`, if `binding.sessionMode === "resume"`, call `codeSessionStore.notifyResumeBindingLanded()`. This is the single explicit signal — `CodeSessionStore` does not subscribe to `cardSessionBindingStore` itself.
+- No subscription teardown needed; the existing `_dispose` path handles `CodeSessionStore.dispose()` which cancels its timers.
+
+**3. `TideCardServicesGate`** (`tugdeck/src/components/tugways/cards/tide-card.tsx`):
+
+- **Delete** `useState` for `softBudget` / `timeoutGrace`, both `useEffect` blocks, and `prevPhaseRef`. The gate has no local timer state.
+- Existing `useSyncExternalStore` subscriptions for `phase` / `transportState` / `lastReplayResult` / `transcript.length` / `projectDir` stay. The new fields (`replayPreflightActive`, `replaySoftBudgetElapsed`, `replayTimeoutDwellActive`) ride the same snapshot.
+- Routing precedence (top to bottom):
+  1. `transportState === "restoring"` → `TideRestoring variant="binding"` (full-card backdrop, unchanged).
+  2. Otherwise, render `TideCardBody`. The body decides banner visibility from the same snapshot.
+
+**4. `TideCardBody` banner consolidation** (`tugdeck/src/components/tugways/cards/tide-card.tsx`):
+
+- Replace the three independent `<TugPaneBanner>` instances with **one** `<TugPaneBanner>` whose `(visible, variant, tone, label, message, ...)` are derived from the snapshot via a pure helper:
+  ```ts
+  type TideCardBannerSpec =
+    | { kind: "none" }
+    | { kind: "error"; cause: LastErrorCause; message: string; ... }
+    | { kind: "transport"; state: "offline" | "restoring"; ... }
+    | { kind: "replay-loading"; turnsCount: number | null }
+    | { kind: "replay-timeout" };
+
+  function deriveTideCardBannerSpec(snap: CodeSessionSnapshot): TideCardBannerSpec {
+    // Precedence chain, mutually exclusive by construction:
+    if (snap.lastError) return { kind: "error", ... };
+    if (snap.transportState !== "online") return { kind: "transport", ... };
+    if (snap.replayTimeoutDwellActive) return { kind: "replay-timeout" };
+    if (snap.phase === "replaying") {
+      return {
+        kind: "replay-loading",
+        turnsCount: snap.replaySoftBudgetElapsed ? snap.transcript.length : null,
+      };
+    }
+    if (snap.replayPreflightActive) {
+      return { kind: "replay-loading", turnsCount: null };
+    }
+    return { kind: "none" };
   }
   ```
-  Snapshot identity is `Object.is`-stable across no-op store dispatches (matches the contract `useSyncExternalStore` requires).
-  Constants `REPLAY_SOFT_BUDGET_MS = 2000`, `REPLAY_TIMEOUT_DWELL_MS = 1500`, `REPLAY_PREFLIGHT_TIMEOUT_MS = 12000` exported alongside.
-  `dispose()` clears all timers and unsubscribes; called by `cardServicesStore._dispose`.
-- `tugdeck/src/lib/card-services-store.ts` — gain a `replayClockStore: ReplayClockStore` slot in the services bag. Construct alongside `CodeSessionStore` in `_construct`; dispose in `_dispose` symmetrically.
-- `tugdeck/src/components/tugways/cards/tide-card.tsx` — `TideCardServicesGate` rewrites:
-  - Read `replayClockStore` snapshot via `useSyncExternalStore`. The shape is exactly the three booleans above.
-  - **Remove** the `softBudget` / `timeoutGrace` `useState` + `useEffect` blocks and `prevPhaseRef`. They are gone; nothing in this component manages timers.
-  - Routing precedence (top to bottom):
-    1. `transportState === "restoring"` → `TideRestoring variant="binding"` (full-card backdrop). Unchanged.
-    2. Otherwise, render `TideCardBody`. The body itself decides whether to surface the replay banner (next bullet).
-  - **The banner now lives inside `TideCardBody`**, not via routing. `TideCardBody` reads `phase`, `replayClockStore.preflightActive`, `replayClockStore.softBudgetElapsed`, `replayClockStore.timeoutDwellActive`, `lastReplayResult`, and `transcript.length`, and conditionally mounts a `<TugPaneBanner variant="status">` at the top of the card body when any of `phase === "replaying"`, `preflightActive`, or `timeoutDwellActive` is true. Banner copy:
-    - `preflightActive && phase === "idle"` → "Loading conversation…"
-    - `phase === "replaying" && !softBudgetElapsed` → "Loading conversation…"
-    - `phase === "replaying" && softBudgetElapsed` → `Loading conversation… (${transcript.length} ${transcript.length === 1 ? "turn" : "turns"})`
-    - `timeoutDwellActive` → "Conversation history unavailable; resuming with empty transcript"
-  - The banner is `data-visible="true"` while any of the above are true; the existing `TugPaneBanner` slot/animation handles enter/exit.
-- `tugdeck/src/components/tugways/cards/tide-card.tsx` — **remove** the `replay-loading` and `replay-timeout` variants from `TideRestoring`'s discriminated union. Only `binding` remains (it's the transport / restore-registry placeholder). The full-card backdrop is no longer used for the replay window — banner replaces it.
-- Header docstring in `tide-card.tsx` updated to spell out the routing precedence and the banner ownership boundary.
+- The single `<TugPaneBanner>` reads the spec and maps to props. Existing error-banner UI (footer with Reset button, detail panel with `children`) stays — error spec carries those fields. Transport status renders strip-only. Replay variants render strip-only with the documented copy.
+- Replay banner copy (banner is `variant="status"`, `tone="default"` for replay-loading, `tone="caution"` for replay-timeout):
+  - `replay-loading` with `turnsCount === null` → "Loading conversation…"
+  - `replay-loading` with `turnsCount > 0` → `Loading conversation… (${turnsCount} ${turnsCount === 1 ? "turn" : "turns"})`
+  - `replay-timeout` → "Conversation history unavailable; resuming with empty transcript"
+
+**5. `TideRestoring`** (`tugdeck/src/components/tugways/cards/tide-card.tsx`):
+
+- Remove the `replay-loading` and `replay-timeout` variants from the discriminated union. Only `binding` remains — a full-card backdrop for the transport-restore beat (the user can Cancel and drop to the picker). The replay window no longer uses `TideRestoring` at all.
+
+**Notes on previously-noted holes** (audit findings carried through):
+
+- *Hole #1 — `TugPaneBanner` portals.* The single banner in `TideCardBody` is rendered as a child of the body subtree; `TugPaneBanner` internally `createPortal`s into the pane chrome's banner slot. The body decides visibility; the banner appears under the title bar. This is the existing pattern for the error and transport banners — not a new mechanic.
+- *Hole #3 — `inert` semantics during banner display.* `TugPaneBanner` applies `inert` to `.tug-pane-body` while visible; user can see the banner and the populating transcript but cannot type into the prompt entry. Acceptable for replay (canSubmit is `false` during replaying anyway). For the preflight beat, the body is also inert — the user cannot pre-stage a message during the wait. Documented limitation; not load-bearing.
+- *Hole #4 — preflight is signaled, not observed.* `CodeSessionStore` does not subscribe to `cardSessionBindingStore`. Instead, `cardServicesStore` is the single point that knows "this binding is resume-mode, just constructed" and explicitly calls `notifyResumeBindingLanded()`. Avoids dual-subscriber coordination bugs.
+- *Hole #7 — three-commit ordering.* The four-commit sequence above resolves the awkward intermediate state of the prior plan: commits 1 and 2 preserve user-visible behavior (variants still rendered as backdrops); commit 3 consolidates banner architecture without functional change; commit 4 swaps backdrops for banner + adds preflight. Each commit is independently green; revert is surgical.
+- *Hole #8 — `TideRestoring(binding)` stays a backdrop.* Deliberate. Binding-restore is a hard-stop beat (the wire is being re-asserted; user can Cancel and drop to picker). Replay is informational (transcript fills behind the banner). Two operations, two visual weights — justified by the different stakes, not by accident.
 
 **Tasks:**
 
-- [ ] **Commit 1** — `ReplayClockStore` introduction:
-  - [ ] Author `tugdeck/src/lib/replay-clock-store.ts` per the snapshot shape above. Internal `Map<string, ReturnType<typeof setTimeout>>` for timer ownership; clean clear/restart on phase transitions.
-  - [ ] Wire into `cardServicesStore._construct` / `_dispose` symmetrically.
-  - [ ] Export the three constants (`REPLAY_SOFT_BUDGET_MS`, `REPLAY_TIMEOUT_DWELL_MS`, `REPLAY_PREFLIGHT_TIMEOUT_MS`).
-  - [ ] Unit tests in `tugdeck/src/lib/__tests__/replay-clock-store.test.ts`: drive a fake CodeSessionStore through phase transitions; assert each flag fires and clears at the right boundary, snapshot identity is stable across no-op dispatches, dispose clears timers.
-- [ ] **Commit 2** — `TideCardServicesGate` rewrite:
-  - [ ] Subscribe to `services.replayClockStore` via `useSyncExternalStore`.
-  - [ ] Delete the `softBudget` / `timeoutGrace` `useState` + `useEffect` + `prevPhaseRef` machinery.
-  - [ ] Confirm the existing component tests in `tide-card-replay-placeholder.test.tsx` still pass (behavior preserved; only the implementation moves into the store).
-- [ ] **Commit 3** — banner UI + preflight beat:
-  - [ ] Move the replay-window placeholder rendering from `TideRestoring`-as-routing-target to a `TugPaneBanner` mounted inside `TideCardBody`.
-  - [ ] Remove the `replay-loading` and `replay-timeout` variants from `TideRestoring`'s discriminated union; collapse to `binding` only.
-  - [ ] Add the preflight beat — banner shows "Loading conversation…" when `replayClockStore.preflightActive` is true, even before `phase` flips to `"replaying"`.
-  - [ ] Update component tests to read the banner via the existing `data-slot="tug-pane-banner"` selector; confirm wording, dismissal, and continuity behaviors.
-  - [ ] Manual smoke confirms a smooth banner-driven UX through cold boot.
+- [ ] **Commit 1 — fold replay clock into `CodeSessionStore`:**
+  - [ ] Add the three new snapshot fields with default values (`false` each); thread through `getSnapshot` memoization.
+  - [ ] Add the three new internal events (`bind_resume_acknowledged`, `tick_soft_budget`, `tick_timeout_dwell_done`, `tick_preflight_done`) to the reducer's event union.
+  - [ ] Add the new effect kinds (`schedule_timer`, `cancel_timer`); extend the dispatch loop to manage the `Map<string, TimeoutHandle>`.
+  - [ ] Implement reducer transitions per the spec above (preflight, replay_started, replay_complete, ticks, transport_close, dispose).
+  - [ ] Add `notifyResumeBindingLanded()` public method.
+  - [ ] Update `cardServicesStore._construct` to call `notifyResumeBindingLanded()` for resume bindings.
+  - [ ] Tests in `tugdeck/src/lib/code-session-store/__tests__/code-session-store.replay-clock.test.ts` (NEW): each new field's lifecycle, snapshot identity stability, dispose cancels timers, transport_close clears preflight.
+  - [ ] All existing CodeSessionStore tests stay green (no new test breaks; the new fields are additive).
+- [ ] **Commit 2 — gate uses store fields:**
+  - [ ] Delete `useState` (`softBudget`, `timeoutGrace`), `useEffect` blocks, and `prevPhaseRef` from `TideCardServicesGate`.
+  - [ ] Read the three new fields off the existing snapshot via the existing `useSyncExternalStore` pattern.
+  - [ ] Existing tests in `tide-card-replay-placeholder.test.tsx` continue to pass — rendering behavior preserved (variants still rendered).
+  - [ ] Grep `tide-card.tsx` gate scope for `useEffect` / `useState`: zero hits attributable to Step 4.
+- [ ] **Commit 3 — consolidate banners in `TideCardBody`:**
+  - [ ] Author `deriveTideCardBannerSpec(snap)` as a pure helper alongside `TideCardBody`.
+  - [ ] Replace the two existing `<TugPaneBanner>` instances with one driven by the spec; ensure the precedence chain `error > transport > replay-timeout > replay-loading > none` produces the same UI for currently-exercised cases.
+  - [ ] Existing tests for the error banner and the transport-state banner (`tide-card-transport-state.test.tsx`, `tide-card-last-error.test.tsx`) pass with no behavioral change.
+  - [ ] Add unit tests for `deriveTideCardBannerSpec` covering each precedence-chain branch.
+- [ ] **Commit 4 — banner replaces backdrop for replay; add preflight beat:**
+  - [ ] Add `replay-loading` and `replay-timeout` cases to `deriveTideCardBannerSpec`.
+  - [ ] Remove the `replay-loading` and `replay-timeout` variants from `TideRestoring`'s discriminated union.
+  - [ ] Update the gate so the only remaining `TideRestoring` consumer is the `transportState === "restoring"` branch (binding variant).
+  - [ ] Update `tide-card-replay-placeholder.test.tsx` to read the banner via `data-slot="tug-pane-banner"`. The four scenarios from Step 4 (preflight render, count after soft-budget, success dismissal, replay_timeout dwell) all migrate to banner selectors. Add a fifth scenario: preflight clears on `transportState` flip away from "online".
+  - [ ] Manual cold-boot smoke confirms the full beat: card mounts → banner shows preflight copy → replay events flow → banner copy transitions through soft-budget if applicable → banner dismisses on `replay_complete` → transcript fully visible.
 
 **Tests:**
 
-- [ ] `replay-clock-store.test.ts` — pure store tests:
-  - [ ] `softBudgetElapsed` fires after 2s in `replaying`; clears on leave.
-  - [ ] `timeoutDwellActive` fires for 1.5s after `replaying → idle` with `replay_timeout`; never fires for other transitions.
-  - [ ] `preflightActive` fires when a fresh resume binding lands; clears on `replay_started` and on the 12s safety-net timeout.
-  - [ ] Snapshot identity stable across no-op dispatches (Object.is).
-  - [ ] `dispose()` clears all in-flight timers; subsequent listener notifications never fire.
-- [ ] `tide-card-replay-placeholder.test.tsx` (existing file, updated):
-  - [ ] All six existing scenarios still pass with the new banner rendering instead of the backdrop. Selectors update to `data-slot="tug-pane-banner"` / banner text inspection.
-  - [ ] `singular '(1 turn)'` rule still holds.
-  - [ ] Existing `transport-state` test asserts that the `binding` variant of `TideRestoring` is unaffected (still a full backdrop).
-- [ ] New: render a Tide card with a fresh `sessionMode: "resume"` binding; assert the banner mounts with the preflight copy immediately, before any replay event flows.
-- [ ] New: `replayClockStore.preflightActive` clears on `replay_started`; banner copy transitions from preflight → active-replaying without unmount.
-- [ ] New: preflight safety net — `phase === "idle"` for `REPLAY_PREFLIGHT_TIMEOUT_MS + buffer` with no replay event; banner dismisses; body remains interactive.
-- [ ] New: a `sessionMode: "new"` binding does NOT preflight — banner never mounts on fresh-spawn.
+- [ ] `code-session-store.replay-clock.test.ts` (NEW):
+  - [ ] `replaySoftBudgetElapsed` flips true 2s after `replay_started`; clears on next `replay_started` or on `replay_complete`.
+  - [ ] `replayTimeoutDwellActive` flips true on `replay_complete{replay_timeout}`; clears 1.5s later via tick.
+  - [ ] `replayTimeoutDwellActive` does NOT fire for non-timeout replay errors.
+  - [ ] `replayPreflightActive` flips true on `notifyResumeBindingLanded()` from idle; clears on `replay_started`, on `replay_complete`, on `transport_close`, and on the 12s tick — whichever fires first.
+  - [ ] Calling `notifyResumeBindingLanded()` while preflight is already active is a reducer no-op (no second timer scheduled).
+  - [ ] Calling `notifyResumeBindingLanded()` while not idle (e.g. mid-replay) is a no-op.
+  - [ ] Snapshot identity is `Object.is`-stable when no replay-clock field changes.
+  - [ ] Store `dispose()` cancels all in-flight timers; subsequent listener notifications never fire.
+- [ ] `deriveTideCardBannerSpec.test.ts` (NEW): one test per precedence-chain branch + the no-banner case.
+- [ ] `tide-card-replay-placeholder.test.tsx` (existing, updated): five scenarios, all reading the banner via `data-slot="tug-pane-banner"` selectors.
+- [ ] `tide-card-transport-state.test.tsx` (existing): unchanged behavior — confirms the transport status banner still works after consolidation.
+- [ ] `tide-card-last-error.test.tsx` (existing): unchanged behavior — confirms the error banner still works after consolidation.
 
 **Tuglaws cross-check:**
 
-- **L01** — One `root.render()`. No new mount points; only the gate's render output changes. ✓
-- **L02** — *External state enters React through `useSyncExternalStore` only. No `useState` + manual sync. No `useEffect` copying external values into React state.* This step **deletes** the prior `useEffect`-driven timer booleans (`softBudget`, `timeoutGrace`) — they were observations of external phase + time, exactly the pattern L02 forbids. The new `ReplayClockStore` is the only owner of that derivation; React reads its snapshot via `useSyncExternalStore`. No `useEffect` or `useState` in `TideCardServicesGate` after this step. ✓
-- **L03** — `useLayoutEffect` for registrations events depend on. No event handlers added; no registrations. ✓
-- **L06** — Appearance via CSS / DOM. The banner's enter/exit and visual state are driven by `data-visible` and `data-state` on `TugPaneBanner`'s existing slot (CSS-only animation). Banner copy is structural data (it is the *content* of an element), not appearance — flows through React render normally. ✓
-- **L09** — Card content owns identity, not chrome. The banner is content owned by the Tide card body; the pane chrome is unchanged. ✓
-- **L10** — One responsibility per layer. `ReplayClockStore` owns time-derivation; `TideCardServicesGate` owns routing; `TideCardBody` owns content composition. No reach-across. ✓
-- **L19** — Component authoring guide. The new store gets a module docstring + props/snapshot interface block; the gate's docstring is updated. ✓
-- **L20** — Token sovereignty. `TugPaneBanner`'s tokens are unaffected; the banner is composed unmodified. ✓
-- **L22** — *When external state drives DOM updates, observe the store directly.* This is the core architectural law this step satisfies. `ReplayClockStore` is exactly that observer pattern: an external store whose snapshot React reads. The previous `useEffect`-driven booleans were the L22 anti-pattern. ✓
-- **L23** — User-visible state preserved. Transcript, focus, scroll, prompt-entry draft are all owned by deeper components and untouched by the routing change. The banner mounts above the body without disturbing it. ✓
-- **L24** — State zones. `ReplayClockStore`'s snapshot is structure-zone state (subscribed via `useSyncExternalStore`, drives mount/unmount of the banner). Banner copy is appearance-zone (CSS / DOM). No local-data-zone leakage of external state. ✓
+- **L01** — One `root.render()`. Render output of `TideCardBody` changes (one banner instead of two, plus replay cases) but no new mount points. ✓
+- **L02** — *External state enters React through `useSyncExternalStore` only. No `useEffect` copying external values into React state.* This step is the corrective for the Step 4 violation: zero `useEffect`-driven booleans remain in `TideCardServicesGate`. The replay-clock state lives entirely inside `CodeSessionStore` and reaches React through the existing snapshot-subscribe path. ✓
+- **L03** — `useLayoutEffect` for event-dependent registrations. N/A — no event handlers added. ✓
+- **L06** — Appearance via CSS / DOM. Banner enter/exit is owned by `TugPaneBanner` (TugAnimator + CSS keyframes per its existing implementation, [L13–L14]-compliant). Banner copy is structural data — flows through render normally per L06's data-vs-appearance test. ✓
+- **L09** — Pane composes chrome; cards supply content. `TugPaneBanner` is content-side composition that portals into pane chrome's banner slot — the existing pattern. ✓
+- **L10** — One responsibility per layer. **`CodeSessionStore` already owns the inputs (`phase`, `lastReplayResult`); folding the time-derived flags into the same store keeps the responsibility cohesive.** Choosing this over a sibling store was a deliberate architectural decision (see "the architecture" above) — sibling-store would have split the responsibility unnecessarily. ✓
+- **L11** — Controls emit, responders own state. `notifyResumeBindingLanded()` is a public method, not a React-level action — `cardServicesStore` calls it directly outside React's render cycle. No new actions; no new responders. ✓
+- **L13–L14** — TugAnimator + CSS keyframes. `TugPaneBanner` is unchanged; the banner consolidation reuses its existing motion contract. ✓
+- **L19** — Component authoring guide. New tests, new helper, new docstrings; existing component contracts untouched. ✓
+- **L20** — Token sovereignty. `TugPaneBanner`'s tokens are unaffected. ✓
+- **L22** — *When external state drives DOM updates, observe the store directly.* Exactly the law this satisfies. The replay-clock derivations live in the store; React reads them via `useSyncExternalStore`. The Step 4 `useEffect` pattern was the L22 anti-pattern. ✓
+- **L23** — User-visible state preserved. Transcript, focus, scroll, prompt-entry draft, `lastError` banner content — all owned by deeper components / stores and untouched by this refactor. The gate-level routing decision still respects [L23] for transport-restoring (full backdrop with Cancel) and idle-with-replay-pending (banner above interactive body). ✓
+- **L24** — State zones. Replay-clock fields are structure-zone state (subscribed via `useSyncExternalStore`). Banner copy is appearance-zone consequence (CSS / DOM). No local-data-zone leakage. The corrective named in this step (folding the timers into the store, deleting the gate's `useState`) is exactly an L24 cleanup. ✓
 
 **Checkpoint:**
 
-- [ ] `bun x tsc --noEmit` exit 0 after each of the three commits.
-- [ ] `bun test` (tugdeck) green after each commit (including the existing `tide-card-replay-placeholder.test.tsx` and `tide-card-transport-state.test.tsx` suites).
+- [ ] `bun x tsc --noEmit` exit 0 after each of the four commits.
+- [ ] `bun test` (tugdeck) green after each commit (including `code-session-store.replay-clock.test.ts`, `deriveTideCardBannerSpec.test.ts`, `tide-card-replay-placeholder.test.tsx`, `tide-card-transport-state.test.tsx`, `tide-card-last-error.test.tsx`).
 - [ ] `bun run audit:tokens lint` zero violations.
 - [ ] Manual cold-boot smoke shows the banner during the wait, transitions through soft-budget count when applicable, and dismisses cleanly to the populated transcript.
-- [ ] Grep `tide-card.tsx` for `useEffect` and `useState` in the gate scope: zero hits introduced by Step 4's pattern. (Other gate `useEffect` calls — if any — are pre-Step-4 baseline, not part of this fix.)
+- [ ] Grep `tide-card.tsx` for `useEffect` / `useState` introduced by [Step 4](#step-4): zero hits.
 
 ---
 
