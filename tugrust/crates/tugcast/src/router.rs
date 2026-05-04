@@ -34,7 +34,7 @@ use tugcast_core::{
 };
 
 use crate::auth::{self, SharedAuthState};
-use crate::feeds::agent_supervisor::{AgentSupervisor, ControlError};
+use crate::feeds::agent_supervisor::{AgentSupervisor, ControlError, ControlOutcome};
 use crate::feeds::code::parse_tug_session_id;
 use crate::feeds::terminal;
 
@@ -490,60 +490,48 @@ enum ControlIntercept {
     PassThrough,
 }
 
-/// Session-lifecycle action names intercepted by the supervisor ([D09]).
-/// Non-session actions (`relaunch`, `eval-response`, etc.) fall through
-/// to [`crate::actions::dispatch_action`].
-///
-/// Includes the session-ledger CONTROL ops added in step 3 of
-/// `tugplan-tide-session-ledger.md`: the picker queries the ledger via
-/// `list_sessions`, per-row Forget goes through `forget_session`, and
-/// the recents-eviction → ledger-eviction coupling uses
-/// `forget_project_dir_sessions`. The supervisor handles all of them so
-/// the ledger remains the single source of truth.
-const SUPERVISOR_SESSION_ACTIONS: &[&str] = &[
-    "spawn_session",
-    "close_session",
-    "reset_session",
-    "list_sessions",
-    "forget_session",
-    "forget_project_dir_sessions",
-];
-
 /// Intercept session-lifecycle CONTROL actions and route them to the
-/// supervisor. Non-session actions return `PassThrough` so the caller
-/// can fall through to the legacy dispatcher. When the supervisor is not
-/// wired (Step 8 interim during router-unit tests), all actions
-/// `PassThrough`.
+/// supervisor ([D09]). Non-session actions return `PassThrough` so the
+/// caller can fall through to the legacy `dispatch_action` (relaunch,
+/// dev-mode toggles, etc.). When the supervisor is not wired (interim
+/// during router-unit tests that omit it), all actions `PassThrough`.
+///
+/// **Single source of truth**: [`AgentSupervisor::handle_control`]'s
+/// match arms decide which actions the supervisor owns. This function
+/// just translates [`ControlOutcome`] into the wire-side
+/// [`ControlIntercept`] shape. Adding a new action to the supervisor
+/// is a one-place change — there is no separate router-side allowlist
+/// that has to be kept in sync.
 async fn intercept_session_control(
     supervisor: Option<&Arc<AgentSupervisor>>,
     action: &str,
     payload: &[u8],
     client_id: u64,
 ) -> ControlIntercept {
-    if !SUPERVISOR_SESSION_ACTIONS.contains(&action) {
-        return ControlIntercept::PassThrough;
-    }
     let Some(sup) = supervisor else {
         return ControlIntercept::PassThrough;
     };
     match sup.handle_control(action, payload, client_id).await {
-        Ok(()) => ControlIntercept::Handled,
-        Err(ControlError::MissingCardId) => ControlIntercept::HandledError {
+        ControlOutcome::Handled => ControlIntercept::Handled,
+        ControlOutcome::PassThrough => ControlIntercept::PassThrough,
+        ControlOutcome::Error(ControlError::MissingCardId) => ControlIntercept::HandledError {
             detail: "missing_card_id",
         },
-        Err(ControlError::MissingSessionId) => ControlIntercept::HandledError {
+        ControlOutcome::Error(ControlError::MissingSessionId) => ControlIntercept::HandledError {
             detail: "missing_tug_session_id",
         },
-        Err(ControlError::Malformed) => ControlIntercept::HandledError {
+        ControlOutcome::Error(ControlError::Malformed) => ControlIntercept::HandledError {
             detail: "malformed_payload",
         },
-        Err(ControlError::PersistenceFailure(_)) => ControlIntercept::HandledError {
-            detail: "persistence_failure",
-        },
-        Err(ControlError::InvalidProjectDir { reason }) => {
+        ControlOutcome::Error(ControlError::PersistenceFailure(_)) => {
+            ControlIntercept::HandledError {
+                detail: "persistence_failure",
+            }
+        }
+        ControlOutcome::Error(ControlError::InvalidProjectDir { reason }) => {
             ControlIntercept::HandledError { detail: reason }
         }
-        Err(ControlError::CapExceeded { reason }) => {
+        ControlOutcome::Error(ControlError::CapExceeded { reason }) => {
             ControlIntercept::HandledError { detail: reason }
         }
     }
@@ -1240,8 +1228,10 @@ mod tests {
 
     // ---- Step 8: CONTROL interception + disconnect hook + metadata broadcast ----
 
-    use crate::feeds::agent_supervisor::test_minimal_supervisor;
+    use crate::feeds::agent_supervisor::{install_live_session_for_tests, test_minimal_supervisor};
     use crate::feeds::session_metadata::is_system_metadata;
+    use crate::feeds::workspace_registry::WorkspaceKey;
+    use std::path::PathBuf;
     use tokio_util::sync::CancellationToken;
     use tugcast_core::TugSessionId;
 
@@ -1284,6 +1274,72 @@ mod tests {
         // `relaunch` is `dispatch_action`'s business.
         let other = intercept_session_control(Some(&sup), "relaunch", b"{}", client_id).await;
         assert!(matches!(other, ControlIntercept::PassThrough));
+    }
+
+    /// Phase A-R1 / Step R1b regression: the `request_replay` verb must
+    /// reach the supervisor through the same wire ingress production
+    /// uses (websocket → router → `intercept_session_control` →
+    /// `handle_control`). The original R1b implementation only tested
+    /// `handle_control` directly; the router maintained a separate
+    /// allowlist that did NOT include `request_replay`, so production
+    /// wire frames fell through to `dispatch_action`'s catch-all and
+    /// the supervisor never saw them. Smoke A/B failed: tugdeck waited
+    /// 12s for replay events that never arrived.
+    ///
+    /// This test rides the wire path: build a Live ledger entry with a
+    /// captured `input_tx`, push a CONTROL `request_replay` payload
+    /// through `intercept_session_control`, and assert both that the
+    /// outcome is `Handled` (the router actually routed it) and that
+    /// the supervisor forwarded `{"type":"request_replay"}` to the
+    /// captured channel (the supervisor actually executed it).
+    ///
+    /// What this test does NOT cover (and cannot, at a unit-level): the
+    /// subprocess pipeline — agent_bridge writing the forwarded frame
+    /// to tugcode's stdin, tugcode's IPC loop dispatching to
+    /// `runReplay`, replay events flowing back through CODE_OUTPUT to
+    /// tugdeck's `CodeSessionStore`. That two-language, two-process
+    /// integration lives in the manual smoke beat (Phase A-R2 of
+    /// `tugplan-tide-transcript-resume.md`).
+    #[tokio::test]
+    async fn test_request_replay_reaches_supervisor_through_router() {
+        let (sup, mut register_rx) = test_minimal_supervisor();
+        tokio::spawn(async move { while register_rx.recv().await.is_some() {} });
+
+        let tug_id = TugSessionId::new("sess-r1b-router");
+        let workspace_key = WorkspaceKey::from_test_str(env!("CARGO_MANIFEST_DIR"));
+        let project_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let mut input_rx =
+            install_live_session_for_tests(&sup, &tug_id, workspace_key, project_dir).await;
+
+        // Build the wire-shape payload tugdeck's `encodeRequestReplay`
+        // emits: `{"action":"request_replay","tug_session_id":"<id>"}`.
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "request_replay",
+            "tug_session_id": "sess-r1b-router",
+        }))
+        .unwrap();
+
+        // The production ingress entry point. If
+        // `intercept_session_control` returns `PassThrough` here, the
+        // verb falls through to `dispatch_action` and the supervisor
+        // never runs — that's the bug Smoke A/B exposed.
+        let outcome = intercept_session_control(Some(&sup), "request_replay", &payload, 1).await;
+        assert!(
+            matches!(outcome, ControlIntercept::Handled),
+            "intercept_session_control must route request_replay to the supervisor, got {outcome:?}",
+        );
+
+        // Wire-side proof of correctness: the supervisor's
+        // `do_request_replay` forwarded a CODE_INPUT frame with the
+        // request_replay JSON payload to the per-session input_tx. That
+        // is the exact byte sequence agent_bridge will write to
+        // tugcode's stdin in production.
+        let frame = input_rx
+            .try_recv()
+            .expect("request_replay payload reached input_tx");
+        assert_eq!(frame.feed_id, FeedId::CODE_INPUT);
+        let body: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+        assert_eq!(body["type"], "request_replay");
     }
 
     #[tokio::test]

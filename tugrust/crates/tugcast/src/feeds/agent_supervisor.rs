@@ -824,6 +824,81 @@ pub fn default_spawner_factory(config: &AgentSupervisorConfig) -> SpawnerFactory
     Arc::new(move || Arc::new(TugcodeSpawner::new(tugcode_path.clone())) as Arc<dyn ChildSpawner>)
 }
 
+/// Result of dispatching a CONTROL frame's `action` to the supervisor.
+///
+/// A single value covers the three outcomes the router needs to
+/// distinguish:
+///
+/// * [`ControlOutcome::Handled`] — the action belongs to the supervisor
+///   and ran cleanly.
+/// * [`ControlOutcome::Error`] — the action belongs to the supervisor
+///   but the payload was malformed or rejected; the router maps the
+///   variant to a wire-side `detail` string and emits a CONTROL error
+///   frame on the in-scope socket.
+/// * [`ControlOutcome::PassThrough`] — the action does not belong to
+///   the supervisor; the router falls through to its legacy
+///   `dispatch_action` pipeline (relaunch, dev-mode toggles, etc.).
+///
+/// Returning the outcome from [`AgentSupervisor::handle_control`] makes
+/// the match arms inside `handle_control` the single source of truth
+/// for "which CONTROL actions the supervisor owns." The router does not
+/// keep a separate allowlist that has to be maintained alongside the
+/// dispatch table — drift between the two surfaces is impossible by
+/// construction. A new arm in `handle_control` is automatically
+/// reachable from the websocket; an action with no arm naturally falls
+/// to `PassThrough` via the catch-all.
+#[derive(Debug)]
+pub enum ControlOutcome {
+    /// Action handled successfully.
+    Handled,
+    /// Action belongs to the supervisor but failed validation or
+    /// payload parsing. The router emits a CONTROL error frame.
+    Error(ControlError),
+    /// Action does not belong to the supervisor. The router falls
+    /// through to `dispatch_action`.
+    PassThrough,
+}
+
+#[cfg(test)]
+impl ControlOutcome {
+    /// Test-only: panic unless the outcome is `Handled`. Mirrors the
+    /// `Result::unwrap` ergonomics tests had before `handle_control`'s
+    /// signature changed.
+    pub(crate) fn expect_handled(self) {
+        match self {
+            ControlOutcome::Handled => {}
+            other => panic!("expected ControlOutcome::Handled, got {other:?}"),
+        }
+    }
+
+    /// Test-only: panic with `msg` unless the outcome is `Handled`.
+    /// Mirrors `Result::expect`. Used where a test wants to attach
+    /// context to the failure ("first spawn admitted", etc.).
+    pub(crate) fn expect_handled_with(self, msg: &str) {
+        match self {
+            ControlOutcome::Handled => {}
+            other => panic!("{msg}: expected ControlOutcome::Handled, got {other:?}"),
+        }
+    }
+
+    /// Test-only: extract the `ControlError` from an `Error` outcome.
+    /// Panics on any other variant.
+    pub(crate) fn expect_error(self) -> ControlError {
+        match self {
+            ControlOutcome::Error(e) => e,
+            other => panic!("expected ControlOutcome::Error, got {other:?}"),
+        }
+    }
+
+    pub(crate) fn is_handled(&self) -> bool {
+        matches!(self, ControlOutcome::Handled)
+    }
+
+    pub(crate) fn is_pass_through(&self) -> bool {
+        matches!(self, ControlOutcome::PassThrough)
+    }
+}
+
 /// Errors returned from [`AgentSupervisor::handle_control`]. Consumed by
 /// `handle_client` (wired in Step 8) to emit a CONTROL error frame on the
 /// in-scope socket.
@@ -1216,22 +1291,39 @@ impl AgentSupervisor {
     ///   `{"type":"request_replay"}` to the live tugcode subprocess so
     ///   a freshly-mounted `CodeSessionStore` rehydrates from JSONL.
     ///   No-op if the entry is not Live. Payload: `{tug_session_id}`.
+    ///
+    /// Returns [`ControlOutcome::PassThrough`] for any action not
+    /// matched above so the router can fall through to its legacy
+    /// `dispatch_action` pipeline. The match arms here are the single
+    /// source of truth for "which CONTROL actions the supervisor owns";
+    /// the router does not maintain a separate allowlist.
     pub async fn handle_control(
         &self,
         action: &str,
         payload: &[u8],
         client_id: ClientId,
-    ) -> Result<(), ControlError> {
-        match action {
+    ) -> ControlOutcome {
+        // Inner closure-style block returns a `Result<(), ControlError>`
+        // for the supervisor-owned arms; the catch-all early-returns
+        // `PassThrough` so unknown actions don't pay the wrap cost. The
+        // outer match below maps Ok→Handled, Err→Error.
+        let result: Result<(), ControlError> = match action {
             "spawn_session" => {
-                let parsed = parse_control_payload_owned(payload).inspect_err(|e| {
-                    warn!(action, error = %e, "handle_control: rejected spawn_session");
-                })?;
+                let parsed = match parse_control_payload_owned(payload) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        warn!(action, error = %e, "handle_control: rejected spawn_session");
+                        return ControlOutcome::Error(e);
+                    }
+                };
                 // project_dir is required on spawn per.
                 let project_dir_str =
-                    parsed.project_dir.ok_or(ControlError::InvalidProjectDir {
+                    match parsed.project_dir.ok_or(ControlError::InvalidProjectDir {
                         reason: "missing_project_dir",
-                    })?;
+                    }) {
+                        Ok(s) => s,
+                        Err(e) => return ControlOutcome::Error(e),
+                    };
                 self.do_spawn_session(
                     &parsed.card_id,
                     parsed.tug_session_id,
@@ -1242,17 +1334,25 @@ impl AgentSupervisor {
                 .await
             }
             "close_session" => {
-                let parsed = parse_control_payload_owned(payload).inspect_err(|e| {
-                    warn!(action, error = %e, "handle_control: rejected close_session");
-                })?;
+                let parsed = match parse_control_payload_owned(payload) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        warn!(action, error = %e, "handle_control: rejected close_session");
+                        return ControlOutcome::Error(e);
+                    }
+                };
                 self.do_close_session(&parsed.card_id, &parsed.tug_session_id, client_id)
                     .await;
                 Ok(())
             }
             "reset_session" => {
-                let parsed = parse_control_payload_owned(payload).inspect_err(|e| {
-                    warn!(action, error = %e, "handle_control: rejected reset_session");
-                })?;
+                let parsed = match parse_control_payload_owned(payload) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        warn!(action, error = %e, "handle_control: rejected reset_session");
+                        return ControlOutcome::Error(e);
+                    }
+                };
                 // W2 [D11]: reset preserves the workspace binding. We do NOT
                 // close-then-spawn here because that would release the
                 // workspace and (potentially) tear down its feeds.
@@ -1260,32 +1360,46 @@ impl AgentSupervisor {
                     .await;
                 Ok(())
             }
-            "list_sessions" => {
-                let project_dir = parse_project_dir_payload(payload)?;
-                self.do_list_sessions(&project_dir).await;
-                Ok(())
-            }
-            "forget_session" => {
-                let session_id = parse_session_id_payload(payload)?;
-                self.do_forget_session(&session_id).await;
-                Ok(())
-            }
-            "forget_project_dir_sessions" => {
-                let project_dir = parse_project_dir_payload(payload)?;
-                self.do_forget_project_dir_sessions(&project_dir).await;
-                Ok(())
-            }
+            "list_sessions" => match parse_project_dir_payload(payload) {
+                Ok(project_dir) => {
+                    self.do_list_sessions(&project_dir).await;
+                    Ok(())
+                }
+                Err(e) => return ControlOutcome::Error(e),
+            },
+            "forget_session" => match parse_session_id_payload(payload) {
+                Ok(session_id) => {
+                    self.do_forget_session(&session_id).await;
+                    Ok(())
+                }
+                Err(e) => return ControlOutcome::Error(e),
+            },
+            "forget_project_dir_sessions" => match parse_project_dir_payload(payload) {
+                Ok(project_dir) => {
+                    self.do_forget_project_dir_sessions(&project_dir).await;
+                    Ok(())
+                }
+                Err(e) => return ControlOutcome::Error(e),
+            },
             "request_replay" => {
-                let tug_session_id = parse_tug_session_id_payload(payload).inspect_err(|e| {
-                    warn!(action, error = %e, "handle_control: rejected request_replay");
-                })?;
+                let tug_session_id = match parse_tug_session_id_payload(payload) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        warn!(action, error = %e, "handle_control: rejected request_replay");
+                        return ControlOutcome::Error(e);
+                    }
+                };
                 self.do_request_replay(&tug_session_id).await;
                 Ok(())
             }
-            other => {
-                warn!(action = other, "handle_control: unknown action, ignoring");
-                Ok(())
-            }
+            // Any action not above is not owned by the supervisor.
+            // Caller falls through to `dispatch_action`.
+            _ => return ControlOutcome::PassThrough,
+        };
+
+        match result {
+            Ok(()) => ControlOutcome::Handled,
+            Err(e) => ControlOutcome::Error(e),
         }
     }
 
@@ -2695,6 +2809,45 @@ pub(crate) fn test_minimal_supervisor() -> (Arc<AgentSupervisor>, mpsc::Receiver
     (Arc::new(sup), register_rx)
 }
 
+/// Test helper: install a Live ledger entry for `tug_session_id` with a
+/// freshly-allocated `input_tx`, and return the matching `input_rx` so
+/// the test can observe any frames the supervisor's CONTROL handlers
+/// forward to that session. Mirrors the Spawning→Live promote path the
+/// production bridge runs on `session_init`, minus the actual subprocess.
+///
+/// Used by router tests that need to exercise the full
+/// `intercept_session_control` → `handle_control` path against a live
+/// session — i.e., the ingress shape that production code actually rides.
+#[cfg(test)]
+pub(crate) async fn install_live_session_for_tests(
+    sup: &AgentSupervisor,
+    tug_session_id: &TugSessionId,
+    workspace_key: WorkspaceKey,
+    project_dir: std::path::PathBuf,
+) -> tokio::sync::mpsc::Receiver<Frame> {
+    let entry = Arc::new(Mutex::new(LedgerEntry::new(
+        tug_session_id.clone(),
+        workspace_key,
+        project_dir,
+        super::agent_bridge::SessionMode::New,
+        CrashBudget::new(3, Duration::from_secs(60)),
+    )));
+    let (input_tx, input_rx) = mpsc::channel::<Frame>(4);
+    {
+        let mut e = entry.lock().await;
+        e.spawn_state = SpawnState::Live;
+        e.input_tx = Some(input_tx.clone());
+    }
+    // Drop the test-side sender clone so the receiver only sees frames
+    // forwarded through the ledger's stored copy.
+    drop(input_tx);
+    sup.ledger
+        .lock()
+        .await
+        .insert(tug_session_id.clone(), entry);
+    input_rx
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -3098,7 +3251,7 @@ mod tests {
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
 
         let frame = state_rx.try_recv().unwrap();
         let (id, state) = session_state_of(&frame);
@@ -3113,7 +3266,7 @@ mod tests {
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
 
         let entries = store.entries_snapshot();
         let rec = entries.get("card-1").expect("card-1 persisted");
@@ -3132,7 +3285,7 @@ mod tests {
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
 
         let cs = sup.client_sessions.lock().await;
         let set = cs.get(&10).expect("client 10 has a session set");
@@ -3153,7 +3306,7 @@ mod tests {
         // assertion isolates the `errored` frame.
         sup.handle_control("spawn_session", &spawn_payload("card-A", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
         while state_rx.try_recv().is_ok() {}
 
         // Second spawn from card-B with mode=resume on the same session
@@ -3162,7 +3315,7 @@ mod tests {
         let err = sup
             .handle_control("spawn_session", &resume_payload("card-B", "sess-1"), 11)
             .await
-            .unwrap_err();
+            .expect_error();
         assert_eq!(
             err,
             ControlError::CapExceeded {
@@ -3186,7 +3339,7 @@ mod tests {
         // B's WS-drop-then-reconnect contract requires this.
         sup.handle_control("spawn_session", &resume_payload("card-A", "sess-1"), 10)
             .await
-            .expect("same-card reconnect must succeed");
+            .expect_handled_with("same-card reconnect must succeed");
     }
 
     #[tokio::test]
@@ -3203,7 +3356,7 @@ mod tests {
         let err = sup
             .handle_control("spawn_session", &payload, 10)
             .await
-            .unwrap_err();
+            .expect_error();
         assert_eq!(err, ControlError::MissingCardId);
 
         // No mutation: ledger, client_sessions, tugbank all untouched.
@@ -3222,7 +3375,7 @@ mod tests {
         let err = sup
             .handle_control("spawn_session", &spawn_payload("", "sess-1"), 10)
             .await
-            .unwrap_err();
+            .expect_error();
         assert_eq!(err, ControlError::MissingCardId);
         assert!(sup.ledger.lock().await.is_empty());
         assert_eq!(store.set_call_count(), 0);
@@ -3236,13 +3389,13 @@ mod tests {
         let tug_id = TugSessionId::new("sess-1");
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
         let entry_before = sup.ledger.lock().await.get(&tug_id).unwrap().clone();
 
         // Second spawn for the same id must preserve the existing entry.
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
         let entry_after = sup.ledger.lock().await.get(&tug_id).unwrap().clone();
 
         assert!(
@@ -3273,7 +3426,7 @@ mod tests {
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 99)
             .await
-            .unwrap();
+            .expect_handled();
 
         // The broadcast subscriber must receive exactly one metadata frame.
         let received = meta_rx.try_recv().expect("replay frame present");
@@ -3291,7 +3444,7 @@ mod tests {
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 7)
             .await
-            .unwrap();
+            .expect_handled();
 
         assert!(
             meta_rx.try_recv().is_err(),
@@ -3307,7 +3460,7 @@ mod tests {
         let err = sup
             .handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 42)
             .await
-            .unwrap_err();
+            .expect_error();
         match err {
             ControlError::PersistenceFailure(_) => {}
             other => panic!("expected PersistenceFailure, got {other:?}"),
@@ -3329,7 +3482,7 @@ mod tests {
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
         // Eager spawn publishes both `pending` and `spawning` before
         // close. Drain whatever the spawn produced so the close
         // assertion isolates the close-time `closed` frame.
@@ -3337,7 +3490,7 @@ mod tests {
 
         sup.handle_control("close_session", &close_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
 
         let (id, state) = session_state_of(&state_rx.try_recv().unwrap());
         assert_eq!(id, "sess-1");
@@ -3357,12 +3510,12 @@ mod tests {
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
         assert_eq!(store.entries_snapshot().len(), 1);
 
         sup.handle_control("close_session", &close_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
         // The record persists across close. delete_session_key must NOT
         // have been called — close is the "stop the subprocess but keep
         // the history pointer" operation; only `reset_session` deletes.
@@ -3383,10 +3536,10 @@ mod tests {
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
         sup.handle_control("close_session", &close_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
 
         let cs = sup.client_sessions.lock().await;
         let set = cs.get(&10).expect("client 10 still has a set");
@@ -3404,7 +3557,7 @@ mod tests {
             10,
         )
         .await
-        .unwrap();
+        .expect_handled();
 
         // No SESSION_STATE publish, no tugbank delete call.
         assert!(state_rx.try_recv().is_err());
@@ -3437,7 +3590,7 @@ mod tests {
         let result = sup
             .handle_control("close_session", &close_payload("card-1", "sess-1"), 10)
             .await;
-        assert!(result.is_ok());
+        assert!(result.is_handled());
 
         // In-memory cleanup proceeded.
         assert!(sup.ledger.lock().await.is_empty());
@@ -3457,14 +3610,14 @@ mod tests {
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
         // Drain everything the first spawn produced (eager spawn fires
         // both `pending` and `spawning`).
         while state_rx.try_recv().is_ok() {}
 
         sup.handle_control("reset_session", &reset_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
 
         // Reset publishes `closed` then re-spawns. The re-spawn fires
         // `pending` then (because eager spawn promotes Idle→Spawning)
@@ -3505,7 +3658,7 @@ mod tests {
 
         sup.handle_control("request_replay", &request_replay_payload("sess-live"), 10)
             .await
-            .unwrap();
+            .expect_handled();
 
         let frame = input_rx_for_assert
             .try_recv()
@@ -3530,7 +3683,7 @@ mod tests {
         let result = sup
             .handle_control("request_replay", &request_replay_payload("sess-idle"), 10)
             .await;
-        assert!(result.is_ok());
+        assert!(result.is_handled());
 
         // Sanity: state remains Idle, no input_tx installed.
         let entry_arc = {
@@ -3565,7 +3718,7 @@ mod tests {
 
         sup.handle_control("request_replay", &request_replay_payload("sess-closed"), 10)
             .await
-            .unwrap();
+            .expect_handled();
 
         // input_tx receives nothing — the no-op branch fired.
         assert!(
@@ -3589,7 +3742,7 @@ mod tests {
                 10,
             )
             .await;
-        assert!(result.is_ok());
+        assert!(result.is_handled());
     }
 
     /// Missing tug_session_id: parse_tug_session_id_payload returns
@@ -3605,7 +3758,7 @@ mod tests {
         }))
         .unwrap();
         let result = sup.handle_control("request_replay", &payload, 10).await;
-        assert_eq!(result.unwrap_err(), ControlError::MissingSessionId);
+        assert_eq!(result.expect_error(), ControlError::MissingSessionId);
     }
 
     /// Empty tug_session_id: same as missing (the parser filters empty
@@ -3621,7 +3774,7 @@ mod tests {
         }))
         .unwrap();
         let result = sup.handle_control("request_replay", &payload, 10).await;
-        assert_eq!(result.unwrap_err(), ControlError::MissingSessionId);
+        assert_eq!(result.expect_error(), ControlError::MissingSessionId);
     }
 
     /// Malformed JSON payload: parser returns `Malformed`.
@@ -3633,7 +3786,7 @@ mod tests {
         let result = sup
             .handle_control("request_replay", b"not-json-at-all", 10)
             .await;
-        assert_eq!(result.unwrap_err(), ControlError::Malformed);
+        assert_eq!(result.expect_error(), ControlError::Malformed);
     }
 
     // ---- P13: spawn budget (concurrent cap + rate limit) ----
@@ -3671,7 +3824,7 @@ mod tests {
         let err = sup
             .handle_control("spawn_session", &spawn_payload("card-3", "sess-c"), 10)
             .await
-            .unwrap_err();
+            .expect_error();
         assert_eq!(
             err,
             ControlError::CapExceeded {
@@ -3720,7 +3873,7 @@ mod tests {
         // (Spawning+Live) count is 0.
         sup.handle_control("spawn_session", &spawn_payload("card-new", "sess-new"), 10)
             .await
-            .expect("Idle+Errored do not consume cap slots");
+            .expect_handled_with("Idle+Errored do not consume cap slots");
     }
 
     #[tokio::test]
@@ -3743,13 +3896,13 @@ mod tests {
         // Reconnect: same tug_session_id as the preloaded entry.
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .expect("reconnect must bypass the concurrent cap");
+            .expect_handled_with("reconnect must bypass the concurrent cap");
 
         // A *fresh* spawn for a different tsid with cap=1 still trips.
         let err = sup
             .handle_control("spawn_session", &spawn_payload("card-2", "sess-2"), 10)
             .await
-            .unwrap_err();
+            .expect_error();
         assert_eq!(
             err,
             ControlError::CapExceeded {
@@ -3774,15 +3927,15 @@ mod tests {
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .expect("first spawn admitted");
+            .expect_handled_with("first spawn admitted");
         sup.handle_control("spawn_session", &spawn_payload("card-2", "sess-2"), 10)
             .await
-            .expect("second spawn admitted");
+            .expect_handled_with("second spawn admitted");
 
         let err = sup
             .handle_control("spawn_session", &spawn_payload("card-3", "sess-3"), 10)
             .await
-            .unwrap_err();
+            .expect_error();
         assert_eq!(
             err,
             ControlError::CapExceeded {
@@ -3838,10 +3991,10 @@ mod tests {
         // rate budget is effectively empty.
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .expect("first spawn admitted after trim");
+            .expect_handled_with("first spawn admitted after trim");
         sup.handle_control("spawn_session", &spawn_payload("card-2", "sess-2"), 10)
             .await
-            .expect("second spawn admitted after trim");
+            .expect_handled_with("second spawn admitted after trim");
 
         // After the two admits, the deque holds exactly two fresh
         // timestamps (the ancient ones were trimmed).
@@ -3869,7 +4022,7 @@ mod tests {
         // Reconnect — must NOT push a timestamp.
         sup.handle_control("spawn_session", &spawn_payload("card-pre", "sess-pre"), 10)
             .await
-            .expect("reconnect admitted");
+            .expect_handled_with("reconnect admitted");
         assert_eq!(
             sup.spawn_timestamps.lock().unwrap().len(),
             0,
@@ -3879,7 +4032,7 @@ mod tests {
         // Fresh spawn — consumes the one and only budget slot.
         sup.handle_control("spawn_session", &spawn_payload("card-new", "sess-new"), 10)
             .await
-            .expect("fresh spawn admitted (first of the window)");
+            .expect_handled_with("fresh spawn admitted (first of the window)");
         assert_eq!(
             sup.spawn_timestamps.lock().unwrap().len(),
             1,
@@ -3890,7 +4043,7 @@ mod tests {
         let err = sup
             .handle_control("spawn_session", &spawn_payload("card-3", "sess-3"), 10)
             .await
-            .unwrap_err();
+            .expect_error();
         assert_eq!(
             err,
             ControlError::CapExceeded {
@@ -3980,7 +4133,7 @@ mod tests {
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
         let (_, pending_state) = session_state_of(&state_rx.try_recv().unwrap());
         assert_eq!(pending_state, "pending");
 
@@ -4018,7 +4171,7 @@ mod tests {
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
         let _ = state_rx.try_recv().unwrap();
 
         sup.dispatch_one(code_input_frame("sess-1")).await;
@@ -4049,7 +4202,7 @@ mod tests {
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
         // Drain the `spawn_session_ok` ack before
         // asserting there are no backpressure frames on the control feed.
         let _ = control_rx.try_recv();
@@ -4118,7 +4271,7 @@ mod tests {
             // ledger entry; otherwise there's nothing for close to remove.
             sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
                 .await
-                .unwrap();
+                .expect_handled();
 
             let sup_close = sup.clone();
             let sup_spawn = sup.clone();
@@ -4135,8 +4288,14 @@ mod tests {
 
             let close_result = close_task.await.expect("close task panic");
             let spawn_result = spawn_task.await.expect("spawn task panic");
-            assert!(close_result.is_ok(), "close_task failed on iter {iter}");
-            assert!(spawn_result.is_ok(), "spawn_task failed on iter {iter}");
+            assert!(
+                close_result.is_handled(),
+                "close_task failed on iter {iter}"
+            );
+            assert!(
+                spawn_result.is_handled(),
+                "spawn_task failed on iter {iter}"
+            );
 
             // Final-state self-consistency: either the ledger has the entry
             // AND only the spawn client has affinity, OR the ledger has no
@@ -4365,7 +4524,7 @@ mod tests {
             42,
         )
         .await
-        .unwrap();
+        .expect_handled();
 
         // [Q01] resolution: ledger entry's mode now reflects the
         // request, so the bridge will spawn with `--session-mode resume
@@ -4461,7 +4620,7 @@ mod tests {
             10,
         )
         .await
-        .unwrap();
+        .expect_handled();
 
         let id = TugSessionId::new("sess-running");
         {
@@ -4487,7 +4646,7 @@ mod tests {
             11,
         )
         .await
-        .unwrap();
+        .expect_handled();
 
         let ledger = sup.ledger.lock().await;
         let entry = ledger.get(&id).unwrap().clone();
@@ -4510,7 +4669,7 @@ mod tests {
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
         assert!(sup.client_sessions.lock().await.contains_key(&10));
 
         sup.on_client_disconnect(10).await;
@@ -4851,7 +5010,7 @@ mod tests {
         // atomic-promote block has no card_id to key the write under.
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
         let initial = store
             .entries_snapshot()
             .get("card-1")
@@ -4999,7 +5158,7 @@ mod tests {
         // First spawn populates the record (claude id None initially).
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
 
         // Simulate the bridge having captured the claude_session_id at
         // session_init time by writing it directly into the in-memory
@@ -5016,7 +5175,7 @@ mod tests {
         // clobber the persisted claude_session_id back to None.
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
         let after = store
             .entries_snapshot()
             .get("card-1")
@@ -5043,7 +5202,7 @@ mod tests {
         // Spawn (mode=resume) so the entry's session_mode is `Resume`.
         sup.handle_control("spawn_session", &resume_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
         // Simulate session_init having captured a claude id.
         let tug_id = TugSessionId::new("sess-1");
         let entry_arc = sup.ledger.lock().await.get(&tug_id).unwrap().clone();
@@ -5073,7 +5232,7 @@ mod tests {
         // Reset must invalidate persistence and in-memory state.
         sup.handle_control("reset_session", &reset_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
 
         // On-disk record is gone.
         assert!(
@@ -5108,7 +5267,7 @@ mod tests {
             sup_a
                 .handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
                 .await
-                .unwrap();
+                .expect_handled();
             let entry_arc = sup_a
                 .ledger
                 .lock()
@@ -5131,7 +5290,7 @@ mod tests {
             sup_a
                 .handle_control("close_session", &close_payload("card-1", "sess-1"), 10)
                 .await
-                .unwrap();
+                .expect_handled();
             // Sanity: record still on disk.
             let in_memory_store = store
                 .as_ref()
@@ -5157,7 +5316,7 @@ mod tests {
         sup_b
             .handle_control("spawn_session", &resume_payload("card-1", "sess-1"), 11)
             .await
-            .unwrap();
+            .expect_handled();
         let entry_arc = sup_b
             .ledger
             .lock()
@@ -5505,7 +5664,7 @@ mod tests {
         let err = sup
             .handle_control("spawn_session", &payload, 10)
             .await
-            .unwrap_err();
+            .expect_error();
         assert_eq!(
             err,
             ControlError::InvalidProjectDir {
@@ -5529,7 +5688,7 @@ mod tests {
         let err = sup
             .handle_control("spawn_session", &payload, 10)
             .await
-            .unwrap_err();
+            .expect_error();
         assert_eq!(
             err,
             ControlError::InvalidProjectDir {
@@ -5553,7 +5712,7 @@ mod tests {
         let err = sup
             .handle_control("spawn_session", &payload, 10)
             .await
-            .unwrap_err();
+            .expect_error();
         assert_eq!(
             err,
             ControlError::InvalidProjectDir {
@@ -5571,7 +5730,7 @@ mod tests {
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
 
         // The first frame on the control feed should be the success ack
         // with an echoed `workspace_key`.
@@ -5605,7 +5764,7 @@ mod tests {
         let err = sup
             .handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap_err();
+            .expect_error();
         assert!(matches!(err, ControlError::PersistenceFailure(_)));
 
         // The workspace refcount bumped in Phase 0 must have been
@@ -5621,10 +5780,10 @@ mod tests {
 
         sup.handle_control("spawn_session", &spawn_payload("card-a", "sess-a"), 10)
             .await
-            .unwrap();
+            .expect_handled();
         sup.handle_control("spawn_session", &spawn_payload("card-b", "sess-b"), 20)
             .await
-            .unwrap();
+            .expect_handled();
         // Drain the two ack frames.
         let _ = control_rx.try_recv();
         let _ = control_rx.try_recv();
@@ -5651,13 +5810,13 @@ mod tests {
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
         let _ = control_rx.try_recv(); // drain ack
         assert_eq!(registry_map_len(&sup), 1);
 
         sup.handle_control("close_session", &close_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
 
         // Refcount should have hit zero; the workspace is removed.
         assert_eq!(registry_map_len(&sup), 0);
@@ -5672,7 +5831,7 @@ mod tests {
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
         let _ = control_rx.try_recv(); // drain ack
 
         // Capture the `Arc<WorkspaceEntry>` from the registry map BEFORE
@@ -5695,7 +5854,7 @@ mod tests {
 
         sup.handle_control("reset_session", &reset_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
 
         // [D11]: the workspace entry survives reset. Map still holds 1.
         assert_eq!(registry_map_len(&sup), 1);
@@ -5742,14 +5901,14 @@ mod tests {
             10,
         )
         .await
-        .unwrap();
+        .expect_handled();
         sup.handle_control(
             "spawn_session",
             &spawn_payload_in("card-b", "sess-b", tmp_b.path().to_str().unwrap()),
             20,
         )
         .await
-        .unwrap();
+        .expect_handled();
         let _ = control_rx.try_recv(); // drain both acks
         let _ = control_rx.try_recv();
 
@@ -5800,13 +5959,13 @@ mod tests {
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
         let _ = control_rx.try_recv(); // drain ack
 
         // Reconnect: same tug_session_id (and same project_dir), new card.
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 11)
             .await
-            .unwrap();
+            .expect_handled();
         let _ = control_rx.try_recv(); // drain second ack
 
         assert_eq!(registry_map_len(&sup), 1);
@@ -6058,7 +6217,7 @@ mod tests {
         // have done in production).
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
         // Pre-seed the ledger so `mark_closed` has a row to transition.
         ledger
             .record_spawn(
@@ -6082,7 +6241,7 @@ mod tests {
 
         sup.handle_control("close_session", &close_payload("card-1", "sess-1"), 10)
             .await
-            .unwrap();
+            .expect_handled();
 
         let row = ledger.get("claude-1").unwrap().expect("row");
         assert_eq!(row.state, LedgerState::Closed);
@@ -6177,7 +6336,7 @@ mod tests {
 
         sup.handle_control("list_sessions", &payload, 10)
             .await
-            .unwrap();
+            .expect_handled();
 
         let response = drain_until_action(&mut rx, "list_sessions_ok");
         assert_eq!(response["project_dir"], "/proj/alpha");
@@ -6199,7 +6358,7 @@ mod tests {
         let err = sup
             .handle_control("list_sessions", &payload, 10)
             .await
-            .unwrap_err();
+            .expect_error();
         assert!(
             matches!(err, ControlError::InvalidProjectDir { reason } if reason == "missing_project_dir")
         );
@@ -6224,7 +6383,7 @@ mod tests {
         .unwrap();
         sup.handle_control("forget_session", &payload, 10)
             .await
-            .unwrap();
+            .expect_handled();
 
         // session_updated push first, then forget_session_ok ack.
         let push = drain_until_action(&mut rx, "session_updated");
@@ -6254,7 +6413,7 @@ mod tests {
         .unwrap();
         sup.handle_control("forget_session", &payload, 10)
             .await
-            .unwrap();
+            .expect_handled();
 
         let err = drain_until_action(&mut rx, "forget_session_err");
         assert_eq!(err["session_id"], "live1");
@@ -6347,7 +6506,7 @@ mod tests {
         .unwrap();
         sup.handle_control("forget_project_dir_sessions", &payload, 10)
             .await
-            .unwrap();
+            .expect_handled();
 
         let ack = drain_until_action(&mut rx, "forget_project_dir_sessions_ok");
         assert_eq!(ack["project_dir"], "/proj/x");
