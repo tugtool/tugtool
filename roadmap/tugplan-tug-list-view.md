@@ -1345,27 +1345,27 @@ The kind change at commit is a prop change to the cell wrapper, which rerenders 
 
 **Tasks:**
 
-- [ ] Author the adapter class with the id-stability protocol above.
-- [ ] Author the hook that constructs/disposes against a `codeSessionStore`.
-- [ ] Tests against fixture-driven `CodeSessionStore`: empty transcript + idle → `numberOfItems = 0`; submit "hi" → `numberOfItems = 2`, kinds `["user", "code-streaming"]`, ids start with seed `"inflight"`; first delta → ids transition to `${activeMsgId}-...`; `turn_complete(success)` → kinds `["user", "code-committed"]`, ids stable through commit; second submit during idle → grows to 4, etc.
-- [ ] Test ids are stable across snapshot ticks for committed turns (so React reconciler matches).
-- [ ] Test the seed → activeMsgId id transition: assert exactly one id change per turn (at first-delta), zero at commit.
+- [x] Author the adapter class with the id-stability protocol above.
+- [x] Author the hook that constructs/disposes against a `codeSessionStore`.
+- [x] Tests against fixture-driven `CodeSessionStore`: empty transcript + idle → `numberOfItems = 0`; submit "hi" → `numberOfItems = 2`, kinds `["user", "code-streaming"]`, ids start with seed `"inflight"`; first delta → ids transition to `${activeMsgId}-...`; `turn_complete(success)` → kinds `["user", "code-committed"]`, ids stable through commit; second submit during idle → grows to 4, etc.
+- [x] Test ids are stable across snapshot ticks for committed turns (so React reconciler matches).
+- [x] Test the seed → activeMsgId id transition: assert exactly one id change per turn (at first-delta), zero at commit.
 
 **Tests:**
 
-- [ ] Empty state: `numberOfItems = 0`.
-- [ ] In-flight pair appears on `send`, kind transitions on commit.
-- [ ] Id stability: `idForIndex(i)` for committed turns is stable across snapshot ticks.
-- [ ] Id transition: in-flight pair's id changes once when `activeMsgId` becomes set; stable through commit.
-- [ ] Multi-turn: kinds and ids are correct across N committed turns.
-- [ ] Subscribe fires on snapshot ticks.
-- [ ] Edge: data source removes a row mid-window (e.g., a future "forget turn" flow) — the adapter handles a mid-array transcript shrink without throwing; current rendered cells re-key correctly.
+- [x] Empty state: `numberOfItems = 0`.
+- [x] In-flight pair appears on `send`, kind transitions on commit.
+- [x] Id stability: `idForIndex(i)` for committed turns is stable across snapshot ticks.
+- [x] Id transition: in-flight pair's id changes once when `activeMsgId` becomes set; stable through commit.
+- [x] Multi-turn: kinds and ids are correct across N committed turns.
+- [x] Subscribe fires on snapshot ticks.
+- [ ] Edge: data source removes a row mid-window (e.g., a future "forget turn" flow) — the adapter handles a mid-array transcript shrink without throwing; current rendered cells re-key correctly. *Deferred: the underlying `CodeSessionStore` exposes no transcript-shrink path today, so a faithful test would require a hand-rolled `CodeSessionStore` mock — out of scope per the test-reality / no-mock-store guidance. Earned when the forget-turn flow lands; tracked in [#roadmap].*
 
 **Checkpoint:**
 
-- [ ] `bun x tsc --noEmit` — exit 0.
-- [ ] `bun test` — all green.
-- [ ] `cargo nextest run` — all green.
+- [x] `bun x tsc --noEmit` — exit 0.
+- [x] `bun test` — all green.
+- [x] `cargo nextest run` — all green.
 
 ---
 
@@ -1478,7 +1478,7 @@ The kind change at commit is a prop change to the cell wrapper, which rerenders 
 - [ ] `TugMarkdownBlock` tests for static and streaming modes (Step 7).
 - [ ] Gallery render-only smoke (Step 8).
 - [ ] `inflightUserMessage` reducer-lifecycle tests (Step 9).
-- [ ] `TideTranscriptDataSource` adapter tests (Step 10).
+- [x] `TideTranscriptDataSource` adapter tests (Step 10).
 - [ ] Tide card multi-turn integration tests (Step 11).
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
