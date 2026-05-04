@@ -33,7 +33,6 @@ use crate::feeds::agent_supervisor::{
     AgentSupervisor, AgentSupervisorConfig, LedgerSessionsRecorder, SessionKeysStore,
     SessionsRecorder, SpawnerFactory, default_spawner_factory,
 };
-use crate::session_ledger::SessionLedger;
 use crate::feeds::filetree::FileTreeQuery;
 #[cfg(debug_assertions)]
 use crate::feeds::stats::BuildStatusCollector;
@@ -41,6 +40,7 @@ use crate::feeds::stats::{ProcessInfoCollector, StatsRunner, TokenUsageCollector
 use crate::feeds::terminal::{self, TerminalFeed};
 use crate::feeds::workspace_registry::WorkspaceRegistry;
 use crate::router::{BROADCAST_CAPACITY, FeedRouter};
+use crate::session_ledger::SessionLedger;
 
 #[tokio::main]
 async fn main() {
@@ -394,8 +394,7 @@ async fn main() {
     // the recorder's broadcast call is harmless against an empty
     // subscriber set.
     let max_age_ms = crate::session_ledger::TIDE_LEDGER_MAX_AGE_DAYS * 86_400_000;
-    ledger_recorder
-        .sweep_expired_with_broadcast(max_age_ms, crate::session_ledger::now_millis());
+    ledger_recorder.sweep_expired_with_broadcast(max_age_ms, crate::session_ledger::now_millis());
 
     // Trash sweep: walk every workspace's `.tug-trash/<deletedAt>/`
     // under `~/.claude/projects/` and remove any deletedAt subdir older
@@ -404,7 +403,10 @@ async fn main() {
     let trash_max_age_ms = crate::session_ledger::TIDE_TRASH_SWEEP_AGE_DAYS * 86_400_000;
     let trash_swept = ledger.sweep_trash(trash_max_age_ms, crate::session_ledger::now_millis());
     if trash_swept > 0 {
-        info!(count = trash_swept, "swept stale trash directories on startup");
+        info!(
+            count = trash_swept,
+            "swept stale trash directories on startup"
+        );
     }
 
     let sessions_recorder: Arc<dyn SessionsRecorder> = ledger_recorder;

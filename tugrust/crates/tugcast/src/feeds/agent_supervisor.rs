@@ -1862,8 +1862,7 @@ impl AgentSupervisor {
                 });
                 let _ = self.control_tx.send(Frame::new(
                     FeedId::CONTROL,
-                    serde_json::to_vec(&body)
-                        .expect("forget_project_dir_sessions_ok serializes"),
+                    serde_json::to_vec(&body).expect("forget_project_dir_sessions_ok serializes"),
                 ));
             }
             Err(err) => {
@@ -1875,8 +1874,7 @@ impl AgentSupervisor {
                 });
                 let _ = self.control_tx.send(Frame::new(
                     FeedId::CONTROL,
-                    serde_json::to_vec(&body)
-                        .expect("forget_project_dir_sessions_err serializes"),
+                    serde_json::to_vec(&body).expect("forget_project_dir_sessions_err serializes"),
                 ));
             }
         }
@@ -4778,7 +4776,7 @@ mod tests {
 
         // On-disk record is gone.
         assert!(
-            store.entries_snapshot().get("card-1").is_none(),
+            !store.entries_snapshot().contains_key("card-1"),
             "reset_session must delete the tugbank record"
         );
         // In-memory entry has the id cleared and session_mode flipped to New.
@@ -5836,10 +5834,7 @@ mod tests {
         (Arc::new(sup), ledger, control_rx)
     }
 
-    fn drain_until_action(
-        rx: &mut broadcast::Receiver<Frame>,
-        action: &str,
-    ) -> serde_json::Value {
+    fn drain_until_action(rx: &mut broadcast::Receiver<Frame>, action: &str) -> serde_json::Value {
         // Pull frames off the broadcast until we find one whose `action`
         // matches; ignore the others. Bounded loop so a missing frame
         // surfaces as a panic on the receiver's empty error rather than a

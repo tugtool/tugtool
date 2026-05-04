@@ -240,10 +240,7 @@ impl SessionLedger {
     }
 
     /// All rows in the workspace, ordered newest-first by `last_used_at`.
-    pub fn list_for_workspace(
-        &self,
-        workspace_key: &str,
-    ) -> Result<Vec<SessionRow>, LedgerError> {
+    pub fn list_for_workspace(&self, workspace_key: &str) -> Result<Vec<SessionRow>, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
@@ -265,10 +262,7 @@ impl SessionLedger {
     /// `record_spawn` time, so no client-side canonicalization is needed.
     /// `list_for_workspace` matches against the canonical key and stays
     /// for the supervisor's resume-resolution path.
-    pub fn list_for_project_dir(
-        &self,
-        project_dir: &str,
-    ) -> Result<Vec<SessionRow>, LedgerError> {
+    pub fn list_for_project_dir(&self, project_dir: &str) -> Result<Vec<SessionRow>, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
@@ -350,11 +344,7 @@ impl SessionLedger {
     /// Set `first_user_prompt` if not already set. The caller is responsible
     /// for truncation; the `truncate_first_prompt` helper is provided for
     /// consistency.
-    pub fn record_first_prompt(
-        &self,
-        session_id: &str,
-        prompt: &str,
-    ) -> Result<(), LedgerError> {
+    pub fn record_first_prompt(&self, session_id: &str, prompt: &str) -> Result<(), LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         let affected = conn.execute(
             "UPDATE sessions
@@ -481,10 +471,7 @@ impl SessionLedger {
     /// ledger rows are dropped in lockstep so the picker doesn't surface
     /// sessions for a path the user no longer recognizes. The JSONLs go to
     /// trash so the user can `mv` them back if they recognize the loss.
-    pub fn forget_for_project_dir(
-        &self,
-        project_dir: &str,
-    ) -> Result<Vec<String>, LedgerError> {
+    pub fn forget_for_project_dir(&self, project_dir: &str) -> Result<Vec<String>, LedgerError> {
         let mut conn = self.db.lock().expect("ledger mutex");
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let doomed: Vec<String> = {
@@ -496,10 +483,7 @@ impl SessionLedger {
                 .collect::<Result<Vec<_>, _>>()?
         };
         for id in &doomed {
-            tx.execute(
-                "DELETE FROM sessions WHERE session_id = ?1",
-                params![id],
-            )?;
+            tx.execute("DELETE FROM sessions WHERE session_id = ?1", params![id])?;
         }
         tx.commit()?;
         drop(conn);
@@ -548,10 +532,7 @@ impl SessionLedger {
             // file_type() avoids one syscall per stat() call when the
             // dirent already carries the type, which it does on macOS +
             // Linux APFS/ext.
-            let is_dir = entry
-                .file_type()
-                .map(|ft| ft.is_dir())
-                .unwrap_or(false);
+            let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
             if !is_dir {
                 continue;
             }
@@ -604,10 +585,7 @@ impl SessionLedger {
             .collect::<Result<Vec<_>, _>>()?
         };
         for id in &doomed {
-            tx.execute(
-                "DELETE FROM sessions WHERE session_id = ?1",
-                params![id],
-            )?;
+            tx.execute("DELETE FROM sessions WHERE session_id = ?1", params![id])?;
         }
         tx.commit()?;
         Ok(doomed)
@@ -645,10 +623,7 @@ impl SessionLedger {
                 .collect::<Result<Vec<_>, _>>()?
         };
         for id in &doomed {
-            tx.execute(
-                "DELETE FROM sessions WHERE session_id = ?1",
-                params![id],
-            )?;
+            tx.execute("DELETE FROM sessions WHERE session_id = ?1", params![id])?;
         }
         tx.commit()?;
         Ok(doomed)
@@ -722,9 +697,8 @@ pub fn now_millis() -> i64 {
 /// `SessionLedger::open_with_claude_root` (or rely on `open` which
 /// resolves it implicitly).
 pub fn default_claude_projects_root() -> PathBuf {
-    let home = dirs::home_dir().unwrap_or_else(|| {
-        PathBuf::from(std::env::var("HOME").unwrap_or_default())
-    });
+    let home = dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from(std::env::var("HOME").unwrap_or_default()));
     home.join(".claude").join("projects")
 }
 
@@ -877,7 +851,8 @@ mod tests {
     fn record_spawn_inserts_live_row() {
         let l = fresh();
         let now = millis(0);
-        l.record_spawn("s1", WS_A, "/proj/alpha", "card-1", now).unwrap();
+        l.record_spawn("s1", WS_A, "/proj/alpha", "card-1", now)
+            .unwrap();
 
         let row = l.get("s1").unwrap().expect("row exists");
         assert_eq!(row.session_id, "s1");
@@ -974,7 +949,8 @@ mod tests {
         l.mark_closed("s1").unwrap();
 
         let t1 = millis(0);
-        l.record_spawn("s1", WS_A, "/proj/alpha", "card-2", t1).unwrap();
+        l.record_spawn("s1", WS_A, "/proj/alpha", "card-2", t1)
+            .unwrap();
         let r = l.get("s1").unwrap().unwrap();
         assert_eq!(r.created_at, t0, "created_at must survive resume");
         assert_eq!(r.last_used_at, t1);
@@ -1253,7 +1229,8 @@ mod tests {
         let path = tmp.path().to_path_buf();
         // First open seeds the schema.
         let l1 = SessionLedger::open(&path).unwrap();
-        l1.record_spawn("s1", WS_A, "/proj", "c1", millis(0)).unwrap();
+        l1.record_spawn("s1", WS_A, "/proj", "c1", millis(0))
+            .unwrap();
         drop(l1);
         // Second open re-runs the idempotent DDL and finds the row intact.
         let l2 = SessionLedger::open(&path).unwrap();

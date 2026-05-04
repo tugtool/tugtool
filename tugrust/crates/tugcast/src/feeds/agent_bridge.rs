@@ -1357,7 +1357,8 @@ mod tests {
 
     #[test]
     fn parse_user_message_text_extracts_text_field() {
-        let json = br#"{"tug_session_id":"abc","type":"user_message","text":"hello","attachments":[]}"#;
+        let json =
+            br#"{"tug_session_id":"abc","type":"user_message","text":"hello","attachments":[]}"#;
         assert_eq!(parse_user_message_text(json), Some("hello".to_owned()));
     }
 
