@@ -179,7 +179,12 @@ async fn fetch_git_status(repo_dir: &Path) -> Option<String> {
     match output {
         Ok(o) if o.status.success() => Some(String::from_utf8_lossy(&o.stdout).to_string()),
         Ok(o) => {
+            // `git`'s stderr ends with a `\n`; the tracing fmt layer
+            // appends its own newline per event, so logging the raw
+            // string would produce a `\n\n` and a blank line in the
+            // log file. Trim before logging.
             let stderr = String::from_utf8_lossy(&o.stderr);
+            let stderr = stderr.trim_end();
             warn!(stderr = %stderr, "git status command failed");
             None
         }

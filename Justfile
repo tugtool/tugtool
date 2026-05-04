@@ -196,6 +196,39 @@ logs:
     fi
     tail -F "$LOG"
 
+# Same body as `logs`. The discoverable name makes intent obvious
+# when grepping `just --list`; reach for this when triaging
+# session-lifecycle / replay issues.
+# Tail today's tugcast log (alias for `logs`).
+tail-tugcast:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    DATE="$(date +%Y-%m-%d)"
+    LOG="$HOME/Library/Application Support/Tug/Logs/tugcast.log.$DATE"
+    if [ ! -f "$LOG" ]; then
+        echo "No log yet for $DATE at $LOG. Launch Tug.app with 'just app' first."
+        exit 1
+    fi
+    tail -F "$LOG"
+
+# Use this during smoke runs (see
+# `roadmap/tugplan-tide-transcript-resume-smoke.md`) so the relevant
+# `[tide::replay::started|progress|complete|error]` and
+# `[tide::session-lifecycle event=...]` lines stand out without the
+# full firehose. `--line-buffered` keeps grep's output flowing live
+# even when the pipe stage downstream block-buffers.
+# Tail tugcast log filtered to replay + lifecycle targets.
+tail-replay:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    DATE="$(date +%Y-%m-%d)"
+    LOG="$HOME/Library/Application Support/Tug/Logs/tugcast.log.$DATE"
+    if [ ! -f "$LOG" ]; then
+        echo "No log yet for $DATE at $LOG. Launch Tug.app with 'just app' first."
+        exit 1
+    fi
+    tail -F "$LOG" | grep --line-buffered -E "tide::replay::|tide::session-lifecycle"
+
 # List any tugcode / claude processes reparented to PID 1 — these
 # are zombies left behind by an ungraceful Tug.app exit (roadmap
 # step 4j). Expected output: `(no zombies)`. A non-empty list means

@@ -874,17 +874,17 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 
 **Tasks:**
 
-- [ ] Add `tail-tugcast` recipe in `Justfile`. Body identical to `logs`; recipe doc-comment explains what's in scope.
-- [ ] Add `tail-replay` recipe that pre-greps for `tide::replay::` and `tide::session-lifecycle` log targets.
-- [ ] Verify both recipes run cleanly against a real launched Tug.app (they should print log lines until `Ctrl-C`).
+- [x] Add `tail-tugcast` recipe in `Justfile`. Body identical to `logs`; recipe doc-comment explains what's in scope.
+- [x] Add `tail-replay` recipe that pre-greps for `tide::replay::` and `tide::session-lifecycle` log targets.
+- [x] Verify both recipes run cleanly against a real launched Tug.app (they should print log lines until `Ctrl-C`). *Verified the live `tugcast.log.<today>` contains 250+ matching lines for the `tide::replay::|tide::session-lifecycle` filter from existing sessions; recipes parse and exec; `tail -F` runs until interrupted.*
 
 **Tests:** none — Justfile recipes are infrastructure.
 
 **Checkpoint:**
 
-- [ ] `just --list` shows both recipes with their doc-comments.
-- [ ] `just tail-tugcast` exits cleanly on `Ctrl-C` and prints log lines as expected.
-- [ ] `just tail-replay` filters to the replay/lifecycle targets.
+- [x] `just --list` shows both recipes with their doc-comments.
+- [x] `just tail-tugcast` exits cleanly on `Ctrl-C` and prints log lines as expected.
+- [x] `just tail-replay` filters to the replay/lifecycle targets.
 
 ---
 
