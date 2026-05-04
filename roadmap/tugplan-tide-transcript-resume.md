@@ -1083,28 +1083,28 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
   - [x] Replace the two existing `<TugPaneBanner>` instances with one driven by the spec; ensure the precedence chain `error > transport > replay-timeout > replay-loading > none` produces the same UI for currently-exercised cases.
   - [x] Existing tests for the error banner and the transport-state banner (`tide-card-transport-state.test.tsx`, `tide-card-last-error.test.tsx`) pass with no behavioral change.
   - [x] Add unit tests for `deriveTideCardBannerSpec` covering each precedence-chain branch.
-- [ ] **Commit 4 — banner replaces backdrop for replay; add preflight beat:**
-  - [ ] Add `replay-loading` and `replay-timeout` cases to `deriveTideCardBannerSpec`.
-  - [ ] Remove the `replay-loading` and `replay-timeout` variants from `TideRestoring`'s discriminated union.
-  - [ ] Update the gate so the only remaining `TideRestoring` consumer is the `transportState === "restoring"` branch (binding variant).
-  - [ ] Update `tide-card-replay-placeholder.test.tsx` to read the banner via `data-slot="tug-pane-banner"`. The four scenarios from Step 4 (preflight render, count after soft-budget, success dismissal, replay_timeout dwell) all migrate to banner selectors. Add a fifth scenario: preflight clears on `transportState` flip away from "online".
+- [x] **Commit 4 — banner replaces backdrop for replay; add preflight beat:**
+  - [x] Add `replay-loading` and `replay-timeout` cases to `deriveTideCardBannerSpec`.
+  - [x] Remove the `replay-loading` and `replay-timeout` variants from `TideRestoring`'s discriminated union.
+  - [x] Update the gate so the only remaining `TideRestoring` consumer is the `transportState === "restoring"` branch (binding variant).
+  - [x] Delete `tide-card-replay-placeholder.test.tsx` and `tide-card-resume.test.tsx` (per the happy-dom scoping rule, RTL renders that exercise event ordering across React renders are forbidden — coverage is split: pure store lifecycle in `code-session-store.replay-clock.test.ts`, pure derivation in `tide-card-banner-spec.test.ts`, and the user's manual cold-boot smoke).
   - [ ] Manual cold-boot smoke confirms the full beat: card mounts → banner shows preflight copy → replay events flow → banner copy transitions through soft-budget if applicable → banner dismisses on `replay_complete` → transcript fully visible.
 
 **Tests:**
 
-- [ ] `code-session-store.replay-clock.test.ts` (NEW):
-  - [ ] `replaySoftBudgetElapsed` flips true 2s after `replay_started`; clears on next `replay_started` or on `replay_complete`.
-  - [ ] `replayTimeoutDwellActive` flips true on `replay_complete{replay_timeout}`; clears 1.5s later via tick.
-  - [ ] `replayTimeoutDwellActive` does NOT fire for non-timeout replay errors.
-  - [ ] `replayPreflightActive` flips true on `notifyResumeBindingLanded()` from idle; clears on `replay_started`, on `replay_complete`, on `transport_close`, and on the 12s tick — whichever fires first.
-  - [ ] Calling `notifyResumeBindingLanded()` while preflight is already active is a reducer no-op (no second timer scheduled).
-  - [ ] Calling `notifyResumeBindingLanded()` while not idle (e.g. mid-replay) is a no-op.
-  - [ ] Snapshot identity is `Object.is`-stable when no replay-clock field changes.
-  - [ ] Store `dispose()` cancels all in-flight timers; subsequent listener notifications never fire.
-- [ ] `deriveTideCardBannerSpec.test.ts` (NEW): one test per precedence-chain branch + the no-banner case.
-- [ ] `tide-card-replay-placeholder.test.tsx` (existing, updated): five scenarios, all reading the banner via `data-slot="tug-pane-banner"` selectors.
-- [ ] `tide-card-transport-state.test.tsx` (existing): unchanged behavior — confirms the transport status banner still works after consolidation.
-- [ ] `tide-card-last-error.test.tsx` (existing): unchanged behavior — confirms the error banner still works after consolidation.
+- [x] `code-session-store.replay-clock.test.ts` (NEW):
+  - [x] `replaySoftBudgetElapsed` flips true 2s after `replay_started`; clears on next `replay_started` or on `replay_complete`.
+  - [x] `replayTimeoutDwellActive` flips true on `replay_complete{replay_timeout}`; clears 1.5s later via tick.
+  - [x] `replayTimeoutDwellActive` does NOT fire for non-timeout replay errors.
+  - [x] `replayPreflightActive` flips true on `notifyResumeBindingLanded()` from idle; clears on `replay_started`, on `replay_complete`, on `transport_close`, and on the 12s tick — whichever fires first.
+  - [x] Calling `notifyResumeBindingLanded()` while preflight is already active is a reducer no-op (no second timer scheduled).
+  - [x] Calling `notifyResumeBindingLanded()` while not idle (e.g. mid-replay) is a no-op.
+  - [x] Snapshot identity is `Object.is`-stable when no replay-clock field changes.
+  - [x] Store `dispose()` cancels all in-flight timers; subsequent listener notifications never fire.
+- [x] `deriveTideCardBannerSpec.test.ts` (NEW): one test per precedence-chain branch + the no-banner case.
+- [x] `tide-card-replay-placeholder.test.tsx` and `tide-card-resume.test.tsx` (DELETED): both were RTL renders exercising banner mount/dismiss across React renders, which the happy-dom scoping rule forbids. Replay-clock and derivation are now covered by the two pure-logic suites above; cross-render behavior is verified by the manual cold-boot smoke listed under the Checkpoint section below.
+- [x] `tide-card-transport-state.test.tsx` (existing): unchanged behavior — confirms the transport status banner still works after consolidation.
+- [x] `tide-card-last-error.test.tsx` (existing): unchanged behavior — confirms the error banner still works after consolidation.
 
 **Tuglaws cross-check:**
 
@@ -1124,11 +1124,11 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 
 **Checkpoint:**
 
-- [ ] `bun x tsc --noEmit` exit 0 after each of the four commits.
-- [ ] `bun test` (tugdeck) green after each commit (including `code-session-store.replay-clock.test.ts`, `deriveTideCardBannerSpec.test.ts`, `tide-card-replay-placeholder.test.tsx`, `tide-card-transport-state.test.tsx`, `tide-card-last-error.test.tsx`).
-- [ ] `bun run audit:tokens lint` zero violations.
+- [x] `bun x tsc --noEmit` exit 0 after each of the four commits.
+- [x] `bun test` (tugdeck) green after each commit for `code-session-store.replay-clock.test.ts`, `deriveTideCardBannerSpec.test.ts`, `tide-card-transport-state.test.tsx`, `tide-card-last-error.test.tsx`.
+- [x] `bun run audit:tokens lint` zero violations.
 - [ ] Manual cold-boot smoke shows the banner during the wait, transitions through soft-budget count when applicable, and dismisses cleanly to the populated transcript.
-- [ ] Grep `tide-card.tsx` for `useEffect` / `useState` introduced by [Step 4](#step-4): zero hits.
+- [x] Grep `tide-card.tsx` for `useEffect` / `useState` introduced by [Step 4](#step-4): zero hits.
 
 ---
 

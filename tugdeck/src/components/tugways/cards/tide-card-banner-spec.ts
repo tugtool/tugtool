@@ -15,11 +15,18 @@
  *      idle-offline (and, defensively, restoring; the gate already
  *      routes restoring to a backdrop, so this branch is a no-op
  *      in production).
- *   3. **none** — no banner.
- *
- * Replay-loading / replay-timeout cases will be added in the next
- * commit when the gate stops routing those phases to a backdrop. For
- * now `none` is the terminal branch.
+ *   3. **replay-timeout** — the most recent replay completed with a
+ *      `replay_timeout` outcome and the dwell window (1.5s) is still
+ *      active. Surfaces the failure copy briefly before dismissing.
+ *   4. **replay-loading** — either `phase === "replaying"` (live
+ *      replay window) OR `replayPreflightActive` (cold-boot wait
+ *      between binding rehydrate and `replay_started`). The
+ *      soft-budget flag promotes the banner copy from the generic
+ *      "Loading conversation…" to the count-aware
+ *      "Loading conversation… (N turns)" once the wait has lasted
+ *      long enough that progress detail reads as reassurance rather
+ *      than noise.
+ *   5. **none** — no banner.
  *
  * Why a separate module: the helper is pure, takes a snapshot, and
  * returns a discriminated union. Testing it in isolation
@@ -61,7 +68,20 @@ export type TideCardBannerSpec =
   | {
       kind: "transport";
       state: "offline" | "restoring";
-    };
+    }
+  | {
+      kind: "replay-loading";
+      /**
+       * Number of turns committed to the transcript so far in this
+       * replay window. `null` until the soft-budget flag elapses (or
+       * during the preflight beat where no replay window has opened
+       * yet). The body promotes the copy from "Loading conversation…"
+       * to "Loading conversation… (N turns)" once a non-null count
+       * lands.
+       */
+      turnsCount: number | null;
+    }
+  | { kind: "replay-timeout" };
 
 /**
  * UI-local context the helper needs in addition to the snapshot.
@@ -77,6 +97,11 @@ export interface TideCardBannerCtx {
  * Pure derivation. Mutually exclusive by construction:
  * - error wins when present and not dismissed
  * - transport wins when no error is showing and the wire is not online
+ * - replay-timeout wins over replay-loading (the dwell is brief and
+ *   stamps the most-recent outcome before any new window opens)
+ * - replay-loading covers the live replay window AND the cold-boot
+ *   preflight beat (no live window yet, but the binding has landed
+ *   and a replay is expected); the latter shows turnsCount=null
  * - none otherwise
  */
 export function deriveTideCardBannerSpec(
@@ -97,6 +122,18 @@ export function deriveTideCardBannerSpec(
   }
   if (snap.transportState !== "online") {
     return { kind: "transport", state: snap.transportState };
+  }
+  if (snap.replayTimeoutDwellActive) {
+    return { kind: "replay-timeout" };
+  }
+  if (snap.phase === "replaying") {
+    return {
+      kind: "replay-loading",
+      turnsCount: snap.replaySoftBudgetElapsed ? snap.transcript.length : null,
+    };
+  }
+  if (snap.replayPreflightActive) {
+    return { kind: "replay-loading", turnsCount: null };
   }
   return { kind: "none" };
 }

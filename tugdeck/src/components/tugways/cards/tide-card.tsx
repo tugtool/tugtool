@@ -338,29 +338,6 @@ function TideCardServicesGate({
     services.codeSessionStore.subscribe,
     () => services.codeSessionStore.getSnapshot().transportState,
   );
-  const phase = useSyncExternalStore(
-    services.codeSessionStore.subscribe,
-    () => services.codeSessionStore.getSnapshot().phase,
-  );
-  const transcriptCount = useSyncExternalStore(
-    services.codeSessionStore.subscribe,
-    () => services.codeSessionStore.getSnapshot().transcript.length,
-  );
-  // The replay-clock fields live on the snapshot ([L02], [L22]). The
-  // gate reads them through the same useSyncExternalStore path it
-  // uses for `phase` and `transportState` — no useEffect mirror, no
-  // local timer state. The reducer + dispatch loop in
-  // `code-session-store.ts` schedules the underlying setTimeouts and
-  // dispatches the tick events that flip these flags; the gate
-  // consumes the result.
-  const replaySoftBudgetElapsed = useSyncExternalStore(
-    services.codeSessionStore.subscribe,
-    () => services.codeSessionStore.getSnapshot().replaySoftBudgetElapsed,
-  );
-  const replayTimeoutDwellActive = useSyncExternalStore(
-    services.codeSessionStore.subscribe,
-    () => services.codeSessionStore.getSnapshot().replayTimeoutDwellActive,
-  );
   const projectDir = useSyncExternalStore(
     cardSessionBindingStore.subscribe,
     useCallback(
@@ -369,28 +346,16 @@ function TideCardServicesGate({
     ),
   );
 
+  // Only the transport-restoring beat takes the full-card backdrop —
+  // it's a hard-stop with Cancel (the wire is being re-asserted; the
+  // user can drop to the picker). Replay windows and the cold-boot
+  // preflight beat are informational; the body's banner surface
+  // covers them while the transcript pane fills in behind it.
   if (transportState === "restoring") {
     return (
       <TideRestoring
         variant="binding"
         cardId={cardId}
-        projectDir={projectDir}
-      />
-    );
-  }
-  if (phase === "replaying") {
-    return (
-      <TideRestoring
-        variant="replay-loading"
-        projectDir={projectDir}
-        turnsCount={replaySoftBudgetElapsed ? transcriptCount : null}
-      />
-    );
-  }
-  if (replayTimeoutDwellActive) {
-    return (
-      <TideRestoring
-        variant="replay-timeout"
         projectDir={projectDir}
       />
     );
@@ -404,69 +369,44 @@ function TideCardServicesGate({
 // ---------------------------------------------------------------------------
 
 /**
- * The placeholder routed in three structural states ([D11]):
+ * Full-card backdrop shown while the per-card binding is being
+ * (re-)acked by the supervisor — i.e., `transportState === "restoring"`
+ * or the registry has a pending restore expectation. Project label,
+ * spinner, Cancel button.
  *
- *   - `binding` — `tide-session-restore` has a pending restore
- *     expectation, OR `transportState === "restoring"`. Project label,
- *     spinner, Cancel.
- *   - `replay-loading` — `phase === "replaying"`. Replay-window copy.
- *     Spinner, no Cancel. After the soft-budget threshold ([D10],
- *     ~2s) the title gains a "(N turns)" count.
- *   - `replay-timeout` — held briefly when the most recent replay
- *     finished with `lastReplayResult.kind === "replay_timeout"`. Hard-
- *     budget copy, no spinner, no Cancel. Dismissed by the gate's
- *     timer once the user has had a moment to read it.
+ * Binding-restore is a hard-stop beat: the wire is being re-asserted
+ * and the user can drop to the picker via Cancel. Replay-window and
+ * preflight beats are intentionally NOT routed here — those are
+ * informational and surface as a banner above the transcript instead
+ * (see `deriveTideCardBannerSpec`).
  *
- * The variant is a structural prop ([L24]: structure zone) — not a
- * styling toggle. CSS reads `data-variant` for any visual variation
- * but the wording, presence of Cancel, and presence of the spinner
- * are owned by this component, not the cascade.
+ * The `variant="binding"` discriminator is kept on the type so CSS
+ * (`data-variant="binding"`) and tests can target this surface
+ * unambiguously, even though it's currently the only kind. Adding a
+ * future hard-stop variant (e.g. some other backdrop beat) would be a
+ * one-line addition rather than re-wiring callers.
  */
-type TideRestoringVariant = "binding" | "replay-loading" | "replay-timeout";
+type TideRestoringVariant = "binding";
 
 interface TideRestoringProps {
   variant: TideRestoringVariant;
-  /** Required for `binding`; the Cancel button calls
-   * `cancelTideRestore(cardId)`. Optional for replay variants. */
+  /** The Cancel button calls `cancelTideRestore(cardId)`. */
   cardId?: string;
-  /** Path label rendered under the title. Always shown. */
+  /** Path label rendered under the title. */
   projectDir: string;
-  /** For `replay-loading` only: turns committed so far. `null` keeps
-   * the title at its plain "Loading conversation…" form (used during
-   * the soft-budget pre-window); a non-null number appends
-   * "(N turns)". */
-  turnsCount?: number | null;
 }
 
 function TideRestoring({
   variant,
   cardId,
   projectDir,
-  turnsCount,
 }: TideRestoringProps) {
   const handleCancel = useCallback(() => {
     if (cardId) cancelTideRestore(cardId);
   }, [cardId]);
 
-  let title: string;
-  let spinnerLabel = "";
-  if (variant === "binding") {
-    title = "Restoring session";
-    spinnerLabel = `Restoring session from ${projectDir}`;
-  } else if (variant === "replay-loading") {
-    if (typeof turnsCount === "number" && turnsCount > 0) {
-      title = `Loading conversation… (${turnsCount} ${turnsCount === 1 ? "turn" : "turns"})`;
-    } else {
-      title = "Loading conversation…";
-    }
-    spinnerLabel = `Loading conversation from ${projectDir}`;
-  } else {
-    title = "Conversation history unavailable; resuming with empty transcript";
-  }
-
-  const showSpinner = variant === "binding" || variant === "replay-loading";
-  const showCancel = variant === "binding";
-  const showFooter = showSpinner || showCancel;
+  const title = "Restoring session";
+  const spinnerLabel = `Restoring session from ${projectDir}`;
 
   return (
     <div
@@ -489,30 +429,22 @@ function TideRestoring({
         >
           {projectDir}
         </p>
-        {showFooter ? (
-          <div className="tide-card-restoring-footer">
-            {showSpinner ? (
-              <span className="tide-card-restoring-spinner">
-                <TugProgress
-                  variant="spinner"
-                  size="sm"
-                  aria-label={spinnerLabel}
-                />
-              </span>
-            ) : (
-              <span />
-            )}
-            {showCancel ? (
-              <TugPushButton
-                emphasis="outlined"
-                onClick={handleCancel}
-                data-testid="tide-card-restoring-cancel"
-              >
-                Cancel
-              </TugPushButton>
-            ) : null}
-          </div>
-        ) : null}
+        <div className="tide-card-restoring-footer">
+          <span className="tide-card-restoring-spinner">
+            <TugProgress
+              variant="spinner"
+              size="sm"
+              aria-label={spinnerLabel}
+            />
+          </span>
+          <TugPushButton
+            emphasis="outlined"
+            onClick={handleCancel}
+            data-testid="tide-card-restoring-cancel"
+          >
+            Cancel
+          </TugPushButton>
+        </div>
       </div>
     </div>
   );
@@ -1357,6 +1289,43 @@ function renderTideCardBanner(
             ? "Lost the connection to tugcast. Trying to reconnect…"
             : "The connection is back. Re-acknowledging your session…"
         }
+      />
+    );
+  }
+  if (spec.kind === "replay-loading") {
+    // Pre-soft-budget (turnsCount === null) keeps the strip generic;
+    // a non-null count promotes it to "(N turns)" — useful signal
+    // once the user has been waiting long enough that detail reads
+    // as reassurance instead of noise. Status variant + default tone
+    // signals "transient, recoverable".
+    const message =
+      typeof spec.turnsCount === "number" && spec.turnsCount > 0
+        ? `Loading conversation… (${spec.turnsCount} ${spec.turnsCount === 1 ? "turn" : "turns"})`
+        : "Loading conversation…";
+    return (
+      <TugPaneBanner
+        visible={true}
+        variant="status"
+        tone="default"
+        icon="loader"
+        label="Loading conversation"
+        message={message}
+      />
+    );
+  }
+  if (spec.kind === "replay-timeout") {
+    // Caution tone + alert icon signals a soft failure. The banner
+    // dismisses on its own when `replayTimeoutDwellActive` flips
+    // false (REPLAY_TIMEOUT_DWELL_MS after the replay_complete that
+    // started the dwell).
+    return (
+      <TugPaneBanner
+        visible={true}
+        variant="status"
+        tone="caution"
+        icon="alert-triangle"
+        label="Conversation history unavailable"
+        message="Resuming with empty transcript"
       />
     );
   }
