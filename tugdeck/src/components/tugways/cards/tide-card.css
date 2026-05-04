@@ -48,9 +48,10 @@
 }
 
 .tide-card-transcript .tug-list-view {
-  /* Snug the rows in toward each other and pad the scroll-bottom
-     so the last row's controls don't kiss the prompt-entry pane. */
-  --tugx-list-view-row-gap: var(--tug-space-md);
+  /* Vertical breathing room between (user, code) row pairs and the
+     pad on the scroll-bottom so the last row's controls don't kiss
+     the prompt-entry pane. */
+  --tugx-list-view-row-gap: var(--tug-space-lg);
   --tugx-list-view-padding-block: var(--tug-space-md);
   --tugx-list-view-scroll-padding-end: var(--tug-space-2xl);
 }
@@ -64,10 +65,15 @@
 }
 
 /* Code-row body — `TugMarkdownBlock`. Width-100% so streaming text
-   wraps inside the row column; rest of the markdown styling lives
-   in `tug-markdown-block.css`. */
+   wraps inside the row column. The default `--tugx-md-block-padding-x`
+   is `1rem` (a soft default for stand-alone consumers); inside a
+   transcript code row the body should align flush with the
+   identifier line — the `TugTranscriptEntry` icon column already
+   provides the gutter, so we cancel the block's horizontal padding
+   here per the [L20] cascade-override pattern. */
 .tide-card-transcript-code-body {
   width: 100%;
+  --tugx-md-block-padding-x: 0;
 }
 
 /* Backdrop rendered behind the picker sheet. Empty — the project

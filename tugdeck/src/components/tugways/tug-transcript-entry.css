@@ -11,7 +11,7 @@
 .tug-transcript-entry {
   display: grid;
   grid-template-columns: var(--tugx-transcript-icon-column-width) 1fr;
-  column-gap: var(--tug-space-sm);
+  column-gap: var(--tugx-transcript-icon-column-gap);
   color: var(--tugx-transcript-body-color);
 }
 
@@ -20,10 +20,6 @@
   align-items: flex-start;
   justify-content: center;
   width: var(--tugx-transcript-icon-column-width);
-  /* Nudge the lucide glyph down 1px so it sits on the identifier's
-     baseline rather than the top of the row. Smaller than --tug-space-2xs
-     (2px) — a literal because the scale stops at 2px. */
-  padding-top: 1px;
   color: var(--tugx-transcript-icon-color);
   user-select: none;
 }

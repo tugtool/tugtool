@@ -133,7 +133,7 @@ export function GalleryTranscriptEntry(): React.ReactElement {
         participant="user"
         identifier="You"
         timestamp="2:14 PM"
-        body="> tell me a haiku"
+        body="tell me a haiku"
       />
       <TugTranscriptEntry
         participant="code"

@@ -66,7 +66,19 @@ export interface ToolCallState {
  */
 export interface TurnEntry {
   msgId: string;
-  userMessage: { text: string; attachments: ReadonlyArray<unknown> };
+  userMessage: {
+    text: string;
+    attachments: ReadonlyArray<unknown>;
+    /**
+     * Wall-clock millisecond timestamp captured when `send()` was
+     * dispatched. Distinct from `endedAt` — the user-visible
+     * "submitted at" time. The transcript's user row reads this for
+     * its timestamp display while the turn's code row reads
+     * `endedAt`, so the row identifier line can post the moment the
+     * user hits submit instead of waiting for the assistant's reply.
+     */
+    submitAt: number;
+  };
   thinking: string;
   assistant: string;
   toolCalls: ReadonlyArray<ToolCallState>;
@@ -157,6 +169,13 @@ export interface CodeSessionSnapshot {
   inflightUserMessage: {
     text: string;
     atoms: ReadonlyArray<AtomSegment>;
+    /**
+     * Wall-clock millisecond timestamp captured when `send()` was
+     * dispatched. Drives the in-flight user row's timestamp display so
+     * the row can post the submit time the moment the user submits,
+     * without waiting for the matching `TurnEntry` to commit.
+     */
+    submitAt: number;
   } | null;
 
   streamingPaths: {

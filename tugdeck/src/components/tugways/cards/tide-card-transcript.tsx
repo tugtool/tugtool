@@ -39,7 +39,9 @@ import React, {
   useMemo,
   useSyncExternalStore,
 } from "react";
+import { Copy } from "lucide-react";
 
+import { TugBadge } from "@/components/tugways/tug-badge";
 import {
   TugListView,
   type TugListViewCellProps,
@@ -47,6 +49,7 @@ import {
   type TugListViewDelegate,
 } from "@/components/tugways/tug-list-view";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
@@ -94,6 +97,19 @@ export function formatTranscriptTimestamp(ms: number): string {
   });
 }
 
+/**
+ * Strip the `>` Code route prefix from a user-row body for display.
+ * Shell (`$`) and command (`:`) prefixes pass through unchanged — only
+ * `>` is suppressed because the row's icon and identifier already
+ * convey "this is a user prompt to the assistant", and the `>` glyph
+ * adds visual noise without information.
+ */
+function stripUserBodyPrefix(text: string): string {
+  if (text.startsWith("> ")) return text.slice(2);
+  if (text.startsWith(">")) return text.slice(1);
+  return text;
+}
+
 // ---------------------------------------------------------------------------
 // Cell renderer components
 // ---------------------------------------------------------------------------
@@ -117,9 +133,16 @@ const UserRowCell: React.FC<UserRowCellProps> = ({ index, dataSource }) => {
   // are missing — defensive against an out-of-range read that
   // shouldn't happen given the adapter's contract but is cheap to
   // guard.
-  const text = row.turn?.userMessage.text ?? row.inflight?.text ?? "";
-  const timestamp = row.turn !== undefined
-    ? formatTranscriptTimestamp(row.turn.endedAt)
+  const rawText = row.turn?.userMessage.text ?? row.inflight?.text ?? "";
+  const text = stripUserBodyPrefix(rawText);
+  // User-row timestamp is the submit time, not the turn's end time —
+  // the user's row "posts" the moment they hit submit, regardless of
+  // whether the assistant has replied yet. For committed rows the
+  // submit time is captured on `userMessage.submitAt`; for in-flight
+  // rows it lives on `inflight.submitAt`.
+  const submitAt = row.turn?.userMessage.submitAt ?? row.inflight?.submitAt;
+  const timestamp = submitAt !== undefined
+    ? formatTranscriptTimestamp(submitAt)
     : undefined;
   return (
     <TugTranscriptEntry
@@ -157,6 +180,10 @@ const CodeCommittedRowCell: React.FC<CodeCommittedRowCellProps> = ({
   const timestamp = turn !== undefined
     ? formatTranscriptTimestamp(turn.endedAt)
     : undefined;
+  const handleCopy = useCallback(() => {
+    if (assistantText.length === 0) return;
+    void navigator.clipboard?.writeText(assistantText);
+  }, [assistantText]);
   return (
     <TugTranscriptEntry
       participant="code"
@@ -167,6 +194,24 @@ const CodeCommittedRowCell: React.FC<CodeCommittedRowCellProps> = ({
           initialText={assistantText}
           className="tide-card-transcript-code-body"
         />
+      }
+      controls={
+        <>
+          {modelName !== null ? (
+            <TugBadge size="sm" emphasis="tinted" role="agent">
+              {modelName}
+            </TugBadge>
+          ) : null}
+          <TugPushButton
+            subtype="icon"
+            emphasis="ghost"
+            role="action"
+            size="sm"
+            icon={<Copy size={12} />}
+            aria-label="Copy"
+            onClick={handleCopy}
+          />
+        </>
       }
     />
   );

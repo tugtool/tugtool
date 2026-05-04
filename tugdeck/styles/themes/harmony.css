@@ -839,6 +839,7 @@ body {
   /* Transcript primitive */
   --tugx-transcript-row-gap: var(--tug-space-xl);
   --tugx-transcript-icon-column-width: 36px;
+  --tugx-transcript-icon-column-gap: var(--tug-space-xs);
   --tugx-transcript-icon-size: var(--tug-icon-size-md);
   --tugx-transcript-header-gap: var(--tug-space-sm);
   --tugx-transcript-body-margin-top: var(--tug-space-2xs);

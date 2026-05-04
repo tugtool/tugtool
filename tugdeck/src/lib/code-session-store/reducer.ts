@@ -54,7 +54,11 @@ export interface CodeSessionState {
   pendingApproval: ControlRequestForward | null;
   pendingQuestion: ControlRequestForward | null;
   prevPhase: CodeSessionPhase | null;
-  pendingUserMessage: { text: string; atoms: ReadonlyArray<AtomSegment> } | null;
+  pendingUserMessage: {
+    text: string;
+    atoms: ReadonlyArray<AtomSegment>;
+    submitAt: number;
+  } | null;
   queuedSends: Array<{ text: string; atoms: AtomSegment[] }>;
   lastError: {
     cause:
@@ -105,7 +109,11 @@ function handleSend(
     const next: CodeSessionState = {
       ...state,
       phase: "submitting",
-      pendingUserMessage: { text: event.text, atoms: event.atoms },
+      pendingUserMessage: {
+        text: event.text,
+        atoms: event.atoms,
+        submitAt: Date.now(),
+      },
     };
     return {
       state: next,
@@ -436,6 +444,7 @@ function handleTurnComplete(
     userMessage: {
       text: state.pendingUserMessage?.text ?? "",
       attachments: state.pendingUserMessage?.atoms ?? [],
+      submitAt: state.pendingUserMessage?.submitAt ?? Date.now(),
     },
     thinking: scratchEntry.thinking,
     assistant: scratchEntry.assistant,
@@ -464,7 +473,11 @@ function handleTurnComplete(
         pendingApproval: null,
         pendingQuestion: null,
         prevPhase: null,
-        pendingUserMessage: { text: next.text, atoms: next.atoms },
+        pendingUserMessage: {
+          text: next.text,
+          atoms: next.atoms,
+          submitAt: Date.now(),
+        },
         queuedSends: rest,
         lastError: null,
       },
