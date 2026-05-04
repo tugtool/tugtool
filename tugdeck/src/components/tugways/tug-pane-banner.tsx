@@ -138,6 +138,25 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
     // the exit animation's `.finished` resolves.
     const [mounted, setMounted] = useState(false);
 
+    // Stable variant/tone through the exit animation. When the parent
+    // flips `visible` from true → false, it commonly drops the
+    // matching variant/tone props at the same render — either because
+    // it consolidated the banner kind to "no banner" (parent has
+    // nothing left to say) or because the kind transitioned. If we
+    // honor the new props mid-exit, the strip's `data-tone` flips
+    // (e.g. status/default → error/danger via component defaults)
+    // and the user sees a red flash as the strip slides up. Hold the
+    // variant/tone the banner had on its last visible render so the
+    // exit animation runs with the colors the user saw a frame ago.
+    const lastVisibleVariantRef = useRef(variant);
+    const lastVisibleToneRef = useRef(tone);
+    if (visible) {
+      lastVisibleVariantRef.current = variant;
+      lastVisibleToneRef.current = tone;
+    }
+    const renderVariant = visible ? variant : lastVisibleVariantRef.current;
+    const renderTone = visible ? tone : lastVisibleToneRef.current;
+
     // Combined ref: internal rootRef + caller's forwarded ref.
     const setRef = useCallback(
       (node: HTMLDivElement | null) => {
@@ -259,7 +278,7 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
         data-slot="tug-pane-banner"
         data-variant="status"
         data-visible={String(visible)}
-        data-tone={tone}
+        data-tone={renderTone}
         data-contained={contained ? "true" : undefined}
         role="status"
         aria-live="polite"
@@ -276,7 +295,7 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
           data-slot="tug-pane-banner"
           data-variant="error"
           data-visible={String(visible)}
-          data-tone={tone}
+          data-tone={renderTone}
           data-contained={contained ? "true" : undefined}
           role="alert"
           aria-live="assertive"
@@ -309,7 +328,10 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
       </FocusScopeRadix.FocusScope>
     );
 
-    const content = variant === "status" ? statusContent : errorContent;
+    // Pick the layout shape from the variant the banner had on its
+    // last visible render so an exit doesn't swap from `error` (with
+    // detail panel + FocusScope) to `status` (strip-only) mid-flight.
+    const content = renderVariant === "status" ? statusContent : errorContent;
     if (contained) return content;
     return createPortal(content, cardEl!);
   },
