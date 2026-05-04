@@ -325,6 +325,8 @@ Content blocks observed inside `message.content[]`:
 - `useSessionModelName(sessionMetadataStore)` returns the same value for every code row in the rendered transcript — which is what users will expect.
 - Documented as a known-trade-off in [#roadmap]: "per-row historical model in transcripts."
 
+**Known surface artifact — model-name flash on resume.** Replay-committed code rows commit *before* the resumed Claude subprocess emits its post-`--resume` `system_init` (which lands on the live wire after `replay_complete`). For the gap between `replay_complete` and that first live `system_init`, `useSessionModelName(sessionMetadataStore)` returns `null` and `CodeCommittedRowCell` shows `CODE_DEFAULT_IDENTIFIER = "Code"` for every replayed row. Once `system_init` lands, all rows flip to the model name in the same render. This brief flash is acceptable for v1 (it matches the pre-binding cold-start behavior of the live path) but worth recording so a future polish item can pre-stage the metadata read from the JSONL's `system` entry, or hold the placeholder for a few hundred ms longer. Not a blocker.
+
 **Alternative considered:**
 
 - Replay per-turn `SESSION_METADATA`: rejected for v1 because the UI consequence (model-name flicker on resume scroll) is worse than the accuracy gain.
@@ -433,7 +435,7 @@ interface LastReplayResult {
 }
 ```
 
-`null` until the first `replay_complete` lands. The `TideRestoring` placeholder reads this for the timeout-state copy. Cleared back to `null` only on a fresh `replay_started` for the next resume.
+`null` until the first `replay_complete` lands; populated on **every** `replay_complete` thereafter, including success (`kind: "success"`, `message: ""`). The `TideRestoring` placeholder reads this for the timeout-state copy; telemetry / dev-surface readers can distinguish success from each error variant by `kind`. Cleared back to `null` only on a fresh `replay_started` for the next resume.
 
 #### `TideRowDescriptor` change for atom-aware user rows {#atom-aware-row}
 
@@ -516,7 +518,7 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 - `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — `rebind_from_tugbank` reads `SessionKeyRecord.claude_session_id` from the tugbank blob and rehydrates the `LedgerEntry::claude_session_id` field. The `--resume` flag in the spawn args path (built around line 1517 of [tide.md §P14 Step 2](./tide.md#p14-claude-resume)) then sees `Some(id)` and threads it into `TugcodeSpawner`.
 - `tugrust/crates/tugcast/src/feeds/agent_bridge.rs` — `TugcodeSpawner` (or its config builder) gains an optional `resume_claude_session_id` field. `spawn_session_worker` reads `entry.claude_session_id` after rebind populates it; if `Some`, the spawned tugcode subprocess gets `--resume <id>` (or an env var); if `None`, fresh spawn.
 - `tugcode/src/session.ts` — replace the legacy resume-id read from the `dev.tugtool.app / session-id` singleton path (carried over from before multi-session) with a read from the new `--resume-session <id>` CLI flag (or env var) the supervisor passes on spawn. tugcode's own singleton tugbank write goes away — supervisor owns persistence ([tide.md §P14 Step 3](./tide.md#p14-claude-resume)).
-- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — `do_reset_session` invalidates `claude_session_id` (tugbank delete + in-memory clear) **before** killing the subprocess so the next spawn is fresh per [tide.md §P14 Step 4](./tide.md#p14-claude-resume). `do_close_session` does **not** invalidate — a closed card can be reopened with history.
+- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — `do_reset_session` invalidates `claude_session_id` (tugbank delete + in-memory clear) **before** killing the subprocess so the next spawn is fresh per [tide.md §P14 Step 4](./tide.md#p14-claude-resume). `do_close_session` does **not** invalidate — a closed card can be reopened with history. **Idempotency invariant:** the invalidate-then-kill sequence treats the kill step as best-effort; if the subprocess kill fails (process already exited, signal lost, etc.), persistence is already cleared and the next spawn is fresh — there is no recovery path that re-introduces the old `claude_session_id`. A retry of `reset_session` on a partially-completed prior reset finds nothing to invalidate (already gone) and proceeds to the kill step (which is also idempotent in the supervisor's existing semantics). Net: persistence always becomes consistent with "session reset"; ledger consistency follows on next `spawn_session_ok`.
 
 **Tasks:**
 
@@ -533,7 +535,7 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 - [ ] `test_spawn_session_resumes_persisted_claude_session_id` — unit test with an `InMemorySessionKeysStore` pre-populated with `(card_id, tug_session_id, claude_session_id)`; asserts the spawner receives the resume id.
 - [ ] `test_reset_session_clears_persisted_claude_session_id` — asserts `reset_session` deletes the claude_session_id binding before the subprocess restart.
 - [ ] `test_close_session_preserves_claude_session_id` — asserts a `close_session` followed by a `spawn_session(mode=resume)` rehydrates the persisted id.
-- [ ] Real-claude integration test: `test_close_then_reopen_preserves_history` — open a session, exchange a turn that establishes known context ("remember the word gazebo"), close the WebSocket, reopen, send a probe ("what word did I tell you to remember?"), assert the response contains "gazebo". Pins the resume path end-to-end.
+- [ ] Real-claude integration test: `test_close_then_reopen_preserves_history` — open a session, exchange a turn that establishes known context ("remember the word gazebo"), close the WebSocket, reopen, send a probe ("what word did I tell you to remember?"), assert the response contains "gazebo". Pins the resume path end-to-end. **CI gating:** matches the existing tugcast real-claude convention — `#[cfg(feature = "real-claude-tests")]` + `#[ignore]` + `TUG_REAL_CLAUDE=1` env gate (see `tugrust/crates/tugcast/Cargo.toml` lines 52–70 and the `multi_session_real_claude` test for the canonical pattern). Default `cargo nextest run` does not enumerate it. Local invocation: `TUG_REAL_CLAUDE=1 cargo test -p tugcast --features real-claude-tests test_close_then_reopen_preserves_history -- --ignored`. The test lives either in the existing `multi_session_real_claude.rs` integration target or a sibling `resume_real_claude.rs` if it grows enough fixtures to warrant its own. Step 0's automated checkpoint runs the default suite; this test is run manually as part of Smoke B / C in Step 5.
 
 **Checkpoint:**
 
@@ -581,11 +583,12 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 
 **Tests:**
 
-- [ ] Two-turn smoke: translator output, when fed through the existing `OutboundMessage` reducer (in test mode), produces a `transcript` array with two `TurnEntry` records carrying the expected `userMessage.text` and `assistant` content.
-- [ ] Tool-call turn: emits `user_message` + `tool_use` + `tool_result` + terminal `assistant_text(is_partial: false)` + `turn_complete(success)` in the right order; the resulting `TurnEntry.toolCalls` is non-empty.
-- [ ] Concurrent tools: tool_use and tool_result events interleave by `tool_use_id` correctly; `TurnEntry.toolCalls` contains both.
-- [ ] Thinking content: `thinking_text(is_partial: false)` lands before the terminal `assistant_text` in the same turn; `TurnEntry.thinking` is non-empty.
-- [ ] Image content in user submission: `user_message` carries the image attachment; `TurnEntry.userMessage.attachments` is non-empty.
+> Step 1 tests assert the translator's `OutboundMessage[]` output shape directly — the tugdeck reducer is exercised in Step 2 and the cross-package wire integration is exercised in Step 5. No reducer is imported in `tugcode/`.
+- [ ] Two-turn smoke: translator output is the expected `OutboundMessage[]` sequence — for each turn: `user_message`, optional intermediate `tool_use` / `tool_result` events, terminal `assistant_text(is_partial: false)`, `turn_complete(success)` carrying the turn's `msg_id` and assembled text.
+- [ ] Tool-call turn: emits `user_message` + `tool_use` + `tool_result` + terminal `assistant_text(is_partial: false)` + `turn_complete(success)` in the right order; the `turn_complete` payload's tool-call list is non-empty.
+- [ ] Concurrent tools: tool_use and tool_result events interleave by `tool_use_id` correctly; the `turn_complete` payload's tool-call list contains both.
+- [ ] Thinking content: `thinking_text(is_partial: false)` lands before the terminal `assistant_text` in the same turn; the turn's `thinking` accumulator is non-empty.
+- [ ] Image content in user submission: `user_message` carries the image attachment in its payload.
 - [ ] Skipped shapes (`attachment` / `queue-operation` / `last-prompt` / `file-history-snapshot` / `ai-title` / `system` / `permission-mode`): produce zero outbound messages each; surrounding turns still commit.
 - [ ] Unknown top-level type: produces zero outbound messages and a structured log line at `tide::replay::unknown_shape`.
 - [ ] Orphan turn at end-of-file: synthesizes `turn_complete(error)` with accumulated text preserved; `TurnEntry.result === "interrupted"`.
@@ -615,8 +618,8 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 - `tugdeck/src/lib/code-session-store/events.ts` — extend the discriminated-union event type with `ReplayStartedEvent` and `ReplayCompleteEvent`.
 - `tugdeck/src/lib/code-session-store/types.ts` — extend `CodeSessionPhase` with `"replaying"` per [D11]. Update the `canSubmit` and `canInterrupt` derivations in the snapshot builder so `replaying` excludes both.
 - `tugdeck/src/lib/code-session-store/reducer.ts` — handle both events:
-  - `replay_started`: transition `phase: idle → replaying`. Clear `pendingUserMessage` defensively (replay should never see one). Snapshot the prior phase only as a sanity invariant — replay must only run from `idle` per [D03], so `replay_started` from a non-idle phase is a logged warning + drop.
-  - `replay_complete`: transition `phase: replaying → idle`. If `error` is set, populate a new `lastReplayResult: { kind, message, count }` field on the snapshot for telemetry / dev surface.
+  - `replay_started`: transition `phase: {idle | errored} → replaying`. Clear `pendingUserMessage` defensively (replay should never see one). Replay must only run from `idle` or `errored` (a fresh `spawn_session_ok` for a previously-errored card transitions `errored → idle` before replay begins, so by the time `replay_started` lands the phase is `idle`; the `errored` case is an explicit invariant in case the supervisor sequences differently). `replay_started` from `submitting` / `awaiting_first_token` / `streaming` / `tool_work` / `awaiting_approval` / `replaying` is a logged warning + drop.
+  - `replay_complete`: transition `phase: replaying → idle`. **Always** populate `lastReplayResult: { kind, message, count, at: Date.now() }` — `kind: "success"` with empty `message` on the no-error path, the matching error kind otherwise.
 - Snapshot dedupe: `committedMsgIds: Set<string>` derived from `transcript.map(t => t.msgId)` (lazy, recomputed when transcript changes). `turn_complete` with a `msg_id` already in the set is a no-op + debug log per [D04].
 - `tugdeck/src/lib/code-session-store/__tests__/code-session-store.replay.test.ts` — new file covering the cases listed under Tests below.
 
@@ -627,12 +630,13 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 - [ ] Update `canSubmit` / `canInterrupt` derivations to exclude `replaying`.
 - [ ] Implement the two new handlers in the reducer.
 - [ ] Add `committedMsgIds` derivation + `turn_complete` dedupe per [D04].
-- [ ] Add `lastReplayResult` snapshot field for the error-surface case.
+- [ ] Add `lastReplayResult` snapshot field; populate on every `replay_complete` (success and error variants) per the type definition at [#last-replay-result].
 - [ ] Author the new test file.
 
 **Tests:**
 
-- [ ] Bracket round-trip: `replay_started` + 2 turns + `replay_complete` produces `phase: idle` and a transcript of length 2; `lastReplayResult` is `null`.
+- [ ] Bracket round-trip: `replay_started` + 2 turns + `replay_complete` produces `phase: idle`, transcript length 2, and `lastReplayResult.kind === "success"` with `count: 2`.
+- [ ] Errored → replaying transition: a card whose phase is `errored` accepts `replay_started`, transitions to `replaying`, and lands on `idle` after `replay_complete` per the [#step-2] reducer contract.
 - [ ] Phase exposure: between `replay_started` and `replay_complete`, `phase === "replaying"`, `canSubmit === false`, `canInterrupt === false`.
 - [ ] `send` while replaying: the reducer drops the action (synthetic test calls `store.send("hi")` mid-replay; assert no `user_message` frame is written, no `pendingUserMessage` set).
 - [ ] Mid-turn live-frame during replay: a live `assistant_text` partial that arrives while `phase === "replaying"` is dropped with a warn (the supervisor's [D03] guarantee should prevent this; the reducer treats it as defense-in-depth).
@@ -676,6 +680,8 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 - [ ] Add the structured telemetry (`replay.started` / `replay.progress` / `replay.complete` / `replay.error`).
 - [ ] Implement [D10]'s hard-timeout enforcement.
 - [ ] If the JSONL is missing or unreadable, emit `replay_started` then `replay_complete` with `error: { kind: "jsonl_missing" | "jsonl_unreadable" }`, and proceed to live ingestion.
+- [ ] Bound the live-stdout buffer at a small constant (`REPLAY_LIVE_BUFFER_MAX = 1024` translated frames is more than enough — Claude on `--resume` with no new user message is essentially silent). On overflow, emit a `replay.live_buffer_overflow` warn telemetry line, stop buffering, and drain whatever was buffered after `replay_complete`. Overflow is a flag for "something pathological"; the user-visible failure mode is still safe (transcript replays; live events resume; a small live-frame slice may be dropped, recoverable via Claude's next emission).
+- [ ] If the Claude subprocess exits *during* the replay window, abort the replay iterator, emit `replay_complete { error: { kind: "jsonl_unreadable", message: "claude_exited_during_replay" } }` (the JSONL itself is fine; the subprocess we needed to bring back online is gone), drop buffered live events, and report subprocess exit through the existing lifecycle telemetry path. The card surfaces `lastReplayResult` and stays in `idle` so the user can re-spawn manually.
 
 **Tests:**
 
@@ -684,6 +690,8 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 - [ ] Unreadable JSONL (e.g. permission denied): same as missing, with `error: { kind: "jsonl_unreadable" }`.
 - [ ] Hard timeout: a fixture JSONL with synthetic delay (a wrapper that throttles iteration past 10s) produces `replay_complete { error: { kind: "replay_timeout" } }` and the card-side reducer transitions to `idle`.
 - [ ] Buffer-then-flush ordering: live events emitted by Claude during the replay window are buffered in tugcode and forwarded to IPC stdout only after `replay_complete`; an integration test asserts the wire ordering.
+- [ ] Buffer overflow: a synthetic Claude stub that emits >`REPLAY_LIVE_BUFFER_MAX` events during a slow replay produces a `replay.live_buffer_overflow` warn line; the buffered prefix is still drained after `replay_complete`; the card stays interactive.
+- [ ] Claude crash mid-replay: a Claude stub that exits during the replay window produces `replay_complete { error: { kind: "jsonl_unreadable", message: "claude_exited_during_replay" } }`; the card transitions to `idle` with the populated `lastReplayResult`.
 
 **Checkpoint:**
 
