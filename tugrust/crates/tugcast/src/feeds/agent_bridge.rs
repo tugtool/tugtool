@@ -742,7 +742,7 @@ pub async fn relay_session_io(
                             // are populated by `do_spawn_session` before the
                             // bridge starts, so they're guaranteed present.
                             //
-                            // [P14] also persist `claude_session_id` to tugbank
+                            // Also persist `claude_session_id` to tugbank
                             // inside this same critical section so the
                             // `(card_id → SessionKeyRecord)` mapping on disk
                             // matches the in-memory ledger. Without this, a
@@ -1207,7 +1207,7 @@ mod tests {
         assert_eq!(args.get(i + 1).map(String::as_str), Some("resume"));
     }
 
-    /// [P14] When `resume_claude_session_id` is `Some`, the helper
+    /// When `resume_claude_session_id` is `Some`, the helper
     /// appends `--resume-session <id>` after `--session-mode`. When
     /// `None`, the flag is omitted entirely (legacy fallback path —
     /// tugcode then uses `--session-id` for its `--resume <id>` claude

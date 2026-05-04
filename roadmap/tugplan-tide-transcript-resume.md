@@ -632,30 +632,32 @@ Default behavior (`undefined` delegate methods): no prefetching; current v1 beha
 
 **Tasks:**
 
-- [ ] Extend the event type union with `ReplayStartedEvent` / `ReplayCompleteEvent`.
-- [ ] Extend `CodeSessionPhase` with `"replaying"` per [D11]; fix exhaustiveness errors at consumer sites.
-- [ ] Update `canSubmit` / `canInterrupt` derivations to exclude `replaying`.
-- [ ] Implement the two new handlers in the reducer.
-- [ ] Add `committedMsgIds` derivation + `turn_complete` dedupe per [D04].
-- [ ] Add `lastReplayResult` snapshot field; populate on every `replay_complete` (success and error variants) per the type definition at [#last-replay-result].
-- [ ] Author the new test file.
+- [x] Extend the event type union with `ReplayStartedEvent` / `ReplayCompleteEvent` / `UserMessageReplayEvent`. *Three events, not two: the per-turn user-message echo is a separate event so the reducer's existing turn-commit machinery can handle replay turns "like very fast live turns" without inventing a synthesized aggregate event.*
+- [x] Extend `CodeSessionPhase` with `"replaying"`; fix exhaustiveness at consumer sites. *Only one consumer-side update was needed (`tug-prompt-entry.test.tsx`'s `defaultSnapshot()` factory) — the reducer's switch-with-default and the snapshot builder cover the rest.*
+- [x] Update `canSubmit` / `canInterrupt` derivations to exclude `replaying`. *No code change needed — `canSubmit` is `phase === "idle" || phase === "errored"`, which excludes `replaying` naturally; `canInterrupt` enumerates active live phases and likewise excludes `replaying`.*
+- [x] Implement the three new handlers in the reducer (`handleReplayStarted`, `handleReplayComplete`, `handleUserMessageReplay`). Plus extend the live `handleTextDelta` / `handleToolUse` / `handleToolResult` to accept `replaying` phase as an *accumulator* — they update scratch + toolCallMap but skip phase transitions and `write-inflight` effects, leaving phase entry/exit to the bracket pair. `handleTurnComplete` also branches: while `replaying`, it commits a `TurnEntry` and stays in `replaying` rather than returning to `idle` (the closing bracket is what returns to idle). `handleSend` drops while `replaying` defensively.
+- [x] Add `committedMsgIds` derivation + `turn_complete` dedupe. *Lives on `CodeSessionState` directly as a `Set<string>`, populated whenever `handleTurnComplete` commits an entry. A duplicate `turn_complete` for an already-committed `msg_id` is a `console.debug`-logged no-op and does not produce a second `TurnEntry`.*
+- [x] Add `lastReplayResult` snapshot field; populate on every `replay_complete` (success and error variants).
+- [x] Author the new test file.
 
 **Tests:**
 
-- [ ] Bracket round-trip: `replay_started` + 2 turns + `replay_complete` produces `phase: idle`, transcript length 2, and `lastReplayResult.kind === "success"` with `count: 2`.
-- [ ] Errored → replaying transition: a card whose phase is `errored` accepts `replay_started`, transitions to `replaying`, and lands on `idle` after `replay_complete` per the [#step-2] reducer contract.
-- [ ] Phase exposure: between `replay_started` and `replay_complete`, `phase === "replaying"`, `canSubmit === false`, `canInterrupt === false`.
-- [ ] `send` while replaying: the reducer drops the action (synthetic test calls `store.send("hi")` mid-replay; assert no `user_message` frame is written, no `pendingUserMessage` set).
-- [ ] Mid-turn live-frame during replay: a live `assistant_text` partial that arrives while `phase === "replaying"` is dropped with a warn (the supervisor's [D03] guarantee should prevent this; the reducer treats it as defense-in-depth).
-- [ ] Dedupe: two `turn_complete`s with the same `msg_id` produce a transcript of length 1; the second commit is a debug-logged no-op.
-- [ ] Error surface: `replay_started` followed by `replay_complete` with `error: { kind: "jsonl_missing" }` produces `phase: idle`, transcript length 0, `lastReplayResult.kind === "jsonl_missing"`.
-- [ ] Replay timeout: `replay_complete` with `error: { kind: "replay_timeout" }` per [D10] sets `lastReplayResult` and lets the card become interactive (regression test for the hard-budget UX).
+- [x] Bracket round-trip: `replay_started` + 2 turns + `replay_complete` produces `phase: idle`, transcript length 2, and `lastReplayResult.kind === "success"` with `count: 2`.
+- [x] Errored → replaying transition: a card whose phase is `errored` accepts `replay_started`, transitions to `replaying`, commits a turn, and lands on `idle` after `replay_complete`.
+- [x] Phase exposure: between `replay_started` and `replay_complete`, `phase === "replaying"`, `canSubmit === false`, `canInterrupt === false`.
+- [x] `send` while replaying: the reducer drops the action (synthetic test calls `store.send("hi")` mid-replay; asserts no CODE_INPUT frame is written, no `pendingUserMessage` set, no `queuedSends`).
+- [x] Mid-turn live-frame during replay: a live `assistant_text` partial that arrives while `phase === "replaying"` accumulates in scratch but does not flip phase or touch the in-flight streaming document. *Refined wording from the original "dropped with a warn" — the cleaner contract is "accumulates without side-effects": replay's own `assistant_text` events go through the same code path, so a stray live partial would be indistinguishable from a replay event mid-window. Phase + in-flight pane stay clean either way.*
+- [x] Dedupe: two `turn_complete`s with the same `msg_id` produce a transcript of length 1; the second commit is a `console.debug`-logged no-op.
+- [x] Error surface: `replay_started` followed by `replay_complete` with `error: { kind: "jsonl_missing" }` produces `phase: idle`, transcript length 0, `lastReplayResult.kind === "jsonl_missing"`.
+- [x] Replay timeout: `replay_complete` with `error: { kind: "replay_timeout" }` sets `lastReplayResult` (with `count` reflecting the pre-timeout commits) and lets the card become interactive.
+- [x] All four error variants (`jsonl_missing`, `jsonl_unreadable`, `jsonl_malformed`, `replay_timeout`) round-trip the `kind` through the snapshot.
+- [x] `lastReplayResult` lifecycle: a fresh `replay_started` clears the prior window's result back to `null`; `replay_complete` outside `replaying` is a logged no-op; `replay_started` from `submitting` is a logged no-op (live-turn protection).
 
 **Checkpoint:**
 
-- [ ] `bun x tsc --noEmit` — exit 0.
-- [ ] `bun test` — green.
-- [ ] `cargo nextest run` — green.
+- [x] `bun x tsc --noEmit` — exit 0.
+- [x] `bun test` — 2957 tugdeck tests pass (2945 prior + 12 new replay tests) + 237 tugcode tests pass.
+- [x] `cargo nextest run` — 1207 workspace tests pass (no Rust changes; sanity).
 
 ---
 

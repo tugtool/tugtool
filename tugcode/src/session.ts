@@ -681,11 +681,11 @@ export class SessionManager {
    */
   private sessionMode: "new" | "resume";
   /**
-   * [P14] The persisted claude session id, threaded in from tugcast via
-   * `--resume-session <id>`. Set when tugcast's tugbank record carries a
-   * `claude_session_id` for this card; `null` for fresh spawns and for
-   * resume spawns whose claude id was never captured (pre-`session_init`
-   * crash, pre-P14 record).
+   * The persisted claude session id, threaded in from tugcast via
+   * `--resume-session <id>`. Set when tugcast's tugbank record carries
+   * a `claude_session_id` for this card; `null` for fresh spawns and
+   * for resume spawns whose claude id was never captured (pre-
+   * `session_init` crash, or an older tugbank record).
    *
    * In resume mode, this id wins over `sessionId` for the claude
    * `--resume <id>` invocation: when claude has rotated its internal id
@@ -967,11 +967,11 @@ export class SessionManager {
     });
 
     const claudeFlag = this.sessionMode === "resume" ? "resume" : "session-id";
-    // [P14] In resume mode, prefer the persisted claude session id
+    // In resume mode, prefer the persisted claude session id
     // (`resumeSessionId`) over the tug session id when it differs.
     // The two diverge after a fork; for un-forked sessions they're
     // equal, so the fallback to `sessionId` is safe and preserves
-    // legacy behavior for pre-P14 tugbank records.
+    // legacy behavior for older tugbank records.
     const claudeId =
       claudeFlag === "resume"
         ? (this.resumeSessionId ?? this.sessionId)
@@ -983,7 +983,7 @@ export class SessionManager {
     this.startStderrReader();
     this.installEarlyExitWatcher();
 
-    // [P14] The synthesized `session_init` carries the same id we just
+    // The synthesized `session_init` carries the same id we just
     // spawned claude with (`claudeId`), not always `this.sessionId`.
     // For fresh spawns the two are equal. For resume spawns whose
     // claude id has diverged from the tug id (forked session, or a

@@ -462,6 +462,7 @@ function defaultSnapshot(): CodeSessionSnapshot {
     streamingPaths: STREAMING_PATHS,
     lastCost: null,
     lastError: null,
+    lastReplayResult: null,
   };
 }
 

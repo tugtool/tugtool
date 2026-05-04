@@ -128,7 +128,7 @@ describe("main.ts inbound message type guard routing", () => {
 });
 
 // ---------------------------------------------------------------------------
-// [P14] --resume-session argv parsing
+// --resume-session argv parsing
 // ---------------------------------------------------------------------------
 
 /**
@@ -168,11 +168,11 @@ async function readStartupLine(args: string[]): Promise<string> {
   return line ?? "";
 }
 
-describe("[P14] main.ts --resume-session argv", () => {
+describe("main.ts --resume-session argv", () => {
   test("--resume-session <id> appears in startup log when provided", async () => {
     const line = await readStartupLine([
       "--dir",
-      "/tmp/p14-argv",
+      "/tmp/resume-argv",
       "--session-id",
       "tug-uuid-1",
       "--session-mode",
@@ -189,7 +189,7 @@ describe("[P14] main.ts --resume-session argv", () => {
   test("--resume-session is omitted from startup log when not provided", async () => {
     const line = await readStartupLine([
       "--dir",
-      "/tmp/p14-argv",
+      "/tmp/resume-argv",
       "--session-id",
       "tug-uuid-2",
       "--session-mode",

@@ -308,7 +308,10 @@ pub struct SessionKeysStoreError(pub String);
 /// - `tug_session_id`: the routing key; always populated.
 /// - `project_dir`: `Some` for post-W2 records; `None` for pre-W2 legacy blobs
 ///   (dropped on rebind once rebind populates workspace paths).
-/// - `claude_session_id`: `None` until P14 starts populating it.
+/// - `claude_session_id`: populated by `relay_session_io`'s
+///   atomic-promote block when `session_init` arrives; `None` for
+///   fresh entries before that, and for legacy records written
+///   before the field was added.
 /// - `session_mode`: `Some("new"|"resume")` for post-[Q01] records; `None`
 ///   for legacy blobs that predate the [Q01] fix. `do_spawn_session` writes
 ///   the *effective* mode (what the bridge will actually use) on every
@@ -1479,15 +1482,15 @@ impl AgentSupervisor {
         // gap so the next `rebind_from_tugbank` reads the correct mode
         // back without needing the defense-in-depth path again.
         //
-        // [P14]: preserve the persisted `claude_session_id` on reconnects.
-        // A fresh insert (`inserted == true`) has `entry.claude_session_id
+        // Preserve the persisted `claude_session_id` on reconnects. A
+        // fresh insert (`inserted == true`) has `entry.claude_session_id
         // == None` by construction, so the record carries `None` — the
         // bridge will fill it in via `relay_session_io`'s atomic-promote
         // block on the next `session_init`. A reconnect (`inserted ==
         // false`) for an entry that was either rebound from tugbank or
-        // already promoted to `Live` carries `Some(...)`; reading from the
-        // entry preserves the persisted id across the rewrite instead of
-        // clobbering it back to `None`.
+        // already promoted to `Live` carries `Some(...)`; reading from
+        // the entry preserves the persisted id across the rewrite
+        // instead of clobbering it back to `None`.
         let preserved_claude_session_id = {
             let entry = entry_arc.lock().await;
             entry.claude_session_id.clone()
@@ -1682,17 +1685,17 @@ impl AgentSupervisor {
             );
         }
 
-        // Phase 4: persistence is preserved across close per [P14]. A
-        // closed card can be reopened with history — either via in-process
-        // re-spawn (the persisted record's `claude_session_id` is
-        // available via tugbank lookup) or via cold-boot rebind (the
-        // record is what `rebind_from_tugbank` reads at startup). The
-        // explicit `reset_session` flow is the only path that invalidates
-        // the persisted id; close is a "stop the subprocess but keep the
+        // Phase 4: persistence is preserved across close. A closed card
+        // can be reopened with history — either via in-process re-spawn
+        // (the persisted record's `claude_session_id` is available via
+        // tugbank lookup) or via cold-boot rebind (the record is what
+        // `rebind_from_tugbank` reads at startup). The explicit
+        // `reset_session` flow is the only path that invalidates the
+        // persisted id; close is a "stop the subprocess but keep the
         // history pointer" operation.
         //
-        // The historical close-time `delete_session_key` call lived here
-        // before P14; removing it shifts the cleanup responsibility to
+        // A historical close-time `delete_session_key` call used to live
+        // here; removing it shifts the cleanup responsibility to
         // explicit reset and to a future age-sweep on tugbank. Lingering
         // closed-card records are benign — they only consume a few
         // hundred bytes per card and contribute nothing to the bridge or
@@ -1913,7 +1916,7 @@ impl AgentSupervisor {
         // workspace_key, project_dir, crash_budget, and latest_metadata
         // fields are intentionally preserved.
         //
-        // [P14] reset invalidates `claude_session_id` (in-memory clear +
+        // Reset invalidates `claude_session_id` (in-memory clear +
         // tugbank delete) and flips `session_mode` back to `New` so the
         // next spawn is fresh. Without the mode flip, a card whose
         // session_mode was `Resume` would still spawn `--session-mode
@@ -2432,13 +2435,13 @@ impl AgentSupervisor {
                 rebound_mode,
                 CrashBudget::new(3, Duration::from_secs(60)),
             );
-            // [P14] rehydrate the persisted `claude_session_id` so the
-            // first spawn after rebind threads `--resume-session <id>`
-            // through the spawner. Without this, the rebind would hand
-            // back an entry with `claude_session_id = None`, the spawner
-            // would fall back to `--resume <tug_session_id>`, and any
-            // session whose claude id has diverged from its tug id (e.g.
-            // a forked session) would try to read a non-existent JSONL
+            // Rehydrate the persisted `claude_session_id` so the first
+            // spawn after rebind threads `--resume-session <id>` through
+            // the spawner. Without this, the rebind would hand back an
+            // entry with `claude_session_id = None`, the spawner would
+            // fall back to `--resume <tug_session_id>`, and any session
+            // whose claude id has diverged from its tug id (e.g. a
+            // forked session) would try to read a non-existent JSONL
             // and resume_failed.
             entry.claude_session_id = record.claude_session_id.clone();
             // Trace the rebound mode + its source so [Q01]-shaped
@@ -3203,11 +3206,11 @@ mod tests {
         assert!(sup.ledger.lock().await.is_empty());
     }
 
-    /// [P14] close preserves the persisted `SessionKeyRecord` so a
-    /// later cold-boot rebind (or in-process re-spawn) can resume with
-    /// the captured `claude_session_id`. The historical close-time
-    /// tugbank delete was removed when P14 landed; the only path that
-    /// invalidates the record is `reset_session`.
+    /// close preserves the persisted `SessionKeyRecord` so a later
+    /// cold-boot rebind (or in-process re-spawn) can resume with the
+    /// captured `claude_session_id`. The historical close-time tugbank
+    /// delete was removed when persistence was added; the only path
+    /// that invalidates the record is `reset_session`.
     #[tokio::test]
     async fn test_close_session_preserves_tugbank_entry() {
         let store = Arc::new(InMemoryStore::default());
@@ -3269,7 +3272,7 @@ mod tests {
         assert_eq!(store.delete_call_count(), 0);
     }
 
-    /// [P14] close no longer touches tugbank — `delete_session_key` is
+    /// close no longer touches tugbank — `delete_session_key` is
     /// not called on the close path. A `FailingDeleteStore` that would
     /// have triggered the historical warn-and-continue branch can no
     /// longer reach it, so this test pins the new contract by verifying
@@ -4530,7 +4533,7 @@ mod tests {
         assert_eq!(state, "live");
     }
 
-    /// [P14] After `do_spawn_session` writes the initial record (with
+    /// After `do_spawn_session` writes the initial record (with
     /// `claude_session_id: None`) and the bridge captures the real
     /// claude id from `session_init`, `relay_session_io` writes the
     /// updated record back to tugbank inside the same lock-held
@@ -4642,7 +4645,7 @@ mod tests {
         assert_eq!(in_memory.as_deref(), Some(claude_id_emitted));
     }
 
-    /// [P14] On a fresh supervisor whose store contains a previously
+    /// On a fresh supervisor whose store contains a previously
     /// persisted record carrying `claude_session_id`, `rebind_from_tugbank`
     /// must read the id back into the rehydrated `LedgerEntry`. Without
     /// this the next resume spawn would forward `--resume <tug_session_id>`
@@ -4682,7 +4685,7 @@ mod tests {
         assert_eq!(entry.session_mode, SessionMode::Resume);
     }
 
-    /// [P14] On a reconnect (`spawn_session` for an entry already in
+    /// On a reconnect (`spawn_session` for an entry already in
     /// the ledger), the Phase 2 tugbank write must preserve the
     /// previously persisted `claude_session_id` rather than clobber it
     /// back to `None`. Without this, every reload of an in-memory
@@ -4728,7 +4731,7 @@ mod tests {
         );
     }
 
-    /// [P14] `reset_session` invalidates the persisted claude id (tugbank
+    /// `reset_session` invalidates the persisted claude id (tugbank
     /// delete + in-memory clear) and flips `session_mode` back to `New`
     /// so the next spawn is fresh. The invalidate-then-cancel ordering
     /// ensures even a racing CODE_INPUT would observe a freshly cleared
@@ -4788,7 +4791,7 @@ mod tests {
         assert_eq!(entry.spawn_state, SpawnState::Idle);
     }
 
-    /// [P14] close preserves the persisted record so a later cold-boot
+    /// close preserves the persisted record so a later cold-boot
     /// rebind + resume spawn rehydrates the captured `claude_session_id`.
     /// Simulates the cold-boot path explicitly: shut down supervisor A,
     /// build a fresh supervisor B over the same store, rebind, send

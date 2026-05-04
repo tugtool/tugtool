@@ -1,4 +1,4 @@
-// tugcode/src/replay.ts — [P14] Step 1
+// tugcode/src/replay.ts
 //
 // JSONL → CODE_OUTPUT translator for tide transcript resume.
 //
@@ -7,37 +7,32 @@
 // and translates each entry into the OutboundMessage shapes the live
 // wire produces, so tugdeck's reducer can commit replayed turns into
 // `transcript` with the same machinery it uses for live turns. The
-// surface is bracketed by `replay_started` / `replay_complete` per
-// [D05] so the reducer's [D11] `replaying` phase has a clean entry
-// and exit point.
+// surface is bracketed by `replay_started` / `replay_complete` so the
+// reducer's `replaying` phase has a clean entry and exit point.
 //
 // Pure module — no filesystem I/O at translate time. The session-
 // level iterator accepts a fully-loaded JSONL string (or a sentinel
 // signaling "missing file" / "unreadable file") and produces the
-// stream of OutboundMessages. Step 3 is where the resume-spawn flow
-// opens the JSONL by path, captures any read error, and feeds the
-// iterator. Keeping translation pure makes the per-entry and per-
-// session paths trivially unit-testable.
+// stream of OutboundMessages. The resume-spawn flow opens the JSONL
+// by path, captures any read error, and feeds the iterator. Keeping
+// translation pure makes the per-entry and per-session paths
+// trivially unit-testable.
 //
-// Per-turn output ordering, fixed by [D06]'s "Implications":
+// Per-turn output ordering:
 //
-//   user_message_replay              ← [P14] synthetic; carries the
-//                                      turn's msg_id + user text +
-//                                      attachments. Reducer mirrors
-//                                      to `pendingUserMessage`.
-//   tool_use     [, tool_use_n]      ← In insertion order ([Q02]).
-//   tool_result  [, tool_result_n]   ← Interleaved by tool_use_id.
-//   thinking_text (optional)         ← `is_partial: false`.
-//   assistant_text                   ← `is_partial: false` (terminal
-//                                      text only — replay doesn't
-//                                      stream per-token deltas).
-//   turn_complete                    ← `result: "success"` for normal
-//                                      turns, `result: "error"` for
-//                                      orphan turns synthesized at
-//                                      EOF per [D08].
-//
-// [D01] (translator location), [D06] (direct JSONL → OutboundMessage),
-// [D08] (orphan-turn synthesis), [D10] (incremental batched yields).
+//   user_message_replay              Synthetic; carries the turn's
+//                                    msg_id + user text + attachments.
+//                                    Reducer mirrors to
+//                                    `pendingUserMessage`.
+//   tool_use     [, tool_use_n]      In insertion order.
+//   tool_result  [, tool_result_n]   Interleaved by tool_use_id.
+//   thinking_text (optional)         `is_partial: false`.
+//   assistant_text                   `is_partial: false` (terminal
+//                                    text only — replay doesn't
+//                                    stream per-token deltas).
+//   turn_complete                    `result: "success"` for normal
+//                                    turns, `result: "error"` for
+//                                    orphan turns synthesized at EOF.
 
 import type {
   AssistantText,
@@ -65,18 +60,19 @@ const IPC_VERSION = 2;
  * Default batch size for the session-level async iterator. After
  * yielding this many OutboundMessages, the iterator awaits a yielded
  * `setImmediate` so the IPC pipe stays responsive during replay of
- * very large JSONLs (e.g. the 37k-line outliers on this machine).
- * See [D10].
+ * very large JSONLs (the largest observed session JSONLs run to tens
+ * of thousands of lines).
  */
 const DEFAULT_BATCH_SIZE = 16;
 
 /**
- * Permissive shape for a single JSONL line, covering the surveyed
- * variants per [D06]. Fields are optional and loosely typed because
- * Claude's per-session JSONL is an internal persistence format whose
- * shape evolves across releases. The translator handles the surveyed
- * cases explicitly and dispatches unknown shapes to the
- * `tide::replay::unknown_shape` skip-with-telemetry path.
+ * Permissive shape for a single JSONL line, covering the variants
+ * observed across surveyed JSONL files. Fields are optional and
+ * loosely typed because Claude's per-session JSONL is an internal
+ * persistence format whose shape evolves across releases. The
+ * translator handles the surveyed cases explicitly and dispatches
+ * unknown shapes to the `tide::replay::unknown_shape`
+ * skip-with-telemetry path.
  *
  * Top-level `type` values seen across surveyed JSONLs:
  *   - `user`                    — user submission (text, image, or
@@ -187,12 +183,12 @@ const DEFAULT_TELEMETRY: ReplayTelemetry = {
  * lands. The buffer is flushed as a fixed-order sequence of
  * OutboundMessages and then reset for the next turn.
  *
- * Per [D08], a buffer that survives end-of-file (no terminal
- * `end_turn` ever arrived — the JSONL was truncated mid-turn, e.g.
- * by a reload during streaming) is flushed as a synthesized
- * `turn_complete(error)` so the user-visible portion of the
- * interrupted turn still appears in the transcript with the
- * "interrupted" marker live `interrupt()` produces.
+ * A buffer that survives end-of-file (no terminal `end_turn` ever
+ * arrived — the JSONL was truncated mid-turn, e.g. by a reload
+ * during streaming) is flushed as a synthesized `turn_complete(error)`
+ * so the user-visible portion of the interrupted turn still appears
+ * in the transcript with the "interrupted" marker live `interrupt()`
+ * produces.
  */
 interface PerTurnBuffer {
   /** The terminal assistant entry's `message.id`. Bound when the
@@ -529,7 +525,7 @@ function handleAssistantEntry(
  *
  * `result` selects the terminal `turn_complete` payload's `result`:
  *   - `"success"`: normal flow at terminal `end_turn`
- *   - `"error"`:   orphan-turn synthesis at EOF per [D08]
+ *   - `"error"`:   orphan-turn synthesis at EOF
  *
  * Returns `[]` if the buffer is unset (defensive — flushTurn should
  * never be called on a null buffer).
@@ -561,7 +557,7 @@ function flushTurn(
   };
   out.push(userMessage);
 
-  // 2. tool_use [+ tool_result] pairs in insertion order ([Q02]).
+  // 2. tool_use [+ tool_result] pairs in insertion order.
   for (const tc of buffer.toolCalls) {
     const toolUse: ToolUse = {
       type: "tool_use",
@@ -641,9 +637,9 @@ function flushTurn(
 // ---------------------------------------------------------------------------
 
 /**
- * Discriminated input shape for `translateJsonlSession`. The caller
- * (Step 3's resume-spawn flow) produces one of these by attempting to
- * read the JSONL file; the translator threads the outcome into the
+ * Discriminated input shape for `translateJsonlSession`. The
+ * resume-spawn flow produces one of these by attempting to read the
+ * JSONL file; the translator threads the outcome into the
  * `replay_started` / `replay_complete` bracket pair without needing
  * any filesystem awareness itself.
  */
@@ -676,10 +672,10 @@ export interface TranslateSessionOptions {
  * `replay_complete` carries an `error` payload identifying the
  * failure mode; tugdeck surfaces this via `lastReplayResult`.
  *
- * Yields are batched per [D10] so a 37k-line JSONL doesn't hold the
- * IPC pipe for seconds. The caller awaits the iterator one
- * OutboundMessage at a time; the inter-batch `setImmediate` yields
- * the event loop so the IPC writer can drain.
+ * Yields are batched so a very long JSONL doesn't hold the IPC pipe
+ * for seconds. The caller awaits the iterator one OutboundMessage at
+ * a time; the inter-batch `setImmediate` yields the event loop so
+ * the IPC writer can drain.
  */
 export async function* translateJsonlSession(
   input: ReplayInput,
@@ -762,10 +758,10 @@ export async function* translateJsonlSession(
     }
   }
 
-  // [D08] orphan-turn synthesis — a buffer that survives end-of-file
-  // means the JSONL was truncated mid-turn. Flush as turn_complete
-  // (error) so the user-visible portion appears in the transcript
-  // marked interrupted, matching live `interrupt()` semantics.
+  // Orphan-turn synthesis — a buffer that survives end-of-file means
+  // the JSONL was truncated mid-turn. Flush as turn_complete(error)
+  // so the user-visible portion appears in the transcript marked
+  // interrupted, matching live `interrupt()` semantics.
   if (ctx.buffer !== null) {
     const orphanFlush = flushTurn(ctx, "error");
     for (const msg of orphanFlush) {

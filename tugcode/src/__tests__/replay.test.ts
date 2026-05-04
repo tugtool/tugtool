@@ -1,15 +1,14 @@
-// tugcode/src/__tests__/replay.test.ts — [P14] Step 1
+// tugcode/src/__tests__/replay.test.ts
 //
-// Unit tests for the JSONL → CODE_OUTPUT translator. Tests assert the
-// translator's `OutboundMessage[]` output shape directly — the
-// tugdeck reducer is exercised in Step 2 and the cross-package wire
-// integration is exercised in Step 5. No reducer is imported in
-// tugcode/.
+// Unit tests for the JSONL → CODE_OUTPUT translator. Tests assert
+// the translator's `OutboundMessage[]` output shape directly — no
+// reducer is imported in tugcode/. Cross-package wire behavior is
+// exercised separately by integration tests on the tugdeck side.
 //
 // Fixture JSONLs are built inline as multi-line strings (one entry
 // per line; trailing newline optional). The shapes mirror real
 // `~/.claude/projects/<dir>/<id>.jsonl` payloads observed during the
-// [D06] survey, with names and ids anonymized.
+// shape survey, with names and ids anonymized.
 
 import { describe, expect, test } from "bun:test";
 
@@ -149,7 +148,7 @@ function isReplayComplete(m: OutboundMessage): m is ReplayComplete {
 // translateJsonlSession — happy paths
 // ---------------------------------------------------------------------------
 
-describe("[P14] translateJsonlSession — happy path", () => {
+describe("translateJsonlSession — happy path", () => {
   test("two simple text-only turns produce the documented sequence", async () => {
     const jsonl = makeJsonl([
       userEntry([{ type: "text", text: "first user prompt" }]),
@@ -258,7 +257,7 @@ describe("[P14] translateJsonlSession — happy path", () => {
   });
 });
 
-describe("[P14] translateJsonlSession — tool calls", () => {
+describe("translateJsonlSession — tool calls", () => {
   test("single Bash tool call emits user_message + tool_use + tool_result + assistant_text + turn_complete", async () => {
     const jsonl = makeJsonl([
       userEntry([{ type: "text", text: "list the files" }]),
@@ -376,7 +375,7 @@ describe("[P14] translateJsonlSession — tool calls", () => {
     ]);
 
     // Emission order: tool_use_A, tool_result_A, tool_use_B,
-    // tool_result_B (per-pair interleaving, [Q02] insertion order).
+    // tool_result_B (per-pair interleaving, insertion order).
     const inner = out
       .slice(1, -1)
       .filter((m) => m.type === "tool_use" || m.type === "tool_result")
@@ -465,7 +464,7 @@ describe("[P14] translateJsonlSession — tool calls", () => {
   });
 });
 
-describe("[P14] translateJsonlSession — thinking + image + degenerate", () => {
+describe("translateJsonlSession — thinking + image + degenerate", () => {
   test("thinking content lands before terminal assistant_text", async () => {
     const jsonl = makeJsonl([
       userEntry([{ type: "text", text: "think hard" }]),
@@ -558,7 +557,7 @@ describe("[P14] translateJsonlSession — thinking + image + degenerate", () => 
 // translateJsonlSession — skipped / unknown / orphan / malformed
 // ---------------------------------------------------------------------------
 
-describe("[P14] translateJsonlSession — skipped top-level types", () => {
+describe("translateJsonlSession — skipped top-level types", () => {
   test("attachment / queue-operation / last-prompt / file-history-snapshot / ai-title / system / permission-mode all skip silently", async () => {
     const skipped: JsonlEntry[] = [
       { type: "attachment" },
@@ -601,7 +600,7 @@ describe("[P14] translateJsonlSession — skipped top-level types", () => {
   });
 });
 
-describe("[P14] translateJsonlSession — unknown shapes", () => {
+describe("translateJsonlSession — unknown shapes", () => {
   test("unknown top-level type fires unknown_shape telemetry and emits nothing", async () => {
     const jsonl = makeJsonl([
       { type: "frobnicate-future-2026" }, // not in the surveyed set
@@ -660,11 +659,11 @@ describe("[P14] translateJsonlSession — unknown shapes", () => {
   });
 });
 
-describe("[P14] translateJsonlSession — orphan turn at EOF", () => {
+describe("translateJsonlSession — orphan turn at EOF", () => {
   test("JSONL ending with assistant.stop_reason=tool_use synthesizes turn_complete(error)", async () => {
     // Reload-mid-stream case: the user sent a message, the assistant
     // started a tool_use, but the JSONL ends before the terminal
-    // end_turn could be written. [D08] says we synthesize an
+    // end_turn could be written. The translator synthesizes an
     // interrupted turn so the user-visible portion (the prompt + any
     // captured assistant content) still appears in the transcript.
     const jsonl = makeJsonl([
@@ -720,7 +719,7 @@ describe("[P14] translateJsonlSession — orphan turn at EOF", () => {
   });
 });
 
-describe("[P14] translateJsonlSession — malformed lines", () => {
+describe("translateJsonlSession — malformed lines", () => {
   test("a single malformed line is skipped; surrounding turns still commit", async () => {
     const jsonl =
       JSON.stringify(userEntry([{ type: "text", text: "u1" }])) +
@@ -784,7 +783,7 @@ describe("[P14] translateJsonlSession — malformed lines", () => {
 // translateJsonlSession — error inputs (missing / unreadable)
 // ---------------------------------------------------------------------------
 
-describe("[P14] translateJsonlSession — error inputs", () => {
+describe("translateJsonlSession — error inputs", () => {
   test("kind=missing yields replay_started → replay_complete{jsonl_missing} with no inner messages", async () => {
     const out = await collectSession({
       kind: "missing",
@@ -811,10 +810,10 @@ describe("[P14] translateJsonlSession — error inputs", () => {
 });
 
 // ---------------------------------------------------------------------------
-// translateJsonlSession — batched yield behavior ([D10])
+// translateJsonlSession — batched yield behavior (yield batching)
 // ---------------------------------------------------------------------------
 
-describe("[P14] translateJsonlSession — batched yields", () => {
+describe("translateJsonlSession — batched yields", () => {
   test("yieldBetweenBatches=true releases the event loop between batches", async () => {
     // Two simple turns — produces 2 brackets + 2*3 = 8 OutboundMessages.
     // With batchSize=2 we should see at least one event-loop yield
@@ -887,7 +886,7 @@ describe("[P14] translateJsonlSession — batched yields", () => {
 // translateJsonlEntry — direct unit tests (no async iterator wrapper)
 // ---------------------------------------------------------------------------
 
-describe("[P14] translateJsonlEntry — direct unit tests", () => {
+describe("translateJsonlEntry — direct unit tests", () => {
   test("user entry alone returns [] and stashes pendingUserText", () => {
     const ctx = makeTranslateContext();
     const out = translateJsonlEntry(

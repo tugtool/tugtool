@@ -19,6 +19,12 @@ import type { AtomSegment } from "../tug-atom-img";
  * rather than the phase — a completed turn always returns to `idle`
  * once its entry is committed, so there is no `complete` or
  * `interrupted` phase.
+ *
+ * `replaying` is the phase for the JSONL replay window bracketed by
+ * `replay_started` / `replay_complete`. While `replaying`,
+ * `canSubmit` and `canInterrupt` are both `false` and the live-frame
+ * handlers drop their inputs (replay events flow through dedicated
+ * handlers; the bracket guarantees ordering).
  */
 export type CodeSessionPhase =
   | "idle"
@@ -27,6 +33,7 @@ export type CodeSessionPhase =
   | "streaming"
   | "tool_work"
   | "awaiting_approval"
+  | "replaying"
   | "errored";
 
 /**
@@ -196,6 +203,43 @@ export interface CodeSessionSnapshot {
     message: string;
     at: number;
   } | null;
+
+  /**
+   * Outcome of the most recent JSONL replay window. `null` until the
+   * first `replay_complete` lands; populated on every
+   * `replay_complete` thereafter — including the success path
+   * (`kind: "success"`, empty `message`) so telemetry / dev-surface
+   * readers can distinguish a clean replay from each error variant by
+   * `kind` alone.
+   *
+   * The `TideRestoring` placeholder reads this for the timeout-state
+   * copy (`kind === "replay_timeout"`); cleared back to `null` on the
+   * next `replay_started` so the field always reflects the most
+   * recent window's outcome rather than accumulating history.
+   */
+  lastReplayResult: LastReplayResult | null;
+}
+
+/**
+ * Result of the most recent JSONL replay window. Each `kind` value
+ * matches the wire-side `replay_complete.error.kind` enum exactly,
+ * plus a `"success"` value that the wire never sets (it is inferred
+ * client-side when `replay_complete` arrives without an `error`
+ * payload).
+ */
+export interface LastReplayResult {
+  kind:
+    | "success"
+    | "jsonl_missing"
+    | "jsonl_unreadable"
+    | "jsonl_malformed"
+    | "replay_timeout";
+  /** Human-readable detail; empty string on the success path. */
+  message: string;
+  /** Number of turns committed during this replay window. */
+  count: number;
+  /** `Date.now()` at the moment `replay_complete` landed. */
+  at: number;
 }
 
 /**

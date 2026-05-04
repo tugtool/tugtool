@@ -3103,13 +3103,13 @@ describe("protocol audit: §2f permission response format", () => {
 });
 
 // ---------------------------------------------------------------------------
-// [P14] SessionManager resumeSessionId plumbing
+// SessionManager resumeSessionId plumbing
 // ---------------------------------------------------------------------------
 
-describe("[P14] SessionManager resumeSessionId", () => {
+describe("SessionManager resumeSessionId", () => {
   test("constructor without fourth arg leaves resumeSessionId null", () => {
     const m = new SessionManager(
-      "/tmp/p14-default-" + Date.now(),
+      "/tmp/resume-default-" + Date.now(),
       crypto.randomUUID(),
     );
     expect((m as any).resumeSessionId).toBe(null);
@@ -3117,7 +3117,7 @@ describe("[P14] SessionManager resumeSessionId", () => {
 
   test("constructor with fourth arg captures the value", () => {
     const m = new SessionManager(
-      "/tmp/p14-set-" + Date.now(),
+      "/tmp/resume-set-" + Date.now(),
       crypto.randomUUID(),
       "resume",
       "claude-internal-id-42",
@@ -3131,7 +3131,7 @@ describe("[P14] SessionManager resumeSessionId", () => {
     // the resume-id-selection logic in `initialize()` a single test
     // (`!= null`) instead of two.
     const m = new SessionManager(
-      "/tmp/p14-empty-" + Date.now(),
+      "/tmp/resume-empty-" + Date.now(),
       crypto.randomUUID(),
       "resume",
       "",
@@ -3141,7 +3141,7 @@ describe("[P14] SessionManager resumeSessionId", () => {
 
   test("constructor coerces undefined resumeSessionId to null", () => {
     const m = new SessionManager(
-      "/tmp/p14-undef-" + Date.now(),
+      "/tmp/resume-undef-" + Date.now(),
       crypto.randomUUID(),
       "resume",
       undefined,

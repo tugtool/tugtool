@@ -73,6 +73,17 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   // tugcode emits this after a failed `--resume` spawn. The reducer
   // rolls it into `lastError`.
   "resume_failed",
+  // Replay bracket events emitted by the JSONL replay translator.
+  // The reducer transitions into / out of the `replaying` phase on
+  // these and populates `lastReplayResult` on completion.
+  "replay_started",
+  "replay_complete",
+  // Per-turn synthetic user-message echo emitted by the replay
+  // translator at the start of each replayed turn. The reducer
+  // mirrors it to `pendingUserMessage` so the subsequent
+  // `turn_complete` commits a `TurnEntry` with the historical user
+  // submission text.
+  "user_message_replay",
 ]);
 
 export interface CodeSessionStoreOptions {
@@ -226,6 +237,8 @@ export class CodeSessionStore {
       // transport health. An idle card whose wire is offline must
       // refuse new turns until reconnect; a card whose phase is
       // errored but whose wire is back can still retry.
+      // `replaying` excludes both submit and interrupt — the bracket
+      // window owns the card; the user can only watch.
       canSubmit:
         (this.state.phase === "idle" || this.state.phase === "errored") &&
         this.state.transportState === "online",
@@ -249,6 +262,7 @@ export class CodeSessionStore {
       streamingPaths: STREAMING_PATHS,
       lastCost: this.state.lastCost,
       lastError: this.state.lastError,
+      lastReplayResult: this.state.lastReplayResult,
     };
     this._cachedSnapshot = snap;
     return snap;

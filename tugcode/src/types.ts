@@ -290,15 +290,15 @@ export interface ResumeFailed {
 }
 
 // ---------------------------------------------------------------------------
-// [P14] Replay event types
+// Replay event types — JSONL → CODE_OUTPUT translator output
 // ---------------------------------------------------------------------------
 
 /**
- * [P14] Replay user-message echo. Emitted by the JSONL replay
- * translator at the start of each replayed turn, carrying the
- * original user submission text + attachments + the upcoming turn's
- * `msg_id` (claude's id for the *terminal* assistant entry of the
- * turn — the same id `turn_complete` will carry).
+ * Replay user-message echo. Emitted by the JSONL replay translator
+ * at the start of each replayed turn, carrying the original user
+ * submission text + attachments + the upcoming turn's `msg_id`
+ * (claude's id for the *terminal* assistant entry of the turn — the
+ * same id `turn_complete` will carry).
  *
  * Distinct from the inbound `user_message` (`tugcast → tugcode`
  * submission shape) because:
@@ -319,11 +319,10 @@ export interface UserMessageReplay {
 }
 
 /**
- * [P14] Bracket marker emitted by the replay translator at the start
- * of a JSONL replay window. The reducer transitions
+ * Bracket marker emitted by the replay translator at the start of a
+ * JSONL replay window. The reducer transitions
  * `phase: idle → replaying` on this event and gates `canSubmit` /
- * `canInterrupt` to `false` for the duration. See [D05] / [D11] in
- * `roadmap/tugplan-tide-transcript-resume.md`.
+ * `canInterrupt` to `false` for the duration.
  */
 export interface ReplayStarted {
   type: "replay_started";
@@ -331,15 +330,14 @@ export interface ReplayStarted {
 }
 
 /**
- * [P14] Bracket marker emitted by the replay translator at end-of-
- * JSONL (or on a hard-budget timeout in Step 3). The reducer
- * transitions `phase: replaying → idle` and populates
- * `lastReplayResult` per [D10].
+ * Bracket marker emitted by the replay translator at end-of-JSONL
+ * (or on a hard-budget timeout). The reducer transitions
+ * `phase: replaying → idle` and populates `lastReplayResult`.
  *
- * `count` is the number of `turn_complete` events emitted during this
- * replay window. `error` is set when replay terminated abnormally;
- * `kind` matches tugdeck's `LastReplayResult.kind` enum exactly so
- * the reducer can pass it through without translation.
+ * `count` is the number of `turn_complete` events emitted during
+ * this replay window. `error` is set when replay terminated
+ * abnormally; `kind` matches tugdeck's `LastReplayResult.kind` enum
+ * exactly so the reducer can pass it through without translation.
  */
 export interface ReplayComplete {
   type: "replay_complete";

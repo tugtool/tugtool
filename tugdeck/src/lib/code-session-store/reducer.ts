@@ -17,6 +17,8 @@ import type {
   CodeSessionEvent,
   ControlRequestForwardEvent,
   CostUpdateEvent,
+  ReplayCompleteEvent,
+  ReplayStartedEvent,
   RespondApprovalActionEvent,
   RespondQuestionActionEvent,
   SendActionEvent,
@@ -29,12 +31,14 @@ import type {
   ToolUseEvent,
   ToolUseStructuredEvent,
   TurnCompleteEvent,
+  UserMessageReplayEvent,
   WireErrorEvent,
 } from "./events";
 import type {
   CodeSessionPhase,
   ControlRequestForward,
   CostSnapshot,
+  LastReplayResult,
   ToolCallState,
   TransportState,
   TurnEntry,
@@ -72,6 +76,26 @@ export interface CodeSessionState {
     at: number;
   } | null;
   lastCost: CostSnapshot | null;
+  /**
+   * Set of msg_ids already committed to the transcript. Used to
+   * dedupe `turn_complete` events whose msg_id has already produced a
+   * TurnEntry — defense-in-depth against a supervisor that
+   * accidentally re-emits a turn (a misordered replay-vs-live during
+   * a fast reconnect, a manual dev-tool replay) so the worst case is
+   * a silent no-op, not a duplicate transcript row.
+   *
+   * Maintained alongside the class wrapper's `_transcript` array. The
+   * reducer adds entries on `turn_complete`; `dispose` and clear
+   * paths are owned by the wrapper.
+   */
+  committedMsgIds: Set<string>;
+  /**
+   * Outcome of the most recent JSONL replay window. `null` between
+   * windows; populated on every `replay_complete` (success and error
+   * variants). The class wrapper mirrors this to
+   * `CodeSessionSnapshot.lastReplayResult`.
+   */
+  lastReplayResult: LastReplayResult | null;
 }
 
 /** Build the initial state for a freshly constructed store. */
@@ -94,6 +118,8 @@ export function createInitialState(
     queuedSends: [],
     lastError: null,
     lastCost: null,
+    committedMsgIds: new Set(),
+    lastReplayResult: null,
   };
 }
 
@@ -105,6 +131,16 @@ function handleSend(
   state: CodeSessionState,
   event: SendActionEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
+  // Submit is gated to idle/errored. While replaying, submit is
+  // refused at the snapshot level (`canSubmit: false`); the reducer
+  // drops the action defensively in case a UI race fires `send`
+  // anyway. The queue is also bypassed — a queued message that
+  // commits after replay completes would surprise the user with a
+  // dispatch they don't remember initiating.
+  if (state.phase === "replaying") {
+    return { state, effects: [] };
+  }
+
   if (state.phase === "idle" || state.phase === "errored") {
     const next: CodeSessionState = {
       ...state,
@@ -130,9 +166,9 @@ function handleSend(
     };
   }
 
-  // Mid-turn send — enqueue. The queue is speculative: a single entry
-  // flushes at `turn_complete(success)` via the single-tick collapse in
-  // `handleTurnComplete`; `interrupt()` clears it per [D05].
+  // Mid-turn send — enqueue. The queue is speculative: a single
+  // entry flushes at `turn_complete(success)` via the single-tick
+  // collapse in `handleTurnComplete`; `interrupt()` clears it.
   const queuedSends = [
     ...state.queuedSends,
     { text: event.text, atoms: [...event.atoms] },
@@ -205,13 +241,18 @@ function handleTextDelta(
   field: "assistant" | "thinking",
   inflightPath: InflightPath,
 ): { state: CodeSessionState; effects: Effect[] } {
-  // Incoming text outside of an active turn — drop. Live Claude should
-  // not emit this, but defensive handling keeps the reducer total.
+  // Incoming text outside of an active turn — drop. Live Claude
+  // should not emit this, but defensive handling keeps the reducer
+  // total. `replaying` is allowed: the JSONL replay translator emits
+  // assistant_text / thinking_text events that need to land in
+  // scratch keyed by msg_id so the subsequent `turn_complete` can
+  // commit them.
   if (
     state.phase !== "submitting" &&
     state.phase !== "awaiting_first_token" &&
     state.phase !== "streaming" &&
-    state.phase !== "tool_work"
+    state.phase !== "tool_work" &&
+    state.phase !== "replaying"
   ) {
     return { state, effects: [] };
   }
@@ -223,6 +264,12 @@ function handleTextDelta(
   const buffer = event.is_partial ? existing[field] + text : text;
   scratch.set(msgId, { ...existing, [field]: buffer });
 
+  // Phase transitions only fire on live turns. While replaying, the
+  // bracket pair owns phase entry/exit — assistant_text accumulates
+  // into scratch but does not flip phase. The replay translator
+  // emits is_partial: false on every text event, so the live
+  // submitting → awaiting_first_token → streaming sequence has no
+  // analogue here anyway.
   let nextPhase: CodeSessionPhase;
   if (state.phase === "submitting") {
     nextPhase = "awaiting_first_token";
@@ -232,6 +279,15 @@ function handleTextDelta(
     nextPhase = state.phase;
   }
 
+  // While replaying, the in-flight streaming document is not the
+  // surface the user reads — replay-committed turns render from
+  // `transcript`. Skip the write-inflight effect so a replayed turn's
+  // partial text doesn't briefly appear in the in-flight pane.
+  const effects: Effect[] =
+    state.phase === "replaying"
+      ? []
+      : [{ kind: "write-inflight", path: inflightPath, value: buffer }];
+
   return {
     state: {
       ...state,
@@ -239,13 +295,7 @@ function handleTextDelta(
       activeMsgId: msgId,
       scratch,
     },
-    effects: [
-      {
-        kind: "write-inflight",
-        path: inflightPath,
-        value: buffer,
-      },
-    ],
+    effects,
   };
 }
 
@@ -289,7 +339,8 @@ function handleToolUse(
     state.phase !== "submitting" &&
     state.phase !== "awaiting_first_token" &&
     state.phase !== "streaming" &&
-    state.phase !== "tool_work"
+    state.phase !== "tool_work" &&
+    state.phase !== "replaying"
   ) {
     return { state, effects: [] };
   }
@@ -324,20 +375,28 @@ function handleToolUse(
     });
   }
 
+  // Live tool_use flips phase to "tool_work"; replay keeps `replaying`
+  // since the bracket pair owns phase entry/exit. The in-flight tool
+  // pane similarly only reflects live turns.
+  const isReplaying = state.phase === "replaying";
+  const effects: Effect[] = isReplaying
+    ? []
+    : [
+        {
+          kind: "write-inflight",
+          path: "inflight.tools",
+          value: serializeToolCalls(toolCallMap),
+        },
+      ];
+
   return {
     state: {
       ...state,
-      phase: "tool_work",
+      phase: isReplaying ? state.phase : "tool_work",
       activeMsgId: event.msg_id ?? state.activeMsgId,
       toolCallMap,
     },
-    effects: [
-      {
-        kind: "write-inflight",
-        path: "inflight.tools",
-        value: serializeToolCalls(toolCallMap),
-      },
-    ],
+    effects,
   };
 }
 
@@ -345,10 +404,11 @@ function handleToolResult(
   state: CodeSessionState,
   event: ToolResultEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
-  // Plan's transition table only lists tool_result under the
-  // `tool_work → streaming` row — there is no legitimate tool_result in
-  // any other phase, so we drop anything else silently.
-  if (state.phase !== "tool_work") {
+  // The transition table only lists tool_result under the
+  // `tool_work → streaming` row for live turns. While replaying,
+  // tool_result also accepted — it pairs with a prior tool_use that
+  // landed in toolCallMap during this same replayed turn.
+  if (state.phase !== "tool_work" && state.phase !== "replaying") {
     return { state, effects: [] };
   }
 
@@ -368,9 +428,25 @@ function handleToolResult(
     result: event.output ?? null,
   });
 
-  const nextPhase: CodeSessionPhase = allToolsTerminal(toolCallMap)
-    ? "streaming"
-    : "tool_work";
+  // Live tool_result drives `tool_work → streaming` once every entry
+  // is terminal. Replay keeps `replaying`; the bracket's
+  // replay_complete returns to idle.
+  const isReplaying = state.phase === "replaying";
+  const nextPhase: CodeSessionPhase = isReplaying
+    ? state.phase
+    : allToolsTerminal(toolCallMap)
+      ? "streaming"
+      : "tool_work";
+
+  const effects: Effect[] = isReplaying
+    ? []
+    : [
+        {
+          kind: "write-inflight",
+          path: "inflight.tools",
+          value: serializeToolCalls(toolCallMap),
+        },
+      ];
 
   return {
     state: {
@@ -378,13 +454,7 @@ function handleToolResult(
       phase: nextPhase,
       toolCallMap,
     },
-    effects: [
-      {
-        kind: "write-inflight",
-        path: "inflight.tools",
-        value: serializeToolCalls(toolCallMap),
-      },
-    ],
+    effects,
   };
 }
 
@@ -427,12 +497,33 @@ function handleTurnComplete(
   state: CodeSessionState,
   event: TurnCompleteEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
-  // turn_complete before any turn started — drop.
-  if (state.activeMsgId === null && state.phase === "idle") {
+  // turn_complete before any turn started — drop. (The `replaying`
+  // phase is excluded from this guard because the replay translator
+  // emits `turn_complete` while `replaying`; activeMsgId is set by
+  // the preceding `assistant_text` / `tool_use` events.)
+  if (
+    state.activeMsgId === null &&
+    state.phase === "idle"
+  ) {
     return { state, effects: [] };
   }
 
   const msgId = event.msg_id ?? state.activeMsgId ?? "";
+
+  // Dedupe by msg_id. A `turn_complete` whose id is already in
+  // `committedMsgIds` is a no-op — defense-in-depth against a
+  // supervisor that re-emits a turn (e.g. replay overlapping live).
+  // Logged at debug level so a real regression is observable without
+  // spamming the console on every legitimate redundant event.
+  if (state.committedMsgIds.has(msgId)) {
+    if (typeof console !== "undefined") {
+      console.debug(
+        `[code-session-store] dropping duplicate turn_complete for msg_id=${msgId}`,
+      );
+    }
+    return { state, effects: [] };
+  }
+
   const scratchEntry = state.scratch.get(msgId) ?? {
     assistant: "",
     thinking: "",
@@ -448,8 +539,8 @@ function handleTurnComplete(
     },
     thinking: scratchEntry.thinking,
     assistant: scratchEntry.assistant,
-    // Preserve insertion order ([Q02]): Map.values() iterates in the
-    // order entries were inserted via handleToolUse.
+    // Preserve insertion order: Map.values() iterates in the order
+    // entries were inserted via handleToolUse.
     toolCalls: Array.from(state.toolCallMap.values()),
     result: isSuccess ? "success" : "interrupted",
     endedAt: Date.now(),
@@ -457,10 +548,35 @@ function handleTurnComplete(
 
   const scratch = new Map(state.scratch);
   scratch.delete(msgId);
+  const committedMsgIds = new Set(state.committedMsgIds);
+  committedMsgIds.add(msgId);
 
-  // Single-tick collapse per: a queued send on a successful
-  // turn flushes in the same dispatch as the commit, so observers see
-  // the final phase as `submitting`, not a transient `idle`.
+  // While replaying, turn_complete commits a transcript entry but
+  // stays in `replaying` — the bracket's terminal `replay_complete`
+  // is what returns the phase to `idle`. Skip the queued-send flush
+  // (replay produces no queued sends) and the `clear-inflight` effect
+  // (replay never wrote to the in-flight streaming document).
+  if (state.phase === "replaying") {
+    return {
+      state: {
+        ...state,
+        // phase stays `replaying`
+        activeMsgId: null,
+        scratch,
+        toolCallMap: new Map(),
+        pendingApproval: null,
+        pendingQuestion: null,
+        prevPhase: null,
+        pendingUserMessage: null,
+        committedMsgIds,
+      },
+      effects: [{ kind: "append-transcript", entry }],
+    };
+  }
+
+  // Single-tick collapse: a queued send on a successful turn flushes
+  // in the same dispatch as the commit, so observers see the final
+  // phase as `submitting`, not a transient `idle`.
   if (isSuccess && state.queuedSends.length > 0) {
     const [next, ...rest] = state.queuedSends;
     return {
@@ -480,6 +596,7 @@ function handleTurnComplete(
         },
         queuedSends: rest,
         lastError: null,
+        committedMsgIds,
       },
       effects: [
         { kind: "append-transcript", entry },
@@ -512,8 +629,9 @@ function handleTurnComplete(
       // Interrupt-driven paths already cleared the queue.
       queuedSends: isSuccess ? state.queuedSends : [],
       // A successful turn clears any lingering `lastError` from an
-      // earlier errored-phase recovery ([]).
+      // earlier errored-phase recovery.
       lastError: isSuccess ? null : state.lastError,
+      committedMsgIds,
     },
     effects: [
       { kind: "append-transcript", entry },
@@ -894,6 +1012,136 @@ function handleSessionNotOwned(
 }
 
 // ---------------------------------------------------------------------------
+// Replay bracket handlers (replay_started / replay_complete /
+// user_message_replay)
+// ---------------------------------------------------------------------------
+
+/**
+ * Open a replay window. Allowed only from `idle` or `errored` —
+ * other phases mean a live turn is in flight, which would race the
+ * supervisor's flush-before-live ordering. The `errored` case is the
+ * explicit invariant: a previously-errored card whose
+ * `spawn_session_ok` cleared the error before replay began would
+ * already be `idle` by the time `replay_started` lands; this branch
+ * exists in case the supervisor sequences differently.
+ */
+function handleReplayStarted(
+  state: CodeSessionState,
+  _event: ReplayStartedEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  if (state.phase !== "idle" && state.phase !== "errored") {
+    console.warn(
+      `[code-session-store] replay_started in unexpected phase ${state.phase}; dropping`,
+    );
+    return { state, effects: [] };
+  }
+  return {
+    state: {
+      ...state,
+      phase: "replaying",
+      // Clear pendingUserMessage defensively — replay should never
+      // observe one (idle/errored have it null), but a future caller
+      // that drives `send` then `replay_started` synchronously would
+      // otherwise leak the pending message into the first replayed
+      // turn's commit.
+      pendingUserMessage: null,
+      // Same defensive clear for any in-flight scratch / tool state.
+      // A live turn racing replay would be a supervisor-side bug,
+      // but the reducer leaves no fingerprint of it on the snapshot.
+      activeMsgId: null,
+      scratch: new Map(),
+      toolCallMap: new Map(),
+      pendingApproval: null,
+      pendingQuestion: null,
+      prevPhase: null,
+      // Clear lastReplayResult — the new window is the new outcome.
+      lastReplayResult: null,
+    },
+    effects: [],
+  };
+}
+
+/**
+ * Close a replay window. Always returns to `idle` and populates
+ * `lastReplayResult` with the success or error variant. Idempotent:
+ * a stray `replay_complete` outside `replaying` is logged and
+ * dropped so the normal idle / errored state isn't perturbed.
+ */
+function handleReplayComplete(
+  state: CodeSessionState,
+  event: ReplayCompleteEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  if (state.phase !== "replaying") {
+    console.warn(
+      `[code-session-store] replay_complete in unexpected phase ${state.phase}; dropping`,
+    );
+    return { state, effects: [] };
+  }
+  const lastReplayResult: LastReplayResult = event.error
+    ? {
+        kind: event.error.kind,
+        message: event.error.message,
+        count: event.count,
+        at: Date.now(),
+      }
+    : {
+        kind: "success",
+        message: "",
+        count: event.count,
+        at: Date.now(),
+      };
+  return {
+    state: {
+      ...state,
+      phase: "idle",
+      activeMsgId: null,
+      scratch: new Map(),
+      toolCallMap: new Map(),
+      pendingApproval: null,
+      pendingQuestion: null,
+      prevPhase: null,
+      pendingUserMessage: null,
+      lastReplayResult,
+    },
+    effects: [],
+  };
+}
+
+/**
+ * Replay user-message echo: the synthetic open of each replayed turn.
+ * Sets `pendingUserMessage` so the upcoming `turn_complete` for the
+ * same `msg_id` commits a `TurnEntry` with this user submission. No
+ * `send-frame` effect — the user already submitted this message
+ * historically; replaying it must NOT round-trip back to the wire.
+ *
+ * Drops in any phase other than `replaying`.
+ */
+function handleUserMessageReplay(
+  state: CodeSessionState,
+  event: UserMessageReplayEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  if (state.phase !== "replaying") {
+    return { state, effects: [] };
+  }
+  const attachments: ReadonlyArray<AtomSegment> = (() => {
+    const raw = event.attachments;
+    return Array.isArray(raw) ? (raw as ReadonlyArray<AtomSegment>) : [];
+  })();
+  return {
+    state: {
+      ...state,
+      pendingUserMessage: {
+        text: event.text,
+        atoms: attachments,
+        submitAt: Date.now(),
+      },
+      activeMsgId: event.msg_id,
+    },
+    effects: [],
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
 
@@ -951,6 +1199,12 @@ export function reduce(
       return handleWireError(state, event);
     case "resume_failed":
       return handleResumeFailed(state, event);
+    case "replay_started":
+      return handleReplayStarted(state, event);
+    case "replay_complete":
+      return handleReplayComplete(state, event);
+    case "user_message_replay":
+      return handleUserMessageReplay(state, event);
     default:
       return { state, effects: [] };
   }

@@ -293,6 +293,60 @@ export interface ResumeFailedEvent {
   stale_session_id?: string;
 }
 
+/**
+ * Replay user-message echo emitted by tugcode's JSONL replay
+ * translator. The reducer sets `pendingUserMessage` (similar to
+ * `send`, but without the outbound `user_message` CODE_INPUT frame)
+ * so the subsequent `assistant_text` / `turn_complete` for the same
+ * `msg_id` commit a `TurnEntry` into `transcript`.
+ *
+ * This event is only meaningful while `phase === "replaying"`; the
+ * reducer drops it in any other phase so a stray frame on a live
+ * session can't corrupt `pendingUserMessage`.
+ */
+export interface UserMessageReplayEvent {
+  type: "user_message_replay";
+  msg_id: string;
+  text: string;
+  attachments?: ReadonlyArray<unknown>;
+  tug_session_id?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Bracket marker emitted by the replay translator at the start of a
+ * JSONL replay window. The reducer transitions
+ * `phase: {idle | errored} → replaying` and gates `canSubmit` /
+ * `canInterrupt` to `false` for the duration.
+ */
+export interface ReplayStartedEvent {
+  type: "replay_started";
+  tug_session_id?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Bracket marker emitted by the replay translator at end-of-JSONL
+ * (or on a hard-budget timeout). The reducer transitions
+ * `phase: replaying → idle` and populates `lastReplayResult`.
+ * `count` is the number of `turn_complete` events emitted during the
+ * window; `error` is set for non-success terminations.
+ */
+export interface ReplayCompleteEvent {
+  type: "replay_complete";
+  count: number;
+  error?: {
+    kind:
+      | "jsonl_missing"
+      | "jsonl_unreadable"
+      | "jsonl_malformed"
+      | "replay_timeout";
+    message: string;
+  };
+  tug_session_id?: string;
+  [key: string]: unknown;
+}
+
 /** Discriminated union of events the reducer accepts. */
 export type CodeSessionEvent =
   | SendActionEvent
@@ -316,4 +370,7 @@ export type CodeSessionEvent =
   | TransportCloseEvent
   | TransportOpenEvent
   | TransportSettledEvent
-  | ResumeFailedEvent;
+  | ResumeFailedEvent
+  | UserMessageReplayEvent
+  | ReplayStartedEvent
+  | ReplayCompleteEvent;
