@@ -1297,7 +1297,10 @@ function renderTideCardBanner(
     // a non-null count promotes it to "(N turns)" — useful signal
     // once the user has been waiting long enough that detail reads
     // as reassurance instead of noise. Status variant + default tone
-    // signals "transient, recoverable".
+    // signals "transient, recoverable". The strip uses a real
+    // animated `TugProgress` spinner via `iconSlot` rather than the
+    // static Lucide loader glyph; the message stands alone (no
+    // redundant bold label that just repeats the message text).
     const message =
       typeof spec.turnsCount === "number" && spec.turnsCount > 0
         ? `Loading conversation… (${spec.turnsCount} ${spec.turnsCount === 1 ? "turn" : "turns"})`
@@ -1307,8 +1310,13 @@ function renderTideCardBanner(
         visible={true}
         variant="status"
         tone="default"
-        icon="loader"
-        label="Loading conversation"
+        iconSlot={
+          <TugProgress
+            variant="spinner"
+            size="sm"
+            aria-label="Loading conversation"
+          />
+        }
         message={message}
       />
     );

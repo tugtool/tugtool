@@ -72,6 +72,14 @@ export interface TugPaneBannerProps {
   /** Optional Lucide icon name for the strip (most useful for status variant). */
   icon?: string;
   /**
+   * Optional custom node rendered in place of the Lucide icon. When
+   * provided, the strip uses this node and ignores `icon`. Use for
+   * indicators that need their own animation or composition — e.g. a
+   * `TugProgress` spinner — that a static Lucide glyph can't express.
+   * The node should be sized to fit the 16px icon slot.
+   */
+  iconSlot?: React.ReactNode;
+  /**
    * Optional Lucide icon name rendered in the detail panel (error variant
    * only). Rendered large (48px) on the left of the TugAlert-style layout.
    */
@@ -109,6 +117,7 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
       label,
       message,
       icon,
+      iconSlot,
       detailIcon,
       detailTitle,
       children,
@@ -232,11 +241,13 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
     // Shared strip markup used by both variants.
     const strip = (
       <div ref={stripRef} className="tug-pane-banner-strip">
-        {icon && (
+        {iconSlot !== undefined ? (
+          <span className="tug-pane-banner-icon">{iconSlot}</span>
+        ) : icon ? (
           <span className="tug-pane-banner-icon" aria-hidden="true">
             <BannerIcon name={icon} />
           </span>
-        )}
+        ) : null}
         {label && <span className="tug-pane-banner-label">{label}</span>}
         <span className="tug-pane-banner-message">{message}</span>
       </div>
