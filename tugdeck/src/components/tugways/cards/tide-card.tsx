@@ -391,7 +391,7 @@ type TideRestoringVariant = "binding";
 interface TideRestoringProps {
   variant: TideRestoringVariant;
   /** The Cancel button calls `cancelTideRestore(cardId)`. */
-  cardId?: string;
+  cardId: string;
   /** Path label rendered under the title. */
   projectDir: string;
 }
@@ -402,7 +402,7 @@ function TideRestoring({
   projectDir,
 }: TideRestoringProps) {
   const handleCancel = useCallback(() => {
-    if (cardId) cancelTideRestore(cardId);
+    cancelTideRestore(cardId);
   }, [cardId]);
 
   const title = "Restoring session";
