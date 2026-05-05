@@ -863,11 +863,20 @@ impl SessionLedger {
     }
 
     /// Transition a `pending` row to `interrupted`, capturing whatever
-    /// `partial_text` had streamed so far. `NotFound` / `InvalidTurnState`
-    /// follow the same shape as `mark_turn_complete`.
+    /// `partial_text` had streamed so far and (when known) claude's
+    /// own message id from the cancelled assistant turn. `NotFound` /
+    /// `InvalidTurnState` follow the same shape as `mark_turn_complete`.
+    ///
+    /// `claude_message_id` is `Some` only when the cancel happened
+    /// after `message_start` (so the wire-side `turn_cancelled` carries
+    /// the id); a `None` here means "no id known yet, leave the row's
+    /// existing claude_message_id alone." `COALESCE(?, claude_message_id)`
+    /// in the SQL preserves any prior value rather than clobbering it
+    /// to NULL.
     pub fn mark_turn_interrupted(
         &self,
         tug_turn_id: &str,
+        claude_message_id: Option<&str>,
         partial_text: Option<&str>,
         completed_at: i64,
     ) -> Result<(), LedgerError> {
@@ -888,10 +897,11 @@ impl SessionLedger {
         tx.execute(
             "UPDATE turns
              SET state = 'interrupted',
-                 partial_text = ?2,
-                 completed_at = ?3
+                 claude_message_id = COALESCE(?2, claude_message_id),
+                 partial_text = ?3,
+                 completed_at = ?4
              WHERE tug_turn_id = ?1",
-            params![tug_turn_id, partial_text, completed_at],
+            params![tug_turn_id, claude_message_id, partial_text, completed_at],
         )?;
         tx.commit()?;
         Ok(())
@@ -2079,27 +2089,71 @@ mod tests {
             .unwrap();
 
         let cancelled_at = now + 3_000;
-        l.mark_turn_interrupted("t1", Some("partial response..."), cancelled_at)
-            .unwrap();
+        l.mark_turn_interrupted(
+            "t1",
+            Some("msg_01XYZ"),
+            Some("partial response..."),
+            cancelled_at,
+        )
+        .unwrap();
 
         let r = l.get_turn("t1").unwrap().unwrap();
         assert_eq!(r.state, TurnState::Interrupted);
+        assert_eq!(r.claude_message_id.as_deref(), Some("msg_01XYZ"));
         assert_eq!(r.partial_text.as_deref(), Some("partial response..."));
         assert_eq!(r.completed_at, Some(cancelled_at));
     }
 
     #[test]
-    fn mark_turn_interrupted_accepts_null_partial_text() {
+    fn mark_turn_interrupted_accepts_null_partial_text_and_claude_id() {
+        // A cancel before claude streamed `message_start` carries
+        // neither claude_message_id nor partial_text. Both are None;
+        // the row goes to interrupted, both columns stay NULL.
         let l = fresh();
         let now = millis(0);
         seed_live(&l, "s1", WS_A, "card-1", now);
         l.insert_pending_turn("s1", "t1", "hello", &[], now)
             .unwrap();
 
-        l.mark_turn_interrupted("t1", None, now + 3_000).unwrap();
+        l.mark_turn_interrupted("t1", None, None, now + 3_000)
+            .unwrap();
         let r = l.get_turn("t1").unwrap().unwrap();
         assert_eq!(r.state, TurnState::Interrupted);
         assert_eq!(r.partial_text, None);
+        assert_eq!(r.claude_message_id, None);
+    }
+
+    #[test]
+    fn mark_turn_interrupted_preserves_existing_claude_message_id() {
+        // If the row's claude_message_id was set earlier (e.g., a
+        // future code path stamps it before cancel), passing None for
+        // claude_message_id must NOT clobber it. The COALESCE in the
+        // UPDATE preserves the existing value.
+        let l = fresh();
+        let now = millis(0);
+        seed_live(&l, "s1", WS_A, "card-1", now);
+        l.insert_pending_turn("s1", "t1", "hello", &[], now)
+            .unwrap();
+
+        // Pre-populate claude_message_id while still pending.
+        {
+            let conn = l.db.lock().expect("ledger mutex");
+            conn.execute(
+                "UPDATE turns SET claude_message_id = ?2 WHERE tug_turn_id = ?1",
+                params!["t1", "msg_pre"],
+            )
+            .unwrap();
+        }
+
+        l.mark_turn_interrupted("t1", None, Some("partial..."), now + 3_000)
+            .unwrap();
+        let r = l.get_turn("t1").unwrap().unwrap();
+        assert_eq!(
+            r.claude_message_id.as_deref(),
+            Some("msg_pre"),
+            "None must not clobber an existing claude_message_id",
+        );
+        assert_eq!(r.partial_text.as_deref(), Some("partial..."));
     }
 
     #[test]

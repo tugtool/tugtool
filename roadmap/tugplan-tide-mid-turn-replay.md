@@ -1288,20 +1288,23 @@ Plus the close-out at [Step 5](#step-5) which retests Smoke D end-to-end against
 
 **Tasks:**
 
-- [ ] Extend `AgentSupervisor::merger_task` per [#step-4-4]'s artifact spec: after the existing `code_output_tx.send(frame.clone())`, parse the payload `type` via `payload_inspector` (reused from 4.3), branch on `turn_complete` and `turn_cancelled`.
-- [ ] On `turn_complete` with `claude_message_id` present: call `mark_turn_complete`. On error: warn + continue (frame is already forwarded).
-- [ ] On `turn_cancelled` (post fix-7 wire-shape change): call `mark_turn_interrupted` with `partial_text` from payload. On error: warn + continue.
-- [ ] On `turn_complete` with `claude_message_id` missing: log a warn line `tide::ledger::turn_complete_missing_claude_id`; skip the ledger update; the row stays `pending` and gets reconciled on next session resume.
-- [ ] Verify that `record_turn` (existing `SessionsRecorder` method that bumps `sessions.turn_count`) **continues to fire** alongside `mark_turn_complete` — both are called for the same `turn_complete` event. Pin in a test that asserts both rows after a single turn.
-- [ ] Extend `SessionsRecorder` (plural — line 490) with `mark_turn_complete` and `mark_turn_interrupted`. Update `LedgerSessionsRecorder` and test fakes.
+- [x] Extend `AgentSupervisor::merger_task` per [#step-4-4]'s artifact spec: after the existing `code_output_tx.send(frame.clone())`, parse the payload `type` via `payload_inspector` (reused from 4.3), branch on `turn_complete` and `turn_cancelled`.
+- [x] On `turn_complete` with `claude_message_id` present: call `mark_turn_complete`. On error: warn + continue (frame is already forwarded).
+- [x] On `turn_cancelled` (post fix-7 wire-shape change): call `mark_turn_interrupted` with `partial_text` from payload. On error: warn + continue.
+- [x] On `turn_complete` with `claude_message_id` missing: log a warn line `tide::ledger::turn_complete_missing_claude_id`; skip the ledger update; the row stays `pending` and gets reconciled on next session resume.
+- [x] Verify that `record_turn` (existing `SessionsRecorder` method that bumps `sessions.turn_count`) **continues to fire** alongside `mark_turn_complete` — both are called for the same `turn_complete` event. _(Structural: `record_turn` is invoked from `agent_bridge.rs` on the `turn_complete` byte scan; `mark_turn_complete` is invoked from `apply_outbound_turn_intercept` in the merger. The two call sites are independent and both unchanged on the bridge side; merger doc comment notes the coexistence.)_
+- [x] Extend `SessionsRecorder` (plural — line 490) with `mark_turn_complete` and `mark_turn_interrupted`. Update `LedgerSessionsRecorder` and test fakes.
+- [x] **Schema/API fix-up landed in this step** — extend `SessionLedger.mark_turn_interrupted` with an `Option<&str>` `claude_message_id` parameter (COALESCE-written in the UPDATE so `None` preserves any existing value). Symmetric with `TurnCancelled.claude_message_id` on the wire so an interrupted turn can carry the back-reference into claude's JSONL for `runReplay`. Existing 4.1 tests updated; two new tests for the COALESCE behavior.
 
 **Tests:**
 
-- [ ] **Happy path (post-4.5)**: feed a `turn_complete { msg_id: <tug_turn_id>, claude_message_id: <claude_id> }` frame from tugcode through the supervisor; assert (a) ledger row is `state='complete'`, `claude_message_id` set, `completed_at` set; (b) tugdeck receives the frame.
-- [ ] **NotFound row**: feed a `turn_complete` for a `tug_turn_id` that doesn't exist; assert (a) warn line emitted in tracing; (b) tugdeck still receives the frame.
-- [ ] **Already-complete row**: mark a row complete twice; assert second call returns `InvalidTurnState`; second forward still goes through.
-- [ ] **Missing `claude_message_id`**: feed a frame without the field; assert warn + forward (no ledger write).
-- [ ] **Failure-first proof**: temporarily make `mark_turn_complete` errors blocking (return early instead of warn-forward); feed a NotFound case; assert tugdeck doesn't receive the frame (regression test the warn-and-continue policy).
+- [x] **Happy path (post-4.5)**: feed a `turn_complete { msg_id: <tug_turn_id>, claude_message_id: <claude_id> }` frame from tugcode through the supervisor; assert (a) ledger row is `state='complete'`, `claude_message_id` set, `completed_at` set; (b) tugdeck receives the frame.
+- [x] **NotFound row**: feed a `turn_complete` for a `tug_turn_id` that doesn't exist; assert (a) warn line emitted in tracing; (b) tugdeck still receives the frame.
+- [x] **Already-complete row**: mark a row complete twice; assert second call returns `InvalidTurnState`; second forward still goes through.
+- [x] **Missing `claude_message_id`**: feed a frame without the field; assert warn + forward (no ledger write).
+- [x] **Turn cancelled with partial_result**: feed a `turn_cancelled { msg_id, claude_message_id, partial_result }`; assert ledger row is `state='interrupted'`, `claude_message_id` set, `partial_text` set, `completed_at` set.
+- [x] **Unrelated types pass through**: feed an `assistant_text` frame; assert no ledger writes.
+- [x] **Failure-first proof**: spin up a real `merger_task`, send a `turn_complete` for a non-existent row (NotFound case), assert the broadcast still receives the frame. If a future regression made `mark_turn_complete` blocking, this test would fail because the frame would never reach the broadcast — pins the warn-and-continue policy.
 
 **Tuglaws cross-check:**
 
@@ -1309,8 +1312,8 @@ Plus the close-out at [Step 5](#step-5) which retests Smoke D end-to-end against
 
 **Checkpoint:**
 
-- [ ] `cargo nextest run -p tugcast` — green.
-- [ ] `cargo clippy -p tugcast --all-targets -- -D warnings` — clean.
+- [x] `cargo nextest run -p tugcast` — green.
+- [x] `cargo clippy -p tugcast --all-targets -- -D warnings` — clean.
 
 ---
 

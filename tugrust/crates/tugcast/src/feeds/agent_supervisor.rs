@@ -536,17 +536,52 @@ pub trait SessionsRecorder: Send + Sync {
     /// frame with no row is structurally impossible because augmentation
     /// happens after this call returns `Ok`.
     ///
-    /// This is the only `SessionsRecorder` method that returns a
-    /// `Result` — the others swallow errors with a `warn!` because their
-    /// failure is after-the-fact telemetry. Insert failures here are
-    /// before-the-fact and govern whether the dispatcher proceeds, so
-    /// the result must reach the caller.
+    /// Unlike the other `SessionsRecorder` methods (which swallow
+    /// errors with a `warn!` because their failure is after-the-fact
+    /// telemetry), `insert_pending_turn` and the `mark_turn_*` methods
+    /// below return `Result`. The dispatcher's decision to forward
+    /// depends on insert success; the merger's call sites use the
+    /// `Result` only to choose between an info trace (`Ok`) and a warn
+    /// trace (`Err`) — the frame has already been forwarded by the time
+    /// `mark_turn_complete` / `mark_turn_interrupted` runs, so failure
+    /// is non-blocking from the wire's perspective. The wire is the
+    /// source of truth for the live UI; the ledger lagging by one
+    /// update is a telemetry signal, not a user-facing error.
     fn insert_pending_turn(
         &self,
         session_id: &str,
         tug_turn_id: &str,
         user_text: &str,
         user_attachments: &[serde_json::Value],
+        now: i64,
+    ) -> Result<(), crate::session_ledger::LedgerError>;
+
+    /// Transition a `pending` row to `complete`, recording the matched
+    /// `claude_message_id` and `now` as `completed_at`. Called from the
+    /// supervisor's merger intercept on every outbound `turn_complete`
+    /// that carries a `claude_message_id` field. **Forward-before-
+    /// mutate**: the frame has already been broadcast on `code_output_tx`
+    /// before this fires, so a `LedgerError` here is a telemetry warn,
+    /// not a user-visible failure.
+    fn mark_turn_complete(
+        &self,
+        tug_turn_id: &str,
+        claude_message_id: &str,
+        now: i64,
+    ) -> Result<(), crate::session_ledger::LedgerError>;
+
+    /// Transition a `pending` row to `interrupted`, optionally
+    /// recording `claude_message_id` (when known — the cancel happened
+    /// after `message_start`) and `partial_text` (whatever the
+    /// assistant streamed before the cancel). Called from the
+    /// supervisor's merger intercept on every outbound `turn_cancelled`,
+    /// and from crash-recovery sweeps in step 4.7. **Forward-before-
+    /// mutate** like `mark_turn_complete`.
+    fn mark_turn_interrupted(
+        &self,
+        tug_turn_id: &str,
+        claude_message_id: Option<&str>,
+        partial_text: Option<&str>,
         now: i64,
     ) -> Result<(), crate::session_ledger::LedgerError>;
 }
@@ -791,6 +826,41 @@ impl SessionsRecorder for LedgerSessionsRecorder {
             event = "ledger.insert_pending_turn",
             session_id,
             tug_turn_id,
+        );
+        Ok(())
+    }
+
+    fn mark_turn_complete(
+        &self,
+        tug_turn_id: &str,
+        claude_message_id: &str,
+        now: i64,
+    ) -> Result<(), crate::session_ledger::LedgerError> {
+        self.ledger
+            .mark_turn_complete(tug_turn_id, claude_message_id, now)?;
+        tracing::info!(
+            target: "tide::ledger",
+            event = "turn_completed",
+            tug_turn_id,
+            claude_message_id,
+        );
+        Ok(())
+    }
+
+    fn mark_turn_interrupted(
+        &self,
+        tug_turn_id: &str,
+        claude_message_id: Option<&str>,
+        partial_text: Option<&str>,
+        now: i64,
+    ) -> Result<(), crate::session_ledger::LedgerError> {
+        self.ledger
+            .mark_turn_interrupted(tug_turn_id, claude_message_id, partial_text, now)?;
+        tracing::info!(
+            target: "tide::ledger",
+            event = "turn_interrupted",
+            tug_turn_id,
+            claude_message_id = claude_message_id.unwrap_or(""),
         );
         Ok(())
     }
@@ -2574,6 +2644,85 @@ impl AgentSupervisor {
         }
     }
 
+    /// Apply the per-frame ledger intercept the merger runs on every
+    /// outbound CODE_OUTPUT frame, **after** the wire-side broadcast
+    /// has fired. Branches on the payload's top-level `type`:
+    ///
+    /// - `turn_complete` with both `msg_id` and `claude_message_id` —
+    ///   call [`SessionsRecorder::mark_turn_complete`]. On `Ok`, an
+    ///   info trace; on `Err`, a `warn!` (the frame has already been
+    ///   forwarded; the wire is the source of truth, the ledger is
+    ///   telemetry).
+    /// - `turn_complete` with `msg_id` but no `claude_message_id` —
+    ///   warn line `tide::ledger::turn_complete_missing_claude_id`,
+    ///   skip the ledger update; the row stays `pending` and gets
+    ///   reconciled on next session resume (step 4.7).
+    /// - `turn_cancelled` with `msg_id` — call
+    ///   [`SessionsRecorder::mark_turn_interrupted`] with whatever
+    ///   `claude_message_id` and `partial_result` the payload carries.
+    /// - any other type or payload shape — no-op.
+    ///
+    /// Extracted from `merger_task` so unit tests can exercise the
+    /// intercept against synthetic frames without spinning up a full
+    /// merger / select loop. `record_turn` (the existing trait method
+    /// that bumps `sessions.turn_count`) continues to fire from
+    /// `agent_bridge.rs` on the same `turn_complete` event — this
+    /// intercept is additive and the two writes hit different rows.
+    fn apply_outbound_turn_intercept(&self, frame: &Frame) {
+        let Some(inspected) =
+            super::payload_inspector::InspectedPayload::from_slice(&frame.payload)
+        else {
+            return;
+        };
+        let now = crate::session_ledger::now_millis();
+        match inspected.msg_type() {
+            Some("turn_complete") => {
+                let Some(tug_turn_id) = inspected.msg_id.as_deref() else {
+                    return;
+                };
+                let Some(claude_message_id) = inspected.claude_message_id.as_deref() else {
+                    warn!(
+                        target: "tide::ledger",
+                        event = "turn_complete_missing_claude_id",
+                        tug_turn_id,
+                        "merger: turn_complete without claude_message_id; \
+                         skipping ledger mark_turn_complete (row stays pending)",
+                    );
+                    return;
+                };
+                if let Err(err) =
+                    self.sessions_recorder
+                        .mark_turn_complete(tug_turn_id, claude_message_id, now)
+                {
+                    warn!(
+                        error = %err,
+                        tug_turn_id,
+                        claude_message_id,
+                        "merger: mark_turn_complete failed (frame already forwarded)",
+                    );
+                }
+            }
+            Some("turn_cancelled") => {
+                let Some(tug_turn_id) = inspected.msg_id.as_deref() else {
+                    return;
+                };
+                if let Err(err) = self.sessions_recorder.mark_turn_interrupted(
+                    tug_turn_id,
+                    inspected.claude_message_id.as_deref(),
+                    inspected.partial_result.as_deref(),
+                    now,
+                ) {
+                    warn!(
+                        error = %err,
+                        tug_turn_id,
+                        "merger: mark_turn_interrupted failed (frame already forwarded)",
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// Per-bridge merger task. Consumes registrations from
     /// `merger_register_rx` and fans in each per-session output mpsc into
     /// the shared CODE_OUTPUT broadcast, the SESSION_METADATA broadcast
@@ -2645,6 +2794,13 @@ impl AgentSupervisor {
                         }
                         let _ = self.session_metadata_tx.send(meta_frame);
                     }
+                    // Forward-before-mutate: the wire-side broadcast above
+                    // is the user-visible signal and must not be delayed
+                    // by a database write. The ledger update here is
+                    // best-effort telemetry from the user's perspective;
+                    // it becomes load-bearing only on the next runReplay,
+                    // by which time the write has long since committed.
+                    self.apply_outbound_turn_intercept(&frame);
                 }
             }
         }
@@ -2964,6 +3120,23 @@ impl SessionsRecorder for NoopSessionsRecorder {
         _tug_turn_id: &str,
         _user_text: &str,
         _user_attachments: &[serde_json::Value],
+        _now: i64,
+    ) -> Result<(), crate::session_ledger::LedgerError> {
+        Ok(())
+    }
+    fn mark_turn_complete(
+        &self,
+        _tug_turn_id: &str,
+        _claude_message_id: &str,
+        _now: i64,
+    ) -> Result<(), crate::session_ledger::LedgerError> {
+        Ok(())
+    }
+    fn mark_turn_interrupted(
+        &self,
+        _tug_turn_id: &str,
+        _claude_message_id: Option<&str>,
+        _partial_text: Option<&str>,
         _now: i64,
     ) -> Result<(), crate::session_ledger::LedgerError> {
         Ok(())
@@ -7012,6 +7185,25 @@ mod tests {
                 now,
             )
         }
+        fn mark_turn_complete(
+            &self,
+            tug_turn_id: &str,
+            claude_message_id: &str,
+            now: i64,
+        ) -> Result<(), crate::session_ledger::LedgerError> {
+            self.inner
+                .mark_turn_complete(tug_turn_id, claude_message_id, now)
+        }
+        fn mark_turn_interrupted(
+            &self,
+            tug_turn_id: &str,
+            claude_message_id: Option<&str>,
+            partial_text: Option<&str>,
+            now: i64,
+        ) -> Result<(), crate::session_ledger::LedgerError> {
+            self.inner
+                .mark_turn_interrupted(tug_turn_id, claude_message_id, partial_text, now)
+        }
     }
 
     fn make_supervisor_with_failing_recorder(
@@ -7276,5 +7468,320 @@ mod tests {
             queued_ids, row_ids,
             "every persisted row has a queued frame"
         );
+    }
+
+    // ── merger_task outbound intercept (mid-turn-replay step 4.4) ────────────
+    //
+    // The merger fans per-session frames into the shared CODE_OUTPUT
+    // broadcast and then calls `apply_outbound_turn_intercept` to update
+    // the ledger row. Forward-before-mutate is load-bearing: a ledger
+    // failure here is telemetry, not a user-visible error. The unit
+    // tests below exercise the helper directly with synthetic frames;
+    // the merger-task integration test at the end pins the forwarding
+    // ordering by spinning up an actual `merger_task` and checking the
+    // broadcast even when the ledger update is a no-op (NotFound row).
+    //
+    // `record_turn` (existing trait method, called from agent_bridge.rs
+    // on the same `turn_complete`) coexists with `mark_turn_complete`
+    // and is not exercised here — the bridge call site is unchanged
+    // and continues to bump `sessions.turn_count` independently.
+
+    fn turn_complete_frame(tug_turn_id: &str, claude_message_id: Option<&str>) -> Frame {
+        let mut body = serde_json::json!({
+            "type": "turn_complete",
+            "msg_id": tug_turn_id,
+            "seq": 3,
+            "result": "",
+            "ipc_version": 2,
+        });
+        if let Some(id) = claude_message_id {
+            body.as_object_mut().unwrap().insert(
+                "claude_message_id".to_owned(),
+                serde_json::Value::String(id.to_owned()),
+            );
+        }
+        Frame::new(FeedId::CODE_OUTPUT, serde_json::to_vec(&body).unwrap())
+    }
+
+    fn turn_cancelled_frame(
+        tug_turn_id: &str,
+        claude_message_id: Option<&str>,
+        partial_result: Option<&str>,
+    ) -> Frame {
+        let mut body = serde_json::json!({
+            "type": "turn_cancelled",
+            "msg_id": tug_turn_id,
+            "seq": 4,
+            "ipc_version": 2,
+        });
+        let map = body.as_object_mut().unwrap();
+        map.insert(
+            "partial_result".to_owned(),
+            serde_json::Value::String(partial_result.unwrap_or_default().to_owned()),
+        );
+        if let Some(id) = claude_message_id {
+            map.insert(
+                "claude_message_id".to_owned(),
+                serde_json::Value::String(id.to_owned()),
+            );
+        }
+        Frame::new(FeedId::CODE_OUTPUT, serde_json::to_vec(&body).unwrap())
+    }
+
+    #[tokio::test]
+    async fn intercept_marks_turn_complete_with_claude_message_id() {
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _ctrl_rx) = make_supervisor_with_ledger(store);
+
+        // Seed a sessions row + pending turn so the ledger has something
+        // to mark complete. We don't go through dispatch here — that's
+        // step 4.3's path; this test exercises the outbound intercept
+        // in isolation.
+        ledger
+            .record_spawn("sess-1", "ws-1", "/proj", "card-1", 1_000)
+            .unwrap();
+        ledger
+            .insert_pending_turn("sess-1", "tt-1", "hello", &[], 1_000)
+            .unwrap();
+
+        sup.apply_outbound_turn_intercept(&turn_complete_frame("tt-1", Some("msg_01ABC")));
+
+        let row = ledger.get_turn("tt-1").unwrap().expect("row present");
+        assert_eq!(row.state, crate::session_ledger::TurnState::Complete);
+        assert_eq!(row.claude_message_id.as_deref(), Some("msg_01ABC"));
+        assert!(row.completed_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn intercept_marks_turn_interrupted_with_partial_text() {
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _ctrl_rx) = make_supervisor_with_ledger(store);
+
+        ledger
+            .record_spawn("sess-1", "ws-1", "/proj", "card-1", 1_000)
+            .unwrap();
+        ledger
+            .insert_pending_turn("sess-1", "tt-1", "hello", &[], 1_000)
+            .unwrap();
+
+        sup.apply_outbound_turn_intercept(&turn_cancelled_frame(
+            "tt-1",
+            Some("msg_01XYZ"),
+            Some("so far the assistant said..."),
+        ));
+
+        let row = ledger.get_turn("tt-1").unwrap().expect("row present");
+        assert_eq!(row.state, crate::session_ledger::TurnState::Interrupted);
+        assert_eq!(row.claude_message_id.as_deref(), Some("msg_01XYZ"));
+        assert_eq!(
+            row.partial_text.as_deref(),
+            Some("so far the assistant said..."),
+        );
+    }
+
+    #[tokio::test]
+    async fn intercept_skips_turn_complete_without_claude_message_id() {
+        // turn_complete arriving without claude_message_id: the row
+        // stays `pending` and gets reconciled on next session resume
+        // (step 4.7). The merger emits a warn line; the wire-side frame
+        // has already been forwarded.
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _ctrl_rx) = make_supervisor_with_ledger(store);
+
+        ledger
+            .record_spawn("sess-1", "ws-1", "/proj", "card-1", 1_000)
+            .unwrap();
+        ledger
+            .insert_pending_turn("sess-1", "tt-1", "hello", &[], 1_000)
+            .unwrap();
+
+        sup.apply_outbound_turn_intercept(&turn_complete_frame("tt-1", None));
+
+        let row = ledger.get_turn("tt-1").unwrap().expect("row present");
+        assert_eq!(
+            row.state,
+            crate::session_ledger::TurnState::Pending,
+            "row stays pending; mark_turn_complete is skipped",
+        );
+        assert_eq!(row.claude_message_id, None);
+        assert_eq!(row.completed_at, None);
+    }
+
+    #[tokio::test]
+    async fn intercept_warns_and_continues_on_not_found_row() {
+        // Forward-before-mutate: if the ledger row is missing (e.g.,
+        // a stale tugcode emitting turn_complete after a Forget),
+        // mark_turn_complete returns NotFound; the helper warns and
+        // continues. The frame has already been broadcast; nothing
+        // user-visible breaks.
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _ctrl_rx) = make_supervisor_with_ledger(store);
+
+        // No record_spawn, no insert_pending_turn — the row simply
+        // doesn't exist.
+        sup.apply_outbound_turn_intercept(&turn_complete_frame("ghost", Some("msg_01GHOST")));
+
+        // Ledger has no row for "ghost"; the helper's failure is
+        // silent at the API surface (it returned without panicking).
+        assert!(ledger.get_turn("ghost").unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn intercept_warns_and_continues_on_already_complete_row() {
+        // Two `turn_complete` frames for the same tug_turn_id: the
+        // first marks the row complete; the second returns
+        // InvalidTurnState; the helper warns and continues. The row's
+        // first-completion state is preserved.
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _ctrl_rx) = make_supervisor_with_ledger(store);
+
+        ledger
+            .record_spawn("sess-1", "ws-1", "/proj", "card-1", 1_000)
+            .unwrap();
+        ledger
+            .insert_pending_turn("sess-1", "tt-1", "hello", &[], 1_000)
+            .unwrap();
+
+        sup.apply_outbound_turn_intercept(&turn_complete_frame("tt-1", Some("msg_first")));
+        let after_first = ledger.get_turn("tt-1").unwrap().unwrap();
+        assert_eq!(
+            after_first.state,
+            crate::session_ledger::TurnState::Complete
+        );
+        assert_eq!(after_first.claude_message_id.as_deref(), Some("msg_first"));
+
+        // Second call. The row is already complete → InvalidTurnState.
+        sup.apply_outbound_turn_intercept(&turn_complete_frame("tt-1", Some("msg_second")));
+        let after_second = ledger.get_turn("tt-1").unwrap().unwrap();
+        assert_eq!(
+            after_second, after_first,
+            "row state must not regress on a duplicate turn_complete",
+        );
+    }
+
+    #[tokio::test]
+    async fn intercept_passes_through_unrelated_types() {
+        // assistant_text, tool_use, etc. flow through the merger but
+        // must not touch the turns table.
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _ctrl_rx) = make_supervisor_with_ledger(store);
+
+        ledger
+            .record_spawn("sess-1", "ws-1", "/proj", "card-1", 1_000)
+            .unwrap();
+        ledger
+            .insert_pending_turn("sess-1", "tt-1", "hello", &[], 1_000)
+            .unwrap();
+
+        let assistant_text = serde_json::json!({
+            "type": "assistant_text",
+            "msg_id": "tt-1",
+            "seq": 1,
+            "rev": 0,
+            "text": "hi back",
+            "is_partial": false,
+            "status": "ok",
+            "ipc_version": 2,
+        });
+        sup.apply_outbound_turn_intercept(&Frame::new(
+            FeedId::CODE_OUTPUT,
+            serde_json::to_vec(&assistant_text).unwrap(),
+        ));
+
+        let row = ledger.get_turn("tt-1").unwrap().unwrap();
+        assert_eq!(
+            row.state,
+            crate::session_ledger::TurnState::Pending,
+            "non-turn_complete/cancelled frames must not modify the row",
+        );
+    }
+
+    /// Failure-first proof of "forward-before-mutate". Spin up a real
+    /// merger_task with a per-session output stream; send a turn_complete
+    /// frame whose ledger row doesn't exist (NotFound case). Assert the
+    /// broadcast received the frame anyway. If a future regression made
+    /// the ledger update blocking (return-on-error instead of warn-and-
+    /// continue), this test would fail because the frame would never
+    /// reach the broadcast.
+    #[tokio::test]
+    async fn merger_forwards_frame_even_when_ledger_lookup_fails() {
+        // Hand-build a supervisor with the merger arm wired through.
+        // We need to subscribe to code_output BEFORE spawning so the
+        // broadcast doesn't drop the frame. Can't reuse
+        // `make_supervisor_with_ledger` because it discards the code
+        // receiver.
+        let ledger = Arc::new(SessionLedger::open_in_memory().expect("ledger open"));
+        let recorder: Arc<dyn SessionsRecorder> =
+            Arc::new(LedgerSessionsRecorder::new(Arc::clone(&ledger)));
+        let (state_tx, _state_rx) = broadcast::channel(64);
+        let (meta_tx, _meta_rx) = broadcast::channel(8);
+        let (code_tx, mut code_rx) = broadcast::channel(64);
+        let (control_tx, _control_rx) = broadcast::channel(64);
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let registry = Arc::new(WorkspaceRegistry::new());
+        let cancel = CancellationToken::new();
+        let (sup, register_rx) = AgentSupervisor::new_with_ledger(
+            state_tx,
+            meta_tx,
+            code_tx,
+            control_tx,
+            store,
+            recorder,
+            Some(Arc::clone(&ledger)),
+            stall_spawner_factory(),
+            AgentSupervisorConfig::default(),
+            registry,
+            cancel.clone(),
+        );
+        let sup = Arc::new(sup);
+
+        // Spawn the merger task.
+        let merger_handle = {
+            let sup = Arc::clone(&sup);
+            let cancel = cancel.clone();
+            tokio::spawn(async move { sup.merger_task(register_rx, cancel).await })
+        };
+
+        // Register a per-session output stream.
+        let id = TugSessionId::new("sess-1");
+        let (out_tx, out_rx) = mpsc::channel::<Frame>(8);
+        sup.merger_register_tx
+            .send((id.clone(), out_rx))
+            .await
+            .expect("register session");
+
+        // Send a turn_complete frame whose tug_turn_id has no row in
+        // the ledger. mark_turn_complete will return NotFound; the
+        // helper warns; the broadcast must still receive the frame.
+        out_tx
+            .send(turn_complete_frame("ghost", Some("msg_01GHOST")))
+            .await
+            .expect("send frame");
+
+        // Wait for the broadcast to receive the frame. Bounded poll
+        // with a short timeout so a regression doesn't hang the test.
+        let received = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                match code_rx.recv().await {
+                    Ok(frame) => break frame,
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => panic!("broadcast closed"),
+                }
+            }
+        })
+        .await
+        .expect("merger should forward the frame even when the ledger update fails");
+        let payload: serde_json::Value =
+            serde_json::from_slice(&received.payload).expect("frame payload parses");
+        assert_eq!(payload["type"], "turn_complete");
+        assert_eq!(payload["msg_id"], "ghost");
+        assert_eq!(payload["claude_message_id"], "msg_01GHOST");
+
+        // Ledger has no row for "ghost" — the NotFound error was warned,
+        // not propagated.
+        assert!(ledger.get_turn("ghost").unwrap().is_none());
+
+        cancel.cancel();
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(1), merger_handle).await;
     }
 }
