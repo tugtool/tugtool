@@ -31,20 +31,26 @@
 //!
 //! - **v1** — `sessions` table only.
 //! - **v2** — adds `turns` (per-turn rows keyed by tugcast-minted
-//!   `tug_turn_id`, FK to `sessions` with `ON DELETE CASCADE`) and a
-//!   `migrations` table that records each applied schema version.
+//!   `tug_turn_id`) and a `migrations` table that records each applied
+//!   schema version. Cascade-on-`sessions`-DELETE is implemented via the
+//!   `turns_cascade_delete_on_session` trigger rather than a foreign-key
+//!   constraint: the supervisor inserts turns rows at user-message
+//!   dispatch time, before claude emits `session_init` and before the
+//!   bridge populates the `sessions` row, so an `INSERT`-time FK check
+//!   would chicken-and-egg. The trigger preserves the user-visible
+//!   "Forget cascades to turns" contract without coupling INSERT
+//!   ordering across the dispatch and bridge code paths.
 //!
 //! Bootstrap is purely additive: `CREATE TABLE IF NOT EXISTS` for every
-//! table, `CREATE INDEX IF NOT EXISTS` for every index, and
+//! table, `CREATE INDEX IF NOT EXISTS` for every index,
+//! `CREATE TRIGGER IF NOT EXISTS` for cascades, and
 //! `INSERT OR IGNORE INTO migrations (version, applied_at) VALUES (N, ?)`
 //! for the current schema version. A v1 file therefore upgrades to v2 in
-//! place on first open: the new tables appear, the migrations marker is
-//! written, and existing `sessions` rows are preserved unchanged. Future
-//! schema variants must add their additive DDL, INSERT a row into
-//! `migrations` keyed on the new version, and update this section.
-//!
-//! `foreign_keys = ON` is set per-connection in `configure` so the
-//! `ON DELETE CASCADE` on `turns.session_id` is enforced.
+//! place on first open: the new tables and trigger appear, the
+//! migrations marker is written, and existing `sessions` rows are
+//! preserved unchanged. Future schema variants must add their additive
+//! DDL, INSERT a row into `migrations` keyed on the new version, and
+//! update this section.
 //!
 //! # Concurrency
 //!
@@ -296,10 +302,6 @@ impl SessionLedger {
         conn.execute_batch("PRAGMA journal_mode = WAL;")?;
         conn.pragma_update(None, "busy_timeout", 5000i64)?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
-        // Required for `turns.session_id REFERENCES sessions(session_id)
-        // ON DELETE CASCADE` to actually cascade. SQLite enforces FKs only
-        // when this pragma is on, and it's per-connection.
-        conn.pragma_update(None, "foreign_keys", "ON")?;
         Self::bootstrap_schema(conn)?;
         Ok(())
     }
@@ -324,7 +326,7 @@ impl SessionLedger {
 
             CREATE TABLE IF NOT EXISTS turns (
                 tug_turn_id        TEXT PRIMARY KEY,
-                session_id         TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+                session_id         TEXT NOT NULL,
                 ordinal            INTEGER NOT NULL,
                 claude_message_id  TEXT,
                 user_text          TEXT NOT NULL,
@@ -340,6 +342,13 @@ impl SessionLedger {
 
             CREATE INDEX IF NOT EXISTS turns_claude_message_id
                 ON turns(claude_message_id);
+
+            CREATE TRIGGER IF NOT EXISTS turns_cascade_delete_on_session
+            AFTER DELETE ON sessions
+            FOR EACH ROW
+            BEGIN
+                DELETE FROM turns WHERE session_id = OLD.session_id;
+            END;
 
             CREATE TABLE IF NOT EXISTS migrations (
                 version    INTEGER PRIMARY KEY,

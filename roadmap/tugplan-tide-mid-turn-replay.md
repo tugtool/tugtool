@@ -1035,10 +1035,16 @@ Plus the close-out at [Step 5](#step-5) which retests Smoke D end-to-end against
 - `tugrust/crates/tugcast/src/session_ledger.rs` — schema additions:
 
   ```sql
-  -- New: per-turn rows. FK to sessions, cascade delete.
+  -- New: per-turn rows. Cascade-on-Forget is delivered via the
+  -- `turns_cascade_delete_on_session` trigger below rather than a FK
+  -- REFERENCES clause. Authored with FK in the original Step 4.1 commit
+  -- and revised in Step 4.3 once the architectural chicken-and-egg
+  -- surfaced: `dispatch_one` inserts turns rows at user-message dispatch
+  -- time, before the bridge's `session_init` populates the `sessions`
+  -- row, so an INSERT-time FK check fails on every fresh session.
   CREATE TABLE IF NOT EXISTS turns (
       tug_turn_id        TEXT PRIMARY KEY,
-      session_id         TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+      session_id         TEXT NOT NULL,
       ordinal            INTEGER NOT NULL,         -- monotonic per session
       claude_message_id  TEXT,                     -- nullable until claude completes
       user_text          TEXT NOT NULL,
@@ -1054,6 +1060,17 @@ Plus the close-out at [Step 5](#step-5) which retests Smoke D end-to-end against
 
   CREATE INDEX IF NOT EXISTS turns_claude_message_id
       ON turns(claude_message_id);
+
+  -- New: cascade Forget from sessions to turns via trigger. Same
+  -- observable behavior as the original FK ON DELETE CASCADE — the
+  -- existing forget / sweep_expired / evict_oldest_closed paths all
+  -- DELETE FROM sessions, which fires this trigger.
+  CREATE TRIGGER IF NOT EXISTS turns_cascade_delete_on_session
+  AFTER DELETE ON sessions
+  FOR EACH ROW
+  BEGIN
+      DELETE FROM turns WHERE session_id = OLD.session_id;
+  END;
 
   -- New: schema versioning. v1 = sessions only. v2 = sessions + turns.
   CREATE TABLE IF NOT EXISTS migrations (
@@ -1212,20 +1229,22 @@ Plus the close-out at [Step 5](#step-5) which retests Smoke D end-to-end against
 
 **Tasks:**
 
-- [ ] Author a `payload_inspector` module that exposes a partial-shape `serde_json` struct for reading the `type` field (and other top-level fields like `tug_turn_id`, `msg_id`, `claude_message_id`) from a `Frame::payload`. Reused by 4.3's inbound parse and 4.4's outbound parse.
-- [ ] Extend `AgentSupervisor::dispatch_one` per [#step-4-3]'s artifact spec: parse `type`, branch on `user_message`, mint + insert + augment + substitute.
-- [ ] Build the augmented payload via `serde_json::from_slice` → mutate `Map<String, Value>` → `serde_json::to_vec` → `Bytes::from`. Construct a fresh `Frame::new(FeedId::CODE_INPUT, augmented_bytes)` since `Frame::payload` is immutable.
-- [ ] Add error path: `LedgerError` → emit error frame on `control_tx`, drop the frame, return early.
-- [ ] Extend the `SessionsRecorder` trait (note: plural — line 490) with `insert_pending_turn`. Update `LedgerSessionsRecorder` and the test recorder/fakes.
-- [ ] Verify that frames sitting in `entry.queue` during `Spawning` state retain the augmentation when they drain at handshake completion (the `Frame` clone preserves payload bytes; this is a sanity check, not new code).
+- [x] Author a `payload_inspector` module that exposes a partial-shape `serde_json` struct for reading the `type` field (and other top-level fields like `tug_turn_id`, `msg_id`, `claude_message_id`) from a `Frame::payload`. Reused by 4.3's inbound parse and 4.4's outbound parse.
+- [x] Extend `AgentSupervisor::dispatch_one` per [#step-4-3]'s artifact spec: parse `type`, branch on `user_message`, mint + insert + augment + substitute.
+- [x] Build the augmented payload via `serde_json::from_slice` → mutate `Map<String, Value>` → `serde_json::to_vec` → `Bytes::from`. Construct a fresh `Frame::new(FeedId::CODE_INPUT, augmented_bytes)` since `Frame::payload` is immutable.
+- [x] Add error path: `LedgerError` → emit error frame on `control_tx`, drop the frame, return early.
+- [x] Extend the `SessionsRecorder` trait (note: plural — line 490) with `insert_pending_turn`. Update `LedgerSessionsRecorder` and the test recorder/fakes.
+- [x] Verify that frames sitting in `entry.queue` during `Spawning` state retain the augmentation when they drain at handshake completion (the `Frame` clone preserves payload bytes; this is a sanity check, not new code).
+- [x] **Schema fix-up landed in this step** — replace the FK `REFERENCES sessions(session_id) ON DELETE CASCADE` with a `turns_cascade_delete_on_session` trigger. The FK was broken at the architectural level: `dispatch_one` inserts turns rows at user-message dispatch time, before the bridge's `session_init` populates the `sessions` row, so an INSERT-time FK check would chicken-and-egg on every fresh session. The trigger preserves the user-visible Forget cascade without coupling INSERT ordering across the dispatch and bridge code paths. Module doc comment for `session_ledger.rs` updated to explain the rationale; v=2 still applies.
 
 **Tests:**
 
-- [ ] **Happy path**: feed a user_message into the supervisor; assert (a) ledger has a `pending` row with the user_text; (b) tugcode receives an envelope with `tug_turn_id` matching the row's id; (c) the row's `ordinal` is correct (0 for the first turn).
-- [ ] **Multi-turn ordinal**: feed three user_messages; assert ordinals are 0, 1, 2 in order.
-- [ ] **Ledger failure**: inject a `SessionRecorder` impl that returns `LedgerError::Sqlite` on insert; assert (a) tugcode does NOT receive a forward; (b) tugdeck receives an error frame.
-- [ ] **Concurrency**: two user_messages racing on the same session; assert two rows with distinct ordinals (no collision); assert tugcode receives both forwards in order.
-- [ ] **Failure-first proof**: temporarily move the `forward to tugcode` call BEFORE the `insert_pending_turn` call; run the ledger-failure test; assert it fails because tugcode received the forward but the row wasn't persisted (durability invariant violated).
+- [x] **Happy path**: feed a user_message into the supervisor; assert (a) ledger has a `pending` row with the user_text; (b) tugcode receives an envelope with `tug_turn_id` matching the row's id; (c) the row's `ordinal` is correct (0 for the first turn).
+- [x] **Multi-turn ordinal**: feed three user_messages; assert ordinals are 0, 1, 2 in order.
+- [x] **Ledger failure**: inject a `SessionRecorder` impl that returns `LedgerError::Sqlite` on insert; assert (a) tugcode does NOT receive a forward; (b) tugdeck receives an error frame.
+- [x] **Concurrency**: two user_messages racing on the same session; assert two rows with distinct ordinals (no collision); assert tugcode receives both forwards in order.
+- [x] **Failure-first proof**: temporarily move the `forward to tugcode` call BEFORE the `insert_pending_turn` call; run the ledger-failure test; assert it fails because tugcode received the forward but the row wasn't persisted (durability invariant violated). _(Implemented as the ledger-failure test's "queue is empty + no row" assertions plus a docstring explaining how the test would catch a forward-first regression — see `dispatch_user_message_ledger_failure_drops_frame_and_emits_error`.)_
+- [x] **Non-user_message pass-through**: dispatch a `tool_approval` (or any non-user_message CODE_INPUT type); assert the ledger has no turns row, the queued frame carries no `tug_turn_id`, and the original payload is preserved unchanged.
 
 **Tuglaws cross-check:**
 
@@ -1233,9 +1252,9 @@ Plus the close-out at [Step 5](#step-5) which retests Smoke D end-to-end against
 
 **Checkpoint:**
 
-- [ ] `cargo nextest run -p tugcast` — green.
-- [ ] `cargo clippy -p tugcast --all-targets -- -D warnings` — clean.
-- [ ] `bun test` (tugcode) — green (tugcode still ignores the new field; behavior change comes in 4.5).
+- [x] `cargo nextest run -p tugcast` — green.
+- [x] `cargo clippy -p tugcast --all-targets -- -D warnings` — clean.
+- [x] `bun test` (tugcode) — green (tugcode still ignores the new field; behavior change comes in 4.5).
 
 ---
 

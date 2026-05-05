@@ -526,6 +526,29 @@ pub trait SessionsRecorder: Send + Sync {
     /// fresh spawn never pushes the workspace's non-live row count above
     /// the cap. No-op if under cap.
     fn evict_for_workspace(&self, workspace_key: &str, cap: usize);
+
+    /// Insert a fresh `pending` row keyed on `tug_turn_id` for this
+    /// session. Called from the supervisor's dispatch intercept on every
+    /// inbound `user_message`, BEFORE the augmented frame is forwarded
+    /// to tugcode. The "row-persisted-before-frame-augmented-before-
+    /// routed" invariant means a failure here drops the inbound frame
+    /// (the supervisor emits an error frame on CONTROL); a forwarded
+    /// frame with no row is structurally impossible because augmentation
+    /// happens after this call returns `Ok`.
+    ///
+    /// This is the only `SessionsRecorder` method that returns a
+    /// `Result` — the others swallow errors with a `warn!` because their
+    /// failure is after-the-fact telemetry. Insert failures here are
+    /// before-the-fact and govern whether the dispatcher proceeds, so
+    /// the result must reach the caller.
+    fn insert_pending_turn(
+        &self,
+        session_id: &str,
+        tug_turn_id: &str,
+        user_text: &str,
+        user_attachments: &[serde_json::Value],
+        now: i64,
+    ) -> Result<(), crate::session_ledger::LedgerError>;
 }
 
 /// Production implementation backed by a shared [`SessionLedger`].
@@ -746,6 +769,30 @@ impl SessionsRecorder for LedgerSessionsRecorder {
 
     fn evict_for_workspace(&self, workspace_key: &str, cap: usize) {
         self.evict_for_workspace_impl(workspace_key, cap);
+    }
+
+    fn insert_pending_turn(
+        &self,
+        session_id: &str,
+        tug_turn_id: &str,
+        user_text: &str,
+        user_attachments: &[serde_json::Value],
+        now: i64,
+    ) -> Result<(), crate::session_ledger::LedgerError> {
+        self.ledger.insert_pending_turn(
+            session_id,
+            tug_turn_id,
+            user_text,
+            user_attachments,
+            now,
+        )?;
+        tracing::info!(
+            target: "tide::session-lifecycle",
+            event = "ledger.insert_pending_turn",
+            session_id,
+            tug_turn_id,
+        );
+        Ok(())
     }
 }
 
@@ -1208,6 +1255,46 @@ fn build_backpressure_frame(tug_session_id: &TugSessionId) -> Frame {
         FeedId::CONTROL,
         serde_json::to_vec(&body).expect("session_backpressure payload serializes"),
     )
+}
+
+/// Build the CONTROL error frame the dispatcher emits when the ledger
+/// `insert_pending_turn` write fails for an inbound `user_message`.
+/// Mirrors the wire shape of [`build_session_unknown_frame`] so tugdeck
+/// surfaces it through the same error-frame path. The user-visible
+/// behavior is identical to a `session_unknown`: the inbound frame is
+/// dropped (not forwarded to tugcode), tugdeck shows an error, and the
+/// session state is unchanged.
+fn build_ledger_failure_frame(tug_session_id: &TugSessionId) -> Frame {
+    let body = serde_json::json!({
+        "type": "error",
+        "detail": "ledger_insert_failed",
+        "tug_session_id": tug_session_id.as_str(),
+    });
+    Frame::new(
+        FeedId::CONTROL,
+        serde_json::to_vec(&body).expect("ledger_insert_failed payload serializes"),
+    )
+}
+
+/// Build a fresh CODE_INPUT `Frame` whose JSON payload is `original`'s
+/// payload with `tug_turn_id` added at the top level. `Frame::payload`
+/// is `Bytes` (immutable in-place), so mutation requires constructing a
+/// new frame. The serde_json round-trip cost is negligible compared to
+/// the sqlite write the dispatcher just did before calling this.
+///
+/// Returns `None` if the original payload doesn't parse as a JSON
+/// object — the dispatcher logs a warn and forwards the original frame
+/// unchanged in that case (the row is already persisted, so dropping
+/// here would orphan it).
+fn augment_user_message_with_tug_turn_id(original: &Frame, tug_turn_id: &str) -> Option<Frame> {
+    let mut value: serde_json::Value = serde_json::from_slice(&original.payload).ok()?;
+    let map = value.as_object_mut()?;
+    map.insert(
+        "tug_turn_id".to_owned(),
+        serde_json::Value::String(tug_turn_id.to_owned()),
+    );
+    let bytes = serde_json::to_vec(&value).ok()?;
+    Some(Frame::new(FeedId::CODE_INPUT, bytes))
 }
 
 /// Routing decision produced by the CODE_INPUT dispatcher under the per-session
@@ -2328,6 +2415,14 @@ impl AgentSupervisor {
             }
         };
 
+        // Inspect the payload's top-level fields once; the user_message
+        // intercept below reads `type`, `text`, and `attachments` from
+        // the same parse. A malformed payload yields `None`, which the
+        // intercept treats as "skip the user_message branch and fall
+        // through to the existing routing" — same as a payload whose
+        // `type` is not `user_message`.
+        let inspected = super::payload_inspector::InspectedPayload::from_slice(&frame.payload);
+
         // Look up the ledger entry.
         let entry_arc = {
             let ledger = self.ledger.lock().await;
@@ -2341,6 +2436,63 @@ impl AgentSupervisor {
                 .control_tx
                 .send(build_session_unknown_frame(&tug_session_id));
             return;
+        };
+
+        // ── user_message intercept ──────────────────────────────────────────
+        //
+        // For inbound `user_message` frames: mint a tug_turn_id, persist a
+        // pending row to the ledger, then augment the frame so tugcode
+        // receives the same id on its stdin. Order is load-bearing:
+        // row-persisted-before-frame-augmented-before-routed. A failure
+        // before the augmentation drops the inbound frame and emits a
+        // CONTROL error; a forwarded frame with no row is structurally
+        // impossible because the augmentation only happens after `Ok` from
+        // `insert_pending_turn`. Other CODE_INPUT types — `tool_approval`,
+        // `interrupt`, `permission_mode`, `model_change`, `session_command`,
+        // `stop_task`, `request_replay` — fall through to the existing
+        // routing with the original frame unchanged.
+        let frame = match inspected.as_ref().and_then(|i| i.msg_type()) {
+            Some("user_message") => {
+                let inspected = inspected.as_ref().expect("checked Some above");
+                let user_text = inspected.text.clone().unwrap_or_default();
+                let user_attachments = inspected.attachments.clone().unwrap_or_default();
+                let tug_turn_id = uuid::Uuid::new_v4().to_string();
+                let now = crate::session_ledger::now_millis();
+                match self.sessions_recorder.insert_pending_turn(
+                    tug_session_id.as_str(),
+                    &tug_turn_id,
+                    &user_text,
+                    &user_attachments,
+                    now,
+                ) {
+                    Ok(()) => {}
+                    Err(err) => {
+                        warn!(
+                            error = %err,
+                            tug_session_id = %tug_session_id,
+                            "dispatcher: insert_pending_turn failed; dropping user_message",
+                        );
+                        let _ = self
+                            .control_tx
+                            .send(build_ledger_failure_frame(&tug_session_id));
+                        return;
+                    }
+                }
+                // Row is persisted; build the augmented frame. If the
+                // augmentation itself fails (malformed JSON, somehow), we
+                // fall back to forwarding the original frame so the row
+                // doesn't orphan. This branch is defensive — the same
+                // payload just parsed cleanly into `inspected`.
+                augment_user_message_with_tug_turn_id(&frame, &tug_turn_id).unwrap_or_else(|| {
+                    warn!(
+                        tug_session_id = %tug_session_id,
+                        "dispatcher: augment_user_message_with_tug_turn_id returned None; \
+                         forwarding original frame",
+                    );
+                    frame
+                })
+            }
+            _ => frame,
         };
 
         // Decide the routing action under the per-session lock. We extract
@@ -2806,6 +2958,16 @@ impl SessionsRecorder for NoopSessionsRecorder {
     fn mark_failed(&self, _session_id: &str) {}
     fn remove(&self, _session_id: &str) {}
     fn evict_for_workspace(&self, _workspace_key: &str, _cap: usize) {}
+    fn insert_pending_turn(
+        &self,
+        _session_id: &str,
+        _tug_turn_id: &str,
+        _user_text: &str,
+        _user_attachments: &[serde_json::Value],
+        _now: i64,
+    ) -> Result<(), crate::session_ledger::LedgerError> {
+        Ok(())
+    }
 }
 
 /// Minimal in-memory [`SessionKeysStore`] used by cross-module router tests.
@@ -6745,5 +6907,374 @@ mod tests {
         sup.sessions_recorder.record_turn("s1");
         let second = drain_until_action(&mut rx, "session_updated");
         assert_eq!(second["fields"]["turn_count"].as_i64(), Some(1));
+    }
+
+    // ── dispatch_one user_message intercept (mid-turn-replay step 4.3) ───────
+    //
+    // Dispatch sees an inbound `user_message`, mints a `tug_turn_id`,
+    // persists a `pending` row through `SessionsRecorder::insert_pending_turn`,
+    // and substitutes a fresh frame whose payload carries `tug_turn_id`. The
+    // load-bearing invariant tested here is "row-persisted-before-frame-
+    // augmented-before-routed": if the ledger insert fails, no augmented
+    // frame is forwarded and a CONTROL `error` frame surfaces the failure
+    // upstream. Other CODE_INPUT message types pass through unchanged.
+
+    use crate::session_ledger::TurnState;
+
+    /// Pop the front frame from the per-session entry's queue. Tests in
+    /// the Spawning state use a stall spawner so dispatched frames sit
+    /// in the queue rather than being forwarded to claude — this lets
+    /// the test peek at the augmented bytes the dispatcher wrote.
+    async fn pop_queued_frame(
+        sup: &AgentSupervisor,
+        tug_session_id: &TugSessionId,
+    ) -> Option<Frame> {
+        let entry_arc = sup.ledger.lock().await.get(tug_session_id).cloned()?;
+        let mut entry = entry_arc.lock().await;
+        entry.queue.pop()
+    }
+
+    fn user_message_frame(tug_session_id: &str, text: &str) -> Frame {
+        let body = serde_json::json!({
+            "tug_session_id": tug_session_id,
+            "type": "user_message",
+            "text": text,
+            "attachments": [],
+        });
+        Frame::new(FeedId::CODE_INPUT, serde_json::to_vec(&body).unwrap())
+    }
+
+    /// `SessionsRecorder` that lets the test choose the result of
+    /// `insert_pending_turn`. The other methods delegate to a real
+    /// `LedgerSessionsRecorder` so the rest of the lifecycle behaves
+    /// like production. Used by the ledger-failure tests below.
+    struct InsertFailingRecorder {
+        inner: LedgerSessionsRecorder,
+        result: StdMutex<Result<(), crate::session_ledger::LedgerError>>,
+    }
+
+    impl InsertFailingRecorder {
+        fn new(ledger: Arc<SessionLedger>) -> Self {
+            Self {
+                inner: LedgerSessionsRecorder::new(ledger),
+                result: StdMutex::new(Ok(())),
+            }
+        }
+
+        fn fail_with(&self, err: crate::session_ledger::LedgerError) {
+            *self.result.lock().expect("result mutex") = Err(err);
+        }
+    }
+
+    impl SessionsRecorder for InsertFailingRecorder {
+        fn record(&self, record: SessionRecord<'_>) {
+            self.inner.record(record);
+        }
+        fn record_turn(&self, session_id: &str) {
+            self.inner.record_turn(session_id);
+        }
+        fn record_first_prompt(&self, session_id: &str, prompt: &str) {
+            self.inner.record_first_prompt(session_id, prompt);
+        }
+        fn mark_closed(&self, session_id: &str) {
+            self.inner.mark_closed(session_id);
+        }
+        fn mark_failed(&self, session_id: &str) {
+            self.inner.mark_failed(session_id);
+        }
+        fn remove(&self, session_id: &str) {
+            self.inner.remove(session_id);
+        }
+        fn evict_for_workspace(&self, workspace_key: &str, cap: usize) {
+            self.inner.evict_for_workspace(workspace_key, cap);
+        }
+        fn insert_pending_turn(
+            &self,
+            session_id: &str,
+            tug_turn_id: &str,
+            user_text: &str,
+            user_attachments: &[serde_json::Value],
+            now: i64,
+        ) -> Result<(), crate::session_ledger::LedgerError> {
+            // Take the configured result and replace it with Ok so a second
+            // dispatch in the same test produces success unless the test
+            // re-arms the failure. Avoids accidental persistent failure.
+            let outcome = {
+                let mut slot = self.result.lock().expect("result mutex");
+                std::mem::replace(&mut *slot, Ok(()))
+            };
+            outcome?; // propagate the configured error if any
+            self.inner.insert_pending_turn(
+                session_id,
+                tug_turn_id,
+                user_text,
+                user_attachments,
+                now,
+            )
+        }
+    }
+
+    fn make_supervisor_with_failing_recorder(
+        store: Arc<dyn SessionKeysStore>,
+    ) -> (
+        Arc<AgentSupervisor>,
+        Arc<SessionLedger>,
+        Arc<InsertFailingRecorder>,
+        broadcast::Receiver<Frame>,
+    ) {
+        let ledger = Arc::new(SessionLedger::open_in_memory().expect("ledger open"));
+        let recorder = Arc::new(InsertFailingRecorder::new(Arc::clone(&ledger)));
+        let (state_tx, _state_rx) = broadcast::channel(64);
+        let (meta_tx, _meta_rx) = broadcast::channel(8);
+        let (code_tx, _code_rx) = broadcast::channel(8);
+        let (control_tx, control_rx) = broadcast::channel(128);
+        let registry = Arc::new(WorkspaceRegistry::new());
+        let cancel = CancellationToken::new();
+        let recorder_dyn: Arc<dyn SessionsRecorder> = recorder.clone();
+        let (sup, mut register_rx) = AgentSupervisor::new_with_ledger(
+            state_tx,
+            meta_tx,
+            code_tx,
+            control_tx,
+            store,
+            recorder_dyn,
+            Some(Arc::clone(&ledger)),
+            stall_spawner_factory(),
+            AgentSupervisorConfig::default(),
+            registry,
+            cancel,
+        );
+        tokio::spawn(async move { while register_rx.recv().await.is_some() {} });
+        (Arc::new(sup), ledger, recorder, control_rx)
+    }
+
+    #[tokio::test]
+    async fn dispatch_user_message_persists_pending_row_and_augments_frame() {
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _ctrl_rx) = make_supervisor_with_ledger(store);
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .expect_handled();
+
+        sup.dispatch_one(user_message_frame("sess-1", "hello world"))
+            .await;
+
+        let rows = ledger.list_turns_for_session("sess-1").unwrap();
+        assert_eq!(rows.len(), 1, "exactly one pending row persisted");
+        let row = &rows[0];
+        assert_eq!(row.session_id, "sess-1");
+        assert_eq!(row.user_text, "hello world");
+        assert_eq!(row.ordinal, 0);
+        assert_eq!(row.state, TurnState::Pending);
+        assert_eq!(row.claude_message_id, None);
+        assert!(row.user_attachments.is_empty());
+
+        let frame = pop_queued_frame(&sup, &TugSessionId::new("sess-1"))
+            .await
+            .expect("augmented frame queued in entry");
+        let payload: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+        assert_eq!(
+            payload["tug_turn_id"].as_str(),
+            Some(row.tug_turn_id.as_str()),
+            "queued frame's tug_turn_id matches the persisted row's id",
+        );
+        // Original payload fields are preserved.
+        assert_eq!(payload["type"], "user_message");
+        assert_eq!(payload["text"], "hello world");
+        assert_eq!(payload["tug_session_id"], "sess-1");
+    }
+
+    #[tokio::test]
+    async fn dispatch_three_user_messages_assigns_ordinals_in_order() {
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _ctrl_rx) = make_supervisor_with_ledger(store);
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .expect_handled();
+
+        for text in ["first", "second", "third"] {
+            sup.dispatch_one(user_message_frame("sess-1", text)).await;
+        }
+
+        let rows = ledger.list_turns_for_session("sess-1").unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].ordinal, 0);
+        assert_eq!(rows[0].user_text, "first");
+        assert_eq!(rows[1].ordinal, 1);
+        assert_eq!(rows[1].user_text, "second");
+        assert_eq!(rows[2].ordinal, 2);
+        assert_eq!(rows[2].user_text, "third");
+
+        // All three frames sit in the queue (stall spawner never drains it),
+        // each with a distinct tug_turn_id matching its row.
+        let mut tug_turn_ids: Vec<String> = Vec::new();
+        for _ in 0..3 {
+            let frame = pop_queued_frame(&sup, &TugSessionId::new("sess-1"))
+                .await
+                .expect("queued frame");
+            let payload: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+            tug_turn_ids.push(payload["tug_turn_id"].as_str().unwrap().to_owned());
+        }
+        let row_ids: Vec<String> = rows.iter().map(|r| r.tug_turn_id.clone()).collect();
+        assert_eq!(
+            tug_turn_ids, row_ids,
+            "queued frames carry the row ids in order"
+        );
+    }
+
+    /// Ledger insert fails → no forward, no augmented frame, no row, and a
+    /// `ledger_insert_failed` CONTROL error reaches tugdeck. This is the
+    /// failure-first proof of the "row-persisted-before-frame-augmented-
+    /// before-routed" invariant: if the dispatcher were to forward the
+    /// frame before the ledger insert (an inverted order), the
+    /// `queue is empty` and `no row in ledger` assertions below would
+    /// both fail — the queue would hold an augmented frame but the
+    /// ledger would have no matching row, leaving a wire-side message
+    /// with no durable record (and tugdeck would observe a turn that
+    /// `runReplay` could never reconstruct).
+    #[tokio::test]
+    async fn dispatch_user_message_ledger_failure_drops_frame_and_emits_error() {
+        use crate::session_ledger::LedgerError;
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let (sup, ledger, recorder, mut ctrl_rx) = make_supervisor_with_failing_recorder(store);
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .expect_handled();
+
+        // Arm the recorder to return a sqlite-style failure on the next
+        // insert. Use NotFound (synthetic) so we don't depend on a real
+        // sqlite error path.
+        recorder.fail_with(LedgerError::NotFound("synthetic".to_owned()));
+
+        sup.dispatch_one(user_message_frame("sess-1", "hi")).await;
+
+        // No row persisted.
+        let rows = ledger.list_turns_for_session("sess-1").unwrap();
+        assert!(
+            rows.is_empty(),
+            "ledger insert failed, so no pending row should exist (got {} rows)",
+            rows.len(),
+        );
+
+        // No frame queued — the dispatcher early-returned before the
+        // routing decision. This is the invariant: a failed insert
+        // never produces a forwarded augmented frame.
+        let queued = pop_queued_frame(&sup, &TugSessionId::new("sess-1")).await;
+        assert!(
+            queued.is_none(),
+            "ledger failure must drop the inbound frame (no augmented forward)",
+        );
+
+        // Drain the CONTROL feed for the `ledger_insert_failed` error
+        // frame. drain_until_error_detail is inlined here since it's the
+        // only test reaching for it; bounded loop avoids hangs.
+        let mut found = false;
+        for _ in 0..16 {
+            let Ok(frame) = ctrl_rx.try_recv() else { break };
+            let v: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+            if v["type"] == "error" && v["detail"] == "ledger_insert_failed" {
+                assert_eq!(v["tug_session_id"], "sess-1");
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected a ledger_insert_failed CONTROL error frame");
+    }
+
+    #[tokio::test]
+    async fn dispatch_non_user_message_passes_through_unchanged() {
+        // tool_approval, interrupt, permission_mode, etc. must not touch
+        // the turns table or carry tug_turn_id. This pins the
+        // type-discriminator branch.
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _ctrl_rx) = make_supervisor_with_ledger(store);
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .expect_handled();
+
+        let approval = serde_json::json!({
+            "tug_session_id": "sess-1",
+            "type": "tool_approval",
+            "request_id": "req-1",
+            "decision": "allow",
+        });
+        sup.dispatch_one(Frame::new(
+            FeedId::CODE_INPUT,
+            serde_json::to_vec(&approval).unwrap(),
+        ))
+        .await;
+
+        // No turns row.
+        assert!(
+            ledger.list_turns_for_session("sess-1").unwrap().is_empty(),
+            "non-user_message must not persist a turns row",
+        );
+
+        // Frame queued unchanged — no tug_turn_id added.
+        let frame = pop_queued_frame(&sup, &TugSessionId::new("sess-1"))
+            .await
+            .expect("non-user_message frame queued");
+        let payload: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+        assert_eq!(payload["type"], "tool_approval");
+        assert!(
+            payload.get("tug_turn_id").is_none(),
+            "tug_turn_id must not be added to non-user_message frames",
+        );
+    }
+
+    #[tokio::test]
+    async fn dispatch_concurrent_user_messages_assigns_distinct_ordinals() {
+        // Two dispatches racing on the same session: under sqlite WAL +
+        // IMMEDIATE-tx insert_pending_turn, ordinals stay distinct and
+        // contiguous from 0. The dispatch path itself serializes through
+        // the per-session entry lock for the routing decision, so this
+        // is a sanity check that the ordinal allocation under the
+        // session_ledger Mutex<Connection> doesn't collide even when
+        // two dispatch_one futures interleave their await points.
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _ctrl_rx) = make_supervisor_with_ledger(store);
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .expect_handled();
+
+        let sup_a = Arc::clone(&sup);
+        let sup_b = Arc::clone(&sup);
+        let a = tokio::spawn(async move {
+            sup_a.dispatch_one(user_message_frame("sess-1", "a")).await;
+        });
+        let b = tokio::spawn(async move {
+            sup_b.dispatch_one(user_message_frame("sess-1", "b")).await;
+        });
+        a.await.unwrap();
+        b.await.unwrap();
+
+        let rows = ledger.list_turns_for_session("sess-1").unwrap();
+        assert_eq!(rows.len(), 2);
+        let mut ordinals: Vec<i64> = rows.iter().map(|r| r.ordinal).collect();
+        ordinals.sort();
+        assert_eq!(
+            ordinals,
+            vec![0, 1],
+            "ordinals must be distinct and contiguous"
+        );
+
+        // Both queued frames carry distinct tug_turn_ids matching the rows.
+        let mut queued_ids: Vec<String> = Vec::new();
+        while let Some(frame) = pop_queued_frame(&sup, &TugSessionId::new("sess-1")).await {
+            let payload: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+            queued_ids.push(payload["tug_turn_id"].as_str().unwrap().to_owned());
+        }
+        queued_ids.sort();
+        let mut row_ids: Vec<String> = rows.iter().map(|r| r.tug_turn_id.clone()).collect();
+        row_ids.sort();
+        assert_eq!(
+            queued_ids, row_ids,
+            "every persisted row has a queued frame"
+        );
     }
 }
