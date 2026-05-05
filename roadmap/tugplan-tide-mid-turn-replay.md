@@ -17,7 +17,7 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft (Phase 0 investigation pending) |
+| Status | Phase 0 complete (verdicts captured, drop audit done); Phase 1 design ready to author |
 | Target branch | tugplan-tide-mid-turn-replay |
 | Last updated | 2026-05-04 |
 | Roadmap anchor | [tugplan-tide-transcript-resume.md #phase-a-r3](./tugplan-tide-transcript-resume.md#phase-a-r3) — extracted from there after one reverted attempt |
@@ -146,11 +146,24 @@ The verdicts together form the input to [Phase 1 — Design](#phase-1).
 
 **How I run it.** `bash tugcode/scripts/investigate-jsonl-flush-timing.sh > traces/e1-trace.json && bun run scripts/analyze-e1.ts < traces/e1-trace.json`. No human in the loop; result is `PASS` (race characterized + verdict known) or `FAIL` (claude unavailable or unexpected output shape; needs investigation before retry).
 
-**Verdict (TBD — pending experiment run):**
+**Verdict — H1a confirmed (race exists).**
 
-- _To be filled in._ Expected output sketch:
-  - "Across N=20 runs of a deterministic prompt, the JSONL final-entry write completed [before / at the same instant / after] the stdout `result` event with mean offset _M_ ms (stddev _σ_)."
-  - "Implication for design: [the H1a or H1b path]."
+Across 10 runs of the deterministic prompt `"reply with exactly the string FOO and nothing else"` against `claude --output-format stream-json --input-format stream-json --include-partial-messages --replay-user-messages` on this machine (claude 2.1.128), the JSONL's first `assistant` entry with a non-null `stop_reason` always landed **after** the `result` event arrived on stdout. Stats:
+
+| Metric | Value |
+|-|-|
+| Runs | 10 / 10 with positive offset |
+| Min `t_jsonl_complete - t_result_stdout` | **2 ms** |
+| Max | **6 ms** |
+| Mean | **4.2 ms** |
+| Median | 4 ms |
+| Stddev | 1.66 ms |
+
+Raw deltas (sorted, ms): `[2, 2, 3, 3, 3, 5, 6, 6, 6, 6]`. Trace files: `roadmap/tugplan-tide-mid-turn-replay-traces/e1-batch-run-{01..10}.json`. Aggregate: `roadmap/tugplan-tide-mid-turn-replay-traces/e1-batch-summary.json`.
+
+**Implication for design (load-bearing):**
+
+A "wait for `result` on stdout, then read JSONL" design (the abandoned α) is unsound in principle — the JSONL is consistently incomplete at the moment of `result`. Even small budgets like 2ms would have to handle the long tail. The empty-assistant-response failure mode in the reverted α was likely this race surfacing under load. **The right answer is to not depend on JSONL for the in-flight turn at all** — tugcode has the in-flight turn's content in its own `ActiveTurn.partialText` (and elsewhere in the per-turn drain state) before `result` arrives, so the in-flight turn can be reconstructed from tugcode's own state. JSONL remains the source of truth for *committed* turns where the race is irrelevant (claude's previous-turn assistant entry has been on disk for seconds before reload).
 
 #### Experiment E2 — Live/replay ordering during the replay window {#e2-live-replay-ordering}
 
@@ -182,11 +195,38 @@ The verdicts together form the input to [Phase 1 — Design](#phase-1).
 
 **Verdict format.** Single-paragraph summary + the test file's assertions become the documented contract.
 
-**Verdict (TBD — pending experiment run):**
+**Verdict — H2c confirmed: msg_id divergence visible on the wire.**
 
-- _To be filled in._ Expected output sketch:
-  - "Captured wire trace shows [interleaving pattern]. Reducer state after replay produces [the correct / a corrupted] TurnEntry in [N/N / fewer than N/N] runs."
-  - "Implication for design: [the H2a or H2b or H2c path]."
+The interleaved-test wire trace (full output preserved in test stdout; rerunnable):
+
+```
+type=session_init
+type=assistant_text msg_id=1d1ab81a-...     ← LIVE event (tugcode UUID)
+type=replay_started
+type=system_metadata
+type=user_message_replay msg_id=msg_committed_1
+type=assistant_text       msg_id=msg_committed_1
+type=turn_complete        msg_id=msg_committed_1
+type=user_message_replay msg_id=msg_inflight_claude_id_2  ← REPLAY trailing turn (claude's id)
+type=assistant_text       msg_id=msg_inflight_claude_id_2
+type=turn_complete        msg_id=msg_inflight_claude_id_2 ← orphan-synthesized per [D08]
+type=replay_complete
+type=assistant_text msg_id=1d1ab81a-...     ← LIVE event (tugcode UUID, AFTER replay)
+```
+
+Three load-bearing observations:
+
+1. **Live and replay events DO interleave on the wire**, even within a single `runReplay` invocation. The first live `assistant_text` lands BEFORE `replay_started`, the second AFTER `replay_complete`. They straddle the bracket rather than being contained by it.
+
+2. **The msg_id divergence is real and confirmed.** Replay events for the trailing in-flight turn use `msg_inflight_claude_id_2` (claude's `message.id` from JSONL). Live events use a tugcode UUID (`1d1ab81a-...`, minted by `newMsgId()` when `ActiveTurn` was installed). The reducer keys by `msg_id`; same logical turn, two keys → reducer treats them as two turns.
+
+3. **Live events that land outside the replay bracket are silently dropped at the reducer.** Pre-`replay_started`, phase is `idle`; `handleAssistantText` drops in `idle`. Post-`replay_complete`, phase is back to `idle`; same drop. So today's wire-shape, even before any "merge" attempt, *loses* the live deltas at the reducer.
+
+**Implication for design.** Three things must change before mid-turn replay can work:
+
+- The msg_id divergence must be eliminated. Two options: (a) tugcode learns claude's `message.id` from the first stream event and uses it as canonical for live emits; (b) the translator emits the trailing in-flight turn's events with tugcode's UUID instead of claude's id. Either path makes the reducer's existing dedupe handle the merge. Option (a) is structurally cleaner (it's a one-time canonicalization at the source) and has the bonus of making live and replay reconcilable for any future feature that needs it. Option (b) is a smaller code change but only fixes the trailing-in-flight-turn case.
+- The translator must NOT orphan-synthesize a `turn_complete{interrupted}` for the trailing turn when tugcode signals the turn is the live in-flight one. Otherwise we double-commit (one interrupted from replay, one completed later from live).
+- The reducer must accept live events for the in-flight turn's `msg_id` even outside the active phase set. Either by extending the phase allowlist for the matching `activeMsgId`, or by ensuring the bracket cleanly contains the live events (which requires tugcode-side ordering control).
 
 #### Experiment E3 — Tugcast subscriber buffering {#e3-tugcast-buffering}
 
@@ -216,12 +256,26 @@ The verdicts together form the input to [Phase 1 — Design](#phase-1).
 
 **How I run it.** `cd tugrust && cargo nextest run -p tugcast --tests` (after the test is written).
 
-**Verdict (TBD — pending experiment run):**
+**Verdict — H3a confirmed: tugcast drops disconnect-window frames for fresh subscribers.**
 
-- _To be filled in._ Expected output sketch:
-  - "Tugcast [drops / buffers up to N events / persists indefinitely] events emitted during the disconnect window."
-  - "If H3a: card v2's recovery relies entirely on request_replay + JSONL completeness."
-  - "If H3b: card v2 may see duplicate events; the reducer's [D04] msg_id dedupe handles them."
+Three sub-tests in `tugrust/crates/tugcast/tests/e3_subscriber_buffering.rs` (all passing):
+
+- `e3_fresh_subscriber_sees_only_post_subscribe_frames`: a `broadcast::Sender` with capacity 1024 (mirroring `CODE_BROADCAST_CAPACITY`). Pre-subscribe sends are not delivered to a later subscriber; only post-subscribe sends arrive.
+- `e3_disconnect_then_reconnect_loses_disconnect_window_frames`: card v1 subscribes, drains 3 frames, drops the receiver. Frames 4-8 are sent during the disconnect. Card v2 subscribes anew and sees only frames 9-11. Frames 4-8 are silently dropped from card v2's perspective.
+- `e3_lag_recovery_is_for_existing_subscribers_only`: tokio's `broadcast` surfaces `RecvError::Lagged(N)` to an existing slow subscriber. The router's `LagPolicy::Replay` reacts to that signal by replaying from the shared `ReplayBuffer` (1000 frames). This path is for *existing* slow subscribers — it does NOT help a *new* subscriber catching up after disconnect-then-reconnect.
+
+**Architectural facts confirmed by code reading:**
+
+- `feeds/code.rs::CODE_BROADCAST_CAPACITY = 1024`.
+- `main.rs:313` wires `code_replay = ReplayBuffer::new(1000)` and `LagPolicy::Replay(code_replay)` for `FeedId::CODE_OUTPUT`.
+- `router.rs:402` calls `tx.subscribe()` per fresh client → fresh `broadcast::Receiver`. No catchup mechanism on connect.
+
+**Implication for mid-turn reload.** Any CODE_OUTPUT events emitted while the WebSocket was between card v1 and card v2 are **lost** at the broadcast layer for card v2. Recovery has exactly two sources:
+
+1. **JSONL** — reliable for *committed* turns (modulo E1's small flush race for the most recent one).
+2. **Live wire from card v2's connect time forward** — reliable while v2 is connected.
+
+Neither source alone covers the disconnect-window in-flight turn. The combination requires that **tugcode emit the in-flight turn's content from its own `ActiveTurn` state** when card v2 sends `request_replay`, then continue forwarding live events. JSONL alone won't work (E1's race plus the delete window for events emitted after v1 disconnected but before reaching JSONL flush).
 
 #### Experiment E4 — Drop audit {#e4-drop-audit}
 
@@ -255,53 +309,103 @@ For each layer, list:
 
 **Verdict format.** A table in this section + a paragraph naming the gaps the design must close.
 
-**Verdict (TBD — pending audit):**
+**Verdict — drop-point inventory complete.**
 
-- _To be filled in._ Expected output sketch:
-  - Table: per-layer buffer / capacity / overflow / telemetry / recovery.
-  - Identified gaps: [list of points where messages can drop without recovery].
-  - Design implications: [what Phase 1 must address to satisfy "never drop"].
+| # | Layer | Buffer / Channel | Capacity | Overflow behavior | Telemetry | Recovery |
+|-|-|-|-|-|-|-|
+| 1 | claude → tugcode (claude stdout pipe) | OS pipe | macOS default ~64 KB | claude blocks on write (TCP-style backpressure) | none from claude | drain catches up; no drops |
+| 2 | tugcode internal `writeLine` → Bun.stdout | OS pipe to tugcast | macOS default ~64 KB | tugcode blocks on write (Bun.write awaits) | none | tugcast's reader keeps draining; backpressure transparent |
+| 3 | tugcode → tugcast (tugcode stdout pipe) | OS pipe | macOS default ~64 KB | tugcode blocks on write | none | tugcast's bridge keeps draining |
+| 4 | tugcast supervisor per-session queue | `BoundedQueue<Frame>` (`agent_supervisor.rs`) | **256** (`BOUNDED_QUEUE_CAP`) | overflow drops the new push, returns `QueuePush::Overflow` | `request_replay.skipped reason="spawning_queue_overflow"` (tracing::warn) | **NONE today** — verb is dropped; cold-boot transcript may show empty until next dispatch (e.g. another reload) |
+| 5 | tugcast CODE_OUTPUT broadcast | `tokio::sync::broadcast` | **1024** (`CODE_BROADCAST_CAPACITY`) | existing subscribers get `RecvError::Lagged(N)` | router emits `lag_detected` + `lag_recovery` control frames | router's `LagPolicy::Replay` replays from `ReplayBuffer` (1000 frames) — **existing subscribers only**; fresh subscribers after disconnect-reconnect get nothing for the disconnect window (E3) |
+| 6 | tugcast CODE_OUTPUT replay buffer | `ReplayBuffer` (router.rs) | **1000** frames, evicting FIFO | oldest frame evicted on push past capacity | none on eviction | covers replay-on-lag for existing subscribers; if eviction happens during a long lag, the lagged subscriber gets a partial replay (older frames already evicted) |
+| 7 | WebSocket frame to tugdeck | TCP socket | TCP receive buffer (kernel) | TCP backpressure; both ends pace | none | TCP guarantees in-order delivery + no loss while connection is open. Disconnect = recovery via reconnect+`request_replay`. |
+| 8 | tugdeck `FeedStore` filter | `acceptFrame` → router by `tug_session_id` | n/a (synchronous filter) | drop if filter rejects | none | n/a — the filter is the contract |
+| 9 | tugdeck `frameToEvent` decoder | `KNOWN_CODE_OUTPUT_TYPES` allowlist | n/a | drop unknown event types | none on receiver side | n/a — silent drop; must update allowlist when adding new event types |
+| 10 | tugdeck reducer drop branches | per-handler phase guards | n/a | drop event if phase doesn't match (e.g. `handleAssistantText` drops in idle) | optional `console.warn` in some handlers | n/a — the drop is intentional defense-in-depth, but during mid-turn reload these become real drops (E2 finding) |
+
+**Identified gaps where messages can drop without recovery in the mid-turn-reload scenario:**
+
+- **G1 (E1 race).** Tugcode reading JSONL right after `result` on stdout sees a 2-6ms incomplete window. Result: an "in-flight" turn that just finished may show empty assistant content if replay reads JSONL too eagerly. Recovery: read tugcode's own `ActiveTurn.partialText` for the in-flight turn instead of JSONL.
+- **G2 (E3 broadcast drop).** CODE_OUTPUT events emitted during the disconnect window between card v1 leaving and card v2 connecting are not delivered to card v2 by the broadcast channel. Recovery: card v2 sends `request_replay`; tugcode replays from JSONL + ActiveTurn.
+- **G3 (E2 reducer drop).** Live events for an in-flight turn that arrive at tugdeck while phase is `idle` (i.e., before `replay_started` and after `replay_complete`) are dropped by the reducer. Recovery: today, none — the events are silently lost. Design phase must either (a) gate the live emit so events arrive only within the bracket, (b) extend the reducer's phase allowlist for events keyed by `state.activeMsgId`, or (c) buffer & re-dispatch.
+- **G4 (Spawning-queue overflow).** A user typing 256+ messages during the cold-boot Spawning window (claude not yet alive) overflows the supervisor's per-session queue. Today logs and drops. Recovery: re-issue. Likely not realistic in practice; document and move on.
+- **G5 (broadcast lag with eviction).** A subscriber that lags long enough for the 1000-frame `ReplayBuffer` to evict gets a partial replay. Likely rare in practice (1000 frames is many turns of content) but possible under load. Recovery: nothing automatic.
+
+**Design implications.** To satisfy "never drop a message" for the mid-turn reload case:
+
+- **Tugcode is the source of truth for the in-flight turn**, not JSONL. Closes G1.
+- **Card v2 fetching via `request_replay` is the recovery path** for events lost during the disconnect window. Closes G2 *if* tugcode's response includes the in-flight turn's content from its own state (i.e., closes G1's same fix).
+- **The bracket must contain the live events for the in-flight turn**, OR the reducer must accept them outside the bracket. Closes G3. Probably the simplest fix is for tugcode to suppress live emit during runReplay's window for the in-flight turn, and emit a single coherent block for it inside the bracket. (This avoids the α suppression failure mode because tugcode's ActiveTurn state, not JSONL, drives the in-flight content emission.)
+- **G4 (spawning-queue overflow) and G5 (replay-buffer eviction)** are accepted as out-of-scope for this plan. Both have telemetry; both are realistic only under pathological load.
+
+#### What we know now {#what-we-know-now}
+
+The four experiments together produce a coherent picture of where the mid-turn reload scenario fails today and what the design must do.
+
+**The story in one paragraph.** Tugcode mints its own UUID for each in-flight turn, but claude writes JSONL using its own `message.id`. These IDs never match. When a user reloads mid-turn, three things happen concurrently: (i) tugcode keeps draining claude's stdout and emitting live events keyed by the tugcode UUID; (ii) tugdeck's WebSocket disconnects, so events emitted in that window are lost at the broadcast layer (E3); (iii) when card v2 reconnects and dispatches `request_replay`, tugcode reads the JSONL — but the JSONL is a few milliseconds behind claude's stdout (E1) and uses claude's `message.id` (E2 confirms divergence). The orphan-synthesis path then fabricates a `turn_complete{interrupted}` for the trailing turn. Live events for the same logical turn (with tugcode's UUID, different key) arrive outside the replay bracket and get dropped by the reducer's phase guards (E2, E4 G3). Net result: the in-flight turn appears as a phantom interrupted row in the transcript while claude is still happily streaming, and the user has lost their work as far as the UI is concerned.
+
+**The fix shape, derived from the verdicts.** Four design commitments, each pinned by a specific experiment:
+
+1. **Tugcode is the in-flight turn's source of truth.** When `request_replay` arrives, tugcode emits the in-flight turn's content from its own `ActiveTurn` state (`partialText`, `toolCallMap`, the user's stored prompt) — not from JSONL. Pins E1's race away. JSONL stays the source of truth for *committed* turns where the race is irrelevant.
+2. **Live and replay agree on `msg_id`.** Tugcode learns claude's `message.id` from the first stream event of each turn and uses it as `ActiveTurn.msgId`, replacing the throwaway UUID it currently mints. The reducer's existing dedupe handles the merge for free. Pins E2's divergence away.
+3. **The translator skips orphan synthesis when tugcode signals the trailing turn is the live in-flight one.** No more `turn_complete{interrupted}` for a turn that's actually still streaming. The signal is a single flag passed from tugcode to the translator.
+4. **Tugcode emits the in-flight turn's content as a coherent block inside the replay bracket.** During `runReplay`, tugcode holds back live emit for the in-flight turn (suppress flag on `ActiveTurn`) and emits one consolidated set of events from its own state at the right point in the bracket. After `replay_complete`, live emit resumes naturally. Pins E2's interleaving and E4's G3 drop away. **This is different from α** because the suppressed events are emitted from tugcode's own ActiveTurn state inside the bracket, not skipped entirely with the hope that JSONL has them later.
+
+**What the front end does.** Front end sends `request_replay` on services construction (already shipped). Reducer accepts the bracket. With (1)–(4), the wire delivers a clean replay including the in-flight turn keyed by claude's `message.id`. After `replay_complete`, live events with the same `message.id` continue to flow into the same TurnEntry. Card observer renders. Done. **The front end is not doing more work — it's the back end's job to deliver a coherent stream, and the back end has the data it needs to do it.**
+
+**Drop story for "never lose a message."** Per E4: G1, G2, G3 are all closed by the four design commitments above. G4 (Spawning-queue overflow at 256 buffered frames during cold-boot) and G5 (broadcast replay buffer eviction at 1000 frames) are accepted as pathological-load-only and remain documented with telemetry. The "never drop" requirement is satisfied for the mid-turn reload scenario.
 
 #### Phase 0 deliverable {#phase-0-deliverable}
 
-A single commit `tide(transcript): mid-turn investigation — Phase 0 traces`:
+A single commit `tide(mid-turn): Phase 0 investigation — harnesses + verdicts`:
 
-- Four harness scripts / tests added to the repo
-- Four trace / report files under `roadmap/tugplan-tide-mid-turn-replay-traces/`
-- This plan section's "Verdict (TBD …)" placeholders all filled in with the actual findings
-- A 1-2 paragraph "What we know now" summary at the end of this Phase 0 section
+- Four harness scripts / tests added to the repo:
+  - `tugcode/scripts/investigate-jsonl-flush-timing.ts` (E1 single-run)
+  - `tugcode/scripts/run-e1-batch.ts` (E1 multi-run aggregator)
+  - `tugcode/src/__tests__/replay-spawn-mid-turn.test.ts` (E2)
+  - `tugrust/crates/tugcast/tests/e3_subscriber_buffering.rs` (E3)
+- Trace / report files under `roadmap/tugplan-tide-mid-turn-replay-traces/`:
+  - `e1-batch-run-{01..10}.json`, `e1-batch-summary.json`
+- This plan section's verdicts filled in with the actual findings
+- "What we know now" summary written
 
 #### Phase 0 checkpoint {#phase-0-checkpoint}
 
-- [ ] E1 (JSONL flush timing) harness committed; trace captured; verdict written.
-- [ ] E2 (live/replay ordering) test committed; trace captured; verdict written.
-- [ ] E3 (tugcast buffering) test committed; trace captured; verdict written.
-- [ ] E4 (drop audit) table committed; gaps identified.
-- [ ] "What we know now" summary written at end of Phase 0.
-- [ ] All check commands green: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`.
+- [x] E1 (JSONL flush timing) harness committed; 10-run trace captured; verdict written. **Race exists, mean 4.2ms.**
+- [x] E2 (live/replay ordering) test committed; trace captured; verdict written. **msg_id divergence + reducer drop confirmed on the wire.**
+- [x] E3 (tugcast buffering) test committed; three sub-tests passing; verdict written. **Disconnect-window frames lost at broadcast layer.**
+- [x] E4 (drop audit) table committed; five gaps identified, three closed by Phase 1 design commitments, two accepted as pathological-load-only.
+- [x] "What we know now" summary written.
+- [x] All check commands green: `bun test` (tugcode + new E2 test), `cargo nextest run` (tugcast + new E3 test). _TS / lint not re-run for this commit since no production source changed; the harnesses live under `scripts/` and `tests/` and don't enter the production build graph._
 
 ---
 
 ### Phase 1 — Design {#phase-1}
 
-**Status:** Pending. Design lands after Phase 0 verdicts are in.
+**Status:** Ready to author. Phase 0 closed; verdicts + drop audit pin the design space.
 
-**Likely shape (subject to Phase 0 confirmation):**
+The design is the four commitments named in [#what-we-know-now]:
 
-The post-mortem of α points at three changes. None ships before Phase 0 confirms its premise:
+1. **Tugcode uses claude's `message.id` as the canonical id for live events.** `ActiveTurn.msgId` is captured from the first stream event of each turn instead of being minted via `crypto.randomUUID()`. Live emits and replay emits then share an id for the same logical turn — the reducer's existing `msg_id` dedupe ([D04]) handles the merge automatically.
+2. **In-flight content emitted from `ActiveTurn`, not JSONL.** When `runReplay` runs against a JSONL whose trailing turn matches `this.activeTurn?.msgId`, tugcode emits the in-flight turn's content from its own per-turn state (user prompt + accumulated `partialText` + tool calls), not from the JSONL's partial assistant entry. JSONL stays the source of truth for committed turns. Closes E1's race.
+3. **Translator skips orphan synthesis on the live in-flight trailing turn.** A flag from tugcode tells the translator "the trailing turn is the one I'm currently streaming; emit its committed prefix from JSONL but no synthetic `turn_complete{interrupted}`." The bracket closes; live forwarding (now using the same `msg_id` per #1) produces the real `turn_complete`.
+4. **Live emit for the in-flight turn is suppressed during `runReplay`'s window**, then resumed after `replay_complete`. Tugcode (which owns both the drain and `runReplay`) is the natural serialization point. The suppressed events accumulate in `ActiveTurn` state during the window — they're not lost, they're just held back from the wire — and emerge as the resume's first deltas after `replay_complete`. Closes E2's interleaving and E4's G3.
 
-1. **Tugcode uses claude's `message.id` as the canonical id for live events.** `ActiveTurn.msgId` is set from the first stream event's `message.id` (currently `crypto.randomUUID()`). Live emits and replay emits then share an id for the same logical turn. The reducer's existing msg_id dedupe handles the merge.
-2. **Reducer accepts a "still in flight" trailing replay turn.** When `replay_complete` lands and the reducer's state has `activeMsgId` set with no `turn_complete` yet committed for that id, transition to `streaming` instead of `idle`. Live events for the same id continue to flow into the existing TurnEntry.
-3. **Translator stops orphan-synthesizing the trailing in-flight turn when tugcode signals it's still alive.** The trailing turn from JSONL emits its events but no synthetic `turn_complete{interrupted}`. Live forwarding produces the real `turn_complete` later.
+**What's NOT in the design** (deliberately):
 
-**Open questions for the design phase (each resolved by a Phase 0 verdict):**
+- No new wire-protocol frames. The bracket protocol stays exactly as today.
+- No new reducer phases. `replay_deferred` is not coming back.
+- No "Check again" UI. The user shouldn't ever wait long enough to need a manual retry — replay reads JSONL fast and the in-flight content emits from already-cached state in tugcode.
+- No client-side reconciliation logic. The reducer's existing `msg_id` dedupe is the entire merge story.
 
-- E1 verdict shapes whether replay can read JSONL immediately after `result` or needs a different source for the in-flight turn's content.
-- E2 verdict shapes whether the wire needs ordering guarantees (serialization in tugcode) or whether the reducer can handle interleaving.
-- E3 verdict shapes whether the disconnect window requires its own recovery mechanism or whether request_replay covers it.
-- E4 verdict shapes the durability story: queue capacities, overflow behavior, recovery paths.
+**Open implementation questions** (small, resolved during Phase 2 by reading code):
 
-**Phase 1 deliverable:** A revised `[#phase-1]` section of this plan, with concrete `[D##]` decisions, artifacts, tasks, tests, tuglaws cross-check, and checkpoint. Implementation phases follow.
+- Where exactly in `dispatchEventToTurn` does `ActiveTurn.msgId` get set from claude's `message.id`? Need to identify which event(s) carry it and verify ordering.
+- Does the translator already pass options through on a per-turn basis, or do we need to thread one? (The "skip orphan synthesis" flag.)
+- Are there existing places where `ActiveTurn.msgId` is captured as a UUID and read elsewhere (logs, telemetry)? If yes, those sites need a one-line update when the canonical-id change lands.
+
+**Phase 1 deliverable:** A revised `[#phase-1]` section of this plan with concrete `[D##]` decisions for each of (1)–(4), per-step artifacts/tasks/tests/tuglaws cross-check, and a checkpoint. Implementation phases follow.
 
 ---
 
