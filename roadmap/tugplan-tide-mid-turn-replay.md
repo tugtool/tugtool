@@ -17,7 +17,7 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | Steps 1–3 landed; manual testing surfaced a [DM03] race bug + a deeper id-stability gap; Step 4 (multi-substep) authored to redesign with ledger-authoritative turn ids; Step 5 (was Step 4) closes Smoke D |
+| Status | Steps 1–3 landed; manual testing surfaced a [DM03] race bug + a deeper id-stability gap; Step 4 (ledger-authoritative turn ids) shipped but smoke test failed (empty window after reload); Step 5 (rip-and-simplify) authored to revert wire to claude-id keying and narrow the ledger to a submission journal; Step 6 (was Step 5) closes Smoke D |
 | Target branch | tugplan-tide-mid-turn-replay |
 | Last updated | 2026-05-05 |
 | Roadmap anchor | [tugplan-tide-transcript-resume.md #phase-a-r3](./tugplan-tide-transcript-resume.md#phase-a-r3) — extracted from there after one reverted attempt |
@@ -185,7 +185,9 @@ This section will fill in as the investigation produces evidence and the design 
 
 **Alternative considered:** rely on the reducer to dedupe + reorder. **Rejected** because today's reducer drops events outside the active phase set, and changing that surface area is a larger blast radius than fixing tugcode's wire-emit ordering at the source.
 
-#### [DM07] Tugbank `SessionLedger.turns` is the authoritative source of turn ids; tugcast mints, tugcode uses, ledger persists (DECIDED — Phase 1, Step 4) {#dm07-ledger-authoritative}
+#### [DM07] Tugbank `SessionLedger.turns` is the authoritative source of turn ids; tugcast mints, tugcode uses, ledger persists (RETIRED 2026-05-05 — see [DM08] / [Step 5](#step-5)) {#dm07-ledger-authoritative}
+
+**Retired:** Step 4 shipped the eight-substep ledger-authoritative redesign as authored. All unit and integration tests passed (602 tugcast + 322 tugcode). The simplest end-to-end smoke test then failed in user dogfooding: type "hello", wait for response, `Developer > Reload`, expect transcript restored — actual: empty window. Two architectural commitments around the same problem (canonicalize live to claude's id; mint a tugcast id and bridge it) had now produced two non-functional code messes. The user's diagnosis on 2026-05-05 named the design itself as the problem: *"Three independent paths (live insert, ledger replay, cold-boot fallback) each with their own id semantics, plus a 'migration' that has to bridge them, and any platform path-resolution wrinkle takes the whole thing down."* The remediation is [DM08]: revert wire keying to claude's `message.id` (drop `tug_turn_id` from envelopes), narrow the ledger to a *submission journal* whose only job is plugging the "tugcode crashes before claude responds" hole, and let `translateJsonlSession` resume being the single replay source with a one-line predicate fix to emit in-flight turns instead of filtering them. The original Decision/Rationale/Implications/Alternatives below are preserved verbatim for audit.
 
 **Decision:** Per-turn identity moves from "minted by tugcode + canonicalized from claude's id" ([DM03]) to **"minted by tugcast at user-submission time, persisted to a new `turns` table in the existing `SessionLedger` sqlite database, and propagated to tugcode via the inbound `user_message` envelope."** The id is named `tug_turn_id` (UUID v4) and is the single source of truth for the reducer's `msg_id` key for live and replay events. Claude's `message.id` is captured as a secondary `claude_message_id` field on the ledger row when claude completes the turn — used to look up content in JSONL during replay, never used as the reducer's key.
 
@@ -213,6 +215,42 @@ This section will fill in as the investigation produces evidence and the design 
 - **A tugcode-side persistence store** (Bun's `bun:sqlite` writing alongside reading). **Rejected:** two writers across processes (tugcast for sessions, tugcode for turns) would either contend for the same database or split into two databases that need to stay coherent. Single-writer is operationally cleaner.
 - **Rewrite or wrap claude's JSONL.** **Rejected:** races claude's writes; breaks compatibility with other tools that read claude's JSONL; more complex than the ledger approach with no additional benefit.
 - **Embed `tug_turn_id` in the user prompt envelope** so claude echoes it through JSONL (tugcode's stdin → claude → JSONL user entry). **Useful as a complement** — cheap diagnostic-correlation aid that round-trips the id through JSONL — but **insufficient on its own:** claude generates assistant entries server-side; we can't tag those. Tracked as a follow-on if/when log-correlation grep-ability becomes a pain point.
+
+#### [DM08] Wire is keyed by claude's `message.id`; the ledger is a submission journal only (DECIDED — Phase 1, Step 5) {#dm08-submission-journal}
+
+**Decision:** Per-turn identity on the wire reverts to claude's `message.id`, the way it was before [DM03]'s canonicalization attempt and [DM07]'s ledger-authoritative attempt. The `turns` table introduced in [Step 4.1](#step-4-1) survives, but its role narrows from "transcript identity authority" to **"durable journal of pending submissions that claude has not yet acknowledged in JSONL."** A row is inserted at the moment tugcast forwards `user_message` to tugcode (already implemented in [Step 4.3](#step-4-3)) and is **deleted** as soon as the merger sees the corresponding `turn_complete` (FIFO match against the session's pending rows). The journal id (formerly `tug_turn_id`) is internal to tugcast and is **not surfaced on the wire** — neither inbound `user_message` nor outbound `turn_complete` carries it. Tugcode's `runReplay` queries the journal via the read-only sqlite handle (already opened in [Step 4.5](#step-4-5)) only to recover submissions that crashed before claude acknowledged them — those are emitted as synthetic `user_message_replay` frames before the JSONL translator pass runs.
+
+**Design goals (verbatim from user 2026-05-05):**
+
+> "The front end is not doing much work. The reducer's existing msg_id-keyed accumulation handles everything. Claude Code keeps ticking. Tugcast keeps ticking. The card just observes."
+
+> "We must NEVER drop a message on the floor — one way or another."
+
+**Rationale:**
+
+- The Step 4 design conflated two concerns into one mechanism: (1) "what is the durable identity for transcript-management features (scroll-restore, share, edit-previous-turn, diff)?" and (2) "how do we restore the transcript across reload?" Concern (1) needs a stable, durable id. Concern (2) does not — it just needs the wire frames to arrive and the reducer's msg_id-keyed accumulation to do its job. By trying to solve both with the same id, Step 4 introduced a re-keying step in the replay path (translate claude's id from JSONL into tugcast's id from the ledger) that became the failure surface.
+- Reverting wire keying to claude's `message.id` collapses the three Step 4 paths (live insert + augmented frame; ledger-driven runReplay; cold-boot translator fallback) into one: tugcode forwards what claude says, keyed by what claude says. Resume reads JSONL via `translateJsonlSession` and emits frames keyed by what JSONL says (claude's ids). One id space; one path; the reducer's existing accumulation does the work.
+- The "tugcode crashes before claude responds" hole — the gap that justified persisting *anything* tugcast-side — is plugged structurally by the journal alone. The journal records the submission immediately; on resume, tugcode injects a synthetic `user_message_replay` for any pending row not yet represented in JSONL, so the user's submission renders as "awaiting response" rather than vanishing. Concern (2) is solved without coupling identity to the journal.
+- Concern (1) — durable identity for transcript-management features — is addressed by **claude's `message.id` in JSONL**. Claude writes the user_message line and the assistant message line to JSONL with stable claude-side ids that survive reload, tugcode restart, tugcast restart, and Tug.app restart. Features keyed off these ids work across all those events. The pre-acknowledgement window (user submitted, claude not yet responded) is the only window where claude's id doesn't exist yet; in that window the journal id is a temporary key that the reducer's pendingUserMessage slot rebinds to claude's id when the first response frame arrives.
+
+**Implications:**
+
+- Wire shape reverts: `UserMessage` no longer carries `tug_turn_id`; `TurnComplete` no longer carries `claude_message_id`. Both fields added in [Step 4.2](#step-4-2) come off.
+- Tugcode's adoption changes: `ActiveTurn.msgId` is no longer sourced from the inbound envelope. The pre-Step-4 mechanism returns — `msgId` starts as a `crypto.randomUUID()` placeholder at install time and migrates to claude's `message.id` once the first stream event arrives. The DM03 race window that Step 4 was designed to close is reopened, but it doesn't matter: the *failure mode* of that race (replay can't match the in-flight turn) is plugged by the journal-driven pending-row replay (the user's submission is rendered from the journal, not from a translator id-match).
+- Tugcode's `runReplay` rewires: `runLedgerDrivenReplay` is deleted; `extractTurnContent` is deleted. The pre-Step-4 `translateJsonlSession` call site returns. New logic before the translator pass: `SELECT user_text, attachments FROM turns WHERE session_id = ? ORDER BY created_at` — for each pending row whose `user_text` does not appear as a `user_message` line in the JSONL, emit a synthetic `user_message_replay` (no terminal `turn_complete`; the reducer's `pendingUserMessage` slot holds it).
+- Translator predicate fix: `translateJsonlSession`'s end-of-JSONL flush, when the trailing turn has no `end_turn`, currently synthesizes a `turn_complete{interrupted}` (the [D08] orphan-synthesis path). For the in-flight case (the original 2026-05-05 mid-turn bug), this predicate changes: emit `user_message_replay` + accumulated `thinking_text` / `assistant_text` content, but **no terminal event**. The reducer's `pendingUserMessage` and `scratch[msgId]` stay populated; live frames continuing post-replay produce the eventual `turn_complete` naturally. Reducer is unchanged.
+- Ledger schema narrows: the `turns` table loses `claude_message_id`, `partial_text`, `completed_at` — those columns existed to bridge ids and back-reference content, both of which are gone. The state column collapses to "row exists = pending; row deleted = seen." `mark_turn_complete`, `mark_turn_interrupted`, `record_partial_text`, `list_turns_for_session` (or its content-bearing variant) are removed from the API. `insert_pending_turn` (renamed to reflect the journal role), `delete_oldest_pending_for_session` (FIFO match), and `reconcile_pending_for_session` survive.
+- Migration scaffolding deleted: `bootstrap_turns_from_jsonl` was bridging legacy JSONL into the ledger so replay could find tug_turn_ids for old sessions. With the wire keyed by claude's id and JSONL the replay source, no migration is needed — the ledger only ever holds *currently pending* submissions, never historical ones. `jsonl_reader.rs` (the minimal Rust JSONL parser added for migration), `bootstrap_turns_from_jsonl`, and `canonical_project_dir_for_jsonl` (the macOS firmlink path resolver) all come out.
+- Reducer is unchanged. `handleReplayStarted`, `handleUserMessageReplay`, `handleTextDelta`, `handleTurnComplete` all continue to operate on whatever `msg_id` arrives. Since claude's ids flow through unchanged, accumulation works without modification. The pendingUserMessage slot's existing behavior (set on user_message_replay, paired with scratch on turn_complete) handles the temporary-key migration described above.
+- Stable identity for transcript-management features (the [DM07] motivation) is now claude's `message.id` from JSONL. For pre-acknowledgement turns there is no stable id — but a feature targeting an unacknowledged turn would itself be racy (the turn might not exist yet from claude's perspective), so this isn't a real loss.
+
+**Alternatives considered:**
+
+- **Keep [DM07], debug the smoke test failure.** Rejected after the user's 2026-05-05 critique: the code review of every link in the chain (ledger row, JSONL extraction, translator re-key, wire emit, broadcast, reducer) showed each step looking correct in isolation, yet the integration silently produced empty output. Two independent rebuild-test cycles failed to surface the root cause. Continuing to debug a four-path design with re-keying at runtime risked spending more dogfooding time on the same fragility.
+- **Add `'in_progress'` as a third value to `TurnEntry.result`** so in-flight turns get a terminal event. Rejected because it requires a reducer change, breaking the "reducer is unchanged" property the user explicitly named as a load-bearing simplicity goal. The chosen alternative — emit no terminal event for in-flight turns and let live continuation produce it — gets the same UX with zero reducer churn.
+- **Reuse `'interrupted'` for in-flight turns.** Rejected because it conflates two distinct UX states (the turn is still streaming vs. the turn was canceled). UI code downstream of TurnEntry would need a side-channel hint to distinguish them.
+- **Drop the journal entirely and rely on claude's `--replay-user-messages` to recover submissions.** Rejected because that flag replays user messages claude has *already received and processed*. Submissions that crashed before claude received them would still be lost. The journal is the only mechanism that captures the submission durably the moment tugcast intercepts the inbound frame, so it's the only mechanism that satisfies the never-drop guarantee.
+- **Rewrite or wrap claude's JSONL.** Rejected for the same reasons as in [DM07].
 
 ---
 
@@ -1020,7 +1058,7 @@ Step 4 ships in 8 substeps. Each is a single coherent commit, each leaves the bu
 | 4.7 | Crash recovery | `tugcast/src/feeds/agent_supervisor.rs`, `tugcast/src/session_ledger.rs` | `tugcast(turns): pending-row reconciliation on session resume` |
 | 4.8 | Migration of existing sessions | `tugcast/src/session_ledger.rs` (new JSONL parser module) | `tugcast(turns): bootstrap turns rows for pre-existing sessions` |
 
-Plus the close-out at [Step 5](#step-5) which retests Smoke D end-to-end against the new design.
+Plus the rip-and-simplify remediation at [Step 5](#step-5) (introduced after Step 4's smoke test failed) and the close-out at [Step 6](#step-6) which retests Smoke D end-to-end against the post-remediation design.
 
 ---
 
@@ -1594,55 +1632,595 @@ Tests that survive unchanged:
 
 ---
 
-#### Step 5: End-to-end automated Smoke D test + manual verification (was Step 4, pushed down by Step 4's substeps) {#step-5}
+#### Step 5: Rip-and-simplify — claude-id-keyed wire, ledger as submission journal only {#step-5}
 
-**Commit:** `tide(mid-turn): automated Smoke D end-to-end; manual verification against ledger-authoritative design`
+**Decision:** [DM08].
 
-**Depends on:** [Step 4.8](#step-4-8).
+**Supersedes:** [DM07] (retired). Reverts the wire-shape additions from [Step 4.2](#step-4-2), the tugcode adoption work from [Step 4.5](#step-4-5), the ledger-driven replay path from [Step 4.6](#step-4-6), and the migration scaffolding from [Step 4.8](#step-4-8). Preserves the `turns` table (narrowed) and the supervisor-side intercepts from [Step 4.1](#step-4-1), [Step 4.3](#step-4-3), [Step 4.4](#step-4-4), [Step 4.7](#step-4-7) — those primitives stay; their roles narrow.
 
-**References:** Full plan; closes [#exit-criteria].
+**References:** [DM08]; [DM07]'s retirement note; smoke-test failure logged 2026-05-05; user's design-goal quotes preserved in [DM08].
 
 ##### Why this Step exists {#step-5-why}
 
-Step 4 lands eight substeps that redesign the data path. Step 5 closes the loop: it confirms the new design holds under realistic end-to-end conditions and pins the Smoke D regression test as the load-bearing wire-level pin going forward.
+Step 4 shipped as authored. All unit and integration tests passed (602 tugcast + 322 tugcode). Manual smoke testing failed: type "hello", wait for response, `Developer > Reload`, expect transcript restored — actual: empty window. Two architectural commitments around the same problem ([DM03] / [DM07]) had now produced two non-functional integrations whose unit tests didn't catch the failure.
 
-The promoted Smoke D test from the (now-superseded) Step 3 close-out is rewritten in 4.6 to drive the ledger-driven path. Step 5's job is to:
+The user's diagnosis on 2026-05-05 named the design itself as the problem:
+
+> "Three independent paths (live insert, ledger replay, cold-boot fallback) each with their own id semantics, plus a 'migration' that has to bridge them, and any platform path-resolution wrinkle takes the whole thing down. WHY is this still so complicated and fragile?"
+
+Step 5 collapses those three paths into one: tugcode forwards what claude says (live), reads JSONL via `translateJsonlSession` (resume), and consults a small submission journal ONLY to recover submissions that crashed before claude acknowledged them (never-drop). One id space (claude's `message.id`); one rendering path; one place where the journal earns its keep.
+
+The user's design-goal quotes from the same conversation (preserved in [DM08]) are the load-bearing constraint:
+
+> "The front end is not doing much work. The reducer's existing msg_id-keyed accumulation handles everything. Claude Code keeps ticking. Tugcast keeps ticking. The card just observes."
+
+> "We must NEVER drop a message on the floor — one way or another."
+
+##### Architecture summary {#step-5-architecture}
+
+```
+                                                    +------------------+
+                                                    |   sessions.db    |
+                                                    |  (sqlite, WAL)   |
+                                                    |                  |
+                                                    |  sessions   ←→ existing
+                                                    |  turns      ←─ NARROWED to journal:
+                                                    |               (journal_id, session_id,
+                                                    |                user_text, attachments,
+                                                    |                created_at)
+                                                    +--------+--+------+
+                                                       writer^  ^reader
+                                                             |  |
+   tugdeck                tugcast                   tugcode  |  |
+     |  user_message        |  intercept user_message:        |  |
+     |───────────────────→  |  INSERT pending journal row ─┐  |  |
+     |                      |  forward user_message (no    └──┘  |
+     |                      |    augmentation) ─────────→ tugcode receives unchanged
+     |                      |                              ActiveTurn.msgId = placeholder
+     |                      |                              (canonicalizes to claude's
+     |                      |                               message.id on first stream
+     |                      |                               event — DM03 mechanism)
+     |                      |                              writes to claude.stdin
+     |                      |                              ...streams...
+     |                      |  ←──── turn_complete         emits turn_complete with
+     |                      |        (claude's id only;    msg_id = claude's message.id;
+     |                      |         no claude_message_id  no journal id on wire
+     |                      |         field on wire)
+     |                      |  intercept turn_complete:
+     |                      |  DELETE oldest pending ───┐
+     |                      |  row for session (FIFO);  │
+     |                      |  forward turn_complete    └────┐
+     |                      |    unchanged                   │
+     |  ←───────────────────|                                │
+     |                      |                                │
+     |  request_replay      |                                │
+     |───────────────────→  |  forward ────────────────────→ tugcode opens sessions.db
+     |                      |                                READ-ONLY (Bun's bun:sqlite)
+     |                      |                                — ALREADY OPEN from Step 4.5;
+     |                      |                                no schema change here.
+     |                      |                                runReplay:
+     |                      |                                  1. SELECT pending journal
+     |                      |                                     rows for this session.
+     |                      |                                  2. translateJsonlSession
+     |                      |                                     reads JSONL.
+     |                      |                                  3. For each pending row
+     |                      |                                     whose user_text is NOT
+     |                      |                                     in JSONL, emit synthetic
+     |                      |                                     user_message_replay
+     |                      |                                     (no terminal event).
+     |                      |                                  4. Run translator pass:
+     |                      |                                     emits frames keyed by
+     |                      |                                     claude's message.id from
+     |                      |                                     JSONL. Trailing in-flight
+     |                      |                                     turn (no end_turn) emits
+     |                      |                                     content but no terminal.
+     |                      |  ←────── replay events ─── tugcode emits
+     |  ←───────────────────|
+```
+
+The journal's only durable role is plugging the gap between "user submitted" and "claude wrote user_message line to JSONL." Once claude has acknowledged the submission, the journal row is deleted (FIFO match in the merger) and the submission is fully represented in JSONL going forward.
+
+##### What from Step 4 survives, and what gets reverted {#step-5-what-survives}
+
+**Reverted:**
+
+- [Step 4.2] all wire shape additions — `tug_turn_id` field on `UserMessage` removed (Rust + TS); `claude_message_id` field on `TurnComplete` removed (Rust + TS).
+- [Step 4.5] tugcode adoption of `tug_turn_id` from envelope — `handleUserMessage` no longer reads `msg.tug_turn_id`; `ActiveTurn.msgId` no longer sources from envelope. The pre-Step-4 mechanism returns: `msgId` is a placeholder UUID at install time, canonicalized to claude's `message.id` on the first stream event ([DM03]'s mechanism is restored — its known race window is now structurally tolerable because the journal-driven pending-row replay covers the failure mode independently).
+- [Step 4.5] `ActiveTurn.claudeMessageId` field — no longer needed; `turn_complete` frames don't carry `claude_message_id` anymore. The `setClaudeMessageId` plumbing in `dispatchEventToTurn` and the corresponding capture sites in `mapStreamEvent` / `routeTopLevelEvent` come out.
+- [Step 4.6] `runLedgerDrivenReplay` in `tugcode/src/session.ts` — deleted. `runReplay` reverts to calling `translateJsonlSession` for committed-turn replay.
+- [Step 4.6] `extractTurnContent` in `tugcode/src/replay.ts` — deleted. Content lookup by `claude_message_id` was the load-bearing role of this function; it has no purpose with translator-driven replay.
+- [Step 4.6] `rekeyTurnContent` and any other Step-4-era re-keying utilities — deleted.
+- [Step 4.8] `bootstrap_turns_from_jsonl` in `session_ledger.rs` — deleted. The journal only ever holds *currently pending* submissions; no historical bootstrap is needed.
+- [Step 4.8] `canonical_project_dir_for_jsonl` (the macOS APFS firmlink prefix-stripping helper) — deleted. JSONL path resolution moves entirely to tugcode; tugcast no longer reads JSONL.
+- [Step 4.8] `tugrust/crates/tugcast/src/jsonl_reader.rs` — the minimal Rust JSONL parser added for the bootstrap migration. Whole file deleted.
+- [Step 4.1] schema columns: `claude_message_id`, `partial_text`, `completed_at` from the `turns` table. The `state` column collapses to "row exists = pending; row deleted = seen" (i.e., the column itself is removed). Migrations table bumps to v3.
+- [Step 4.4] `mark_turn_complete` and `mark_turn_interrupted` ledger API methods — deleted. Replaced by `delete_oldest_pending_for_session` (FIFO match on the merger's `turn_complete` intercept).
+- [Step 4.7] `record_partial_text` and the deferred `partial_text` snapshot pathway — deleted (was already an unused TODO; Step 5 closes the door).
+
+**Survives (with narrowed role):**
+
+- [Step 4.1] `turns` table — schema narrowed (5 columns: `journal_id`, `session_id`, `user_text`, `user_attachments`, `created_at`). `turns_cascade_delete_on_session` trigger preserved unchanged. `migrations` table preserved (used to track the Step 5 narrowing as v3).
+- [Step 4.1] `turns_session_created` index (was `turns_session_ordinal`; renamed to reflect the column rename — `created_at` replaces `ordinal` as the ordering key for FIFO match).
+- [Step 4.3] `dispatch_one`'s inbound `user_message` intercept — keeps the row insert. The augmentation (mutating the frame to add `tug_turn_id`) comes off; the frame forwards unchanged. The internal journal id is recorded on the row only.
+- [Step 4.4] `apply_outbound_turn_intercept` in the merger — keeps the intercept on `turn_complete`. The role narrows: instead of `UPDATE turns SET claude_message_id = ?, state = 'complete' WHERE tug_turn_id = ?`, the new behavior is `DELETE FROM turns WHERE journal_id = (SELECT journal_id FROM turns WHERE session_id = ? ORDER BY created_at LIMIT 1)` — FIFO match. The merger no longer extracts `claude_message_id` from the frame (it's not on the wire).
+- [Step 4.5] `bun:sqlite` read-only handle in `SessionManager` — kept. Opened at construction; held for lifetime; reused across `runReplay` invocations. Used by the new pending-row injection logic in `runReplay`.
+- [Step 4.7] `reconcile_pending_for_session` — survives, narrowed. The role becomes "on session resume, sweep pending rows older than the configured TTL (e.g., 5 minutes) — they correspond to submissions whose claude side never landed. Surfaces them via a new wire signal so the user sees the submission rendered as 'lost — retry?'" The fine-grained "match by `claude_message_id`" logic from Step 4 is gone.
+- [Step 3] `ActiveTurn.suppressEmit` and the seven gated `writeLine` sites — still load-bearing for keeping live drain emits off the wire during `runReplay`'s bracket window.
+- [Step 3] `emitInflightTurnFromActiveTurn` — kept. Inputs revert: `turn.msgId` is canonicalized from claude's `message.id` (Step 4.5's tug_turn_id source comes off).
+- [Step 3] [DM06] crash-during-suppression mitigation — the `gotResult` / `interrupted` terminal-event branches keep the bracket delivering a complete TurnEntry when the drain dies mid-replay.
+
+**Newly added:**
+
+- `runReplay`'s pending-row injection: a new pre-translator pass that queries the journal and emits synthetic `user_message_replay` frames for pending rows whose `user_text` does not appear as a `user_message` line in the JSONL. The injected frames carry the journal id as `msg_id` (a temporary key) and no terminal event. The reducer's `pendingUserMessage` slot rebinds to claude's id when the first response frame arrives post-replay, per [DM08]'s implications.
+- `translateJsonlSession`'s in-flight predicate: when the trailing turn has no `end_turn`, the translator emits the accumulated content (`thinking_text`, `assistant_text`, `tool_use`) but **no terminal event**. The reducer's accumulation stays open; live frames continuing post-replay produce the eventual `turn_complete` naturally. Reducer is unchanged. Replaces the previous orphan-synthesis path that emitted a synthetic `turn_complete{interrupted}` (which was the original 2026-05-05 mid-turn bug — the "interrupted" was wrong when the turn was actually still streaming).
+
+##### Substep overview {#step-5-substeps-overview}
+
+Step 5 ships in 8 substeps. Each is a single coherent commit, each leaves the build green (warnings-as-errors), each has a failure-first proof for any new behavior the substep introduces. Substep ordering is chosen so that intermediate states keep the build green even if a smoke test would fail at that intermediate point — the user-visible smoke test passes at substep 5.6 when the pending-row replay lands; substep 5.7 deletes the now-orphaned migration scaffolding; substep 5.8 closes out [DM07] and confirms the smoke.
+
+| Substep | Topic | Touches | Commit message |
+|---|---|---|---|
+| 5.1 | Wire revert | `tugcast` (Rust IPC types), `tugcode/src/types.ts` | `tide(turns): revert wire — drop tug_turn_id from UserMessage, claude_message_id from TurnComplete` |
+| 5.2 | Schema narrow | `tugrust/crates/tugcast/src/session_ledger.rs` | `tugcast(journal): narrow turns to submission journal — drop claude_message_id, partial_text, completed_at, state` |
+| 5.3 | Intercept narrow | `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` | `tugcast(journal): merger turn_complete intercept narrows to FIFO mark-seen` |
+| 5.4 | Restore translator-driven replay | `tugcode/src/session.ts`, `tugcode/src/replay.ts` | `tugcode(journal): restore translateJsonlSession path; delete runLedgerDrivenReplay + extractTurnContent` |
+| 5.5 | Translator predicate fix | `tugcode/src/replay.ts` | `tugcode(replay): in-flight trailing turn emits content without terminal event` |
+| 5.6 | Pending-row replay | `tugcode/src/session.ts` | `tugcode(journal): inject synthetic user_message_replay for pending rows not in JSONL` |
+| 5.7 | Delete migration scaffolding | `tugrust/crates/tugcast/src/session_ledger.rs`, deletes `jsonl_reader.rs` | `tugcast(journal): delete bootstrap_turns_from_jsonl, jsonl_reader, canonical_project_dir_for_jsonl` |
+| 5.8 | Close-out: tests + docs | tests + this plan | `tide(journal): submission-journal smoke + retire DM07` |
+
+Plus the close-out at [Step 6](#step-6) which retests Smoke D end-to-end against the new design.
+
+---
+
+##### Step 5.1: Wire revert — drop `tug_turn_id` and `claude_message_id` {#step-5-1}
+
+**Commit:** `tide(turns): revert wire — drop tug_turn_id from UserMessage, claude_message_id from TurnComplete`
+
+**Depends on:** none (foundation; pure type+plumbing revert).
+
+**Artifacts:**
+
+- `tugrust/crates/tugcast/src/ipc/types.rs` (or wherever the IPC envelope types live in Step 4.2's home) — `tug_turn_id` field removed from `UserMessage`. `claude_message_id` field removed from `TurnComplete`. Both fields existed only between Step 4.2 and Step 5.1.
+- `tugcode/src/types.ts` — same removals on the TS side. `UserMessage.tug_turn_id` and `TurnComplete.claude_message_id` come off. Conditional-spread sites (`{ ...(turn.claudeMessageId ? { claude_message_id: turn.claudeMessageId } : {}) }` from Step 4.5) come off.
+- `tugcode/src/session.ts` — `handleUserMessage` no longer reads `msg.tug_turn_id`. `ActiveTurn.msgId` reverts to the pre-Step-4 mechanism: `crypto.randomUUID()` placeholder at install, canonicalized to claude's `message.id` on the first stream event (the [DM03] mechanism returns).
+- `tugcode/src/session.ts` — `ActiveTurn.claudeMessageId` field removed. `setClaudeMessageId` method removed. `dispatchEventToTurn`'s `setClaudeMessageId` call sites removed.
+- `tugcode/src/session.ts` — `mapStreamEvent` and `routeTopLevelEvent`: the [DM03] canonicalization plumbing returns. `messageId` field on `EventMappingResult` and `TopLevelRoutingResult` is restored. `mapStreamEvent`'s `message_start` branch surfaces `messageId`. `routeTopLevelEvent`'s `case "assistant"` extracts `message.id` for canonical-id flow.
+- `tugcode/src/session.ts` — `ActiveTurn.msgId` is `mutable until first canonicalization`, frozen after. The Step 4.5 `readonly` declaration reverts.
+- `tugcode/src/session.ts` — `dispatchEventToTurn` re-introduces canonicalize-after-route and canonicalize-after-stream blocks (Step 1's plumbing) — these blocks were deleted in Step 4.5's revert; they come back here.
+
+**Tasks:**
+
+- [ ] Remove `tug_turn_id` field from `UserMessage` IPC type (Rust + TS).
+- [ ] Remove `claude_message_id` field from `TurnComplete` IPC type (Rust + TS).
+- [ ] Remove `claudeMessageId` capture from `ActiveTurn` (TS).
+- [ ] Restore `messageId` field on `EventMappingResult` / `TopLevelRoutingResult` (TS).
+- [ ] Restore canonicalize-after-route / canonicalize-after-stream blocks in `dispatchEventToTurn` (TS).
+- [ ] Update `handleUserMessage` to mint a placeholder UUID locally (no longer reads from envelope).
+- [ ] Update Step 4.2 / 4.5 tests in `session.test.ts`: tests that asserted on `tug_turn_id` from envelope, `claude_message_id` on `turn_complete`, or `claudeMessageId` capture come out (or revert to their pre-Step-4 form).
+
+**Tests:**
+
+- [ ] **Wire shape**: drive a synthetic `handleUserMessage`; assert the outbound `user_message` frame on tugcode's stdout has no `tug_turn_id` field. Assert the outbound `turn_complete` frame has no `claude_message_id` field.
+- [ ] **Canonicalization restored**: drive `handleUserMessage` (local UUID), then `message_start` with `message.id = "claude_X"`; assert `activeTurn.msgId === "claude_X"` after the canonicalization step (the pre-Step-4 behavior).
+- [ ] **Regression**: full `bun test` — all surviving tests pass; tests that assert on the now-removed fields are deleted or updated in this same commit.
+
+**Tuglaws cross-check:**
+
+- N/A — tugcode bridge subprocess; no React.
+
+**Checkpoint:**
+
+- [ ] `bun test` (tugcode) — green.
+- [ ] `cargo nextest run` — green.
+- [ ] `just lint` — clean.
+
+---
+
+##### Step 5.2: Schema narrow — `turns` becomes a submission journal {#step-5-2}
+
+**Commit:** `tugcast(journal): narrow turns to submission journal — drop claude_message_id, partial_text, completed_at, state`
+
+**Depends on:** [Step 5.1](#step-5-1) (wire is already free of the soon-to-be-deleted columns' downstream consumers).
+
+**Artifacts:**
+
+- `tugrust/crates/tugcast/src/session_ledger.rs` — new schema migration, v3 (v2 was Step 4.1's turns table; v3 narrows it). The migration is conservative:
+
+  ```sql
+  -- Drop columns that no longer have a role. SQLite doesn't support
+  -- ALTER TABLE DROP COLUMN before 3.35; we use the proven pattern of
+  -- (1) create new table, (2) copy data, (3) drop old, (4) rename.
+  -- Pending rows from v2 that have a non-null claude_message_id should
+  -- be deleted entirely (they correspond to submissions claude already
+  -- acknowledged — the journal is for *unacknowledged* submissions).
+  CREATE TABLE turns_v3 (
+      journal_id        TEXT PRIMARY KEY,
+      session_id        TEXT NOT NULL,
+      user_text         TEXT NOT NULL,
+      user_attachments  BLOB NOT NULL,
+      created_at        INTEGER NOT NULL
+  );
+  CREATE INDEX turns_v3_session_created ON turns_v3(session_id, created_at);
+  CREATE TRIGGER turns_v3_cascade_delete_on_session
+  AFTER DELETE ON sessions
+  FOR EACH ROW
+  BEGIN
+      DELETE FROM turns_v3 WHERE session_id = OLD.session_id;
+  END;
+
+  INSERT INTO turns_v3 (journal_id, session_id, user_text, user_attachments, created_at)
+      SELECT tug_turn_id, session_id, user_text, user_attachments, created_at
+      FROM turns
+      WHERE state = 'pending';
+
+  DROP TRIGGER IF EXISTS turns_cascade_delete_on_session;
+  DROP TABLE turns;
+  ALTER TABLE turns_v3 RENAME TO turns;
+  ALTER INDEX turns_v3_session_created RENAME TO turns_session_created;
+  -- The trigger keeps its v3 name; renaming is not strictly necessary.
+  ```
+
+- `tugrust/crates/tugcast/src/session_ledger.rs` — Rust API narrows:
+  - `insert_pending_turn(session_id, user_text, attachments) -> journal_id` — keeps shape; column name `tug_turn_id` → `journal_id`.
+  - `delete_oldest_pending_for_session(session_id) -> Option<JournalRow>` — NEW. FIFO match on `created_at ASC LIMIT 1`. Returns the deleted row's content for any caller that needs it (logs, metrics).
+  - `list_pending_turns_for_session(session_id) -> Vec<JournalRow>` — NEW. Returns all pending rows for a session, ordered by `created_at`. Used by tugcode's `runReplay` (via the read-only sqlite handle) for the pending-row injection in [Step 5.6](#step-5-6).
+  - `mark_turn_complete` — DELETED.
+  - `mark_turn_interrupted` — DELETED.
+  - `record_partial_text` — DELETED.
+  - `list_turns_for_session` (the variant that returned content for replay) — DELETED. Replaced by `list_pending_turns_for_session`.
+  - `bootstrap_turns_from_jsonl` — kept as a stub returning `Ok(())` for [Step 5.7](#step-5-7) to delete cleanly. (Or deleted here; the substep boundary is a judgment call. Deletion-deferred makes the migration's incremental commit cleaner.)
+- `tugrust/crates/tugcast/src/session_ledger.rs` — `JournalRow` struct (replaces `TurnRow`):
+  ```rust
+  pub struct JournalRow {
+      pub journal_id: String,
+      pub session_id: String,
+      pub user_text: String,
+      pub user_attachments: Vec<UserAttachment>,
+      pub created_at: i64,
+  }
+  ```
+
+**Tasks:**
+
+- [ ] Add v3 migration to `SessionLedger::ensure_schema`.
+- [ ] Add `JournalRow` struct; remove `TurnRow` (or rename in place).
+- [ ] Add `delete_oldest_pending_for_session` API.
+- [ ] Add `list_pending_turns_for_session` API.
+- [ ] Remove `mark_turn_complete`, `mark_turn_interrupted`, `record_partial_text`, content-bearing variant of `list_turns_for_session` from the Rust API.
+- [ ] Update `tugrust/crates/tugcast/src/session_ledger_test.rs` (or wherever schema tests live) — schema-shape tests for v3, FIFO-match test for `delete_oldest_pending_for_session`, ordering test for `list_pending_turns_for_session`.
+
+**Tests:**
+
+- [ ] **v3 migration from a fresh database**: open with no existing tables; assert v3 schema lands; `migrations` table has rows for v2 + v3.
+- [ ] **v3 migration from a v2 database with pending rows**: seed v2 with 3 pending + 2 complete rows; run migration; assert v3 has only the 3 pending rows; the 2 complete rows are dropped.
+- [ ] **v3 migration from a v2 database with already-applied v3**: run migration twice; assert idempotent (no double-create errors, no duplicate rows).
+- [ ] **`insert_pending_turn` round-trip**: insert; assert `journal_id` is returned; `list_pending_turns_for_session` returns the row.
+- [ ] **`delete_oldest_pending_for_session` FIFO**: insert 3 rows with monotonic `created_at`; call `delete_oldest_pending_for_session` 3 times; assert the rows come out in insertion order; fourth call returns `None`.
+- [ ] **`turns_cascade_delete_on_session` trigger preserved**: insert journal row; delete the parent session row; assert the journal row is gone.
+
+**Tuglaws cross-check:**
+
+- N/A — Rust crate; no React.
+
+**Checkpoint:**
+
+- [ ] `cargo nextest run -p tugcast` — green.
+- [ ] `just lint` — clean.
+
+---
+
+##### Step 5.3: Merger intercept narrows to FIFO mark-seen {#step-5-3}
+
+**Commit:** `tugcast(journal): merger turn_complete intercept narrows to FIFO mark-seen`
+
+**Depends on:** [Step 5.2](#step-5-2).
+
+**Artifacts:**
+
+- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — `apply_outbound_turn_intercept` narrows. Old behavior: extract `claude_message_id` from the frame, `UPDATE turns SET claude_message_id = ?, state = 'complete' WHERE tug_turn_id = ?`. New behavior: `delete_oldest_pending_for_session(session_id)`. The frame is forwarded unchanged. The merger no longer reads any field from the `turn_complete` frame except `session_id` (which is on the routing envelope, not the payload — already routed by this point).
+- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — `dispatch_one`'s `user_message` intercept narrows. Old behavior: mint `tug_turn_id`, `INSERT pending`, augment frame with `tug_turn_id`, forward. New behavior: mint internal `journal_id`, `INSERT pending`, forward frame unchanged. The mint and insert stay; the augmentation comes off (the wire field was removed in [Step 5.1](#step-5-1)).
+
+**Tasks:**
+
+- [ ] Update `apply_outbound_turn_intercept` to call `delete_oldest_pending_for_session` instead of `mark_turn_complete`.
+- [ ] Remove `claude_message_id` extraction from the frame in the merger.
+- [ ] Update `dispatch_one`'s `user_message` intercept to NOT augment the frame; the journal id is recorded internally only.
+- [ ] Update tests in `agent_supervisor_test.rs` that asserted on the augmentation or on `mark_turn_complete` calls.
+
+**Tests:**
+
+- [ ] **FIFO match across multiple submissions**: simulate two `user_message`s in flight, then two `turn_complete`s; assert the journal rows are deleted in order; final journal row count for the session is 0.
+- [ ] **Spurious `turn_complete` (no pending rows)**: simulate a `turn_complete` for a session with no pending rows; assert `delete_oldest_pending_for_session` returns `None`; merger forwards the frame unchanged; warn log fires (`turn_complete_no_pending_journal_row`).
+- [ ] **Pending row outlives session**: simulate a `user_message`, then session deletion before any `turn_complete`; assert the journal row is cascade-deleted via the trigger.
+- [ ] **Frame forwarded unchanged**: capture the frame at the merger output; assert it has the same shape as the input (no `claude_message_id` to add or remove).
+
+**Tuglaws cross-check:**
+
+- N/A — Rust crate; no React.
+
+**Checkpoint:**
+
+- [ ] `cargo nextest run -p tugcast` — green.
+- [ ] `just lint` — clean.
+
+---
+
+##### Step 5.4: Restore translator-driven `runReplay`; delete `runLedgerDrivenReplay` and `extractTurnContent` {#step-5-4}
+
+**Commit:** `tugcode(journal): restore translateJsonlSession path; delete runLedgerDrivenReplay + extractTurnContent`
+
+**Depends on:** [Step 5.1](#step-5-1) (wire is free of the Step 4 augmentations).
+
+**Artifacts:**
+
+- `tugcode/src/session.ts` — `runReplay` reverts to its pre-Step-4 shape: open the JSONL via the translator's resolver; emit `replay_started`; call `translateJsonlSession`; emit `replay_complete`. The Step 4.6 ledger-driven branch (the one that read `turns` rows and called `extractTurnContent`) is deleted entirely. The bun:sqlite handle stays open at construction (Step 4.5's plumbing), but is unused in `runReplay` for this substep — it'll come back into use in [Step 5.6](#step-5-6) for pending-row injection.
+- `tugcode/src/session.ts` — `runLedgerDrivenReplay` function and any helpers (e.g., `loadTurnsForSession`, `lookupContentByClaudeMessageId`) — DELETED.
+- `tugcode/src/replay.ts` — `extractTurnContent` generator — DELETED. Imports for it across the tree (session.ts, tests) come off.
+- `tugcode/src/replay.ts` — `rekeyTurnContent` (or any other Step-4 re-keying helpers) — DELETED.
+- `tugcode/src/replay.ts` — `translateJsonlSession` shape unchanged from its pre-Step-4 form: it accepts JSONL input, emits frames keyed by claude's `message.id`. This substep does NOT touch the in-flight predicate yet — that's [Step 5.5](#step-5-5).
+
+**Tasks:**
+
+- [ ] Delete `runLedgerDrivenReplay` from `session.ts`.
+- [ ] Restore `runReplay` to call `translateJsonlSession` with no special trailing-turn handling.
+- [ ] Delete `extractTurnContent` from `replay.ts`.
+- [ ] Delete `rekeyTurnContent` (or any other Step 4 re-keying helpers) from `replay.ts`.
+- [ ] Update imports across `session.ts`, `replay.test.ts`, `replay-spawn-mid-turn.test.ts`.
+- [ ] Delete tests that exercised `runLedgerDrivenReplay` / `extractTurnContent` in `replay.test.ts` and `replay-spawn-mid-turn.test.ts`. Translator-driven tests that pre-dated Step 4 should still pass.
+
+**Tests:**
+
+- [ ] **Translator-driven replay (post-turn case)**: seed a JSONL with 2 committed turns; `runReplay`; assert the wire emits `replay_started`, two complete TurnEntry-equivalent frame sequences keyed by claude's ids, `replay_complete`.
+- [ ] **Empty JSONL**: seed a JSONL with no turns; `runReplay`; assert `replay_started` + `replay_complete` (with `kind: empty` or whichever pre-Step-4 shape was used).
+- [ ] **Regression — `bun test` full pass**: any tests that survived the Step 4 deletions still pass; any tests that asserted on the deleted Step-4 paths are removed in this commit.
+
+**Tuglaws cross-check:**
+
+- N/A — tugcode bridge subprocess; no React.
+
+**Checkpoint:**
+
+- [ ] `bun test` (tugcode) — green.
+- [ ] `cargo nextest run` — green.
+- [ ] `just lint` — clean.
+
+---
+
+##### Step 5.5: Translator predicate fix — in-flight trailing turn emits content without terminal event {#step-5-5}
+
+**Commit:** `tugcode(replay): in-flight trailing turn emits content without terminal event`
+
+**Depends on:** [Step 5.4](#step-5-4).
+
+**Artifacts:**
+
+- `tugcode/src/replay.ts` — `translateJsonlSession`'s end-of-JSONL flush logic. Current behavior (pre-Step-4 and as restored in Step 5.4): if the trailing turn's terminal assistant entry has no `stop_reason` (i.e., no `end_turn`), synthesize a `turn_complete{result: "interrupted"}`. New behavior: if the trailing turn has no `end_turn`, emit the user_message_replay + accumulated content frames (`thinking_text`, `assistant_text`, `tool_use`) but emit **no terminal event** at all. The reducer's `pendingUserMessage` and `scratch[msgId]` slots stay populated; the live drain continuing post-replay produces the eventual `turn_complete` naturally.
+- `tugcode/src/replay.ts` — code comment at the predicate site explaining the design goal: "The in-flight turn is mid-stream; emitting a terminal event here would cause the reducer to commit a partial TurnEntry and dedupe subsequent live frames. Withholding the terminal event lets the live drain produce it when claude actually finishes (or never produces it if claude crashed — the user sees an open in-flight turn that they can act on)."
+
+**Why this is the original bug fix:**
+
+The pre-Step-4 design had this exact predicate emitting `turn_complete{interrupted}`. The 2026-05-05 mid-turn-replay bug was that this predicate fired for turns that were *currently streaming*, so the reducer committed an "interrupted" TurnEntry and then deduped (via `committedMsgIds`) the subsequent live `turn_complete` that finished the turn for real. The user saw an "interrupted" turn that wasn't actually interrupted, and the streaming response never landed. Step 4 tried to fix this by replacing the entire identity scheme with a ledger-driven path — that introduced more bugs than it fixed. The right fix is the one-line predicate change here.
+
+**Tasks:**
+
+- [ ] Locate the end-of-JSONL flush logic in `translateJsonlSession` (the synthesizes-`turn_complete{interrupted}`-on-no-`end_turn` branch).
+- [ ] Change the predicate: emit content frames; do NOT emit a terminal event. Add the design-goal comment.
+- [ ] Update tests in `replay.test.ts` that asserted on the synthetic `turn_complete{interrupted}` for trailing turns. The test fixtures stay; the assertions change to "no terminal event in the replay output for the trailing in-flight turn."
+
+**Tests:**
+
+- [ ] **Mid-turn JSONL**: seed a JSONL ending with an assistant entry that has `stop_reason: null`; `translateJsonlSession`; assert the emitted frames include `user_message_replay` + `thinking_text` + `assistant_text` for the trailing turn but NO `turn_complete` event for it.
+- [ ] **Tool-use mid-turn**: seed a JSONL ending with a tool_use block (no end_turn); assert the tool_use is emitted; no terminal event.
+- [ ] **Cold-boot interrupted (legit case)**: seed a JSONL where the trailing turn was interrupted in a *previous* claude session (claude crashed before reload, the JSONL has been on disk for hours). The new predicate emits no terminal — does the reducer leave the TurnEntry uncommitted? Yes, that's intended. The user sees the partial content and the absence of a "completed" indicator. If they want closure, they can submit something or reload again — neither produces the wrong answer (no phantom interrupted state). Document the trade-off in the plan; do not synthesize a terminal in this substep.
+- [ ] **Committed trailing turn (`end_turn` present)**: seed a JSONL where the trailing turn has `end_turn`; assert the translator emits the full sequence including a normal `turn_complete{success}`. (Predicate untouched for this branch.)
+
+**Tuglaws cross-check:**
+
+- N/A — tugcode bridge subprocess; no React.
+
+**Checkpoint:**
+
+- [ ] `bun test` (tugcode) — green.
+- [ ] `cargo nextest run` — green.
+- [ ] `just lint` — clean.
+
+---
+
+##### Step 5.6: Pending-row replay — synthetic `user_message_replay` for journal rows not in JSONL {#step-5-6}
+
+**Commit:** `tugcode(journal): inject synthetic user_message_replay for pending rows not in JSONL`
+
+**Depends on:** [Step 5.4](#step-5-4), [Step 5.5](#step-5-5).
+
+**This substep delivers the never-drop guarantee.** Before this lands, a tugcode crash (or Tug.app crash, or any reload) between user submission and claude's first JSONL write loses the user's submission silently. After this lands, the journal's pending row is observed on resume and the submission is rendered as a turn awaiting a response.
+
+**Artifacts:**
+
+- `tugcode/src/session.ts` — `runReplay` adds a pre-translator pass:
+  1. `SELECT journal_id, user_text, user_attachments, created_at FROM turns WHERE session_id = ? ORDER BY created_at` via the held bun:sqlite read-only handle.
+  2. Read the JSONL once to extract the list of `user_message` lines (text-only — comparison is by exact text match against the pending row's `user_text`).
+  3. For each pending row whose `user_text` does NOT appear in the JSONL's `user_message` lines, emit a synthetic `user_message_replay` frame with:
+     - `msg_id`: the journal id (a temporary key — see below)
+     - `text`: the row's `user_text`
+     - `attachments`: the row's `user_attachments`
+     - `is_partial`: `false`
+     - No subsequent content frames; no terminal event.
+  4. Continue with `translateJsonlSession` for the rest of replay.
+- `tugcode/src/session.ts` — the synthetic injection happens inside the `replay_started` / `replay_complete` bracket (between `replay_started` emit and the first translator emit), so the reducer sees the pending submissions as part of the same replay window.
+
+**Why no terminal event for the synthetic frame:**
+
+The reducer's `pendingUserMessage` slot is set on `user_message_replay` and consumed on the next `turn_complete` (along with `scratch[activeMsgId]`). Since the pending row by definition has no claude response yet, there is no scratch content and no claude message id. Emitting a terminal event for the synthetic frame would commit an empty assistant TurnEntry. Withholding the terminal event leaves `pendingUserMessage` populated; when the live drain produces the response post-replay (claude is `--resume`d and continues), the first response frame's claude `message.id` becomes the `activeMsgId` and the eventual `turn_complete` commits a proper TurnEntry whose `userMessage` text comes from `pendingUserMessage`. This is the exact same migration that LIVE submissions use — pendingUserMessage is set locally on submit (no msg_id), and bound to claude's id on the first response.
+
+The journal id is a *temporary key* for the reducer's state during the gap between the synthetic emit and the first live response. After live response binds, the journal id is no longer reachable from the reducer's state; the row is also deleted FIFO-style by the merger's intercept (Step 5.3) when the live `turn_complete` reaches the merger.
+
+**Match by exact text — discussion:**
+
+Comparing pending rows against JSONL by exact text match is the simplest reliable predicate: if the user submitted "hello" and JSONL has a `user_message` line with `text: "hello"`, the submission has been acknowledged. Edge case: the user submits two identical "hello"s. Two pending rows; JSONL might have one or both matching lines depending on timing. This is handled by FIFO: at the merger's intercept, the oldest pending row is deleted on each `turn_complete` regardless of text content. The injection logic uses text match only to decide *which subset of pending rows to emit synthetics for* — and even if it occasionally over-emits or under-emits in the ambiguous-duplicate case, the FIFO match at the merger eventually reconciles. The reducer is order-tolerant within the window because identical user text is identical user text. Worst case: the user sees their duplicate submission rendered twice or once-with-a-rebound; in either case, no message is dropped.
+
+**Alternative considered:** match by exact (user_text, attachments) tuple. Rejected as over-engineering — text match handles all real cases.
+
+**Tasks:**
+
+- [ ] Add the pre-translator pass to `runReplay`.
+- [ ] Read JSONL once in the pass (use the existing translator's resolver to find the path; do a streaming read for `user_message` lines only).
+- [ ] Emit synthetic `user_message_replay` frames for unmatched pending rows.
+- [ ] Document the journal-id-as-temporary-key in a comment at the emit site.
+- [ ] Add failure-first proof: a test that exercises the never-drop guarantee.
+
+**Tests:**
+
+- [ ] **Pending row, no JSONL match**: seed the journal with one pending row; seed a JSONL with no `user_message` line for that text; `runReplay`; assert the wire emits a synthetic `user_message_replay` for that row inside the bracket.
+- [ ] **Pending row, JSONL match**: seed the journal with a pending row whose `user_text` matches a `user_message` line in the JSONL (claude acknowledged the submission but the row hasn't been deleted yet, e.g., the merger crashed mid-intercept); `runReplay`; assert NO synthetic frame is emitted (the JSONL pass will emit the real frame instead).
+- [ ] **Multiple pending rows, partial JSONL match**: seed the journal with 3 pending rows; JSONL has matches for 2 of them (the oldest 2); `runReplay`; assert the synthetic frame is emitted for the 1 unmatched row only.
+- [ ] **Never-drop smoke (the gate)**: simulate the full scenario: tugdeck submits "hello" → tugcast inserts journal row + forwards → simulate tugcode crash before claude writes JSONL (no JSONL update) → restart tugcode → `runReplay` → assert "hello" is on the wire as a synthetic `user_message_replay` → assert tugdeck reducer renders it as a pending TurnEntry. THIS TEST IS THE LOAD-BEARING PROOF FOR DM08.
+- [ ] **Pending row + active live drain**: ensure the synthetic emit happens inside the `replay_started`/`replay_complete` bracket so the reducer's phase guard accepts it.
+
+**Tuglaws cross-check:**
+
+- N/A — tugcode bridge subprocess; no React.
+
+**Checkpoint:**
+
+- [ ] `bun test` (tugcode) — green.
+- [ ] `cargo nextest run` — green.
+- [ ] `just lint` — clean.
+- [ ] **Never-drop smoke test passes deterministically across N=20 sequential invocations.** This is the gate — if N=20 isn't deterministic, the substep doesn't ship.
+
+---
+
+##### Step 5.7: Delete migration scaffolding {#step-5-7}
+
+**Commit:** `tugcast(journal): delete bootstrap_turns_from_jsonl, jsonl_reader, canonical_project_dir_for_jsonl`
+
+**Depends on:** [Step 5.6](#step-5-6) (the live path is fully on the new design before scaffolding deletion).
+
+**Artifacts:**
+
+- `tugrust/crates/tugcast/src/session_ledger.rs` — `bootstrap_turns_from_jsonl` function — DELETED. Any callers (the eager-spawn block in `agent_supervisor::do_spawn_session` from Step 4.8) — DELETED. The journal only holds *currently pending* submissions; no historical bootstrap is needed.
+- `tugrust/crates/tugcast/src/session_ledger.rs` — `canonical_project_dir_for_jsonl` helper (the macOS APFS firmlink prefix-stripper added in the Step 4.8 fixup) — DELETED. JSONL path resolution moves entirely to tugcode side; tugcast no longer reads JSONL.
+- `tugrust/crates/tugcast/src/jsonl_reader.rs` — the minimal Rust JSONL parser added in Step 4.8 — WHOLE FILE DELETED. Removed from `lib.rs` exports.
+- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — `do_spawn_session`'s eager-spawn block: the bootstrap call is removed. The `reconcile_pending_for_session` call survives (its narrowed role per Step 4.7 lives on per [DM08]'s implications).
+- Tests in `session_ledger_test.rs`, `agent_supervisor_test.rs` that exercised bootstrap or jsonl_reader paths — DELETED.
+
+**Tasks:**
+
+- [ ] Delete `bootstrap_turns_from_jsonl` and its tests.
+- [ ] Delete `canonical_project_dir_for_jsonl` and its tests (including the macOS firmlink-stripping unit test).
+- [ ] Delete `tugrust/crates/tugcast/src/jsonl_reader.rs` and remove from `lib.rs` exports.
+- [ ] Remove the bootstrap call from `do_spawn_session`'s eager-spawn block.
+- [ ] Run `cargo build` and `cargo nextest run` to surface any orphaned references.
+- [ ] Confirm the Smoke D regression test (the never-drop smoke from 5.6) still passes deterministically.
+
+**Tests:**
+
+- [ ] **Cargo build clean after deletion**: `cargo build -p tugcast --workspace` produces no warnings (warnings-as-errors).
+- [ ] **Test suite green**: `cargo nextest run -p tugcast` — green.
+- [ ] **Never-drop smoke (regression)**: rerun the 5.6 test; assert it still passes (deletion of scaffolding did not regress live-path behavior).
+
+**Tuglaws cross-check:**
+
+- N/A — Rust crate; no React.
+
+**Checkpoint:**
+
+- [ ] `cargo nextest run -p tugcast` — green.
+- [ ] `just lint` — clean.
+
+---
+
+##### Step 5.8: Close-out — submission-journal smoke + retire DM07 {#step-5-8}
+
+**Commit:** `tide(journal): submission-journal smoke + retire DM07`
+
+**Depends on:** [Step 5.7](#step-5-7).
+
+**Artifacts:**
+
+- `roadmap/tugplan-tide-mid-turn-replay.md` — already updated as part of authoring this Step 5; this substep flips checkboxes (5.1–5.7 ✓) and confirms DM07 is retired with the submission-journal pivot recorded as DM08.
+- `tugcode/src/__tests__/replay-spawn-mid-turn.test.ts` — promoted as the Smoke D regression test in its post-Step-5 form. The file's top-of-file comment is updated to reflect the submission-journal design.
+- A new test fixture for the never-drop scenario lands in this file (or a new sibling test file): submit, simulate tugcode crash before JSONL write, resume, assert pending row is observed and rendered.
+
+**Tasks:**
+
+- [ ] Confirm Smoke D regression test passes deterministically across N=20 sequential invocations.
+- [ ] Confirm the never-drop smoke (from 5.6) passes deterministically across N=20 sequential invocations.
+- [ ] Manual check: type "hello" in a brand-new session, wait for response, `Developer > Reload`, assert transcript restored.
+- [ ] Manual check: type "hello", interrupt mid-stream (tugcode crash via `kill -9`), restart, assert "hello" appears as a pending submission.
+- [ ] Manual check: HMR cycle during a live conversation does not lose context.
+- [ ] Update Phase Exit Criteria checkboxes for Step 5 substeps.
+- [ ] Confirm DM07 is marked RETIRED with the original text preserved; DM08 is the active decision record.
+
+**Tests:**
+
+- [ ] N=20 deterministic green for the Step 5.6 never-drop smoke test.
+- [ ] N=20 deterministic green for the Step 5.5 in-flight predicate test.
+- [ ] Full-suite green: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`, `just lint`.
+
+**Tuglaws cross-check:**
+
+- N/A — close-out + tests + docs.
+
+**Checkpoint:**
+
+- [ ] All check commands green.
+- [ ] N=20 deterministic green on the two new smoke tests.
+- [ ] Manual smokes pass.
+- [ ] DM07 retired; DM08 active.
+
+---
+
+#### Step 6: End-to-end automated Smoke D test + manual verification (was Step 5; renumbered when Step 5 was repurposed for the rip-and-simplify remediation) {#step-6}
+
+**Commit:** `tide(mid-turn): automated Smoke D end-to-end; manual verification against submission-journal design`
+
+**Depends on:** [Step 5](#step-5).
+
+**References:** Full plan; closes [#exit-criteria].
+
+##### Why this Step exists {#step-6-why}
+
+Step 5 lands eight substeps that revert wire keying to claude's `message.id` and narrow the ledger to a submission journal. Step 6 closes the loop: it confirms the new design holds under realistic end-to-end conditions and pins the Smoke D regression test as the load-bearing wire-level pin going forward.
+
+Step 5's substep 5.7 lands the Smoke D regression test in its post-remediation form — translator-driven replay with pending-row injection. Step 6's job is to:
 
 - Confirm the test still passes deterministically (N=20).
-- Confirm the bug-scenario regressions from 4.6 still pass deterministically (N=20).
+- Confirm the bug-scenario regressions still pass deterministically (N=20).
 - Manual user-confirmation of the actual UX: submit + immediate reload, submit + reload during streaming, cancel during the bracket, and the dogfooding HMR cycle.
 - Flip the plan to `shipped` and update the smoke checklist citation.
 
-##### Artifacts {#step-5-artifacts}
+##### Artifacts {#step-6-artifacts}
 
-- `tugcode/src/__tests__/replay-spawn-mid-turn.test.ts` — final pass: assertions tightened for deterministic ordering; any remaining diagnostic noise removed; the file's top-of-file comment updated to reflect that this is the post-Step-4 ledger-authoritative regression suite (not the post-Step-3 canonicalization regression suite).
-- `roadmap/tugplan-tide-mid-turn-replay.md` — final close-out: Plan Metadata `Status: shipped`; all Step 4 / Step 5 boxes flipped; Phase Exit Criteria reflect the ledger-authoritative design.
-- `roadmap/archive/tugplan-tide-transcript-resume-smoke.md` — Smoke D entry updated to cite the Step 4 + Step 5 design (the existing citation written for the Step 1–3 design is rewritten).
+- `tugcode/src/__tests__/replay-spawn-mid-turn.test.ts` — final pass: assertions tightened for deterministic ordering; any remaining diagnostic noise removed; the file's top-of-file comment updated to reflect that this is the post-Step-5 submission-journal regression suite (not the post-Step-3 canonicalization regression suite, nor the post-Step-4 ledger-authoritative one).
+- `roadmap/tugplan-tide-mid-turn-replay.md` — final close-out: Plan Metadata `Status: shipped`; all Step 5 / Step 6 boxes flipped; Phase Exit Criteria reflect the submission-journal design.
+- `roadmap/archive/tugplan-tide-transcript-resume-smoke.md` — Smoke D entry updated to cite the Step 5 + Step 6 design (the existing citation written for the Step 1–3 design is rewritten).
 
-##### Tasks {#step-5-tasks}
+##### Tasks {#step-6-tasks}
 
-- [ ] Confirm the Smoke D regression test (the ledger-driven version landed in 4.6) passes deterministically across N=20 sequential invocations.
+- [ ] Confirm the Smoke D regression test (the submission-journal version landed in 5.7) passes deterministically across N=20 sequential invocations.
 - [ ] Manual verification — submit-then-immediate-reload (the original bug): assert the user submission is on the screen after the first reload; the streaming response continues; one TurnEntry with both halves of content; no phantom interrupted row; no second reload required.
 - [ ] Manual verification — reload during steady-state streaming (claude already responding): same expectations as above; one TurnEntry, smooth continuation.
 - [ ] Manual verification — cancel-during-bracket edge case: submit a turn, reload, cancel via existing UI before the bracket closes; assert the truncated turn renders cleanly with the partial content.
 - [ ] Manual verification — HMR dogfooding cycle: developer using Tug to develop Tug, with HMR cycling tugdeck during a live conversation, doesn't lose context across reloads.
-- [ ] Manual verification — tugcode-crash recovery: kill tugcode mid-turn (deliberately, via `kill -9` in another terminal), let tugcast respawn it; assert the user submission survived (rendered as `interrupted` in the transcript per 4.7's reconciliation).
-- [ ] Update the smoke checklist in `roadmap/archive/tugplan-tide-transcript-resume-smoke.md` to cite Step 4 + Step 5.
+- [ ] Manual verification — tugcode-crash recovery: kill tugcode mid-turn (deliberately, via `kill -9` in another terminal), let tugcast respawn it; assert the user submission survived (rendered as "awaiting response" via the journal-driven pending-row replay path from 5.6).
+- [ ] Manual verification — never-drop smoke: submit a message, instantly kill Tug.app (Cmd-Q before claude responds); reopen; assert the submission appears as a pending entry in the transcript, never silently lost.
+- [ ] Update the smoke checklist in `roadmap/archive/tugplan-tide-transcript-resume-smoke.md` to cite Step 5 + Step 6.
 - [ ] Flip Plan Metadata `Status: shipped`.
 
-##### Tests {#step-5-tests}
+##### Tests {#step-6-tests}
 
 - [ ] Full-suite green: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`, `just lint`.
-- [ ] N=20 deterministic green for the ledger-driven Smoke D regression test.
+- [ ] N=20 deterministic green for the submission-journal Smoke D regression test.
 
-##### Tuglaws cross-check {#step-5-tuglaws}
+##### Tuglaws cross-check {#step-6-tuglaws}
 
 - N/A — test plumbing + doc updates.
 
-##### Checkpoint {#step-5-checkpoint}
+##### Checkpoint {#step-6-checkpoint}
 
 - [ ] All check commands green.
-- [ ] Manual Smoke D passes (all five manual scenarios listed in [#step-5-tasks]).
+- [ ] Manual Smoke D passes (all six manual scenarios listed in [#step-6-tasks]).
 - [ ] Plan status: `shipped`.
 
 ---
@@ -1654,22 +2232,31 @@ The promoted Smoke D test from the (now-superseded) Step 3 close-out is rewritte
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
 - [x] Phase 0 investigation complete (four verdicts written, drop audit done).
-- [x] Phase 1 design recorded as `[DM03]`–`[DM07]` decisions in this plan; spec written for the Steps 1–3 design (now superseded by [DM07] / Step 4); Step 4 design fully elaborated.
-- [x] Step 1 (canonical msg_id — _superseded by Step 4_): shipped in `6fe7ee60`. The canonicalization plumbing is reverted in [Step 4.5](#step-4-5).
-- [x] Step 2 (translator skip on liveInflightMsgId — _superseded by Step 4_): shipped in `cafa0c39`. The translator's identity surface is removed in [Step 4.6](#step-4-6).
-- [x] Step 3 (in-flight emission + suppress — _retained into Step 4_): shipped in `e71d8590`. `suppressEmit` and `emitInflightTurnFromActiveTurn` survive into the new design.
-- [ ] Step 4.1 (ledger schema + API): `turns` table + migrations table land; CRUD API authored; failure-first proof on the ordinal-race; cargo nextest green.
-- [ ] Step 4.2 (wire shape): `tug_turn_id?` on `UserMessage`, `claude_message_id?` on `TurnComplete`; tsc + cargo nextest green.
-- [ ] Step 4.3 (tugcast write path: insert pending): mint + insert + forward; durability invariant pinned by failure-first proof; cargo nextest green.
-- [ ] Step 4.4 (tugcast write path: mark complete): intercept + update; warn-and-forward error policy pinned; cargo nextest green.
-- [ ] Step 4.5 (tugcode adoption): `tug_turn_id` from envelope; [DM03] plumbing reverted; `claudeMessageId` captured; bun test green; failure-first proof landed.
-- [ ] Step 4.6 (ledger-driven runReplay): translator becomes content-only; `runReplay` reads ledger; bug-scenario regression tests pass; bun test green.
-- [ ] Step 4.7 (crash recovery): `reconcile_pending_for_session` lands; live-tugcode gate pinned; cargo nextest green.
-- [ ] Step 4.8 (migration): minimal Rust JSONL parser; `bootstrap_turns_from_jsonl` lands; idempotent re-run pinned; cargo nextest green.
-- [ ] Step 5 (close-out): ledger-driven Smoke D regression test passes deterministically (N=20); five manual scenarios pass; smoke checklist updated; plan status `shipped`.
-- [ ] Smoke D — mid-turn reload — passes manually with the new design (the original 2026-05-05 bug confirmed fixed).
-- [ ] Smoke D — automated regression — passes deterministically with the ledger-driven test.
-- [x] Drop audit's identified gaps closed (G1, G2, G3 by Phase 1 design; G4, G5 explicitly accepted as pathological-load-only with telemetry). Step 4 also closes the previously-unaddressed "tugcode crash before claude responds" gap via row-persisted-before-forward.
+- [x] Phase 1 design recorded as `[DM03]`–`[DM08]` decisions in this plan; spec written for the Steps 1–3 design (now superseded by [DM07] / Step 4); Step 4 design fully elaborated; Step 5 (rip-and-simplify, [DM08]) authored after Step 4's smoke test failed.
+- [x] Step 1 (canonical msg_id — _superseded by Step 4, restored by Step 5_): shipped in `6fe7ee60`. The canonicalization plumbing is reverted in [Step 4.5](#step-4-5) and restored in [Step 5.1](#step-5-1).
+- [x] Step 2 (translator skip on liveInflightMsgId — _superseded by Step 4 and Step 5_): shipped in `cafa0c39`. The translator's identity surface is removed in [Step 4.6](#step-4-6); the predicate question is resolved differently in [Step 5.5](#step-5-5).
+- [x] Step 3 (in-flight emission + suppress — _retained_): shipped in `e71d8590`. `suppressEmit` and `emitInflightTurnFromActiveTurn` survive into the post-Step-5 design.
+- [x] Step 4.1 (ledger schema + API — _superseded by Step 5.2_): shipped in `74557c06`. Schema narrows in [Step 5.2](#step-5-2).
+- [x] Step 4.2 (wire shape — _superseded by Step 5.1_): shipped in `ebcaf6a3`. Wire fields removed in [Step 5.1](#step-5-1).
+- [x] Step 4.3 (tugcast write path: insert pending — _retained, augmentation comes off in Step 5.3_): shipped in `3260093b`.
+- [x] Step 4.4 (tugcast write path: mark complete — _intercept narrowed to FIFO mark-seen in Step 5.3_): shipped in `5158f5ee`.
+- [x] Step 4.5 (tugcode adoption — _superseded by Step 5.1_): shipped in `4e9047cc`. Adoption plumbing reverted in [Step 5.1](#step-5-1).
+- [x] Step 4.6 (ledger-driven runReplay — _superseded by Step 5.4_): shipped in `7aaa28a0`. `runLedgerDrivenReplay` and `extractTurnContent` deleted in [Step 5.4](#step-5-4).
+- [x] Step 4.7 (crash recovery — _retained, role narrowed_): shipped in `87df91fd`. `reconcile_pending_for_session` survives with its narrowed Step-5 role.
+- [x] Step 4.8 (migration — _superseded by Step 5.7_): shipped in `a2996ec5` (with audit fixups in `2f9a9d52`). All migration scaffolding deleted in [Step 5.7](#step-5-7).
+- [ ] Step 5.1 (wire revert): `tug_turn_id`/`claude_message_id` come off the wire; canonicalization restored; bun test green.
+- [ ] Step 5.2 (schema narrow): `turns` table v3 lands as a 5-column submission journal; FIFO-match API added; bun test green for the migration; cargo nextest green.
+- [ ] Step 5.3 (intercept narrow): merger's `turn_complete` intercept narrows to FIFO mark-seen; cargo nextest green.
+- [ ] Step 5.4 (restore translator-driven runReplay): `runLedgerDrivenReplay` and `extractTurnContent` deleted; `translateJsonlSession` resumes as the replay source; bun test green.
+- [ ] Step 5.5 (translator predicate fix): in-flight trailing turn emits content without a terminal event; bun test green; the original 2026-05-05 mid-turn bug structurally fixed by this one-line change.
+- [ ] Step 5.6 (pending-row replay): synthetic `user_message_replay` for unmatched pending rows; bun test green; **never-drop smoke passes deterministically across N=20** (load-bearing gate for [DM08]).
+- [ ] Step 5.7 (delete migration scaffolding): `bootstrap_turns_from_jsonl`, `canonical_project_dir_for_jsonl`, `jsonl_reader.rs` deleted; cargo nextest green.
+- [ ] Step 5.8 (close-out): smoke + DM07 retired confirmed; phase exit checkboxes flipped.
+- [ ] Step 6 (close-out): submission-journal Smoke D regression test passes deterministically (N=20); six manual scenarios pass; smoke checklist updated; plan status `shipped`.
+- [ ] Smoke D — mid-turn reload — passes manually with the post-Step-5 design (the original 2026-05-05 bug confirmed fixed by [Step 5.5](#step-5-5)'s predicate change).
+- [ ] Smoke D — automated regression — passes deterministically with the submission-journal-aware test.
+- [ ] Never-drop smoke — submit-then-instant-Cmd-Q before claude responds — passes manually (rendered as pending submission on next open, never silently lost).
+- [x] Drop audit's identified gaps closed (G1, G2, G3 by Phase 1 design; G4, G5 explicitly accepted as pathological-load-only with telemetry). The "tugcode crash before claude responds" gap is closed by the journal's pending-row mechanism (introduced in Step 4.3, role narrowed to journal-only in [DM08] / [Step 5.6](#step-5-6)).
 - [ ] HMR cycles during dogfooding don't lose conversation context (manual confirmation via the user's actual workflow).
 - [ ] All check commands green: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`.
 
@@ -1684,11 +2271,20 @@ The promoted Smoke D test from the (now-superseded) Step 3 close-out is rewritte
 | Step 4.2 wire shape | `bun x tsc --noEmit` + `cargo nextest run -p tugcast` |
 | Step 4.3 / 4.4 supervisor write path | `cargo nextest run -p tugcast` |
 | Step 4.5 tugcode adoption | `cd tugcode && bun test` + failure-first proof |
-| Step 4.6 ledger-driven runReplay | `cd tugcode && bun test src/__tests__/replay-spawn-mid-turn.test.ts` + bug-scenario regression |
+| Step 4.6 ledger-driven runReplay (superseded) | `cd tugcode && bun test src/__tests__/replay-spawn-mid-turn.test.ts` + bug-scenario regression |
 | Step 4.7 crash recovery | `cargo nextest run -p tugcast` |
-| Step 4.8 migration | `cargo nextest run -p tugcast` + manual sanity on real session |
-| Step 5 promoted regression | Same test, asserted N=20 sequential green |
-| Smoke D manual | User confirmation across the five scenarios in [#step-5-tasks] |
+| Step 4.8 migration (superseded) | `cargo nextest run -p tugcast` + manual sanity on real session |
+| Step 5.1 wire revert | `bun x tsc --noEmit` + `cd tugcode && bun test` + `cargo nextest run -p tugcast` |
+| Step 5.2 schema narrow | `cargo nextest run -p tugcast --test session_ledger` |
+| Step 5.3 intercept narrow | `cargo nextest run -p tugcast` |
+| Step 5.4 restore translator-driven runReplay | `cd tugcode && bun test` |
+| Step 5.5 translator predicate fix | `cd tugcode && bun test src/__tests__/replay.test.ts` + targeted in-flight tests |
+| Step 5.6 pending-row replay (never-drop gate) | `cd tugcode && bun test src/__tests__/replay-spawn-mid-turn.test.ts` asserted N=20 green |
+| Step 5.7 delete migration scaffolding | `cargo nextest run -p tugcast` + `cargo build -p tugcast` (warnings-as-errors) |
+| Step 5.8 close-out | All check commands; manual smokes |
+| Step 6 promoted regression | Same test, asserted N=20 sequential green |
+| Smoke D manual | User confirmation across the six scenarios in [#step-6-tasks] |
+| Never-drop smoke manual | Submit-then-Cmd-Q-before-response; reopen; verify pending submission rendered |
 | TS clean | `bun x tsc --noEmit` |
 | Rust clean | `cargo nextest run` |
 | Lint clean | `just lint` |
