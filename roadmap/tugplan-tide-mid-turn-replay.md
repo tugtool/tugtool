@@ -17,7 +17,7 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | Steps 1–3 landed; manual testing surfaced a [DM03] race bug + a deeper id-stability gap; Step 4 (ledger-authoritative turn ids) shipped but smoke test failed (empty window after reload); Step 5 (rip-and-simplify) authored to revert wire to claude-id keying and narrow the ledger to a submission journal; Step 6 (was Step 5) closes Smoke D |
+| Status | Steps 1–3 landed; manual testing surfaced a [DM03] race bug + a deeper id-stability gap; Step 4 (ledger-authoritative turn ids) shipped but smoke test failed (empty window after reload); Step 5 (rip-and-simplify) shipped: wire reverts to claude-id keying, ledger narrowed to a submission journal, never-drop guarantee gate held at N=20; Step 6 (was Step 5) is the load-bearing manual close-out (user-driven smoke + status flip to `shipped`) |
 | Target branch | tugplan-tide-mid-turn-replay |
 | Last updated | 2026-05-05 |
 | Roadmap anchor | [tugplan-tide-transcript-resume.md #phase-a-r3](./tugplan-tide-transcript-resume.md#phase-a-r3) — extracted from there after one reverted attempt |
@@ -2243,19 +2243,19 @@ Comparing pending rows against JSONL by exact text match is the simplest reliabl
 
 **Tasks:**
 
-- [ ] Confirm Smoke D regression test passes deterministically across N=20 sequential invocations.
-- [ ] Confirm the never-drop smoke (from 5.6) passes deterministically across N=20 sequential invocations.
-- [ ] Manual check: type "hello" in a brand-new session, wait for response, `Developer > Reload`, assert transcript restored.
-- [ ] Manual check: type "hello", interrupt mid-stream (tugcode crash via `kill -9`), restart, assert "hello" appears as a pending submission.
-- [ ] Manual check: HMR cycle during a live conversation does not lose context.
-- [ ] Update Phase Exit Criteria checkboxes for Step 5 substeps.
-- [ ] Confirm DM07 is marked RETIRED with the original text preserved; DM08 is the active decision record.
+- [x] Confirm the Step 5.6 never-drop smoke passes deterministically across N=20 sequential invocations (this substep's gate). Run was 20 outer × 20 inner = 400 deterministic passes for the gate's `NEVER-DROP SMOKE` test.
+- [x] Confirm the Step 5.5 in-flight predicate tests pass deterministically across N=20 sequential invocations of `replay.test.ts` (33/33 every iteration).
+- [ ] Manual check: type "hello" in a brand-new session, wait for response, `Developer > Reload`, assert transcript restored. **(User-driven; this environment cannot run Tug.app.)**
+- [ ] Manual check: type "hello", interrupt mid-stream (tugcode crash via `kill -9`), restart, assert "hello" appears as a pending submission. **(User-driven.)**
+- [ ] Manual check: HMR cycle during a live conversation does not lose context. **(User-driven.)**
+- [x] Update Phase Exit Criteria checkboxes for Step 5 substeps (this substep's plan-doc work).
+- [x] Confirm DM07 is marked RETIRED with the original text preserved; DM08 is the active decision record. (Verified line 188: `(RETIRED 2026-05-05 — see [DM08] / [Step 5](#step-5))`; line 190: `**Retired:**` rationale; original Decision/Rationale/Implications/Alternatives preserved verbatim below; line 219 hosts active [DM08].)
 
 **Tests:**
 
-- [ ] N=20 deterministic green for the Step 5.6 never-drop smoke test.
-- [ ] N=20 deterministic green for the Step 5.5 in-flight predicate test.
-- [ ] Full-suite green: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`, `just lint`.
+- [x] N=20 deterministic green for the Step 5.6 never-drop smoke test (the test file's `NEVER-DROP SMOKE` test does N=20 internally; the file was also run 20 times externally, all green).
+- [x] N=20 deterministic green for the Step 5.5 in-flight predicate test (`replay.test.ts` ran 20 times; 33/33 every iteration).
+- [x] Full-suite green: `bun x tsc --noEmit` (clean), `bun test` (322 pass), `bun run audit:tokens lint` (zero violations), `cargo nextest run` (1248 pass), `just lint` (clean).
 
 **Tuglaws cross-check:**
 
@@ -2263,10 +2263,10 @@ Comparing pending rows against JSONL by exact text match is the simplest reliabl
 
 **Checkpoint:**
 
-- [ ] All check commands green.
-- [ ] N=20 deterministic green on the two new smoke tests.
-- [ ] Manual smokes pass.
-- [ ] DM07 retired; DM08 active.
+- [x] All check commands green.
+- [x] N=20 deterministic green on the two new smoke tests (5.5 + 5.6).
+- [ ] Manual smokes pass. **(Deferred to [Step 6](#step-6) — that's Step 6's job; Step 6 promotes the automated smokes and adds user-driven manual verification + status flip.)**
+- [x] DM07 retired; DM08 active.
 
 ---
 
@@ -2351,7 +2351,7 @@ Step 5's substep 5.7 lands the Smoke D regression test in its post-remediation f
 - [x] Step 5.5 (translator predicate fix): in-flight trailing turn emits content without a terminal event via new `flushInflightTurnContent` helper sharing `emitTurnContentFrames` with `flushTurn`; the original 2026-05-05 mid-turn bug structurally fixed; bun test green (307 pass, +3 new); workspace nextest green; just lint clean.
 - [x] Step 5.6 (pending-row replay): synthetic `user_message_replay` for unmatched pending rows; multiset (text → count) handles duplicate-text submissions; injection lands inside `replay_started`/`replay_complete` bracket; bun test green (322 pass, +15 new); **never-drop smoke passes deterministically across N=20** (load-bearing gate for [DM08] — held).
 - [x] Step 5.7 (delete migration scaffolding): absorbed into [Step 5.2](#step-5-2). All migration scaffolding (`bootstrap_turns_from_jsonl`, `canonical_project_dir_for_jsonl`, `jsonl_reader.rs`, the migrations table, the supervisor's bootstrap call site) deleted in 5.2.
-- [ ] Step 5.8 (close-out): smoke + DM07 retired confirmed; phase exit checkboxes flipped.
+- [x] Step 5.8 (close-out): N=20 determinism gates held for 5.5 + 5.6; full-suite green (tsc, bun test 322 pass, audit:tokens lint zero violations, cargo nextest 1248 pass, just lint clean); DM07 confirmed RETIRED with original text preserved; DM08 confirmed active; phase exit checkboxes flipped. Manual smokes deferred to Step 6.
 - [ ] Step 6 (close-out): submission-journal Smoke D regression test passes deterministically (N=20); six manual scenarios pass; smoke checklist updated; plan status `shipped`.
 - [ ] Smoke D — mid-turn reload — passes manually with the post-Step-5 design (the original 2026-05-05 bug confirmed fixed by [Step 5.5](#step-5-5)'s predicate change).
 - [ ] Smoke D — automated regression — passes deterministically with the submission-journal-aware test.
