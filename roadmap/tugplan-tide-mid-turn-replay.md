@@ -1991,17 +1991,23 @@ The developer's local `sessions.db` will lose any in-flight pending rows from be
 
 **Tasks:**
 
-- [ ] Update `apply_outbound_turn_intercept` to call `delete_oldest_pending_for_session` instead of `mark_turn_complete`.
-- [ ] Remove `claude_message_id` extraction from the frame in the merger.
-- [ ] Update `dispatch_one`'s `user_message` intercept to NOT augment the frame; the journal id is recorded internally only.
-- [ ] Update tests in `agent_supervisor_test.rs` that asserted on the augmentation or on `mark_turn_complete` calls.
+- [x] Update `apply_outbound_turn_intercept` to call `delete_oldest_pending_for_session` instead of `mark_turn_complete`. Takes `&TugSessionId` parameter (the merger task already has it from the StreamMap; threaded through the call site).
+- [x] Remove `claude_message_id` / `partial_result` / `msg_id` extraction from the frame in the merger; the new intercept reads only the top-level `type` discriminator.
+- [x] Update `dispatch_one`'s `user_message` intercept to NOT augment the frame; mint internal `journal_id`, `INSERT pending`, forward unchanged. Delete the `augment_user_message_with_tug_turn_id` helper.
+- [x] Drop `mark_turn_complete` and `mark_turn_interrupted` from the `SessionsRecorder` trait, the production impl, and `NoopSessionsRecorder`. Add `delete_oldest_pending_for_session` to all three.
+- [x] Delete the now-orphan stubs in `session_ledger.rs` (`mark_turn_complete`, `mark_turn_interrupted`).
+- [x] Narrow `payload_inspector::InspectedPayload` to drop the now-unread fields (`msg_id`, `tug_turn_id`, `claude_message_id`, `partial_result`); update its tests.
+- [x] Add new Step 5.3 tests in `agent_supervisor.rs`'s test module (the Step 4 sub-modules were deleted in 5.2; this adds back focused coverage of the narrowed surface).
 
 **Tests:**
 
-- [ ] **FIFO match across multiple submissions**: simulate two `user_message`s in flight, then two `turn_complete`s; assert the journal rows are deleted in order; final journal row count for the session is 0.
-- [ ] **Spurious `turn_complete` (no pending rows)**: simulate a `turn_complete` for a session with no pending rows; assert `delete_oldest_pending_for_session` returns `None`; merger forwards the frame unchanged; warn log fires (`turn_complete_no_pending_journal_row`).
-- [ ] **Pending row outlives session**: simulate a `user_message`, then session deletion before any `turn_complete`; assert the journal row is cascade-deleted via the trigger.
-- [ ] **Frame forwarded unchanged**: capture the frame at the merger output; assert it has the same shape as the input (no `claude_message_id` to add or remove).
+- [x] **FIFO match across multiple submissions**: simulate two `user_message`s in flight, then two `turn_complete`s; assert the journal rows are deleted in order; final journal row count for the session is 0.
+- [x] **`turn_cancelled` pops the journal too** (same path as `turn_complete`).
+- [x] **Unrelated frames don't pop the journal** (`assistant_text`, `tool_use`, etc.).
+- [x] **Spurious `turn_complete` (no pending rows)**: assert `delete_oldest_pending_for_session` returns `None`; intercept handles gracefully; warn log fires (`turn_complete_no_pending_journal_row`).
+- [x] **Per-session isolation**: a `turn_complete` on session B does not pop session A's pending rows.
+- [x] **Cascade trigger purges journal when session forgotten** (the "pending row outlives session" case).
+- [x] **`dispatch_one` forwards the frame unchanged** — pop the queued frame and assert payload bytes equal the input bytes (no `tug_turn_id` augmentation).
 
 **Tuglaws cross-check:**
 
@@ -2009,8 +2015,9 @@ The developer's local `sessions.db` will lose any in-flight pending rows from be
 
 **Checkpoint:**
 
-- [ ] `cargo nextest run -p tugcast` — green.
-- [ ] `just lint` — clean.
+- [x] `cargo nextest run -p tugcast` — green (547 pass; +5 new from 5.3, +2 from `dispatch_one` round-trip and per-session isolation).
+- [x] `cargo nextest run` (workspace) — green (1248 pass).
+- [x] `just lint` — clean.
 
 ---
 
@@ -2327,7 +2334,7 @@ Step 5's substep 5.7 lands the Smoke D regression test in its post-remediation f
 - [x] Step 5.1 (wire revert): `tug_turn_id`/`claude_message_id` come off the wire; canonicalization restored; bun test green.
 - [x] Step 5.2 (schema narrow): `turns` table narrowed to 5-column submission journal; migrations table + bootstrap + jsonl_reader deleted entirely (Step 5.7's job folded in per the no-migration policy); FIFO-match API added; cargo nextest + just lint green.
 - [x] Step 5.7 (delete migration scaffolding): ABSORBED into 5.2.
-- [ ] Step 5.3 (intercept narrow): merger's `turn_complete` intercept narrows to FIFO mark-seen; cargo nextest green.
+- [x] Step 5.3 (intercept narrow): merger's `turn_complete` intercept narrows to FIFO mark-seen; `dispatch_one` forwards `user_message` frames unchanged; `payload_inspector` narrowed to msg_type/text/attachments; cargo nextest green.
 - [ ] Step 5.4 (restore translator-driven runReplay): `runLedgerDrivenReplay` and `extractTurnContent` deleted; `translateJsonlSession` resumes as the replay source; bun test green.
 - [ ] Step 5.5 (translator predicate fix): in-flight trailing turn emits content without a terminal event; bun test green; the original 2026-05-05 mid-turn bug structurally fixed by this one-line change.
 - [ ] Step 5.6 (pending-row replay): synthetic `user_message_replay` for unmatched pending rows; bun test green; **never-drop smoke passes deterministically across N=20** (load-bearing gate for [DM08]).

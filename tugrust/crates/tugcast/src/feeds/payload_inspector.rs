@@ -1,22 +1,18 @@
 //! payload_inspector — single-pass partial-shape parser for stream-json
 //! payloads on the CODE_INPUT and CODE_OUTPUT feeds.
 //!
-//! The supervisor's dispatch + merger intercepts (mid-turn-replay
-//! steps 4.3 / 4.4) need to look at several top-level fields of every
-//! frame's JSON payload to decide whether to mint a `tug_turn_id`,
-//! mark a row complete, etc. The naive approach — call
-//! `parse_*_field` four times — pays the JSON deserialize cost four
-//! times per frame. This module exposes a single
-//! [`InspectedPayload`] struct whose fields cover everything the
-//! intercepts read; one `serde_json::from_slice` reads them all.
+//! The supervisor's dispatcher (`dispatch_one`) reads `text` and
+//! `attachments` off every inbound `user_message` to seed the
+//! submission journal row, and the merger (`apply_outbound_turn_intercept`)
+//! reads only `msg_type` to decide whether a frame is a
+//! `turn_complete` / `turn_cancelled` that should pop the journal's
+//! oldest pending row. One `serde_json::from_slice` reads everything
+//! both sites need.
 //!
 //! All fields are optional. A payload with no `type` (malformed,
 //! truncated, or just a different shape than we expected) yields a
 //! struct whose `msg_type` is `None`; the dispatcher treats that as
-//! "pass through unchanged" and the merger treats it as "skip the
-//! ledger update". Optional everywhere is the wire-shape
-//! backward-compatibility contract — older tugcode binaries omit the
-//! new fields, and synthetic-input tests build minimal envelopes.
+//! "pass through unchanged" and the merger treats it as "no-op".
 
 // The inspector surface is authored ahead of the supervisor wiring
 // that consumes it; suppress dead-code warnings for the public API
@@ -40,48 +36,17 @@ pub struct InspectedPayload {
     #[serde(rename = "type", default)]
     pub msg_type: Option<String>,
 
-    /// Tugcode's per-turn message id stamped on assistant outputs
-    /// (`turn_complete.msg_id`, `turn_cancelled.msg_id`,
-    /// `assistant_text.msg_id`). On the inbound side, tugcast mints
-    /// `tug_turn_id` and the dispatcher splices it into the envelope;
-    /// tugcode then echoes that same id back as `msg_id` on outbound
-    /// assistant frames.
-    #[serde(default)]
-    pub msg_id: Option<String>,
-
-    /// Tugcast-minted UUIDv4 stamped onto inbound `user_message`
-    /// envelopes. Read by tugcode in step 4.5 as
-    /// `ActiveTurn.msgId`. The merger (4.4) does not read this — it
-    /// reads `msg_id` instead.
-    #[serde(default)]
-    pub tug_turn_id: Option<String>,
-
-    /// Claude's own message id (the `id` field on the assistant
-    /// `message` block in the JSONL). Tugcode populates this on
-    /// `turn_complete` / `turn_cancelled` so the merger (4.4) can
-    /// record it on the ledger row as a back-reference into claude's
-    /// JSONL.
-    #[serde(default)]
-    pub claude_message_id: Option<String>,
-
-    /// `text` field on inbound `user_message`. The dispatcher (4.3)
-    /// persists this onto the pending turns row.
+    /// `text` field on inbound `user_message`. The dispatcher persists
+    /// this on the journal row.
     #[serde(default)]
     pub text: Option<String>,
 
     /// `attachments` array on inbound `user_message`. The dispatcher
-    /// persists these onto the pending turns row as a JSON BLOB.
-    /// Stored as `Vec<serde_json::Value>` so the inspector doesn't
-    /// need to know the inner attachment shape.
+    /// persists these onto the journal row as a JSON BLOB. Stored as
+    /// `Vec<serde_json::Value>` so the inspector doesn't need to know
+    /// the inner attachment shape.
     #[serde(default)]
     pub attachments: Option<Vec<serde_json::Value>>,
-
-    /// `partial_result` on `turn_cancelled`. The merger (4.4)
-    /// persists this onto the ledger row's `partial_text` so
-    /// `runReplay` can surface the partial assistant content on the
-    /// next reload.
-    #[serde(default)]
-    pub partial_result: Option<String>,
 }
 
 impl InspectedPayload {
@@ -107,90 +72,50 @@ mod tests {
     // ── round-trip across the three intercept-relevant message types ─────────
 
     #[test]
-    fn inspects_user_message_with_all_fields() {
+    fn inspects_user_message_with_text_and_attachments() {
         let payload = br#"{
             "tug_session_id": "sess-abc",
             "type": "user_message",
             "text": "hello",
-            "attachments": [{"path": "/tmp/foo.txt"}],
-            "tug_turn_id": "11111111-2222-3333-4444-555555555555"
+            "attachments": [{"path": "/tmp/foo.txt"}]
         }"#;
         let i = InspectedPayload::from_slice(payload).expect("parses");
         assert_eq!(i.msg_type(), Some("user_message"));
         assert_eq!(i.text.as_deref(), Some("hello"));
-        assert_eq!(
-            i.tug_turn_id.as_deref(),
-            Some("11111111-2222-3333-4444-555555555555"),
-        );
         assert_eq!(i.attachments.as_deref().map(|a| a.len()), Some(1));
-        // Outbound-only fields stay None on inbound payloads.
-        assert_eq!(i.msg_id, None);
-        assert_eq!(i.claude_message_id, None);
-        assert_eq!(i.partial_result, None);
     }
 
     #[test]
-    fn inspects_turn_complete_with_claude_message_id() {
+    fn inspects_turn_complete_msg_type_only() {
+        // The merger only branches on `msg_type` post-Step-5.3; the
+        // outbound payload's other fields are unread.
         let payload = br#"{
             "type": "turn_complete",
-            "msg_id": "tug-abc",
+            "msg_id": "msg_01ABC",
             "seq": 3,
             "result": "",
-            "ipc_version": 2,
-            "claude_message_id": "msg_01ABC"
+            "ipc_version": 2
         }"#;
         let i = InspectedPayload::from_slice(payload).expect("parses");
         assert_eq!(i.msg_type(), Some("turn_complete"));
-        assert_eq!(i.msg_id.as_deref(), Some("tug-abc"));
-        assert_eq!(i.claude_message_id.as_deref(), Some("msg_01ABC"));
         // Inbound-only fields stay None on outbound payloads.
         assert_eq!(i.text, None);
         assert_eq!(i.attachments, None);
-        assert_eq!(i.partial_result, None);
     }
 
     #[test]
-    fn inspects_turn_cancelled_with_partial_result() {
+    fn inspects_turn_cancelled_msg_type_only() {
         let payload = br#"{
             "type": "turn_cancelled",
-            "msg_id": "tug-xyz",
+            "msg_id": "msg_01XYZ",
             "seq": 4,
             "partial_result": "so far the assistant said...",
-            "ipc_version": 2,
-            "claude_message_id": "msg_01XYZ"
+            "ipc_version": 2
         }"#;
         let i = InspectedPayload::from_slice(payload).expect("parses");
         assert_eq!(i.msg_type(), Some("turn_cancelled"));
-        assert_eq!(i.msg_id.as_deref(), Some("tug-xyz"));
-        assert_eq!(
-            i.partial_result.as_deref(),
-            Some("so far the assistant said..."),
-        );
-        assert_eq!(i.claude_message_id.as_deref(), Some("msg_01XYZ"));
-    }
-
-    // ── backward-compat: optional fields default to None ─────────────────────
-
-    #[test]
-    fn back_compat_user_message_without_tug_turn_id() {
-        // Pre-step-4.3 tugdeck → tugcast envelope: no tug_turn_id yet.
-        let payload =
-            br#"{"tug_session_id":"s","type":"user_message","text":"hi","attachments":[]}"#;
-        let i = InspectedPayload::from_slice(payload).expect("parses");
-        assert_eq!(i.msg_type(), Some("user_message"));
-        assert_eq!(i.text.as_deref(), Some("hi"));
-        assert_eq!(i.tug_turn_id, None);
-        assert_eq!(i.attachments.as_deref().map(<[_]>::len), Some(0));
-    }
-
-    #[test]
-    fn back_compat_turn_complete_without_claude_message_id() {
-        let payload =
-            br#"{"type":"turn_complete","msg_id":"m","seq":1,"result":"","ipc_version":2}"#;
-        let i = InspectedPayload::from_slice(payload).expect("parses");
-        assert_eq!(i.msg_type(), Some("turn_complete"));
-        assert_eq!(i.msg_id.as_deref(), Some("m"));
-        assert_eq!(i.claude_message_id, None);
+        assert_eq!(i.text, None);
+        assert_eq!(i.attachments, None);
     }
 
     // ── unknown-type pass-through ────────────────────────────────────────────
@@ -200,12 +125,9 @@ mod tests {
         let payload = br#"{"type":"tool_approval","request_id":"r","decision":"allow"}"#;
         let i = InspectedPayload::from_slice(payload).expect("parses");
         assert_eq!(i.msg_type(), Some("tool_approval"));
-        // None of the user_message / turn_complete fields apply.
+        // None of the user_message fields apply.
         assert_eq!(i.text, None);
         assert_eq!(i.attachments, None);
-        assert_eq!(i.tug_turn_id, None);
-        assert_eq!(i.msg_id, None);
-        assert_eq!(i.claude_message_id, None);
     }
 
     #[test]
@@ -242,7 +164,6 @@ mod tests {
         assert_eq!(i.msg_type(), Some("user_message"));
         assert_eq!(i.text, None);
         assert_eq!(i.attachments, None);
-        assert_eq!(i.tug_turn_id, None);
     }
 
     // ── attachments shape is preserved as raw Value ─────────────────────────

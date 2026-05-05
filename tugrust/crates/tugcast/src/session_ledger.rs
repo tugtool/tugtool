@@ -778,35 +778,6 @@ impl SessionLedger {
         Ok(Some(row))
     }
 
-    /// Stubbed in [Step 5.2](#step-5-2). Replaced in [Step 5.3](#step-5-3)
-    /// with `delete_oldest_pending_for_session`; the merger's
-    /// `apply_outbound_turn_intercept` still calls this in the Step 5.2
-    /// snapshot, so the function survives as a no-op until 5.3 narrows
-    /// the call site. Argument names preserved for grep continuity.
-    #[allow(unused_variables)]
-    pub fn mark_turn_complete(
-        &self,
-        tug_turn_id: &str,
-        claude_message_id: &str,
-        completed_at: i64,
-    ) -> Result<(), LedgerError> {
-        Ok(())
-    }
-
-    /// Stubbed in [Step 5.2](#step-5-2). Replaced in [Step 5.3](#step-5-3)
-    /// alongside `mark_turn_complete`; same rationale.
-    #[allow(unused_variables)]
-    pub fn mark_turn_interrupted(
-        &self,
-        tug_turn_id: &str,
-        claude_message_id: Option<&str>,
-        partial_text: Option<&str>,
-        completed_at: i64,
-    ) -> Result<(), LedgerError> {
-        let _ = (tug_turn_id, claude_message_id, partial_text, completed_at);
-        Ok(())
-    }
-
     /// All pending journal rows for `session_id`, ordered by `created_at`
     /// ASC (FIFO). This is the read surface tugcode's `runReplay`
     /// consumes through the cross-process `bun:sqlite` handle: for each

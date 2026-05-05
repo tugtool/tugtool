@@ -527,73 +527,57 @@ pub trait SessionsRecorder: Send + Sync {
     /// the cap. No-op if under cap.
     fn evict_for_workspace(&self, workspace_key: &str, cap: usize);
 
-    /// Insert a fresh `pending` row keyed on `tug_turn_id` for this
-    /// session. Called from the supervisor's dispatch intercept on every
-    /// inbound `user_message`, BEFORE the augmented frame is forwarded
-    /// to tugcode. The "row-persisted-before-frame-augmented-before-
-    /// routed" invariant means a failure here drops the inbound frame
-    /// (the supervisor emits an error frame on CONTROL); a forwarded
-    /// frame with no row is structurally impossible because augmentation
-    /// happens after this call returns `Ok`.
+    /// Insert a fresh row in the submission journal for this session.
+    /// Called from the supervisor's `dispatch_one` intercept on every
+    /// inbound `user_message`, BEFORE the frame is forwarded to tugcode.
+    /// The "row-persisted-before-forwarded" invariant means a failure
+    /// here drops the inbound frame (the supervisor emits an error frame
+    /// on CONTROL); a forwarded frame with no row is structurally
+    /// impossible because the forward only happens after this call
+    /// returns `Ok`. The journal id is internal to tugcast — it is not
+    /// surfaced on the wire and tugcode never sees it. See [DM08] in the
+    /// mid-turn-replay plan for the never-drop chain audit.
     ///
-    /// Unlike the other `SessionsRecorder` methods (which swallow
-    /// errors with a `warn!` because their failure is after-the-fact
-    /// telemetry), `insert_pending_turn` and the `mark_turn_*` methods
-    /// below return `Result`. The dispatcher's decision to forward
-    /// depends on insert success; the merger's call sites use the
-    /// `Result` only to choose between an info trace (`Ok`) and a warn
-    /// trace (`Err`) — the frame has already been forwarded by the time
-    /// `mark_turn_complete` / `mark_turn_interrupted` runs, so failure
-    /// is non-blocking from the wire's perspective. The wire is the
-    /// source of truth for the live UI; the ledger lagging by one
-    /// update is a telemetry signal, not a user-facing error.
+    /// Returns `Result` because the dispatcher's decision to forward
+    /// depends on insert success. Sibling
+    /// `delete_oldest_pending_for_session` runs after the wire-side
+    /// broadcast (forward-before-mutate), so its `Result` is treated as
+    /// telemetry — the wire is the source of truth for the live UI; the
+    /// journal lagging by one update is a warn, not a user-facing error.
     fn insert_pending_turn(
         &self,
         session_id: &str,
-        tug_turn_id: &str,
+        journal_id: &str,
         user_text: &str,
         user_attachments: &[serde_json::Value],
         now: i64,
     ) -> Result<(), crate::session_ledger::LedgerError>;
 
-    /// Transition a `pending` row to `complete`, recording the matched
-    /// `claude_message_id` and `now` as `completed_at`. Called from the
-    /// supervisor's merger intercept on every outbound `turn_complete`
-    /// that carries a `claude_message_id` field. **Forward-before-
-    /// mutate**: the frame has already been broadcast on `code_output_tx`
-    /// before this fires, so a `LedgerError` here is a telemetry warn,
-    /// not a user-visible failure.
-    fn mark_turn_complete(
+    /// Delete the oldest pending journal row for `session_id` (FIFO match
+    /// by `created_at` ASC). Called from the supervisor's merger
+    /// intercept on every outbound `turn_complete` / `turn_cancelled` —
+    /// claude has acknowledged the user's submission, so the journal
+    /// row's reason for existing (rendering the submission as
+    /// awaiting-response on resume) is gone.
+    ///
+    /// Returns the deleted row's content for logging, or `None` if
+    /// there were no pending rows for the session. The frame has
+    /// already been broadcast on `code_output_tx` before this fires
+    /// (forward-before-mutate), so a `LedgerError` here is a
+    /// telemetry warn, not a user-visible failure.
+    fn delete_oldest_pending_for_session(
         &self,
-        tug_turn_id: &str,
-        claude_message_id: &str,
-        now: i64,
-    ) -> Result<(), crate::session_ledger::LedgerError>;
+        session_id: &str,
+    ) -> Result<Option<crate::session_ledger::JournalRow>, crate::session_ledger::LedgerError>;
 
-    /// Transition a `pending` row to `interrupted`, optionally
-    /// recording `claude_message_id` (when known — the cancel happened
-    /// after `message_start`) and `partial_text` (whatever the
-    /// assistant streamed before the cancel). Called from the
-    /// supervisor's merger intercept on every outbound `turn_cancelled`,
-    /// and from crash-recovery sweeps in step 4.7. **Forward-before-
-    /// mutate** like `mark_turn_complete`.
-    fn mark_turn_interrupted(
-        &self,
-        tug_turn_id: &str,
-        claude_message_id: Option<&str>,
-        partial_text: Option<&str>,
-        now: i64,
-    ) -> Result<(), crate::session_ledger::LedgerError>;
-
-    /// Reconcile every `pending` row for `session_id` to
-    /// `interrupted`. Called from the supervisor's spawn-worker hook
-    /// just before a fresh tugcode subprocess is launched for a
-    /// session whose previous tugcode is gone — any rows still in
-    /// `pending` at that moment are orphans from the prior run and
-    /// would otherwise stall a `runReplay` loop forever. Returns the
-    /// affected `tug_turn_id`s for telemetry; the caller emits a warn
-    /// line per orphan so tugcode-crash patterns surface in tracing.
-    /// Errors propagate from the underlying sqlite write.
+    /// Reconcile every pending journal row for `session_id`. Called
+    /// from the supervisor's spawn-worker hook just before a fresh
+    /// tugcode subprocess is launched for a session whose previous
+    /// tugcode is gone. Stubbed in [Step 5.2](#step-5-2); [Step 5.6](#step-5-6)
+    /// will replace this with journal-driven pending-row replay (the
+    /// recovery story moves to tugcode's `runReplay` reading the
+    /// journal directly, so the supervisor doesn't need to sweep).
+    /// Returns the affected `journal_id`s for telemetry.
     fn reconcile_pending_for_session(
         &self,
         session_id: &str,
@@ -824,14 +808,14 @@ impl SessionsRecorder for LedgerSessionsRecorder {
     fn insert_pending_turn(
         &self,
         session_id: &str,
-        tug_turn_id: &str,
+        journal_id: &str,
         user_text: &str,
         user_attachments: &[serde_json::Value],
         now: i64,
     ) -> Result<(), crate::session_ledger::LedgerError> {
         self.ledger.insert_pending_turn(
             session_id,
-            tug_turn_id,
+            journal_id,
             user_text,
             user_attachments,
             now,
@@ -840,44 +824,25 @@ impl SessionsRecorder for LedgerSessionsRecorder {
             target: "tide::session-lifecycle",
             event = "ledger.insert_pending_turn",
             session_id,
-            tug_turn_id,
+            journal_id,
         );
         Ok(())
     }
 
-    fn mark_turn_complete(
+    fn delete_oldest_pending_for_session(
         &self,
-        tug_turn_id: &str,
-        claude_message_id: &str,
-        now: i64,
-    ) -> Result<(), crate::session_ledger::LedgerError> {
-        self.ledger
-            .mark_turn_complete(tug_turn_id, claude_message_id, now)?;
-        tracing::info!(
-            target: "tide::ledger",
-            event = "turn_completed",
-            tug_turn_id,
-            claude_message_id,
-        );
-        Ok(())
-    }
-
-    fn mark_turn_interrupted(
-        &self,
-        tug_turn_id: &str,
-        claude_message_id: Option<&str>,
-        partial_text: Option<&str>,
-        now: i64,
-    ) -> Result<(), crate::session_ledger::LedgerError> {
-        self.ledger
-            .mark_turn_interrupted(tug_turn_id, claude_message_id, partial_text, now)?;
-        tracing::info!(
-            target: "tide::ledger",
-            event = "turn_interrupted",
-            tug_turn_id,
-            claude_message_id = claude_message_id.unwrap_or(""),
-        );
-        Ok(())
+        session_id: &str,
+    ) -> Result<Option<crate::session_ledger::JournalRow>, crate::session_ledger::LedgerError> {
+        let popped = self.ledger.delete_oldest_pending_for_session(session_id)?;
+        if let Some(row) = popped.as_ref() {
+            tracing::info!(
+                target: "tide::ledger",
+                event = "turn_seen_journal_row_deleted",
+                session_id,
+                journal_id = %row.journal_id,
+            );
+        }
+        Ok(popped)
     }
 
     fn reconcile_pending_for_session(
@@ -886,15 +851,12 @@ impl SessionsRecorder for LedgerSessionsRecorder {
         now: i64,
     ) -> Result<Vec<String>, crate::session_ledger::LedgerError> {
         let reconciled = self.ledger.reconcile_pending_for_session(session_id, now)?;
-        for tug_turn_id in &reconciled {
-            // One warn line per orphan so tugcode-crash patterns
-            // surface in tracing without flooding the log when the
-            // common case (no orphans) hits.
+        for journal_id in &reconciled {
             tracing::warn!(
                 target: "tide::ledger",
                 event = "turn_reconciled_pending_to_interrupted",
                 session_id,
-                tug_turn_id,
+                journal_id,
                 "reconciled orphan pending turn (tugcode for this session was gone at spawn-worker entry)",
             );
         }
@@ -1380,27 +1342,6 @@ fn build_ledger_failure_frame(tug_session_id: &TugSessionId) -> Frame {
         FeedId::CONTROL,
         serde_json::to_vec(&body).expect("ledger_insert_failed payload serializes"),
     )
-}
-
-/// Build a fresh CODE_INPUT `Frame` whose JSON payload is `original`'s
-/// payload with `tug_turn_id` added at the top level. `Frame::payload`
-/// is `Bytes` (immutable in-place), so mutation requires constructing a
-/// new frame. The serde_json round-trip cost is negligible compared to
-/// the sqlite write the dispatcher just did before calling this.
-///
-/// Returns `None` if the original payload doesn't parse as a JSON
-/// object — the dispatcher logs a warn and forwards the original frame
-/// unchanged in that case (the row is already persisted, so dropping
-/// here would orphan it).
-fn augment_user_message_with_tug_turn_id(original: &Frame, tug_turn_id: &str) -> Option<Frame> {
-    let mut value: serde_json::Value = serde_json::from_slice(&original.payload).ok()?;
-    let map = value.as_object_mut()?;
-    map.insert(
-        "tug_turn_id".to_owned(),
-        serde_json::Value::String(tug_turn_id.to_owned()),
-    );
-    let bytes = serde_json::to_vec(&value).ok()?;
-    Some(Frame::new(FeedId::CODE_INPUT, bytes))
 }
 
 /// Routing decision produced by the CODE_INPUT dispatcher under the per-session
@@ -2597,60 +2538,47 @@ impl AgentSupervisor {
 
         // ── user_message intercept ──────────────────────────────────────────
         //
-        // For inbound `user_message` frames: mint a tug_turn_id, persist a
-        // pending row to the ledger, then augment the frame so tugcode
-        // receives the same id on its stdin. Order is load-bearing:
-        // row-persisted-before-frame-augmented-before-routed. A failure
-        // before the augmentation drops the inbound frame and emits a
-        // CONTROL error; a forwarded frame with no row is structurally
-        // impossible because the augmentation only happens after `Ok` from
-        // `insert_pending_turn`. Other CODE_INPUT types — `tool_approval`,
-        // `interrupt`, `permission_mode`, `model_change`, `session_command`,
-        // `stop_task`, `request_replay` — fall through to the existing
-        // routing with the original frame unchanged.
-        let frame = match inspected.as_ref().and_then(|i| i.msg_type()) {
-            Some("user_message") => {
-                let inspected = inspected.as_ref().expect("checked Some above");
-                let user_text = inspected.text.clone().unwrap_or_default();
-                let user_attachments = inspected.attachments.clone().unwrap_or_default();
-                let tug_turn_id = uuid::Uuid::new_v4().to_string();
-                let now = crate::session_ledger::now_millis();
-                match self.sessions_recorder.insert_pending_turn(
-                    tug_session_id.as_str(),
-                    &tug_turn_id,
-                    &user_text,
-                    &user_attachments,
-                    now,
-                ) {
-                    Ok(()) => {}
-                    Err(err) => {
-                        warn!(
-                            error = %err,
-                            tug_session_id = %tug_session_id,
-                            "dispatcher: insert_pending_turn failed; dropping user_message",
-                        );
-                        let _ = self
-                            .control_tx
-                            .send(build_ledger_failure_frame(&tug_session_id));
-                        return;
-                    }
-                }
-                // Row is persisted; build the augmented frame. If the
-                // augmentation itself fails (malformed JSON, somehow), we
-                // fall back to forwarding the original frame so the row
-                // doesn't orphan. This branch is defensive — the same
-                // payload just parsed cleanly into `inspected`.
-                augment_user_message_with_tug_turn_id(&frame, &tug_turn_id).unwrap_or_else(|| {
+        // For inbound `user_message` frames: mint an internal `journal_id`
+        // and persist a pending row to the submission journal, then
+        // forward the frame **unchanged**. Order is load-bearing:
+        // row-persisted-before-forwarded. A failure before the forward
+        // drops the inbound frame (the supervisor emits a CONTROL error);
+        // a forwarded frame with no row is structurally impossible because
+        // the forward only happens after `Ok` from `insert_pending_turn`.
+        // The journal id is internal to tugcast — not surfaced on the
+        // wire, never seen by tugcode (the merger reconciles by
+        // session-scoped FIFO, not by id). Other CODE_INPUT types —
+        // `tool_approval`, `interrupt`, `permission_mode`, `model_change`,
+        // `session_command`, `stop_task`, `request_replay` — fall through
+        // unchanged. See [DM08] / [Step 5.3](#step-5-3) in the
+        // mid-turn-replay plan.
+        if let Some("user_message") = inspected.as_ref().and_then(|i| i.msg_type()) {
+            let inspected = inspected.as_ref().expect("checked Some above");
+            let user_text = inspected.text.clone().unwrap_or_default();
+            let user_attachments = inspected.attachments.clone().unwrap_or_default();
+            let journal_id = uuid::Uuid::new_v4().to_string();
+            let now = crate::session_ledger::now_millis();
+            match self.sessions_recorder.insert_pending_turn(
+                tug_session_id.as_str(),
+                &journal_id,
+                &user_text,
+                &user_attachments,
+                now,
+            ) {
+                Ok(()) => {}
+                Err(err) => {
                     warn!(
+                        error = %err,
                         tug_session_id = %tug_session_id,
-                        "dispatcher: augment_user_message_with_tug_turn_id returned None; \
-                         forwarding original frame",
+                        "dispatcher: insert_pending_turn failed; dropping user_message",
                     );
-                    frame
-                })
+                    let _ = self
+                        .control_tx
+                        .send(build_ledger_failure_frame(&tug_session_id));
+                    return;
+                }
             }
-            _ => frame,
-        };
+        }
 
         // Decide the routing action under the per-session lock. We extract
         // the decision and release the lock before doing any await-heavy
@@ -2731,79 +2659,71 @@ impl AgentSupervisor {
         }
     }
 
-    /// Apply the per-frame ledger intercept the merger runs on every
-    /// outbound CODE_OUTPUT frame, **after** the wire-side broadcast
-    /// has fired. Branches on the payload's top-level `type`:
+    /// Apply the per-frame journal intercept the merger runs on every
+    /// outbound CODE_OUTPUT frame, **after** the wire-side broadcast has
+    /// fired. Narrowed in [Step 5.3](#step-5-3) to a session-scoped FIFO
+    /// mark-seen: every `turn_complete` / `turn_cancelled` frame deletes
+    /// the oldest pending row in the session's journal. The frame is
+    /// forwarded unchanged — this intercept does not read or write any
+    /// payload field except the top-level `type` discriminator.
     ///
-    /// - `turn_complete` with both `msg_id` and `claude_message_id` —
-    ///   call [`SessionsRecorder::mark_turn_complete`]. On `Ok`, an
-    ///   info trace; on `Err`, a `warn!` (the frame has already been
-    ///   forwarded; the wire is the source of truth, the ledger is
-    ///   telemetry).
-    /// - `turn_complete` with `msg_id` but no `claude_message_id` —
-    ///   warn line `tide::ledger::turn_complete_missing_claude_id`,
-    ///   skip the ledger update; the row stays `pending` and gets
-    ///   reconciled on next session resume (step 4.7).
-    /// - `turn_cancelled` with `msg_id` — call
-    ///   [`SessionsRecorder::mark_turn_interrupted`] with whatever
-    ///   `claude_message_id` and `partial_result` the payload carries.
-    /// - any other type or payload shape — no-op.
+    /// Branches on the payload's top-level `type`:
     ///
-    /// Extracted from `merger_task` so unit tests can exercise the
-    /// intercept against synthetic frames without spinning up a full
-    /// merger / select loop. `record_turn` (the existing trait method
-    /// that bumps `sessions.turn_count`) continues to fire from
-    /// `agent_bridge.rs` on the same `turn_complete` event — this
-    /// intercept is additive and the two writes hit different rows.
-    fn apply_outbound_turn_intercept(&self, frame: &Frame) {
+    /// - `turn_complete` or `turn_cancelled` — call
+    ///   [`SessionsRecorder::delete_oldest_pending_for_session`]. On
+    ///   `Ok(Some)`, an info trace; on `Ok(None)` a warn
+    ///   (`turn_complete_no_pending_journal_row` — claude responded for
+    ///   a turn the journal didn't see, e.g. resume-of-an-existing-
+    ///   conversation where the new tugcode picks up mid-stream); on
+    ///   `Err`, a `warn!` (the frame has already been forwarded; the
+    ///   wire is the source of truth, the journal lagging by one update
+    ///   is telemetry).
+    /// - any other type — no-op.
+    ///
+    /// `record_turn` (the existing trait method that bumps
+    /// `sessions.turn_count`) continues to fire from `agent_bridge.rs`
+    /// on the same `turn_complete` event — this intercept is additive
+    /// and the two writes hit different tables.
+    fn apply_outbound_turn_intercept(&self, session_id: &TugSessionId, frame: &Frame) {
         let Some(inspected) =
             super::payload_inspector::InspectedPayload::from_slice(&frame.payload)
         else {
             return;
         };
-        let now = crate::session_ledger::now_millis();
         match inspected.msg_type() {
-            Some("turn_complete") => {
-                let Some(tug_turn_id) = inspected.msg_id.as_deref() else {
-                    return;
-                };
-                let Some(claude_message_id) = inspected.claude_message_id.as_deref() else {
-                    warn!(
-                        target: "tide::ledger",
-                        event = "turn_complete_missing_claude_id",
-                        tug_turn_id,
-                        "merger: turn_complete without claude_message_id; \
-                         skipping ledger mark_turn_complete (row stays pending)",
-                    );
-                    return;
-                };
-                if let Err(err) =
-                    self.sessions_recorder
-                        .mark_turn_complete(tug_turn_id, claude_message_id, now)
+            Some("turn_complete") | Some("turn_cancelled") => {
+                let kind = inspected.msg_type().unwrap_or("");
+                match self
+                    .sessions_recorder
+                    .delete_oldest_pending_for_session(session_id.as_str())
                 {
-                    warn!(
-                        error = %err,
-                        tug_turn_id,
-                        claude_message_id,
-                        "merger: mark_turn_complete failed (frame already forwarded)",
-                    );
-                }
-            }
-            Some("turn_cancelled") => {
-                let Some(tug_turn_id) = inspected.msg_id.as_deref() else {
-                    return;
-                };
-                if let Err(err) = self.sessions_recorder.mark_turn_interrupted(
-                    tug_turn_id,
-                    inspected.claude_message_id.as_deref(),
-                    inspected.partial_result.as_deref(),
-                    now,
-                ) {
-                    warn!(
-                        error = %err,
-                        tug_turn_id,
-                        "merger: mark_turn_interrupted failed (frame already forwarded)",
-                    );
+                    Ok(Some(row)) => {
+                        tracing::debug!(
+                            target: "tide::ledger",
+                            event = "merger.journal_row_deleted",
+                            session_id = %session_id,
+                            kind,
+                            journal_id = %row.journal_id,
+                        );
+                    }
+                    Ok(None) => {
+                        warn!(
+                            target: "tide::ledger",
+                            event = "turn_complete_no_pending_journal_row",
+                            session_id = %session_id,
+                            kind,
+                            "merger: {kind} for a session whose journal has no pending rows; \
+                             frame forwarded unchanged",
+                        );
+                    }
+                    Err(err) => {
+                        warn!(
+                            error = %err,
+                            session_id = %session_id,
+                            kind,
+                            "merger: delete_oldest_pending_for_session failed (frame already forwarded)",
+                        );
+                    }
                 }
             }
             _ => {}
@@ -2883,11 +2803,11 @@ impl AgentSupervisor {
                     }
                     // Forward-before-mutate: the wire-side broadcast above
                     // is the user-visible signal and must not be delayed
-                    // by a database write. The ledger update here is
+                    // by a database write. The journal mark-seen here is
                     // best-effort telemetry from the user's perspective;
                     // it becomes load-bearing only on the next runReplay,
                     // by which time the write has long since committed.
-                    self.apply_outbound_turn_intercept(&frame);
+                    self.apply_outbound_turn_intercept(&id, &frame);
                 }
             }
         }
@@ -3204,29 +3124,18 @@ impl SessionsRecorder for NoopSessionsRecorder {
     fn insert_pending_turn(
         &self,
         _session_id: &str,
-        _tug_turn_id: &str,
+        _journal_id: &str,
         _user_text: &str,
         _user_attachments: &[serde_json::Value],
         _now: i64,
     ) -> Result<(), crate::session_ledger::LedgerError> {
         Ok(())
     }
-    fn mark_turn_complete(
+    fn delete_oldest_pending_for_session(
         &self,
-        _tug_turn_id: &str,
-        _claude_message_id: &str,
-        _now: i64,
-    ) -> Result<(), crate::session_ledger::LedgerError> {
-        Ok(())
-    }
-    fn mark_turn_interrupted(
-        &self,
-        _tug_turn_id: &str,
-        _claude_message_id: Option<&str>,
-        _partial_text: Option<&str>,
-        _now: i64,
-    ) -> Result<(), crate::session_ledger::LedgerError> {
-        Ok(())
+        _session_id: &str,
+    ) -> Result<Option<crate::session_ledger::JournalRow>, crate::session_ledger::LedgerError> {
+        Ok(None)
     }
     fn reconcile_pending_for_session(
         &self,
@@ -7176,5 +7085,271 @@ mod tests {
         assert_eq!(second["fields"]["turn_count"].as_i64(), Some(1));
     }
 
-    // (Step 4 dispatch / merger / reconcile / bootstrap test sections deleted in mid-turn-replay [Step 5.2](#step-5-2). [Step 5.3](#step-5-3) re-adds tests for the narrowed merger intercept against the journal API.)
+    // ── Step 5.3 — merger intercept narrows to FIFO mark-seen ───────────────
+    //
+    // The merger calls `apply_outbound_turn_intercept(&session_id, &frame)`
+    // on every CODE_OUTPUT frame after the wire-side broadcast. For
+    // `turn_complete` / `turn_cancelled` frames, the intercept pops the
+    // oldest pending row from the session's submission journal (FIFO
+    // match by `created_at`). For other types, it's a no-op. The frame
+    // is forwarded unchanged regardless. See [DM08] in the
+    // mid-turn-replay plan.
+
+    fn turn_complete_frame() -> Frame {
+        // The merger reads only `msg_type` from outbound payloads
+        // post-Step-5.3; the other fields are pinned-shape but unread.
+        let body = serde_json::json!({
+            "type": "turn_complete",
+            "msg_id": "msg_01ABC",
+            "seq": 3,
+            "result": "",
+            "ipc_version": 2,
+        });
+        Frame::new(FeedId::CODE_OUTPUT, serde_json::to_vec(&body).unwrap())
+    }
+
+    fn turn_cancelled_frame() -> Frame {
+        let body = serde_json::json!({
+            "type": "turn_cancelled",
+            "msg_id": "msg_01XYZ",
+            "seq": 4,
+            "partial_result": "so far the assistant said...",
+            "ipc_version": 2,
+        });
+        Frame::new(FeedId::CODE_OUTPUT, serde_json::to_vec(&body).unwrap())
+    }
+
+    fn seed_session_for_journal_test(ledger: &SessionLedger, id: &str) {
+        // Insert a `live` row in `sessions` so the cascade trigger has a
+        // parent to cascade from. The merger intercept itself does NOT
+        // require a sessions row to be present (it operates on the
+        // `turns` journal directly); seeding the parent here is for the
+        // "cascade-delete when forgotten" test only.
+        ledger
+            .record_spawn(
+                id,
+                "ws-journal",
+                "/proj/journal",
+                "card-journal",
+                crate::session_ledger::now_millis(),
+            )
+            .expect("seed session row");
+    }
+
+    fn count_pending_for_session(ledger: &SessionLedger, session_id: &str) -> usize {
+        ledger
+            .list_pending_turns_for_session(session_id)
+            .expect("list pending")
+            .len()
+    }
+
+    #[tokio::test]
+    async fn merger_intercept_pops_journal_in_fifo_order_across_two_turns() {
+        // Two pending submissions in flight; two turn_complete frames
+        // arrive. The journal rows pop in created_at order (oldest first);
+        // after both pops the journal for the session is empty.
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let session_id = "sess-fifo";
+        seed_session_for_journal_test(&ledger, session_id);
+
+        // Insert two pending rows directly via the journal API (the
+        // dispatcher's user_message intercept is exercised in a separate
+        // test); use distinct created_at so FIFO order is unambiguous.
+        ledger
+            .insert_pending_turn(session_id, "j_oldest", "first", &[], 1_000)
+            .unwrap();
+        ledger
+            .insert_pending_turn(session_id, "j_newer", "second", &[], 2_000)
+            .unwrap();
+        assert_eq!(count_pending_for_session(&ledger, session_id), 2);
+
+        let frame = turn_complete_frame();
+        sup.apply_outbound_turn_intercept(&TugSessionId::new(session_id), &frame);
+        assert_eq!(count_pending_for_session(&ledger, session_id), 1);
+        let remaining = ledger.list_pending_turns_for_session(session_id).unwrap();
+        assert_eq!(
+            remaining[0].journal_id, "j_newer",
+            "FIFO: the oldest row pops first; the newer row remains",
+        );
+
+        let frame2 = turn_complete_frame();
+        sup.apply_outbound_turn_intercept(&TugSessionId::new(session_id), &frame2);
+        assert_eq!(count_pending_for_session(&ledger, session_id), 0);
+    }
+
+    #[tokio::test]
+    async fn merger_intercept_handles_turn_cancelled_same_as_turn_complete() {
+        // turn_cancelled also pops the oldest pending row — the journal
+        // doesn't distinguish "claude finished" from "user cancelled"
+        // because both land back at "no longer awaiting response".
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let session_id = "sess-cancel";
+        seed_session_for_journal_test(&ledger, session_id);
+
+        ledger
+            .insert_pending_turn(session_id, "j_only", "submission", &[], 1_000)
+            .unwrap();
+        assert_eq!(count_pending_for_session(&ledger, session_id), 1);
+
+        let frame = turn_cancelled_frame();
+        sup.apply_outbound_turn_intercept(&TugSessionId::new(session_id), &frame);
+        assert_eq!(count_pending_for_session(&ledger, session_id), 0);
+    }
+
+    #[tokio::test]
+    async fn merger_intercept_no_op_on_unrelated_frame_type() {
+        // assistant_text, tool_use, tool_result etc. don't pop the journal.
+        // The journal pops only on the terminal `turn_complete` /
+        // `turn_cancelled` frames that mark "claude has acknowledged".
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let session_id = "sess-unrelated";
+        seed_session_for_journal_test(&ledger, session_id);
+
+        ledger
+            .insert_pending_turn(session_id, "j_keep", "should survive", &[], 1_000)
+            .unwrap();
+
+        let assistant_body = serde_json::json!({
+            "type": "assistant_text",
+            "msg_id": "msg_x",
+            "seq": 1,
+            "rev": 0,
+            "text": "partial",
+            "is_partial": true,
+            "status": "partial",
+            "ipc_version": 2,
+        });
+        let frame = Frame::new(
+            FeedId::CODE_OUTPUT,
+            serde_json::to_vec(&assistant_body).unwrap(),
+        );
+        sup.apply_outbound_turn_intercept(&TugSessionId::new(session_id), &frame);
+        assert_eq!(
+            count_pending_for_session(&ledger, session_id),
+            1,
+            "assistant_text must not pop the journal; only turn_complete / turn_cancelled do",
+        );
+    }
+
+    #[tokio::test]
+    async fn merger_intercept_returns_none_when_journal_empty() {
+        // Spurious turn_complete: claude responds for a session whose
+        // journal has no pending rows (e.g., a resume picking up
+        // mid-stream where the dispatcher never saw the user_message).
+        // The intercept calls delete_oldest_pending_for_session which
+        // returns Ok(None); a warn fires; the frame is forwarded
+        // unchanged at the merger task level (this test exercises the
+        // intercept directly so we just assert the no-throw + journal
+        // stays empty).
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let session_id = "sess-spurious";
+        seed_session_for_journal_test(&ledger, session_id);
+        assert_eq!(count_pending_for_session(&ledger, session_id), 0);
+
+        let frame = turn_complete_frame();
+        // Should not panic; intercept handles None gracefully.
+        sup.apply_outbound_turn_intercept(&TugSessionId::new(session_id), &frame);
+        assert_eq!(count_pending_for_session(&ledger, session_id), 0);
+    }
+
+    #[tokio::test]
+    async fn merger_intercept_isolates_per_session() {
+        // Pending row in session A; turn_complete arrives for session B.
+        // Session A's row must be untouched.
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        seed_session_for_journal_test(&ledger, "sess-a");
+        seed_session_for_journal_test(&ledger, "sess-b");
+
+        ledger
+            .insert_pending_turn("sess-a", "j_a", "for sess-a", &[], 1_000)
+            .unwrap();
+
+        let frame = turn_complete_frame();
+        sup.apply_outbound_turn_intercept(&TugSessionId::new("sess-b"), &frame);
+
+        assert_eq!(
+            count_pending_for_session(&ledger, "sess-a"),
+            1,
+            "session A's pending row must survive when session B emits turn_complete",
+        );
+        assert_eq!(count_pending_for_session(&ledger, "sess-b"), 0);
+    }
+
+    #[tokio::test]
+    async fn cascade_trigger_purges_journal_when_session_forgotten() {
+        // Pending row outlives session: insert journal row, then forget
+        // the session. The cascade trigger purges the journal row.
+        let store = Arc::new(InMemoryStore::default());
+        let (_sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let session_id = "sess-cascade";
+        seed_session_for_journal_test(&ledger, session_id);
+
+        // Mark closed first (forget refuses live rows by design).
+        ledger.mark_closed(session_id).unwrap();
+        ledger
+            .insert_pending_turn(session_id, "j_orphan", "outlives session", &[], 1_000)
+            .unwrap();
+        assert_eq!(count_pending_for_session(&ledger, session_id), 1);
+
+        ledger.forget(session_id).unwrap();
+
+        assert_eq!(
+            count_pending_for_session(&ledger, session_id),
+            0,
+            "cascade trigger must purge journal rows when the parent session is forgotten",
+        );
+    }
+
+    #[tokio::test]
+    async fn dispatch_one_inserts_journal_row_without_augmenting_frame() {
+        // Step 5.3 invariant: the dispatcher's user_message intercept
+        // mints a journal id, persists the row, and forwards the frame
+        // UNCHANGED (no `tug_turn_id` field stamped onto the wire). The
+        // forwarded frame's bytes equal the input frame's bytes.
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let session_id_str = "sess-dispatch";
+        let tug_session_id = TugSessionId::new(session_id_str);
+
+        // The dispatcher requires an entry in the supervisor's per-session
+        // map (the `Some(entry_arc)` branch). The `Idle` state queues the
+        // frame rather than spawning a real worker (the test's
+        // stall_spawner_factory wouldn't run anyway).
+        let entry_arc = insert_ledger_entry(&sup, &tug_session_id).await;
+        seed_session_for_journal_test(&ledger, session_id_str);
+
+        let body = serde_json::json!({
+            "tug_session_id": session_id_str,
+            "type": "user_message",
+            "text": "hello",
+            "attachments": [],
+        });
+        let original_payload = serde_json::to_vec(&body).unwrap();
+        let frame = Frame::new(FeedId::CODE_INPUT, original_payload.clone());
+
+        sup.dispatch_one(frame).await;
+
+        // A journal row landed for this session, sourced from the
+        // payload's `text` and `attachments` fields.
+        let rows = ledger
+            .list_pending_turns_for_session(session_id_str)
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].user_text, "hello");
+        assert!(rows[0].user_attachments.is_empty());
+
+        // Pop the queued frame and assert its payload is byte-identical
+        // to the input — the dispatcher does NOT augment the wire.
+        let mut entry = entry_arc.lock().await;
+        let queued = entry.queue.pop().expect("frame queued");
+        assert_eq!(
+            queued.payload, original_payload,
+            "dispatcher must forward user_message frames unchanged (Step 5.3 wire invariant)",
+        );
+    }
 }
