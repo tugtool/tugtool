@@ -751,23 +751,29 @@ describe("translateJsonlSession — unknown shapes", () => {
   });
 });
 
-describe("translateJsonlSession — orphan turn at EOF", () => {
-  test("JSONL ending with assistant.stop_reason=tool_use synthesizes turn_complete(error)", async () => {
+describe("translateJsonlSession — in-flight trailing turn at EOF", () => {
+  // Step 5.5 of the mid-turn-replay plan: the trailing in-flight turn
+  // emits its content frames (so the user sees the in-flight portion of
+  // the turn) but **no terminal `turn_complete`** (so the reducer
+  // doesn't commit a partial TurnEntry that would dedupe the live
+  // turn_complete claude emits when the turn actually finishes).
+
+  test("JSONL ending with assistant.stop_reason=tool_use emits content frames; NO terminal", async () => {
     // Reload-mid-stream case: the user sent a message, the assistant
     // started a tool_use, but the JSONL ends before the terminal
-    // end_turn could be written. The translator synthesizes an
-    // interrupted turn so the user-visible portion (the prompt + any
-    // captured assistant content) still appears in the transcript.
+    // end_turn could be written. The translator emits the user-visible
+    // content (prompt + thinking + tool_use) but withholds the terminal
+    // event so live continuation can land the eventual turn_complete.
     const jsonl = makeJsonl([
       userEntry([{ type: "text", text: "go" }]),
       assistantEntry({
-        msgId: "m_orphan",
+        msgId: "m_inflight",
         stopReason: "tool_use",
         content: [
           { type: "thinking", thinking: "starting..." },
           {
             type: "tool_use",
-            id: "tu_orphan",
+            id: "tu_inflight",
             name: "Bash",
             input: { command: "ls" },
           },
@@ -786,13 +792,71 @@ describe("translateJsonlSession — orphan turn at EOF", () => {
       "user_message_replay",
       "tool_use",
       "thinking_text",
-      "turn_complete",
     ]);
-    const tc = inner[4] as TurnComplete;
-    expect(tc.result).toBe("error");
-    expect(tc.msg_id).toBe("m_orphan");
-    // count is bumped on every flush — orphan included.
-    expect((out.at(-1) as ReplayComplete).count).toBe(1);
+    // Content frames carry the in-flight turn's msg_id so post-replay
+    // live deltas with the same id append to the same scratch entry.
+    const userReplay = inner[1] as UserMessageReplay;
+    expect(userReplay.msg_id).toBe("m_inflight");
+    expect(userReplay.text).toBe("go");
+    const toolUse = inner[2] as ToolUse;
+    expect(toolUse.msg_id).toBe("m_inflight");
+    expect(toolUse.tool_use_id).toBe("tu_inflight");
+    // count does NOT include the in-flight turn — replay_complete.count
+    // counts only committed turns (those that emitted turn_complete).
+    expect((out.at(-1) as ReplayComplete).count).toBe(0);
+  });
+
+  test("JSONL ending with assistant.stop_reason=null (text-only mid-stream) emits content frames; NO terminal", async () => {
+    // Streaming-text case: claude is mid-text-generation when the
+    // reload happens. Some text accumulated in the JSONL; no end_turn.
+    // Translator emits the partial text; reducer renders it as
+    // awaiting-response.
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "hi" }]),
+      assistantEntry({
+        msgId: "m_partial",
+        stopReason: null,
+        content: [{ type: "text", text: "Hello, " }],
+      }),
+    ]);
+    const out = await collectSession({ kind: "ok", jsonl });
+
+    const inner = out.slice(1, -1);
+    expect(inner.map((m) => m.type)).toEqual([
+      "system_metadata",
+      "user_message_replay",
+      "assistant_text",
+    ]);
+    const at = inner[2] as AssistantText;
+    expect(at.text).toBe("Hello, ");
+    expect(at.msg_id).toBe("m_partial");
+    expect((out.at(-1) as ReplayComplete).count).toBe(0);
+  });
+
+  test("Cold-boot of a permanently-interrupted session: no terminal, reducer holds partial content", async () => {
+    // Documented trade-off: if the trailing turn was interrupted in a
+    // *previous* session (claude crashed / was killed before reload),
+    // the new predicate emits no terminal. The reducer leaves the
+    // TurnEntry uncommitted; the user sees the partial content and the
+    // absence of a "completed" indicator. A submission or a reload
+    // produces no phantom interrupted state — both are correct
+    // behaviors. The acknowledged residual gap (b) in the never-drop
+    // chain audit lives here; mitigation (client-side watchdog) is a
+    // deferred follow-on, not a chain failure.
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "tell me a story" }]),
+      assistantEntry({
+        msgId: "m_dead",
+        stopReason: null,
+        content: [{ type: "text", text: "Once upon" }],
+      }),
+    ]);
+    const out = await collectSession({ kind: "ok", jsonl });
+
+    const types = out.slice(1, -1).map((m) => m.type);
+    expect(types).not.toContain("turn_complete");
+    // count stays 0 — the in-flight turn is never counted as committed.
+    expect((out.at(-1) as ReplayComplete).count).toBe(0);
   });
 
   test("JSONL ending with bare user submission (no answering assistant) commits no turn", async () => {
@@ -809,6 +873,28 @@ describe("translateJsonlSession — orphan turn at EOF", () => {
     // Just brackets; no inner messages.
     expect(out.length).toBe(2);
     expect((out.at(-1) as ReplayComplete).count).toBe(0);
+  });
+
+  test("Committed trailing turn (end_turn present) still emits a normal turn_complete{success}", async () => {
+    // Belt-and-suspenders: the predicate change only affects the
+    // no-`end_turn` branch. A trailing turn that DID close cleanly
+    // still gets the standard committed-turn shape.
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "ping" }]),
+      assistantEntry({
+        msgId: "m_final",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "pong" }],
+      }),
+    ]);
+    const out = await collectSession({ kind: "ok", jsonl });
+
+    const inner = out.slice(1, -1);
+    const tc = inner.find((m) => m.type === "turn_complete") as TurnComplete;
+    expect(tc).toBeDefined();
+    expect(tc.result).toBe("success");
+    expect(tc.msg_id).toBe("m_final");
+    expect((out.at(-1) as ReplayComplete).count).toBe(1);
   });
 });
 

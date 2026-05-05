@@ -30,9 +30,13 @@
 //   assistant_text                   `is_partial: false` (terminal
 //                                    text only — replay doesn't
 //                                    stream per-token deltas).
-//   turn_complete                    `result: "success"` for normal
-//                                    turns, `result: "error"` for
-//                                    orphan turns synthesized at EOF.
+//   turn_complete                    `result: "success"` for committed
+//                                    turns. The trailing in-flight turn
+//                                    (no `end_turn` in JSONL) emits its
+//                                    content frames but NO terminal —
+//                                    see [`flushInflightTurnContent`] /
+//                                    Step 5.5 of the mid-turn-replay
+//                                    plan.
 
 import type {
   AssistantText,
@@ -182,14 +186,18 @@ const DEFAULT_TELEMETRY: ReplayTelemetry = {
  *
  * A turn ends when an `assistant` entry with `stop_reason: "end_turn"`
  * lands. The buffer is flushed as a fixed-order sequence of
- * OutboundMessages and then reset for the next turn.
+ * OutboundMessages — including a terminal `turn_complete{success}` —
+ * and reset for the next turn.
  *
  * A buffer that survives end-of-file (no terminal `end_turn` ever
- * arrived — the JSONL was truncated mid-turn, e.g. by a reload
- * during streaming) is flushed as a synthesized `turn_complete(error)`
- * so the user-visible portion of the interrupted turn still appears
- * in the transcript with the "interrupted" marker live `interrupt()`
- * produces.
+ * arrived — the JSONL was truncated mid-turn, e.g. by a reload during
+ * streaming) is flushed via [`flushInflightTurnContent`]: content frames
+ * surface so the user sees the in-flight portion of the turn, but **no
+ * terminal `turn_complete` is emitted**. The reducer holds the partial
+ * content in `pendingUserMessage` / `scratch[msgId]` until the live
+ * drain produces the eventual `turn_complete` from claude's continuing
+ * stream. See Step 5.5 of the mid-turn-replay plan; this is the
+ * structural fix for the 2026-05-05 reload-mid-stream bug.
  */
 interface PerTurnBuffer {
   /** The terminal assistant entry's `message.id`. Bound when the
@@ -517,24 +525,22 @@ function handleAssistantEntry(
   }
 
   // Terminal entry: flush the turn.
-  return flushTurn(ctx, /*result*/ "success");
+  return flushTurn(ctx);
 }
 
 /**
- * Flush the current per-turn buffer as the fixed-order
- * OutboundMessage sequence and reset ctx for the next turn.
+ * Emit the per-turn buffer's content frames in fixed order, without a
+ * terminal `turn_complete`. Shared between [`flushTurn`] (which appends
+ * the terminal afterward) and [`flushInflightTurnContent`] (which does
+ * not). Resets the per-turn buffer state on the way out so the next
+ * `assistant` entry opens a fresh buffer; does NOT bump
+ * `ctx.turnsCommitted` — that's the caller's call (only the committed
+ * path counts toward `replay_complete.count`).
  *
- * `result` selects the terminal `turn_complete` payload's `result`:
- *   - `"success"`: normal flow at terminal `end_turn`
- *   - `"error"`:   orphan-turn synthesis at EOF
- *
- * Returns `[]` if the buffer is unset (defensive — flushTurn should
- * never be called on a null buffer).
+ * Returns `[]` if the buffer is unset (defensive — neither caller
+ * should hit this).
  */
-function flushTurn(
-  ctx: TranslateContext,
-  result: "success" | "error",
-): OutboundMessage[] {
+function emitTurnContentFrames(ctx: TranslateContext): OutboundMessage[] {
   const buffer = ctx.buffer;
   if (buffer === null) {
     return [];
@@ -614,23 +620,82 @@ function flushTurn(
     out.push(assistant);
   }
 
-  // 5. turn_complete.
+  // Reset the per-turn buffer state for the next turn (or for the
+  // EOF-orphan path, which also wants the reset before the iterator
+  // returns).
+  ctx.buffer = null;
+  ctx.pendingUserText = null;
+  ctx.pendingUserAttachments = [];
+
+  return out;
+}
+
+/**
+ * Flush the current per-turn buffer as the fixed-order
+ * `[user_message_replay, tool_use/tool_result..., thinking_text?,
+ * assistant_text?, turn_complete{success}]` sequence and reset ctx for
+ * the next turn. Called from [`translateJsonlEntry`] when an `assistant`
+ * entry's `stop_reason` is `"end_turn"` — that's the JSONL signal that
+ * the turn closed normally. Increments `ctx.turnsCommitted` so the
+ * `replay_complete.count` reflects the committed turn.
+ *
+ * Returns `[]` if the buffer is unset (defensive — flushTurn should
+ * never be called on a null buffer).
+ */
+function flushTurn(ctx: TranslateContext): OutboundMessage[] {
+  const buffer = ctx.buffer;
+  if (buffer === null) {
+    return [];
+  }
+  const msgId = buffer.msgId;
+  const out = emitTurnContentFrames(ctx);
+
+  // 5. turn_complete{success}.
   const turnComplete: TurnComplete = {
     type: "turn_complete",
     msg_id: msgId,
     seq: ctx.globalSeq++,
-    result,
+    result: "success",
     ipc_version: IPC_VERSION,
   };
   out.push(turnComplete);
 
-  // Reset for the next turn.
-  ctx.buffer = null;
-  ctx.pendingUserText = null;
-  ctx.pendingUserAttachments = [];
   ctx.turnsCommitted += 1;
-
   return out;
+}
+
+/**
+ * Flush the trailing in-flight turn's content at end-of-JSONL **without
+ * a terminal `turn_complete`**. The original mid-turn-replay bug
+ * (2026-05-05): the pre-Step-4 translator synthesized
+ * `turn_complete{result: "interrupted"}` here, which caused the reducer
+ * to commit a partial TurnEntry for a turn that was actually still
+ * streaming — and then dedupe (via `committedMsgIds`) the live
+ * `turn_complete` that finished the turn for real. The user saw an
+ * "interrupted" turn that wasn't actually interrupted, and the
+ * streaming response never landed.
+ *
+ * The fix: emit the content frames so the user sees the in-flight
+ * portion of the turn (user_message_replay + thinking + assistant_text +
+ * tool_use/tool_result), but DO NOT emit a terminal event. The
+ * reducer's `pendingUserMessage` and `scratch[msgId]` slots stay
+ * populated; the live drain continuing post-replay produces the
+ * eventual `turn_complete` naturally when claude actually finishes.
+ *
+ * If claude never finishes (claude crashed before reload, network
+ * dropped, etc.), the reducer leaves the TurnEntry uncommitted. The
+ * user sees the partial content and the absence of a "completed"
+ * indicator. Acknowledged residual gap (b) in the [Never-drop chain
+ * audit](roadmap/tugplan-tide-mid-turn-replay.md#step-5-never-drop) —
+ * client-side watchdog mitigation is deferred behavior, not a never-
+ * drop chain failure.
+ *
+ * Does NOT increment `ctx.turnsCommitted` — the in-flight turn is not
+ * counted toward `replay_complete.count` because no terminal frame
+ * fired. See [DM08] / [Step 5.5](roadmap/tugplan-tide-mid-turn-replay.md#step-5-5).
+ */
+function flushInflightTurnContent(ctx: TranslateContext): OutboundMessage[] {
+  return emitTurnContentFrames(ctx);
 }
 
 // ---------------------------------------------------------------------------
@@ -833,18 +898,16 @@ export async function* translateJsonlSession(
     }
   }
 
-  // Orphan-turn synthesis — a buffer that survives end-of-file means
-  // the JSONL was truncated mid-turn. Flush as turn_complete(error)
-  // so the user-visible portion appears in the transcript marked
-  // interrupted, matching live `interrupt()` semantics. Step 4
-  // mid-turn-replay: the Step-3-era trailing-turn-skip coordinated by
-  // `liveInflightMsgId` is gone — `runReplay` is ledger-driven and
-  // calls `translateJsonlSession` only on the cold-boot fallback path
-  // (no ledger rows for this session), so a trailing orphan here is
-  // legitimately uncoordinated and should flush as before.
+  // In-flight trailing turn at end-of-JSONL — see
+  // [`flushInflightTurnContent`] for the design rationale. The
+  // user-visible content of the partial turn surfaces; no terminal
+  // event fires; the live drain (or the next reload's translator
+  // pass against a fuller JSONL) lands the eventual close. Step 5.5
+  // of the mid-turn-replay plan is the structural fix for the
+  // 2026-05-05 mid-turn-reload bug.
   if (ctx.buffer !== null) {
-    const orphanFlush = flushTurn(ctx, "error");
-    for (const msg of orphanFlush) {
+    const inflight = flushInflightTurnContent(ctx);
+    for (const msg of inflight) {
       yield msg;
     }
   }

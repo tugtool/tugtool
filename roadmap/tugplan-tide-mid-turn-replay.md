@@ -2104,16 +2104,19 @@ The pre-Step-4 design had this exact predicate emitting `turn_complete{interrupt
 
 **Tasks:**
 
-- [ ] Locate the end-of-JSONL flush logic in `translateJsonlSession` (the synthesizes-`turn_complete{interrupted}`-on-no-`end_turn` branch).
-- [ ] Change the predicate: emit content frames; do NOT emit a terminal event. Add the design-goal comment.
-- [ ] Update tests in `replay.test.ts` that asserted on the synthetic `turn_complete{interrupted}` for trailing turns. The test fixtures stay; the assertions change to "no terminal event in the replay output for the trailing in-flight turn."
+- [x] Locate the end-of-JSONL flush logic in `translateJsonlSession` (the `flushTurn(ctx, "error")` branch at the post-iteration epilogue).
+- [x] Refactor `flushTurn` into two functions: `emitTurnContentFrames(ctx)` (shared content emission + ctx reset, no terminal, no `turnsCommitted++`), `flushTurn(ctx)` (content + `turn_complete{success}` + `turnsCommitted++`), `flushInflightTurnContent(ctx)` (content only). Drop the now-unneeded `result` parameter from `flushTurn`'s sole call site.
+- [x] Replace `flushTurn(ctx, "error")` at the orphan-synthesis site with `flushInflightTurnContent(ctx)`. Update the surrounding comment to explain the design goal.
+- [x] Update the file-head comment + `PerTurnBuffer` doc to reflect the new in-flight semantics (no terminal event for the trailing in-flight turn).
+- [x] Update tests in `replay.test.ts` that asserted on the synthetic `turn_complete{error}` for trailing turns. Renamed the describe block to "in-flight trailing turn at EOF". Added new tests for tool-use-mid-turn / text-mid-turn / committed-trailing-turn / cold-boot-permanently-interrupted; the bare-user-no-assistant test survives unchanged.
 
 **Tests:**
 
-- [ ] **Mid-turn JSONL**: seed a JSONL ending with an assistant entry that has `stop_reason: null`; `translateJsonlSession`; assert the emitted frames include `user_message_replay` + `thinking_text` + `assistant_text` for the trailing turn but NO `turn_complete` event for it.
-- [ ] **Tool-use mid-turn**: seed a JSONL ending with a tool_use block (no end_turn); assert the tool_use is emitted; no terminal event.
-- [ ] **Cold-boot interrupted (legit case)**: seed a JSONL where the trailing turn was interrupted in a *previous* claude session (claude crashed before reload, the JSONL has been on disk for hours). The new predicate emits no terminal — does the reducer leave the TurnEntry uncommitted? Yes, that's intended. The user sees the partial content and the absence of a "completed" indicator. If they want closure, they can submit something or reload again — neither produces the wrong answer (no phantom interrupted state). Document the trade-off in the plan; do not synthesize a terminal in this substep.
-- [ ] **Committed trailing turn (`end_turn` present)**: seed a JSONL where the trailing turn has `end_turn`; assert the translator emits the full sequence including a normal `turn_complete{success}`. (Predicate untouched for this branch.)
+- [x] **Mid-turn JSONL (text)**: assistant entry with `stop_reason: null`; assert emitted frames are `[system_metadata, user_message_replay, assistant_text]`, no `turn_complete`; `replay_complete.count = 0`.
+- [x] **Tool-use mid-turn**: assistant entry with `stop_reason: "tool_use"` and `[thinking, tool_use]` content; assert `[system_metadata, user_message_replay, tool_use, thinking_text]`, no terminal; `count = 0`.
+- [x] **Cold-boot permanently-interrupted**: trailing turn from a prior session that never closed; assert no `turn_complete` in inner frames; `count = 0` (the documented trade-off — reducer holds partial content; user sees no completion indicator).
+- [x] **Bare user submission**: still yields no inner messages and `count = 0` (unchanged).
+- [x] **Committed trailing turn** (`end_turn` present): trailing turn that DID close cleanly; assert a normal `turn_complete{success}`; `count = 1` (predicate untouched for this branch).
 
 **Tuglaws cross-check:**
 
@@ -2121,9 +2124,9 @@ The pre-Step-4 design had this exact predicate emitting `turn_complete{interrupt
 
 **Checkpoint:**
 
-- [ ] `bun test` (tugcode) — green.
-- [ ] `cargo nextest run` — green.
-- [ ] `just lint` — clean.
+- [x] `bun test` (tugcode) — green (307 pass; +3 new from 5.5).
+- [x] `cargo nextest run` — green (1248 pass workspace-wide).
+- [x] `just lint` — clean.
 
 ---
 
@@ -2340,7 +2343,7 @@ Step 5's substep 5.7 lands the Smoke D regression test in its post-remediation f
 - [x] Step 5.7 (delete migration scaffolding): ABSORBED into 5.2.
 - [x] Step 5.3 (intercept narrow): merger's `turn_complete` intercept narrows to FIFO mark-seen; `dispatch_one` forwards `user_message` frames unchanged; `payload_inspector` narrowed to msg_type/text/attachments; cargo nextest green.
 - [x] Step 5.4 (restore translator-driven runReplay): `runLedgerDrivenReplay`, `readLedgerTurnsForSession`, `decodeUserAttachments`, `LedgerTurnRow`, `extractTurnContent`, `readMsgIdFromBatch`, `rekeyTurnContent` all deleted; `runReplay` reverts to translator-driven path; `replay-spawn-mid-turn.test.ts` and `sessions-db-cross-process.test.ts` deleted (Step 4.6/4.1 territory); bun test green (304); workspace nextest green (1248); just lint clean.
-- [ ] Step 5.5 (translator predicate fix): in-flight trailing turn emits content without a terminal event; bun test green; the original 2026-05-05 mid-turn bug structurally fixed by this one-line change.
+- [x] Step 5.5 (translator predicate fix): in-flight trailing turn emits content without a terminal event via new `flushInflightTurnContent` helper sharing `emitTurnContentFrames` with `flushTurn`; the original 2026-05-05 mid-turn bug structurally fixed; bun test green (307 pass, +3 new); workspace nextest green; just lint clean.
 - [ ] Step 5.6 (pending-row replay): synthetic `user_message_replay` for unmatched pending rows; bun test green; **never-drop smoke passes deterministically across N=20** (load-bearing gate for [DM08]).
 - [x] Step 5.7 (delete migration scaffolding): absorbed into [Step 5.2](#step-5-2). All migration scaffolding (`bootstrap_turns_from_jsonl`, `canonical_project_dir_for_jsonl`, `jsonl_reader.rs`, the migrations table, the supervisor's bootstrap call site) deleted in 5.2.
 - [ ] Step 5.8 (close-out): smoke + DM07 retired confirmed; phase exit checkboxes flipped.
