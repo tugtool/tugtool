@@ -1831,7 +1831,23 @@ export class SessionManager {
    * a documented threshold; it is not load-bearing post-R1e.
    */
   async runReplay(): Promise<void> {
-    if (this.sessionMode !== "resume") return;
+    // Pre-Step-5 the early-return `if (this.sessionMode !== "resume") return;`
+    // gated runReplay by the original spawn mode. That assumption (mode=new
+    // ⇒ no JSONL to replay) holds at the moment of spawn but rots once the
+    // session has had wire activity. After the first turn lands, any
+    // request_replay against the same session — sent from tugdeck on
+    // `Developer > Reload` / HMR / card remount — needs the JSONL pass to
+    // rehydrate the freshly-mounted CodeSessionStore. The mid-turn-replay
+    // [Step 5](roadmap/tugplan-tide-mid-turn-replay.md#step-5) close-out
+    // smoke surfaced this: open new card, type "hello", get response,
+    // Developer > Reload → empty window because both tugdeck's
+    // `binding.sessionMode === "resume"` gate (also dropped) and this
+    // early-return swallowed the rebind's request_replay. Dropping both
+    // gates makes runReplay always-on; for a truly fresh new session whose
+    // JSONL doesn't exist yet, the translator emits
+    // `replay_started → replay_complete{kind: "jsonl_missing"}` and the
+    // reducer flashes through `replaying` to `idle`. Harmless.
+
     // Re-entrancy guard for the request_replay verb (Phase A-R1 /
     // [D12]). Cold-boot replay and request-driven replay share this
     // method. If a request lands while a replay is already in flight,

@@ -185,7 +185,15 @@ describe("cardServicesStore._construct — request_replay dispatch ([D12])", () 
     expect(found[0].tugSessionId).toBe(tugSessionId);
   });
 
-  it("does not dispatch request_replay for a fresh-spawn (sessionMode=new) binding", () => {
+  it("dispatches request_replay for a fresh-spawn (sessionMode=new) binding too — post-Step-5 smoke fix", () => {
+    // Pre-Step-5 the gate was `if (binding.sessionMode === "resume")`,
+    // which skipped fresh-spawn bindings. That assumption holds at
+    // the moment of spawn but rots once the session has had wire
+    // activity. After the first turn lands, any rebind of the same
+    // session needs request_replay so the freshly-mounted
+    // CodeSessionStore rehydrates its transcript. The fix drops the
+    // gate; an empty JSONL during a truly-fresh spawn is a harmless
+    // `replay_complete{jsonl_missing}` flash.
     const cardId = "r1c-card-new";
     const tugSessionId = "sess-r1c-new";
 
@@ -198,12 +206,15 @@ describe("cardServicesStore._construct — request_replay dispatch ([D12])", () 
 
     bindNew(cardId, tugSessionId);
 
-    // Services constructed, but the dispatch must be gated off the
-    // resume mode. Fresh-spawn bindings have no JSONL to replay.
     const services = cardServicesStore.getServices(cardId);
     expect(services).not.toBeNull();
 
-    expect(findRequestReplayFrames()).toHaveLength(0);
+    // Fires unconditionally now: idempotent at three layers ([D04]
+    // msg_id dedupe + tugcode re-entrancy guard + supervisor's
+    // Live-only forward).
+    const found = findRequestReplayFrames();
+    expect(found).toHaveLength(1);
+    expect(found[0].tugSessionId).toBe(tugSessionId);
   });
 
   it("dispatches once per construct — re-binding the same card after dispose runs another dispatch", () => {
