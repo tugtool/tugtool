@@ -86,7 +86,7 @@ After the resume work, the `Roadmap: right away` list from the parent plan has e
 7a''. **Recovery: tugcode startup-order refactor** ([Step R0d](#step-r0d)). Address Bug Y — the 5–10s wait itself. Run `runReplay()` before spawning claude; spawn claude asynchronously in the background. Replay events flow within ~100ms; claude is ready by the time the user submits a new turn.
 7b. **Recovery: `request_replay` IPC verb** across tugcode / tugcast / tugdeck per [D12] ([Phase A-R1](#phase-a-r1)). Closes the Smoke A/B gap exposed by [Step 5](#step-5)'s manual smokes. Tugdeck dispatches on services construction for resume bindings; tugcast forwards via CONTROL action; tugcode handles inbound and re-runs `runReplay()` re-entrancy-safely.
 7c. **Recovery: smoke verification + telemetry capture** ([Phase A-R2](#phase-a-r2)). Manual run of Smokes A/B/C with the new verb in place; mark off the smoke checklist with telemetry quotes.
-7d. **Recovery: Smoke D wait-for-completion** ([Phase A-R3](#phase-a-r3)). When `request_replay` arrives during an active turn, tugcode emits `replay_deferred`, gates outbound live events for the turn, and awaits its completion before running replay. Card shows a "Claude is still responding" placeholder with a "Check again" retry button.
+7d. **Recovery: Smoke D mid-turn ordering** ([Phase A-R3](#phase-a-r3)). Pick D-1 (pause-live), D-2 (skip-orphan), or D-3 (defer) and either implement or document the limitation.
 7e. **Recovery: convergence cleanup** ([Phase A-R4](#phase-a-r4)). Decide whether the startup-replay path collapses into request-driven, or both stay (with [D04] dedupe as the safety net).
 8. **Sticky id for replay-committed turns** in `TideTranscriptDataSource` per [D07]. The replay-committed turn's `msg_id` is the row's id from frame zero — no seed transition. Live-turn flicker is unchanged.
 9. **Atom-aware user rows.** `UserRowCell` switches from a plain `<span>` body to a body that renders `userMessage.attachments` as inline atoms when present, falling back to plain text for legacy or attachment-empty turns.
@@ -1355,7 +1355,7 @@ The two awaits are sequential, but they're not actually dependent: replay only n
 
 **Issue 1: false-positive spawn timer.** The R0d 30s `SPAWN_TIMEOUT_MS` watchdog (`tugcode/src/session.ts::armSpawnTimeout`) fires after 30 seconds of user inactivity, killing a healthy claude. The "is claude alive" proxy is `claudeReceivedInput`, which only flips when `handleUserMessage` runs. Smoke B reproduces this directly: Developer>Reload doesn't trigger a `user_message`, so 30 seconds after the cold-boot spawn the timer fires unconditionally. Smoke C masked it because the user always typed within the window. Telemetry from the failing run (`2026-05-04T21:46:53.853` claude spawn → `21:47:23.855` `tugcode.spawn_timeout` exactly 30s later → `resume_failed{spawn_timeout}` → "Couldn't resume" picker dialog) makes the chain explicit.
 
-**Issue 2: pull-based reader architecture.** tugcode's reader for claude's stdout (`this.stdoutReader = stdout.getReader()`) is owned by `handleUserMessage`. Outside a turn, claude's stdout sits in the OS pipe buffer; tugcode is not reading. This conflates "did the user type" with "is claude doing anything," made the spawn-timer's broken proxy seem reasonable for as long as it did, and forecloses [Phase A-R3](#phase-a-r3) from the cleaner design space — α's "gate emit on the active turn during the deferred window" is materially easier against a continuously-draining reader than against a reader handed off mid-turn.
+**Issue 2: pull-based reader architecture.** tugcode's reader for claude's stdout (`this.stdoutReader = stdout.getReader()`) is owned by `handleUserMessage`. Outside a turn, claude's stdout sits in the OS pipe buffer; tugcode is not reading. This conflates "did the user type" with "is claude doing anything," made the spawn-timer's broken proxy seem reasonable for as long as it did, and forecloses [Phase A-R3](#phase-a-r3) from the cleaner design space — both D-1 and D-2 are easier to express against a continuously-draining reader than against a reader handed off mid-turn.
 
 **Why both, in this order, before A-R2.**
 
@@ -1369,7 +1369,7 @@ The two awaits are sequential, but they're not actually dependent: replay only n
 
 - *Tuglaws scope.* tugcode is a Bun subprocess; no React, no DOM, no rendering. L01–L25 govern tugways/tugdeck and do not apply directly. Same posture as [Step R0d](#step-r0d), [Step R1a](#step-r1a). The wire shape tugcode emits is unchanged by both steps; tugdeck's reducer (where L02/L22/L23/L24 do apply) sees identical CODE_OUTPUT frames before and after. **L23** explicitly considered for R1e: faster delivery of claude-emitted events (system_metadata, etc.) cannot lose user-visible state because the reducer's [D04] msg_id dedupe is order-tolerant within a turn and idempotent across replays.
 - *Architectural fit.* R1e moves tugcode closer to the relay shape it is conceptually — input from tugcast, drain claude's stdout continuously, forward outputs through `writeLine`. The pre-R1e code structure is a pull model owned by `handleUserMessage`; the post-R1e structure is a push model owned by a dedicated drain task with `handleUserMessage` reduced to "submit input + await turn-end signal." Cleaner separation, smaller per-call surface for `handleUserMessage`.
-- *Future-readiness.* [Phase A-R3](#phase-a-r3) (Smoke D — mid-turn handling) is materially easier with a single drain. The chosen α design (wait for the active turn to finish before running replay; gate live emit during the wait) requires tugcode to know "what is the active turn and where in its stream are we?" — the drain task naturally owns that, and `ActiveTurn` provides the per-turn state to gate. [Phase A-R4](#phase-a-r4) (converge startup-replay and request_replay paths) is independent of R1e but benefits from the cleaner state machine. R1e is therefore not just a Smoke-B-adjacent cleanup; it is a structural prerequisite for the recovery feature's later phases doing well.
+- *Future-readiness.* [Phase A-R3](#phase-a-r3) (Smoke D — mid-turn ordering) is materially easier with a single drain. Both D-1 (pause live, drain replay, resume live) and D-2 (replay completed turns, live carries the in-flight) require tugcode to know "what is the active turn and where in its stream are we?" — the drain task naturally owns that. [Phase A-R4](#phase-a-r4) (converge startup-replay and request_replay paths) is independent of R1e but benefits from the cleaner state machine. R1e is therefore not just a Smoke-B-adjacent cleanup; it is a structural prerequisite for the recovery feature's later phases doing well.
 - *Pitfalls — R1d.* Removing the timer means a genuinely-hung claude (spawned but never exits, never responds) shows the user a populated transcript that doesn't react to input. Acceptable: the user can close the card, and this failure mode is rare (the early-exit watcher already catches the common claude-failed-to-init case). Document in code that this is a deliberate trade.
 - *Pitfalls — R1e (the substantial ones).*
   1. **Test-infra rewrite.** Existing `session.test.ts` and `replay-spawn.test.ts` mock claude with `ReadableStream` instances that are read on demand. With a long-lived drain, mocks must feed lines at-or-near rate, and the drain task must be teardown-clean across tests. Mitigation: introduce a thin `MockClaudeStdout` helper in the test module that drives the stream from inside the test.
@@ -1483,7 +1483,7 @@ The two awaits are sequential, but they're not actually dependent: replay only n
 - [x] `cargo nextest run` (workspace) — green (no Rust touched). *1215 pass.*
 - [x] `just lint` — clean.
 - [x] Manual: re-run Smoke A and Smoke B and capture telemetry. *Verified by user 2026-05-04. Telemetry from a representative cycle: reload at `23:09:21.129` → client reconnect `23:09:21.236` → `spawn.supervisor_recv inserted=false` (idempotent rebind) → `request_replay.dispatched 23:09:21.249` → tugcode `[tide::replay::request]` → `replay::started` → `replay::complete count=4 elapsed_ms=0`. End-to-end ≈120ms reload-to-fully-replayed. Two consecutive cycles in the captured trace, both clean. Zero `spawn_timeout`, zero `resume_failed`, zero errors. The expected timing change for inter-turn events (`system_metadata` mid-stream, etc.) was not exercised in this trace — claude was idle between cycles — but the contract is locked in by the `replay-spawn-drain.test.ts` "drain forwards `system:init` between turns" test.*
-- [x] Self-check: re-read the [Phase A-R3](#phase-a-r3) plan with R1e in mind. Confirm that the chosen α design is easier to express against the drain task. If it becomes harder, raise the concern before proceeding to A-R2. *Confirmed: α's "gate ActiveTurn's emitFrame calls while runReplay awaits the turn's completion promise" maps cleanly to a per-ActiveTurn `suppressEmit` flag — the drain still dispatches into the active turn so state and the completion promise advance normally, but emit is silenced. Strictly easier to express post-R1e than pre-R1e (no reader handoff to coordinate).*
+- [x] Self-check: re-read the [Phase A-R3](#phase-a-r3) plan with R1e in mind. Confirm that D-1 and D-2 are easier to express against the drain task. If either becomes harder, raise the concern before proceeding to A-R2. *Confirmed: D-1's "pause live, drain replay, resume live" maps cleanly to "pause the drain's dispatch into the active turn while replay runs"; D-2's "live carries the in-flight turn" maps cleanly to "drain continues dispatching into the active turn while translator emits completed-turns-only replay alongside" — no special "attach to in-flight turn" reducer change needed in tugcode. Both designs strictly easier to express post-R1e.*
 
 ---
 
@@ -1520,145 +1520,39 @@ The two awaits are sequential, but they're not actually dependent: replay only n
 
 ---
 
-#### Phase A-R3: Smoke D — wait-for-completion with retry button {#phase-a-r3}
+#### Phase A-R3: Smoke D — mid-turn ordering semantics {#phase-a-r3}
 
-**Why this phase.** Mid-turn reload (Smoke D) has a coordination problem the prior phases do not solve. When the user reloads while an active turn is in flight (claude is mid-stream), `request_replay` arrives at tugcode while a `handleUserMessage` turn is still going. Today, replay would read JSONL — which has only a *partial* in-flight turn — and emit it (with orphan synthesis per [D08] producing an interrupted-looking row). Meanwhile the [Step R1e](#step-r1e) drain is still streaming live deltas for the same logical turn, but with a different msg_id (tugcode's `crypto.randomUUID()` vs. claude's `message.id` from JSONL). The result: a duplicated row (one interrupted from replay, one completed from live) or a turn that appears stuck.
+**Why this phase.** Mid-turn reload (Smoke D) has a coordination problem [Phase A-R1](#phase-a-r1) does not solve on its own. When `request_replay` arrives at tugcode while a `handleUserMessage` turn is in flight (claude is mid-stream), three things compete on tugcode's IPC stdout:
 
-The simple framing: **the tide card needs to accurately track work the back end has already received and is stored in JSONL, plus stream new content for any live turn.** The complication only appears when one logical turn is half in JSONL and half still live. We can sidestep the entire complication by waiting for the in-flight turn to finish — then the JSONL is complete, replay reads it, no merging is needed.
+  - replay events being emitted by `runReplay` (translator output for committed turns + orphan synthesis for the in-flight turn, per [D08])
+  - live `assistant_text` deltas that `handleUserMessage` is still forwarding from claude's stdout
+  - the eventual `turn_complete` for that live turn
 
-**Decision (recorded 2026-05-04): wait-for-completion (α) with a "Check again" retry affordance.**
+Without explicit coordination, the live deltas land at the fresh tugdeck `CodeSessionStore` with no preceding `user_message` context (a wire violation), the orphan synthesis commits the same turn as `result: "interrupted"` (per [D08]), and the live `turn_complete` is silently no-op'd by [D04] msg_id dedupe — so the transcript shows the user's submission marked interrupted while the actual completion lands in the JSONL on disk and never on screen.
 
-When `runReplay()` is invoked while an active turn exists, tugcode emits a `replay_deferred` informational frame, suppresses outbound live events for the active turn, and awaits the turn's completion. Once the turn finishes (claude emits `result`, JSONL is fully written), tugcode runs replay against the now-complete JSONL and emits the normal `replay_started` → events → `replay_complete` bracket. The card displays a "Claude is still responding to your previous message" placeholder during the wait, with a "Check again" button that re-sends `request_replay`.
+**Possible designs (pick one in the step body):**
 
-The user can interrupt the wait at any time by hitting cancel/ESC on the in-flight turn — the existing user-initiated cancel path is unchanged. Cancel ends the turn, JSONL gets the truncated record, deferred replay runs immediately. No system-initiated discarding of in-flight work.
+- **Design D-1 — pause live, drain replay, resume live.** tugcode holds claude's stdout reader during replay; live deltas buffer in the OS pipe (small) or in tugcode's accumulator (bounded). After `replay_complete`, resume forwarding. The reducer must learn a new path: "in-flight turn previously committed as interrupted now upgrades to completed" (not currently supported; shape TBD).
+- **Design D-2 — replay completed turns only; live carries the in-flight turn.** Translator skips the trailing in-flight turn from the JSONL (no orphan synthesis on `request_replay`, only on startup-replay). Live forwarding picks up where it left off; the fresh tugdeck reducer needs a new path: "attach to a turn already in flight" (ingest a partial assistant_text stream without a preceding `send`). Cleaner reducer story but requires new tugcode state — it must know which turn is in flight when the verb arrives.
+- **Design D-3 — defer Smoke D; document as known limitation.** Mid-turn reload is rare enough relative to A/B/C that shipping A/B/C and documenting D as "transcript shows committed turns; in-flight turn appears interrupted; user can re-submit" may be acceptable for v1. Graduates when imperative-DOM-cell-pooling or a follow-on plan addresses both halves of the problem.
 
-**Designs considered, not selected.**
+#### Step R3: Pick D-design, implement or defer {#step-r3}
 
-- **D-1 (pause-live, drain replay, resume live)** and **D-2 (replay completed turns + live carries the in-flight)** were both expressible against the [Step R1e](#step-r1e) drain. Both require msg_id reconciliation between live (tugcode's UUID) and replay (claude's `message.id`) for the in-flight turn, plus reducer-side handoff logic to extend a turn past the `replay_complete` bracket. D-2 was specified in detail and accumulated six pitfalls (race conditions during replay, mid-tool-use reload, pre-existing duplicate-turn cases) — clear signal that the merge-replay-with-live design space is too narrow for the time available and too risky for the production code path.
-- **β (interrupt the in-flight turn server-side, then replay)** was rejected because it discards in-flight work without user consent. The user keeps agency: if they want to skip the wait, they cancel manually.
-- **γ (skip replay during active turn; rely on live)** was rejected because it loses card history for one cycle (no committed turns shown until next reload).
-- **δ (defer Smoke D entirely)** was rejected because the smoke is reachable in normal HMR development and leaving it red is a quality bar regression.
+**Commit:** TBD (depends on design pick).
 
-**Mechanics (three layers).**
-
-1. **tugcode — defer-during-active-turn.** At the top of `runReplay()`, after the existing `replayActive` re-entrancy guard, check `this.activeTurn`. If non-null:
-   - Set `this.activeTurn.suppressEmit = true` (gates outbound live events for this turn).
-   - Emit `replay_deferred { reason: "active_turn_in_flight" }` as a one-shot informational frame.
-   - Log `replay.deferred { tug_session_id, msg_id, reason }`.
-   - `await this.activeTurn.completion`.
-   - On resolution, log `replay.resumed_after_active_turn { tug_session_id, wait_ms }`.
-   - Fall through to the existing replay logic (which now runs against a complete JSONL).
-
-   The Promise-based wait handles every "second arrival" case correctly: idempotent re-dispatches (HMR, "Check again" clicks) all `await` the same Promise; if it's already resolved, they proceed immediately and hit the `replayActive` guard if a replay is already in progress.
-
-2. **tugcode — live event gating.** `ActiveTurn` gains a `suppressEmit: boolean` field (default false). The methods that call `sessionManager.emitFrame()` for assistant_text, tool_use, partial deltas, and turn_complete check this flag before emitting. State updates (partialText accumulation, `gotResult` latch, `interrupted` latch, completion resolution) run unchanged so the turn lifecycle proceeds normally and `await activeTurn.completion` resolves on schedule. JSONL is unaffected — claude writes its own JSONL regardless of what tugcode does on the wire.
-
-   Inter-turn events (handled by `handleInterTurnEvent` per R1e) are not gated. Only events dispatched into the suppressed ActiveTurn are gated.
-
-3. **tugdeck — `replay_deferred` reducer handling.** New phase `replay_deferred` added to the phase union alongside `idle`, `replaying`, `live`. `handleReplayDeferred` transitions phase from `idle` → `replay_deferred`. `handleReplayStarted` accepts transitions from both `idle` and `replay_deferred` → `replaying` (existing path otherwise unchanged). The reducer ignores duplicate `replay_deferred` arrivals (idempotent — same phase, same state). No msg_id reconciliation, no `inflight_msg_id`, no handoff logic.
-
-4. **tugdeck — placeholder UI + "Check again" button.** When `state.phase === "replay_deferred"`, the transcript renders:
-   - Banner-style placeholder: "Claude is still responding to your previous message"
-   - "Check again" button. On click, calls `sendRequestReplay(connection, tugSessionId)` (the existing helper from R1c). Button is visible *only* in the `replay_deferred` phase — never in idle, replaying, or live (which would cause weird re-replays).
-
-   The button is a reassurance affordance: the deferred wait will resolve on its own when the turn completes, but the user can re-poll to confirm tugcode is still alive. Re-dispatch is safe by construction — it either re-emits `replay_deferred` (same phase, no-op) or arrives after turn completion and starts the real replay.
-
-**What this design rules out and why.**
-
-- **No msg_id reconciliation.** Live events (tugcode UUIDs) for the in-flight turn are suppressed during the deferred window. When replay runs after turn completion, JSONL has the full turn keyed by claude's `message.id`. The wire only ever shows one id per turn — the same posture as completed-turn replays. The msg_id divergence noted in the abandoned D-2 discussion remains latent (live still uses UUIDs, replay still uses claude's id) but never surfaces as a bug because no turn has both ids on the wire simultaneously.
-- **No reducer handoff state.** `replay_complete` clears `pendingUserMessage` and `activeMsgId` as it does today. There is no "extend the turn past the bracket" mechanism. After replay completes, the reducer is in `live` phase and any subsequent live events are for the *next* turn (which doesn't exist yet from the card's perspective until the user submits).
-- **No translator-side bifurcation.** `D08` orphan synthesis stays as-is — it's still the right behavior for cold-boot replays where the JSONL ends mid-turn from a *previous* interrupted session and there's no live continuation. In the Smoke D path (active turn + reload), JSONL is complete by replay time, so orphan synthesis simply isn't triggered.
-
-**Holistic assessment.**
-
-- *Architectural fit.* α adds one new outbound frame (`replay_deferred`), one new reducer phase, one new reducer handler, one new ActiveTurn flag, and one button. No new wire shapes per-turn, no new id schemes, no new reducer state machine branches. The R1e drain still owns the wire; the verb is still the only trigger; the active turn is still the single coordinator. Three orthogonal concerns, same as post-R4.
-- *Future-readiness.* The `replay_deferred` frame can carry richer payload later (e.g., `eta_ms`, `partial_text_preview`) without re-shaping the protocol. The reducer's three-phase machine remains a finite state automaton. If we ever want to add a "show the in-flight turn live during the wait" UX later, that becomes a frame-level extension (server emits live deltas with a hint, reducer renders speculatively) — independent of α's correctness.
-- *Pitfalls.*
-  1. **Long waits.** Worst case: claude is mid-tool-use, reload happens, tool runs for several minutes. User sees the placeholder for that whole duration. "Check again" doesn't shorten it. Mitigation: copy is honest ("Claude is still responding"), and the user can hit cancel/ESC on the in-flight turn to truncate. Documented as expected behavior.
-  2. **Multiple concurrent reloads.** HMR or rapid Cmd-R may dispatch `request_replay` several times. Each invocation hits `replayActive`'s re-entrancy guard or the `await activeTurn.completion` queue. The Promise resolves once; the first caller past `replayActive` runs the actual replay. Subsequent callers either find `replayActive` true and drop, or find the active turn replaced/null and proceed normally. Pin with a test.
-  3. **Finished-but-uncleaned `activeTurn`.** `handleUserMessage` (session.ts:2125-2147) installs the active turn at line 2134, awaits `turn.completion` at 2136, and clears `this.activeTurn = null` in a `finally` block at 2145 — so there is a microtask window where the turn has finished (`gotResult: true` and `completion` resolved) but `this.activeTurn` still points at it. If `runReplay` enters the defer branch in that window, we emit `replay_deferred`, await an already-resolved promise (returns immediately), then run replay. Card sees a brief flash of placeholder, then the normal replay bracket. Correctness is fine; UX is slightly noisy. **Mitigation**: tighten the defer condition to `activeTurn !== null && !activeTurn.gotResult && !activeTurn.interrupted`. A finished turn is treated as "no active turn" — no defer, no flash. Pin with a test that constructs an active turn with `gotResult=true` already set and asserts no `replay_deferred` frame is emitted. (Note: the cross-process race I initially worried about — drain dispatching between `runReplay`'s read of `activeTurn` and its flag-set — is impossible. JS is single-threaded; `runReplay`'s entry block from method-entry through `replayActive=true` (session.ts:1534-1564) runs in one synchronous tick with no await, so the drain task cannot interleave.)
-  4. **Cancel during deferred wait.** User clicks cancel/ESC on the in-flight turn while the card is in `replay_deferred` phase. The cancel writes interrupt to claude's stdin; claude finalizes the truncated turn into JSONL; `activeTurn.finish()` runs; deferred `runReplay` resolves and runs replay against the truncated JSONL; card renders the truncated turn (orphan synthesis applies — claude wrote `stop_reason: null`). Card transitions through `replay_deferred` → `replaying` → `live` normally. No special handling needed — the cancel path uses the same finish-the-turn mechanism α relies on.
-  5. **"Check again" during a real replay.** If the user clicks the button during the brief window between `replay_started` and `replay_complete`, the second `request_replay` arrives at tugcode while `replayActive` is true. The guard drops it with `request_dropped reason="replay_in_flight"` (existing R1a behavior). User sees no change; the in-progress replay completes normally. UI option: the button is hidden the moment we leave `replay_deferred` phase, so this case shouldn't be reachable from the UI but is correct if it does occur.
-  6. **`session_command` (fork/continue/new) during deferred wait.** If the user issues a session command while `runReplay` is parked on `await activeTurn.completion`, `handleSessionCommand` (session.ts:2359) may rebuild the session — claudeProcess restart, ActiveTurn discarded. The parked promise's resolution depends on whether the session-rebuild path explicitly resolves `activeTurn.completion` before clearing it. Verify in implementation: read `handleSessionCommand` and confirm the active turn's completion is signaled (via `turn.finish()` or equivalent) on rebuild. If not, the deferred `runReplay` would block forever — in which case add an explicit `signalEofToActiveTurn`-equivalent call to the rebuild path. Pin with a test if non-trivial.
-- *Limitations.*
-  - **No mid-turn live-streaming during the wait.** The user reloads, then waits for the turn to complete before seeing anything. They could otherwise have seen the rest of the turn streaming in. This is the primary UX cost of α. Trade-off accepted: simplicity and correctness over latency for a development-time case.
-  - **Pre-existing duplicate-turn race** (turn completes between card mount and `request_replay` arrival) is unchanged. α neither fixes nor worsens it. Tracked as out-of-scope.
-
-#### Step R3: Implement α — defer-during-active-turn + replay_deferred + retry button {#step-r3}
-
-**Commit:** `tide(transcript): wait-for-completion replay during active turn`
-
-**Depends on:** [Step R4](#step-r4) (single-trigger architecture), [Step R1e](#step-r1e) (active drain + ActiveTurn).
-
-**References:** [D04] msg_id dedupe (still load-bearing in the post-replay live phase), [D08] orphan synthesis (untouched — active turn completes before replay so JSONL is complete), [D12] request-driven replay.
-
-**Artifacts:**
-
-- `tugcode/src/types.ts` — new outbound interface `ReplayDeferred { type: "replay_deferred", reason: string }` added to the outbound message union; `isReplayDeferred` guard.
-- `tugcode/src/session.ts`:
-  - `ActiveTurn` class gains a `suppressEmit: boolean = false` field. The methods that emit assistant_text, tool_use, partial-text deltas, and turn_complete check this flag and skip `emitFrame` while preserving state updates (partialText, gotResult, interrupted, completion resolution).
-  - `runReplay()`: after the existing `replayActive` re-entrancy guard, snapshot `this.activeTurn` once. Treat as "active for defer purposes" only when `activeTurn !== null && !activeTurn.gotResult && !activeTurn.interrupted` (per Pitfall 3 — a finished-but-not-yet-cleaned turn doesn't need a defer). If active, set `suppressEmit=true`, emit `replay_deferred`, log `replay.deferred`, capture `Date.now()`, `await activeTurn.completion`, log `replay.resumed_after_active_turn { wait_ms }`, then fall through. Otherwise fall through directly (existing path).
-- `tugdeck/src/protocol.ts` — decoder for `replay_deferred` frames; type narrows on `reason: string`.
-- `tugdeck/src/lib/code-session-store/events.ts` — wire-decoded `ReplayDeferred` event type; entry point in the event-tagged union the reducer dispatches on.
-- `tugdeck/src/lib/code-session-store/types.ts` — phase union extended: `"idle" | "replay_deferred" | "replaying" | "live"`. Existing consumers that switch over the phase need updating where they don't already handle the union exhaustively (TypeScript will surface them).
-- `tugdeck/src/lib/code-session-store/reducer.ts`:
-  - New handler `handleReplayDeferred`: transitions phase from `idle` to `replay_deferred`. Idempotent — receiving `replay_deferred` again while already in that phase is a no-op.
-  - `handleReplayStarted`: extends accepted-from-phase set to include `replay_deferred` (in addition to `idle`).
-  - `handleReplayComplete`: unchanged — still transitions to `live` and clears `pendingUserMessage`/`activeMsgId` per existing behavior.
-- `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` (or its banner-rendering child): when `state.phase === "replay_deferred"`, render a banner: "Claude is still responding to your previous message" with a secondary "Check again" button. Hidden in all other phases.
-- `tugdeck/src/lib/session-lifecycle.ts` — already exports `sendRequestReplay` from R1c; the button handler reuses it. Add a lifecycle log line `request_replay.user_retry tug_session_id=…` so a user-initiated retry is distinguishable from the initial dispatch.
-- Tests:
-  - `tugcode/src/__tests__/replay-spawn.test.ts` (or a new `replay-spawn-defer.test.ts`): defer behavior tests.
-  - `tugdeck/src/lib/code-session-store/__tests__/code-session-store.replay.test.ts`: reducer phase transitions through `replay_deferred`.
-  - `tugdeck/src/__tests__/tide-card-transcript-replay-deferred.test.tsx` (UI markup test, *not* happy-dom event-ordering): banner renders only in `replay_deferred` phase; "Check again" button is present and click-handler dispatches via the lifecycle helper.
+**Depends on:** [Step R2](#step-r2)
 
 **Tasks:**
 
-- [ ] Verify the live-event-gating call sites. The drain's per-turn emit happens in `dispatchEventToTurn` (session.ts:1918-2028) at five `writeLine` sites: route messages (1936), stream messages (1951), control_request_forward (1985), final assistant_text on `gotResult` (2004), `turn_complete` on `gotResult` (2019). The drain-EOF handler `signalEofToActiveTurn` (session.ts:2039) emits at two more sites: `turn_cancelled` (2051) and `error` (2059). All seven need to honor `suppressEmit`. State updates (partialText, gotResult, interrupted, completion resolve) and `turn.finish()` calls do NOT honor the flag — the turn lifecycle proceeds normally so the deferred `runReplay` can wake up. Document the call-site list inline in the class.
-- [ ] Add `ReplayDeferred` type and `isReplayDeferred` guard to `tugcode/src/types.ts`. Wire it through `OutboundMessage`.
-- [ ] Add `suppressEmit: boolean` to `ActiveTurn`; gate the seven emit call sites identified above (five in `dispatchEventToTurn`, two in `signalEofToActiveTurn`).
-- [ ] Update `runReplay()` per Artifacts. Add the `replay.deferred` and `replay.resumed_after_active_turn` log lines.
-- [ ] Update `tugdeck/src/protocol.ts` with the `replay_deferred` frame decoder.
-- [ ] Update `tugdeck/src/lib/code-session-store/events.ts` and `types.ts` with the new event type and phase.
-- [ ] Add `handleReplayDeferred` to the reducer; extend `handleReplayStarted`'s accepted-from-phase set.
-- [ ] Update the `<TideCardTranscript>` (or the appropriate banner-host child component) to render the `replay_deferred` banner with the "Check again" button. Wire the button to `sendRequestReplay`.
-- [ ] Add `request_replay.user_retry` log line to the click handler.
-- [ ] Run TypeScript `tsc --noEmit` to surface every `switch (phase)` site that doesn't exhaustively handle `replay_deferred`. Update each one (most should fall through to "show transcript with no overlay" — same as `idle`).
-- [ ] Manual grep pass for `phase ===` and `phase !==` comparison sites in tugdeck — TypeScript exhaustiveness only catches `switch` blocks, not direct comparisons. For each comparison, decide whether `replay_deferred` should match the existing branch (e.g., a check for "not done loading") or get its own clause. Document the decision inline at the site.
-
-**Tests:**
-
-- [ ] **tugcode unit (defer trigger)**: install a fake active turn; call `runReplay()`. Assert `replay_deferred` frame is emitted, `suppressEmit` flips to true on the active turn, and `runReplay` is parked on the completion promise (not yet emitted `replay_started`).
-- [ ] **tugcode unit (defer resolves on completion)**: with a fake active turn parked, simulate the turn's completion (resolve `activeTurn.completion`); assert `runReplay` proceeds — `replay_started` and `replay_complete` arrive, in order, after `replay_deferred`.
-- [ ] **tugcode unit (no active turn → no defer)**: call `runReplay()` with no active turn; assert NO `replay_deferred` frame; replay runs immediately as today.
-- [ ] **tugcode unit (finished-but-uncleaned active turn → no defer)**: install an active turn with `gotResult=true` (or `interrupted=true`); call `runReplay()`; assert NO `replay_deferred` frame; replay runs immediately. Pins Pitfall 3's mitigation — the brief microtask window where `handleUserMessage`'s finally hasn't yet cleared `this.activeTurn` doesn't trigger a placeholder flash.
-- [ ] **tugcode unit (suppression covers expected events)**: with `suppressEmit=true`, drive the four gated event types into the active turn; assert `emitFrame` is not called for any of them; assert state updates still happen (e.g., partialText accumulates).
-- [ ] **tugcode unit (idempotent re-dispatch during defer)**: while parked on completion, call `runReplay()` again; assert the second call does not double-emit `replay_deferred`, does not start a second replay, and either parks on the same promise or returns via the `replayActive` guard.
-- [ ] **tugdeck reducer (phase transitions)**: `idle` → `replay_deferred` (on `replay_deferred` event); `replay_deferred` → `replaying` (on `replay_started`); `replaying` → `live` (on `replay_complete`); `replay_deferred` → `replay_deferred` (idempotent re-dispatch).
-- [ ] **tugdeck reducer (no extension past replay_complete)**: drive `replay_deferred` → `replay_started` → `user_message_replay{id:X}` → `replay_complete` → live `assistant_text{id:Y}` (different id, the next turn) → live `turn_complete{id:Y}`. Assert two TurnEntries (the replayed in-flight turn keyed by id X; the new live turn keyed by id Y). No carryover bugs.
-- [ ] **tugdeck UI (banner visibility)**: render with `state.phase = "replay_deferred"`; assert banner is present with the expected copy and "Check again" button. Render with each other phase; assert banner is absent.
-- [ ] **tugdeck UI (button dispatches request_replay)**: render with `state.phase = "replay_deferred"`; click "Check again"; assert `sendRequestReplay` is called with the bound tug_session_id.
-- [ ] **Failure-first proof (tugcode)**: temporarily revert the `suppressEmit` gate on `emitFrame` so live events leak during the wait. Run a synthetic mid-turn defer test (drive replay_deferred → simulate live deltas → resolve turn → run replay). Assert the test fails (live events appear before the replay bracket). Restore.
-- [ ] **Failure-first proof (tugcode)**: temporarily revert `runReplay`'s defer branch to fall through unconditionally. Assert the "no active turn → no defer" test still passes (regression-pin) but a new "with active turn → expect defer" test fails (no `replay_deferred` frame emitted, replay races against the live turn). Restore.
-
-**Tuglaws cross-check:**
-
-- **L01–L25** — α touches tugdeck's reducer (a structure-zone store) and adds one banner element. The reducer change is one new handler + one new accepted-from-phase entry. The banner is an additional render branch in the existing transcript component, no new mount, no new useEffect, no new observe-store call. Existing [L02], [L22], [L24] guarantees hold.
-- **L23** considered explicitly: pre-α, mid-turn reload **lost or duplicated** the user's in-flight turn (interrupted-looking row from replay + duplicate from live). α strictly preserves user-visible state — when the wait completes, JSONL has the full turn, replay emits exactly one TurnEntry for it, and live events have been gated so no duplicate appears. ✓
-- **D04** msg_id dedupe — unchanged. The dedupe contract is no longer load-bearing for Smoke D (because no turn appears with two ids simultaneously), but remains the safety net for any redundant verb dispatch within a single replay. ✓
-- **D08** orphan synthesis — completely untouched. Cold-boot replays of JSONLs that end mid-turn still synthesize the orphan turn_complete with claude's id. α only applies when there's a *live* active turn, which by definition means the JSONL will be complete by the time replay runs. ✓
-- **D12** request-driven replay — α keeps the verb as the single trigger and adds one new outbound frame (`replay_deferred`) that older readers can ignore safely. ✓
+- [ ] Choose between D-1, D-2, and D-3 with explicit rationale recorded in this step.
+- [ ] If D-1 or D-2: author a sub-plan describing wire-protocol and reducer changes; commit the sub-plan as a separate file under `roadmap/tugplan-tide-transcript-resume-mid-turn.md`.
+- [ ] If D-3: add the limitation to the [#roadmap] follow-ons section with explicit reason and acceptance criteria for graduation.
+- [ ] Update [#exit-criteria] accordingly.
 
 **Checkpoint:**
 
-- [ ] `bun test` (tugcode) — green; failure-first proofs both produce sensible diagnostics.
-- [ ] `bun test` (tugdeck) — green; reducer + UI tests both pass.
-- [ ] `cargo nextest run --workspace` — green (no Rust touched in α).
-- [ ] `just lint` — clean.
-- [ ] `bun x tsc --noEmit` (tugdeck) — exit 0. All phase-switch sites updated for `replay_deferred`.
-- [ ] Manual: run Smoke D end-to-end. Submit a turn that produces a long response (>5s streaming). Mid-stream, Cmd-R / Developer → Reload. **Verify**: the page rebuilds; the card shows "Claude is still responding to your previous message" with a "Check again" button. After claude finishes, the placeholder disappears and the transcript shows committed turns plus the in-flight turn with the user prompt and the assistant's completed response (one TurnEntry, no duplicates). Click "Check again" during the wait — verify it does not break anything (placeholder stays; no double-replay).
-- [ ] Manual (cancel during wait): submit a long turn, reload mid-stream, click cancel/ESC on the in-flight turn from another window or via existing controls if reachable. **Verify**: claude truncates, JSONL gets the truncated record, replay runs and renders the truncated turn, card transitions to live phase. No hung placeholder.
-- [ ] Self-check: re-read [#exit-criteria] and confirm Smoke D's checkbox can flip from "documented limitation" to "passes."
+- [ ] Design pick is recorded.
+- [ ] Smoke D either passes, or its known-limitation entry is explicit and time-bound in the roadmap.
 
 ---
 
@@ -1741,7 +1635,7 @@ For cold boot, both fire today: tugcode's startup runs replay synchronously; tug
 **Holistic assessment.**
 
 - *Architectural fit.* R4 is the cleanup pass [D12] always implied: the "request-driven replay" decision was supposed to be the load-bearing trigger, with startup-replay surviving only because R1's wire path happened to arrive too late on cold boot for a clean cutover. R1.5 and the supervisor-queue change in R4 together make the verb path tolerant of every state the entry can be in when the dispatch arrives — at which point the startup invocation has no remaining purpose.
-- *Future-readiness.* Phase A-R3 (Smoke D mid-turn handling) becomes structurally easier with one trigger path: α only needs to coordinate replay vs. the in-flight turn, not also reason about a startup-replay path that fires at protocol_init. The drain task from R1e is the single dispatcher; the verb is the single trigger; the active turn is the single coordinator. Three orthogonal concerns instead of four.
+- *Future-readiness.* Phase A-R3 (Smoke D mid-turn ordering) becomes structurally easier with one trigger path: D-1 / D-2 only need to coordinate replay vs. the in-flight turn, not also reason about a startup-replay path that fires at protocol_init. The drain task from R1e is the single dispatcher; the verb is the single trigger; the active turn is the single coordinator. Three orthogonal concerns instead of four.
 - *Pitfalls.*
   1. **Frame ordering during Spawning→Live drain.** The bridge's drain loop pushes queued frames into `input_tx` in FIFO order. If a CODE_INPUT (user_message) was queued before request_replay (e.g., user typed instantly after rebind), the user_message arrives at tugcode's stdin first. Tugcode's IPC loop processes user_message — handleUserMessage installs ActiveTurn and writes to claude's stdin — *then* processes request_replay → runReplay starts. The result: in-flight live turn AND in-flight replay simultaneously. This is exactly the Smoke D shape; the conflict is genuine but not new (Phase A-R3 owns it). Mitigation: enqueue request_replay at the *front* of the queue when Spawning, so it always precedes any user input. Document the front-push behavior in the supervisor; pin with a test.
   2. **What if claude crashes before promote-to-Live?** The early-exit watcher emits `resume_failed` and tugcode shuts down. The queued request_replay is lost — but tugdeck observes `resume_failed` via CODE_OUTPUT, the card unbinds, the picker takes over. Same shape as today's "claude failed to spawn" path; no regression.
@@ -1912,7 +1806,7 @@ For cold boot, both fire today: tugcode's startup runs replay synchronously; tug
 - [ ] Cold-boot wall-clock cut from ~5–10s to ~1s via [Step R0d](#step-r0d)'s startup-order refactor (replay-before-claude).
 - [ ] `request_replay` IPC verb ([D12]) implemented across tugcode/tugcast/tugdeck (per [Phase A-R1](#phase-a-r1)); a fresh `CodeSessionStore` for a resume binding receives replay events without needing a tugcode respawn.
 - [ ] Smokes A (HMR), B (Reload), C (cold boot) all verified against a real session via [Phase A-R2](#phase-a-r2).
-- [ ] Smoke D (mid-turn reload) resolved per [Phase A-R3](#phase-a-r3) — green via the α (wait-for-completion) design with the `replay_deferred` placeholder and "Check again" retry button.
+- [ ] Smoke D (mid-turn reload) resolved per [Phase A-R3](#phase-a-r3) — either green via the chosen design (D-1/D-2) or documented as a known limitation (D-3) with explicit graduation criteria in [#roadmap].
 - [ ] Convergence decision between startup-replay and request-driven replay recorded per [Phase A-R4](#phase-a-r4).
 - [ ] Sticky id eliminates the seed-transition remount for replay-committed turns; live-turn flicker documented as a follow-on.
 - [ ] `UserRowCell` renders inline atoms when `attachments` is non-empty.
