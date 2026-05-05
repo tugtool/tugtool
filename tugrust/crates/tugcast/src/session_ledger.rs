@@ -1016,25 +1016,33 @@ impl SessionLedger {
             return Ok(0);
         }
 
-        // Canonicalize `project_dir` before encoding. Claude itself
-        // resolves its cwd via `getcwd()` (which follows symlinks), so
-        // the on-disk JSONL lives under the canonical path's encoding.
-        // A user opening a session through a symlinked path (e.g.
-        // `/u/src/tugtool` → `/Users/<u>/Mounts/u/src/tugtool`) would
-        // otherwise produce a bootstrap path that has no file under
-        // it; the function would silently `Ok(0)` and the migration
-        // would never run for that session. Mirrors the
-        // `realpath()` step tugcode performs in `runReplay`'s
-        // cold-boot path. Falls back to the raw `project_dir` if the
-        // canonicalization itself fails (path doesn't exist on disk
-        // — fixture / deleted directory cases): downstream
-        // `read_to_string` reports `NotFound` and bootstrap is a
-        // no-op, which is the same outcome the raw form would
-        // produce.
-        let canonical_project_dir = match std::fs::canonicalize(project_dir) {
-            Ok(p) => p.to_string_lossy().into_owned(),
-            Err(_) => project_dir.to_owned(),
-        };
+        // Resolve `project_dir` to the same user-facing form that
+        // claude code's `getcwd()` (and Node's `fs.realpath`, which
+        // tugcode's TS-side `runReplay` uses) produces. The on-disk
+        // JSONL lives under the encoded form of THAT path — matching
+        // it is the load-bearing requirement for bootstrap to find
+        // the file. Two ways the raw `project_dir` can differ from
+        // claude's view:
+        //
+        //   1. **Symlink in the path** (e.g. user-managed
+        //      `/u/src/tugtool` → `/Users/<u>/Mounts/u/src/tugtool`).
+        //      Claude resolves the symlink; tugcast must too.
+        //   2. **macOS APFS firmlink** (`/Users` ↔
+        //      `/System/Volumes/Data/Users`). Claude / Node /
+        //      `getcwd()` stop at the user-facing `/Users/...` form;
+        //      Rust's `std::fs::canonicalize` traverses through to
+        //      `/System/Volumes/Data/Users/...`. Strip the firmlink
+        //      prefix so the encoding matches what's on disk.
+        //
+        // Without (1), bootstrap silently no-ops on every dev machine
+        // that uses a symlinked project path. Without (2), bootstrap
+        // looks under `-System-Volumes-Data-Users-...` while the
+        // JSONL is at `-Users-...` — same silent miss, just with a
+        // different wrong path. Falls back to raw `project_dir` if
+        // canonicalize fails (deleted directory / fixture); the
+        // downstream `read_to_string` reports `NotFound` and
+        // bootstrap no-ops cleanly.
+        let canonical_project_dir = canonical_project_dir_for_jsonl(project_dir);
         let encoded = encode_claude_project_name(&canonical_project_dir);
         let jsonl_path = self
             .claude_projects_root
@@ -1290,6 +1298,43 @@ pub fn default_claude_projects_root() -> PathBuf {
     let home = dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from(std::env::var("HOME").unwrap_or_default()));
     home.join(".claude").join("projects")
+}
+
+/// Resolve `project_dir` to the user-facing form claude itself uses
+/// when writing JSONLs (and that tugcode's `runReplay` uses when
+/// reading them). Two transformations:
+///
+///   1. Resolve symlinks via `std::fs::canonicalize`. A user-typed
+///      path like `/u/src/tugtool` (symlink) becomes the realpath of
+///      the symlink target.
+///   2. Strip the macOS APFS firmlink prefix (`/System/Volumes/Data`)
+///      if present. macOS firmlinks set up `/Users` to be
+///      bidirectionally accessible at `/System/Volumes/Data/Users`,
+///      and Rust's `canonicalize` (via `realpath(3)`) traverses
+///      through to the latter. Claude code's `getcwd()` and Node's
+///      `fs.realpath` both stop at `/Users/...` — that's the form
+///      claude writes its on-disk path encoding under, and the form
+///      tugcode resolves to in `runReplay`'s `realpath` step. Strip
+///      the prefix so tugcast's encoding matches what's on disk.
+///
+/// Falls back to the raw input on canonicalize failure (deleted
+/// directory, fixture path that doesn't exist) — downstream callers
+/// then see a `NotFound` from the I/O attempt and treat it as a
+/// no-op.
+pub fn canonical_project_dir_for_jsonl(project_dir: &str) -> String {
+    let canonical = match std::fs::canonicalize(project_dir) {
+        Ok(p) => p.to_string_lossy().into_owned(),
+        Err(_) => return project_dir.to_owned(),
+    };
+    // macOS firmlink workaround. The "/System/Volumes/Data" prefix
+    // alone is not a valid path; require a trailing slash + content
+    // before stripping.
+    if let Some(stripped) = canonical.strip_prefix("/System/Volumes/Data")
+        && stripped.starts_with('/')
+    {
+        return stripped.to_owned();
+    }
+    canonical
 }
 
 /// Encode a project_dir into the directory name claude code uses under
@@ -2998,22 +3043,21 @@ mod tests {
         // Regression pin for the dev-machine symlink case (the user's
         // own path: `/u/src/tugtool` symlinks to
         // `/Users/<u>/Mounts/u/src/tugtool`). Claude resolves its cwd
-        // via `getcwd()` and writes the JSONL under the *canonical*
-        // path's encoded form. Bootstrap must canonicalize before
-        // encoding or it silently no-ops on every symlinked session.
+        // via `getcwd()` and writes the JSONL under the resolved
+        // path's encoded form. Bootstrap must do the SAME resolution
+        // (via `canonical_project_dir_for_jsonl`) or it silently
+        // no-ops on every symlinked session.
         let tmp = tempfile::tempdir().expect("tempdir");
         let canonical_dir = tmp.path().join("real-project");
         std::fs::create_dir_all(&canonical_dir).unwrap();
-        // Pre-resolve the canonical path so the test isn't sensitive
-        // to host-temp-dir symlink hops (e.g., macOS `/tmp` ↔
-        // `/private/tmp`, or `/var/folders/...` quirks). Production's
-        // `bootstrap_turns_from_jsonl` calls `canonicalize` on its
-        // input, so the JSONL's on-disk encoding MUST match that
-        // canonicalize result for bootstrap to find the file.
-        let canonical_str = std::fs::canonicalize(&canonical_dir)
-            .expect("canonicalize fixture canonical_dir")
-            .to_string_lossy()
-            .into_owned();
+        // Use the SAME helper bootstrap uses, so the test isn't
+        // sensitive to host-temp-dir hops (`/tmp` ↔ `/private/tmp`,
+        // `/var/folders/...` ↔ `/private/var/folders/...`, macOS
+        // firmlink prefix `/System/Volumes/Data`, etc.). Production
+        // uses this helper internally; the test's fixture must agree
+        // with it for the assertion to exercise the right contract.
+        let canonical_str =
+            canonical_project_dir_for_jsonl(canonical_dir.to_string_lossy().as_ref());
 
         // Create a symlink pointing at the canonical path.
         let symlink_dir = tmp.path().join("link-to-real-project");
@@ -3022,11 +3066,11 @@ mod tests {
         let symlink_str = symlink_dir.to_string_lossy().into_owned();
         assert_ne!(
             symlink_str, canonical_str,
-            "symlink-form and canonical-form must differ for the test to \
+            "symlink-form and resolved-form must differ for the test to \
              actually exercise the canonicalization step",
         );
 
-        // Seed the JSONL under the canonical-form encoding (what
+        // Seed the JSONL under the resolved-form encoding (what
         // claude itself writes).
         let claude_root = tmp.path().join("claude_root");
         std::fs::create_dir_all(&claude_root).unwrap();
@@ -3047,13 +3091,39 @@ mod tests {
             .unwrap();
         assert_eq!(
             inserted, 2,
-            "bootstrap must canonicalize the symlinked project_dir before \
-             computing the JSONL path; otherwise the migration silently \
-             no-ops on every dev machine that uses symlinked project paths",
+            "bootstrap must resolve the symlinked project_dir to the same \
+             form claude/getcwd produces before encoding; otherwise the \
+             migration silently no-ops on every dev machine with symlinked \
+             project paths",
         );
 
         let rows = l.list_turns_for_session("sess-symlink").unwrap();
         assert_eq!(rows.len(), 2);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn canonical_project_dir_for_jsonl_strips_macos_firmlink_prefix() {
+        // macOS APFS firmlinks: `/Users` is bidirectionally
+        // accessible at `/System/Volumes/Data/Users`. Rust's
+        // `std::fs::canonicalize` traverses through to the latter on
+        // some macOS configurations, but claude's `getcwd()` and
+        // Node's `fs.realpath` stop at the former (which is also
+        // where claude writes its JSONLs on disk). Pin that
+        // `canonical_project_dir_for_jsonl` strips the firmlink
+        // prefix so tugcast's encoding matches the on-disk reality.
+        //
+        // The actual value `canonicalize` returns for `/Users` on a
+        // given macOS host is environment-specific (firmlink
+        // configuration changes across macOS versions). What matters
+        // is the contract: if the resolved form starts with
+        // `/System/Volumes/Data/`, the helper strips that prefix.
+        let resolved = canonical_project_dir_for_jsonl("/Users");
+        assert!(
+            !resolved.starts_with("/System/Volumes/Data"),
+            "canonical_project_dir_for_jsonl must strip the macOS firmlink \
+             prefix; got `{resolved}`",
+        );
     }
 
     #[test]
