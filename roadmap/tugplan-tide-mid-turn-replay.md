@@ -1159,17 +1159,17 @@ Plus the close-out at [Step 5](#step-5) which retests Smoke D end-to-end against
 
 **Tasks:**
 
-- [ ] Add `tug_turn_id?: string` to `UserMessage` in `tugcode/src/types.ts`.
-- [ ] Add `claude_message_id?: string` to `TurnComplete` in `tugcode/src/types.ts`.
-- [ ] Add `claude_message_id?: string` to `TurnCancelled` in `tugcode/src/types.ts`.
-- [ ] Update tugcast's IPC envelope serialization to thread these fields through (Rust side).
-- [ ] No changes in tugdeck. Verify with a build.
+- [x] Add `tug_turn_id?: string` to `UserMessage` in `tugcode/src/types.ts`.
+- [x] Add `claude_message_id?: string` to `TurnComplete` in `tugcode/src/types.ts`.
+- [x] Add `claude_message_id?: string` to `TurnCancelled` in `tugcode/src/types.ts`.
+- [x] Update tugcast's IPC envelope serialization to thread these fields through (Rust side).
+- [x] No changes in tugdeck. Verify with a build.
 
 **Tests:**
 
-- [ ] **Type compile-check**: `bun x tsc --noEmit` passes with the new fields. (Implicit; covered by full-suite check.)
-- [ ] **Round-trip serialization (Rust)**: `UserMessage { tug_turn_id: Some("...") }` serializes / deserializes; same for `TurnComplete { claude_message_id: Some("...") }`.
-- [ ] **Backward-compat**: deserialize an envelope WITHOUT the new field; assert it parses with `tug_turn_id = None`. Pins the optional-field migration story.
+- [x] **Type compile-check**: `bun x tsc --noEmit` passes with the new fields. (Implicit; covered by full-suite check.)
+- [x] **Round-trip serialization (Rust)**: `UserMessage { tug_turn_id: Some("...") }` serializes / deserializes; same for `TurnComplete { claude_message_id: Some("...") }`.
+- [x] **Backward-compat**: deserialize an envelope WITHOUT the new field; assert it parses with `tug_turn_id = None`. Pins the optional-field migration story.
 
 **Tuglaws cross-check:**
 
@@ -1177,9 +1177,9 @@ Plus the close-out at [Step 5](#step-5) which retests Smoke D end-to-end against
 
 **Checkpoint:**
 
-- [ ] `bun x tsc --noEmit` — clean.
-- [ ] `cargo nextest run -p tugcast` — green.
-- [ ] `bun test` (tugcode) — green (no behavior change yet; the new field is unread).
+- [x] `bun x tsc --noEmit` — clean.
+- [x] `cargo nextest run -p tugcast` — green.
+- [x] `bun test` (tugcode) — green (no behavior change yet; the new field is unread).
 
 ---
 

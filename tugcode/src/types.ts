@@ -24,6 +24,15 @@ export interface UserMessage {
   type: "user_message";
   text: string;
   attachments: Attachment[];
+  /**
+   * Tugcast-minted UUIDv4 stamped onto every inbound `user_message` at
+   * the supervisor's dispatch intercept (tugplan mid-turn-replay step
+   * 4.3). Optional in the type so test fixtures and synthetic-input
+   * paths still compile; production tugcast always populates it. Tugcode
+   * forwards it as `ActiveTurn.msgId` so the live wire trace and the
+   * ledger row share one id, and `runReplay` can use it as the row key.
+   */
+  tug_turn_id?: string;
 }
 
 export interface ToolApproval {
@@ -159,6 +168,15 @@ export interface TurnComplete {
   seq: number;
   result: string;
   ipc_version: number;
+  /**
+   * Claude's message id (the `id` field on the assistant `message` block
+   * inside the JSONL). Tugcode populates it from `ActiveTurn.claudeMessageId`
+   * captured during the live stream so the supervisor's merger intercept
+   * (mid-turn-replay step 4.4) can record it on the ledger row. Optional
+   * for backward-compat with older tugcode binaries that don't yet
+   * populate it.
+   */
+  claude_message_id?: string;
 }
 
 export interface TurnCancelled {
@@ -167,6 +185,14 @@ export interface TurnCancelled {
   seq: number;
   partial_result: string;
   ipc_version: number;
+  /**
+   * Symmetric with `TurnComplete.claude_message_id` — present when the
+   * cancel happened after `message_start`. Lets the supervisor's merger
+   * intercept persist the back-reference to claude's JSONL entry so
+   * `runReplay` can reconstruct the partial assistant content on the
+   * next reload.
+   */
+  claude_message_id?: string;
 }
 
 export interface ErrorEvent {
