@@ -11,12 +11,13 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
-| Target branch | tugplan-tide-transcript-resume |
-| Last updated | 2026-05-03 |
-| Roadmap anchor | [tugplan-tug-list-view.md #roadmap](./tugplan-tug-list-view.md#roadmap) — this plan executes the resume gap surfaced post-shipping plus the right-away polish items |
-| Predecessors | [tugplan-tug-list-view.md](./tugplan-tug-list-view.md) (shipped 2026-05-03); [tugplan-tide-session-ledger.md](./tugplan-tide-session-ledger.md) (shipped — owns the binding-record + resume-spawn machinery this plan extends). [§P14](./tide.md#p14-claude-resume) `claude_session_id` persistence is **absorbed as Step 0** of this plan — historically a separate roadmap item, brought in here because it's the load-bearing prerequisite for JSONL replay |
-| Successors | parent [tugplan-tide-card-polish.md](./tugplan-tide-card-polish.md) §step-12 (markdown styling) and §step-13 (thinking + tool surfaces) build on the resumed transcript surface; an eventual `tugplan-tug-list-view-v2-imperative-pool.md` resolves the imperative-DOM-pool follow-on noted in #roadmap |
+| Status | closed (resume from JSONL shipped; mid-turn extracted to its own plan; adapter polish extracted to its own plan) |
+| Target branch | main |
+| Last updated | 2026-05-04 |
+| Roadmap anchor | [tugplan-tug-list-view.md #roadmap](./tugplan-tug-list-view.md#roadmap) — this plan executed the resume gap surfaced post-shipping |
+| Predecessors | [tugplan-tug-list-view.md](./tugplan-tug-list-view.md) (shipped 2026-05-03); [tugplan-tide-session-ledger.md](./tugplan-tide-session-ledger.md) (shipped — owns the binding-record + resume-spawn machinery this plan extends). [§P14](./tide.md#p14-claude-resume) `claude_session_id` persistence is **absorbed as Step 0** of this plan |
+| Successors | [tugplan-tide-mid-turn-replay.md](./tugplan-tide-mid-turn-replay.md) — investigation + design for the mid-turn reload case (Smoke D), extracted because the resume plan's design space couldn't accommodate it. [tugplan-tide-transcript-followon.md](./tugplan-tide-transcript-followon.md) — the three adapter / list-view polish items absorbed from `tugplan-tug-list-view.md`'s right-away list (sticky-seed, atom-aware row, prefetch protocol) plus a tuglaws walkthrough close-out |
+| Closure note | Phase A — Resume from JSONL ([Step 0](#step-0) through [Step 5](#step-5)) shipped. Recovery saga ([Phase A-R0](#phase-a-r0) through [Phase A-R4](#phase-a-r4)) shipped except for the mid-turn / Smoke D placeholder. Smoke D is moved to [tugplan-tide-mid-turn-replay.md](./tugplan-tide-mid-turn-replay.md) and starts from a fresh design after one failed attempt (α / `replay_deferred`) was reverted on 2026-05-04. Adapter polish (Steps 6–8 of the original scope) and the close-out tuglaws walkthrough (Step 9) move to [tugplan-tide-transcript-followon.md](./tugplan-tide-transcript-followon.md) — same content, fresh plan file, separated to keep work units sized for clean review |
 
 ---
 
@@ -86,16 +87,15 @@ After the resume work, the `Roadmap: right away` list from the parent plan has e
 7a''. **Recovery: tugcode startup-order refactor** ([Step R0d](#step-r0d)). Address Bug Y — the 5–10s wait itself. Run `runReplay()` before spawning claude; spawn claude asynchronously in the background. Replay events flow within ~100ms; claude is ready by the time the user submits a new turn.
 7b. **Recovery: `request_replay` IPC verb** across tugcode / tugcast / tugdeck per [D12] ([Phase A-R1](#phase-a-r1)). Closes the Smoke A/B gap exposed by [Step 5](#step-5)'s manual smokes. Tugdeck dispatches on services construction for resume bindings; tugcast forwards via CONTROL action; tugcode handles inbound and re-runs `runReplay()` re-entrancy-safely.
 7c. **Recovery: smoke verification + telemetry capture** ([Phase A-R2](#phase-a-r2)). Manual run of Smokes A/B/C with the new verb in place; mark off the smoke checklist with telemetry quotes.
-7d. **Recovery: Smoke D mid-turn ordering** ([Phase A-R3](#phase-a-r3)). Pick D-1 (pause-live), D-2 (skip-orphan), or D-3 (defer) and either implement or document the limitation.
-7e. **Recovery: convergence cleanup** ([Phase A-R4](#phase-a-r4)). Decide whether the startup-replay path collapses into request-driven, or both stay (with [D04] dedupe as the safety net).
-8. **Sticky id for replay-committed turns** in `TideTranscriptDataSource` per [D07]. The replay-committed turn's `msg_id` is the row's id from frame zero — no seed transition. Live-turn flicker is unchanged.
-9. **Atom-aware user rows.** `UserRowCell` switches from a plain `<span>` body to a body that renders `userMessage.attachments` as inline atoms when present, falling back to plain text for legacy or attachment-empty turns.
-10. **`TugListView` prefetching protocol.** `delegate.prefetchForIndices(indices)` / `delegate.cancelPrefetchForIndices(indices)` plus a viewport-prediction window. Delegate-only — `TugListView` does not assume any specific prefetch behavior; consumers decide.
-11. **Tuglaws walkthrough + plan close-out**, mirroring the parent plan's pattern.
+7d. **Recovery: convergence cleanup** ([Phase A-R4](#phase-a-r4)). Collapse to request-driven only; supervisor queues during Spawning. Shipped.
 
-Out of scope:
+Mid-turn handling (originally 7d.) extracted to [tugplan-tide-mid-turn-replay.md](./tugplan-tide-mid-turn-replay.md) after one failed attempt: a "wait-for-completion" design (codename α, with a `replay_deferred` placeholder phase + Check-again retry button) was implemented, found broken in manual smoke (the existing `replayPreflightActive` precedence ate the new banner; an empty-assistant-response showed up after the wait), and reverted on 2026-05-04. The investigation that should have come *before* the design lives in the new plan.
+
+Adapter / list-view polish (originally items 8–10) extracted to [tugplan-tide-transcript-followon.md](./tugplan-tide-transcript-followon.md): sticky-seed for replay-committed turns, atom-aware user rows, `TugListView` prefetching protocol, plus a tuglaws walkthrough close-out.
+
+Out of scope (preserved for context):
 - New persistence layer in tugdeck or in the supervisor's sqlite (Path B / C from the diagnosis — explicit non-starter).
-- Imperative DOM cell pooling (its own plan in #roadmap).
+- Imperative DOM cell pooling (its own plan in [tugplan-tide-transcript-followon.md #roadmap](./tugplan-tide-transcript-followon.md#roadmap)).
 - Picker migration onto `TugListView` (its own plan).
 - Markdown styling pass for assistant output (parent §step-12).
 - Thinking + tool surfaces inside `code` rows (parent §step-13).
@@ -1520,39 +1520,11 @@ The two awaits are sequential, but they're not actually dependent: replay only n
 
 ---
 
-#### Phase A-R3: Smoke D — mid-turn ordering semantics {#phase-a-r3}
+#### Phase A-R3: Smoke D — extracted to its own plan {#phase-a-r3}
 
-**Why this phase.** Mid-turn reload (Smoke D) has a coordination problem [Phase A-R1](#phase-a-r1) does not solve on its own. When `request_replay` arrives at tugcode while a `handleUserMessage` turn is in flight (claude is mid-stream), three things compete on tugcode's IPC stdout:
+The mid-turn reload case (Smoke D) is **not handled in this plan.** A first attempt — codename α, with a `replay_deferred` placeholder phase, a "Check again" retry button, and `suppressEmit` gating on the active turn — was implemented and reverted on 2026-05-04 because manual smoke verification surfaced two bugs (`replayPreflightActive` precedence ate the new banner; an empty-assistant-response showed up after the wait). The post-mortem named the root cause: live and replay use different `msg_id` schemes for the same logical turn (tugcode UUID vs. claude's `message.id` from JSONL), and every "merge replay with live" design has been working around that mismatch.
 
-  - replay events being emitted by `runReplay` (translator output for committed turns + orphan synthesis for the in-flight turn, per [D08])
-  - live `assistant_text` deltas that `handleUserMessage` is still forwarding from claude's stdout
-  - the eventual `turn_complete` for that live turn
-
-Without explicit coordination, the live deltas land at the fresh tugdeck `CodeSessionStore` with no preceding `user_message` context (a wire violation), the orphan synthesis commits the same turn as `result: "interrupted"` (per [D08]), and the live `turn_complete` is silently no-op'd by [D04] msg_id dedupe — so the transcript shows the user's submission marked interrupted while the actual completion lands in the JSONL on disk and never on screen.
-
-**Possible designs (pick one in the step body):**
-
-- **Design D-1 — pause live, drain replay, resume live.** tugcode holds claude's stdout reader during replay; live deltas buffer in the OS pipe (small) or in tugcode's accumulator (bounded). After `replay_complete`, resume forwarding. The reducer must learn a new path: "in-flight turn previously committed as interrupted now upgrades to completed" (not currently supported; shape TBD).
-- **Design D-2 — replay completed turns only; live carries the in-flight turn.** Translator skips the trailing in-flight turn from the JSONL (no orphan synthesis on `request_replay`, only on startup-replay). Live forwarding picks up where it left off; the fresh tugdeck reducer needs a new path: "attach to a turn already in flight" (ingest a partial assistant_text stream without a preceding `send`). Cleaner reducer story but requires new tugcode state — it must know which turn is in flight when the verb arrives.
-- **Design D-3 — defer Smoke D; document as known limitation.** Mid-turn reload is rare enough relative to A/B/C that shipping A/B/C and documenting D as "transcript shows committed turns; in-flight turn appears interrupted; user can re-submit" may be acceptable for v1. Graduates when imperative-DOM-cell-pooling or a follow-on plan addresses both halves of the problem.
-
-#### Step R3: Pick D-design, implement or defer {#step-r3}
-
-**Commit:** TBD (depends on design pick).
-
-**Depends on:** [Step R2](#step-r2)
-
-**Tasks:**
-
-- [ ] Choose between D-1, D-2, and D-3 with explicit rationale recorded in this step.
-- [ ] If D-1 or D-2: author a sub-plan describing wire-protocol and reducer changes; commit the sub-plan as a separate file under `roadmap/tugplan-tide-transcript-resume-mid-turn.md`.
-- [ ] If D-3: add the limitation to the [#roadmap] follow-ons section with explicit reason and acceptance criteria for graduation.
-- [ ] Update [#exit-criteria] accordingly.
-
-**Checkpoint:**
-
-- [ ] Design pick is recorded.
-- [ ] Smoke D either passes, or its known-limitation entry is explicit and time-bound in the roadmap.
+The investigation that should have come *before* the design — observing the JSONL flush race, the live/replay ordering on the wire, and the durability guarantees ("never drop a message") — is now the explicit Phase 0 of [tugplan-tide-mid-turn-replay.md](./tugplan-tide-mid-turn-replay.md). Design follows from observed reality there, not from my speculation.
 
 ---
 
@@ -1642,200 +1614,59 @@ For cold boot, both fire today: tugcode's startup runs replay synchronously; tug
   3. **Stub-replay path.** `--stub-transcript` mode bypasses real claude and the supervisor's queue is irrelevant (no real session_lifecycle). Confirm by grep that R4's changes don't touch the stub path. Same posture as R1e.
 - *Limitations.* This phase does not address the broader question of "what does tugcode emit when no user has typed and there's no in-flight turn?" — claude is silent at startup (R1d's docstring covers why), so the wire is intentionally quiet. R1e's drain stands ready to forward inter-turn events when claude eventually emits them; R4 doesn't change that posture.
 
-#### Phase B — Adapter polish {#phase-b}
+#### Phase B / C / D — extracted to a follow-on plan {#phase-b}
 
-#### Step 6: Stable in-flight ↔ committed id (sticky seed for replay) {#step-6}
-
-**Depends on:** #step-5
-
-**Commit:** `tide(transcript): sticky seed for in-flight ↔ committed id`
-
-**References:** [D07] sticky-seed
-
-**Artifacts:**
-
-- `tugdeck/src/lib/tide-transcript-data-source.ts`:
-  - The data source mints a `Symbol`-backed seed (or a string nonce) at the moment `inflightUserMessage` first appears on a snapshot.
-  - `idForIndex(index)` for in-flight indices reads the seed and returns `${seed}-{user|code}` until `activeMsgId` is set.
-  - For replay-committed turns, the msg_id is known up front, so the sticky seed never enters the picture.
-- Test extensions in `tugdeck/src/lib/__tests__/tide-transcript-data-source.test.ts`:
-  - For a replay-committed turn, the id at the row's index equals `${msgId}-{user|code}` directly (no seed transition).
-  - For a live in-flight turn, the seed transitions at the first delta as before — this step does NOT change live-turn behavior; live-turn flicker remains a follow-on resolved by the imperative-DOM-pool plan.
-
-**Tasks:**
-
-- [ ] Implement the seed minting at first-appearance of `inflightUserMessage`.
-- [ ] Ensure replay-committed turns bypass the seed (their msg_id is known on commit).
-- [ ] Update tests to assert the new behavior.
-
-**Tests:**
-
-- [ ] Replay-only commit: id is `${msgId}-...` at first read; never transitions.
-- [ ] Live submit (regression): seed transitions exactly once at first delta (unchanged from v1).
-
-**Checkpoint:**
-
-- [ ] `bun x tsc --noEmit` — exit 0.
-- [ ] `bun test` — green.
-- [ ] `cargo nextest run` — green.
-
----
-
-#### Step 7: Atom-aware `user` row body {#step-7}
-
-**Depends on:** #step-6
-
-**Commit:** `tide(transcript): atom-aware user-row body`
-
-**References:** [#atom-aware-row], parent §step-11's [D11]
-
-**Artifacts:**
-
-- `tugdeck/src/lib/code-session-store/types.ts` — narrow `userMessage.attachments` from `ReadonlyArray<unknown>` to `ReadonlyArray<AtomSegment>` once the prompt entry's atom flow reaches transcript form. (Gating note: if the prompt entry hasn't shipped that change, this step ships a `userMessage.attachments?: ReadonlyArray<AtomSegment>` opt-in instead.)
-- `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` — `UserRowCell` renders `attachments` as inline atoms alongside `text` when present. Falls back to plain text when `attachments` is empty.
-- Test extensions in `tugdeck/src/__tests__/tide-card-transcript.test.tsx` — fixture turn whose `attachments` carries one or two `AtomSegment`s; assert the rendered DOM has the atom elements inline.
-
-**Tasks:**
-
-- [ ] Verify whether the prompt entry's atom flow exposes `AtomSegment[]` on submission today; gate the type change accordingly.
-- [ ] Update `UserRowCell` to render atoms inline.
-- [ ] Add the test fixture and assertions.
-
-**Tests:**
-
-- [ ] Atom-bearing user message: rendered DOM contains the atom elements with their atom-specific attributes.
-- [ ] Atom-empty user message (regression): renders plain text; no atom elements.
-
-**Checkpoint:**
-
-- [ ] `bun x tsc --noEmit` — exit 0.
-- [ ] `bun test` — green.
-- [ ] `bun run audit:tokens lint` — zero violations.
-- [ ] `cargo nextest run` — green.
-
----
-
-#### Phase C — TugListView prefetching {#phase-c}
-
-#### Step 8: `TugListView` prefetching protocol {#step-8}
-
-**Depends on:** #step-7
-
-**Commit:** `tug-list-view: delegate.prefetchForIndices + cancelPrefetchForIndices`
-
-**References:** [#prefetch-delegate]
-
-**Artifacts:**
-
-- `tugdeck/src/components/tugways/tug-list-view.tsx`:
-  - `TugListViewDelegate` gains optional `prefetchForIndices(indices)` and `cancelPrefetchForIndices(indices)`.
-  - The list view computes a prefetch window — a small band ahead of and behind the rendered window (e.g. 5 indices on each side, configurable via a delegate option in a future step).
-  - On windowing pass, the list view diffs the previous prefetch set against the new one and dispatches `prefetchForIndices(added)` / `cancelPrefetchForIndices(removed)` accordingly.
-  - The list view does NOT call `cellRenderers[kind]` for prefetched-only indices — they are informational.
-- `tugdeck/src/components/tugways/__tests__/tug-list-view.test.tsx` — new tests covering the prefetch dispatch.
-
-**Tasks:**
-
-- [ ] Compute the prefetch window in the windowing pass.
-- [ ] Diff against previous and dispatch.
-- [ ] Author tests.
-
-**Tests:**
-
-- [ ] On scroll forward: indices ahead of the rendered window enter via `prefetchForIndices`; previously-prefetched indices behind the rendered window enter via `cancelPrefetchForIndices`.
-- [ ] On scroll reversal: prefetched-but-not-rendered indices flip via `cancelPrefetchForIndices`.
-- [ ] No prefetch dispatch when neither method is provided on the delegate (default v1 behavior).
-- [ ] Cell renderers are NOT invoked for prefetched indices.
-
-**Checkpoint:**
-
-- [ ] `bun x tsc --noEmit` — exit 0.
-- [ ] `bun test` — green.
-- [ ] `bun run audit:tokens lint` — zero violations.
-- [ ] `cargo nextest run` — green.
-
----
-
-#### Phase D — Tuglaws walkthrough + close-out {#phase-d}
-
-#### Step 9: Tuglaws walkthrough + plan close-out {#step-9}
-
-**Depends on:** #step-8
-
-**Commit:** `tide(transcript): tuglaws walkthrough; close out plan`
-
-**References:** [#tuglaws-cross-check]
-
-**Artifacts:**
-
-- Per-step compliance review against [tuglaws.md](../tuglaws/tuglaws.md), [pane-model.md](../tuglaws/pane-model.md), [component-authoring.md](../tuglaws/component-authoring.md), [responder-chain.md](../tuglaws/responder-chain.md), [state-preservation.md](../tuglaws/state-preservation.md), [token-naming.md](../tuglaws/token-naming.md). Findings either land as small fixes in this commit or are explicitly logged.
-- `roadmap/tide.md §T3.4.a` updated to mention JSONL replay on resume.
-- `roadmap/tugplan-tug-list-view.md #roadmap` updated: `Stable in-flight ↔ committed id`, `Atom-aware rendering for user rows`, `Prefetching protocol` rows flipped to "shipped — see [tugplan-tide-transcript-resume.md]"; `Imperative DOM cell pooling` row gets a "promoted to its own plan" marker.
-- Plan Metadata `Status` flips to `shipped`.
-
-**Tasks:**
-
-- [ ] Walk each tuglaw against this plan's diff.
-- [ ] Update `tide.md §T3.4.a`.
-- [ ] Update `tugplan-tug-list-view.md #roadmap` rows.
-- [ ] Promote imperative-DOM-pool plan to its own follow-on file (or leave as a roadmap note pointing at a TBD plan name).
-
-**Tests:**
-
-- [ ] Full-suite green: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`.
-
-**Checkpoint:**
-
-- [ ] All commands above exit clean.
+The three small adapter / list-view polish items originally scoped here ([Step 6] sticky seed for replay, [Step 7] atom-aware user rows, [Step 8] `TugListView` prefetching protocol) plus the close-out tuglaws walkthrough ([Step 9]) move to a fresh plan: **[tugplan-tide-transcript-followon.md](./tugplan-tide-transcript-followon.md)**. Same content, fresh plan file. Separated from this plan to keep work units sized for clean review and so this file stays focused on the resume saga that actually shipped.
 
 ---
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** Tide card transcripts survive HMR / Developer-Reload / cold-boot via JSONL replay on resume — same wire path as live, no parallel persistence layer. Three small `Roadmap: right away` polish items absorbed into this plan: replay-correct in-flight ↔ committed id, atom-aware user rows, prefetching protocol on `TugListView`. Imperative DOM cell pooling promoted to its own plan.
+**Deliverable:** Tide card transcripts survive HMR / Developer-Reload / cold-boot via JSONL replay on resume — same wire path as live, no parallel persistence layer. The recovery saga ([Phase A-R0](#phase-a-r0) through [Phase A-R4](#phase-a-r4), minus the extracted [Phase A-R3](#phase-a-r3)) shipped: cold-boot diagnosis + realpath fix, request_replay IPC verb across all three layers, single drain task replacing the per-turn reader, and convergence to a single replay-trigger path via the supervisor's Spawning-window queue.
+
+Mid-turn reload (Smoke D) is **not** part of the deliverable here. Adapter / list-view polish (sticky-seed, atom-aware row, prefetch protocol) is **not** part of the deliverable here. Both extracted to their own plan files; see [#plan-metadata]'s Successors row.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] `claude_session_id` persisted and threaded through resume (Step 0); real-claude integration test confirms `--resume` end-to-end.
-- [ ] `tugcode/src/replay.ts` exists; pure translator unit tests green against fixture JSONLs covering the surveyed shape inventory + orphan-turn synthesis.
-- [ ] Reducer handles `replay_started` / `replay_complete`, exposes `replaying` phase, dedupes by msg_id, surfaces `lastReplayResult`.
-- [ ] Resume-mode session start in tugcode emits replay events on IPC stdout before forwarding live events from Claude's stdout; respects [D10] hard-timeout.
-- [ ] Tide card surfaces "Loading conversation…" / "Loading conversation… (N turns)" / timeout-state copy via `phase === "replaying"` + `lastReplayResult`; placeholder dismisses on `replay_complete`.
-- [ ] Smoke C (cold boot) root cause identified and fixed (per [Phase A-R0](#phase-a-r0)).
-- [ ] Cold-boot UX surfaces feedback during the bind→replay wait via [Step R0c](#step-r0c)'s preflight placeholder.
-- [ ] Cold-boot wall-clock cut from ~5–10s to ~1s via [Step R0d](#step-r0d)'s startup-order refactor (replay-before-claude).
-- [ ] `request_replay` IPC verb ([D12]) implemented across tugcode/tugcast/tugdeck (per [Phase A-R1](#phase-a-r1)); a fresh `CodeSessionStore` for a resume binding receives replay events without needing a tugcode respawn.
-- [ ] Smokes A (HMR), B (Reload), C (cold boot) all verified against a real session via [Phase A-R2](#phase-a-r2).
-- [ ] Smoke D (mid-turn reload) resolved per [Phase A-R3](#phase-a-r3) — either green via the chosen design (D-1/D-2) or documented as a known limitation (D-3) with explicit graduation criteria in [#roadmap].
-- [ ] Convergence decision between startup-replay and request-driven replay recorded per [Phase A-R4](#phase-a-r4).
-- [ ] Sticky id eliminates the seed-transition remount for replay-committed turns; live-turn flicker documented as a follow-on.
-- [ ] `UserRowCell` renders inline atoms when `attachments` is non-empty.
-- [ ] `TugListView` dispatches `prefetchForIndices` / `cancelPrefetchForIndices` on a working window.
-- [ ] Tuglaws cross-check passes per-step.
+- [x] `claude_session_id` persisted and threaded through resume (Step 0); real-claude integration test confirms `--resume` end-to-end.
+- [x] `tugcode/src/replay.ts` exists; pure translator unit tests green against fixture JSONLs covering the surveyed shape inventory + orphan-turn synthesis.
+- [x] Reducer handles `replay_started` / `replay_complete`, exposes `replaying` phase, dedupes by msg_id, surfaces `lastReplayResult`.
+- [x] Resume-mode session start in tugcode emits replay events on IPC stdout before forwarding live events from Claude's stdout; respects [D10] hard-timeout.
+- [x] Tide card surfaces "Loading conversation…" / "Loading conversation… (N turns)" / timeout-state copy via `phase === "replaying"` + `lastReplayResult`; placeholder dismisses on `replay_complete`.
+- [x] Smoke C (cold boot) root cause identified and fixed (per [Phase A-R0](#phase-a-r0)).
+- [x] Cold-boot UX surfaces feedback during the bind→replay wait via [Step R0c](#step-r0c)'s preflight placeholder.
+- [x] Cold-boot wall-clock cut from ~5–10s to ~1s via [Step R0d](#step-r0d)'s startup-order refactor (replay-before-claude).
+- [x] `request_replay` IPC verb ([D12]) implemented across tugcode/tugcast/tugdeck (per [Phase A-R1](#phase-a-r1)); a fresh `CodeSessionStore` for a resume binding receives replay events without needing a tugcode respawn.
+- [x] Smokes A (HMR), B (Reload), C (cold boot) all verified against a real session via [Phase A-R2](#phase-a-r2).
+- [ ] **Smoke D (mid-turn reload)** — extracted to [tugplan-tide-mid-turn-replay.md](./tugplan-tide-mid-turn-replay.md). First attempt (α / `replay_deferred`) reverted on 2026-05-04. Investigation + fresh design pending.
+- [x] Convergence decision between startup-replay and request-driven replay recorded per [Phase A-R4](#phase-a-r4) (collapsed to request-driven only via supervisor-queue).
+- [ ] Sticky id eliminates the seed-transition remount for replay-committed turns; live-turn flicker documented as a follow-on. — *moved to [tugplan-tide-transcript-followon.md](./tugplan-tide-transcript-followon.md) Step 1*
+- [ ] `UserRowCell` renders inline atoms when `attachments` is non-empty. — *moved to [tugplan-tide-transcript-followon.md](./tugplan-tide-transcript-followon.md) Step 2*
+- [ ] `TugListView` dispatches `prefetchForIndices` / `cancelPrefetchForIndices` on a working window. — *moved to [tugplan-tide-transcript-followon.md](./tugplan-tide-transcript-followon.md) Step 3*
+- [ ] Tuglaws cross-check passes per-step. — *moved to [tugplan-tide-transcript-followon.md](./tugplan-tide-transcript-followon.md) Step 4*
 - [ ] `tugplan-tug-list-view.md #roadmap` rows for absorbed items flipped to "shipped"; [§P14](./tide.md#p14-claude-resume) flipped to shipped via this plan's Step 0.
-- [ ] All check commands green: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`.
+- [x] All check commands green at every step that shipped: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`.
 
-**Acceptance tests:**
+**Acceptance tests (this plan):**
 
-- [ ] `claude_session_id` persistence + threading tests (Step 0) — including the real-claude `test_close_then_reopen_preserves_history` integration.
-- [ ] tugcode replay-translator unit tests (Step 1) — covers all surveyed shapes, orphan-turn synthesis, batched yields.
-- [ ] Reducer replay-bracket + `replaying` phase + `lastReplayResult` tests (Step 2).
-- [ ] tugcode resume-flow integration tests (Step 3) — ordering, missing JSONL, hard timeout.
-- [ ] Tide card replay-UX component tests (Step 4) — three placeholder copy variants, dismiss timing.
-- [ ] Tide card resume-integration tests (Step 5) — including orphan-turn smoke.
-- [ ] tugcode `request_replay` re-entrancy + dispatch tests (Step R1a).
-- [ ] tugcast CONTROL `request_replay` forward tests for Live / Idle / unknown sessions (Step R1b).
-- [ ] tugdeck `request_replay` dispatch on services construction + end-to-end fresh-store-replay test (Step R1c).
-- [ ] Manual smoke verification of A/B/C with telemetry capture (Step R2).
-- [ ] Adapter sticky-id tests (Step 6).
-- [ ] Atom-aware user-row tests (Step 7).
-- [ ] `TugListView` prefetch tests (Step 8).
+- [x] `claude_session_id` persistence + threading tests (Step 0) — including the real-claude `test_close_then_reopen_preserves_history` integration.
+- [x] tugcode replay-translator unit tests (Step 1) — covers all surveyed shapes, orphan-turn synthesis, batched yields.
+- [x] Reducer replay-bracket + `replaying` phase + `lastReplayResult` tests (Step 2).
+- [x] tugcode resume-flow integration tests (Step 3) — ordering, missing JSONL, hard timeout.
+- [x] Tide card replay-UX component tests (Step 4) — three placeholder copy variants, dismiss timing.
+- [x] Tide card resume-integration tests (Step 5) — including orphan-turn smoke.
+- [x] tugcode `request_replay` re-entrancy + dispatch tests ([Step R1a](#step-r1a)).
+- [x] tugcast CONTROL `request_replay` forward tests for Live / Idle / unknown sessions ([Step R1b](#step-r1b)).
+- [x] tugdeck `request_replay` dispatch on services construction + end-to-end fresh-store-replay test ([Step R1c](#step-r1c)).
+- [x] Manual smoke verification of A/B/C with telemetry capture ([Phase A-R2](#phase-a-r2)).
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
-- [ ] **Imperative DOM cell pooling** — the v2 of `TugListView` that swaps React item-keyed mount/unmount for an imperative DOM pool keyed by cell kind. Public API unchanged; lifecycle semantics shift for stateful cell renderers (per the v1 → v2 caveat in [tugplan-tug-list-view.md §[D04]](./tugplan-tug-list-view.md#d04-cell-reuse)). Promoted from `tugplan-tug-list-view.md #roadmap` to its own plan because the structural shift earns dedicated decision-making (pool sizing, eviction policy, the [D13] native-text-selection-survival side-effect win, the per-kind reuse-token contract). Plan name TBD: `tugplan-tug-list-view-v2-imperative-pool.md` is a placeholder.
-- [ ] **Native-text-selection survival across scroll-out** — explicitly resolved as a side effect of the imperative-DOM-pool plan above. v1 documented limitation per [tugplan-tug-list-view.md §[D13]](./tugplan-tug-list-view.md#d13-selection-scroll-out).
-- [ ] **Live-turn flicker at the awaiting-first-token transition** — the seed-rewrite remount that this plan's Step 6 *cannot* eliminate (only replay-committed turns avoid the rewrite, since their msg_id is known up front). The imperative-DOM-pool plan resolves this naturally because cell DOM survives wrapper-key changes.
+These items remain on the long-term roadmap. Items unrelated to mid-turn handling and adapter polish stay here; the others live in their respective successor plans (see [#plan-metadata]).
+
+- [ ] **Imperative DOM cell pooling** — see [tugplan-tide-transcript-followon.md #roadmap](./tugplan-tide-transcript-followon.md#roadmap). The v2 of `TugListView` that swaps React item-keyed mount/unmount for an imperative DOM pool keyed by cell kind.
+- [ ] **Native-text-selection survival across scroll-out** — see [tugplan-tide-transcript-followon.md #roadmap](./tugplan-tide-transcript-followon.md#roadmap). Resolved as a side effect of the imperative-DOM-pool plan.
+- [ ] **Live-turn flicker at the awaiting-first-token transition** — see [tugplan-tide-transcript-followon.md #roadmap](./tugplan-tide-transcript-followon.md#roadmap). Resolved by imperative DOM pooling.
 - [ ] **Cross-machine session export / import** — the JSONL is per-machine. "Open this conversation on another laptop" requires a much larger design (sync, encryption, schema-stable export shape). Not in scope for this plan or near-term follow-ons.
 - [ ] **Replay performance review** — long sessions (≥ 100 turns) may take observable time to translate + commit. If the user-perceived "Loading conversation…" beat exceeds a small budget, profile the translator and the reducer's commit loop. Earned when the manual smoke surfaces real lag.
 - [ ] **Replay-while-live (interleaved replay)** — [D03] commits to synchronous-before-live ordering. If a future use case wants to splice replay into a live session (e.g. a compaction summary delivered alongside live frames), revisit the dedupe contract and the bracket protocol. Not earned today.
@@ -1844,15 +1675,12 @@ For cold boot, both fire today: tugcode's startup runs replay synchronously; tug
 
 | Checkpoint | Verification |
 |-|-|
-| Tokens lint clean | `bun run audit:tokens lint` |
 | Supervisor + bridge tests | `cargo nextest run` (covers Step 0's persistence + threading + real-claude integration) |
 | Translator unit tests | `cd tugcode && bun test src/__tests__/replay.test.ts` |
 | Reducer replay tests | `bun test src/lib/code-session-store/__tests__/code-session-store.replay.test.ts` |
 | Tide card replay UX | `bun test src/__tests__/tide-card-resume.test.tsx` |
-| Adapter sticky-id tests | `bun test src/lib/__tests__/tide-transcript-data-source.test.ts` |
-| List-view prefetch tests | `bun test src/components/tugways/__tests__/tug-list-view.test.tsx` |
 | TS clean | `bun x tsc --noEmit` |
-| Smoke A — HMR | Manual per Step 5; transcript repaints intact across module replacement |
-| Smoke B — Developer > Reload | Manual per Step 5; transcript repaints from JSONL replay |
-| Smoke C — Cold boot | Manual per Step 5; quit-and-relaunch restores transcript |
-| Smoke D — Mid-turn reload | Manual per Step 5; orphan turn commits as interrupted |
+| Smoke A — HMR | Verified per [Phase A-R2](#phase-a-r2); transcript repaints intact across module replacement |
+| Smoke B — Developer > Reload | Verified per [Phase A-R2](#phase-a-r2); transcript repaints from JSONL replay |
+| Smoke C — Cold boot | Verified per [Phase A-R2](#phase-a-r2); quit-and-relaunch restores transcript |
+| Smoke D — Mid-turn reload | **Pending — see [tugplan-tide-mid-turn-replay.md](./tugplan-tide-mid-turn-replay.md)** |
