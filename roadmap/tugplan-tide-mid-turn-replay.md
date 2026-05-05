@@ -959,6 +959,20 @@ Adding a `turns` table alongside `sessions` is the cheapest move that gets us a 
 
 Single sqlite writer (tugcast). Single sqlite reader for replay (tugcode). Same database file. WAL mode supports the writer + reader pair without contention.
 
+##### Resume / fork / continue semantics for `turns` rows {#step-4-resume-fork-continue}
+
+The session_ledger today supports three "open an existing session" flows: `--resume <id>` (resume an existing session), `--continue` (resume the most-recent session), and `--fork-session` (branch from an existing session into a new claude_session_id). The new `turns` table needs a clear answer for each.
+
+- **`--resume <id>` (existing session_id):** The session_id is the same as before. The `sessions` row already exists. The `turns` rows for this session_id already exist (or get bootstrapped on first open per Step 4.8). New submissions append rows with the next `ordinal`. **Behavior is straightforward — no schema change needed.**
+
+- **`--continue` (most-recent session):** The supervisor resolves the most-recent session_id from the existing `sessions` index, then proceeds as `--resume`. **Same as resume — no schema change needed.**
+
+- **`--fork-session` (new claude_session_id, branched from a parent):** Tugcast assigns a fresh session_id for the fork. The fork has no `sessions` row yet (gets created via `record_spawn`) and no `turns` rows. **The forked session starts with `turns` empty.** The parent's `turns` rows are NOT copied — they belong to the parent session_id. JSONL on disk for the fork starts blank; `bootstrap_turns_from_jsonl` finds nothing to bootstrap until the user's first new turn lands.
+
+  **Implication for transcript display on a fresh fork:** the fork's transcript is empty until the user submits. If the user expects to see the parent's history in the fork's view, that's a separate UX layer that reads BOTH the parent's `turns` rows and the fork's `turns` rows and concatenates. Out of scope for Step 4; if the picker / fork UX wants this, it builds the join query against the existing `sessions` row's `parent_session_id` field (which doesn't exist today — would be a follow-on schema addition).
+
+**Decision pinned:** Step 4 implements the conservative interpretation — each session_id has its own `turns` rows, no cross-session copying. Forks start empty. If a future fork-UX feature needs parent history visible in the fork's transcript, it adds a `parent_session_id` column to `sessions` and a UNION query in tugcode's `runReplay`. That's a focused follow-on with its own decision record, not scaffolding here.
+
 ##### Trade-off table — why the new design {#step-4-tradeoff}
 
 | | Steps 1–3 (canonicalize live to claude's id; [DM03] / [DM05]) | Step 3.5 (rejected; UUID for live + claude id for historical) | **Step 4 (ledger-authoritative `tug_turn_id`)** |
@@ -1048,7 +1062,7 @@ Plus the close-out at [Step 5](#step-5) which retests Smoke D end-to-end against
   );
   ```
 
-  The `bootstrap_schema` fn applies the new tables idempotently and inserts a row into `migrations` for `version=2` if not present. v1 → v2 has no data to migrate at the SQL layer (existing `sessions` rows are unchanged); the JSONL-bootstrap migration lives in 4.8.
+  The `bootstrap_schema` fn applies the new tables idempotently and inserts a row into `migrations` for `version=2` via `INSERT OR IGNORE INTO migrations (version, applied_at) VALUES (2, ?)` so re-opening an already-v2 database doesn't double-insert (the PRIMARY KEY on `version` would otherwise reject the duplicate, but `OR IGNORE` is the right idiom for "schema-version markers"). v1 → v2 has no data to migrate at the SQL layer (existing `sessions` rows are unchanged); the JSONL-bootstrap migration lives in 4.8. The "open a v1 file, get a v2 file" path is exercised by the v1→v2 migration test in [#step-4-1]'s test list.
 
 - `tugrust/crates/tugcast/src/session_ledger.rs` — new types:
 
@@ -1103,8 +1117,9 @@ Plus the close-out at [Step 5](#step-5) which retests Smoke D end-to-end against
 
 **Tests:** (all in `tugrust/crates/tugcast/src/session_ledger.rs`'s existing `#[cfg(test)]` module)
 
-- [ ] **Schema bootstrap**: open in-memory ledger; assert `turns` and `migrations` tables exist; assert `migrations` has one row with `version=2`.
-- [ ] **Idempotent re-open**: open, close, re-open; assert no duplicate `migrations` rows; assert `turns` table still exists with same shape.
+- [ ] **Schema bootstrap (fresh DB)**: open in-memory ledger; assert `sessions`, `turns`, and `migrations` tables exist; assert `migrations` has one row with `version=2`.
+- [ ] **Schema bootstrap (v1 → v2 migration on existing file)**: pre-create a sqlite file with ONLY the v1 schema (just the `sessions` table — no `turns`, no `migrations`); insert a few sessions rows directly; open the ledger via `SessionLedger::open`; assert (a) the `turns` and `migrations` tables now exist; (b) `migrations` has a single row with `version=2`; (c) the pre-existing `sessions` rows are preserved unchanged. Pins the in-place upgrade path that real users on existing tugbank databases will hit.
+- [ ] **Idempotent re-open**: open, close, re-open; assert no duplicate `migrations` rows (the v=2 row INSERT uses `INSERT OR IGNORE` keyed on `version`); assert `turns` table still exists with same shape.
 - [ ] **insert_pending_turn**: insert two turns into same session; assert ordinals are 0 and 1; assert state='pending'; assert claude_message_id is NULL.
 - [ ] **insert_pending_turn ordinal race**: two threads racing inserts on the same session; assert no duplicate ordinals (the immediate transaction guarantees this).
 - [ ] **mark_turn_complete**: insert pending, mark complete, assert state='complete', claude_message_id set, completed_at set.
@@ -1137,15 +1152,16 @@ Plus the close-out at [Step 5](#step-5) which retests Smoke D end-to-end against
 
 **Artifacts:**
 
-- `tugcode/src/types.ts` — `UserMessage` (inbound) gains a `tug_turn_id?: string` field. Optional in the type so test fixtures and synthetic-input paths still compile; production tugcast always populates it. `TurnComplete` (outbound) gains a `claude_message_id?: string` field. Same optionality.
+- `tugcode/src/types.ts` — `UserMessage` (inbound) gains a `tug_turn_id?: string` field. Optional in the type so test fixtures and synthetic-input paths still compile; production tugcast always populates it. `TurnComplete` (outbound) gains a `claude_message_id?: string` field. **`TurnCancelled` (outbound) symmetrically gains a `claude_message_id?: string` field.** This lets tugcast's merger intercept (Step 4.4) record `claude_message_id` on the ledger row when the user explicitly cancels mid-stream — important because the row's `claude_message_id` is what `runReplay` uses to look up the partial assistant content from JSONL on the next reload. Without `claude_message_id` on `turn_cancelled`, an interrupted turn loses its partial-content backreference. All three fields are optional for the same backward-compat reason.
 - `tugcode/src/types.ts` — type guards (`isUserMessage`, etc.) unchanged.
-- `tugrust/crates/tugcast/src/feeds/code.rs` (or wherever the IPC envelope shape is encoded) — `UserMessage` envelope construction is updated to forward `tug_turn_id` to tugcode's stdin. `TurnComplete` parsing reads `claude_message_id` if present.
+- `tugrust/crates/tugcast/src/feeds/code.rs` (or wherever the IPC envelope shape is encoded) — `UserMessage` envelope construction is updated to forward `tug_turn_id` to tugcode's stdin. `TurnComplete` and `TurnCancelled` parsing reads `claude_message_id` if present.
 - Reducer / tugdeck — **no change.** The reducer keys by `msg_id` on the wire; the new fields are siblings the reducer ignores. Tugways / observers ignore them. This is a load-bearing decision — we're keeping reducer surface area unchanged.
 
 **Tasks:**
 
 - [ ] Add `tug_turn_id?: string` to `UserMessage` in `tugcode/src/types.ts`.
 - [ ] Add `claude_message_id?: string` to `TurnComplete` in `tugcode/src/types.ts`.
+- [ ] Add `claude_message_id?: string` to `TurnCancelled` in `tugcode/src/types.ts`.
 - [ ] Update tugcast's IPC envelope serialization to thread these fields through (Rust side).
 - [ ] No changes in tugdeck. Verify with a build.
 
@@ -1175,23 +1191,33 @@ Plus the close-out at [Step 5](#step-5) which retests Smoke D end-to-end against
 
 **Artifacts:**
 
-- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — the path that receives `user_message` from tugdeck and forwards it to tugcode's stdin grows an interception step:
-  1. Mint `tug_turn_id` (UUID v4 via `uuid::Uuid::new_v4()`).
-  2. Call `ledger.insert_pending_turn(session_id, &tug_turn_id, user_text, user_attachments, now())`.
-  3. **Only on success**, mutate the outbound envelope to include `tug_turn_id` and forward to tugcode's stdin.
-  4. On `LedgerError`: emit a `code_error` frame to tugdeck (envelope shape TBD — match existing supervisor error patterns), do NOT forward to tugcode. The user retries.
+- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — `AgentSupervisor::dispatch_one` (the per-frame entry point at line ~2321) gains a type-aware interception step. The dispatcher today is **generic over `Frame`** — it parses `tug_session_id` from the payload, looks up the ledger entry, and routes by `SpawnState` (Idle / Spawning / Live / Errored / Closed). It does NOT currently parse the inner JSON `type` field. The intercept extends this:
 
-  This ordering is load-bearing: row-persisted-before-forward is the durability invariant.
+  Implementation site, in order:
 
-- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — the `SessionRecorder` trait (or its caller) gains `insert_pending_turn(session_id, user_text, user_attachments) -> Result<TugTurnId, LedgerError>` so the test injection seam works.
+  1. After `parse_tug_session_id` (existing) and BEFORE the `entry_arc` lookup: also parse `frame.payload`'s `type` field (cheap — same JSON we already touched).
+  2. If `type !== "user_message"`: continue with the existing routing logic, frame unchanged. (Other CODE_INPUT types — `tool_approval`, `interrupt`, `permission_mode`, `model_change`, `session_command`, `stop_task`, `request_replay` — pass through as today.)
+  3. If `type === "user_message"`:
+      a. Parse `text` and `attachments` from the payload (existing JSON we already have).
+      b. Mint `tug_turn_id` via `uuid::Uuid::new_v4()`.
+      c. Call `ledger.insert_pending_turn(session_id, &tug_turn_id, user_text, user_attachments, now())`.
+      d. On `LedgerError`: emit a `code_error` frame to `control_tx` (matches existing `build_session_unknown_frame` / `build_backpressure_frame` pattern at line ~2342), drop the inbound frame, return early. **Do not forward to tugcode.** The user-visible behavior is identical to a backpressure error; tugdeck surfaces it through the existing error-frame path.
+      e. On success: build a **new** `Frame` with the augmented payload (`Frame::payload` is `Bytes`, immutable in-place; we construct a fresh `Frame::new(FeedId::CODE_INPUT, augmented_payload_bytes)`), where the augmented payload is the original JSON with `tug_turn_id` added at the top level. Use `serde_json` to round-trip; the cost is negligible compared to the sqlite write we just did.
+      f. Substitute the augmented frame for the original. Continue with the existing routing logic.
+  4. The augmented frame proceeds through the unchanged `match entry.spawn_state` block. Critically: in **all three** branches that consume the frame — `Idle` (queue + spawn), `Spawning` (queue), `Live` (forward via `input_tx`) — the frame already carries `tug_turn_id`. Frames sitting in `entry.queue` waiting for the session to go live are baked with the id; when they drain at handshake completion, tugcode receives them already-augmented.
+
+  This ordering is load-bearing: **row-persisted-before-frame-augmented-before-routed.** A failure between any of (a)…(f) leaves the system in a recoverable state — a `pending` row with no forwarded frame is reconciled to `interrupted` on session resume (Step 4.7); a forwarded augmented frame with no row is structurally impossible because the augmentation happens after the insert.
+
+- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — the `SessionsRecorder` trait gains `insert_pending_turn(session_id: &str, tug_turn_id: &str, user_text: &str, user_attachments: &[serde_json::Value], now: i64) -> Result<(), LedgerError>` so the test injection seam works. (Note the existing trait is `SessionsRecorder` — plural — at `agent_supervisor.rs:490`, NOT `SessionRecorder`. Authors have written this consistently as plural; the new method joins the existing 8 methods on the trait.)
 
 **Tasks:**
 
-- [ ] Identify the exact code path in `agent_supervisor.rs` where inbound `user_message` is forwarded to tugcode's stdin. (Use grep + the existing `record_spawn` / `record_turn` call sites for orientation.)
-- [ ] Inject the mint + insert step before forward.
-- [ ] Add error path: ledger insert failure → emit error frame, abort forward.
-- [ ] Update the supervisor's `SessionRecorder` trait + impls to expose the new method.
-- [ ] Update test recorders / fakes to match.
+- [ ] Author a `payload_inspector` module that exposes a partial-shape `serde_json` struct for reading the `type` field (and other top-level fields like `tug_turn_id`, `msg_id`, `claude_message_id`) from a `Frame::payload`. Reused by 4.3's inbound parse and 4.4's outbound parse.
+- [ ] Extend `AgentSupervisor::dispatch_one` per [#step-4-3]'s artifact spec: parse `type`, branch on `user_message`, mint + insert + augment + substitute.
+- [ ] Build the augmented payload via `serde_json::from_slice` → mutate `Map<String, Value>` → `serde_json::to_vec` → `Bytes::from`. Construct a fresh `Frame::new(FeedId::CODE_INPUT, augmented_bytes)` since `Frame::payload` is immutable.
+- [ ] Add error path: `LedgerError` → emit error frame on `control_tx`, drop the frame, return early.
+- [ ] Extend the `SessionsRecorder` trait (note: plural — line 490) with `insert_pending_turn`. Update `LedgerSessionsRecorder` and the test recorder/fakes.
+- [ ] Verify that frames sitting in `entry.queue` during `Spawning` state retain the augmentation when they drain at handshake completion (the `Frame` clone preserves payload bytes; this is a sanity check, not new code).
 
 **Tests:**
 
@@ -1221,20 +1247,34 @@ Plus the close-out at [Step 5](#step-5) which retests Smoke D end-to-end against
 
 **Artifacts:**
 
-- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — the path that receives outbound frames from tugcode's stdout and forwards them to tugdeck (CODE_OUTPUT broadcast) grows an interception step for `turn_complete`:
-  1. Read `tug_turn_id = frame.msg_id` and `claude_message_id = frame.claude_message_id`.
-  2. Call `ledger.mark_turn_complete(&tug_turn_id, &claude_message_id, now())`.
-  3. On `LedgerError::NotFound` or `InvalidTurnState`: log a warning (`tracing::warn!`) but **continue forwarding** to tugdeck — the wire frame is the source of truth for the live UI; the ledger can fall behind on a single update without breaking the user-visible flow. We surface the error in telemetry, not in the user's face.
-  4. Forward the frame to tugdeck (CODE_OUTPUT).
+- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — `AgentSupervisor::merger_task` (the per-bridge fan-in at line ~2431) gains a type-aware interception step. The merger today is **generic over `Frame`** — it forwards each per-session frame to `code_output_tx`, and additionally captures `system_metadata` for SESSION_METADATA broadcast. It does NOT currently parse the payload's `type` for any other purpose. The intercept extends this:
 
-- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — `SessionRecorder` trait gains `mark_turn_complete(tug_turn_id, claude_message_id) -> Result<(), LedgerError>`.
+  Implementation site, in the `maybe_frame = streams.next()` branch at line ~2464, **after** the existing `code_output_tx.send(frame.clone())` and the `is_system_metadata` check, **before** the next select-loop iteration:
+
+  1. Parse the frame's payload `type` field (cheap — `serde_json::from_slice` with a partial-shape struct that only reads `type`).
+  2. If `type === "turn_complete"` AND `claude_message_id` is present on the payload AND `msg_id` is present:
+      a. Read `tug_turn_id = payload.msg_id`, `claude_message_id = payload.claude_message_id`.
+      b. Call `ledger.mark_turn_complete(&tug_turn_id, &claude_message_id, now())`.
+      c. On success: emit a `tide::ledger::turn_completed` tracing line for telemetry.
+      d. On `LedgerError::NotFound` or `InvalidTurnState`: log a `tracing::warn!` but **the frame has already been forwarded** (step "before" above). The wire is the source of truth for the live UI; the ledger lagging by one update is a telemetry signal, not a user-facing error.
+  3. Same intercept also runs for `type === "turn_cancelled"` (post fix-7 below): call `ledger.mark_turn_interrupted(&tug_turn_id, partial_text_from_payload, now())` so user-driven cancels persist correctly. The supervisor distinguishes this from crash-driven `mark_turn_interrupted` calls in 4.7 because this path has the `tug_turn_id` and (when claude streamed) the `claude_message_id`.
+
+  Forward-before-mutate ordering is deliberate: the wire-side broadcast is the user-visible signal and must not be delayed by a database write. The ledger-side update is best-effort telemetry from the user's perspective; it becomes load-bearing only on the next `runReplay`, by which time the write has long since committed.
+
+  Same partial-shape struct is reusable for both `dispatch_one`'s inbound parse (Step 4.3) and the merger's outbound parse — author it once in a `payload_inspector` module.
+
+- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — `SessionsRecorder` trait gains `mark_turn_complete(tug_turn_id: &str, claude_message_id: &str, now: i64) -> Result<(), LedgerError>` and `mark_turn_interrupted(tug_turn_id: &str, claude_message_id: Option<&str>, partial_text: Option<&str>, now: i64) -> Result<(), LedgerError>`. (The trait is `SessionsRecorder` — plural — at `agent_supervisor.rs:490`.)
+
+- **Coexists with existing `record_turn(session_id)`.** The existing `record_turn` (line 499) increments `sessions.turn_count` and bumps `last_used_at`. It continues to fire per-turn on the same `turn_complete` event and is **not** replaced by `mark_turn_complete`. The two are complementary: `record_turn` updates the per-session counter the picker reads; `mark_turn_complete` updates the per-turn row tugcode reads during `runReplay`. Both calls happen in the merger's `turn_complete` branch.
 
 **Tasks:**
 
-- [ ] Identify the outbound `turn_complete` interception point.
-- [ ] Wire `mark_turn_complete` call before forwarding.
-- [ ] Decide error handling: warn-and-forward on NotFound / InvalidTurnState (production); fail-test-loudly on these in test recorders.
-- [ ] If `claude_message_id` is missing on the frame (defensive — earlier-substep tugcode might not yet emit it), log a warning and skip the ledger update; still forward the frame.
+- [ ] Extend `AgentSupervisor::merger_task` per [#step-4-4]'s artifact spec: after the existing `code_output_tx.send(frame.clone())`, parse the payload `type` via `payload_inspector` (reused from 4.3), branch on `turn_complete` and `turn_cancelled`.
+- [ ] On `turn_complete` with `claude_message_id` present: call `mark_turn_complete`. On error: warn + continue (frame is already forwarded).
+- [ ] On `turn_cancelled` (post fix-7 wire-shape change): call `mark_turn_interrupted` with `partial_text` from payload. On error: warn + continue.
+- [ ] On `turn_complete` with `claude_message_id` missing: log a warn line `tide::ledger::turn_complete_missing_claude_id`; skip the ledger update; the row stays `pending` and gets reconciled on next session resume.
+- [ ] Verify that `record_turn` (existing `SessionsRecorder` method that bumps `sessions.turn_count`) **continues to fire** alongside `mark_turn_complete` — both are called for the same `turn_complete` event. Pin in a test that asserts both rows after a single turn.
+- [ ] Extend `SessionsRecorder` (plural — line 490) with `mark_turn_complete` and `mark_turn_interrupted`. Update `LedgerSessionsRecorder` and test fakes.
 
 **Tests:**
 
@@ -1273,7 +1313,8 @@ Plus the close-out at [Step 5](#step-5) which retests Smoke D end-to-end against
   - `routeTopLevelEvent`'s `case "assistant"`: same.
 - `tugcode/src/session.ts` — `handleUserMessage` reads `msg.tug_turn_id`. If present, use it as the `ActiveTurn`'s `msgId`. If absent (test fixtures, synthetic input), fall back to `newMsgId()` for graceful degradation; production always has the field because tugcast always supplies it.
 - `tugcode/src/session.ts` — `dispatchEventToTurn`'s `gotResult` branch emits `turn_complete` with the new `claude_message_id` field populated from `turn.claudeMessageId`.
-- `tugcode/src/session.ts` — `signalEofToActiveTurn`'s emit path: `turn_cancelled` doesn't carry `claude_message_id` today. Decide: leave as-is (the wire shape change is on `turn_complete` only, per [Step 4.2](#step-4-2)); the ledger gets `mark_turn_interrupted` from a different path ([Step 4.7](#step-4-7)).
+- `tugcode/src/session.ts` — `signalEofToActiveTurn` emits `turn_cancelled` with `claude_message_id: turn.claudeMessageId ?? undefined` (matches `turn_complete`'s shape, per fix-7 in Step 4.2). The user-driven cancel path (the user clicks Stop while claude is streaming) now persists `claude_message_id` to the ledger row, so on next reload the partial assistant content is reachable from the JSONL via the row. This closes the gap where a user cancel would leave the row without a content backreference. The supervisor-driven crash-recovery path in Step 4.7 calls `mark_turn_interrupted` with `claude_message_id: None` because in that path the supervisor doesn't see claude's id — that's fine, the crash-recovery row is already lossy by definition.
+- `tugcode/src/session.ts` — `emitInflightTurnFromActiveTurn`'s `turn_cancelled` branch (the [DM06] mitigation) ALSO populates `claude_message_id: turn.claudeMessageId ?? undefined`, for the same reason.
 
 **Tasks:**
 
@@ -1332,12 +1373,29 @@ Tests that survive unchanged:
 
 **Artifacts:**
 
-- `tugcode/src/session.ts` — `runReplay` opens `~/Library/Application Support/Tug/sessions.db` (or platform equivalent) read-only via Bun's `bun:sqlite`. The path is resolved at the same site that resolves `claudeProjectsRoot` today; tests inject an override.
+- `tugcode/src/session.ts` — `SessionManager` opens `~/Library/Application Support/Tug/sessions.db` (or platform equivalent) read-only via Bun's `bun:sqlite` **once at construction**, holding the connection for the lifetime of the manager. `runReplay` reuses the connection on every invocation. The path is resolved at the same site that resolves `claudeProjectsRoot` today; tests inject an override via constructor option.
 
   ```ts
   import { Database } from "bun:sqlite";
-  // open(path, { readonly: true })
+  // At SessionManager construction:
+  //   this.sessionsDb = new Database(sessionsDbPath, { readonly: true });
+  // At SessionManager.shutdown():
+  //   this.sessionsDb.close();
   ```
+
+  Connection reuse rationale: opens are cheap but each `runReplay` invocation is a hot path. Holding the connection avoids per-call open/close overhead and lets sqlite cache the prepared statement for the `SELECT * FROM turns WHERE session_id = ? ORDER BY ordinal ASC` query (the only query `runReplay` runs against `sessions.db`).
+
+- **Cross-process WAL verification.** tugcast (Rust, rusqlite) is the writer; tugcode (TS, `bun:sqlite`) is the reader. They are separate OS processes sharing one sqlite file. WAL mode supports this directly — multiple readers + one writer on the same file with no contention — but cross-process WAL on macOS has historical sharp edges (file locking interactions, particular when one process opened the DB before the other applied `PRAGMA journal_mode = WAL`). **A concrete verification test is required in 4.6 before we trust the production path:**
+
+  ```ts
+  // verification test (cargo nextest + bun test, coordinated):
+  // 1. Rust test opens sessions.db (writes a row with `tug_turn_id: "VERIFY"`)
+  // 2. Bun test opens the SAME path read-only via bun:sqlite
+  // 3. Bun test SELECTs by tug_turn_id, asserts the row is visible
+  // 4. Rust test inserts a second row; Bun test re-queries; assert visible
+  ```
+
+  This pins the cross-process invariant. If it fails on any platform, the whole Step 4 architecture has to fall back to RPC-via-stdin (tugcast reads on tugcode's behalf), which is a larger redesign — so we run this test FIRST, before committing to the rest of 4.6.
 
 - `tugcode/src/session.ts` — `runReplay`'s loop:
   1. Snapshot `inflight = activeTurn` (same `!gotResult && !interrupted` guard as today).
@@ -1347,10 +1405,11 @@ Tests that survive unchanged:
   5. For each row:
      - if `state === 'complete'`:
        - Emit `user_message_replay { msg_id: row.tug_turn_id, text: row.user_text, attachments: row.user_attachments }`.
-       - Look up the corresponding turn content in JSONL by `row.claude_message_id` (uses a refactored translator helper — see below). Emit `tool_use` / `tool_result` / `thinking_text` / `assistant_text { is_partial: false, msg_id: row.tug_turn_id }` for the turn's content.
+       - **If `row.claude_message_id` is non-null:** look up the corresponding turn content in JSONL via `extractTurnContent(jsonl, row.claude_message_id, row.tug_turn_id)`. Emit `tool_use` / `tool_result` / `thinking_text` / `assistant_text { is_partial: false, msg_id: row.tug_turn_id }` for the turn's content.
+       - **Defensive: if `row.claude_message_id` is null** (shouldn't happen for `state === 'complete'` rows in practice, but the column allows null and a future bug or partial migration could land us here): emit a tracing warn `tide::replay::complete_row_missing_claude_id` with the `tug_turn_id`, skip content extraction (no `assistant_text` emitted), and proceed to `turn_complete` so the TurnEntry still commits with whatever user-side content the row has. Same defensive treatment for **multiple ledger rows with the same `claude_message_id`** (the index is non-unique by design — claude reuse would be pathological): take the latest (`ORDER BY ordinal DESC LIMIT 1`) and warn.
        - Emit `turn_complete { msg_id: row.tug_turn_id, result: 'success' }`.
      - if `state === 'interrupted'`:
-       - Emit `user_message_replay`, `assistant_text` (if `partial_text` set), `turn_cancelled { msg_id: row.tug_turn_id, partial_result: row.partial_text ?? "" }`.
+       - Emit `user_message_replay`. If `row.claude_message_id` is non-null AND JSONL has content for it: emit the partial `assistant_text` from JSONL (gives us the streaming content the user saw before they cancelled). Else if `row.partial_text` is set: emit synthesized `assistant_text { text: row.partial_text, is_partial: false }`. Else: skip the assistant_text. Then emit `turn_cancelled { msg_id: row.tug_turn_id, partial_result: row.partial_text ?? "" }`.
      - if `state === 'pending'`:
        - if `inflight !== null && row.tug_turn_id === inflight.msgId`: call `emitInflightTurnFromActiveTurn(inflight)`. (Same Step 3 helper.) The pending row's content is in ActiveTurn; the row exists in the ledger as a durability anchor, but ActiveTurn has the live state.
        - else: this is a "pending" row from a prior session that's no longer live (tugcode crash recovery). Treat as interrupted: emit user_message_replay + (optional partial_text) + turn_cancelled. (Defer to [Step 4.7](#step-4-7)'s reconciliation; for now emit a defensive synthesis.)
@@ -1401,10 +1460,14 @@ Tests that survive unchanged:
 
 **Tests:**
 
+- [ ] **Cross-process WAL verification** (per [#step-4-6]'s artifact spec): coordinated Rust-writer + Bun-reader test, asserts the reader sees writes from the writer on the same `sessions.db` file. **Run this first before any other 4.6 work** — the rest of the substep is predicated on it passing.
 - [ ] **Bug-scenario regression (manual reload symptom)**: ledger has one pending row matching the surrogate ActiveTurn; drive `runReplay`; assert wire emits `user_message_replay { msg_id: tug_turn_id, text }` + `assistant_text { msg_id: tug_turn_id }` + replay_complete. **The bug from 2026-05-05 is structurally impossible because tug_turn_id is stable from submission and the ledger has the row regardless of JSONL state.**
 - [ ] **Smoke D ordering**: ledger has two rows (one complete, one pending matching ActiveTurn); assert ordering [replay_started, committed turn events, in-flight emission, replay_complete].
 - [ ] **Cold-boot no-rows path**: ledger has zero rows for the session (legacy / migration not yet run); JSONL has content; assert `runReplay` falls back to JSONL-driven emit via `extractOrphanTurn` (preserves [D08] equivalence). Pin this until Step 4.8 lands the migration; afterwards this case becomes vanishingly rare.
 - [ ] **Stale pending row (crash recovery proxy)**: ledger has a pending row that no live ActiveTurn matches; assert `runReplay` emits user + optional partial + turn_cancelled (defensive synthesis until 4.7 lands the reconciliation).
+- [ ] **Defensive: complete row with null `claude_message_id`**: seed a `state='complete'` row with `claude_message_id: NULL`; assert `runReplay` warns + emits `user_message_replay` + `turn_complete` with no `assistant_text`. Pins the defensive code path so it can't silently regress.
+- [ ] **Defensive: duplicate `claude_message_id` across rows**: seed two `state='complete'` rows with the same `claude_message_id` (defensive — index is non-unique). Drive `runReplay`; assert it emits both turn rows but the JSONL content lookup picks the latest by ordinal and warns about the duplication.
+- [ ] **Invariant pin: one `msg_id` per logical turn on the wire**: drive a full turn through both paths (live + replay-after-reload). Capture the entire wire trace. Assert: for every `text` content present, all frames carrying that text use the **same** `msg_id`. Equivalent: assert `Set<msg_id>` across the trace's user_message_replay + assistant_text + turn_complete + turn_cancelled frames is exactly `Set<tug_turn_id>` of the seeded ledger rows. Permanent regression pin against the whole class of "two ids for one turn" bugs that motivated Step 4.
 - [ ] **Full-suite regression**: all surviving tests from Steps 1–3 still pass with their fixtures pointed at the ledger.
 - [ ] **Failure-first proof**: temporarily restore `liveInflightMsgId` gating in the translator + `runReplay`'s old emit predicate; assert the bug-scenario regression test fails because the translator's logic doesn't kick in (the ledger isn't read).
 
@@ -1474,7 +1537,7 @@ Tests that survive unchanged:
 **Artifacts:**
 
 - `tugrust/crates/tugcast/src/jsonl_reader.rs` — NEW module. A minimal JSONL parser sufficient for migration: walk a JSONL file line-by-line, identify per-turn boundaries (user entry → assistant entries with the same logical thread → terminal entry with `stop_reason: end_turn`), extract per-turn `user_text`, `user_attachments`, `claude_message_id`. Does NOT need to mirror the full TS translator's content logic — migration only needs identity + user submission.
-- `tugrust/crates/tugcast/src/session_ledger.rs` — new method `bootstrap_turns_from_jsonl(session_id: &str, project_dir: &str, now: i64) -> Result<usize, LedgerError>` — scans the JSONL file for the session, mints a `tug_turn_id` per turn, bulk-inserts rows. Idempotent: uses `get_turn_by_claude_message_id` to skip turns already in the ledger.
+- `tugrust/crates/tugcast/src/session_ledger.rs` — new method `bootstrap_turns_from_jsonl(session_id: &str, project_dir: &str, now: i64) -> Result<usize, LedgerError>` — scans the JSONL file for the session, mints a `tug_turn_id` per turn, bulk-inserts rows. **Idempotency:** the function first calls `list_turns_for_session(session_id)` and short-circuits with `Ok(0)` if any rows exist for the session. This is correct because bootstrap is an "all or nothing" operation per session (a partial bootstrap shouldn't happen — either the session has been migrated or it hasn't), and it handles the case where mid-turn JSONL entries have `claude_message_id: NULL` (which `get_turn_by_claude_message_id` cannot disambiguate). The earlier draft's "skip by `claude_message_id`" check is replaced by this whole-session gate. Also: `get_turn_by_claude_message_id` is retained on the ledger API for diagnostic / debugging use, but is no longer the migration's idempotency primitive.
 - `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — call `bootstrap_turns_from_jsonl` lazily on session-open if `list_turns_for_session` returns empty (and JSONL exists). Cached per session — bootstrap runs at most once.
 
 **Tasks:**
