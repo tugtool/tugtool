@@ -1638,7 +1638,7 @@ Tests that survive unchanged:
 
 **Supersedes:** [DM07] (retired). Reverts the wire-shape additions from [Step 4.2](#step-4-2), the tugcode adoption work from [Step 4.5](#step-4-5), the ledger-driven replay path from [Step 4.6](#step-4-6), and the migration scaffolding from [Step 4.8](#step-4-8). Preserves the `turns` table (narrowed) and the supervisor-side intercepts from [Step 4.1](#step-4-1), [Step 4.3](#step-4-3), [Step 4.4](#step-4-4), [Step 4.7](#step-4-7) — those primitives stay; their roles narrow.
 
-**References:** [DM08]; [DM07]'s retirement note; smoke-test failure logged 2026-05-05; user's design-goal quotes preserved in [DM08].
+**References:** [DM08]; [DM07]'s retirement note; smoke-test failure logged 2026-05-05; user's design-goal quotes preserved in [DM08]; [Never-drop chain audit](#step-5-never-drop) (the load-bearing reference for the per-substep recovery story); [E1 verdict](#e1-jsonl-flush-timing) (JSONL flush timing race, still relevant for the [Step 5.5](#step-5-5) predicate); [E2 verdict](#e2-live-replay-ordering) (live/replay ordering); [E4 drop audit](#e4-drop-audit) (the broader drop-point picture from Phase 0 — the Step 5 chain audit narrows it); the resume-plan's [D04] reducer dedupe (load-bearing, unchanged); the resume-plan's [D08] orphan synthesis (revisited and changed by [Step 5.5](#step-5-5)).
 
 ##### Why this Step exists {#step-5-why}
 
@@ -1810,6 +1810,18 @@ Plus the close-out at [Step 6](#step-6) which retests Smoke D end-to-end against
 
 **Depends on:** none (foundation; pure type+plumbing revert).
 
+**References:**
+
+- [DM08] — the decision; in particular the "Wire shape reverts" and "Tugcode's adoption changes" bullets under Implications.
+- [DM03] — the canonicalization mechanism this substep restores. [DM03]'s race window is reopened by this revert; that's structurally tolerable per [DM08]'s rationale because [Step 5.6](#step-5-6) plugs the failure mode independently via the journal.
+- [DM07] (retired) — the design that introduced the wire fields being removed.
+- [Step 1](#step-1) — original home of the canonicalization plumbing being restored (`canonicalizeMsgId`, `messageId` on `EventMappingResult` / `TopLevelRoutingResult`, the `message_start` branch in `mapStreamEvent`, the assistant-snapshot extraction in `routeTopLevelEvent`).
+- [Step 4.2](#step-4-2) — the wire-shape commit being reverted.
+- [Step 4.5](#step-4-5) — the tugcode adoption commit being reverted.
+- [E2 verdict](#e2-live-replay-ordering) — the original live/replay msg_id-divergence observation. The divergence returns with this revert; the never-drop chain (below) absorbs it.
+- [Never-drop chain audit](#step-5-never-drop) rows 1–3 — wire transit drop points (in-process tugdeck, WebSocket flight, tugcast ingress) characterized as acceptable; this substep doesn't change row 1–3 behavior (the journal-backed rows are introduced in [Step 5.6](#step-5-6)).
+- Resume plan's [D04] — reducer's `msg_id`-keyed dedupe is the contract this substep is restoring on the wire.
+
 **Artifacts:**
 
 - `tugrust/crates/tugcast/src/ipc/types.rs` (or wherever the IPC envelope types live in Step 4.2's home) — `tug_turn_id` field removed from `UserMessage`. `claude_message_id` field removed from `TurnComplete`. Both fields existed only between Step 4.2 and Step 5.1.
@@ -1853,6 +1865,15 @@ Plus the close-out at [Step 6](#step-6) which retests Smoke D end-to-end against
 **Commit:** `tugcast(journal): narrow turns to submission journal — drop claude_message_id, partial_text, completed_at, state`
 
 **Depends on:** [Step 5.1](#step-5-1) (wire is already free of the soon-to-be-deleted columns' downstream consumers).
+
+**References:**
+
+- [DM08] — the decision; in particular the "Ledger schema narrows" bullet under Implications, which spells out the exact columns coming off and the API methods being deleted.
+- [Step 4.1](#step-4-1) — origin of the v2 schema being narrowed. The `turns_cascade_delete_on_session` trigger and `migrations` table from 4.1 are preserved; the columns from 4.1 that bridged ids and back-referenced content come off.
+- [Architecture summary](#step-5-architecture) — the new 5-column journal shape (`journal_id`, `session_id`, `user_text`, `user_attachments`, `created_at`).
+- [What survives](#step-5-what-survives) — the "Reverted" / "Survives" enumeration that this substep enacts on the schema side.
+- [Never-drop chain audit](#step-5-never-drop) row 4 — the durability promise this schema underwrites: "Row in `sessions.db` (durable; WAL mode)." A pending row inserted at [Step 4.3](#step-4-3)'s `dispatch_one` intercept survives every drop scenario from row 4 through row 9.
+- [Resume / fork / continue semantics](#step-4-resume-fork-continue) — Step 4's resume/fork/continue analysis still applies; the narrowed schema does not change those semantics (forks still start with empty journal; resume reuses the existing rows; continue resolves to the most-recent session id).
 
 **Artifacts:**
 
@@ -1947,6 +1968,15 @@ Plus the close-out at [Step 6](#step-6) which retests Smoke D end-to-end against
 
 **Depends on:** [Step 5.2](#step-5-2).
 
+**References:**
+
+- [DM08] — the decision; in particular "the journal id (formerly `tug_turn_id`) is internal to tugcast and is not surfaced on the wire — neither inbound `user_message` nor outbound `turn_complete` carries it."
+- [Step 4.3](#step-4-3) — origin of `dispatch_one`'s `user_message` intercept. The intercept stays; the augmentation that mutated the frame to add `tug_turn_id` is removed (the wire field came off in [Step 5.1](#step-5-1)). The journal id is recorded internally only.
+- [Step 4.4](#step-4-4) — origin of the merger's `apply_outbound_turn_intercept`. The intercept stays; the role narrows from "extract `claude_message_id`, `UPDATE turns SET claude_message_id = ?, state = 'complete'`" to "delete the oldest pending row (FIFO match by `created_at`)."
+- [Never-drop chain audit](#step-5-never-drop) row 8 — the merger's `turn_complete`-driven row deletion is the recovery mechanism for the "JSONL has complete turn but row not yet deleted" race. This substep implements the deletion; [Step 4.7](#step-4-7)'s `reconcile_pending_for_session` (retained, role narrowed) handles any missed deletions on session resume.
+- [Architecture summary](#step-5-architecture) — the diagram showing the merger intercept boxed in the tugcast lane.
+- [What survives](#step-5-what-survives) — the "Survives (with narrowed role)" bullets covering [Step 4.3](#step-4-3) and [Step 4.4](#step-4-4).
+
 **Artifacts:**
 
 - `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — `apply_outbound_turn_intercept` narrows. Old behavior: extract `claude_message_id` from the frame, `UPDATE turns SET claude_message_id = ?, state = 'complete' WHERE tug_turn_id = ?`. New behavior: `delete_oldest_pending_for_session(session_id)`. The frame is forwarded unchanged. The merger no longer reads any field from the `turn_complete` frame except `session_id` (which is on the routing envelope, not the payload — already routed by this point).
@@ -1982,6 +2012,16 @@ Plus the close-out at [Step 6](#step-6) which retests Smoke D end-to-end against
 **Commit:** `tugcode(journal): restore translateJsonlSession path; delete runLedgerDrivenReplay + extractTurnContent`
 
 **Depends on:** [Step 5.1](#step-5-1) (wire is free of the Step 4 augmentations).
+
+**References:**
+
+- [DM08] — the decision; in particular "Tugcode's `runReplay` rewires: `runLedgerDrivenReplay` is deleted; `extractTurnContent` is deleted."
+- [Step 4.6](#step-4-6) — the ledger-driven `runReplay` and content-only translator path being deleted. The ledger-driven path was the source of the Step 4 smoke-test failure; this substep removes it entirely.
+- [`runReplay` flow specification](#run-replay-flow) — the pre-Step-4 design being restored. This substep returns `runReplay` to that shape, with the addition of the [Step 5.6](#step-5-6) pending-row injection layered on top in the next substep.
+- [Translator option and "did-skip" reporting](#translator-option) — the pre-Step-4 translator surface. Note that [DM05]'s `liveInflightMsgId` option was already removed in Step 4.6; this substep does not re-introduce it (the in-flight handling is rewritten in [Step 5.5](#step-5-5)'s predicate change instead).
+- [Never-drop chain audit](#step-5-never-drop) rows 7–8 — the translator's role: it emits committed turns (row 8) and in-flight content from JSONL (row 7). The predicate fix in [Step 5.5](#step-5-5) is what makes row 7's behavior correct.
+- [What survives](#step-5-what-survives) — "Reverted" enumeration: `runLedgerDrivenReplay`, `extractTurnContent`, `rekeyTurnContent` all named. The bun:sqlite handle from [Step 4.5](#step-4-5) survives (held but unused in this substep; used by [Step 5.6](#step-5-6)).
+- Resume plan's [D04] — reducer's msg_id-keyed dedupe is the contract that the translator's claude-id-keyed output satisfies.
 
 **Artifacts:**
 
@@ -2024,6 +2064,17 @@ Plus the close-out at [Step 6](#step-6) which retests Smoke D end-to-end against
 
 **Depends on:** [Step 5.4](#step-5-4).
 
+**References:**
+
+- [DM08] — the decision; in particular the "Translator predicate fix" bullet under Implications. **This substep is the structural fix for the original 2026-05-05 mid-turn-replay bug** that motivated this entire plan.
+- Resume plan's [D08] — orphan synthesis (the pre-Step-4 mechanism this substep is changing). [D08] said "if the trailing turn has no `end_turn`, synthesize a `turn_complete{interrupted}`." That predicate was correct for cold-boot of a *previously*-interrupted session but wrong for a turn that's *currently* streaming. This substep changes the predicate's emit shape; the predicate's trigger condition (no `end_turn`) is unchanged.
+- [E1 verdict](#e1-jsonl-flush-timing) — JSONL flush trails stdout `result` by 2-6 ms. The new predicate is robust to this race: when JSONL has a partial entry (no `end_turn`), tugcode emits content without a terminal; when claude resumes via `--resume` and emits the eventual `turn_complete`, the reducer commits naturally.
+- [DM06] — `emitInflightTurnFromActiveTurn` mechanism (retained from [Step 3](#step-3)). When `runReplay` enters with a non-null `activeTurn` (live drain has the in-flight turn), `emitInflightTurnFromActiveTurn` handles the bracket emission. This substep's predicate fix is the path for when `activeTurn` is null (post-reload, before the first stream event arrives) — the two mechanisms are complementary and don't overlap.
+- [Step 4.6](#step-4-6) — the ledger-driven path that tried to fix the same bug differently. Step 4.6 is gone (deleted in [Step 5.4](#step-5-4)); this substep is the alternative fix that was always available as a one-line predicate change.
+- [Never-drop chain audit](#step-5-never-drop) row 7 — "JSONL has user_message line + partial assistant content + no `end_turn`; claude is mid-stream when reload happens." This is the row this substep implements.
+- [`runReplay` flow specification](#run-replay-flow) — the bracket-window contract that this substep operates within.
+- Acknowledged residual gap (b) in [Never-drop chain audit](#step-5-never-drop) — stuck-pending-no-claude-response. The predicate fix opens the door to this gap; the watchdog mitigation is deferred (additive; does not modify the never-drop chain).
+
 **Artifacts:**
 
 - `tugcode/src/replay.ts` — `translateJsonlSession`'s end-of-JSONL flush logic. Current behavior (pre-Step-4 and as restored in Step 5.4): if the trailing turn's terminal assistant entry has no `stop_reason` (i.e., no `end_turn`), synthesize a `turn_complete{result: "interrupted"}`. New behavior: if the trailing turn has no `end_turn`, emit the user_message_replay + accumulated content frames (`thinking_text`, `assistant_text`, `tool_use`) but emit **no terminal event** at all. The reducer's `pendingUserMessage` and `scratch[msgId]` slots stay populated; the live drain continuing post-replay produces the eventual `turn_complete` naturally.
@@ -2064,7 +2115,18 @@ The pre-Step-4 design had this exact predicate emitting `turn_complete{interrupt
 
 **Depends on:** [Step 5.4](#step-5-4), [Step 5.5](#step-5-5).
 
-**This substep delivers the never-drop guarantee.** Before this lands, a tugcode crash (or Tug.app crash, or any reload) between user submission and claude's first JSONL write loses the user's submission silently. After this lands, the journal's pending row is observed on resume and the submission is rendered as a turn awaiting a response.
+**References:**
+
+- [DM08] — the decision; in particular "Tugcode's `runReplay` rewires: ... New logic before the translator pass: `SELECT user_text, attachments FROM turns WHERE session_id = ? ORDER BY created_at` — for each pending row whose `user_text` does not appear as a `user_message` line in the JSONL, emit a synthetic `user_message_replay`." This substep is the load-bearing implementation of the never-drop guarantee.
+- [Never-drop chain audit](#step-5-never-drop) **rows 4, 5, 6** — the three drop points whose recovery mechanism is THIS substep. Row 4: tugcast INSERTed the row, hadn't yet forwarded to tugcode. Row 5: frame reached tugcode, hadn't written to claude.stdin. Row 6: claude received but hadn't written to JSONL. All three recover via the synthetic emit landed here.
+- [Step 4.3](#step-4-3) — the `dispatch_one` user_message intercept that creates the pending row this substep consumes. The "row exists in `sessions.db`" half of the chain is from 4.3; the "synthetic emit on resume" half is here.
+- [Step 4.5](#step-4-5) — origin of the `bun:sqlite` read-only handle this substep uses. The handle is opened at `SessionManager` construction and held for lifetime; this substep adds the first runtime use of it (Step 5.4 deleted the previous use).
+- [Step 5.2](#step-5-2) — the `list_pending_turns_for_session` API this substep calls.
+- [Architecture summary](#step-5-architecture) — the diagram showing the pre-translator pass and the journal-driven branch in `runReplay`.
+- Reducer behavior — `pendingUserMessage` is a free-floating slot in the existing reducer; the journal-id → claude-id migration is automatic (the reducer doesn't need to know about journal ids). [DM08]'s Implications spell this out.
+- Resume plan's [D04] — the reducer's msg_id-keyed dedupe is what makes the journal-id → claude-id migration safe (no double-commit). The synthetic frame's `msg_id = journal_id` is never added to `committedMsgIds` because no `turn_complete` is emitted for it; when the live `turn_complete` arrives with `msg_id = claude_id`, that's the first time a `committedMsgIds` entry gets added for the turn.
+- Acknowledged residual gap (a) in [Never-drop chain audit](#step-5-never-drop) — multi-pending singleton overwrite. The reducer's `pendingUserMessage` is a singleton; multiple unmatched pending rows result in only the most-recent rendering during the pending window. Confirmed-acceptable 2026-05-05; the messages remain durably stored and render fully when claude responds.
+- [E3 verdict](#e3-tugcast-buffering) — tugcast's broadcast subscription replay buffer. Subscribers that connect during the bracket window receive the synthetic frames via the buffer; this substep doesn't introduce any new subscription-timing assumption beyond what E3 characterized. Before this lands, a tugcode crash (or Tug.app crash, or any reload) between user submission and claude's first JSONL write loses the user's submission silently. After this lands, the journal's pending row is observed on resume and the submission is rendered as a turn awaiting a response.
 
 **Artifacts:**
 
@@ -2127,6 +2189,14 @@ Comparing pending rows against JSONL by exact text match is the simplest reliabl
 
 **Depends on:** [Step 5.6](#step-5-6) (the live path is fully on the new design before scaffolding deletion).
 
+**References:**
+
+- [DM08] — the decision; in particular "Migration scaffolding deleted: ... With the wire keyed by claude's id and JSONL the replay source, no migration is needed — the ledger only ever holds *currently pending* submissions, never historical ones."
+- [Step 4.8](#step-4-8) — origin of the migration scaffolding being deleted (`bootstrap_turns_from_jsonl`, `canonical_project_dir_for_jsonl`, `jsonl_reader.rs`). Step 4.8's audit fixup commit `2f9a9d52` introduced the firmlink-aware `canonical_project_dir_for_jsonl` helper; the standalone fixup commit `6bd46030` (post-Step-4.8 morning of 2026-05-05) refined it. Both come out here.
+- [Step 4.7](#step-4-7) — `reconcile_pending_for_session` (kept, narrowed). The bootstrap call is removed from `do_spawn_session`'s eager-spawn block; the reconcile call survives.
+- [What survives](#step-5-what-survives) — "Reverted" enumeration: all migration scaffolding named.
+- [Never-drop chain audit](#step-5-never-drop) — this substep does not add or remove any never-drop guarantee. It deletes scaffolding that was bridging legacy JSONL into the ledger; the new chain (rows 4–6 via [Step 5.6](#step-5-6); rows 7–8 via [Step 5.5](#step-5-5)) does not depend on bootstrap. The 5.6 never-drop smoke is run as a regression confirmation in this substep's checklist.
+
 **Artifacts:**
 
 - `tugrust/crates/tugcast/src/session_ledger.rs` — `bootstrap_turns_from_jsonl` function — DELETED. Any callers (the eager-spawn block in `agent_supervisor::do_spawn_session` from Step 4.8) — DELETED. The journal only holds *currently pending* submissions; no historical bootstrap is needed.
@@ -2166,6 +2236,16 @@ Comparing pending rows against JSONL by exact text match is the simplest reliabl
 **Commit:** `tide(journal): submission-journal smoke + retire DM07`
 
 **Depends on:** [Step 5.7](#step-5-7).
+
+**References:**
+
+- [DM08] — the active decision record being confirmed.
+- [DM07] (retired) — confirmed retired-inline with the submission-journal pivot recorded as [DM08]. The original [DM07] text is preserved verbatim under the RETIRED header (matching the [DM03]/[DM05] retirement pattern).
+- [Never-drop chain audit](#step-5-never-drop) — this substep verifies all 9 enumerated drop points have working recovery via the manual smoke checklist. The two acknowledged residual gaps (a) and (b) are confirmed as deferred-with-named-mitigation, not silent drops.
+- [Step 5.1](#step-5-1)–[Step 5.7](#step-5-7) — all prior substeps; this close-out flips their checkboxes and confirms the integration smoke.
+- [Step 6](#step-6) — the next plan step; this substep does NOT close out [Step 6]'s manual scenarios. Step 6 is the load-bearing manual gate that flips Plan Metadata `Status: shipped`.
+- [#exit-criteria] — the Phase Exit Criteria block updated by this substep.
+- User's design-goal quotes (preserved in [DM08]) — the close-out smoke confirms both: "the front end is not doing much work" (reducer is unchanged), and "we must NEVER drop a message on the floor" (every chain row from [Never-drop chain audit](#step-5-never-drop) has a working recovery).
 
 **Artifacts:**
 
