@@ -223,3 +223,71 @@ describe("deriveTideCardBannerSpec — precedence chain", () => {
     });
   });
 });
+
+describe("deriveTideCardBannerSpec — replay-deferred (wait-for-completion)", () => {
+  it("returns kind=replay-deferred when phase is replay_deferred", () => {
+    const spec = deriveTideCardBannerSpec(
+      baseSnap({ phase: "replay_deferred" }),
+      { dismissedAt: null },
+    );
+    expect(spec).toEqual({ kind: "replay-deferred" });
+  });
+
+  it("preflight wins over replay-deferred (cold-boot precedence preserved)", () => {
+    const spec = deriveTideCardBannerSpec(
+      baseSnap({
+        phase: "replay_deferred",
+        replayPreflightActive: true,
+      }),
+      { dismissedAt: null },
+    );
+    // Preflight is the cold-boot bridge banner; if it's somehow set
+    // alongside `replay_deferred` (only possible if a turn lands in
+    // a brand-new card and tugcode immediately defers), the
+    // existing precedence keeps the cold-boot copy until preflight
+    // resolves.
+    expect(spec.kind).toBe("replay-loading");
+  });
+
+  it("error wins over replay-deferred when an undismissed error is present", () => {
+    const at = 1_700_000_000_000;
+    const spec = deriveTideCardBannerSpec(
+      baseSnap({
+        phase: "replay_deferred",
+        lastError: {
+          cause: "session_state_errored",
+          message: "boom",
+          at,
+        },
+      }),
+      { dismissedAt: null },
+    );
+    expect(spec.kind).toBe("error");
+  });
+
+  it("transport-offline wins over replay-deferred", () => {
+    const spec = deriveTideCardBannerSpec(
+      baseSnap({ phase: "replay_deferred", transportState: "offline" }),
+      { dismissedAt: null },
+    );
+    expect(spec.kind).toBe("transport");
+  });
+
+  it("replay-deferred wins over the active-phase replay-loading branch", () => {
+    // `replay_deferred` precedes `replaying` in the deferred-then-
+    // replay sequence; it would never coexist on the same snapshot
+    // (phase is a single value), but the explicit precedence
+    // documents the intent.
+    const deferredSpec = deriveTideCardBannerSpec(
+      baseSnap({ phase: "replay_deferred" }),
+      { dismissedAt: null },
+    );
+    expect(deferredSpec.kind).toBe("replay-deferred");
+
+    const replayingSpec = deriveTideCardBannerSpec(
+      baseSnap({ phase: "replaying" }),
+      { dismissedAt: null },
+    );
+    expect(replayingSpec.kind).toBe("replay-loading");
+  });
+});

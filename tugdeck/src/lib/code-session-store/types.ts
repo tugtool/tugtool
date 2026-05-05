@@ -25,6 +25,16 @@ import type { AtomSegment } from "../tug-atom-img";
  * `canSubmit` and `canInterrupt` are both `false` and the live-frame
  * handlers drop their inputs (replay events flow through dedicated
  * handlers; the bracket guarantees ordering).
+ *
+ * `replay_deferred` is the placeholder phase tugcode signals when a
+ * `request_replay` arrives while a turn is in flight. Tugcode awaits
+ * the active turn's completion before running replay, so the bracket
+ * (`replay_started` → `replay_complete`) arrives only after the turn
+ * has finished and the JSONL is fully written. While
+ * `replay_deferred`, the card renders a "Claude is still responding"
+ * placeholder; `canSubmit` and `canInterrupt` are both `false`. The
+ * phase transitions to `replaying` on `replay_started` and (only via
+ * the replay path) onward to `idle` on `replay_complete`.
  */
 export type CodeSessionPhase =
   | "idle"
@@ -34,6 +44,7 @@ export type CodeSessionPhase =
   | "tool_work"
   | "awaiting_approval"
   | "replaying"
+  | "replay_deferred"
   | "errored";
 
 /**

@@ -348,6 +348,26 @@ export interface ReplayCompleteEvent {
 }
 
 /**
+ * Informational frame emitted by tugcode's `runReplay` when an
+ * active turn is in flight at the moment a `request_replay` arrives.
+ * The reducer transitions `phase: idle → replay_deferred` and
+ * renders a "Claude is still responding" placeholder. Tugcode
+ * suppresses outbound emit on the active turn, awaits its
+ * completion, then emits the normal `replay_started` →
+ * `replay_complete` bracket against the now-complete JSONL — at
+ * which point the reducer transitions `replay_deferred → replaying`.
+ *
+ * `reason` is a stable identifier ("active_turn_in_flight" today)
+ * so future deferral causes can be added without a wire change.
+ */
+export interface ReplayDeferredEvent {
+  type: "replay_deferred";
+  reason: string;
+  tug_session_id?: string;
+  [key: string]: unknown;
+}
+
+/**
  * Internal action injected by `CodeSessionStore.notifyResumeBindingLanded()`.
  * Not a wire event. The reducer flips `replayPreflightActive` to `true`
  * (only from idle + not-already-active) and emits a `schedule_timer`
@@ -420,6 +440,7 @@ export type CodeSessionEvent =
   | UserMessageReplayEvent
   | ReplayStartedEvent
   | ReplayCompleteEvent
+  | ReplayDeferredEvent
   | BindResumeAcknowledgedEvent
   | TickSoftBudgetEvent
   | TickTimeoutDwellDoneEvent

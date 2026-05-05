@@ -63,7 +63,7 @@ import {
   cardSessionBindingStore,
   type CardSessionMode,
 } from "@/lib/card-session-binding-store";
-import { sendSpawnSession } from "@/lib/session-lifecycle";
+import { sendRequestReplayUserRetry, sendSpawnSession } from "@/lib/session-lifecycle";
 import { TugProgress } from "../tug-progress";
 import {
   tideRestoreRegistry,
@@ -1250,6 +1250,7 @@ interface TideCardBodyProps {
 function renderTideCardBanner(
   spec: ReturnType<typeof deriveTideCardBannerSpec>,
   setDismissedAt: (at: number) => void,
+  onCheckAgain: () => void,
 ): React.ReactElement {
   if (spec.kind === "error") {
     return (
@@ -1337,6 +1338,39 @@ function renderTideCardBanner(
       />
     );
   }
+  if (spec.kind === "replay-deferred") {
+    // Wait-for-completion placeholder: a `request_replay` arrived
+    // while a turn was in flight. Tugcode is awaiting the active
+    // turn's completion before running replay (the JSONL won't be
+    // complete until claude finishes). The "Check again" button
+    // re-dispatches `request_replay` so the user has agency to
+    // re-poll if the wait feels long; tugcode either re-emits
+    // `replay_deferred` (turn still in flight) or proceeds to run
+    // replay (turn completed in the meantime). The wait can also be
+    // shortened by canceling the in-flight turn through normal
+    // means; the resulting truncated JSONL flushes the deferred
+    // replay immediately.
+    return (
+      <TugPaneBanner
+        visible={true}
+        variant="status"
+        tone="default"
+        iconSlot={
+          <TugProgress
+            variant="spinner"
+            size="sm"
+            aria-label="Waiting for turn to complete"
+          />
+        }
+        message="Claude is still responding to your previous message"
+        footer={
+          <TugPushButton emphasis="outlined" onClick={onCheckAgain}>
+            Check again
+          </TugPushButton>
+        }
+      />
+    );
+  }
   // kind === "none" — banner runs its exit animation if it was
   // previously visible, then unmounts.
   return <TugPaneBanner visible={false} message="" />;
@@ -1364,6 +1398,20 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   // cause through the picker.
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
   const bannerSpec = deriveTideCardBannerSpec(codeSnap, { dismissedAt });
+
+  // "Check again" handler for the wait-for-completion placeholder.
+  // Re-dispatches `request_replay` with the user-retry log shape.
+  // Tugcode handles re-entrant verbs idempotently (either re-emits
+  // `replay_deferred` or proceeds to actual replay if the active
+  // turn finished in the meantime), so the button is safe to spam.
+  const onCheckAgain = useCallback(() => {
+    const connection = getConnection();
+    if (!connection) {
+      console.warn("TideCardBody: connection unavailable for check-again");
+      return;
+    }
+    sendRequestReplayUserRetry(connection, codeSnap.tugSessionId);
+  }, [codeSnap.tugSessionId]);
 
   // Once the session hits any non-recoverable error, disable the entry —
   // the dismiss gesture only hides the banner, the underlying session is
@@ -1734,7 +1782,7 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
         false`; the component runs its exit animation and then
         unmounts via its internal `mounted` state.
       */}
-      {renderTideCardBanner(bannerSpec, setDismissedAt)}
+      {renderTideCardBanner(bannerSpec, setDismissedAt, onCheckAgain)}
       </div>
     </CardContentResponderScope>
   );
