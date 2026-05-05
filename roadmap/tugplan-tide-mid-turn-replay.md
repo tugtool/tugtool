@@ -1862,66 +1862,69 @@ Plus the close-out at [Step 6](#step-6) which retests Smoke D end-to-end against
 
 ##### Step 5.2: Schema narrow — `turns` becomes a submission journal {#step-5-2}
 
-**Commit:** `tugcast(journal): narrow turns to submission journal — drop claude_message_id, partial_text, completed_at, state`
+**Commit:** `tugcast(journal): narrow turns schema to submission journal; nuke + recreate, no migration`
 
 **Depends on:** [Step 5.1](#step-5-1) (wire is already free of the soon-to-be-deleted columns' downstream consumers).
 
 **References:**
 
 - [DM08] — the decision; in particular the "Ledger schema narrows" bullet under Implications, which spells out the exact columns coming off and the API methods being deleted.
-- [Step 4.1](#step-4-1) — origin of the v2 schema being narrowed. The `turns_cascade_delete_on_session` trigger and `migrations` table from 4.1 are preserved; the columns from 4.1 that bridged ids and back-referenced content come off.
+- [Step 4.1](#step-4-1) — origin of the schema being narrowed. The `turns_cascade_delete_on_session` trigger from 4.1 is preserved; the columns from 4.1 that bridged ids and back-referenced content come off.
 - [Architecture summary](#step-5-architecture) — the new 5-column journal shape (`journal_id`, `session_id`, `user_text`, `user_attachments`, `created_at`).
 - [What survives](#step-5-what-survives) — the "Reverted" / "Survives" enumeration that this substep enacts on the schema side.
 - [Never-drop chain audit](#step-5-never-drop) row 4 — the durability promise this schema underwrites: "Row in `sessions.db` (durable; WAL mode)." A pending row inserted at [Step 4.3](#step-4-3)'s `dispatch_one` intercept survives every drop scenario from row 4 through row 9.
 - [Resume / fork / continue semantics](#step-4-resume-fork-continue) — Step 4's resume/fork/continue analysis still applies; the narrowed schema does not change those semantics (forks still start with empty journal; resume reuses the existing rows; continue resolves to the most-recent session id).
 
+**No-migration policy (decided 2026-05-05):**
+
+There are no users to migrate, no production data to preserve. Tugtool is a single-developer dogfooding tool at this stage; the only `sessions.db` in existence is the developer's. The right move is therefore: **drop the existing `turns` table on first open, create the new schema fresh, delete any dead `migrations` infrastructure that was speculative.** No conditional ALTER paths, no version-gated copy logic, no idempotency dance for an upgrade scenario that doesn't exist. The narrowed schema is authored as the *only* shape `ensure_schema` ever creates.
+
+The developer's local `sessions.db` will lose any in-flight pending rows from before the upgrade. That is fine — pending rows older than the upgrade boundary correspond to submissions claude already acknowledged (the merger's intercept narrowing in [Step 5.3](#step-5-3) replaces the old "mark complete" path with FIFO delete, and the existing rows have no claude response coming back to delete them anyway). The developer flushes their `sessions.db` once before the new code runs and starts fresh from there.
+
 **Artifacts:**
 
-- `tugrust/crates/tugcast/src/session_ledger.rs` — new schema migration, v3 (v2 was Step 4.1's turns table; v3 narrows it). The migration is conservative:
+- `tugrust/crates/tugcast/src/session_ledger.rs` — `ensure_schema` is rewritten to create the narrowed `turns` table directly. No `migrations` table. Step 4.1's v2 schema (with `claude_message_id`, `partial_text`, `state`, `completed_at`, `ordinal`) goes away entirely.
 
   ```sql
-  -- Drop columns that no longer have a role. SQLite doesn't support
-  -- ALTER TABLE DROP COLUMN before 3.35; we use the proven pattern of
-  -- (1) create new table, (2) copy data, (3) drop old, (4) rename.
-  -- Pending rows from v2 that have a non-null claude_message_id should
-  -- be deleted entirely (they correspond to submissions claude already
-  -- acknowledged — the journal is for *unacknowledged* submissions).
-  CREATE TABLE turns_v3 (
+  -- The single shape ensure_schema creates. No migration; no version table.
+  -- A user upgrading from Step 4.1's schema should DELETE FROM turns + DROP
+  -- TABLE turns + DROP TRIGGER turns_cascade_delete_on_session before
+  -- running the new code, OR simply delete sessions.db (it gets recreated
+  -- on first open). Tugtool has no production users; this is the
+  -- developer's local file only.
+  CREATE TABLE IF NOT EXISTS turns (
       journal_id        TEXT PRIMARY KEY,
       session_id        TEXT NOT NULL,
       user_text         TEXT NOT NULL,
-      user_attachments  BLOB NOT NULL,
+      user_attachments  BLOB NOT NULL,            -- JSON array (serde_json)
       created_at        INTEGER NOT NULL
   );
-  CREATE INDEX turns_v3_session_created ON turns_v3(session_id, created_at);
-  CREATE TRIGGER turns_v3_cascade_delete_on_session
+
+  CREATE INDEX IF NOT EXISTS turns_session_created
+      ON turns(session_id, created_at);
+
+  CREATE TRIGGER IF NOT EXISTS turns_cascade_delete_on_session
   AFTER DELETE ON sessions
   FOR EACH ROW
   BEGIN
-      DELETE FROM turns_v3 WHERE session_id = OLD.session_id;
+      DELETE FROM turns WHERE session_id = OLD.session_id;
   END;
-
-  INSERT INTO turns_v3 (journal_id, session_id, user_text, user_attachments, created_at)
-      SELECT tug_turn_id, session_id, user_text, user_attachments, created_at
-      FROM turns
-      WHERE state = 'pending';
-
-  DROP TRIGGER IF EXISTS turns_cascade_delete_on_session;
-  DROP TABLE turns;
-  ALTER TABLE turns_v3 RENAME TO turns;
-  ALTER INDEX turns_v3_session_created RENAME TO turns_session_created;
-  -- The trigger keeps its v3 name; renaming is not strictly necessary.
   ```
 
 - `tugrust/crates/tugcast/src/session_ledger.rs` — Rust API narrows:
-  - `insert_pending_turn(session_id, user_text, attachments) -> journal_id` — keeps shape; column name `tug_turn_id` → `journal_id`.
-  - `delete_oldest_pending_for_session(session_id) -> Option<JournalRow>` — NEW. FIFO match on `created_at ASC LIMIT 1`. Returns the deleted row's content for any caller that needs it (logs, metrics).
-  - `list_pending_turns_for_session(session_id) -> Vec<JournalRow>` — NEW. Returns all pending rows for a session, ordered by `created_at`. Used by tugcode's `runReplay` (via the read-only sqlite handle) for the pending-row injection in [Step 5.6](#step-5-6).
+  - `insert_pending_turn(session_id, journal_id, user_text, attachments, now)` — keeps shape; column rename internally (`tug_turn_id` → `journal_id`). Caller mints the id externally so the merger and dispatcher share the source.
+  - `delete_oldest_pending_for_session(session_id) -> Option<JournalRow>` — NEW. FIFO match on `created_at ASC LIMIT 1`. Returns the deleted row's content for logging.
+  - `list_pending_turns_for_session(session_id) -> Vec<JournalRow>` — NEW. Returns all pending rows for a session, ordered by `created_at`. Used by tugcode's `runReplay` (via the read-only sqlite handle) for the pending-row injection in [Step 5.6](#step-5-6). Replaces the content-bearing variant from Step 4.1.
   - `mark_turn_complete` — DELETED.
   - `mark_turn_interrupted` — DELETED.
   - `record_partial_text` — DELETED.
-  - `list_turns_for_session` (the variant that returned content for replay) — DELETED. Replaced by `list_pending_turns_for_session`.
-  - `bootstrap_turns_from_jsonl` — kept as a stub returning `Ok(())` for [Step 5.7](#step-5-7) to delete cleanly. (Or deleted here; the substep boundary is a judgment call. Deletion-deferred makes the migration's incremental commit cleaner.)
+  - `list_turns_for_session` (content-bearing variant) — DELETED. Replaced by `list_pending_turns_for_session`.
+  - `get_turn_by_claude_message_id` (if it exists) — DELETED.
+  - `bootstrap_turns_from_jsonl` — DELETED entirely. (Step 5.7's job folds into 5.2 per the no-migration policy.)
+  - Migrations module / table / version-tracking helpers — DELETED. There is no `migrations` table to track; the schema is whatever `ensure_schema` creates today.
+- `tugrust/crates/tugcast/src/session_ledger.rs` — `canonical_project_dir_for_jsonl` (the macOS firmlink stripper) DELETED. JSONL path resolution lived only inside bootstrap, which is gone. (Step 5.7's job folds into 5.2.)
+- `tugrust/crates/tugcast/src/jsonl_reader.rs` — entire file DELETED. Used only by bootstrap. (Step 5.7's job folds into 5.2.)
+- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — the bootstrap call in `do_spawn_session`'s eager-spawn block DELETED. The `reconcile_pending_for_session` call survives (its narrowed role per 5.3+5.6 lives on per [DM08]'s implications).
 - `tugrust/crates/tugcast/src/session_ledger.rs` — `JournalRow` struct (replaces `TurnRow`):
   ```rust
   pub struct JournalRow {
@@ -1932,24 +1935,27 @@ Plus the close-out at [Step 6](#step-6) which retests Smoke D end-to-end against
       pub created_at: i64,
   }
   ```
+- `tugrust/crates/tugcast/src/session_ledger.rs` — supervisor + tugcode test surfaces using the old `TurnRow` / `mark_turn_complete` / `mark_turn_interrupted` / Step 4.1 column names update to the narrow shape. Calls into the deleted methods that the supervisor still makes (the merger intercept's `mark_turn_complete` / `mark_turn_interrupted` calls from Step 4.4) are temporarily stubbed to no-op until Step 5.3 narrows the merger.
 
 **Tasks:**
 
-- [ ] Add v3 migration to `SessionLedger::ensure_schema`.
-- [ ] Add `JournalRow` struct; remove `TurnRow` (or rename in place).
-- [ ] Add `delete_oldest_pending_for_session` API.
-- [ ] Add `list_pending_turns_for_session` API.
-- [ ] Remove `mark_turn_complete`, `mark_turn_interrupted`, `record_partial_text`, content-bearing variant of `list_turns_for_session` from the Rust API.
-- [ ] Update `tugrust/crates/tugcast/src/session_ledger_test.rs` (or wherever schema tests live) — schema-shape tests for v3, FIFO-match test for `delete_oldest_pending_for_session`, ordering test for `list_pending_turns_for_session`.
+- [x] Replace v1+v2 schema in `ensure_schema` with the single narrowed schema; drop the `migrations` table creation.
+- [x] Delete the `migrations` table read/write helpers from the Rust crate (e.g., `record_migration`, version-bump logic, the `MIGRATION_V2` constant).
+- [x] Replace `TurnRow` with `JournalRow`; rename column `tug_turn_id` → `journal_id` in struct, queries, and tests.
+- [x] Add `delete_oldest_pending_for_session` API + tests.
+- [x] Add `list_pending_turns_for_session` API + tests.
+- [x] Delete `mark_turn_complete`, `mark_turn_interrupted`, `record_partial_text`, `list_turns_for_session` (content-bearing), `get_turn_by_claude_message_id` from the API and their tests.
+- [x] Stub the merger's still-extant calls to `mark_turn_complete` / `mark_turn_interrupted` (called from `apply_outbound_turn_intercept`) to inert no-ops returning `Ok(())` so the build stays green; Step 5.3 replaces the call sites with `delete_oldest_pending_for_session`. The intent: keep this substep's blast radius bounded to the schema and API; defer behavior change to 5.3.
+- [x] Update tests in `session_ledger.rs` to the narrowed shape — schema-shape test, `insert_pending_turn` round-trip, `list_pending_turns_for_session` ordering, `delete_oldest_pending_for_session` FIFO, cascade trigger preserved.
 
 **Tests:**
 
-- [ ] **v3 migration from a fresh database**: open with no existing tables; assert v3 schema lands; `migrations` table has rows for v2 + v3.
-- [ ] **v3 migration from a v2 database with pending rows**: seed v2 with 3 pending + 2 complete rows; run migration; assert v3 has only the 3 pending rows; the 2 complete rows are dropped.
-- [ ] **v3 migration from a v2 database with already-applied v3**: run migration twice; assert idempotent (no double-create errors, no duplicate rows).
-- [ ] **`insert_pending_turn` round-trip**: insert; assert `journal_id` is returned; `list_pending_turns_for_session` returns the row.
-- [ ] **`delete_oldest_pending_for_session` FIFO**: insert 3 rows with monotonic `created_at`; call `delete_oldest_pending_for_session` 3 times; assert the rows come out in insertion order; fourth call returns `None`.
-- [ ] **`turns_cascade_delete_on_session` trigger preserved**: insert journal row; delete the parent session row; assert the journal row is gone.
+- [x] **Fresh-database schema shape**: open a fresh ledger; assert `turns` has exactly 5 columns (`journal_id`, `session_id`, `user_text`, `user_attachments`, `created_at`) and the cascade trigger fires on parent session delete.
+- [x] **`insert_pending_turn` round-trip**: insert; assert `list_pending_turns_for_session` returns the row.
+- [x] **`list_pending_turns_for_session` orders by `created_at` ASC**: insert 3 rows with monotonic `created_at`; assert order.
+- [x] **`delete_oldest_pending_for_session` FIFO**: insert 3 rows; call delete 3 times; assert FIFO order; fourth call returns `None`.
+- [x] **`turns_cascade_delete_on_session` trigger preserved**: insert journal row; delete the parent session row; assert the journal row is gone.
+- [x] **No migrations table**: `SELECT name FROM sqlite_master WHERE type='table'` does NOT include `migrations`.
 
 **Tuglaws cross-check:**
 
@@ -1957,7 +1963,8 @@ Plus the close-out at [Step 6](#step-6) which retests Smoke D end-to-end against
 
 **Checkpoint:**
 
-- [ ] `cargo nextest run -p tugcast` — green.
+- [x] `cargo nextest run -p tugcast` — green.
+- [x] `just lint` — clean.
 - [ ] `just lint` — clean.
 
 ---
@@ -2183,51 +2190,13 @@ Comparing pending rows against JSONL by exact text match is the simplest reliabl
 
 ---
 
-##### Step 5.7: Delete migration scaffolding {#step-5-7}
+##### Step 5.7: ~~Delete migration scaffolding~~ — ABSORBED INTO [Step 5.2](#step-5-2) {#step-5-7}
 
-**Commit:** `tugcast(journal): delete bootstrap_turns_from_jsonl, jsonl_reader, canonical_project_dir_for_jsonl`
+**Status:** ABSORBED (2026-05-05). The user's no-migration policy made this substep redundant: [Step 5.2](#step-5-2) already deletes `bootstrap_turns_from_jsonl`, `canonical_project_dir_for_jsonl`, `jsonl_reader.rs`, and the eager-spawn block's bootstrap call as part of the schema narrow. There is no migration scaffolding left to delete by the time the original 5.7 boundary is reached. The substep number is preserved so the [Phase Exit Criteria](#exit-criteria) and [Substep overview](#step-5-substeps-overview) tables don't have to renumber; the work itself is done.
 
-**Depends on:** [Step 5.6](#step-5-6) (the live path is fully on the new design before scaffolding deletion).
+**Tasks:** *(absorbed — see [Step 5.2 Tasks](#step-5-2))*
 
-**References:**
-
-- [DM08] — the decision; in particular "Migration scaffolding deleted: ... With the wire keyed by claude's id and JSONL the replay source, no migration is needed — the ledger only ever holds *currently pending* submissions, never historical ones."
-- [Step 4.8](#step-4-8) — origin of the migration scaffolding being deleted (`bootstrap_turns_from_jsonl`, `canonical_project_dir_for_jsonl`, `jsonl_reader.rs`). Step 4.8's audit fixup commit `2f9a9d52` introduced the firmlink-aware `canonical_project_dir_for_jsonl` helper; the standalone fixup commit `6bd46030` (post-Step-4.8 morning of 2026-05-05) refined it. Both come out here.
-- [Step 4.7](#step-4-7) — `reconcile_pending_for_session` (kept, narrowed). The bootstrap call is removed from `do_spawn_session`'s eager-spawn block; the reconcile call survives.
-- [What survives](#step-5-what-survives) — "Reverted" enumeration: all migration scaffolding named.
-- [Never-drop chain audit](#step-5-never-drop) — this substep does not add or remove any never-drop guarantee. It deletes scaffolding that was bridging legacy JSONL into the ledger; the new chain (rows 4–6 via [Step 5.6](#step-5-6); rows 7–8 via [Step 5.5](#step-5-5)) does not depend on bootstrap. The 5.6 never-drop smoke is run as a regression confirmation in this substep's checklist.
-
-**Artifacts:**
-
-- `tugrust/crates/tugcast/src/session_ledger.rs` — `bootstrap_turns_from_jsonl` function — DELETED. Any callers (the eager-spawn block in `agent_supervisor::do_spawn_session` from Step 4.8) — DELETED. The journal only holds *currently pending* submissions; no historical bootstrap is needed.
-- `tugrust/crates/tugcast/src/session_ledger.rs` — `canonical_project_dir_for_jsonl` helper (the macOS APFS firmlink prefix-stripper added in the Step 4.8 fixup) — DELETED. JSONL path resolution moves entirely to tugcode side; tugcast no longer reads JSONL.
-- `tugrust/crates/tugcast/src/jsonl_reader.rs` — the minimal Rust JSONL parser added in Step 4.8 — WHOLE FILE DELETED. Removed from `lib.rs` exports.
-- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — `do_spawn_session`'s eager-spawn block: the bootstrap call is removed. The `reconcile_pending_for_session` call survives (its narrowed role per Step 4.7 lives on per [DM08]'s implications).
-- Tests in `session_ledger_test.rs`, `agent_supervisor_test.rs` that exercised bootstrap or jsonl_reader paths — DELETED.
-
-**Tasks:**
-
-- [ ] Delete `bootstrap_turns_from_jsonl` and its tests.
-- [ ] Delete `canonical_project_dir_for_jsonl` and its tests (including the macOS firmlink-stripping unit test).
-- [ ] Delete `tugrust/crates/tugcast/src/jsonl_reader.rs` and remove from `lib.rs` exports.
-- [ ] Remove the bootstrap call from `do_spawn_session`'s eager-spawn block.
-- [ ] Run `cargo build` and `cargo nextest run` to surface any orphaned references.
-- [ ] Confirm the Smoke D regression test (the never-drop smoke from 5.6) still passes deterministically.
-
-**Tests:**
-
-- [ ] **Cargo build clean after deletion**: `cargo build -p tugcast --workspace` produces no warnings (warnings-as-errors).
-- [ ] **Test suite green**: `cargo nextest run -p tugcast` — green.
-- [ ] **Never-drop smoke (regression)**: rerun the 5.6 test; assert it still passes (deletion of scaffolding did not regress live-path behavior).
-
-**Tuglaws cross-check:**
-
-- N/A — Rust crate; no React.
-
-**Checkpoint:**
-
-- [ ] `cargo nextest run -p tugcast` — green.
-- [ ] `just lint` — clean.
+**Checkpoint:** *(absorbed — see [Step 5.2 Checkpoint](#step-5-2))*
 
 ---
 
@@ -2354,14 +2323,15 @@ Step 5's substep 5.7 lands the Smoke D regression test in its post-remediation f
 - [x] Step 4.5 (tugcode adoption — _superseded by Step 5.1_): shipped in `4e9047cc`. Adoption plumbing reverted in [Step 5.1](#step-5-1).
 - [x] Step 4.6 (ledger-driven runReplay — _superseded by Step 5.4_): shipped in `7aaa28a0`. `runLedgerDrivenReplay` and `extractTurnContent` deleted in [Step 5.4](#step-5-4).
 - [x] Step 4.7 (crash recovery — _retained, role narrowed_): shipped in `87df91fd`. `reconcile_pending_for_session` survives with its narrowed Step-5 role.
-- [x] Step 4.8 (migration — _superseded by Step 5.7_): shipped in `a2996ec5` (with audit fixups in `2f9a9d52`). All migration scaffolding deleted in [Step 5.7](#step-5-7).
+- [x] Step 4.8 (migration — _superseded by Step 5.2_): shipped in `a2996ec5` (with audit fixups in `2f9a9d52`). All migration scaffolding deleted in [Step 5.2](#step-5-2) (Step 5.7's job folded in per the no-migration policy).
 - [x] Step 5.1 (wire revert): `tug_turn_id`/`claude_message_id` come off the wire; canonicalization restored; bun test green.
-- [ ] Step 5.2 (schema narrow): `turns` table v3 lands as a 5-column submission journal; FIFO-match API added; bun test green for the migration; cargo nextest green.
+- [x] Step 5.2 (schema narrow): `turns` table narrowed to 5-column submission journal; migrations table + bootstrap + jsonl_reader deleted entirely (Step 5.7's job folded in per the no-migration policy); FIFO-match API added; cargo nextest + just lint green.
+- [x] Step 5.7 (delete migration scaffolding): ABSORBED into 5.2.
 - [ ] Step 5.3 (intercept narrow): merger's `turn_complete` intercept narrows to FIFO mark-seen; cargo nextest green.
 - [ ] Step 5.4 (restore translator-driven runReplay): `runLedgerDrivenReplay` and `extractTurnContent` deleted; `translateJsonlSession` resumes as the replay source; bun test green.
 - [ ] Step 5.5 (translator predicate fix): in-flight trailing turn emits content without a terminal event; bun test green; the original 2026-05-05 mid-turn bug structurally fixed by this one-line change.
 - [ ] Step 5.6 (pending-row replay): synthetic `user_message_replay` for unmatched pending rows; bun test green; **never-drop smoke passes deterministically across N=20** (load-bearing gate for [DM08]).
-- [ ] Step 5.7 (delete migration scaffolding): `bootstrap_turns_from_jsonl`, `canonical_project_dir_for_jsonl`, `jsonl_reader.rs` deleted; cargo nextest green.
+- [x] Step 5.7 (delete migration scaffolding): absorbed into [Step 5.2](#step-5-2). All migration scaffolding (`bootstrap_turns_from_jsonl`, `canonical_project_dir_for_jsonl`, `jsonl_reader.rs`, the migrations table, the supervisor's bootstrap call site) deleted in 5.2.
 - [ ] Step 5.8 (close-out): smoke + DM07 retired confirmed; phase exit checkboxes flipped.
 - [ ] Step 6 (close-out): submission-journal Smoke D regression test passes deterministically (N=20); six manual scenarios pass; smoke checklist updated; plan status `shipped`.
 - [ ] Smoke D — mid-turn reload — passes manually with the post-Step-5 design (the original 2026-05-05 bug confirmed fixed by [Step 5.5](#step-5-5)'s predicate change).

@@ -27,30 +27,27 @@
 //! Live rows are never evicted by either policy. A long-pinned card keeps its
 //! ledger row regardless of age.
 //!
-//! # Schema versioning
+//! # Schema
 //!
-//! - **v1** — `sessions` table only.
-//! - **v2** — adds `turns` (per-turn rows keyed by tugcast-minted
-//!   `tug_turn_id`) and a `migrations` table that records each applied
-//!   schema version. Cascade-on-`sessions`-DELETE is implemented via the
-//!   `turns_cascade_delete_on_session` trigger rather than a foreign-key
-//!   constraint: the supervisor inserts turns rows at user-message
-//!   dispatch time, before claude emits `session_init` and before the
-//!   bridge populates the `sessions` row, so an `INSERT`-time FK check
-//!   would chicken-and-egg. The trigger preserves the user-visible
-//!   "Forget cascades to turns" contract without coupling INSERT
-//!   ordering across the dispatch and bridge code paths.
+//! Two tables: `sessions` (one row per claude session, lifecycle state
+//! and metadata) and `turns` (a *submission journal* — one row per
+//! pending user submission, deleted as soon as claude acknowledges).
+//! Cascade-on-`sessions`-DELETE for the journal is implemented via the
+//! `turns_cascade_delete_on_session` trigger rather than a foreign-key
+//! constraint: the supervisor inserts journal rows at user-message
+//! dispatch time, before claude emits `session_init` and before the
+//! bridge populates the `sessions` row, so an `INSERT`-time FK check
+//! would chicken-and-egg. The trigger preserves the user-visible
+//! "Forget cascades to journal" contract without coupling INSERT
+//! ordering across the dispatch and bridge code paths.
 //!
-//! Bootstrap is purely additive: `CREATE TABLE IF NOT EXISTS` for every
-//! table, `CREATE INDEX IF NOT EXISTS` for every index,
-//! `CREATE TRIGGER IF NOT EXISTS` for cascades, and
-//! `INSERT OR IGNORE INTO migrations (version, applied_at) VALUES (N, ?)`
-//! for the current schema version. A v1 file therefore upgrades to v2 in
-//! place on first open: the new tables and trigger appear, the
-//! migrations marker is written, and existing `sessions` rows are
-//! preserved unchanged. Future schema variants must add their additive
-//! DDL, INSERT a row into `migrations` keyed on the new version, and
-//! update this section.
+//! Bootstrap creates both tables and the cascade trigger via
+//! `CREATE … IF NOT EXISTS`. There is no `migrations` table and no
+//! versioning machinery: tugtool is a single-developer dogfooding tool
+//! with no production users, so the right move when the schema changes
+//! is to delete the on-disk `sessions.db` and let the next open
+//! recreate it. See [DM08] in the mid-turn-replay plan for the
+//! no-migration policy.
 //!
 //! # Concurrency
 //!
@@ -58,10 +55,10 @@
 //! Sqlite runs in WAL mode with a 5-second `busy_timeout`. The supervisor's
 //! write cadence — one write per `session_init` / `turn_complete` /
 //! `resume_failed` / close — fits comfortably under those settings.
-//! Per-turn writes (`insert_pending_turn`, `mark_turn_complete`,
-//! `mark_turn_interrupted`) wrap their read-modify-write into an
-//! `IMMEDIATE` transaction so concurrent ledger handles on the same file
-//! cannot produce duplicate ordinals or trample state transitions.
+//! Journal writes (`insert_pending_turn`,
+//! `delete_oldest_pending_for_session`) are single-statement and don't
+//! need explicit transactions; sqlite's per-statement implicit
+//! transaction is enough.
 
 // The ledger surface is authored ahead of the supervisor wiring that consumes
 // it; suppress dead-code warnings for the public API until the bridge swap
@@ -105,9 +102,6 @@ pub enum LedgerError {
 
     #[error("invalid session state in row: {0}")]
     InvalidState(String),
-
-    #[error("invalid turn state in row: {0}")]
-    InvalidTurnState(String),
 
     #[error("serde error: {0}")]
     Serde(#[from] serde_json::Error),
@@ -159,64 +153,21 @@ pub struct SessionRow {
     pub card_id_live: Option<String>,
 }
 
-/// Lifecycle state of one row in the `turns` table.
-///
-/// - `Pending` — tugcast minted a `tug_turn_id` and persisted the row when
-///   the user submitted the prompt; claude has not (yet) acknowledged
-///   completion. The row's `claude_message_id` is `NULL` and
-///   `completed_at` is unset.
-/// - `Complete` — claude emitted `turn_complete` for this turn; the row
-///   carries the matched `claude_message_id` and `completed_at`.
-/// - `Interrupted` — the user (or a crash recovery sweep) cancelled the
-///   pending turn; `partial_text` may carry whatever assistant text had
-///   streamed so far, and `completed_at` is the cancel timestamp.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum TurnState {
-    Pending,
-    Complete,
-    Interrupted,
-}
-
-impl TurnState {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            TurnState::Pending => "pending",
-            TurnState::Complete => "complete",
-            TurnState::Interrupted => "interrupted",
-        }
-    }
-}
-
-impl std::str::FromStr for TurnState {
-    type Err = LedgerError;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "pending" => Ok(TurnState::Pending),
-            "complete" => Ok(TurnState::Complete),
-            "interrupted" => Ok(TurnState::Interrupted),
-            other => Err(LedgerError::InvalidTurnState(other.to_owned())),
-        }
-    }
-}
-
-/// One row of the `turns` table. Authored by tugcast at user-submit time
-/// (`insert_pending_turn`) and updated on `turn_complete` /
-/// `turn_cancelled` (`mark_turn_complete` / `mark_turn_interrupted`).
-/// `tugcode`'s replay path reads these rows in `ordinal` order to
-/// reconstruct the transcript across reload, restart, and crash boundaries.
+/// One row of the `turns` submission journal. Authored by tugcast at
+/// user-submit time (`insert_pending_turn`) and deleted by the merger's
+/// `turn_complete` intercept (FIFO match) once claude acknowledges the
+/// submission. While the row exists, the user submission is "pending" —
+/// claude hasn't yet recorded it in JSONL. The journal's only durable
+/// role is plugging the gap between user-submit and JSONL-acknowledge so
+/// `runReplay` can render the submission as awaiting-response on
+/// resume. See [DM08] in the mid-turn-replay plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TurnRow {
-    pub tug_turn_id: String,
+pub struct JournalRow {
+    pub journal_id: String,
     pub session_id: String,
-    pub ordinal: i64,
-    pub claude_message_id: Option<String>,
     pub user_text: String,
     pub user_attachments: Vec<serde_json::Value>,
-    pub state: TurnState,
-    pub partial_text: Option<String>,
     pub created_at: i64,
-    pub completed_at: Option<i64>,
 }
 
 /// Result of a successful `forget` call.
@@ -325,23 +276,15 @@ impl SessionLedger {
                 ON sessions(workspace_key, last_used_at DESC);
 
             CREATE TABLE IF NOT EXISTS turns (
-                tug_turn_id        TEXT PRIMARY KEY,
-                session_id         TEXT NOT NULL,
-                ordinal            INTEGER NOT NULL,
-                claude_message_id  TEXT,
-                user_text          TEXT NOT NULL,
-                user_attachments   BLOB NOT NULL,
-                state              TEXT NOT NULL,
-                partial_text       TEXT,
-                created_at         INTEGER NOT NULL,
-                completed_at       INTEGER
+                journal_id        TEXT PRIMARY KEY,
+                session_id        TEXT NOT NULL,
+                user_text         TEXT NOT NULL,
+                user_attachments  BLOB NOT NULL,
+                created_at        INTEGER NOT NULL
             );
 
-            CREATE INDEX IF NOT EXISTS turns_session_ordinal
-                ON turns(session_id, ordinal);
-
-            CREATE INDEX IF NOT EXISTS turns_claude_message_id
-                ON turns(claude_message_id);
+            CREATE INDEX IF NOT EXISTS turns_session_created
+                ON turns(session_id, created_at);
 
             CREATE TRIGGER IF NOT EXISTS turns_cascade_delete_on_session
             AFTER DELETE ON sessions
@@ -349,22 +292,7 @@ impl SessionLedger {
             BEGIN
                 DELETE FROM turns WHERE session_id = OLD.session_id;
             END;
-
-            CREATE TABLE IF NOT EXISTS migrations (
-                version    INTEGER PRIMARY KEY,
-                applied_at INTEGER NOT NULL
-            );
             ",
-        )?;
-        // Mark v2 applied. `INSERT OR IGNORE` keeps re-opens of an
-        // already-v2 database silent (the PRIMARY KEY rejects duplicate
-        // versions; we want re-open to be a no-op, not an error). v1
-        // files have no `migrations` table at all — the additive DDL
-        // above creates it on the spot, so this insert lands the v=2
-        // marker on the first upgrade and stays put on subsequent opens.
-        conn.execute(
-            "INSERT OR IGNORE INTO migrations (version, applied_at) VALUES (2, ?1)",
-            params![now_millis()],
         )?;
         Ok(())
     }
@@ -771,108 +699,103 @@ impl SessionLedger {
         Ok(names)
     }
 
-    // ── turns table ──────────────────────────────────────────────────────────
+    // ── submission journal ───────────────────────────────────────────────────
     //
-    // These methods are the per-turn write/read surface. The supervisor
-    // (`agent_supervisor.rs`) calls them from its dispatcher and merger
-    // intercepts; tugcode reads through them via cross-process bun:sqlite.
-    // All methods are crate-public; callers outside tugcast use the
-    // supervisor as the entry point.
+    // The `turns` table is a journal of pending user submissions: tugcast
+    // inserts a row at user-message dispatch (the supervisor's
+    // `dispatch_one` intercept), and the merger's `turn_complete`
+    // intercept deletes the oldest pending row for the session via
+    // `delete_oldest_pending_for_session` (FIFO match) once claude
+    // acknowledges. tugcode reads pending rows for a session via the
+    // cross-process bun:sqlite handle in `runReplay` and emits a synthetic
+    // `user_message_replay` for any row whose `user_text` does not appear
+    // as a `user_message` line in the JSONL — that's the never-drop
+    // recovery for the gap between user-submit and JSONL-acknowledge.
+    // See [DM08] in the mid-turn-replay plan.
 
-    /// Insert a fresh `pending` row keyed on `tug_turn_id`. The ordinal is
-    /// computed inside an `IMMEDIATE` transaction so two ledger handles
-    /// racing on the same file cannot land the same ordinal — the
-    /// transaction takes a `RESERVED` lock that blocks the other writer
-    /// until our INSERT commits.
-    ///
-    /// `user_attachments` is encoded as a JSON array and stored as BLOB.
-    /// The empty case (`&[]`) round-trips as `[]`. `claude_message_id`
-    /// stays `NULL` until `mark_turn_complete` (or, for cancelled turns,
-    /// `mark_turn_interrupted` does not need it because the wire shape
-    /// already carries it on `turn_cancelled`).
+    /// Insert a fresh row in the journal. `user_attachments` is encoded
+    /// as a JSON array and stored as BLOB; the empty case (`&[]`)
+    /// round-trips as `[]`. The caller mints `journal_id` (the supervisor
+    /// uses `Uuid::new_v4().to_string()` so the id is unique across the
+    /// whole database) and persists it before forwarding the
+    /// `user_message` frame to tugcode — that ordering is the durability
+    /// guarantee documented in [Never-drop chain audit row 4](#step-5-never-drop).
     pub fn insert_pending_turn(
         &self,
         session_id: &str,
-        tug_turn_id: &str,
+        journal_id: &str,
         user_text: &str,
         user_attachments: &[serde_json::Value],
         now: i64,
     ) -> Result<(), LedgerError> {
         let attachments_blob = serde_json::to_vec(user_attachments)?;
-        let mut conn = self.db.lock().expect("ledger mutex");
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let next_ordinal: i64 = tx.query_row(
-            "SELECT COALESCE(MAX(ordinal), -1) + 1 FROM turns WHERE session_id = ?1",
-            params![session_id],
-            |row| row.get(0),
-        )?;
-        tx.execute(
+        let conn = self.db.lock().expect("ledger mutex");
+        conn.execute(
             "INSERT INTO turns (
-                tug_turn_id, session_id, ordinal, claude_message_id,
-                user_text, user_attachments, state, partial_text,
-                created_at, completed_at
-             ) VALUES (?1, ?2, ?3, NULL, ?4, ?5, 'pending', NULL, ?6, NULL)",
-            params![
-                tug_turn_id,
-                session_id,
-                next_ordinal,
-                user_text,
-                attachments_blob,
-                now,
-            ],
+                journal_id, session_id, user_text, user_attachments, created_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![journal_id, session_id, user_text, attachments_blob, now],
         )?;
-        tx.commit()?;
         Ok(())
     }
 
-    /// Transition a `pending` row to `complete`, recording the matched
-    /// `claude_message_id` and `completed_at`. Returns `NotFound` if the
-    /// row doesn't exist; `InvalidTurnState` if the row is already
-    /// `complete` or `interrupted` (defensive — a duplicate `turn_complete`
-    /// upstream is a bug, not a no-op).
+    /// Delete the oldest pending row for `session_id` (FIFO match by
+    /// `created_at` ASC). Called from the merger's `turn_complete`
+    /// intercept (narrowed in [Step 5.3](#step-5-3) to delete-on-ack
+    /// rather than mark-complete-by-id). Returns the deleted row's
+    /// content so the caller can log it; returns `Ok(None)` if there
+    /// were no pending rows for the session (a `turn_complete` arrived
+    /// for a session whose journal is already empty — claude responding
+    /// to a turn the journal didn't see, e.g. resume-after-bootstrap-of-
+    /// older-tugcode-data).
+    pub fn delete_oldest_pending_for_session(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<JournalRow>, LedgerError> {
+        let mut conn = self.db.lock().expect("ledger mutex");
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let row = tx
+            .query_row(
+                "SELECT journal_id, session_id, user_text, user_attachments, created_at
+                 FROM turns
+                 WHERE session_id = ?1
+                 ORDER BY created_at ASC, journal_id ASC
+                 LIMIT 1",
+                params![session_id],
+                journal_row_from_query,
+            )
+            .optional()?;
+        let Some(decoded) = row else {
+            tx.commit()?;
+            return Ok(None);
+        };
+        let row = decoded?;
+        tx.execute(
+            "DELETE FROM turns WHERE journal_id = ?1",
+            params![row.journal_id],
+        )?;
+        tx.commit()?;
+        Ok(Some(row))
+    }
+
+    /// Stubbed in [Step 5.2](#step-5-2). Replaced in [Step 5.3](#step-5-3)
+    /// with `delete_oldest_pending_for_session`; the merger's
+    /// `apply_outbound_turn_intercept` still calls this in the Step 5.2
+    /// snapshot, so the function survives as a no-op until 5.3 narrows
+    /// the call site. Argument names preserved for grep continuity.
+    #[allow(unused_variables)]
     pub fn mark_turn_complete(
         &self,
         tug_turn_id: &str,
         claude_message_id: &str,
         completed_at: i64,
     ) -> Result<(), LedgerError> {
-        let mut conn = self.db.lock().expect("ledger mutex");
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let current_state: Option<String> = tx
-            .query_row(
-                "SELECT state FROM turns WHERE tug_turn_id = ?1",
-                params![tug_turn_id],
-                |row| row.get(0),
-            )
-            .optional()?;
-        match current_state {
-            None => return Err(LedgerError::NotFound(tug_turn_id.to_owned())),
-            Some(s) if s == TurnState::Pending.as_str() => {}
-            Some(other) => return Err(LedgerError::InvalidTurnState(other)),
-        }
-        tx.execute(
-            "UPDATE turns
-             SET state = 'complete',
-                 claude_message_id = ?2,
-                 completed_at = ?3
-             WHERE tug_turn_id = ?1",
-            params![tug_turn_id, claude_message_id, completed_at],
-        )?;
-        tx.commit()?;
         Ok(())
     }
 
-    /// Transition a `pending` row to `interrupted`, capturing whatever
-    /// `partial_text` had streamed so far and (when known) claude's
-    /// own message id from the cancelled assistant turn. `NotFound` /
-    /// `InvalidTurnState` follow the same shape as `mark_turn_complete`.
-    ///
-    /// `claude_message_id` is `Some` only when the cancel happened
-    /// after `message_start` (so the wire-side `turn_cancelled` carries
-    /// the id); a `None` here means "no id known yet, leave the row's
-    /// existing claude_message_id alone." `COALESCE(?, claude_message_id)`
-    /// in the SQL preserves any prior value rather than clobbering it
-    /// to NULL.
+    /// Stubbed in [Step 5.2](#step-5-2). Replaced in [Step 5.3](#step-5-3)
+    /// alongside `mark_turn_complete`; same rationale.
+    #[allow(unused_variables)]
     pub fn mark_turn_interrupted(
         &self,
         tug_turn_id: &str,
@@ -880,324 +803,46 @@ impl SessionLedger {
         partial_text: Option<&str>,
         completed_at: i64,
     ) -> Result<(), LedgerError> {
-        let mut conn = self.db.lock().expect("ledger mutex");
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let current_state: Option<String> = tx
-            .query_row(
-                "SELECT state FROM turns WHERE tug_turn_id = ?1",
-                params![tug_turn_id],
-                |row| row.get(0),
-            )
-            .optional()?;
-        match current_state {
-            None => return Err(LedgerError::NotFound(tug_turn_id.to_owned())),
-            Some(s) if s == TurnState::Pending.as_str() => {}
-            Some(other) => return Err(LedgerError::InvalidTurnState(other)),
-        }
-        tx.execute(
-            "UPDATE turns
-             SET state = 'interrupted',
-                 claude_message_id = COALESCE(?2, claude_message_id),
-                 partial_text = ?3,
-                 completed_at = ?4
-             WHERE tug_turn_id = ?1",
-            params![tug_turn_id, claude_message_id, partial_text, completed_at],
-        )?;
-        tx.commit()?;
+        let _ = (tug_turn_id, claude_message_id, partial_text, completed_at);
         Ok(())
     }
 
-    /// Snapshot the running `partial_text` for crash recovery. No-op if
-    /// the row is missing or no longer `pending` — the snapshot is best-
-    /// effort and the terminal `mark_turn_complete` /
-    /// `mark_turn_interrupted` writes the authoritative value. Idempotent
-    /// re-writes with the same value are fine.
-    pub fn record_partial_text(
+    /// All pending journal rows for `session_id`, ordered by `created_at`
+    /// ASC (FIFO). This is the read surface tugcode's `runReplay`
+    /// consumes through the cross-process `bun:sqlite` handle: for each
+    /// row whose `user_text` does NOT appear as a `user_message` line in
+    /// the JSONL, `runReplay` emits a synthetic `user_message_replay`
+    /// frame to render the submission as awaiting-response. See
+    /// [DM08]'s pending-row replay description in the mid-turn-replay plan.
+    pub fn list_pending_turns_for_session(
         &self,
-        tug_turn_id: &str,
-        partial_text: &str,
-    ) -> Result<(), LedgerError> {
-        let conn = self.db.lock().expect("ledger mutex");
-        conn.execute(
-            "UPDATE turns
-             SET partial_text = ?2
-             WHERE tug_turn_id = ?1 AND state = 'pending'",
-            params![tug_turn_id, partial_text],
-        )?;
-        Ok(())
-    }
-
-    /// All turns for `session_id`, ordered ascending by `ordinal`. This is
-    /// the read surface tugcode's `runReplay` consumes to rebuild the
-    /// transcript on cold-boot.
-    pub fn list_turns_for_session(&self, session_id: &str) -> Result<Vec<TurnRow>, LedgerError> {
+        session_id: &str,
+    ) -> Result<Vec<JournalRow>, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
-            "SELECT tug_turn_id, session_id, ordinal, claude_message_id,
-                    user_text, user_attachments, state, partial_text,
-                    created_at, completed_at
+            "SELECT journal_id, session_id, user_text, user_attachments, created_at
              FROM turns
              WHERE session_id = ?1
-             ORDER BY ordinal ASC",
+             ORDER BY created_at ASC, journal_id ASC",
         )?;
         let rows = stmt
-            .query_map(params![session_id], turn_row_from_query)?
+            .query_map(params![session_id], journal_row_from_query)?
             .collect::<Result<Vec<_>, _>>()?;
         rows.into_iter().collect()
     }
 
-    /// Single-row lookup by `tug_turn_id`.
-    pub fn get_turn(&self, tug_turn_id: &str) -> Result<Option<TurnRow>, LedgerError> {
-        let conn = self.db.lock().expect("ledger mutex");
-        let mut stmt = conn.prepare(
-            "SELECT tug_turn_id, session_id, ordinal, claude_message_id,
-                    user_text, user_attachments, state, partial_text,
-                    created_at, completed_at
-             FROM turns
-             WHERE tug_turn_id = ?1
-             LIMIT 1",
-        )?;
-        let row = stmt
-            .query_row(params![tug_turn_id], turn_row_from_query)
-            .optional()?;
-        match row {
-            Some(r) => Ok(Some(r?)),
-            None => Ok(None),
-        }
-    }
-
-    /// One-time JSONL → ledger migration for sessions that pre-date
-    /// the `turns` table. Walks the on-disk JSONL via the minimal
-    /// `jsonl_reader` parser, mints a fresh `tug_turn_id` per
-    /// historical turn, and bulk-inserts rows in a single immediate
-    /// transaction. Returns the number of rows inserted (`0` for no-op
-    /// paths: already-bootstrapped, missing JSONL, empty JSONL).
-    ///
-    /// **Idempotency** is gated by [`Self::list_turns_for_session`]:
-    /// any rows already present for the session short-circuit the
-    /// function with `Ok(0)`. Bootstrap is "all or nothing" — a
-    /// partial bootstrap shouldn't happen, so the whole-session gate
-    /// avoids the trap of "skip by `claude_message_id`" (which can't
-    /// disambiguate mid-turn entries that are still `null`-id at
-    /// bootstrap time). Live tugcode that's already inserting rows
-    /// for this session via `dispatch_one` (Step 4.3) takes
-    /// precedence — bootstrap won't try to re-create those.
-    ///
-    /// Per-row state mapping:
-    ///   - JSONL turn closed by `stop_reason: "end_turn"` →
-    ///     [`TurnState::Complete`] with `claude_message_id` set from
-    ///     the terminal assistant entry's `message.id`.
-    ///   - JSONL trailing turn at EOF (no terminal) →
-    ///     [`TurnState::Interrupted`] with `claude_message_id` from
-    ///     the latest assistant entry seen for the turn (or `NULL` if
-    ///     no assistant content reached the JSONL before the
-    ///     truncation). `partial_text` stays `NULL` — the historical
-    ///     content is still in the JSONL and `runReplay` will pick it
-    ///     up via `extractTurnContent` keyed on `claude_message_id`.
-    ///
-    /// `completed_at` is set to `now` for every row so the migration
-    /// timestamp reflects "row inserted by bootstrap" rather than
-    /// stamping the historical conversation time (which we don't
-    /// have to millisecond accuracy and which the picker doesn't read
-    /// from this column anyway).
-    ///
-    /// JSONL path: `<claude_projects_root>/<encode(project_dir)>/<session_id>.jsonl`.
-    /// Missing file → `Ok(0)` with a tracing line; malformed lines
-    /// inside the JSONL are silently skipped by the parser (same
-    /// permissiveness the TS translator uses on the live path).
-    pub fn bootstrap_turns_from_jsonl(
-        &self,
-        session_id: &str,
-        project_dir: &str,
-        now: i64,
-    ) -> Result<usize, LedgerError> {
-        // Whole-session idempotency gate.
-        if !self.list_turns_for_session(session_id)?.is_empty() {
-            return Ok(0);
-        }
-
-        // Resolve `project_dir` to the same user-facing form that
-        // claude code's `getcwd()` (and Node's `fs.realpath`, which
-        // tugcode's TS-side `runReplay` uses) produces. The on-disk
-        // JSONL lives under the encoded form of THAT path — matching
-        // it is the load-bearing requirement for bootstrap to find
-        // the file. Two ways the raw `project_dir` can differ from
-        // claude's view:
-        //
-        //   1. **Symlink in the path** (e.g. user-managed
-        //      `/u/src/tugtool` → `/Users/<u>/Mounts/u/src/tugtool`).
-        //      Claude resolves the symlink; tugcast must too.
-        //   2. **macOS APFS firmlink** (`/Users` ↔
-        //      `/System/Volumes/Data/Users`). Claude / Node /
-        //      `getcwd()` stop at the user-facing `/Users/...` form;
-        //      Rust's `std::fs::canonicalize` traverses through to
-        //      `/System/Volumes/Data/Users/...`. Strip the firmlink
-        //      prefix so the encoding matches what's on disk.
-        //
-        // Without (1), bootstrap silently no-ops on every dev machine
-        // that uses a symlinked project path. Without (2), bootstrap
-        // looks under `-System-Volumes-Data-Users-...` while the
-        // JSONL is at `-Users-...` — same silent miss, just with a
-        // different wrong path. Falls back to raw `project_dir` if
-        // canonicalize fails (deleted directory / fixture); the
-        // downstream `read_to_string` reports `NotFound` and
-        // bootstrap no-ops cleanly.
-        let canonical_project_dir = canonical_project_dir_for_jsonl(project_dir);
-        let encoded = encode_claude_project_name(&canonical_project_dir);
-        let jsonl_path = self
-            .claude_projects_root
-            .join(encoded)
-            .join(format!("{session_id}.jsonl"));
-
-        let jsonl = match std::fs::read_to_string(&jsonl_path) {
-            Ok(s) => s,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                tracing::info!(
-                    target: "tide::ledger",
-                    event = "bootstrap_jsonl_missing",
-                    session_id,
-                    project_dir,
-                    canonical_project_dir = canonical_project_dir.as_str(),
-                    path = %jsonl_path.display(),
-                );
-                return Ok(0);
-            }
-            Err(e) => return Err(LedgerError::Io(e)),
-        };
-
-        let parsed = crate::jsonl_reader::parse_turns_from_jsonl(&jsonl);
-        if parsed.is_empty() {
-            return Ok(0);
-        }
-
-        let mut conn = self.db.lock().expect("ledger mutex");
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let inserted = parsed.len();
-        for (ordinal, turn) in parsed.iter().enumerate() {
-            let tug_turn_id = uuid::Uuid::new_v4().to_string();
-            let attachments_blob = serde_json::to_vec(&turn.user_attachments)?;
-            let state_str = match turn.state {
-                crate::jsonl_reader::ParsedTurnState::Complete => "complete",
-                crate::jsonl_reader::ParsedTurnState::Interrupted => "interrupted",
-            };
-            tx.execute(
-                "INSERT INTO turns (
-                    tug_turn_id, session_id, ordinal, claude_message_id,
-                    user_text, user_attachments, state, partial_text,
-                    created_at, completed_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, ?8, ?8)",
-                params![
-                    tug_turn_id,
-                    session_id,
-                    ordinal as i64,
-                    turn.claude_message_id,
-                    turn.user_text,
-                    attachments_blob,
-                    state_str,
-                    now,
-                ],
-            )?;
-        }
-        tx.commit()?;
-
-        tracing::info!(
-            target: "tide::ledger",
-            event = "bootstrap",
-            session_id,
-            project_dir,
-            count = inserted,
-        );
-
-        Ok(inserted)
-    }
-
-    /// Reconcile every `pending` row owned by `session_id` to
-    /// `interrupted`. Used by the supervisor's spawn-worker hook
-    /// (mid-turn-replay step 4.7) just before launching a fresh
-    /// tugcode subprocess for a session whose previous tugcode is
-    /// gone — any rows still in `pending` at that moment are orphans
-    /// from the prior tugcode (clean exit before claude responded, or
-    /// crash mid-stream). Marking them `interrupted` lets the
-    /// next `runReplay` surface them as `turn_cancelled` rather than
-    /// leaving them stuck in a stale `pending` state forever.
-    ///
-    /// Policy: `partial_text` is left as `NULL` (we don't have the
-    /// streamed content; only the row's `user_text` survives), and
-    /// `claude_message_id` is preserved (`COALESCE`) — if a future
-    /// crash-recovery snapshot path populates it before this call
-    /// runs, we keep the value for the next run's JSONL lookup.
-    /// `completed_at` is set to `now` so the cancel timestamp
-    /// reflects when the supervisor reconciled, not when the original
-    /// turn started.
-    ///
-    /// Returns the `tug_turn_id`s of every reconciled row so the
-    /// caller can emit telemetry (one warn line per orphan in
-    /// production helps surface tugcode-crash patterns). Wraps the
-    /// SELECT-then-UPDATE in an immediate transaction so a concurrent
-    /// `mark_turn_complete` on the same row can't race the
-    /// reconciliation; whichever wins commits its full state
-    /// transition.
+    /// Stubbed in [Step 5.2](#step-5-2). The supervisor's `do_spawn_session`
+    /// eager-spawn block still calls this in the Step 5.2 snapshot; the
+    /// stub keeps the build green while [Step 5.6](#step-5-6) replaces the
+    /// caller with a no-op (the journal-driven pending-row replay handles
+    /// resume directly without a sweep step).
+    #[allow(unused_variables)]
     pub fn reconcile_pending_for_session(
         &self,
         session_id: &str,
         now: i64,
     ) -> Result<Vec<String>, LedgerError> {
-        let mut conn = self.db.lock().expect("ledger mutex");
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let pending_ids: Vec<String> = {
-            let mut stmt = tx.prepare(
-                "SELECT tug_turn_id FROM turns
-                 WHERE session_id = ?1 AND state = 'pending'
-                 ORDER BY ordinal ASC",
-            )?;
-            stmt.query_map(params![session_id], |row| row.get::<_, String>(0))?
-                .collect::<Result<Vec<_>, _>>()?
-        };
-        if pending_ids.is_empty() {
-            tx.commit()?;
-            return Ok(Vec::new());
-        }
-        // Bulk UPDATE — every pending row owned by this session goes
-        // to interrupted. partial_text stays NULL (we have no content);
-        // claude_message_id preserved via COALESCE if it was set.
-        tx.execute(
-            "UPDATE turns
-             SET state = 'interrupted',
-                 completed_at = ?2
-             WHERE session_id = ?1 AND state = 'pending'",
-            params![session_id, now],
-        )?;
-        tx.commit()?;
-        Ok(pending_ids)
-    }
-
-    /// Lookup by claude's message id. Used by the JSONL-bootstrap
-    /// migration in 4.8 ("did we already mint a tug_turn_id for this
-    /// claude_message_id?") and by replay in 4.6 to back-reference partial
-    /// content stored in the JSONL. If multiple rows somehow share a
-    /// `claude_message_id` (legacy data, JSONL replay edge case), the
-    /// row with the highest `ordinal` wins.
-    pub fn get_turn_by_claude_message_id(
-        &self,
-        claude_message_id: &str,
-    ) -> Result<Option<TurnRow>, LedgerError> {
-        let conn = self.db.lock().expect("ledger mutex");
-        let mut stmt = conn.prepare(
-            "SELECT tug_turn_id, session_id, ordinal, claude_message_id,
-                    user_text, user_attachments, state, partial_text,
-                    created_at, completed_at
-             FROM turns
-             WHERE claude_message_id = ?1
-             ORDER BY ordinal DESC
-             LIMIT 1",
-        )?;
-        let row = stmt
-            .query_row(params![claude_message_id], turn_row_from_query)
-            .optional()?;
-        match row {
-            Some(r) => Ok(Some(r?)),
-            None => Ok(None),
-        }
+        Ok(Vec::new())
     }
 }
 
@@ -1232,42 +877,29 @@ fn row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<SessionRow
     }))
 }
 
-/// Decode one row from a `SELECT … FROM turns` cursor matching the column
-/// order documented inline at every callsite. Same closure type as
-/// `row_from_query`: returns `rusqlite::Result<Result<TurnRow,
-/// LedgerError>>` so callers can distinguish row-decode errors (state
-/// string parse, BLOB JSON parse) from sqlite-level errors and surface
-/// them through `LedgerError`.
-fn turn_row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<TurnRow, LedgerError>> {
-    let tug_turn_id: String = row.get(0)?;
+/// Decode one row from a `SELECT journal_id, session_id, user_text,
+/// user_attachments, created_at FROM turns` cursor. Same closure type as
+/// `row_from_query`: returns `rusqlite::Result<Result<JournalRow,
+/// LedgerError>>` so callers can distinguish BLOB-JSON-decode errors
+/// from sqlite-level errors and surface them through `LedgerError`.
+fn journal_row_from_query(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<Result<JournalRow, LedgerError>> {
+    let journal_id: String = row.get(0)?;
     let session_id: String = row.get(1)?;
-    let ordinal: i64 = row.get(2)?;
-    let claude_message_id: Option<String> = row.get(3)?;
-    let user_text: String = row.get(4)?;
-    let attachments_blob: Vec<u8> = row.get(5)?;
-    let state_str: String = row.get(6)?;
-    let partial_text: Option<String> = row.get(7)?;
-    let created_at: i64 = row.get(8)?;
-    let completed_at: Option<i64> = row.get(9)?;
+    let user_text: String = row.get(2)?;
+    let attachments_blob: Vec<u8> = row.get(3)?;
+    let created_at: i64 = row.get(4)?;
     let user_attachments: Vec<serde_json::Value> = match serde_json::from_slice(&attachments_blob) {
         Ok(v) => v,
         Err(e) => return Ok(Err(LedgerError::Serde(e))),
     };
-    let state = match state_str.parse::<TurnState>() {
-        Ok(s) => s,
-        Err(e) => return Ok(Err(e)),
-    };
-    Ok(Ok(TurnRow {
-        tug_turn_id,
+    Ok(Ok(JournalRow {
+        journal_id,
         session_id,
-        ordinal,
-        claude_message_id,
         user_text,
         user_attachments,
-        state,
-        partial_text,
         created_at,
-        completed_at,
     }))
 }
 
@@ -1298,43 +930,6 @@ pub fn default_claude_projects_root() -> PathBuf {
     let home = dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from(std::env::var("HOME").unwrap_or_default()));
     home.join(".claude").join("projects")
-}
-
-/// Resolve `project_dir` to the user-facing form claude itself uses
-/// when writing JSONLs (and that tugcode's `runReplay` uses when
-/// reading them). Two transformations:
-///
-///   1. Resolve symlinks via `std::fs::canonicalize`. A user-typed
-///      path like `/u/src/tugtool` (symlink) becomes the realpath of
-///      the symlink target.
-///   2. Strip the macOS APFS firmlink prefix (`/System/Volumes/Data`)
-///      if present. macOS firmlinks set up `/Users` to be
-///      bidirectionally accessible at `/System/Volumes/Data/Users`,
-///      and Rust's `canonicalize` (via `realpath(3)`) traverses
-///      through to the latter. Claude code's `getcwd()` and Node's
-///      `fs.realpath` both stop at `/Users/...` — that's the form
-///      claude writes its on-disk path encoding under, and the form
-///      tugcode resolves to in `runReplay`'s `realpath` step. Strip
-///      the prefix so tugcast's encoding matches what's on disk.
-///
-/// Falls back to the raw input on canonicalize failure (deleted
-/// directory, fixture path that doesn't exist) — downstream callers
-/// then see a `NotFound` from the I/O attempt and treat it as a
-/// no-op.
-pub fn canonical_project_dir_for_jsonl(project_dir: &str) -> String {
-    let canonical = match std::fs::canonicalize(project_dir) {
-        Ok(p) => p.to_string_lossy().into_owned(),
-        Err(_) => return project_dir.to_owned(),
-    };
-    // macOS firmlink workaround. The "/System/Volumes/Data" prefix
-    // alone is not a valid path; require a trailing slash + content
-    // before stripping.
-    if let Some(stripped) = canonical.strip_prefix("/System/Volumes/Data")
-        && stripped.starts_with('/')
-    {
-        return stripped.to_owned();
-    }
-    canonical
 }
 
 /// Encode a project_dir into the directory name claude code uses under
@@ -2078,1093 +1673,188 @@ mod tests {
     }
 
     #[test]
-    fn schema_bootstrap_creates_v2_tables_and_marker() {
+    fn schema_bootstrap_creates_only_two_tables_and_no_migrations_table() {
+        // Pin the no-migration policy ([DM08] — mid-turn-replay [Step 5.2](#step-5-2)):
+        // bootstrap creates exactly `sessions` and `turns`, no `migrations` table.
         let l = fresh();
         let conn = l.db.lock().expect("ledger mutex");
         assert!(has_table(&conn, "sessions"));
         assert!(has_table(&conn, "turns"));
-        assert!(has_table(&conn, "migrations"));
-
-        let v: i64 = conn
-            .query_row(
-                "SELECT version FROM migrations WHERE version = 2",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(v, 2);
-
-        let total: i64 = conn
-            .query_row("SELECT COUNT(*) FROM migrations", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(total, 1);
+        assert!(!has_table(&conn, "migrations"));
     }
 
     #[test]
-    fn schema_bootstrap_migrates_v1_file_to_v2() {
-        // Pin the in-place v1→v2 upgrade path real users on existing
-        // ledger files will hit. Hand-build a v1 file (sessions table
-        // only, no turns, no migrations), seed a few rows, then open via
-        // SessionLedger and verify the new tables appear, the v=2 marker
-        // is written, and the existing rows survive unchanged.
-        let tmp = NamedTempFile::new().expect("temp file");
-        let path = tmp.path().to_path_buf();
-
-        {
-            let conn = Connection::open(&path).expect("open v1 file");
-            // v1 schema: sessions only.
-            conn.execute_batch(
-                "
-                CREATE TABLE sessions (
-                    session_id        TEXT PRIMARY KEY,
-                    workspace_key     TEXT NOT NULL,
-                    project_dir       TEXT NOT NULL,
-                    created_at        INTEGER NOT NULL,
-                    last_used_at      INTEGER NOT NULL,
-                    turn_count        INTEGER NOT NULL DEFAULT 0,
-                    first_user_prompt TEXT,
-                    state             TEXT NOT NULL,
-                    card_id_live      TEXT
-                );
-                CREATE INDEX sessions_workspace_recent
-                    ON sessions(workspace_key, last_used_at DESC);
-                ",
-            )
-            .unwrap();
-            conn.execute(
-                "INSERT INTO sessions (
-                    session_id, workspace_key, project_dir,
-                    created_at, last_used_at, turn_count,
-                    first_user_prompt, state, card_id_live
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                params![
-                    "legacy-1",
-                    "ws-old",
-                    "/proj/old",
-                    1_000_i64,
-                    1_000_i64,
-                    5_i64,
-                    "old prompt",
-                    "closed",
-                    Option::<String>::None,
-                ],
-            )
-            .unwrap();
-            conn.execute(
-                "INSERT INTO sessions (
-                    session_id, workspace_key, project_dir,
-                    created_at, last_used_at, turn_count,
-                    first_user_prompt, state, card_id_live
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                params![
-                    "legacy-2",
-                    "ws-old",
-                    "/proj/old",
-                    2_000_i64,
-                    2_000_i64,
-                    0_i64,
-                    Option::<String>::None,
-                    "failed",
-                    Option::<String>::None,
-                ],
-            )
-            .unwrap();
-        }
-
-        let l = SessionLedger::open(&path).unwrap();
-
-        {
-            let conn = l.db.lock().expect("ledger mutex");
-            assert!(has_table(&conn, "turns"));
-            assert!(has_table(&conn, "migrations"));
-
-            let v: i64 = conn
-                .query_row(
-                    "SELECT version FROM migrations WHERE version = 2",
-                    [],
-                    |row| row.get(0),
-                )
-                .unwrap();
-            assert_eq!(v, 2);
-
-            let total: i64 = conn
-                .query_row("SELECT COUNT(*) FROM migrations", [], |row| row.get(0))
-                .unwrap();
-            assert_eq!(total, 1);
-        }
-
-        let r1 = l.get("legacy-1").unwrap().expect("legacy-1 preserved");
-        assert_eq!(r1.workspace_key, "ws-old");
-        assert_eq!(r1.project_dir, "/proj/old");
-        assert_eq!(r1.turn_count, 5);
-        assert_eq!(r1.first_user_prompt.as_deref(), Some("old prompt"));
-        assert_eq!(r1.state, SessionState::Closed);
-
-        let r2 = l.get("legacy-2").unwrap().expect("legacy-2 preserved");
-        assert_eq!(r2.state, SessionState::Failed);
-    }
-
-    #[test]
-    fn migrations_marker_idempotent_across_reopens() {
-        let tmp = NamedTempFile::new().expect("temp file");
-        let path = tmp.path().to_path_buf();
-
-        for _ in 0..3 {
-            let l = SessionLedger::open(&path).unwrap();
-            drop(l);
-        }
-
-        let l = SessionLedger::open(&path).unwrap();
+    fn turns_table_has_narrowed_journal_columns() {
+        // Pin the narrowed schema. Five columns; no `claude_message_id`,
+        // `partial_text`, `state`, `completed_at`, `ordinal`.
+        let l = fresh();
         let conn = l.db.lock().expect("ledger mutex");
-        let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM migrations", [], |row| row.get(0))
+        let mut stmt = conn
+            .prepare("SELECT name FROM pragma_table_info('turns') ORDER BY cid")
             .unwrap();
-        assert_eq!(
-            count, 1,
-            "INSERT OR IGNORE keeps the v=2 marker singular across re-opens"
-        );
-        assert!(has_table(&conn, "turns"));
-    }
-
-    #[test]
-    fn insert_pending_turn_assigns_sequential_per_session_ordinals() {
-        let l = fresh();
-        let now = millis(0);
-        seed_live(&l, "s1", WS_A, "card-1", now);
-        seed_live(&l, "s2", WS_A, "card-2", now);
-
-        l.insert_pending_turn("s1", "t1", "first", &[], now)
-            .unwrap();
-        l.insert_pending_turn("s1", "t2", "second", &[], now)
-            .unwrap();
-        l.insert_pending_turn("s2", "t3", "first-of-s2", &[], now)
-            .unwrap();
-
-        let r1 = l.get_turn("t1").unwrap().expect("t1");
-        assert_eq!(r1.session_id, "s1");
-        assert_eq!(r1.ordinal, 0);
-        assert_eq!(r1.state, TurnState::Pending);
-        assert_eq!(r1.claude_message_id, None);
-        assert_eq!(r1.user_text, "first");
-        assert_eq!(r1.partial_text, None);
-        assert_eq!(r1.completed_at, None);
-        assert!(r1.user_attachments.is_empty());
-
-        let r2 = l.get_turn("t2").unwrap().expect("t2");
-        assert_eq!(r2.ordinal, 1);
-
-        // Ordinals are per-session, not global.
-        let r3 = l.get_turn("t3").unwrap().expect("t3");
-        assert_eq!(r3.session_id, "s2");
-        assert_eq!(r3.ordinal, 0);
-    }
-
-    #[test]
-    fn insert_pending_turn_persists_user_attachments() {
-        let l = fresh();
-        let now = millis(0);
-        seed_live(&l, "s1", WS_A, "card-1", now);
-        let attachments = vec![
-            serde_json::json!({"path": "/tmp/foo.txt", "size": 42}),
-            serde_json::json!({"path": "/tmp/bar.png", "kind": "image"}),
-        ];
-        l.insert_pending_turn("s1", "t1", "with-att", &attachments, now)
-            .unwrap();
-
-        let r = l.get_turn("t1").unwrap().expect("t1");
-        assert_eq!(r.user_attachments, attachments);
-    }
-
-    #[test]
-    fn mark_turn_complete_transitions_pending_to_complete() {
-        let l = fresh();
-        let now = millis(0);
-        seed_live(&l, "s1", WS_A, "card-1", now);
-        l.insert_pending_turn("s1", "t1", "hello", &[], now)
-            .unwrap();
-
-        let completed = now + 5_000;
-        l.mark_turn_complete("t1", "msg_abc", completed).unwrap();
-
-        let r = l.get_turn("t1").unwrap().unwrap();
-        assert_eq!(r.state, TurnState::Complete);
-        assert_eq!(r.claude_message_id.as_deref(), Some("msg_abc"));
-        assert_eq!(r.completed_at, Some(completed));
-        // user_text and ordinal preserved.
-        assert_eq!(r.user_text, "hello");
-        assert_eq!(r.ordinal, 0);
-    }
-
-    #[test]
-    fn mark_turn_complete_on_already_complete_returns_invalid_state() {
-        let l = fresh();
-        let now = millis(0);
-        seed_live(&l, "s1", WS_A, "card-1", now);
-        l.insert_pending_turn("s1", "t1", "hello", &[], now)
-            .unwrap();
-        l.mark_turn_complete("t1", "msg_abc", now + 1_000).unwrap();
-
-        let err = l
-            .mark_turn_complete("t1", "msg_def", now + 2_000)
-            .unwrap_err();
-        assert!(
-            matches!(err, LedgerError::InvalidTurnState(ref s) if s == "complete"),
-            "expected InvalidTurnState(\"complete\"); got {err:?}",
-        );
-    }
-
-    #[test]
-    fn mark_turn_complete_on_missing_row_returns_not_found() {
-        let l = fresh();
-        let err = l
-            .mark_turn_complete("ghost", "msg_abc", millis(0))
-            .unwrap_err();
-        assert!(matches!(err, LedgerError::NotFound(ref id) if id == "ghost"));
-    }
-
-    #[test]
-    fn mark_turn_interrupted_records_partial_text_and_state() {
-        let l = fresh();
-        let now = millis(0);
-        seed_live(&l, "s1", WS_A, "card-1", now);
-        l.insert_pending_turn("s1", "t1", "hello", &[], now)
-            .unwrap();
-
-        let cancelled_at = now + 3_000;
-        l.mark_turn_interrupted(
-            "t1",
-            Some("msg_01XYZ"),
-            Some("partial response..."),
-            cancelled_at,
-        )
-        .unwrap();
-
-        let r = l.get_turn("t1").unwrap().unwrap();
-        assert_eq!(r.state, TurnState::Interrupted);
-        assert_eq!(r.claude_message_id.as_deref(), Some("msg_01XYZ"));
-        assert_eq!(r.partial_text.as_deref(), Some("partial response..."));
-        assert_eq!(r.completed_at, Some(cancelled_at));
-    }
-
-    #[test]
-    fn mark_turn_interrupted_accepts_null_partial_text_and_claude_id() {
-        // A cancel before claude streamed `message_start` carries
-        // neither claude_message_id nor partial_text. Both are None;
-        // the row goes to interrupted, both columns stay NULL.
-        let l = fresh();
-        let now = millis(0);
-        seed_live(&l, "s1", WS_A, "card-1", now);
-        l.insert_pending_turn("s1", "t1", "hello", &[], now)
-            .unwrap();
-
-        l.mark_turn_interrupted("t1", None, None, now + 3_000)
-            .unwrap();
-        let r = l.get_turn("t1").unwrap().unwrap();
-        assert_eq!(r.state, TurnState::Interrupted);
-        assert_eq!(r.partial_text, None);
-        assert_eq!(r.claude_message_id, None);
-    }
-
-    #[test]
-    fn mark_turn_interrupted_preserves_existing_claude_message_id() {
-        // If the row's claude_message_id was set earlier (e.g., a
-        // future code path stamps it before cancel), passing None for
-        // claude_message_id must NOT clobber it. The COALESCE in the
-        // UPDATE preserves the existing value.
-        let l = fresh();
-        let now = millis(0);
-        seed_live(&l, "s1", WS_A, "card-1", now);
-        l.insert_pending_turn("s1", "t1", "hello", &[], now)
-            .unwrap();
-
-        // Pre-populate claude_message_id while still pending.
-        {
-            let conn = l.db.lock().expect("ledger mutex");
-            conn.execute(
-                "UPDATE turns SET claude_message_id = ?2 WHERE tug_turn_id = ?1",
-                params!["t1", "msg_pre"],
-            )
-            .unwrap();
-        }
-
-        l.mark_turn_interrupted("t1", None, Some("partial..."), now + 3_000)
-            .unwrap();
-        let r = l.get_turn("t1").unwrap().unwrap();
-        assert_eq!(
-            r.claude_message_id.as_deref(),
-            Some("msg_pre"),
-            "None must not clobber an existing claude_message_id",
-        );
-        assert_eq!(r.partial_text.as_deref(), Some("partial..."));
-    }
-
-    #[test]
-    fn record_partial_text_persists_latest_value() {
-        let l = fresh();
-        let now = millis(0);
-        seed_live(&l, "s1", WS_A, "card-1", now);
-        l.insert_pending_turn("s1", "t1", "hello", &[], now)
-            .unwrap();
-
-        l.record_partial_text("t1", "first chunk").unwrap();
-        let r = l.get_turn("t1").unwrap().unwrap();
-        assert_eq!(r.partial_text.as_deref(), Some("first chunk"));
-
-        l.record_partial_text("t1", "first chunk + second chunk")
-            .unwrap();
-        let r = l.get_turn("t1").unwrap().unwrap();
-        assert_eq!(
-            r.partial_text.as_deref(),
-            Some("first chunk + second chunk")
-        );
-    }
-
-    #[test]
-    fn record_partial_text_no_op_on_non_pending_or_missing() {
-        let l = fresh();
-        let now = millis(0);
-        seed_live(&l, "s1", WS_A, "card-1", now);
-        l.insert_pending_turn("s1", "t1", "hello", &[], now)
-            .unwrap();
-        l.mark_turn_complete("t1", "msg_abc", now + 1_000).unwrap();
-
-        // Already complete — must not overwrite partial_text.
-        l.record_partial_text("t1", "should-be-ignored").unwrap();
-        let r = l.get_turn("t1").unwrap().unwrap();
-        assert_eq!(r.partial_text, None);
-
-        // Missing — silent no-op (best-effort snapshot).
-        l.record_partial_text("ghost", "ignored").unwrap();
-    }
-
-    #[test]
-    fn list_turns_for_session_orders_by_ordinal_asc() {
-        let l = fresh();
-        let now = millis(0);
-        seed_live(&l, "s1", WS_A, "card-1", now);
-
-        // Bypass insert_pending_turn (which auto-assigns ordinals) and use
-        // raw SQL so we can verify ORDER BY against non-monotonic input.
-        {
-            let conn = l.db.lock().expect("ledger mutex");
-            for (id, ordinal) in [("ta", 5_i64), ("tb", 1), ("tc", 3)] {
-                conn.execute(
-                    "INSERT INTO turns (
-                        tug_turn_id, session_id, ordinal, claude_message_id,
-                        user_text, user_attachments, state, partial_text,
-                        created_at, completed_at
-                     ) VALUES (?1, ?2, ?3, NULL, '', X'5b5d', 'pending', NULL, ?4, NULL)",
-                    params![id, "s1", ordinal, now],
-                )
-                .unwrap();
-            }
-        }
-
-        let rows = l.list_turns_for_session("s1").unwrap();
-        let ids: Vec<&str> = rows.iter().map(|r| r.tug_turn_id.as_str()).collect();
-        assert_eq!(ids, vec!["tb", "tc", "ta"]);
-    }
-
-    #[test]
-    fn list_turns_for_session_filters_by_session() {
-        let l = fresh();
-        let now = millis(0);
-        seed_live(&l, "s1", WS_A, "card-1", now);
-        seed_live(&l, "s2", WS_A, "card-2", now);
-        l.insert_pending_turn("s1", "t1", "a", &[], now).unwrap();
-        l.insert_pending_turn("s2", "t2", "b", &[], now).unwrap();
-
-        let s1 = l.list_turns_for_session("s1").unwrap();
-        assert_eq!(s1.len(), 1);
-        assert_eq!(s1[0].tug_turn_id, "t1");
-
-        let s2 = l.list_turns_for_session("s2").unwrap();
-        assert_eq!(s2.len(), 1);
-        assert_eq!(s2[0].tug_turn_id, "t2");
-
-        let none = l.list_turns_for_session("never").unwrap();
-        assert!(none.is_empty());
-    }
-
-    #[test]
-    fn get_turn_and_get_turn_by_claude_message_id_roundtrip() {
-        let l = fresh();
-        let now = millis(0);
-        seed_live(&l, "s1", WS_A, "card-1", now);
-        let attachments = vec![serde_json::json!({"path": "/tmp/foo.txt", "size": 42})];
-        l.insert_pending_turn("s1", "t1", "with-att", &attachments, now)
-            .unwrap();
-
-        let r = l.get_turn("t1").unwrap().expect("by tug_turn_id");
-        assert_eq!(r.user_text, "with-att");
-        assert_eq!(r.user_attachments, attachments);
-
-        // Pre-completion: claude_message_id index lookup returns None.
-        assert!(l.get_turn_by_claude_message_id("never").unwrap().is_none());
-        assert!(
-            l.get_turn_by_claude_message_id("msg_abc")
-                .unwrap()
-                .is_none()
-        );
-
-        l.mark_turn_complete("t1", "msg_abc", now + 1_000).unwrap();
-
-        let r = l
-            .get_turn_by_claude_message_id("msg_abc")
+        let columns: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(0))
             .unwrap()
-            .expect("by claude id");
-        assert_eq!(r.tug_turn_id, "t1");
-        assert_eq!(r.state, TurnState::Complete);
-        assert_eq!(r.completed_at, Some(now + 1_000));
-
-        // Non-existent tug_turn_id → None.
-        assert!(l.get_turn("ghost").unwrap().is_none());
-    }
-
-    #[test]
-    fn cascade_delete_removes_turns_when_session_deleted() {
-        let l = fresh();
-        let now = millis(0);
-        seed_live(&l, "s1", WS_A, "card-1", now);
-        seed_live(&l, "s2", WS_A, "card-2", now);
-        l.insert_pending_turn("s1", "t1", "a", &[], now).unwrap();
-        l.insert_pending_turn("s1", "t2", "b", &[], now).unwrap();
-        l.insert_pending_turn("s2", "t3", "c", &[], now).unwrap();
-
-        {
-            let conn = l.db.lock().expect("ledger mutex");
-            conn.execute("DELETE FROM sessions WHERE session_id = 's1'", [])
-                .unwrap();
-        }
-
-        // s1's turns gone via FK cascade.
-        assert!(l.get_turn("t1").unwrap().is_none());
-        assert!(l.get_turn("t2").unwrap().is_none());
-        assert!(l.list_turns_for_session("s1").unwrap().is_empty());
-        // s2's turn untouched.
-        assert!(l.get_turn("t3").unwrap().is_some());
-    }
-
-    #[test]
-    fn insert_pending_turn_no_duplicate_ordinals_under_concurrency() {
-        // Cross-handle concurrency: each thread opens its own
-        // SessionLedger pointing at the same file, so the protection has
-        // to come from sqlite + IMMEDIATE transactions (not from the
-        // process-local mutex). With the IMMEDIATE tx on read-modify-
-        // write, ordinals stay unique and contiguous; without it the
-        // failure-first test below shows duplicates.
-        let tmp = NamedTempFile::new().expect("temp file");
-        let path = tmp.path().to_path_buf();
-
-        {
-            let l_seed = SessionLedger::open(&path).unwrap();
-            l_seed
-                .record_spawn("s1", WS_A, "/proj", "card-1", millis(0))
-                .unwrap();
-        }
-
-        let n_per_thread = 10usize;
-        let n_threads = 4usize;
-
-        let handles: Vec<_> = (0..n_threads)
-            .map(|t| {
-                let path = path.clone();
-                std::thread::spawn(move || {
-                    let l = SessionLedger::open(&path).expect("open ledger handle");
-                    for i in 0..n_per_thread {
-                        let id = format!("real-t{t}-i{i}");
-                        l.insert_pending_turn("s1", &id, "x", &[], millis(0))
-                            .unwrap();
-                    }
-                })
-            })
-            .collect();
-        for h in handles {
-            h.join().unwrap();
-        }
-
-        let l = SessionLedger::open(&path).unwrap();
-        let rows = l.list_turns_for_session("s1").unwrap();
-        assert_eq!(rows.len(), n_per_thread * n_threads);
-
-        let mut ordinals: Vec<i64> = rows.iter().map(|r| r.ordinal).collect();
-        ordinals.sort();
-        let expected: Vec<i64> = (0..(n_per_thread * n_threads) as i64).collect();
+            .collect::<Result<_, _>>()
+            .unwrap();
         assert_eq!(
-            ordinals, expected,
-            "ordinals must be unique and contiguous from 0",
+            columns,
+            vec![
+                "journal_id".to_string(),
+                "session_id".to_string(),
+                "user_text".to_string(),
+                "user_attachments".to_string(),
+                "created_at".to_string(),
+            ],
         );
     }
 
     #[test]
-    fn reconcile_pending_for_session_marks_all_pending_interrupted() {
-        // Multiple pending rows for one session: every one transitions
-        // to `interrupted`; the function returns all reconciled ids in
-        // ordinal order. Rows for unrelated sessions are untouched.
+    fn insert_pending_turn_round_trips_via_list_pending_turns_for_session() {
         let l = fresh();
-        let now = millis(0);
-        seed_live(&l, "s1", WS_A, "card-1", now);
-        seed_live(&l, "s2", WS_A, "card-2", now);
-        l.insert_pending_turn("s1", "t1a", "first", &[], now)
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        l.insert_pending_turn("s1", "j1", "hello", &[], millis(0))
             .unwrap();
-        l.insert_pending_turn("s1", "t1b", "second", &[], now)
-            .unwrap();
-        l.insert_pending_turn("s2", "t2a", "other-session", &[], now)
-            .unwrap();
-
-        let cancelled_at = now + 5_000;
-        let reconciled = l.reconcile_pending_for_session("s1", cancelled_at).unwrap();
-        assert_eq!(reconciled, vec!["t1a".to_owned(), "t1b".to_owned()]);
-
-        for id in ["t1a", "t1b"] {
-            let r = l.get_turn(id).unwrap().unwrap();
-            assert_eq!(r.state, TurnState::Interrupted);
-            assert_eq!(r.partial_text, None);
-            assert_eq!(r.completed_at, Some(cancelled_at));
-            // user_text preserved.
-            assert!(!r.user_text.is_empty());
-        }
-        // Unrelated session's pending row is NOT touched.
-        let other = l.get_turn("t2a").unwrap().unwrap();
-        assert_eq!(other.state, TurnState::Pending);
-    }
-
-    #[test]
-    fn reconcile_pending_for_session_skips_complete_and_interrupted_rows() {
-        // Mixed-state set: complete + interrupted + pending. Only the
-        // pending row reconciles; the others are untouched.
-        let l = fresh();
-        let now = millis(0);
-        seed_live(&l, "s1", WS_A, "card-1", now);
-        l.insert_pending_turn("s1", "tt-complete", "done", &[], now)
-            .unwrap();
-        l.mark_turn_complete("tt-complete", "msg_complete", now + 1_000)
-            .unwrap();
-        l.insert_pending_turn("s1", "tt-interrupted", "stopped", &[], now)
-            .unwrap();
-        l.mark_turn_interrupted("tt-interrupted", None, Some("partial..."), now + 2_000)
-            .unwrap();
-        l.insert_pending_turn("s1", "tt-pending", "still going", &[], now)
-            .unwrap();
-
-        let reconciled = l.reconcile_pending_for_session("s1", now + 10_000).unwrap();
-        assert_eq!(reconciled, vec!["tt-pending".to_owned()]);
-
-        // Complete row preserved.
-        let c = l.get_turn("tt-complete").unwrap().unwrap();
-        assert_eq!(c.state, TurnState::Complete);
-        assert_eq!(c.claude_message_id.as_deref(), Some("msg_complete"));
-
-        // Interrupted row preserved (cancelled_at unchanged).
-        let i = l.get_turn("tt-interrupted").unwrap().unwrap();
-        assert_eq!(i.state, TurnState::Interrupted);
-        assert_eq!(i.completed_at, Some(now + 2_000));
-        assert_eq!(i.partial_text.as_deref(), Some("partial..."));
-
-        // Pending → interrupted with NULL partial_text and the
-        // reconciliation timestamp.
-        let p = l.get_turn("tt-pending").unwrap().unwrap();
-        assert_eq!(p.state, TurnState::Interrupted);
-        assert_eq!(p.partial_text, None);
-        assert_eq!(p.completed_at, Some(now + 10_000));
-    }
-
-    #[test]
-    fn reconcile_pending_for_session_returns_empty_when_none_pending() {
-        // No pending rows: return Ok([]) without writing anything.
-        // Pins the no-op fast path.
-        let l = fresh();
-        let now = millis(0);
-        seed_live(&l, "s1", WS_A, "card-1", now);
-        l.insert_pending_turn("s1", "tt-1", "x", &[], now).unwrap();
-        l.mark_turn_complete("tt-1", "msg_1", now + 1_000).unwrap();
-
-        let reconciled = l.reconcile_pending_for_session("s1", now + 5_000).unwrap();
-        assert!(reconciled.is_empty());
-        let r = l.get_turn("tt-1").unwrap().unwrap();
-        // Complete row's completed_at unchanged.
-        assert_eq!(r.completed_at, Some(now + 1_000));
-    }
-
-    #[test]
-    fn reconcile_pending_for_session_unknown_session_is_no_op() {
-        let l = fresh();
-        let reconciled = l
-            .reconcile_pending_for_session("never-existed", millis(0))
-            .unwrap();
-        assert!(reconciled.is_empty());
-    }
-
-    #[test]
-    fn reconcile_pending_for_session_preserves_existing_claude_message_id() {
-        // Stretch case: a future code path stamps claude_message_id on
-        // a pending row before the reconciliation runs (e.g., a
-        // partial-snapshot path lands the id ahead of cancel). The
-        // reconcile UPDATE doesn't touch claude_message_id — only
-        // state, completed_at. Pinned so a future "always NULL it"
-        // refactor can't silently drop a known back-reference.
-        let l = fresh();
-        let now = millis(0);
-        seed_live(&l, "s1", WS_A, "card-1", now);
-        l.insert_pending_turn("s1", "tt-1", "x", &[], now).unwrap();
-        {
-            let conn = l.db.lock().expect("ledger mutex");
-            conn.execute(
-                "UPDATE turns SET claude_message_id = 'msg_pre'
-                 WHERE tug_turn_id = 'tt-1'",
-                [],
-            )
-            .unwrap();
-        }
-
-        let reconciled = l.reconcile_pending_for_session("s1", now + 1_000).unwrap();
-        assert_eq!(reconciled, vec!["tt-1".to_owned()]);
-        let r = l.get_turn("tt-1").unwrap().unwrap();
-        assert_eq!(r.state, TurnState::Interrupted);
-        assert_eq!(
-            r.claude_message_id.as_deref(),
-            Some("msg_pre"),
-            "claude_message_id preserved across reconciliation",
-        );
-    }
-
-    /// Failure-first proof: if `insert_pending_turn` released the lock
-    /// between its SELECT max(ordinal) and INSERT, racing handles would
-    /// produce duplicate ordinals. We model that buggy variant here and
-    /// assert duplicates surface — without this the no-duplicates test
-    /// above could pass even if the production code lost its protection.
-    fn buggy_insert_with_split_locks(
-        ledger: &SessionLedger,
-        session_id: &str,
-        tug_turn_id: &str,
-        now: i64,
-    ) -> Result<(), LedgerError> {
-        let next_ordinal: i64 = {
-            let conn = ledger.db.lock().expect("ledger mutex");
-            conn.query_row(
-                "SELECT COALESCE(MAX(ordinal), -1) + 1 FROM turns WHERE session_id = ?1",
-                params![session_id],
-                |row| row.get(0),
-            )?
-        };
-        // Drop the lock and sleep to widen the race window. Other ledger
-        // handles can now read the same max ordinal and race us into
-        // INSERT with a duplicate value.
-        std::thread::sleep(std::time::Duration::from_millis(20));
-        let conn = ledger.db.lock().expect("ledger mutex");
-        conn.execute(
-            "INSERT INTO turns (
-                tug_turn_id, session_id, ordinal, claude_message_id,
-                user_text, user_attachments, state, partial_text,
-                created_at, completed_at
-             ) VALUES (?1, ?2, ?3, NULL, '', X'5b5d', 'pending', NULL, ?4, NULL)",
-            params![tug_turn_id, session_id, next_ordinal, now],
-        )?;
-        Ok(())
-    }
-
-    #[test]
-    fn buggy_split_lock_inserter_produces_duplicate_ordinals() {
-        let tmp = NamedTempFile::new().expect("temp file");
-        let path = tmp.path().to_path_buf();
-
-        {
-            let l_seed = SessionLedger::open(&path).unwrap();
-            l_seed
-                .record_spawn("s1", WS_A, "/proj", "card-1", millis(0))
-                .unwrap();
-        }
-
-        let n_per_thread = 5usize;
-        let n_threads = 4usize;
-
-        let handles: Vec<_> = (0..n_threads)
-            .map(|t| {
-                let path = path.clone();
-                std::thread::spawn(move || {
-                    let l = SessionLedger::open(&path).expect("open ledger handle");
-                    for i in 0..n_per_thread {
-                        let id = format!("buggy-t{t}-i{i}");
-                        buggy_insert_with_split_locks(&l, "s1", &id, millis(0)).unwrap();
-                    }
-                })
-            })
-            .collect();
-        for h in handles {
-            h.join().unwrap();
-        }
-
-        let l = SessionLedger::open(&path).unwrap();
-        let rows = l.list_turns_for_session("s1").unwrap();
-        assert_eq!(rows.len(), n_per_thread * n_threads);
-
-        let mut ordinals: Vec<i64> = rows.iter().map(|r| r.ordinal).collect();
-        ordinals.sort();
-        let mut deduped = ordinals.clone();
-        deduped.dedup();
-        assert!(
-            deduped.len() < ordinals.len(),
-            "buggy split-lock inserter must produce duplicate ordinals \
-             (proves the production no-duplicates test is meaningful); \
-             ordinals={ordinals:?}",
-        );
-    }
-
-    // ── bootstrap_turns_from_jsonl (mid-turn-replay step 4.8) ────────────────
-    //
-    // Migration path for sessions that pre-date the turns table.
-    // Idempotency via `list_turns_for_session` short-circuit; per-row
-    // state derived from the JSONL parser's `ParsedTurnState`.
-
-    fn write_jsonl_content(
-        root: &Path,
-        project_dir: &str,
-        session_id: &str,
-        content: &str,
-    ) -> PathBuf {
-        let encoded = encode_claude_project_name(project_dir);
-        let project_root = root.join(encoded);
-        std::fs::create_dir_all(&project_root).expect("mkdir project root");
-        let path = project_root.join(format!("{session_id}.jsonl"));
-        std::fs::write(&path, content).expect("write jsonl");
-        path
-    }
-
-    /// JSONL with N consecutive complete turns (each `user → assistant
-    /// end_turn`). Lets the historical-bootstrap test fixture stay
-    /// compact.
-    fn jsonl_with_complete_turns(n: usize) -> String {
-        let mut lines: Vec<String> = Vec::new();
-        for i in 0..n {
-            lines.push(
-                serde_json::json!({
-                    "type": "user",
-                    "message": {
-                        "role": "user",
-                        "content": [{ "type": "text", "text": format!("u{i}") }]
-                    }
-                })
-                .to_string(),
-            );
-            lines.push(
-                serde_json::json!({
-                    "type": "assistant",
-                    "message": {
-                        "id": format!("msg_claude_{i}"),
-                        "stop_reason": "end_turn",
-                        "content": [{ "type": "text", "text": format!("a{i}") }]
-                    }
-                })
-                .to_string(),
-            );
-        }
-        lines.join("\n") + "\n"
-    }
-
-    #[test]
-    fn bootstrap_inserts_consecutive_ordinals_for_complete_turns() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let l = fresh_ledger_with_root(tmp.path());
-        write_jsonl_content(
-            tmp.path(),
-            "/proj/legacy",
-            "sess-legacy",
-            &jsonl_with_complete_turns(5),
-        );
-
-        let inserted = l
-            .bootstrap_turns_from_jsonl("sess-legacy", "/proj/legacy", millis(0))
-            .unwrap();
-        assert_eq!(inserted, 5);
-
-        let rows = l.list_turns_for_session("sess-legacy").unwrap();
-        assert_eq!(rows.len(), 5);
-        for (i, row) in rows.iter().enumerate() {
-            assert_eq!(row.ordinal, i as i64);
-            assert_eq!(row.user_text, format!("u{i}"));
-            assert_eq!(
-                row.claude_message_id.as_deref(),
-                Some(format!("msg_claude_{i}").as_str()),
-            );
-            assert_eq!(row.state, TurnState::Complete);
-            assert_eq!(row.partial_text, None);
-            // Tug_turn_id is freshly minted (UUID).
-            assert_eq!(row.tug_turn_id.len(), 36);
-            // completed_at == now passed in.
-            assert_eq!(row.completed_at, Some(millis(0)));
-        }
-    }
-
-    #[test]
-    fn bootstrap_is_idempotent_on_re_run() {
-        // Running bootstrap twice on the same session: second call is
-        // a no-op (returns 0 because rows already exist).
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let l = fresh_ledger_with_root(tmp.path());
-        write_jsonl_content(
-            tmp.path(),
-            "/proj/idem",
-            "sess-idem",
-            &jsonl_with_complete_turns(2),
-        );
-
-        let first = l
-            .bootstrap_turns_from_jsonl("sess-idem", "/proj/idem", millis(0))
-            .unwrap();
-        assert_eq!(first, 2);
-        let second = l
-            .bootstrap_turns_from_jsonl("sess-idem", "/proj/idem", millis(0) + 1_000)
-            .unwrap();
-        assert_eq!(second, 0, "second call must short-circuit on existing rows");
-        // Total rows unchanged.
-        let rows = l.list_turns_for_session("sess-idem").unwrap();
-        assert_eq!(rows.len(), 2);
-    }
-
-    #[test]
-    fn bootstrap_partial_jsonl_yields_complete_then_interrupted() {
-        // 3 complete turns + 1 mid-turn (no end_turn). Bootstrap
-        // classifies the trailing turn as interrupted.
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let l = fresh_ledger_with_root(tmp.path());
-        let mut content = jsonl_with_complete_turns(3);
-        content.push_str(
-            &serde_json::json!({
-                "type": "user",
-                "message": {
-                    "role": "user",
-                    "content": [{ "type": "text", "text": "uX" }]
-                }
-            })
-            .to_string(),
-        );
-        content.push('\n');
-        content.push_str(
-            &serde_json::json!({
-                "type": "assistant",
-                "message": {
-                    "id": "msg_partial",
-                    "stop_reason": null,
-                    "content": [{ "type": "text", "text": "aX..." }]
-                }
-            })
-            .to_string(),
-        );
-        content.push('\n');
-        write_jsonl_content(tmp.path(), "/proj/partial", "sess-partial", &content);
-
-        let inserted = l
-            .bootstrap_turns_from_jsonl("sess-partial", "/proj/partial", millis(0))
-            .unwrap();
-        assert_eq!(inserted, 4);
-
-        let rows = l.list_turns_for_session("sess-partial").unwrap();
-        // First 3 complete.
-        for (i, row) in rows.iter().enumerate().take(3) {
-            assert_eq!(row.state, TurnState::Complete);
-            assert_eq!(row.user_text, format!("u{i}"));
-            assert_eq!(
-                row.claude_message_id.as_deref(),
-                Some(format!("msg_claude_{i}").as_str()),
-            );
-        }
-        // Trailing turn: interrupted, with claude_message_id captured.
-        assert_eq!(rows[3].state, TurnState::Interrupted);
-        assert_eq!(rows[3].user_text, "uX");
-        assert_eq!(rows[3].claude_message_id.as_deref(), Some("msg_partial"));
-        assert_eq!(rows[3].partial_text, None);
-    }
-
-    #[test]
-    fn bootstrap_skips_malformed_lines() {
-        // Surrounding turns insert; the malformed line is silently
-        // dropped by the parser. Pin so a future "fail-on-malformed"
-        // refactor can't silently break legacy migration.
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let l = fresh_ledger_with_root(tmp.path());
-        let content = format!(
-            "{}\nthis is not json\n{}\n",
-            serde_json::to_string(&serde_json::json!({
-                "type": "user",
-                "message": { "role": "user", "content": [{ "type": "text", "text": "u" }] }
-            }))
-            .unwrap(),
-            serde_json::to_string(&serde_json::json!({
-                "type": "assistant",
-                "message": {
-                    "id": "msg_after_garbage",
-                    "stop_reason": "end_turn",
-                    "content": [{ "type": "text", "text": "a" }]
-                }
-            }))
-            .unwrap(),
-        );
-        write_jsonl_content(tmp.path(), "/proj/malf", "sess-malf", &content);
-
-        let inserted = l
-            .bootstrap_turns_from_jsonl("sess-malf", "/proj/malf", millis(0))
-            .unwrap();
-        assert_eq!(inserted, 1);
-        let rows = l.list_turns_for_session("sess-malf").unwrap();
+        let rows = l.list_pending_turns_for_session("s1").unwrap();
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].user_text, "u");
-        assert_eq!(
-            rows[0].claude_message_id.as_deref(),
-            Some("msg_after_garbage"),
-        );
+        assert_eq!(rows[0].journal_id, "j1");
+        assert_eq!(rows[0].session_id, "s1");
+        assert_eq!(rows[0].user_text, "hello");
+        assert!(rows[0].user_attachments.is_empty());
     }
 
     #[test]
-    fn bootstrap_missing_jsonl_returns_zero() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let l = fresh_ledger_with_root(tmp.path());
-        // No JSONL file written.
-        let inserted = l
-            .bootstrap_turns_from_jsonl("sess-missing", "/proj/none", millis(0))
+    fn insert_pending_turn_persists_user_attachments_round_trip() {
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        let attachments = vec![
+            serde_json::json!({"filename": "a.txt", "content": "hi", "media_type": "text/plain"}),
+        ];
+        l.insert_pending_turn("s1", "j1", "with attachment", &attachments, millis(0))
             .unwrap();
-        assert_eq!(inserted, 0);
-        assert!(l.list_turns_for_session("sess-missing").unwrap().is_empty());
-    }
-
-    #[test]
-    fn bootstrap_empty_jsonl_returns_zero() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let l = fresh_ledger_with_root(tmp.path());
-        write_jsonl_content(tmp.path(), "/proj/empty", "sess-empty", "");
-        let inserted = l
-            .bootstrap_turns_from_jsonl("sess-empty", "/proj/empty", millis(0))
-            .unwrap();
-        assert_eq!(inserted, 0);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn bootstrap_canonicalizes_symlinked_project_dir_before_path_encoding() {
-        // Regression pin for the dev-machine symlink case (the user's
-        // own path: `/u/src/tugtool` symlinks to
-        // `/Users/<u>/Mounts/u/src/tugtool`). Claude resolves its cwd
-        // via `getcwd()` and writes the JSONL under the resolved
-        // path's encoded form. Bootstrap must do the SAME resolution
-        // (via `canonical_project_dir_for_jsonl`) or it silently
-        // no-ops on every symlinked session.
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let canonical_dir = tmp.path().join("real-project");
-        std::fs::create_dir_all(&canonical_dir).unwrap();
-        // Use the SAME helper bootstrap uses, so the test isn't
-        // sensitive to host-temp-dir hops (`/tmp` ↔ `/private/tmp`,
-        // `/var/folders/...` ↔ `/private/var/folders/...`, macOS
-        // firmlink prefix `/System/Volumes/Data`, etc.). Production
-        // uses this helper internally; the test's fixture must agree
-        // with it for the assertion to exercise the right contract.
-        let canonical_str =
-            canonical_project_dir_for_jsonl(canonical_dir.to_string_lossy().as_ref());
-
-        // Create a symlink pointing at the canonical path.
-        let symlink_dir = tmp.path().join("link-to-real-project");
-        std::os::unix::fs::symlink(&canonical_dir, &symlink_dir)
-            .expect("create symlink for fixture");
-        let symlink_str = symlink_dir.to_string_lossy().into_owned();
-        assert_ne!(
-            symlink_str, canonical_str,
-            "symlink-form and resolved-form must differ for the test to \
-             actually exercise the canonicalization step",
-        );
-
-        // Seed the JSONL under the resolved-form encoding (what
-        // claude itself writes).
-        let claude_root = tmp.path().join("claude_root");
-        std::fs::create_dir_all(&claude_root).unwrap();
-        write_jsonl_content(
-            &claude_root,
-            &canonical_str,
-            "sess-symlink",
-            &jsonl_with_complete_turns(2),
-        );
-
-        let l = fresh_ledger_with_root(&claude_root);
-
-        // Drive bootstrap with the SYMLINK path (mirrors what
-        // tugdeck/tugcast carry when the user opened the session via
-        // the symlink).
-        let inserted = l
-            .bootstrap_turns_from_jsonl("sess-symlink", &symlink_str, millis(0))
-            .unwrap();
-        assert_eq!(
-            inserted, 2,
-            "bootstrap must resolve the symlinked project_dir to the same \
-             form claude/getcwd produces before encoding; otherwise the \
-             migration silently no-ops on every dev machine with symlinked \
-             project paths",
-        );
-
-        let rows = l.list_turns_for_session("sess-symlink").unwrap();
-        assert_eq!(rows.len(), 2);
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn canonical_project_dir_for_jsonl_strips_macos_firmlink_prefix() {
-        // macOS APFS firmlinks: `/Users` is bidirectionally
-        // accessible at `/System/Volumes/Data/Users`. Rust's
-        // `std::fs::canonicalize` traverses through to the latter on
-        // some macOS configurations, but claude's `getcwd()` and
-        // Node's `fs.realpath` stop at the former (which is also
-        // where claude writes its JSONLs on disk). Pin that
-        // `canonical_project_dir_for_jsonl` strips the firmlink
-        // prefix so tugcast's encoding matches the on-disk reality.
-        //
-        // The actual value `canonicalize` returns for `/Users` on a
-        // given macOS host is environment-specific (firmlink
-        // configuration changes across macOS versions). What matters
-        // is the contract: if the resolved form starts with
-        // `/System/Volumes/Data/`, the helper strips that prefix.
-        let resolved = canonical_project_dir_for_jsonl("/Users");
-        assert!(
-            !resolved.starts_with("/System/Volumes/Data"),
-            "canonical_project_dir_for_jsonl must strip the macOS firmlink \
-             prefix; got `{resolved}`",
-        );
-    }
-
-    #[test]
-    fn bootstrap_carries_user_attachments_through() {
-        // Attachments survive the round-trip through the parser, the
-        // BLOB encoding, and back through the row read.
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let l = fresh_ledger_with_root(tmp.path());
-        let content = format!(
-            "{}\n{}\n",
-            serde_json::to_string(&serde_json::json!({
-                "type": "user",
-                "message": { "role": "user", "content": [
-                    { "type": "text", "text": "describe" },
-                    { "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": "abc" } }
-                ] }
-            }))
-            .unwrap(),
-            serde_json::to_string(&serde_json::json!({
-                "type": "assistant",
-                "message": {
-                    "id": "msg_x",
-                    "stop_reason": "end_turn",
-                    "content": [{ "type": "text", "text": "ok" }]
-                }
-            }))
-            .unwrap(),
-        );
-        write_jsonl_content(tmp.path(), "/proj/att", "sess-att", &content);
-
-        let inserted = l
-            .bootstrap_turns_from_jsonl("sess-att", "/proj/att", millis(0))
-            .unwrap();
-        assert_eq!(inserted, 1);
-        let rows = l.list_turns_for_session("sess-att").unwrap();
+        let rows = l.list_pending_turns_for_session("s1").unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].user_attachments.len(), 1);
-        assert_eq!(rows[0].user_attachments[0]["type"], "image");
+        assert_eq!(rows[0].user_attachments[0]["filename"], "a.txt");
+    }
+
+    #[test]
+    fn list_pending_turns_for_session_orders_by_created_at_asc() {
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        l.insert_pending_turn("s1", "j_oldest", "first", &[], 1_000)
+            .unwrap();
+        l.insert_pending_turn("s1", "j_middle", "second", &[], 2_000)
+            .unwrap();
+        l.insert_pending_turn("s1", "j_newest", "third", &[], 3_000)
+            .unwrap();
+        let rows = l.list_pending_turns_for_session("s1").unwrap();
+        let ids: Vec<&str> = rows.iter().map(|r| r.journal_id.as_str()).collect();
+        assert_eq!(ids, vec!["j_oldest", "j_middle", "j_newest"]);
+    }
+
+    #[test]
+    fn list_pending_turns_for_session_filters_by_session() {
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        seed_live(&l, "s2", "ws", "card-2", millis(0));
+        l.insert_pending_turn("s1", "j_s1", "for s1", &[], millis(0))
+            .unwrap();
+        l.insert_pending_turn("s2", "j_s2", "for s2", &[], millis(0))
+            .unwrap();
+        let s1_rows = l.list_pending_turns_for_session("s1").unwrap();
+        let s2_rows = l.list_pending_turns_for_session("s2").unwrap();
+        assert_eq!(s1_rows.len(), 1);
+        assert_eq!(s1_rows[0].user_text, "for s1");
+        assert_eq!(s2_rows.len(), 1);
+        assert_eq!(s2_rows[0].user_text, "for s2");
+    }
+
+    #[test]
+    fn delete_oldest_pending_for_session_fifo_order() {
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        l.insert_pending_turn("s1", "j_oldest", "first", &[], 1_000)
+            .unwrap();
+        l.insert_pending_turn("s1", "j_middle", "second", &[], 2_000)
+            .unwrap();
+        l.insert_pending_turn("s1", "j_newest", "third", &[], 3_000)
+            .unwrap();
+
+        let popped = l.delete_oldest_pending_for_session("s1").unwrap();
         assert_eq!(
-            rows[0].user_attachments[0]["source"]["media_type"],
-            "image/png",
+            popped.as_ref().map(|r| r.journal_id.as_str()),
+            Some("j_oldest")
+        );
+        assert_eq!(popped.as_ref().map(|r| r.user_text.as_str()), Some("first"));
+
+        let popped = l.delete_oldest_pending_for_session("s1").unwrap();
+        assert_eq!(
+            popped.as_ref().map(|r| r.journal_id.as_str()),
+            Some("j_middle")
+        );
+
+        let popped = l.delete_oldest_pending_for_session("s1").unwrap();
+        assert_eq!(
+            popped.as_ref().map(|r| r.journal_id.as_str()),
+            Some("j_newest")
+        );
+
+        // Fourth pop returns None — empty journal.
+        assert!(l.delete_oldest_pending_for_session("s1").unwrap().is_none(),);
+    }
+
+    #[test]
+    fn delete_oldest_pending_for_session_returns_none_on_empty_journal() {
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        // Session exists but no pending rows.
+        assert!(l.delete_oldest_pending_for_session("s1").unwrap().is_none(),);
+    }
+
+    #[test]
+    fn delete_oldest_pending_for_session_returns_none_on_unknown_session() {
+        let l = fresh();
+        assert!(
+            l.delete_oldest_pending_for_session("never-existed")
+                .unwrap()
+                .is_none(),
+        );
+    }
+
+    #[test]
+    fn delete_oldest_pending_for_session_does_not_touch_other_sessions() {
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        seed_live(&l, "s2", "ws", "card-2", millis(0));
+        l.insert_pending_turn("s1", "j_s1", "for s1", &[], 1_000)
+            .unwrap();
+        l.insert_pending_turn("s2", "j_s2", "for s2", &[], 1_000)
+            .unwrap();
+
+        l.delete_oldest_pending_for_session("s1").unwrap();
+
+        let s2_rows = l.list_pending_turns_for_session("s2").unwrap();
+        assert_eq!(s2_rows.len(), 1, "s2's pending row must be untouched");
+    }
+
+    #[test]
+    fn cascade_delete_removes_journal_when_session_deleted() {
+        // Pin the `turns_cascade_delete_on_session` trigger: forgetting
+        // a session also removes its journal rows.
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        l.mark_closed("s1").unwrap();
+        l.insert_pending_turn("s1", "j1", "to be cascaded", &[], millis(0))
+            .unwrap();
+        assert_eq!(l.list_pending_turns_for_session("s1").unwrap().len(), 1,);
+
+        l.forget("s1").unwrap();
+
+        assert_eq!(
+            l.list_pending_turns_for_session("s1").unwrap().len(),
+            0,
+            "cascade trigger must purge journal rows when the parent session row is deleted",
         );
     }
 }
