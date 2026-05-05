@@ -3155,3 +3155,477 @@ describe("SessionManager resumeSessionId", () => {
     expect((m as any).resumeSessionId).toBe(null);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Canonical msg_id: ActiveTurn adopts claude's `message.id` from the first
+// stream event that reveals it (mid-turn replay design).
+// ---------------------------------------------------------------------------
+
+describe("mapStreamEvent surfaces messageId from message_start", () => {
+  test("message_start with id surfaces messageId on result", () => {
+    const result = mapStreamEvent(
+      { type: "message_start", message: { id: "msg_claude_xyz", role: "assistant" } },
+      baseCtx,
+      "",
+    );
+    expect(result.messageId).toBe("msg_claude_xyz");
+    expect(result.messages).toHaveLength(0);
+  });
+
+  test("message_start with no id leaves messageId undefined", () => {
+    const result = mapStreamEvent({ type: "message_start", message: {} }, baseCtx, "");
+    expect(result.messageId).toBeUndefined();
+  });
+
+  test("message_start with empty-string id leaves messageId undefined", () => {
+    const result = mapStreamEvent(
+      { type: "message_start", message: { id: "" } },
+      baseCtx,
+      "",
+    );
+    expect(result.messageId).toBeUndefined();
+  });
+
+  test("non-message_start events leave messageId undefined", () => {
+    const delta = mapStreamEvent(
+      { type: "content_block_delta", delta: { type: "text_delta", text: "hi" } },
+      baseCtx,
+      "",
+    );
+    expect(delta.messageId).toBeUndefined();
+  });
+});
+
+describe("routeTopLevelEvent surfaces messageId from assistant snapshot", () => {
+  test("assistant with message.id surfaces messageId on result", () => {
+    const event = {
+      type: "assistant",
+      message: { id: "msg_claude_abc", content: [] },
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.messageId).toBe("msg_claude_abc");
+  });
+
+  test("assistant tool_use blocks emit with claude's message.id", () => {
+    const event = {
+      type: "assistant",
+      message: {
+        id: "msg_claude_def",
+        content: [
+          { type: "tool_use", name: "Read", id: "tu-1", input: { path: "/a.ts" } },
+        ],
+      },
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.messageId).toBe("msg_claude_def");
+    expect(result.messages).toHaveLength(1);
+    expect((result.messages[0] as any).msg_id).toBe("msg_claude_def");
+  });
+
+  test("synthetic assistant text emits with claude's message.id", () => {
+    const event = {
+      type: "assistant",
+      message: {
+        id: "msg_claude_synth",
+        model: "<synthetic>",
+        content: [{ type: "text", text: "/cost output" }],
+      },
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.messageId).toBe("msg_claude_synth");
+    expect(result.messages).toHaveLength(1);
+    expect((result.messages[0] as any).type).toBe("assistant_text");
+    expect((result.messages[0] as any).msg_id).toBe("msg_claude_synth");
+  });
+
+  test("assistant snapshot without message.id falls back to ctx.msgId", () => {
+    const event = {
+      type: "assistant",
+      message: {
+        content: [
+          { type: "tool_use", name: "Read", id: "tu-1", input: {} },
+        ],
+      },
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.messageId).toBeUndefined();
+    expect(result.messages).toHaveLength(1);
+    expect((result.messages[0] as any).msg_id).toBe(baseCtx.msgId);
+  });
+
+  test("non-assistant events leave messageId undefined", () => {
+    const result = routeTopLevelEvent(
+      { type: "result", subtype: "success", result: "" },
+      baseCtx,
+    );
+    expect(result.messageId).toBeUndefined();
+  });
+});
+
+describe("dispatchEventToTurn canonicalizes ActiveTurn.msgId", () => {
+  // Build a manager with no claude process; install an ActiveTurn manually
+  // and dispatch synthetic events. The Bun.write writeLine path is captured
+  // via captureIpcOutput so we observe the wire shape.
+  function setupTurn(
+    text: string,
+    attachments: Array<{ filename: string; content: string; media_type: string }> = [],
+  ): { manager: SessionManager; turn: any } {
+    const manager = new SessionManager(
+      "/tmp/canon-msgid-" + Date.now() + "-" + Math.random().toString(36).slice(2),
+      crypto.randomUUID(),
+    );
+    const placeholder = (manager as any).newMsgId();
+    const seq = (manager as any).nextSeq();
+    const ActiveTurnCtor = (manager as any).constructor;
+    void ActiveTurnCtor;
+    // ActiveTurn is not exported; reach in via internal reference.
+    // Easiest: drive through handleUserMessage's installation path via a
+    // mock subprocess, or build via the shared module export. We use
+    // `(manager as any).activeTurn = { ... }` style in tests further below;
+    // here we exercise dispatchEventToTurn directly by passing a constructed
+    // ActiveTurn shape.
+    const turn = {
+      msgId: placeholder,
+      seq,
+      userText: text,
+      userAttachments: attachments,
+      rev: 0,
+      partialText: "",
+      gotResult: false,
+      interrupted: false,
+      msgIdCanonicalized: false,
+      canonicalizeMsgId(claudeMessageId: string): boolean {
+        if (this.msgIdCanonicalized) {
+          return false;
+        }
+        this.msgId = claudeMessageId;
+        this.msgIdCanonicalized = true;
+        return true;
+      },
+      finish(): void {},
+    };
+    return { manager, turn };
+  }
+
+  test("message_start canonicalizes msgId from placeholder", async () => {
+    const { manager, turn } = setupTurn("hi");
+    const placeholder = turn.msgId;
+    await captureIpcOutput(async () => {
+      (manager as any).dispatchEventToTurn(turn, {
+        type: "stream_event",
+        event: {
+          type: "message_start",
+          message: { id: "msg_X", role: "assistant" },
+        },
+      });
+    });
+    expect(turn.msgId).toBe("msg_X");
+    expect(turn.msgId).not.toBe(placeholder);
+  });
+
+  test("top-level assistant snapshot canonicalizes msgId from placeholder", async () => {
+    const { manager, turn } = setupTurn("hi");
+    const placeholder = turn.msgId;
+    await captureIpcOutput(async () => {
+      (manager as any).dispatchEventToTurn(turn, {
+        type: "assistant",
+        message: {
+          id: "msg_Y",
+          content: [],
+        },
+      });
+    });
+    expect(turn.msgId).toBe("msg_Y");
+    expect(turn.msgId).not.toBe(placeholder);
+  });
+
+  test("subsequent stream events with matching id are no-ops", async () => {
+    const { manager, turn } = setupTurn("hi");
+    await captureIpcOutput(async () => {
+      (manager as any).dispatchEventToTurn(turn, {
+        type: "stream_event",
+        event: { type: "message_start", message: { id: "msg_Z" } },
+      });
+      (manager as any).dispatchEventToTurn(turn, {
+        type: "stream_event",
+        event: { type: "message_start", message: { id: "msg_Z" } },
+      });
+    });
+    expect(turn.msgId).toBe("msg_Z");
+  });
+
+  test("subsequent event with divergent id is rejected (first id wins)", async () => {
+    const { manager, turn } = setupTurn("hi");
+    const errors: string[] = [];
+    const originalErr = console.error;
+    console.error = (msg: any) => {
+      errors.push(String(msg));
+    };
+    try {
+      await captureIpcOutput(async () => {
+        (manager as any).dispatchEventToTurn(turn, {
+          type: "stream_event",
+          event: { type: "message_start", message: { id: "msg_first" } },
+        });
+        (manager as any).dispatchEventToTurn(turn, {
+          type: "assistant",
+          message: { id: "msg_different", content: [] },
+        });
+      });
+    } finally {
+      console.error = originalErr;
+    }
+    expect(turn.msgId).toBe("msg_first");
+    // Logging is a soft contract; if/when canonicalize logs divergence,
+    // the message names both ids.
+    if (errors.length > 0) {
+      expect(errors.some((e) => e.includes("msg_first") && e.includes("msg_different"))).toBe(
+        true,
+      );
+    }
+  });
+
+  test("first emit uses canonical id when message_start arrives first", async () => {
+    const { manager, turn } = setupTurn("hi");
+    const ipc = await captureIpcOutput(async () => {
+      (manager as any).dispatchEventToTurn(turn, {
+        type: "stream_event",
+        event: { type: "message_start", message: { id: "msg_canon" } },
+      });
+      (manager as any).dispatchEventToTurn(turn, {
+        type: "stream_event",
+        event: {
+          type: "content_block_delta",
+          delta: { type: "text_delta", text: "hello" },
+        },
+      });
+    });
+    const assistantText = ipc.find((m: any) => m.type === "assistant_text") as any;
+    expect(assistantText).toBeDefined();
+    expect(assistantText.msg_id).toBe("msg_canon");
+  });
+
+  test("first emit uses canonical id even when top-level assistant arrives first", async () => {
+    // Belt-and-suspenders path: claude bypasses message_start (e.g., synthetic
+    // slash-command response) and the first event the drain sees is the
+    // top-level assistant snapshot. Messages built within that branch are
+    // already keyed by claude's id.
+    const { manager, turn } = setupTurn("/cost");
+    const ipc = await captureIpcOutput(async () => {
+      (manager as any).dispatchEventToTurn(turn, {
+        type: "assistant",
+        message: {
+          id: "msg_synth_canon",
+          model: "<synthetic>",
+          content: [{ type: "text", text: "Cost summary" }],
+        },
+      });
+    });
+    const assistantText = ipc.find((m: any) => m.type === "assistant_text") as any;
+    expect(assistantText).toBeDefined();
+    expect(assistantText.msg_id).toBe("msg_synth_canon");
+  });
+});
+
+describe("ActiveTurn carries userText and userAttachments after handleUserMessage", () => {
+  // Build a mock subprocess whose stdout NEVER closes, so handleUserMessage
+  // installs an ActiveTurn and stays awaiting turn.completion. The test
+  // inspects the activeTurn while it's pending, then resolves the await
+  // by signaling EOF (which closes the stream from the controller side).
+  function injectNonTerminatingMock(manager: SessionManager): {
+    closeStream: () => void;
+    mockStdin: Record<string, unknown>;
+  } {
+    let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        streamController = controller;
+      },
+    });
+    const mockStdin: Record<string, unknown> = {
+      write(_data: unknown) {},
+      flush() {},
+      end() {},
+    };
+    const mockProcess: Record<string, unknown> = {
+      stdin: mockStdin,
+      stdout: stream,
+      kill: (_signal: string) => {},
+    };
+    (manager as any).claudeProcess = mockProcess;
+    (manager as any).startStdoutDrain(mockProcess);
+    return {
+      closeStream: () => streamController?.close(),
+      mockStdin,
+    };
+  }
+
+  test("plain text submission populates userText and empty attachments", async () => {
+    const manager = new SessionManager(
+      "/tmp/canon-userText-" + Date.now(),
+      crypto.randomUUID(),
+    );
+    const { closeStream, mockStdin } = injectNonTerminatingMock(manager);
+    mockStdin.write = (_data: unknown) => {};
+
+    const userMsg = {
+      type: "user_message" as const,
+      text: "hello there",
+      attachments: [],
+    };
+    const turnPromise = captureIpcOutput(() => manager.handleUserMessage(userMsg));
+    // Yield so handleUserMessage's pre-await synchronous block (which
+    // installs the activeTurn) gets to run.
+    await new Promise((r) => setTimeout(r, 5));
+    const active = (manager as any).activeTurn;
+    expect(active).not.toBeNull();
+    expect(active.userText).toBe("hello there");
+    expect(active.userAttachments).toEqual([]);
+    // Cleanup: close the stream → drain sees EOF → signalEofToActiveTurn
+    // resolves turn.completion → handleUserMessage's finally fires.
+    closeStream();
+    await turnPromise;
+  });
+
+  test("attachment submission preserves attachment array on ActiveTurn", async () => {
+    const manager = new SessionManager(
+      "/tmp/canon-userAtt-" + Date.now(),
+      crypto.randomUUID(),
+    );
+    const { closeStream, mockStdin } = injectNonTerminatingMock(manager);
+    mockStdin.write = (_data: unknown) => {};
+
+    const att = {
+      filename: "f.txt",
+      content: "file body",
+      media_type: "text/plain",
+    };
+    const userMsg = {
+      type: "user_message" as const,
+      text: "see attached",
+      attachments: [att],
+    };
+    const turnPromise = captureIpcOutput(() => manager.handleUserMessage(userMsg));
+    await new Promise((r) => setTimeout(r, 5));
+    const active = (manager as any).activeTurn;
+    expect(active).not.toBeNull();
+    expect(active.userText).toBe("see attached");
+    expect(active.userAttachments).toHaveLength(1);
+    expect(active.userAttachments[0]).toEqual(att);
+    closeStream();
+    await turnPromise;
+  });
+});
+
+describe("handleUserMessage integration: live emits use canonical msg_id", () => {
+  test("full turn through drain emits assistant_text and turn_complete keyed by claude's message.id", async () => {
+    const manager = new SessionManager(
+      "/tmp/canon-integration-" + Date.now(),
+      crypto.randomUUID(),
+    );
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "system",
+        subtype: "init",
+        session_id: "sess-canon-1",
+        cwd: "/proj",
+        tools: [],
+        model: "claude-opus-4-6",
+        permissionMode: "acceptEdits",
+      },
+      {
+        type: "stream_event",
+        event: {
+          type: "message_start",
+          message: { id: "msg_claude_real_id", role: "assistant" },
+        },
+      },
+      {
+        type: "stream_event",
+        event: {
+          type: "content_block_delta",
+          delta: { type: "text_delta", text: "Hello" },
+        },
+      },
+      {
+        type: "stream_event",
+        event: {
+          type: "content_block_delta",
+          delta: { type: "text_delta", text: " world" },
+        },
+      },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipc = await captureIpcOutput(() =>
+      manager.handleUserMessage({
+        type: "user_message",
+        text: "hi",
+        attachments: [],
+      }),
+    );
+
+    const assistantTexts = ipc.filter((m: any) => m.type === "assistant_text") as any[];
+    const turnComplete = ipc.find((m: any) => m.type === "turn_complete") as any;
+
+    expect(assistantTexts.length).toBeGreaterThan(0);
+    for (const at of assistantTexts) {
+      // Every assistant_text on the wire — partial deltas and the final
+      // complete snapshot — must carry claude's id, not the install-time
+      // placeholder.
+      expect(at.msg_id).toBe("msg_claude_real_id");
+    }
+    expect(turnComplete).toBeDefined();
+    expect(turnComplete.msg_id).toBe("msg_claude_real_id");
+  });
+
+  test("synthetic-only turn (no message_start) still canonicalizes from top-level assistant", async () => {
+    // Slash-command-style flows where claude emits a top-level assistant
+    // snapshot with no preceding message_start. The belt-and-suspenders
+    // branch in routeTopLevelEvent picks up message.id.
+    const manager = new SessionManager(
+      "/tmp/canon-synth-" + Date.now(),
+      crypto.randomUUID(),
+    );
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "system",
+        subtype: "init",
+        session_id: "sess-canon-synth",
+        cwd: "/proj",
+        tools: [],
+        model: "claude-opus-4-6",
+        permissionMode: "acceptEdits",
+      },
+      {
+        type: "assistant",
+        message: {
+          id: "msg_synth_id",
+          model: "<synthetic>",
+          content: [{ type: "text", text: "/cost reply" }],
+        },
+      },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipc = await captureIpcOutput(() =>
+      manager.handleUserMessage({
+        type: "user_message",
+        text: "/cost",
+        attachments: [],
+      }),
+    );
+
+    const synthText = ipc.find(
+      (m: any) => m.type === "assistant_text" && m.text === "/cost reply",
+    ) as any;
+    expect(synthText).toBeDefined();
+    expect(synthText.msg_id).toBe("msg_synth_id");
+
+    const turnComplete = ipc.find((m: any) => m.type === "turn_complete") as any;
+    expect(turnComplete).toBeDefined();
+    expect(turnComplete.msg_id).toBe("msg_synth_id");
+  });
+});

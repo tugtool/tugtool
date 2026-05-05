@@ -81,7 +81,9 @@ async fn e3_fresh_subscriber_sees_only_post_subscribe_frames() {
         (6..=10).map(Frame).collect::<Vec<_>>(),
         "Fresh subscriber should see only post-subscribe frames",
     );
-    println!("VERDICT: fresh subscribers see only post-subscribe frames; pre-subscribe frames are dropped from their perspective.");
+    println!(
+        "VERDICT: fresh subscribers see only post-subscribe frames; pre-subscribe frames are dropped from their perspective."
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]

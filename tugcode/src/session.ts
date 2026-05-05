@@ -302,12 +302,19 @@ export interface EventMappingContext {
 
 /**
  * Result of mapping a single stream-json (inner) event to IPC outbound messages.
+ *
+ * `messageId` carries claude's `message.id` whenever the stream event reveals
+ * it (today: `message_start` only; future event types may also expose it).
+ * `dispatchEventToTurn` canonicalizes `ActiveTurn.msgId` from this value so
+ * live emits and replay events agree on the same key for the same logical
+ * turn. Absent on events that don't reveal the id.
  */
 export interface EventMappingResult {
   messages: OutboundMessage[];
   newRev: number;
   partialText: string;
   gotResult: boolean;
+  messageId?: string;
 }
 
 /**
@@ -341,6 +348,13 @@ export interface TopLevelRoutingResult {
   parentToolUseId?: string;
   resultMetadata?: ResultMetadata;
   systemMetadata?: Record<string, unknown>;
+  /**
+   * Claude's `message.id` for the turn, when revealed by this top-level
+   * event (today: the `assistant` snapshot only). Belt-and-suspenders to the
+   * `mapStreamEvent` `message_start` path: whichever lands first canonicalizes
+   * `ActiveTurn.msgId`. Absent on events that don't reveal the id.
+   */
+  messageId?: string;
 }
 
 /**
@@ -361,6 +375,7 @@ export function routeTopLevelEvent(
   let parentToolUseId: string | undefined;
   let resultMetadata: ResultMetadata | undefined;
   let systemMetadata: Record<string, unknown> | undefined;
+  let messageId: string | undefined;
 
   // parent_tool_use_id is present on all 5 message types per PN-8.
   const rawParentId = event.parent_tool_use_id;
@@ -441,6 +456,16 @@ export function routeTopLevelEvent(
       // built-in slash commands like /cost, /compact. These have no streaming
       // events — the assistant message is the only source of text. Emit it.
       const message = event.message as Record<string, unknown> | undefined;
+      const rawId = message?.id;
+      if (typeof rawId === "string" && rawId.length > 0) {
+        messageId = rawId;
+      }
+      // Use claude's id for any messages built here when present, so the
+      // first emit (synthetic text or tool_use within this snapshot) is
+      // already keyed by the canonical id. dispatchEventToTurn updates
+      // turn.msgId from `messageId` after this function returns; messages
+      // already on the wire carry the correct id from this assignment.
+      const effectiveMsgId = messageId ?? ctx.msgId;
       const model = (message?.model as string) || "";
       const isSynthetic = model === "<synthetic>";
       const content = (message?.content as Array<Record<string, unknown>>) || [];
@@ -451,7 +476,7 @@ export function routeTopLevelEvent(
           if (text.length > 0) {
             messages.push({
               type: "assistant_text",
-              msg_id: ctx.msgId,
+              msg_id: effectiveMsgId,
               seq: ctx.seq,
               rev: ctx.rev,
               text,
@@ -463,7 +488,7 @@ export function routeTopLevelEvent(
         } else if (block.type === "tool_use") {
           messages.push({
             type: "tool_use",
-            msg_id: ctx.msgId,
+            msg_id: effectiveMsgId,
             seq: ctx.seq,
             tool_name: (block.name as string) || "",
             tool_use_id: (block.id as string) || "",
@@ -687,6 +712,7 @@ export function routeTopLevelEvent(
     parentToolUseId,
     resultMetadata,
     systemMetadata,
+    messageId,
   };
 }
 
@@ -703,10 +729,22 @@ export function mapStreamEvent(
   let newRev = ctx.rev;
   let partialText = accumulatedPartialText;
   let gotResult = false;
+  let messageId: string | undefined;
 
   const eventType = event.type as string | undefined;
 
-  if (eventType === "content_block_start") {
+  if (eventType === "message_start") {
+    // claude reveals its message.id in the message_start frame BEFORE any
+    // emit-bearing event for the turn (content_block_start / _delta land
+    // after). Surface it so dispatchEventToTurn can canonicalize
+    // ActiveTurn.msgId before the first wire emit, making live and replay
+    // events agree on the same key for the same logical turn.
+    const message = event.message as Record<string, unknown> | undefined;
+    const rawId = message?.id;
+    if (typeof rawId === "string" && rawId.length > 0) {
+      messageId = rawId;
+    }
+  } else if (eventType === "content_block_start") {
     const contentBlock = event.content_block as Record<string, unknown> | undefined;
     if (contentBlock?.type === "tool_use") {
       messages.push({
@@ -766,7 +804,7 @@ export function mapStreamEvent(
     });
   }
 
-  return { messages, newRev, partialText, gotResult };
+  return { messages, newRev, partialText, gotResult, messageId };
 }
 
 // ---------------------------------------------------------------------------
@@ -792,10 +830,33 @@ export function mapStreamEvent(
  * mutation safety without locks.
  */
 class ActiveTurn {
-  /** Claude's id for this turn's terminal assistant entry; minted by `newMsgId()`. */
-  readonly msgId: string;
+  /**
+   * Claude's id for this turn's terminal assistant entry. Mutable: starts
+   * as a placeholder UUID minted by `newMsgId()` so logs / EOF emits have
+   * something to show before claude responds, then frozen on the first
+   * stream event that reveals `message.id` (typically `message_start` —
+   * see `mapStreamEvent`'s branch — with the top-level `assistant`
+   * snapshot as a belt-and-suspenders fallback). After canonicalization,
+   * live and replay events for the same logical turn share a key, and
+   * the reducer's existing msg_id dedupe handles the merge for free.
+   */
+  msgId: string;
   /** Outbound `seq` for the user-message half of this turn. */
   readonly seq: number;
+  /**
+   * The user's prompt text, captured by `handleUserMessage` from the
+   * inbound `UserMessage`. Source-of-truth for the in-flight turn's
+   * `user_message_replay` payload during `runReplay`.
+   */
+  readonly userText: string;
+  /**
+   * Attachments captured by `handleUserMessage` from the inbound
+   * `UserMessage`. Threaded through to the synthesized
+   * `user_message_replay` so attachment-bearing turns reconstruct
+   * faithfully on mid-turn replay. Empty array when the user submitted
+   * plain text.
+   */
+  readonly userAttachments: ReadonlyArray<Attachment>;
   /** Streaming-text revision counter, bumped per stream-event delta. */
   rev: number = 0;
   /** Accumulated streaming text; emitted as a final `assistant_text` on `gotResult`. */
@@ -807,15 +868,50 @@ class ActiveTurn {
   /** Resolves when the turn ends (either via `gotResult` or stdout EOF). */
   readonly completion: Promise<void>;
   private resolveCompletion: (() => void) | null;
+  /**
+   * True after the first stream event with `message.id` has been
+   * adopted as `msgId`. Subsequent events with a matching id are no-ops;
+   * an event with a divergent id is logged and ignored.
+   */
+  private msgIdCanonicalized: boolean = false;
 
-  constructor(msgId: string, seq: number) {
+  constructor(
+    msgId: string,
+    seq: number,
+    userText: string,
+    userAttachments: ReadonlyArray<Attachment>,
+  ) {
     this.msgId = msgId;
     this.seq = seq;
+    this.userText = userText;
+    this.userAttachments = userAttachments;
     let resolve: () => void = () => {};
     this.completion = new Promise<void>((r) => {
       resolve = r;
     });
     this.resolveCompletion = resolve;
+  }
+
+  /**
+   * Adopt claude's `message.id` as the canonical `msgId` for this turn.
+   * Called by `dispatchEventToTurn` whenever a stream event surfaces
+   * `messageId`. First call wins; subsequent matching calls are no-ops;
+   * subsequent divergent calls log and return false.
+   *
+   * Returns true iff `msgId` was overwritten by this call.
+   */
+  canonicalizeMsgId(claudeMessageId: string): boolean {
+    if (this.msgIdCanonicalized) {
+      if (this.msgId !== claudeMessageId) {
+        console.error(
+          `[tide::canonicalize] msg_id divergence: turn already adopted "${this.msgId}", ignoring "${claudeMessageId}"`,
+        );
+      }
+      return false;
+    }
+    this.msgId = claudeMessageId;
+    this.msgIdCanonicalized = true;
+    return true;
   }
 
   /**
@@ -1928,6 +2024,16 @@ export class SessionManager {
     // Tier 1: route the top-level message type.
     const routeResult = routeTopLevelEvent(event, ctx);
 
+    // Canonicalize msgId from the top-level event (today: the `assistant`
+    // snapshot's `message.id`). routeTopLevelEvent has already used that
+    // id for any messages it built within this branch, so the messages
+    // about to be written carry the canonical id; the canonicalize here
+    // freezes it on the turn so subsequent emits agree.
+    if (routeResult.messageId !== undefined) {
+      turn.canonicalizeMsgId(routeResult.messageId);
+      ctx.msgId = turn.msgId;
+    }
+
     for (const ipcMsg of routeResult.messages) {
       if (routeResult.parentToolUseId) {
         (ipcMsg as Record<string, unknown>).parent_tool_use_id =
@@ -1943,6 +2049,15 @@ export class SessionManager {
         ctx,
         turn.partialText,
       );
+      // Canonicalize from the stream event (today: `message_start`).
+      // Claude reveals `message.id` here BEFORE any emit-bearing event for
+      // the turn, so by the time `content_block_delta` lands ctx.msgId is
+      // already canonical and the first assistant_text on the wire is
+      // keyed by claude's id rather than the install-time placeholder.
+      if (streamResult.messageId !== undefined) {
+        turn.canonicalizeMsgId(streamResult.messageId);
+        ctx.msgId = turn.msgId;
+      }
       for (const ipcMsg of streamResult.messages) {
         if (routeResult.parentToolUseId) {
           (ipcMsg as Record<string, unknown>).parent_tool_use_id =
@@ -2130,7 +2245,19 @@ export class SessionManager {
     // promise resolves when the drain sees `turn_complete`
     // (via `dispatchEventToTurn`'s `gotResult` branch) or when
     // claude's stdout EOFs (via `signalEofToActiveTurn`).
-    const turn = new ActiveTurn(this.newMsgId(), this.nextSeq());
+    //
+    // `msgId` is a placeholder UUID that gets overwritten with claude's
+    // own `message.id` on the first stream event of the turn (see
+    // ActiveTurn.canonicalizeMsgId). userText / userAttachments are the
+    // source of truth for the in-flight turn's `user_message_replay`
+    // payload during a mid-turn `runReplay` — they hold what the user
+    // submitted in this call.
+    const turn = new ActiveTurn(
+      this.newMsgId(),
+      this.nextSeq(),
+      msg.text,
+      msg.attachments ?? [],
+    );
     this.activeTurn = turn;
     try {
       await turn.completion;

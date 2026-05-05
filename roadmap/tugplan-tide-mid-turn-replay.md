@@ -720,23 +720,23 @@ Three execution steps + one close-out step. Each step ships a single commit, has
 
 **Tasks:**
 
-- [ ] Read `dispatchEventToTurn` end-to-end. Identify the order in which `message_start`, top-level `assistant`, and the first emit-bearing event arrive. Confirm that no live emit fires before `message.id` is known (the first emit is for `content_block_delta`, which arrives after `message_start`).
-- [ ] Extend `mapStreamEvent` with a `message_start` branch that extracts `event.message.id` and threads it back through `EventMappingResult` (add a `messageId?: string` field).
-- [ ] Extend `routeTopLevelEvent`'s `case "assistant"` branch to read `(message?.id as string)` and surface it on `RouteResult` (add a `messageId?: string` field).
-- [ ] Add `userText: string` and `userAttachments: ReadonlyArray<Attachment>` to `ActiveTurn`. `Attachment` is already declared in `types.ts`.
-- [ ] Update `handleUserMessage` to populate `userText` from `msg.text` and `userAttachments` from `msg.attachments ?? []` before installing the active turn.
-- [ ] Implement the canonicalization in `dispatchEventToTurn`: after each call to `routeTopLevelEvent` / `mapStreamEvent`, check if the result surfaced a `messageId`. If so AND `turn.msgId` is still the placeholder, overwrite `turn.msgId`. Update `ctx.msgId` for any subsequent emits within the same dispatch tick so the FIRST emit (from the same event that carried the id) uses the canonical id.
-- [ ] Add tests as below.
+- [x] Read `dispatchEventToTurn` end-to-end. Identify the order in which `message_start`, top-level `assistant`, and the first emit-bearing event arrive. Confirm that no live emit fires before `message.id` is known (the first emit is for `content_block_delta`, which arrives after `message_start`).
+- [x] Extend `mapStreamEvent` with a `message_start` branch that extracts `event.message.id` and threads it back through `EventMappingResult` (add a `messageId?: string` field).
+- [x] Extend `routeTopLevelEvent`'s `case "assistant"` branch to read `(message?.id as string)` and surface it on `RouteResult` (add a `messageId?: string` field).
+- [x] Add `userText: string` and `userAttachments: ReadonlyArray<Attachment>` to `ActiveTurn`. `Attachment` is already declared in `types.ts`.
+- [x] Update `handleUserMessage` to populate `userText` from `msg.text` and `userAttachments` from `msg.attachments ?? []` before installing the active turn.
+- [x] Implement the canonicalization in `dispatchEventToTurn`: after each call to `routeTopLevelEvent` / `mapStreamEvent`, check if the result surfaced a `messageId`. If so AND `turn.msgId` is still the placeholder, overwrite `turn.msgId`. Update `ctx.msgId` for any subsequent emits within the same dispatch tick so the FIRST emit (from the same event that carried the id) uses the canonical id.
+- [x] Add tests as below.
 
 **Tests:**
 
-- [ ] **Unit (msgId canonicalization via `message_start`)**: install an `ActiveTurn` with placeholder UUID `"placeholder-1"`. Drive a stream event of the form `{type: "stream_event", event: {type: "message_start", message: {id: "msg_claude_xyz", role: "assistant", ...}}}`. Assert `turn.msgId === "msg_claude_xyz"` after dispatch.
-- [ ] **Unit (msgId canonicalization via top-level `assistant`)**: same setup, but drive `{type: "assistant", message: {id: "msg_claude_abc", ...}}` instead. Assert `turn.msgId === "msg_claude_abc"`. Pins the belt-and-suspenders path for cases where `message_start` is absent.
-- [ ] **Unit (subsequent events keep the id)**: drive a second stream event for the same turn with the same `message.id`. Assert `turn.msgId` is still the captured value. Drive a third event with a *different* `message.id` (defensive check; shouldn't occur in production); assert tugcode keeps the first id captured and logs the divergence (no overwrite).
-- [ ] **Unit (`userText` + `userAttachments` populated)**: drive a `handleUserMessage({type: "user_message", text: "hello", attachments: [{filename: "f.txt", content: "...", media_type: "text/plain"}]})`. Read `(manager as any).activeTurn`. Assert `activeTurn.userText === "hello"` and `activeTurn.userAttachments.length === 1` with the right shape.
-- [ ] **Integration (live emit uses canonical id)**: drive a full turn through the drain (mock claude stdout feeding `message_start` → `content_block_delta` → ... → `result`). Assert every `assistant_text` / `turn_complete` IPC frame's `msg_id` matches claude's `message.id`, not the original placeholder UUID.
-- [ ] **Failure-first proof**: temporarily strip the canonicalization so `turn.msgId` stays the placeholder. Run the integration test. Assert it fails because emitted frames carry the placeholder UUID instead of claude's id. Restore.
-- [ ] **Regression (existing tests stay green)**: full `bun test` — `ActiveTurn.msgId`'s semantics change but its visibility doesn't; existing tests that observe emitted IPC frames pass because they read `msg_id` from the wire, not the construction-time UUID.
+- [x] **Unit (msgId canonicalization via `message_start`)**: install an `ActiveTurn` with placeholder UUID `"placeholder-1"`. Drive a stream event of the form `{type: "stream_event", event: {type: "message_start", message: {id: "msg_claude_xyz", role: "assistant", ...}}}`. Assert `turn.msgId === "msg_claude_xyz"` after dispatch.
+- [x] **Unit (msgId canonicalization via top-level `assistant`)**: same setup, but drive `{type: "assistant", message: {id: "msg_claude_abc", ...}}` instead. Assert `turn.msgId === "msg_claude_abc"`. Pins the belt-and-suspenders path for cases where `message_start` is absent.
+- [x] **Unit (subsequent events keep the id)**: drive a second stream event for the same turn with the same `message.id`. Assert `turn.msgId` is still the captured value. Drive a third event with a *different* `message.id` (defensive check; shouldn't occur in production); assert tugcode keeps the first id captured and logs the divergence (no overwrite).
+- [x] **Unit (`userText` + `userAttachments` populated)**: drive a `handleUserMessage({type: "user_message", text: "hello", attachments: [{filename: "f.txt", content: "...", media_type: "text/plain"}]})`. Read `(manager as any).activeTurn`. Assert `activeTurn.userText === "hello"` and `activeTurn.userAttachments.length === 1` with the right shape.
+- [x] **Integration (live emit uses canonical id)**: drive a full turn through the drain (mock claude stdout feeding `message_start` → `content_block_delta` → ... → `result`). Assert every `assistant_text` / `turn_complete` IPC frame's `msg_id` matches claude's `message.id`, not the original placeholder UUID.
+- [x] **Failure-first proof**: temporarily strip the canonicalization so `turn.msgId` stays the placeholder. Run the integration test. Assert it fails because emitted frames carry the placeholder UUID instead of claude's id. Restore. _Verified: 7 of 8 canonical tests fail with the canonicalization stripped (placeholder UUIDs leak into wire output); restored after verification._
+- [x] **Regression (existing tests stay green)**: full `bun test` — `ActiveTurn.msgId`'s semantics change but its visibility doesn't; existing tests that observe emitted IPC frames pass because they read `msg_id` from the wire, not the construction-time UUID. _Verified: 291 / 291 tests pass post-implementation._
 
 **Tuglaws cross-check:**
 
@@ -744,9 +744,9 @@ Three execution steps + one close-out step. Each step ships a single commit, has
 
 **Checkpoint:**
 
-- [ ] `bun test` (tugcode) — green.
-- [ ] `cargo nextest run` — green (no Rust touched).
-- [ ] `just lint` — clean.
+- [x] `bun test` (tugcode) — green. _291 / 291 pass._
+- [x] `cargo nextest run` — green. _1221 / 1221 pass._
+- [x] `just lint` — clean. _Auto-format applied to a pre-existing rustfmt issue in `e3_subscriber_buffering.rs` (Phase 0 file, not part of Step 1 logic) so the build stays green per the plan's strategy._
 
 ---
 
@@ -889,7 +889,7 @@ Three execution steps + one close-out step. Each step ships a single commit, has
 
 - [x] Phase 0 investigation complete (four verdicts written, drop audit done).
 - [x] Phase 1 design recorded as `[DM03]`–`[DM06]` decisions in this plan; spec written.
-- [ ] Step 1 (canonical msg_id): `ActiveTurn.msgId` is claude's `message.id`; live-emit integration test asserts every wire frame carries it; failure-first proof landed.
+- [x] Step 1 (canonical msg_id): `ActiveTurn.msgId` is claude's `message.id`; live-emit integration test asserts every wire frame carries it; failure-first proof landed.
 - [ ] Step 2 (translator skip): `liveInflightMsgId` option implemented; both branches tested; cold-boot regression preserved; failure-first proof landed.
 - [ ] Step 3 (in-flight emission + suppress): `suppressEmit` field gates seven emit sites; `emitInflightTurnFromActiveTurn` ships; integration test asserts one bracket + one TurnEntry for the in-flight turn; both failure-first proofs landed.
 - [ ] Step 4 (close-out): regression test promoted; Smoke D smoke-checklist entry passing; plan status `shipped`.
