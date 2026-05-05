@@ -1082,3 +1082,249 @@ describe("translateJsonlEntry — direct unit tests", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// liveInflightMsgId — trailing-turn skip for mid-turn replay handoff
+// ---------------------------------------------------------------------------
+
+/**
+ * Drive `translateJsonlSession` with options and capture both the yielded
+ * messages and the generator's return value. The return value is
+ * unreachable through `for await`; this helper iterates with `.next()`
+ * so callers can assert on `TranslateSessionResult` directly.
+ */
+async function collectSessionWithResult(
+  input: ReplayInput,
+  opts?: {
+    telemetry?: ReplayTelemetry;
+    disableYield?: boolean;
+    liveInflightMsgId?: string;
+  },
+): Promise<{
+  messages: OutboundMessage[];
+  result: { count: number; skippedTrailingTurn: boolean };
+}> {
+  const messages: OutboundMessage[] = [];
+  const it = translateJsonlSession(input, {
+    telemetry: opts?.telemetry,
+    disableYield: opts?.disableYield ?? true,
+    liveInflightMsgId: opts?.liveInflightMsgId,
+  });
+  let returnValue = { count: 0, skippedTrailingTurn: false };
+  while (true) {
+    const r = await it.next();
+    if (r.done) {
+      if (r.value !== undefined) returnValue = r.value;
+      break;
+    }
+    messages.push(r.value);
+  }
+  return { messages, result: returnValue };
+}
+
+describe("translateJsonlSession — liveInflightMsgId trailing-turn skip", () => {
+  test("skip on match: trailing in-flight turn whose terminal id matches is dropped", async () => {
+    // Mid-turn reload scenario: JSONL has one committed turn plus a
+    // trailing in-flight turn (assistant entry with stop_reason: null).
+    // Tugcode's ActiveTurn matches the trailing turn's id. The
+    // translator skips the trailing turn entirely; tugcode's runReplay
+    // (Step 3) emits the in-flight content from ActiveTurn state.
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "first prompt" }]),
+      assistantEntry({
+        msgId: "msg_committed",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "first reply" }],
+      }),
+      userEntry([{ type: "text", text: "second prompt" }]),
+      assistantEntry({
+        msgId: "msg_inflight",
+        stopReason: null,
+        content: [{ type: "text", text: "partial reply..." }],
+      }),
+    ]);
+    const { messages, result } = await collectSessionWithResult(
+      { kind: "ok", jsonl },
+      { liveInflightMsgId: "msg_inflight" },
+    );
+
+    // First (committed) turn emits normally.
+    const userReplays = messages.filter(isUserMessageReplay);
+    const turnCompletes = messages.filter(isTurnComplete);
+    expect(userReplays).toHaveLength(1);
+    expect(userReplays[0].msg_id).toBe("msg_committed");
+    expect(turnCompletes).toHaveLength(1);
+    expect(turnCompletes[0].msg_id).toBe("msg_committed");
+    expect(turnCompletes[0].result).toBe("success");
+
+    // Trailing in-flight turn produces NO outbound messages — no
+    // user_message_replay for "second prompt", no orphan turn_complete.
+    expect(messages.find((m) => m.type === "user_message_replay" && (m as UserMessageReplay).msg_id === "msg_inflight")).toBeUndefined();
+    expect(messages.find((m) => m.type === "assistant_text" && (m as AssistantText).msg_id === "msg_inflight")).toBeUndefined();
+    expect(messages.find((m) => m.type === "turn_complete" && (m as TurnComplete).msg_id === "msg_inflight")).toBeUndefined();
+
+    // replay_complete reflects only the committed turn.
+    const complete = messages.at(-1) as ReplayComplete;
+    expect(complete.count).toBe(1);
+    expect(complete.error).toBeUndefined();
+
+    expect(result.count).toBe(1);
+    expect(result.skippedTrailingTurn).toBe(true);
+  });
+
+  test("no skip on mismatch: trailing in-flight turn with different id orphan-synthesizes", async () => {
+    // Edge case: tugcode has an active turn for one id, but the JSONL's
+    // trailing in-flight turn has a different id (e.g., a previously
+    // interrupted session that was never cleaned up). Translator
+    // orphan-synthesizes the JSONL's trailing turn as today.
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "abandoned prompt" }]),
+      assistantEntry({
+        msgId: "msg_jsonl_orphan",
+        stopReason: null,
+        content: [{ type: "text", text: "abandoned partial..." }],
+      }),
+    ]);
+    const { messages, result } = await collectSessionWithResult(
+      { kind: "ok", jsonl },
+      { liveInflightMsgId: "msg_DIFFERENT" },
+    );
+
+    const userReplays = messages.filter(isUserMessageReplay);
+    const turnCompletes = messages.filter(isTurnComplete);
+    expect(userReplays).toHaveLength(1);
+    expect(userReplays[0].msg_id).toBe("msg_jsonl_orphan");
+    expect(turnCompletes).toHaveLength(1);
+    expect(turnCompletes[0].msg_id).toBe("msg_jsonl_orphan");
+    expect(turnCompletes[0].result).toBe("error");
+
+    expect(result.count).toBe(1);
+    expect(result.skippedTrailingTurn).toBe(false);
+  });
+
+  test("cold-boot regression: no liveInflightMsgId orphan-synthesizes (preserves D08)", async () => {
+    // Cold-boot replay path: user opens a session whose JSONL ends
+    // mid-turn (a previously interrupted session). With no
+    // liveInflightMsgId, the existing orphan-synthesis behavior is
+    // preserved so the trailing interrupted turn shows up in the
+    // transcript with the canonical "interrupted" marker.
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "go" }]),
+      assistantEntry({
+        msgId: "m_orphan",
+        stopReason: "tool_use",
+        content: [
+          { type: "tool_use", id: "tu_x", name: "Bash", input: { command: "ls" } },
+        ],
+      }),
+    ]);
+    const { messages, result } = await collectSessionWithResult(
+      { kind: "ok", jsonl },
+      { /* liveInflightMsgId omitted */ },
+    );
+
+    const turnCompletes = messages.filter(isTurnComplete);
+    expect(turnCompletes).toHaveLength(1);
+    expect(turnCompletes[0].result).toBe("error");
+    expect(turnCompletes[0].msg_id).toBe("m_orphan");
+
+    expect(result.count).toBe(1);
+    expect(result.skippedTrailingTurn).toBe(false);
+  });
+
+  test("no trailing turn: JSONL ending in committed end_turn is unaffected by liveInflightMsgId", async () => {
+    // JSONL has only completed turns (every assistant entry has
+    // stop_reason: end_turn). liveInflightMsgId is set to anything;
+    // the translator's check at EOF finds buffer === null and proceeds
+    // normally. skippedTrailingTurn is false because the orphan path
+    // didn't fire.
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "u1" }]),
+      assistantEntry({
+        msgId: "m1",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "a1" }],
+      }),
+    ]);
+    const { messages, result } = await collectSessionWithResult(
+      { kind: "ok", jsonl },
+      { liveInflightMsgId: "msg_anything" },
+    );
+
+    const turnCompletes = messages.filter(isTurnComplete);
+    expect(turnCompletes).toHaveLength(1);
+    expect(turnCompletes[0].msg_id).toBe("m1");
+    expect(turnCompletes[0].result).toBe("success");
+
+    expect(result.count).toBe(1);
+    expect(result.skippedTrailingTurn).toBe(false);
+  });
+
+  test("missing JSONL with liveInflightMsgId still reports skippedTrailingTurn=false", async () => {
+    // Error branches (missing/unreadable) bypass JSONL iteration;
+    // skippedTrailingTurn must be false because no orphan flush ever
+    // ran. Pinned so a future re-shape of the error branches doesn't
+    // accidentally drift the contract.
+    const { messages, result } = await collectSessionWithResult(
+      { kind: "missing", message: "no file" },
+      { liveInflightMsgId: "msg_anything" },
+    );
+    expect(messages.at(-1)?.type).toBe("replay_complete");
+    expect((messages.at(-1) as ReplayComplete).error?.kind).toBe("jsonl_missing");
+    expect(result.count).toBe(0);
+    expect(result.skippedTrailingTurn).toBe(false);
+  });
+
+  test("empty liveInflightMsgId is treated as unset (no skip)", async () => {
+    // Defensive: an empty string for liveInflightMsgId must not match
+    // a buffer.msgId of "" (which is the default placeholder before
+    // the first assistant entry's id is observed). The check requires
+    // a non-empty match.
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "go" }]),
+      assistantEntry({
+        msgId: "",
+        stopReason: null,
+        content: [{ type: "text", text: "partial" }],
+      }),
+    ]);
+    const { messages, result } = await collectSessionWithResult(
+      { kind: "ok", jsonl },
+      { liveInflightMsgId: "" },
+    );
+
+    // The trailing in-flight turn orphan-synthesizes (empty-string
+    // liveInflightMsgId did not trigger the skip path).
+    const turnCompletes = messages.filter(isTurnComplete);
+    expect(turnCompletes).toHaveLength(1);
+    expect(turnCompletes[0].result).toBe("error");
+    expect(result.skippedTrailingTurn).toBe(false);
+  });
+
+  test("for-await consumers (existing call sites) ignore the return value cleanly", async () => {
+    // Backward-compatibility check: pre-Step-2 callers iterate via
+    // for-await, which discards the generator's return value. Adding a
+    // typed return must not change anything observable to those callers.
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "u" }]),
+      assistantEntry({
+        msgId: "m",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "a" }],
+      }),
+    ]);
+    const out: OutboundMessage[] = [];
+    for await (const msg of translateJsonlSession(
+      { kind: "ok", jsonl },
+      { disableYield: true, liveInflightMsgId: "m" },
+    )) {
+      out.push(msg);
+    }
+    // The trailing turn here IS complete (end_turn), so it commits
+    // normally — `liveInflightMsgId` only fires on an open trailing
+    // buffer at EOF.
+    const turnCompletes = out.filter(isTurnComplete);
+    expect(turnCompletes).toHaveLength(1);
+    expect(turnCompletes[0].result).toBe("success");
+  });
+});

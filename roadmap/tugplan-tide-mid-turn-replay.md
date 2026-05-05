@@ -766,19 +766,21 @@ Three execution steps + one close-out step. Each step ships a single commit, has
 
 **Tasks:**
 
-- [ ] Add `liveInflightMsgId?: string` to `TranslateSessionOptions`.
-- [ ] Update the trailing-turn flush branch: when `liveInflightMsgId` is set AND matches the trailing turn's id, skip everything for that turn.
-- [ ] Implement `TranslateSessionResult` per [#translator-option]. The contract is fixed: `skippedTrailingTurn` is `true` iff `liveInflightMsgId` was set, the JSONL had a trailing turn, AND the trailing turn's id matched. Otherwise `false`. The exact API shape (generator-with-final-value vs. callback-plus-promise) is the implementer's choice; document the pick inline.
-- [ ] Verify the cold-boot path is unaffected: existing tests with no `liveInflightMsgId` set must still synthesize the orphan `turn_complete{interrupted}`, and `skippedTrailingTurn` must be `false` for them.
-- [ ] Add tests as below.
+- [x] Add `liveInflightMsgId?: string` to `TranslateSessionOptions`.
+- [x] Update the trailing-turn flush branch: when `liveInflightMsgId` is set AND matches the trailing turn's id, skip everything for that turn.
+- [x] Implement `TranslateSessionResult` per [#translator-option]. The contract is fixed: `skippedTrailingTurn` is `true` iff `liveInflightMsgId` was set, the JSONL had a trailing turn, AND the trailing turn's id matched. Otherwise `false`. _Implementation: AsyncGenerator's third type parameter (TReturn). `runReplay` reads it via `r.value` on the final `.next()` result; existing for-await call sites continue to work because they discard the return value. This is the cleanest pick — no callback indirection, no parallel promise — and it pins the contract at the type level._
+- [x] Verify the cold-boot path is unaffected: existing tests with no `liveInflightMsgId` set must still synthesize the orphan `turn_complete{interrupted}`, and `skippedTrailingTurn` must be `false` for them.
+- [x] Add tests as below.
 
 **Tests:**
 
-- [ ] **Unit (skip on match)**: JSONL fixture with N committed turns + a trailing in-flight turn whose terminal assistant id is `"msg_X"`. Translator called with `liveInflightMsgId: "msg_X"` → emits the N committed turns and NOTHING for the trailing turn (no `user_message_replay`, no `assistant_text`, no `turn_complete`). `skippedTrailingTurn === true`.
-- [ ] **Unit (no skip on mismatch)**: same JSONL, called with `liveInflightMsgId: "msg_DIFFERENT"` → trailing turn emits with orphan synthesis as today. `skippedTrailingTurn === false`.
-- [ ] **Unit (cold-boot regression, no liveInflight)**: same JSONL, called with `liveInflightMsgId: undefined` → trailing turn orphan-synthesizes as today (preserves [D08] for the cold-boot interrupted-session case). `skippedTrailingTurn === false`.
-- [ ] **Unit (no trailing turn)**: JSONL with only completed turns (every assistant entry has `stop_reason`). Called with any `liveInflightMsgId` value → emits all turns normally. `skippedTrailingTurn === false`.
-- [ ] **Failure-first proof**: temporarily strip the early-return so the trailing turn always emits. Run the skip-on-match test. Assert it fails because the trailing turn's events appeared on the wire AND `skippedTrailingTurn` reports `false` (or whatever the buggy state produces — document the diagnostic shape). Restore.
+- [x] **Unit (skip on match)**: JSONL fixture with N committed turns + a trailing in-flight turn whose terminal assistant id is `"msg_X"`. Translator called with `liveInflightMsgId: "msg_X"` → emits the N committed turns and NOTHING for the trailing turn (no `user_message_replay`, no `assistant_text`, no `turn_complete`). `skippedTrailingTurn === true`.
+- [x] **Unit (no skip on mismatch)**: same JSONL, called with `liveInflightMsgId: "msg_DIFFERENT"` → trailing turn emits with orphan synthesis as today. `skippedTrailingTurn === false`.
+- [x] **Unit (cold-boot regression, no liveInflight)**: same JSONL, called with `liveInflightMsgId: undefined` → trailing turn orphan-synthesizes as today (preserves [D08] for the cold-boot interrupted-session case). `skippedTrailingTurn === false`.
+- [x] **Unit (no trailing turn)**: JSONL with only completed turns (every assistant entry has `stop_reason`). Called with any `liveInflightMsgId` value → emits all turns normally. `skippedTrailingTurn === false`.
+- [x] **Failure-first proof**: temporarily strip the early-return so the trailing turn always emits. Run the skip-on-match test. Assert it fails because the trailing turn's events appeared on the wire AND `skippedTrailingTurn` reports `false` (or whatever the buggy state produces — document the diagnostic shape). Restore. _Verified: with the skip path stripped, the skip-on-match test fails with `Expected length: 1, Received length: 2` (a duplicate `user_message_replay` for the trailing turn leaks through). Restored after verification._
+
+Plus three additional pin tests landed alongside the five required ones: `missing JSONL with liveInflightMsgId still reports skippedTrailingTurn=false` (error-branch contract), `empty liveInflightMsgId is treated as unset` (defensive against placeholder-buffer collisions), and `for-await consumers cleanly ignore the return value` (backward-compat guard for pre-Step-2 call sites).
 
 **Tuglaws cross-check:**
 
@@ -786,9 +788,9 @@ Three execution steps + one close-out step. Each step ships a single commit, has
 
 **Checkpoint:**
 
-- [ ] `bun test` (tugcode) — green.
-- [ ] `cargo nextest run` — green.
-- [ ] `just lint` — clean.
+- [x] `bun test` (tugcode) — green. _298 / 298 pass; 7 new tests added in the trailing-turn-skip describe block._
+- [x] `cargo nextest run` — green. _1221 / 1221 pass._
+- [x] `just lint` — clean.
 
 ---
 
@@ -890,7 +892,7 @@ Three execution steps + one close-out step. Each step ships a single commit, has
 - [x] Phase 0 investigation complete (four verdicts written, drop audit done).
 - [x] Phase 1 design recorded as `[DM03]`–`[DM06]` decisions in this plan; spec written.
 - [x] Step 1 (canonical msg_id): `ActiveTurn.msgId` is claude's `message.id`; live-emit integration test asserts every wire frame carries it; failure-first proof landed.
-- [ ] Step 2 (translator skip): `liveInflightMsgId` option implemented; both branches tested; cold-boot regression preserved; failure-first proof landed.
+- [x] Step 2 (translator skip): `liveInflightMsgId` option implemented; both branches tested; cold-boot regression preserved; failure-first proof landed.
 - [ ] Step 3 (in-flight emission + suppress): `suppressEmit` field gates seven emit sites; `emitInflightTurnFromActiveTurn` ships; integration test asserts one bracket + one TurnEntry for the in-flight turn; both failure-first proofs landed.
 - [ ] Step 4 (close-out): regression test promoted; Smoke D smoke-checklist entry passing; plan status `shipped`.
 - [ ] Smoke D — mid-turn reload — passes manually.

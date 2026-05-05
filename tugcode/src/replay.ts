@@ -670,6 +670,44 @@ export interface TranslateSessionOptions {
   /** Disable the inter-batch yield. Tests set this to keep
    * synchronous; production never sets it. */
   disableYield?: boolean;
+  /**
+   * When set, the translator's end-of-JSONL flush checks the trailing
+   * in-flight (orphan) turn's most recent assistant entry's `message.id`.
+   * If it matches, the entire trailing turn is skipped — no
+   * `user_message_replay`, no per-turn `assistant_text`, no orphan
+   * `turn_complete{error}`. The translator's caller (tugcode's
+   * `runReplay`) emits the in-flight turn's content from `ActiveTurn`
+   * state instead, closing the JSONL-flush race characterized by the
+   * Phase 0 E1 verdict.
+   *
+   * When unset, the existing behavior applies: a trailing in-flight
+   * turn orphan-synthesizes a `turn_complete{error}` so the cold-boot
+   * replay of an interrupted session still surfaces a transcript row.
+   */
+  liveInflightMsgId?: string;
+}
+
+/**
+ * Result returned by `translateJsonlSession`'s AsyncGenerator (the
+ * value reachable via `.next()` when `done: true`, also typed as the
+ * generator's `TReturn` parameter).
+ *
+ * `count` mirrors the per-wire `replay_complete.count` and counts
+ * `turn_complete` events emitted by the translator. The terminal
+ * orphan-synthesized turn (when `liveInflightMsgId` is unset) does
+ * count toward this total; a skipped trailing turn does not.
+ *
+ * `skippedTrailingTurn` is `true` iff the trailing-turn skip path
+ * fired — i.e., `liveInflightMsgId` was set, the JSONL had an open
+ * trailing buffer at EOF, and the buffer's `msgId` matched. The
+ * caller reads this to decide whether to follow up with its own
+ * in-flight emission (per [DM04]). False in every other case (no
+ * `liveInflightMsgId`, no trailing buffer, mismatched id, or an
+ * input error branch where no entries were read).
+ */
+export interface TranslateSessionResult {
+  count: number;
+  skippedTrailingTurn: boolean;
 }
 
 /**
@@ -692,10 +730,11 @@ export interface TranslateSessionOptions {
 export async function* translateJsonlSession(
   input: ReplayInput,
   opts: TranslateSessionOptions = {},
-): AsyncGenerator<OutboundMessage> {
+): AsyncGenerator<OutboundMessage, TranslateSessionResult> {
   const batchSize = opts.batchSize ?? DEFAULT_BATCH_SIZE;
   const telemetry = opts.telemetry ?? DEFAULT_TELEMETRY;
   const yieldBetweenBatches = opts.disableYield !== true;
+  const liveInflightMsgId = opts.liveInflightMsgId;
 
   const started: ReplayStarted = {
     type: "replay_started",
@@ -717,7 +756,7 @@ export async function* translateJsonlSession(
       ipc_version: IPC_VERSION,
     };
     yield complete;
-    return;
+    return { count: 0, skippedTrailingTurn: false };
   }
   if (input.kind === "unreadable") {
     const complete: ReplayComplete = {
@@ -730,7 +769,7 @@ export async function* translateJsonlSession(
       ipc_version: IPC_VERSION,
     };
     yield complete;
-    return;
+    return { count: 0, skippedTrailingTurn: false };
   }
 
   // OK branch: parse + translate line by line.
@@ -814,10 +853,33 @@ export async function* translateJsonlSession(
   // the JSONL was truncated mid-turn. Flush as turn_complete(error)
   // so the user-visible portion appears in the transcript marked
   // interrupted, matching live `interrupt()` semantics.
+  //
+  // Exception: when `liveInflightMsgId` is set AND matches the
+  // trailing buffer's `msgId`, the trailing turn is the one tugcode
+  // is currently streaming locally. Skip the entire orphan flush —
+  // tugcode's `runReplay` follows up with `emitInflightTurnFromActiveTurn`
+  // (Step 3) using its in-memory `ActiveTurn` state, which is fresher
+  // and more complete than the JSONL (the JSONL's incomplete-flush
+  // window is the E1 race we're routing around). `skippedTrailingTurn`
+  // signals the skip back to the caller via the generator's return
+  // value; the caller reads it to decide whether to emit its own
+  // in-flight block, avoiding double-emission for matching ids.
+  let skippedTrailingTurn = false;
   if (ctx.buffer !== null) {
-    const orphanFlush = flushTurn(ctx, "error");
-    for (const msg of orphanFlush) {
-      yield msg;
+    if (
+      liveInflightMsgId !== undefined &&
+      liveInflightMsgId.length > 0 &&
+      ctx.buffer.msgId === liveInflightMsgId
+    ) {
+      skippedTrailingTurn = true;
+      ctx.buffer = null;
+      ctx.pendingUserText = null;
+      ctx.pendingUserAttachments = [];
+    } else {
+      const orphanFlush = flushTurn(ctx, "error");
+      for (const msg of orphanFlush) {
+        yield msg;
+      }
     }
   }
 
@@ -835,6 +897,7 @@ export async function* translateJsonlSession(
       : {}),
   };
   yield complete;
+  return { count: ctx.turnsCommitted, skippedTrailingTurn };
 }
 
 /**
