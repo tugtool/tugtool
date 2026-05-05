@@ -761,6 +761,22 @@ export function mapStreamEvent(
     const delta = event.delta as Record<string, unknown> | undefined;
     if (delta?.type === "text_delta" && typeof delta.text === "string") {
       partialText += delta.text;
+      // LOAD-BEARING INVARIANT: the wire emit carries the delta only
+      // (`text: delta.text`), not the cumulative `partialText`. Mid-turn
+      // replay's "snapshot then resume" pattern depends on this:
+      //
+      //   1. emitInflightTurnFromActiveTurn writes one consolidated
+      //      `assistant_text { text: turn.partialText, is_partial: false }`
+      //      inside the bracket — the reducer REPLACES its scratch
+      //      with that text.
+      //   2. After replay_complete, live deltas resume here. The reducer
+      //      APPENDS each `is_partial: true` delta to scratch from that
+      //      baseline.
+      //
+      // If this branch ever switched to emitting cumulative text, the
+      // first post-bracket delta would re-include the snapshot's text,
+      // and the reducer's append would double-count. The mid-turn
+      // integration test would catch the regression.
       messages.push({
         type: "assistant_text",
         msg_id: ctx.msgId,
@@ -865,6 +881,25 @@ class ActiveTurn {
   gotResult: boolean = false;
   /** True if `handleInterrupt` was invoked while this turn was active. */
   interrupted: boolean = false;
+  /**
+   * Set by `runReplay` when it adopts this turn for in-flight emission
+   * (mid-turn replay design). While true, the per-turn `writeLine`
+   * sites in `dispatchEventToTurn` and `signalEofToActiveTurn` skip
+   * emission but continue to mutate state (`partialText` accumulates,
+   * `gotResult`/`interrupted` latch, `finish()` still runs). Cleared
+   * by `runReplay`'s `finally` after `replay_complete` is on the wire.
+   *
+   * Gated emit sites — five in dispatchEventToTurn, two in
+   * signalEofToActiveTurn:
+   *   1. dispatch: routeResult.messages forwarding
+   *   2. dispatch: streamResult.messages forwarding (live deltas)
+   *   3. dispatch: control_request_forward
+   *   4. dispatch: final complete `assistant_text` on gotResult
+   *   5. dispatch: `turn_complete` on gotResult
+   *   6. EOF: `turn_cancelled` on interrupted
+   *   7. EOF: `error` on unexpected stream end
+   */
+  suppressEmit: boolean = false;
   /** Resolves when the turn ends (either via `gotResult` or stdout EOF). */
   readonly completion: Promise<void>;
   private resolveCompletion: (() => void) | null;
@@ -1735,8 +1770,32 @@ export class SessionManager {
       );
     });
 
+    // Snapshot the active turn at entry. Only adopt it as in-flight
+    // when the drain hasn't yet observed its terminal event — a
+    // turn that already latched gotResult/interrupted is "done" from
+    // tugcode's perspective and the translator's path handles it
+    // (or the orphan synthesis does, when ids don't match).
+    //
+    // Setting suppressEmit BEFORE the first translator yield is
+    // load-bearing: live deltas dispatched by the drain in parallel
+    // would otherwise interleave with replay events on the wire.
+    // The window stays open through the buffered replay_complete
+    // emission below; the finally clears it.
+    const inflight = (
+      this.activeTurn !== null &&
+      !this.activeTurn.gotResult &&
+      !this.activeTurn.interrupted
+    ) ? this.activeTurn : null;
+    if (inflight !== null) {
+      inflight.suppressEmit = true;
+    }
+
     const iter = translateJsonlSession(input, {
       telemetry: this.replayTelemetry,
+      // Threaded so the translator's end-of-JSONL flush skips the
+      // trailing in-flight turn when its id matches; emitInflightTurn
+      // -FromActiveTurn fills it in from authoritative state below.
+      liveInflightMsgId: inflight?.msgId,
     });
 
     let count = 0;
@@ -1746,6 +1805,16 @@ export class SessionManager {
       | { kind: "timeout" }
       | { kind: "exit"; code: number | null }
       | null = null;
+    // The translator yields replay_complete BEFORE its return value
+    // (TranslateSessionResult). Buffer the bracket-close so the
+    // in-flight emission can land between the last committed turn
+    // and replay_complete on the wire — matching the chronological
+    // order [committed, in-flight, replay_complete].
+    let bufferedReplayComplete: OutboundMessage | null = null;
+    let sessionResult: { count: number; skippedTrailingTurn: boolean } = {
+      count: 0,
+      skippedTrailingTurn: false,
+    };
 
     try {
       while (true) {
@@ -1754,7 +1823,7 @@ export class SessionManager {
           .then((r) => ({ kind: "next" as const, value: r }));
         const racers: Array<
           Promise<
-            | { kind: "next"; value: IteratorResult<OutboundMessage> }
+            | { kind: "next"; value: IteratorResult<OutboundMessage, { count: number; skippedTrailingTurn: boolean }> }
             | { kind: "timeout" }
             | { kind: "exit"; code: number | null }
           >
@@ -1763,9 +1832,14 @@ export class SessionManager {
         const winner = await Promise.race(racers);
 
         if (winner.kind === "next") {
-          if (winner.value.done) break;
+          if (winner.value.done) {
+            // The generator returned. value carries TranslateSessionResult.
+            if (winner.value.value !== undefined) {
+              sessionResult = winner.value.value;
+            }
+            break;
+          }
           const msg = winner.value.value;
-          writeLine(msg);
           if (msg.type === "turn_complete") {
             count++;
             if (count - lastProgressPosted >= progressBatch) {
@@ -1777,20 +1851,41 @@ export class SessionManager {
             }
           }
           if (msg.type === "replay_complete") {
-            // The iterator emitted its terminal bracket itself; mirror
-            // the count it reported so the lifecycle log line matches
-            // the wire.
+            // Buffer it; mirror the count for the lifecycle log.
+            // Continuing the loop one more iteration consumes the
+            // generator's return value (TranslateSessionResult), which
+            // tells us whether to fill in the trailing in-flight turn.
             if (typeof msg.count === "number") count = msg.count;
-            break;
+            bufferedReplayComplete = msg;
+            continue;
           }
+          writeLine(msg);
         } else {
           aborted = winner;
           break;
         }
       }
+
+      // After clean iterator completion (no abort): emit the in-flight
+      // turn from ActiveTurn state if the translator skipped it, then
+      // emit the buffered replay_complete to close the bracket.
+      if (aborted === null) {
+        if (inflight !== null && sessionResult.skippedTrailingTurn) {
+          this.emitInflightTurnFromActiveTurn(inflight);
+        }
+        if (bufferedReplayComplete !== null) {
+          writeLine(bufferedReplayComplete);
+        }
+      }
     } finally {
       if (timeoutHandle !== null) clearTimeout(timeoutHandle);
       this.replayActive = false;
+      // Clear suppressEmit AFTER replay_complete is on the wire so
+      // post-suppression live deltas land outside the bracket and
+      // observe the reducer's idle/streaming phase, not replaying.
+      if (inflight !== null) {
+        inflight.suppressEmit = false;
+      }
       // Best-effort iterator cleanup; abandoned-iterator semantics
       // are well-defined in JS but explicit `.return()` releases any
       // pending awaits inside the generator.
@@ -2039,7 +2134,12 @@ export class SessionManager {
         (ipcMsg as Record<string, unknown>).parent_tool_use_id =
           routeResult.parentToolUseId;
       }
-      writeLine(ipcMsg);
+      // Gate site 1/7: suppressEmit holds back live forwarding while
+      // runReplay's bracket is on the wire. State mutations above
+      // (canonicalizeMsgId) and below (turn.rev, turn.partialText)
+      // continue regardless — the snapshot emission in
+      // emitInflightTurnFromActiveTurn reads them.
+      if (!turn.suppressEmit) writeLine(ipcMsg);
     }
 
     // Tier 2: delegate stream_event inner payload to mapStreamEvent().
@@ -2063,7 +2163,14 @@ export class SessionManager {
           (ipcMsg as Record<string, unknown>).parent_tool_use_id =
             routeResult.parentToolUseId;
         }
-        writeLine(ipcMsg);
+        // Gate site 2/7: live deltas during the suppressed window
+        // accumulate into turn.partialText (assigned below) but stay
+        // off the wire. After runReplay clears suppressEmit, future
+        // deltas writeLine normally. The reducer's "snapshot then
+        // resume" pattern (is_partial:false replace from snapshot,
+        // then is_partial:true append from live deltas) reconciles
+        // the two halves into one TurnEntry.
+        if (!turn.suppressEmit) writeLine(ipcMsg);
       }
       turn.rev = streamResult.newRev;
       turn.partialText = streamResult.partialText;
@@ -2097,7 +2204,16 @@ export class SessionManager {
           is_question: isQuestion,
           ipc_version: 2,
         };
-        writeLine(forward);
+        // Gate site 3/7. The pendingControlRequests entry above is
+        // still recorded so a tool_approval response from tugdeck
+        // would correlate; the forward itself is held back so the
+        // reducer's replaying phase doesn't surface a tool dialog
+        // while the bracket is on the wire. In practice runReplay's
+        // window is short (tens of ms) and tool approvals are rare
+        // mid-window — a request that lands here would deadlock on
+        // tugdeck's side until claude retries. Acceptable for v1;
+        // see [#roadmap].
+        if (!turn.suppressEmit) writeLine(forward);
       } else {
         console.log(`Unhandled control_request subtype=${subtype ?? "unknown"}`);
       }
@@ -2116,29 +2232,131 @@ export class SessionManager {
       // empty for those.
       if (turn.partialText.length > 0) {
         const completeSeq = this.nextSeq();
-        writeLine({
-          type: "assistant_text",
-          msg_id: turn.msgId,
-          seq: completeSeq,
-          rev: 0,
-          text: turn.partialText,
-          is_partial: false,
-          status: "complete",
-          ipc_version: 2,
-        });
+        // Gate site 4/7. Skipped emits during the suppressed window
+        // are reconstructed by emitInflightTurnFromActiveTurn from
+        // turn.partialText + turn.gotResult.
+        if (!turn.suppressEmit) {
+          writeLine({
+            type: "assistant_text",
+            msg_id: turn.msgId,
+            seq: completeSeq,
+            rev: 0,
+            text: turn.partialText,
+            is_partial: false,
+            status: "complete",
+            ipc_version: 2,
+          });
+        }
       }
 
       const turnSeq = this.nextSeq();
       const resultValue =
         (routeResult.resultMetadata?.resultValue as string) || "success";
+      // Gate site 5/7. The reconstructed terminal event lives in
+      // emitInflightTurnFromActiveTurn (turn_complete branch when
+      // gotResult).
+      if (!turn.suppressEmit) {
+        writeLine({
+          type: "turn_complete",
+          msg_id: turn.msgId,
+          seq: turnSeq,
+          result: resultValue,
+          ipc_version: 2,
+        });
+      }
+      turn.finish();
+    }
+  }
+
+  /**
+   * Emit the in-flight turn's content from `ActiveTurn` state, inside
+   * `runReplay`'s bracket. Called by `runReplay` after the translator
+   * finishes iterating and reports `skippedTrailingTurn === true` —
+   * meaning the JSONL's trailing in-flight turn's id matched
+   * `liveInflightMsgId`, the translator emitted nothing for it, and
+   * tugcode is now responsible for delivering the in-flight content.
+   *
+   * The reads here (`turn.userText`, `turn.partialText`, etc.) are
+   * tugcode's authoritative state — fresher and more complete than
+   * JSONL (the JSONL's incomplete-flush window is the E1 race we're
+   * routing around). Caller has set `turn.suppressEmit = true` for
+   * the duration of the bracket so live deltas land in turn state but
+   * stay off the wire; `runReplay` clears it after `replay_complete`.
+   *
+   * Tool calls inside the in-flight turn are NOT reconstructed here —
+   * the drain currently dispatches tool events through writeLine
+   * without buffering per-turn tool state, so we have no record to
+   * replay. After this bracket clears, post-suppression live emit
+   * resumes; any tool events that landed mid-window did update the
+   * pendingControlRequests map but their forwards were skipped (gate
+   * site 3/7). A tool approval mid-window is rare given the bracket's
+   * tens-of-ms window; documented as a known limitation in the
+   * roadmap.
+   *
+   * Terminal-event branch closes the [DM06] crash-during-suppression
+   * pitfall: if the drain hit EOF or claude emitted result while
+   * `suppressEmit=true`, `signalEofToActiveTurn` / `dispatchEventToTurn`
+   * latched `gotResult` / `interrupted` but skipped their writeLine.
+   * Without an explicit terminal here, the reducer's
+   * `pendingUserMessage` would stay set and the TurnEntry would
+   * never commit. The terminal we synthesize here makes the bracket
+   * deliver a complete TurnEntry even when the drain dies mid-replay.
+   */
+  private emitInflightTurnFromActiveTurn(turn: ActiveTurn): void {
+    // 1. user_message_replay — synthetic but keyed by claude's id
+    //    (canonicalized in Step 1) so the reducer's existing dedupe
+    //    stitches this together with any post-bracket live emits for
+    //    the same turn.
+    writeLine({
+      type: "user_message_replay",
+      msg_id: turn.msgId,
+      text: turn.userText,
+      attachments: turn.userAttachments.slice(),
+      ipc_version: 2,
+    });
+
+    // 2. assistant_text — one consolidated emit with `is_partial:false`,
+    //    which tells the reducer to REPLACE its scratch (not append).
+    //    Subsequent live deltas after the bracket carry `is_partial:true`
+    //    and append to this baseline. Allocate a fresh seq via
+    //    nextSeq() rather than reusing turn.seq (the user-half's seq);
+    //    matches the existing pattern at the gotResult complete-text
+    //    site in dispatchEventToTurn.
+    if (turn.partialText.length > 0) {
+      writeLine({
+        type: "assistant_text",
+        msg_id: turn.msgId,
+        seq: this.nextSeq(),
+        rev: turn.rev,
+        text: turn.partialText,
+        is_partial: false,
+        status: "streaming",
+        ipc_version: 2,
+      });
+    }
+
+    // 3. Terminal event — only fires if the turn already finished
+    //    while suppressed. Live turns (gotResult=false, interrupted=false)
+    //    skip this; the drain's post-suppression dispatch will emit
+    //    the real `turn_complete` when claude's `result` lands.
+    if (turn.gotResult) {
       writeLine({
         type: "turn_complete",
         msg_id: turn.msgId,
-        seq: turnSeq,
-        result: resultValue,
+        seq: this.nextSeq(),
+        result: "success",
         ipc_version: 2,
       });
-      turn.finish();
+    } else if (turn.interrupted) {
+      writeLine({
+        type: "turn_cancelled",
+        msg_id: turn.msgId,
+        seq: this.nextSeq(),
+        partial_result: turn.partialText.length > 0
+          ? turn.partialText
+          : "User interrupted",
+        ipc_version: 2,
+      });
     }
   }
 
@@ -2162,21 +2380,31 @@ export class SessionManager {
       });
       return;
     }
+    // Gate sites 6 & 7. The EOF emit is held back during the
+    // suppressed window — a claude crash mid-replay would otherwise
+    // race the bracket. emitInflightTurnFromActiveTurn re-synthesizes
+    // the right terminal event (turn_complete for gotResult,
+    // turn_cancelled for interrupted) from latched state so the
+    // bracket delivers a complete TurnEntry even if the drain dies.
     if (turn.interrupted) {
-      writeLine({
-        type: "turn_cancelled",
-        msg_id: turn.msgId,
-        seq: turn.seq,
-        partial_result: turn.partialText || "User interrupted",
-        ipc_version: 2,
-      });
+      if (!turn.suppressEmit) {
+        writeLine({
+          type: "turn_cancelled",
+          msg_id: turn.msgId,
+          seq: turn.seq,
+          partial_result: turn.partialText || "User interrupted",
+          ipc_version: 2,
+        });
+      }
     } else if (!turn.gotResult) {
-      writeLine({
-        type: "error",
-        message: "Claude process stream ended unexpectedly",
-        recoverable: true,
-        ipc_version: 2,
-      });
+      if (!turn.suppressEmit) {
+        writeLine({
+          type: "error",
+          message: "Claude process stream ended unexpectedly",
+          recoverable: true,
+          ipc_version: 2,
+        });
+      }
     }
     turn.finish();
   }

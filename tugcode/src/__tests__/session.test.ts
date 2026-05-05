@@ -3629,3 +3629,372 @@ describe("handleUserMessage integration: live emits use canonical msg_id", () =>
     expect(turnComplete.msg_id).toBe("msg_synth_id");
   });
 });
+
+// ---------------------------------------------------------------------------
+// suppressEmit gate: dispatchEventToTurn updates state but holds back wire
+// emits during runReplay's bracket window (mid-turn replay design).
+// ---------------------------------------------------------------------------
+
+describe("ActiveTurn.suppressEmit gates dispatchEventToTurn", () => {
+  function setupTurn(opts: {
+    suppressEmit: boolean;
+    msgIdCanonicalized?: boolean;
+    msgId?: string;
+  }): { manager: SessionManager; turn: any } {
+    const manager = new SessionManager(
+      "/tmp/suppress-" + Date.now() + "-" + Math.random().toString(36).slice(2),
+      crypto.randomUUID(),
+    );
+    const placeholder = (manager as any).newMsgId();
+    const turn = {
+      msgId: opts.msgId ?? placeholder,
+      seq: (manager as any).nextSeq(),
+      userText: "",
+      userAttachments: [],
+      rev: 0,
+      partialText: "",
+      gotResult: false,
+      interrupted: false,
+      suppressEmit: opts.suppressEmit,
+      msgIdCanonicalized: opts.msgIdCanonicalized ?? false,
+      canonicalizeMsgId(claudeMessageId: string): boolean {
+        if (this.msgIdCanonicalized) return false;
+        this.msgId = claudeMessageId;
+        this.msgIdCanonicalized = true;
+        return true;
+      },
+      finish() {},
+    };
+    return { manager, turn };
+  }
+
+  test("text delta with suppress=true: no wire emit; partialText accumulates", async () => {
+    const { manager, turn } = setupTurn({
+      suppressEmit: true,
+      msgId: "msg_X",
+      msgIdCanonicalized: true,
+    });
+    const ipc = await captureIpcOutput(async () => {
+      (manager as any).dispatchEventToTurn(turn, {
+        type: "stream_event",
+        event: {
+          type: "content_block_delta",
+          delta: { type: "text_delta", text: "hello " },
+        },
+      });
+      (manager as any).dispatchEventToTurn(turn, {
+        type: "stream_event",
+        event: {
+          type: "content_block_delta",
+          delta: { type: "text_delta", text: "world" },
+        },
+      });
+    });
+    expect(ipc.filter((m: any) => m.type === "assistant_text")).toHaveLength(0);
+    expect(turn.partialText).toBe("hello world");
+  });
+
+  test("result event with suppress=true: no turn_complete on wire; gotResult latches", async () => {
+    const { manager, turn } = setupTurn({
+      suppressEmit: true,
+      msgId: "msg_X",
+      msgIdCanonicalized: true,
+    });
+    turn.partialText = "the answer";
+    const ipc = await captureIpcOutput(async () => {
+      (manager as any).dispatchEventToTurn(turn, {
+        type: "result",
+        subtype: "success",
+        result: "",
+      });
+    });
+    // Cost update (from routeResult.messages — site 1) is ALSO gated.
+    // Verify nothing per-turn lands.
+    expect(ipc.filter((m: any) => m.type === "turn_complete")).toHaveLength(0);
+    expect(ipc.filter((m: any) => m.type === "assistant_text")).toHaveLength(0);
+    expect(ipc.filter((m: any) => m.type === "cost_update")).toHaveLength(0);
+    expect(turn.gotResult).toBe(true);
+  });
+
+  test("suppress=false: same dispatches emit normally to wire", async () => {
+    const { manager, turn } = setupTurn({
+      suppressEmit: false,
+      msgId: "msg_Y",
+      msgIdCanonicalized: true,
+    });
+    const ipc = await captureIpcOutput(async () => {
+      (manager as any).dispatchEventToTurn(turn, {
+        type: "stream_event",
+        event: {
+          type: "content_block_delta",
+          delta: { type: "text_delta", text: "hi" },
+        },
+      });
+      (manager as any).dispatchEventToTurn(turn, {
+        type: "result",
+        subtype: "success",
+        result: "",
+      });
+    });
+    const ats = ipc.filter((m: any) => m.type === "assistant_text");
+    const tcs = ipc.filter((m: any) => m.type === "turn_complete");
+    // Live delta + the gotResult complete-text snapshot = 2 assistant_text.
+    expect(ats.length).toBeGreaterThanOrEqual(1);
+    expect(tcs).toHaveLength(1);
+  });
+
+  test("control_request with suppress=true: forward held back; pendingControlRequests still records", async () => {
+    const { manager, turn } = setupTurn({
+      suppressEmit: true,
+      msgId: "msg_Z",
+      msgIdCanonicalized: true,
+    });
+    const ipc = await captureIpcOutput(async () => {
+      (manager as any).dispatchEventToTurn(turn, {
+        type: "control_request",
+        request_id: "req-1",
+        request: {
+          subtype: "can_use_tool",
+          tool_name: "Read",
+          input: { path: "/x" },
+        },
+      });
+    });
+    expect(ipc.filter((m: any) => m.type === "control_request_forward")).toHaveLength(0);
+    // The pendingControlRequests map still got the entry — the gate
+    // is on the wire emit only. (Documented as a known v1 limitation.)
+    expect((manager as any).pendingControlRequests.get("req-1")).toBeDefined();
+  });
+});
+
+describe("signalEofToActiveTurn honors suppressEmit", () => {
+  test("suppress=true on interrupted turn: no turn_cancelled on wire; finish() runs", async () => {
+    const manager = new SessionManager(
+      "/tmp/eof-suppress-" + Date.now(),
+      crypto.randomUUID(),
+    );
+    const turn = {
+      msgId: "msg_eof",
+      seq: 0,
+      userText: "",
+      userAttachments: [],
+      rev: 0,
+      partialText: "partial",
+      gotResult: false,
+      interrupted: true,
+      suppressEmit: true,
+      msgIdCanonicalized: true,
+      canonicalizeMsgId() {
+        return false;
+      },
+      finishCalled: false,
+      finish() {
+        this.finishCalled = true;
+      },
+    };
+    (manager as any).activeTurn = turn;
+    const ipc = await captureIpcOutput(async () => {
+      (manager as any).signalEofToActiveTurn();
+    });
+    expect(ipc.filter((m: any) => m.type === "turn_cancelled")).toHaveLength(0);
+    expect(ipc.filter((m: any) => m.type === "error")).toHaveLength(0);
+    expect(turn.finishCalled).toBe(true);
+  });
+
+  test("suppress=true on unfinished turn: no error emit; finish() runs", async () => {
+    const manager = new SessionManager(
+      "/tmp/eof-suppress-2-" + Date.now(),
+      crypto.randomUUID(),
+    );
+    const turn = {
+      msgId: "msg_eof2",
+      seq: 0,
+      userText: "",
+      userAttachments: [],
+      rev: 0,
+      partialText: "",
+      gotResult: false,
+      interrupted: false,
+      suppressEmit: true,
+      msgIdCanonicalized: true,
+      canonicalizeMsgId() {
+        return false;
+      },
+      finishCalled: false,
+      finish() {
+        this.finishCalled = true;
+      },
+    };
+    (manager as any).activeTurn = turn;
+    const ipc = await captureIpcOutput(async () => {
+      (manager as any).signalEofToActiveTurn();
+    });
+    expect(ipc.filter((m: any) => m.type === "error")).toHaveLength(0);
+    expect(turn.finishCalled).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// emitInflightTurnFromActiveTurn — synthetic block emitted inside the
+// replay bracket from authoritative ActiveTurn state.
+// ---------------------------------------------------------------------------
+
+describe("emitInflightTurnFromActiveTurn", () => {
+  function setupTurn(overrides: Partial<{
+    msgId: string;
+    userText: string;
+    userAttachments: Array<{ filename: string; content: string; media_type: string }>;
+    partialText: string;
+    rev: number;
+    gotResult: boolean;
+    interrupted: boolean;
+  }> = {}): { manager: SessionManager; turn: any } {
+    const manager = new SessionManager(
+      "/tmp/emit-inflight-" + Date.now() + "-" + Math.random().toString(36).slice(2),
+      crypto.randomUUID(),
+    );
+    const turn = {
+      msgId: overrides.msgId ?? "msg_X",
+      seq: 100,
+      userText: overrides.userText ?? "",
+      userAttachments: overrides.userAttachments ?? [],
+      rev: overrides.rev ?? 0,
+      partialText: overrides.partialText ?? "",
+      gotResult: overrides.gotResult ?? false,
+      interrupted: overrides.interrupted ?? false,
+      suppressEmit: false,
+      finish() {},
+    };
+    return { manager, turn };
+  }
+
+  test("still-live turn with partialText: user_message_replay + assistant_text, no terminal", async () => {
+    const { manager, turn } = setupTurn({
+      msgId: "msg_X",
+      userText: "hi",
+      partialText: "hello world",
+      rev: 5,
+    });
+    const ipc = await captureIpcOutput(async () => {
+      (manager as any).emitInflightTurnFromActiveTurn(turn);
+    });
+    const types = ipc.map((m: any) => m.type);
+    expect(types).toEqual(["user_message_replay", "assistant_text"]);
+
+    const userReplay = ipc[0] as any;
+    expect(userReplay.msg_id).toBe("msg_X");
+    expect(userReplay.text).toBe("hi");
+    expect(userReplay.attachments).toEqual([]);
+
+    const assistantText = ipc[1] as any;
+    expect(assistantText.msg_id).toBe("msg_X");
+    expect(assistantText.text).toBe("hello world");
+    expect(assistantText.is_partial).toBe(false);
+    expect(assistantText.status).toBe("streaming");
+    expect(assistantText.rev).toBe(5);
+    expect(typeof assistantText.seq).toBe("number");
+  });
+
+  test("with attachments: user_message_replay carries attachment array verbatim", async () => {
+    const att = {
+      filename: "f.txt",
+      content: "contents",
+      media_type: "text/plain",
+    };
+    const { manager, turn } = setupTurn({
+      msgId: "msg_att",
+      userText: "see",
+      userAttachments: [att],
+      partialText: "ok",
+    });
+    const ipc = await captureIpcOutput(async () => {
+      (manager as any).emitInflightTurnFromActiveTurn(turn);
+    });
+    const userReplay = ipc[0] as any;
+    expect(userReplay.attachments).toEqual([att]);
+  });
+
+  test("empty partialText: skips assistant_text", async () => {
+    const { manager, turn } = setupTurn({
+      msgId: "msg_empty",
+      userText: "go",
+      partialText: "",
+    });
+    const ipc = await captureIpcOutput(async () => {
+      (manager as any).emitInflightTurnFromActiveTurn(turn);
+    });
+    const types = ipc.map((m: any) => m.type);
+    expect(types).toEqual(["user_message_replay"]);
+  });
+
+  test("gotResult=true: terminal turn_complete emitted with fresh seq", async () => {
+    const { manager, turn } = setupTurn({
+      msgId: "msg_done",
+      userText: "ask",
+      partialText: "answer",
+      gotResult: true,
+    });
+    const ipc = await captureIpcOutput(async () => {
+      (manager as any).emitInflightTurnFromActiveTurn(turn);
+    });
+    const types = ipc.map((m: any) => m.type);
+    expect(types).toEqual(["user_message_replay", "assistant_text", "turn_complete"]);
+    const tc = ipc[2] as any;
+    expect(tc.msg_id).toBe("msg_done");
+    expect(tc.result).toBe("success");
+    expect(typeof tc.seq).toBe("number");
+    // Fresh seq invariant: assistant_text.seq < turn_complete.seq
+    expect((ipc[1] as any).seq).toBeLessThan(tc.seq);
+  });
+
+  test("interrupted=true: terminal turn_cancelled with partial_result from partialText", async () => {
+    const { manager, turn } = setupTurn({
+      msgId: "msg_intr",
+      userText: "ask",
+      partialText: "I was saying",
+      interrupted: true,
+    });
+    const ipc = await captureIpcOutput(async () => {
+      (manager as any).emitInflightTurnFromActiveTurn(turn);
+    });
+    const types = ipc.map((m: any) => m.type);
+    expect(types).toEqual(["user_message_replay", "assistant_text", "turn_cancelled"]);
+    const tcanc = ipc[2] as any;
+    expect(tcanc.msg_id).toBe("msg_intr");
+    expect(tcanc.partial_result).toBe("I was saying");
+  });
+
+  test("interrupted=true with empty partialText: turn_cancelled defaults partial_result", async () => {
+    const { manager, turn } = setupTurn({
+      msgId: "msg_intr_empty",
+      userText: "ask",
+      partialText: "",
+      interrupted: true,
+    });
+    const ipc = await captureIpcOutput(async () => {
+      (manager as any).emitInflightTurnFromActiveTurn(turn);
+    });
+    const types = ipc.map((m: any) => m.type);
+    expect(types).toEqual(["user_message_replay", "turn_cancelled"]);
+    const tcanc = ipc[1] as any;
+    expect(tcanc.partial_result).toBe("User interrupted");
+  });
+
+  test("gotResult takes precedence over interrupted (defensive)", async () => {
+    // Should not happen in practice (interrupt sets interrupted before
+    // gotResult could land), but pin the precedence explicitly.
+    const { manager, turn } = setupTurn({
+      msgId: "msg_both",
+      userText: "ask",
+      partialText: "ok",
+      gotResult: true,
+      interrupted: true,
+    });
+    const ipc = await captureIpcOutput(async () => {
+      (manager as any).emitInflightTurnFromActiveTurn(turn);
+    });
+    const types = ipc.map((m: any) => m.type);
+    expect(types).toContain("turn_complete");
+    expect(types).not.toContain("turn_cancelled");
+  });
+});
