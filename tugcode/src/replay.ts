@@ -670,21 +670,6 @@ export interface TranslateSessionOptions {
   /** Disable the inter-batch yield. Tests set this to keep
    * synchronous; production never sets it. */
   disableYield?: boolean;
-  /**
-   * When set, the translator's end-of-JSONL flush checks the trailing
-   * in-flight (orphan) turn's most recent assistant entry's `message.id`.
-   * If it matches, the entire trailing turn is skipped — no
-   * `user_message_replay`, no per-turn `assistant_text`, no orphan
-   * `turn_complete{error}`. The translator's caller (tugcode's
-   * `runReplay`) emits the in-flight turn's content from `ActiveTurn`
-   * state instead, closing the JSONL-flush race characterized by the
-   * Phase 0 E1 verdict.
-   *
-   * When unset, the existing behavior applies: a trailing in-flight
-   * turn orphan-synthesizes a `turn_complete{error}` so the cold-boot
-   * replay of an interrupted session still surfaces a transcript row.
-   */
-  liveInflightMsgId?: string;
 }
 
 /**
@@ -693,21 +678,21 @@ export interface TranslateSessionOptions {
  * generator's `TReturn` parameter).
  *
  * `count` mirrors the per-wire `replay_complete.count` and counts
- * `turn_complete` events emitted by the translator. The terminal
- * orphan-synthesized turn (when `liveInflightMsgId` is unset) does
- * count toward this total; a skipped trailing turn does not.
+ * `turn_complete` events emitted by the translator. A trailing
+ * in-flight turn that the translator orphan-synthesizes counts toward
+ * this total.
  *
- * `skippedTrailingTurn` is `true` iff the trailing-turn skip path
- * fired — i.e., `liveInflightMsgId` was set, the JSONL had an open
- * trailing buffer at EOF, and the buffer's `msgId` matched. The
- * caller reads this to decide whether to follow up with its own
- * in-flight emission (per [DM04]). False in every other case (no
- * `liveInflightMsgId`, no trailing buffer, mismatched id, or an
- * input error branch where no entries were read).
+ * Step 4 mid-turn-replay: `runReplay` is now ledger-driven and uses
+ * `translateJsonlSession` only as the cold-boot fallback when the
+ * ledger has no rows for the session. The Step-3-era
+ * `liveInflightMsgId` / `skippedTrailingTurn` surface that coordinated
+ * trailing-turn skipping with `emitInflightTurnFromActiveTurn` is gone
+ * — the ledger row keyed by `tug_turn_id` is the single coordination
+ * point now, and `extractTurnContent` is the per-row content lookup
+ * runReplay performs against the JSONL.
  */
 export interface TranslateSessionResult {
   count: number;
-  skippedTrailingTurn: boolean;
 }
 
 /**
@@ -734,7 +719,6 @@ export async function* translateJsonlSession(
   const batchSize = opts.batchSize ?? DEFAULT_BATCH_SIZE;
   const telemetry = opts.telemetry ?? DEFAULT_TELEMETRY;
   const yieldBetweenBatches = opts.disableYield !== true;
-  const liveInflightMsgId = opts.liveInflightMsgId;
 
   const started: ReplayStarted = {
     type: "replay_started",
@@ -756,7 +740,7 @@ export async function* translateJsonlSession(
       ipc_version: IPC_VERSION,
     };
     yield complete;
-    return { count: 0, skippedTrailingTurn: false };
+    return { count: 0 };
   }
   if (input.kind === "unreadable") {
     const complete: ReplayComplete = {
@@ -769,7 +753,7 @@ export async function* translateJsonlSession(
       ipc_version: IPC_VERSION,
     };
     yield complete;
-    return { count: 0, skippedTrailingTurn: false };
+    return { count: 0 };
   }
 
   // OK branch: parse + translate line by line.
@@ -852,34 +836,16 @@ export async function* translateJsonlSession(
   // Orphan-turn synthesis — a buffer that survives end-of-file means
   // the JSONL was truncated mid-turn. Flush as turn_complete(error)
   // so the user-visible portion appears in the transcript marked
-  // interrupted, matching live `interrupt()` semantics.
-  //
-  // Exception: when `liveInflightMsgId` is set AND matches the
-  // trailing buffer's `msgId`, the trailing turn is the one tugcode
-  // is currently streaming locally. Skip the entire orphan flush —
-  // tugcode's `runReplay` follows up with `emitInflightTurnFromActiveTurn`
-  // (Step 3) using its in-memory `ActiveTurn` state, which is fresher
-  // and more complete than the JSONL (the JSONL's incomplete-flush
-  // window is the E1 race we're routing around). `skippedTrailingTurn`
-  // signals the skip back to the caller via the generator's return
-  // value; the caller reads it to decide whether to emit its own
-  // in-flight block, avoiding double-emission for matching ids.
-  let skippedTrailingTurn = false;
+  // interrupted, matching live `interrupt()` semantics. Step 4
+  // mid-turn-replay: the Step-3-era trailing-turn-skip coordinated by
+  // `liveInflightMsgId` is gone — `runReplay` is ledger-driven and
+  // calls `translateJsonlSession` only on the cold-boot fallback path
+  // (no ledger rows for this session), so a trailing orphan here is
+  // legitimately uncoordinated and should flush as before.
   if (ctx.buffer !== null) {
-    if (
-      liveInflightMsgId !== undefined &&
-      liveInflightMsgId.length > 0 &&
-      ctx.buffer.msgId === liveInflightMsgId
-    ) {
-      skippedTrailingTurn = true;
-      ctx.buffer = null;
-      ctx.pendingUserText = null;
-      ctx.pendingUserAttachments = [];
-    } else {
-      const orphanFlush = flushTurn(ctx, "error");
-      for (const msg of orphanFlush) {
-        yield msg;
-      }
+    const orphanFlush = flushTurn(ctx, "error");
+    for (const msg of orphanFlush) {
+      yield msg;
     }
   }
 
@@ -897,7 +863,7 @@ export async function* translateJsonlSession(
       : {}),
   };
   yield complete;
-  return { count: ctx.turnsCommitted, skippedTrailingTurn };
+  return { count: ctx.turnsCommitted };
 }
 
 /**
@@ -907,6 +873,124 @@ export async function* translateJsonlSession(
  */
 function yieldToEventLoop(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
+ * Iterate JSONL entries and yield the assistant-side content (tool_use,
+ * tool_result, thinking_text, assistant_text) for the turn whose
+ * terminal `assistant` entry has `message.id === claudeMessageId`. The
+ * yielded frames are re-keyed with `msgIdForOutput` (the caller's
+ * tug_turn_id) so live wire emits and replay emits agree on a single
+ * `msg_id` per logical turn.
+ *
+ * Does NOT yield `user_message_replay` or `turn_complete` —
+ * `runReplay` synthesizes those directly from the ledger row's
+ * `tug_turn_id`, `user_text`, `user_attachments`, and `state`. The
+ * separation keeps the caller in charge of bracket framing while
+ * delegating per-turn content extraction here.
+ *
+ * If the JSONL has multiple turns whose terminal entry shares
+ * `claudeMessageId` (defensive — claude doesn't reuse ids in
+ * practice), every match's content yields in JSONL order. Callers
+ * that care about deduplication ignore all but the last batch via
+ * the ledger row's ordinal.
+ *
+ * If the trailing in-flight buffer at end-of-file matches
+ * `claudeMessageId`, its accumulated content is flushed and yielded
+ * the same way — necessary for `state='interrupted'` rows whose
+ * partial assistant content lives in the JSONL's last (resultless)
+ * turn.
+ */
+export function* extractTurnContent(
+  jsonl: string,
+  claudeMessageId: string,
+  msgIdForOutput: string,
+): Generator<OutboundMessage> {
+  if (claudeMessageId.length === 0) {
+    return;
+  }
+  const ctx = makeTranslateContext(NOOP_TELEMETRY);
+  const lines = jsonl.split("\n");
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (line.length === 0) continue;
+    let parsed: JsonlEntry;
+    try {
+      parsed = JSON.parse(line) as JsonlEntry;
+    } catch {
+      // Malformed lines: skip (matches translateJsonlSession's
+      // permissiveness; runReplay's caller has the surfaced error from
+      // the cold-boot path's `replay_complete{error}`).
+      continue;
+    }
+    const messages = translateJsonlEntry(parsed, ctx);
+    if (messages.length === 0) continue;
+    // `translateJsonlEntry` returns a non-empty array only when
+    // `flushTurn` fired (terminal `end_turn` assistant entry). Every
+    // frame in the flush carries `msg_id === buffer.msgId` for the
+    // turn that just closed. Read it from the first such frame to
+    // detect a match against `claudeMessageId`. (We don't read from
+    // `ctx.buffer` because `flushTurn` resets it to `null` before
+    // returning.)
+    const flushedMsgId = readMsgIdFromBatch(messages);
+    if (flushedMsgId === claudeMessageId) {
+      for (const msg of rekeyTurnContent(messages, msgIdForOutput)) {
+        yield msg;
+      }
+    }
+  }
+  // Trailing-buffer flush: same orphan-synthesis path used by
+  // translateJsonlSession, but only emit if the buffer matches.
+  if (ctx.buffer !== null && ctx.buffer.msgId === claudeMessageId) {
+    const orphan = flushTurn(ctx, "error");
+    for (const msg of rekeyTurnContent(orphan, msgIdForOutput)) {
+      yield msg;
+    }
+  }
+}
+
+/**
+ * Pull the per-turn `msg_id` out of a batch of `flushTurn`-produced
+ * messages. Every message except `tool_result` (keyed by
+ * `tool_use_id`) carries `msg_id`, and they all share the buffer's id
+ * — so we read the first one. Returns `undefined` only if no message
+ * in the batch has an `msg_id` field, which `flushTurn` never produces
+ * in practice.
+ */
+function readMsgIdFromBatch(messages: OutboundMessage[]): string | undefined {
+  for (const msg of messages) {
+    if ("msg_id" in msg && typeof (msg as { msg_id?: unknown }).msg_id === "string") {
+      return (msg as { msg_id: string }).msg_id;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Drop the user-side and terminal frames from `flushTurn`'s output and
+ * re-key the surviving content frames with `msgIdForOutput`. Shared
+ * helper for `extractTurnContent` so both the per-turn match and the
+ * trailing-buffer match path produce identical shapes.
+ */
+function* rekeyTurnContent(
+  messages: OutboundMessage[],
+  msgIdForOutput: string,
+): Generator<OutboundMessage> {
+  for (const msg of messages) {
+    if (msg.type === "user_message_replay" || msg.type === "turn_complete") {
+      continue;
+    }
+    // Every other message in flushTurn's output (tool_use, tool_result,
+    // thinking_text, assistant_text) carries an `msg_id` field except
+    // tool_result, which is keyed by `tool_use_id` only and needs no
+    // re-keying. Spread + override is safe: the discriminated-union
+    // narrowing for the rest of the fields is preserved.
+    if ("msg_id" in msg) {
+      yield { ...msg, msg_id: msgIdForOutput } as OutboundMessage;
+    } else {
+      yield msg;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

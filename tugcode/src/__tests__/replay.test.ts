@@ -17,6 +17,7 @@ import {
   type ReplayInput,
   type ReplayTelemetry,
   type TranslateContext,
+  extractTurnContent,
   makeTranslateContext,
   translateJsonlEntry,
   translateJsonlSession,
@@ -1080,247 +1081,163 @@ describe("translateJsonlEntry — direct unit tests", () => {
 });
 
 // ---------------------------------------------------------------------------
-// liveInflightMsgId — trailing-turn skip for mid-turn replay handoff
+// extractTurnContent — per-turn content lookup keyed by claude_message_id
 // ---------------------------------------------------------------------------
+//
+// Step 4 mid-turn-replay: `runReplay` is ledger-driven; for each
+// `state='complete'` row that carries a `claude_message_id`, it asks
+// `extractTurnContent` for the assistant-side content blocks (tool_use,
+// tool_result, thinking_text, assistant_text) keyed on the row's
+// `tug_turn_id`. The Step-3-era trailing-turn-skip (`liveInflightMsgId` /
+// `skippedTrailingTurn`) is gone — the ledger is the single coordination
+// point now.
 
-/**
- * Drive `translateJsonlSession` with options and capture both the yielded
- * messages and the generator's return value. The return value is
- * unreachable through `for await`; this helper iterates with `.next()`
- * so callers can assert on `TranslateSessionResult` directly.
- */
-async function collectSessionWithResult(
-  input: ReplayInput,
-  opts?: {
-    telemetry?: ReplayTelemetry;
-    disableYield?: boolean;
-    liveInflightMsgId?: string;
-  },
-): Promise<{
-  messages: OutboundMessage[];
-  result: { count: number; skippedTrailingTurn: boolean };
-}> {
-  const messages: OutboundMessage[] = [];
-  const it = translateJsonlSession(input, {
-    telemetry: opts?.telemetry,
-    disableYield: opts?.disableYield ?? true,
-    liveInflightMsgId: opts?.liveInflightMsgId,
-  });
-  let returnValue = { count: 0, skippedTrailingTurn: false };
-  while (true) {
-    const r = await it.next();
-    if (r.done) {
-      if (r.value !== undefined) returnValue = r.value;
-      break;
-    }
-    messages.push(r.value);
-  }
-  return { messages, result: returnValue };
-}
-
-describe("translateJsonlSession — liveInflightMsgId trailing-turn skip", () => {
-  test("skip on match: trailing in-flight turn whose terminal id matches is dropped", async () => {
-    // Mid-turn reload scenario: JSONL has one committed turn plus a
-    // trailing in-flight turn (assistant entry with stop_reason: null).
-    // Tugcode's ActiveTurn matches the trailing turn's id. The
-    // translator skips the trailing turn entirely; tugcode's runReplay
-    // (Step 3) emits the in-flight content from ActiveTurn state.
+describe("extractTurnContent — per-turn content lookup", () => {
+  test("happy path: yields content keyed by msgIdForOutput, no user/turn_complete", () => {
+    // Single committed turn with a tool call. The intermediate
+    // assistant entry buffers the tool_use; the matching tool_result
+    // (in a user entry) fills its slot; the terminal assistant entry
+    // (stop_reason=end_turn, msgId=msg_target) flushes the turn. The
+    // terminal entry's `msgId` is what extractTurnContent matches on
+    // — `flushTurn` keys every emitted frame off `buffer.msgId`,
+    // which the terminal entry sets just before flush.
     const jsonl = makeJsonl([
-      userEntry([{ type: "text", text: "first prompt" }]),
+      userEntry([{ type: "text", text: "do a thing" }]),
       assistantEntry({
-        msgId: "msg_committed",
-        stopReason: "end_turn",
-        content: [{ type: "text", text: "first reply" }],
-      }),
-      userEntry([{ type: "text", text: "second prompt" }]),
-      assistantEntry({
-        msgId: "msg_inflight",
-        stopReason: null,
-        content: [{ type: "text", text: "partial reply..." }],
-      }),
-    ]);
-    const { messages, result } = await collectSessionWithResult(
-      { kind: "ok", jsonl },
-      { liveInflightMsgId: "msg_inflight" },
-    );
-
-    // First (committed) turn emits normally.
-    const userReplays = messages.filter(isUserMessageReplay);
-    const turnCompletes = messages.filter(isTurnComplete);
-    expect(userReplays).toHaveLength(1);
-    expect(userReplays[0].msg_id).toBe("msg_committed");
-    expect(turnCompletes).toHaveLength(1);
-    expect(turnCompletes[0].msg_id).toBe("msg_committed");
-    expect(turnCompletes[0].result).toBe("success");
-
-    // Trailing in-flight turn produces NO outbound messages — no
-    // user_message_replay for "second prompt", no orphan turn_complete.
-    expect(messages.find((m) => m.type === "user_message_replay" && (m as UserMessageReplay).msg_id === "msg_inflight")).toBeUndefined();
-    expect(messages.find((m) => m.type === "assistant_text" && (m as AssistantText).msg_id === "msg_inflight")).toBeUndefined();
-    expect(messages.find((m) => m.type === "turn_complete" && (m as TurnComplete).msg_id === "msg_inflight")).toBeUndefined();
-
-    // replay_complete reflects only the committed turn.
-    const complete = messages.at(-1) as ReplayComplete;
-    expect(complete.count).toBe(1);
-    expect(complete.error).toBeUndefined();
-
-    expect(result.count).toBe(1);
-    expect(result.skippedTrailingTurn).toBe(true);
-  });
-
-  test("no skip on mismatch: trailing in-flight turn with different id orphan-synthesizes", async () => {
-    // Edge case: tugcode has an active turn for one id, but the JSONL's
-    // trailing in-flight turn has a different id (e.g., a previously
-    // interrupted session that was never cleaned up). Translator
-    // orphan-synthesizes the JSONL's trailing turn as today.
-    const jsonl = makeJsonl([
-      userEntry([{ type: "text", text: "abandoned prompt" }]),
-      assistantEntry({
-        msgId: "msg_jsonl_orphan",
-        stopReason: null,
-        content: [{ type: "text", text: "abandoned partial..." }],
-      }),
-    ]);
-    const { messages, result } = await collectSessionWithResult(
-      { kind: "ok", jsonl },
-      { liveInflightMsgId: "msg_DIFFERENT" },
-    );
-
-    const userReplays = messages.filter(isUserMessageReplay);
-    const turnCompletes = messages.filter(isTurnComplete);
-    expect(userReplays).toHaveLength(1);
-    expect(userReplays[0].msg_id).toBe("msg_jsonl_orphan");
-    expect(turnCompletes).toHaveLength(1);
-    expect(turnCompletes[0].msg_id).toBe("msg_jsonl_orphan");
-    expect(turnCompletes[0].result).toBe("error");
-
-    expect(result.count).toBe(1);
-    expect(result.skippedTrailingTurn).toBe(false);
-  });
-
-  test("cold-boot regression: no liveInflightMsgId orphan-synthesizes (preserves D08)", async () => {
-    // Cold-boot replay path: user opens a session whose JSONL ends
-    // mid-turn (a previously interrupted session). With no
-    // liveInflightMsgId, the existing orphan-synthesis behavior is
-    // preserved so the trailing interrupted turn shows up in the
-    // transcript with the canonical "interrupted" marker.
-    const jsonl = makeJsonl([
-      userEntry([{ type: "text", text: "go" }]),
-      assistantEntry({
-        msgId: "m_orphan",
+        msgId: "msg_intermediate",
         stopReason: "tool_use",
         content: [
-          { type: "tool_use", id: "tu_x", name: "Bash", input: { command: "ls" } },
+          { type: "tool_use", id: "tu1", name: "Bash", input: { cmd: "ls" } },
+        ],
+      }),
+      userEntry([
+        { type: "tool_result", tool_use_id: "tu1", content: "ok" },
+      ]),
+      assistantEntry({
+        msgId: "msg_target",
+        stopReason: "end_turn",
+        content: [
+          { type: "thinking", thinking: "let me reason" },
+          { type: "text", text: "done" },
         ],
       }),
     ]);
-    const { messages, result } = await collectSessionWithResult(
-      { kind: "ok", jsonl },
-      { /* liveInflightMsgId omitted */ },
-    );
-
-    const turnCompletes = messages.filter(isTurnComplete);
-    expect(turnCompletes).toHaveLength(1);
-    expect(turnCompletes[0].result).toBe("error");
-    expect(turnCompletes[0].msg_id).toBe("m_orphan");
-
-    expect(result.count).toBe(1);
-    expect(result.skippedTrailingTurn).toBe(false);
+    const out = Array.from(extractTurnContent(jsonl, "msg_target", "tug_x"));
+    const types = out.map((m) => m.type);
+    expect(types).toContain("tool_use");
+    expect(types).toContain("tool_result");
+    expect(types).toContain("thinking_text");
+    expect(types).toContain("assistant_text");
+    expect(types).not.toContain("user_message_replay");
+    expect(types).not.toContain("turn_complete");
+    // Every yielded message that carries msg_id is re-keyed.
+    for (const msg of out) {
+      if ("msg_id" in msg) {
+        expect((msg as { msg_id: string }).msg_id).toBe("tug_x");
+      }
+    }
   });
 
-  test("no trailing turn: JSONL ending in committed end_turn is unaffected by liveInflightMsgId", async () => {
-    // JSONL has only completed turns (every assistant entry has
-    // stop_reason: end_turn). liveInflightMsgId is set to anything;
-    // the translator's check at EOF finds buffer === null and proceeds
-    // normally. skippedTrailingTurn is false because the orphan path
-    // didn't fire.
+  test("no matching turn: yields nothing", () => {
     const jsonl = makeJsonl([
-      userEntry([{ type: "text", text: "u1" }]),
+      userEntry([{ type: "text", text: "u" }]),
       assistantEntry({
-        msgId: "m1",
+        msgId: "msg_other",
         stopReason: "end_turn",
-        content: [{ type: "text", text: "a1" }],
+        content: [{ type: "text", text: "a" }],
       }),
     ]);
-    const { messages, result } = await collectSessionWithResult(
-      { kind: "ok", jsonl },
-      { liveInflightMsgId: "msg_anything" },
-    );
-
-    const turnCompletes = messages.filter(isTurnComplete);
-    expect(turnCompletes).toHaveLength(1);
-    expect(turnCompletes[0].msg_id).toBe("m1");
-    expect(turnCompletes[0].result).toBe("success");
-
-    expect(result.count).toBe(1);
-    expect(result.skippedTrailingTurn).toBe(false);
+    const out = Array.from(extractTurnContent(jsonl, "msg_target", "tug_x"));
+    expect(out).toHaveLength(0);
   });
 
-  test("missing JSONL with liveInflightMsgId still reports skippedTrailingTurn=false", async () => {
-    // Error branches (missing/unreadable) bypass JSONL iteration;
-    // skippedTrailingTurn must be false because no orphan flush ever
-    // ran. Pinned so a future re-shape of the error branches doesn't
-    // accidentally drift the contract.
-    const { messages, result } = await collectSessionWithResult(
-      { kind: "missing", message: "no file" },
-      { liveInflightMsgId: "msg_anything" },
-    );
-    expect(messages.at(-1)?.type).toBe("replay_complete");
-    expect((messages.at(-1) as ReplayComplete).error?.kind).toBe("jsonl_missing");
-    expect(result.count).toBe(0);
-    expect(result.skippedTrailingTurn).toBe(false);
-  });
-
-  test("empty liveInflightMsgId is treated as unset (no skip)", async () => {
-    // Defensive: an empty string for liveInflightMsgId must not match
-    // a buffer.msgId of "" (which is the default placeholder before
-    // the first assistant entry's id is observed). The check requires
-    // a non-empty match.
+  test("empty claudeMessageId: yields nothing without iterating", () => {
+    // Defensive: an empty claudeMessageId can't possibly match a
+    // turn's terminal id (the JSONL never has buffer.msgId === "" by
+    // production convention; an empty arg is a programmer error).
+    // Guard against a stray match by short-circuiting at the top.
     const jsonl = makeJsonl([
-      userEntry([{ type: "text", text: "go" }]),
+      userEntry([{ type: "text", text: "u" }]),
       assistantEntry({
         msgId: "",
         stopReason: null,
         content: [{ type: "text", text: "partial" }],
       }),
     ]);
-    const { messages, result } = await collectSessionWithResult(
-      { kind: "ok", jsonl },
-      { liveInflightMsgId: "" },
-    );
-
-    // The trailing in-flight turn orphan-synthesizes (empty-string
-    // liveInflightMsgId did not trigger the skip path).
-    const turnCompletes = messages.filter(isTurnComplete);
-    expect(turnCompletes).toHaveLength(1);
-    expect(turnCompletes[0].result).toBe("error");
-    expect(result.skippedTrailingTurn).toBe(false);
+    const out = Array.from(extractTurnContent(jsonl, "", "tug_x"));
+    expect(out).toHaveLength(0);
   });
 
-  test("for-await consumers (existing call sites) ignore the return value cleanly", async () => {
-    // Backward-compatibility check: pre-Step-2 callers iterate via
-    // for-await, which discards the generator's return value. Adding a
-    // typed return must not change anything observable to those callers.
+  test("matches the trailing in-flight turn (no result entry) and yields its content", () => {
+    // Mid-turn reload scenario: the JSONL ends with an open
+    // assistant entry (stop_reason: null). The ledger row
+    // (state='interrupted' or 'pending') carries a claude_message_id
+    // pointing at this trailing turn. extractTurnContent flushes the
+    // orphan and yields its content re-keyed.
     const jsonl = makeJsonl([
-      userEntry([{ type: "text", text: "u" }]),
+      userEntry([{ type: "text", text: "go" }]),
       assistantEntry({
-        msgId: "m",
-        stopReason: "end_turn",
-        content: [{ type: "text", text: "a" }],
+        msgId: "msg_inflight",
+        stopReason: null,
+        content: [{ type: "text", text: "partial..." }],
       }),
     ]);
-    const out: OutboundMessage[] = [];
-    for await (const msg of translateJsonlSession(
-      { kind: "ok", jsonl },
-      { disableYield: true, liveInflightMsgId: "m" },
-    )) {
-      out.push(msg);
-    }
-    // The trailing turn here IS complete (end_turn), so it commits
-    // normally — `liveInflightMsgId` only fires on an open trailing
-    // buffer at EOF.
-    const turnCompletes = out.filter(isTurnComplete);
-    expect(turnCompletes).toHaveLength(1);
-    expect(turnCompletes[0].result).toBe("success");
+    const out = Array.from(
+      extractTurnContent(jsonl, "msg_inflight", "tug_inflight"),
+    );
+    const assistantTexts = out.filter((m) => m.type === "assistant_text") as Array<
+      { msg_id: string; text: string }
+    >;
+    expect(assistantTexts.length).toBeGreaterThan(0);
+    expect(assistantTexts[0].msg_id).toBe("tug_inflight");
+    expect(assistantTexts[0].text).toBe("partial...");
+  });
+
+  test("multiple turns; only the matching turn's content is yielded", () => {
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "u1" }]),
+      assistantEntry({
+        msgId: "msg_a",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "a1" }],
+      }),
+      userEntry([{ type: "text", text: "u2" }]),
+      assistantEntry({
+        msgId: "msg_b",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "a2" }],
+      }),
+    ]);
+    const out = Array.from(extractTurnContent(jsonl, "msg_b", "tug_b"));
+    const assistantTexts = out.filter((m) => m.type === "assistant_text") as Array<
+      { msg_id: string; text: string }
+    >;
+    expect(assistantTexts).toHaveLength(1);
+    expect(assistantTexts[0].text).toBe("a2");
+    expect(assistantTexts[0].msg_id).toBe("tug_b");
+  });
+
+  test("malformed lines around the matching turn don't break extraction", () => {
+    // Same permissiveness as translateJsonlSession: malformed lines
+    // are skipped silently; the matching turn still extracts.
+    const jsonl = [
+      "not json",
+      JSON.stringify(userEntry([{ type: "text", text: "go" }])),
+      JSON.stringify(
+        assistantEntry({
+          msgId: "msg_x",
+          stopReason: "end_turn",
+          content: [{ type: "text", text: "answer" }],
+        }),
+      ),
+      "{ also not json",
+    ].join("\n");
+    const out = Array.from(extractTurnContent(jsonl, "msg_x", "tug_x"));
+    const assistantTexts = out.filter((m) => m.type === "assistant_text") as Array<
+      { msg_id: string; text: string }
+    >;
+    expect(assistantTexts).toHaveLength(1);
+    expect(assistantTexts[0].text).toBe("answer");
+    expect(assistantTexts[0].msg_id).toBe("tug_x");
   });
 });

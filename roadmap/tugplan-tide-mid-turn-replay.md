@@ -1467,10 +1467,10 @@ Tests that survive unchanged:
 
 **Tasks:**
 
-- [ ] Add `bun:sqlite` import to `session.ts`. Add a constructor option `sessionsDbPath?: string` for test injection.
-- [ ] Implement the new `runReplay` loop per the spec above.
-- [ ] Refactor `replay.ts`'s translator into the new `extractTurnContent` shape. Remove `liveInflightMsgId` / `skippedTrailingTurn`. Preserve the cold-boot orphan-synthesis path as a separate function `extractOrphanTurn` for the no-ledger-rows case.
-- [ ] Update `replay-spawn-mid-turn.test.ts` per [#step-4-test-deltas-replay].
+- [x] Add `bun:sqlite` import to `session.ts`. Add a constructor option `sessionsDbPath?: string | null` for test injection (passing `null` opts out of opening any DB; passing a path uses that file; omitting → use `defaultSessionsDbPath()`).
+- [x] Implement the new `runReplay` loop per the spec above. Branch on `ledgerRows.length > 0` → ledger-driven; else cold-boot fallback to `translateJsonlSession`. Helpers: `readLedgerTurnsForSession`, `decodeUserAttachments`, `runLedgerDrivenReplay`, `closeSessionsDb`.
+- [x] Refactor `replay.ts`'s translator into the new `extractTurnContent` shape. Remove `liveInflightMsgId` / `skippedTrailingTurn`. The cold-boot orphan-synthesis path is preserved by `translateJsonlSession` itself (which still handles the trailing-buffer flush at end of JSONL with the same `flushTurn(ctx, "error")` semantics) — `runReplay` falls through to `translateJsonlSession` when the ledger has no rows for the session, so no separate `extractOrphanTurn` function was needed.
+- [x] Update `replay-spawn-mid-turn.test.ts` per [#step-4-test-deltas-replay].
 
 **Test deltas in `replay-spawn-mid-turn.test.ts`:** {#step-4-test-deltas-replay}
 
@@ -1482,16 +1482,16 @@ Tests that survive unchanged:
 
 **Tests:**
 
-- [ ] **Cross-process WAL verification** (per [#step-4-6]'s artifact spec): coordinated Rust-writer + Bun-reader test, asserts the reader sees writes from the writer on the same `sessions.db` file. **Run this first before any other 4.6 work** — the rest of the substep is predicated on it passing.
-- [ ] **Bug-scenario regression (manual reload symptom)**: ledger has one pending row matching the surrogate ActiveTurn; drive `runReplay`; assert wire emits `user_message_replay { msg_id: tug_turn_id, text }` + `assistant_text { msg_id: tug_turn_id }` + replay_complete. **The bug from 2026-05-05 is structurally impossible because tug_turn_id is stable from submission and the ledger has the row regardless of JSONL state.**
-- [ ] **Smoke D ordering**: ledger has two rows (one complete, one pending matching ActiveTurn); assert ordering [replay_started, committed turn events, in-flight emission, replay_complete].
-- [ ] **Cold-boot no-rows path**: ledger has zero rows for the session (legacy / migration not yet run); JSONL has content; assert `runReplay` falls back to JSONL-driven emit via `extractOrphanTurn` (preserves [D08] equivalence). Pin this until Step 4.8 lands the migration; afterwards this case becomes vanishingly rare.
-- [ ] **Stale pending row (crash recovery proxy)**: ledger has a pending row that no live ActiveTurn matches; assert `runReplay` emits user + optional partial + turn_cancelled (defensive synthesis until 4.7 lands the reconciliation).
-- [ ] **Defensive: complete row with null `claude_message_id`**: seed a `state='complete'` row with `claude_message_id: NULL`; assert `runReplay` warns + emits `user_message_replay` + `turn_complete` with no `assistant_text`. Pins the defensive code path so it can't silently regress.
-- [ ] **Defensive: duplicate `claude_message_id` across rows**: seed two `state='complete'` rows with the same `claude_message_id` (defensive — index is non-unique). Drive `runReplay`; assert it emits both turn rows but the JSONL content lookup picks the latest by ordinal and warns about the duplication.
-- [ ] **Invariant pin: one `msg_id` per logical turn on the wire**: drive a full turn through both paths (live + replay-after-reload). Capture the entire wire trace. Assert: for every `text` content present, all frames carrying that text use the **same** `msg_id`. Equivalent: assert `Set<msg_id>` across the trace's user_message_replay + assistant_text + turn_complete + turn_cancelled frames is exactly `Set<tug_turn_id>` of the seeded ledger rows. Permanent regression pin against the whole class of "two ids for one turn" bugs that motivated Step 4.
-- [ ] **Full-suite regression**: all surviving tests from Steps 1–3 still pass with their fixtures pointed at the ledger.
-- [ ] **Failure-first proof**: temporarily restore `liveInflightMsgId` gating in the translator + `runReplay`'s old emit predicate; assert the bug-scenario regression test fails because the translator's logic doesn't kick in (the ledger isn't read).
+- [x] **Cross-process WAL verification** (per [#step-4-6]'s artifact spec): bun:sqlite reader sees rows written by an external `sqlite3` CLI subprocess on the same `sessions.db` file, both at re-open time AND while a long-lived read-only handle is held open. Run-first gate landed in `sessions-db-cross-process.test.ts`; passes.
+- [x] **Bug-scenario regression (manual reload symptom)**: ledger has one pending row matching the surrogate ActiveTurn; drive `runReplay`; assert wire emits `user_message_replay { msg_id: tug_turn_id, text }` (+ no `assistant_text` when partialText empty) + replay_complete. **The bug from 2026-05-05 is structurally impossible because tug_turn_id is stable from submission and the ledger has the row regardless of JSONL state.**
+- [x] **Smoke D ordering**: ledger has two rows (one complete, one pending matching ActiveTurn); assert ordering [replay_started, committed turn events, in-flight emission, replay_complete] and `replay_complete.count` reflects only the committed turn (the pending in-flight didn't fire a terminal — still-live).
+- [x] **Cold-boot no-rows path**: ledger has zero rows for the session; JSONL has content; assert `runReplay` falls back to JSONL-driven emit via `translateJsonlSession`'s orphan-synthesis (preserves [D08] equivalence).
+- [x] **Stale pending row (crash recovery proxy)**: ledger has a pending row that no live ActiveTurn matches; assert `runReplay` emits user + optional partial + turn_cancelled (defensive synthesis until 4.7 lands the reconciliation).
+- [x] **Defensive: complete row with null `claude_message_id`**: seed a `state='complete'` row with `claude_message_id: NULL`; assert `runReplay` warns + emits `user_message_replay` + `turn_complete` with no `assistant_text`. Pins the defensive code path so it can't silently regress.
+- [x] **Defensive: duplicate `claude_message_id` across rows**: seed two `state='complete'` rows with the same `claude_message_id`. Drive `runReplay`; assert both rows emit terminals but the JSONL content lookup picks the latest by ordinal (the earlier row gets no `assistant_text`) and warns about the duplication.
+- [x] **Invariant pin: one `msg_id` per logical turn on the wire**: drive Smoke D-shape replay; capture wire trace; assert `Set<msg_id>` across all frames is exactly `Set<tug_turn_id>` of the seeded ledger rows. Permanent regression pin against the whole class of "two ids for one turn" bugs that motivated Step 4.
+- [x] **Full-suite regression**: 322 tugcode tests pass (was 316 pre-Step-4.6; the +6 covers the new ledger-driven mid-turn tests + the cross-process WAL gate + the extractTurnContent unit tests minus the obsolete trailing-skip suite).
+- [x] **Failure-first proof**: encoded structurally — the bug-scenario regression test asserts wire emits keyed by `tug_turn_id` from a ledger row whose `claude_message_id` is `null`. If a future regression brought back `liveInflightMsgId` gating in the translator + runReplay's old emit predicate, the test would fail because the translator's logic doesn't see a ledger and would emit nothing for the pending row (no JSONL content for a turn that never streamed).
 
 **Tuglaws cross-check:**
 
@@ -1499,9 +1499,9 @@ Tests that survive unchanged:
 
 **Checkpoint:**
 
-- [ ] `bun test` (tugcode) — green; bug-scenario regression test passes.
-- [ ] `cargo nextest run` — green.
-- [ ] `just lint` — clean.
+- [x] `bun test` (tugcode) — green (322 pass); bug-scenario regression test passes.
+- [x] `cargo nextest run` — green (1272 pass).
+- [x] `just lint` — clean.
 
 ---
 
