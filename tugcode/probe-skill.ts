@@ -41,7 +41,7 @@ const proc = spawn({
   }
 })();
 
-function send(msg: object) {
+function send(msg: { type?: string } & Record<string, unknown>) {
   const json = JSON.stringify(msg) + "\n";
   console.log(`>>> ${msg.type || JSON.stringify(msg)}`);
   proc.stdin.write(json);

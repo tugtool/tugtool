@@ -128,7 +128,7 @@ async function waitForPort(host: string, port: number, deadlineMs: number): Prom
 // Tugcast lifecycle
 // ---------------------------------------------------------------------------
 
-let tugcastProc: ReturnType<typeof spawn> | null = null;
+let tugcastProc: Bun.Subprocess<"ignore", "ignore", "pipe"> | null = null;
 
 /**
  * Launch tugcast and drain stderr in the background (for logging).
@@ -310,7 +310,11 @@ async function runProbe(): Promise<void> {
   // Step 3: wait for session_init from tugcode (via CodeOutput feed)
   // Allow up to 15s for tugcode to start and emit session_init.
   // If missed due to race, we proceed anyway and try to send a message.
-  let sessionId: string | null = null;
+  // `as string | null` blocks TypeScript's flow narrowing from collapsing
+  // sessionId to the literal `null` type — the only assignments that
+  // promote it to `string` happen inside the collectUntil callback,
+  // which TS can't track across the await.
+  let sessionId = null as string | null;
   let sessionInitReceived = false;
   let nonCodeFeedsReceived = 0;
 
@@ -418,7 +422,7 @@ async function runProbe(): Promise<void> {
   // After reconnect, listen for any frames for 5 seconds.
   // Expect snapshot feeds (filesystem, git, stats) but NOT session_init
   // (that was a one-shot broadcast — gone).
-  let sessionId2: string | null = null;
+  let sessionId2 = null as string | null;
   let gotAnyFrameAfterReconnect = false;
   let snapshotFeedsSeen: number[] = [];
   log("Listening for frames on reconnected socket (5s)...");

@@ -731,13 +731,9 @@ describe("translateJsonlSession — unknown shapes", () => {
         msgId: "m1",
         stopReason: "end_turn",
         content: [
-          { type: "future_block_2030", text: "ignored" } as JsonlEntry["message"] extends infer M
-            ? NonNullable<M>["content"] extends infer C
-              ? C extends ReadonlyArray<infer Item>
-                ? Item
-                : never
-              : never
-            : never,
+          { type: "future_block_2030", text: "ignored" } as NonNullable<
+            NonNullable<JsonlEntry["message"]>["content"]
+          >[number],
           { type: "text", text: "real reply" },
         ],
       }),

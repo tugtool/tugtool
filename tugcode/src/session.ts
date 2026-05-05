@@ -966,13 +966,21 @@ class ActiveTurn {
 // SessionManager
 // ---------------------------------------------------------------------------
 
+// The main spawn pipes stderr so it can be pattern-matched for failure
+// classification; fork / continue inherit stderr because no
+// classification is needed for those paths. Both share stdin/stdout
+// "pipe", so the field accepts either stderr mode.
+type ClaudeSubprocess =
+  | Bun.Subprocess<"pipe", "pipe", "pipe">
+  | Bun.Subprocess<"pipe", "pipe", "inherit">;
+
 /**
  * Manages claude CLI process lifecycle, message identity, and streaming.
  * Spawns claude with --output-format stream-json --input-format stream-json
  * per D01/D02.
  */
 export class SessionManager {
-  private claudeProcess: ReturnType<typeof Bun.spawn> | null = null;
+  private claudeProcess: ClaudeSubprocess | null = null;
   /**
    * Background task draining claude's stdout (Step R1e). Started by
    * {@link spawnClaudeAndWatch} (and the session-command handlers
@@ -1163,7 +1171,7 @@ export class SessionManager {
   private spawnClaude(
     id: string | null,
     mode: "session-id" | "resume",
-  ): ReturnType<typeof Bun.spawn> {
+  ): ClaudeSubprocess {
     const claudePath = Bun.which("claude");
     if (!claudePath) {
       throw new Error("claude CLI not found on PATH");
@@ -1741,7 +1749,7 @@ export class SessionManager {
     // synthesized `system_metadata` IPC at the top of replay carries
     // the right session_id field. Only the `ok` variant carries
     // payload; missing/unreadable variants pass through unchanged.
-    const input: typeof rawInput = rawInput.kind === "ok"
+    const input: ReplayInput = rawInput.kind === "ok"
       ? { ...rawInput, claudeSessionId }
       : rawInput;
 
@@ -1890,7 +1898,9 @@ export class SessionManager {
       // are well-defined in JS but explicit `.return()` releases any
       // pending awaits inside the generator.
       try {
-        await iter.return?.(undefined);
+        // Best-effort abort. The return value is discarded; we just
+        // need the generator to release any pending awaits.
+        await iter.return?.({ count: 0, skippedTrailingTurn: false });
       } catch {
         // generator already finished or threw — nothing to clean up.
       }
@@ -1980,7 +1990,7 @@ export class SessionManager {
    * `getReader()` on `claudeProcess.stdout`. The drain is the only
    * reader for claude's stdout for the lifetime of `claudeProcess`.
    */
-  private startStdoutDrain(claudeProcess: ReturnType<typeof Bun.spawn>): void {
+  private startStdoutDrain(claudeProcess: ClaudeSubprocess): void {
     // Reset the EOF flag — a fresh claude means a fresh stdout
     // stream that hasn't EOF'd yet. Without this reset, a respawn
     // (fork / continue / new) after a prior EOF would leave
@@ -2011,7 +2021,7 @@ export class SessionManager {
     let buffer = "";
     try {
       while (true) {
-        let result: ReadableStreamReadResult<Uint8Array>;
+        let result: Awaited<ReturnType<typeof reader.read>>;
         try {
           result = await reader.read();
         } catch {
@@ -2131,7 +2141,7 @@ export class SessionManager {
 
     for (const ipcMsg of routeResult.messages) {
       if (routeResult.parentToolUseId) {
-        (ipcMsg as Record<string, unknown>).parent_tool_use_id =
+        (ipcMsg as unknown as Record<string, unknown>).parent_tool_use_id =
           routeResult.parentToolUseId;
       }
       // Gate site 1/7: suppressEmit holds back live forwarding while
@@ -2160,7 +2170,7 @@ export class SessionManager {
       }
       for (const ipcMsg of streamResult.messages) {
         if (routeResult.parentToolUseId) {
-          (ipcMsg as Record<string, unknown>).parent_tool_use_id =
+          (ipcMsg as unknown as Record<string, unknown>).parent_tool_use_id =
             routeResult.parentToolUseId;
         }
         // Gate site 2/7: live deltas during the suppressed window

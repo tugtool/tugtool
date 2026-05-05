@@ -38,7 +38,10 @@ let projectDir: string = process.cwd();
 // claude's own session id (either claimed via `--session-id` for a
 // fresh spawn or matched via `--resume` for a resume), the tugbank
 // sessions-record key, and the id tugcast routes CODE_OUTPUT under.
-let sessionId: string | undefined;
+// Default to a freshly minted UUID so SessionManager always has a stable
+// identifier; `--session-id <id>` from the args loop below overrides it
+// when tugcast supplies one.
+let sessionId: string = crypto.randomUUID();
 // `--session-mode new|resume` picks between a fresh spawn (claude
 // claims `sessionId` as its own id) and resuming an existing
 // conversation. Absent / unknown values fall through to "new".
@@ -88,12 +91,6 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 
-// If tugcast didn't supply a session id (standalone invocation), mint
-// one so SessionManager always has a stable identifier.
-if (!sessionId) {
-  sessionId = crypto.randomUUID();
-}
-
 console.log(
   `Starting tugcode (projectDir: ${projectDir}, sessionId: ${sessionId}, sessionMode: ${sessionMode}${resumeSessionId ? `, resumeSessionId: ${resumeSessionId}` : ""}${stubTranscriptPath ? `, stubTranscript: ${stubTranscriptPath}` : ""})`,
 );
@@ -141,7 +138,7 @@ async function main() {
       const transcript = loadTranscript(stubTranscriptPath);
       stubReplay = new StubReplayEngine({
         transcript,
-        sessionId: sessionId ?? crypto.randomUUID(),
+        sessionId,
         emit: (msg) => writeLine(msg),
       });
     } catch (err) {

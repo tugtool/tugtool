@@ -922,7 +922,7 @@ describe("Step R0d — cold-boot resume order", () => {
     // transcript (replay events) before the picker takes over via
     // resume_failed. That's the failure-path regression the R0d plan
     // accepts in exchange for the success-path speedup. Lock it in.
-    const failed = emitted[failedIdx] as Record<string, unknown>;
+    const failed = emitted[failedIdx] as unknown as Record<string, unknown>;
     expect(failed.stale_session_id).toBe(sessionId);
     expect(failed.reason).toContain("No conversation found");
   });
