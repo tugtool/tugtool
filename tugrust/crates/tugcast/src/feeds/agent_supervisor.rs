@@ -274,6 +274,16 @@ pub struct LedgerEntry {
     /// session under a *different* card while the original card is
     /// still holding it; same-card reconnects are allowed.
     pub card_id_live: Option<String>,
+    /// True while a replay bracket is in flight on this session's
+    /// outbound stream — set on the merger's `replay_started` observation,
+    /// cleared on `replay_complete`. The merger's `apply_outbound_turn_intercept`
+    /// skips its FIFO journal-pop work while this flag is set so
+    /// replay-emitted `turn_complete` frames (from `translateJsonlSession`'s
+    /// committed-turn output) do not get treated as live `turn_complete`s
+    /// and do not pop the user's still-pending journal row. Mid-turn-replay
+    /// [Step 5.10](roadmap/tugplan-tide-mid-turn-replay.md#step-5) — the
+    /// post-Step-5.9 fix for the HMR-mid-stream regression.
+    pub replay_in_progress: bool,
 }
 
 impl LedgerEntry {
@@ -299,6 +309,7 @@ impl LedgerEntry {
             input_tx: None,
             cancel: CancellationToken::new(),
             card_id_live: None,
+            replay_in_progress: false,
         }
     }
 }
@@ -2807,9 +2818,96 @@ impl AgentSupervisor {
                     // best-effort telemetry from the user's perspective;
                     // it becomes load-bearing only on the next runReplay,
                     // by which time the write has long since committed.
-                    self.apply_outbound_turn_intercept(&id, &frame);
+                    //
+                    // Step 5.10: process_outbound_frame_journal_gate first
+                    // updates the per-session replay-bracket flag from
+                    // replay_started / replay_complete markers, then gates
+                    // apply_outbound_turn_intercept on `!replay_in_progress`
+                    // so replay-emitted committed-turn frames don't pop
+                    // the user's pending journal row.
+                    self.process_outbound_frame_journal_gate(&id, &frame).await;
                 }
             }
+        }
+    }
+
+    /// Bracket-aware wrapper around [`Self::apply_outbound_turn_intercept`].
+    /// Tracks per-session `LedgerEntry::replay_in_progress` based on the
+    /// `replay_started` / `replay_complete` frames the merger forwards,
+    /// and gates the FIFO journal-pop intercept on the flag.
+    ///
+    /// Why this gate exists (mid-turn-replay
+    /// [Step 5.10](roadmap/tugplan-tide-mid-turn-replay.md#step-5)):
+    /// `runReplay`'s `translateJsonlSession` emits `turn_complete` frames
+    /// for every committed turn in the JSONL. Those frames flow through
+    /// the merger task on the same path live `turn_complete`s do.
+    /// Step 5.3's pure-FIFO intercept (`delete_oldest_pending_for_session`)
+    /// can't tell replay-emitted from live, and the FIRST replay
+    /// `turn_complete` to arrive on a session with a still-pending journal
+    /// row pops that row — destroying the never-drop guarantee for any
+    /// inflight submission whose runReplay fires while it's still pending.
+    /// The HMR-mid-stream regression in the plan's close-out manual
+    /// smoke surfaced this. The gate suppresses the intercept while the
+    /// bracket markers say a replay is in flight on this session.
+    async fn process_outbound_frame_journal_gate(&self, session_id: &TugSessionId, frame: &Frame) {
+        let Some(inspected) =
+            super::payload_inspector::InspectedPayload::from_slice(&frame.payload)
+        else {
+            return;
+        };
+        let msg_type = inspected.msg_type();
+        // Match before grabbing the entry — `_` covers most frames and
+        // we don't need to touch the ledger map for them.
+        match msg_type {
+            Some("replay_started")
+            | Some("replay_complete")
+            | Some("turn_complete")
+            | Some("turn_cancelled") => {}
+            _ => return,
+        }
+
+        let entry_arc = {
+            let ledger = self.ledger.lock().await;
+            ledger.get(session_id).cloned()
+        };
+        let Some(entry_arc) = entry_arc else { return };
+
+        match msg_type {
+            Some("replay_started") => {
+                let mut entry = entry_arc.lock().await;
+                entry.replay_in_progress = true;
+                tracing::debug!(
+                    target: "tide::ledger",
+                    event = "merger.replay_bracket_open",
+                    session_id = %session_id,
+                );
+            }
+            Some("replay_complete") => {
+                let mut entry = entry_arc.lock().await;
+                entry.replay_in_progress = false;
+                tracing::debug!(
+                    target: "tide::ledger",
+                    event = "merger.replay_bracket_close",
+                    session_id = %session_id,
+                );
+            }
+            Some("turn_complete") | Some("turn_cancelled") => {
+                let in_replay = {
+                    let entry = entry_arc.lock().await;
+                    entry.replay_in_progress
+                };
+                if in_replay {
+                    tracing::debug!(
+                        target: "tide::ledger",
+                        event = "merger.intercept_skipped_in_replay_bracket",
+                        session_id = %session_id,
+                        kind = msg_type.unwrap_or(""),
+                    );
+                } else {
+                    self.apply_outbound_turn_intercept(session_id, frame);
+                }
+            }
+            _ => unreachable!("filtered above"),
         }
     }
 
@@ -7350,6 +7448,215 @@ mod tests {
         assert_eq!(
             queued.payload, original_payload,
             "dispatcher must forward user_message frames unchanged (Step 5.3 wire invariant)",
+        );
+    }
+
+    // ── Step 5.10 — replay-bracket gate on the journal-pop intercept ─────────
+    //
+    // The merger's `process_outbound_frame_journal_gate` tracks per-session
+    // `replay_in_progress` from `replay_started` / `replay_complete` markers
+    // and skips `apply_outbound_turn_intercept` while a replay bracket is
+    // open. Without the gate, replay-emitted committed-turn `turn_complete`s
+    // pop the user's still-pending journal row (the HMR-mid-stream
+    // regression surfaced in the [Step 5](roadmap/tugplan-tide-mid-turn-replay.md#step-5)
+    // close-out manual smoke).
+
+    fn replay_started_frame() -> Frame {
+        let body = serde_json::json!({
+            "type": "replay_started",
+            "ipc_version": 2,
+        });
+        Frame::new(FeedId::CODE_OUTPUT, serde_json::to_vec(&body).unwrap())
+    }
+
+    fn replay_complete_frame() -> Frame {
+        let body = serde_json::json!({
+            "type": "replay_complete",
+            "count": 1,
+            "ipc_version": 2,
+        });
+        Frame::new(FeedId::CODE_OUTPUT, serde_json::to_vec(&body).unwrap())
+    }
+
+    #[tokio::test]
+    async fn journal_gate_marks_replay_bracket_open_on_replay_started() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, _ledger, _rx) = make_supervisor_with_ledger(store);
+        let session_id = "sess-bracket-open";
+        let tug_session_id = TugSessionId::new(session_id);
+        insert_ledger_entry(&sup, &tug_session_id).await;
+
+        sup.process_outbound_frame_journal_gate(&tug_session_id, &replay_started_frame())
+            .await;
+
+        let entry_arc = sup
+            .ledger
+            .lock()
+            .await
+            .get(&tug_session_id)
+            .cloned()
+            .expect("entry exists");
+        assert!(
+            entry_arc.lock().await.replay_in_progress,
+            "replay_started must set replay_in_progress=true",
+        );
+    }
+
+    #[tokio::test]
+    async fn journal_gate_marks_replay_bracket_closed_on_replay_complete() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, _ledger, _rx) = make_supervisor_with_ledger(store);
+        let session_id = "sess-bracket-close";
+        let tug_session_id = TugSessionId::new(session_id);
+        let entry_arc = insert_ledger_entry(&sup, &tug_session_id).await;
+        // Seed flag = true (as if a replay had opened).
+        entry_arc.lock().await.replay_in_progress = true;
+
+        sup.process_outbound_frame_journal_gate(&tug_session_id, &replay_complete_frame())
+            .await;
+
+        assert!(
+            !entry_arc.lock().await.replay_in_progress,
+            "replay_complete must set replay_in_progress=false",
+        );
+    }
+
+    #[tokio::test]
+    async fn journal_gate_skips_intercept_for_turn_complete_inside_replay_bracket() {
+        // The HMR-mid-stream regression: replay's committed-turn
+        // turn_complete frames must NOT pop the user's pending journal
+        // row (which is the user's still-inflight submission claude
+        // hasn't yet finished).
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let session_id = "sess-bracket-skip";
+        let tug_session_id = TugSessionId::new(session_id);
+        insert_ledger_entry(&sup, &tug_session_id).await;
+        seed_session_for_journal_test(&ledger, session_id);
+
+        // Insert a pending journal row for the user's still-inflight submission.
+        ledger
+            .insert_pending_turn(session_id, "j-inflight", "still pending", &[], 1_000)
+            .unwrap();
+        assert_eq!(count_pending_for_session(&ledger, session_id), 1);
+
+        // Open the replay bracket.
+        sup.process_outbound_frame_journal_gate(&tug_session_id, &replay_started_frame())
+            .await;
+
+        // Replay emits a committed-turn turn_complete (claude's id, not
+        // the user's pending journal id). Without the bracket gate this
+        // would pop the user's pending row via FIFO.
+        sup.process_outbound_frame_journal_gate(&tug_session_id, &turn_complete_frame())
+            .await;
+
+        assert_eq!(
+            count_pending_for_session(&ledger, session_id),
+            1,
+            "replay-emitted turn_complete inside the bracket must NOT pop the pending journal row",
+        );
+
+        // Close the bracket.
+        sup.process_outbound_frame_journal_gate(&tug_session_id, &replay_complete_frame())
+            .await;
+
+        // Now the live turn_complete (claude's actual ack of the inflight
+        // submission) arrives. The bracket is closed, so the intercept
+        // fires and pops the row.
+        sup.process_outbound_frame_journal_gate(&tug_session_id, &turn_complete_frame())
+            .await;
+
+        assert_eq!(
+            count_pending_for_session(&ledger, session_id),
+            0,
+            "live turn_complete after the bracket closes must pop the pending journal row",
+        );
+    }
+
+    #[tokio::test]
+    async fn journal_gate_unrelated_frames_are_pass_through() {
+        // Non-bracket / non-terminal frames don't touch the journal or
+        // the replay flag. assistant_text, system_metadata, etc. flow
+        // through untouched by the gate.
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let session_id = "sess-bracket-passthrough";
+        let tug_session_id = TugSessionId::new(session_id);
+        insert_ledger_entry(&sup, &tug_session_id).await;
+        seed_session_for_journal_test(&ledger, session_id);
+        ledger
+            .insert_pending_turn(session_id, "j-keep", "keep me", &[], 1_000)
+            .unwrap();
+
+        let assistant_body = serde_json::json!({
+            "type": "assistant_text",
+            "msg_id": "msg_x",
+            "seq": 1,
+            "rev": 0,
+            "text": "partial",
+            "is_partial": true,
+            "status": "partial",
+            "ipc_version": 2,
+        });
+        let frame = Frame::new(
+            FeedId::CODE_OUTPUT,
+            serde_json::to_vec(&assistant_body).unwrap(),
+        );
+        sup.process_outbound_frame_journal_gate(&tug_session_id, &frame)
+            .await;
+
+        let entry_arc = sup
+            .ledger
+            .lock()
+            .await
+            .get(&tug_session_id)
+            .cloned()
+            .unwrap();
+        assert!(
+            !entry_arc.lock().await.replay_in_progress,
+            "assistant_text must not touch the replay flag",
+        );
+        assert_eq!(
+            count_pending_for_session(&ledger, session_id),
+            1,
+            "assistant_text must not pop the journal",
+        );
+    }
+
+    #[tokio::test]
+    async fn journal_gate_per_session_isolation_for_replay_state() {
+        // Replay bracket on session A must not affect session B's
+        // intercept. Two independent replays could run concurrently;
+        // their per-session flags must be tracked separately.
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let tug_a = TugSessionId::new("sess-a");
+        let tug_b = TugSessionId::new("sess-b");
+        insert_ledger_entry(&sup, &tug_a).await;
+        insert_ledger_entry(&sup, &tug_b).await;
+        seed_session_for_journal_test(&ledger, "sess-a");
+        seed_session_for_journal_test(&ledger, "sess-b");
+
+        ledger
+            .insert_pending_turn("sess-a", "j-a", "for sess-a", &[], 1_000)
+            .unwrap();
+        ledger
+            .insert_pending_turn("sess-b", "j-b", "for sess-b", &[], 1_000)
+            .unwrap();
+
+        // Open the bracket on session A only.
+        sup.process_outbound_frame_journal_gate(&tug_a, &replay_started_frame())
+            .await;
+
+        // turn_complete on session B should pop B's row (B is NOT in a replay bracket).
+        sup.process_outbound_frame_journal_gate(&tug_b, &turn_complete_frame())
+            .await;
+
+        assert_eq!(count_pending_for_session(&ledger, "sess-a"), 1);
+        assert_eq!(
+            count_pending_for_session(&ledger, "sess-b"),
+            0,
+            "session B's bracket flag stays false; its turn_complete pops as normal",
         );
     }
 }
