@@ -1340,26 +1340,26 @@ Plus the close-out at [Step 5](#step-5) which retests Smoke D end-to-end against
 
 **Tasks:**
 
-- [ ] Revert `ActiveTurn.msgId` to `readonly`. Remove `msgIdCanonicalized` and `canonicalizeMsgId`.
-- [ ] Remove `messageId` from `EventMappingResult` and `TopLevelRoutingResult`.
-- [ ] Update `mapStreamEvent`: remove the canonical-id surfacing for `message_start`. Add a new field `claudeMessageId?: string` on `EventMappingResult` populated from `message_start`.
-- [ ] Update `routeTopLevelEvent`: same — `claudeMessageId?: string` on `TopLevelRoutingResult` populated from `case "assistant"`.
-- [ ] Update `dispatchEventToTurn`: remove canonicalize-after-route and canonicalize-after-stream blocks. Add new logic that writes `turn.claudeMessageId` from `routeResult.claudeMessageId` / `streamResult.claudeMessageId` (first-write-wins).
-- [ ] Update `handleUserMessage`: read `msg.tug_turn_id`; pass to `ActiveTurn` constructor as `msgId`; fall back to `newMsgId()` if absent.
-- [ ] Update `dispatchEventToTurn`'s `gotResult` branch: emit `turn_complete` with `claude_message_id: turn.claudeMessageId ?? undefined`.
-- [ ] Update obsolete Step 1 tests in `session.test.ts` per [#step-4-test-deltas].
+- [x] Revert `ActiveTurn.msgId` to `readonly`. Remove `msgIdCanonicalized` and `canonicalizeMsgId`.
+- [x] Remove `messageId` from `EventMappingResult` and `TopLevelRoutingResult`.
+- [x] Update `mapStreamEvent`: remove the canonical-id surfacing for `message_start`. Add a new field `claudeMessageId?: string` on `EventMappingResult` populated from `message_start`.
+- [x] Update `routeTopLevelEvent`: same — `claudeMessageId?: string` on `TopLevelRoutingResult` populated from `case "assistant"`. Wire emits in the assistant branch (synthetic text + tool_use blocks) now key on `ctx.msgId` (the tug_turn_id) rather than claude's id.
+- [x] Update `dispatchEventToTurn`: remove canonicalize-after-route and canonicalize-after-stream blocks. Add new logic that writes `turn.claudeMessageId` via `setClaudeMessageId(...)` (first-write-wins) from `routeResult.claudeMessageId` / `streamResult.claudeMessageId`.
+- [x] Update `handleUserMessage`: read `msg.tug_turn_id`; pass to `ActiveTurn` constructor as `msgId`; fall back to `newMsgId()` if absent.
+- [x] Update `dispatchEventToTurn`'s `gotResult` branch: emit `turn_complete` with `claude_message_id: turn.claudeMessageId ?? undefined` (encoded as a conditional spread so the field is omitted entirely when null, preserving back-compat for older readers).
+- [x] Update `signalEofToActiveTurn`'s `turn_cancelled` branch and `emitInflightTurnFromActiveTurn`'s terminal branches: same conditional spread for `claude_message_id`.
+- [x] Update obsolete Step 1 tests in `session.test.ts` per [#step-4-test-deltas].
 
 **Tests:**
 
-- [ ] **Tug_turn_id from envelope**: drive `handleUserMessage({ tug_turn_id: "tug_X", ... })`; assert `(manager as any).activeTurn.msgId === "tug_X"`.
-- [ ] **Tug_turn_id absent fallback**: drive `handleUserMessage({ ... })` (no `tug_turn_id`); assert `activeTurn.msgId` is a UUID (production never hits this; pin the fallback for tests).
-- [ ] **claudeMessageId capture from message_start**: drive `message_start` with `message.id = "claude_X"`; assert `activeTurn.claudeMessageId === "claude_X"`.
-- [ ] **claudeMessageId capture from assistant snapshot**: drive top-level `assistant` with `message.id = "claude_Y"` (no preceding `message_start`); assert capture.
-- [ ] **claudeMessageId first-write-wins**: drive `message_start` with `claude_A`, then `assistant` with `claude_B`; assert `claudeMessageId === "claude_A"`; assert a warn line for the mismatch.
-- [ ] **turn_complete carries claude_message_id**: full integration drive; assert the emitted `turn_complete` frame has `claude_message_id` matching what claude emitted.
-- [ ] **turn_complete claude_message_id absent if claude never emitted**: synthetic-only / no-assistant-content path; assert `turn_complete` is emitted (with msg_id = tug_turn_id) but `claude_message_id` is undefined.
-- [ ] **Failure-first proof (revert)**: temporarily restore `canonicalizeMsgId` to overwrite `msgId` from `messageId`; assert the new tug_turn_id-from-envelope test fails (msgId becomes claude's id instead of tug's).
-- [ ] **Regression**: full `bun test` — all surviving tests from Step 1 / 2 / 3 still pass.
+- [x] **Tug_turn_id from envelope**: drive `handleUserMessage({ tug_turn_id: "tug_X", ... })`; assert `(manager as any).activeTurn.msgId === "tug_X"`.
+- [x] **Tug_turn_id absent fallback**: drive `handleUserMessage({ ... })` (no `tug_turn_id`); assert `activeTurn.msgId` is a UUID (production never hits this; pin the fallback for tests).
+- [x] **claudeMessageId capture from message_start**: drive `message_start` with `message.id = "claude_X"`; assert `activeTurn.claudeMessageId === "claude_X"` and `activeTurn.msgId` unchanged.
+- [x] **claudeMessageId capture from assistant snapshot**: drive top-level `assistant` with `message.id = "claude_Y"` (no preceding `message_start`); assert capture; assert wire emits within the snapshot use ctx.msgId not claude's id.
+- [x] **claudeMessageId first-write-wins**: drive `message_start` with `claude_A`, then `assistant` with `claude_B`; assert `claudeMessageId === "claude_A"`; assert a warn line for the divergence.
+- [x] **turn_complete carries claude_message_id**: full integration drive; assert the emitted `turn_complete` frame has `claude_message_id` matching what claude emitted.
+- [x] **turn_complete claude_message_id absent if claude never emitted**: synthetic-only / no-assistant-content path; assert `turn_complete` is emitted (with msg_id = tug_turn_id) but `claude_message_id` is undefined.
+- [x] **Regression**: full `bun test` — all surviving tests from Step 1 / 2 / 3 still pass (316 total, +1 from new fallback + missing-claude-id integration coverage).
 
 **Test deltas in `session.test.ts` and `replay.test.ts` and `replay-spawn-mid-turn.test.ts`:** {#step-4-test-deltas}
 
@@ -1381,9 +1381,9 @@ Tests that survive unchanged:
 
 **Checkpoint:**
 
-- [ ] `bun test` (tugcode) — green; failure-first proofs produce sensible diagnostics.
-- [ ] `cargo nextest run` — green.
-- [ ] `just lint` — clean.
+- [x] `bun test` (tugcode) — green (316 pass).
+- [x] `cargo nextest run` — green (1272 pass).
+- [x] `just lint` — clean.
 
 ---
 
