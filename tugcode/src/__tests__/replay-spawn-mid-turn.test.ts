@@ -1,36 +1,27 @@
-// Investigation: live/replay ordering during the replay window.
+// Mid-turn replay regression suite (Smoke D).
 //
-// Question: when `runReplay` is iterating its translator output and
-// emitting events for a JSONL that ends with a trailing in-flight
-// turn, the drain task is also forwarding live stream events from
-// claude for the same in-flight turn. In what order do the two
-// streams interleave on the wire? Does the reducer's existing
-// accumulation produce the correct final state regardless of order?
+// Pins the post-fix contract for the mid-turn reload scenario:
+// when a user reloads while claude is mid-stream, runReplay snapshots
+// the active turn, suppresses live emit during the bracket window,
+// threads `liveInflightMsgId` into the JSONL translator (which skips
+// the trailing in-flight turn on match), and emits one consolidated
+// in-flight block — `user_message_replay` + `assistant_text` (and a
+// terminal event when the turn already finished while suppressed) —
+// from authoritative `ActiveTurn` state. Live and replay agree on
+// claude's `message.id` (canonicalized in the dispatch path) so the
+// reducer's existing msg_id dedupe stitches the two halves into one
+// TurnEntry.
 //
-// Methodology:
-//   1. Build a `SessionManager` with a JSONL fixture: N committed
-//      turns + a trailing in-flight turn (assistant entry with
-//      `stop_reason: null`).
-//   2. Inject a mock claude `stdout` stream (controllable from the
-//      test).
-//   3. Install an `ActiveTurn` directly via `(manager as any)`,
-//      simulating the handleUserMessage path having installed it
-//      before `request_replay` arrived.
-//   4. Drive the scenario:
-//        - Concurrently invoke `runReplay()`.
-//        - Concurrently feed live stream events into the mock
-//          claude stdout (drained into the active turn).
-//   5. Capture every `writeLine` call to mocked Bun.stdout.
-//   6. Inspect the captured wire trace. Report:
-//        - Did replay events and live events arrive interleaved?
-//        - In what pattern?
-//        - Did both paths use the same msg_id for the trailing
-//          turn? (Today: NO — replay uses claude's `message.id`,
-//          live uses the tugcode UUID `ActiveTurn` was installed
-//          with. This test confirms the divergence.)
-//        - Does the reducer produce the right final state when
-//          we replay the captured wire into a fresh
-//          `CodeSessionStore`?
+// Test surface:
+//   - Build a `SessionManager` with a JSONL fixture (one committed
+//     turn + one trailing in-flight turn).
+//   - Inject a mock claude stdout so we can capture exactly what
+//     tugcode emits on the wire during runReplay.
+//   - Install an `ActiveTurn` surrogate to simulate the
+//     handleUserMessage path.
+//   - Invoke `runReplay()` and assert the wire ordering:
+//     replay_started → committed turn → in-flight emission →
+//     replay_complete.
 
 import { describe, expect, test } from "bun:test";
 
@@ -222,187 +213,14 @@ function makeE2Rig(): E2Rig {
 }
 
 // ---------------------------------------------------------------------------
-// Tests / observation
-// ---------------------------------------------------------------------------
-
-describe("E2 — live/replay ordering during the replay window", () => {
-  test("baseline: replay alone (no concurrent live drain) emits the bracket plus orphan synthesis for the trailing turn", async () => {
-    const rig = makeE2Rig();
-    try {
-      rig.manager.prepareSession();
-      // Skip claude spawn; we just want to see what runReplay emits
-      // for our fixture in isolation. The drain isn't running yet,
-      // so no live events compete for the wire.
-      await rig.manager.runReplay();
-      await rig.flush();
-
-      const types = rig.emitted.map((m) => m.type);
-      // We expect: replay_started, then events for the committed
-      // turn (user_message_replay + assistant_text + turn_complete),
-      // then events for the trailing in-flight turn (user_message_
-      // replay + ... + a synthesized turn_complete{error:
-      // "interrupted"} per [D08]), then replay_complete.
-      expect(types).toContain("replay_started");
-      expect(types).toContain("replay_complete");
-      expect(types).toContain("user_message_replay");
-
-      // Inspect the ids the translator emitted. We expect ALL events
-      // for the trailing turn to use claude's `message.id` from the
-      // JSONL (`INFLIGHT_CLAUDE_MSG_ID`).
-      const trailingEvents = rig.emitted.filter(
-        (m) => "msg_id" in m && m.msg_id === INFLIGHT_CLAUDE_MSG_ID,
-      );
-      console.log(
-        `[E2 baseline] trailing-turn events: ${trailingEvents.length} (should be ≥1)`,
-      );
-      console.log(
-        `[E2 baseline] trailing-turn types: ${JSON.stringify(trailingEvents.map((e) => e.type))}`,
-      );
-      expect(trailingEvents.length).toBeGreaterThan(0);
-    } finally {
-      rig.cleanup();
-    }
-  });
-
-  test("interleaved: ActiveTurn installed; runReplay + drain forwarding both fire for the same in-flight turn", async () => {
-    const rig = makeE2Rig();
-    try {
-      rig.manager.prepareSession();
-      await rig.manager.spawnClaudeAndWatch();
-
-      // Install an ActiveTurn manually — this simulates
-      // handleUserMessage having received the user_message before
-      // request_replay arrived. The activeTurn's msgId is tugcode's
-      // UUID (`newMsgId()` mints fresh UUIDs); the JSONL trailing
-      // turn's id is `INFLIGHT_CLAUDE_MSG_ID`. The IDs DIVERGE.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const ActiveTurnCtor = (await import("../session.ts" as string)) as unknown as {
-        // The class is file-private; we reach for it via the
-        // running manager's existing surface instead.
-      };
-      void ActiveTurnCtor; // silence
-
-      // The cleanest way to install an active turn is to call
-      // handleUserMessage. But that writes to claude.stdin and
-      // awaits completion forever. So we reach in directly:
-      // construct an `ActiveTurn`-shaped object by copying the
-      // shape from session.ts and assign it.
-      let resolveCompletion: (() => void) | null = null;
-      const completion = new Promise<void>((r) => {
-        resolveCompletion = r;
-      });
-      const tugcodeUuid = crypto.randomUUID();
-      const activeTurnSurrogate = {
-        msgId: tugcodeUuid,
-        seq: 100,
-        rev: 0,
-        partialText: "",
-        gotResult: false,
-        interrupted: false,
-        completion,
-        finish() {
-          if (resolveCompletion !== null) {
-            resolveCompletion();
-            resolveCompletion = null;
-          }
-        },
-      };
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (rig.manager as any).activeTurn = activeTurnSurrogate;
-
-      // Concurrently:
-      //   - runReplay (reads JSONL fixture; emits replay events).
-      //   - Feed live stream events into the drain (claude is
-      //     mid-stream for the in-flight turn, with claude's id).
-      // The interleaving on the wire is what we want to observe.
-
-      const replayPromise = rig.manager.runReplay();
-
-      // Feed a delta of the in-flight turn's reply.
-      rig.stdout.feed({
-        type: "stream_event",
-        event: {
-          type: "content_block_delta",
-          delta: { type: "text_delta", text: " continuing… " },
-        },
-      });
-      await rig.flush();
-
-      // Feed a few more.
-      rig.stdout.feed({
-        type: "stream_event",
-        event: {
-          type: "content_block_delta",
-          delta: { type: "text_delta", text: "more text" },
-        },
-      });
-      await rig.flush();
-
-      // Wait for runReplay to finish. The drain is still alive but
-      // we won't feed it the result event — we just want to see
-      // what was on the wire during replay.
-      await replayPromise;
-      await rig.flush();
-
-      // Resolve the active turn so handleUserMessage's await would
-      // unblock (defensive — the surrogate isn't actually being
-      // awaited by anyone in the test, but releasing it lets the
-      // promise GC).
-      activeTurnSurrogate.finish();
-
-      // ---- OBSERVATION ----
-      console.log("\n[E2 interleaved] full wire trace:");
-      for (const m of rig.emitted) {
-        const msgId = "msg_id" in m ? (m as { msg_id?: string }).msg_id : null;
-        console.log(`  type=${m.type}${msgId ? ` msg_id=${msgId}` : ""}`);
-      }
-
-      const types = rig.emitted.map((m) => m.type);
-      expect(types).toContain("replay_started");
-      expect(types).toContain("replay_complete");
-
-      // Did replay and live both emit for the in-flight turn? Show
-      // the ids each path used. Live events use the tugcode UUID
-      // (active turn's msgId); replay events use claude's id from
-      // the JSONL fixture.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const replaySideForInflight = rig.emitted.filter(
-        (m): m is OutboundMessage & { msg_id: string } =>
-          "msg_id" in m && (m as { msg_id?: string }).msg_id === INFLIGHT_CLAUDE_MSG_ID,
-      );
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const liveSideForInflight = rig.emitted.filter(
-        (m): m is OutboundMessage & { msg_id: string } =>
-          "msg_id" in m && (m as { msg_id?: string }).msg_id === tugcodeUuid,
-      );
-      console.log(
-        `[E2 interleaved] events with claude-id (replay path): ${replaySideForInflight.length}`,
-      );
-      console.log(
-        `[E2 interleaved] events with tugcode-uuid (live path): ${liveSideForInflight.length}`,
-      );
-
-      // The msg_id divergence is the load-bearing observation:
-      // BOTH paths emitted events for the same logical turn, with
-      // DIFFERENT ids. A reducer that keys by msg_id sees TWO
-      // turns. This is exactly the bug the design phase has to
-      // address.
-      if (replaySideForInflight.length > 0 && liveSideForInflight.length > 0) {
-        console.log(
-          "[E2 interleaved] MSG_ID DIVERGENCE CONFIRMED: live events and replay events for the same in-flight turn use different msg_ids.",
-        );
-      }
-    } finally {
-      rig.cleanup();
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Mid-turn replay integration: runReplay snapshots active turn, threads
+// Mid-turn replay regression: runReplay snapshots active turn, threads
 // liveInflightMsgId into the translator, suppresses live emit during the
 // bracket, fills in the in-flight content from ActiveTurn state, then
 // closes the bracket.
+//
+// Investigation tests that documented the pre-fix msg_id divergence
+// were removed when Step 4 promoted this file to a permanent regression
+// suite. The verdicts they captured live in the plan's [E2] section.
 // ---------------------------------------------------------------------------
 
 /**
@@ -543,10 +361,19 @@ describe("runReplay with in-flight turn (mid-turn replay design)", () => {
     }
   });
 
-  test("Smoke D variant: ActiveTurn that has already gotResult emits a turn_complete in the synthesized block", async () => {
-    // Tight race: turn.gotResult latched while suppressEmit=true (e.g.,
-    // claude's `result` arrived during the window). The terminal-event
-    // branch in emitInflightTurnFromActiveTurn closes [DM06]'s pitfall.
+  test("[DM06] mitigation: gotResult latching during the suppressed window emits turn_complete inside the bracket", async () => {
+    // Pitfall from [DM06]: claude crashes (or completes) while
+    // suppressEmit=true. The drain's signalEofToActiveTurn or
+    // dispatchEventToTurn latches gotResult / interrupted but skips
+    // its writeLine. Without the terminal-event branches in
+    // emitInflightTurnFromActiveTurn, the synthesized block would
+    // emit user_message_replay + assistant_text + (nothing) and
+    // the reducer's TurnEntry would dangle.
+    //
+    // Deterministic simulation: hook the surrogate's suppressEmit
+    // setter so the moment runReplay flips it true, gotResult flips
+    // true too — modeling "claude's result arrived during the
+    // bracket window".
     const rig = makeE2Rig();
     try {
       rig.manager.prepareSession();
@@ -555,24 +382,21 @@ describe("runReplay with in-flight turn (mid-turn replay design)", () => {
         msgId: INFLIGHT_CLAUDE_MSG_ID,
         userText: INFLIGHT_USER_TEXT,
       });
-      turn.partialText = "complete answer";
-      // We need the surrogate adopted while !gotResult so runReplay's
-      // snapshot picks it up; mutate gotResult AFTER the call would be
-      // an integration we can't easily script. For this test, we
-      // simulate "gotResult landed during the bracket" by setting it
-      // before runReplay BUT also keeping the snapshot (runReplay's
-      // gating excludes already-finished turns). To exercise the
-      // terminal branch deterministically, call emitInflightTurnFromActiveTurn
-      // directly with gotResult=true after suppressEmit was on.
-
-      // Pre-set gotResult to false so runReplay adopts it; flip it
-      // mid-suppress via a hook on the surrogate's suppressEmit setter
-      // is awkward. Simpler: drive runReplay with a turn that's
-      // !gotResult, then assert post-bracket behavior. The dedicated
-      // gotResult/interrupted terminal-emission tests live as unit
-      // tests in session.test.ts; this test just confirms the
-      // integration path renders the unit-tested helper's output
-      // inside the bracket.
+      turn.partialText = "the complete answer";
+      let suppressBacking = false;
+      Object.defineProperty(turn, "suppressEmit", {
+        configurable: true,
+        get(): boolean {
+          return suppressBacking;
+        },
+        set(v: boolean) {
+          suppressBacking = v;
+          if (v === true) {
+            // Mid-bracket: claude's result event landed.
+            this.gotResult = true;
+          }
+        },
+      });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (rig.manager as any).activeTurn = turn;
 
@@ -583,12 +407,73 @@ describe("runReplay with in-flight turn (mid-turn replay design)", () => {
         (m): m is OutboundMessage & { msg_id: string } =>
           "msg_id" in m && (m as { msg_id?: string }).msg_id === INFLIGHT_CLAUDE_MSG_ID,
       );
-      // For a still-live turn (gotResult=false), the emitted block is
-      // user_message_replay + assistant_text; no terminal here.
       expect(inflightEvents.map((e) => e.type)).toEqual([
         "user_message_replay",
         "assistant_text",
+        "turn_complete",
       ]);
+      const tc = inflightEvents[2] as any;
+      expect(tc.result).toBe("success");
+      expect(tc.msg_id).toBe(INFLIGHT_CLAUDE_MSG_ID);
+
+      // turn_complete lands BEFORE replay_complete (inside the bracket).
+      const tcIdx = rig.emitted.findIndex(
+        (m: any) => m.type === "turn_complete" && m.msg_id === INFLIGHT_CLAUDE_MSG_ID,
+      );
+      const replayCompleteIdx = rig.emitted.findIndex(
+        (m) => m.type === "replay_complete",
+      );
+      expect(tcIdx).toBeGreaterThanOrEqual(0);
+      expect(tcIdx).toBeLessThan(replayCompleteIdx);
+    } finally {
+      rig.cleanup();
+    }
+  });
+
+  test("[DM06] mitigation: interrupted latching during the suppressed window emits turn_cancelled inside the bracket", async () => {
+    // Symmetric to the gotResult test above: an interrupt landed
+    // while suppressEmit=true. The interrupted branch in
+    // emitInflightTurnFromActiveTurn synthesizes turn_cancelled.
+    const rig = makeE2Rig();
+    try {
+      rig.manager.prepareSession();
+
+      const turn = makeActiveTurnSurrogate({
+        msgId: INFLIGHT_CLAUDE_MSG_ID,
+        userText: INFLIGHT_USER_TEXT,
+      });
+      turn.partialText = "I was halfway through";
+      let suppressBacking = false;
+      Object.defineProperty(turn, "suppressEmit", {
+        configurable: true,
+        get(): boolean {
+          return suppressBacking;
+        },
+        set(v: boolean) {
+          suppressBacking = v;
+          if (v === true) {
+            this.interrupted = true;
+          }
+        },
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (rig.manager as any).activeTurn = turn;
+
+      await rig.manager.runReplay();
+      await rig.flush();
+
+      const inflightEvents = rig.emitted.filter(
+        (m): m is OutboundMessage & { msg_id: string } =>
+          "msg_id" in m && (m as { msg_id?: string }).msg_id === INFLIGHT_CLAUDE_MSG_ID,
+      );
+      expect(inflightEvents.map((e) => e.type)).toEqual([
+        "user_message_replay",
+        "assistant_text",
+        "turn_cancelled",
+      ]);
+      const tcanc = inflightEvents[2] as any;
+      expect(tcanc.partial_result).toBe("I was halfway through");
+      expect(tcanc.msg_id).toBe(INFLIGHT_CLAUDE_MSG_ID);
     } finally {
       rig.cleanup();
     }

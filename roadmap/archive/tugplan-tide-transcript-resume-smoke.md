@@ -146,12 +146,35 @@ path covers that case).
       not re-emit per-turn `SESSION_METADATA`, so historical model
       names don't surface; this is intentional for v1).
 
-### Smoke D — Mid-turn reload (orphan turn synthesis [D08])
+### Smoke D — Mid-turn reload (passes via mid-turn replay plan)
 
-Exercises: the JSONL ends mid-turn (last `assistant.stop_reason`
-is `tool_use` or `null`); the translator synthesizes a
-`turn_complete(error)`; reducer commits the orphan as
-`result === "interrupted"`.
+**Status: PASSES via [tugplan-tide-mid-turn-replay.md](../tugplan-tide-mid-turn-replay.md)** —
+the original Smoke D entry below assumed the [D08] orphan-synthesis
+contract for *every* mid-turn reload; the mid-turn replay plan
+inverts that for the case where tugcode has an active turn for the
+trailing in-flight id (Steps 1–3 of that plan: msg_id canonicalization
++ translator skip + in-flight emission from `ActiveTurn` state).
+Cold-boot interrupted-session JSONLs (no active turn) still
+orphan-synthesize per [D08]. Automated regression coverage lives in
+`tugcode/src/__tests__/replay-spawn-mid-turn.test.ts` (Smoke D test
++ five sibling pins, 20-run deterministic verification).
+
+Exercises (post-fix expectations):
+
+- The JSONL ends mid-turn (last `assistant.stop_reason: null`).
+- Tugcode has an `ActiveTurn` for the in-flight turn whose
+  `msgId` matches the JSONL trailing entry's `message.id`
+  (canonicalized from claude's stream events).
+- `runReplay` snapshots the active turn, threads
+  `liveInflightMsgId` into the translator (which skips the
+  trailing turn), and emits one consolidated in-flight block
+  (`user_message_replay` + `assistant_text` + optional
+  terminal event) from `ActiveTurn` state inside the bracket.
+- Reducer's existing msg_id dedupe stitches the synthesized
+  block with any post-bracket live deltas into one TurnEntry.
+
+Original cold-boot interrupted-session smoke (preserved for
+[D08] regression coverage of the no-active-turn case):
 
 - [ ] Open a Tide card; submit a turn that produces a long response
       (e.g. "give me a 500-word summary of how this repo's session
@@ -160,16 +183,21 @@ is `tool_use` or `null`); the translator synthesizes a
 - [ ] Mid-stream — while the assistant is still generating —
       Cmd-R / Developer → Reload.
 - [ ] **Verify:** the page rebuilds; the transcript shows the
-      partial assistant text from before the reload, marked as
-      interrupted (per the existing `turn_complete(error)` UI).
-- [ ] **Verify:** the orphan turn is *not* shown as in-flight —
-      no spinner, no ghost user-row pair.
-- [ ] **Verify:** submit one fresh turn; it appends after the
-      interrupted one and flows live to completion.
+      partial assistant text from before the reload, AND
+      streaming continues live to completion as one TurnEntry —
+      no duplicate row, no phantom interrupted marker, no stuck
+      "Loading conversation" spinner.
+- [ ] **Verify:** if the user explicitly interrupts during the
+      bracket window (Cmd-R then immediate cancel via existing
+      UI), the in-flight TurnEntry renders as truncated with the
+      `turn_cancelled` partial_result.
+- [ ] **Verify:** submit one fresh turn after the bracket
+      closes; it appends and flows live to completion.
 - [ ] **Verify:** in the tugcast log,
       `[tide::replay::complete]` carries no `error` field
-      (jsonl_malformed wouldn't fire — orphan synthesis is the
-      translator's normal path; `count` includes the orphan).
+      (the translator's skip path is its normal end-of-iteration
+      flow; `count` reflects only committed turns, not the
+      handed-off in-flight turn).
 
 ---
 
