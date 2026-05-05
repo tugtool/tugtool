@@ -17,7 +17,7 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | Steps 1–4 landed; manual testing surfaced a [DM03] race bug; Step 3.5 authored to retire canonicalization; ship after Step 3.5 |
+| Status | Steps 1–3 landed; manual testing surfaced a [DM03] race bug + a deeper id-stability gap; Step 4 (multi-substep) authored to redesign with ledger-authoritative turn ids; Step 5 (was Step 4) closes Smoke D |
 | Target branch | tugplan-tide-mid-turn-replay |
 | Last updated | 2026-05-05 |
 | Roadmap anchor | [tugplan-tide-transcript-resume.md #phase-a-r3](./tugplan-tide-transcript-resume.md#phase-a-r3) — extracted from there after one reverted attempt |
@@ -100,7 +100,11 @@ This section will fill in as the investigation produces evidence and the design 
 - Automation pins the scenario so a regression in any layer breaks a CI test, not a vibe.
 - The user's stated requirement: "I don't want to be a test monkey" (2026-05-04).
 
-#### [DM03] Tugcode adopts claude's `message.id` as the canonical id for live events (DECIDED — Phase 1) {#dm03-canonical-id}
+#### [DM03] Tugcode adopts claude's `message.id` as the canonical id for live events (RETIRED 2026-05-05 — see [DM07] / [Step 4](#step-4)) {#dm03-canonical-id}
+
+**Retired:** Manual testing after Step 3 surfaced a deterministic bug — reload immediately after submit drops the user's submission and the streaming response until a second reload. Root cause: `ActiveTurn.msgId` starts as a placeholder UUID at install time and is only canonicalized to claude's `message.id` when `message_start` arrives. `request_replay` arriving in that window produces a `liveInflightMsgId` that doesn't match the JSONL's trailing-turn id (or matches nothing, if no assistant entry has been written yet), so the trailing-turn skip path doesn't fire and `emitInflightTurnFromActiveTurn` is gated out. Conversation with the user on 2026-05-05 surfaced that the "future merge feature" benefit this decision was supposed to preserve is not concrete — the only place we merge live and replay is the mid-turn case in this plan, and the canonicalization race introduced its own bug class. Step 4 replaces this approach with a ledger-authoritative turn id minted at user-submission time and persisted before any forward to claude — the id is stable from the moment of submission, the race window is closed, and the user's reported bug becomes structurally impossible. See [DM07].
+
+
 
 **Decision:** `ActiveTurn.msgId` is captured from the first stream event of each turn that carries `message.id`. Live emits and replay emits then share an id for the same logical turn, and the reducer's existing `msg_id` dedupe ([D04] of the resume plan) handles the merge automatically. The current `crypto.randomUUID()` mint at `handleUserMessage` time is replaced.
 
@@ -138,7 +142,11 @@ This section will fill in as the investigation produces evidence and the design 
 
 **Alternative considered:** make tugcode wait some extra ms after `result` for JSONL to settle (a "settle window"). **Rejected** because timing-fragile and adds latency. The right answer is to use the data tugcode already has.
 
-#### [DM05] Translator skips orphan synthesis when tugcode signals the live in-flight trailing turn (DECIDED — Phase 1) {#dm05-orphan-handoff}
+#### [DM05] Translator skips orphan synthesis when tugcode signals the live in-flight trailing turn (RETIRED 2026-05-05 — see [DM07] / [Step 4](#step-4)) {#dm05-orphan-handoff}
+
+**Retired:** [DM05]'s id-match predicate ("skip if `liveInflightMsgId === ctx.buffer.msgId`") is conditional on [DM03]'s canonicalization succeeding before reload. The race window in [DM03] therefore breaks [DM05] too: if `liveInflightMsgId` is the placeholder UUID, no trailing turn matches, and the translator orphan-synthesizes the in-flight turn under claude's id while ActiveTurn carries the placeholder — two TurnEntries for one logical turn. Step 4 replaces the id-match predicate with a row-driven replay path: tugcode iterates the ledger's `turns` rows for the session, emits each keyed by the row's `tug_turn_id`, and consults JSONL only for content lookup by `claude_message_id`. The translator no longer drives identity at all; the orphan-synthesis path survives only for the cold-boot case where the ledger has no rows for the session (legacy / migration). See [DM07].
+
+
 
 **Decision:** `translateJsonlSession` gains an option `liveInflightMsgId?: string`. When set, the translator's end-of-JSONL flush behaves differently: if the trailing turn's terminal assistant entry has `message.id === liveInflightMsgId`, the translator emits no events for that turn at all (tugcode's own emission path covers it per [DM04]), and skips the synthetic `turn_complete{interrupted}` per [D08] of the resume plan. When `liveInflightMsgId` is unset, the existing orphan-synthesis behavior is preserved (cold-boot replays of JSONLs that end mid-turn from a previous interrupted session still synthesize the orphan).
 
@@ -176,6 +184,35 @@ This section will fill in as the investigation produces evidence and the design 
 **Pitfall: claude crash during the suppressed window.** If claude's stdout EOFs while `runReplay` is mid-iteration (claude crashed, killed, or the subprocess otherwise dies), the drain hits EOF and calls `signalEofToActiveTurn`. With `suppressEmit=true`, that handler's `turn_cancelled` / `error` `writeLine` is skipped — but `turn.finish()` still runs, so the active turn ends. After replay events finish, `runReplay` calls `emitInflightTurnFromActiveTurn` (per [DM04]). Without explicit handling, the synthesized block emits `user_message_replay` + `assistant_text` but **no terminal event**, because no `gotResult` arrived. After `replay_complete` and suppression clearing, the drain is dead (EOF), so no live `turn_complete` ever arrives. The reducer's `pendingUserMessage` stays set, scratch has assistant text, but the TurnEntry never commits — the in-flight turn dangles. **Mitigation:** `emitInflightTurnFromActiveTurn` checks `turn.gotResult` / `turn.interrupted` and emits the appropriate terminal event (`turn_complete` for `gotResult`, `turn_cancelled` for `interrupted`) inside the bracket. See [#emit-inflight] for the spec; pinned by Step 3's tests.
 
 **Alternative considered:** rely on the reducer to dedupe + reorder. **Rejected** because today's reducer drops events outside the active phase set, and changing that surface area is a larger blast radius than fixing tugcode's wire-emit ordering at the source.
+
+#### [DM07] Tugbank `SessionLedger.turns` is the authoritative source of turn ids; tugcast mints, tugcode uses, ledger persists (DECIDED — Phase 1, Step 4) {#dm07-ledger-authoritative}
+
+**Decision:** Per-turn identity moves from "minted by tugcode + canonicalized from claude's id" ([DM03]) to **"minted by tugcast at user-submission time, persisted to a new `turns` table in the existing `SessionLedger` sqlite database, and propagated to tugcode via the inbound `user_message` envelope."** The id is named `tug_turn_id` (UUID v4) and is the single source of truth for the reducer's `msg_id` key for live and replay events. Claude's `message.id` is captured as a secondary `claude_message_id` field on the ledger row when claude completes the turn — used to look up content in JSONL during replay, never used as the reducer's key.
+
+**Rationale:**
+
+- The id is durable from the moment of submission. No race window; no canonicalization step; no two-id-scheme partition.
+- Tugcast is the single sqlite writer (it already owns `SessionLedger`), so the row is persisted *before* the user_message is forwarded to tugcode and *before* tugcode writes to claude.stdin. A tugcode crash in the window that today loses the user's submission instead leaves a `state: 'pending'` row in the ledger that next session start can surface.
+- The reducer's `msg_id` keying is unchanged (load-bearing [D04] dedupe). What changes is which actor mints the id and where it persists.
+- The mid-turn replay's `liveInflightMsgId` match-up problem disappears: tugcode reads the ledger's `turns` rows directly during `runReplay`, emits each row keyed by its `tug_turn_id`, and skips the JSONL-translator's identity logic entirely. The translator becomes a content-extraction utility looked up by `claude_message_id`.
+- Stable `tug_turn_id` across reload unlocks transcript-management features the user has on the roadmap (scroll-restore, turn references, sharing, edit-previous-turn, diff). These were the actual reason "two id schemes coexist" was unacceptable — the project's value proposition is *managing the experience of submitting requests and getting responses well*, and stable identity is foundational to that.
+
+**Implications:**
+
+- `SessionLedger` gains a `turns` table (FK to `sessions.session_id`) plus a `migrations` table (this is the second schema variant; the existing one-table schema dodges migrations).
+- Tugcast supervisor intercepts inbound `user_message` to mint `tug_turn_id` + insert the row, and intercepts outbound `turn_complete` to update the row with `claude_message_id`.
+- Wire shape: `user_message` (inbound to tugcode) gains `tug_turn_id`; `turn_complete` (outbound from tugcode) gains `claude_message_id`. Reducer ignores these fields (it already keys by `msg_id` on the wire frame).
+- Tugcode opens the `sessions.db` read-only via Bun's `bun:sqlite` for `runReplay`. WAL mode supports the writer (tugcast) + reader (tugcode) pair on the same file with no contention.
+- All [DM03] and [DM05] plumbing is removed. `ActiveTurn.msgId` returns to `readonly`. `canonicalizeMsgId`, `messageId` fields on `EventMappingResult` / `TopLevelRoutingResult`, the `message_start` branch in `mapStreamEvent`, and the id extraction in `routeTopLevelEvent`'s `case "assistant"` all go away. `claude_message_id` is captured as informational state (`ActiveTurn.claudeMessageId: string | null`) for the `turn_complete` payload — the same plumbing that surfaced "messageId" before is partially restored, but the destination is informational, not canonical.
+- Migration: pre-existing sessions have `sessions` rows but no `turns` rows. On first open, tugcast scans JSONL, mints `tug_turn_id` per turn, and bulk-inserts. One-time per session, idempotent.
+
+**Alternatives considered:**
+
+- **Place the new table in tugbank** (the existing `tugbank-core` typed defaults store). **Rejected:** tugbank is explicitly authored as a "SQLite-backed typed defaults store" modeled after Apple's `UserDefaults` — domain-keyed, generation-counter-based, optimized for settings/preferences. Per-turn live-data writes are the wrong fit; you'd be misusing the abstraction.
+- **A new dedicated turn store / sqlite database**. **Rejected:** more operational surface (another file, another connection pool, another migration story) for no benefit. `SessionLedger` already provides everything we need; adding a table is the cheapest move.
+- **A tugcode-side persistence store** (Bun's `bun:sqlite` writing alongside reading). **Rejected:** two writers across processes (tugcast for sessions, tugcode for turns) would either contend for the same database or split into two databases that need to stay coherent. Single-writer is operationally cleaner.
+- **Rewrite or wrap claude's JSONL.** **Rejected:** races claude's writes; breaks compatibility with other tools that read claude's JSONL; more complex than the ledger approach with no additional benefit.
+- **Embed `tug_turn_id` in the user prompt envelope** so claude echoes it through JSONL (tugcode's stdin → claude → JSONL user entry). **Useful as a complement** — cheap diagnostic-correlation aid that round-trips the id through JSONL — but **insufficient on its own:** claude generates assistant entries server-side; we can't tag those. Tracked as a follow-on if/when log-correlation grep-ability becomes a pain point.
 
 ---
 
@@ -425,7 +462,7 @@ The four experiments together produce a coherent picture of where the mid-turn r
 **The fix shape, derived from the verdicts.** Four design commitments, each pinned by a specific experiment:
 
 1. **Tugcode is the in-flight turn's source of truth.** When `request_replay` arrives, tugcode emits the in-flight turn's content from its own `ActiveTurn` state (`partialText`, `toolCallMap`, the user's stored prompt) — not from JSONL. Pins E1's race away. JSONL stays the source of truth for *committed* turns where the race is irrelevant.
-2. **Live and replay agree on `msg_id`.** Tugcode learns claude's `message.id` from the first stream event of each turn and uses it as `ActiveTurn.msgId`, replacing the throwaway UUID it currently mints. The reducer's existing dedupe handles the merge for free. Pins E2's divergence away.
+2. **One stable id per turn, owned by Tug, persisted in the ledger.** _(Originally written as "live and replay agree on claude's `message.id`"; superseded 2026-05-05 by [DM07] / [Step 4](#step-4) after manual testing surfaced a canonicalization race.)_ Tugcast mints a `tug_turn_id` UUID at user-submission time and persists it to the new `turns` table in the existing `SessionLedger` sqlite database BEFORE forwarding the user_message to tugcode. The id is propagated to tugcode via the inbound envelope, used as `ActiveTurn.msgId`, emitted on every live wire frame, and read back from the ledger during `runReplay`. Claude's `message.id` is captured as a secondary `claude_message_id` field on the row when claude completes — used to look up content in JSONL during replay, never used as the reducer's key. The reducer's existing `msg_id` dedupe handles the merge for free, but the id is durable from the moment of submission, so the merge problem doesn't depend on a runtime canonicalization step. Pins E2's divergence away by making it structurally impossible.
 3. **The translator skips orphan synthesis when tugcode signals the trailing turn is the live in-flight one.** No more `turn_complete{interrupted}` for a turn that's actually still streaming. The signal is a single flag passed from tugcode to the translator.
 4. **Tugcode emits the in-flight turn's content as a coherent block inside the replay bracket.** During `runReplay`, tugcode holds back live emit for the in-flight turn (suppress flag on `ActiveTurn`) and emits one consolidated set of events from its own state at the right point in the bracket. After `replay_complete`, live emit resumes naturally. Pins E2's interleaving and E4's G3 drop away. **This is different from α** because the suppressed events are emitted from tugcode's own ActiveTurn state inside the bracket, not skipped entirely with the hope that JSONL has them later.
 
@@ -460,7 +497,9 @@ A single commit `tide(mid-turn): Phase 0 investigation — harnesses + verdicts`
 
 ### Specification {#specification}
 
-#### Wire shape (unchanged) {#wire-shape}
+> **Specification below describes the Steps 1–3 design (DM03 / DM04 / DM05 / DM06).** It shipped in commits `6fe7ee60`, `cafa0c39`, `e71d8590` and remains the live design until [Step 4](#step-4) lands. The retirement of [DM03] and [DM05] (see [DM07]) replaces the wire-shape sub-sections below — `tug_turn_id` becomes a new field on inbound `user_message`, `claude_message_id` becomes a new field on outbound `turn_complete` — and replaces the `liveInflightMsgId` / `skippedTrailingTurn` translator contract with a ledger-driven `runReplay` path. The `ActiveTurn`-shape and `emitInflightTurnFromActiveTurn` machinery from [DM04] / [DM06] survive into Step 4 with two changes: `msgId` returns to `readonly` (sourced from the inbound `tug_turn_id`); a sibling `claudeMessageId: string | null` field captures claude's id for the `turn_complete` payload. Read this section for the implemented-and-shipped state; read [Step 4](#step-4) for the target state.
+
+#### Wire shape (Steps 1–3 — superseded by [Step 4](#step-4)) {#wire-shape}
 
 The mid-turn replay rides the existing `CODE_OUTPUT` bracket: `replay_started` → per-turn events → `replay_complete`. **No new wire frames.** Reducer phases unchanged: `idle | submitting | awaiting_first_token | streaming | tool_work | awaiting_approval | replaying | errored`. **No new reducer phase.** The four design decisions ([DM03]–[DM06]) all live below the wire — they reshape what tugcode emits, not how tugdeck observes it.
 
@@ -846,184 +885,677 @@ Workspace-wide regression check: `bun test` from repo root — 3365 / 3365 pass 
 
 ---
 
-#### Step 3.5: Retire [DM03] canonicalization; tugcode UUID is the only id for live turns {#step-3-5}
+#### Step 4: Ledger-authoritative turn ids — `SessionLedger.turns` table, single-id design {#step-4}
 
-**Commit:** `tugcode(mid-turn): retire ActiveTurn.msgId canonicalization; translator skips trailing turn unconditionally`
+**Decision:** [DM07].
 
-**Depends on:** [Step 3](#step-3)
+**Supersedes:** [DM03], [DM05]. Reverts the canonicalization plumbing introduced in [Step 1](#step-1) and the id-match plumbing introduced in [Step 2](#step-2). Preserves the `ActiveTurn` machinery from [Step 3](#step-3) (suppressEmit + emitInflightTurnFromActiveTurn) — those primitives stay; their inputs change.
 
-**References:** retires [DM03]; tightens [DM05]; closes a manual-test bug surfaced 2026-05-05.
+**References:** [DM07]; [E1 verdict](#e1-jsonl-flush-timing); [E2 verdict](#e2-live-replay-ordering); [E3 verdict](#e3-tugcast-buffering); [E4 drop audit](#e4-drop-audit); manual-test bug surfaced 2026-05-05.
 
-##### Why this Step exists {#step-3-5-why}
+##### Why this Step exists {#step-4-why}
 
-Manual testing after Step 3 surfaced a deterministic bug: submit a request, then `Developer > Reload` quickly while the turn is in flight. The user submission disappears from the transcript, no streaming response ever appears, and a *second* `Developer > Reload` is required for anything to surface.
+Two converging signals:
 
-Root cause: [DM03] decided "tugcode adopts claude's `message.id` as canonical for live events." `ActiveTurn.msgId` starts as a placeholder UUID minted by `newMsgId()` at install time, then gets *canonicalized* to claude's id when `message_start` arrives via the drain. Live emits, replay emits, and `runReplay`'s in-flight emission all key off `ActiveTurn.msgId`. **The window between `handleUserMessage` installing the turn and `message_start` arriving is exactly where reload can land.** In that window:
+1. **The user-reported bug from manual testing 2026-05-05.** Submit a request, immediately `Developer > Reload` while the turn is in flight. The user submission disappears and the streaming response never appears — until a *second* reload. Root cause is the [DM03] canonicalization race: `ActiveTurn.msgId` is a placeholder UUID at install time and is canonicalized to claude's `message.id` only when `message_start` arrives. `request_replay` arriving in that window passes a placeholder UUID as `liveInflightMsgId`, the translator's [DM05] match check fails, and `runReplay`'s emit gate (`if (inflight && skippedTrailingTurn)`) prevents `emitInflightTurnFromActiveTurn` from firing. Live deltas post-bracket land while the reducer is in `idle` and get dropped per [E4 G3]. On the second reload, claude has finished, `activeTurn` is null at `runReplay` entry, JSONL has the complete turn, the translator's normal path emits everything.
 
-- `ActiveTurn.msgId` is still the placeholder UUID.
-- `liveInflightMsgId` passed to the translator is the placeholder UUID.
-- JSONL's trailing turn (if any assistant entry was written) has claude's id — different from the placeholder.
-- [DM05]'s id-match check fails, so the translator orphan-synthesizes the trailing turn instead of skipping it.
-- Or, if claude hasn't streamed any assistant entry yet, the JSONL has only the user entry, the translator's per-turn buffer is null at EOF, `skippedTrailingTurn` is `false`, and `runReplay`'s gate (`if (inflight && skippedTrailingTurn)`) prevents `emitInflightTurnFromActiveTurn` from firing. Nothing emits for the in-flight turn at all.
+2. **The user's stated product direction.** "Doing a great job of managing the transcript *is what this app does*." Stable identity per turn — across reload, across tugcode restart, across tugcode crash — is foundational to the transcript-management features on the roadmap (scroll-restore, turn references, sharing, edit-previous-turn, diff). A "two id schemes coexist" partition (the rejected Step 3.5 design) was unstable across reload and traded a real product-direction need for a debugging-grep convenience.
 
-Either way: the user's submission and the streaming response are absent from the wire. Live deltas that arrive post-bracket land while the reducer is in `idle` and get dropped ([E2 G3]). On the second reload, claude has finished, `activeTurn` is null at `runReplay` entry, JSONL has the complete turn, the translator's normal path emits everything, and the user finally sees their content.
+[DM03]'s framing — "structural cleanness" of canonicalizing live to claude's id — was illusory: the only place we merge live and replay is the mid-turn case in this plan, and the canonicalization race introduced its own bug class. The right move is to put per-turn identity where it belongs — in our own durable ledger — and use the ledger's id end-to-end. JSONL becomes a content-extraction source for the assistant text and tool calls of completed turns; the ledger is the identity authority.
 
-The Step 1 / Step 2 / Step 3 design treated [DM03] (canonicalize live to claude's id) and [DM05] (skip trailing turn on id match) as orthogonal decisions. They are not. [DM05]'s correctness is conditional on [DM03]'s canonicalization having succeeded *before* the user reloads. The race window violates that condition.
+##### Why `SessionLedger`, not tugbank {#step-4-why-ledger}
 
-##### Decision {#step-3-5-decision}
+Reading `tugbank-core/src/lib.rs` confirms tugbank is explicitly authored as a *"SQLite-backed typed defaults store"* modeled after Apple's `UserDefaults` — domain-keyed, generation-counter-based for CAS settings writes, designed for "my preferences are these typed values." Per-turn write-heavy live-data flow is the wrong fit; using tugbank for it would misuse the abstraction.
 
-Invert [DM03]. Tugcode mints its own UUID at `handleUserMessage` time and uses it as `ActiveTurn.msgId` for the entire turn lifecycle — frozen at install, never canonicalized. Live emits, in-flight replay emits, and EOF emits all key off this UUID.
+`tugcast/src/session_ledger.rs` is already a per-session sqlite store with the right primitives:
+- `rusqlite` 0.32, WAL mode, `busy_timeout=5000ms`, `synchronous=NORMAL`.
+- One `Mutex<Connection>` per ledger instance; all writes serialize through it.
+- Idempotent schema bootstrap (`CREATE TABLE IF NOT EXISTS`).
+- Owned by the tugcast supervisor via the `SessionRecorder` trait (`LedgerSessionRecorder` is the production impl).
+- Default path: `~/Library/Application Support/Tug/sessions.db` (macOS) / `$XDG_DATA_HOME/tugcast/sessions.db` (Linux).
 
-Tighten [DM05]. The translator's trailing-turn skip becomes unconditional when `liveInflightMsgId` is set: any trailing-turn content (open per-turn buffer at EOF *or* a dangling `pendingUserText` with no buffer) is skipped, regardless of id. The match check is removed.
+Adding a `turns` table alongside `sessions` is the cheapest move that gets us a stable, durable, per-turn identity authority. Same crate, same database file, same writer.
 
-Drop the `skippedTrailingTurn` gate in `runReplay`. When `inflight !== null`, `emitInflightTurnFromActiveTurn` fires unconditionally. The translator's "did anything get skipped" signal is kept for telemetry but no longer gates emission.
+##### Architecture summary {#step-4-architecture}
 
-This eliminates the canonicalization race — there is no canonicalization. Live turns key off tugcode's UUID; historical / orphan-synthesized turns key off claude's id from JSONL. The two id schemes coexist in the reducer without conflict because they're never used for the same logical entry within a single reducer lifetime: live turns are committed under their UUID; cross-reload, the reducer state resets and historical turns surface under claude's id.
+```
+                                                    +------------------+
+                                                    |   sessions.db    |
+                                                    |  (sqlite, WAL)   |
+                                                    |                  |
+                                                    |  sessions   ←→ existing
+                                                    |  turns      ←─ NEW (Step 4.1)
+                                                    |  migrations ←─ NEW (Step 4.1)
+                                                    +--------+--+------+
+                                                       writer^  ^reader
+                                                             |  |
+   tugdeck                tugcast                   tugcode  |  |
+     |  user_message        |  intercept user_message: mint  |  |
+     |───────────────────→  |  tug_turn_id, INSERT turns ─┐  |  |
+     |                      |  forward user_message       └──┘  |
+     |                      |    +tug_turn_id  ─────────→ tugcode reads tug_turn_id
+     |                      |                              ActiveTurn.msgId = tug_turn_id
+     |                      |                              writes to claude.stdin
+     |                      |                              ...streams...
+     |                      |  ←──── turn_complete         emits turn_complete with
+     |                      |        +claude_message_id    msg_id=tug_turn_id +
+     |                      |  intercept turn_complete:    claude_message_id
+     |                      |  UPDATE turns ──────────┐    │
+     |                      |  forward turn_complete  └────┘
+     |  ←───────────────────|
+     |                      |
+     |  request_replay      |
+     |───────────────────→  |  forward ──────────────────→ tugcode opens sessions.db
+     |                      |                              READ-ONLY (Bun's bun:sqlite)
+     |                      |                              SELECT turns ORDER BY ordinal
+     |                      |                              for each row, emit replay
+     |                      |                              events keyed by tug_turn_id;
+     |                      |                              for pending row matching
+     |                      |                              ActiveTurn, emit from
+     |                      |                              ActiveTurn state.
+     |                      |  ←────── replay events ─── tugcode emits
+     |  ←───────────────────|
+```
 
-##### Trade-off table {#step-3-5-tradeoff}
+Single sqlite writer (tugcast). Single sqlite reader for replay (tugcode). Same database file. WAL mode supports the writer + reader pair without contention.
 
-| | Canonicalize live (current — [DM03]) | Skip JSONL when ActiveTurn exists (this Step) |
-|---|---|---|
-| Race window | Placeholder UUID lives between `handleUserMessage` install and `message_start`; reload there breaks | None — id is frozen at install |
-| Producer mental model | One id at the source; matches JSONL | Two id schemes coexist (UUID for live, claude id for historical / orphan) |
-| Mid-turn merge mechanism | Reducer's id-keyed dedupe handles it | Translator + ActiveTurn handle it; ids never need to match across sources |
-| Code complexity | Mutable `msgId`; `canonicalizeMsgId` method; `messageId` fields on `EventMappingResult` and `TopLevelRoutingResult`; two extraction sites (`mapStreamEvent` `message_start`, `routeTopLevelEvent` `case "assistant"`); canonicalization plumbing in `dispatchEventToTurn` | None of that — `msgId` is `readonly` |
-| `[DM05]` skip predicate | Id match (couples to [DM03]) | `liveInflightMsgId !== undefined` (no id comparison) |
-| `runReplay` emit predicate | `inflight !== null && skippedTrailingTurn` (couples to [DM05] match) | `inflight !== null` |
-| Cross-reload id stability | Same id before and after reload (claude's id persists) | Different id (UUID before reload, claude id after) — not user-visible; reducer state is reset on reload anyway |
-| Cross-source merge for any future feature | Already works | Would need a UUID ↔ claude-id map; no such feature is on the roadmap |
+##### Trade-off table — why the new design {#step-4-tradeoff}
 
-##### What's actually given up {#step-3-5-tradeoff-honest}
+| | Steps 1–3 (canonicalize live to claude's id; [DM03] / [DM05]) | Step 3.5 (rejected; UUID for live + claude id for historical) | **Step 4 (ledger-authoritative `tug_turn_id`)** |
+|---|---|---|---|
+| Race window | Placeholder UUID until `message_start`; reload there breaks | None (UUID frozen at install) | None (UUID minted by tugcast before forward) |
+| Id stable across reload | Yes (claude's id persists) | **No** — UUID disappears on reload, turn re-keys to claude id | **Yes** — `tug_turn_id` lives in sqlite |
+| Id stable across tugcode crash | Yes if claude responded | No | **Yes** — row persisted before forward to tugcode |
+| Tugcode-crash-before-claude-responds | User submission lost | User submission lost | **User submission preserved** (`state: 'pending'` row) |
+| Future scroll-restore / turn-reference / sharing / edit-previous-turn / diff | Works | **Breaks** (id changes across reload) | **Works** (`tug_turn_id` is durable) |
+| Cross-source merge for any future feature | Already works (single id) | Would need UUID ↔ claude-id map | **Already works** (`tug_turn_id` everywhere; `claude_message_id` is informational) |
+| Mid-turn merge mechanism | Reducer's id-keyed dedupe (couples to [DM03] race) | Translator + ActiveTurn (couples to [DM05] match) | **Ledger row is the identity; translator content-only; ActiveTurn for in-flight content** |
+| Code complexity | Mutable `msgId`, `canonicalizeMsgId`, `messageId` fields, two extraction sites | Drops [DM03] plumbing; coexisting id schemes in reducer | Drops [DM03] plumbing; new sqlite table + supervisor intercepts; **one id everywhere** |
+| Wire shape change | None | None | **`user_message`: +`tug_turn_id`; `turn_complete`: +`claude_message_id` (reducer ignores both)** |
+| Operational story | Single-process | Single-process | Single-writer (tugcast) + single-reader (tugcode) on same sqlite via WAL |
 
-The "future merge feature" entry above is the trade-off [DM03] was designed to preserve. Concretely, that means:
+The Step 4 column is the only one where the rightmost row of "stable identity" is `Yes` for all of: reload, tugcode crash, future-feature support. That's why we're paying for the schema change and the supervisor intercepts.
 
-- **Debugging / observability convenience.** A developer correlating wire logs (`[tide::replay::*]`, IPC traces) with JSONL contents has to know which id is which: live wire emits use a UUID, JSONL records claude's id, and they don't match for the same logical turn. With [DM03], a single grep finds both.
+##### What from Steps 1–3 survives, and what gets reverted {#step-4-what-survives}
 
-That is the actual cost. There is no concrete user-facing feature that depends on cross-source id agreement today. Speculative merge cases I considered and ruled out:
+**Reverted:**
+- [Step 1] all canonicalization plumbing — `ActiveTurn.msgId` mutability, `canonicalizeMsgId`, `EventMappingResult.messageId`, `TopLevelRoutingResult.messageId`, the `message_start` branch in `mapStreamEvent`, the id extraction in `routeTopLevelEvent`'s `case "assistant"`. `ActiveTurn.msgId` returns to `readonly`.
+- [Step 2] `TranslateSessionOptions.liveInflightMsgId`, the trailing-turn skip logic, `TranslateSessionResult.skippedTrailingTurn`. The translator stops driving identity. The orphan-synthesis path stays for the cold-boot case where the ledger has no rows for the session (legacy / migration mid-flight).
 
-- Selective replay (replay turn N) — keys by position or claude id; live continuation isn't part of the same op.
-- Time-travel / forking — a fork creates a new turn with a new id; no merge.
-- Reconnect mid-stream (network drop) — same code path as mid-turn reload; not a different feature.
-- Multi-observer / collaboration — observers see the same wire, whatever its id scheme.
-- Tugbank queries — already keys by claude's session/message ids from JSONL; the live wire isn't indexed there.
+**Survives:**
+- [Step 1] `ActiveTurn.userText`, `ActiveTurn.userAttachments` — still populated by `handleUserMessage` and consumed by `emitInflightTurnFromActiveTurn`.
+- [Step 3] `ActiveTurn.suppressEmit` and the seven gated `writeLine` sites — still load-bearing for keeping live drain emits off the wire during `runReplay`'s bracket window. The reducer's `replaying` phase still drops events outside the active-msg-id-set; suppression keeps those events from leaking and being lost.
+- [Step 3] `emitInflightTurnFromActiveTurn` — same shape (`user_message_replay` + `assistant_text` + optional terminal). Inputs change: `turn.msgId` is now `tug_turn_id` (sourced from the inbound envelope) rather than canonicalized from claude's id.
+- [Step 3] [DM06] crash-during-suppression mitigation — the `gotResult` / `interrupted` terminal-event branches in `emitInflightTurnFromActiveTurn` keep the bracket delivering a complete TurnEntry even when the drain dies mid-replay.
 
-If a future feature genuinely needs cross-source id agreement, canonicalization can come back — as a focused decision tied to that feature, not as scaffolding for an imagined need.
+**Newly added:**
+- `ActiveTurn.claudeMessageId: string | null` — captured from `message_start` (or the assistant snapshot's `message.id`) for inclusion in the outbound `turn_complete` frame's new `claude_message_id` field. The capture plumbing is similar in shape to [Step 1]'s `messageId` extraction, but the destination is informational (the ledger uses it for JSONL content lookup), not identity.
 
-##### Artifacts {#step-3-5-artifacts}
+##### Substep overview {#step-4-substeps-overview}
 
-- `tugcode/src/session.ts` — `ActiveTurn.msgId` reverts to `readonly`. Drop `msgIdCanonicalized` field and `canonicalizeMsgId` method. `EventMappingResult.messageId` and `TopLevelRoutingResult.messageId` removed. `mapStreamEvent`'s `message_start` branch removed (back to silently passing through). `routeTopLevelEvent`'s `case "assistant"` no longer extracts `message.id`; messages built within the branch use `ctx.msgId` directly. `dispatchEventToTurn` removes the canonicalize-after-route and canonicalize-after-stream blocks; `ctx` is built once at the top from `turn.msgId` and used unchanged. The "delta-only invariant" comment in `content_block_delta` stays — it's load-bearing for the snapshot-then-resume pattern regardless of id source.
-- `tugcode/src/replay.ts` — `TranslateSessionOptions.liveInflightMsgId` doc updated: caller passes a non-empty string when there's an active turn, undefined otherwise. The id value is used as a "skip trailing turn" signal, not for matching. The trailing-turn flush logic at end-of-iteration:
-  - When `liveInflightMsgId` is set AND (per-turn buffer is open OR `pendingUserText` is non-null at EOF): skip everything for the trailing turn (no `user_message_replay`, no per-turn `assistant_text`, no orphan synthesis). Set `skippedTrailingTurn = true`. Reset buffer / pendingUserText / pendingUserAttachments.
-  - When `liveInflightMsgId` is set AND nothing is dangling: `skippedTrailingTurn = false`.
-  - When `liveInflightMsgId` is unset: existing [D08] orphan synthesis on open buffer; otherwise nothing. Preserves the cold-boot interrupted-session contract.
-- `tugcode/src/session.ts` (`runReplay`) — emit gate becomes `if (inflight !== null)`. The `sessionResult.skippedTrailingTurn` value is logged for telemetry but does not gate `emitInflightTurnFromActiveTurn`.
-- `roadmap/tugplan-tide-mid-turn-replay.md` — `[DM03]` and `[DM05]` get `**Retired:**` footers pointing at this Step. The "What we know now" section's commitment #2 ("Live and replay agree on `msg_id`") is rewritten to commitment #2-revised: "When an `ActiveTurn` exists, the JSONL view of the in-flight turn is replaced from `ActiveTurn` state; live and replay don't need to agree on ids because only one source emits for any given turn at any given time."
-- `tugcode/src/__tests__/session.test.ts` — Step 1 canonicalization tests are removed (the surface they tested no longer exists):
-  - `mapStreamEvent surfaces messageId from message_start` (4 tests)
-  - `routeTopLevelEvent surfaces messageId from assistant snapshot` (5 tests)
-  - `dispatchEventToTurn canonicalizes ActiveTurn.msgId` (6 tests)
-  - `handleUserMessage integration: live emits use canonical msg_id` (2 tests)
+Step 4 ships in 8 substeps. Each is a single coherent commit, each leaves the build green (warnings-as-errors), each has a failure-first proof for any new behavior the substep introduces.
 
-  Tests that survive (still relevant): `ActiveTurn carries userText and userAttachments after handleUserMessage` (2 tests), `ActiveTurn.suppressEmit gates dispatchEventToTurn` (4 tests), `signalEofToActiveTurn honors suppressEmit` (2 tests), `emitInflightTurnFromActiveTurn` shape (7 tests).
-- `tugcode/src/__tests__/replay.test.ts` — the `liveInflightMsgId trailing-turn skip` describe block updates:
-  - `skip on match` test: still passes; rename to `skip when buffer is open` and assert that the skip happens regardless of id value.
-  - `no skip on mismatch` test: **inverts** to `skip on mismatch (now also skips)`. Asserts the trailing turn is skipped even when the JSONL trailing id differs from `liveInflightMsgId`.
-  - `cold-boot regression: no liveInflightMsgId orphan-synthesizes` test: unchanged.
-  - `no trailing turn` test: unchanged.
-  - `missing JSONL with liveInflightMsgId` test: unchanged.
-  - `empty liveInflightMsgId is treated as unset` test: unchanged.
-  - `for-await consumers cleanly ignore the return value` test: unchanged.
-  - **NEW** `skip when buffer is null but pendingUserText set` test: pins the Case-3 fix (JSONL has user entry only; translator skips the dangling user content; `skippedTrailingTurn === true`).
-- `tugcode/src/__tests__/replay-spawn-mid-turn.test.ts` — fixture and tests update to reflect the new contract:
-  - `INFLIGHT_CLAUDE_MSG_ID` constant is renamed to clarify it's only the JSONL's id; the test's `ActiveTurn` surrogate uses a separate tugcode UUID. The Smoke D test asserts that the in-flight emission's `msg_id` is the surrogate's UUID, NOT the JSONL's claude id.
-  - `[DM06] mitigation: gotResult latching` test: surrogate uses tugcode UUID throughout; same emit shape.
-  - `[DM06] mitigation: interrupted latching` test: same.
-  - `no active turn` test: still pins [D08] orphan synthesis with claude's id.
-  - `active turn already finished` test: unchanged.
-  - `post-bracket live deltas` test: unchanged (assertions about wire shape, not id source).
-  - **NEW** `JSONL has user entry only (no assistant entry yet)` test: pins the manual-test bug fix. Fixture: `[user_entry]` only. ActiveTurn surrogate alive. Assert: in-flight emission fires with surrogate UUID; reducer would commit a TurnEntry with that UUID and the user's text.
-  - **NEW** `JSONL trailing turn id differs from ActiveTurn UUID` test: pins the pre-canonicalization race fix. Fixture: `[user_entry, assistant_entry(stop_reason: null, id: "claude_id_X")]`. ActiveTurn surrogate has UUID `"tugcode_uuid_Y"`. Assert: translator skips the trailing turn; in-flight emission fires with `"tugcode_uuid_Y"`; no orphan-synthesized turn for `"claude_id_X"` appears on the wire.
+| Substep | Topic | Touches | Commit message |
+|---|---|---|---|
+| 4.1 | Ledger schema + API | `tugcast` (Rust) | `tugcast(turns): SessionLedger gains turns table + CRUD API` |
+| 4.2 | Wire shape additions | `tugcode/src/types.ts`, tugcast IPC types | `tide(turns): wire shape — tug_turn_id on UserMessage, claude_message_id on TurnComplete` |
+| 4.3 | Tugcast write path: insert pending | `tugcast/src/feeds/agent_supervisor.rs` | `tugcast(turns): mint tug_turn_id, insert pending row, forward augmented user_message` |
+| 4.4 | Tugcast write path: mark complete | `tugcast/src/feeds/agent_supervisor.rs` | `tugcast(turns): intercept turn_complete, update row with claude_message_id` |
+| 4.5 | Tugcode adoption | `tugcode/src/session.ts` | `tugcode(turns): adopt tug_turn_id from envelope; revert DM03 canonicalization; capture claudeMessageId` |
+| 4.6 | Ledger-driven replay | `tugcode/src/session.ts`, `tugcode/src/replay.ts` | `tugcode(turns): runReplay reads ledger; translator becomes content-only` |
+| 4.7 | Crash recovery | `tugcast/src/feeds/agent_supervisor.rs`, `tugcast/src/session_ledger.rs` | `tugcast(turns): pending-row reconciliation on session resume` |
+| 4.8 | Migration of existing sessions | `tugcast/src/session_ledger.rs` (new JSONL parser module) | `tugcast(turns): bootstrap turns rows for pre-existing sessions` |
 
-##### Tasks {#step-3-5-tasks}
-
-- [ ] Revert `ActiveTurn.msgId` to `readonly`. Remove `msgIdCanonicalized` and `canonicalizeMsgId`. Update the constructor to set `this.msgId = msgId` and stop.
-- [ ] Remove `messageId` from `EventMappingResult` and `TopLevelRoutingResult`.
-- [ ] Remove the `message_start` branch from `mapStreamEvent`. Restore the existing `session.test.ts` test `message_start produces no messages` to its pre-Step-1 form.
-- [ ] Remove `messageId` extraction from `routeTopLevelEvent`'s `case "assistant"`. Messages built within the branch use `ctx.msgId` directly.
-- [ ] Simplify `dispatchEventToTurn`: drop the canonicalize-after-route and canonicalize-after-stream blocks. `ctx.msgId = turn.msgId` at top, used unchanged.
-- [ ] Update `replay.ts`'s trailing-turn flush per [#step-3-5-artifacts]. Drop the id-match condition.
-- [ ] Update `runReplay`'s emit gate to `if (inflight !== null)`. Keep `sessionResult.skippedTrailingTurn` for the lifecycle log but stop gating on it.
-- [ ] Add `**Retired:**` footers to [DM03] and [DM05] pointing at [#step-3-5].
-- [ ] Rewrite "What we know now" commitment #2.
-- [ ] Remove the obsolete Step 1 canonicalization tests from `session.test.ts` per [#step-3-5-artifacts].
-- [ ] Update the existing `liveInflightMsgId trailing-turn skip` tests in `replay.test.ts` per [#step-3-5-artifacts]. Add the new "user entry only" test.
-- [ ] Update the integration tests in `replay-spawn-mid-turn.test.ts` per [#step-3-5-artifacts]. Add the two new bug-scenario tests.
-
-##### Tests {#step-3-5-tests}
-
-- [ ] **Bug-scenario regression (JSONL has user entry only)**: fixture with one committed turn followed by a single `user` entry (no `assistant` entry yet). `ActiveTurn` surrogate alive with UUID. Assert: `runReplay` emits `replay_started → committed turn → user_message_replay (UUID) + assistant_text (UUID, partialText) → replay_complete`. The user's submission is on the wire; second reload is not required.
-- [ ] **Bug-scenario regression (JSONL trailing id differs from UUID)**: fixture with one committed turn followed by `[user_entry, assistant_entry(stop_reason: null, id: "claude_X")]`. `ActiveTurn` surrogate UUID = `"tugcode_Y"`. Assert: translator's trailing turn is skipped (no orphan synthesis on `claude_X`); `runReplay` emits the in-flight block keyed by `"tugcode_Y"`. The wire has no `claude_X`-keyed events.
-- [ ] **Bug-scenario regression (manual reload symptom)**: end-to-end shape. Drive a fresh fixture through `runReplay` mid-turn (per the two scenarios above) and assert the captured wire would commit a `TurnEntry` for the in-flight turn with the user's text and any accumulated `partialText`. (Pure assertion on wire shape; no reducer is imported.)
-- [ ] **Failure-first proof (translator skip is unconditional)**: temporarily restore the id-match check in the translator. Run the "trailing id differs from UUID" test. Assert it fails because the translator orphan-synthesizes the trailing turn under `claude_X`, polluting the wire.
-- [ ] **Failure-first proof (runReplay emit is unconditional)**: temporarily restore `if (inflight && skippedTrailingTurn)` in `runReplay`. Run the "user entry only" test. Assert it fails because `skippedTrailingTurn === false` (no buffer, no skip), so `emitInflightTurnFromActiveTurn` doesn't fire and the user's submission is absent from the wire.
-- [ ] **Failure-first proof (msgId is readonly)**: temporarily make `ActiveTurn.msgId` mutable and re-introduce a synthetic `canonicalizeMsgId` call in `dispatchEventToTurn`. Run the full `bun test` suite. Assert nothing about the new behavior breaks (sanity that the readonly model is sufficient — if a test depended on canonicalization, the new design has a gap to address).
-- [ ] **Cold-boot regression unaffected**: existing [D08] orphan synthesis test for the no-active-turn case must still pass — the cold-boot interrupted-session path uses claude's id from JSONL, unchanged.
-- [ ] **Step 3 regression unaffected**: the `emitInflightTurnFromActiveTurn` shape tests (still-live, attachments, gotResult, interrupted) all pass unchanged — the helper's behavior is independent of where `turn.msgId` came from.
-- [ ] Full-suite green: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`.
-- [ ] N=20 sequential `bun test src/__tests__/replay-spawn-mid-turn.test.ts` runs all green.
-- [ ] **Manual reload bug confirmed fixed**: user runs a real session, submits a request, immediately reloads via `Developer > Reload`. Confirm: the user submission is visible after the first reload; the streaming response continues; one `TurnEntry`, both halves of content, no phantom interrupted row, no second reload required.
-
-##### Tuglaws cross-check {#step-3-5-tuglaws}
-
-- N/A — tugcode bridge subprocess; no React; no tokens. The reducer contract is unchanged: it still keys by `msg_id`. What changes is *which* id source supplies the key for a given turn (tugcode UUID for live, claude id for historical / orphan).
-
-##### Checkpoint {#step-3-5-checkpoint}
-
-- [ ] `bun test` (tugcode) — green; failure-first proofs all produce sensible diagnostics.
-- [ ] `bun test` (workspace) — green; no tugdeck regressions.
-- [ ] `cargo nextest run` — green.
-- [ ] `just lint` — clean.
-- [ ] Manual reload bug confirmed fixed by user.
-- [ ] [DM03] and [DM05] retirement footers in place; "What we know now" commitment #2 rewritten.
+Plus the close-out at [Step 5](#step-5) which retests Smoke D end-to-end against the new design.
 
 ---
 
-#### Step 4: End-to-end automated Smoke D test + manual verification {#step-4}
+##### Step 4.1: SessionLedger gains `turns` table + CRUD API {#step-4-1}
 
-**Commit:** `tide(mid-turn): automated Smoke D test; manual verification`
+**Commit:** `tugcast(turns): SessionLedger gains turns table + CRUD API`
 
-**Depends on:** [Step 3](#step-3)
-
-**References:** Full plan; closes [#exit-criteria].
+**Depends on:** none (foundation).
 
 **Artifacts:**
 
-- `tugcode/src/__tests__/replay-spawn-mid-turn.test.ts` — promoted from the Phase 0 investigation test into a permanent regression test. Asserts the post-Step-3 contract: a mid-turn replay scenario produces exactly one TurnEntry with both user and assistant content, keyed by claude's id, with no duplicate row.
-- `roadmap/tugplan-tide-mid-turn-replay.md` — close-out updates. Status flips to `shipped`. Phase 1 checkpoints all flipped to `[x]`. Verdicts archived (Phase 0 traces stay; section retitled to "historical").
-- `roadmap/tugplan-tide-transcript-resume-smoke.md` (in archive) — Smoke D entry updated to "passes via mid-turn plan, see [tugplan-tide-mid-turn-replay.md]".
+- `tugrust/crates/tugcast/src/session_ledger.rs` — schema additions:
+
+  ```sql
+  -- New: per-turn rows. FK to sessions, cascade delete.
+  CREATE TABLE IF NOT EXISTS turns (
+      tug_turn_id        TEXT PRIMARY KEY,
+      session_id         TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+      ordinal            INTEGER NOT NULL,         -- monotonic per session
+      claude_message_id  TEXT,                     -- nullable until claude completes
+      user_text          TEXT NOT NULL,
+      user_attachments   BLOB NOT NULL,            -- JSON array (serde_json)
+      state              TEXT NOT NULL,            -- 'pending' | 'complete' | 'interrupted'
+      partial_text       TEXT,                     -- optional snapshots for crash recovery (deferred to 4.7)
+      created_at         INTEGER NOT NULL,
+      completed_at       INTEGER
+  );
+
+  CREATE INDEX IF NOT EXISTS turns_session_ordinal
+      ON turns(session_id, ordinal);
+
+  CREATE INDEX IF NOT EXISTS turns_claude_message_id
+      ON turns(claude_message_id);
+
+  -- New: schema versioning. v1 = sessions only. v2 = sessions + turns.
+  CREATE TABLE IF NOT EXISTS migrations (
+      version INTEGER PRIMARY KEY,
+      applied_at INTEGER NOT NULL
+  );
+  ```
+
+  The `bootstrap_schema` fn applies the new tables idempotently and inserts a row into `migrations` for `version=2` if not present. v1 → v2 has no data to migrate at the SQL layer (existing `sessions` rows are unchanged); the JSONL-bootstrap migration lives in 4.8.
+
+- `tugrust/crates/tugcast/src/session_ledger.rs` — new types:
+
+  ```rust
+  #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+  #[serde(rename_all = "lowercase")]
+  pub enum TurnState {
+      Pending,
+      Complete,
+      Interrupted,
+  }
+
+  #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+  pub struct TurnRow {
+      pub tug_turn_id: String,
+      pub session_id: String,
+      pub ordinal: i64,
+      pub claude_message_id: Option<String>,
+      pub user_text: String,
+      pub user_attachments: Vec<serde_json::Value>,  // serialized to BLOB at write
+      pub state: TurnState,
+      pub partial_text: Option<String>,
+      pub created_at: i64,
+      pub completed_at: Option<i64>,
+  }
+  ```
+
+- `tugrust/crates/tugcast/src/session_ledger.rs` — new methods on `SessionLedger`. All `#[allow(dead_code)]` until 4.3+ wire them up (mirrors the existing pattern).
+
+  - `insert_pending_turn(session_id: &str, tug_turn_id: &str, user_text: &str, user_attachments: &[serde_json::Value], now: i64) -> Result<(), LedgerError>` — INSERT a row with `state='pending'`, `ordinal = (SELECT COALESCE(MAX(ordinal), -1) + 1 FROM turns WHERE session_id = ?)`. Inside a single immediate transaction so the ordinal is race-free.
+  - `mark_turn_complete(tug_turn_id: &str, claude_message_id: &str, completed_at: i64) -> Result<(), LedgerError>` — UPDATE `state='complete', claude_message_id=?, completed_at=?` WHERE the row is currently `pending`. NotFound if no row. InvalidState if the row is already `complete` or `interrupted` (defensive — see 4.4 for "what if turn_complete fires twice" handling).
+  - `mark_turn_interrupted(tug_turn_id: &str, partial_text: Option<&str>, completed_at: i64) -> Result<(), LedgerError>` — UPDATE `state='interrupted', partial_text=?, completed_at=?` WHERE pending. Used by 4.7's crash-recovery and explicit user-interrupt paths.
+  - `record_partial_text(tug_turn_id: &str, partial_text: &str) -> Result<(), LedgerError>` — UPDATE `partial_text=?` WHERE pending. Optional periodic snapshot for crash recovery; called from 4.7 if we wire it. Idempotent re-writes are fine.
+  - `list_turns_for_session(session_id: &str) -> Result<Vec<TurnRow>, LedgerError>` — `SELECT … FROM turns WHERE session_id = ? ORDER BY ordinal ASC`. Used by tugcode's read-side in 4.6.
+  - `get_turn(tug_turn_id: &str) -> Result<Option<TurnRow>, LedgerError>` — single-row lookup.
+  - `get_turn_by_claude_message_id(claude_message_id: &str) -> Result<Option<TurnRow>, LedgerError>` — uses the `turns_claude_message_id` index. Used during migration in 4.8 for idempotency ("did we already mint a tug_turn_id for this claude_message_id?").
+
+- `tugrust/crates/tugcast/src/session_ledger.rs` — new error variant:
+
+  ```rust
+  #[error("invalid turn state in row: {0}")]
+  InvalidTurnState(String),
+  ```
 
 **Tasks:**
 
-- [x] Promote the investigation test to a permanent regression test (rename file, sharpen assertions, remove diagnostic prints). _Trimmed the obsolete E2 investigation describe block (its findings are captured in the plan's [E2 verdict]); kept the file at `replay-spawn-mid-turn.test.ts` since the name still applies post-promotion. Replaced the redundant "Smoke D variant" test with two deterministic [DM06] mitigation pins (gotResult / interrupted latching during the suppressed window via a `suppressEmit` setter hook on the surrogate turn). 6 regression tests now exercise: Smoke D ordering, [DM06] gotResult mitigation, [DM06] interrupted mitigation, no-active-turn cold-boot path, already-finished turn excluded from adoption, post-bracket live deltas land normally._
-- [ ] Manual verification: run a real session, submit a long-streaming turn, reload mid-stream, observe the card. Verify one TurnEntry, both halves of the content, no duplicate, no phantom interrupted row. _User confirmation pending; not blocking ship per the checkpoint table._
-- [ ] Manual verification: cancel-during-mid-turn-replay edge case. Submit a turn, reload, cancel via existing UI, verify the truncated turn renders cleanly. _User confirmation pending; not blocking ship._
-- [x] Update the smoke checklist in `roadmap/archive/tugplan-tide-transcript-resume-smoke.md` to flip Smoke D to passing with a telemetry citation.
-- [x] Flip plan status to `shipped`.
+- [ ] Author the schema additions in `bootstrap_schema`.
+- [ ] Author `TurnState` and `TurnRow` types.
+- [ ] Author the seven CRUD methods, each with `#[allow(dead_code)]`.
+- [ ] Wire `migrations` table writes in `bootstrap_schema` (insert v2 row idempotently).
+- [ ] Document the schema-versioning policy in the module doc comment ("v1 was sessions-only; v2 added turns + migrations table; subsequent variants must INSERT a row into migrations and update the docs").
 
-**Tests:**
+**Tests:** (all in `tugrust/crates/tugcast/src/session_ledger.rs`'s existing `#[cfg(test)]` module)
 
-- [x] Full-suite green: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`. _All green: tsc exit 0; bun test workspace 3364/3364 pass + 142 skip; tugdeck audit:tokens zero violations; cargo nextest 1221/1221 pass._
-- [x] The promoted Smoke D test runs deterministically green across N=20 sequential invocations (catches order-fragile assertions). _Verified: 20/20 runs green (`for i in $(seq 1 20); do bun test src/__tests__/replay-spawn-mid-turn.test.ts; done`)._
+- [ ] **Schema bootstrap**: open in-memory ledger; assert `turns` and `migrations` tables exist; assert `migrations` has one row with `version=2`.
+- [ ] **Idempotent re-open**: open, close, re-open; assert no duplicate `migrations` rows; assert `turns` table still exists with same shape.
+- [ ] **insert_pending_turn**: insert two turns into same session; assert ordinals are 0 and 1; assert state='pending'; assert claude_message_id is NULL.
+- [ ] **insert_pending_turn ordinal race**: two threads racing inserts on the same session; assert no duplicate ordinals (the immediate transaction guarantees this).
+- [ ] **mark_turn_complete**: insert pending, mark complete, assert state='complete', claude_message_id set, completed_at set.
+- [ ] **mark_turn_complete on already-complete row**: returns `InvalidTurnState`.
+- [ ] **mark_turn_complete on missing row**: returns `NotFound`.
+- [ ] **mark_turn_interrupted**: insert pending, mark interrupted with partial_text, assert state='interrupted', partial_text set.
+- [ ] **record_partial_text**: insert pending, write partial twice with different values, assert latest value persists.
+- [ ] **list_turns_for_session**: insert three turns out of ordinal order via direct SQL; assert list returns them in ordinal-ASC order.
+- [ ] **get_turn / get_turn_by_claude_message_id**: round-trip lookup.
+- [ ] **Cascade delete**: delete a session row; assert all its turns rows are gone.
+- [ ] **Failure-first proof**: temporarily strip the unique-by-session-ordinal logic from `insert_pending_turn`; run the ordinal-race test; assert duplicates surface.
 
 **Tuglaws cross-check:**
 
-- N/A — test plumbing + doc updates.
+- N/A — Rust crate; no React.
 
 **Checkpoint:**
 
-- [x] All check commands green.
-- [ ] Manual Smoke D passes. _User confirmation pending; not blocking automated ship._
-- [x] Plan status: `shipped`.
+- [ ] `cargo nextest run -p tugcast` — green.
+- [ ] `cargo clippy -p tugcast --all-targets -- -D warnings` — clean.
+- [ ] `cargo fmt --all -- --check` — clean.
+
+---
+
+##### Step 4.2: Wire shape — `tug_turn_id` on UserMessage, `claude_message_id` on TurnComplete {#step-4-2}
+
+**Commit:** `tide(turns): wire shape — tug_turn_id on UserMessage, claude_message_id on TurnComplete`
+
+**Depends on:** [Step 4.1](#step-4-1).
+
+**Artifacts:**
+
+- `tugcode/src/types.ts` — `UserMessage` (inbound) gains a `tug_turn_id?: string` field. Optional in the type so test fixtures and synthetic-input paths still compile; production tugcast always populates it. `TurnComplete` (outbound) gains a `claude_message_id?: string` field. Same optionality.
+- `tugcode/src/types.ts` — type guards (`isUserMessage`, etc.) unchanged.
+- `tugrust/crates/tugcast/src/feeds/code.rs` (or wherever the IPC envelope shape is encoded) — `UserMessage` envelope construction is updated to forward `tug_turn_id` to tugcode's stdin. `TurnComplete` parsing reads `claude_message_id` if present.
+- Reducer / tugdeck — **no change.** The reducer keys by `msg_id` on the wire; the new fields are siblings the reducer ignores. Tugways / observers ignore them. This is a load-bearing decision — we're keeping reducer surface area unchanged.
+
+**Tasks:**
+
+- [ ] Add `tug_turn_id?: string` to `UserMessage` in `tugcode/src/types.ts`.
+- [ ] Add `claude_message_id?: string` to `TurnComplete` in `tugcode/src/types.ts`.
+- [ ] Update tugcast's IPC envelope serialization to thread these fields through (Rust side).
+- [ ] No changes in tugdeck. Verify with a build.
+
+**Tests:**
+
+- [ ] **Type compile-check**: `bun x tsc --noEmit` passes with the new fields. (Implicit; covered by full-suite check.)
+- [ ] **Round-trip serialization (Rust)**: `UserMessage { tug_turn_id: Some("...") }` serializes / deserializes; same for `TurnComplete { claude_message_id: Some("...") }`.
+- [ ] **Backward-compat**: deserialize an envelope WITHOUT the new field; assert it parses with `tug_turn_id = None`. Pins the optional-field migration story.
+
+**Tuglaws cross-check:**
+
+- N/A — wire shape addition; no React state.
+
+**Checkpoint:**
+
+- [ ] `bun x tsc --noEmit` — clean.
+- [ ] `cargo nextest run -p tugcast` — green.
+- [ ] `bun test` (tugcode) — green (no behavior change yet; the new field is unread).
+
+---
+
+##### Step 4.3: Tugcast intercepts inbound `user_message` — mint `tug_turn_id`, INSERT pending row, forward augmented envelope {#step-4-3}
+
+**Commit:** `tugcast(turns): mint tug_turn_id, insert pending row, forward augmented user_message`
+
+**Depends on:** [Step 4.1](#step-4-1), [Step 4.2](#step-4-2).
+
+**Artifacts:**
+
+- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — the path that receives `user_message` from tugdeck and forwards it to tugcode's stdin grows an interception step:
+  1. Mint `tug_turn_id` (UUID v4 via `uuid::Uuid::new_v4()`).
+  2. Call `ledger.insert_pending_turn(session_id, &tug_turn_id, user_text, user_attachments, now())`.
+  3. **Only on success**, mutate the outbound envelope to include `tug_turn_id` and forward to tugcode's stdin.
+  4. On `LedgerError`: emit a `code_error` frame to tugdeck (envelope shape TBD — match existing supervisor error patterns), do NOT forward to tugcode. The user retries.
+
+  This ordering is load-bearing: row-persisted-before-forward is the durability invariant.
+
+- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — the `SessionRecorder` trait (or its caller) gains `insert_pending_turn(session_id, user_text, user_attachments) -> Result<TugTurnId, LedgerError>` so the test injection seam works.
+
+**Tasks:**
+
+- [ ] Identify the exact code path in `agent_supervisor.rs` where inbound `user_message` is forwarded to tugcode's stdin. (Use grep + the existing `record_spawn` / `record_turn` call sites for orientation.)
+- [ ] Inject the mint + insert step before forward.
+- [ ] Add error path: ledger insert failure → emit error frame, abort forward.
+- [ ] Update the supervisor's `SessionRecorder` trait + impls to expose the new method.
+- [ ] Update test recorders / fakes to match.
+
+**Tests:**
+
+- [ ] **Happy path**: feed a user_message into the supervisor; assert (a) ledger has a `pending` row with the user_text; (b) tugcode receives an envelope with `tug_turn_id` matching the row's id; (c) the row's `ordinal` is correct (0 for the first turn).
+- [ ] **Multi-turn ordinal**: feed three user_messages; assert ordinals are 0, 1, 2 in order.
+- [ ] **Ledger failure**: inject a `SessionRecorder` impl that returns `LedgerError::Sqlite` on insert; assert (a) tugcode does NOT receive a forward; (b) tugdeck receives an error frame.
+- [ ] **Concurrency**: two user_messages racing on the same session; assert two rows with distinct ordinals (no collision); assert tugcode receives both forwards in order.
+- [ ] **Failure-first proof**: temporarily move the `forward to tugcode` call BEFORE the `insert_pending_turn` call; run the ledger-failure test; assert it fails because tugcode received the forward but the row wasn't persisted (durability invariant violated).
+
+**Tuglaws cross-check:**
+
+- N/A — supervisor (Rust); no React.
+
+**Checkpoint:**
+
+- [ ] `cargo nextest run -p tugcast` — green.
+- [ ] `cargo clippy -p tugcast --all-targets -- -D warnings` — clean.
+- [ ] `bun test` (tugcode) — green (tugcode still ignores the new field; behavior change comes in 4.5).
+
+---
+
+##### Step 4.4: Tugcast intercepts outbound `turn_complete` — mark row complete with `claude_message_id` {#step-4-4}
+
+**Commit:** `tugcast(turns): intercept turn_complete, update row with claude_message_id`
+
+**Depends on:** [Step 4.3](#step-4-3).
+
+**Artifacts:**
+
+- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — the path that receives outbound frames from tugcode's stdout and forwards them to tugdeck (CODE_OUTPUT broadcast) grows an interception step for `turn_complete`:
+  1. Read `tug_turn_id = frame.msg_id` and `claude_message_id = frame.claude_message_id`.
+  2. Call `ledger.mark_turn_complete(&tug_turn_id, &claude_message_id, now())`.
+  3. On `LedgerError::NotFound` or `InvalidTurnState`: log a warning (`tracing::warn!`) but **continue forwarding** to tugdeck — the wire frame is the source of truth for the live UI; the ledger can fall behind on a single update without breaking the user-visible flow. We surface the error in telemetry, not in the user's face.
+  4. Forward the frame to tugdeck (CODE_OUTPUT).
+
+- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — `SessionRecorder` trait gains `mark_turn_complete(tug_turn_id, claude_message_id) -> Result<(), LedgerError>`.
+
+**Tasks:**
+
+- [ ] Identify the outbound `turn_complete` interception point.
+- [ ] Wire `mark_turn_complete` call before forwarding.
+- [ ] Decide error handling: warn-and-forward on NotFound / InvalidTurnState (production); fail-test-loudly on these in test recorders.
+- [ ] If `claude_message_id` is missing on the frame (defensive — earlier-substep tugcode might not yet emit it), log a warning and skip the ledger update; still forward the frame.
+
+**Tests:**
+
+- [ ] **Happy path (post-4.5)**: feed a `turn_complete { msg_id: <tug_turn_id>, claude_message_id: <claude_id> }` frame from tugcode through the supervisor; assert (a) ledger row is `state='complete'`, `claude_message_id` set, `completed_at` set; (b) tugdeck receives the frame.
+- [ ] **NotFound row**: feed a `turn_complete` for a `tug_turn_id` that doesn't exist; assert (a) warn line emitted in tracing; (b) tugdeck still receives the frame.
+- [ ] **Already-complete row**: mark a row complete twice; assert second call returns `InvalidTurnState`; second forward still goes through.
+- [ ] **Missing `claude_message_id`**: feed a frame without the field; assert warn + forward (no ledger write).
+- [ ] **Failure-first proof**: temporarily make `mark_turn_complete` errors blocking (return early instead of warn-forward); feed a NotFound case; assert tugdeck doesn't receive the frame (regression test the warn-and-continue policy).
+
+**Tuglaws cross-check:**
+
+- N/A — supervisor (Rust); no React.
+
+**Checkpoint:**
+
+- [ ] `cargo nextest run -p tugcast` — green.
+- [ ] `cargo clippy -p tugcast --all-targets -- -D warnings` — clean.
+
+---
+
+##### Step 4.5: Tugcode adopts `tug_turn_id` from envelope; reverts [DM03] canonicalization {#step-4-5}
+
+**Commit:** `tugcode(turns): adopt tug_turn_id from envelope; revert DM03 canonicalization; capture claudeMessageId`
+
+**Depends on:** [Step 4.2](#step-4-2), [Step 4.3](#step-4-3).
+
+**Artifacts:**
+
+- `tugcode/src/session.ts` — `ActiveTurn.msgId` reverts to `readonly`. `msgIdCanonicalized` field and `canonicalizeMsgId` method are removed.
+- `tugcode/src/session.ts` — `EventMappingResult.messageId` and `TopLevelRoutingResult.messageId` removed. `mapStreamEvent`'s `message_start` branch no longer returns `messageId`. `routeTopLevelEvent`'s `case "assistant"` no longer extracts `message.id` for the canonical-id path.
+- `tugcode/src/session.ts` — `dispatchEventToTurn` removes the canonicalize-after-route and canonicalize-after-stream blocks. `ctx.msgId = turn.msgId` at top, used unchanged.
+- `tugcode/src/session.ts` — `ActiveTurn` gains a new field `claudeMessageId: string | null = null`. The same plumbing that surfaced `messageId` before is partially restored, but the destination is `turn.claudeMessageId` (informational, used for the outbound `turn_complete`'s `claude_message_id` field), not `turn.msgId` (canonical).
+
+  Hooks:
+  - `mapStreamEvent`'s `message_start` branch: extract `event.message.id` and write to `turn.claudeMessageId` (via a new optional output field on `EventMappingResult` that `dispatchEventToTurn` forwards to the turn). First-write-wins (defensive — ignore subsequent mismatches with a warn).
+  - `routeTopLevelEvent`'s `case "assistant"`: same.
+- `tugcode/src/session.ts` — `handleUserMessage` reads `msg.tug_turn_id`. If present, use it as the `ActiveTurn`'s `msgId`. If absent (test fixtures, synthetic input), fall back to `newMsgId()` for graceful degradation; production always has the field because tugcast always supplies it.
+- `tugcode/src/session.ts` — `dispatchEventToTurn`'s `gotResult` branch emits `turn_complete` with the new `claude_message_id` field populated from `turn.claudeMessageId`.
+- `tugcode/src/session.ts` — `signalEofToActiveTurn`'s emit path: `turn_cancelled` doesn't carry `claude_message_id` today. Decide: leave as-is (the wire shape change is on `turn_complete` only, per [Step 4.2](#step-4-2)); the ledger gets `mark_turn_interrupted` from a different path ([Step 4.7](#step-4-7)).
+
+**Tasks:**
+
+- [ ] Revert `ActiveTurn.msgId` to `readonly`. Remove `msgIdCanonicalized` and `canonicalizeMsgId`.
+- [ ] Remove `messageId` from `EventMappingResult` and `TopLevelRoutingResult`.
+- [ ] Update `mapStreamEvent`: remove the canonical-id surfacing for `message_start`. Add a new field `claudeMessageId?: string` on `EventMappingResult` populated from `message_start`.
+- [ ] Update `routeTopLevelEvent`: same — `claudeMessageId?: string` on `TopLevelRoutingResult` populated from `case "assistant"`.
+- [ ] Update `dispatchEventToTurn`: remove canonicalize-after-route and canonicalize-after-stream blocks. Add new logic that writes `turn.claudeMessageId` from `routeResult.claudeMessageId` / `streamResult.claudeMessageId` (first-write-wins).
+- [ ] Update `handleUserMessage`: read `msg.tug_turn_id`; pass to `ActiveTurn` constructor as `msgId`; fall back to `newMsgId()` if absent.
+- [ ] Update `dispatchEventToTurn`'s `gotResult` branch: emit `turn_complete` with `claude_message_id: turn.claudeMessageId ?? undefined`.
+- [ ] Update obsolete Step 1 tests in `session.test.ts` per [#step-4-test-deltas].
+
+**Tests:**
+
+- [ ] **Tug_turn_id from envelope**: drive `handleUserMessage({ tug_turn_id: "tug_X", ... })`; assert `(manager as any).activeTurn.msgId === "tug_X"`.
+- [ ] **Tug_turn_id absent fallback**: drive `handleUserMessage({ ... })` (no `tug_turn_id`); assert `activeTurn.msgId` is a UUID (production never hits this; pin the fallback for tests).
+- [ ] **claudeMessageId capture from message_start**: drive `message_start` with `message.id = "claude_X"`; assert `activeTurn.claudeMessageId === "claude_X"`.
+- [ ] **claudeMessageId capture from assistant snapshot**: drive top-level `assistant` with `message.id = "claude_Y"` (no preceding `message_start`); assert capture.
+- [ ] **claudeMessageId first-write-wins**: drive `message_start` with `claude_A`, then `assistant` with `claude_B`; assert `claudeMessageId === "claude_A"`; assert a warn line for the mismatch.
+- [ ] **turn_complete carries claude_message_id**: full integration drive; assert the emitted `turn_complete` frame has `claude_message_id` matching what claude emitted.
+- [ ] **turn_complete claude_message_id absent if claude never emitted**: synthetic-only / no-assistant-content path; assert `turn_complete` is emitted (with msg_id = tug_turn_id) but `claude_message_id` is undefined.
+- [ ] **Failure-first proof (revert)**: temporarily restore `canonicalizeMsgId` to overwrite `msgId` from `messageId`; assert the new tug_turn_id-from-envelope test fails (msgId becomes claude's id instead of tug's).
+- [ ] **Regression**: full `bun test` — all surviving tests from Step 1 / 2 / 3 still pass.
+
+**Test deltas in `session.test.ts` and `replay.test.ts` and `replay-spawn-mid-turn.test.ts`:** {#step-4-test-deltas}
+
+Step 1's canonicalization tests are removed (the surface they tested no longer exists in this form):
+- `mapStreamEvent surfaces messageId from message_start` (4 tests) — REMOVED. Replaced by `mapStreamEvent surfaces claudeMessageId from message_start` (informational-not-canonical assertion).
+- `routeTopLevelEvent surfaces messageId from assistant snapshot` (5 tests) — REMOVED. Replaced by `routeTopLevelEvent surfaces claudeMessageId from assistant snapshot`.
+- `dispatchEventToTurn canonicalizes ActiveTurn.msgId` (6 tests) — REMOVED. Replaced by `dispatchEventToTurn captures claudeMessageId on ActiveTurn` (3-4 tests covering the same code paths but asserting on `claudeMessageId`, not `msgId`).
+- `handleUserMessage integration: live emits use canonical msg_id` (2 tests) — REMOVED. Replaced by `handleUserMessage integration: live emits use tug_turn_id from envelope`.
+
+Tests that survive unchanged:
+- `ActiveTurn carries userText and userAttachments after handleUserMessage` (2 tests).
+- `ActiveTurn.suppressEmit gates dispatchEventToTurn` (4 tests).
+- `signalEofToActiveTurn honors suppressEmit` (2 tests).
+- `emitInflightTurnFromActiveTurn` shape (7 tests) — fixture's `msgId` is now the tug_turn_id, but the helper's behavior is identical.
+
+**Tuglaws cross-check:**
+
+- N/A — tugcode bridge subprocess; no React.
+
+**Checkpoint:**
+
+- [ ] `bun test` (tugcode) — green; failure-first proofs produce sensible diagnostics.
+- [ ] `cargo nextest run` — green.
+- [ ] `just lint` — clean.
+
+---
+
+##### Step 4.6: Ledger-driven `runReplay`; translator becomes content-only {#step-4-6}
+
+**Commit:** `tugcode(turns): runReplay reads ledger; translator becomes content-only`
+
+**Depends on:** [Step 4.5](#step-4-5).
+
+**Artifacts:**
+
+- `tugcode/src/session.ts` — `runReplay` opens `~/Library/Application Support/Tug/sessions.db` (or platform equivalent) read-only via Bun's `bun:sqlite`. The path is resolved at the same site that resolves `claudeProjectsRoot` today; tests inject an override.
+
+  ```ts
+  import { Database } from "bun:sqlite";
+  // open(path, { readonly: true })
+  ```
+
+- `tugcode/src/session.ts` — `runReplay`'s loop:
+  1. Snapshot `inflight = activeTurn` (same `!gotResult && !interrupted` guard as today).
+  2. If `inflight !== null`, set `inflight.suppressEmit = true`. (Same as Step 3.)
+  3. Open `sessions.db` read-only. Read `SELECT * FROM turns WHERE session_id = ? ORDER BY ordinal ASC`.
+  4. Emit `replay_started`.
+  5. For each row:
+     - if `state === 'complete'`:
+       - Emit `user_message_replay { msg_id: row.tug_turn_id, text: row.user_text, attachments: row.user_attachments }`.
+       - Look up the corresponding turn content in JSONL by `row.claude_message_id` (uses a refactored translator helper — see below). Emit `tool_use` / `tool_result` / `thinking_text` / `assistant_text { is_partial: false, msg_id: row.tug_turn_id }` for the turn's content.
+       - Emit `turn_complete { msg_id: row.tug_turn_id, result: 'success' }`.
+     - if `state === 'interrupted'`:
+       - Emit `user_message_replay`, `assistant_text` (if `partial_text` set), `turn_cancelled { msg_id: row.tug_turn_id, partial_result: row.partial_text ?? "" }`.
+     - if `state === 'pending'`:
+       - if `inflight !== null && row.tug_turn_id === inflight.msgId`: call `emitInflightTurnFromActiveTurn(inflight)`. (Same Step 3 helper.) The pending row's content is in ActiveTurn; the row exists in the ledger as a durability anchor, but ActiveTurn has the live state.
+       - else: this is a "pending" row from a prior session that's no longer live (tugcode crash recovery). Treat as interrupted: emit user_message_replay + (optional partial_text) + turn_cancelled. (Defer to [Step 4.7](#step-4-7)'s reconciliation; for now emit a defensive synthesis.)
+  6. Emit `replay_complete { count: <number of rows emitted> }`.
+  7. Clear `inflight.suppressEmit` in `finally`.
+
+- `tugcode/src/replay.ts` — the JSONL translator's identity surface is removed:
+  - `TranslateSessionOptions.liveInflightMsgId` — REMOVED.
+  - `TranslateSessionResult.skippedTrailingTurn` — REMOVED.
+  - The trailing-turn-skip logic in the end-of-iteration flush — REMOVED.
+  - The orphan-synthesis path is preserved for the cold-boot case where the ledger has no rows for the session (legacy / migration mid-flight).
+
+  The translator becomes a **content-extraction utility**. New entry point:
+
+  ```ts
+  /**
+   * Iterate JSONL entries and yield the OutboundMessage content for the turn
+   * whose terminal `assistant` entry has `message.id === claudeMessageId`.
+   * Yields tool_use / tool_result / thinking_text / assistant_text for that
+   * turn's content blocks. Does NOT yield user_message_replay or turn_complete
+   * — runReplay synthesizes those keyed by tug_turn_id.
+   */
+  export function* extractTurnContent(
+    jsonl: string,
+    claudeMessageId: string,
+    msgIdForOutput: string,  // = tug_turn_id; runReplay supplies this
+  ): Generator<OutboundMessage>
+  ```
+
+  The implementation reuses the existing `handleAssistantEntry` / `flushTurn` logic but is parameterized to emit with a caller-supplied `msg_id`.
+
+- `tugcode/src/__tests__/replay-spawn-mid-turn.test.ts` — fixture seeds the ledger (via a tugbank-test seam) and asserts ledger-driven replay output. The existing 6 tests are restructured to seed rows + assert wire output keyed by `tug_turn_id` (seeded in the test).
+
+**Tasks:**
+
+- [ ] Add `bun:sqlite` import to `session.ts`. Add a constructor option `sessionsDbPath?: string` for test injection.
+- [ ] Implement the new `runReplay` loop per the spec above.
+- [ ] Refactor `replay.ts`'s translator into the new `extractTurnContent` shape. Remove `liveInflightMsgId` / `skippedTrailingTurn`. Preserve the cold-boot orphan-synthesis path as a separate function `extractOrphanTurn` for the no-ledger-rows case.
+- [ ] Update `replay-spawn-mid-turn.test.ts` per [#step-4-test-deltas-replay].
+
+**Test deltas in `replay-spawn-mid-turn.test.ts`:** {#step-4-test-deltas-replay}
+
+- The test rig grows a "seed turns rows" helper that opens a temp sqlite file, writes the schema (or borrows the production bootstrap), inserts `turns` rows for the test fixture, and points `runReplay` at it via the constructor option.
+- The Smoke D test seeds two rows (one complete with claude_message_id pointing at JSONL, one pending matching the surrogate ActiveTurn). Asserts the wire output: replay_started → committed turn (via JSONL content lookup) → in-flight emission (via ActiveTurn) → replay_complete.
+- The [DM06] gotResult / interrupted mitigation tests: seed one pending row, install ActiveTurn with the same tug_turn_id, drive the suppressEmit setter hook to simulate mid-bracket completion. Same assertions as today; fixture wires through the ledger now.
+- The "no active turn / cold-boot" test: ledger has the rows for a previously-interrupted session; assert the wire emits each row keyed by its tug_turn_id (state=interrupted → turn_cancelled).
+- The "post-bracket live deltas" backstop: same as today, fixture seeded into ledger.
+
+**Tests:**
+
+- [ ] **Bug-scenario regression (manual reload symptom)**: ledger has one pending row matching the surrogate ActiveTurn; drive `runReplay`; assert wire emits `user_message_replay { msg_id: tug_turn_id, text }` + `assistant_text { msg_id: tug_turn_id }` + replay_complete. **The bug from 2026-05-05 is structurally impossible because tug_turn_id is stable from submission and the ledger has the row regardless of JSONL state.**
+- [ ] **Smoke D ordering**: ledger has two rows (one complete, one pending matching ActiveTurn); assert ordering [replay_started, committed turn events, in-flight emission, replay_complete].
+- [ ] **Cold-boot no-rows path**: ledger has zero rows for the session (legacy / migration not yet run); JSONL has content; assert `runReplay` falls back to JSONL-driven emit via `extractOrphanTurn` (preserves [D08] equivalence). Pin this until Step 4.8 lands the migration; afterwards this case becomes vanishingly rare.
+- [ ] **Stale pending row (crash recovery proxy)**: ledger has a pending row that no live ActiveTurn matches; assert `runReplay` emits user + optional partial + turn_cancelled (defensive synthesis until 4.7 lands the reconciliation).
+- [ ] **Full-suite regression**: all surviving tests from Steps 1–3 still pass with their fixtures pointed at the ledger.
+- [ ] **Failure-first proof**: temporarily restore `liveInflightMsgId` gating in the translator + `runReplay`'s old emit predicate; assert the bug-scenario regression test fails because the translator's logic doesn't kick in (the ledger isn't read).
+
+**Tuglaws cross-check:**
+
+- N/A — tugcode bridge subprocess; no React. Reducer surface unchanged.
+
+**Checkpoint:**
+
+- [ ] `bun test` (tugcode) — green; bug-scenario regression test passes.
+- [ ] `cargo nextest run` — green.
+- [ ] `just lint` — clean.
+
+---
+
+##### Step 4.7: Crash recovery — pending rows reconciled on session resume {#step-4-7}
+
+**Commit:** `tugcast(turns): pending-row reconciliation on session resume`
+
+**Depends on:** [Step 4.6](#step-4-6).
+
+**Artifacts:**
+
+- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — on session resume (the `record_spawn` path or its equivalent), after the session row is upserted to `live`, sweep any `state='pending'` rows owned by this session that have no live ActiveTurn (they're orphans from a prior tugcode crash or a clean tugcode exit before claude responded).
+- Reconciliation policy: orphan pending rows are marked `interrupted` with `partial_text=NULL` (we don't have the streamed content; the row's `user_text` survives).
+- Tugcode's `runReplay` (already written in 4.6 to handle `state='interrupted'`) surfaces these rows as `turn_cancelled`.
+- `tugrust/crates/tugcast/src/session_ledger.rs` — new method `reconcile_pending_for_session(session_id: &str, now: i64) -> Result<Vec<String>, LedgerError>` — UPDATEs all pending rows for the session to interrupted, returns the affected `tug_turn_id`s for telemetry.
+
+**Optional (deferred to follow-on if not needed for v1):** periodic `partial_text` snapshots from tugcode → tugcast → `record_partial_text`. Adds a write per N stream events. Closes the gap where a crash-mid-stream loses the partial assistant text. Not required to fix the user-reported bug; defer unless dogfooding surfaces a need.
+
+**Tasks:**
+
+- [ ] Author `reconcile_pending_for_session` in `session_ledger.rs`.
+- [ ] Wire it into the session-resume path in `agent_supervisor.rs`.
+- [ ] Decide UX: surface reconciled rows as `turn_cancelled` with a generic `partial_result: ""` (or `"interrupted by reload"` — wire frame string). Tugcode's `runReplay` (4.6) reads the row state and emits accordingly.
+- [ ] Optional: periodic partial_text snapshots — defer to follow-on if not needed.
+
+**Tests:**
+
+- [ ] **Reconciliation on resume**: seed two pending rows for a session; call session-resume path; assert both are marked `interrupted`; assert the two `tug_turn_id`s are in the returned vec.
+- [ ] **Live ActiveTurn not reconciled**: live tugcode has an ActiveTurn matching one of the pending rows; assert that row is NOT reconciled (the live turn is alive). Hmm, wait — the supervisor doesn't know about ActiveTurn; tugcode does. Resolution: reconciliation runs on session-resume, BEFORE tugcode is respawned. The pending row will be marked interrupted; if tugcode then creates a NEW pending row for a new submission, that's fine (different `tug_turn_id`).
+
+  Actually this needs more thought. On `Developer > Reload`, the session may have a pending turn that's STILL in progress in the live tugcode. We don't want to mark it interrupted. The question is: does reload trigger a session-resume flow in tugcast, or does the existing tugcode keep the session live?
+
+  Today, tugcode is a long-lived subprocess of tugcast; `Developer > Reload` reloads tugdeck only. tugcode and tugcast keep running. The session row stays `state='live'`. The pending turn row stays `pending`. Reconciliation only runs when tugcast itself restarts and the session's tugcode subprocess is gone. **Pin this in the test: only reconcile when tugcode is dead (the supervisor's view of the session is effectively cold).**
+- [ ] **No reconciliation when tugcode is alive**: the supervisor's "is tugcode alive for this session" check gates the reconciliation. Test injects "alive" → no reconciliation; "dead" → reconciliation fires.
+- [ ] **Failure-first proof**: temporarily make reconciliation unconditional; assert a live-tugcode test fails because the pending row was prematurely marked interrupted.
+
+**Tuglaws cross-check:**
+
+- N/A — supervisor (Rust); no React.
+
+**Checkpoint:**
+
+- [ ] `cargo nextest run -p tugcast` — green.
+- [ ] `bun test` (tugcode) — green; tugcode `runReplay` correctly handles the new "interrupted" rows surfaced by reconciliation.
+- [ ] `just lint` — clean.
+
+---
+
+##### Step 4.8: Migration — bootstrap turns rows for pre-existing sessions {#step-4-8}
+
+**Commit:** `tugcast(turns): bootstrap turns rows for pre-existing sessions`
+
+**Depends on:** [Step 4.6](#step-4-6).
+
+**Artifacts:**
+
+- `tugrust/crates/tugcast/src/jsonl_reader.rs` — NEW module. A minimal JSONL parser sufficient for migration: walk a JSONL file line-by-line, identify per-turn boundaries (user entry → assistant entries with the same logical thread → terminal entry with `stop_reason: end_turn`), extract per-turn `user_text`, `user_attachments`, `claude_message_id`. Does NOT need to mirror the full TS translator's content logic — migration only needs identity + user submission.
+- `tugrust/crates/tugcast/src/session_ledger.rs` — new method `bootstrap_turns_from_jsonl(session_id: &str, project_dir: &str, now: i64) -> Result<usize, LedgerError>` — scans the JSONL file for the session, mints a `tug_turn_id` per turn, bulk-inserts rows. Idempotent: uses `get_turn_by_claude_message_id` to skip turns already in the ledger.
+- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — call `bootstrap_turns_from_jsonl` lazily on session-open if `list_turns_for_session` returns empty (and JSONL exists). Cached per session — bootstrap runs at most once.
+
+**Tasks:**
+
+- [ ] Author the minimal Rust JSONL parser in `jsonl_reader.rs`. Scope: only what migration needs.
+- [ ] Author `bootstrap_turns_from_jsonl`. Idempotency via `get_turn_by_claude_message_id`.
+- [ ] Wire lazy invocation on session-open.
+- [ ] Tracing: emit a `tide::ledger::bootstrap` line with the count for telemetry.
+
+**Tests:**
+
+- [ ] **Bootstrap a session with 5 historical turns**: JSONL fixture; call `bootstrap_turns_from_jsonl`; assert 5 rows inserted with consecutive ordinals.
+- [ ] **Idempotent re-run**: call bootstrap twice on the same session; assert no duplicate rows; assert the second call returns 0 inserted.
+- [ ] **Partial JSONL**: JSONL has 3 complete turns + 1 mid-turn (stop_reason: null); assert 3 complete rows + 1 pending row inserted (or interrupted — decide based on whether the bootstrap classifies open turns as pending; probably interrupted since they're historical).
+- [ ] **Malformed JSONL line**: bootstrap skips the malformed line, continues; assert surrounding turns insert; warn line emitted.
+- [ ] **Missing JSONL**: bootstrap returns Ok(0) with a warn; no rows inserted.
+- [ ] **Empty JSONL**: same.
+
+**Tuglaws cross-check:**
+
+- N/A — Rust crate; no React.
+
+**Checkpoint:**
+
+- [ ] `cargo nextest run -p tugcast` — green.
+- [ ] `bun test` (tugcode) — green; tugcode's `runReplay` reads the bootstrapped rows correctly.
+- [ ] `just lint` — clean.
+- [ ] Manual sanity: open a real existing session in dev; tail `tide::ledger::bootstrap` to confirm it ran; verify the transcript renders correctly with the bootstrapped tug_turn_ids.
+
+---
+
+#### Step 5: End-to-end automated Smoke D test + manual verification (was Step 4, pushed down by Step 4's substeps) {#step-5}
+
+**Commit:** `tide(mid-turn): automated Smoke D end-to-end; manual verification against ledger-authoritative design`
+
+**Depends on:** [Step 4.8](#step-4-8).
+
+**References:** Full plan; closes [#exit-criteria].
+
+##### Why this Step exists {#step-5-why}
+
+Step 4 lands eight substeps that redesign the data path. Step 5 closes the loop: it confirms the new design holds under realistic end-to-end conditions and pins the Smoke D regression test as the load-bearing wire-level pin going forward.
+
+The promoted Smoke D test from the (now-superseded) Step 3 close-out is rewritten in 4.6 to drive the ledger-driven path. Step 5's job is to:
+
+- Confirm the test still passes deterministically (N=20).
+- Confirm the bug-scenario regressions from 4.6 still pass deterministically (N=20).
+- Manual user-confirmation of the actual UX: submit + immediate reload, submit + reload during streaming, cancel during the bracket, and the dogfooding HMR cycle.
+- Flip the plan to `shipped` and update the smoke checklist citation.
+
+##### Artifacts {#step-5-artifacts}
+
+- `tugcode/src/__tests__/replay-spawn-mid-turn.test.ts` — final pass: assertions tightened for deterministic ordering; any remaining diagnostic noise removed; the file's top-of-file comment updated to reflect that this is the post-Step-4 ledger-authoritative regression suite (not the post-Step-3 canonicalization regression suite).
+- `roadmap/tugplan-tide-mid-turn-replay.md` — final close-out: Plan Metadata `Status: shipped`; all Step 4 / Step 5 boxes flipped; Phase Exit Criteria reflect the ledger-authoritative design.
+- `roadmap/archive/tugplan-tide-transcript-resume-smoke.md` — Smoke D entry updated to cite the Step 4 + Step 5 design (the existing citation written for the Step 1–3 design is rewritten).
+
+##### Tasks {#step-5-tasks}
+
+- [ ] Confirm the Smoke D regression test (the ledger-driven version landed in 4.6) passes deterministically across N=20 sequential invocations.
+- [ ] Manual verification — submit-then-immediate-reload (the original bug): assert the user submission is on the screen after the first reload; the streaming response continues; one TurnEntry with both halves of content; no phantom interrupted row; no second reload required.
+- [ ] Manual verification — reload during steady-state streaming (claude already responding): same expectations as above; one TurnEntry, smooth continuation.
+- [ ] Manual verification — cancel-during-bracket edge case: submit a turn, reload, cancel via existing UI before the bracket closes; assert the truncated turn renders cleanly with the partial content.
+- [ ] Manual verification — HMR dogfooding cycle: developer using Tug to develop Tug, with HMR cycling tugdeck during a live conversation, doesn't lose context across reloads.
+- [ ] Manual verification — tugcode-crash recovery: kill tugcode mid-turn (deliberately, via `kill -9` in another terminal), let tugcast respawn it; assert the user submission survived (rendered as `interrupted` in the transcript per 4.7's reconciliation).
+- [ ] Update the smoke checklist in `roadmap/archive/tugplan-tide-transcript-resume-smoke.md` to cite Step 4 + Step 5.
+- [ ] Flip Plan Metadata `Status: shipped`.
+
+##### Tests {#step-5-tests}
+
+- [ ] Full-suite green: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`, `just lint`.
+- [ ] N=20 deterministic green for the ledger-driven Smoke D regression test.
+
+##### Tuglaws cross-check {#step-5-tuglaws}
+
+- N/A — test plumbing + doc updates.
+
+##### Checkpoint {#step-5-checkpoint}
+
+- [ ] All check commands green.
+- [ ] Manual Smoke D passes (all five manual scenarios listed in [#step-5-tasks]).
+- [ ] Plan status: `shipped`.
 
 ---
 
@@ -1034,16 +1566,24 @@ If a future feature genuinely needs cross-source id agreement, canonicalization 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
 - [x] Phase 0 investigation complete (four verdicts written, drop audit done).
-- [x] Phase 1 design recorded as `[DM03]`–`[DM06]` decisions in this plan; spec written.
-- [x] Step 1 (canonical msg_id): `ActiveTurn.msgId` is claude's `message.id`; live-emit integration test asserts every wire frame carries it; failure-first proof landed.
-- [x] Step 2 (translator skip): `liveInflightMsgId` option implemented; both branches tested; cold-boot regression preserved; failure-first proof landed.
-- [x] Step 3 (in-flight emission + suppress): `suppressEmit` field gates seven emit sites; `emitInflightTurnFromActiveTurn` ships; integration test asserts one bracket + one TurnEntry for the in-flight turn; both failure-first proofs landed.
-- [x] Step 4 (close-out): regression test promoted; Smoke D smoke-checklist entry passing; plan status `shipped`.
-- [ ] Smoke D — mid-turn reload — passes manually. _User confirmation pending; automated regression below covers the contract._
-- [x] Smoke D — automated regression — passes deterministically. _20/20 sequential green._
-- [x] Drop audit's identified gaps closed (G1, G2, G3 by Phase 1 design; G4, G5 explicitly accepted as pathological-load-only with telemetry).
-- [ ] HMR cycles during dogfooding don't lose conversation context (manual confirmation via the user's actual workflow). _User confirmation pending._
-- [x] All check commands green: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`.
+- [x] Phase 1 design recorded as `[DM03]`–`[DM07]` decisions in this plan; spec written for the Steps 1–3 design (now superseded by [DM07] / Step 4); Step 4 design fully elaborated.
+- [x] Step 1 (canonical msg_id — _superseded by Step 4_): shipped in `6fe7ee60`. The canonicalization plumbing is reverted in [Step 4.5](#step-4-5).
+- [x] Step 2 (translator skip on liveInflightMsgId — _superseded by Step 4_): shipped in `cafa0c39`. The translator's identity surface is removed in [Step 4.6](#step-4-6).
+- [x] Step 3 (in-flight emission + suppress — _retained into Step 4_): shipped in `e71d8590`. `suppressEmit` and `emitInflightTurnFromActiveTurn` survive into the new design.
+- [ ] Step 4.1 (ledger schema + API): `turns` table + migrations table land; CRUD API authored; failure-first proof on the ordinal-race; cargo nextest green.
+- [ ] Step 4.2 (wire shape): `tug_turn_id?` on `UserMessage`, `claude_message_id?` on `TurnComplete`; tsc + cargo nextest green.
+- [ ] Step 4.3 (tugcast write path: insert pending): mint + insert + forward; durability invariant pinned by failure-first proof; cargo nextest green.
+- [ ] Step 4.4 (tugcast write path: mark complete): intercept + update; warn-and-forward error policy pinned; cargo nextest green.
+- [ ] Step 4.5 (tugcode adoption): `tug_turn_id` from envelope; [DM03] plumbing reverted; `claudeMessageId` captured; bun test green; failure-first proof landed.
+- [ ] Step 4.6 (ledger-driven runReplay): translator becomes content-only; `runReplay` reads ledger; bug-scenario regression tests pass; bun test green.
+- [ ] Step 4.7 (crash recovery): `reconcile_pending_for_session` lands; live-tugcode gate pinned; cargo nextest green.
+- [ ] Step 4.8 (migration): minimal Rust JSONL parser; `bootstrap_turns_from_jsonl` lands; idempotent re-run pinned; cargo nextest green.
+- [ ] Step 5 (close-out): ledger-driven Smoke D regression test passes deterministically (N=20); five manual scenarios pass; smoke checklist updated; plan status `shipped`.
+- [ ] Smoke D — mid-turn reload — passes manually with the new design (the original 2026-05-05 bug confirmed fixed).
+- [ ] Smoke D — automated regression — passes deterministically with the ledger-driven test.
+- [x] Drop audit's identified gaps closed (G1, G2, G3 by Phase 1 design; G4, G5 explicitly accepted as pathological-load-only with telemetry). Step 4 also closes the previously-unaddressed "tugcode crash before claude responds" gap via row-persisted-before-forward.
+- [ ] HMR cycles during dogfooding don't lose conversation context (manual confirmation via the user's actual workflow).
+- [ ] All check commands green: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`.
 
 | Checkpoint | Verification |
 |-|-|
@@ -1051,11 +1591,16 @@ If a future feature genuinely needs cross-source id agreement, canonicalization 
 | E2 verdict | `bun test src/__tests__/replay-spawn-mid-turn.test.ts` |
 | E3 verdict | `cargo nextest run --manifest-path tugrust/Cargo.toml -p tugcast --test e3_subscriber_buffering` + verdict in plan |
 | E4 verdict | Drop-audit table in [#e4-drop-audit] |
-| Step 1 unit + integration tests | `cd tugcode && bun test` |
-| Step 2 translator tests | `cd tugcode && bun test src/__tests__/replay.test.ts` |
-| Step 3 mid-turn integration test | `cd tugcode && bun test src/__tests__/replay-spawn-mid-turn.test.ts` |
-| Step 4 promoted regression | Same test, asserted N=20 sequential green |
-| Smoke D manual | User confirmation; not blocking ship if automated covers it |
+| Step 1–3 (shipped) | `cd tugcode && bun test` (note: parts of Steps 1, 2 reverted in Step 4) |
+| Step 4.1 ledger schema | `cargo nextest run -p tugcast --test session_ledger` |
+| Step 4.2 wire shape | `bun x tsc --noEmit` + `cargo nextest run -p tugcast` |
+| Step 4.3 / 4.4 supervisor write path | `cargo nextest run -p tugcast` |
+| Step 4.5 tugcode adoption | `cd tugcode && bun test` + failure-first proof |
+| Step 4.6 ledger-driven runReplay | `cd tugcode && bun test src/__tests__/replay-spawn-mid-turn.test.ts` + bug-scenario regression |
+| Step 4.7 crash recovery | `cargo nextest run -p tugcast` |
+| Step 4.8 migration | `cargo nextest run -p tugcast` + manual sanity on real session |
+| Step 5 promoted regression | Same test, asserted N=20 sequential green |
+| Smoke D manual | User confirmation across the five scenarios in [#step-5-tasks] |
 | TS clean | `bun x tsc --noEmit` |
 | Rust clean | `cargo nextest run` |
 | Lint clean | `just lint` |
@@ -1068,4 +1613,7 @@ Items explicitly NOT required for Phase Close. Listed for future reference.
 - [ ] **G5 — Broadcast replay buffer eviction** (E4): the shared 1000-frame `ReplayBuffer` evicts oldest on overflow. A subscriber that lags long enough loses the oldest frames during their lag-recovery replay. Pathological-load only.
 - [ ] **Per-session replay buffer** — if G5 ever bites, the design space includes a per-session ring buffer (instead of the shared one) so one chatty session can't evict another's recent history. Out of scope today; the shared buffer is sized comfortably for normal use.
 - [ ] **Mid-tool-use reload** — when claude is mid-tool-use at reload, the in-flight emission needs to thread tool_use / tool_result events from the drain's per-turn tool record. Step 3's task list calls this out for implementation; if the drain's tool tracking turns out to be unstructured for direct emission, the emission path falls back to "user prompt + accumulated text only", and tool events arrive post-replay as live deltas. Document the limitation if encountered; fix is a follow-on.
-- [ ] **Cross-machine session export / import** — the JSONL is per-machine; "open this conversation on another laptop" is much larger.
+- [ ] **Diagnostic id-roundtrip via prompt envelope (Option 3 from the 2026-05-05 design conversation).** Embed `tug_turn_id` in the user-message envelope written to claude.stdin so claude echoes it on the user-entry side of JSONL. Cheap diagnostic-correlation aid for grepping wire logs against JSONL contents. Does NOT replace the ledger (claude generates assistant entries with its own id, untaggable by us). Worth adding only if log-correlation grep-ability becomes a pain point during ongoing dogfooding.
+- [ ] **Periodic `partial_text` snapshots** — Step 4.7 leaves this deferred. Every N stream events, tugcode tells tugcast to call `record_partial_text(tug_turn_id, partial_text)`. Closes the gap where a tugcode crash mid-stream loses the partial assistant text. Adds one ledger write per N events; defer until dogfooding shows the gap matters.
+- [ ] **Turn-level features that depend on stable identity** — scroll-restore-on-reload, "share this turn" URLs, edit-previous-turn, bookmarks, per-turn metadata, diff view across forks. All key off `tug_turn_id` from [DM07]. Each lands as a separate plan; Step 4 lays the foundation.
+- [ ] **Cross-machine session export / import** — the JSONL is per-machine; "open this conversation on another laptop" is much larger. With `tug_turn_id` in the ledger, the export shape becomes `(sessions row, turns rows, JSONL content)` — well-defined but out of scope here.
