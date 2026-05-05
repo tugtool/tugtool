@@ -1971,6 +1971,7 @@ export class SessionManager {
       // and the JSONL has already been fully read above. The
       // suppressEmit / replayActive plumbing in the surrounding
       // try/finally still applies; cleanup happens in the finally.
+      let ledgerError: unknown = null;
       try {
         count = this.runLedgerDrivenReplay(
           ledgerRows!,
@@ -1986,6 +1987,26 @@ export class SessionManager {
           count,
           ipc_version: 2,
         };
+      } catch (err) {
+        // Defensive belt: nothing inside `runLedgerDrivenReplay`
+        // throws under normal conditions (every leaf — `writeLine`,
+        // `extractTurnContent`, `decodeUserAttachments`,
+        // `console.error` — swallows). If a future regression
+        // introduces a throw, the bracket would otherwise hang the
+        // reducer in `replaying` phase forever. Emit the canonical
+        // error close so the frontend can unwind, and re-raise so
+        // upstream supervision (`installEarlyExitWatcher`,
+        // `handleUserMessage`) sees the failure.
+        ledgerError = err;
+        bufferedReplayComplete = {
+          type: "replay_complete",
+          count,
+          error: {
+            kind: "jsonl_unreadable",
+            message: `ledger_replay_failed: ${err instanceof Error ? err.message : String(err)}`,
+          },
+          ipc_version: 2,
+        };
       } finally {
         if (timeoutHandle !== null) clearTimeout(timeoutHandle);
         this.replayActive = false;
@@ -1996,12 +2017,24 @@ export class SessionManager {
       if (bufferedReplayComplete !== null) {
         writeLine(bufferedReplayComplete);
       }
-      logReplay("complete", {
+      logReplay(ledgerError === null ? "complete" : "error", {
         session_id: this.sessionId,
         count,
         elapsed_ms: Date.now() - startedAt,
         source: "ledger",
+        ...(ledgerError === null
+          ? {}
+          : {
+              kind: "ledger_replay_failed",
+              reason:
+                ledgerError instanceof Error
+                  ? ledgerError.message
+                  : String(ledgerError),
+            }),
       });
+      if (ledgerError !== null) {
+        throw ledgerError;
+      }
       return;
     }
 

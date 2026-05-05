@@ -1016,7 +1016,26 @@ impl SessionLedger {
             return Ok(0);
         }
 
-        let encoded = encode_claude_project_name(project_dir);
+        // Canonicalize `project_dir` before encoding. Claude itself
+        // resolves its cwd via `getcwd()` (which follows symlinks), so
+        // the on-disk JSONL lives under the canonical path's encoding.
+        // A user opening a session through a symlinked path (e.g.
+        // `/u/src/tugtool` → `/Users/<u>/Mounts/u/src/tugtool`) would
+        // otherwise produce a bootstrap path that has no file under
+        // it; the function would silently `Ok(0)` and the migration
+        // would never run for that session. Mirrors the
+        // `realpath()` step tugcode performs in `runReplay`'s
+        // cold-boot path. Falls back to the raw `project_dir` if the
+        // canonicalization itself fails (path doesn't exist on disk
+        // — fixture / deleted directory cases): downstream
+        // `read_to_string` reports `NotFound` and bootstrap is a
+        // no-op, which is the same outcome the raw form would
+        // produce.
+        let canonical_project_dir = match std::fs::canonicalize(project_dir) {
+            Ok(p) => p.to_string_lossy().into_owned(),
+            Err(_) => project_dir.to_owned(),
+        };
+        let encoded = encode_claude_project_name(&canonical_project_dir);
         let jsonl_path = self
             .claude_projects_root
             .join(encoded)
@@ -1030,6 +1049,7 @@ impl SessionLedger {
                     event = "bootstrap_jsonl_missing",
                     session_id,
                     project_dir,
+                    canonical_project_dir = canonical_project_dir.as_str(),
                     path = %jsonl_path.display(),
                 );
                 return Ok(0);
@@ -2970,6 +2990,70 @@ mod tests {
             .bootstrap_turns_from_jsonl("sess-empty", "/proj/empty", millis(0))
             .unwrap();
         assert_eq!(inserted, 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bootstrap_canonicalizes_symlinked_project_dir_before_path_encoding() {
+        // Regression pin for the dev-machine symlink case (the user's
+        // own path: `/u/src/tugtool` symlinks to
+        // `/Users/<u>/Mounts/u/src/tugtool`). Claude resolves its cwd
+        // via `getcwd()` and writes the JSONL under the *canonical*
+        // path's encoded form. Bootstrap must canonicalize before
+        // encoding or it silently no-ops on every symlinked session.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let canonical_dir = tmp.path().join("real-project");
+        std::fs::create_dir_all(&canonical_dir).unwrap();
+        // Pre-resolve the canonical path so the test isn't sensitive
+        // to host-temp-dir symlink hops (e.g., macOS `/tmp` ↔
+        // `/private/tmp`, or `/var/folders/...` quirks). Production's
+        // `bootstrap_turns_from_jsonl` calls `canonicalize` on its
+        // input, so the JSONL's on-disk encoding MUST match that
+        // canonicalize result for bootstrap to find the file.
+        let canonical_str = std::fs::canonicalize(&canonical_dir)
+            .expect("canonicalize fixture canonical_dir")
+            .to_string_lossy()
+            .into_owned();
+
+        // Create a symlink pointing at the canonical path.
+        let symlink_dir = tmp.path().join("link-to-real-project");
+        std::os::unix::fs::symlink(&canonical_dir, &symlink_dir)
+            .expect("create symlink for fixture");
+        let symlink_str = symlink_dir.to_string_lossy().into_owned();
+        assert_ne!(
+            symlink_str, canonical_str,
+            "symlink-form and canonical-form must differ for the test to \
+             actually exercise the canonicalization step",
+        );
+
+        // Seed the JSONL under the canonical-form encoding (what
+        // claude itself writes).
+        let claude_root = tmp.path().join("claude_root");
+        std::fs::create_dir_all(&claude_root).unwrap();
+        write_jsonl_content(
+            &claude_root,
+            &canonical_str,
+            "sess-symlink",
+            &jsonl_with_complete_turns(2),
+        );
+
+        let l = fresh_ledger_with_root(&claude_root);
+
+        // Drive bootstrap with the SYMLINK path (mirrors what
+        // tugdeck/tugcast carry when the user opened the session via
+        // the symlink).
+        let inserted = l
+            .bootstrap_turns_from_jsonl("sess-symlink", &symlink_str, millis(0))
+            .unwrap();
+        assert_eq!(
+            inserted, 2,
+            "bootstrap must canonicalize the symlinked project_dir before \
+             computing the JSONL path; otherwise the migration silently \
+             no-ops on every dev machine that uses symlinked project paths",
+        );
+
+        let rows = l.list_turns_for_session("sess-symlink").unwrap();
+        assert_eq!(rows.len(), 2);
     }
 
     #[test]

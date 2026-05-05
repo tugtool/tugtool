@@ -1018,4 +1018,64 @@ describe("runReplay with in-flight turn (mid-turn replay design, ledger-driven)"
       rig.cleanup();
     }
   });
+
+  // Defensive: if a future regression makes runLedgerDrivenReplay
+  // throw mid-emission, the surrounding try/catch must still emit a
+  // replay_complete{error} so the reducer unwinds out of the
+  // replaying phase. Without the catch, the bracket would hang
+  // forever and tugdeck's card would freeze.
+  test("ledger-path runReplay surfaces replay_complete{error} on synchronous throw", async () => {
+    const rig = makeE2Rig({
+      ledgerRows: [
+        {
+          tug_turn_id: "tug_throw",
+          ordinal: 0,
+          state: "complete",
+          user_text: "hello",
+          claude_message_id: COMMITTED_CLAUDE_MSG_ID,
+        },
+      ],
+    });
+    try {
+      rig.manager.prepareSession();
+      // Inject a throw by replacing nextSeq() with a hostile mock
+      // that throws on first call. runLedgerDrivenReplay calls
+      // nextSeq() inside the `complete` branch when emitting
+      // turn_complete — so this fires after replay_started and the
+      // user_message_replay write, but before the bracket closes.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (rig.manager as any).nextSeq = () => {
+        throw new Error("synthetic ledger-replay failure");
+      };
+
+      let threw: unknown = null;
+      try {
+        await rig.manager.runReplay();
+      } catch (err) {
+        threw = err;
+      }
+      await rig.flush();
+
+      // The synthetic error propagated out (so upstream supervision
+      // sees the failure, not a silent stall).
+      expect(threw).toBeInstanceOf(Error);
+      expect((threw as Error).message).toContain("synthetic ledger-replay failure");
+
+      // Crucially, replay_complete WAS emitted — closing the
+      // bracket so the reducer can unwind. The error frame's `kind`
+      // identifies the failure mode for diagnostics.
+      const complete = rig.emitted.find((m) => m.type === "replay_complete") as
+        | {
+            type: "replay_complete";
+            error?: { kind: string; message: string };
+          }
+        | undefined;
+      expect(complete).toBeDefined();
+      expect(complete?.error?.kind).toBe("jsonl_unreadable");
+      expect(complete?.error?.message).toContain("ledger_replay_failed");
+      expect(complete?.error?.message).toContain("synthetic ledger-replay failure");
+    } finally {
+      rig.cleanup();
+    }
+  });
 });

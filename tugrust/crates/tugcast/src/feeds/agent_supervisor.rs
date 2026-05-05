@@ -8111,7 +8111,6 @@ mod tests {
         // historical turn. The test asserts both rows land with
         // consecutive ordinals, the expected `claude_message_id`s,
         // and `state='complete'`.
-        use std::path::PathBuf;
         let claude_root = tempfile::tempdir().expect("tempdir");
         let project_dir = test_project_dir();
         let encoded = crate::session_ledger::encode_claude_project_name(project_dir);
@@ -8158,10 +8157,6 @@ mod tests {
             SessionLedger::open_with_claude_root(":memory:", claude_root.path().to_path_buf())
                 .expect("ledger open"),
         );
-        // open_with_claude_root + ":memory:" opens an in-memory DB
-        // distinct from any other handle, perfect for an isolated
-        // test fixture.
-        let _ = PathBuf::from(":memory:");
 
         let (state_tx, _state_rx) = broadcast::channel(64);
         let (meta_tx, _meta_rx) = broadcast::channel(8);
@@ -8221,9 +8216,7 @@ mod tests {
         // ledger has no turns rows, bootstrap is a no-op. Pin so
         // the migration path can never accidentally synthesize rows
         // for a session that has no historical content.
-        use std::path::PathBuf;
         let claude_root = tempfile::tempdir().expect("tempdir");
-        let _ = PathBuf::from(":memory:");
 
         let ledger = Arc::new(
             SessionLedger::open_with_claude_root(":memory:", claude_root.path().to_path_buf())
