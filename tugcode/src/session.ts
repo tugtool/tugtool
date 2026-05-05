@@ -34,7 +34,6 @@ import { logSessionLifecycle } from "./session-lifecycle-log.ts";
 import {
   type ReplayInput,
   type ReplayTelemetry,
-  extractTurnContent,
   translateJsonlSession,
 } from "./replay.ts";
 
@@ -141,26 +140,6 @@ export function defaultSessionsDbPath(): string {
   const xdg = process.env.XDG_DATA_HOME;
   const base = xdg && xdg.length > 0 ? xdg : join(home, ".local", "share");
   return join(base, "tugcast", "sessions.db");
-}
-
-/**
- * One row of the `turns` table read by tugcode's `runReplay` over
- * cross-process WAL. Mirrors the Rust-side `TurnRow` shape with
- * Bun-native types (`Buffer` for the BLOB column, JS-native nullables
- * via `null`). Construction is via `bun:sqlite`'s row mapping; tugcode
- * never writes to this table.
- */
-interface LedgerTurnRow {
-  tug_turn_id: string;
-  session_id: string;
-  ordinal: number;
-  claude_message_id: string | null;
-  user_text: string;
-  user_attachments: Buffer | Uint8Array;
-  state: string;
-  partial_text: string | null;
-  created_at: number;
-  completed_at: number | null;
 }
 
 /**
@@ -1911,26 +1890,15 @@ export class SessionManager {
       inflight.suppressEmit = true;
     }
 
-    // Step 4 mid-turn-replay: the SessionLedger turns table is the
-    // source of truth for what to replay. If sessions.db is open and
-    // has rows for this session, drive the bracket from those rows
-    // (synthesizing each frame keyed by `tug_turn_id`, looking up
-    // assistant content from JSONL via `extractTurnContent` when
-    // `claude_message_id` is known). If the ledger is unavailable or
-    // empty (cold-boot, pre-migration, fresh install), fall back to
-    // the JSONL-only translator — preserves D08 equivalence and lets
-    // legacy sessions replay until step 4.8 lands the JSONL→ledger
-    // migration.
-    const ledgerRows = this.readLedgerTurnsForSession();
-    const useLedgerPath =
-      ledgerRows !== null &&
-      ledgerRows.length > 0 &&
-      // Ledger-driven path requires the JSONL bytes for content
-      // extraction on `state='complete'` rows; if the JSONL read
-      // failed, fall back to translator's error frame so the user
-      // sees the same diagnostic the cold-boot path would emit.
-      input.kind === "ok";
-
+    // JSONL-driven replay (the only path post-Step-5.4). The
+    // translator emits `replay_started` → committed-turn frames →
+    // `replay_complete`, raced against the exit + timeout promises.
+    // The trailing in-flight turn's predicate is the
+    // [Step 5.5](roadmap/tugplan-tide-mid-turn-replay.md#step-5-5)
+    // territory; this substep restores the pre-Step-4 translator-driven
+    // shape unchanged. The journal-driven pending-row injection lands
+    // in [Step 5.6](roadmap/tugplan-tide-mid-turn-replay.md#step-5-6),
+    // wrapping this path with a pre-pass over `sessions.db`.
     let count = 0;
     let lastProgressPosted = 0;
     const progressBatch = 16;
@@ -1938,91 +1906,13 @@ export class SessionManager {
       | { kind: "timeout" }
       | { kind: "exit"; code: number | null }
       | null = null;
-    // The translator (cold-boot path) yields replay_complete BEFORE
-    // its return value. Buffer the bracket-close so we can write it
-    // last regardless of which path we took.
+    // The translator yields `replay_complete` BEFORE returning. Buffer
+    // the bracket-close so we can write it last after the loop, in case
+    // a future caller (Step 5.6's pending-row injection) wants to add
+    // post-iteration work between the last committed-turn frame and the
+    // bracket-closing event.
     let bufferedReplayComplete: OutboundMessage | null = null;
 
-    if (useLedgerPath) {
-      // Ledger-driven path: synchronous emission from in-memory rows
-      // + on-demand JSONL content extraction. No timeout/exit race
-      // here — the work is bounded by the row count (typically <100)
-      // and the JSONL has already been fully read above. The
-      // suppressEmit / replayActive plumbing in the surrounding
-      // try/finally still applies; cleanup happens in the finally.
-      let ledgerError: unknown = null;
-      try {
-        count = this.runLedgerDrivenReplay(
-          ledgerRows!,
-          input.kind === "ok" ? input.jsonl : "",
-          inflight,
-        );
-        // Buffer replay_complete so the finally-side ordering matches
-        // the cold-boot path: bracket closes after any post-iteration
-        // work that the ledger-path doesn't have today but might in
-        // the future.
-        bufferedReplayComplete = {
-          type: "replay_complete",
-          count,
-          ipc_version: 2,
-        };
-      } catch (err) {
-        // Defensive belt: nothing inside `runLedgerDrivenReplay`
-        // throws under normal conditions (every leaf — `writeLine`,
-        // `extractTurnContent`, `decodeUserAttachments`,
-        // `console.error` — swallows). If a future regression
-        // introduces a throw, the bracket would otherwise hang the
-        // reducer in `replaying` phase forever. Emit the canonical
-        // error close so the frontend can unwind, and re-raise so
-        // upstream supervision (`installEarlyExitWatcher`,
-        // `handleUserMessage`) sees the failure.
-        ledgerError = err;
-        bufferedReplayComplete = {
-          type: "replay_complete",
-          count,
-          error: {
-            kind: "jsonl_unreadable",
-            message: `ledger_replay_failed: ${err instanceof Error ? err.message : String(err)}`,
-          },
-          ipc_version: 2,
-        };
-      } finally {
-        if (timeoutHandle !== null) clearTimeout(timeoutHandle);
-        this.replayActive = false;
-        if (inflight !== null) {
-          inflight.suppressEmit = false;
-        }
-      }
-      if (bufferedReplayComplete !== null) {
-        writeLine(bufferedReplayComplete);
-      }
-      logReplay(ledgerError === null ? "complete" : "error", {
-        session_id: this.sessionId,
-        count,
-        elapsed_ms: Date.now() - startedAt,
-        source: "ledger",
-        ...(ledgerError === null
-          ? {}
-          : {
-              kind: "ledger_replay_failed",
-              reason:
-                ledgerError instanceof Error
-                  ? ledgerError.message
-                  : String(ledgerError),
-            }),
-      });
-      if (ledgerError !== null) {
-        throw ledgerError;
-      }
-      return;
-    }
-
-    // Cold-boot fallback: JSONL-only translator, raced against the
-    // exit + timeout promises. This is the pre-Step-4 behavior, intact
-    // except the trailing-turn-skip (Step 3's `liveInflightMsgId`)
-    // is gone — the ledger's `state='pending'` row matching the
-    // inflight ActiveTurn drives the in-flight emission in the
-    // ledger path, never the translator.
     const iter = translateJsonlSession(input, {
       telemetry: this.replayTelemetry,
     });
@@ -2468,277 +2358,6 @@ export class SessionManager {
       turn.finish();
     }
   }
-
-  /**
-   * Pull the per-turn rows tugcast wrote into `sessions.db` for this
-   * session. Returns `null` if the DB is unavailable (file missing,
-   * read failed at construction, or the open was opted out by tests).
-   * An empty array means the DB is open but has no rows for this
-   * session — `runReplay` falls back to JSONL-only translation in that
-   * case (cold-boot / pre-migration / fresh install).
-   *
-   * The query is parameterized + read-only and runs against the
-   * long-lived prepared statement cache `bun:sqlite` keeps on the
-   * `Database` handle, so the per-call overhead is dominated by the
-   * actual row fetch, not the prepare.
-   */
-  private readLedgerTurnsForSession(): LedgerTurnRow[] | null {
-    if (this.sessionsDb === null) return null;
-    try {
-      const stmt = this.sessionsDb.query<LedgerTurnRow, [string]>(
-        `SELECT tug_turn_id, session_id, ordinal, claude_message_id,
-                user_text, user_attachments, state, partial_text,
-                created_at, completed_at
-         FROM turns
-         WHERE session_id = ?
-         ORDER BY ordinal ASC`,
-      );
-      return stmt.all(this.sessionId);
-    } catch (err) {
-      // sqlite error during read (corruption, schema mismatch). Log
-      // and treat as no-rows so cold-boot fallback fires; the user
-      // sees the JSONL-driven transcript and runReplay doesn't crash
-      // tugcode.
-      logReplay("sessions_db_read_error", {
-        session_id: this.sessionId,
-        reason: err instanceof Error ? err.message : String(err),
-      });
-      return null;
-    }
-  }
-
-  /**
-   * Decode the BLOB-encoded `user_attachments` JSON array into the
-   * `Attachment[]` shape the wire `user_message_replay` expects. A
-   * malformed BLOB (shouldn't happen under tugcast's writer; pinned
-   * defensively) emits an empty array so the user side of the turn
-   * still surfaces.
-   */
-  private decodeUserAttachments(blob: Buffer | Uint8Array): Attachment[] {
-    try {
-      const text = Buffer.from(blob).toString("utf8");
-      const parsed: unknown = JSON.parse(text);
-      if (Array.isArray(parsed)) {
-        return parsed as Attachment[];
-      }
-      return [];
-    } catch {
-      return [];
-    }
-  }
-
-  /**
-   * Synthesize the `replay_started` → per-row content → `replay_complete`
-   * bracket from in-memory ledger rows. Each row's content is keyed by
-   * the row's `tug_turn_id` (the wire `msg_id` for the turn's lifetime
-   * — established at user-submit by tugcast in step 4.3 and held through
-   * the live emit, the merger ledger update, and now this replay path).
-   *
-   * Per-row state branches:
-   *   - **complete**: emit `user_message_replay`, look up
-   *     assistant-side content from JSONL via
-   *     [`extractTurnContent`] keyed on `claude_message_id` (defensive
-   *     warn-and-skip when null, defensive ordinal-latest-wins when
-   *     duplicated across rows), emit `turn_complete`.
-   *   - **interrupted**: emit `user_message_replay`, emit assistant
-   *     content from JSONL if present (the partial bytes streamed
-   *     before the cancel) else fall back to the row's `partial_text`,
-   *     emit `turn_cancelled`.
-   *   - **pending matching the live ActiveTurn**: delegate to
-   *     [`emitInflightTurnFromActiveTurn`] — that helper synthesizes
-   *     `user_message_replay`, the consolidated `assistant_text`
-   *     snapshot, and the appropriate terminal event from the
-   *     in-memory `turn.partialText` / `gotResult` / `interrupted`
-   *     latches. Avoids duplicating the user_message_replay or wire
-   *     state that's already in `ActiveTurn`.
-   *   - **pending without a matching live ActiveTurn** (stale): emit a
-   *     defensive synthesis as `turn_cancelled` with whatever
-   *     `partial_text` survived. Step 4.7's reconciliation will sweep
-   *     these on session resume; for now this branch keeps the user-
-   *     visible transcript honest about a turn that never finished.
-   *
-   * Returns the count for the `replay_complete.count` field — every
-   * row that flushes a terminal (`turn_complete` / `turn_cancelled`)
-   * contributes one. Pending+matching-inflight rows contribute only
-   * when `emitInflightTurnFromActiveTurn` lands a terminal frame
-   * (i.e., the turn already finished while suppressed).
-   */
-  private runLedgerDrivenReplay(
-    rows: LedgerTurnRow[],
-    jsonl: string,
-    inflight: ActiveTurn | null,
-  ): number {
-    writeLine({ type: "replay_started", ipc_version: 2 });
-
-    // Pre-scan for duplicate `claude_message_id` across `complete`
-    // rows so the per-row JSONL content lookup picks the latest by
-    // ordinal and warns on the others. The schema's
-    // `turns_claude_message_id` index is non-unique by design (claude
-    // shouldn't reuse ids in practice; the index supports the
-    // migration's `get_turn_by_claude_message_id` lookup), so this
-    // defensive sweep is the layer that pins the policy.
-    const claudeIdLatestOrdinal = new Map<string, number>();
-    for (const row of rows) {
-      if (row.claude_message_id !== null && row.state === "complete") {
-        const cur = claudeIdLatestOrdinal.get(row.claude_message_id);
-        if (cur === undefined || row.ordinal > cur) {
-          claudeIdLatestOrdinal.set(row.claude_message_id, row.ordinal);
-        }
-      }
-    }
-
-    let terminalCount = 0;
-    for (const row of rows) {
-      const userAttachments = this.decodeUserAttachments(row.user_attachments);
-      if (row.state === "complete") {
-        writeLine({
-          type: "user_message_replay",
-          msg_id: row.tug_turn_id,
-          text: row.user_text,
-          attachments: userAttachments,
-          ipc_version: 2,
-        });
-        if (row.claude_message_id !== null && jsonl.length > 0) {
-          const isLatestForId =
-            claudeIdLatestOrdinal.get(row.claude_message_id) === row.ordinal;
-          if (!isLatestForId) {
-            console.error(
-              `[tide::replay::duplicate_claude_message_id] tug_turn_id=${row.tug_turn_id} claude_message_id=${row.claude_message_id} ordinal=${row.ordinal} (skipping content; latest ordinal owns the JSONL lookup)`,
-            );
-          } else {
-            for (const msg of extractTurnContent(
-              jsonl,
-              row.claude_message_id,
-              row.tug_turn_id,
-            )) {
-              writeLine(msg);
-            }
-          }
-        } else if (row.claude_message_id === null) {
-          console.error(
-            `[tide::replay::complete_row_missing_claude_id] tug_turn_id=${row.tug_turn_id} (no JSONL content lookup; turn_complete emitted with no assistant_text)`,
-          );
-        }
-        writeLine({
-          type: "turn_complete",
-          msg_id: row.tug_turn_id,
-          seq: this.nextSeq(),
-          result: "success",
-          ipc_version: 2,
-        });
-        terminalCount += 1;
-        continue;
-      }
-
-      if (row.state === "interrupted") {
-        writeLine({
-          type: "user_message_replay",
-          msg_id: row.tug_turn_id,
-          text: row.user_text,
-          attachments: userAttachments,
-          ipc_version: 2,
-        });
-        // Prefer JSONL content (the partial bytes claude streamed
-        // before the cancel). The assistant_text from extractTurnContent
-        // arrives with `is_partial: false` so the reducer treats it
-        // as a complete snapshot.
-        let emittedJsonlContent = false;
-        if (row.claude_message_id !== null && jsonl.length > 0) {
-          for (const msg of extractTurnContent(
-            jsonl,
-            row.claude_message_id,
-            row.tug_turn_id,
-          )) {
-            writeLine(msg);
-            if (msg.type === "assistant_text") emittedJsonlContent = true;
-          }
-        }
-        // Fallback to the row's `partial_text` snapshot if JSONL had
-        // nothing to extract (no claude_message_id, JSONL never
-        // captured the partial, etc.). Pre-Step-4.7 the snapshot is
-        // populated only on live cancel paths; the fallback gives us
-        // a transcript line in either case.
-        if (
-          !emittedJsonlContent &&
-          row.partial_text !== null &&
-          row.partial_text.length > 0
-        ) {
-          writeLine({
-            type: "assistant_text",
-            msg_id: row.tug_turn_id,
-            seq: this.nextSeq(),
-            rev: 0,
-            text: row.partial_text,
-            is_partial: false,
-            status: "streaming",
-            ipc_version: 2,
-          });
-        }
-        writeLine({
-          type: "turn_cancelled",
-          msg_id: row.tug_turn_id,
-          seq: this.nextSeq(),
-          partial_result: row.partial_text ?? "",
-          ipc_version: 2,
-        });
-        terminalCount += 1;
-        continue;
-      }
-
-      // state === "pending"
-      if (inflight !== null && row.tug_turn_id === inflight.msgId) {
-        // Live in-flight turn. emitInflightTurnFromActiveTurn writes
-        // user_message_replay (from inflight.userText), the consolidated
-        // assistant_text snapshot (from inflight.partialText), and a
-        // terminal frame iff the turn already latched gotResult or
-        // interrupted while suppressEmit was on. If the turn is still
-        // open (no terminal latched yet), no terminal lands here and
-        // the row counts as 0 toward replay_complete.
-        const before = inflight.gotResult || inflight.interrupted;
-        this.emitInflightTurnFromActiveTurn(inflight);
-        if (before) {
-          terminalCount += 1;
-        }
-        continue;
-      }
-
-      // Stale pending (no matching live ActiveTurn). Defensive
-      // synthesis so the user sees the turn happened. Step 4.7's
-      // reconciliation sweep will mark these `interrupted` on the
-      // next session resume; this run still emits a coherent
-      // transcript line.
-      writeLine({
-        type: "user_message_replay",
-        msg_id: row.tug_turn_id,
-        text: row.user_text,
-        attachments: userAttachments,
-        ipc_version: 2,
-      });
-      if (row.partial_text !== null && row.partial_text.length > 0) {
-        writeLine({
-          type: "assistant_text",
-          msg_id: row.tug_turn_id,
-          seq: this.nextSeq(),
-          rev: 0,
-          text: row.partial_text,
-          is_partial: false,
-          status: "streaming",
-          ipc_version: 2,
-        });
-      }
-      writeLine({
-        type: "turn_cancelled",
-        msg_id: row.tug_turn_id,
-        seq: this.nextSeq(),
-        partial_result: row.partial_text ?? "",
-        ipc_version: 2,
-      });
-      terminalCount += 1;
-    }
-
-    return terminalCount;
-  }
-
   /**
    * Emit the in-flight turn's content from `ActiveTurn` state, inside
    * `runReplay`'s bracket. Called by `runReplay` after the translator

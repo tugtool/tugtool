@@ -2047,18 +2047,22 @@ The developer's local `sessions.db` will lose any in-flight pending rows from be
 
 **Tasks:**
 
-- [ ] Delete `runLedgerDrivenReplay` from `session.ts`.
-- [ ] Restore `runReplay` to call `translateJsonlSession` with no special trailing-turn handling.
-- [ ] Delete `extractTurnContent` from `replay.ts`.
-- [ ] Delete `rekeyTurnContent` (or any other Step 4 re-keying helpers) from `replay.ts`.
-- [ ] Update imports across `session.ts`, `replay.test.ts`, `replay-spawn-mid-turn.test.ts`.
-- [ ] Delete tests that exercised `runLedgerDrivenReplay` / `extractTurnContent` in `replay.test.ts` and `replay-spawn-mid-turn.test.ts`. Translator-driven tests that pre-dated Step 4 should still pass.
+- [x] Delete `runLedgerDrivenReplay` from `session.ts`.
+- [x] Delete `readLedgerTurnsForSession` and `decodeUserAttachments` (helpers used only by `runLedgerDrivenReplay`).
+- [x] Delete `LedgerTurnRow` type from `session.ts` (no remaining consumers).
+- [x] Restore `runReplay` to call `translateJsonlSession` with no special trailing-turn handling. Single path; no ledger branch; no source labelling. Buffered `replay_complete` emit retained as the bracket-close hook for Step 5.6's pending-row injection to layer on top.
+- [x] Delete `extractTurnContent`, `readMsgIdFromBatch`, `rekeyTurnContent` from `replay.ts`. The `yieldToEventLoop` helper survives (used by the translator).
+- [x] Drop `extractTurnContent` import from `session.ts` and `replay.test.ts`.
+- [x] Delete the `extractTurnContent` describe block from `replay.test.ts` (was Step 4.6's test surface).
+- [x] Delete `replay-spawn-mid-turn.test.ts` entirely (Step 4.6's load-bearing test for the deleted ledger-driven path; Step 5.6 will write a focused never-drop smoke test against the new shape).
+- [x] Delete `sessions-db-cross-process.test.ts` (was pinning the Step 4.1 schema; the new schema lives only in `session_ledger.rs` tests now, and Step 5.6 will write its own cross-process pin against the journal columns).
+- [x] Keep `emitInflightTurnFromActiveTurn` and `ActiveTurn.suppressEmit` (per [What survives](#step-5-what-survives)). The function has no caller post-Step-5.4; [Step 5.5](#step-5-5)/[Step 5.6](#step-5-6) decide whether to wire it back in or remove it.
 
 **Tests:**
 
-- [ ] **Translator-driven replay (post-turn case)**: seed a JSONL with 2 committed turns; `runReplay`; assert the wire emits `replay_started`, two complete TurnEntry-equivalent frame sequences keyed by claude's ids, `replay_complete`.
-- [ ] **Empty JSONL**: seed a JSONL with no turns; `runReplay`; assert `replay_started` + `replay_complete` (with `kind: empty` or whichever pre-Step-4 shape was used).
-- [ ] **Regression — `bun test` full pass**: any tests that survived the Step 4 deletions still pass; any tests that asserted on the deleted Step-4 paths are removed in this commit.
+- [x] **Translator-driven replay (post-turn case)**: covered by the surviving `translateJsonlSession — happy path` describe block in `replay.test.ts` (12 tests).
+- [x] **Empty JSONL**: covered by `translateJsonlSession — error inputs` and the `replay_complete` emit in the translator's main loop.
+- [x] **Regression — `bun test` full pass**: 304 tests pass (was 324 pre-deletion; -20 from removed `replay-spawn-mid-turn.test.ts`).
 
 **Tuglaws cross-check:**
 
@@ -2066,9 +2070,9 @@ The developer's local `sessions.db` will lose any in-flight pending rows from be
 
 **Checkpoint:**
 
-- [ ] `bun test` (tugcode) — green.
-- [ ] `cargo nextest run` — green.
-- [ ] `just lint` — clean.
+- [x] `bun test` (tugcode) — green (304 pass).
+- [x] `cargo nextest run` — green (1248 pass workspace-wide).
+- [x] `just lint` — clean.
 
 ---
 
@@ -2335,7 +2339,7 @@ Step 5's substep 5.7 lands the Smoke D regression test in its post-remediation f
 - [x] Step 5.2 (schema narrow): `turns` table narrowed to 5-column submission journal; migrations table + bootstrap + jsonl_reader deleted entirely (Step 5.7's job folded in per the no-migration policy); FIFO-match API added; cargo nextest + just lint green.
 - [x] Step 5.7 (delete migration scaffolding): ABSORBED into 5.2.
 - [x] Step 5.3 (intercept narrow): merger's `turn_complete` intercept narrows to FIFO mark-seen; `dispatch_one` forwards `user_message` frames unchanged; `payload_inspector` narrowed to msg_type/text/attachments; cargo nextest green.
-- [ ] Step 5.4 (restore translator-driven runReplay): `runLedgerDrivenReplay` and `extractTurnContent` deleted; `translateJsonlSession` resumes as the replay source; bun test green.
+- [x] Step 5.4 (restore translator-driven runReplay): `runLedgerDrivenReplay`, `readLedgerTurnsForSession`, `decodeUserAttachments`, `LedgerTurnRow`, `extractTurnContent`, `readMsgIdFromBatch`, `rekeyTurnContent` all deleted; `runReplay` reverts to translator-driven path; `replay-spawn-mid-turn.test.ts` and `sessions-db-cross-process.test.ts` deleted (Step 4.6/4.1 territory); bun test green (304); workspace nextest green (1248); just lint clean.
 - [ ] Step 5.5 (translator predicate fix): in-flight trailing turn emits content without a terminal event; bun test green; the original 2026-05-05 mid-turn bug structurally fixed by this one-line change.
 - [ ] Step 5.6 (pending-row replay): synthetic `user_message_replay` for unmatched pending rows; bun test green; **never-drop smoke passes deterministically across N=20** (load-bearing gate for [DM08]).
 - [x] Step 5.7 (delete migration scaffolding): absorbed into [Step 5.2](#step-5-2). All migration scaffolding (`bootstrap_turns_from_jsonl`, `canonical_project_dir_for_jsonl`, `jsonl_reader.rs`, the migrations table, the supervisor's bootstrap call site) deleted in 5.2.
