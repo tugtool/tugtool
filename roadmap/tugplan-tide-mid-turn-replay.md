@@ -1834,19 +1834,19 @@ Plus the close-out at [Step 6](#step-6) which retests Smoke D end-to-end against
 
 **Tasks:**
 
-- [ ] Remove `tug_turn_id` field from `UserMessage` IPC type (Rust + TS).
-- [ ] Remove `claude_message_id` field from `TurnComplete` IPC type (Rust + TS).
-- [ ] Remove `claudeMessageId` capture from `ActiveTurn` (TS).
-- [ ] Restore `messageId` field on `EventMappingResult` / `TopLevelRoutingResult` (TS).
-- [ ] Restore canonicalize-after-route / canonicalize-after-stream blocks in `dispatchEventToTurn` (TS).
-- [ ] Update `handleUserMessage` to mint a placeholder UUID locally (no longer reads from envelope).
-- [ ] Update Step 4.2 / 4.5 tests in `session.test.ts`: tests that asserted on `tug_turn_id` from envelope, `claude_message_id` on `turn_complete`, or `claudeMessageId` capture come out (or revert to their pre-Step-4 form).
+- [x] Remove `tug_turn_id` field from `UserMessage` IPC type (Rust + TS).
+- [x] Remove `claude_message_id` field from `TurnComplete` IPC type (Rust + TS).
+- [x] Remove `claudeMessageId` capture from `ActiveTurn` (TS).
+- [x] Restore `messageId` field on `EventMappingResult` / `TopLevelRoutingResult` (TS).
+- [x] Restore canonicalize-after-route / canonicalize-after-stream blocks in `dispatchEventToTurn` (TS).
+- [x] Update `handleUserMessage` to mint a placeholder UUID locally (no longer reads from envelope).
+- [x] Update Step 4.2 / 4.5 tests in `session.test.ts`: tests that asserted on `tug_turn_id` from envelope, `claude_message_id` on `turn_complete`, or `claudeMessageId` capture come out (or revert to their pre-Step-4 form).
 
 **Tests:**
 
-- [ ] **Wire shape**: drive a synthetic `handleUserMessage`; assert the outbound `user_message` frame on tugcode's stdout has no `tug_turn_id` field. Assert the outbound `turn_complete` frame has no `claude_message_id` field.
-- [ ] **Canonicalization restored**: drive `handleUserMessage` (local UUID), then `message_start` with `message.id = "claude_X"`; assert `activeTurn.msgId === "claude_X"` after the canonicalization step (the pre-Step-4 behavior).
-- [ ] **Regression**: full `bun test` — all surviving tests pass; tests that assert on the now-removed fields are deleted or updated in this same commit.
+- [x] **Wire shape**: drive a synthetic `handleUserMessage`; assert the outbound `user_message` frame on tugcode's stdout has no `tug_turn_id` field. Assert the outbound `turn_complete` frame has no `claude_message_id` field.
+- [x] **Canonicalization restored**: drive `handleUserMessage` (local UUID), then `message_start` with `message.id = "claude_X"`; assert `activeTurn.msgId === "claude_X"` after the canonicalization step (the pre-Step-4 behavior).
+- [x] **Regression**: full `bun test` — all surviving tests pass; tests that assert on the now-removed fields are deleted or updated in this same commit.
 
 **Tuglaws cross-check:**
 
@@ -1854,9 +1854,9 @@ Plus the close-out at [Step 6](#step-6) which retests Smoke D end-to-end against
 
 **Checkpoint:**
 
-- [ ] `bun test` (tugcode) — green.
-- [ ] `cargo nextest run` — green.
-- [ ] `just lint` — clean.
+- [x] `bun test` (tugcode) — green (324 pass; +2 wire-shape pin tests added).
+- [x] `cargo nextest run` — green (1294 pass; -8 from deletion of parse_message_type / parse_tug_turn_id / parse_claude_message_id tests).
+- [x] `just lint` — clean.
 
 ---
 
@@ -2355,7 +2355,7 @@ Step 5's substep 5.7 lands the Smoke D regression test in its post-remediation f
 - [x] Step 4.6 (ledger-driven runReplay — _superseded by Step 5.4_): shipped in `7aaa28a0`. `runLedgerDrivenReplay` and `extractTurnContent` deleted in [Step 5.4](#step-5-4).
 - [x] Step 4.7 (crash recovery — _retained, role narrowed_): shipped in `87df91fd`. `reconcile_pending_for_session` survives with its narrowed Step-5 role.
 - [x] Step 4.8 (migration — _superseded by Step 5.7_): shipped in `a2996ec5` (with audit fixups in `2f9a9d52`). All migration scaffolding deleted in [Step 5.7](#step-5-7).
-- [ ] Step 5.1 (wire revert): `tug_turn_id`/`claude_message_id` come off the wire; canonicalization restored; bun test green.
+- [x] Step 5.1 (wire revert): `tug_turn_id`/`claude_message_id` come off the wire; canonicalization restored; bun test green.
 - [ ] Step 5.2 (schema narrow): `turns` table v3 lands as a 5-column submission journal; FIFO-match API added; bun test green for the migration; cargo nextest green.
 - [ ] Step 5.3 (intercept narrow): merger's `turn_complete` intercept narrows to FIFO mark-seen; cargo nextest green.
 - [ ] Step 5.4 (restore translator-driven runReplay): `runLedgerDrivenReplay` and `extractTurnContent` deleted; `translateJsonlSession` resumes as the replay source; bun test green.

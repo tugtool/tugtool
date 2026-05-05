@@ -348,23 +348,18 @@ export interface EventMappingContext {
 /**
  * Result of mapping a single stream-json (inner) event to IPC outbound messages.
  *
- * `claudeMessageId` carries claude's own `message.id` whenever the stream
- * event reveals it (today: `message_start` only; future event types may
- * also expose it). It is **informational, not canonical** — under the
- * mid-turn-replay step 4 design, `ActiveTurn.msgId` is the tugcast-minted
- * `tug_turn_id` from `user_message.tug_turn_id` and is never overwritten
- * by claude's id. `dispatchEventToTurn` records the id on
- * `ActiveTurn.claudeMessageId` (first-write-wins) so the outbound
- * `turn_complete` / `turn_cancelled` can carry it as a back-reference into
- * claude's JSONL for the supervisor's merger intercept (step 4.4).
- * Absent on events that don't reveal the id.
+ * `messageId` carries claude's `message.id` whenever the stream event reveals
+ * it (today: `message_start` only; future event types may also expose it).
+ * `dispatchEventToTurn` canonicalizes `ActiveTurn.msgId` from this value so
+ * live emits and replay events agree on the same key for the same logical
+ * turn. Absent on events that don't reveal the id.
  */
 export interface EventMappingResult {
   messages: OutboundMessage[];
   newRev: number;
   partialText: string;
   gotResult: boolean;
-  claudeMessageId?: string;
+  messageId?: string;
 }
 
 /**
@@ -399,16 +394,12 @@ export interface TopLevelRoutingResult {
   resultMetadata?: ResultMetadata;
   systemMetadata?: Record<string, unknown>;
   /**
-   * Claude's own `message.id` for the turn, when revealed by this
-   * top-level event (today: the `assistant` snapshot). **Informational,
-   * not canonical** — see [`EventMappingResult.claudeMessageId`].
-   * `dispatchEventToTurn` records it on `ActiveTurn.claudeMessageId`
-   * (first-write-wins, belt-and-suspenders alongside the
-   * `mapStreamEvent` `message_start` path) so the outbound
-   * `turn_complete` / `turn_cancelled` can carry it. Absent on events
-   * that don't reveal the id.
+   * Claude's `message.id` for the turn, when revealed by this top-level
+   * event (today: the `assistant` snapshot only). Belt-and-suspenders to the
+   * `mapStreamEvent` `message_start` path: whichever lands first canonicalizes
+   * `ActiveTurn.msgId`. Absent on events that don't reveal the id.
    */
-  claudeMessageId?: string;
+  messageId?: string;
 }
 
 /**
@@ -429,7 +420,7 @@ export function routeTopLevelEvent(
   let parentToolUseId: string | undefined;
   let resultMetadata: ResultMetadata | undefined;
   let systemMetadata: Record<string, unknown> | undefined;
-  let claudeMessageId: string | undefined;
+  let messageId: string | undefined;
 
   // parent_tool_use_id is present on all 5 message types per PN-8.
   const rawParentId = event.parent_tool_use_id;
@@ -512,14 +503,14 @@ export function routeTopLevelEvent(
       const message = event.message as Record<string, unknown> | undefined;
       const rawId = message?.id;
       if (typeof rawId === "string" && rawId.length > 0) {
-        claudeMessageId = rawId;
+        messageId = rawId;
       }
-      // Wire emits in this branch are keyed by `ctx.msgId` (= the
-      // tug_turn_id minted by tugcast at user-submission time), not by
-      // claude's id. The captured `claudeMessageId` is informational
-      // and surfaces on `TopLevelRoutingResult.claudeMessageId` so the
-      // outbound `turn_complete` / `turn_cancelled` can carry it as a
-      // back-reference; it does NOT participate in wire keying.
+      // Use claude's id for any messages built here when present, so the
+      // first emit (synthetic text or tool_use within this snapshot) is
+      // already keyed by the canonical id. dispatchEventToTurn updates
+      // turn.msgId from `messageId` after this function returns; messages
+      // already on the wire carry the correct id from this assignment.
+      const effectiveMsgId = messageId ?? ctx.msgId;
       const model = (message?.model as string) || "";
       const isSynthetic = model === "<synthetic>";
       const content = (message?.content as Array<Record<string, unknown>>) || [];
@@ -530,7 +521,7 @@ export function routeTopLevelEvent(
           if (text.length > 0) {
             messages.push({
               type: "assistant_text",
-              msg_id: ctx.msgId,
+              msg_id: effectiveMsgId,
               seq: ctx.seq,
               rev: ctx.rev,
               text,
@@ -542,7 +533,7 @@ export function routeTopLevelEvent(
         } else if (block.type === "tool_use") {
           messages.push({
             type: "tool_use",
-            msg_id: ctx.msgId,
+            msg_id: effectiveMsgId,
             seq: ctx.seq,
             tool_name: (block.name as string) || "",
             tool_use_id: (block.id as string) || "",
@@ -766,7 +757,7 @@ export function routeTopLevelEvent(
     parentToolUseId,
     resultMetadata,
     systemMetadata,
-    claudeMessageId,
+    messageId,
   };
 }
 
@@ -783,22 +774,20 @@ export function mapStreamEvent(
   let newRev = ctx.rev;
   let partialText = accumulatedPartialText;
   let gotResult = false;
-  let claudeMessageId: string | undefined;
+  let messageId: string | undefined;
 
   const eventType = event.type as string | undefined;
 
   if (eventType === "message_start") {
-    // claude reveals its message.id in the message_start frame BEFORE
-    // any emit-bearing event for the turn (content_block_start /
-    // _delta land after). Surface it so dispatchEventToTurn can record
-    // it on `ActiveTurn.claudeMessageId` for the outbound
-    // `turn_complete` / `turn_cancelled`'s back-reference field. This
-    // is informational only — the wire-side `msg_id` stays at the
-    // tug_turn_id minted by tugcast at user-submission time.
+    // claude reveals its message.id in the message_start frame BEFORE any
+    // emit-bearing event for the turn (content_block_start / _delta land
+    // after). Surface it so dispatchEventToTurn can canonicalize
+    // ActiveTurn.msgId before the first wire emit, making live and replay
+    // events agree on the same key for the same logical turn.
     const message = event.message as Record<string, unknown> | undefined;
     const rawId = message?.id;
     if (typeof rawId === "string" && rawId.length > 0) {
-      claudeMessageId = rawId;
+      messageId = rawId;
     }
   } else if (eventType === "content_block_start") {
     const contentBlock = event.content_block as Record<string, unknown> | undefined;
@@ -876,7 +865,7 @@ export function mapStreamEvent(
     });
   }
 
-  return { messages, newRev, partialText, gotResult, claudeMessageId };
+  return { messages, newRev, partialText, gotResult, messageId };
 }
 
 // ---------------------------------------------------------------------------
@@ -903,19 +892,16 @@ export function mapStreamEvent(
  */
 class ActiveTurn {
   /**
-   * Stable id for this turn for the wire's lifetime. Sourced from
-   * `UserMessage.tug_turn_id` (the UUIDv4 tugcast mints at user-
-   * submission time and splices into the envelope before forwarding to
-   * tugcode); falls back to `newMsgId()` only on synthetic / fixture
-   * paths that don't supply the field. Read-only because the
-   * mid-turn-replay step 4 design makes the tug_turn_id authoritative
-   * — `ActiveTurn.msgId` is what the supervisor's ledger row keys on
-   * (`turns.tug_turn_id`) and what `runReplay` re-emits keys frames
-   * with on a cold-boot. Claude's own `message.id` is captured on
-   * `claudeMessageId` below for the outbound back-reference but never
-   * overwrites this field.
+   * Claude's id for this turn's terminal assistant entry. Mutable: starts
+   * as a placeholder UUID minted by `newMsgId()` so logs / EOF emits have
+   * something to show before claude responds, then frozen on the first
+   * stream event that reveals `message.id` (typically `message_start` —
+   * see `mapStreamEvent`'s branch — with the top-level `assistant`
+   * snapshot as a belt-and-suspenders fallback). After canonicalization,
+   * live and replay events for the same logical turn share a key, and
+   * the reducer's existing msg_id dedupe handles the merge for free.
    */
-  readonly msgId: string;
+  msgId: string;
   /** Outbound `seq` for the user-message half of this turn. */
   readonly seq: number;
   /**
@@ -959,23 +945,15 @@ class ActiveTurn {
    *   7. EOF: `error` on unexpected stream end
    */
   suppressEmit: boolean = false;
-  /**
-   * Claude's own `message.id` for this turn's terminal assistant
-   * entry. **Informational, not canonical** — see `msgId` above.
-   * Captured first-write-wins from whichever event reveals it first
-   * (`message_start` on the stream side, the top-level `assistant`
-   * snapshot as a belt-and-suspenders fallback). Surfaces on outbound
-   * `turn_complete` / `turn_cancelled` as `claude_message_id` so the
-   * supervisor's merger intercept (step 4.4) can record it on the
-   * ledger row as a back-reference into claude's JSONL. `null` until
-   * claude reveals an id; stays `null` for synthetic-only / no-
-   * assistant-content paths (e.g., a turn that ends on a tool error
-   * before any `message_start`).
-   */
-  claudeMessageId: string | null = null;
   /** Resolves when the turn ends (either via `gotResult` or stdout EOF). */
   readonly completion: Promise<void>;
   private resolveCompletion: (() => void) | null;
+  /**
+   * True after the first stream event with `message.id` has been
+   * adopted as `msgId`. Subsequent events with a matching id are no-ops;
+   * an event with a divergent id is logged and ignored.
+   */
+  private msgIdCanonicalized: boolean = false;
 
   constructor(
     msgId: string,
@@ -995,23 +973,24 @@ class ActiveTurn {
   }
 
   /**
-   * Record claude's `message.id` for this turn (first-write-wins). The
-   * stream-side `message_start` and the top-level `assistant` snapshot
-   * may each surface the id; whichever lands first wins. A subsequent
-   * matching call is a silent no-op; a subsequent divergent call logs
-   * a warn (claude shouldn't change ids mid-turn — defensive
-   * diagnostic). Returns `true` iff this call set the field.
+   * Adopt claude's `message.id` as the canonical `msgId` for this turn.
+   * Called by `dispatchEventToTurn` whenever a stream event surfaces
+   * `messageId`. First call wins; subsequent matching calls are no-ops;
+   * subsequent divergent calls log and return false.
+   *
+   * Returns true iff `msgId` was overwritten by this call.
    */
-  setClaudeMessageId(id: string): boolean {
-    if (this.claudeMessageId !== null) {
-      if (this.claudeMessageId !== id) {
+  canonicalizeMsgId(claudeMessageId: string): boolean {
+    if (this.msgIdCanonicalized) {
+      if (this.msgId !== claudeMessageId) {
         console.error(
-          `[tide::claude-message-id] divergence: turn already captured "${this.claudeMessageId}", ignoring "${id}"`,
+          `[tide::canonicalize] msg_id divergence: turn already adopted "${this.msgId}", ignoring "${claudeMessageId}"`,
         );
       }
       return false;
     }
-    this.claudeMessageId = id;
+    this.msgId = claudeMessageId;
+    this.msgIdCanonicalized = true;
     return true;
   }
 
@@ -2341,16 +2320,14 @@ export class SessionManager {
     // Tier 1: route the top-level message type.
     const routeResult = routeTopLevelEvent(event, ctx);
 
-    // Capture claude's `message.id` from the top-level event when
-    // revealed (today: the `assistant` snapshot). Belt-and-suspenders
-    // to the `mapStreamEvent` `message_start` path below — whichever
-    // lands first wins, subsequent calls are silent no-ops or warn on
-    // divergence. The wire-side `msg_id` already used by
-    // routeTopLevelEvent's emits is `ctx.msgId` (the tug_turn_id);
-    // this capture surfaces only on the outbound `turn_complete` /
-    // `turn_cancelled`'s `claude_message_id` field.
-    if (routeResult.claudeMessageId !== undefined) {
-      turn.setClaudeMessageId(routeResult.claudeMessageId);
+    // Canonicalize msgId from the top-level event (today: the `assistant`
+    // snapshot's `message.id`). routeTopLevelEvent has already used that
+    // id for any messages it built within this branch, so the messages
+    // about to be written carry the canonical id; the canonicalize here
+    // freezes it on the turn so subsequent emits agree.
+    if (routeResult.messageId !== undefined) {
+      turn.canonicalizeMsgId(routeResult.messageId);
+      ctx.msgId = turn.msgId;
     }
 
     for (const ipcMsg of routeResult.messages) {
@@ -2360,7 +2337,7 @@ export class SessionManager {
       }
       // Gate site 1/7: suppressEmit holds back live forwarding while
       // runReplay's bracket is on the wire. State mutations above
-      // (setClaudeMessageId) and below (turn.rev, turn.partialText)
+      // (canonicalizeMsgId) and below (turn.rev, turn.partialText)
       // continue regardless — the snapshot emission in
       // emitInflightTurnFromActiveTurn reads them.
       if (!turn.suppressEmit) writeLine(ipcMsg);
@@ -2373,12 +2350,14 @@ export class SessionManager {
         ctx,
         turn.partialText,
       );
-      // Capture from the stream event (today: `message_start`). Claude
-      // reveals `message.id` here BEFORE any emit-bearing event for the
-      // turn, so the first capture is typically this one. The wire-
-      // side `msg_id` stays at `turn.msgId` (= tug_turn_id) regardless.
-      if (streamResult.claudeMessageId !== undefined) {
-        turn.setClaudeMessageId(streamResult.claudeMessageId);
+      // Canonicalize from the stream event (today: `message_start`).
+      // Claude reveals `message.id` here BEFORE any emit-bearing event for
+      // the turn, so by the time `content_block_delta` lands ctx.msgId is
+      // already canonical and the first assistant_text on the wire is
+      // keyed by claude's id rather than the install-time placeholder.
+      if (streamResult.messageId !== undefined) {
+        turn.canonicalizeMsgId(streamResult.messageId);
+        ctx.msgId = turn.msgId;
       }
       for (const ipcMsg of streamResult.messages) {
         if (routeResult.parentToolUseId) {
@@ -2484,9 +2463,6 @@ export class SessionManager {
           seq: turnSeq,
           result: resultValue,
           ipc_version: 2,
-          ...(turn.claudeMessageId !== null
-            ? { claude_message_id: turn.claudeMessageId }
-            : {}),
         });
       }
       turn.finish();
@@ -2841,9 +2817,6 @@ export class SessionManager {
         seq: this.nextSeq(),
         result: "success",
         ipc_version: 2,
-        ...(turn.claudeMessageId !== null
-          ? { claude_message_id: turn.claudeMessageId }
-          : {}),
       });
     } else if (turn.interrupted) {
       writeLine({
@@ -2854,9 +2827,6 @@ export class SessionManager {
           ? turn.partialText
           : "User interrupted",
         ipc_version: 2,
-        ...(turn.claudeMessageId !== null
-          ? { claude_message_id: turn.claudeMessageId }
-          : {}),
       });
     }
   }
@@ -2895,9 +2865,6 @@ export class SessionManager {
           seq: turn.seq,
           partial_result: turn.partialText || "User interrupted",
           ipc_version: 2,
-          ...(turn.claudeMessageId !== null
-            ? { claude_message_id: turn.claudeMessageId }
-            : {}),
         });
       }
     } else if (!turn.gotResult) {
@@ -2978,19 +2945,14 @@ export class SessionManager {
     // (via `dispatchEventToTurn`'s `gotResult` branch) or when
     // claude's stdout EOFs (via `signalEofToActiveTurn`).
     //
-    // Step 4 mid-turn-replay: `msgId` is the tug_turn_id minted by
-    // tugcast at user-submission time and spliced into the inbound
-    // envelope (`msg.tug_turn_id`). It stays put for the wire's
-    // lifetime — the supervisor's ledger row keys on it
-    // (`turns.tug_turn_id`), and `runReplay` re-emits frames keyed by
-    // it on cold-boot. Claude's own `message.id` is captured on
-    // `ActiveTurn.claudeMessageId` for the outbound
-    // `turn_complete` / `turn_cancelled`'s back-reference field, but
-    // never overwrites `msgId`. Synthetic / fixture paths that omit
-    // `tug_turn_id` fall back to a fresh UUID via `newMsgId()` —
-    // production tugcast always supplies the field.
+    // `msgId` is a placeholder UUID that gets overwritten with claude's
+    // own `message.id` on the first stream event of the turn (see
+    // ActiveTurn.canonicalizeMsgId). userText / userAttachments are the
+    // source of truth for the in-flight turn's `user_message_replay`
+    // payload during a mid-turn `runReplay` — they hold what the user
+    // submitted in this call.
     const turn = new ActiveTurn(
-      msg.tug_turn_id ?? this.newMsgId(),
+      this.newMsgId(),
       this.nextSeq(),
       msg.text,
       msg.attachments ?? [],
