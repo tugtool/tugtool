@@ -584,6 +584,21 @@ pub trait SessionsRecorder: Send + Sync {
         partial_text: Option<&str>,
         now: i64,
     ) -> Result<(), crate::session_ledger::LedgerError>;
+
+    /// Reconcile every `pending` row for `session_id` to
+    /// `interrupted`. Called from the supervisor's spawn-worker hook
+    /// just before a fresh tugcode subprocess is launched for a
+    /// session whose previous tugcode is gone — any rows still in
+    /// `pending` at that moment are orphans from the prior run and
+    /// would otherwise stall a `runReplay` loop forever. Returns the
+    /// affected `tug_turn_id`s for telemetry; the caller emits a warn
+    /// line per orphan so tugcode-crash patterns surface in tracing.
+    /// Errors propagate from the underlying sqlite write.
+    fn reconcile_pending_for_session(
+        &self,
+        session_id: &str,
+        now: i64,
+    ) -> Result<Vec<String>, crate::session_ledger::LedgerError>;
 }
 
 /// Production implementation backed by a shared [`SessionLedger`].
@@ -863,6 +878,27 @@ impl SessionsRecorder for LedgerSessionsRecorder {
             claude_message_id = claude_message_id.unwrap_or(""),
         );
         Ok(())
+    }
+
+    fn reconcile_pending_for_session(
+        &self,
+        session_id: &str,
+        now: i64,
+    ) -> Result<Vec<String>, crate::session_ledger::LedgerError> {
+        let reconciled = self.ledger.reconcile_pending_for_session(session_id, now)?;
+        for tug_turn_id in &reconciled {
+            // One warn line per orphan so tugcode-crash patterns
+            // surface in tracing without flooding the log when the
+            // common case (no orphans) hits.
+            tracing::warn!(
+                target: "tide::ledger",
+                event = "turn_reconciled_pending_to_interrupted",
+                session_id,
+                tug_turn_id,
+                "reconciled orphan pending turn (tugcode for this session was gone at spawn-worker entry)",
+            );
+        }
+        Ok(reconciled)
     }
 }
 
@@ -1909,6 +1945,50 @@ impl AgentSupervisor {
                 tug_session_id = %tug_session_id,
                 card_id = card_id,
             );
+            // Crash-recovery reconciliation (mid-turn-replay step 4.7):
+            // we're about to launch a fresh tugcode subprocess for a
+            // session whose entry was `Idle` immediately above (the
+            // `should_spawn` gate). `Idle` means no tugcode is
+            // currently bound, so any `state='pending'` rows in the
+            // SessionLedger turns table for this session_id are
+            // orphans from a prior tugcode (clean exit before claude
+            // responded, or crash mid-stream). Mark them
+            // `interrupted` so the next `runReplay` surfaces them as
+            // `turn_cancelled` rather than leaving them stuck.
+            //
+            // Critically, this runs BEFORE any `dispatch_one`
+            // user_message intercept can insert a fresh pending row
+            // for this session — the dispatcher's lazy
+            // `Idle → Spawning` branch is documented above as
+            // "unreachable in normal client flow because
+            // do_spawn_session promotes Idle→Spawning before any
+            // CODE_INPUT frame can arrive." The fresh pending row
+            // therefore can't exist yet at this reconcile call site,
+            // so we don't risk interrupting a turn that's just been
+            // submitted in the same session lifecycle.
+            //
+            // Failure is non-fatal: the spawn proceeds and the
+            // orphans get another chance to reconcile on the next
+            // session resume.
+            match self.sessions_recorder.reconcile_pending_for_session(
+                tug_session_id.as_str(),
+                crate::session_ledger::now_millis(),
+            ) {
+                Ok(reconciled) if !reconciled.is_empty() => {
+                    tracing::info!(
+                        target: "tide::session-lifecycle",
+                        event = "supervisor.reconcile_pending_at_spawn",
+                        tug_session_id = %tug_session_id,
+                        count = reconciled.len(),
+                    );
+                }
+                Ok(_) => {}
+                Err(err) => warn!(
+                    error = %err,
+                    tug_session_id = %tug_session_id,
+                    "reconcile_pending_for_session failed; proceeding with spawn",
+                ),
+            }
             self.spawn_session_worker(&tug_session_id).await;
         }
 
@@ -3140,6 +3220,13 @@ impl SessionsRecorder for NoopSessionsRecorder {
         _now: i64,
     ) -> Result<(), crate::session_ledger::LedgerError> {
         Ok(())
+    }
+    fn reconcile_pending_for_session(
+        &self,
+        _session_id: &str,
+        _now: i64,
+    ) -> Result<Vec<String>, crate::session_ledger::LedgerError> {
+        Ok(Vec::new())
     }
 }
 
@@ -7204,6 +7291,13 @@ mod tests {
             self.inner
                 .mark_turn_interrupted(tug_turn_id, claude_message_id, partial_text, now)
         }
+        fn reconcile_pending_for_session(
+            &self,
+            session_id: &str,
+            now: i64,
+        ) -> Result<Vec<String>, crate::session_ledger::LedgerError> {
+            self.inner.reconcile_pending_for_session(session_id, now)
+        }
     }
 
     fn make_supervisor_with_failing_recorder(
@@ -7783,5 +7877,185 @@ mod tests {
 
         cancel.cancel();
         let _ = tokio::time::timeout(std::time::Duration::from_secs(1), merger_handle).await;
+    }
+
+    // ── Crash-recovery reconciliation (mid-turn-replay step 4.7) ─────────────
+    //
+    // do_spawn_session calls `reconcile_pending_for_session` in its
+    // eager-spawn block when the entry is `Idle` (i.e., no tugcode
+    // currently bound to this session, so any `pending` rows are
+    // orphans from the prior tugcode). The "live tugcode" gate is
+    // structural: rebinding to a `Live` entry doesn't go through the
+    // eager-spawn block (the `should_spawn` predicate filters it),
+    // so reconciliation never fires while a session's tugcode is
+    // alive.
+
+    #[tokio::test]
+    async fn fresh_spawn_reconciles_orphan_pending_rows() {
+        // Pre-seed the ledger with two pending rows for a session
+        // (simulating the prior tugcode having inserted them and then
+        // crashed before responding). spawn_session via CONTROL fires
+        // the eager-spawn block which calls reconcile; both rows
+        // transition to interrupted before the new tugcode is
+        // launched.
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _ctrl_rx) = make_supervisor_with_ledger(store);
+
+        // Seed: pretend a prior tugcode had this session live. Insert
+        // sessions row + two pending turns rows directly.
+        ledger
+            .record_spawn(
+                "sess-orphans",
+                "ws-1",
+                test_project_dir(),
+                "card-prior",
+                1_000,
+            )
+            .unwrap();
+        ledger
+            .insert_pending_turn("sess-orphans", "tt-orph-a", "before", &[], 1_000)
+            .unwrap();
+        ledger
+            .insert_pending_turn("sess-orphans", "tt-orph-b", "during", &[], 1_500)
+            .unwrap();
+        ledger.mark_closed("sess-orphans").unwrap();
+
+        // Open a fresh card; eager-spawn fires.
+        sup.handle_control(
+            "spawn_session",
+            &spawn_payload("card-1", "sess-orphans"),
+            10,
+        )
+        .await
+        .expect_handled();
+
+        // Both orphans now interrupted.
+        let rows = ledger.list_turns_for_session("sess-orphans").unwrap();
+        assert_eq!(rows.len(), 2);
+        for r in &rows {
+            assert_eq!(
+                r.state,
+                crate::session_ledger::TurnState::Interrupted,
+                "orphan pending row {} must be reconciled to interrupted",
+                r.tug_turn_id,
+            );
+            assert_eq!(r.partial_text, None);
+        }
+    }
+
+    #[tokio::test]
+    async fn fresh_spawn_does_not_disturb_just_inserted_user_message_row() {
+        // Failure-first proof of the "do_spawn_session-not-
+        // spawn_session_worker" placement choice: dispatch_one's
+        // user_message intercept inserts a pending row on every
+        // submit. If reconciliation were placed AFTER that insert
+        // (e.g., inside spawn_session_worker), the just-submitted
+        // turn would be marked interrupted before claude could
+        // respond. Pinned by driving the flow and asserting the new
+        // pending row stays pending after CONTROL spawn_session +
+        // first user_message.
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _ctrl_rx) = make_supervisor_with_ledger(store);
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-fresh"), 10)
+            .await
+            .expect_handled();
+        sup.dispatch_one(user_message_frame("sess-fresh", "first prompt"))
+            .await;
+
+        let rows = ledger.list_turns_for_session("sess-fresh").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].user_text, "first prompt");
+        assert_eq!(
+            rows[0].state,
+            crate::session_ledger::TurnState::Pending,
+            "the just-submitted user_message's pending row must NOT be reconciled at spawn time",
+        );
+    }
+
+    #[tokio::test]
+    async fn rebind_to_live_session_does_not_reconcile() {
+        // The eager-spawn block is gated on `entry.spawn_state ==
+        // Idle`. A rebind to a Live (or Spawning) entry skips the
+        // block — and therefore skips reconciliation. Pin this by
+        // driving spawn_session twice: first sets up + spawns,
+        // second is a rebind that must not reconcile.
+        //
+        // Simulating live state in this test rig: after the first
+        // spawn, the ledger entry is in Spawning (the StallSpawner
+        // never produces session_init so it doesn't transition to
+        // Live, but Spawning is also non-Idle, which exercises the
+        // same gate).
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _ctrl_rx) = make_supervisor_with_ledger(store);
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-live"), 10)
+            .await
+            .expect_handled();
+        // Submit a user_message to insert a pending row that
+        // represents the live in-flight turn.
+        sup.dispatch_one(user_message_frame("sess-live", "in flight"))
+            .await;
+
+        // Sanity: row is pending.
+        let before = ledger.list_turns_for_session("sess-live").unwrap();
+        assert_eq!(before.len(), 1);
+        assert_eq!(before[0].state, crate::session_ledger::TurnState::Pending,);
+
+        // Rebind: a second CONTROL spawn_session for the same
+        // session lands while the entry is still Spawning. The
+        // eager-spawn block's `should_spawn` predicate returns false
+        // (entry.spawn_state != Idle), so reconciliation does NOT
+        // fire — the pending row survives.
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-live"), 11)
+            .await
+            .expect_handled();
+
+        let after = ledger.list_turns_for_session("sess-live").unwrap();
+        assert_eq!(after.len(), 1);
+        assert_eq!(
+            after[0].state,
+            crate::session_ledger::TurnState::Pending,
+            "pending row for a still-bound session must NOT be reconciled on rebind",
+        );
+    }
+
+    #[tokio::test]
+    async fn reconciliation_warn_emitted_per_orphan() {
+        // The Ledger-side trait impl emits one warn line per
+        // reconciled orphan so tugcode-crash patterns surface in
+        // tracing. Drive a session-resume scenario and verify the
+        // returned reconcile vec carries every orphan id (the trait
+        // method's return value is what the warn loop reads from).
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let (_sup, ledger, _ctrl_rx) = make_supervisor_with_ledger(store);
+
+        ledger
+            .record_spawn("sess-w", "ws-1", test_project_dir(), "card-1", 1_000)
+            .unwrap();
+        ledger
+            .insert_pending_turn("sess-w", "tt-w-1", "a", &[], 1_000)
+            .unwrap();
+        ledger
+            .insert_pending_turn("sess-w", "tt-w-2", "b", &[], 1_500)
+            .unwrap();
+        ledger.mark_closed("sess-w").unwrap();
+
+        // Direct trait call (recorder-level invariant). The
+        // supervisor's eager-spawn block routes through this same
+        // trait method.
+        let recorder: Arc<dyn SessionsRecorder> =
+            Arc::new(LedgerSessionsRecorder::new(Arc::clone(&ledger)));
+        let reconciled = recorder
+            .reconcile_pending_for_session("sess-w", 5_000)
+            .unwrap();
+        assert_eq!(reconciled, vec!["tt-w-1".to_owned(), "tt-w-2".to_owned()]);
+
+        // Both rows now interrupted with the new completed_at.
+        let rows = ledger.list_turns_for_session("sess-w").unwrap();
+        for r in &rows {
+            assert_eq!(r.state, crate::session_ledger::TurnState::Interrupted);
+            assert_eq!(r.completed_at, Some(5_000));
+        }
     }
 }

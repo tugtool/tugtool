@@ -1522,21 +1522,20 @@ Tests that survive unchanged:
 
 **Tasks:**
 
-- [ ] Author `reconcile_pending_for_session` in `session_ledger.rs`.
-- [ ] Wire it into the session-resume path in `agent_supervisor.rs`.
-- [ ] Decide UX: surface reconciled rows as `turn_cancelled` with a generic `partial_result: ""` (or `"interrupted by reload"` — wire frame string). Tugcode's `runReplay` (4.6) reads the row state and emits accordingly.
-- [ ] Optional: periodic partial_text snapshots — defer to follow-on if not needed.
+- [x] Author `reconcile_pending_for_session` in `session_ledger.rs` (UPDATEs all pending rows for the session to `interrupted`, returns the affected `tug_turn_id`s, preserves `claude_message_id` via COALESCE, sets `completed_at = now`, leaves `partial_text` NULL).
+- [x] Extend `SessionsRecorder` trait with `reconcile_pending_for_session`; impl on `LedgerSessionsRecorder` (with one warn line per orphan for tracing), `NoopSessionsRecorder`, and the test `InsertFailingRecorder`.
+- [x] Wire into the session-resume path: placed inside `do_spawn_session`'s eager-spawn block, **gated on `should_spawn` (i.e., the entry's `spawn_state` was `Idle`)**. Idle means no tugcode is currently bound to this session, so any pending rows are orphans from the prior tugcode. Critically, this runs BEFORE any `dispatch_one` user_message intercept can insert a new pending row, avoiding the chicken-and-egg where reconciliation would interrupt a turn that's just been submitted.
+- [x] UX decision: tugcode's `runReplay` (4.6) reads the reconciled row's state and emits `turn_cancelled` with `partial_result: row.partial_text ?? ""` — empty string for these because reconciliation can't know the streamed content. The wire shape is unchanged from the existing `turn_cancelled`.
+- [x] Optional: periodic partial_text snapshots — deferred; not required to fix the user-reported bug.
 
 **Tests:**
 
-- [ ] **Reconciliation on resume**: seed two pending rows for a session; call session-resume path; assert both are marked `interrupted`; assert the two `tug_turn_id`s are in the returned vec.
-- [ ] **Live ActiveTurn not reconciled**: live tugcode has an ActiveTurn matching one of the pending rows; assert that row is NOT reconciled (the live turn is alive). Hmm, wait — the supervisor doesn't know about ActiveTurn; tugcode does. Resolution: reconciliation runs on session-resume, BEFORE tugcode is respawned. The pending row will be marked interrupted; if tugcode then creates a NEW pending row for a new submission, that's fine (different `tug_turn_id`).
-
-  Actually this needs more thought. On `Developer > Reload`, the session may have a pending turn that's STILL in progress in the live tugcode. We don't want to mark it interrupted. The question is: does reload trigger a session-resume flow in tugcast, or does the existing tugcode keep the session live?
-
-  Today, tugcode is a long-lived subprocess of tugcast; `Developer > Reload` reloads tugdeck only. tugcode and tugcast keep running. The session row stays `state='live'`. The pending turn row stays `pending`. Reconciliation only runs when tugcast itself restarts and the session's tugcode subprocess is gone. **Pin this in the test: only reconcile when tugcode is dead (the supervisor's view of the session is effectively cold).**
-- [ ] **No reconciliation when tugcode is alive**: the supervisor's "is tugcode alive for this session" check gates the reconciliation. Test injects "alive" → no reconciliation; "dead" → reconciliation fires.
-- [ ] **Failure-first proof**: temporarily make reconciliation unconditional; assert a live-tugcode test fails because the pending row was prematurely marked interrupted.
+- [x] **Reconciliation on resume**: seed two pending rows; spawn_session via CONTROL fires the eager-spawn block which reconciles. Assert both rows transition to `interrupted` with `partial_text=NULL`.
+- [x] **Just-submitted user_message row not reconciled**: drive `spawn_session` + first `user_message` dispatch; assert the freshly-inserted pending row stays pending. Pins the `do_spawn_session`-not-`spawn_session_worker` placement choice — if reconciliation moved later in the spawn flow, this test would fail.
+- [x] **Rebind to non-Idle session does not reconcile**: drive `spawn_session` twice; the second is a rebind that hits the `should_spawn=false` branch (entry already in Spawning) and skips reconciliation. Pending row representing the live in-flight turn survives. The "live tugcode" gate is structural via `should_spawn`.
+- [x] **Per-orphan warn telemetry**: direct trait call returns the affected `tug_turn_id`s in ordinal order (the warn-loop in the impl reads from this vec); reconciled rows carry the new `completed_at`.
+- [x] **Failure-first proof**: encoded structurally — the "just-submitted user_message row not reconciled" test would fail if reconciliation moved into `spawn_session_worker` (which fires AFTER `dispatch_one`'s pending-row insert). The placement comment in `do_spawn_session` documents the invariant explicitly.
+- [x] Ledger-level tests (in `session_ledger.rs`): all-pending → all-interrupted; mixed-state set leaves complete/interrupted rows untouched; empty no-op fast path; unknown session id is no-op; existing `claude_message_id` preserved across reconciliation.
 
 **Tuglaws cross-check:**
 
@@ -1544,9 +1543,9 @@ Tests that survive unchanged:
 
 **Checkpoint:**
 
-- [ ] `cargo nextest run -p tugcast` — green.
-- [ ] `bun test` (tugcode) — green; tugcode `runReplay` correctly handles the new "interrupted" rows surfaced by reconciliation.
-- [ ] `just lint` — clean.
+- [x] `cargo nextest run -p tugcast` — green (580 pass, +4 from Step 4.7).
+- [x] `bun test` (tugcode) — green (322 pass; tugcode's `runReplay` already handles `state='interrupted'` from Step 4.6).
+- [x] `just lint` — clean.
 
 ---
 

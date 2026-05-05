@@ -966,6 +966,66 @@ impl SessionLedger {
         }
     }
 
+    /// Reconcile every `pending` row owned by `session_id` to
+    /// `interrupted`. Used by the supervisor's spawn-worker hook
+    /// (mid-turn-replay step 4.7) just before launching a fresh
+    /// tugcode subprocess for a session whose previous tugcode is
+    /// gone — any rows still in `pending` at that moment are orphans
+    /// from the prior tugcode (clean exit before claude responded, or
+    /// crash mid-stream). Marking them `interrupted` lets the
+    /// next `runReplay` surface them as `turn_cancelled` rather than
+    /// leaving them stuck in a stale `pending` state forever.
+    ///
+    /// Policy: `partial_text` is left as `NULL` (we don't have the
+    /// streamed content; only the row's `user_text` survives), and
+    /// `claude_message_id` is preserved (`COALESCE`) — if a future
+    /// crash-recovery snapshot path populates it before this call
+    /// runs, we keep the value for the next run's JSONL lookup.
+    /// `completed_at` is set to `now` so the cancel timestamp
+    /// reflects when the supervisor reconciled, not when the original
+    /// turn started.
+    ///
+    /// Returns the `tug_turn_id`s of every reconciled row so the
+    /// caller can emit telemetry (one warn line per orphan in
+    /// production helps surface tugcode-crash patterns). Wraps the
+    /// SELECT-then-UPDATE in an immediate transaction so a concurrent
+    /// `mark_turn_complete` on the same row can't race the
+    /// reconciliation; whichever wins commits its full state
+    /// transition.
+    pub fn reconcile_pending_for_session(
+        &self,
+        session_id: &str,
+        now: i64,
+    ) -> Result<Vec<String>, LedgerError> {
+        let mut conn = self.db.lock().expect("ledger mutex");
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let pending_ids: Vec<String> = {
+            let mut stmt = tx.prepare(
+                "SELECT tug_turn_id FROM turns
+                 WHERE session_id = ?1 AND state = 'pending'
+                 ORDER BY ordinal ASC",
+            )?;
+            stmt.query_map(params![session_id], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        if pending_ids.is_empty() {
+            tx.commit()?;
+            return Ok(Vec::new());
+        }
+        // Bulk UPDATE — every pending row owned by this session goes
+        // to interrupted. partial_text stays NULL (we have no content);
+        // claude_message_id preserved via COALESCE if it was set.
+        tx.execute(
+            "UPDATE turns
+             SET state = 'interrupted',
+                 completed_at = ?2
+             WHERE session_id = ?1 AND state = 'pending'",
+            params![session_id, now],
+        )?;
+        tx.commit()?;
+        Ok(pending_ids)
+    }
+
     /// Lookup by claude's message id. Used by the JSONL-bootstrap
     /// migration in 4.8 ("did we already mint a tug_turn_id for this
     /// claude_message_id?") and by replay in 4.6 to back-reference partial
@@ -2351,6 +2411,138 @@ mod tests {
         assert_eq!(
             ordinals, expected,
             "ordinals must be unique and contiguous from 0",
+        );
+    }
+
+    #[test]
+    fn reconcile_pending_for_session_marks_all_pending_interrupted() {
+        // Multiple pending rows for one session: every one transitions
+        // to `interrupted`; the function returns all reconciled ids in
+        // ordinal order. Rows for unrelated sessions are untouched.
+        let l = fresh();
+        let now = millis(0);
+        seed_live(&l, "s1", WS_A, "card-1", now);
+        seed_live(&l, "s2", WS_A, "card-2", now);
+        l.insert_pending_turn("s1", "t1a", "first", &[], now)
+            .unwrap();
+        l.insert_pending_turn("s1", "t1b", "second", &[], now)
+            .unwrap();
+        l.insert_pending_turn("s2", "t2a", "other-session", &[], now)
+            .unwrap();
+
+        let cancelled_at = now + 5_000;
+        let reconciled = l.reconcile_pending_for_session("s1", cancelled_at).unwrap();
+        assert_eq!(reconciled, vec!["t1a".to_owned(), "t1b".to_owned()]);
+
+        for id in ["t1a", "t1b"] {
+            let r = l.get_turn(id).unwrap().unwrap();
+            assert_eq!(r.state, TurnState::Interrupted);
+            assert_eq!(r.partial_text, None);
+            assert_eq!(r.completed_at, Some(cancelled_at));
+            // user_text preserved.
+            assert!(!r.user_text.is_empty());
+        }
+        // Unrelated session's pending row is NOT touched.
+        let other = l.get_turn("t2a").unwrap().unwrap();
+        assert_eq!(other.state, TurnState::Pending);
+    }
+
+    #[test]
+    fn reconcile_pending_for_session_skips_complete_and_interrupted_rows() {
+        // Mixed-state set: complete + interrupted + pending. Only the
+        // pending row reconciles; the others are untouched.
+        let l = fresh();
+        let now = millis(0);
+        seed_live(&l, "s1", WS_A, "card-1", now);
+        l.insert_pending_turn("s1", "tt-complete", "done", &[], now)
+            .unwrap();
+        l.mark_turn_complete("tt-complete", "msg_complete", now + 1_000)
+            .unwrap();
+        l.insert_pending_turn("s1", "tt-interrupted", "stopped", &[], now)
+            .unwrap();
+        l.mark_turn_interrupted("tt-interrupted", None, Some("partial..."), now + 2_000)
+            .unwrap();
+        l.insert_pending_turn("s1", "tt-pending", "still going", &[], now)
+            .unwrap();
+
+        let reconciled = l.reconcile_pending_for_session("s1", now + 10_000).unwrap();
+        assert_eq!(reconciled, vec!["tt-pending".to_owned()]);
+
+        // Complete row preserved.
+        let c = l.get_turn("tt-complete").unwrap().unwrap();
+        assert_eq!(c.state, TurnState::Complete);
+        assert_eq!(c.claude_message_id.as_deref(), Some("msg_complete"));
+
+        // Interrupted row preserved (cancelled_at unchanged).
+        let i = l.get_turn("tt-interrupted").unwrap().unwrap();
+        assert_eq!(i.state, TurnState::Interrupted);
+        assert_eq!(i.completed_at, Some(now + 2_000));
+        assert_eq!(i.partial_text.as_deref(), Some("partial..."));
+
+        // Pending → interrupted with NULL partial_text and the
+        // reconciliation timestamp.
+        let p = l.get_turn("tt-pending").unwrap().unwrap();
+        assert_eq!(p.state, TurnState::Interrupted);
+        assert_eq!(p.partial_text, None);
+        assert_eq!(p.completed_at, Some(now + 10_000));
+    }
+
+    #[test]
+    fn reconcile_pending_for_session_returns_empty_when_none_pending() {
+        // No pending rows: return Ok([]) without writing anything.
+        // Pins the no-op fast path.
+        let l = fresh();
+        let now = millis(0);
+        seed_live(&l, "s1", WS_A, "card-1", now);
+        l.insert_pending_turn("s1", "tt-1", "x", &[], now).unwrap();
+        l.mark_turn_complete("tt-1", "msg_1", now + 1_000).unwrap();
+
+        let reconciled = l.reconcile_pending_for_session("s1", now + 5_000).unwrap();
+        assert!(reconciled.is_empty());
+        let r = l.get_turn("tt-1").unwrap().unwrap();
+        // Complete row's completed_at unchanged.
+        assert_eq!(r.completed_at, Some(now + 1_000));
+    }
+
+    #[test]
+    fn reconcile_pending_for_session_unknown_session_is_no_op() {
+        let l = fresh();
+        let reconciled = l
+            .reconcile_pending_for_session("never-existed", millis(0))
+            .unwrap();
+        assert!(reconciled.is_empty());
+    }
+
+    #[test]
+    fn reconcile_pending_for_session_preserves_existing_claude_message_id() {
+        // Stretch case: a future code path stamps claude_message_id on
+        // a pending row before the reconciliation runs (e.g., a
+        // partial-snapshot path lands the id ahead of cancel). The
+        // reconcile UPDATE doesn't touch claude_message_id — only
+        // state, completed_at. Pinned so a future "always NULL it"
+        // refactor can't silently drop a known back-reference.
+        let l = fresh();
+        let now = millis(0);
+        seed_live(&l, "s1", WS_A, "card-1", now);
+        l.insert_pending_turn("s1", "tt-1", "x", &[], now).unwrap();
+        {
+            let conn = l.db.lock().expect("ledger mutex");
+            conn.execute(
+                "UPDATE turns SET claude_message_id = 'msg_pre'
+                 WHERE tug_turn_id = 'tt-1'",
+                [],
+            )
+            .unwrap();
+        }
+
+        let reconciled = l.reconcile_pending_for_session("s1", now + 1_000).unwrap();
+        assert_eq!(reconciled, vec!["tt-1".to_owned()]);
+        let r = l.get_turn("tt-1").unwrap().unwrap();
+        assert_eq!(r.state, TurnState::Interrupted);
+        assert_eq!(
+            r.claude_message_id.as_deref(),
+            Some("msg_pre"),
+            "claude_message_id preserved across reconciliation",
         );
     }
 
