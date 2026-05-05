@@ -153,6 +153,75 @@ export type JsonlReadResult =
   | { kind: "unreadable"; message: string };
 
 /**
+ * One row of the `turns` submission journal read by tugcode through
+ * the cross-process bun:sqlite handle. Mirrors the Rust `JournalRow`
+ * shape (mid-turn-replay [Step 5.2](roadmap/tugplan-tide-mid-turn-replay.md#step-5-2)).
+ * Tugcode never writes to this table; tugcast's `dispatch_one`
+ * intercept owns inserts ([Step 4.3](roadmap/tugplan-tide-mid-turn-replay.md#step-4-3))
+ * and the merger's `apply_outbound_turn_intercept` owns FIFO deletes
+ * ([Step 5.3](roadmap/tugplan-tide-mid-turn-replay.md#step-5-3)).
+ */
+interface JournalRow {
+  journal_id: string;
+  session_id: string;
+  user_text: string;
+  user_attachments: Buffer | Uint8Array;
+  created_at: number;
+}
+
+/**
+ * Build a multiset (text → count) of user-message texts seen in the
+ * JSONL bytes. Used by [`runReplay`]'s pending-row injection
+ * (mid-turn-replay [Step 5.6](roadmap/tugplan-tide-mid-turn-replay.md#step-5-6))
+ * to decide which journal rows still need a synthetic
+ * `user_message_replay` emit (i.e., the rows whose `user_text` does
+ * NOT appear as a `user_message` line in JSONL — claude has not yet
+ * acknowledged those submissions).
+ *
+ * Multi-occurrence handling: if claude has written N user_messages
+ * with the same text, the count is N; the journal-pass decrements
+ * the count once per matched row and emits a synthetic only when
+ * the count is exhausted. This handles duplicate-text submissions
+ * better than a Set membership check at no extra parse cost.
+ *
+ * Tool-result entries (also `type: "user"` in JSONL but with
+ * `tool_result` content blocks) are skipped — they're not user
+ * submissions. Malformed JSON lines are skipped silently (matches
+ * the translator's permissiveness).
+ */
+export function extractUserMessageTextCounts(jsonl: string): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const rawLine of jsonl.split("\n")) {
+    const line = rawLine.trim();
+    if (line.length === 0) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (typeof parsed !== "object" || parsed === null) continue;
+    const entry = parsed as { type?: unknown; message?: unknown };
+    if (entry.type !== "user") continue;
+    const message = entry.message as { content?: unknown } | undefined;
+    const content = message?.content;
+    if (!Array.isArray(content)) continue;
+    const textParts: string[] = [];
+    for (const block of content) {
+      if (typeof block !== "object" || block === null) continue;
+      const b = block as { type?: unknown; text?: unknown };
+      if (b.type === "text" && typeof b.text === "string") {
+        textParts.push(b.text);
+      }
+    }
+    if (textParts.length === 0) continue;
+    const text = textParts.join("");
+    counts.set(text, (counts.get(text) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
  * Default JSONL reader. Uses `Bun.file(path)` and treats `ENOENT` as
  * `missing`, every other error as `unreadable`. Replaceable from
  * tests via {@link SessionManager}'s `jsonlReader` option.
@@ -1912,6 +1981,12 @@ export class SessionManager {
     // post-iteration work between the last committed-turn frame and the
     // bracket-closing event.
     let bufferedReplayComplete: OutboundMessage | null = null;
+    // Step 5.6: pending-row synthetics inject between replay_started
+    // and the next translator emit, ONCE per replay. Tracked via this
+    // flag so the loop body fires the injection on the first
+    // `replay_started` it forwards and skips it on every subsequent
+    // event.
+    let pendingRowSyntheticsInjected = false;
 
     const iter = translateJsonlSession(input, {
       telemetry: this.replayTelemetry,
@@ -1951,15 +2026,28 @@ export class SessionManager {
             }
           }
           if (msg.type === "replay_complete") {
-            // Buffer it; the cold-boot path emits no in-flight
-            // emission, so we just write replay_complete after the
-            // loop. Ledger path is the one that drives in-flight via
-            // the `state='pending'` row.
+            // Buffer it; the bracket-close emits last after any
+            // post-iteration synthetics (Step 5.6 injects before the
+            // first translator yield, so by `replay_complete` the
+            // synthetics have already landed).
             if (typeof msg.count === "number") count = msg.count;
             bufferedReplayComplete = msg;
             continue;
           }
           writeLine(msg);
+          // Step 5.6 — pending-row replay. The translator's first
+          // emit is `replay_started`; we inject synthetic
+          // `user_message_replay` frames for journal rows whose
+          // `user_text` is not in JSONL right after the bracket
+          // opens. The synthetics land in `phase: replaying` (the
+          // reducer's handleUserMessageReplay phase guard) so the
+          // user's pending submissions render before the JSONL pass
+          // emits anything else. See `injectPendingRowSynthetics` for
+          // the design notes.
+          if (msg.type === "replay_started" && !pendingRowSyntheticsInjected) {
+            pendingRowSyntheticsInjected = true;
+            this.injectPendingRowSynthetics(input);
+          }
         } else {
           aborted = winner;
           break;
@@ -2058,6 +2146,134 @@ export class SessionManager {
       count,
       elapsed_ms: elapsedMs,
     });
+  }
+
+  /**
+   * Pull the submission journal's pending rows for this session via
+   * the cross-process bun:sqlite handle. Read-only; the supervisor's
+   * `dispatch_one` intercept owns inserts and the merger's
+   * `apply_outbound_turn_intercept` owns FIFO deletes — tugcode never
+   * writes here. Returns `[]` when the DB handle is unavailable
+   * (file missing at construction, opted-out by tests) or the read
+   * fails (corruption, schema mismatch); the caller treats either as
+   * "no pending rows to surface" so a sqlite hiccup doesn't block
+   * the user-visible JSONL replay.
+   *
+   * Mid-turn-replay [Step 5.6](roadmap/tugplan-tide-mid-turn-replay.md#step-5-6).
+   */
+  private readPendingTurnsForSession(): JournalRow[] {
+    if (this.sessionsDb === null) return [];
+    try {
+      const stmt = this.sessionsDb.query<JournalRow, [string]>(
+        `SELECT journal_id, session_id, user_text, user_attachments, created_at
+         FROM turns
+         WHERE session_id = ?
+         ORDER BY created_at ASC, journal_id ASC`,
+      );
+      return stmt.all(this.sessionId);
+    } catch (err) {
+      logReplay("sessions_db_read_error", {
+        session_id: this.sessionId,
+        reason: err instanceof Error ? err.message : String(err),
+      });
+      return [];
+    }
+  }
+
+  /**
+   * Decode the BLOB-encoded `user_attachments` JSON array into the
+   * `Attachment[]` shape the wire `user_message_replay` carries. A
+   * malformed BLOB (shouldn't happen under tugcast's writer; pinned
+   * defensively) yields an empty array so the synthetic emit's user
+   * side still surfaces.
+   */
+  private decodeUserAttachmentsBlob(blob: Buffer | Uint8Array): Attachment[] {
+    try {
+      const text = Buffer.from(blob).toString("utf8");
+      const parsed: unknown = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        return parsed as Attachment[];
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Pre-translator pass for the never-drop guarantee
+   * (mid-turn-replay [Step 5.6](roadmap/tugplan-tide-mid-turn-replay.md#step-5-6)
+   * — the load-bearing implementation of [DM08]).
+   *
+   * For each pending journal row whose `user_text` does not appear as
+   * a `user_message` line in the JSONL, emit a synthetic
+   * `user_message_replay` frame. The synthetic carries the journal id
+   * as `msg_id` (a TEMPORARY KEY for the reducer's
+   * `pendingUserMessage` slot) and the row's user_text + attachments.
+   *
+   * **Why no terminal event for the synthetic.** The pending row by
+   * definition has no claude response yet — there is no scratch
+   * content and no claude message id. Emitting a `turn_complete`
+   * here would commit an empty assistant TurnEntry. Withholding the
+   * terminal leaves `pendingUserMessage` populated; when the live
+   * drain produces the response post-replay (claude --resume
+   * continues), the first response frame's claude `message.id`
+   * becomes `activeMsgId` and the eventual live `turn_complete`
+   * commits a proper TurnEntry whose `userMessage` text comes from
+   * `pendingUserMessage` — the journal id is a temporary key for the
+   * reducer's state during the gap.
+   *
+   * **Why the synthetic emits BEFORE the JSONL pass.** Per
+   * [DM08]'s implications and the plan's "synthetic injection happens
+   * inside the `replay_started` / `replay_complete` bracket (between
+   * `replay_started` emit and the first translator emit)" — the
+   * synthetic emits at the start of the bracket so it arrives in
+   * `phase: replaying` (the reducer's
+   * [`handleUserMessageReplay`] phase guard) and, when the JSONL is
+   * empty (cold-boot of a fresh session whose only state is the
+   * pending journal row), the synthetic's `pendingUserMessage`
+   * survives until the live drain consumes it.
+   *
+   * **Acknowledged residual gap (a):** when JSONL has committed
+   * turns OR an in-flight trailing turn AND the journal also has
+   * unmatched pending rows, the JSONL pass's
+   * `user_message_replay` frames overwrite the synthetic's
+   * `pendingUserMessage`. Confirmed-acceptable 2026-05-05; the
+   * messages remain durably stored, render fully when claude
+   * responds (in the common single-pending case), and the merger's
+   * FIFO deletion keeps the journal coherent.
+   */
+  private injectPendingRowSynthetics(input: ReplayInput): void {
+    const pendingRows = this.readPendingTurnsForSession();
+    if (pendingRows.length === 0) return;
+
+    const jsonl = input.kind === "ok" ? input.jsonl : "";
+    const userMessageCounts = extractUserMessageTextCounts(jsonl);
+
+    for (const row of pendingRows) {
+      const remaining = userMessageCounts.get(row.user_text) ?? 0;
+      if (remaining > 0) {
+        // The submission appears in JSONL — claude has acknowledged
+        // it; the JSONL pass will emit the corresponding
+        // `user_message_replay`. Decrement so a duplicate-text
+        // submission later in the journal correctly accounts for
+        // multiple JSONL matches.
+        userMessageCounts.set(row.user_text, remaining - 1);
+        continue;
+      }
+      const attachments = this.decodeUserAttachmentsBlob(row.user_attachments);
+      writeLine({
+        type: "user_message_replay",
+        msg_id: row.journal_id,
+        text: row.user_text,
+        attachments,
+        ipc_version: 2,
+      });
+      logReplay("pending_row_synthetic_emit", {
+        session_id: this.sessionId,
+        journal_id: row.journal_id,
+      });
+    }
   }
 
   /**

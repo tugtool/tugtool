@@ -2177,19 +2177,24 @@ Comparing pending rows against JSONL by exact text match is the simplest reliabl
 
 **Tasks:**
 
-- [ ] Add the pre-translator pass to `runReplay`.
-- [ ] Read JSONL once in the pass (use the existing translator's resolver to find the path; do a streaming read for `user_message` lines only).
-- [ ] Emit synthetic `user_message_replay` frames for unmatched pending rows.
-- [ ] Document the journal-id-as-temporary-key in a comment at the emit site.
-- [ ] Add failure-first proof: a test that exercises the never-drop guarantee.
+- [x] Add `JournalRow` type and `extractUserMessageTextCounts(jsonl)` helper to `session.ts`. The helper builds a multiset (text → count) from JSONL `user_message` lines so duplicate-text submissions account correctly during the journal-pass.
+- [x] Add `SessionManager.readPendingTurnsForSession()` — bun:sqlite query against the narrowed Step 5.2 schema (5 columns, ordered by `created_at ASC, journal_id ASC`).
+- [x] Add `SessionManager.decodeUserAttachmentsBlob(blob)` — JSON BLOB → `Attachment[]`, defensive against malformed blobs.
+- [x] Add `SessionManager.injectPendingRowSynthetics(input)` — orchestrates the read + match + emit. Decrements the JSONL multiset on each match so duplicate-text rows correctly account for partial JSONL matches.
+- [x] Wire the call into `runReplay`'s loop: detect `replay_started` from the translator, write it, fire `injectPendingRowSynthetics(input)` once. The synthetic frames land in `phase: replaying` (the reducer's `handleUserMessageReplay` phase guard).
+- [x] Document the journal-id-as-temporary-key in `injectPendingRowSynthetics`'s docblock + the residual-gap (a) trade-off for the JSONL-with-committed-turns case.
 
-**Tests:**
+**Tests** (`tugcode/src/__tests__/replay-pending-row-injection.test.ts`, 15 tests total):
 
-- [ ] **Pending row, no JSONL match**: seed the journal with one pending row; seed a JSONL with no `user_message` line for that text; `runReplay`; assert the wire emits a synthetic `user_message_replay` for that row inside the bracket.
-- [ ] **Pending row, JSONL match**: seed the journal with a pending row whose `user_text` matches a `user_message` line in the JSONL (claude acknowledged the submission but the row hasn't been deleted yet, e.g., the merger crashed mid-intercept); `runReplay`; assert NO synthetic frame is emitted (the JSONL pass will emit the real frame instead).
-- [ ] **Multiple pending rows, partial JSONL match**: seed the journal with 3 pending rows; JSONL has matches for 2 of them (the oldest 2); `runReplay`; assert the synthetic frame is emitted for the 1 unmatched row only.
-- [ ] **Never-drop smoke (the gate)**: simulate the full scenario: tugdeck submits "hello" → tugcast inserts journal row + forwards → simulate tugcode crash before claude writes JSONL (no JSONL update) → restart tugcode → `runReplay` → assert "hello" is on the wire as a synthetic `user_message_replay` → assert tugdeck reducer renders it as a pending TurnEntry. THIS TEST IS THE LOAD-BEARING PROOF FOR DM08.
-- [ ] **Pending row + active live drain**: ensure the synthetic emit happens inside the `replay_started`/`replay_complete` bracket so the reducer's phase guard accepts it.
+- [x] `extractUserMessageTextCounts` unit tests (7): empty / single / duplicate / multi-block-concat / tool_result-skip / malformed-skip / non-user-skip.
+- [x] **Pending row, no JSONL match**: synthetic emitted with `msg_id = journal_id`, between `replay_started` and `replay_complete`.
+- [x] **Pending row, JSONL match**: NO synthetic; JSONL pass emits its own frame keyed by claude's id.
+- [x] **Multiple pending rows, partial JSONL match**: synthetic only for the unmatched row.
+- [x] **Duplicate user_text — multiset count handles partial JSONL match correctly**: 2 pending rows with text "hello", 1 JSONL match → 1 synthetic for the second row.
+- [x] **Attachments round-trip**: BLOB-encoded attachments survive into the synthetic's `attachments` field.
+- [x] **Empty journal**: no synthetic; replay completes cleanly.
+- [x] **NEVER-DROP SMOKE (the DM08 gate)**: journal-only submission renders as synthetic across N=20 deterministic runs. Asserts bracket order, msg_id, text, and `replay_complete.count = 0` (synthetic doesn't contribute since no terminal event).
+- [x] **Bracket-window invariant**: synthetic always lands strictly between `replay_started` and `replay_complete`.
 
 **Tuglaws cross-check:**
 
@@ -2197,10 +2202,10 @@ Comparing pending rows against JSONL by exact text match is the simplest reliabl
 
 **Checkpoint:**
 
-- [ ] `bun test` (tugcode) — green.
-- [ ] `cargo nextest run` — green.
-- [ ] `just lint` — clean.
-- [ ] **Never-drop smoke test passes deterministically across N=20 sequential invocations.** This is the gate — if N=20 isn't deterministic, the substep doesn't ship.
+- [x] `bun test` (tugcode) — green (322 pass; +15 new from 5.6 across `replay-pending-row-injection.test.ts`).
+- [x] `cargo nextest run` (workspace) — green (1248 pass).
+- [x] `just lint` — clean.
+- [x] **Never-drop smoke test passes deterministically across N=20 sequential invocations.** Gate held — the test loops 20 times asserting the synthetic emit + bracket-order invariants on every iteration.
 
 ---
 
@@ -2344,7 +2349,7 @@ Step 5's substep 5.7 lands the Smoke D regression test in its post-remediation f
 - [x] Step 5.3 (intercept narrow): merger's `turn_complete` intercept narrows to FIFO mark-seen; `dispatch_one` forwards `user_message` frames unchanged; `payload_inspector` narrowed to msg_type/text/attachments; cargo nextest green.
 - [x] Step 5.4 (restore translator-driven runReplay): `runLedgerDrivenReplay`, `readLedgerTurnsForSession`, `decodeUserAttachments`, `LedgerTurnRow`, `extractTurnContent`, `readMsgIdFromBatch`, `rekeyTurnContent` all deleted; `runReplay` reverts to translator-driven path; `replay-spawn-mid-turn.test.ts` and `sessions-db-cross-process.test.ts` deleted (Step 4.6/4.1 territory); bun test green (304); workspace nextest green (1248); just lint clean.
 - [x] Step 5.5 (translator predicate fix): in-flight trailing turn emits content without a terminal event via new `flushInflightTurnContent` helper sharing `emitTurnContentFrames` with `flushTurn`; the original 2026-05-05 mid-turn bug structurally fixed; bun test green (307 pass, +3 new); workspace nextest green; just lint clean.
-- [ ] Step 5.6 (pending-row replay): synthetic `user_message_replay` for unmatched pending rows; bun test green; **never-drop smoke passes deterministically across N=20** (load-bearing gate for [DM08]).
+- [x] Step 5.6 (pending-row replay): synthetic `user_message_replay` for unmatched pending rows; multiset (text → count) handles duplicate-text submissions; injection lands inside `replay_started`/`replay_complete` bracket; bun test green (322 pass, +15 new); **never-drop smoke passes deterministically across N=20** (load-bearing gate for [DM08] — held).
 - [x] Step 5.7 (delete migration scaffolding): absorbed into [Step 5.2](#step-5-2). All migration scaffolding (`bootstrap_turns_from_jsonl`, `canonical_project_dir_for_jsonl`, `jsonl_reader.rs`, the migrations table, the supervisor's bootstrap call site) deleted in 5.2.
 - [ ] Step 5.8 (close-out): smoke + DM07 retired confirmed; phase exit checkboxes flipped.
 - [ ] Step 6 (close-out): submission-journal Smoke D regression test passes deterministically (N=20); six manual scenarios pass; smoke checklist updated; plan status `shipped`.
