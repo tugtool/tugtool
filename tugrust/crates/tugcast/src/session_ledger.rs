@@ -966,6 +966,123 @@ impl SessionLedger {
         }
     }
 
+    /// One-time JSONL → ledger migration for sessions that pre-date
+    /// the `turns` table. Walks the on-disk JSONL via the minimal
+    /// `jsonl_reader` parser, mints a fresh `tug_turn_id` per
+    /// historical turn, and bulk-inserts rows in a single immediate
+    /// transaction. Returns the number of rows inserted (`0` for no-op
+    /// paths: already-bootstrapped, missing JSONL, empty JSONL).
+    ///
+    /// **Idempotency** is gated by [`Self::list_turns_for_session`]:
+    /// any rows already present for the session short-circuit the
+    /// function with `Ok(0)`. Bootstrap is "all or nothing" — a
+    /// partial bootstrap shouldn't happen, so the whole-session gate
+    /// avoids the trap of "skip by `claude_message_id`" (which can't
+    /// disambiguate mid-turn entries that are still `null`-id at
+    /// bootstrap time). Live tugcode that's already inserting rows
+    /// for this session via `dispatch_one` (Step 4.3) takes
+    /// precedence — bootstrap won't try to re-create those.
+    ///
+    /// Per-row state mapping:
+    ///   - JSONL turn closed by `stop_reason: "end_turn"` →
+    ///     [`TurnState::Complete`] with `claude_message_id` set from
+    ///     the terminal assistant entry's `message.id`.
+    ///   - JSONL trailing turn at EOF (no terminal) →
+    ///     [`TurnState::Interrupted`] with `claude_message_id` from
+    ///     the latest assistant entry seen for the turn (or `NULL` if
+    ///     no assistant content reached the JSONL before the
+    ///     truncation). `partial_text` stays `NULL` — the historical
+    ///     content is still in the JSONL and `runReplay` will pick it
+    ///     up via `extractTurnContent` keyed on `claude_message_id`.
+    ///
+    /// `completed_at` is set to `now` for every row so the migration
+    /// timestamp reflects "row inserted by bootstrap" rather than
+    /// stamping the historical conversation time (which we don't
+    /// have to millisecond accuracy and which the picker doesn't read
+    /// from this column anyway).
+    ///
+    /// JSONL path: `<claude_projects_root>/<encode(project_dir)>/<session_id>.jsonl`.
+    /// Missing file → `Ok(0)` with a tracing line; malformed lines
+    /// inside the JSONL are silently skipped by the parser (same
+    /// permissiveness the TS translator uses on the live path).
+    pub fn bootstrap_turns_from_jsonl(
+        &self,
+        session_id: &str,
+        project_dir: &str,
+        now: i64,
+    ) -> Result<usize, LedgerError> {
+        // Whole-session idempotency gate.
+        if !self.list_turns_for_session(session_id)?.is_empty() {
+            return Ok(0);
+        }
+
+        let encoded = encode_claude_project_name(project_dir);
+        let jsonl_path = self
+            .claude_projects_root
+            .join(encoded)
+            .join(format!("{session_id}.jsonl"));
+
+        let jsonl = match std::fs::read_to_string(&jsonl_path) {
+            Ok(s) => s,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                tracing::info!(
+                    target: "tide::ledger",
+                    event = "bootstrap_jsonl_missing",
+                    session_id,
+                    project_dir,
+                    path = %jsonl_path.display(),
+                );
+                return Ok(0);
+            }
+            Err(e) => return Err(LedgerError::Io(e)),
+        };
+
+        let parsed = crate::jsonl_reader::parse_turns_from_jsonl(&jsonl);
+        if parsed.is_empty() {
+            return Ok(0);
+        }
+
+        let mut conn = self.db.lock().expect("ledger mutex");
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let inserted = parsed.len();
+        for (ordinal, turn) in parsed.iter().enumerate() {
+            let tug_turn_id = uuid::Uuid::new_v4().to_string();
+            let attachments_blob = serde_json::to_vec(&turn.user_attachments)?;
+            let state_str = match turn.state {
+                crate::jsonl_reader::ParsedTurnState::Complete => "complete",
+                crate::jsonl_reader::ParsedTurnState::Interrupted => "interrupted",
+            };
+            tx.execute(
+                "INSERT INTO turns (
+                    tug_turn_id, session_id, ordinal, claude_message_id,
+                    user_text, user_attachments, state, partial_text,
+                    created_at, completed_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, ?8, ?8)",
+                params![
+                    tug_turn_id,
+                    session_id,
+                    ordinal as i64,
+                    turn.claude_message_id,
+                    turn.user_text,
+                    attachments_blob,
+                    state_str,
+                    now,
+                ],
+            )?;
+        }
+        tx.commit()?;
+
+        tracing::info!(
+            target: "tide::ledger",
+            event = "bootstrap",
+            session_id,
+            project_dir,
+            count = inserted,
+        );
+
+        Ok(inserted)
+    }
+
     /// Reconcile every `pending` row owned by `session_id` to
     /// `interrupted`. Used by the supervisor's spawn-worker hook
     /// (mid-turn-replay step 4.7) just before launching a fresh
@@ -2625,6 +2742,275 @@ mod tests {
             "buggy split-lock inserter must produce duplicate ordinals \
              (proves the production no-duplicates test is meaningful); \
              ordinals={ordinals:?}",
+        );
+    }
+
+    // ── bootstrap_turns_from_jsonl (mid-turn-replay step 4.8) ────────────────
+    //
+    // Migration path for sessions that pre-date the turns table.
+    // Idempotency via `list_turns_for_session` short-circuit; per-row
+    // state derived from the JSONL parser's `ParsedTurnState`.
+
+    fn write_jsonl_content(
+        root: &Path,
+        project_dir: &str,
+        session_id: &str,
+        content: &str,
+    ) -> PathBuf {
+        let encoded = encode_claude_project_name(project_dir);
+        let project_root = root.join(encoded);
+        std::fs::create_dir_all(&project_root).expect("mkdir project root");
+        let path = project_root.join(format!("{session_id}.jsonl"));
+        std::fs::write(&path, content).expect("write jsonl");
+        path
+    }
+
+    /// JSONL with N consecutive complete turns (each `user → assistant
+    /// end_turn`). Lets the historical-bootstrap test fixture stay
+    /// compact.
+    fn jsonl_with_complete_turns(n: usize) -> String {
+        let mut lines: Vec<String> = Vec::new();
+        for i in 0..n {
+            lines.push(
+                serde_json::json!({
+                    "type": "user",
+                    "message": {
+                        "role": "user",
+                        "content": [{ "type": "text", "text": format!("u{i}") }]
+                    }
+                })
+                .to_string(),
+            );
+            lines.push(
+                serde_json::json!({
+                    "type": "assistant",
+                    "message": {
+                        "id": format!("msg_claude_{i}"),
+                        "stop_reason": "end_turn",
+                        "content": [{ "type": "text", "text": format!("a{i}") }]
+                    }
+                })
+                .to_string(),
+            );
+        }
+        lines.join("\n") + "\n"
+    }
+
+    #[test]
+    fn bootstrap_inserts_consecutive_ordinals_for_complete_turns() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let l = fresh_ledger_with_root(tmp.path());
+        write_jsonl_content(
+            tmp.path(),
+            "/proj/legacy",
+            "sess-legacy",
+            &jsonl_with_complete_turns(5),
+        );
+
+        let inserted = l
+            .bootstrap_turns_from_jsonl("sess-legacy", "/proj/legacy", millis(0))
+            .unwrap();
+        assert_eq!(inserted, 5);
+
+        let rows = l.list_turns_for_session("sess-legacy").unwrap();
+        assert_eq!(rows.len(), 5);
+        for (i, row) in rows.iter().enumerate() {
+            assert_eq!(row.ordinal, i as i64);
+            assert_eq!(row.user_text, format!("u{i}"));
+            assert_eq!(
+                row.claude_message_id.as_deref(),
+                Some(format!("msg_claude_{i}").as_str()),
+            );
+            assert_eq!(row.state, TurnState::Complete);
+            assert_eq!(row.partial_text, None);
+            // Tug_turn_id is freshly minted (UUID).
+            assert_eq!(row.tug_turn_id.len(), 36);
+            // completed_at == now passed in.
+            assert_eq!(row.completed_at, Some(millis(0)));
+        }
+    }
+
+    #[test]
+    fn bootstrap_is_idempotent_on_re_run() {
+        // Running bootstrap twice on the same session: second call is
+        // a no-op (returns 0 because rows already exist).
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let l = fresh_ledger_with_root(tmp.path());
+        write_jsonl_content(
+            tmp.path(),
+            "/proj/idem",
+            "sess-idem",
+            &jsonl_with_complete_turns(2),
+        );
+
+        let first = l
+            .bootstrap_turns_from_jsonl("sess-idem", "/proj/idem", millis(0))
+            .unwrap();
+        assert_eq!(first, 2);
+        let second = l
+            .bootstrap_turns_from_jsonl("sess-idem", "/proj/idem", millis(0) + 1_000)
+            .unwrap();
+        assert_eq!(second, 0, "second call must short-circuit on existing rows");
+        // Total rows unchanged.
+        let rows = l.list_turns_for_session("sess-idem").unwrap();
+        assert_eq!(rows.len(), 2);
+    }
+
+    #[test]
+    fn bootstrap_partial_jsonl_yields_complete_then_interrupted() {
+        // 3 complete turns + 1 mid-turn (no end_turn). Bootstrap
+        // classifies the trailing turn as interrupted.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let l = fresh_ledger_with_root(tmp.path());
+        let mut content = jsonl_with_complete_turns(3);
+        content.push_str(
+            &serde_json::json!({
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{ "type": "text", "text": "uX" }]
+                }
+            })
+            .to_string(),
+        );
+        content.push('\n');
+        content.push_str(
+            &serde_json::json!({
+                "type": "assistant",
+                "message": {
+                    "id": "msg_partial",
+                    "stop_reason": null,
+                    "content": [{ "type": "text", "text": "aX..." }]
+                }
+            })
+            .to_string(),
+        );
+        content.push('\n');
+        write_jsonl_content(tmp.path(), "/proj/partial", "sess-partial", &content);
+
+        let inserted = l
+            .bootstrap_turns_from_jsonl("sess-partial", "/proj/partial", millis(0))
+            .unwrap();
+        assert_eq!(inserted, 4);
+
+        let rows = l.list_turns_for_session("sess-partial").unwrap();
+        // First 3 complete.
+        for (i, row) in rows.iter().enumerate().take(3) {
+            assert_eq!(row.state, TurnState::Complete);
+            assert_eq!(row.user_text, format!("u{i}"));
+            assert_eq!(
+                row.claude_message_id.as_deref(),
+                Some(format!("msg_claude_{i}").as_str()),
+            );
+        }
+        // Trailing turn: interrupted, with claude_message_id captured.
+        assert_eq!(rows[3].state, TurnState::Interrupted);
+        assert_eq!(rows[3].user_text, "uX");
+        assert_eq!(rows[3].claude_message_id.as_deref(), Some("msg_partial"));
+        assert_eq!(rows[3].partial_text, None);
+    }
+
+    #[test]
+    fn bootstrap_skips_malformed_lines() {
+        // Surrounding turns insert; the malformed line is silently
+        // dropped by the parser. Pin so a future "fail-on-malformed"
+        // refactor can't silently break legacy migration.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let l = fresh_ledger_with_root(tmp.path());
+        let content = format!(
+            "{}\nthis is not json\n{}\n",
+            serde_json::to_string(&serde_json::json!({
+                "type": "user",
+                "message": { "role": "user", "content": [{ "type": "text", "text": "u" }] }
+            }))
+            .unwrap(),
+            serde_json::to_string(&serde_json::json!({
+                "type": "assistant",
+                "message": {
+                    "id": "msg_after_garbage",
+                    "stop_reason": "end_turn",
+                    "content": [{ "type": "text", "text": "a" }]
+                }
+            }))
+            .unwrap(),
+        );
+        write_jsonl_content(tmp.path(), "/proj/malf", "sess-malf", &content);
+
+        let inserted = l
+            .bootstrap_turns_from_jsonl("sess-malf", "/proj/malf", millis(0))
+            .unwrap();
+        assert_eq!(inserted, 1);
+        let rows = l.list_turns_for_session("sess-malf").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].user_text, "u");
+        assert_eq!(
+            rows[0].claude_message_id.as_deref(),
+            Some("msg_after_garbage"),
+        );
+    }
+
+    #[test]
+    fn bootstrap_missing_jsonl_returns_zero() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let l = fresh_ledger_with_root(tmp.path());
+        // No JSONL file written.
+        let inserted = l
+            .bootstrap_turns_from_jsonl("sess-missing", "/proj/none", millis(0))
+            .unwrap();
+        assert_eq!(inserted, 0);
+        assert!(l.list_turns_for_session("sess-missing").unwrap().is_empty());
+    }
+
+    #[test]
+    fn bootstrap_empty_jsonl_returns_zero() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let l = fresh_ledger_with_root(tmp.path());
+        write_jsonl_content(tmp.path(), "/proj/empty", "sess-empty", "");
+        let inserted = l
+            .bootstrap_turns_from_jsonl("sess-empty", "/proj/empty", millis(0))
+            .unwrap();
+        assert_eq!(inserted, 0);
+    }
+
+    #[test]
+    fn bootstrap_carries_user_attachments_through() {
+        // Attachments survive the round-trip through the parser, the
+        // BLOB encoding, and back through the row read.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let l = fresh_ledger_with_root(tmp.path());
+        let content = format!(
+            "{}\n{}\n",
+            serde_json::to_string(&serde_json::json!({
+                "type": "user",
+                "message": { "role": "user", "content": [
+                    { "type": "text", "text": "describe" },
+                    { "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": "abc" } }
+                ] }
+            }))
+            .unwrap(),
+            serde_json::to_string(&serde_json::json!({
+                "type": "assistant",
+                "message": {
+                    "id": "msg_x",
+                    "stop_reason": "end_turn",
+                    "content": [{ "type": "text", "text": "ok" }]
+                }
+            }))
+            .unwrap(),
+        );
+        write_jsonl_content(tmp.path(), "/proj/att", "sess-att", &content);
+
+        let inserted = l
+            .bootstrap_turns_from_jsonl("sess-att", "/proj/att", millis(0))
+            .unwrap();
+        assert_eq!(inserted, 1);
+        let rows = l.list_turns_for_session("sess-att").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].user_attachments.len(), 1);
+        assert_eq!(rows[0].user_attachments[0]["type"], "image");
+        assert_eq!(
+            rows[0].user_attachments[0]["source"]["media_type"],
+            "image/png",
         );
     }
 }

@@ -5,6 +5,7 @@ mod control;
 mod defaults;
 mod dev;
 mod feeds;
+mod jsonl_reader;
 #[cfg(any(debug_assertions, test))]
 mod migration;
 mod resources;

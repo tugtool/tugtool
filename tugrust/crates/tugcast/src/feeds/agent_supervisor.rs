@@ -599,6 +599,22 @@ pub trait SessionsRecorder: Send + Sync {
         session_id: &str,
         now: i64,
     ) -> Result<Vec<String>, crate::session_ledger::LedgerError>;
+
+    /// One-time JSONL → ledger migration for legacy sessions
+    /// (mid-turn-replay step 4.8). Walks the on-disk JSONL once and
+    /// bulk-inserts a `turns` row per historical turn so `runReplay`
+    /// can drive the bracket from the ledger like it does for
+    /// post-Step-4 sessions. Idempotency is enforced inside the
+    /// ledger via the whole-session `list_turns_for_session` gate;
+    /// returns `Ok(0)` on the no-op paths (already bootstrapped,
+    /// missing JSONL, empty JSONL). Errors propagate from sqlite or
+    /// I/O failure during the read.
+    fn bootstrap_turns_from_jsonl(
+        &self,
+        session_id: &str,
+        project_dir: &str,
+        now: i64,
+    ) -> Result<usize, crate::session_ledger::LedgerError>;
 }
 
 /// Production implementation backed by a shared [`SessionLedger`].
@@ -899,6 +915,19 @@ impl SessionsRecorder for LedgerSessionsRecorder {
             );
         }
         Ok(reconciled)
+    }
+
+    fn bootstrap_turns_from_jsonl(
+        &self,
+        session_id: &str,
+        project_dir: &str,
+        now: i64,
+    ) -> Result<usize, crate::session_ledger::LedgerError> {
+        // The underlying ledger method already emits the
+        // `tide::ledger::bootstrap` tracing line on success; nothing
+        // to add at the trait-impl layer beyond delegation.
+        self.ledger
+            .bootstrap_turns_from_jsonl(session_id, project_dir, now)
     }
 }
 
@@ -1945,6 +1974,41 @@ impl AgentSupervisor {
                 tug_session_id = %tug_session_id,
                 card_id = card_id,
             );
+
+            // Migration bootstrap (mid-turn-replay step 4.8): if this
+            // session has no `turns` rows yet, scan the JSONL once
+            // and migrate the historical conversation. Idempotent
+            // (whole-session gate inside `bootstrap_turns_from_jsonl`),
+            // so the second resume of the same session is a no-op.
+            // Runs BEFORE the reconcile sweep below so any historical
+            // mid-turn entries land as `Interrupted` (the bootstrap
+            // parser's classification) rather than getting picked up
+            // as orphan `Pending` (which they never are post-
+            // bootstrap, but we run bootstrap first for clarity).
+            // Failure is non-fatal — fall back to cold-boot via the
+            // JSONL translator on `runReplay` if bootstrap couldn't
+            // read or write.
+            match self.sessions_recorder.bootstrap_turns_from_jsonl(
+                tug_session_id.as_str(),
+                project_dir_str.as_str(),
+                crate::session_ledger::now_millis(),
+            ) {
+                Ok(0) => {}
+                Ok(count) => {
+                    tracing::info!(
+                        target: "tide::session-lifecycle",
+                        event = "supervisor.bootstrap_at_spawn",
+                        tug_session_id = %tug_session_id,
+                        count,
+                    );
+                }
+                Err(err) => warn!(
+                    error = %err,
+                    tug_session_id = %tug_session_id,
+                    "bootstrap_turns_from_jsonl failed; proceeding with spawn",
+                ),
+            }
+
             // Crash-recovery reconciliation (mid-turn-replay step 4.7):
             // we're about to launch a fresh tugcode subprocess for a
             // session whose entry was `Idle` immediately above (the
@@ -3227,6 +3291,14 @@ impl SessionsRecorder for NoopSessionsRecorder {
         _now: i64,
     ) -> Result<Vec<String>, crate::session_ledger::LedgerError> {
         Ok(Vec::new())
+    }
+    fn bootstrap_turns_from_jsonl(
+        &self,
+        _session_id: &str,
+        _project_dir: &str,
+        _now: i64,
+    ) -> Result<usize, crate::session_ledger::LedgerError> {
+        Ok(0)
     }
 }
 
@@ -7298,6 +7370,15 @@ mod tests {
         ) -> Result<Vec<String>, crate::session_ledger::LedgerError> {
             self.inner.reconcile_pending_for_session(session_id, now)
         }
+        fn bootstrap_turns_from_jsonl(
+            &self,
+            session_id: &str,
+            project_dir: &str,
+            now: i64,
+        ) -> Result<usize, crate::session_ledger::LedgerError> {
+            self.inner
+                .bootstrap_turns_from_jsonl(session_id, project_dir, now)
+        }
     }
 
     fn make_supervisor_with_failing_recorder(
@@ -8017,6 +8098,178 @@ mod tests {
             after[0].state,
             crate::session_ledger::TurnState::Pending,
             "pending row for a still-bound session must NOT be reconciled on rebind",
+        );
+    }
+
+    #[tokio::test]
+    async fn fresh_spawn_bootstraps_legacy_jsonl_into_turns_rows() {
+        // Migration test (mid-turn-replay step 4.8). Pre-seed a JSONL
+        // for a session with two complete turns under a tempdir
+        // claude root, then drive `spawn_session` via CONTROL. The
+        // eager-spawn block calls `bootstrap_turns_from_jsonl`,
+        // which scans the JSONL and inserts a `turns` row per
+        // historical turn. The test asserts both rows land with
+        // consecutive ordinals, the expected `claude_message_id`s,
+        // and `state='complete'`.
+        use std::path::PathBuf;
+        let claude_root = tempfile::tempdir().expect("tempdir");
+        let project_dir = test_project_dir();
+        let encoded = crate::session_ledger::encode_claude_project_name(project_dir);
+        let project_root = claude_root.path().join(encoded);
+        std::fs::create_dir_all(&project_root).expect("mkdir project root");
+        let session_id = "sess-bootstrap";
+        let jsonl_path = project_root.join(format!("{session_id}.jsonl"));
+        let jsonl_content = format!(
+            "{}\n{}\n{}\n{}\n",
+            serde_json::to_string(&serde_json::json!({
+                "type": "user",
+                "message": { "role": "user", "content": [{ "type": "text", "text": "u0" }] }
+            }))
+            .unwrap(),
+            serde_json::to_string(&serde_json::json!({
+                "type": "assistant",
+                "message": {
+                    "id": "msg_legacy_0",
+                    "stop_reason": "end_turn",
+                    "content": [{ "type": "text", "text": "a0" }]
+                }
+            }))
+            .unwrap(),
+            serde_json::to_string(&serde_json::json!({
+                "type": "user",
+                "message": { "role": "user", "content": [{ "type": "text", "text": "u1" }] }
+            }))
+            .unwrap(),
+            serde_json::to_string(&serde_json::json!({
+                "type": "assistant",
+                "message": {
+                    "id": "msg_legacy_1",
+                    "stop_reason": "end_turn",
+                    "content": [{ "type": "text", "text": "a1" }]
+                }
+            }))
+            .unwrap(),
+        );
+        std::fs::write(&jsonl_path, jsonl_content).expect("write jsonl");
+
+        // Build supervisor with a ledger rooted at the tempdir so the
+        // bootstrap can locate the seeded JSONL.
+        let ledger = Arc::new(
+            SessionLedger::open_with_claude_root(":memory:", claude_root.path().to_path_buf())
+                .expect("ledger open"),
+        );
+        // open_with_claude_root + ":memory:" opens an in-memory DB
+        // distinct from any other handle, perfect for an isolated
+        // test fixture.
+        let _ = PathBuf::from(":memory:");
+
+        let (state_tx, _state_rx) = broadcast::channel(64);
+        let (meta_tx, _meta_rx) = broadcast::channel(8);
+        let (code_tx, _code_rx) = broadcast::channel(8);
+        let (control_tx, _control_rx) = broadcast::channel(128);
+        let recorder: Arc<dyn SessionsRecorder> = Arc::new(LedgerSessionsRecorder::with_broadcast(
+            Arc::clone(&ledger),
+            control_tx.clone(),
+        ));
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let registry = Arc::new(WorkspaceRegistry::new());
+        let cancel = CancellationToken::new();
+        let (sup, mut register_rx) = AgentSupervisor::new_with_ledger(
+            state_tx,
+            meta_tx,
+            code_tx,
+            control_tx,
+            store,
+            recorder,
+            Some(Arc::clone(&ledger)),
+            stall_spawner_factory(),
+            AgentSupervisorConfig::default(),
+            registry,
+            cancel,
+        );
+        tokio::spawn(async move { while register_rx.recv().await.is_some() {} });
+        let sup = Arc::new(sup);
+
+        // Sanity: ledger has zero rows for this session pre-spawn.
+        assert!(
+            ledger
+                .list_turns_for_session(session_id)
+                .unwrap()
+                .is_empty()
+        );
+
+        // Drive the eager-spawn path.
+        sup.handle_control("spawn_session", &spawn_payload("card-1", session_id), 10)
+            .await
+            .expect_handled();
+
+        // Bootstrap inserted both legacy turns.
+        let rows = ledger.list_turns_for_session(session_id).unwrap();
+        assert_eq!(rows.len(), 2, "bootstrap should have inserted 2 rows");
+        assert_eq!(rows[0].ordinal, 0);
+        assert_eq!(rows[0].user_text, "u0");
+        assert_eq!(rows[0].claude_message_id.as_deref(), Some("msg_legacy_0"));
+        assert_eq!(rows[0].state, crate::session_ledger::TurnState::Complete,);
+        assert_eq!(rows[1].ordinal, 1);
+        assert_eq!(rows[1].user_text, "u1");
+        assert_eq!(rows[1].claude_message_id.as_deref(), Some("msg_legacy_1"));
+    }
+
+    #[tokio::test]
+    async fn fresh_spawn_with_no_jsonl_does_not_create_rows() {
+        // The common case for a brand-new session: no JSONL exists,
+        // ledger has no turns rows, bootstrap is a no-op. Pin so
+        // the migration path can never accidentally synthesize rows
+        // for a session that has no historical content.
+        use std::path::PathBuf;
+        let claude_root = tempfile::tempdir().expect("tempdir");
+        let _ = PathBuf::from(":memory:");
+
+        let ledger = Arc::new(
+            SessionLedger::open_with_claude_root(":memory:", claude_root.path().to_path_buf())
+                .expect("ledger open"),
+        );
+        let (state_tx, _state_rx) = broadcast::channel(64);
+        let (meta_tx, _meta_rx) = broadcast::channel(8);
+        let (code_tx, _code_rx) = broadcast::channel(8);
+        let (control_tx, _control_rx) = broadcast::channel(128);
+        let recorder: Arc<dyn SessionsRecorder> = Arc::new(LedgerSessionsRecorder::with_broadcast(
+            Arc::clone(&ledger),
+            control_tx.clone(),
+        ));
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let registry = Arc::new(WorkspaceRegistry::new());
+        let cancel = CancellationToken::new();
+        let (sup, mut register_rx) = AgentSupervisor::new_with_ledger(
+            state_tx,
+            meta_tx,
+            code_tx,
+            control_tx,
+            store,
+            recorder,
+            Some(Arc::clone(&ledger)),
+            stall_spawner_factory(),
+            AgentSupervisorConfig::default(),
+            registry,
+            cancel,
+        );
+        tokio::spawn(async move { while register_rx.recv().await.is_some() {} });
+        let sup = Arc::new(sup);
+
+        sup.handle_control(
+            "spawn_session",
+            &spawn_payload("card-1", "sess-fresh-noj"),
+            10,
+        )
+        .await
+        .expect_handled();
+
+        // No JSONL → no rows.
+        assert!(
+            ledger
+                .list_turns_for_session("sess-fresh-noj")
+                .unwrap()
+                .is_empty()
         );
     }
 

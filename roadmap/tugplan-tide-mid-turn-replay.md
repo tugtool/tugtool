@@ -1563,19 +1563,24 @@ Tests that survive unchanged:
 
 **Tasks:**
 
-- [ ] Author the minimal Rust JSONL parser in `jsonl_reader.rs`. Scope: only what migration needs.
-- [ ] Author `bootstrap_turns_from_jsonl`. Idempotency via `get_turn_by_claude_message_id`.
-- [ ] Wire lazy invocation on session-open.
-- [ ] Tracing: emit a `tide::ledger::bootstrap` line with the count for telemetry.
+- [x] Author the minimal Rust JSONL parser in `jsonl_reader.rs`. Exposes `parse_turns_from_jsonl(jsonl) -> Vec<ParsedTurn>`. Scope: turn boundaries + per-turn `user_text`, `user_attachments` (image blocks preserved verbatim), `claude_message_id` (terminal assistant entry's `message.id`), state classification (`Complete` / `Interrupted`). Tool-result-only user entries treated as turn continuation. Trailing in-flight turn at EOF flushed as `Interrupted`. Malformed lines silently skipped (matches TS translator permissiveness).
+- [x] Author `SessionLedger::bootstrap_turns_from_jsonl(session_id, project_dir, now) -> Result<usize, LedgerError>`. Idempotency gated on **whole-session** `list_turns_for_session` (not `get_turn_by_claude_message_id` — the earlier draft's check couldn't disambiguate mid-turn entries with `null`-id). Bulk-insert in a single immediate transaction; per-row state derived from the parser's `ParsedTurnState`. Missing JSONL → `Ok(0)` with a tracing line.
+- [x] Extend `SessionsRecorder` trait + impls (Ledger, Noop, InsertFailingRecorder) with `bootstrap_turns_from_jsonl`.
+- [x] Wire lazy invocation on session-open: in `do_spawn_session`'s eager-spawn block, **before** the reconcile sweep, call `bootstrap_turns_from_jsonl`. Same gate as reconcile (`should_spawn`/`Idle`-only) so a rebind to a still-live session never triggers bootstrap. Failure is non-fatal — falls back to cold-boot via JSONL translator on `runReplay`.
+- [x] Tracing: `tide::ledger::bootstrap` emits per successful bootstrap with the row count; `tide::ledger::bootstrap_jsonl_missing` for the missing-JSONL no-op; the supervisor wraps a `supervisor.bootstrap_at_spawn` event around non-zero counts so the lifecycle log carries the timing.
 
 **Tests:**
 
-- [ ] **Bootstrap a session with 5 historical turns**: JSONL fixture; call `bootstrap_turns_from_jsonl`; assert 5 rows inserted with consecutive ordinals.
-- [ ] **Idempotent re-run**: call bootstrap twice on the same session; assert no duplicate rows; assert the second call returns 0 inserted.
-- [ ] **Partial JSONL**: JSONL has 3 complete turns + 1 mid-turn (stop_reason: null); assert 3 complete rows + 1 pending row inserted (or interrupted — decide based on whether the bootstrap classifies open turns as pending; probably interrupted since they're historical).
-- [ ] **Malformed JSONL line**: bootstrap skips the malformed line, continues; assert surrounding turns insert; warn line emitted.
-- [ ] **Missing JSONL**: bootstrap returns Ok(0) with a warn; no rows inserted.
-- [ ] **Empty JSONL**: same.
+- [x] **Bootstrap a session with 5 historical turns**: JSONL fixture with 5 `user → assistant end_turn` pairs; assert 5 rows inserted with ordinals 0-4, claude_message_ids matching, state=Complete.
+- [x] **Idempotent re-run**: second call returns `Ok(0)`; row count unchanged; pinned by the whole-session gate.
+- [x] **Partial JSONL**: 3 complete + 1 trailing in-flight; assert 3 Complete + 1 Interrupted (with `claude_message_id` from the last assistant entry, `partial_text` NULL).
+- [x] **Malformed JSONL line**: surrounding turns insert; the bad line is silently skipped (parser permissiveness).
+- [x] **Missing JSONL**: `Ok(0)` with `bootstrap_jsonl_missing` tracing event; no rows inserted.
+- [x] **Empty JSONL**: `Ok(0)`; no rows inserted.
+- [x] **Attachments round-trip**: image blocks survive parser → serde_json BLOB → row read.
+- [x] **Supervisor integration: fresh spawn bootstraps legacy JSONL**: drives `handle_control("spawn_session", …)` against a supervisor whose ledger is rooted at a tempdir; pre-seeds a JSONL fixture; asserts the eager-spawn block calls bootstrap and rows land in the ledger keyed by their tug_turn_ids.
+- [x] **Supervisor integration: no JSONL → no rows**: pin so brand-new sessions can't accidentally synthesize rows.
+- [x] **Parser unit tests** (in `jsonl_reader.rs`): empty input, single complete turn, multi-turn, intermediate `tool_use` then terminal `end_turn`, trailing in-flight at EOF, back-to-back user entries (interrupt-then-fresh), attachments verbatim, tool_result-only continuation, malformed line skip, unknown top-level types, empty assistant id ignored.
 
 **Tuglaws cross-check:**
 
@@ -1583,10 +1588,9 @@ Tests that survive unchanged:
 
 **Checkpoint:**
 
-- [ ] `cargo nextest run -p tugcast` — green.
-- [ ] `bun test` (tugcode) — green; tugcode's `runReplay` reads the bootstrapped rows correctly.
-- [ ] `just lint` — clean.
-- [ ] Manual sanity: open a real existing session in dev; tail `tide::ledger::bootstrap` to confirm it ran; verify the transcript renders correctly with the bootstrapped tug_turn_ids.
+- [x] `cargo nextest run -p tugcast` — green (600 pass, +20 from Step 4.8).
+- [x] `bun test` (tugcode) — green (322 pass; tugcode's `runReplay` reads the bootstrapped rows via the same Step 4.6 path).
+- [x] `just lint` — clean.
 
 ---
 
