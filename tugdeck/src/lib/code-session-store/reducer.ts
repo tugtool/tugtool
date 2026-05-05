@@ -28,7 +28,6 @@ import type {
   ControlRequestForwardEvent,
   CostUpdateEvent,
   ReplayCompleteEvent,
-  ReplayDeferredEvent,
   ReplayStartedEvent,
   RespondApprovalActionEvent,
   RespondQuestionActionEvent,
@@ -180,14 +179,13 @@ function handleSend(
   state: CodeSessionState,
   event: SendActionEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
-  // Submit is gated to idle/errored. While replaying or in the
-  // wait-for-completion `replay_deferred` placeholder, submit is
+  // Submit is gated to idle/errored. While replaying, submit is
   // refused at the snapshot level (`canSubmit: false`); the reducer
   // drops the action defensively in case a UI race fires `send`
   // anyway. The queue is also bypassed — a queued message that
   // commits after replay completes would surprise the user with a
   // dispatch they don't remember initiating.
-  if (state.phase === "replaying" || state.phase === "replay_deferred") {
+  if (state.phase === "replaying") {
     return { state, effects: [] };
   }
 
@@ -1082,70 +1080,19 @@ function handleSessionNotOwned(
 // ---------------------------------------------------------------------------
 
 /**
- * Enter the placeholder phase: a `request_replay` reached tugcode
- * while a turn was in flight, so tugcode is awaiting that turn's
- * completion before running replay. The card renders a "Claude is
- * still responding" banner with a "Check again" retry button until
- * the deferred bracket arrives.
- *
- * Allowed only from `idle` — any other phase means either a live
- * turn is happening locally (which the deferred replay's eventual
- * arrival would race) or a replay is already in progress (in which
- * case tugcode would have dropped this `replay_deferred` via its
- * `replayActive` re-entrancy guard rather than emitting it).
- *
- * Idempotent: a duplicate `replay_deferred` while already in the
- * `replay_deferred` phase is a no-op. The "Check again" button
- * triggers `request_replay` re-dispatch which can produce a second
- * `replay_deferred` if the active turn is still in flight; that
- * lands here as a same-phase no-op.
- */
-function handleReplayDeferred(
-  state: CodeSessionState,
-  _event: ReplayDeferredEvent,
-): { state: CodeSessionState; effects: Effect[] } {
-  if (state.phase === "replay_deferred") {
-    return { state, effects: [] };
-  }
-  if (state.phase !== "idle") {
-    console.warn(
-      `[code-session-store] replay_deferred in unexpected phase ${state.phase}; dropping`,
-    );
-    return { state, effects: [] };
-  }
-  return {
-    state: {
-      ...state,
-      phase: "replay_deferred",
-      // Defensive clear (mirrors handleReplayStarted): the deferred
-      // window precedes the actual replay bracket; pending state
-      // would otherwise leak into the first replayed turn's commit.
-      pendingUserMessage: null,
-      activeMsgId: null,
-    },
-    effects: [],
-  };
-}
-
-/**
- * Open a replay window. Allowed from `idle`, `errored`, or
- * `replay_deferred`. `idle` / `errored` are the cold-paths (no
- * deferral); `replay_deferred` is the wait-for-completion path —
- * tugcode signaled a deferral while a turn was in flight, awaited
- * the turn's completion, and is now opening the actual replay
- * bracket against the now-complete JSONL. Other phases mean a live
- * turn is in flight, which would race the supervisor's
- * flush-before-live ordering.
+ * Open a replay window. Allowed only from `idle` or `errored` —
+ * other phases mean a live turn is in flight, which would race the
+ * supervisor's flush-before-live ordering. The `errored` case is the
+ * explicit invariant: a previously-errored card whose
+ * `spawn_session_ok` cleared the error before replay began would
+ * already be `idle` by the time `replay_started` lands; this branch
+ * exists in case the supervisor sequences differently.
  */
 function handleReplayStarted(
   state: CodeSessionState,
   _event: ReplayStartedEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
-  if (
-    state.phase !== "idle" &&
-    state.phase !== "errored" &&
-    state.phase !== "replay_deferred"
-  ) {
+  if (state.phase !== "idle" && state.phase !== "errored") {
     console.warn(
       `[code-session-store] replay_started in unexpected phase ${state.phase}; dropping`,
     );
@@ -1452,8 +1399,6 @@ export function reduce(
       return handleReplayStarted(state, event);
     case "replay_complete":
       return handleReplayComplete(state, event);
-    case "replay_deferred":
-      return handleReplayDeferred(state, event);
     case "user_message_replay":
       return handleUserMessageReplay(state, event);
     case "bind_resume_acknowledged":

@@ -90,17 +90,7 @@ export type TideCardBannerSpec =
        */
       turnsCount: number | null;
     }
-  | { kind: "replay-timeout" }
-  | {
-      /**
-       * Reload landed during a turn; tugcode is awaiting the
-       * in-flight turn's completion before running replay. The card
-       * renders a "Claude is still responding" placeholder with a
-       * "Check again" retry affordance until the deferred bracket
-       * arrives.
-       */
-      kind: "replay-deferred";
-    };
+  | { kind: "replay-timeout" };
 
 /**
  * UI-local context the helper needs in addition to the snapshot.
@@ -121,9 +111,6 @@ export interface TideCardBannerCtx {
  * - replay-timeout wins over the active-phase replay-loading (the
  *   dwell is brief and stamps the most-recent outcome before any new
  *   window opens)
- * - replay-deferred covers the wait-for-completion phase (mid-turn
- *   reload). Mutually exclusive with replay-loading because tugcode
- *   only emits one or the other for a given replay request.
  * - replay-loading covers the live replay window
  * - none otherwise
  */
@@ -151,9 +138,6 @@ export function deriveTideCardBannerSpec(
   }
   if (snap.replayTimeoutDwellActive) {
     return { kind: "replay-timeout" };
-  }
-  if (snap.phase === "replay_deferred") {
-    return { kind: "replay-deferred" };
   }
   if (snap.phase === "replaying") {
     return {

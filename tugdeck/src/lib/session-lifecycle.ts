@@ -116,31 +116,3 @@ export function sendRequestReplay(
   const frame = encodeRequestReplay(tugSessionId);
   connection.send(frame.feedId, frame.payload);
 }
-
-/**
- * Send a user-initiated `request_replay` CONTROL frame, distinguished
- * from the automatic dispatch by a `user_retry` lifecycle log shape.
- *
- * Wired to the "Check again" button on the wait-for-completion
- * placeholder banner: while a deferred replay is parked on tugcode's
- * active-turn completion, the user can re-dispatch to confirm the
- * server is still working. Tugcode either re-emits `replay_deferred`
- * (if the turn is still in flight) or proceeds to run replay (if the
- * turn completed in the meantime). Either outcome is safe — the
- * reducer's `replay_deferred` handler is idempotent and the
- * `replayActive` re-entrancy guard prevents overlapping replays.
- *
- * Identical wire effect to `sendRequestReplay`; the only divergence
- * is the telemetry log so a user-initiated retry shows up clearly in
- * `just tail-tugcast` traces.
- */
-export function sendRequestReplayUserRetry(
-  connection: TugConnection,
-  tugSessionId: string,
-): void {
-  logSessionLifecycle("request_replay.user_retry", {
-    tug_session_id: tugSessionId,
-  });
-  const frame = encodeRequestReplay(tugSessionId);
-  connection.send(frame.feedId, frame.payload);
-}

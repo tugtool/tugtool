@@ -346,27 +346,6 @@ export interface ReplayStarted {
 }
 
 /**
- * Informational frame emitted by `runReplay` when an active turn is
- * in flight at the moment a replay is requested. The reducer
- * transitions `phase: idle → replay_deferred` and renders a
- * "Claude is still responding" placeholder until the active turn
- * completes — at which point the normal `replay_started` →
- * `replay_complete` bracket follows. Live emit for the active turn
- * is gated server-side via `ActiveTurn.suppressEmit`, so the
- * deferred-then-replay sequence shows exactly one TurnEntry per
- * turn on the wire.
- *
- * `reason` is a stable string identifier ("active_turn_in_flight"
- * is the only value today) so future deferral causes can extend
- * the protocol without wire-shape changes.
- */
-export interface ReplayDeferred {
-  type: "replay_deferred";
-  reason: string;
-  ipc_version: number;
-}
-
-/**
  * Bracket marker emitted by the replay translator at end-of-JSONL
  * (or on a hard-budget timeout). The reducer transitions
  * `phase: replaying → idle` and populates `lastReplayResult`.
@@ -412,8 +391,7 @@ export type OutboundMessage =
   | ResumeFailed
   | UserMessageReplay
   | ReplayStarted
-  | ReplayComplete
-  | ReplayDeferred;
+  | ReplayComplete;
 
 // Type guards
 export function isInboundMessage(msg: unknown): msg is InboundMessage {
@@ -471,8 +449,4 @@ export function isStopTask(msg: InboundMessage): msg is StopTask {
 
 export function isRequestReplay(msg: InboundMessage): msg is RequestReplay {
   return msg.type === "request_replay";
-}
-
-export function isReplayDeferred(msg: OutboundMessage): msg is ReplayDeferred {
-  return msg.type === "replay_deferred";
 }

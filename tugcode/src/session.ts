@@ -790,26 +790,6 @@ export function mapStreamEvent(
  * `handleInterrupt` mutates `interrupted` directly when the user
  * cancels a turn in flight. Single-threaded JS event loop guarantees
  * mutation safety without locks.
- *
- * Emit gating. `suppressEmit` is set by `runReplay` when a
- * `request_replay` verb arrives during an active turn. While true,
- * every outbound `writeLine` in the per-turn emit path is skipped —
- * but state updates and `finish()` calls run unchanged so the turn
- * lifecycle continues and the deferred `runReplay`'s
- * `await activeTurn.completion` resolves on schedule. JSONL is
- * unaffected (claude writes its own JSONL regardless of what tugcode
- * does on the wire), so when the deferred replay finally runs
- * against the now-complete JSONL it sees the full turn.
- *
- * Gated emit sites (must honor `suppressEmit`):
- *   - `dispatchEventToTurn`: route messages, stream messages,
- *     control_request_forward, final assistant_text on gotResult,
- *     turn_complete on gotResult.
- *   - `signalEofToActiveTurn`: turn_cancelled, error.
- *
- * Non-gated (always run): `partialText` accumulation, `rev`/`seq`
- * bumps, `gotResult` / `interrupted` latches, `turn.finish()` calls,
- * `pendingControlRequests` updates.
  */
 class ActiveTurn {
   /** Claude's id for this turn's terminal assistant entry; minted by `newMsgId()`. */
@@ -824,14 +804,6 @@ class ActiveTurn {
   gotResult: boolean = false;
   /** True if `handleInterrupt` was invoked while this turn was active. */
   interrupted: boolean = false;
-  /**
-   * True while a deferred `runReplay` is waiting on this turn's
-   * completion. Per-turn emit sites skip `writeLine` while this is
-   * set; state updates and `finish()` proceed unchanged. Set by
-   * `runReplay` and never cleared — the turn ends shortly after, and
-   * the next turn gets a fresh `ActiveTurn` instance.
-   */
-  suppressEmit: boolean = false;
   /** Resolves when the turn ends (either via `gotResult` or stdout EOF). */
   readonly completion: Promise<void>;
   private resolveCompletion: (() => void) | null;
@@ -1591,49 +1563,6 @@ export class SessionManager {
     // `resume_failed` order.
     this.replayActive = true;
 
-    // Defer-during-active-turn. If a turn is in flight when
-    // `request_replay` arrives, run the replay only after the turn
-    // completes. Mid-flight, suppress per-turn outbound emit on the
-    // active turn so live and replay never carry events for the same
-    // logical turn. JSONL fills out as claude finishes; the
-    // subsequent replay reads the complete record.
-    //
-    // `activeTurn` may point to a finished-but-not-yet-cleaned turn
-    // because `handleUserMessage`'s `finally` clears the field after
-    // `await turn.completion` resumes. Treat such a turn as "no
-    // active turn for defer purposes" by guarding on `gotResult` and
-    // `interrupted` — otherwise we'd emit a brief placeholder flash
-    // for a turn that's already done.
-    //
-    // Re-entrant calls during the defer wait drop via the
-    // `replayActive` guard above (set just before this block). The
-    // user-facing "Check again" button is therefore safe to spam.
-    const activeTurn = this.activeTurn;
-    if (
-      activeTurn !== null &&
-      !activeTurn.gotResult &&
-      !activeTurn.interrupted
-    ) {
-      activeTurn.suppressEmit = true;
-      writeLine({
-        type: "replay_deferred",
-        reason: "active_turn_in_flight",
-        ipc_version: 2,
-      });
-      logReplay("deferred", {
-        session_id: this.sessionId,
-        msg_id: activeTurn.msgId,
-        reason: "active_turn_in_flight",
-      });
-      const waitStart = Date.now();
-      await activeTurn.completion;
-      logReplay("resumed_after_active_turn", {
-        session_id: this.sessionId,
-        msg_id: activeTurn.msgId,
-        wait_ms: Date.now() - waitStart,
-      });
-    }
-
     // Resolve symlinks on `projectDir` so the encoded form matches
     // the encoding claude itself uses when writing the per-session
     // JSONL. Claude canonicalizes its cwd internally (getcwd()
@@ -2004,7 +1933,7 @@ export class SessionManager {
         (ipcMsg as Record<string, unknown>).parent_tool_use_id =
           routeResult.parentToolUseId;
       }
-      if (!turn.suppressEmit) writeLine(ipcMsg);
+      writeLine(ipcMsg);
     }
 
     // Tier 2: delegate stream_event inner payload to mapStreamEvent().
@@ -2019,7 +1948,7 @@ export class SessionManager {
           (ipcMsg as Record<string, unknown>).parent_tool_use_id =
             routeResult.parentToolUseId;
         }
-        if (!turn.suppressEmit) writeLine(ipcMsg);
+        writeLine(ipcMsg);
       }
       turn.rev = streamResult.newRev;
       turn.partialText = streamResult.partialText;
@@ -2053,7 +1982,7 @@ export class SessionManager {
           is_question: isQuestion,
           ipc_version: 2,
         };
-        if (!turn.suppressEmit) writeLine(forward);
+        writeLine(forward);
       } else {
         console.log(`Unhandled control_request subtype=${subtype ?? "unknown"}`);
       }
@@ -2072,32 +2001,28 @@ export class SessionManager {
       // empty for those.
       if (turn.partialText.length > 0) {
         const completeSeq = this.nextSeq();
-        if (!turn.suppressEmit) {
-          writeLine({
-            type: "assistant_text",
-            msg_id: turn.msgId,
-            seq: completeSeq,
-            rev: 0,
-            text: turn.partialText,
-            is_partial: false,
-            status: "complete",
-            ipc_version: 2,
-          });
-        }
+        writeLine({
+          type: "assistant_text",
+          msg_id: turn.msgId,
+          seq: completeSeq,
+          rev: 0,
+          text: turn.partialText,
+          is_partial: false,
+          status: "complete",
+          ipc_version: 2,
+        });
       }
 
       const turnSeq = this.nextSeq();
       const resultValue =
         (routeResult.resultMetadata?.resultValue as string) || "success";
-      if (!turn.suppressEmit) {
-        writeLine({
-          type: "turn_complete",
-          msg_id: turn.msgId,
-          seq: turnSeq,
-          result: resultValue,
-          ipc_version: 2,
-        });
-      }
+      writeLine({
+        type: "turn_complete",
+        msg_id: turn.msgId,
+        seq: turnSeq,
+        result: resultValue,
+        ipc_version: 2,
+      });
       turn.finish();
     }
   }
@@ -2123,24 +2048,20 @@ export class SessionManager {
       return;
     }
     if (turn.interrupted) {
-      if (!turn.suppressEmit) {
-        writeLine({
-          type: "turn_cancelled",
-          msg_id: turn.msgId,
-          seq: turn.seq,
-          partial_result: turn.partialText || "User interrupted",
-          ipc_version: 2,
-        });
-      }
+      writeLine({
+        type: "turn_cancelled",
+        msg_id: turn.msgId,
+        seq: turn.seq,
+        partial_result: turn.partialText || "User interrupted",
+        ipc_version: 2,
+      });
     } else if (!turn.gotResult) {
-      if (!turn.suppressEmit) {
-        writeLine({
-          type: "error",
-          message: "Claude process stream ended unexpectedly",
-          recoverable: true,
-          ipc_version: 2,
-        });
-      }
+      writeLine({
+        type: "error",
+        message: "Claude process stream ended unexpectedly",
+        recoverable: true,
+        ipc_version: 2,
+      });
     }
     turn.finish();
   }

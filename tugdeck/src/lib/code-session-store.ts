@@ -106,11 +106,6 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   // these and populates `lastReplayResult` on completion.
   "replay_started",
   "replay_complete",
-  // Informational frame emitted when a `request_replay` arrives
-  // while a turn is in flight. Tugcode awaits the turn's completion
-  // before running replay; the reducer enters the `replay_deferred`
-  // phase and renders a placeholder until the bracket arrives.
-  "replay_deferred",
   // Per-turn synthetic user-message echo emitted by the replay
   // translator at the start of each replayed turn. The reducer
   // mirrors it to `pendingUserMessage` so the subsequent
