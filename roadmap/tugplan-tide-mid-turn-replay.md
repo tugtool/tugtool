@@ -1109,28 +1109,28 @@ Plus the close-out at [Step 5](#step-5) which retests Smoke D end-to-end against
 
 **Tasks:**
 
-- [ ] Author the schema additions in `bootstrap_schema`.
-- [ ] Author `TurnState` and `TurnRow` types.
-- [ ] Author the seven CRUD methods, each with `#[allow(dead_code)]`.
-- [ ] Wire `migrations` table writes in `bootstrap_schema` (insert v2 row idempotently).
-- [ ] Document the schema-versioning policy in the module doc comment ("v1 was sessions-only; v2 added turns + migrations table; subsequent variants must INSERT a row into migrations and update the docs").
+- [x] Author the schema additions in `bootstrap_schema`.
+- [x] Author `TurnState` and `TurnRow` types.
+- [x] Author the seven CRUD methods, each with `#[allow(dead_code)]`.
+- [x] Wire `migrations` table writes in `bootstrap_schema` (insert v2 row idempotently).
+- [x] Document the schema-versioning policy in the module doc comment ("v1 was sessions-only; v2 added turns + migrations table; subsequent variants must INSERT a row into migrations and update the docs").
 
 **Tests:** (all in `tugrust/crates/tugcast/src/session_ledger.rs`'s existing `#[cfg(test)]` module)
 
-- [ ] **Schema bootstrap (fresh DB)**: open in-memory ledger; assert `sessions`, `turns`, and `migrations` tables exist; assert `migrations` has one row with `version=2`.
-- [ ] **Schema bootstrap (v1 → v2 migration on existing file)**: pre-create a sqlite file with ONLY the v1 schema (just the `sessions` table — no `turns`, no `migrations`); insert a few sessions rows directly; open the ledger via `SessionLedger::open`; assert (a) the `turns` and `migrations` tables now exist; (b) `migrations` has a single row with `version=2`; (c) the pre-existing `sessions` rows are preserved unchanged. Pins the in-place upgrade path that real users on existing tugbank databases will hit.
-- [ ] **Idempotent re-open**: open, close, re-open; assert no duplicate `migrations` rows (the v=2 row INSERT uses `INSERT OR IGNORE` keyed on `version`); assert `turns` table still exists with same shape.
-- [ ] **insert_pending_turn**: insert two turns into same session; assert ordinals are 0 and 1; assert state='pending'; assert claude_message_id is NULL.
-- [ ] **insert_pending_turn ordinal race**: two threads racing inserts on the same session; assert no duplicate ordinals (the immediate transaction guarantees this).
-- [ ] **mark_turn_complete**: insert pending, mark complete, assert state='complete', claude_message_id set, completed_at set.
-- [ ] **mark_turn_complete on already-complete row**: returns `InvalidTurnState`.
-- [ ] **mark_turn_complete on missing row**: returns `NotFound`.
-- [ ] **mark_turn_interrupted**: insert pending, mark interrupted with partial_text, assert state='interrupted', partial_text set.
-- [ ] **record_partial_text**: insert pending, write partial twice with different values, assert latest value persists.
-- [ ] **list_turns_for_session**: insert three turns out of ordinal order via direct SQL; assert list returns them in ordinal-ASC order.
-- [ ] **get_turn / get_turn_by_claude_message_id**: round-trip lookup.
-- [ ] **Cascade delete**: delete a session row; assert all its turns rows are gone.
-- [ ] **Failure-first proof**: temporarily strip the unique-by-session-ordinal logic from `insert_pending_turn`; run the ordinal-race test; assert duplicates surface.
+- [x] **Schema bootstrap (fresh DB)**: open in-memory ledger; assert `sessions`, `turns`, and `migrations` tables exist; assert `migrations` has one row with `version=2`.
+- [x] **Schema bootstrap (v1 → v2 migration on existing file)**: pre-create a sqlite file with ONLY the v1 schema (just the `sessions` table — no `turns`, no `migrations`); insert a few sessions rows directly; open the ledger via `SessionLedger::open`; assert (a) the `turns` and `migrations` tables now exist; (b) `migrations` has a single row with `version=2`; (c) the pre-existing `sessions` rows are preserved unchanged. Pins the in-place upgrade path that real users on existing tugbank databases will hit.
+- [x] **Idempotent re-open**: open, close, re-open; assert no duplicate `migrations` rows (the v=2 row INSERT uses `INSERT OR IGNORE` keyed on `version`); assert `turns` table still exists with same shape.
+- [x] **insert_pending_turn**: insert two turns into same session; assert ordinals are 0 and 1; assert state='pending'; assert claude_message_id is NULL.
+- [x] **insert_pending_turn ordinal race**: two threads racing inserts on the same session; assert no duplicate ordinals (the immediate transaction guarantees this).
+- [x] **mark_turn_complete**: insert pending, mark complete, assert state='complete', claude_message_id set, completed_at set.
+- [x] **mark_turn_complete on already-complete row**: returns `InvalidTurnState`.
+- [x] **mark_turn_complete on missing row**: returns `NotFound`.
+- [x] **mark_turn_interrupted**: insert pending, mark interrupted with partial_text, assert state='interrupted', partial_text set.
+- [x] **record_partial_text**: insert pending, write partial twice with different values, assert latest value persists.
+- [x] **list_turns_for_session**: insert three turns out of ordinal order via direct SQL; assert list returns them in ordinal-ASC order.
+- [x] **get_turn / get_turn_by_claude_message_id**: round-trip lookup.
+- [x] **Cascade delete**: delete a session row; assert all its turns rows are gone.
+- [x] **Failure-first proof**: temporarily strip the unique-by-session-ordinal logic from `insert_pending_turn`; run the ordinal-race test; assert duplicates surface.
 
 **Tuglaws cross-check:**
 
@@ -1138,9 +1138,9 @@ Plus the close-out at [Step 5](#step-5) which retests Smoke D end-to-end against
 
 **Checkpoint:**
 
-- [ ] `cargo nextest run -p tugcast` — green.
-- [ ] `cargo clippy -p tugcast --all-targets -- -D warnings` — clean.
-- [ ] `cargo fmt --all -- --check` — clean.
+- [x] `cargo nextest run -p tugcast` — green.
+- [x] `cargo clippy -p tugcast --all-targets -- -D warnings` — clean.
+- [x] `cargo fmt --all -- --check` — clean.
 
 ---
 
