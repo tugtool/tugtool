@@ -16,16 +16,14 @@ The plan is deliberately small: one new module, four new `TUG_ACTIONS`, two subs
 | Status | draft |
 | Target branch | tugplan-text-editing-keybindings |
 | Last updated | 2026-05-06 |
-| Roadmap anchor | none — bug-driven plan; surfaces from a user report rather than a parent roadmap row |
-| Predecessors | the `useTextInputResponder` consolidation that landed cut/copy/paste/select-all under one hook (already shipped); [tuglaws/action-naming.md](../tuglaws/action-naming.md) (the naming and classification doc this plan extends) |
-| Successors | a settings UI for keybinding remap — explicitly out of scope here, but the new `text-editing-keybindings.ts` module is laid out as the data layer such a UI would consume |
-| Related | none |
 
 ---
 
 ### Phase Overview {#phase-overview}
 
 #### Context {#context}
+
+This is a bug-driven plan; it surfaces from a user report ("Ctrl-U doesn't clear a line") rather than a parent roadmap row. The closest predecessor is the `useTextInputResponder` consolidation that landed cut/copy/paste/select-all under one hook (already shipped) and [tuglaws/action-naming.md](../tuglaws/action-naming.md) (the naming and classification doc this plan extends). The closest successor is a settings UI for keybinding remap — explicitly out of scope here, but the new `text-editing-keybindings.ts` module is laid out as the data layer such a UI would consume.
 
 Three text-editing substrates ship in tugways:
 
@@ -130,6 +128,7 @@ Out of scope:
 
 **Rationale:**
 
+- This is the [L23] invariant for native inputs: the WKWebView's NSUndoManager state is user data, and an internal implementation operation must not destroy it. Cmd-Z keeping working after a Ctrl-U / Ctrl-W deletion is the user-visible state we are obligated to preserve.
 - The existing `applyPastedText` helper in the same hook documents the pattern: `setRangeText` + synthetic input event bypasses the native editing pipeline and leaves the edit invisible to NSUndoManager. The fix used there was to switch to `execCommand("insertText", false, text)`. Deletions follow the same logic: select-then-`execCommand("delete")` keeps undo working.
 - The "set selection, run execCommand" pattern is symmetrical with the existing `cut` handler in the same hook (which sets up via `execCommand("copy")` then `execCommand("delete")` in the continuation), so reviewers see one shape.
 - The browser's selection/range computation is already correct for the DOM-text representation; we only need to feed it the boundary indices.
@@ -199,6 +198,8 @@ These are added as a `Prec.high` `keymap.of([...])` entry in `tug-text-editor/ke
 
 **Commit:** `tugways(actions): add gap-fill editing actions and keybinding registry`
 
+**References:** [DM01] substrate-local wiring, [DM02] only gap actions earn `TUG_ACTIONS` entries, [DM05] shift-extends at substrate, [DM06] data layer for future settings UI, (#scope, #context)
+
 **Background:** The audit pinned four bindings missing across all three substrates. This step lays down the vocabulary they dispatch through and the registry the substrates consume. No substrate is wired yet — Steps 2 and 3 do the wirings on top of this foundation.
 
 **Artifacts:**
@@ -257,9 +258,11 @@ These are added as a `Prec.high` `keymap.of([...])` entry in `tug-text-editor/ke
 
 #### Step 2: Native input wiring (`useTextInputResponder`) {#step-2}
 
-**Depends on:** [Step 1](#step-1)
+**Depends on:** #step-1
 
 **Commit:** `tugways(text-input): handle Ctrl-U/W and Option-F/B with native undo`
+
+**References:** [DM01] substrate-local wiring, [DM03] native deletions go through execCommand for undo-stack integration, [DM05] shift-extends at substrate, [DM06] registry read at keystroke time, (#strategy)
 
 **Background:** `useTextInputResponder` already owns CUT/COPY/PASTE/SELECT_ALL action handlers, ref composition, and the right-click context menu for native `<input>` and `<textarea>`. This step extends the same hook with a keydown listener and four new action handlers. No new components touched — `tug-input`, `tug-textarea`, and `tug-value-input` consume the hook and inherit the wiring transitively.
 
@@ -308,11 +311,12 @@ Recommend Option (a). Document the chain-dispatch defaulting to `shift=false` in
 
 **Tuglaws cross-check:**
 
-- **[L02]** the keydown listener attaches to a DOM element via the existing `inputRef`; no React state copy of selection or value is involved.
 - **[L03]** the keydown registration uses `useLayoutEffect`, so the listener is in place before any user keystroke can reach the element after mount. Matches the existing pointerdown registration.
 - **[L07]** the handlers read `inputRef.current`'s selection state at call time, never a captured-at-mount snapshot.
 - **[L11]** the keystroke turns into a `TUG_ACTIONS.*` dispatch; the same actions are reachable from a future menu / settings dispatch via the responder registration.
 - **[L19]** component-authoring guide — the hook gains a new responsibility (keydown handling) but stays a single source of truth for native-text-input chain participation; consumer components are not edited.
+- **[L23]** the WKWebView's NSUndoManager state is user data; routing deletions through `execCommand("delete")` per [DM03] keeps Cmd-Z working across the new bindings.
+- **[L24]** operations stay in the data zone (selection range writes, value mutations via the native editing pipeline) and structure zone (the keydown listener registration); no appearance-zone state introduced.
 
 **Open questions / decisions:**
 
@@ -330,9 +334,13 @@ Recommend Option (a). Document the chain-dispatch defaulting to `shift=false` in
 
 #### Step 3: CM6 substrate wiring (`tug-text-editor`) {#step-3}
 
-**Depends on:** [Step 1](#step-1) (does not depend on Step 2 — the two substrates are independent).
+**Depends on:** #step-1
 
 **Commit:** `tug-text-editor: bind Ctrl-U/W and Alt-F/B via @codemirror/commands`
+
+**References:** [DM01] substrate-local wiring, [DM04] CM6 motions/deletions reuse `@codemirror/commands` directly, [DM05] shift-extends at substrate, (#strategy)
+
+Does not depend on Step 2 — the two substrates are independent.
 
 **Background:** `tug-text-editor` carries a `Prec.high` keymap in `tug-text-editor/keymap.ts` for Enter / numpad-Enter / Cmd-Enter / Cmd-Up / Cmd-Down. This step layers the four gap bindings onto the same surface, plus their Shift-extension variants, using existing `@codemirror/commands` commands per [DM04] / [DM05]. The editor's responder gains four new action handlers so a chain dispatch (settings UI, future menu) invokes the same commands programmatically.
 
@@ -395,9 +403,11 @@ Recommend Option (a). Document the chain-dispatch defaulting to `shift=false` in
 
 #### Step 4: app-test smokes + tuglaws walkthrough + plan close-out {#step-4}
 
-**Depends on:** [Step 2](#step-2), [Step 3](#step-3)
+**Depends on:** #step-2, #step-3
 
 **Commit:** `tugways(text-editing): app-test smokes; tuglaws walkthrough; close out plan`
+
+**References:** [DM01] substrate-local wiring, [DM02] only gap actions, [DM03] execCommand for native undo, [DM04] CM6 commands directly, [DM05] shift-extends at substrate, [DM06] data layer for future settings UI, (#success-criteria, #exit-criteria)
 
 **Background:** The final pass: pin the new bindings with one `app-test` per substrate, walk the tuglaws against the diff, flip the plan status. app-test is the right test layer here per the project rule "use `just app-test` for app-test tests"; happy-dom is excluded for focus/selection/event-ordering work.
 
@@ -428,12 +438,13 @@ Recommend Option (a). Document the chain-dispatch defaulting to `shift=false` in
 
 **Tuglaws cross-check (final walkthrough):**
 
-- **[L02]** — no new React state mirrors of DOM selection / caret; all reads are at-call-time off the DOM or the CM6 view.
 - **[L03]** — keydown listeners for native inputs install via `useLayoutEffect`; CM6's keymap is in place at `EditorView` construction.
-- **[L06]** — no appearance changes. Selection / caret rendering is unchanged; the plan only touches dispatch wiring.
+- **[L06]** — not invoked. The plan operates in the data zone (selection ranges, document text); no appearance-zone state introduced or moved.
 - **[L07]** — every handler reads its substrate's live state at dispatch time.
 - **[L11]** — four new actions, all kebab-cased, all referenced via `TUG_ACTIONS.*` constants at every call site (matcher, keydown listener, registry, action map).
 - **[L19]** — the new module + the hook + the keymap update each follow the file-structure conventions of their neighbors.
+- **[L23]** — Cmd-Z continues to revert deletions in all three substrates: native inputs route through `execCommand("delete")` (NSUndoManager-integrated per [DM03]); CM6 commands push onto the editor's `history()` stack natively per [DM04]. User-visible undo state is preserved across the new bindings.
+- **[L24]** — operations stay in the data zone (selection / value / document mutations) and structure zone (event registration). The plan never crosses into the appearance zone.
 - **[action-naming.md]** — `<verb>-<object>[-<modifier>]` shape held; no synonyms with existing actions; `SCREAMING_SNAKE_CASE` keys derived mechanically.
 
 **Checkpoint:**
