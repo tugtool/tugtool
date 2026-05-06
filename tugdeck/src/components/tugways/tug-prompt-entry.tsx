@@ -90,18 +90,22 @@ import type { HistoryEntry } from "@/lib/prompt-history-store";
 // ---------------------------------------------------------------------------
 
 /**
- * The three route prefix characters surfaced in the segment control.
- * Each segment renders a lucide gutter glyph (matching the participant
- * iconography in TugTranscriptEntry) followed by the route prefix and
- * label — `[icon] [gap] [prefix][thin-space][name]`. The thin space
- * (`U+2009`) separates the prefix from the name without giving them
- * full word-spacing.
+ * The three routes surfaced in the segment control. Each segment is
+ * `[icon][gap][name]` — a lucide gutter glyph (matching the
+ * participant iconography in `TugTranscriptEntry`) plus the route's
+ * display name. The route prefix character (`>` / `$` / `:`) is no
+ * longer painted in the segment label; it lives on as a hidden
+ * power-user feature, since `route-prefix-extension` still flips the
+ * route when the user types one of those characters at offset 0 of
+ * the editor. The visible affordances are the segment icon + name
+ * and the keyboard shortcuts wired in `keybinding-map.ts`
+ * (⇧⌘C → Code, ⇧⌘S → Shell, ⇧⌘: → Command), which dispatch
+ * `SELECT_ROUTE` to this entry's responder.
  */
-const THIN_SPACE = " ";
 const ROUTE_ITEMS: ReadonlyArray<TugChoiceItem> = [
-  { value: "❯", label: `❯${THIN_SPACE}Code`,    icon: <Bot /> },
-  { value: "$", label: `$${THIN_SPACE}Shell`,   icon: <Shell /> },
-  { value: ":", label: `:${THIN_SPACE}Command`, icon: <Command /> },
+  { value: "❯", label: "Code",    icon: <Bot /> },
+  { value: "$", label: "Shell",   icon: <Shell /> },
+  { value: ":", label: "Command", icon: <Command /> },
 ];
 
 /**
@@ -841,6 +845,19 @@ export const TugPromptEntry = React.forwardRef<
         // start typing immediately — the segment button had focus
         // from the click; this hands it back.
         textEditorRef.current?.focus();
+      },
+      [TUG_ACTIONS.SELECT_ROUTE]: (event: ActionEvent) => {
+        // Keyboard-shortcut path (⇧⌘C / ⇧⌘S / ⇧⌘:). The keymap puts
+        // the canonical route character on `event.value`; we narrow
+        // to string and gate against unknown values. Same semantics
+        // as the segment-control click path above, minus the focus
+        // handoff (the editor already has focus when the shortcut
+        // fires, since the dispatch is `first-responder` scoped).
+        if (typeof event.value !== "string") return;
+        const nextRoute = event.value;
+        if (!Object.prototype.hasOwnProperty.call(RETURN_ACTION_BY_ROUTE, nextRoute)) return;
+        if (routeRef.current === nextRoute) return;
+        setRouteState(nextRoute);
       },
       [TUG_ACTIONS.SUBMIT]: (_event: ActionEvent) => {
         performSubmit();

@@ -262,11 +262,19 @@ export const TUG_ACTIONS = {
   //                  Used by numeric scrubbers on arrow-up.
   // DECREMENT_VALUE: payload — optional `value: number` (step override).
   //                  Used by numeric scrubbers on arrow-down.
+  // SELECT_ROUTE:    payload — `value: string` (a tug-prompt-entry route
+  //                  identifier — `"❯"`, `"$"`, or `":"`). Dispatched
+  //                  by the keymap's ⇧⌘C / ⇧⌘S / ⇧⌘: bindings; handled
+  //                  by `tug-prompt-entry`'s responder, which sets its
+  //                  React route state. Distinct from `select-value` —
+  //                  no sender disambiguation is needed because route
+  //                  state has a single owner per entry.
   SET_VALUE:       "set-value",
   TOGGLE:          "toggle",
   SELECT_VALUE:    "select-value",
   INCREMENT_VALUE: "increment-value",
   DECREMENT_VALUE: "decrement-value",
+  SELECT_ROUTE:    "select-route",
 
   // ---- Tab operations ----
   //
