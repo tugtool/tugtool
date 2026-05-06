@@ -253,8 +253,8 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
                 label.bottomAnchor.constraint(equalTo: overlay.bottomAnchor, constant: -3),
                 label.leadingAnchor.constraint(equalTo: overlay.leadingAnchor, constant: 6),
                 label.trailingAnchor.constraint(equalTo: overlay.trailingAnchor, constant: -6),
-                overlay.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 8),
-                overlay.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -8),
+                overlay.leadingAnchor.constraint(equalTo: webView.leadingAnchor, constant: 8),
+                overlay.bottomAnchor.constraint(equalTo: webView.bottomAnchor, constant: -8),
             ])
             devInfoOverlay = overlay
             devInfoLabel = label
