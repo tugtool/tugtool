@@ -281,6 +281,36 @@ const SKIPPED_TOP_LEVEL_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Per-call options for {@link translateJsonlEntry}.
+ *
+ * Threaded by the session-level loop when peek-ahead detects shape
+ * variants the per-entry translator can't see on its own.
+ */
+export interface TranslateJsonlEntryOptions {
+  /**
+   * When true, the per-entry translator skips emitting `turn_complete`
+   * for an `assistant` entry whose `stop_reason === "end_turn"`,
+   * leaving `ctx.cycleOpen` true so a following same-msg_id entry's
+   * content frames land in the same cycle.
+   *
+   * The session-level loop sets this when the immediately-following
+   * non-skipped JSONL entry is another `assistant` entry sharing the
+   * current entry's `message.id`. Claude Code's SDK occasionally
+   * persists a single assistant message across multiple JSONL records
+   * (one snapshot when the thinking block was complete, another when
+   * the text block was complete), with both records carrying
+   * `stop_reason: "end_turn"`. Without suppression the leading entry
+   * would emit a terminal `turn_complete` and reset `cycleOpen`,
+   * causing the trailing entry to open a phantom second cycle whose
+   * `user_message_replay` carries empty text and whose duplicate
+   * `turn_complete` is dedupe-dropped by the reducer — leaving
+   * `pendingUserMessage` populated and the post-replay phase stuck in
+   * `streaming` (canInterrupt=true) once `replay_complete` lands.
+   */
+  suppressTurnComplete?: boolean;
+}
+
+/**
  * Translate one JSONL entry into 0..N outbound messages. Pure with
  * respect to external state; the only mutation is on the passed `ctx`.
  *
@@ -301,7 +331,10 @@ const SKIPPED_TOP_LEVEL_TYPES: ReadonlySet<string> = new Set([
  *     message; no canonicalization).
  *   - An `assistant` entry with `stop_reason: "end_turn"` additionally
  *     emits a terminal `turn_complete` and increments
- *     `ctx.turnsCommitted` (which feeds `replay_complete.count`).
+ *     `ctx.turnsCommitted` (which feeds `replay_complete.count`),
+ *     UNLESS `options.suppressTurnComplete` is true (set by the
+ *     session-level loop when peek-ahead detects a same-msg_id
+ *     continuation entry; see {@link TranslateJsonlEntryOptions}).
  *   - The cycle's `user_message_replay` fires on the FIRST `assistant`
  *     entry of the cycle (when `pendingUserText` is consumed). Each
  *     subsequent `assistant` entry within the same cycle skips
@@ -312,6 +345,7 @@ const SKIPPED_TOP_LEVEL_TYPES: ReadonlySet<string> = new Set([
 export function translateJsonlEntry(
   entry: JsonlEntry,
   ctx: TranslateContext,
+  options?: TranslateJsonlEntryOptions,
 ): OutboundMessage[] {
   const topType = typeof entry.type === "string" ? entry.type : "";
   if (SKIPPED_TOP_LEVEL_TYPES.has(topType)) {
@@ -323,7 +357,7 @@ export function translateJsonlEntry(
   }
 
   if (topType === "assistant") {
-    return handleAssistantEntry(entry, ctx);
+    return handleAssistantEntry(entry, ctx, options);
   }
 
   ctx.telemetry.unknownShape({ kind: "top_level", type: topType || "<missing>" });
@@ -546,6 +580,7 @@ function coerceToolResultContent(content: unknown): string {
 function handleAssistantEntry(
   entry: JsonlEntry,
   ctx: TranslateContext,
+  options?: TranslateJsonlEntryOptions,
 ): OutboundMessage[] {
   const content = entry.message?.content ?? [];
   const stopReason = entry.message?.stop_reason ?? null;
@@ -677,11 +712,17 @@ function handleAssistantEntry(
     out.push(assistant);
   }
 
-  // Cycle terminal: only on `stop_reason === "end_turn"`. Carries this
-  // entry's `message.id`. Bumps `turnsCommitted` so
-  // `replay_complete.count` reflects committed cycles. Closes the
-  // cycle so the next user submission starts fresh.
-  if (stopReason === "end_turn") {
+  // Cycle terminal: only on `stop_reason === "end_turn"`, AND only
+  // when the session-level loop hasn't asked us to defer. Suppression
+  // applies when peek-ahead identified a same-msg_id continuation
+  // entry — claude's SDK split a single assistant message across two
+  // JSONL records (each with `end_turn`), and we want exactly one
+  // `turn_complete` to land at the end of the run rather than two
+  // (the second of which the reducer would dedupe, stranding pending
+  // state). Bumps `turnsCommitted` so `replay_complete.count`
+  // reflects committed cycles; closes the cycle so the next user
+  // submission starts fresh.
+  if (stopReason === "end_turn" && options?.suppressTurnComplete !== true) {
     const turnComplete: TurnComplete = {
       type: "turn_complete",
       msg_id: entryMsgId,
@@ -846,21 +887,53 @@ export async function* translateJsonlSession(
   // Split on newlines without losing trailing-no-newline content. The
   // tail (after the final \n) is included if non-empty so the last
   // entry of a JSONL that lacks a trailing newline still parses.
+  //
+  // Pre-parse every line up-front so the iteration loop can peek
+  // ahead one significant entry. The peek is needed to detect the
+  // same-msg_id continuation case described in
+  // {@link TranslateJsonlEntryOptions.suppressTurnComplete}: when two
+  // consecutive `assistant` entries share a `message.id`, the leading
+  // entry's `turn_complete` must be deferred so the cycle stays open
+  // and the trailing entry's content lands in the same scratch.
+  // Telemetry for malformed lines fires at parse time, identical to
+  // the prior streaming behavior.
   const lines = input.jsonl.split("\n");
-  for (const rawLine of lines) {
+  const parsedEntries: Array<JsonlEntry | null> = lines.map((rawLine) => {
     const line = rawLine.trim();
     if (line.length === 0) {
-      continue;
+      return null;
     }
-    let parsed: JsonlEntry;
     try {
-      parsed = JSON.parse(line) as JsonlEntry;
+      return JSON.parse(line) as JsonlEntry;
     } catch (err) {
       sawAnyMalformed = true;
       telemetry.malformedLine({
         reason: err instanceof Error ? err.message : String(err),
         preview: line.slice(0, 80),
       });
+      return null;
+    }
+  });
+
+  // Walk forward from `start` (inclusive) returning the index of the
+  // next entry that the per-entry translator would process — i.e.
+  // skipping nulls (empty / malformed) and `SKIPPED_TOP_LEVEL_TYPES`
+  // entries (claude bookkeeping the translator silently drops).
+  // Returns `-1` when no such entry exists.
+  const nextSignificantIndex = (start: number): number => {
+    for (let j = start; j < parsedEntries.length; j++) {
+      const e = parsedEntries[j];
+      if (e === null) continue;
+      const t = typeof e.type === "string" ? e.type : "";
+      if (SKIPPED_TOP_LEVEL_TYPES.has(t)) continue;
+      return j;
+    }
+    return -1;
+  };
+
+  for (let i = 0; i < parsedEntries.length; i++) {
+    const parsed = parsedEntries[i];
+    if (parsed === null) {
       continue;
     }
 
@@ -892,7 +965,32 @@ export async function* translateJsonlSession(
       emittedSystemMetadata = true;
     }
 
-    const messages = translateJsonlEntry(parsed, ctx);
+    // Peek ahead for the same-msg_id continuation case. Only fires
+    // for assistant entries with a string `message.id`; the next
+    // significant entry must also be an assistant entry sharing that
+    // id. A `user` entry, an unknown-shape entry, or EOF in between
+    // ends the run and the current entry behaves normally.
+    let suppressTurnComplete = false;
+    if (
+      parsed.type === "assistant" &&
+      typeof parsed.message?.id === "string" &&
+      parsed.message.id.length > 0
+    ) {
+      const currentMsgId = parsed.message.id;
+      const nextIdx = nextSignificantIndex(i + 1);
+      if (nextIdx !== -1) {
+        const next = parsedEntries[nextIdx]!;
+        if (
+          next.type === "assistant" &&
+          typeof next.message?.id === "string" &&
+          next.message.id === currentMsgId
+        ) {
+          suppressTurnComplete = true;
+        }
+      }
+    }
+
+    const messages = translateJsonlEntry(parsed, ctx, { suppressTurnComplete });
     for (const msg of messages) {
       yield msg;
       emittedSinceYield += 1;

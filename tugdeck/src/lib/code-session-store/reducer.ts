@@ -563,13 +563,36 @@ function handleTurnComplete(
   // supervisor that re-emits a turn (e.g. replay overlapping live).
   // Logged at debug level so a real regression is observable without
   // spamming the console on every legitimate redundant event.
+  //
+  // Belt-and-suspenders: a duplicate `turn_complete` is also a signal
+  // that an upstream emitter opened a phantom cycle for an already-
+  // committed msg_id — the prior `user_message_replay` (if any) wrote
+  // junk to `pendingUserMessage` and any preceding content frames
+  // wrote to `scratch[msgId]`. If we early-return here without
+  // clearing that pending state, `replay_complete`'s "in-flight cycle
+  // survived the bracket" branch (chain-link 13) sees
+  // `pendingUserMessage !== null` and transitions phase to
+  // `streaming` after replay closes — leaving the card stuck with
+  // `canInterrupt=true` and a Stop button that can't reach the wire.
+  // Clear the stale pending state so duplicate turn_complete events
+  // are inert beyond the no-op transcript commit.
   if (state.committedMsgIds.has(msgId)) {
     if (typeof console !== "undefined") {
       console.debug(
         `[code-session-store] dropping duplicate turn_complete for msg_id=${msgId}`,
       );
     }
-    return { state, effects: [] };
+    const scratch = new Map(state.scratch);
+    scratch.delete(msgId);
+    return {
+      state: {
+        ...state,
+        pendingUserMessage: null,
+        activeMsgId: state.activeMsgId === msgId ? null : state.activeMsgId,
+        scratch,
+      },
+      effects: [],
+    };
   }
 
   const scratchEntry = state.scratch.get(msgId) ?? {

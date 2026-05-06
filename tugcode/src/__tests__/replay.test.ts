@@ -573,6 +573,145 @@ describe("translateJsonlSession — thinking + image + degenerate", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Same-msg_id continuation: claude's SDK occasionally persists a single
+// assistant message across multiple JSONL records (one snapshot when the
+// thinking block was complete, another when the text block was complete),
+// each carrying the same `message.id` and `stop_reason: "end_turn"`. The
+// session-level peek-ahead should fold these into one cycle: one
+// `user_message_replay`, the union of content frames keyed on the shared
+// msg_id, and exactly one terminal `turn_complete`.
+// ---------------------------------------------------------------------------
+
+describe("translateJsonlSession — same-msg_id continuation", () => {
+  test("two assistant entries sharing a msg_id collapse into one cycle (thinking then text)", async () => {
+    // Mirrors the ae7360c session JSONL: thinking-only entry followed
+    // by a text-only entry, both with the same msg_id and end_turn.
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "How many entities listed?" }]),
+      assistantEntry({
+        msgId: "msg_split",
+        stopReason: "end_turn",
+        content: [
+          { type: "thinking", thinking: "Let me think about that." },
+        ],
+      }),
+      assistantEntry({
+        msgId: "msg_split",
+        stopReason: "end_turn",
+        content: [
+          { type: "text", text: "I need more context to answer." },
+        ],
+      }),
+    ]);
+    const out = await collectSession({ kind: "ok", jsonl });
+
+    // Inner shape: one user_message_replay (cycle's first assistant
+    // entry), one thinking_text from entry 1, one assistant_text from
+    // entry 2, one turn_complete from entry 2 only — no phantom second
+    // user_message_replay, no duplicate turn_complete.
+    const inner = out.slice(1, -1);
+    expect(inner.map((m) => m.type)).toEqual([
+      "system_metadata",
+      "user_message_replay",
+      "thinking_text",
+      "assistant_text",
+      "turn_complete",
+    ]);
+
+    const um = inner.find(isUserMessageReplay)!;
+    expect(um.msg_id).toBe("msg_split");
+    expect(um.text).toBe("How many entities listed?");
+
+    const tc = inner.filter(isTurnComplete);
+    expect(tc.length).toBe(1);
+    expect(tc[0].msg_id).toBe("msg_split");
+
+    // replay_complete carries count=1 — the run is one committed
+    // cycle, not two.
+    const rc = out.at(-1) as ReplayComplete;
+    expect(rc.count).toBe(1);
+  });
+
+  test("three-way same-msg_id run also collapses (defensive against multi-snapshot writes)", async () => {
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "u" }]),
+      assistantEntry({
+        msgId: "msg_run",
+        stopReason: "end_turn",
+        content: [{ type: "thinking", thinking: "first" }],
+      }),
+      assistantEntry({
+        msgId: "msg_run",
+        stopReason: "end_turn",
+        content: [{ type: "thinking", thinking: "second" }],
+      }),
+      assistantEntry({
+        msgId: "msg_run",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "final" }],
+      }),
+    ]);
+    const out = await collectSession({ kind: "ok", jsonl });
+    const tc = out.filter(isTurnComplete);
+    expect(tc.length).toBe(1);
+    expect(tc[0].msg_id).toBe("msg_run");
+    expect((out.at(-1) as ReplayComplete).count).toBe(1);
+  });
+
+  test("skipped entries between same-msg_id entries are transparent (run still collapses)", async () => {
+    // Claude bookkeeping (attachment, queue-operation, ai-title, etc.)
+    // can interleave with assistant entries. The peek must skip over
+    // those when deciding whether the run continues.
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "u" }]),
+      assistantEntry({
+        msgId: "msg_thru",
+        stopReason: "end_turn",
+        content: [{ type: "thinking", thinking: "t" }],
+      }),
+      // Claude bookkeeping that the per-entry translator skips silently.
+      { type: "queue-operation" } as JsonlEntry,
+      { type: "ai-title" } as JsonlEntry,
+      assistantEntry({
+        msgId: "msg_thru",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "a" }],
+      }),
+    ]);
+    const out = await collectSession({ kind: "ok", jsonl });
+    const tc = out.filter(isTurnComplete);
+    expect(tc.length).toBe(1);
+    expect(tc[0].msg_id).toBe("msg_thru");
+  });
+
+  test("different msg_ids in adjacent assistant entries are NOT collapsed (regression guard)", async () => {
+    // Multi-message claude cycles use distinct msg_ids per entry. The
+    // peek-ahead must only fold runs that actually share a msg_id —
+    // distinct ids are independent cycles and must each emit their own
+    // turn_complete.
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "u1" }]),
+      assistantEntry({
+        msgId: "msg_one",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "a1" }],
+      }),
+      userEntry([{ type: "text", text: "u2" }]),
+      assistantEntry({
+        msgId: "msg_two",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "a2" }],
+      }),
+    ]);
+    const out = await collectSession({ kind: "ok", jsonl });
+    const tc = out.filter(isTurnComplete);
+    expect(tc.length).toBe(2);
+    expect(tc.map((t) => t.msg_id)).toEqual(["msg_one", "msg_two"]);
+    expect((out.at(-1) as ReplayComplete).count).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // translateJsonlSession — synthesized system_metadata
 // ---------------------------------------------------------------------------
 

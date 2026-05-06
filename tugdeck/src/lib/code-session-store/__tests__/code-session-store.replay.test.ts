@@ -267,6 +267,52 @@ describe("CodeSessionStore — turn_complete dedupe by msg_id", () => {
     expect(store.getSnapshot().transcript[0].userMessage.text).toBe("u");
     expect(store.getSnapshot().transcript[0].assistant).toBe("a");
   });
+
+  it("a duplicate turn_complete clears stranded pendingUserMessage so replay closes to idle", () => {
+    // Defensive: the translator has been hardened to fold same-msg_id
+    // assistant runs into one cycle, but if a phantom second cycle
+    // ever leaks through (translator regression, or a new SDK shape
+    // we haven't surveyed), the duplicate `turn_complete` must clear
+    // any pending state it stranded. Without the clear,
+    // `replay_complete`'s in-flight-survival branch (chain-link 13)
+    // would observe `pendingUserMessage !== null` and transition
+    // phase to `streaming` post-replay — leaving the card with
+    // `canInterrupt=true` and a Stop button that can't reach the
+    // wire (the user-reported ae7360c bug shape).
+    const { store, conn } = makeStore();
+
+    emit(conn, replayStarted());
+    // First (real) cycle commits.
+    emit(conn, userMessageReplay("msg-strand", "real user text"));
+    emit(conn, assistantText("msg-strand", "real reply"));
+    emit(conn, turnComplete("msg-strand"));
+    expect(store.getSnapshot().transcript.length).toBe(1);
+
+    // Phantom second cycle for the same msg_id mid-bracket: a
+    // `user_message_replay` writes to `pendingUserMessage` and the
+    // following `turn_complete` is dedupe-dropped because msg-strand
+    // is already in committedMsgIds. The dedup branch must wipe the
+    // junk pending state.
+    emit(conn, userMessageReplay("msg-strand", ""));
+    emit(conn, assistantText("msg-strand", "phantom text"));
+    emit(conn, turnComplete("msg-strand"));
+
+    // Bracket closes. With the defensive clear, no pending cycle
+    // survives — phase returns to idle, not streaming.
+    emit(conn, replayComplete(1));
+
+    const snap = store.getSnapshot();
+    expect(snap.phase).toBe("idle");
+    expect(snap.canInterrupt).toBe(false);
+    expect(snap.canSubmit).toBe(true);
+    expect(snap.transcript.length).toBe(1);
+    // The committed turn is the real one, untouched by the phantom.
+    expect(snap.transcript[0].userMessage.text).toBe("real user text");
+    expect(snap.transcript[0].assistant).toBe("real reply");
+    // No leftover pending state.
+    expect(snap.inflightUserMessage).toBeNull();
+    expect(snap.activeMsgId).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------
