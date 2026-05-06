@@ -523,7 +523,21 @@ export class SmartScroll {
     const wasIdle = this._phase === 'idle';
     const wasAlreadyDragging = this._phase === 'dragging';
     if (wasIdle) {
-      this._gestureStartScrollTop = this._container.scrollTop;
+      // Use `_lastScrollTop` rather than `_container.scrollTop` for the
+      // pre-gesture snapshot. With `passive: true` wheel listeners on
+      // macOS WKWebView the browser pre-applies the deltaY *before*
+      // dispatching the wheel JS event, so by the time `_handleWheel`
+      // calls `_enterDragging` the live `scrollTop` already reflects
+      // the first wheel tick. Reading it would treat that initial pull
+      // as the gesture's starting position, and the post-gesture
+      // re-engage check (`scrollTop > gestureStart`) would later
+      // misread a return to bottom (driven by layout's natural
+      // scrollHeight jitter while the user wheels up) as a net-down
+      // gesture and re-engage follow-bottom against the user's intent.
+      // `_lastScrollTop` is the value `_handleScroll` saw on the
+      // previous scroll event, which has not yet been updated for the
+      // new gesture — the true pre-gesture position.
+      this._gestureStartScrollTop = this._lastScrollTop;
     }
     this._phase = 'dragging';
     if (!wasAlreadyDragging) {

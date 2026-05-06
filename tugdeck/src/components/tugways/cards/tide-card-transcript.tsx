@@ -340,6 +340,7 @@ export const TideTranscriptHost: React.FC<TideTranscriptHostProps> = ({
         cellRenderers={cellRenderers}
         scrollKey="tide-card-transcript"
         followBottom
+        inline
       />
     </div>
   );

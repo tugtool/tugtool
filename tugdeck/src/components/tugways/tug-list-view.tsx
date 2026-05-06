@@ -316,6 +316,36 @@ export interface TugListViewProps<
    * @default false
    */
   followBottom?: boolean;
+
+  /**
+   * Skip windowing — render every cell in document order with no
+   * spacers, no overscan, no `computeWindow` math. Use for lists
+   * where rendering every cell is acceptable (transcripts, settings
+   * groups, small fixed inventories) and the windowing-induced layout
+   * instability is not.
+   *
+   * Why this exists: windowed rendering relies on
+   * `estimatedHeightForKind` for cells outside the rendered range,
+   * then corrects to the true measured height the first time each
+   * cell enters the window (`ResizeObserver` populates `heightIndex`
+   * on observation). Each first-time-measured event shifts
+   * `scrollHeight` by `(measured − estimate)` pixels. The cumulative
+   * effect — visible as a "bounce" on relaunch and as scroll-position
+   * jitter when wheeling near the bottom of a freshly-loaded
+   * transcript — disappears entirely when every cell is rendered
+   * from mount, because `heightIndex` is fully populated before the
+   * user can interact and never reverts to estimates.
+   *
+   * Default `false` — windowing is the right choice for unbounded
+   * lists (gallery feeds, large logs). Tide's transcript opts in
+   * with `inline` because turn counts are small and visual stability
+   * matters more than DOM weight. The choice is per-instance, not
+   * per-itemCount: a consumer that knows its data is bounded picks
+   * `inline`; a consumer that may grow unboundedly stays windowed.
+   *
+   * @default false
+   */
+  inline?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -418,7 +448,7 @@ const SCROLL_CORRECTION_THRESHOLD_PX = 4;
  */
 const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
   function TugListView(
-    { dataSource, delegate, cellRenderers, scrollKey, className, followBottom },
+    { dataSource, delegate, cellRenderers, scrollKey, className, followBottom, inline },
     ref,
   ) {
     const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
@@ -482,6 +512,18 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // freshly-mounted following-bottom list view that already has
     // items pins itself to the bottom on first paint.
     const prevItemCountRef = React.useRef<number>(0);
+
+    // Set to `true` by signals that legitimately request an auto-pin
+    // (mount with `followBottom`, item-count growth, cell ResizeObserver
+    // flush, container ResizeObserver). The post-commit pin effect
+    // bails out unless this ref is set, then clears it. This breaks
+    // the previous "post-commit pin runs every commit" feedback loop
+    // where `pinToBottom`'s own scroll event would re-trigger the pin
+    // via `onScroll → scrollTick → re-render → pin`. Pin is a DOM
+    // appearance update ([L06]) and its true triggers are layout /
+    // growth signals; coupling it to React's commit cycle is the
+    // L22-spirit violation that produced the relaunch bounce.
+    const pinRequestedRef = React.useRef<boolean>(false);
 
     // Pending two-pass `scrollToIndex` correction state, or `null`
     // when no correction is queued. When `scrollToIndex` is called
@@ -562,23 +604,52 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       [estimatedHeightForKindOnly],
     );
 
-    const windowResult = computeWindow({
-      itemCount,
-      scrollTop,
-      viewportHeight,
-      overscanCount: OVERSCAN_COUNT,
-      estimatedHeightForIndex: heightForIndex,
-    });
+    // Windowing decision: when the consumer opts into `inline`,
+    // render every cell — no spacers, no overscan math. This collapses
+    // the class of "first-time-measured cell shifts scrollHeight"
+    // bugs because every cell is observed from mount, so `heightIndex`
+    // is fully populated before the user can scroll and never reverts
+    // to estimates. Otherwise the windowed path runs as before.
+    const windowResult = inline === true
+      ? ({
+          firstIndex: 0,
+          lastIndex: itemCount,
+          topSpacerHeight: 0,
+          bottomSpacerHeight: 0,
+          // `totalHeight` is only consumed by `scrollToIndex`'s
+          // estimated-jump path, which is itself a no-op when every
+          // cell is rendered (the imperative handle's
+          // `scrollToElement` branch fires instead). Reporting 0 here
+          // is harmless.
+          totalHeight: 0,
+        })
+      : computeWindow({
+          itemCount,
+          scrollTop,
+          viewportHeight,
+          overscanCount: OVERSCAN_COUNT,
+          estimatedHeightForIndex: heightForIndex,
+        });
 
     // Mount-tick: after the first commit attaches the scroll-container
     // ref, force a rerender so the window math reads a real
     // `clientHeight`. Without this, `viewportHeight` stays 0 until
     // some other event (scroll, data source tick) triggers a render.
+    //
+    // Also seeds the initial pin request when `followBottom === true`
+    // so a freshly-mounted list view with items already in the data
+    // source pins to the bottom on first paint without waiting for a
+    // ResizeObserver fire (which is critical for tests, where
+    // `ResizeObserver` is a no-op stub, and useful in production where
+    // it tightens the cold-mount paint to a single committed pin).
     React.useLayoutEffect(() => {
-      // Trigger one rerender after first mount. Subsequent mounts of
-      // a stable component instance don't re-run this effect, so it
-      // doesn't loop.
+      if (followBottom === true) {
+        pinRequestedRef.current = true;
+      }
       scrollTick();
+      // `followBottom` is read once at mount; runtime changes are not
+      // tracked (matches the SmartScroll-install effect's pattern).
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Install the `ResizeObserver` once per list-view instance.
@@ -627,6 +698,12 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         if (anyChanged && pendingFlushRef.current === null) {
           pendingFlushRef.current = requestAnimationFrame(() => {
             pendingFlushRef.current = null;
+            // A measured cell height changed → request a pin so the
+            // post-commit pin effect re-asserts the bottom on the
+            // next commit. Without this, the signal-gated pin effect
+            // would bail out (no request) and a streaming cell that
+            // grew its content would leave the user above the bottom.
+            pinRequestedRef.current = true;
             scrollTick();
           });
         }
@@ -707,6 +784,10 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       const el = scrollContainerRef.current;
       if (el === null) return;
       const observer = new ResizeObserver(() => {
+        // Container resized → if we were following the bottom, the
+        // new viewport changes the absolute bottom position. Request
+        // a pin so the post-commit pin effect re-asserts.
+        pinRequestedRef.current = true;
         scrollTick();
       });
       observer.observe(el);
@@ -739,43 +820,57 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       heightIndexRef.current.prepare(itemCount, estimatedHeightForKindOnly);
     }, [itemCount, estimatedHeightForKindOnly]);
 
-    // Auto-follow-bottom pin per [D07]. Runs after every commit so
-    // both observable content-growth signals are covered:
-    //
-    //   (a) Data-source ticks that grew `numberOfItems()` — detected
-    //       by comparing `itemCount` against `prevItemCountRef`.
-    //   (b) Height-index updates that changed total height while the
-    //       last item is in the rendered window — detected by
-    //       `lastIndex >= itemCount`.
-    //
-    // [L07] — `isFollowingBottom` and `isUserScrolling` are read
-    // from `smartScrollRef.current` at the moment of the call, not
-    // captured at effect creation. A stale closure here would yank
-    // the user back to bottom even after they scrolled up.
-    //
-    // The user-scrolling guard separates intent from action: a user
-    // mid-gesture (dragging, decelerating) owns the scroll position
-    // even if `isFollowingBottom` is still set; SmartScroll will
-    // either disengage on scroll-up or re-engage on scroll-down-to-
-    // bottom; the next post-gesture commit pins again. This mirrors
-    // `TugMarkdownView`'s `doSetRegion` invariant.
-    //
-    // No deps array — every commit re-checks growth and last-visible
-    // state. Steady-state commits hit the early return.
+    // Detect data-source growth and request a pin. Runs only when
+    // `itemCount` actually changes — the deps array is the contract.
+    // First run on mount sees `prev=0, current=initial`; if items are
+    // already present, that classifies as growth and a pin is
+    // requested even before any ResizeObserver fires.
     React.useLayoutEffect(() => {
-      const ss = smartScrollRef.current;
-      const prevItemCount = prevItemCountRef.current;
+      if (itemCount > prevItemCountRef.current) {
+        pinRequestedRef.current = true;
+      }
       prevItemCountRef.current = itemCount;
+    }, [itemCount]);
 
+    // Auto-follow-bottom pin per [D07]. Signal-driven: bails out
+    // unless `pinRequestedRef` was set by an upstream signal (mount,
+    // item-count growth, cell ResizeObserver flush, container
+    // ResizeObserver). Commits not driven by such a signal — including
+    // the scroll-event-induced commit triggered by `pinToBottom`'s own
+    // `scrollTop` write — hit the no-request bail at the top, breaking
+    // the previous post-commit-on-every-render feedback loop.
+    //
+    // [L22] alignment: `pinToBottom` is a DOM-appearance update whose
+    // legitimate triggers are layout / growth signals, not React's
+    // commit cycle. Coupling it to every commit (the previous no-deps
+    // `useLayoutEffect`) is the spirit-violation that produced the
+    // relaunch bounce — pin's own scroll event re-fed the commit
+    // cycle, sustaining a tight pin → scroll → re-render → pin loop.
+    //
+    // [L07] — `isFollowingBottom` / `isUserScrolling` are read from
+    // `smartScrollRef.current` at the moment of the call so each pin
+    // sees the live SmartScroll state.
+    //
+    // Ref-clearing semantics: clear on cancel-conditions (`!following`,
+    // `empty`) so a stale request doesn't fire later. Hold the request
+    // (don't clear) on `user-scrolling` so the pin re-fires once the
+    // gesture ends. Hold on `no-ss` (rare; the SmartScroll-install
+    // effect runs before this one in registration order) so the
+    // request survives to a commit where SmartScroll exists.
+    React.useLayoutEffect(() => {
+      if (!pinRequestedRef.current) return;
+      const ss = smartScrollRef.current;
       if (ss === null) return;
-      if (!ss.isFollowingBottom) return;
+      if (!ss.isFollowingBottom) {
+        pinRequestedRef.current = false;
+        return;
+      }
       if (ss.isUserScrolling) return;
-      if (itemCount <= 0) return;
-
-      const grew = itemCount > prevItemCount;
-      const lastVisible = windowResult.lastIndex >= itemCount;
-      if (!grew && !lastVisible) return;
-
+      if (itemCount <= 0) {
+        pinRequestedRef.current = false;
+        return;
+      }
+      pinRequestedRef.current = false;
       ss.pinToBottom();
     });
 
