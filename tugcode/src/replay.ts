@@ -232,6 +232,14 @@ export interface TranslateContext {
    * `message.id`s within one cycle.
    */
   cycleOpen: boolean;
+  /**
+   * Counter for synthetic msg_ids assigned to orphan-interrupted
+   * submissions (user entries with no following assistant cycle).
+   * Bumped each time `handleUserEntry` flushes a prior `pendingUserText`
+   * as an interrupted TurnEntry. The id format is `orphan-<n>` so it
+   * cannot collide with claude's `msg_<base62>` ids.
+   */
+  orphanCounter: number;
   /** Telemetry sink. */
   telemetry: ReplayTelemetry;
 }
@@ -245,6 +253,7 @@ export function makeTranslateContext(
     pendingUserText: null,
     pendingUserAttachments: [],
     cycleOpen: false,
+    orphanCounter: 0,
     telemetry,
   };
 }
@@ -321,6 +330,71 @@ export function translateJsonlEntry(
   return [];
 }
 
+/**
+ * Sentinel string claude writes as a synthetic `user` JSONL entry when
+ * the prior turn was interrupted. Surveyed in `roadmap/archive/
+ * tugtalk-protocol.txt` §2b: "control_request interrupt sends on
+ * stdin, CLI acknowledges, injects '[Request interrupted by user]',
+ * emits a proper `result` event." Also lands in JSONL after a Cmd-Q
+ * mid-stream when claude is resumed and detects an unfinished turn.
+ *
+ * The translator treats this string as a SENTINEL: its presence
+ * triggers a flush of any pending orphan submission, but the marker
+ * itself is NOT emitted as a user-visible frame on the wire. Without
+ * this special-case, the marker text concatenates onto the prior or
+ * following user submission's text on replay (the 2026-05-06
+ * "hello[Request interrupted by user]what time is it?" symptom).
+ */
+const INTERRUPT_MARKER_TEXT = "[Request interrupted by user]";
+
+/**
+ * Flush any pending orphan user submission as a committed-interrupted
+ * turn pair on the wire: `user_message_replay` + `turn_complete{result:
+ * "interrupted"}` keyed on a synthetic `orphan-<n>` id. Resets
+ * `pendingUserText` / `pendingUserAttachments` and bumps both
+ * `turnsCommitted` (the orphan IS committed; it shows in the
+ * transcript) and `orphanCounter` (so subsequent orphans get unique
+ * ids). Returns the emitted frames; caller appends to its own output.
+ *
+ * Idempotent on empty pending state — returns `[]` when there's
+ * nothing to flush, so callers can call unconditionally before
+ * stashing a new submission.
+ */
+function flushPendingOrphan(ctx: TranslateContext): OutboundMessage[] {
+  if (ctx.pendingUserText === null && ctx.pendingUserAttachments.length === 0) {
+    return [];
+  }
+  const orphanMsgId = `orphan-${ctx.orphanCounter}`;
+  ctx.orphanCounter += 1;
+
+  const out: OutboundMessage[] = [];
+  const userMessage: UserMessageReplay = {
+    type: "user_message_replay",
+    msg_id: orphanMsgId,
+    text: ctx.pendingUserText ?? "",
+    attachments: ctx.pendingUserAttachments,
+    ipc_version: IPC_VERSION,
+  };
+  out.push(userMessage);
+
+  const turnComplete: TurnComplete = {
+    type: "turn_complete",
+    msg_id: orphanMsgId,
+    seq: ctx.globalSeq++,
+    // Non-"success" result tells the reducer to commit the TurnEntry
+    // with `result: "interrupted"` (see reducer.ts handleTurnComplete:
+    // `result: isSuccess ? "success" : "interrupted"`).
+    result: "interrupted",
+    ipc_version: IPC_VERSION,
+  };
+  out.push(turnComplete);
+
+  ctx.turnsCommitted += 1;
+  ctx.pendingUserText = null;
+  ctx.pendingUserAttachments = [];
+  return out;
+}
+
 function handleUserEntry(
   entry: JsonlEntry,
   ctx: TranslateContext,
@@ -388,18 +462,36 @@ function handleUserEntry(
     ctx.telemetry.unknownShape({ kind: "content_block", type: blockType });
   }
 
-  if (textParts.length > 0 || attachments.length > 0) {
-    // Capture as the pending user submission. The first `assistant`
-    // entry of the cycle will consume this and emit
-    // `user_message_replay` keyed on claude's first `message.id`.
-    if (textParts.length > 0) {
-      ctx.pendingUserText =
-        (ctx.pendingUserText ?? "") + textParts.join("");
+  // Combine text blocks within this single entry — multi-block within
+  // one user entry is the same submission and concatenates.
+  const entryText = textParts.join("");
+
+  // Sentinel: claude's "[Request interrupted by user]" marker. Flush
+  // any pending orphan as its own committed-interrupted turn, then
+  // drop the marker (don't accumulate, don't emit). The marker has no
+  // attachments by design.
+  if (entryText === INTERRUPT_MARKER_TEXT && attachments.length === 0) {
+    out.push(...flushPendingOrphan(ctx));
+    return out;
+  }
+
+  // Real user submission. If there's already a pending submission
+  // (no assistant cycle separated us from a prior user entry),
+  // flush the prior as an orphan first — multiple consecutive user
+  // entries are structural orphans, never a single concatenated
+  // submission.
+  if (entryText.length > 0 || attachments.length > 0) {
+    if (
+      ctx.pendingUserText !== null ||
+      ctx.pendingUserAttachments.length > 0
+    ) {
+      out.push(...flushPendingOrphan(ctx));
+    }
+    if (entryText.length > 0) {
+      ctx.pendingUserText = entryText;
     }
     if (attachments.length > 0) {
-      ctx.pendingUserAttachments = ctx.pendingUserAttachments.concat(
-        attachments,
-      );
+      ctx.pendingUserAttachments = attachments;
     }
   }
 
