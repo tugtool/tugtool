@@ -752,18 +752,14 @@ export interface TranslateSessionOptions {
  * generator's `TReturn` parameter).
  *
  * `count` mirrors the per-wire `replay_complete.count` and counts
- * `turn_complete` events emitted by the translator. A trailing
- * in-flight turn that the translator orphan-synthesizes counts toward
- * this total.
- *
- * Step 4 mid-turn-replay: `runReplay` is now ledger-driven and uses
- * `translateJsonlSession` only as the cold-boot fallback when the
- * ledger has no rows for the session. The Step-3-era
- * `liveInflightMsgId` / `skippedTrailingTurn` surface that coordinated
- * trailing-turn skipping with `emitInflightTurnFromActiveTurn` is gone
- * — the ledger row keyed by `tug_turn_id` is the single coordination
- * point now, and `extractTurnContent` is the per-row content lookup
- * runReplay performs against the JSONL.
+ * cycles committed via `turn_complete{result: "success"}` (one per
+ * `assistant` JSONL entry whose `stop_reason === "end_turn"`) plus
+ * orphan-interrupted cycles flushed via `flushPendingOrphan` (one per
+ * orphaned user submission with no following assistant cycle). A
+ * trailing in-flight cycle (assistant entry without `end_turn`) emits
+ * its content frames per-entry but does NOT count — the translator
+ * doesn't synthesize a terminal for it; the live drain produces the
+ * eventual `turn_complete` when claude's `result` lands.
  */
 export interface TranslateSessionResult {
   count: number;

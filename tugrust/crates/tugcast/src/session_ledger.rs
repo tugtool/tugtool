@@ -801,20 +801,6 @@ impl SessionLedger {
             .collect::<Result<Vec<_>, _>>()?;
         rows.into_iter().collect()
     }
-
-    /// Stubbed in [Step 5.2](#step-5-2). The supervisor's `do_spawn_session`
-    /// eager-spawn block still calls this in the Step 5.2 snapshot; the
-    /// stub keeps the build green while [Step 5.6](#step-5-6) replaces the
-    /// caller with a no-op (the journal-driven pending-row replay handles
-    /// resume directly without a sweep step).
-    #[allow(unused_variables)]
-    pub fn reconcile_pending_for_session(
-        &self,
-        session_id: &str,
-        now: i64,
-    ) -> Result<Vec<String>, LedgerError> {
-        Ok(Vec::new())
-    }
 }
 
 /// Decode one row from a `SELECT … FROM sessions` cursor matching the column

@@ -274,16 +274,28 @@ pub struct LedgerEntry {
     /// session under a *different* card while the original card is
     /// still holding it; same-card reconnects are allowed.
     pub card_id_live: Option<String>,
-    /// True while a replay bracket is in flight on this session's
-    /// outbound stream — set on the merger's `replay_started` observation,
-    /// cleared on `replay_complete`. The merger's `apply_outbound_turn_intercept`
-    /// skips its FIFO journal-pop work while this flag is set so
-    /// replay-emitted `turn_complete` frames (from `translateJsonlSession`'s
-    /// committed-turn output) do not get treated as live `turn_complete`s
-    /// and do not pop the user's still-pending journal row. Mid-turn-replay
-    /// [Step 5.10](roadmap/tugplan-tide-mid-turn-replay.md#step-5) — the
+    /// Count of replay brackets currently in flight on this session's
+    /// outbound stream — incremented on each `replay_started` the merger
+    /// observes, saturating-decremented on each `replay_complete`. The
+    /// merger's `apply_outbound_turn_intercept` skips its FIFO journal-pop
+    /// work while this counter is non-zero, so replay-emitted
+    /// `turn_complete` frames (from `translateJsonlSession`'s
+    /// committed-turn output) don't get treated as live `turn_complete`s
+    /// and don't pop the user's still-pending journal row. Mid-turn-replay
+    /// [Step 5.10](roadmap/tugplan-tide-mid-turn-replay.md#step-5) is the
     /// post-Step-5.9 fix for the HMR-mid-stream regression.
-    pub replay_in_progress: bool,
+    ///
+    /// Counter (not bool) because a bridge that dies between emitting
+    /// `replay_started` and emitting `replay_complete` (kill -9, panic,
+    /// OOM before the `finally` runs) would, with a bool, leave the gate
+    /// stuck-open forever. Using `u32::saturating_sub(1)` on
+    /// `replay_complete` means stray closes are no-ops rather than
+    /// underflowing into an enormous u32. tugcode's `runReplay`
+    /// re-entrancy guard prevents legitimate overlapping brackets, so
+    /// in healthy operation the counter is 0 between brackets and 1
+    /// during a bracket; the counter shape is purely defense-in-depth
+    /// against bridge-crash-mid-replay leaving stale state.
+    pub replay_brackets_open: u32,
 }
 
 impl LedgerEntry {
@@ -309,7 +321,7 @@ impl LedgerEntry {
             input_tx: None,
             cancel: CancellationToken::new(),
             card_id_live: None,
-            replay_in_progress: false,
+            replay_brackets_open: 0,
         }
     }
 }
@@ -580,20 +592,6 @@ pub trait SessionsRecorder: Send + Sync {
         &self,
         session_id: &str,
     ) -> Result<Option<crate::session_ledger::JournalRow>, crate::session_ledger::LedgerError>;
-
-    /// Reconcile every pending journal row for `session_id`. Called
-    /// from the supervisor's spawn-worker hook just before a fresh
-    /// tugcode subprocess is launched for a session whose previous
-    /// tugcode is gone. Stubbed in [Step 5.2](#step-5-2); [Step 5.6](#step-5-6)
-    /// will replace this with journal-driven pending-row replay (the
-    /// recovery story moves to tugcode's `runReplay` reading the
-    /// journal directly, so the supervisor doesn't need to sweep).
-    /// Returns the affected `journal_id`s for telemetry.
-    fn reconcile_pending_for_session(
-        &self,
-        session_id: &str,
-        now: i64,
-    ) -> Result<Vec<String>, crate::session_ledger::LedgerError>;
 }
 
 /// Production implementation backed by a shared [`SessionLedger`].
@@ -854,24 +852,6 @@ impl SessionsRecorder for LedgerSessionsRecorder {
             );
         }
         Ok(popped)
-    }
-
-    fn reconcile_pending_for_session(
-        &self,
-        session_id: &str,
-        now: i64,
-    ) -> Result<Vec<String>, crate::session_ledger::LedgerError> {
-        let reconciled = self.ledger.reconcile_pending_for_session(session_id, now)?;
-        for journal_id in &reconciled {
-            tracing::warn!(
-                target: "tide::ledger",
-                event = "turn_reconciled_pending_to_interrupted",
-                session_id,
-                journal_id,
-                "reconciled orphan pending turn (tugcode for this session was gone at spawn-worker entry)",
-            );
-        }
-        Ok(reconciled)
     }
 }
 
@@ -1898,56 +1878,19 @@ impl AgentSupervisor {
                 card_id = card_id,
             );
 
-            // (Migration bootstrap removed by mid-turn-replay [Step 5.2](#step-5-2)
-            // / [DM08]'s no-migration policy. Tugtool has no production
-            // users, so historical JSONL → ledger migration is unneeded;
-            // the journal only ever holds *currently pending* submissions,
-            // never historical ones.)
-
-            // Crash-recovery reconciliation (mid-turn-replay step 4.7):
-            // we're about to launch a fresh tugcode subprocess for a
-            // session whose entry was `Idle` immediately above (the
-            // `should_spawn` gate). `Idle` means no tugcode is
-            // currently bound, so any `state='pending'` rows in the
-            // SessionLedger turns table for this session_id are
-            // orphans from a prior tugcode (clean exit before claude
-            // responded, or crash mid-stream). Mark them
-            // `interrupted` so the next `runReplay` surfaces them as
-            // `turn_cancelled` rather than leaving them stuck.
-            //
-            // Critically, this runs BEFORE any `dispatch_one`
-            // user_message intercept can insert a fresh pending row
-            // for this session — the dispatcher's lazy
-            // `Idle → Spawning` branch is documented above as
-            // "unreachable in normal client flow because
-            // do_spawn_session promotes Idle→Spawning before any
-            // CODE_INPUT frame can arrive." The fresh pending row
-            // therefore can't exist yet at this reconcile call site,
-            // so we don't risk interrupting a turn that's just been
-            // submitted in the same session lifecycle.
-            //
-            // Failure is non-fatal: the spawn proceeds and the
-            // orphans get another chance to reconcile on the next
-            // session resume.
-            match self.sessions_recorder.reconcile_pending_for_session(
-                tug_session_id.as_str(),
-                crate::session_ledger::now_millis(),
-            ) {
-                Ok(reconciled) if !reconciled.is_empty() => {
-                    tracing::info!(
-                        target: "tide::session-lifecycle",
-                        event = "supervisor.reconcile_pending_at_spawn",
-                        tug_session_id = %tug_session_id,
-                        count = reconciled.len(),
-                    );
-                }
-                Ok(_) => {}
-                Err(err) => warn!(
-                    error = %err,
-                    tug_session_id = %tug_session_id,
-                    "reconcile_pending_for_session failed; proceeding with spawn",
-                ),
-            }
+            // (Migration bootstrap and supervisor-side spawn-time
+            // reconciliation both removed by mid-turn-replay
+            // [Step 5.2](#step-5-2) / [Step 5.6](#step-5-6).
+            // Tugtool has no production users, so historical JSONL
+            // → ledger migration is unneeded; the journal only ever
+            // holds *currently pending* submissions, never historical
+            // ones. Per-session pending rows are surfaced directly
+            // by tugcode's `runReplay` via `injectPendingRowSynthetics`,
+            // which reads the journal through the cross-process
+            // bun:sqlite handle and emits a synthetic
+            // `user_message_replay` for each pending row whose
+            // `user_text` doesn't appear in JSONL — no supervisor
+            // sweep step needed.)
             self.spawn_session_worker(&tug_session_id).await;
         }
 
@@ -2820,9 +2763,9 @@ impl AgentSupervisor {
                     // by which time the write has long since committed.
                     //
                     // Step 5.10: process_outbound_frame_journal_gate first
-                    // updates the per-session replay-bracket flag from
+                    // updates the per-session replay-bracket counter from
                     // replay_started / replay_complete markers, then gates
-                    // apply_outbound_turn_intercept on `!replay_in_progress`
+                    // apply_outbound_turn_intercept on `replay_brackets_open == 0`
                     // so replay-emitted committed-turn frames don't pop
                     // the user's pending journal row.
                     self.process_outbound_frame_journal_gate(&id, &frame).await;
@@ -2832,9 +2775,9 @@ impl AgentSupervisor {
     }
 
     /// Bracket-aware wrapper around [`Self::apply_outbound_turn_intercept`].
-    /// Tracks per-session `LedgerEntry::replay_in_progress` based on the
+    /// Tracks per-session `LedgerEntry::replay_brackets_open` based on the
     /// `replay_started` / `replay_complete` frames the merger forwards,
-    /// and gates the FIFO journal-pop intercept on the flag.
+    /// and gates the FIFO journal-pop intercept on the counter being zero.
     ///
     /// Why this gate exists (mid-turn-replay
     /// [Step 5.10](roadmap/tugplan-tide-mid-turn-replay.md#step-5)):
@@ -2848,7 +2791,19 @@ impl AgentSupervisor {
     /// inflight submission whose runReplay fires while it's still pending.
     /// The HMR-mid-stream regression in the plan's close-out manual
     /// smoke surfaced this. The gate suppresses the intercept while the
-    /// bracket markers say a replay is in flight on this session.
+    /// counter is non-zero.
+    ///
+    /// Counter (not bool) for defense-in-depth against bridge-crash-mid-
+    /// replay: a bridge that emits `replay_started` and dies (kill -9,
+    /// panic, OOM before `runReplay`'s `finally` runs) would, with a
+    /// bool, leave the gate stuck-open forever and silently drop every
+    /// future live journal-pop. The counter shape doesn't fix that
+    /// directly — a stuck-non-zero counter has the same effect — but it
+    /// makes a stray `replay_complete` on a closed bracket a no-op
+    /// (saturating-decrement at 0) instead of underflowing a bool into
+    /// "open" state. tugcode's `runReplay` re-entrancy guard prevents
+    /// legitimate overlapping brackets, so in healthy operation the
+    /// counter is 0 between brackets and 1 during a bracket.
     async fn process_outbound_frame_journal_gate(&self, session_id: &TugSessionId, frame: &Frame) {
         let Some(inspected) =
             super::payload_inspector::InspectedPayload::from_slice(&frame.payload)
@@ -2875,26 +2830,28 @@ impl AgentSupervisor {
         match msg_type {
             Some("replay_started") => {
                 let mut entry = entry_arc.lock().await;
-                entry.replay_in_progress = true;
+                entry.replay_brackets_open = entry.replay_brackets_open.saturating_add(1);
                 tracing::debug!(
                     target: "tide::ledger",
                     event = "merger.replay_bracket_open",
                     session_id = %session_id,
+                    depth = entry.replay_brackets_open,
                 );
             }
             Some("replay_complete") => {
                 let mut entry = entry_arc.lock().await;
-                entry.replay_in_progress = false;
+                entry.replay_brackets_open = entry.replay_brackets_open.saturating_sub(1);
                 tracing::debug!(
                     target: "tide::ledger",
                     event = "merger.replay_bracket_close",
                     session_id = %session_id,
+                    depth = entry.replay_brackets_open,
                 );
             }
             Some("turn_complete") | Some("turn_cancelled") => {
                 let in_replay = {
                     let entry = entry_arc.lock().await;
-                    entry.replay_in_progress
+                    entry.replay_brackets_open > 0
                 };
                 if in_replay {
                     tracing::debug!(
@@ -2999,6 +2956,17 @@ impl AgentSupervisor {
         // Install the dispatcher-side sender and clone the
         // cancellation token. Do **not** drain the queue or transition to
         // Live — that's the bridge's job on `session_init` (see above).
+        //
+        // Reset `replay_brackets_open` to zero on every bridge respawn.
+        // The counter tracks `replay_started` / `replay_complete` markers
+        // emitted by the bridge's `runReplay`. A bridge that died between
+        // emitting `replay_started` and `replay_complete` would leave
+        // the counter stuck non-zero — the new bridge's brackets would
+        // then nest into the stale outer bracket and the gate would
+        // skip live `turn_complete`s indefinitely. Reset here closes
+        // the stuck-state risk: each fresh bridge starts with a clean
+        // gate, regardless of whether the previous bridge crashed
+        // mid-replay.
         let cancel_for_bridge = {
             let mut entry = entry_arc.lock().await;
             if entry.spawn_state != SpawnState::Spawning {
@@ -3010,6 +2978,7 @@ impl AgentSupervisor {
                 return;
             }
             entry.input_tx = Some(input_tx.clone());
+            entry.replay_brackets_open = 0;
             entry.cancel.clone()
         };
         // `input_tx` is stashed in the ledger entry; the bridge drains it
@@ -3234,13 +3203,6 @@ impl SessionsRecorder for NoopSessionsRecorder {
         _session_id: &str,
     ) -> Result<Option<crate::session_ledger::JournalRow>, crate::session_ledger::LedgerError> {
         Ok(None)
-    }
-    fn reconcile_pending_for_session(
-        &self,
-        _session_id: &str,
-        _now: i64,
-    ) -> Result<Vec<String>, crate::session_ledger::LedgerError> {
-        Ok(Vec::new())
     }
 }
 
@@ -7454,12 +7416,23 @@ mod tests {
     // ── Step 5.10 — replay-bracket gate on the journal-pop intercept ─────────
     //
     // The merger's `process_outbound_frame_journal_gate` tracks per-session
-    // `replay_in_progress` from `replay_started` / `replay_complete` markers
-    // and skips `apply_outbound_turn_intercept` while a replay bracket is
-    // open. Without the gate, replay-emitted committed-turn `turn_complete`s
-    // pop the user's still-pending journal row (the HMR-mid-stream
-    // regression surfaced in the [Step 5](roadmap/tugplan-tide-mid-turn-replay.md#step-5)
+    // `replay_brackets_open` from `replay_started` / `replay_complete` markers
+    // and skips `apply_outbound_turn_intercept` while the counter is non-zero.
+    // Without the gate, replay-emitted committed-turn `turn_complete`s pop
+    // the user's still-pending journal row (the HMR-mid-stream regression
+    // surfaced in the [Step 5](roadmap/tugplan-tide-mid-turn-replay.md#step-5)
     // close-out manual smoke).
+    //
+    // Counter (not bool) is defense-in-depth: a stray `replay_complete` on
+    // a closed bracket is a saturating-decrement no-op, not an underflow
+    // that re-opens the gate. tugcode's `runReplay` re-entrancy guard
+    // prevents legitimate overlapping brackets, so in healthy operation
+    // the counter is 0 between brackets and 1 during a bracket. The
+    // bridge-respawn reset in `spawn_session_worker` clears the counter
+    // back to 0 if a previous bridge died after `replay_started` but
+    // before `replay_complete` — a stuck-non-zero counter would otherwise
+    // make the new bridge's brackets nest into the stale outer bracket
+    // and the gate would skip live `turn_complete`s indefinitely.
 
     fn replay_started_frame() -> Frame {
         let body = serde_json::json!({
@@ -7479,7 +7452,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn journal_gate_marks_replay_bracket_open_on_replay_started() {
+    async fn journal_gate_increments_bracket_counter_on_replay_started() {
         let store = Arc::new(InMemoryStore::default());
         let (sup, _ledger, _rx) = make_supervisor_with_ledger(store);
         let session_id = "sess-bracket-open";
@@ -7496,28 +7469,173 @@ mod tests {
             .get(&tug_session_id)
             .cloned()
             .expect("entry exists");
-        assert!(
-            entry_arc.lock().await.replay_in_progress,
-            "replay_started must set replay_in_progress=true",
+        assert_eq!(
+            entry_arc.lock().await.replay_brackets_open,
+            1,
+            "replay_started must increment the bracket counter to 1",
         );
     }
 
     #[tokio::test]
-    async fn journal_gate_marks_replay_bracket_closed_on_replay_complete() {
+    async fn journal_gate_decrements_bracket_counter_on_replay_complete() {
         let store = Arc::new(InMemoryStore::default());
         let (sup, _ledger, _rx) = make_supervisor_with_ledger(store);
         let session_id = "sess-bracket-close";
         let tug_session_id = TugSessionId::new(session_id);
         let entry_arc = insert_ledger_entry(&sup, &tug_session_id).await;
-        // Seed flag = true (as if a replay had opened).
-        entry_arc.lock().await.replay_in_progress = true;
+        // Seed counter = 1 (as if a replay had opened).
+        entry_arc.lock().await.replay_brackets_open = 1;
 
         sup.process_outbound_frame_journal_gate(&tug_session_id, &replay_complete_frame())
             .await;
 
-        assert!(
-            !entry_arc.lock().await.replay_in_progress,
-            "replay_complete must set replay_in_progress=false",
+        assert_eq!(
+            entry_arc.lock().await.replay_brackets_open,
+            0,
+            "replay_complete must decrement the bracket counter to 0",
+        );
+    }
+
+    #[tokio::test]
+    async fn journal_gate_replay_complete_at_zero_saturates_no_underflow() {
+        // Defensive: a stray replay_complete on a closed bracket
+        // (counter already 0) must NOT underflow into u32::MAX. The
+        // saturating_sub keeps it at 0; subsequent live turn_completes
+        // continue to pop the journal as normal.
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let session_id = "sess-bracket-saturate";
+        let tug_session_id = TugSessionId::new(session_id);
+        let entry_arc = insert_ledger_entry(&sup, &tug_session_id).await;
+        seed_session_for_journal_test(&ledger, session_id);
+        ledger
+            .insert_pending_turn(session_id, "j-saturate", "stay alive", &[], 1_000)
+            .unwrap();
+
+        // Counter starts at 0 (fresh entry).
+        assert_eq!(entry_arc.lock().await.replay_brackets_open, 0);
+
+        // Stray replay_complete: counter must clamp at 0.
+        sup.process_outbound_frame_journal_gate(&tug_session_id, &replay_complete_frame())
+            .await;
+        assert_eq!(
+            entry_arc.lock().await.replay_brackets_open,
+            0,
+            "saturating_sub at 0 must clamp; not underflow into u32::MAX",
+        );
+
+        // Live turn_complete now arrives. Gate is open (counter == 0);
+        // intercept must fire and pop the row.
+        sup.process_outbound_frame_journal_gate(&tug_session_id, &turn_complete_frame())
+            .await;
+        assert_eq!(
+            count_pending_for_session(&ledger, session_id),
+            0,
+            "live turn_complete after a stray replay_complete must still pop the journal row",
+        );
+    }
+
+    #[tokio::test]
+    async fn journal_gate_stuck_nonzero_counter_is_reset_on_bridge_respawn() {
+        // Stuck-non-zero scenario: a previous bridge emitted
+        // `replay_started` (counter -> 1) but died before emitting
+        // `replay_complete` (kill -9, panic, OOM before runReplay's
+        // finally block ran). Without a reset on bridge respawn, the
+        // counter stays at 1 forever, and every future live
+        // `turn_complete` would skip the journal-pop intercept —
+        // silently breaking the never-drop guarantee for all subsequent
+        // submissions on this session.
+        //
+        // `spawn_session_worker` resets `replay_brackets_open = 0`
+        // whenever a fresh bridge is wired up. This test simulates the
+        // crash by manually setting the counter to a stuck value, then
+        // observes that a `process_outbound_frame_journal_gate` on a
+        // live `turn_complete` post-reset correctly pops the journal.
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let session_id = "sess-stuck-counter";
+        let tug_session_id = TugSessionId::new(session_id);
+        let entry_arc = insert_ledger_entry(&sup, &tug_session_id).await;
+        seed_session_for_journal_test(&ledger, session_id);
+        ledger
+            .insert_pending_turn(session_id, "j-stuck", "should still pop", &[], 1_000)
+            .unwrap();
+
+        // Simulate a stuck-non-zero counter from a prior bridge that
+        // crashed mid-replay. The exact value doesn't matter — anything
+        // > 0 leaves the gate skipping intercepts.
+        entry_arc.lock().await.replay_brackets_open = 3;
+
+        // While stuck, a turn_complete is skipped — pin this so the
+        // reset is the only way to recover.
+        sup.process_outbound_frame_journal_gate(&tug_session_id, &turn_complete_frame())
+            .await;
+        assert_eq!(
+            count_pending_for_session(&ledger, session_id),
+            1,
+            "stuck-non-zero counter must skip intercept (no reset yet)",
+        );
+
+        // Bridge respawn resets the counter. We replicate the field
+        // mutation `spawn_session_worker` performs without invoking the
+        // full spawn path (which requires an actual subprocess).
+        entry_arc.lock().await.replay_brackets_open = 0;
+
+        // Post-reset, a live turn_complete pops the journal as normal.
+        sup.process_outbound_frame_journal_gate(&tug_session_id, &turn_complete_frame())
+            .await;
+        assert_eq!(
+            count_pending_for_session(&ledger, session_id),
+            0,
+            "post-respawn-reset, live turn_complete pops the row",
+        );
+    }
+
+    #[tokio::test]
+    async fn journal_gate_nested_brackets_open_count_correctly() {
+        // tugcode's runReplay re-entrancy guard prevents legitimate
+        // overlapping brackets in production, but the counter shape
+        // tolerates them defensively. Two replay_started markers leave
+        // the counter at 2; one replay_complete decrements to 1 (still
+        // gating); the second decrements to 0 (gate opens).
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let session_id = "sess-nested";
+        let tug_session_id = TugSessionId::new(session_id);
+        let entry_arc = insert_ledger_entry(&sup, &tug_session_id).await;
+        seed_session_for_journal_test(&ledger, session_id);
+        ledger
+            .insert_pending_turn(session_id, "j-nested", "nested test", &[], 1_000)
+            .unwrap();
+
+        sup.process_outbound_frame_journal_gate(&tug_session_id, &replay_started_frame())
+            .await;
+        sup.process_outbound_frame_journal_gate(&tug_session_id, &replay_started_frame())
+            .await;
+        assert_eq!(entry_arc.lock().await.replay_brackets_open, 2);
+
+        // First replay_complete: counter -> 1, still gating.
+        sup.process_outbound_frame_journal_gate(&tug_session_id, &replay_complete_frame())
+            .await;
+        assert_eq!(entry_arc.lock().await.replay_brackets_open, 1);
+        sup.process_outbound_frame_journal_gate(&tug_session_id, &turn_complete_frame())
+            .await;
+        assert_eq!(
+            count_pending_for_session(&ledger, session_id),
+            1,
+            "turn_complete inside the still-open outer bracket must NOT pop",
+        );
+
+        // Second replay_complete: counter -> 0, gate opens.
+        sup.process_outbound_frame_journal_gate(&tug_session_id, &replay_complete_frame())
+            .await;
+        assert_eq!(entry_arc.lock().await.replay_brackets_open, 0);
+        sup.process_outbound_frame_journal_gate(&tug_session_id, &turn_complete_frame())
+            .await;
+        assert_eq!(
+            count_pending_for_session(&ledger, session_id),
+            0,
+            "turn_complete after both brackets close must pop",
         );
     }
 
@@ -7612,9 +7730,10 @@ mod tests {
             .get(&tug_session_id)
             .cloned()
             .unwrap();
-        assert!(
-            !entry_arc.lock().await.replay_in_progress,
-            "assistant_text must not touch the replay flag",
+        assert_eq!(
+            entry_arc.lock().await.replay_brackets_open,
+            0,
+            "assistant_text must not touch the bracket counter",
         );
         assert_eq!(
             count_pending_for_session(&ledger, session_id),

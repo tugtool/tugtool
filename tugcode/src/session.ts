@@ -2597,11 +2597,21 @@ export class SessionManager {
   }
   /**
    * Emit the in-flight turn's content from `ActiveTurn` state, inside
-   * `runReplay`'s bracket. Called by `runReplay` after the translator
-   * finishes iterating and reports `skippedTrailingTurn === true` —
-   * meaning the JSONL's trailing in-flight turn's id matched
-   * `liveInflightMsgId`, the translator emitted nothing for it, and
-   * tugcode is now responsible for delivering the in-flight content.
+   * `runReplay`'s bracket. Called unconditionally by `runReplay` after
+   * the JSONL pass finishes and before the buffered `replay_complete`
+   * is written, whenever an in-flight `ActiveTurn` was adopted at
+   * bracket entry (`activeTurn !== null && !gotResult && !interrupted`).
+   *
+   * This is the load-bearing delivery path for claude's pre-HMR
+   * streaming content (Step 5.11's never-drop chain link 8). The
+   * CODE_OUTPUT broadcast does not backfill new subscribers
+   * (`LagPolicy::Replay` only triggers on broadcast lag overflow,
+   * not on initial subscribe), the JSONL only contains committed
+   * turns, and the Step 5.6 pending-row synthetic delivers only the
+   * user-side echo. Without this snapshot, the freshly-connected
+   * client sees `pendingUserMessage` set but no scratch text, and
+   * post-bracket `is_partial: true` deltas append onto an empty
+   * baseline — losing the head of claude's response.
    *
    * The reads here (`turn.userText`, `turn.partialText`, etc.) are
    * tugcode's authoritative state — fresher and more complete than
