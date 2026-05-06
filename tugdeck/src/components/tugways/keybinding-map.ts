@@ -156,6 +156,19 @@ export const KEYBINDINGS: KeyBinding[] = [
   },
   { key: "Comma", meta: true, action: TUG_ACTIONS.SHOW_SETTINGS },
   { key: "Period", meta: true, action: TUG_ACTIONS.CANCEL_DIALOG },
+  // Escape routes to the same chain action as ⌘. so floating UI
+  // (popovers, alerts, sheets) dismisses via its existing
+  // CANCEL_DIALOG handlers, AND — when nothing dialog-like is in the
+  // chain — a card-level CANCEL_DIALOG handler (e.g. tide-card.tsx's
+  // card-content responder) can interrupt an in-flight turn. The
+  // chain's "first responder up" walk gives the natural priority:
+  // visible popover dismisses first, drag cancels next (via the
+  // separate document-level Escape listener in card-drag-coordinator),
+  // in-flight interrupt last. No `preventDefaultOnMatch`: when no
+  // responder claims the action the event continues to bubble so
+  // bubble-phase consumers (e.g. CodeMirror's autocomplete dismiss)
+  // still see it.
+  { key: "Escape", action: TUG_ACTIONS.CANCEL_DIALOG },
   { key: "KeyF", meta: true, action: TUG_ACTIONS.FIND },
   // Tab navigation: macOS convention (Safari, Terminal) uses
   // ⇧⌘[ / ⇧⌘] for previous / next tab with wrap-around. Routes to

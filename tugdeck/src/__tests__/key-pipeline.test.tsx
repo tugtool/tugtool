@@ -496,6 +496,30 @@ describe("matchKeybinding", () => {
     );
   });
 
+  it("Escape → cancelDialog (no modifiers, no preventDefaultOnMatch)", () => {
+    // Escape and Cmd-. share the same action so floating UI dismisses
+    // via existing CANCEL_DIALOG handlers and tide-card's card-content
+    // responder can interrupt an in-flight turn when nothing
+    // dialog-like is in the chain. preventDefaultOnMatch is omitted
+    // so the event still bubbles when no responder claims it — needed
+    // for editor-internal Escape semantics (CodeMirror's autocomplete
+    // dismiss).
+    const binding = matchKeybinding(makeEvent("Escape"));
+    expect(binding?.action).toBe("cancel-dialog");
+    expect(binding?.preventDefaultOnMatch).toBeUndefined();
+  });
+
+  it("Escape with modifiers does not match the bare Escape binding", () => {
+    // Modifier-loaded Escape variants are unmapped; the bare-Escape
+    // binding's modifier flags all default to false and the matcher
+    // requires exact equality. Defends against accidental future
+    // bindings that overlap.
+    expect(matchKeybinding(makeEvent("Escape", { metaKey: true }))).toBeNull();
+    expect(matchKeybinding(makeEvent("Escape", { ctrlKey: true }))).toBeNull();
+    expect(matchKeybinding(makeEvent("Escape", { shiftKey: true }))).toBeNull();
+    expect(matchKeybinding(makeEvent("Escape", { altKey: true }))).toBeNull();
+  });
+
   it("Cmd+F → find", () => {
     expect(matchKeybinding(makeEvent("KeyF", { metaKey: true }))?.action).toBe(
       "find",
@@ -621,5 +645,169 @@ describe("capture-phase payload threading", () => {
     });
 
     expect(received).toBeUndefined();
+  });
+});
+
+// ============================================================================
+// Cmd-. and Escape interrupt routing — pins the chain wiring used by
+// `tide-card.tsx`'s card-content responder, where CANCEL_DIALOG is
+// conditionally registered (gated on `canInterrupt`) so the first
+// responder's chain walk hits an interrupt handler when a turn is in
+// flight and falls through to bubble-phase consumers (CodeMirror,
+// Radix) when nothing dialog-like is available.
+// ============================================================================
+
+describe("key pipeline – CANCEL_DIALOG routes to a card-content handler when it exists", () => {
+  it("Escape with conditional CANCEL_DIALOG present routes to the card-content handler", () => {
+    let cardContentCalled = 0;
+    let manager!: ResponderChainManager;
+
+    function Setup() {
+      const m = useResponderChain();
+      if (m) manager = m;
+      return null;
+    }
+
+    act(() => {
+      render(
+        <ResponderChainProvider>
+          <Setup />
+        </ResponderChainProvider>
+      );
+    });
+
+    // Mimic the tide-card responder hierarchy: a card-content node
+    // at the top, an editor-mimic at the bottom. The card-content
+    // node carries a CANCEL_DIALOG handler unconditionally for this
+    // test (the conditional-spread case is exercised separately).
+    manager.register({
+      id: "card-content",
+      parentId: null,
+      kind: "card-content",
+      actions: {
+        [TUG_ACTIONS.CANCEL_DIALOG]: () => {
+          cardContentCalled += 1;
+        },
+      },
+    });
+    manager.register({
+      id: "editor-mimic",
+      parentId: "card-content",
+      actions: {},
+    });
+    manager.makeFirstResponder("editor-mimic");
+
+    act(() => {
+      fireKeydown({ code: "Escape" });
+    });
+
+    // The chain walked from `editor-mimic` (no handler) up to
+    // `card-content` (handler present) and fired it once.
+    expect(cardContentCalled).toBe(1);
+  });
+
+  it("Escape with NO CANCEL_DIALOG handler in the chain returns handled=false (no preventDefault)", () => {
+    let manager!: ResponderChainManager;
+    function Setup() {
+      const m = useResponderChain();
+      if (m) manager = m;
+      return null;
+    }
+
+    act(() => {
+      render(
+        <ResponderChainProvider>
+          <Setup />
+        </ResponderChainProvider>
+      );
+    });
+
+    manager.register({
+      id: "card-content-no-cancel",
+      parentId: null,
+      kind: "card-content",
+      actions: {},
+    });
+    manager.register({
+      id: "editor-mimic-2",
+      parentId: "card-content-no-cancel",
+      actions: {},
+    });
+    manager.makeFirstResponder("editor-mimic-2");
+
+    let preventDefaultCalled = false;
+    let bubbleFired = false;
+    const origPreventDefault = KeyboardEvent.prototype.preventDefault;
+    KeyboardEvent.prototype.preventDefault = function (this: KeyboardEvent) {
+      preventDefaultCalled = true;
+      origPreventDefault.call(this);
+    };
+    const bubbleListener = () => { bubbleFired = true; };
+    document.addEventListener("keydown", bubbleListener);
+
+    act(() => {
+      fireKeydown({ code: "Escape" });
+    });
+
+    KeyboardEvent.prototype.preventDefault = origPreventDefault;
+    document.removeEventListener("keydown", bubbleListener);
+
+    // Chain returns handled=false → pipeline does not preventDefault.
+    expect(preventDefaultCalled).toBe(false);
+    // Event continued to bubble phase (CodeMirror / Radix would see it).
+    expect(bubbleFired).toBe(true);
+  });
+
+  it("Escape with an upstream popover-shaped CANCEL_DIALOG handler routes there, not to card-content", () => {
+    // Mimics the live cascade: a popover registered between the
+    // editor-mimic and the card-content node. Chain walks UP from the
+    // first responder; the popover's handler is encountered first and
+    // consumes the action, so the card-content handler does NOT fire.
+    let popoverCalled = 0;
+    let cardContentCalled = 0;
+    let manager!: ResponderChainManager;
+
+    function Setup() {
+      const m = useResponderChain();
+      if (m) manager = m;
+      return null;
+    }
+
+    act(() => {
+      render(
+        <ResponderChainProvider>
+          <Setup />
+        </ResponderChainProvider>
+      );
+    });
+
+    manager.register({
+      id: "card-content-popover",
+      parentId: null,
+      kind: "card-content",
+      actions: {
+        [TUG_ACTIONS.CANCEL_DIALOG]: () => { cardContentCalled += 1; },
+      },
+    });
+    manager.register({
+      id: "popover-mimic",
+      parentId: "card-content-popover",
+      actions: {
+        [TUG_ACTIONS.CANCEL_DIALOG]: () => { popoverCalled += 1; },
+      },
+    });
+    manager.register({
+      id: "editor-mimic-3",
+      parentId: "popover-mimic",
+      actions: {},
+    });
+    manager.makeFirstResponder("editor-mimic-3");
+
+    act(() => {
+      fireKeydown({ code: "Escape" });
+    });
+
+    expect(popoverCalled).toBe(1);
+    expect(cardContentCalled).toBe(0);
   });
 });

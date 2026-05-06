@@ -76,6 +76,21 @@
   --tugx-md-block-padding-x: 0;
 }
 
+/* Trailing interrupted indicator on a committed code row whose
+   `result === "interrupted"`. Mirrors Claude Code's terminal layout
+   where "Interrupted" is the postscript line under the assistant's
+   (possibly partial) output. The wrapper aligns the badge flush with
+   the body content; the small unconditional top margin lifts the
+   badge off whatever assistant content sits above it. For CASE A
+   interrupts (empty assistantText) the gap is harmless — the row's
+   identifier line provides enough visual separation that the small
+   margin reads as deliberate spacing rather than dangling whitespace. */
+.tide-card-transcript-code-interrupted {
+  display: flex;
+  align-items: center;
+  margin-top: var(--tug-space-xs, 4px);
+}
+
 /* Backdrop rendered behind the picker sheet. Empty — the project
    picker lives in a TugSheet that drops from the title bar. Keeps
    the card body at its intrinsic size so no scroll bars appear. */

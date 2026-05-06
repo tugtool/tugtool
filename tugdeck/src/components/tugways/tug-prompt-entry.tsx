@@ -799,6 +799,34 @@ export const TugPromptEntry = React.forwardRef<
   // there's no per-route draft to swap into the editor anymore
   // ([Q07]=a), so the handler is a single setRouteState +
   // refocus-the-editor.
+  //
+  // CANCEL_DIALOG is conditionally registered (only when an
+  // in-flight turn can be interrupted). Both Escape and Cmd-. map
+  // to CANCEL_DIALOG in `keybinding-map.ts`; the chain walks from
+  // first responder upward so any visible popover / sheet / alert
+  // dismisses first via its own CANCEL_DIALOG handler. When nothing
+  // dialog-like is in the chain and a turn is in flight, the walk
+  // reaches us and we route through to the store's interrupt() —
+  // same behavior as clicking the red Stop button.
+  //
+  // Conditional registration matters: the chain marks an action as
+  // handled iff its key exists in the responder's actions map
+  // (`lookupHandler` is `node.actions[action]`). Registering
+  // CANCEL_DIALOG unconditionally would suppress the bubble-phase
+  // event (preventDefault + stopImmediatePropagation) even when
+  // canInterrupt is false — and that would break editor-internal
+  // Escape semantics (CodeMirror's autocomplete dismiss). The
+  // `useResponder` hook's R5 live-lookup proxy reads
+  // `optionsRef.current.actions` on every dispatch, so the
+  // conditional spread reflects the current snapshot's
+  // `canInterrupt` value at dispatch time.
+  //
+  // The handler lives at THIS responder (TugPromptEntry's) rather
+  // than further up the chain (card-content) because the chain walk
+  // reaches us first — closer to the first responder is the natural
+  // place for a behavior that's semantically owned by the prompt
+  // entry (which already owns the submit / interrupt branching for
+  // the Stop button via `performSubmit`).
   const { ResponderScope, responderRef } = useResponder({
     id,
     actions: {
@@ -825,6 +853,13 @@ export const TugPromptEntry = React.forwardRef<
         const next = !maximizedRef.current;
         onMaximizeChangeRef.current?.(next);
       },
+      ...(snap.canInterrupt
+        ? {
+            [TUG_ACTIONS.CANCEL_DIALOG]: (_event: ActionEvent) => {
+              codeSessionStore.interrupt();
+            },
+          }
+        : {}),
     },
   });
 

@@ -480,3 +480,121 @@ describe("TideTranscriptHost — persistence axis", () => {
     expect(scrollContainer).not.toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Interrupted indicator — committed turns whose `result === "interrupted"`
+// surface a trailing "Interrupted" badge in the code-row body. Mirrors
+// Claude Code's terminal layout where "Interrupted" sits as the
+// postscript line under any partial assistant output. Both CASE B
+// (post-first-delta interrupt) and the CASE-A-style empty-content
+// interrupted entry are covered by the same indicator path.
+// ---------------------------------------------------------------------------
+
+describe("TideTranscriptHost — interrupted indicator", () => {
+  it("renders the indicator on a CASE B interrupted turn (partial content + indicator)", () => {
+    const h = buildHarness(queuedRafCallbacks);
+    const { container } = renderHost(h);
+
+    act(() => {
+      h.codeSessionStore.send("hi", []);
+      // One partial drives `submitting → awaiting_first_token` and
+      // sets `activeMsgId`, putting us past the dividing line into
+      // CASE B. The wire's eventual turn_complete(error) commits a
+      // TurnEntry with `result: "interrupted"` carrying the partial.
+      h.conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+        type: "assistant_text",
+        tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+        msg_id: "msg-interrupted",
+        text: "partial reply",
+        is_partial: true,
+        seq: 0,
+        rev: 0,
+      });
+      h.codeSessionStore.interrupt();
+      h.conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+        type: "turn_complete",
+        tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+        msg_id: "msg-interrupted",
+        result: "error",
+      });
+      h.flushRaf();
+    });
+
+    expect(h.codeSessionStore.getSnapshot().transcript.length).toBe(1);
+    expect(h.codeSessionStore.getSnapshot().transcript[0].result).toBe("interrupted");
+
+    const indicator = container.querySelector(
+      '[data-slot="tide-card-transcript-interrupted"]',
+    );
+    expect(indicator).not.toBeNull();
+    expect(indicator?.textContent).toContain("Interrupted");
+
+    // Partial content is still visible in the body alongside the
+    // indicator.
+    const codeBody = codeBodies(container)[0];
+    expect(codeBody?.textContent).toContain("partial reply");
+  });
+
+  it("renders the indicator on an interrupted turn with no content (CASE-A-shape entry)", () => {
+    // CASE A's user-facing flow doesn't actually commit a transcript
+    // entry — handleInterrupt suppresses via pendingCaseAEchoes. But
+    // the cell renderer itself shouldn't care WHY a turn ended up as
+    // `result: "interrupted"` with empty content; it just needs to
+    // surface the indicator. This test pins that contract by directly
+    // committing a synthetic interrupted turn whose scratch was empty
+    // at commit time (mirrors the pre-Design-E shape that older
+    // sessions on disk could carry).
+    const h = buildHarness(queuedRafCallbacks);
+    const { container } = renderHost(h);
+
+    act(() => {
+      h.codeSessionStore.send("hi", []);
+      // No partials → activeMsgId never set; turn_complete(error) with
+      // explicit msg_id flows through the standard commit path
+      // (handleTurnComplete commits a TurnEntry with empty assistant
+      // text and result="interrupted"). Note: this is NOT the CASE A
+      // suppressed path (pendingCaseAEchoes is 0 because the user
+      // never pressed Stop in this scenario — claude failed silently
+      // before any content). The cell renderer's interrupted path is
+      // the same regardless of WHY content is empty.
+      h.conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+        type: "turn_complete",
+        tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+        msg_id: "msg-empty-interrupted",
+        result: "error",
+      });
+      h.flushRaf();
+    });
+
+    expect(h.codeSessionStore.getSnapshot().transcript.length).toBe(1);
+    expect(h.codeSessionStore.getSnapshot().transcript[0].result).toBe("interrupted");
+
+    const indicator = container.querySelector(
+      '[data-slot="tide-card-transcript-interrupted"]',
+    );
+    expect(indicator).not.toBeNull();
+    expect(indicator?.textContent).toContain("Interrupted");
+  });
+
+  it("does NOT render the indicator on a successful turn", () => {
+    const probe = loadGoldenProbe("v2.1.105", "test-01-basic-round-trip");
+    const h = buildHarness(queuedRafCallbacks);
+    const { container } = renderHost(h);
+
+    act(() => {
+      h.codeSessionStore.send("hi", []);
+      for (const event of probe.events) {
+        h.conn.dispatchDecoded(FeedId.CODE_OUTPUT, event);
+      }
+      h.flushRaf();
+    });
+
+    expect(h.codeSessionStore.getSnapshot().transcript.length).toBe(1);
+    expect(h.codeSessionStore.getSnapshot().transcript[0].result).toBe("success");
+
+    const indicator = container.querySelector(
+      '[data-slot="tide-card-transcript-interrupted"]',
+    );
+    expect(indicator).toBeNull();
+  });
+});

@@ -39,7 +39,7 @@ import React, {
   useMemo,
   useSyncExternalStore,
 } from "react";
-import { Copy } from "lucide-react";
+import { Copy, OctagonX } from "lucide-react";
 
 import { TugBadge } from "@/components/tugways/tug-badge";
 import {
@@ -177,6 +177,7 @@ const CodeCommittedRowCell: React.FC<CodeCommittedRowCellProps> = ({
   // re-render against a shrunk transcript) we render an empty body
   // rather than crash on `undefined.assistant`.
   const assistantText = turn?.assistant ?? "";
+  const isInterrupted = turn?.result === "interrupted";
   const timestamp = turn !== undefined
     ? formatTranscriptTimestamp(turn.endedAt)
     : undefined;
@@ -190,10 +191,34 @@ const CodeCommittedRowCell: React.FC<CodeCommittedRowCellProps> = ({
       identifier={modelName ?? CODE_DEFAULT_IDENTIFIER}
       timestamp={timestamp === "" ? undefined : timestamp}
       body={
-        <TugMarkdownBlock
-          initialText={assistantText}
-          className="tide-card-transcript-code-body"
-        />
+        // The committed body is the assistant markdown followed (when
+        // the turn was interrupted) by a trailing "Interrupted" badge.
+        // Mirrors the trailing-indicator placement in Claude Code's
+        // terminal output — the indicator sits AFTER any partial
+        // content the assistant produced before being cut off, and is
+        // the only visible body for a CASE A interrupt where no
+        // content ever landed (assistantText === "").
+        <>
+          <TugMarkdownBlock
+            initialText={assistantText}
+            className="tide-card-transcript-code-body"
+          />
+          {isInterrupted ? (
+            <div
+              className="tide-card-transcript-code-interrupted"
+              data-slot="tide-card-transcript-interrupted"
+            >
+              <TugBadge
+                size="sm"
+                emphasis="tinted"
+                role="caution"
+                icon={<OctagonX size={12} aria-hidden="true" />}
+              >
+                Interrupted
+              </TugBadge>
+            </div>
+          ) : null}
+        </>
       }
       controls={
         <>
