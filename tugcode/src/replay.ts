@@ -30,13 +30,16 @@
 //   assistant_text                   `is_partial: false` (terminal
 //                                    text only — replay doesn't
 //                                    stream per-token deltas).
-//   turn_complete                    `result: "success"` for committed
-//                                    turns. The trailing in-flight turn
-//                                    (no `end_turn` in JSONL) emits its
-//                                    content frames but NO terminal —
-//                                    see [`flushInflightTurnContent`] /
-//                                    Step 5.5 of the mid-turn-replay
-//                                    plan.
+//   turn_complete                    `result: "success"`. Emitted only
+//                                    when an assistant entry's
+//                                    `stop_reason === "end_turn"`. The
+//                                    trailing in-flight assistant entry
+//                                    of an unfinished cycle emits its
+//                                    content frames per-entry but no
+//                                    terminal — the live drain
+//                                    continuing post-replay produces
+//                                    the eventual `turn_complete` when
+//                                    claude's `result` lands.
 
 import type {
   AssistantText,
@@ -172,59 +175,33 @@ const DEFAULT_TELEMETRY: ReplayTelemetry = {
 // ---------------------------------------------------------------------------
 
 /**
- * Per-turn buffer that accumulates content across the JSONL entries
- * comprising a single user → assistant turn:
+ * Per-cycle context for the JSONL → frame translator.
  *
- *   - The user submission's text + image attachments (captured on the
- *     `user` entry that opens the turn; held until the terminal
- *     `assistant` entry surfaces a `message.id` so the user-message
- *     and the turn share a single canonical msg_id).
- *   - Tool-use invocations from intermediate `assistant` entries
- *     (stop_reason=tool_use) and the responses from the corresponding
- *     `user` entries with tool_result content.
- *   - Accumulated `thinking` and assistant `text` content.
+ * "Cycle" = one user submission + claude's response (one or more
+ * assistant entries, ending with `stop_reason === "end_turn"`).
  *
- * A turn ends when an `assistant` entry with `stop_reason: "end_turn"`
- * lands. The buffer is flushed as a fixed-order sequence of
- * OutboundMessages — including a terminal `turn_complete{success}` —
- * and reset for the next turn.
+ * Each `assistant` JSONL entry emits its content frames immediately,
+ * keyed on its own `message.id` — multi-message claude cycles produce
+ * multiple separately-keyed assistant streams on the wire. The cycle's
+ * `user_message_replay` fires once, on the FIRST assistant entry,
+ * keyed on claude's first `message.id`. The terminal `turn_complete`
+ * fires only on the `end_turn` entry.
  *
- * A buffer that survives end-of-file (no terminal `end_turn` ever
- * arrived — the JSONL was truncated mid-turn, e.g. by a reload during
- * streaming) is flushed via [`flushInflightTurnContent`]: content frames
- * surface so the user sees the in-flight portion of the turn, but **no
- * terminal `turn_complete` is emitted**. The reducer holds the partial
- * content in `pendingUserMessage` / `scratch[msgId]` until the live
- * drain produces the eventual `turn_complete` from claude's continuing
- * stream. See Step 5.5 of the mid-turn-replay plan; this is the
- * structural fix for the 2026-05-05 reload-mid-stream bug.
+ * `pendingUserText` and `pendingUserAttachments` hold the cycle's
+ * user submission until the first assistant entry consumes them.
+ * `cycleOpen` tracks whether `user_message_replay` has fired yet so
+ * subsequent assistant entries within the same cycle skip re-emitting
+ * it. `turnsCommitted` advances once per `end_turn` (the count
+ * surfaced via `replay_complete.count`).
+ *
+ * A cycle that survives end-of-file (no terminal `end_turn` ever
+ * arrived — the JSONL was truncated mid-stream, e.g. by a reload while
+ * claude is still responding) needs no special EOF flush: each
+ * assistant entry has already emitted its content per-entry. The
+ * absence of `turn_complete` keeps the reducer's `pendingUserMessage`
+ * and per-msg-id scratch populated until the live drain produces the
+ * eventual `turn_complete` when claude's `result` lands.
  */
-interface PerTurnBuffer {
-  /** The terminal assistant entry's `message.id`. Bound when the
-   * end_turn (or the only available — at EOF — assistant) entry
-   * arrives. Until then the buffer is open and the msg_id slot is
-   * filled with the most recently observed assistant `message.id`
-   * so an orphan-turn flush has a coherent id to attach to. */
-  msgId: string;
-  /** Accumulated text from the terminal `assistant` entry's `text`
-   * blocks. Replay is per-turn (not per-token) so this is never a
-   * partial — `is_partial: false` is hard-coded on emission. */
-  assistantText: string;
-  /** Accumulated `thinking` content. */
-  thinkingText: string;
-  /** Tool-use invocations seen so far, in insertion order. The
-   * matching tool_result responses are stored alongside; emission
-   * pairs them at flush time. */
-  toolCalls: Array<{
-    toolUseId: string;
-    toolName: string;
-    input: unknown;
-    /** The tool_result, populated when the corresponding `user`
-     * entry's tool_result block lands. `null` until then. */
-    result: { output: string; is_error: boolean } | null;
-  }>;
-}
-
 export interface TranslateContext {
   /**
    * Wire-message sequence counter — used for `seq` fields on shapes
@@ -237,15 +214,24 @@ export interface TranslateContext {
   turnsCommitted: number;
   /**
    * Pending user submission's text — captured when a `user` JSONL
-   * entry with text content arrives, held until the next `assistant`
-   * entry binds it to a turn msg_id. `null` between turns or before
-   * the first user entry.
+   * entry with text content arrives, held until the FIRST `assistant`
+   * entry of the cycle emits the `user_message_replay` (and clears
+   * this slot). `null` between cycles or before the cycle's user
+   * entry has been read.
    */
   pendingUserText: string | null;
   /** Pending user-submission image attachments. */
   pendingUserAttachments: Attachment[];
-  /** The active turn buffer, or `null` between turns. */
-  buffer: PerTurnBuffer | null;
+  /**
+   * True between the cycle's first `assistant` entry (which emits
+   * `user_message_replay`) and its terminal `end_turn` (which emits
+   * `turn_complete` and resets the flag). Used to suppress repeated
+   * `user_message_replay` emits across multi-message claude turns:
+   * the user submission appears once on the wire, even though the
+   * claude side can produce multiple assistant entries with distinct
+   * `message.id`s within one cycle.
+   */
+  cycleOpen: boolean;
   /** Telemetry sink. */
   telemetry: ReplayTelemetry;
 }
@@ -258,7 +244,7 @@ export function makeTranslateContext(
     turnsCommitted: 0,
     pendingUserText: null,
     pendingUserAttachments: [],
-    buffer: null,
+    cycleOpen: false,
     telemetry,
   };
 }
@@ -286,21 +272,31 @@ const SKIPPED_TOP_LEVEL_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Translate one JSONL entry into 0..N outbound messages, mutating
- * `ctx`'s per-turn buffer as a side effect. Pure with respect to
- * external state; the only mutation is on the passed `ctx`.
+ * Translate one JSONL entry into 0..N outbound messages. Pure with
+ * respect to external state; the only mutation is on the passed `ctx`.
  *
  * Invariants:
  *   - A `user` entry with `text` content captures into
- *     `ctx.pendingUserText`; emits nothing yet.
- *   - A `user` entry with `tool_result` content fills the matching
- *     buffer slot keyed on `tool_use_id`; emits nothing yet.
- *   - An `assistant` entry with `stop_reason: "tool_use"` or `null`
- *     accumulates content into the buffer; emits nothing yet.
- *   - An `assistant` entry with `stop_reason: "end_turn"` is the
- *     turn boundary; flushes the buffer as the fixed-order sequence
- *     `[user_message_replay, ...tool_use_then_result, thinking_text?,
- *     assistant_text?, turn_complete(success)]` and resets ctx.
+ *     `ctx.pendingUserText`; emits nothing yet (the cycle's user
+ *     side appears on the wire once the first `assistant` entry of
+ *     the cycle binds it to claude's `message.id`).
+ *   - A `user` entry with `tool_result` blocks emits one
+ *     `tool_result` outbound per block immediately. The reducer
+ *     pairs them with the prior `tool_use` by `tool_use_id`; no
+ *     translator-side buffering is needed.
+ *   - An `assistant` entry emits its content frames immediately,
+ *     keyed on its own `message.id`. Multi-message claude cycles
+ *     (text → tool_use → tool_result → second text) produce two
+ *     separately-keyed assistant streams on the wire — one per
+ *     `message.id`. That matches the live shape (one id per claude
+ *     message; no canonicalization).
+ *   - An `assistant` entry with `stop_reason: "end_turn"` additionally
+ *     emits a terminal `turn_complete` and increments
+ *     `ctx.turnsCommitted` (which feeds `replay_complete.count`).
+ *   - The cycle's `user_message_replay` fires on the FIRST `assistant`
+ *     entry of the cycle (when `pendingUserText` is consumed). Each
+ *     subsequent `assistant` entry within the same cycle skips
+ *     re-emitting it.
  *   - A `SKIPPED_TOP_LEVEL_TYPES` entry returns `[]` immediately.
  *   - Anything else falls into the `unknown_shape` skip path.
  */
@@ -314,8 +310,7 @@ export function translateJsonlEntry(
   }
 
   if (topType === "user") {
-    handleUserEntry(entry, ctx);
-    return [];
+    return handleUserEntry(entry, ctx);
   }
 
   if (topType === "assistant") {
@@ -326,7 +321,10 @@ export function translateJsonlEntry(
   return [];
 }
 
-function handleUserEntry(entry: JsonlEntry, ctx: TranslateContext): void {
+function handleUserEntry(
+  entry: JsonlEntry,
+  ctx: TranslateContext,
+): OutboundMessage[] {
   const content = entry.message?.content ?? [];
   // A user entry can carry `text` blocks (a fresh user submission)
   // or `tool_result` blocks (a response to a prior tool_use). The two
@@ -334,6 +332,7 @@ function handleUserEntry(entry: JsonlEntry, ctx: TranslateContext): void {
   // them independently so a future hybrid wouldn't break it.
   const textParts: string[] = [];
   const attachments: Attachment[] = [];
+  const out: OutboundMessage[] = [];
 
   for (const block of content) {
     const blockType = typeof block.type === "string" ? block.type : "";
@@ -344,22 +343,28 @@ function handleUserEntry(entry: JsonlEntry, ctx: TranslateContext): void {
       continue;
     }
     if (blockType === "tool_result") {
-      // Pair with the buffered tool_use. If the buffer is closed (no
-      // matching tool_use) we drop silently — a stray tool_result
-      // without its initiating tool_use is a malformed JSONL signal,
-      // not user-visible content.
+      // Emit the tool_result directly. The reducer pairs it with the
+      // prior `tool_use` frame by `tool_use_id`; no translator-side
+      // buffering or msg_id keying is needed for tool_result on the
+      // wire (the shape carries no msg_id).
       const toolUseId =
         typeof block.tool_use_id === "string" ? block.tool_use_id : "";
+      if (toolUseId.length === 0) {
+        // Stray tool_result without its initiating tool_use is a
+        // malformed JSONL signal; drop silently rather than emit a
+        // dangling frame.
+        continue;
+      }
       const isError = block.is_error === true;
       const output = coerceToolResultContent(block.content);
-      if (ctx.buffer && toolUseId.length > 0) {
-        const slot = ctx.buffer.toolCalls.find(
-          (t) => t.toolUseId === toolUseId,
-        );
-        if (slot) {
-          slot.result = { output, is_error: isError };
-        }
-      }
+      const toolResult: ToolResult = {
+        type: "tool_result",
+        tool_use_id: toolUseId,
+        output,
+        is_error: isError,
+        ipc_version: IPC_VERSION,
+      };
+      out.push(toolResult);
       continue;
     }
     if (blockType === "image") {
@@ -384,9 +389,9 @@ function handleUserEntry(entry: JsonlEntry, ctx: TranslateContext): void {
   }
 
   if (textParts.length > 0 || attachments.length > 0) {
-    // Capture as the pending user submission. Multiple text blocks
-    // in one user entry concatenate (matches how live `user_message`
-    // arrives as a single text payload).
+    // Capture as the pending user submission. The first `assistant`
+    // entry of the cycle will consume this and emit
+    // `user_message_replay` keyed on claude's first `message.id`.
     if (textParts.length > 0) {
       ctx.pendingUserText =
         (ctx.pendingUserText ?? "") + textParts.join("");
@@ -397,6 +402,8 @@ function handleUserEntry(entry: JsonlEntry, ctx: TranslateContext): void {
       );
     }
   }
+
+  return out;
 }
 
 /**
@@ -453,37 +460,56 @@ function handleAssistantEntry(
   const entryMsgId =
     typeof entry.message?.id === "string" ? entry.message.id : "";
 
-  // Open or reuse the turn buffer. The msgId slot tracks the most
-  // recent assistant entry's `message.id` so an orphan-turn flush at
-  // EOF has a coherent id even if the terminal end_turn never
-  // arrived. The terminal entry overrides this slot below.
-  if (ctx.buffer === null) {
-    ctx.buffer = {
-      msgId: entryMsgId,
-      assistantText: "",
-      thinkingText: "",
-      toolCalls: [],
+  const out: OutboundMessage[] = [];
+
+  // user_message_replay fires once per cycle, on the FIRST assistant
+  // entry. Use claude's first `message.id` of the cycle as the key so
+  // the wire's user side and assistant side agree on an id (per the
+  // "one id, claude's id" rule). Subsequent assistant entries in the
+  // same cycle skip this — multi-message claude turns produce one
+  // user_message_replay, multiple assistant streams.
+  if (!ctx.cycleOpen) {
+    const userText = ctx.pendingUserText ?? "";
+    const userAttachments = ctx.pendingUserAttachments;
+    const userMessage: UserMessageReplay = {
+      type: "user_message_replay",
+      msg_id: entryMsgId,
+      text: userText,
+      attachments: userAttachments,
+      ipc_version: IPC_VERSION,
     };
-  } else if (entryMsgId.length > 0) {
-    ctx.buffer.msgId = entryMsgId;
+    out.push(userMessage);
+    ctx.pendingUserText = null;
+    ctx.pendingUserAttachments = [];
+    ctx.cycleOpen = true;
   }
 
-  // Accumulate content into the buffer.
+  // Accumulate this entry's content into per-message locals. Each
+  // assistant entry is its own keyed unit on the wire; nothing carries
+  // across entries.
+  let assistantText = "";
+  let thinkingText = "";
+  const toolUses: Array<{
+    toolUseId: string;
+    toolName: string;
+    input: unknown;
+  }> = [];
+
   for (const block of content) {
     const blockType = typeof block.type === "string" ? block.type : "";
     if (blockType === "text") {
       if (typeof block.text === "string") {
-        ctx.buffer.assistantText += block.text;
+        assistantText += block.text;
       }
       continue;
     }
     if (blockType === "thinking") {
       if (typeof block.thinking === "string") {
-        ctx.buffer.thinkingText += block.thinking;
+        thinkingText += block.thinking;
       } else if (typeof block.text === "string") {
         // Tolerate a handful of older JSONL shapes that put the
         // thinking text in the `text` field on a `thinking` block.
-        ctx.buffer.thinkingText += block.text;
+        thinkingText += block.text;
       }
       continue;
     }
@@ -494,12 +520,7 @@ function handleAssistantEntry(
       // Skip tool_use blocks with no id — they can't be paired with
       // a tool_result and are useless to the reducer.
       if (toolUseId.length > 0) {
-        ctx.buffer.toolCalls.push({
-          toolUseId,
-          toolName,
-          input,
-          result: null,
-        });
+        toolUses.push({ toolUseId, toolName, input });
       }
       continue;
     }
@@ -519,84 +540,30 @@ function handleAssistantEntry(
     ctx.telemetry.unknownShape({ kind: "content_block", type: blockType });
   }
 
-  // Intermediate assistant entry: keep accumulating, emit nothing.
-  if (stopReason !== "end_turn") {
-    return [];
-  }
-
-  // Terminal entry: flush the turn.
-  return flushTurn(ctx);
-}
-
-/**
- * Emit the per-turn buffer's content frames in fixed order, without a
- * terminal `turn_complete`. Shared between [`flushTurn`] (which appends
- * the terminal afterward) and [`flushInflightTurnContent`] (which does
- * not). Resets the per-turn buffer state on the way out so the next
- * `assistant` entry opens a fresh buffer; does NOT bump
- * `ctx.turnsCommitted` — that's the caller's call (only the committed
- * path counts toward `replay_complete.count`).
- *
- * Returns `[]` if the buffer is unset (defensive — neither caller
- * should hit this).
- */
-function emitTurnContentFrames(ctx: TranslateContext): OutboundMessage[] {
-  const buffer = ctx.buffer;
-  if (buffer === null) {
-    return [];
-  }
-  const msgId = buffer.msgId;
-  const out: OutboundMessage[] = [];
-
-  // 1. user_message_replay — emit even with empty text so the reducer
-  // sees a stable "this turn happened, here's the user side"
-  // signal. Empty text covers degenerate-but-real cases like a
-  // turn that opens with a `--continue` flag and no preceding user
-  // entry in the JSONL.
-  const userText = ctx.pendingUserText ?? "";
-  const userAttachments = ctx.pendingUserAttachments;
-  const userMessage: UserMessageReplay = {
-    type: "user_message_replay",
-    msg_id: msgId,
-    text: userText,
-    attachments: userAttachments,
-    ipc_version: IPC_VERSION,
-  };
-  out.push(userMessage);
-
-  // 2. tool_use [+ tool_result] pairs in insertion order.
-  for (const tc of buffer.toolCalls) {
+  // Emit this entry's content frames keyed on this entry's
+  // `message.id` (claude's id; no canonicalization).
+  for (const tu of toolUses) {
     const toolUse: ToolUse = {
       type: "tool_use",
-      msg_id: msgId,
+      msg_id: entryMsgId,
       seq: ctx.globalSeq++,
-      tool_name: tc.toolName,
-      tool_use_id: tc.toolUseId,
-      input: typeof tc.input === "object" && tc.input !== null
-        ? tc.input as object
-        : {},
+      tool_name: tu.toolName,
+      tool_use_id: tu.toolUseId,
+      input:
+        typeof tu.input === "object" && tu.input !== null
+          ? (tu.input as object)
+          : {},
       ipc_version: IPC_VERSION,
     };
     out.push(toolUse);
-    if (tc.result !== null) {
-      const toolResult: ToolResult = {
-        type: "tool_result",
-        tool_use_id: tc.toolUseId,
-        output: tc.result.output,
-        is_error: tc.result.is_error,
-        ipc_version: IPC_VERSION,
-      };
-      out.push(toolResult);
-    }
   }
 
-  // 3. thinking_text (optional).
-  if (buffer.thinkingText.length > 0) {
+  if (thinkingText.length > 0) {
     const thinking: ThinkingText = {
       type: "thinking_text",
-      msg_id: msgId,
+      msg_id: entryMsgId,
       seq: ctx.globalSeq++,
-      text: buffer.thinkingText,
+      text: thinkingText,
       is_partial: false,
       status: "complete",
       ipc_version: IPC_VERSION,
@@ -604,15 +571,13 @@ function emitTurnContentFrames(ctx: TranslateContext): OutboundMessage[] {
     out.push(thinking);
   }
 
-  // 4. assistant_text (terminal text only — replay is per-turn, not
-  //    per-token).
-  if (buffer.assistantText.length > 0) {
+  if (assistantText.length > 0) {
     const assistant: AssistantText = {
       type: "assistant_text",
-      msg_id: msgId,
+      msg_id: entryMsgId,
       seq: ctx.globalSeq++,
       rev: 0,
-      text: buffer.assistantText,
+      text: assistantText,
       is_partial: false,
       status: "complete",
       ipc_version: IPC_VERSION,
@@ -620,83 +585,35 @@ function emitTurnContentFrames(ctx: TranslateContext): OutboundMessage[] {
     out.push(assistant);
   }
 
-  // Reset the per-turn buffer state for the next turn (or for the
-  // EOF-orphan path, which also wants the reset before the iterator
-  // returns).
-  ctx.buffer = null;
-  ctx.pendingUserText = null;
-  ctx.pendingUserAttachments = [];
-
-  return out;
-}
-
-/**
- * Flush the current per-turn buffer as the fixed-order
- * `[user_message_replay, tool_use/tool_result..., thinking_text?,
- * assistant_text?, turn_complete{success}]` sequence and reset ctx for
- * the next turn. Called from [`translateJsonlEntry`] when an `assistant`
- * entry's `stop_reason` is `"end_turn"` — that's the JSONL signal that
- * the turn closed normally. Increments `ctx.turnsCommitted` so the
- * `replay_complete.count` reflects the committed turn.
- *
- * Returns `[]` if the buffer is unset (defensive — flushTurn should
- * never be called on a null buffer).
- */
-function flushTurn(ctx: TranslateContext): OutboundMessage[] {
-  const buffer = ctx.buffer;
-  if (buffer === null) {
-    return [];
+  // Cycle terminal: only on `stop_reason === "end_turn"`. Carries this
+  // entry's `message.id`. Bumps `turnsCommitted` so
+  // `replay_complete.count` reflects committed cycles. Closes the
+  // cycle so the next user submission starts fresh.
+  if (stopReason === "end_turn") {
+    const turnComplete: TurnComplete = {
+      type: "turn_complete",
+      msg_id: entryMsgId,
+      seq: ctx.globalSeq++,
+      result: "success",
+      ipc_version: IPC_VERSION,
+    };
+    out.push(turnComplete);
+    ctx.turnsCommitted += 1;
+    ctx.cycleOpen = false;
   }
-  const msgId = buffer.msgId;
-  const out = emitTurnContentFrames(ctx);
 
-  // 5. turn_complete{success}.
-  const turnComplete: TurnComplete = {
-    type: "turn_complete",
-    msg_id: msgId,
-    seq: ctx.globalSeq++,
-    result: "success",
-    ipc_version: IPC_VERSION,
-  };
-  out.push(turnComplete);
-
-  ctx.turnsCommitted += 1;
   return out;
 }
 
-/**
- * Flush the trailing in-flight turn's content at end-of-JSONL **without
- * a terminal `turn_complete`**. The original mid-turn-replay bug
- * (2026-05-05): the pre-Step-4 translator synthesized
- * `turn_complete{result: "interrupted"}` here, which caused the reducer
- * to commit a partial TurnEntry for a turn that was actually still
- * streaming — and then dedupe (via `committedMsgIds`) the live
- * `turn_complete` that finished the turn for real. The user saw an
- * "interrupted" turn that wasn't actually interrupted, and the
- * streaming response never landed.
- *
- * The fix: emit the content frames so the user sees the in-flight
- * portion of the turn (user_message_replay + thinking + assistant_text +
- * tool_use/tool_result), but DO NOT emit a terminal event. The
- * reducer's `pendingUserMessage` and `scratch[msgId]` slots stay
- * populated; the live drain continuing post-replay produces the
- * eventual `turn_complete` naturally when claude actually finishes.
- *
- * If claude never finishes (claude crashed before reload, network
- * dropped, etc.), the reducer leaves the TurnEntry uncommitted. The
- * user sees the partial content and the absence of a "completed"
- * indicator. Acknowledged residual gap (b) in the [Never-drop chain
- * audit](roadmap/tugplan-tide-mid-turn-replay.md#step-5-never-drop) —
- * client-side watchdog mitigation is deferred behavior, not a never-
- * drop chain failure.
- *
- * Does NOT increment `ctx.turnsCommitted` — the in-flight turn is not
- * counted toward `replay_complete.count` because no terminal frame
- * fired. See [DM08] / [Step 5.5](roadmap/tugplan-tide-mid-turn-replay.md#step-5-5).
- */
-function flushInflightTurnContent(ctx: TranslateContext): OutboundMessage[] {
-  return emitTurnContentFrames(ctx);
-}
+// Per-message flushing makes a separate "in-flight trailing turn"
+// flush at end-of-JSONL unnecessary: each `assistant` entry emits its
+// content frames immediately when its line is processed, regardless of
+// `stop_reason`. The trailing entry of an unfinished cycle has already
+// emitted; only the cycle-terminal `turn_complete` is absent (because
+// `stop_reason` was not `end_turn`). The live drain continuing
+// post-replay produces the eventual `turn_complete` naturally when
+// claude's `result` lands. The translateJsonlSession loop body no
+// longer needs an EOF-time flush.
 
 // ---------------------------------------------------------------------------
 // Session-level async iterator
@@ -898,19 +815,13 @@ export async function* translateJsonlSession(
     }
   }
 
-  // In-flight trailing turn at end-of-JSONL — see
-  // [`flushInflightTurnContent`] for the design rationale. The
-  // user-visible content of the partial turn surfaces; no terminal
-  // event fires; the live drain (or the next reload's translator
-  // pass against a fuller JSONL) lands the eventual close. Step 5.5
-  // of the mid-turn-replay plan is the structural fix for the
-  // 2026-05-05 mid-turn-reload bug.
-  if (ctx.buffer !== null) {
-    const inflight = flushInflightTurnContent(ctx);
-    for (const msg of inflight) {
-      yield msg;
-    }
-  }
+  // The trailing in-flight assistant entry (if any) has already
+  // emitted its content frames per-entry above. Its absence of an
+  // `end_turn` stop_reason means no `turn_complete` fired — the
+  // reducer's `pendingUserMessage` and per-msg-id scratch stay
+  // populated until the live drain produces the eventual
+  // `turn_complete` when claude's `result` lands. No EOF-time flush
+  // is needed.
 
   const complete: ReplayComplete = {
     type: "replay_complete",

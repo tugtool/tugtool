@@ -1187,6 +1187,40 @@ function handleReplayComplete(
       fire: { type: "tick_timeout_dwell_done" },
     });
   }
+
+  // Never-drop chain link 13: if `pendingUserMessage` survived the
+  // bracket, the in-flight snapshot's `user_message_replay` landed
+  // without a matching `turn_complete` (the live tail is still
+  // streaming). Preserve `pendingUserMessage` + `scratch` +
+  // `toolCallMap`, transition to `streaming` so post-bracket live
+  // deltas continue to accumulate, and let the eventual live
+  // `turn_complete` commit the TurnEntry naturally. Without this
+  // preservation, replay_complete wipes the cycle and post-bracket
+  // deltas land in `idle` (which `handleTextDelta`'s phase guard
+  // rejects), the user sees no inflight indicator after HMR-mid-
+  // stream, and the response never auto-syncs.
+  if (state.pendingUserMessage !== null) {
+    return {
+      state: {
+        ...state,
+        phase: "streaming",
+        // activeMsgId stays as whatever the snapshot's
+        // assistant_text set (claude's id for the in-flight
+        // message). scratch + toolCallMap preserved as-is.
+        // pendingUserMessage preserved as-is.
+        pendingApproval: null,
+        pendingQuestion: null,
+        prevPhase: null,
+        lastReplayResult,
+        replayPreflightActive: false,
+        replaySoftBudgetElapsed: false,
+        replayTimeoutDwellActive: isTimeout,
+      },
+      effects,
+    };
+  }
+
+  // No surviving in-flight cycle: clean replay terminates to idle.
   return {
     state: {
       ...state,

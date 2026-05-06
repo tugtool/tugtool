@@ -294,9 +294,13 @@ describe("translateJsonlSession — tool calls", () => {
     const out = await collectSession({ kind: "ok", jsonl });
 
     expect(out.at(0)?.type).toBe("replay_started");
-    // Inner sequence: system_metadata (synthesized once at top of
-    // replay), user_message_replay, tool_use, tool_result,
-    // assistant_text, turn_complete (6).
+    // Inner sequence under per-message flushing:
+    //   system_metadata (synthesized once at top of replay)
+    //   user_message_replay (cycle's first assistant entry, msg=msg_intermediate)
+    //   tool_use (msg=msg_intermediate)
+    //   tool_result (no msg_id; keyed by tool_use_id)
+    //   assistant_text (msg=msg_terminal — the end_turn entry)
+    //   turn_complete (msg=msg_terminal)
     const inner = out.slice(1, -1);
     expect(inner.map((m) => m.type)).toEqual([
       "system_metadata",
@@ -307,23 +311,24 @@ describe("translateJsonlSession — tool calls", () => {
       "turn_complete",
     ]);
 
-    // tool_use payload sanity.
+    // tool_use carries the intermediate assistant entry's id —
+    // claude's id, not invented. The reducer renders this as a
+    // separate panel from the terminal entry's content.
     const tu = inner[2] as ToolUse;
     expect(tu.tool_use_id).toBe("toolu_01");
     expect(tu.tool_name).toBe("Bash");
     expect(tu.input).toEqual({ command: "ls" });
-    // The msg_id used across all events is the *terminal* assistant
-    // entry's id, not the intermediate's. Replay normalizes this so
-    // the reducer's scratch[msg_id] / activeMsgId flow lines up.
-    expect(tu.msg_id).toBe("msg_terminal");
+    expect(tu.msg_id).toBe("msg_intermediate");
 
-    // tool_result payload sanity.
+    // tool_result payload sanity (no msg_id field on this shape).
     const tr = inner[3] as ToolResult;
     expect(tr.tool_use_id).toBe("toolu_01");
     expect(tr.output).toBe("file1\nfile2\n");
     expect(tr.is_error).toBe(false);
 
-    // turn_complete msg_id matches.
+    // assistant_text + turn_complete both key on the terminal entry.
+    const at = inner[4] as AssistantText;
+    expect(at.msg_id).toBe("msg_terminal");
     const tc = inner[5] as TurnComplete;
     expect(tc.msg_id).toBe("msg_terminal");
     expect(tc.result).toBe("success");
@@ -380,16 +385,19 @@ describe("translateJsonlSession — tool calls", () => {
       "toolu_B",
     ]);
 
-    // Emission order: tool_use_A, tool_result_A, tool_use_B,
-    // tool_result_B (per-pair interleaving, insertion order).
+    // Emission order under per-message flushing: all tool_uses from
+    // the assistant entry emit together (when that line is processed),
+    // then all tool_results from the user entry emit together (when
+    // its line is processed). The reducer pairs them by tool_use_id;
+    // adjacency on the wire isn't required.
     const inner = out
       .slice(1, -1)
       .filter((m) => m.type === "tool_use" || m.type === "tool_result")
       .map((m) => `${m.type}:${m.type === "tool_use" ? m.tool_use_id : m.tool_use_id}`);
     expect(inner).toEqual([
       "tool_use:toolu_A",
-      "tool_result:toolu_A",
       "tool_use:toolu_B",
+      "tool_result:toolu_A",
       "tool_result:toolu_B",
     ]);
   });
@@ -487,9 +495,12 @@ describe("translateJsonlSession — thinking + image + degenerate", () => {
     ]);
     const out = await collectSession({ kind: "ok", jsonl });
 
-    // Inner sequence: system_metadata (synthesized once at top of
-    // replay), user_message_replay, thinking_text, assistant_text,
-    // turn_complete.
+    // Inner sequence under per-message flushing:
+    //   system_metadata (synthesized once at top of replay)
+    //   user_message_replay (cycle's first assistant entry, msg=m_int)
+    //   thinking_text (msg=m_int — thinking belongs to the intermediate entry)
+    //   assistant_text (msg=m_t — terminal entry's text)
+    //   turn_complete (msg=m_t)
     const inner = out.slice(1, -1);
     expect(inner.map((m) => m.type)).toEqual([
       "system_metadata",
@@ -501,7 +512,7 @@ describe("translateJsonlSession — thinking + image + degenerate", () => {
     const thinking = inner[2] as ThinkingText;
     expect(thinking.text).toBe("let me consider...");
     expect(thinking.is_partial).toBe(false);
-    expect(thinking.msg_id).toBe("m_t");
+    expect(thinking.msg_id).toBe("m_int");
   });
 
   test("image attachment in user submission is carried through", async () => {
@@ -1066,7 +1077,7 @@ describe("translateJsonlSession — batched yields", () => {
 // ---------------------------------------------------------------------------
 
 describe("translateJsonlEntry — direct unit tests", () => {
-  test("user entry alone returns [] and stashes pendingUserText", () => {
+  test("user entry with text alone returns [] and stashes pendingUserText", () => {
     const ctx = makeTranslateContext();
     const out = translateJsonlEntry(
       userEntry([{ type: "text", text: "hello" }]),
@@ -1074,10 +1085,14 @@ describe("translateJsonlEntry — direct unit tests", () => {
     );
     expect(out).toEqual([]);
     expect(ctx.pendingUserText).toBe("hello");
-    expect(ctx.buffer).toBeNull();
+    expect(ctx.cycleOpen).toBe(false);
   });
 
-  test("assistant entry with stop_reason=tool_use returns [] and opens a buffer", () => {
+  test("assistant entry with stop_reason=tool_use emits user_message_replay + tool_use immediately", () => {
+    // Per-message flushing: the first assistant entry of a cycle emits
+    // user_message_replay + this entry's content (here: tool_use)
+    // keyed on this entry's message.id. No accumulation across
+    // entries; the next user entry's tool_result emits independently.
     const ctx = makeTranslateContext();
     translateJsonlEntry(
       userEntry([{ type: "text", text: "hello" }]),
@@ -1093,13 +1108,16 @@ describe("translateJsonlEntry — direct unit tests", () => {
       }),
       ctx,
     );
-    expect(out).toEqual([]);
-    expect(ctx.buffer).not.toBeNull();
-    expect(ctx.buffer!.msgId).toBe("msg_1");
-    expect(ctx.buffer!.toolCalls.length).toBe(1);
+    expect(out.length).toBe(2);
+    expect(out[0].type).toBe("user_message_replay");
+    expect((out[0] as { msg_id: string }).msg_id).toBe("msg_1");
+    expect(out[1].type).toBe("tool_use");
+    expect((out[1] as { msg_id: string }).msg_id).toBe("msg_1");
+    expect(ctx.cycleOpen).toBe(true);
+    expect(ctx.pendingUserText).toBeNull();
   });
 
-  test("terminal assistant entry flushes the buffer and resets ctx", () => {
+  test("terminal assistant entry emits its content frames + turn_complete; resets cycle", () => {
     const ctx = makeTranslateContext();
     translateJsonlEntry(
       userEntry([{ type: "text", text: "hello" }]),
@@ -1113,13 +1131,75 @@ describe("translateJsonlEntry — direct unit tests", () => {
       }),
       ctx,
     );
-    // 3 messages: user_message_replay, assistant_text, turn_complete.
+    // 3 frames: user_message_replay, assistant_text, turn_complete.
     expect(out.length).toBe(3);
-    // ctx is reset.
-    expect(ctx.buffer).toBeNull();
+    expect(out[0].type).toBe("user_message_replay");
+    expect(out[1].type).toBe("assistant_text");
+    expect(out[2].type).toBe("turn_complete");
+    expect(ctx.cycleOpen).toBe(false);
     expect(ctx.pendingUserText).toBeNull();
     expect(ctx.pendingUserAttachments).toEqual([]);
     expect(ctx.turnsCommitted).toBe(1);
+  });
+
+  test("multi-message cycle: each assistant entry emits under its own msg_id", () => {
+    // The bug Step 5.10 exposed in live (msg_id divergence dropping
+    // claude's second message) has its replay analogue: pre-fix the
+    // translator merged multi-message cycles into one panel under the
+    // LAST entry's id. Post-fix, each `assistant` JSONL entry's
+    // content streams under its own `message.id`.
+    const ctx = makeTranslateContext();
+    translateJsonlEntry(
+      userEntry([{ type: "text", text: "do tools" }]),
+      ctx,
+    );
+    const firstOut = translateJsonlEntry(
+      assistantEntry({
+        msgId: "msg_first",
+        stopReason: "tool_use",
+        content: [
+          { type: "text", text: "thinking..." },
+          { type: "tool_use", id: "tu_1", name: "Bash", input: { cmd: "ls" } },
+        ],
+      }),
+      ctx,
+    );
+    // user_message_replay (first message of cycle) + tool_use + assistant_text
+    // (this entry's text), all keyed on msg_first.
+    const firstIds = firstOut.map((m) => (m as { msg_id?: string }).msg_id);
+    expect(firstOut[0].type).toBe("user_message_replay");
+    expect(firstIds[0]).toBe("msg_first");
+    expect(firstIds.every((id) => id === "msg_first" || id === undefined)).toBe(true);
+
+    // user entry with tool_result emits directly.
+    const trOut = translateJsonlEntry(
+      userEntry([
+        { type: "tool_result", tool_use_id: "tu_1", content: "ls output" },
+      ]),
+      ctx,
+    );
+    expect(trOut.length).toBe(1);
+    expect(trOut[0].type).toBe("tool_result");
+    expect((trOut[0] as { tool_use_id: string }).tool_use_id).toBe("tu_1");
+
+    // Second assistant entry (end_turn) emits its own content under msg_second.
+    const secondOut = translateJsonlEntry(
+      assistantEntry({
+        msgId: "msg_second",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "done" }],
+      }),
+      ctx,
+    );
+    // No re-emit of user_message_replay; just assistant_text + turn_complete.
+    expect(secondOut.length).toBe(2);
+    expect(secondOut[0].type).toBe("assistant_text");
+    expect((secondOut[0] as { msg_id: string }).msg_id).toBe("msg_second");
+    expect(secondOut[1].type).toBe("turn_complete");
+    expect((secondOut[1] as { msg_id: string }).msg_id).toBe("msg_second");
+
+    expect(ctx.turnsCommitted).toBe(1);
+    expect(ctx.cycleOpen).toBe(false);
   });
 
   test("unknown top-level type returns [] and fires telemetry", () => {

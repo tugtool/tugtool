@@ -398,9 +398,10 @@ export interface EventMappingContext {
  *
  * `messageId` carries claude's `message.id` whenever the stream event reveals
  * it (today: `message_start` only; future event types may also expose it).
- * `dispatchEventToTurn` canonicalizes `ActiveTurn.msgId` from this value so
- * live emits and replay events agree on the same key for the same logical
- * turn. Absent on events that don't reveal the id.
+ * `dispatchEventToTurn` slides `ActiveTurn.currentMessageId` to this value so
+ * subsequent events whose claude shape doesn't carry an id directly
+ * (`content_block_delta`, `content_block_start`) emit under the right key.
+ * Absent on events that don't reveal the id.
  */
 export interface EventMappingResult {
   messages: OutboundMessage[];
@@ -444,8 +445,9 @@ export interface TopLevelRoutingResult {
   /**
    * Claude's `message.id` for the turn, when revealed by this top-level
    * event (today: the `assistant` snapshot only). Belt-and-suspenders to the
-   * `mapStreamEvent` `message_start` path: whichever lands first canonicalizes
-   * `ActiveTurn.msgId`. Absent on events that don't reveal the id.
+   * `mapStreamEvent` `message_start` path: whichever lands first slides
+   * `ActiveTurn.currentMessageId` to it. Absent on events that don't reveal
+   * the id.
    */
   messageId?: string;
 }
@@ -554,10 +556,11 @@ export function routeTopLevelEvent(
         messageId = rawId;
       }
       // Use claude's id for any messages built here when present, so the
-      // first emit (synthetic text or tool_use within this snapshot) is
-      // already keyed by the canonical id. dispatchEventToTurn updates
-      // turn.msgId from `messageId` after this function returns; messages
-      // already on the wire carry the correct id from this assignment.
+      // first emit (synthetic text or tool_use within this snapshot)
+      // already carries the same id the wire / reducer will use.
+      // dispatchEventToTurn slides `turn.currentMessageId` to this id
+      // after this function returns; the messages built below already
+      // carry it via this local.
       const effectiveMsgId = messageId ?? ctx.msgId;
       const model = (message?.model as string) || "";
       const isSynthetic = model === "<synthetic>";
@@ -828,10 +831,12 @@ export function mapStreamEvent(
 
   if (eventType === "message_start") {
     // claude reveals its message.id in the message_start frame BEFORE any
-    // emit-bearing event for the turn (content_block_start / _delta land
-    // after). Surface it so dispatchEventToTurn can canonicalize
-    // ActiveTurn.msgId before the first wire emit, making live and replay
-    // events agree on the same key for the same logical turn.
+    // emit-bearing event for the message (content_block_start / _delta
+    // land after). Surface it so dispatchEventToTurn can slide
+    // ActiveTurn.currentMessageId to claude's id before any wire emit
+    // for this message. Multi-message claude turns (text → tool_use →
+    // tool_result → second text) trigger another `message_start` with a
+    // fresh id; the slide simply overwrites — no rejection, no warning.
     const message = event.message as Record<string, unknown> | undefined;
     const rawId = message?.id;
     if (typeof rawId === "string" && rawId.length > 0) {
@@ -940,16 +945,23 @@ export function mapStreamEvent(
  */
 class ActiveTurn {
   /**
-   * Claude's id for this turn's terminal assistant entry. Mutable: starts
-   * as a placeholder UUID minted by `newMsgId()` so logs / EOF emits have
-   * something to show before claude responds, then frozen on the first
-   * stream event that reveals `message.id` (typically `message_start` —
-   * see `mapStreamEvent`'s branch — with the top-level `assistant`
-   * snapshot as a belt-and-suspenders fallback). After canonicalization,
-   * live and replay events for the same logical turn share a key, and
-   * the reducer's existing msg_id dedupe handles the merge for free.
+   * Sliding pointer to the most recent claude `message.id` seen on this
+   * turn's stream. Updated on every `message_start` (via
+   * `mapStreamEvent.messageId`) and on every top-level `assistant`
+   * snapshot (via `routeTopLevelEvent.messageId`). Used by
+   * `dispatchEventToTurn` to populate `msg_id` on frames whose claude
+   * stream event doesn't carry one directly (`content_block_delta`,
+   * `content_block_start`). `null` before claude's first id-bearing
+   * event — degenerate-state emit sites
+   * (`signalEofToActiveTurn`, `emitInflightTurnFromActiveTurn`)
+   * treat null as "nothing claude-keyable to emit yet."
+   *
+   * Multi-message claude turns (text → tool_use → tool_result → second
+   * text) overwrite this pointer on the second `message_start`. Each
+   * `message.id` is its own thing on the wire; the reducer renders them
+   * as separate panels keyed by id.
    */
-  msgId: string;
+  currentMessageId: string | null = null;
   /** Outbound `seq` for the user-message half of this turn. */
   readonly seq: number;
   /**
@@ -996,20 +1008,12 @@ class ActiveTurn {
   /** Resolves when the turn ends (either via `gotResult` or stdout EOF). */
   readonly completion: Promise<void>;
   private resolveCompletion: (() => void) | null;
-  /**
-   * True after the first stream event with `message.id` has been
-   * adopted as `msgId`. Subsequent events with a matching id are no-ops;
-   * an event with a divergent id is logged and ignored.
-   */
-  private msgIdCanonicalized: boolean = false;
 
   constructor(
-    msgId: string,
     seq: number,
     userText: string,
     userAttachments: ReadonlyArray<Attachment>,
   ) {
-    this.msgId = msgId;
     this.seq = seq;
     this.userText = userText;
     this.userAttachments = userAttachments;
@@ -1018,28 +1022,6 @@ class ActiveTurn {
       resolve = r;
     });
     this.resolveCompletion = resolve;
-  }
-
-  /**
-   * Adopt claude's `message.id` as the canonical `msgId` for this turn.
-   * Called by `dispatchEventToTurn` whenever a stream event surfaces
-   * `messageId`. First call wins; subsequent matching calls are no-ops;
-   * subsequent divergent calls log and return false.
-   *
-   * Returns true iff `msgId` was overwritten by this call.
-   */
-  canonicalizeMsgId(claudeMessageId: string): boolean {
-    if (this.msgIdCanonicalized) {
-      if (this.msgId !== claudeMessageId) {
-        console.error(
-          `[tide::canonicalize] msg_id divergence: turn already adopted "${this.msgId}", ignoring "${claudeMessageId}"`,
-        );
-      }
-      return false;
-    }
-    this.msgId = claudeMessageId;
-    this.msgIdCanonicalized = true;
-    return true;
   }
 
   /**
@@ -1314,10 +1296,6 @@ export class SessionManager {
 
   private nextSeq(): number {
     return this.seq++;
-  }
-
-  private newMsgId(): string {
-    return crypto.randomUUID();
   }
 
   /**
@@ -2070,6 +2048,33 @@ export class SessionManager {
         }
       }
 
+      // After the JSONL pass and before the bracket-close: emit the
+      // in-flight turn's snapshot from `ActiveTurn` state. This is the
+      // only path that delivers claude's pre-HMR streaming content
+      // (`turn.partialText` + tool state) to a freshly-connected
+      // client. The CODE_OUTPUT broadcast doesn't backfill new
+      // subscribers (LagPolicy::Replay only triggers on lag overflow,
+      // not on initial subscription); the JSONL only contains
+      // committed turns; the Step 5.6 synthetic delivers the
+      // user-side echo only. Without this snapshot, the new client
+      // sees a `pendingUserMessage` with no scratch — post-bracket
+      // deltas land into a fresh empty scratch and the user sees
+      // only the tail of the response, missing the head.
+      //
+      // The snapshot keys on `turn.currentMessageId` (claude's most
+      // recent `message.id` for the turn). It writes one consolidated
+      // `assistant_text { is_partial: false }` that the reducer
+      // REPLACES into its scratch; subsequent live deltas (post-
+      // suppression) carry `is_partial: true` and append from that
+      // baseline. If the turn's terminal already latched while
+      // suppressed (`gotResult` / `interrupted`), the snapshot also
+      // synthesizes the corresponding `turn_complete` /
+      // `turn_cancelled` so the bracket delivers a complete
+      // TurnEntry.
+      if (inflight !== null) {
+        this.emitInflightTurnFromActiveTurn(inflight);
+      }
+
       // After clean iterator completion (no abort): emit the buffered
       // replay_complete to close the bracket.
       if (aborted === null && bufferedReplayComplete !== null) {
@@ -2434,7 +2439,7 @@ export class SessionManager {
     event: Record<string, unknown>,
   ): void {
     const ctx: EventMappingContext = {
-      msgId: turn.msgId,
+      msgId: turn.currentMessageId ?? "",
       seq: turn.seq,
       rev: turn.rev,
     };
@@ -2442,14 +2447,13 @@ export class SessionManager {
     // Tier 1: route the top-level message type.
     const routeResult = routeTopLevelEvent(event, ctx);
 
-    // Canonicalize msgId from the top-level event (today: the `assistant`
-    // snapshot's `message.id`). routeTopLevelEvent has already used that
-    // id for any messages it built within this branch, so the messages
-    // about to be written carry the canonical id; the canonicalize here
-    // freezes it on the turn so subsequent emits agree.
+    // Slide the per-turn pointer to claude's most recent `message.id`.
+    // Top-level `assistant` snapshots carry it directly; nothing rejects,
+    // nothing freezes. Multi-message turns simply move the pointer to
+    // the new id when the next `message_start` (below) arrives.
     if (routeResult.messageId !== undefined) {
-      turn.canonicalizeMsgId(routeResult.messageId);
-      ctx.msgId = turn.msgId;
+      turn.currentMessageId = routeResult.messageId;
+      ctx.msgId = turn.currentMessageId;
     }
 
     for (const ipcMsg of routeResult.messages) {
@@ -2458,9 +2462,9 @@ export class SessionManager {
           routeResult.parentToolUseId;
       }
       // Gate site 1/7: suppressEmit holds back live forwarding while
-      // runReplay's bracket is on the wire. State mutations above
-      // (canonicalizeMsgId) and below (turn.rev, turn.partialText)
-      // continue regardless — the snapshot emission in
+      // runReplay's bracket is on the wire. State mutations
+      // (turn.currentMessageId, turn.rev, turn.partialText) continue
+      // regardless — the snapshot emission in
       // emitInflightTurnFromActiveTurn reads them.
       if (!turn.suppressEmit) writeLine(ipcMsg);
     }
@@ -2472,14 +2476,15 @@ export class SessionManager {
         ctx,
         turn.partialText,
       );
-      // Canonicalize from the stream event (today: `message_start`).
-      // Claude reveals `message.id` here BEFORE any emit-bearing event for
-      // the turn, so by the time `content_block_delta` lands ctx.msgId is
-      // already canonical and the first assistant_text on the wire is
-      // keyed by claude's id rather than the install-time placeholder.
+      // Slide the pointer when `message_start` reveals a new id. claude
+      // emits this before any content-bearing event of the message, so
+      // by the time `content_block_delta` lands, ctx.msgId is already
+      // claude's. Multi-message turns: a second `message_start` simply
+      // moves the pointer to the new id; the prior message's frames are
+      // already on the wire under its own id.
       if (streamResult.messageId !== undefined) {
-        turn.canonicalizeMsgId(streamResult.messageId);
-        ctx.msgId = turn.msgId;
+        turn.currentMessageId = streamResult.messageId;
+        ctx.msgId = turn.currentMessageId;
       }
       for (const ipcMsg of streamResult.messages) {
         if (routeResult.parentToolUseId) {
@@ -2561,7 +2566,7 @@ export class SessionManager {
         if (!turn.suppressEmit) {
           writeLine({
             type: "assistant_text",
-            msg_id: turn.msgId,
+            msg_id: turn.currentMessageId ?? "",
             seq: completeSeq,
             rev: 0,
             text: turn.partialText,
@@ -2581,7 +2586,7 @@ export class SessionManager {
       if (!turn.suppressEmit) {
         writeLine({
           type: "turn_complete",
-          msg_id: turn.msgId,
+          msg_id: turn.currentMessageId ?? "",
           seq: turnSeq,
           result: resultValue,
           ipc_version: 2,
@@ -2625,13 +2630,15 @@ export class SessionManager {
    * deliver a complete TurnEntry even when the drain dies mid-replay.
    */
   private emitInflightTurnFromActiveTurn(turn: ActiveTurn): void {
-    // 1. user_message_replay — synthetic but keyed by claude's id
-    //    (canonicalized in Step 1) so the reducer's existing dedupe
-    //    stitches this together with any post-bracket live emits for
-    //    the same turn.
+    const msgId = turn.currentMessageId ?? "";
+    // 1. user_message_replay — synthetic, keyed by claude's most recent
+    //    `message.id` for this turn (sliding pointer). When the bracket
+    //    fires before claude has revealed any id (`message_start` not
+    //    yet seen), msgId is empty — the reducer treats that as a
+    //    pre-claude submission marker.
     writeLine({
       type: "user_message_replay",
-      msg_id: turn.msgId,
+      msg_id: msgId,
       text: turn.userText,
       attachments: turn.userAttachments.slice(),
       ipc_version: 2,
@@ -2647,7 +2654,7 @@ export class SessionManager {
     if (turn.partialText.length > 0) {
       writeLine({
         type: "assistant_text",
-        msg_id: turn.msgId,
+        msg_id: msgId,
         seq: this.nextSeq(),
         rev: turn.rev,
         text: turn.partialText,
@@ -2664,7 +2671,7 @@ export class SessionManager {
     if (turn.gotResult) {
       writeLine({
         type: "turn_complete",
-        msg_id: turn.msgId,
+        msg_id: msgId,
         seq: this.nextSeq(),
         result: "success",
         ipc_version: 2,
@@ -2672,7 +2679,7 @@ export class SessionManager {
     } else if (turn.interrupted) {
       writeLine({
         type: "turn_cancelled",
-        msg_id: turn.msgId,
+        msg_id: msgId,
         seq: this.nextSeq(),
         partial_result: turn.partialText.length > 0
           ? turn.partialText
@@ -2712,7 +2719,7 @@ export class SessionManager {
       if (!turn.suppressEmit) {
         writeLine({
           type: "turn_cancelled",
-          msg_id: turn.msgId,
+          msg_id: turn.currentMessageId ?? "",
           seq: turn.seq,
           partial_result: turn.partialText || "User interrupted",
           ipc_version: 2,
@@ -2796,14 +2803,13 @@ export class SessionManager {
     // (via `dispatchEventToTurn`'s `gotResult` branch) or when
     // claude's stdout EOFs (via `signalEofToActiveTurn`).
     //
-    // `msgId` is a placeholder UUID that gets overwritten with claude's
-    // own `message.id` on the first stream event of the turn (see
-    // ActiveTurn.canonicalizeMsgId). userText / userAttachments are the
-    // source of truth for the in-flight turn's `user_message_replay`
+    // The turn's `currentMessageId` slot is null until claude reveals
+    // its `message.id` on the first stream event (`message_start` or
+    // top-level `assistant` snapshot). userText / userAttachments are
+    // the source of truth for the in-flight turn's `user_message_replay`
     // payload during a mid-turn `runReplay` — they hold what the user
     // submitted in this call.
     const turn = new ActiveTurn(
-      this.newMsgId(),
       this.nextSeq(),
       msg.text,
       msg.attachments ?? [],

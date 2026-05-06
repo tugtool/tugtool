@@ -3262,22 +3262,23 @@ describe("routeTopLevelEvent surfaces messageId from assistant snapshot", () => 
   });
 });
 
-describe("dispatchEventToTurn canonicalizes ActiveTurn.msgId", () => {
-  // Build a manager with no claude process; install an ActiveTurn manually
-  // and dispatch synthetic events. The Bun.write writeLine path is captured
-  // via captureIpcOutput so we observe the wire shape.
+describe("dispatchEventToTurn slides ActiveTurn.currentMessageId", () => {
+  // ActiveTurn carries a sliding pointer to claude's most recent
+  // `message.id` for the turn. Every `message_start` (stream event) and
+  // every top-level `assistant` snapshot updates it. Nothing rejects.
+  // Nothing freezes. Multi-message claude turns simply move the pointer
+  // forward; each message's content frames go out under its own id.
   function setupTurn(
     text: string,
     attachments: Array<{ filename: string; content: string; media_type: string }> = [],
   ): { manager: SessionManager; turn: any } {
     const manager = new SessionManager(
-      "/tmp/canon-msgid-" + Date.now() + "-" + Math.random().toString(36).slice(2),
+      "/tmp/slide-msgid-" + Date.now() + "-" + Math.random().toString(36).slice(2),
       crypto.randomUUID(),
     );
-    const placeholder = (manager as any).newMsgId();
     const seq = (manager as any).nextSeq();
     const turn = {
-      msgId: placeholder,
+      currentMessageId: null as string | null,
       seq,
       userText: text,
       userAttachments: attachments,
@@ -3285,58 +3286,35 @@ describe("dispatchEventToTurn canonicalizes ActiveTurn.msgId", () => {
       partialText: "",
       gotResult: false,
       interrupted: false,
-      msgIdCanonicalized: false,
-      canonicalizeMsgId(claudeMessageId: string): boolean {
-        if (this.msgIdCanonicalized) {
-          if (this.msgId !== claudeMessageId) {
-            console.error(
-              `[tide::canonicalize] msg_id divergence: turn already adopted "${this.msgId}", ignoring "${claudeMessageId}"`,
-            );
-          }
-          return false;
-        }
-        this.msgId = claudeMessageId;
-        this.msgIdCanonicalized = true;
-        return true;
-      },
       finish(): void {},
     };
     return { manager, turn };
   }
 
-  test("message_start canonicalizes msgId from placeholder", async () => {
+  test("message_start slides currentMessageId from null", async () => {
     const { manager, turn } = setupTurn("hi");
-    const placeholder = turn.msgId;
+    expect(turn.currentMessageId).toBeNull();
     await captureIpcOutput(async () => {
       (manager as any).dispatchEventToTurn(turn, {
         type: "stream_event",
-        event: {
-          type: "message_start",
-          message: { id: "msg_X", role: "assistant" },
-        },
+        event: { type: "message_start", message: { id: "msg_X", role: "assistant" } },
       });
     });
-    expect(turn.msgId).toBe("msg_X");
-    expect(turn.msgId).not.toBe(placeholder);
+    expect(turn.currentMessageId).toBe("msg_X");
   });
 
-  test("top-level assistant snapshot canonicalizes msgId from placeholder", async () => {
+  test("top-level assistant snapshot slides currentMessageId from null", async () => {
     const { manager, turn } = setupTurn("hi");
-    const placeholder = turn.msgId;
     await captureIpcOutput(async () => {
       (manager as any).dispatchEventToTurn(turn, {
         type: "assistant",
-        message: {
-          id: "msg_Y",
-          content: [],
-        },
+        message: { id: "msg_Y", content: [] },
       });
     });
-    expect(turn.msgId).toBe("msg_Y");
-    expect(turn.msgId).not.toBe(placeholder);
+    expect(turn.currentMessageId).toBe("msg_Y");
   });
 
-  test("subsequent stream events with matching id are no-ops", async () => {
+  test("repeated message_start with same id leaves pointer at that id", async () => {
     const { manager, turn } = setupTurn("hi");
     await captureIpcOutput(async () => {
       (manager as any).dispatchEventToTurn(turn, {
@@ -3348,10 +3326,14 @@ describe("dispatchEventToTurn canonicalizes ActiveTurn.msgId", () => {
         event: { type: "message_start", message: { id: "msg_Z" } },
       });
     });
-    expect(turn.msgId).toBe("msg_Z");
+    expect(turn.currentMessageId).toBe("msg_Z");
   });
 
-  test("subsequent event with divergent id is rejected (first id wins)", async () => {
+  test("multi-message turn: second message_start slides pointer to new id (no rejection)", async () => {
+    // claude's multi-message turns (text → tool_use → tool_result →
+    // second text) emit a fresh `message_start` for the second message.
+    // The pointer must follow — content for the second message keys on
+    // its own id so the reducer renders it as a separate panel.
     const { manager, turn } = setupTurn("hi");
     const errors: string[] = [];
     const originalErr = console.error;
@@ -3366,19 +3348,19 @@ describe("dispatchEventToTurn canonicalizes ActiveTurn.msgId", () => {
         });
         (manager as any).dispatchEventToTurn(turn, {
           type: "assistant",
-          message: { id: "msg_different", content: [] },
+          message: { id: "msg_second", content: [] },
         });
       });
     } finally {
       console.error = originalErr;
     }
-    expect(turn.msgId).toBe("msg_first");
-    expect(errors.some((e) => e.includes("msg_first") && e.includes("msg_different"))).toBe(
-      true,
-    );
+    expect(turn.currentMessageId).toBe("msg_second");
+    // No "divergence" warning — the slide is silent. We don't reject;
+    // we don't even notice.
+    expect(errors.some((e) => e.includes("divergence"))).toBe(false);
   });
 
-  test("first emit uses canonical id when message_start arrives first", async () => {
+  test("content_block_delta after message_start emits with claude's id", async () => {
     const { manager, turn } = setupTurn("hi");
     const ipc = await captureIpcOutput(async () => {
       (manager as any).dispatchEventToTurn(turn, {
@@ -3387,10 +3369,7 @@ describe("dispatchEventToTurn canonicalizes ActiveTurn.msgId", () => {
       });
       (manager as any).dispatchEventToTurn(turn, {
         type: "stream_event",
-        event: {
-          type: "content_block_delta",
-          delta: { type: "text_delta", text: "hello" },
-        },
+        event: { type: "content_block_delta", delta: { type: "text_delta", text: "hello" } },
       });
     });
     const assistantText = ipc.find((m: any) => m.type === "assistant_text") as any;
@@ -3398,17 +3377,49 @@ describe("dispatchEventToTurn canonicalizes ActiveTurn.msgId", () => {
     expect(assistantText.msg_id).toBe("msg_canon");
   });
 
-  test("first emit uses canonical id even when top-level assistant arrives first", async () => {
-    // Belt-and-suspenders path: claude bypasses message_start (e.g., synthetic
-    // slash-command response) and the first event the drain sees is the
-    // top-level assistant snapshot. Messages built within that branch are
-    // already keyed by claude's id.
+  test("multi-message turn: deltas for each message carry that message's id", async () => {
+    // The bug Step 5.10 exposed: pre-fix, the second message's deltas
+    // went out under the first message's id (canonicalize rejected the
+    // new id, ctx.msgId stayed frozen). Post-fix the wire carries two
+    // separate streams of assistant_text, one per claude message.id.
+    const { manager, turn } = setupTurn("hi");
+    const ipc = await captureIpcOutput(async () => {
+      (manager as any).dispatchEventToTurn(turn, {
+        type: "stream_event",
+        event: { type: "message_start", message: { id: "msg_first" } },
+      });
+      (manager as any).dispatchEventToTurn(turn, {
+        type: "stream_event",
+        event: { type: "content_block_delta", delta: { type: "text_delta", text: "alpha" } },
+      });
+      (manager as any).dispatchEventToTurn(turn, {
+        type: "stream_event",
+        event: { type: "message_start", message: { id: "msg_second" } },
+      });
+      (manager as any).dispatchEventToTurn(turn, {
+        type: "stream_event",
+        event: { type: "content_block_delta", delta: { type: "text_delta", text: "beta" } },
+      });
+    });
+    const texts = ipc.filter((m: any) => m.type === "assistant_text") as any[];
+    expect(texts.length).toBe(2);
+    expect(texts[0].msg_id).toBe("msg_first");
+    expect(texts[0].text).toBe("alpha");
+    expect(texts[1].msg_id).toBe("msg_second");
+    expect(texts[1].text).toBe("beta");
+  });
+
+  test("top-level assistant first (synthetic slash command path) emits with claude's id", async () => {
+    // Synthetic slash-command response (e.g. /cost) bypasses
+    // `message_start` — the drain's first id-bearing event is the
+    // top-level `assistant` snapshot. Messages built within that branch
+    // already key on claude's id.
     const { manager, turn } = setupTurn("/cost");
     const ipc = await captureIpcOutput(async () => {
       (manager as any).dispatchEventToTurn(turn, {
         type: "assistant",
         message: {
-          id: "msg_synth_canon",
+          id: "msg_synth",
           model: "<synthetic>",
           content: [{ type: "text", text: "Cost summary" }],
         },
@@ -3416,7 +3427,7 @@ describe("dispatchEventToTurn canonicalizes ActiveTurn.msgId", () => {
     });
     const assistantText = ipc.find((m: any) => m.type === "assistant_text") as any;
     expect(assistantText).toBeDefined();
-    expect(assistantText.msg_id).toBe("msg_synth_canon");
+    expect(assistantText.msg_id).toBe("msg_synth");
   });
 });
 
@@ -3674,16 +3685,14 @@ describe("Step 5.1 wire-shape pin: claude's id flows through unchanged", () => {
     expect("claude_message_id" in turnComplete).toBe(false);
   });
 
-  test("ActiveTurn.msgId starts as a placeholder UUID and canonicalizes on first stream event", async () => {
-    // Pin the [DM03] mechanism restored by Step 5.1: handleUserMessage
-    // mints a placeholder UUID locally; the first message.id-bearing
-    // event canonicalizes ActiveTurn.msgId to claude's id. Wire emits
-    // before message_start carry the placeholder; emits after carry
-    // claude's id. In production claude reveals the id in the very
-    // first stream event for every turn, so the placeholder window
-    // closes before any user-visible emit lands.
+  test("ActiveTurn.currentMessageId starts null; deltas after message_start emit with claude's id", async () => {
+    // The wire's id is claude's `message.id`, end of story. ActiveTurn
+    // holds a sliding pointer (currentMessageId) that starts null and
+    // moves to claude's id on the first id-bearing event
+    // (`message_start` or top-level `assistant`). All emits keyed by
+    // the pointer carry claude's id from that point on.
     const manager = new SessionManager(
-      "/tmp/wire-shape-canonicalize-" + Date.now(),
+      "/tmp/wire-shape-slide-" + Date.now(),
       crypto.randomUUID(),
     );
     const mockStdin = injectMockSubprocess(manager, [
@@ -3700,7 +3709,7 @@ describe("Step 5.1 wire-shape pin: claude's id flows through unchanged", () => {
         type: "stream_event",
         event: {
           type: "message_start",
-          message: { id: "msg_claude_canon", role: "assistant" },
+          message: { id: "msg_claude_id", role: "assistant" },
         },
       },
       {
@@ -3722,11 +3731,10 @@ describe("Step 5.1 wire-shape pin: claude's id flows through unchanged", () => {
       }),
     );
 
-    // After canonicalization, every emit on the wire shares claude's id.
     const assistantTexts = ipc.filter((m: any) => m.type === "assistant_text") as any[];
     expect(assistantTexts.length).toBeGreaterThan(0);
     for (const at of assistantTexts) {
-      expect(at.msg_id).toBe("msg_claude_canon");
+      expect(at.msg_id).toBe("msg_claude_id");
     }
   });
 });
@@ -3739,15 +3747,14 @@ describe("Step 5.1 wire-shape pin: claude's id flows through unchanged", () => {
 describe("ActiveTurn.suppressEmit gates dispatchEventToTurn", () => {
   function setupTurn(opts: {
     suppressEmit: boolean;
-    msgId?: string;
+    currentMessageId?: string;
   }): { manager: SessionManager; turn: any } {
     const manager = new SessionManager(
       "/tmp/suppress-" + Date.now() + "-" + Math.random().toString(36).slice(2),
       crypto.randomUUID(),
     );
-    const placeholder = (manager as any).newMsgId();
     const turn = {
-      msgId: opts.msgId ?? placeholder,
+      currentMessageId: opts.currentMessageId ?? null,
       seq: (manager as any).nextSeq(),
       userText: "",
       userAttachments: [],
@@ -3756,13 +3763,6 @@ describe("ActiveTurn.suppressEmit gates dispatchEventToTurn", () => {
       gotResult: false,
       interrupted: false,
       suppressEmit: opts.suppressEmit,
-      msgIdCanonicalized: opts.msgId !== undefined,
-      canonicalizeMsgId(claudeMessageId: string): boolean {
-        if (this.msgIdCanonicalized) return false;
-        this.msgId = claudeMessageId;
-        this.msgIdCanonicalized = true;
-        return true;
-      },
       finish() {},
     };
     return { manager, turn };
@@ -3771,7 +3771,7 @@ describe("ActiveTurn.suppressEmit gates dispatchEventToTurn", () => {
   test("text delta with suppress=true: no wire emit; partialText accumulates", async () => {
     const { manager, turn } = setupTurn({
       suppressEmit: true,
-      msgId: "msg_X",
+      currentMessageId: "msg_X",
     });
     const ipc = await captureIpcOutput(async () => {
       (manager as any).dispatchEventToTurn(turn, {
@@ -3796,7 +3796,7 @@ describe("ActiveTurn.suppressEmit gates dispatchEventToTurn", () => {
   test("result event with suppress=true: no turn_complete on wire; gotResult latches", async () => {
     const { manager, turn } = setupTurn({
       suppressEmit: true,
-      msgId: "msg_X",
+      currentMessageId: "msg_X",
     });
     turn.partialText = "the answer";
     const ipc = await captureIpcOutput(async () => {
@@ -3817,7 +3817,7 @@ describe("ActiveTurn.suppressEmit gates dispatchEventToTurn", () => {
   test("suppress=false: same dispatches emit normally to wire", async () => {
     const { manager, turn } = setupTurn({
       suppressEmit: false,
-      msgId: "msg_Y",
+      currentMessageId: "msg_Y",
     });
     const ipc = await captureIpcOutput(async () => {
       (manager as any).dispatchEventToTurn(turn, {
@@ -3843,7 +3843,7 @@ describe("ActiveTurn.suppressEmit gates dispatchEventToTurn", () => {
   test("control_request with suppress=true: forward held back; pendingControlRequests still records", async () => {
     const { manager, turn } = setupTurn({
       suppressEmit: true,
-      msgId: "msg_Z",
+      currentMessageId: "msg_Z",
     });
     const ipc = await captureIpcOutput(async () => {
       (manager as any).dispatchEventToTurn(turn, {
@@ -3870,7 +3870,7 @@ describe("signalEofToActiveTurn honors suppressEmit", () => {
       crypto.randomUUID(),
     );
     const turn = {
-      msgId: "msg_eof",
+      currentMessageId: "msg_eof",
       seq: 0,
       userText: "",
       userAttachments: [],
@@ -3879,10 +3879,6 @@ describe("signalEofToActiveTurn honors suppressEmit", () => {
       gotResult: false,
       interrupted: true,
       suppressEmit: true,
-      msgIdCanonicalized: true,
-      canonicalizeMsgId() {
-        return false;
-      },
       finishCalled: false,
       finish() {
         this.finishCalled = true;
@@ -3903,7 +3899,7 @@ describe("signalEofToActiveTurn honors suppressEmit", () => {
       crypto.randomUUID(),
     );
     const turn = {
-      msgId: "msg_eof2",
+      currentMessageId: "msg_eof2",
       seq: 0,
       userText: "",
       userAttachments: [],
@@ -3912,10 +3908,6 @@ describe("signalEofToActiveTurn honors suppressEmit", () => {
       gotResult: false,
       interrupted: false,
       suppressEmit: true,
-      msgIdCanonicalized: true,
-      canonicalizeMsgId() {
-        return false;
-      },
       finishCalled: false,
       finish() {
         this.finishCalled = true;
@@ -3950,7 +3942,7 @@ describe("emitInflightTurnFromActiveTurn", () => {
       crypto.randomUUID(),
     );
     const turn = {
-      msgId: overrides.msgId ?? "msg_X",
+      currentMessageId: overrides.msgId ?? "msg_X",
       seq: 100,
       userText: overrides.userText ?? "",
       userAttachments: overrides.userAttachments ?? [],
