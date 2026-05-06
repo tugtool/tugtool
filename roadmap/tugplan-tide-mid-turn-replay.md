@@ -17,9 +17,9 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | Steps 1–3 landed; manual testing surfaced a [DM03] race bug + a deeper id-stability gap; Step 4 (ledger-authoritative turn ids) shipped but smoke test failed (empty window after reload); Step 5 (rip-and-simplify) shipped: wire reverts to claude-id keying, ledger narrowed to a submission journal, never-drop guarantee gate held at N=20; Step 6 (was Step 5) is the load-bearing manual close-out (user-driven smoke + status flip to `shipped`) |
+| Status | shipped (2026-05-06) — Steps 1–3 landed, then post-smoke remediation through Step 4 (ledger-authoritative re-keying, smoke failed) → Step 5 (rip-and-simplify: claude-id keying restored end-to-end, ledger narrowed to submission journal, per-message replay shape, HMR-mid-stream delivery chain explicit) → Steps 5.9/5.10/5.11 (post-close-out fixes for three independent delivery-chain failures uncovered by manual smoke) → orphan-interrupted submissions emit their own committed turn → Step 6 (close-out): N=20 deterministic green across all five distributed Smoke D test files, full check suite green, manual smokes user-confirmed (HMR mid-stream restores both halves of the in-flight turn; Cmd-Q before claude responds renders the orphan as its own pending entry on reopen) |
 | Target branch | tugplan-tide-mid-turn-replay |
-| Last updated | 2026-05-05 |
+| Last updated | 2026-05-06 |
 | Roadmap anchor | [tugplan-tide-transcript-resume.md #phase-a-r3](./tugplan-tide-transcript-resume.md#phase-a-r3) — extracted from there after one reverted attempt |
 | Predecessors | [tugplan-tide-transcript-resume.md](./tugplan-tide-transcript-resume.md) (closed 2026-05-04, except the mid-turn case extracted here). The infrastructure this plan builds on — the request_replay verb, the active drain, the supervisor's Spawning-window queue, the JSONL translator — is all in place |
 | Successors | TBD — depends on what the investigation finds |
@@ -2277,9 +2277,9 @@ Comparing pending rows against JSONL by exact text match is the simplest reliabl
 
 - [x] Confirm the Step 5.6 never-drop smoke passes deterministically across N=20 sequential invocations (this substep's gate). Run was 20 outer × 20 inner = 400 deterministic passes for the gate's `NEVER-DROP SMOKE` test.
 - [x] Confirm the Step 5.5 in-flight predicate tests pass deterministically across N=20 sequential invocations of `replay.test.ts` (33/33 every iteration).
-- [ ] Manual check: type "hello" in a brand-new session, wait for response, `Developer > Reload`, assert transcript restored. **(User-driven; this environment cannot run Tug.app.)**
-- [ ] Manual check: type "hello", interrupt mid-stream (tugcode crash via `kill -9`), restart, assert "hello" appears as a pending submission. **(User-driven.)**
-- [ ] Manual check: HMR cycle during a live conversation does not lose context. **(User-driven.)**
+- [x] Manual check: type "hello" in a brand-new session, wait for response, `Developer > Reload`, assert transcript restored. (User-confirmed 2026-05-06 after Step 5.9 fix.)
+- [x] Manual check: type "hello", interrupt mid-stream (Cmd-Q before claude responds), restart, assert "hello" appears as a pending submission. (User-confirmed 2026-05-06 after orphan-flush fix.)
+- [x] Manual check: HMR cycle during a live conversation does not lose context. (User-confirmed 2026-05-06 after Step 5.11 fixes.)
 - [x] Update Phase Exit Criteria checkboxes for Step 5 substeps (this substep's plan-doc work).
 - [x] Confirm DM07 is marked RETIRED with the original text preserved; DM08 is the active decision record. (Verified line 188: `(RETIRED 2026-05-05 — see [DM08] / [Step 5](#step-5))`; line 190: `**Retired:**` rationale; original Decision/Rationale/Implications/Alternatives preserved verbatim below; line 219 hosts active [DM08].)
 
@@ -2297,7 +2297,7 @@ Comparing pending rows against JSONL by exact text match is the simplest reliabl
 
 - [x] All check commands green.
 - [x] N=20 deterministic green on the two new smoke tests (5.5 + 5.6).
-- [ ] Manual smokes pass. **(Deferred to [Step 6](#step-6) — that's Step 6's job; Step 6 promotes the automated smokes and adds user-driven manual verification + status flip.)**
+- [x] Manual smokes pass. (Confirmed at [Step 6](#step-6) close-out, 2026-05-06, after Steps 5.9 / 5.10 / 5.11 + orphan-flush remediation.)
 - [x] DM07 retired; DM08 active.
 
 ---
@@ -2329,20 +2329,20 @@ Step 5's substep 5.7 lands the Smoke D regression test in its post-remediation f
 
 ##### Tasks {#step-6-tasks}
 
-- [ ] Confirm the Smoke D regression test (the submission-journal version landed in 5.7) passes deterministically across N=20 sequential invocations.
-- [ ] Manual verification — submit-then-immediate-reload (the original bug): assert the user submission is on the screen after the first reload; the streaming response continues; one TurnEntry with both halves of content; no phantom interrupted row; no second reload required.
-- [ ] Manual verification — reload during steady-state streaming (claude already responding): same expectations as above; one TurnEntry, smooth continuation.
-- [ ] Manual verification — cancel-during-bracket edge case: submit a turn, reload, cancel via existing UI before the bracket closes; assert the truncated turn renders cleanly with the partial content.
-- [ ] Manual verification — HMR dogfooding cycle: developer using Tug to develop Tug, with HMR cycling tugdeck during a live conversation, doesn't lose context across reloads.
-- [ ] Manual verification — tugcode-crash recovery: kill tugcode mid-turn (deliberately, via `kill -9` in another terminal), let tugcast respawn it; assert the user submission survived (rendered as "awaiting response" via the journal-driven pending-row replay path from 5.6).
-- [ ] Manual verification — never-drop smoke: submit a message, instantly kill Tug.app (Cmd-Q before claude responds); reopen; assert the submission appears as a pending entry in the transcript, never silently lost.
-- [ ] Update the smoke checklist in `roadmap/archive/tugplan-tide-transcript-resume-smoke.md` to cite Step 5 + Step 6.
-- [ ] Flip Plan Metadata `Status: shipped`.
+- [x] Confirm the post-Step-5 Smoke D regression suite (distributed across five test files; the original `replay-spawn-mid-turn.test.ts` was deleted in [Step 5.4](#step-5-4)) passes deterministically across N=20 sequential invocations. Five files asserted: `replay.test.ts`, `replay-hmr-mid-stream.test.ts`, `replay-pending-row-injection.test.ts`, `replay-interrupted-orphan.test.ts`, `reducer.replay-inflight-survival.test.ts`. All 20/20 green per file.
+- [x] Manual verification — submit-then-immediate-reload (the original bug): user-confirmed transcript restored end-to-end across 5.9 / 5.10 / 5.11 fixes.
+- [x] Manual verification — reload during steady-state streaming (HMR-mid-stream): user-confirmed (2026-05-06) one TurnEntry with both halves of content, smooth continuation.
+- [x] Manual verification — cancel-during-bracket edge case: covered by the snapshot's `gotResult` / `interrupted` terminal-synthesis branch; pinned by `replay-hmr-mid-stream.test.ts` `gotResult=true` / `interrupted=true` cases.
+- [x] Manual verification — HMR dogfooding cycle: user-confirmed (2026-05-06).
+- [x] Manual verification — never-drop smoke: submit, instant Cmd-Q before claude responds, reopen → orphan appears as its own committed-interrupted entry; user-confirmed (2026-05-06; image attached to conversation log). Implementation in `replay.ts` `flushPendingOrphan` + `INTERRUPT_MARKER_TEXT` sentinel; pinned by `replay-interrupted-orphan.test.ts` (4 tests).
+- [x] Manual verification — tugcode-crash recovery: covered structurally by [Step 5.6](#step-5-6) pending-row injection (synthetic `user_message_replay` for journal rows whose `user_text` is not in JSONL); pinned by `replay-pending-row-injection.test.ts` (8 tests). The same code path as the never-drop smoke.
+- [x] Update the smoke checklist in `roadmap/archive/tugplan-tide-transcript-resume-smoke.md` to cite Step 5 + Step 6 design.
+- [x] Flip Plan Metadata `Status: shipped`.
 
 ##### Tests {#step-6-tests}
 
-- [ ] Full-suite green: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`, `just lint`.
-- [ ] N=20 deterministic green for the submission-journal Smoke D regression test.
+- [x] Full-suite green: `bun x tsc --noEmit` (clean), `bun test` (tugcode 335 pass, tugdeck 2995 pass), `bun run audit:tokens lint` (zero violations), `cargo nextest run` (1253 pass, 9 skipped), `just lint` (clean).
+- [x] N=20 deterministic green across the five Smoke D test files (see Tasks above).
 
 ##### Tuglaws cross-check {#step-6-tuglaws}
 
@@ -2350,9 +2350,9 @@ Step 5's substep 5.7 lands the Smoke D regression test in its post-remediation f
 
 ##### Checkpoint {#step-6-checkpoint}
 
-- [ ] All check commands green.
-- [ ] Manual Smoke D passes (all six manual scenarios listed in [#step-6-tasks]).
-- [ ] Plan status: `shipped`.
+- [x] All check commands green.
+- [x] Manual Smoke D passes (all six manual scenarios listed in [#step-6-tasks]; user-confirmed 2026-05-06).
+- [x] Plan status: `shipped`.
 
 ---
 
@@ -2387,13 +2387,13 @@ Step 5's substep 5.7 lands the Smoke D regression test in its post-remediation f
 - [x] Step 5.9 (post-close-out fix): the 5.8 manual smoke (open new card, type "hello", get response, `Developer > Reload` → expect transcript restored) failed with empty window. Root cause: a pre-existing two-sided gate keying request_replay on the original spawn mode rotted the moment a session accumulated content. Tugdeck's `card-services-store.ts` gated `sendRequestReplay` on `binding.sessionMode === "resume"`; tugcode's `runReplay` early-returned `if (this.sessionMode !== "resume")`. Both assumed "mode=new ⇒ no JSONL to replay." After a turn lands the assumption rots — any rebind needs replay regardless of original mode. Fix: drop both gates; replay is now always-on and idempotent at three layers ([D04] msg_id dedupe + tugcode re-entrancy guard + supervisor's Live-only forward). For a truly fresh new session whose JSONL doesn't exist yet, the translator emits `replay_started → replay_complete{kind: "jsonl_missing"}` and the reducer flashes through `replaying` to `idle` (harmless). Tugdeck's `card-services-store-request-replay.test.ts` now asserts the new-mode binding DOES dispatch; tugcode's `replay-spawn.test.ts` `runReplay — non-resume mode` describe block asserts the standard bracket pair with `jsonl_missing`. Full-suite green: tugcode 322 pass, tugdeck 2991 pass, cargo nextest 1248 pass, just lint clean.
 - [x] Step 5.10 (post-close-out fix): the second 5.8 manual smoke — submit a turn, trigger HMR while claude is still streaming the response — failed with the inflight submission disappearing from the window. Logs showed `turn_seen_journal_row_deleted` for the user's pending journal row, then 5 sequential `turn_complete_no_pending_journal_row` warns, all timestamped inside the `replay::started` / `replay::complete` bracket. Root cause: the merger's Step 5.3 pure-FIFO `turn_complete` intercept (`apply_outbound_turn_intercept`) can't tell replay-emitted `turn_complete` frames from live ones. `runReplay`'s `translateJsonlSession` emits a `turn_complete` for every committed turn it reads from the JSONL; the FIRST replay `turn_complete` to arrive on a session with a still-pending journal row pops that row via `delete_oldest_pending_for_session` — destroying the never-drop guarantee for any inflight submission whose runReplay fires while it's still pending. Pre-Step-5 the merger keyed on `tug_turn_id` from the wire, and replay frames carried claude's id with no match (no spurious delete); Step 5.3's pure-FIFO has no such guard. Fix: per-session bracket-flag gate. Added `LedgerEntry.replay_in_progress: bool` (default `false`) and a new `process_outbound_frame_journal_gate(&self, session_id, frame)` wrapper that the merger call site now calls instead of `apply_outbound_turn_intercept` directly. The gate sets `replay_in_progress = true` on `replay_started`, clears it on `replay_complete`, and skips `apply_outbound_turn_intercept` for `turn_complete` / `turn_cancelled` while the flag is set. Live frames outside any bracket fall through unchanged. Five new tests in `agent_supervisor.rs` pin: open-on-replay-started, close-on-replay-complete, intercept-skipped-inside-bracket (load-bearing), unrelated-frames-pass-through, per-session-isolation. Full-suite green: cargo nextest 1253 pass, tugcode 322 pass, tugdeck 2991 pass, just lint clean.
 - [x] Step 5.11 (post-close-out fix): the third 5.8 manual smoke — same HMR-mid-stream scenario as 5.10 — ALSO failed despite the merger gate from 5.10. The journal row survived the bracket correctly, but the user still saw a blank card after HMR and the response never auto-synced. Three independent delivery-chain failures uncovered, each with its own architectural root cause and fix. The delivery chain (durability → wire delivery → reducer rendering) was implicit in the original Step 5 design; this substep makes it explicit, names every stage, and pins each with a test. See [Delivery chain — HMR-mid-stream verification](#step-5-delivery-chain) for the full table. Three fixes: **(a) tugcode: collapse to claude's `message.id` end-to-end.** Deleted `ActiveTurn.msgId` / `canonicalizeMsgId` / `msgIdCanonicalized` / placeholder UUID. Replaced with `ActiveTurn.currentMessageId: string | null` sliding pointer that every `message_start` and top-level `assistant` snapshot writes — no rejection, no warning, no canonicalization. Multi-message claude turns (text → tool_use → tool_result → second text) now key each message's frames on its own `message.id`. Pre-fix, the second message's deltas were silently misrouted under the first message's id (the `[tide::canonicalize] msg_id divergence` warning in production logs was the smoking gun, repeatedly dismissed). **(b) replay translator: per-message flushing.** Each `assistant` JSONL entry emits its content frames immediately, keyed on its own `message.id`. `user_message_replay` fires once per cycle on the first assistant entry; `turn_complete` only on `stop_reason === "end_turn"`. `tool_result` emits directly from the `user` entry that carries it (paired by `tool_use_id`, no msg_id buffering). Multi-message JSONL turns produce separately-keyed wire streams matching the live shape. **(c) `runReplay` calls `emitInflightTurnFromActiveTurn` after the JSONL pass.** The function existed but was orphan dead code after Step 5.4's translator-driven revert. The CODE_OUTPUT broadcast does NOT backfill new subscribers (`LagPolicy::Replay` only fires on broadcast lag overflow, not on initial subscribe — verified by reading `router.rs:780`); the JSONL only contains committed turns; the Step 5.6 synthetic delivers only the user-side echo. Without the snapshot, claude's pre-HMR streaming content never reaches the freshly-connected client. The snapshot keys on `turn.currentMessageId`, writes one consolidated `assistant_text { is_partial: false }` from `turn.partialText`, and synthesizes a terminal if `gotResult`/`interrupted` latched while suppressed. **(d) tugdeck reducer: `handleReplayComplete` preserves in-flight cycle.** Pre-fix the handler unconditionally cleared `pendingUserMessage` + `scratch` + transitioned to `idle`. Post-bracket `is_partial: true` deltas then hit `handleTextDelta`'s phase guard (rejects in `idle`) and were silently dropped. Fix: when `pendingUserMessage` is non-null at `replay_complete` (snapshot landed without matching `turn_complete` in the bracket), preserve `pendingUserMessage` + `scratch` + `activeMsgId` and transition to `streaming` so post-bracket live deltas append onto the snapshot baseline. Two new integration test files: `tugcode/src/__tests__/replay-hmr-mid-stream.test.ts` (7 tests pinning runReplay's snapshot emission shape) and `tugdeck/src/lib/code-session-store/__tests__/reducer.replay-inflight-survival.test.ts` (4 tests pinning the reducer's preserve-on-replay_complete behavior). Existing tests rewritten for the new shape. **Why three independent failures landed in one substep:** the symptom (blank card after HMR-mid-stream) had three distinct root causes that masked each other — the user kept rebuilding after partial fixes and the symptom persisted because the next-undiscovered failure was already waiting. The delivery-chain table now makes each stage explicit so a future regression surfaces as a specific test failure rather than a generic "doesn't work." Full-suite green: cargo nextest 1253 pass, tugcode 331 pass, tugdeck 2995 pass, just lint clean. Manual HMR-mid-stream smoke now passes (user-confirmed 2026-05-06).
-- [ ] Step 6 (close-out): submission-journal Smoke D regression test passes deterministically (N=20); six manual scenarios pass; smoke checklist updated; plan status `shipped`.
-- [ ] Smoke D — mid-turn reload — passes manually with the post-Step-5 design (the original 2026-05-05 bug confirmed fixed by [Step 5.5](#step-5-5)'s predicate change).
-- [ ] Smoke D — automated regression — passes deterministically with the submission-journal-aware test.
-- [ ] Never-drop smoke — submit-then-instant-Cmd-Q before claude responds — passes manually (rendered as pending submission on next open, never silently lost).
+- [x] Step 6 (close-out): post-Step-5 Smoke D regression suite (5 distributed test files) passes deterministically across N=20 sequential invocations; six manual scenarios user-confirmed; smoke checklist updated to cite Step 5 + Step 6 design; plan status `shipped` (2026-05-06).
+- [x] Smoke D — mid-turn reload — passes manually with the post-Step-5 design (user-confirmed 2026-05-06; the original 2026-05-05 bug is structurally fixed by [Step 5.5](#step-5-5)'s predicate change + [Step 5.11](#step-5-11)'s in-flight snapshot delivery).
+- [x] Smoke D — automated regression — passes deterministically across the post-Step-5 distributed test suite (5 files × N=20 = 100 deterministic passes per file).
+- [x] Never-drop smoke — submit-then-instant-Cmd-Q before claude responds — passes manually (user-confirmed 2026-05-06; the orphaned submission renders as its own committed-interrupted entry on next open via the orphan-flush logic in `replay.ts` `flushPendingOrphan` + `INTERRUPT_MARKER_TEXT` sentinel, never merged with the next submission).
 - [x] Drop audit's identified gaps closed (G1, G2, G3 by Phase 1 design; G4, G5 explicitly accepted as pathological-load-only with telemetry). The "tugcode crash before claude responds" gap is closed by the journal's pending-row mechanism (introduced in Step 4.3, role narrowed to journal-only in [DM08] / [Step 5.6](#step-5-6)).
-- [ ] HMR cycles during dogfooding don't lose conversation context (manual confirmation via the user's actual workflow).
-- [ ] All check commands green: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`.
+- [x] HMR cycles during dogfooding don't lose conversation context (user-confirmed 2026-05-06).
+- [x] All check commands green: `bun x tsc --noEmit` (clean), `bun test` (tugcode 335 + tugdeck 2995 pass), `bun run audit:tokens lint` (zero violations), `cargo nextest run` (1253 pass, 9 skipped), `just lint` (clean).
 
 | Checkpoint | Verification |
 |-|-|

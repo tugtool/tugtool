@@ -148,30 +148,84 @@ path covers that case).
 
 ### Smoke D — Mid-turn reload (passes via mid-turn replay plan)
 
-**Status: PASSES via [tugplan-tide-mid-turn-replay.md](../tugplan-tide-mid-turn-replay.md)** —
-the original Smoke D entry below assumed the [D08] orphan-synthesis
-contract for *every* mid-turn reload; the mid-turn replay plan
-inverts that for the case where tugcode has an active turn for the
-trailing in-flight id (Steps 1–3 of that plan: msg_id canonicalization
-+ translator skip + in-flight emission from `ActiveTurn` state).
-Cold-boot interrupted-session JSONLs (no active turn) still
-orphan-synthesize per [D08]. Automated regression coverage lives in
-`tugcode/src/__tests__/replay-spawn-mid-turn.test.ts` (Smoke D test
-+ five sibling pins, 20-run deterministic verification).
+**Status: PASSES via [tugplan-tide-mid-turn-replay.md](../tugplan-tide-mid-turn-replay.md)
+(Step 5 + Step 6, shipped 2026-05-06).** The original Smoke D entry
+below assumed the [D08] orphan-synthesis contract for *every*
+mid-turn reload. The mid-turn replay plan went through three design
+generations:
 
-Exercises (post-fix expectations):
+1. **Steps 1–3** (msg_id canonicalization + translator skip +
+   in-flight emission). Shipped, then manual smoke surfaced a
+   [DM03] race bug + a deeper id-stability gap.
+2. **Step 4** (ledger-authoritative `tug_turn_id` re-keying).
+   Shipped, smoke test failed (empty window after reload).
+3. **Step 5** ([DM08] rip-and-simplify): wire reverts to claude's
+   `message.id` end-to-end; ledger narrows to a submission journal;
+   translator-driven replay; pending-row injection; HMR-mid-stream
+   delivery chain explicit and pinned.
 
-- The JSONL ends mid-turn (last `assistant.stop_reason: null`).
-- Tugcode has an `ActiveTurn` for the in-flight turn whose
-  `msgId` matches the JSONL trailing entry's `message.id`
-  (canonicalized from claude's stream events).
-- `runReplay` snapshots the active turn, threads
-  `liveInflightMsgId` into the translator (which skips the
-  trailing turn), and emits one consolidated in-flight block
-  (`user_message_replay` + `assistant_text` + optional
-  terminal event) from `ActiveTurn` state inside the bracket.
-- Reducer's existing msg_id dedupe stitches the synthesized
-  block with any post-bracket live deltas into one TurnEntry.
+The post-Step-5 design treats `message.id` as the only id on the
+wire. Tugcode never invents an id. The submission journal (narrowed
+`turns` table) holds pending rows from user-submit until claude
+acknowledges in JSONL; after acknowledge, JSONL is the authority.
+The reducer keys content by claude's `message.id` (sliding pointer
+within `ActiveTurn.currentMessageId`); multi-message claude turns
+produce separately-keyed wire streams.
+
+Automated regression coverage is distributed across multiple test
+files (the original `replay-spawn-mid-turn.test.ts` was deleted in
+[Step 5.4](../tugplan-tide-mid-turn-replay.md#step-5-4) along with
+the rest of the ledger-authoritative scaffolding):
+
+- `tugcode/src/__tests__/replay.test.ts` — translator core
+  (per-message flushing, multi-message cycles, tool ordering).
+- `tugcode/src/__tests__/replay-hmr-mid-stream.test.ts` — runReplay's
+  in-flight snapshot emission shape (7 tests covering live inflight,
+  empty partial, no-id-yet, pre-bracket-finished, no-activeTurn,
+  multi-frame ordering).
+- `tugcode/src/__tests__/replay-pending-row-injection.test.ts` —
+  Step 5.6 pending-row synthetic for journal rows whose `user_text`
+  doesn't appear in JSONL (8 tests).
+- `tugcode/src/__tests__/replay-interrupted-orphan.test.ts` —
+  orphan-interrupted submissions (Cmd-Q before claude responds) emit
+  their own committed-interrupted turn; `[Request interrupted by user]`
+  marker dropped from the wire (4 tests).
+- `tugcode/src/__tests__/session.test.ts` — `ActiveTurn.currentMessageId`
+  sliding pointer (no canonicalize/reject; multi-message turns split
+  per claude `message.id`).
+- `tugdeck/src/lib/code-session-store/__tests__/reducer.replay-inflight-survival.test.ts` —
+  reducer preserves `pendingUserMessage` + `scratch` + `activeMsgId`
+  when `replay_complete` arrives with an in-flight cycle still pending
+  (4 tests).
+
+All five files asserted N=20 deterministic green at Step 6 close-out.
+
+Exercises (post-Step-5 expectations):
+
+- The JSONL ends mid-turn (last `assistant.stop_reason: null`)
+  AND/OR the journal has a pending row for a submission claude
+  hasn't yet acknowledged.
+- The translator emits per-message frames from JSONL keyed on each
+  `assistant` entry's own `message.id`. `user_message_replay` fires
+  once per cycle on the first assistant entry; `turn_complete` only
+  on `stop_reason === "end_turn"`.
+- For pending journal rows whose `user_text` doesn't appear in JSONL,
+  `injectPendingRowSynthetics` emits a synthetic `user_message_replay`
+  keyed on `journal_id` between the bracket's `replay_started` and
+  the first translator emit.
+- For an in-flight turn (tugcode's `ActiveTurn` non-null with no
+  terminal latched), `runReplay` calls `emitInflightTurnFromActiveTurn`
+  after the JSONL pass and before `replay_complete` to deliver the
+  pre-HMR streaming content (consolidated `assistant_text { is_partial:
+  false }` from `turn.partialText`, keyed on `turn.currentMessageId`).
+- `replay_complete` preserves `pendingUserMessage` + `scratch` +
+  `activeMsgId` if any survived the bracket; transitions to
+  `streaming` so post-bracket live deltas append onto the snapshot
+  baseline.
+- Live `turn_complete` arrives, reducer commits the TurnEntry with
+  the full body (snapshot + post-bracket tail). The merger's
+  Step 5.10 bracket-flag gate suppresses replay-emitted
+  `turn_complete` from popping the journal; live terminal pops once.
 
 Original cold-boot interrupted-session smoke (preserved for
 [D08] regression coverage of the no-active-turn case):
