@@ -260,9 +260,20 @@ export class SmartScroll {
   }
 
   /** Slam scrollTop to bottom without entering programmatic phase.
-   *  Used for content growth while following bottom. Stays in idle. [D04] */
+   *  Used for content growth while following bottom. Stays in idle. [D04]
+   *
+   *  Idempotent: reads the live scroll geometry and skips the write when
+   *  scrollTop is already at (or past) the maximum. Setting scrollTop to a
+   *  clamped value is *logically* a no-op, but on WebKit the assignment can
+   *  still fire a scroll event regardless, which feeds back into a caller
+   *  that re-runs after every commit (see TugListView's post-commit pin
+   *  effect) and produces a 60Hz scrollTop-write loop on relaunch. The
+   *  callers have just committed, so the layout read here is fresh and
+   *  cheap. */
   pinToBottom(): void {
     if (this._disposed) return;
+    const max = this._container.scrollHeight - this._container.clientHeight;
+    if (this._container.scrollTop >= max) return;
     this._container.scrollTop = 0x40000000;
   }
 
