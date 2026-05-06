@@ -36,7 +36,15 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
 
         self.title = "Tug"
-        self.setFrameAutosaveName("MainWindow")
+        // Restore the window frame saved by AppKit under
+        // `NSWindow Frame MainWindow` in NSUserDefaults. If no saved frame
+        // exists (first launch), center on the active screen as a default.
+        // setFrameAutosaveName then registers automatic save-on-move/resize.
+        let autosaveName: NSWindow.FrameAutosaveName = "MainWindow"
+        if !self.setFrameUsingName(autosaveName) {
+            self.center()
+        }
+        self.setFrameAutosaveName(autosaveName)
 
         // Configure WKUserContentController for script message handlers
         contentController = WKUserContentController()

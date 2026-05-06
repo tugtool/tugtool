@@ -84,7 +84,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         lap("resolveStartupBackgroundHex → \(bgHex)")
 
         window.updateBackgroundColor(bgHex)
-        window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         lap("window visible")
