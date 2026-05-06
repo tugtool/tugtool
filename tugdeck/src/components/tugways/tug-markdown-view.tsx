@@ -64,7 +64,7 @@ import { RenderedBlockWindow } from "@/lib/rendered-block-window";
 import { RegionMap } from "@/lib/region-map";
 import { SmartScroll } from "@/lib/smart-scroll";
 import type { PropertyStore } from "@/components/tugways/property-store";
-import { TugEditorContextMenu, type TugEditorContextMenuEntry } from "@/components/tugways/tug-editor-context-menu";
+import { useTextSurfaceContextMenu } from "@/components/tugways/use-text-surface-context-menu";
 import { useOptionalResponder } from "@/components/tugways/use-responder";
 import type { ActionHandlerResult } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
@@ -1077,27 +1077,6 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     // to be listed as a dependency.
   }, [streamingStore, streamingPath]);
 
-  // ---- Context menu (cut/copy/paste/select all) ----
-  //
-  // Uses TugEditorContextMenu — the same portaled menu used by
-  // tug-prompt-input and the native input components.
-  //
-  // Selection management is handled entirely by SelectionGuard.
-  // This component does NOT add its own pointer or selection event
-  // listeners for selection management. The only listeners are:
-  //   - contextmenu: to show/hide the editor context menu
-  //   - pointerdown (bubble): ONLY to clear the selectAllActive flag
-  //   - click: cleanup pass to remove collapsed carets in read-only content
-
-  // Menu state: null when closed, {x, y, hasSelection} when open.
-  const [menuState, setMenuState] = useState<{
-    x: number;
-    y: number;
-    hasSelection: boolean;
-  } | null>(null);
-
-  const closeMenu = useCallback(() => setMenuState(null), []);
-
   // ---- Virtualized select-all ----
   //
   // A logical flag that means "the entire document is selected," even
@@ -1174,51 +1153,57 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     },
   });
 
-  // ---- Context menu items ----
-
-  const menuItems = useMemo<TugEditorContextMenuEntry[]>(() => {
-    const hasSelection = menuState?.hasSelection ?? false;
-    return [
-      { action: TUG_ACTIONS.CUT,        label: "Cut",        shortcut: "\u2318X", disabled: true },
-      { action: TUG_ACTIONS.COPY,       label: "Copy",       shortcut: "\u2318C", disabled: !hasSelection },
-      { action: TUG_ACTIONS.PASTE,      label: "Paste",      shortcut: "\u2318V", disabled: true },
-      { type: "separator" },
-      { action: TUG_ACTIONS.SELECT_ALL, label: "Select All", shortcut: "\u2318A" },
-    ];
-  }, [menuState?.hasSelection]);
+  // ---- Right-click menu via shared hook ----
+  //
+  // Markdown view doesn't use a `TextSelectionAdapter`: SelectionGuard
+  // owns the selection lifecycle and the existing UX is "right-click
+  // reflects whatever's already selected — no smart-click word
+  // expansion in a paragraph". Pass `adapter: null` to skip the
+  // hook's restore/classify/expand pipeline. Supply
+  // `hasSelectionOverride` to fold the virtualized select-all flag
+  // (`selectAllActiveRef`) into Copy enablement: when select-all is
+  // logically active, the DOM Selection is empty (we removed the
+  // ranges to avoid double-painting alongside the CSS visual), but
+  // Copy must still be enabled because the COPY handler reads the
+  // full document text from `regionMap.text`.
+  const {
+    onContextMenu: hookContextMenu,
+    menu: contextMenuNode,
+  } = useTextSurfaceContextMenu({
+    adapter: null,
+    capabilities: { canEdit: false },
+    hasSelectionOverride: () => {
+      if (selectAllActiveRef.current) return true;
+      const blockContainer = blockContainerRef.current;
+      if (blockContainer === null) return false;
+      const sel = window.getSelection();
+      if (sel === null || sel.isCollapsed || sel.rangeCount === 0) return false;
+      return (
+        (sel.anchorNode !== null && blockContainer.contains(sel.anchorNode)) ||
+        (sel.focusNode !== null && blockContainer.contains(sel.focusNode))
+      );
+    },
+  });
 
   // ---- Event listeners ----
   //
-  // Minimal set — SelectionGuard owns the selection lifecycle.
-  // These listeners handle only:
-  //   1. contextmenu: show the editor context menu
-  //   2. pointerdown (bubble): clear selectAllActive flag
-  //   3. click: remove collapsed carets in read-only content
+  // Minimal set — SelectionGuard owns the selection lifecycle. These
+  // listeners handle only:
+  //   1. contextmenu: defer to the hook handler when the click lands
+  //      inside the block container.
+  //   2. pointerdown (bubble): clear selectAllActive flag on any
+  //      non-right-click, after SelectionGuard's capture-phase work.
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
 
-    // 1. Contextmenu — show the editor context menu on right-click
-    //    within the block container.
     const onContextMenu = (e: MouseEvent) => {
       const blockContainer = blockContainerRef.current;
       if (!blockContainer) return;
       if (!blockContainer.contains(e.target as Node) && e.target !== blockContainer) return;
-      e.preventDefault();
-
-      const hasSelection = selectAllActiveRef.current || (() => {
-        const sel = window.getSelection();
-        if (!sel || sel.isCollapsed || sel.rangeCount === 0) return false;
-        return blockContainer.contains(sel.anchorNode) || blockContainer.contains(sel.focusNode);
-      })();
-
-      setMenuState({ x: e.clientX, y: e.clientY, hasSelection });
+      hookContextMenu(e);
     };
 
-    // 2. Pointerdown (bubble phase) — clear select-all on any
-    //    non-right-click. This runs AFTER SelectionGuard's capture-phase
-    //    handler has already processed the event, so there's no race.
-    //    This is the ONLY pointer listener; no pointermove/pointerup.
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 2 && selectAllActiveRef.current) {
         selectAllActiveRef.current = false;
@@ -1232,8 +1217,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
       container.removeEventListener("contextmenu", onContextMenu);
       container.removeEventListener("pointerdown", onPointerDown);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- refs are stable
-  }, []);
+  }, [hookContextMenu]);
 
   // ---- Selection publish [A5] ----
   //
@@ -1321,13 +1305,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
         <div ref={blockContainerRef} className="tugx-md-block-container" />
         <div ref={bottomSpacerRef} className="tugx-md-spacer tugx-md-spacer--bottom" aria-hidden="true" />
         <div className="tugx-md-bottom-buffer" aria-hidden="true" />
-        <TugEditorContextMenu
-          open={menuState !== null}
-          x={menuState?.x ?? 0}
-          y={menuState?.y ?? 0}
-          items={menuItems}
-          onClose={closeMenu}
-        />
+        {contextMenuNode}
       </div>
     </ResponderScope>
   );

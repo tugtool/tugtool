@@ -118,6 +118,7 @@ import { atomicRangesExt } from "./tug-text-editor/atomic-ranges";
 import { clipboardExt, parseClipboardHtmlEnvelope } from "./tug-text-editor/clipboard-filters";
 import { tugDropExtension } from "./tug-text-editor/drop-extension";
 import { createCMSelectionAdapter } from "./tug-text-editor/selection-adapter";
+import type { TextSelectionAdapter } from "./text-selection-adapter";
 import { tugCaretInteractionPlugin, tugCaretLayer } from "./tug-text-editor/caret-layer";
 import { tugLineNumbersGutter } from "./tug-text-editor/line-numbers-gutter";
 import { tugSelectionLayer } from "./tug-text-editor/selection-layer";
@@ -140,7 +141,7 @@ import {
 import type { PendingEditRestore } from "./tug-text-editor/state-preservation";
 import { deckTrace } from "@/deck-trace";
 import { selectionGuard } from "./selection-guard";
-import { TugEditorContextMenu, type TugEditorContextMenuEntry } from "./tug-editor-context-menu";
+import { useTextSurfaceContextMenu } from "./use-text-surface-context-menu";
 import { useCardId } from "./use-card-state-preservation";
 import { useCompanionPopupBinding } from "./use-companion-popup-binding";
 import { useOptionalResponder } from "./use-responder";
@@ -1187,92 +1188,52 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     // pointerdown and contextmenu is undone via the same chain CM6
     // uses for any other selection mutation.
 
-    // Menu state: null when closed, {x, y, hasSelection} when open.
-    // hasSelection is sampled once on open and drives Cut/Copy
-    // enablement.
-    const [menuState, setMenuState] = useState<{
-      x: number;
-      y: number;
-      hasSelection: boolean;
-    } | null>(null);
+    // The CM6 adapter is held in a ref so the surface listeners and
+    // the responder-action handlers all read the same instance. The
+    // adapter closes over `viewRef.current` at construction; we
+    // refresh it whenever the view identity changes (substrate
+    // remount, view recreation).
+    const cmAdapterRef = useRef<TextSelectionAdapter | null>(null);
+    useLayoutEffect(() => {
+      cmAdapterRef.current = view !== null ? createCMSelectionAdapter(view) : null;
+    }, [view]);
 
-    // Captured at pointerdown on a right-click, restored at contextmenu.
-    // Stored as `from` / `to` (CM6 selection range fields) so a CM6
-    // transaction can rebuild the same range without translating
-    // through DOM Selection.
-    const preRightClickSelectionRef = useRef<{ from: number; to: number } | null>(null);
+    const {
+      onPointerDown: onContextMenuPointerDown,
+      onContextMenu: onContextMenuOpen,
+      menu: contextMenu,
+    } = useTextSurfaceContextMenu({
+      adapter: cmAdapterRef.current,
+      capabilities: { canEdit: true },
+    });
 
+    // Attach the hook's listeners only when the click lands inside the
+    // editor's own contentDOM — clicks on host padding fall through to
+    // the browser's native menu, matching the legacy behavior. The
+    // listeners themselves are stable (returned by the hook); this
+    // effect handles the wiring + the contentDOM-membership gate.
     useLayoutEffect(() => {
       const host = hostRef.current;
       if (host === null) return;
-      // Pointerdown runs before the browser's native mousedown default
-      // action, so reading the selection here captures it pre-expansion.
-      // We don't `preventDefault` — the native action is allowed to
-      // run (focus, place caret if none existed) and we undo only the
-      // selection portion in the contextmenu handler.
-      const onPointerDown = (e: PointerEvent) => {
-        if (e.button !== 2) return;
-        const view = viewRef.current;
-        if (view === null) return;
-        if (!view.dom.contains(e.target as Node)) {
-          preRightClickSelectionRef.current = null;
-          return;
-        }
-        const sel = view.state.selection.main;
-        preRightClickSelectionRef.current = { from: sel.from, to: sel.to };
+      const handlePointerDown = (e: PointerEvent) => {
+        const v = viewRef.current;
+        if (v === null) return;
+        if (!v.dom.contains(e.target as Node)) return;
+        onContextMenuPointerDown(e);
       };
-      const onContextMenu = (e: MouseEvent) => {
-        const view = viewRef.current;
-        if (view === null) return;
-        // Only intercept right-clicks that land inside the editor proper.
-        // Clicks on host padding fall through to the browser's native
-        // menu — matching `tug-prompt-input`.
-        if (!view.dom.contains(e.target as Node)) return;
-        e.preventDefault();
-        // No makeFirstResponder call: the document-level pointerdown
-        // listener in ResponderChainProvider already promoted this
-        // node via data-responder-id lookup, and a right-click issues
-        // pointerdown before contextmenu.
-        //
-        // Restore the pre-right-click selection, undoing any WebKit
-        // smart-click expansion that ran during native mousedown
-        // handling. When the captured value is null (right-click into
-        // an unfocused or off-target editor), skip the restore and
-        // let whatever caret WebKit placed be the effective state —
-        // avoids clearing a caret the user expects.
-        const captured = preRightClickSelectionRef.current;
-        if (captured !== null) {
-          view.dispatch({
-            selection: EditorSelection.range(captured.from, captured.to),
-            userEvent: "select",
-          });
-        }
-        const adapter = createCMSelectionAdapter(view);
-        const classification = adapter.classifyRightClick(e.clientX, e.clientY);
-
-        let hasSelection: boolean;
-        if (classification === "elsewhere") {
-          // Click landed away from the selection — move to click point
-          // and expand to word boundaries.
-          adapter.selectWordAtPoint(e.clientX, e.clientY);
-          hasSelection = adapter.hasRangedSelection();
-        } else {
-          // "near-caret" or "within-range" — leave the restored
-          // selection as-is. hasSelection is true only for "within-range".
-          hasSelection = classification === "within-range";
-        }
-
-        setMenuState({ x: e.clientX, y: e.clientY, hasSelection });
+      const handleContextMenu = (e: MouseEvent) => {
+        const v = viewRef.current;
+        if (v === null) return;
+        if (!v.dom.contains(e.target as Node)) return;
+        onContextMenuOpen(e);
       };
-      host.addEventListener("pointerdown", onPointerDown);
-      host.addEventListener("contextmenu", onContextMenu);
+      host.addEventListener("pointerdown", handlePointerDown);
+      host.addEventListener("contextmenu", handleContextMenu);
       return () => {
-        host.removeEventListener("pointerdown", onPointerDown);
-        host.removeEventListener("contextmenu", onContextMenu);
+        host.removeEventListener("pointerdown", handlePointerDown);
+        host.removeEventListener("contextmenu", handleContextMenu);
       };
-    }, []);
-
-    const closeMenu = useCallback(() => setMenuState(null), []);
+    }, [onContextMenuPointerDown, onContextMenuOpen]);
 
     // ---------------------------------------------------------------
     // Responder-chain action handlers
@@ -1509,24 +1470,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       focus: () => viewRef.current?.focus(),
     });
 
-    // Menu items: stable for the menu's lifetime. `hasSelection` is
-    // the only input that can change while the menu is open, but the
-    // menu reads `items` once at mount per its own contract, so
-    // re-deriving on `menuState?.hasSelection` change is safe. Kept
-    // identical in shape to `tug-prompt-input`'s menu so cross-
-    // substrate UX matches: same labels, same shortcuts, same order.
-    const menuItems = useMemo<TugEditorContextMenuEntry[]>(() => {
-      const hasSelection = menuState?.hasSelection ?? false;
-      return [
-        { action: TUG_ACTIONS.CUT,        label: "Cut",        shortcut: "⌘X", disabled: !hasSelection },
-        { action: TUG_ACTIONS.COPY,       label: "Copy",       shortcut: "⌘C", disabled: !hasSelection },
-        { action: TUG_ACTIONS.PASTE,      label: "Paste",      shortcut: "⌘V" },
-        { type: "separator" },
-        { action: TUG_ACTIONS.SELECT_ALL, label: "Select All", shortcut: "⌘A" },
-      ];
-    }, [menuState?.hasSelection]);
-
-    // Compose the host ref so a single ref callback writes the local
+// Compose the host ref so a single ref callback writes the local
     // `hostRef`, the `responderRef` (which writes `data-responder-id`
     // for first-responder promotion on click), and the standard
     // `useRef` slot. Mirrors the `composedRef` pattern in
@@ -1768,15 +1712,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
               ([L11]); the substrate's responder is registered on
               this host so item activations land in the same
               handlers as the keyboard shortcuts. */}
-          {menuState !== null && (
-            <TugEditorContextMenu
-              open
-              x={menuState.x}
-              y={menuState.y}
-              items={menuItems}
-              onClose={closeMenu}
-            />
-          )}
+          {contextMenu}
         </div>
         {/* Typeahead overlay. Renders `null` until the view is born;
             once `view` is non-null, mounts a portal into

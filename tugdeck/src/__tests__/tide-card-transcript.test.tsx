@@ -34,6 +34,7 @@ import { render, act, cleanup } from "@testing-library/react";
 
 import { initSync } from "../../crates/tugmark-wasm/pkg/tugmark_wasm.js";
 import { TideTranscriptHost } from "@/components/tugways/cards/tide-card-transcript";
+import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { CodeSessionStore } from "@/lib/code-session-store";
 import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import type { TugConnection } from "@/connection";
@@ -133,10 +134,12 @@ function buildHarness(
 
 function renderHost(h: Harness) {
   return render(
-    <TideTranscriptHost
-      codeSessionStore={h.codeSessionStore}
-      sessionMetadataStore={h.sessionMetadataStore}
-    />,
+    <ResponderChainProvider>
+      <TideTranscriptHost
+        codeSessionStore={h.codeSessionStore}
+        sessionMetadataStore={h.sessionMetadataStore}
+      />
+    </ResponderChainProvider>,
   );
 }
 

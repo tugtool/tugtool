@@ -137,6 +137,14 @@ function pointInRects(rects: readonly Rect[], x: number, y: number): boolean {
  */
 export function createCMSelectionAdapter(view: EditorView): TextSelectionAdapter {
   /**
+   * Snapshot of the primary selection captured at right-click
+   * `pointerdown`, stored as CM6 `from` / `to` so a transaction can
+   * rebuild the same range. `null` between right-clicks or when the
+   * pointerdown landed outside the editor's contentDOM.
+   */
+  let preClickSnapshot: { from: number; to: number } | null = null;
+
+  /**
    * True when the primary selection range is non-empty. Multi-range
    * selections are uncommon in the substrate but only the main range
    * affects clipboard / menu enablement, mirroring the rest of the
@@ -258,6 +266,48 @@ export function createCMSelectionAdapter(view: EditorView): TextSelectionAdapter
     });
   }
 
+  /**
+   * Snapshot CM6's primary selection at right-click pointerdown. The
+   * editor's pointerdown listener calls this on `event.button === 2`
+   * before the browser's mousedown can move the caret. CM6 is the
+   * source of truth for the editor's selection, so reading
+   * `view.state.selection.main` here captures the user's pre-right-
+   * click state directly — no DOM Selection round-trip.
+   */
+  function capturePreRightClick(): void {
+    const sel = view.state.selection.main;
+    preClickSnapshot = { from: sel.from, to: sel.to };
+  }
+
+  /**
+   * Right-click pipeline: restore the pre-click snapshot via a CM6
+   * transaction (undoing any smart-click expansion the browser ran),
+   * classify the click, and either keep the restored selection or
+   * call `selectWordAtPoint` to re-place the caret. CM6 transactions
+   * are the JS-driven commit that survives the contextmenu's
+   * `preventDefault` — without them, WebKit reverts whatever the
+   * smart-click did and the menu opens against an empty selection.
+   *
+   * Returns `hasRangedSelection()` for the menu's Cut / Copy gates.
+   */
+  function prepareSelectionForRightClick(
+    clientX: number,
+    clientY: number,
+  ): boolean {
+    if (preClickSnapshot !== null) {
+      view.dispatch({
+        selection: EditorSelection.range(preClickSnapshot.from, preClickSnapshot.to),
+        userEvent: "select",
+      });
+    }
+    const classification = classifyRightClick(clientX, clientY);
+    if (classification === "elsewhere") {
+      selectWordAtPoint(clientX, clientY);
+    }
+    preClickSnapshot = null;
+    return hasRangedSelection();
+  }
+
   return {
     hasRangedSelection,
     getSelectedText,
@@ -265,5 +315,7 @@ export function createCMSelectionAdapter(view: EditorView): TextSelectionAdapter
     expandToWord,
     classifyRightClick,
     selectWordAtPoint,
+    capturePreRightClick,
+    prepareSelectionForRightClick,
   };
 }

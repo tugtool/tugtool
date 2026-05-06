@@ -66,10 +66,17 @@
  * registered before this one, could suppress classification.
  * Known-but-absent adversary.
  *
- * **Pointer-button filtering.** The listener does not filter on
- * `event.button`; right- and middle-click classify the same as
- * primary. Matches prior behavior (the former
- * `handleFramePointerDown` did not check `button` either).
+ * **Pointer-button filtering.** Primary button (`event.button === 0`)
+ * only. Right-click and middle-click skip classification entirely so
+ * neither pane-activation focus transfer nor canvas-background
+ * deselect fires from a non-primary button. Standard desktop
+ * interaction: primary click activates / focuses; secondary click
+ * shows a context menu without changing focus or selection.
+ * Filtering here is what lets a right-click on selected text in a
+ * transcript cell preserve the selection through to the moment the
+ * context menu opens — without the filter, `transferFocusForActivation`
+ * would `.focus()` an activation target on the right-button
+ * pointerdown and collapse the document selection.
  *
  * **Pointer→click z-index ordering.** DeckCanvas comments note
  * that synchronous z-index update on pointerdown preserves the
@@ -159,6 +166,19 @@ export function usePaneFocusController(
     function onPointerDown(event: PointerEvent): void {
       const root = deckRootRef.current;
       if (!root) return;
+
+      // Primary-button-only classification. Right-click and middle-
+      // click never trigger pane-activation focus transfer or canvas-
+      // background deselect — those buttons are for context menus and
+      // the user expects the document selection to survive a
+      // right-click on selected text. The previous "no filter"
+      // behavior matched the legacy `handleFramePointerDown` but
+      // routed right-click through `transferFocusForActivation`,
+      // whose `.focus()` call collapsed any active selection at the
+      // moment a context menu would have used it. Standard desktop
+      // interaction is: primary click activates, secondary click
+      // shows a menu without changing focus.
+      if (event.button !== 0) return;
 
       const target = event.target;
       const startEl =

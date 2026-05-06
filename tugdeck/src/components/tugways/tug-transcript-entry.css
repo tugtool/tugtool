@@ -75,6 +75,13 @@
   /* Same min-width: 0 trick as the body column — body slot content (long
      URLs, code spans, atoms) must not push the transcript surface wider. */
   min-width: 0;
+  /* Transcript text is user data — the user submitted it, the assistant
+     wrote it, both should be selectable. Browser default is `text` for
+     normal flow content, but be explicit so a future ancestor rule with
+     `user-select: none` (e.g. for drag chrome) can't silently disable
+     selection on the body. */
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .tug-transcript-entry__controls {

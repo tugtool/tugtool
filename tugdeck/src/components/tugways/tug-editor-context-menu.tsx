@@ -16,14 +16,32 @@
  *     (b) callers can run document.execCommand and navigator.clipboard.*
  *         inside the mousedown handler — a synchronous user gesture.
  *
- * - Actions flow through the responder chain [L11]. Each item's `id`
- *   is the action name dispatched via manager.sendToFirstResponderForContinuation.
- *   The first responder (typically the editor that opened the menu)
- *   provides the handler. Handlers may return a continuation callback
- *   for two-phase execution: the sync body runs inside the user
- *   gesture, the continuation runs after the activation blink for
- *   visible side effects — so the user sees flash feedback first,
- *   then the result (cut, paste, etc.).
+ * - Actions flow through the responder chain [L11] via targeted
+ *   dispatch. Each item's `action` is dispatched through
+ *   `useControlDispatch().dispatchForContinuation`, which calls
+ *   `manager.sendToTarget(parentId, event)` with `parentId` read from
+ *   `ResponderParentContext`. The handler runs on the consumer that
+ *   opened the menu — not on whatever happens to be first responder —
+ *   so a menu opened from a non-focused surface (e.g. a transcript
+ *   cell while the editor remains first responder) still routes its
+ *   actions to the correct owner. This matches the pattern used by
+ *   `TugContextMenu` (Radix-backed) and is the canonical "control
+ *   dispatches to its parent responder" shape from
+ *   `tuglaws/responder-chain.md`. Handlers may return a continuation
+ *   callback for two-phase execution: the sync body runs inside the
+ *   user gesture, the continuation runs after the activation blink
+ *   for visible side effects — so the user sees flash feedback
+ *   first, then the result (cut, paste, etc.).
+ *
+ *   Contract for consumers: render `<TugEditorContextMenu />` inside
+ *   the `<ResponderScope>` of the responder that should handle the
+ *   menu's actions. The React-tree position *is* the dispatch target
+ *   — there is no `target` prop and no fallback to first-responder
+ *   dispatch. Consumers that already wrap their hosts in
+ *   `useResponder().ResponderScope` (the editor, the markdown view,
+ *   the transcript cells) get this for free; consumers like the
+ *   native-input hook wrap the returned menu inside the responder's
+ *   scope themselves.
  *
  * - Mouse dismissal: window-level capture-phase mousedown outside the
  *   menu closes it. Mousedowns inside the menu element are ignored.
@@ -85,6 +103,7 @@ import React, {
 import { createPortal } from "react-dom";
 import { playMenuItemBlink } from "./tug-menu-item-blink";
 import { useRequiredResponderChain } from "./responder-chain-provider";
+import { useControlDispatch } from "./use-control-dispatch";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import type { TugAction } from "./action-vocabulary";
 
@@ -149,10 +168,11 @@ export interface TugEditorContextMenuProps {
   /**
    * Menu entries — items, separators, and section labels. Each action
    * item's `action` field is the responder-chain action name
-   * dispatched when the item is activated. The responder that handles
-   * the dispatch must be the first responder (or an ancestor) when
-   * the item is activated — typically the editor that opened the
-   * menu.
+   * dispatched when the item is activated. The dispatch is targeted
+   * via `useControlDispatch` to the parent responder — i.e., the
+   * nearest enclosing `<ResponderScope>` in the React tree — so the
+   * consumer's responder must wrap the rendered
+   * `<TugEditorContextMenu />`.
    */
   items: TugEditorContextMenuEntry[];
   /** Called when the menu should close (Escape, outside click, or after a selection). */
@@ -179,6 +199,10 @@ export function TugEditorContextMenu({
   onClose,
 }: TugEditorContextMenuProps) {
   const manager = useRequiredResponderChain();
+  // Targeted dispatch to the parent responder — the consumer that
+  // wrapped this menu in its `<ResponderScope>`. Mirrors
+  // `TugContextMenu`'s use of the same hook for the same reason.
+  const { dispatchForContinuation } = useControlDispatch();
   const overlayRoot = useCanvasOverlay();
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -274,10 +298,10 @@ export function TugEditorContextMenu({
    * Activate an item. Two-phase execution via the responder chain:
    *
    * 1. Dispatch `{action, phase: "discrete"}` through the chain
-   *    synchronously — inside the current user gesture. The first
-   *    responder's handler runs inside the mousedown/keydown stack,
-   *    so clipboard APIs and execCommand work. If the handler returns
-   *    a continuation callback (see ActionHandler), sendToFirstResponderForContinuation
+   *    synchronously — inside the current user gesture. The handler
+   *    runs inside the mousedown/keydown stack, so clipboard APIs
+   *    and execCommand work. If the handler returns a continuation
+   *    callback (see ActionHandler), `dispatchForContinuation`
    *    exposes it here.
    *
    * 2. Play the activation blink. When it finishes, run the optional
@@ -288,15 +312,19 @@ export function TugEditorContextMenu({
    *
    * Then close the menu.
    *
-   * `action` is typed as TugAction because menu items are declared
-   * with typed actions at the consumer site (via TugEditorContextMenuItem).
-   * No cast or coercion is needed on the dispatch path.
+   * Dispatch is targeted to the menu's parent responder via
+   * `useControlDispatch`. The first responder is irrelevant — the
+   * action lands on whoever wrapped the rendered menu in their
+   * `<ResponderScope>`. `action` is typed as TugAction because menu
+   * items are declared with typed actions at the consumer site
+   * (via TugEditorContextMenuItem); no cast or coercion is needed
+   * on the dispatch path.
    */
   const activateItem = useCallback((target: HTMLElement, action: TugAction) => {
     if (blinkingRef.current) return;
     blinkingRef.current = true;
-    // Phase 1: synchronous dispatch through the responder chain.
-    const { continuation } = manager.sendToFirstResponderForContinuation({
+    // Phase 1: synchronous targeted dispatch to the parent responder.
+    const { continuation } = dispatchForContinuation({
       action,
       phase: "discrete",
     });
@@ -309,7 +337,7 @@ export function TugEditorContextMenu({
         onCloseRef.current();
       }
     });
-  }, [manager]);
+  }, [dispatchForContinuation]);
 
   /**
    * Append a character to the typeahead buffer and move the keyboard
@@ -531,6 +559,25 @@ export function TugEditorContextMenu({
       data-slot="tug-editor-context-menu"
       className="tug-menu-content tug-editor-context-menu"
       role="menu"
+      // Mark the menu and its items as focus-refusing so a click on
+      // an item does NOT promote a first responder. The menu portals
+      // to canvas overlay, which is structurally outside the
+      // responder hierarchy but, in the DOM, sits inside DeckCanvas's
+      // wrapper (data-responder-id="deck-canvas"). Without this
+      // attribute, `responder-chain-provider`'s document-level
+      // pointerdown listener would walk DOM-up from the clicked menu
+      // item, find no closer responder, land on deck-canvas, and
+      // promote it. Even though the menu's own dispatch is *targeted*
+      // (sendToTarget(parentId)) and so doesn't depend on first
+      // responder, clobbering first responder mid-menu would break
+      // unrelated chain behavior — keyboard shortcuts arriving while
+      // the menu is open would route to deck-canvas instead of the
+      // surface the user was working with. With the attribute,
+      // promotion is skipped and the responder that owned the
+      // surface that opened the menu (the editor, the transcript
+      // cell, etc.) keeps first-responder status across the menu's
+      // lifetime.
+      data-tug-focus="refuse"
       // Suppress the browser's native context menu on right-click
       // within our own menu — otherwise right-clicking an item would
       // stack the system menu on top.

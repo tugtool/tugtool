@@ -302,14 +302,21 @@ function renderClassificationHost(store: Store) {
 
 /** Dispatch a real DOM PointerEvent on the target. `PointerEvent` isn't
  * always present in happy-dom; fall back to dispatching a bubbling
- * `Event` of type "pointerdown" with a `metaKey` override. */
+ * `Event` of type "pointerdown" with `metaKey` and `button` overrides.
+ * Defaults to `button: 0` (primary) to mirror real-world clicks; the
+ * controller only classifies primary buttons to avoid collapsing
+ * document selection on right-click context-menu gestures. */
 function dispatchPointerDown(
   target: EventTarget,
-  init: { metaKey?: boolean } = {},
+  init: { metaKey?: boolean; button?: number } = {},
 ): void {
   const event = new Event("pointerdown", { bubbles: true, cancelable: true });
   Object.defineProperty(event, "metaKey", {
     value: init.metaKey === true,
+    configurable: true,
+  });
+  Object.defineProperty(event, "button", {
+    value: init.button ?? 0,
     configurable: true,
   });
   act(() => {
@@ -730,9 +737,9 @@ describe("pane-focus-controller — classification listener", () => {
       '[data-testid="paneB-content"]',
     );
     expect(contentB).not.toBeNull();
-    contentB!.dispatchEvent(
-      new Event("pointerdown", { bubbles: true, cancelable: true }),
-    );
+    const earlyEvent = new Event("pointerdown", { bubbles: true, cancelable: true });
+    Object.defineProperty(earlyEvent, "button", { value: 0, configurable: true });
+    contentB!.dispatchEvent(earlyEvent);
     expect(store.activateCardCalls).toEqual(["cB"]);
   });
 
@@ -788,5 +795,39 @@ describe("pane-focus-controller — classification listener", () => {
     } finally {
       outside.remove();
     }
+  });
+
+  it("C18: right-click (button=2) on card content does NOT activate the pane", () => {
+    // Pins the fix that lets a right-click on selected text in a
+    // transcript cell preserve the document selection through to the
+    // moment Radix opens the context menu. Without the button filter,
+    // pointerdown classifies right-clicks as primary and routes them
+    // through `transferFocusForActivation`, whose `.focus()` call
+    // collapses the selection. Standard desktop interaction is:
+    // primary click activates, secondary click shows a menu without
+    // changing focus.
+    const store = classificationStore();
+    const { container } = renderClassificationHost(store);
+    const contentB = container.querySelector<HTMLElement>(
+      '[data-testid="paneB-content"]',
+    );
+    expect(contentB).not.toBeNull();
+    dispatchPointerDown(contentB!, { button: 2 });
+    expect(store.activateCardCalls).toEqual([]);
+  });
+
+  it("C19: middle-click (button=1) on card content does NOT activate the pane", () => {
+    // Companion to C18 — primary-only classification means middle-
+    // click also skips activation. macOS doesn't use middle-click for
+    // anything that should change focus; treating it the same as
+    // right-click avoids surprise focus shifts on stray buttons.
+    const store = classificationStore();
+    const { container } = renderClassificationHost(store);
+    const contentB = container.querySelector<HTMLElement>(
+      '[data-testid="paneB-content"]',
+    );
+    expect(contentB).not.toBeNull();
+    dispatchPointerDown(contentB!, { button: 1 });
+    expect(store.activateCardCalls).toEqual([]);
   });
 });

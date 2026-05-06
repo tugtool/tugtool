@@ -36,12 +36,18 @@
  
 import React, {
   useCallback,
+  useId,
+  useLayoutEffect,
   useMemo,
+  useRef,
+  useState,
   useSyncExternalStore,
 } from "react";
 import { Copy, OctagonX } from "lucide-react";
 
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { TugBadge } from "@/components/tugways/tug-badge";
+import { HighlightSelectionAdapter, type TextSelectionAdapter } from "@/components/tugways/text-selection-adapter";
 import {
   TugListView,
   type TugListViewCellProps,
@@ -51,6 +57,9 @@ import {
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
+import type { ActionHandlerResult } from "@/components/tugways/responder-chain";
+import { useResponder } from "@/components/tugways/use-responder";
+import { useTextSurfaceContextMenu } from "@/components/tugways/use-text-surface-context-menu";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import {
@@ -111,6 +120,153 @@ function stripUserBodyPrefix(text: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Per-cell context-menu wiring
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-cell context menu + responder wiring for transcript entries.
+ *
+ * Each entry installs its own responder + right-click menu via the
+ * shared `useTextSurfaceContextMenu` hook so the same code path that
+ * powers the editor and markdown view drives transcript-cell
+ * right-clicks. Per-entry scope follows from the responder model:
+ * the document-level pointerdown listener in
+ * `ResponderChainProvider` promotes whichever cell's responder owns
+ * the click target to first responder, and `TugEditorContextMenu`
+ * dispatches first-responder-targeted, so items from the menu reach
+ * THIS cell's `COPY` / `SELECT_ALL` handlers — no
+ * `makeFirstResponder` boilerplate needed.
+ *
+ * The cell uses a `HighlightSelectionAdapter` scoped to its body
+ * element. The adapter handles the smart-click pipeline that fixed
+ * the "right-click selects a word but Copy then fails" bug —
+ * `prepareSelectionForRightClick` JS-commits the selection so it
+ * survives the contextmenu's `preventDefault`, regardless of whether
+ * the user had a prior selection or relied on WebKit's smart-click.
+ *
+ * `useTextSurfaceContextMenu` requires a non-null adapter at
+ * hook-call time to set up the right-click pipeline, but our cell's
+ * body element isn't available until after the cell mounts. We hold
+ * the adapter in a ref that a layout-effect populates from the body
+ * ref, and pass `adapterRef.current` to the hook. On the first
+ * render the adapter is `null` (no body yet) — `useTextSurfaceContextMenu`
+ * tolerates that and skips the pipeline; by the time the user can
+ * right-click, the body has rendered and the layout-effect has
+ * filled the adapter ref.
+ */
+interface TranscriptCellProps {
+  ref: (node: Element | null) => void;
+  onContextMenu: (event: React.MouseEvent) => void;
+  onPointerDown: (event: React.PointerEvent) => void;
+}
+
+function useTranscriptCellMenu(): {
+  ResponderScope: React.FC<{ children: React.ReactNode }>;
+  cellProps: TranscriptCellProps;
+  bodyRef: React.MutableRefObject<HTMLElement | null>;
+  menu: React.ReactNode;
+} {
+  const bodyRef = useRef<HTMLElement | null>(null);
+  const adapterRef = useRef<TextSelectionAdapter | null>(null);
+
+  // Build the adapter once the body element is available. Re-runs
+  // whenever the body element identity changes (rare for inline-rendered
+  // transcript cells; the body element is stable for the cell's life).
+  useLayoutEffect(() => {
+    const body = bodyRef.current;
+    adapterRef.current = body !== null ? new HighlightSelectionAdapter(body) : null;
+  });
+
+  // Copy reads the live selection synchronously inside the menu's
+  // mousedown gesture so `clipboard.writeText` is permitted.
+  const handleCopy = useCallback((): ActionHandlerResult => {
+    const sel = window.getSelection();
+    if (sel === null || sel.rangeCount === 0 || sel.isCollapsed) return;
+    const text = sel.toString();
+    if (text === "") return;
+    void navigator.clipboard?.writeText(text);
+  }, []);
+
+  // Select All returns a continuation so the selection change lands
+  // AFTER the menu's activation blink. Per [L07], the body element
+  // is sampled at handler-invocation time (Phase 1, inside the user
+  // gesture, when the ref is reliably populated) and the continuation
+  // closes over the captured value — not over `bodyRef.current` —
+  // so a re-render during the blink that flickers the inline ref
+  // through `null` can't race the deferred operation.
+  const handleSelectAll = useCallback((): ActionHandlerResult => {
+    const root = bodyRef.current;
+    if (root === null) return;
+    return () => {
+      const range = document.createRange();
+      range.selectNodeContents(root);
+      const sel = window.getSelection();
+      if (sel === null) return;
+      sel.removeAllRanges();
+      sel.addRange(range);
+    };
+  }, []);
+
+  const responderId = useId();
+  const { ResponderScope, responderRef } = useResponder({
+    id: responderId,
+    actions: {
+      [TUG_ACTIONS.COPY]: handleCopy,
+      [TUG_ACTIONS.SELECT_ALL]: handleSelectAll,
+    },
+  });
+
+  // The shared hook owns menuState, the contextmenu pipeline, and
+  // the menu render. We feed it the adapter (read live from the ref
+  // so it's whatever the latest layout-effect installed) and the
+  // capabilities for a read-only surface. The menu's items dispatch
+  // via `useControlDispatch` to the parent responder — i.e., this
+  // cell's `<ResponderScope>`, which we render the menu inside
+  // below. The cell may never have been promoted to first responder
+  // (the editor often holds it across the right-click), but targeted
+  // dispatch via `parentId` doesn't care: COPY and SELECT_ALL always
+  // land on this cell's handlers regardless of first-responder
+  // state. Same canonical L11 shape every other tugway control uses.
+  const {
+    onPointerDown: hookPointerDown,
+    onContextMenu: hookContextMenu,
+    menu,
+  } = useTextSurfaceContextMenu({
+    adapter: adapterRef.current,
+    capabilities: { canEdit: false },
+  });
+
+  // The hook returns native-event handlers; the cell wires them
+  // through React event props. `onContextMenu` calls
+  // `event.preventDefault` inside, so the system menu is suppressed
+  // even when no adapter is attached yet.
+  const handleContextMenu = useCallback(
+    (event: React.MouseEvent) => {
+      hookContextMenu(event.nativeEvent);
+    },
+    [hookContextMenu],
+  );
+
+  const handlePointerDown = useCallback(
+    (event: React.PointerEvent) => {
+      hookPointerDown(event.nativeEvent);
+    },
+    [hookPointerDown],
+  );
+
+  return {
+    ResponderScope,
+    cellProps: {
+      ref: responderRef as (node: Element | null) => void,
+      onContextMenu: handleContextMenu,
+      onPointerDown: handlePointerDown,
+    },
+    bodyRef,
+    menu,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Cell renderer components
 // ---------------------------------------------------------------------------
 
@@ -144,20 +300,46 @@ const UserRowCell: React.FC<UserRowCellProps> = ({ index, dataSource }) => {
   const timestamp = submitAt !== undefined
     ? formatTranscriptTimestamp(submitAt)
     : undefined;
+  const handleCopyButton = useCallback(() => {
+    if (text.length === 0) return;
+    void navigator.clipboard?.writeText(text);
+  }, [text]);
+  const hasBody = text.length > 0;
+  const { ResponderScope, cellProps, bodyRef, menu } =
+    useTranscriptCellMenu();
   return (
-    <TugTranscriptEntry
-      participant="user"
-      identifier={USER_IDENTIFIER}
-      timestamp={timestamp === "" ? undefined : timestamp}
-      body={
-        <span
-          className="tide-card-transcript-user-body"
-          data-testid="tide-card-transcript-user-body"
-        >
-          {text}
-        </span>
-      }
-    />
+    <ResponderScope>
+      <div {...cellProps}>
+        <TugTranscriptEntry
+          participant="user"
+          identifier={USER_IDENTIFIER}
+          timestamp={timestamp === "" ? undefined : timestamp}
+          body={
+            <span
+              ref={(el) => { bodyRef.current = el; }}
+              className="tide-card-transcript-user-body"
+              data-testid="tide-card-transcript-user-body"
+            >
+              {text}
+            </span>
+          }
+          controls={
+            hasBody ? (
+              <TugPushButton
+                subtype="icon"
+                emphasis="ghost"
+                role="action"
+                size="sm"
+                icon={<Copy size={12} />}
+                aria-label="Copy"
+                onClick={handleCopyButton}
+              />
+            ) : null
+          }
+        />
+      </div>
+      {menu}
+    </ResponderScope>
   );
 };
 
@@ -181,64 +363,70 @@ const CodeCommittedRowCell: React.FC<CodeCommittedRowCellProps> = ({
   const timestamp = turn !== undefined
     ? formatTranscriptTimestamp(turn.endedAt)
     : undefined;
-  const handleCopy = useCallback(() => {
+  const handleCopyButton = useCallback(() => {
     if (assistantText.length === 0) return;
     void navigator.clipboard?.writeText(assistantText);
   }, [assistantText]);
+  // No copy affordance when there's nothing to copy — e.g. CASE A
+  // interrupts where the turn ended before any assistant content
+  // landed leave the body as just the "Interrupted" badge.
+  const hasBody = assistantText.length > 0;
+  const { ResponderScope, cellProps, bodyRef, menu } =
+    useTranscriptCellMenu();
   return (
-    <TugTranscriptEntry
-      participant="code"
-      identifier={modelName ?? CODE_DEFAULT_IDENTIFIER}
-      timestamp={timestamp === "" ? undefined : timestamp}
-      body={
-        // The committed body is the assistant markdown followed (when
-        // the turn was interrupted) by a trailing "Interrupted" badge.
-        // Mirrors the trailing-indicator placement in Claude Code's
-        // terminal output — the indicator sits AFTER any partial
-        // content the assistant produced before being cut off, and is
-        // the only visible body for a CASE A interrupt where no
-        // content ever landed (assistantText === "").
-        <>
-          <TugMarkdownBlock
-            initialText={assistantText}
-            className="tide-card-transcript-code-body"
-          />
-          {isInterrupted ? (
-            <div
-              className="tide-card-transcript-code-interrupted"
-              data-slot="tide-card-transcript-interrupted"
-            >
-              <TugBadge
-                size="sm"
-                emphasis="tinted"
-                role="caution"
-                icon={<OctagonX size={12} aria-hidden="true" />}
-              >
-                Interrupted
-              </TugBadge>
+    <ResponderScope>
+      <div {...cellProps}>
+        <TugTranscriptEntry
+          participant="code"
+          identifier={modelName ?? CODE_DEFAULT_IDENTIFIER}
+          timestamp={timestamp === "" ? undefined : timestamp}
+          body={
+            // The committed body is the assistant markdown followed (when
+            // the turn was interrupted) by a trailing "Interrupted" badge.
+            // Mirrors the trailing-indicator placement in Claude Code's
+            // terminal output — the indicator sits AFTER any partial
+            // content the assistant produced before being cut off, and is
+            // the only visible body for a CASE A interrupt where no
+            // content ever landed (assistantText === "").
+            <div ref={(el) => { bodyRef.current = el; }}>
+              <TugMarkdownBlock
+                initialText={assistantText}
+                className="tide-card-transcript-code-body"
+              />
+              {isInterrupted ? (
+                <div
+                  className="tide-card-transcript-code-interrupted"
+                  data-slot="tide-card-transcript-interrupted"
+                >
+                  <TugBadge
+                    size="sm"
+                    emphasis="tinted"
+                    role="danger"
+                    icon={<OctagonX size={12} aria-hidden="true" />}
+                  >
+                    Interrupted
+                  </TugBadge>
+                </div>
+              ) : null}
             </div>
-          ) : null}
-        </>
-      }
-      controls={
-        <>
-          {modelName !== null ? (
-            <TugBadge size="sm" emphasis="tinted" role="agent">
-              {modelName}
-            </TugBadge>
-          ) : null}
-          <TugPushButton
-            subtype="icon"
-            emphasis="ghost"
-            role="action"
-            size="sm"
-            icon={<Copy size={12} />}
-            aria-label="Copy"
-            onClick={handleCopy}
-          />
-        </>
-      }
-    />
+          }
+          controls={
+            hasBody ? (
+              <TugPushButton
+                subtype="icon"
+                emphasis="ghost"
+                role="action"
+                size="sm"
+                icon={<Copy size={12} />}
+                aria-label="Copy"
+                onClick={handleCopyButton}
+              />
+            ) : null
+          }
+        />
+      </div>
+      {menu}
+    </ResponderScope>
   );
 };
 
@@ -253,18 +441,27 @@ const CodeStreamingRowCell: React.FC<CodeStreamingRowCellProps> = ({
   streamingStore,
   streamingPath,
 }) => {
+  const { ResponderScope, cellProps, bodyRef, menu } =
+    useTranscriptCellMenu();
   return (
-    <TugTranscriptEntry
-      participant="code"
-      identifier={modelName ?? CODE_DEFAULT_IDENTIFIER}
-      body={
-        <TugMarkdownBlock
-          streamingStore={streamingStore}
-          streamingPath={streamingPath}
-          className="tide-card-transcript-code-body"
+    <ResponderScope>
+      <div {...cellProps}>
+        <TugTranscriptEntry
+          participant="code"
+          identifier={modelName ?? CODE_DEFAULT_IDENTIFIER}
+          body={
+            <div ref={(el) => { bodyRef.current = el; }}>
+              <TugMarkdownBlock
+                streamingStore={streamingStore}
+                streamingPath={streamingPath}
+                className="tide-card-transcript-code-body"
+              />
+            </div>
+          }
         />
-      }
-    />
+      </div>
+      {menu}
+    </ResponderScope>
   );
 };
 

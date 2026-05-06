@@ -93,43 +93,49 @@ export interface TextSelectionAdapter {
    * @param clientY Viewport Y coordinate of the right-click event.
    */
   selectWordAtPoint(clientX: number, clientY: number): void;
-}
 
-// ---------------------------------------------------------------------------
-// NativeInputSelectionAdapterExtras
-// ---------------------------------------------------------------------------
-
-/**
- * Additional API exposed by `createNativeInputAdapter` beyond `TextSelectionAdapter`.
- *
- * The factory returns `TextSelectionAdapter & NativeInputSelectionAdapterExtras`.
- * This extra method is specific to native inputs (offset-comparison approach)
- * and is not part of the shared interface.
- *
- * See: [D04] NativeInputSelectionAdapter captures pre-click state via explicit call.
- */
-export interface NativeInputSelectionAdapterExtras {
   /**
-   * Capture the pre-right-click selection state.
+   * Snapshot the current selection state so a subsequent
+   * `prepareSelectionForRightClick` call can restore it.
    *
-   * Call this at pointerdown time (when `event.button === 2`) to snapshot the
-   * current `selectionStart` / `selectionEnd` before the browser's mousedown
-   * handler potentially moves the caret. `classifyRightClick` compares the
-   * post-mousedown caret position against this snapshot to determine the case.
+   * Call this at `pointerdown` time when `event.button === 2`, before
+   * the browser's mousedown handler has a chance to mutate the
+   * selection (caret placement, smart-click word expansion). The snapshot
+   * lives inside the adapter; callers don't manage it directly.
    *
-   * The `proximityThreshold` parameter to `classifyRightClick` is unused for
-   * native inputs — offset comparison is exact, not geometric.
+   * Adapters whose surface has no notion of pre-click state (e.g. a
+   * static span with no caret) implement this as a no-op.
    */
   capturePreRightClick(): void;
 
   /**
-   * Restore the selection state captured by `capturePreRightClick`.
+   * Prepare the surface's selection for a right-click context menu and
+   * return `true` if a non-collapsed selection survives.
    *
-   * Call this after `classifyRightClick` returns `"within-range"` to put the
-   * original ranged selection back — the browser's mousedown collapsed it to
-   * a caret at the click point. No-op if no snapshot was captured.
+   * Called from the `contextmenu` handler after `event.preventDefault`.
+   * The implementation owns the four right-click cases:
+   *
+   *   1. Restore any state captured at `capturePreRightClick`, undoing
+   *      whatever the browser's mousedown / smart-click did to the
+   *      surface's selection.
+   *   2. Classify the click via `classifyRightClick`.
+   *   3. On `"elsewhere"`, place the caret at the click point and
+   *      expand to word boundaries (via `selectWordAtPoint`).
+   *   4. On `"within-range"` or `"near-caret"`, leave the restored
+   *      selection in place.
+   *
+   * Crucially, the resulting selection is committed via the surface's
+   * native API (CM6 transaction, `setSelectionRange`, DOM
+   * `setBaseAndExtent`) rather than the browser's tentative
+   * smart-click. WebKit reverts tentative smart-click selections when
+   * the contextmenu's default is prevented, so a JS-driven commit is
+   * what makes the selection actually persist into the menu's
+   * lifetime.
+   *
+   * Returns `hasRangedSelection()` after the work has run, suitable
+   * for driving the menu's Cut / Copy enablement.
    */
-  restorePreRightClick(): void;
+  prepareSelectionForRightClick(clientX: number, clientY: number): boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -201,6 +207,16 @@ export function findWordBoundaries(
  */
 export class HighlightSelectionAdapter implements TextSelectionAdapter {
   private readonly _boundaryEl: HTMLElement;
+  /**
+   * Snapshot of the DOM selection captured at `capturePreRightClick`.
+   * Stored as anchor / focus node + offset so a `setBaseAndExtent`
+   * call can rebuild the same range. `null` between right-clicks or
+   * when the captured selection lay outside this adapter's boundary
+   * (we don't restore foreign selections).
+   */
+  private _preClickSnapshot:
+    | { anchorNode: Node; anchorOffset: number; focusNode: Node; focusOffset: number }
+    | null = null;
 
   constructor(boundaryEl: HTMLElement) {
     this._boundaryEl = boundaryEl;
@@ -309,6 +325,101 @@ export class HighlightSelectionAdapter implements TextSelectionAdapter {
     sel.setBaseAndExtent(pos.node, pos.offset, pos.node, pos.offset);
     sel.modify("move", "backward", "word");
     sel.modify("extend", "forward", "word");
+  }
+
+  /**
+   * Snapshot the current DOM selection when (and only when) it lives
+   * inside this adapter's boundary. Selections elsewhere on the page
+   * aren't ours to restore later. Called at `pointerdown` time on a
+   * right-click so the snapshot predates any browser smart-click
+   * mutation.
+   */
+  capturePreRightClick(): void {
+    const sel = window.getSelection();
+    if (
+      sel === null ||
+      sel.rangeCount === 0 ||
+      sel.anchorNode === null ||
+      sel.focusNode === null ||
+      !this._isSelectionInBoundary(sel)
+    ) {
+      this._preClickSnapshot = null;
+      return;
+    }
+    this._preClickSnapshot = {
+      anchorNode: sel.anchorNode,
+      anchorOffset: sel.anchorOffset,
+      focusNode: sel.focusNode,
+      focusOffset: sel.focusOffset,
+    };
+  }
+
+  /**
+   * Right-click pipeline:
+   *
+   *   1. Restore the pre-click snapshot via `setBaseAndExtent`. This
+   *      undoes the browser's smart-click expansion (if it ran during
+   *      mousedown) and re-applies the user's prior selection as a
+   *      JS-driven commit.
+   *   2. Classify the click against the (now-restored) selection.
+   *   3. On `"elsewhere"`, place the caret at the click point and
+   *      expand to word boundaries — `selectWordAtPoint` writes via
+   *      `setBaseAndExtent`, also a JS commit.
+   *   4. On `"within-range"` / `"near-caret"`, re-commit the current
+   *      selection by reading anchor / focus from `window.getSelection`
+   *      and writing them back via `setBaseAndExtent`. This step is
+   *      what lifts the selection out of WebKit's "tentative" state.
+   *
+   * Why step 4 needs an explicit re-commit:
+   *
+   * When the user right-clicks directly on a word with no prior
+   * selection, WebKit's mousedown handler runs a smart-click: the
+   * word at the click point becomes selected as a *tentative*
+   * selection — meaning WebKit will commit it if the system context
+   * menu shows, and revert it if the menu is suppressed. Our
+   * `event.preventDefault()` (suppressing the system menu so we can
+   * show our own) puts WebKit in revert mode. Without an explicit
+   * re-commit, the selection survives just long enough to drive the
+   * menu's `hasSelection` sample, then collapses by the time the
+   * user clicks Copy or Select All. Even Select All's continuation
+   * (which writes a fresh selection via `setBaseAndExtent`) can race
+   * the revert, leaving the user looking at a briefly-correct
+   * highlight that snaps back to the smart-click word a moment
+   * later. Re-committing in step 4 forecloses that whole race —
+   * after `setBaseAndExtent`, the selection is JS-driven and WebKit
+   * has nothing tentative to revert.
+   */
+  prepareSelectionForRightClick(clientX: number, clientY: number): boolean {
+    const sel = window.getSelection();
+    if (sel === null) return false;
+
+    const snap = this._preClickSnapshot;
+    if (snap !== null) {
+      sel.setBaseAndExtent(
+        snap.anchorNode, snap.anchorOffset,
+        snap.focusNode, snap.focusOffset,
+      );
+    }
+
+    const classification = this.classifyRightClick(clientX, clientY);
+    if (classification === "elsewhere") {
+      this.selectWordAtPoint(clientX, clientY);
+    } else if (
+      sel.rangeCount > 0 &&
+      sel.anchorNode !== null &&
+      sel.focusNode !== null &&
+      this._isSelectionInBoundary(sel)
+    ) {
+      // "within-range" / "near-caret" — re-commit the current
+      // selection so WebKit gives up its tentative-revert claim.
+      sel.setBaseAndExtent(
+        sel.anchorNode, sel.anchorOffset,
+        sel.focusNode, sel.focusOffset,
+      );
+    }
+
+    this._preClickSnapshot = null;
+    return this.hasRangedSelection();
   }
 
   /** Check if the DOM selection's anchor or focus is within the boundary. */

@@ -51,9 +51,20 @@
   /* Vertical breathing room between (user, code) row pairs and the
      pad on the scroll-bottom so the last row's controls don't kiss
      the prompt-entry pane. */
-  --tugx-list-view-row-gap: var(--tug-space-lg);
+  --tugx-list-view-row-gap: var(--tug-space-xl);
   --tugx-list-view-padding-block: var(--tug-space-md);
   --tugx-list-view-scroll-padding-end: var(--tug-space-2xl);
+}
+
+/* Tighten the gap between an entry's body and its trailing controls
+   (e.g. the per-entry copy button). The base token reads as standard
+   editorial spacing for transcript-style rows; in this consumer the
+   controls are a small ghost icon button that reads better hugging
+   the body than at the default distance. The companion adjustment is
+   `--tugx-list-view-row-gap` above, which puts the saved space back
+   between entries instead of inside one. */
+.tide-card-transcript .tug-transcript-entry {
+  --tugx-transcript-controls-margin-top: var(--tug-space-2xs);
 }
 
 /* User-row body — plain text per [D11]. Wraps long lines, preserves

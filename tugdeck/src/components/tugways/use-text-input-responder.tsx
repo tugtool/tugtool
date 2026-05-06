@@ -156,15 +156,12 @@
  *       [L19] component authoring guide
  */
 
-import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useLayoutEffect, useRef } from "react";
 import { useOptionalResponder } from "./use-responder";
 import { useResponderChain } from "./responder-chain-provider";
 import type { ActionHandler, ActionHandlerResult } from "./responder-chain";
 import { TUG_ACTIONS, type TugAction } from "./action-vocabulary";
-import {
-  TugEditorContextMenu,
-  type TugEditorContextMenuEntry,
-} from "./tug-editor-context-menu";
+import { useTextSurfaceContextMenu } from "./use-text-surface-context-menu";
 import {
   hasNativeClipboardBridge,
   readClipboardViaNative,
@@ -172,7 +169,6 @@ import {
 } from "@/lib/tug-native-clipboard";
 import {
   type TextSelectionAdapter,
-  type NativeInputSelectionAdapterExtras,
   type RightClickClassification,
   findWordBoundaries,
 } from "./text-selection-adapter";
@@ -260,21 +256,19 @@ export type TextInputLikeElement = HTMLInputElement | HTMLTextAreaElement;
  * Factory that wraps a native `<input>` or `<textarea>` element in a
  * `TextSelectionAdapter`.
  *
- * The returned object also satisfies `NativeInputSelectionAdapterExtras`,
- * which exposes `capturePreRightClick()` — call this at `pointerdown` time
- * (when `event.button === 2`) to snapshot the selection before the browser
- * moves the caret. `classifyRightClick` then compares the post-mousedown
- * position against that snapshot.
- *
- * See: [D04] NativeInputSelectionAdapter captures pre-click state via
- * explicit call.
+ * Pre-right-click capture lives on the unified
+ * `TextSelectionAdapter.capturePreRightClick` API; the right-click
+ * pipeline (restore-or-expand-and-commit) is encapsulated in
+ * `prepareSelectionForRightClick` and consumed by
+ * `useTextSurfaceContextMenu`. Native inputs use offset comparison
+ * (not geometry) to classify the click, since the browser's
+ * mousedown has already placed the caret at the click point.
  *
  * @param el  The host `<input>` or `<textarea>` DOM element.
- * @returns   `TextSelectionAdapter & NativeInputSelectionAdapterExtras`
  */
 export function createNativeInputAdapter(
   el: TextInputLikeElement,
-): TextSelectionAdapter & NativeInputSelectionAdapterExtras {
+): TextSelectionAdapter {
   // Snapshot of the selection state captured at pointerdown (button === 2).
   // `classifyRightClick` reads this to compare against the post-mousedown
   // browser-placed caret. Initialized to null — `capturePreRightClick`
@@ -282,137 +276,129 @@ export function createNativeInputAdapter(
   let preRightClickStart: number | null = null;
   let preRightClickEnd: number | null = null;
 
-  return {
-    /**
-     * True when there is a non-collapsed (ranged) selection.
-     * Guards against null — `selectionStart`/`selectionEnd` are null on
-     * non-text input types (e.g. `<input type="number">`).
-     */
-    hasRangedSelection(): boolean {
-      return (
-        el.selectionStart !== null &&
-        el.selectionEnd !== null &&
-        el.selectionStart !== el.selectionEnd
-      );
-    },
+  function hasRangedSelection(): boolean {
+    return (
+      el.selectionStart !== null &&
+      el.selectionEnd !== null &&
+      el.selectionStart !== el.selectionEnd
+    );
+  }
 
-    /**
-     * The currently selected text, or `""` when there is no ranged selection.
-     */
+  function expandToWord(): void {
+    const offset = el.selectionStart ?? 0;
+    const { start, end } = findWordBoundaries(el.value, offset);
+    el.setSelectionRange(start, end);
+  }
+
+  function classifyRightClick(
+    _clientX: number,
+    _clientY: number,
+  ): RightClickClassification {
+    const newOffset = el.selectionStart;
+    if (newOffset === null) return "elsewhere";
+
+    const capturedStart = preRightClickStart;
+    const capturedEnd = preRightClickEnd;
+
+    // No snapshot — treat as "elsewhere".
+    if (capturedStart === null || capturedEnd === null) return "elsewhere";
+
+    const capturedIsCollapsed = capturedStart === capturedEnd;
+
+    if (capturedIsCollapsed) {
+      // Case 1: collapsed selection — click is near the caret if the
+      // browser placed the new caret within the same word. Pixel
+      // distance isn't available for native inputs (no DOM Range for
+      // their internal text layout), so word boundaries are the best
+      // geometric proxy — they scale naturally with font size and
+      // character width.
+      const word = findWordBoundaries(el.value, capturedStart);
+      const inSameWord = word.start !== word.end
+        && newOffset >= word.start
+        && newOffset <= word.end;
+      return inSameWord ? "near-caret" : "elsewhere";
+    }
+
+    // Case 2: ranged selection — click is within the range if the browser
+    // placed the caret inside [capturedStart, capturedEnd).
+    if (newOffset >= capturedStart && newOffset < capturedEnd) {
+      return "within-range";
+    }
+
+    // Case 3: click fell outside the selection.
+    return "elsewhere";
+  }
+
+  /**
+   * Restore the captured pre-right-click range via `setSelectionRange`.
+   * Internal helper for `prepareSelectionForRightClick`'s
+   * `"within-range"` / `"near-caret"` branches; no longer part of the
+   * adapter's external API now that `prepareSelectionForRightClick`
+   * encapsulates the full pipeline.
+   */
+  function restoreFromSnapshot(): void {
+    if (preRightClickStart === null || preRightClickEnd === null) return;
+    el.setSelectionRange(preRightClickStart, preRightClickEnd);
+  }
+
+  return {
+    hasRangedSelection,
+
     getSelectedText(): string {
-      if (!this.hasRangedSelection()) return "";
+      if (!hasRangedSelection()) return "";
       return el.value.slice(el.selectionStart!, el.selectionEnd!);
     },
 
-    /** Select all content in the element. */
     selectAll(): void {
       el.select();
     },
 
-    /**
-     * Expand the browser-placed caret to word boundaries using
-     * `findWordBoundaries`.
-     */
-    expandToWord(): void {
-      const offset = el.selectionStart ?? 0;
-      const { start, end } = findWordBoundaries(el.value, offset);
-      el.setSelectionRange(start, end);
+    expandToWord,
+
+    classifyRightClick,
+
+    selectWordAtPoint(_clientX: number, _clientY: number): void {
+      // The browser already placed the caret via mousedown; expand to
+      // word from there. Native inputs don't expose the geometric
+      // `caretPositionFromPoint` API.
+      expandToWord();
     },
 
-    /**
-     * Capture the pre-right-click selection state.
-     *
-     * Call this at `pointerdown` time when `event.button === 2`, before the
-     * browser's mousedown handler moves the caret. `classifyRightClick`
-     * compares the post-mousedown offset against this snapshot.
-     */
     capturePreRightClick(): void {
       preRightClickStart = el.selectionStart;
       preRightClickEnd = el.selectionEnd;
     },
 
     /**
-     * Restore the selection range captured by `capturePreRightClick`.
-     * No-op if no snapshot was captured.
-     */
-    restorePreRightClick(): void {
-      if (preRightClickStart === null || preRightClickEnd === null) return;
-      el.setSelectionRange(preRightClickStart, preRightClickEnd);
-    },
-
-    /**
-     * Classify a right-click relative to the selection captured at the last
-     * `capturePreRightClick()` call.
+     * Right-click pipeline:
      *
-     * The `clientX`/`clientY` parameters are unused — native input adapters
-     * use offset comparison rather than geometry.
+     *   1. The browser's mousedown has already moved the caret to the
+     *      click point and (for native inputs) discarded any prior
+     *      ranged selection. Classify against the snapshot.
+     *   2. On `"elsewhere"`, leave the browser-placed caret and expand
+     *      to word — `selectWordAtPoint` is `expandToWord` for native
+     *      inputs.
+     *   3. On `"within-range"` or `"near-caret"`, restore the snapshot
+     *      via `setSelectionRange` (the JS-driven commit that survives
+     *      `preventDefault`).
      *
-     * Algorithm:
-     *   1. Read the current `selectionStart` (browser-placed after mousedown).
-     *   2. If the captured snapshot was collapsed and the new offset is within
-     *      the same word → `"near-caret"`.
-     *   3. If the captured snapshot was ranged and the new offset falls within
-     *      `[capturedStart, capturedEnd)` → `"within-range"`.
-     *   4. Otherwise → `"elsewhere"`.
+     * Returns `hasRangedSelection()` for the menu's Cut / Copy gates.
      */
-    classifyRightClick(
-      _clientX: number,
-      _clientY: number,
-    ): RightClickClassification {
-      const newOffset = el.selectionStart;
-      if (newOffset === null) return "elsewhere";
-
-      const capturedStart = preRightClickStart;
-      const capturedEnd = preRightClickEnd;
-
-      // No snapshot — treat as "elsewhere".
-      if (capturedStart === null || capturedEnd === null) return "elsewhere";
-
-      const capturedIsCollapsed = capturedStart === capturedEnd;
-
-      if (capturedIsCollapsed) {
-        // Case 1: collapsed selection — click is near the caret if the
-        // browser placed the new caret within the same word. Pixel
-        // distance isn't available for native inputs (no DOM Range for
-        // their internal text layout), so word boundaries are the best
-        // geometric proxy — they scale naturally with font size and
-        // character width.
-        const word = findWordBoundaries(el.value, capturedStart);
-        const inSameWord = word.start !== word.end
-          && newOffset >= word.start
-          && newOffset <= word.end;
-        return inSameWord ? "near-caret" : "elsewhere";
+    prepareSelectionForRightClick(
+      clientX: number,
+      clientY: number,
+    ): boolean {
+      const classification = classifyRightClick(clientX, clientY);
+      if (classification === "elsewhere") {
+        expandToWord();
+      } else {
+        restoreFromSnapshot();
       }
-
-      // Case 2: ranged selection — click is within the range if the browser
-      // placed the caret inside [capturedStart, capturedEnd).
-      if (newOffset >= capturedStart && newOffset < capturedEnd) {
-        return "within-range";
-      }
-
-      // Case 3: click fell outside the selection.
-      return "elsewhere";
-    },
-
-    /**
-     * The browser already placed the caret via mousedown; call `expandToWord`
-     * to extend it to word boundaries.
-     *
-     * The `clientX`/`clientY` parameters are unused — native inputs do not
-     * support `caretPositionFromPoint` geometry for their internal text
-     * rendering.
-     */
-    selectWordAtPoint(_clientX: number, _clientY: number): void {
-      this.expandToWord();
+      preRightClickStart = null;
+      preRightClickEnd = null;
+      return hasRangedSelection();
     },
   };
-}
-
-/** State of the right-click context menu. `null` when closed. */
-export interface TextInputContextMenuState {
-  x: number;
-  y: number;
-  hasSelection: boolean;
 }
 
 export interface UseTextInputResponderOptions<T extends TextInputLikeElement> {
@@ -810,7 +796,7 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
   // DOM element stay stable across provider transitions, so caret
   // position, focus, and selection survive any test that wraps or
   // unwraps a provider around a mounted leaf control.
-  const { responderRef } = useOptionalResponder({ id: responderId, actions });
+  const { responderRef, ResponderScope } = useOptionalResponder({ id: responderId, actions });
 
   // ---- Ref composition ----
   //
@@ -841,32 +827,45 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
     [inputRef, forwardedRef, responderRef],
   );
 
-  // ---- Pre-right-click selection capture ----
+  // ---- Right-click context menu via shared hook ----
   //
-  // Native inputs move the caret on mousedown (before contextmenu
-  // fires), so we snapshot the selection at pointerdown (button === 2)
-  // to know what the user's selection looked like before the browser
-  // touched it. The adapter ref is created lazily per pointerdown so
-  // it always wraps the current element.
+  // A single `TextSelectionAdapter` instance lives in a ref for the
+  // input's lifetime; the hook calls `capturePreRightClick` on
+  // right-button pointerdown and `prepareSelectionForRightClick` on
+  // contextmenu. Both flows operate against the same `el`, so
+  // creating the adapter once per element (rather than per click) is
+  // sufficient.
+  const adapterRef = useRef<TextSelectionAdapter | null>(null);
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    adapterRef.current = el !== null ? createNativeInputAdapter(el) : null;
+  }, [inputRef]);
 
-  const preRightClickAdapterRef = useRef<
-    (TextSelectionAdapter & NativeInputSelectionAdapterExtras) | null
-  >(null);
+  const {
+    onPointerDown: hookPointerDown,
+    onContextMenu: hookContextMenu,
+    menu: hookMenu,
+  } = useTextSurfaceContextMenu({
+    adapter: adapterRef.current,
+    capabilities: { canEdit: true },
+  });
 
+  // Native pointerdown listener so the hook's `capturePreRightClick`
+  // runs *before* the browser's mousedown moves the caret. The hook
+  // returns a stable React-style handler; we wrap it to dispatch as
+  // a native PointerEvent.
   useLayoutEffect(() => {
     const el = inputRef.current;
     if (!el) return;
     const onPointerDown = (e: Event) => {
-      if (!(e instanceof PointerEvent) || e.button !== 2) return;
-      const adapter = createNativeInputAdapter(el);
-      adapter.capturePreRightClick();
-      preRightClickAdapterRef.current = adapter;
+      if (!(e instanceof PointerEvent)) return;
+      hookPointerDown(e);
     };
     el.addEventListener("pointerdown", onPointerDown);
     return () => {
       el.removeEventListener("pointerdown", onPointerDown);
     };
-  });
+  }, [inputRef, hookPointerDown]);
 
   // ---- Editing keystroke listener ----
   //
@@ -934,117 +933,47 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
     handleMoveWordBackward,
   ]);
 
-  // ---- Context menu state ----
-
-  const [menuState, setMenuState] = useState<TextInputContextMenuState | null>(null);
-
-  // Opens the menu at the cursor. Consumers reach this via the
-  // bridged `handleContextMenu` below, which also fires the
-  // consumer's own `onContextMenu` prop afterward.
+  // ---- Context menu (consumer-facing handler) ----
   //
-  // Gated on `manager !== null`: outside a chain provider the menu
-  // items have nowhere to dispatch their cut/copy/paste actions, so
-  // suppress the menu entirely rather than show disabled items or
-  // invite a crash when the menu tries to consume the chain. Native
-  // right-click behavior on the underlying input is unaffected — the
-  // browser's default context menu is shown instead (we don't call
-  // `preventDefault` when we bail early).
-  const openMenu = useCallback(
-    (e: React.MouseEvent<T>) => {
-      if (disabled) return;
-      if (manager === null) return;
-      e.preventDefault();
-      const node = inputRef.current;
-      if (!node) return;
-
-      const adapter = preRightClickAdapterRef.current;
-      if (!adapter) {
-        // No pointerdown capture — fall back to current selection state.
-        const hasSelection =
-          node.selectionStart !== null &&
-          node.selectionEnd !== null &&
-          node.selectionStart !== node.selectionEnd;
-        setMenuState({ x: e.clientX, y: e.clientY, hasSelection });
-        return;
-      }
-
-      // Classify the right-click against the pre-click selection.
-      const classification = adapter.classifyRightClick(e.clientX, e.clientY);
-
-      let hasSelection: boolean;
-      if (classification === "elsewhere") {
-        // Click landed away from the selection — the browser already
-        // moved the caret to the click point during mousedown. Expand
-        // to word boundaries from the browser-placed caret.
-        adapter.selectWordAtPoint(e.clientX, e.clientY);
-        hasSelection = adapter.hasRangedSelection();
-      } else if (classification === "within-range") {
-        // Click inside a ranged selection — restore the pre-click range
-        // (browser mousedown collapsed it to a caret at the click point).
-        adapter.restorePreRightClick();
-        hasSelection = true;
-      } else {
-        // "near-caret" — restore the original caret position (browser
-        // may have shifted it by one offset during mousedown).
-        adapter.restorePreRightClick();
-        hasSelection = false;
-      }
-
-      preRightClickAdapterRef.current = null;
-      setMenuState({ x: e.clientX, y: e.clientY, hasSelection });
-    },
-    [disabled, manager, inputRef],
-  );
-
-  // Bridge: menu first, consumer callback after. Previously every
-  // consumer open-coded this two-liner.
+  // Consumers wire `handleContextMenu` to the input's React
+  // `onContextMenu` prop. We bridge: open via the hook, then fire the
+  // consumer's own `onContextMenu` prop (if supplied) afterward, so
+  // legacy consumers that observed contextmenu events keep their
+  // semantics. Disabled inputs and out-of-provider mounts skip the
+  // menu entirely; the browser's native context menu shows in those
+  // cases (we don't `preventDefault`).
   const handleContextMenu = useCallback(
     (e: React.MouseEvent<T>) => {
-      openMenu(e);
+      if (!disabled && manager !== null) {
+        hookContextMenu(e.nativeEvent);
+      }
       consumerOnContextMenu?.(e);
     },
-    [openMenu, consumerOnContextMenu],
+    [disabled, manager, hookContextMenu, consumerOnContextMenu],
   );
 
-  const closeMenu = useCallback(() => setMenuState(null), []);
-
-  const menuItems = useMemo<TugEditorContextMenuEntry[]>(() => {
-    const hasSelection = menuState?.hasSelection ?? false;
-    return [
-      { action: TUG_ACTIONS.CUT, label: "Cut", shortcut: "\u2318X", disabled: !hasSelection },
-      { action: TUG_ACTIONS.COPY, label: "Copy", shortcut: "\u2318C", disabled: !hasSelection },
-      { action: TUG_ACTIONS.PASTE, label: "Paste", shortcut: "\u2318V" },
-      { type: "separator" },
-      { action: TUG_ACTIONS.SELECT_ALL, label: "Select All", shortcut: "\u2318A" },
-    ];
-  }, [menuState?.hasSelection]);
-
-  // Ready-to-render context menu. Consumers used to build this JSX
-  // themselves in three places with identical props. Now the hook
-  // owns the entire menu surface; consumers just interpolate
-  // `{contextMenu}` into their render output.
+  // Outside a chain provider the hook's menu has nowhere to dispatch
+  // its actions, so suppress it. The hook itself returns `null` for
+  // `menu` until `setMenuState` runs (and we don't call the hook's
+  // contextmenu when `manager === null` per the gate above), but we
+  // layer a second gate here so a future hook change that
+  // always-renders won't leak a chain-less menu into the input's
+  // tree.
   //
-  // Gated on `manager !== null`: `TugEditorContextMenu` internally
-  // calls `useRequiredResponderChain` (to obtain the manager it
-  // dispatches into), so rendering it outside a provider would throw
-  // at mount. When there is no chain, we return `null` for
-  // `contextMenu` — the openMenu callback above is already gated on
-  // the same condition, so `menuState` can never be non-null in the
-  // no-provider case, and the null slot never transitions to an open
-  // menu. Across a provider transition (null → non-null), the
-  // contextMenu position in the JSX fragment swaps from `null` to a
-  // fresh `TugEditorContextMenu`; the sibling `<input>` element
-  // stays mounted at its own position, so caret and focus survive
-  // the swap.
+  // Wrap the menu in this hook's `<ResponderScope>` so that
+  // `TugEditorContextMenu`'s `useControlDispatch` reads this input's
+  // responder id from `ResponderParentContext` and dispatches its
+  // items here — the canonical "control dispatches to its parent
+  // responder" shape from `tuglaws/responder-chain.md`. The other
+  // text-surface consumers (editor, markdown view, transcript cell)
+  // already render their menu inside their own `<ResponderScope>`;
+  // the native input is the only one whose JSX returns `<input>` and
+  // `{contextMenu}` as siblings (not children of a wrapping host
+  // div), so the wrap happens here at the hook boundary instead of
+  // burdening every consumer with the same wiring.
   const contextMenu: React.ReactNode =
-    manager !== null ? (
-      <TugEditorContextMenu
-        open={menuState !== null}
-        x={menuState?.x ?? 0}
-        y={menuState?.y ?? 0}
-        items={menuItems}
-        onClose={closeMenu}
-      />
+    manager !== null && hookMenu !== null ? (
+      <ResponderScope>{hookMenu}</ResponderScope>
     ) : null;
 
   return {
