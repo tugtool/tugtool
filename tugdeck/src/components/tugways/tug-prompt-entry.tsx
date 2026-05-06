@@ -57,6 +57,7 @@ import type {
   HistoryProvider,
   TugTextEditingState,
 } from "@/lib/tug-text-types";
+import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { PromptHistoryStore } from "@/lib/prompt-history-store";
@@ -294,6 +295,53 @@ export function computeSubmitText(
   return stripLeadingRoutePrefix(rawText, activeRoute, aliasMap);
 }
 
+/**
+ * Build a {@link TugTextEditingState} from a `(text, atoms)` pair
+ * carried on `CodeSessionSnapshot.pendingDraftRestore`. The snapshot
+ * shape stores atoms positionally-implicit: `text` contains
+ * {@link TUG_ATOM_CHAR} (`U+FFFC`) at each atom's spot, and `atoms` is
+ * the parallel sequence of segments in document order. The substrate's
+ * `restoreState` consumes the positional shape — `{ position, type,
+ * label, value }` per atom — so we walk `text` for placeholder indices
+ * and zip them with `atoms`.
+ *
+ * Defensive against shape mismatches: if the placeholder count and
+ * `atoms.length` don't agree, we trust the shorter sequence so a
+ * malformed snapshot can't crash the editor's restore path. Selection
+ * is omitted (`null`) — the caret will land at end-of-doc on restore,
+ * which is the natural place for the user to continue editing after
+ * an interrupted submission.
+ *
+ * Exported so the unit tests can pin the conversion without standing
+ * up the full component.
+ */
+export function buildEditingStateFromDraftRestore(
+  text: string,
+  atoms: ReadonlyArray<AtomSegment>,
+): TugTextEditingState {
+  const positions: number[] = [];
+  for (let i = 0; i < text.length; i++) {
+    if (text.charAt(i) === TUG_ATOM_CHAR) {
+      positions.push(i);
+    }
+  }
+  const pairCount = Math.min(positions.length, atoms.length);
+  const positionedAtoms = Array.from({ length: pairCount }, (_, i) => {
+    const segment = atoms[i]!;
+    return {
+      position: positions[i]!,
+      type: segment.type,
+      label: segment.label,
+      value: segment.value,
+    };
+  });
+  return {
+    text,
+    atoms: positionedAtoms,
+    selection: null,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Props / delegate
 // ---------------------------------------------------------------------------
@@ -498,6 +546,37 @@ export const TugPromptEntry = React.forwardRef<
   useLayoutEffect(() => {
     snapRef.current = snap;
   }, [snap]);
+
+  // CASE A interrupt restore. When the user cancels a submission
+  // before claude has produced any content (the dividing line is the
+  // first delta carrying an `msg_id`; see the reducer's
+  // `handleInterrupt` for the full grounding), the store captures
+  // the prompt that was in flight onto
+  // `snap.pendingDraftRestore` and clears `inflightUserMessage` so
+  // the transcript stops rendering the in-flight pair. This effect
+  // observes the slot's identity, seeds the editor with the captured
+  // text + atoms, and dispatches `consumePendingDraftRestore` so the
+  // slot clears in the next snapshot — guaranteeing the restore is
+  // applied exactly once per CASE A, even if the parent re-renders.
+  //
+  // [L02] state enters via the snap from useSyncExternalStore.
+  // [L03] useLayoutEffect ensures the doc replacement is visible in
+  // the same paint as the snapshot transition (no flash of an empty
+  // editor between cancel and restore).
+  // [L07] the effect reads the substrate delegate via the ref so a
+  // late mount doesn't lose its restore — the slot survives until
+  // consumed, so a re-mount after the slot was set still seeds the
+  // editor on its first effect tick.
+  const restoreSlot = snap.pendingDraftRestore;
+  useLayoutEffect(() => {
+    if (restoreSlot === null) return;
+    const editor = textEditorRef.current;
+    if (editor === null) return;
+    editor.restoreState(
+      buildEditingStateFromDraftRestore(restoreSlot.text, restoreSlot.atoms),
+    );
+    codeSessionStore.consumePendingDraftRestore();
+  }, [restoreSlot, codeSessionStore]);
 
   // Stable sender id for the segment control. Derived from `id` so
   // parent cards can predict it for integration tests.

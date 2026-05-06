@@ -160,6 +160,22 @@ export interface InterruptActionEvent {
 }
 
 /**
+ * Internal action injected by
+ * `CodeSessionStore.consumePendingDraftRestore`. Not a wire event. The
+ * reducer clears `pendingDraftRestore` to `null` so the prompt-entry
+ * editor's `useLayoutEffect` does not re-apply the restore on
+ * subsequent snapshot rebuilds. The flow is: CASE A interrupt sets
+ * `pendingDraftRestore` → prompt-entry observes the slot via
+ * `useSyncExternalStore`, applies it to the editor inside a
+ * `useLayoutEffect` keyed on the slot's identity, and dispatches this
+ * action. Idempotent — a second consume while the slot is already
+ * `null` is a state-ref-stable no-op.
+ */
+export interface ConsumeDraftRestoreActionEvent {
+  type: "consume_draft_restore";
+}
+
+/**
  * `cost_update` — telemetry frame carrying cumulative dollar cost and
  * per-turn/session accounting. Surfaced through the snapshot's
  * `lastCost` field with no phase transition; `cost_update` can land in
@@ -408,6 +424,7 @@ export type CodeSessionEvent =
   | RespondApprovalActionEvent
   | RespondQuestionActionEvent
   | InterruptActionEvent
+  | ConsumeDraftRestoreActionEvent
   | CostUpdateEvent
   | WireErrorEvent
   | SessionStateErroredEvent

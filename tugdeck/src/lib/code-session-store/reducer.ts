@@ -73,6 +73,57 @@ export interface CodeSessionState {
     atoms: ReadonlyArray<AtomSegment>;
     submitAt: number;
   } | null;
+  /**
+   * One-shot draft restore for CASE A interrupt — `interrupt()` fired
+   * while `phase === "submitting"`, before claude produced any content
+   * keyed to a `msg_id`. The reducer captures `pendingUserMessage` here
+   * so the prompt entry can seed the editor with the original text +
+   * atoms for re-edit. Cleared by `consume_draft_restore` (the prompt
+   * entry's signal that it has applied the restore) — never overwritten
+   * elsewhere; a brand-new CASE A interrupt while a previous restore
+   * still sits in this slot replaces the contents (the editor
+   * effectively "missed" the prior restore, but losing the older draft
+   * is preferable to stranding the most recent one).
+   *
+   * Mirrored onto the public snapshot as
+   * `CodeSessionSnapshot.pendingDraftRestore`. The reference is shared
+   * with the snapshot so identity is stable across snapshot rebuilds
+   * (per the same [D10]-style stability contract that
+   * `pendingUserMessage` honors).
+   */
+  pendingDraftRestore: {
+    text: string;
+    atoms: ReadonlyArray<AtomSegment>;
+  } | null;
+  /**
+   * Counter of outstanding CASE A wire echoes the reducer expects to
+   * suppress. Incremented every time `handleInterrupt` fires from
+   * `phase === "submitting"`; decremented when `handleTurnComplete`'s
+   * suppression gate matches and drops the echo.
+   *
+   * Why a counter and not a boolean: a single bit can't represent
+   * multiple in-flight aborted cycles, and the wire doesn't carry a
+   * client-assigned correlation id. The user can rapid-fire
+   * interrupts (CASE A → re-submit → CASE A → …) before any single
+   * wire echo lands; each pending abort needs its own slot. The
+   * counter rises with the user's actions and falls as wire echoes
+   * arrive in FIFO order.
+   *
+   * Why this is correct under FIFO wire ordering: tugcode processes
+   * inbound user_message frames sequentially via
+   * `await turn.completion`, so the aborted cycle's eventual
+   * `turn_complete(error)` (which the abort probe shows carries
+   * `msg_id: ""` for a no-content abort) always lands before any
+   * frame from the next cycle. At the moment the gate fires,
+   * `state.activeMsgId === null` confirms no live turn has produced
+   * content yet — the echo can only belong to an aborted cycle.
+   *
+   * Reset to 0 on `transport_close` (any stranded echoes are lost
+   * with the dead wire — letting them carry across a reconnect would
+   * falsely suppress the next live turn's pre-content error). Not
+   * exposed on the snapshot.
+   */
+  pendingCaseAEchoes: number;
   queuedSends: Array<{ text: string; atoms: AtomSegment[] }>;
   lastError: {
     cause:
@@ -160,6 +211,8 @@ export function createInitialState(
     pendingQuestion: null,
     prevPhase: null,
     pendingUserMessage: null,
+    pendingDraftRestore: null,
+    pendingCaseAEchoes: 0,
     queuedSends: [],
     lastError: null,
     lastCost: null,
@@ -198,6 +251,19 @@ function handleSend(
         atoms: event.atoms,
         submitAt: Date.now(),
       },
+      // The user is moving on to a new turn. The prompt-entry editor
+      // consumes `pendingDraftRestore` synchronously via
+      // `useLayoutEffect` before user input is possible, so by the
+      // time `send` fires the restore slot is moot — clear it for
+      // cleanliness.
+      //
+      // `pendingCaseAEchoes` is deliberately NOT cleared here:
+      // outstanding aborted-cycle echoes are still in flight on the
+      // wire and must be matched against their respective suppression
+      // slots. Wire FIFO ordering guarantees those echoes arrive
+      // before any frame from this new cycle, so the counter drains
+      // naturally as `handleTurnComplete`'s gate fires.
+      pendingDraftRestore: null,
     };
     return {
       state: next,
@@ -234,6 +300,78 @@ function handleInterrupt(
     return { state, effects: [] };
   }
 
+  // CASE A — interrupt fired while `phase === "submitting"`. The
+  // dividing line between A and B is the first content frame from
+  // claude carrying an `msg_id` (verified across `tugcode/src/types.ts`
+  // — no per-turn ack frames precede content; `tugcode/src/session.ts`
+  // writes the `user_message` to claude's stdin and waits on the
+  // active turn whose `currentMessageId` slot stays null until the
+  // first stream event; the `tugcode/probe-case-a.ts` wire-trace
+  // confirms an aborted-no-content cycle emits exactly
+  // `system_metadata` → `cost_update` → `turn_complete{msg_id: "",
+  // result: "error"}` and nothing else). In reducer terms that's the
+  // `submitting → awaiting_first_token` transition (text/thinking
+  // partial) or the `submitting → tool_work` transition (tool_use
+  // first). The `submitting` phase is the silent window: the wire
+  // received our `user_message` but no `msg_id` is bound on this side
+  // yet, so there is nothing meaningful to commit as an interrupted
+  // `TurnEntry`. The user's intent is "claude hadn't picked it up; let
+  // me re-edit and resubmit" — capture the pending message into a
+  // one-shot restore slot, clear the in-flight pair so the transcript
+  // stops rendering it, and return the phase to `idle` so the user
+  // can resubmit immediately without waiting for the wire's
+  // `turn_complete(error)` round-trip.
+  //
+  // Wire echo handling: increment `pendingCaseAEchoes` so the
+  // matching `turn_complete(error)` (carrying `msg_id: ""`) is
+  // suppressed by the gate at the top of `handleTurnComplete`. The
+  // counter (rather than a boolean) is what makes back-to-back CASE
+  // A cancels and re-submit-before-echo races correct: each abort
+  // claims its own pending suppression, decremented in FIFO order as
+  // wire echoes arrive. Late content frames
+  // (`assistant_text` / `thinking_text` / `tool_use`) hit their own
+  // phase guards and drop with phase `idle` — no scratch leakage.
+  if (state.phase === "submitting") {
+    const pending = state.pendingUserMessage;
+    // Carry the pending submission into the restore slot. If
+    // `pendingUserMessage` is somehow null (defensive — handleSend
+    // populates it on every successful send), preserve any existing
+    // restore so a brand-new CASE A doesn't wipe a previously-stranded
+    // one.
+    const restore = pending !== null
+      ? { text: pending.text, atoms: pending.atoms }
+      : state.pendingDraftRestore;
+    return {
+      state: {
+        ...state,
+        phase: "idle",
+        activeMsgId: null,
+        scratch: new Map(),
+        toolCallMap: new Map(),
+        pendingUserMessage: null,
+        pendingDraftRestore: restore,
+        pendingCaseAEchoes: state.pendingCaseAEchoes + 1,
+        pendingApproval: null,
+        pendingQuestion: null,
+        prevPhase: null,
+        queuedSends: [],
+      },
+      effects: [
+        { kind: "send-frame", msg: { type: "interrupt" } },
+        // Defensive: if any partial slipped past the phase guards into
+        // the in-flight streaming document before the interrupt fired,
+        // wipe it so the transcript's in-flight pane lands clean.
+        { kind: "clear-inflight" },
+      ],
+    };
+  }
+
+  // CASE B — interrupt fired after claude produced at least one
+  // content frame (`activeMsgId` is set, `scratch[activeMsgId]` may
+  // hold partial text/thinking/tool-use content). The wire's eventual
+  // `turn_complete(result: "error")` commits a `TurnEntry` with
+  // `result: "interrupted"` carrying whatever has accumulated.
+  //
   // Interrupting from `awaiting_approval` must also abandon the
   // approval prompt: the `interrupt` frame dooms the turn, but the
   // following `turn_complete(error)` is a round-trip away. Between
@@ -257,6 +395,23 @@ function handleInterrupt(
       queuedSends: [],
     },
     effects: [{ kind: "send-frame", msg: { type: "interrupt" } }],
+  };
+}
+
+function handleConsumeDraftRestore(
+  state: CodeSessionState,
+): { state: CodeSessionState; effects: Effect[] } {
+  // Idempotent — return the same state ref when the slot is already
+  // null so the dispatch loop sees no change and skips the listener
+  // notification. Callers can safely fire `consume_draft_restore` from
+  // a `useLayoutEffect` keyed on `pendingDraftRestore` identity
+  // without worrying about a notification storm.
+  if (state.pendingDraftRestore === null) {
+    return { state, effects: [] };
+  }
+  return {
+    state: { ...state, pendingDraftRestore: null },
+    effects: [],
   };
 }
 
@@ -545,6 +700,51 @@ function handleTurnComplete(
   state: CodeSessionState,
   event: TurnCompleteEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
+  // CASE A wire-echo suppression gate. When the user cancelled a
+  // turn while `phase === "submitting"`, the wire eventually echoes
+  // a `turn_complete(result: "error", msg_id: "")` for the aborted
+  // cycle (verified via `tugcode/probe-case-a.ts`). Suppress it so
+  // no phantom transcript entry lands.
+  //
+  // The triple-clause gate is what makes this correct under all
+  // observed user-action races:
+  //
+  //   - `pendingCaseAEchoes > 0` — at least one aborted cycle is
+  //     awaiting its echo. The counter is incremented per CASE A
+  //     interrupt (in `handleInterrupt`) and decremented here in
+  //     FIFO order, so back-to-back cancels each consume their own
+  //     suppression slot.
+  //   - `state.activeMsgId === null` — no live turn has bound a
+  //     `msg_id` yet. Wire FIFO ordering (verified via
+  //     `tugcode/probe-case-a-race.ts`) means an aborted cycle's
+  //     `turn_complete(error)` always arrives before any content
+  //     frame of a subsequent cycle, so this clause distinguishes
+  //     "aborted cycle echo" from "live turn errored mid-stream"
+  //     (which would have set `activeMsgId` via a prior content
+  //     delta) AND from "live turn errored without ever producing
+  //     content" (which falls through this gate when the counter is
+  //     zero).
+  //   - `event.result === "error"` — defensive; the aborted cycle
+  //     never completes successfully on the wire.
+  //
+  // Counter is reset to 0 on `transport_close` (any stranded echoes
+  // are lost with the dead wire) so a stale aborted-cycle suppression
+  // can't carry across a reconnect and falsely consume a future live
+  // turn's pre-content error.
+  if (
+    state.pendingCaseAEchoes > 0 &&
+    state.activeMsgId === null &&
+    event.result === "error"
+  ) {
+    return {
+      state: {
+        ...state,
+        pendingCaseAEchoes: state.pendingCaseAEchoes - 1,
+      },
+      effects: [],
+    };
+  }
+
   // turn_complete before any turn started — drop. (The `replaying`
   // phase is excluded from this guard because the replay translator
   // emits `turn_complete` while `replaying`; activeMsgId is set by
@@ -958,13 +1158,28 @@ function handleTransportClose(
     ? { replayPreflightActive: false }
     : {};
 
+  // Any aborted CASE A cycles whose `turn_complete(error)` had not
+  // yet arrived will never arrive — the wire is dead and the next
+  // `transport_open` brings up a fresh connection with no memory of
+  // the prior cycles. Letting `pendingCaseAEchoes` carry across the
+  // close would falsely suppress the first live `turn_complete(error)`
+  // after reconnect (e.g. a real claude error on a new turn).
+  const caseAEchoesCleared = state.pendingCaseAEchoes !== 0
+    ? { pendingCaseAEchoes: 0 }
+    : {};
+
   // Transport close from `idle` no longer drops silently — per [D06]
   // the offline transportState gates submit even for cards that had
   // nothing in flight. Phase stays `idle` (there is nothing to error
   // on); `lastError` is left untouched for the same reason.
   if (state.phase === "idle") {
     return {
-      state: { ...state, transportState: "offline", ...preflightCleared },
+      state: {
+        ...state,
+        transportState: "offline",
+        ...preflightCleared,
+        ...caseAEchoesCleared,
+      },
       effects: cancelPreflightEffect,
     };
   }
@@ -984,6 +1199,7 @@ function handleTransportClose(
         at: Date.now(),
       },
       ...preflightCleared,
+      ...caseAEchoesCleared,
     },
     effects: cancelPreflightEffect,
   };
@@ -1431,6 +1647,8 @@ export function reduce(
       return handleRespondQuestion(state, event);
     case "interrupt_action":
       return handleInterrupt(state);
+    case "consume_draft_restore":
+      return handleConsumeDraftRestore(state);
     case "cost_update":
       return handleCostUpdate(state, event);
     case "system_metadata":

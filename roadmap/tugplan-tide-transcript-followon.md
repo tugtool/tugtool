@@ -105,20 +105,23 @@ CASE B — `state.phase ∈ {awaiting_first_token, streaming, tool_work, awaitin
 
 **Tasks:**
 
-- [ ] Add `pendingDraftRestore` + `interruptOrigin` to `CodeSessionState` and surface `pendingDraftRestore` on the snapshot.
-- [ ] Branch `handleInterrupt` on `state.phase === "submitting"`.
-- [ ] Branch `handleTurnComplete` for `result: "error"` on `interruptOrigin === "submitting"` (suppress transcript append).
-- [ ] Add `consume_draft_restore` reducer event + `consumePendingDraftRestore()` public method.
-- [ ] Wire the editor restore path inside `TugPromptEntry` via `useLayoutEffect`.
-- [ ] Author tests for both paths.
+- [x] Add `pendingDraftRestore` + `pendingCaseAEchoes` to `CodeSessionState` and surface `pendingDraftRestore` on the snapshot. (Design E — counter, not boolean. The original task description called it `interruptOrigin: "submitting" | null`; in-flight investigation showed a single boolean can't represent multiple in-flight aborted cycles, so the field shipped as `pendingCaseAEchoes: number`. See the in-tree wire probes `tugcode/probe-case-a.ts` and `tugcode/probe-case-a-race.ts` for the empirical grounding.)
+- [x] Branch `handleInterrupt` on `state.phase === "submitting"` (CASE A increments the counter; CASE B path unchanged).
+- [x] Add the suppression gate at the top of `handleTurnComplete` (`pendingCaseAEchoes > 0 && activeMsgId === null && result === "error"` → decrement and drop). Reset the counter on `transport_close` so stranded echoes don't survive a reconnect.
+- [x] Add `consume_draft_restore` reducer event + `consumePendingDraftRestore()` public method.
+- [x] Wire the editor restore path inside `TugPromptEntry` via `useLayoutEffect`.
+- [x] Author tests for both paths.
 
 **Tests:**
 
-- [ ] CASE A: `submitting` → `interrupt()` populates `pendingDraftRestore`, clears `pendingUserMessage`, suppresses the transcript entry on the wire's `turn_complete(error)`, lands snapshot at `idle`.
-- [ ] CASE A queued sends: any prior queued sends are wiped (current behavior preserved — the user re-edits one prompt; queue is not restored).
-- [ ] CASE A consumption: `consumePendingDraftRestore()` clears the slot to `null`.
-- [ ] CASE B `awaiting_first_token` boundary: one partial in, then `interrupt()` → `turn_complete(error)` commits a `TurnEntry` with `result: "interrupted"` carrying that partial's text.
-- [ ] CASE B regressions: existing mid-stream + awaiting_approval interrupt cases pass unchanged.
+- [x] CASE A: `submitting` → `interrupt()` populates `pendingDraftRestore`, clears `pendingUserMessage`, suppresses the transcript entry on the wire's `turn_complete(error)`, lands snapshot at `idle`.
+- [x] CASE A queued sends: any prior queued sends are wiped (current behavior preserved — the user re-edits one prompt; queue is not restored).
+- [x] CASE A consumption: `consumePendingDraftRestore()` clears the slot to `null`.
+- [x] CASE A re-submit-before-echo race (Design E): wire FIFO ordering means the aborted echo arrives before any frame from the new turn, the counter survives `handleSend`, and the gate suppresses the echo cleanly.
+- [x] CASE A back-to-back cancels: two pending suppressions drained in FIFO order; a subsequent fresh-turn pre-content error commits an interrupted entry as expected.
+- [x] CASE A transport reset: `transport_close` resets `pendingCaseAEchoes` to 0 so a stranded echo can't carry across a reconnect.
+- [x] CASE B `awaiting_first_token` boundary: one partial in, then `interrupt()` → `turn_complete(error)` commits a `TurnEntry` with `result: "interrupted"` carrying that partial's text.
+- [x] CASE B regressions: existing mid-stream + awaiting_approval interrupt cases pass unchanged.
 
 **Tuglaws cross-check:**
 
@@ -135,9 +138,10 @@ CASE B — `state.phase ∈ {awaiting_first_token, streaming, tool_work, awaitin
 
 **Checkpoint:**
 
-- [ ] `bun x tsc --noEmit` — exit 0.
-- [ ] `bun test` — green.
-- [ ] `cargo nextest run` — green.
+- [x] `bun x tsc --noEmit` — exit 0.
+- [x] `bun test` — green (3004 tugdeck + 339 tugcode).
+- [x] `cargo nextest run` — green (1256 tests).
+- [x] `bun run audit:tokens lint` — zero violations.
 
 ---
 

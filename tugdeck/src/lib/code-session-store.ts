@@ -303,6 +303,12 @@ export class CodeSessionStore {
       // `useSyncExternalStore` consumers ([L02]) need `Object.is`
       // stability to avoid spurious re-renders.
       inflightUserMessage: this.state.pendingUserMessage,
+      // [D10]-style identity stability: pass the reducer's
+      // pendingDraftRestore reference through unchanged so the
+      // prompt-entry's `useLayoutEffect` (keyed on the slot's identity)
+      // fires exactly once per CASE A interrupt — not on every
+      // snapshot rebuild that touches an unrelated field.
+      pendingDraftRestore: this.state.pendingDraftRestore,
       streamingPaths: STREAMING_PATHS,
       lastCost: this.state.lastCost,
       lastError: this.state.lastError,
@@ -377,10 +383,51 @@ export class CodeSessionStore {
    * and clears any queued sends per [D05]. A no-op when the store is
    * `idle` / `errored` — accidental double-clicks don't spam the
    * server.
+   *
+   * Behavior splits on phase:
+   *
+   *   - **CASE A** (`phase === "submitting"`, no `activeMsgId`) — the
+   *     wire received our `user_message` but claude has not produced
+   *     anything keyed to a `msg_id` yet. The reducer captures
+   *     `pendingUserMessage` into `pendingDraftRestore` for the prompt
+   *     entry to seed back into the editor, clears the in-flight pair
+   *     so the transcript stops rendering it, and returns `phase` to
+   *     `idle`. The wire's eventual `turn_complete(error)` is
+   *     suppressed via the reducer-internal `interruptOrigin` flag —
+   *     no `TurnEntry` is appended.
+   *   - **CASE B** (`phase ∈ {awaiting_first_token, streaming,
+   *     tool_work, awaiting_approval}`) — claude has produced at least
+   *     one content frame. Phase stays put (or restores from
+   *     `awaiting_approval` to its `prevPhase`), the wire's
+   *     `turn_complete(error)` commits a `TurnEntry` carrying whatever
+   *     scratch has accumulated with `result: "interrupted"`. Existing
+   *     behavior, unchanged.
    */
   interrupt(): void {
     if (this._disposed) return;
     this.dispatch({ type: "interrupt_action" });
+  }
+
+  /**
+   * Acknowledge that the prompt-entry editor has applied the most
+   * recent CASE A draft restore. The reducer clears
+   * `pendingDraftRestore` to `null` so the editor's
+   * `useLayoutEffect` (keyed on the slot's identity) does not
+   * re-apply the same restore on subsequent snapshot rebuilds.
+   *
+   * Idempotent — a call while the slot is already `null` is a state-
+   * ref-stable no-op and produces no listener notification.
+   *
+   * Public rather than internal because the dispatch source is the
+   * UI surface (`TugPromptEntry`), not the reducer; routing through a
+   * named method here keeps `dispatch` private and the prompt-entry
+   * free of any reducer-event-vocabulary knowledge — the same
+   * precedent as `notifyTransportSettled` /
+   * `notifyResumeBindingLanded`.
+   */
+  consumePendingDraftRestore(): void {
+    if (this._disposed) return;
+    this.dispatch({ type: "consume_draft_restore" });
   }
 
   /**

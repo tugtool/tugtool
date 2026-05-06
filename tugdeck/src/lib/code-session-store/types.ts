@@ -185,6 +185,41 @@ export interface CodeSessionSnapshot {
     submitAt: number;
   } | null;
 
+  /**
+   * One-shot restore slot populated when the user interrupts a turn
+   * before claude has produced any content (CASE A — `phase ===
+   * "submitting"`, no `activeMsgId`). Carries the user's exact prompt
+   * (text + atoms) at submit time so the prompt-entry editor can seed
+   * its document for re-edit.
+   *
+   * Lifecycle:
+   *   - Set by `handleInterrupt` the moment `interrupt()` fires while
+   *     the phase is `submitting`. Simultaneously cleared:
+   *     `pendingUserMessage` (so the in-flight pair stops rendering),
+   *     `queuedSends` (current `interrupt()` semantics).
+   *   - Consumed by the prompt entry via
+   *     {@link CodeSessionStore.consumePendingDraftRestore} once it has
+   *     applied the restore to the editor. The consume call is what
+   *     transitions this slot back to `null`; until then it survives
+   *     subsequent snapshot rebuilds so a remount or late mount of the
+   *     prompt entry still picks it up.
+   *
+   * The reference is preserved across snapshot rebuilds while the slot
+   * is non-null so `useSyncExternalStore` consumers ([L02]) get
+   * `Object.is` stability — a `useLayoutEffect` keyed on the slot's
+   * identity fires once per restore, not on every parent render.
+   *
+   * The wire's `turn_complete(error)` that arrives after the interrupt
+   * round-trip does NOT clear or repopulate this slot — the reducer
+   * routes that path via the internal `interruptOrigin` flag and skips
+   * appending a transcript entry, so a CASE A interrupt produces zero
+   * `TurnEntry` regardless of the wire echo's timing.
+   */
+  pendingDraftRestore: {
+    text: string;
+    atoms: ReadonlyArray<AtomSegment>;
+  } | null;
+
   streamingPaths: {
     readonly assistant: "inflight.assistant";
     readonly thinking: "inflight.thinking";
