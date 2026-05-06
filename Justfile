@@ -180,6 +180,28 @@ app: build wasm
         open "$APP_DIR"
     fi
 
+# Run/restart Tug.app using whatever's already built — no Rust, wasm,
+# tugdeck, or xcodebuild work. Useful when only Swift-untouched assets
+# (e.g. tugdeck dist via HMR or a prior `bun run build`) need to be
+# picked up, or to relaunch after a manual quit.
+launch:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/Tug.app"
+    if [ ! -d "$APP_DIR" ]; then
+        echo "error: Tug.app not built at $APP_DIR" >&2
+        echo "       Run 'just app' (or 'just build-app') first." >&2
+        exit 1
+    fi
+    echo "==> Launching Tug.app"
+    tugbank write dev.tugexec.app source-tree-path "$(pwd)"
+    TUG_PID=$(pgrep -x Tug 2>/dev/null || true)
+    if [ -n "$TUG_PID" ]; then
+        tugrust/target/debug/tugrelaunch --app-bundle "$APP_DIR" --pid "$TUG_PID"
+    else
+        open "$APP_DIR"
+    fi
+
 # Tail today's tugcast log. Includes forwarded tugcode / Claude
 # stderr under the `tugcast::tugcode_stderr` target — that's where
 # Claude's real error messages land since Tug.app is launched via
