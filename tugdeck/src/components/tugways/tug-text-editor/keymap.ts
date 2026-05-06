@@ -1,24 +1,40 @@
 /**
  * tug-text-editor/keymap.ts — high-precedence keyboard handler for the
  * tug-specific input actions: Enter (submit / newline), numpad Enter,
- * Cmd-Enter (forced submit), and Cmd-Up / Cmd-Down (history nav).
+ * Cmd-Enter (forced submit), Cmd-Up / Cmd-Down (history nav), and the
+ * gap-fill text-editing bindings Ctrl-U / Ctrl-W / Alt-F / Alt-B.
  *
  * Cmd-A (selectAll), Cmd-Z (undo), and Cmd-Shift-Z (redo) are inherited
  * from `@codemirror/commands` `defaultKeymap` + `historyKeymap`, which
  * the React shell wires alongside this module — no need to redeclare
  * them here.
  *
- * Why `EditorView.domEventHandlers` rather than `keymap.of`: the
- * keymap facet normalizes both main-row Enter and numpad Enter to the
- * same key string, so a binding written against `key: "Enter"` cannot
- * tell them apart. Tug requires per-source action: numpad Enter
- * submits even when `returnAction === "newline"` if the host wires
+ * Why `EditorView.domEventHandlers` rather than `keymap.of` for the
+ * Enter / Cmd-Up / Cmd-Down family: the keymap facet normalizes both
+ * main-row Enter and numpad Enter to the same key string, so a binding
+ * written against `key: "Enter"` cannot tell them apart. Tug requires
+ * per-source action: numpad Enter submits even when
+ * `returnAction === "newline"` if the host wires
  * `numpadEnterAction === "submit"`. We need `KeyboardEvent.code`,
  * which only the raw event exposes, so the handler reads keydown
  * events directly. `Prec.high` ensures we run before the default
  * keymap and the history extension; returning `false` from any branch
  * lets the next handler take over (e.g., a "newline" Enter falls
  * through to `defaultKeymap`'s `insertNewlineAndIndent`).
+ *
+ * The four gap-fill bindings (Ctrl-U / Ctrl-W / Alt-F / Alt-B) ride on
+ * a `keymap.of([...])` block layered alongside the `domEventHandlers`
+ * inside the same `Prec.high([...])` wrapper. They dispatch existing
+ * `@codemirror/commands` commands directly per [DM04]:
+ *   - Ctrl-U → `deleteLineBoundaryBackward`
+ *   - Ctrl-W → `deleteGroupBackward`
+ *   - Alt-F  → `cursorGroupForward` (Shift variant: `selectGroupForward`)
+ *   - Alt-B  → `cursorGroupBackward` (Shift variant: `selectGroupBackward`)
+ * The `shift:` slot on each entry expresses the [DM05] shift-extends
+ * pattern idiomatically — CM6 routes Shift-Alt-F to `selectGroupForward`
+ * while a bare Alt-F runs `cursorGroupForward`. The CM6 commands push
+ * onto CM6's own `history()` stack, so Cmd-Z reverts them naturally
+ * (no execCommand bridge needed for the editor substrate).
  *
  * Configuration is supplied as a `getConfig` thunk so the React shell
  * can update the values (returnAction / onSubmit / historyProvider)
@@ -34,8 +50,16 @@
 
 import { EditorSelection, Prec } from "@codemirror/state";
 import type { Extension, TransactionSpec } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
 import type { WidgetType } from "@codemirror/view";
+import {
+  cursorGroupBackward,
+  cursorGroupForward,
+  deleteGroupBackward,
+  deleteLineBoundaryBackward,
+  selectGroupBackward,
+  selectGroupForward,
+} from "@codemirror/commands";
 import {
   AtomWidget,
   atomDecorationField,
@@ -273,16 +297,29 @@ function handleEnter(
 /**
  * Build the high-precedence tug keymap extension.
  *
- * Returns an `EditorView.domEventHandlers` registration wrapped in
- * `Prec.high` so it precedes both `defaultKeymap` and `historyKeymap`.
- * Returning `true` from a branch claims the event; returning `false`
- * lets the lower-precedence handlers run (e.g. newline insertion via
- * `insertNewlineAndIndent`).
+ * Layers two registrations inside one `Prec.high([...])` wrapper:
+ *
+ *   1. `EditorView.domEventHandlers` for the Enter family + Cmd-Up /
+ *      Cmd-Down history nav. Reads `KeyboardEvent.code` directly to
+ *      tell main-row Enter and numpad Enter apart (the keymap facet
+ *      normalizes them).
+ *   2. `keymap.of([...])` for the four gap-fill bindings (Ctrl-U /
+ *      Ctrl-W / Alt-F / Alt-B), each dispatching an existing
+ *      `@codemirror/commands` command. The `shift:` slot expresses
+ *      shift-extends-selection per [DM05] — CM6 idiom for "same
+ *      motion with extension."
+ *
+ * `Prec.high` ensures both registrations precede `defaultKeymap` and
+ * `historyKeymap`. Returning `true` from a `domEventHandlers` branch
+ * claims the event; returning `false` lets the lower-precedence
+ * handlers run (e.g. newline insertion via `insertNewlineAndIndent`).
+ * `keymap.of` calls `preventDefault` automatically on a matched
+ * binding.
  */
 export function tugTextEditorKeymap(
   getConfig: () => TugTextEditorKeymapConfig,
 ): Extension {
-  return Prec.high(
+  return Prec.high([
     EditorView.domEventHandlers({
       keydown(event, view) {
         const config = getConfig();
@@ -304,5 +341,11 @@ export function tugTextEditorKeymap(
         return false;
       },
     }),
-  );
+    keymap.of([
+      { key: "Ctrl-u", run: deleteLineBoundaryBackward },
+      { key: "Ctrl-w", run: deleteGroupBackward },
+      { key: "Alt-f", run: cursorGroupForward, shift: selectGroupForward },
+      { key: "Alt-b", run: cursorGroupBackward, shift: selectGroupBackward },
+    ]),
+  ]);
 }

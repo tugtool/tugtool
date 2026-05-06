@@ -39,6 +39,37 @@
  *   - undo      → continuation: `execCommand("undo")`.
  *   - redo      → continuation: `execCommand("redo")`.
  *
+ * ## Editing motion / deletion (Ctrl-U/W, Alt-F/B)
+ *
+ * Four substrate-local "gap" bindings consumed from
+ * `text-editing-keybindings.ts` per [DM01]: AppKit's field editor
+ * inside a WKWebView already handles Ctrl-A/E/F/B/P/N/D/H/K/T and
+ * Option-Delete; this hook fills the remaining four — Ctrl-U
+ * (`DELETE_TO_LINE_START`), Ctrl-W (`DELETE_WORD_BACKWARD`), Alt-F
+ * (`MOVE_WORD_FORWARD`), Alt-B (`MOVE_WORD_BACKWARD`). The bindings
+ * arrive two ways:
+ *
+ *   1. **Keystroke.** A `useLayoutEffect`-installed `keydown` listener
+ *      calls `matchEditingKeybinding(event)` per [L03]; on a match,
+ *      `event.preventDefault()` runs and the corresponding handler is
+ *      invoked directly with `event.shiftKey` (so the `MOVE_*`
+ *      handlers can extend selection per [DM05]). On a null match,
+ *      the listener returns immediately — no `preventDefault` — so
+ *      AppKit's field editor still sees the keystroke for the
+ *      platform-handled bindings.
+ *
+ *   2. **Chain dispatch** (future settings UI / menu). The four
+ *      actions are registered in the `actions` map alongside CUT /
+ *      COPY / etc., so a `manager.sendToTarget(id, ...)` call
+ *      reaches the same code. Chain dispatch carries no native
+ *      event, so the `MOVE_*` handlers default to no shift extension
+ *      — settings/menu dispatch never extends selection.
+ *
+ * Native deletes route through `el.setSelectionRange(...)` then
+ * `document.execCommand("delete")` per [DM03] / [L23] so Cmd-Z
+ * reverts them through the WKWebView's NSUndoManager — same shape as
+ * the existing `cut` continuation.
+ *
  * ## Paste — native bridge with browser fallback
  *
  * Goal: no Safari "Paste" permission popup, AND the text insertion
@@ -145,6 +176,7 @@ import {
   type RightClickClassification,
   findWordBoundaries,
 } from "./text-selection-adapter";
+import { matchEditingKeybinding } from "./text-editing-keybindings";
 
 // ---- applyPastedText — pure helper ----
 //
@@ -195,6 +227,26 @@ export function applyPastedText(
   // editing pipeline entirely, which left paste invisible to the
   // WKWebView's NSUndoManager.
   document.execCommand("insertText", false, text);
+}
+
+// ---- findLineStart — pure helper ----
+//
+// Compute the index of the start of the line containing `caret` in
+// `value`. For `<input>` (single-line) the returned index is always
+// 0; for `<textarea>` it is the index immediately after the last
+// `\n` at-or-before the caret. Used by `handleDeleteToLineStart`
+// per [DM03] to seed the `setSelectionRange` call before
+// `execCommand("delete")`.
+//
+// Exported so tests can exercise it in pure-logic mode without a
+// React render (no focus, no event ordering — just string math).
+export function findLineStart(value: string, caret: number): number {
+  // Clamp caret to the value range. `selectionStart` is always
+  // inside [0, value.length] in normal use, but defensive clamping
+  // keeps the helper a pure function over arbitrary inputs.
+  const clamped = Math.max(0, Math.min(caret, value.length));
+  const newlineIndex = value.lastIndexOf("\n", clamped - 1);
+  return newlineIndex < 0 ? 0 : newlineIndex + 1;
 }
 
 /** Any DOM element that has an editable text value, caret, and selection. */
@@ -602,6 +654,126 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
     };
   }, [disabled, inputRef]);
 
+  // ---- Editing motion / deletion ----
+  //
+  // Four substrate-local handlers for the gap bindings consumed from
+  // `text-editing-keybindings.ts` per [DM01]. The DELETE_* handlers
+  // route through `setSelectionRange` + `execCommand("delete")` per
+  // [DM03] so the WKWebView's NSUndoManager records the operation
+  // and Cmd-Z reverts it. The MOVE_* handlers take an internal
+  // `(shift: boolean)` parameter so the keystroke listener can
+  // extend the selection on Shift per [DM05]; the chain-dispatch
+  // wrappers below pin shift=false because settings/menu dispatch
+  // carries no native event.
+
+  const handleDeleteToLineStart = useCallback((): ActionHandlerResult => {
+    if (disabled) return;
+    const el = inputRef.current;
+    if (!el) return;
+    const caret = el.selectionEnd ?? el.value.length;
+    const lineStart = findLineStart(el.value, caret);
+    // Nothing to delete when the caret is already at the line start
+    // and no range is selected — bail without calling execCommand so
+    // we don't push a no-op onto the undo stack.
+    if (lineStart === caret && el.selectionStart === el.selectionEnd) return;
+    el.setSelectionRange(lineStart, caret);
+    document.execCommand("delete");
+  }, [disabled, inputRef]);
+
+  const handleDeleteWordBackward = useCallback((): ActionHandlerResult => {
+    if (disabled) return;
+    const el = inputRef.current;
+    if (!el) return;
+    const caret = el.selectionEnd ?? el.value.length;
+    // findWordBoundaries returns the word containing `offset`. When
+    // the caret sits *just past* a word (the typical Ctrl-W
+    // position), step one character back so the boundary search
+    // lands inside the word we want to delete.
+    let probe = caret;
+    while (probe > 0 && /\s/.test(el.value[probe - 1] ?? "")) probe--;
+    const { start } = findWordBoundaries(el.value, Math.max(0, probe - 1));
+    // Clamp: never delete forward past the caret. If the boundary
+    // search came back collapsed (caret on punctuation with nothing
+    // word-shaped behind it), delete just the run of whitespace
+    // back to where the probe stopped.
+    const targetStart = Math.min(start, probe);
+    if (targetStart >= caret) return;
+    el.setSelectionRange(targetStart, caret);
+    document.execCommand("delete");
+  }, [disabled, inputRef]);
+
+  // Move handlers carry an internal `(shift: boolean)` parameter so
+  // the keystroke listener can extend the selection on Shift per
+  // [DM05]. The chain `actions` map registers wrappers that pin
+  // shift=false — settings/menu dispatch never extends selection.
+  const handleMoveWordForward = useCallback(
+    (shift: boolean): ActionHandlerResult => {
+      if (disabled) return;
+      const el = inputRef.current;
+      if (!el) return;
+      const value = el.value;
+      const anchor = shift ? (el.selectionStart ?? 0) : null;
+      const cursor = el.selectionEnd ?? 0;
+      // Move past whitespace, then to the end of the next word.
+      let i = cursor;
+      while (i < value.length && /\s/.test(value[i] ?? "")) i++;
+      const { end } = findWordBoundaries(value, i);
+      const nextOffset = end > cursor ? end : Math.min(value.length, i + 1);
+      if (shift && anchor !== null) {
+        // Extend from the existing anchor (the side of the current
+        // selection that is *not* moving). For a forward motion
+        // starting from a collapsed caret, anchor === cursor — the
+        // selection grows forward.
+        const start = Math.min(anchor, nextOffset);
+        const finish = Math.max(anchor, nextOffset);
+        el.setSelectionRange(start, finish);
+      } else {
+        el.setSelectionRange(nextOffset, nextOffset);
+      }
+    },
+    [disabled, inputRef],
+  );
+
+  const handleMoveWordBackward = useCallback(
+    (shift: boolean): ActionHandlerResult => {
+      if (disabled) return;
+      const el = inputRef.current;
+      if (!el) return;
+      const value = el.value;
+      const anchor = shift ? (el.selectionEnd ?? 0) : null;
+      const cursor = el.selectionStart ?? 0;
+      // Move past whitespace going backward, then to the start of
+      // the previous word.
+      let i = cursor;
+      while (i > 0 && /\s/.test(value[i - 1] ?? "")) i--;
+      const { start } = findWordBoundaries(value, Math.max(0, i - 1));
+      const prevOffset = start < cursor ? start : Math.max(0, i - 1);
+      if (shift && anchor !== null) {
+        const lo = Math.min(anchor, prevOffset);
+        const hi = Math.max(anchor, prevOffset);
+        el.setSelectionRange(lo, hi);
+      } else {
+        el.setSelectionRange(prevOffset, prevOffset);
+      }
+    },
+    [disabled, inputRef],
+  );
+
+  // Chain-dispatch wrappers. The `actions` map below registers
+  // `ActionHandler` shapes — `(event: ActionEvent) => result`. Native
+  // chain dispatch (settings UI, future menu) carries no
+  // `event.shiftKey`, so the wrappers pin shift=false. The keystroke
+  // listener bypasses these and calls the shift-aware closures
+  // directly.
+  const handleMoveWordForwardChain = useCallback(
+    (): ActionHandlerResult => handleMoveWordForward(false),
+    [handleMoveWordForward],
+  );
+  const handleMoveWordBackwardChain = useCallback(
+    (): ActionHandlerResult => handleMoveWordBackward(false),
+    [handleMoveWordBackward],
+  );
+
   // ---- Responder registration ----
   //
   // `useResponder` installs a live Proxy over `options.actions` — so
@@ -623,6 +795,11 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
     [TUG_ACTIONS.COPY]: handleCopy,
     [TUG_ACTIONS.PASTE]: handlePaste,
     [TUG_ACTIONS.SELECT_ALL]: handleSelectAll,
+    // ---- Editing motion / deletion ----
+    [TUG_ACTIONS.DELETE_TO_LINE_START]: handleDeleteToLineStart,
+    [TUG_ACTIONS.DELETE_WORD_BACKWARD]: handleDeleteWordBackward,
+    [TUG_ACTIONS.MOVE_WORD_FORWARD]: handleMoveWordForwardChain,
+    [TUG_ACTIONS.MOVE_WORD_BACKWARD]: handleMoveWordBackwardChain,
   };
   // `useOptionalResponder` (not `useResponder`) so the three consuming
   // components — TugInput, TugTextarea, TugValueInput — can render
@@ -690,6 +867,72 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
       el.removeEventListener("pointerdown", onPointerDown);
     };
   });
+
+  // ---- Editing keystroke listener ----
+  //
+  // Installs a `keydown` listener on the host element that consults
+  // `matchEditingKeybinding` per [DM01]. Registration uses
+  // `useLayoutEffect` per [L03] so the listener is in place before
+  // any user keystroke can reach the element after mount — same
+  // pattern as the pointerdown registration above.
+  //
+  // On a null match the listener returns immediately (no
+  // `preventDefault`), so AppKit's field editor still handles the
+  // platform-handled bindings (Ctrl-A/E/F/B/etc., Option-Delete,
+  // Cmd-Z) untouched. On a match, the listener calls
+  // `preventDefault()` and invokes the corresponding handler
+  // directly (bypassing chain dispatch — the closures are already
+  // bound in this hook). The MOVE_* handlers receive
+  // `event.shiftKey` per [DM05] so they extend selection on Shift.
+  //
+  // The `disabled` guard is defence-in-depth — a disabled input
+  // normally cannot receive focus, but we mirror the chain handlers'
+  // own short-circuit shape here so the keystroke surface stays
+  // symmetric with the dispatch surface.
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    if (disabled) return;
+    const onKeyDown = (e: Event) => {
+      if (!(e instanceof KeyboardEvent)) return;
+      const binding = matchEditingKeybinding(e);
+      if (binding === null) return;
+      e.preventDefault();
+      switch (binding.action) {
+        case TUG_ACTIONS.DELETE_TO_LINE_START:
+          handleDeleteToLineStart();
+          return;
+        case TUG_ACTIONS.DELETE_WORD_BACKWARD:
+          handleDeleteWordBackward();
+          return;
+        case TUG_ACTIONS.MOVE_WORD_FORWARD:
+          handleMoveWordForward(e.shiftKey);
+          return;
+        case TUG_ACTIONS.MOVE_WORD_BACKWARD:
+          handleMoveWordBackward(e.shiftKey);
+          return;
+        default:
+          // Registry contains an action this hook doesn't own (e.g.,
+          // a future entry routed through CM6 only). Don't swallow
+          // the keystroke — release the preventDefault by re-dispatching
+          // would be racy, so the safe choice is to let the action
+          // be a no-op for native inputs. Reachable only after a
+          // settings-driven remap to an unsupported action.
+          return;
+      }
+    };
+    el.addEventListener("keydown", onKeyDown);
+    return () => {
+      el.removeEventListener("keydown", onKeyDown);
+    };
+  }, [
+    disabled,
+    inputRef,
+    handleDeleteToLineStart,
+    handleDeleteWordBackward,
+    handleMoveWordForward,
+    handleMoveWordBackward,
+  ]);
 
   // ---- Context menu state ----
 

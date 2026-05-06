@@ -127,6 +127,57 @@ export const TUG_ACTIONS = {
   DELETE:    "delete",
   DUPLICATE: "duplicate",
 
+  // ---- Editing motion / deletion ----
+  //
+  // These four actions are dispatched by the substrate-local text-editing
+  // keybinding registry in `text-editing-keybindings.ts`, NOT by the
+  // global `keybinding-map.ts` capture-phase pipeline. Movement and
+  // deletion only ever target the focused text input, so the chain
+  // abstraction adds nothing — see [DM01] in
+  // `tugplan-text-editing-keybindings.md` for the substrate-local
+  // wiring rationale.
+  //
+  // Sender for all four: "the focused text-editing responder" (the
+  // `useTextInputResponder`-backed input/textarea, or the
+  // `tug-text-editor` editor responder). Handlers read selection
+  // state from the focused element / view at dispatch time per [L07];
+  // there is no payload on the ActionEvent.
+  //
+  // DELETE_TO_LINE_START:  payload — none. Erase backward from the caret
+  //                        to the start of the current line. For
+  //                        single-line `<input>` this means index 0;
+  //                        for `<textarea>` and CM6, the index after
+  //                        the last `\n` at-or-before the caret. Native
+  //                        substrates route through
+  //                        `document.execCommand("delete")` so the
+  //                        WKWebView's NSUndoManager records the
+  //                        operation per [L23] / [DM03]; CM6 uses
+  //                        `deleteLineBoundaryBackward` which pushes
+  //                        onto the editor's `history()` stack per
+  //                        [DM04]. Bound to Ctrl-U.
+  // DELETE_WORD_BACKWARD:  payload — none. Erase the word ending at (or
+  //                        immediately preceding) the caret. Word
+  //                        boundaries come from the substrate's own
+  //                        definition (native: `findWordBoundaries`
+  //                        from `text-selection-adapter.ts`; CM6:
+  //                        `deleteGroupBackward`). Bound to Ctrl-W.
+  // MOVE_WORD_FORWARD:     payload — none. Move the caret one word
+  //                        forward. With Shift held, the substrate
+  //                        handler extends the selection rather than
+  //                        moving the caret per [DM05]. Native
+  //                        substrates read `event.shiftKey` from the
+  //                        keystroke; CM6 uses the keymap entry's
+  //                        `shift:` slot to bind `selectGroupForward`.
+  //                        Chain dispatch (no native event) defaults
+  //                        to no shift — settings/menu dispatch never
+  //                        extends selection. Bound to Alt-F (Option-F).
+  // MOVE_WORD_BACKWARD:    payload — none. Symmetric with
+  //                        MOVE_WORD_FORWARD. Bound to Alt-B (Option-B).
+  DELETE_TO_LINE_START: "delete-to-line-start",
+  DELETE_WORD_BACKWARD: "delete-word-backward",
+  MOVE_WORD_FORWARD:    "move-word-forward",
+  MOVE_WORD_BACKWARD:   "move-word-backward",
+
   // ---- Submission ----
   //
   // TUG_ACTIONS.SUBMIT:

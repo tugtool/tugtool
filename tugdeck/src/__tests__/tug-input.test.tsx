@@ -382,6 +382,121 @@ describe("TugInput – action handlers (A2.7)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Editing motion / deletion handlers — chain dispatch membership
+// ---------------------------------------------------------------------------
+//
+// Per the project rule, happy-dom is OFF-LIMITS for focus / selection
+// / event-ordering across React renders. The actual keystroke flow
+// (Ctrl-U/W/Alt-F/B → preventDefault → handler invocation in real
+// AppKit) is verified by `just app-test` in Step 4. These tests pin
+// only the chain-dispatch surface — that the four new TUG_ACTIONS
+// are registered on the responder and reach the right side-effect
+// when dispatched programmatically (the future settings UI / menu
+// path).
+
+describe("TugInput – editing motion / deletion handlers (chain dispatch)", () => {
+  it("DELETE_TO_LINE_START runs setSelectionRange + execCommand('delete')", () => {
+    const { container, manager } = renderWithProvider(
+      <TugInput data-testid="del-bol" defaultValue="hello world" />
+    );
+    const input = getInput(container, "del-bol");
+    const id = input.getAttribute("data-responder-id") as string;
+
+    // Caret after "hello " (offset 6) — DELETE_TO_LINE_START should
+    // select [0, 6) and call execCommand("delete").
+    input.setSelectionRange(6, 6);
+
+    const handled = manager.sendToTarget(id, {
+      action: TUG_ACTIONS.DELETE_TO_LINE_START,
+      phase: "discrete",
+    });
+    expect(handled).toBe(true);
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe(6);
+    expect(execCommandCalls.length).toBe(1);
+    expect(execCommandCalls[0].command).toBe("delete");
+  });
+
+  it("DELETE_TO_LINE_START at offset 0 with no selection is a no-op", () => {
+    const { container, manager } = renderWithProvider(
+      <TugInput data-testid="del-bol-noop" defaultValue="hello" />
+    );
+    const input = getInput(container, "del-bol-noop");
+    const id = input.getAttribute("data-responder-id") as string;
+    input.setSelectionRange(0, 0);
+
+    manager.sendToTarget(id, {
+      action: TUG_ACTIONS.DELETE_TO_LINE_START,
+      phase: "discrete",
+    });
+    // No execCommand call — handler bailed before mutating the DOM.
+    expect(execCommandCalls.length).toBe(0);
+  });
+
+  it("DELETE_WORD_BACKWARD selects the word ending at the caret and deletes", () => {
+    const { container, manager } = renderWithProvider(
+      <TugInput data-testid="del-word" defaultValue="hello world" />
+    );
+    const input = getInput(container, "del-word");
+    const id = input.getAttribute("data-responder-id") as string;
+
+    // Caret at end of "world" (offset 11). The handler should select
+    // [6, 11) (the word "world") and call execCommand("delete").
+    input.setSelectionRange(11, 11);
+
+    const handled = manager.sendToTarget(id, {
+      action: TUG_ACTIONS.DELETE_WORD_BACKWARD,
+      phase: "discrete",
+    });
+    expect(handled).toBe(true);
+    expect(input.selectionStart).toBe(6);
+    expect(input.selectionEnd).toBe(11);
+    expect(execCommandCalls.length).toBe(1);
+    expect(execCommandCalls[0].command).toBe("delete");
+  });
+
+  it("MOVE_WORD_FORWARD moves the caret to the end of the next word (no shift)", () => {
+    const { container, manager } = renderWithProvider(
+      <TugInput data-testid="mv-fwd" defaultValue="hello world" />
+    );
+    const input = getInput(container, "mv-fwd");
+    const id = input.getAttribute("data-responder-id") as string;
+
+    // Caret at offset 0; chain dispatch carries no shiftKey — handler
+    // collapses the selection at the new offset (end of "hello" = 5).
+    input.setSelectionRange(0, 0);
+
+    const handled = manager.sendToTarget(id, {
+      action: TUG_ACTIONS.MOVE_WORD_FORWARD,
+      phase: "discrete",
+    });
+    expect(handled).toBe(true);
+    expect(input.selectionStart).toBe(5);
+    expect(input.selectionEnd).toBe(5);
+  });
+
+  it("MOVE_WORD_BACKWARD moves the caret to the start of the previous word (no shift)", () => {
+    const { container, manager } = renderWithProvider(
+      <TugInput data-testid="mv-bwd" defaultValue="hello world" />
+    );
+    const input = getInput(container, "mv-bwd");
+    const id = input.getAttribute("data-responder-id") as string;
+
+    // Caret at end of value (offset 11); chain dispatch collapses
+    // selection at the start of "world" (offset 6).
+    input.setSelectionRange(11, 11);
+
+    const handled = manager.sendToTarget(id, {
+      action: TUG_ACTIONS.MOVE_WORD_BACKWARD,
+      phase: "discrete",
+    });
+    expect(handled).toBe(true);
+    expect(input.selectionStart).toBe(6);
+    expect(input.selectionEnd).toBe(6);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Paste cascade — focused branch integration tests
 // ---------------------------------------------------------------------------
 
@@ -506,5 +621,29 @@ describe("TugInput – disabled guard (A2.7)", () => {
     // continuation, so the initial selection is untouched.
     expect(input.selectionStart).toBe(1);
     expect(input.selectionEnd).toBe(2);
+  });
+
+  it("disabled input does not mutate selection / fire execCommand for editing motion / deletion actions", () => {
+    const { container, manager } = renderWithProvider(
+      <TugInput data-testid="disabled-edit" defaultValue="hello world" disabled />
+    );
+    const input = getInput(container, "disabled-edit");
+    const id = input.getAttribute("data-responder-id") as string;
+
+    input.setSelectionRange(3, 3);
+    for (const action of [
+      TUG_ACTIONS.DELETE_TO_LINE_START,
+      TUG_ACTIONS.DELETE_WORD_BACKWARD,
+      TUG_ACTIONS.MOVE_WORD_FORWARD,
+      TUG_ACTIONS.MOVE_WORD_BACKWARD,
+    ]) {
+      manager.sendToTarget(id, { action, phase: "discrete" });
+    }
+
+    // No execCommand call, no selection drift — every handler bailed
+    // on the disabled short-circuit.
+    expect(execCommandCalls.length).toBe(0);
+    expect(input.selectionStart).toBe(3);
+    expect(input.selectionEnd).toBe(3);
   });
 });

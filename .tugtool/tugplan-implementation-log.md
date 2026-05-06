@@ -9,6 +9,42 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-05-06T16:09:44Z
+---
+
+## step-3: Wired four new TUG_ACTIONS into tug-text-editor: handleDeleteToLineStart, handleDeleteWordBackward, handleMoveWordForward, handleMoveWordBackward, each a one-liner invoking the corresponding @codemirror/commands command on viewRef.current. Refactored tugTextEditorKeymap to layer keymap.of([Ctrl-u, Ctrl-w, Alt-f (with shift: select), Alt-b (with shift: select)]) alongside the existing Enter-family domEventHandlers, both inside one Prec.high. Reuses CM6 commands (deleteLineBoundaryBackward/deleteGroupBackward/cursorGroupForward/cursorGroupBackward + select* variants) so undo integrates with CM6 history() per DM04. Updated keymap module docstring.
+
+**Files changed:**
+- text-editing-keybindings-b63f4bb-1
+
+---
+
+---
+step: step-2
+date: 2025-05-06T16:04:37Z
+---
+
+## step-2: Wired four new TUG_ACTIONS into useTextInputResponder: handleDeleteToLineStart, handleDeleteWordBackward, handleMoveWordForward, handleMoveWordBackward. Deletes go through setSelectionRange + execCommand("delete") to push onto WKWebView's NSUndoManager (DM03/L23); moves call setSelectionRange directly with optional shift-extends per DM05. useLayoutEffect-installed keydown listener consults matchEditingKeybinding and dispatches with event.shiftKey. Added findLineStart pure helper. Tests: chain-dispatch membership in tug-input.test.tsx; pure-logic test for findLineStart.
+
+**Files changed:**
+- text-editing-keybindings-b63f4bb-1
+
+---
+
+---
+step: step-1
+date: 2025-05-06T15:56:30Z
+---
+
+## step-1: Added DELETE_TO_LINE_START, DELETE_WORD_BACKWARD, MOVE_WORD_FORWARD, MOVE_WORD_BACKWARD to TUG_ACTIONS; new substrate-local text-editing-keybindings.ts registry with matchEditingKeybinding and shiftExtends semantics; 18-test pure-logic suite covering positives, modifier mismatches, shift-extends, and runtime remap.
+
+**Files changed:**
+- text-editing-keybindings-b63f4bb-1
+
+---
+
+---
 step: step-8
 date: 2025-04-27T23:38:20Z
 ---

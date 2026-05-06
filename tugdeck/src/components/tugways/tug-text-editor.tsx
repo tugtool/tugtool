@@ -84,7 +84,11 @@ import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import { EditorView, highlightActiveLineGutter, keymap, placeholder as cmPlaceholder } from "@codemirror/view";
 import {
+  cursorGroupBackward,
+  cursorGroupForward,
   defaultKeymap,
+  deleteGroupBackward,
+  deleteLineBoundaryBackward,
   history,
   historyKeymap,
   redo,
@@ -1423,6 +1427,46 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       };
     }, []);
 
+    // ---- Editing motion / deletion ----
+    //
+    // The four gap-fill actions (Ctrl-U / Ctrl-W / Alt-F / Alt-B)
+    // are handled at the keymap layer in `tug-text-editor/keymap.ts`
+    // for the keyboard path, where Shift extends selection idiomatically
+    // via CM6's `shift:` slot. These responder handlers cover the chain
+    // dispatch path — a future settings UI / menu invokes the same CM6
+    // commands programmatically. Chain dispatch carries no native event,
+    // so motion never extends selection from this path (per [DM05]; the
+    // collapsed `cursorGroupForward` / `cursorGroupBackward` are used).
+    // The CM6 commands push onto the editor's own `history()` stack, so
+    // Cmd-Z reverts the deletions naturally per [DM04].
+    const handleDeleteToLineStart = useCallback((): ActionHandlerResult => {
+      const view = viewRef.current;
+      if (view === null) return;
+      view.focus();
+      deleteLineBoundaryBackward(view);
+    }, []);
+
+    const handleDeleteWordBackward = useCallback((): ActionHandlerResult => {
+      const view = viewRef.current;
+      if (view === null) return;
+      view.focus();
+      deleteGroupBackward(view);
+    }, []);
+
+    const handleMoveWordForward = useCallback((): ActionHandlerResult => {
+      const view = viewRef.current;
+      if (view === null) return;
+      view.focus();
+      cursorGroupForward(view);
+    }, []);
+
+    const handleMoveWordBackward = useCallback((): ActionHandlerResult => {
+      const view = viewRef.current;
+      if (view === null) return;
+      view.focus();
+      cursorGroupBackward(view);
+    }, []);
+
     const responderId = useId();
     const actions: Partial<Record<TugAction, ActionHandler>> = {
       [TUG_ACTIONS.SELECT_ALL]: handleSelectAll,
@@ -1432,6 +1476,11 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       [TUG_ACTIONS.CUT]: handleCut,
       [TUG_ACTIONS.PASTE]: handlePaste,
       [TUG_ACTIONS.SUBMIT]: handleSubmit,
+      // ---- Editing motion / deletion ----
+      [TUG_ACTIONS.DELETE_TO_LINE_START]: handleDeleteToLineStart,
+      [TUG_ACTIONS.DELETE_WORD_BACKWARD]: handleDeleteWordBackward,
+      [TUG_ACTIONS.MOVE_WORD_FORWARD]: handleMoveWordForward,
+      [TUG_ACTIONS.MOVE_WORD_BACKWARD]: handleMoveWordBackward,
     };
     const { responderRef, ResponderScope } = useOptionalResponder({
       id: responderId,
