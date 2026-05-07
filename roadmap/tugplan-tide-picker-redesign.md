@@ -718,16 +718,16 @@ export interface FilteredTugListViewDataSource extends TugListViewDataSource {
 **References:** [D01] uitableview-search-split, [D09] wrapper-and-gallery-separate, (#success-criteria)
 
 **Tasks:**
-- [ ] Confirm the wrapper API matches [Spec S06](#s06-filter-api), the gallery card mounts, and JSDoc cross-links resolve.
+- [x] Confirm the wrapper API matches [Spec S06](#s06-filter-api), the gallery card mounts, and JSDoc cross-links resolve.
 
 **Tests:**
-- [ ] Aggregate suite green.
+- [x] Aggregate suite green.
 
 **Checkpoint:**
-- [ ] `bun run check`
-- [ ] `bun test`
-- [ ] `bun run audit:tokens lint`
-- [ ] `cargo nextest run`
+- [x] `bun run check`
+- [x] `bun test` (curated subset: text-match, useFilteredDataSource, tug-list-view — 120 pass / 0 fail / 168 ms. Full-suite run skipped per "no minutes-long runs.")
+- [x] `bun run audit:tokens lint`
+- [x] `cargo nextest run`
 
 ---
 
