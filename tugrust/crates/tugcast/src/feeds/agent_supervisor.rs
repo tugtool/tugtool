@@ -266,14 +266,14 @@ pub struct LedgerEntry {
     pub input_tx: Option<mpsc::Sender<Frame>>,
     /// Cancels the per-session worker on `close_session`.
     pub cancel: CancellationToken,
-    /// Card id currently holding this session in `Spawning` or `Live` state.
-    /// `None` for a fresh `Idle` entry, after `close_session`, after the
-    /// bridge transitions to `Errored`, or after the supervisor rehydrates
-    /// stored bindings on startup. Used to reject a
-    /// `spawn_session(mode=resume)` payload that would bind the same
-    /// session under a *different* card while the original card is
-    /// still holding it; same-card reconnects are allowed.
-    pub card_id_live: Option<String>,
+    /// Card id this session is bound to. Set on the first
+    /// `spawn_session` and preserved across lifecycle transitions
+    /// (close, errored, crash-exhausted) so the persisted ledger row
+    /// retains the binding for client-side restore. Liveness is encoded
+    /// in `spawn_state`, not by nullity of this field; the
+    /// "live-elsewhere" check in `do_spawn_session` gates on
+    /// `spawn_state ∈ {Spawning, Live}` plus a card mismatch.
+    pub card_id: Option<String>,
     /// Count of replay brackets currently in flight on this session's
     /// outbound stream — incremented on each `replay_started` the merger
     /// observes, saturating-decremented on each `replay_complete`. The
@@ -320,7 +320,7 @@ impl LedgerEntry {
             child: None,
             input_tx: None,
             cancel: CancellationToken::new(),
-            card_id_live: None,
+            card_id: None,
             replay_brackets_open: 0,
         }
     }
@@ -488,8 +488,9 @@ impl SessionKeysStore for TugbankClient {
 ///
 /// The recorder uses `session_id` as the row key (the claude session id —
 /// also the JSONL file name on disk). `card_id` populates the row's
-/// `card_id_live` while the session is live; `mark_closed` and
-/// `mark_failed` clear it on lifecycle transitions.
+/// `card_id` column on `record_spawn` and is preserved across
+/// `mark_closed` / `mark_failed` so the persisted ledger retains the
+/// binding for client-side restore.
 #[derive(Debug, Clone, Copy)]
 pub struct SessionRecord<'a> {
     pub session_id: &'a str,
@@ -871,7 +872,11 @@ pub fn build_session_updated_frame(row: &crate::session_ledger::SessionRow) -> F
             "turn_count": row.turn_count,
             "first_user_prompt": row.first_user_prompt,
             "state": row.state,
-            "card_id_live": row.card_id_live,
+            // Wire key remains `card_id_live` for backward compatibility
+            // with the existing tugdeck consumer; the column was renamed
+            // to `card_id` (and is now preserved across close/fail) in
+            // step A of the session-keys retirement.
+            "card_id_live": row.card_id,
         },
     });
     Frame::new(
@@ -1082,8 +1087,10 @@ pub struct AgentSupervisor {
     /// `mark_failed` on `resume_failed` / crash exhaustion. The supervisor
     /// calls `mark_closed` on `do_close_session`. The Forget UX (step 6)
     /// uses `remove`. The live-elsewhere check during spawn reads the
-    /// in-memory `LedgerEntry::card_id_live`; the ledger row's
-    /// `card_id_live` mirrors that for cross-card picker visibility.
+    /// in-memory `LedgerEntry::card_id` and gates on `spawn_state`; the
+    /// ledger row's `card_id` mirrors the in-memory value so the
+    /// client-side restore can reconstruct the binding after a tugcast
+    /// restart.
     pub sessions_recorder: Arc<dyn SessionsRecorder>,
     /// Read handle to the same [`SessionLedger`] the recorder writes to.
     /// Used for the read-side CONTROL ops (`list_sessions`, the picker's
@@ -1736,19 +1743,29 @@ impl AgentSupervisor {
                 );
             }
             // Reject a `resume` against a session already bound to a
-            // *different* card. `card_id_live` (set in Phase 3 below,
-            // cleared on close / errored) is the source of truth for
-            // "currently bound." Same-card reconnects (WS drop +
-            // reconnect) and `new` payloads are unaffected. The
-            // wire-side rejection complements the picker grey-out:
-            // even with a stale picker view, the supervisor refuses
-            // to double-bind a live session. We do NOT gate on
-            // `spawn_state` because a freshly-bound entry sits at
-            // `Idle` until the dispatcher's first CODE_INPUT promotes
-            // it to `Spawning`.
+            // *different* card while it is still live. The `card_id`
+            // field is the persistent "last bound" record and is
+            // preserved across close/errored, so liveness is encoded
+            // in `spawn_state ∈ {Idle, Spawning, Live}` (a freshly
+            // rebound or just-bound entry sits at `Idle` until the
+            // dispatcher's first CODE_INPUT promotes it to `Spawning`,
+            // so Idle counts as held). Closed/Errored entries do not
+            // hold the binding from the supervisor's perspective —
+            // a different card may rebind them via `mode=resume`.
+            // Same-card reconnects (WS drop + reconnect) and `new`
+            // payloads are unaffected.
             if session_mode == SessionMode::Resume {
                 let entry = entry_arc.lock().await;
-                if let Some(holder) = entry.card_id_live.as_deref() {
+                let still_held = matches!(
+                    entry.spawn_state,
+                    SpawnState::Idle | SpawnState::Spawning | SpawnState::Live
+                );
+                let holder_opt = if still_held {
+                    entry.card_id.as_deref()
+                } else {
+                    None
+                };
+                if let Some(holder) = holder_opt {
                     if holder != card_id {
                         let holder_owned = holder.to_owned();
                         drop(entry);
@@ -1832,15 +1849,17 @@ impl AgentSupervisor {
         // entry with `latest_metadata: None`.
         let replay_frame = {
             let mut entry = entry_arc.lock().await;
-            // Record the binding card so a later resume from a
-            // different card can be detected and rejected. Same-card
+            // Record the binding card. `card_id` is preserved across
+            // lifecycle transitions (close/errored/crash-exhausted),
+            // so this assignment is durable. The live-elsewhere check
+            // gates on `spawn_state` instead of nullity. Same-card
             // reconnects overwrite with the same value (no-op).
-            entry.card_id_live = Some(card_id.to_owned());
+            entry.card_id = Some(card_id.to_owned());
             entry.latest_metadata.clone()
         };
-        // Live-elsewhere visibility for cross-card pickers is now driven by
-        // the ledger row that the bridge writes on `session_init` (with
-        // `state="live"` and `card_id_live`). Pre-handshake spawns don't
+        // Live-elsewhere visibility for cross-card pickers is driven by
+        // the ledger row the bridge writes on `session_init` (with
+        // `state="live"` and `card_id`). Pre-handshake spawns don't
         // appear in any picker — by then the user has already chosen.
 
         let _ =
@@ -1989,9 +2008,9 @@ impl AgentSupervisor {
             // about to be dropped; we only care that any Arc-clone holder
             // observes `Closed` on its next lock acquire.
             entry.spawn_state = SpawnState::Closed;
-            // Release the live-card binding so a future resume from
-            // any card is allowed.
-            entry.card_id_live = None;
+            // `card_id` is preserved across close so the persisted
+            // ledger row retains the binding for client-side restore;
+            // liveness is encoded in `spawn_state`.
             (entry.workspace_key.clone(), entry.claude_session_id.clone())
         };
 
@@ -5609,7 +5628,7 @@ mod tests {
 
         // Drive the public spawn path so the Phase 2 tugbank write
         // populates the record (claude_session_id == None initially)
-        // and `card_id_live` is set on the entry. Without `card_id_live`,
+        // and `card_id` is set on the entry. Without `card_id`,
         // `relay_session_io` would skip the persist write — the
         // atomic-promote block has no card_id to key the write under.
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
@@ -6689,7 +6708,7 @@ mod tests {
         let row = ledger.get("claude-abc").unwrap().expect("row");
         assert_eq!(row.workspace_key, "ws-1");
         assert_eq!(row.project_dir, "/proj/x");
-        assert_eq!(row.card_id_live.as_deref(), Some("card-1"));
+        assert_eq!(row.card_id.as_deref(), Some("card-1"));
         assert_eq!(row.state, LedgerState::Live);
         assert_eq!(row.turn_count, 0);
     }
@@ -6730,7 +6749,10 @@ mod tests {
         let row = ledger.get("claude-abc").unwrap().expect("row");
         assert_eq!(row.turn_count, 3);
         assert_eq!(row.state, LedgerState::Closed);
-        assert_eq!(row.card_id_live, None);
+        // card_id is preserved across mark_closed under the new
+        // semantics — the persisted row keeps the binding so client-side
+        // restore can reconstruct it.
+        assert_eq!(row.card_id.as_deref(), Some("card-1"));
     }
 
     #[test]
@@ -6746,7 +6768,7 @@ mod tests {
 
         let row = ledger.get("claude-abc").unwrap().expect("row retained");
         assert_eq!(row.state, LedgerState::Failed);
-        assert_eq!(row.card_id_live, None);
+        assert_eq!(row.card_id.as_deref(), Some("card-1"));
     }
 
     #[test]
@@ -6849,7 +6871,7 @@ mod tests {
 
         let row = ledger.get("claude-1").unwrap().expect("row");
         assert_eq!(row.state, LedgerState::Closed);
-        assert_eq!(row.card_id_live, None);
+        assert_eq!(row.card_id.as_deref(), Some("card-1"));
     }
 
     // ── CONTROL ledger ops ───────────────────────────────────────────────────

@@ -11,10 +11,16 @@
 //!
 //! `state` is one of `live` | `closed` | `failed`. Allowed transitions:
 //!
-//! - `INSERT  state="live", card_id_live=<card_id>` on `spawn_session_ok`.
-//! - `UPDATE  state="closed", card_id_live=NULL`    on `close_session` or tugcode exit.
-//! - `UPDATE  state="failed", card_id_live=NULL`    on `resume_failed` (replaces the previous row-removal).
+//! - `INSERT  state="live", card_id=<card_id>` on `spawn_session_ok`.
+//! - `UPDATE  state="closed"`                  on `close_session` or tugcode exit.
+//! - `UPDATE  state="failed"`                  on `resume_failed` (replaces the previous row-removal).
 //! - `DELETE` on cap/age eviction or explicit forget.
+//!
+//! `card_id` is set when the session first binds to a card and is preserved
+//! across the row's lifetime — `mark_closed` and `mark_failed` retain it as
+//! the "last bound" record so client-side restore can reconstruct the
+//! card↔session mapping after a tugcast restart. Liveness is encoded
+//! exclusively in `state`, not by nullity of `card_id`.
 //!
 //! # Eviction
 //!
@@ -150,7 +156,10 @@ pub struct SessionRow {
     pub turn_count: i64,
     pub first_user_prompt: Option<String>,
     pub state: SessionState,
-    pub card_id_live: Option<String>,
+    /// The card this session is bound to. Set on `record_spawn` and never
+    /// cleared by lifecycle transitions; combined with `state` it answers
+    /// "which session was last bound to this card, and is it still live?"
+    pub card_id: Option<String>,
 }
 
 /// One row of the `turns` submission journal. Authored by tugcast at
@@ -269,7 +278,7 @@ impl SessionLedger {
                 turn_count        INTEGER NOT NULL DEFAULT 0,
                 first_user_prompt TEXT,
                 state             TEXT NOT NULL,
-                card_id_live      TEXT
+                card_id           TEXT
             );
 
             CREATE INDEX IF NOT EXISTS sessions_workspace_recent
@@ -302,7 +311,7 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
-                    turn_count, first_user_prompt, state, card_id_live
+                    turn_count, first_user_prompt, state, card_id
              FROM sessions
              WHERE workspace_key = ?1
              ORDER BY last_used_at DESC",
@@ -324,7 +333,7 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
-                    turn_count, first_user_prompt, state, card_id_live
+                    turn_count, first_user_prompt, state, card_id
              FROM sessions
              WHERE project_dir = ?1
              ORDER BY last_used_at DESC",
@@ -340,7 +349,7 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
-                    turn_count, first_user_prompt, state, card_id_live
+                    turn_count, first_user_prompt, state, card_id
              FROM sessions
              WHERE session_id = ?1
              LIMIT 1",
@@ -378,14 +387,14 @@ impl SessionLedger {
             "INSERT INTO sessions (
                 session_id, workspace_key, project_dir,
                 created_at, last_used_at, turn_count,
-                first_user_prompt, state, card_id_live
+                first_user_prompt, state, card_id
              ) VALUES (?1, ?2, ?3, ?4, ?5, 0, NULL, 'live', ?6)
              ON CONFLICT(session_id) DO UPDATE SET
                 workspace_key = excluded.workspace_key,
                 project_dir   = excluded.project_dir,
                 last_used_at  = excluded.last_used_at,
                 state         = 'live',
-                card_id_live  = excluded.card_id_live",
+                card_id       = excluded.card_id",
             params![
                 session_id,
                 workspace_key,
@@ -448,12 +457,14 @@ impl SessionLedger {
         Ok(())
     }
 
-    /// Transition a row to `closed`.
+    /// Transition a row to `closed`. `card_id` is preserved across
+    /// transitions so the client-side restore can ask "which session
+    /// was last bound to this card?" after a tugcast restart.
     pub fn mark_closed(&self, session_id: &str) -> Result<(), LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         conn.execute(
             "UPDATE sessions
-             SET state = 'closed', card_id_live = NULL
+             SET state = 'closed'
              WHERE session_id = ?1",
             params![session_id],
         )?;
@@ -462,11 +473,12 @@ impl SessionLedger {
 
     /// Transition a row to `failed`. Replaces the previous "remove on
     /// resume_failed" semantics — the row is retained as a diagnostic crumb.
+    /// `card_id` is preserved across transitions; see [`mark_closed`].
     pub fn mark_failed(&self, session_id: &str) -> Result<(), LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         conn.execute(
             "UPDATE sessions
-             SET state = 'failed', card_id_live = NULL
+             SET state = 'failed'
              WHERE session_id = ?1",
             params![session_id],
         )?;
@@ -658,7 +670,7 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let count = conn.execute(
             "UPDATE sessions
-             SET state = 'closed', card_id_live = NULL
+             SET state = 'closed'
              WHERE state = 'live'",
             [],
         )?;
@@ -816,7 +828,7 @@ fn row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<SessionRow
     let turn_count: i64 = row.get(5)?;
     let first_user_prompt: Option<String> = row.get(6)?;
     let state_str: String = row.get(7)?;
-    let card_id_live: Option<String> = row.get(8)?;
+    let card_id: Option<String> = row.get(8)?;
     let state = match state_str.parse::<SessionState>() {
         Ok(s) => s,
         Err(e) => return Ok(Err(e)),
@@ -830,7 +842,7 @@ fn row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<SessionRow
         turn_count,
         first_user_prompt,
         state,
-        card_id_live,
+        card_id,
     }))
 }
 
@@ -1050,7 +1062,7 @@ mod tests {
         assert_eq!(row.turn_count, 0);
         assert_eq!(row.first_user_prompt, None);
         assert_eq!(row.state, SessionState::Live);
-        assert_eq!(row.card_id_live.as_deref(), Some("card-1"));
+        assert_eq!(row.card_id.as_deref(), Some("card-1"));
     }
 
     #[test]
@@ -1109,23 +1121,25 @@ mod tests {
     }
 
     #[test]
-    fn mark_closed_clears_card_binding() {
+    fn mark_closed_preserves_card_binding() {
         let l = fresh();
         seed_live(&l, "s1", WS_A, "card-1", millis(0));
         l.mark_closed("s1").unwrap();
         let r = l.get("s1").unwrap().unwrap();
         assert_eq!(r.state, SessionState::Closed);
-        assert_eq!(r.card_id_live, None);
+        // card_id is preserved across the close transition so the
+        // client-side restore can reconstruct the card→session map.
+        assert_eq!(r.card_id.as_deref(), Some("card-1"));
     }
 
     #[test]
-    fn mark_failed_retains_row_and_clears_binding() {
+    fn mark_failed_retains_row_and_card_binding() {
         let l = fresh();
         seed_live(&l, "s1", WS_A, "card-1", millis(0));
         l.mark_failed("s1").unwrap();
         let r = l.get("s1").unwrap().unwrap();
         assert_eq!(r.state, SessionState::Failed);
-        assert_eq!(r.card_id_live, None);
+        assert_eq!(r.card_id.as_deref(), Some("card-1"));
     }
 
     #[test]
@@ -1142,7 +1156,7 @@ mod tests {
         assert_eq!(r.created_at, t0, "created_at must survive resume");
         assert_eq!(r.last_used_at, t1);
         assert_eq!(r.state, SessionState::Live);
-        assert_eq!(r.card_id_live.as_deref(), Some("card-2"));
+        assert_eq!(r.card_id.as_deref(), Some("card-2"));
     }
 
     // ── list_for_workspace ───────────────────────────────────────────────────
@@ -1383,11 +1397,13 @@ mod tests {
 
         let r = l.get("live1").unwrap().unwrap();
         assert_eq!(r.state, SessionState::Closed);
-        assert_eq!(r.card_id_live, None);
+        // card_id is preserved across the demote transition so the
+        // client-side restore retains the binding after a tugcast crash.
+        assert_eq!(r.card_id.as_deref(), Some("c1"));
 
         let r = l.get("live2").unwrap().unwrap();
         assert_eq!(r.state, SessionState::Closed);
-        assert_eq!(r.card_id_live, None);
+        assert_eq!(r.card_id.as_deref(), Some("c2"));
 
         // Already-closed and failed rows untouched.
         assert_eq!(

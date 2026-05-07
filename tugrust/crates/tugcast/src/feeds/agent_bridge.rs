@@ -473,9 +473,8 @@ pub async fn run_session_bridge(
                     entry.spawn_state = SpawnState::Errored;
                 }
                 entry.input_tx = None;
-                // Release the live-card binding so a future resume
-                // from any card is allowed.
-                entry.card_id_live = None;
+                // `card_id` is preserved across the errored transition;
+                // liveness is encoded in `spawn_state`.
                 let claude_id = entry.claude_session_id.clone();
                 drop(entry);
                 // Crash exhaustion is a `failed` lifecycle ending: the
@@ -613,9 +612,8 @@ pub async fn run_session_bridge(
                     entry.spawn_state = SpawnState::Errored;
                 }
                 entry.input_tx = None;
-                // Release the live-card binding so a future resume
-                // from any card is allowed.
-                entry.card_id_live = None;
+                // `card_id` is preserved across the errored transition;
+                // liveness is encoded in `spawn_state`.
                 drop(entry);
                 if !already_closed {
                     info!(
@@ -781,7 +779,7 @@ pub async fn relay_session_io(
                                 // what's strictly required for atomicity with
                                 // the in-memory state mutation above.
                                 let persist_record =
-                                    entry.card_id_live.clone().map(|cid| {
+                                    entry.card_id.clone().map(|cid| {
                                         (
                                             cid,
                                             SessionKeyRecord {
@@ -800,7 +798,7 @@ pub async fn relay_session_io(
                                     });
                                 (
                                     entry.workspace_key.as_ref().to_owned(),
-                                    entry.card_id_live.clone(),
+                                    entry.card_id.clone(),
                                     persist_record,
                                 )
                             };
@@ -865,7 +863,7 @@ pub async fn relay_session_io(
                                     tug_session_id.as_str()
                                 }
                             };
-                            // `card_id_live` is `None` only if `do_spawn_session`
+                            // `card_id` is `None` only if `do_spawn_session`
                             // didn't populate it (which only happens for ledger
                             // entries rebound from tugbank at startup). The
                             // ledger column tolerates that — the row tracks
