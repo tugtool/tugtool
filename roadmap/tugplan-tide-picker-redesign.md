@@ -805,18 +805,18 @@ export interface FilteredTugListViewDataSource extends TugListViewDataSource {
   - Remove `.tide-card-picker-recents`, `.tide-card-picker-recents-list`, `.tide-card-picker-pending-placeholder` rules.
 
 **Tasks:**
-- [ ] Implement seven cell renderers.
-- [ ] Define a React context for cell-renderer callbacks (or pass via props on the data source — pick the smaller surface).
-- [ ] Add scoped CSS; remove obsolete rules.
+- [x] Implement seven cell renderers.
+- [x] Define a React context for cell-renderer callbacks (or pass via props on the data source — pick the smaller surface).
+- [x] Add scoped CSS; remove obsolete rules.
 - [ ] Verify `data-list-cell-role` styling renders as designed in DevTools.
 
 **Tests:**
-- [ ] Cell-renderer unit tests via `@testing-library/react` (render, click, role attribute, selected state).
+- [x] Cell-renderer unit tests via `@testing-library/react` (render, click, role attribute, selected state).
 
 **Checkpoint:**
-- [ ] `bun run check`
-- [ ] `bun test src/components/tugways/cards/__tests__/`
-- [ ] `bun run audit:tokens lint`
+- [x] `bun run check`
+- [x] `bun test src/components/tugways/cards/__tests__/`
+- [x] `bun run audit:tokens lint`
 
 ---
 

@@ -222,22 +222,6 @@
   font-family: var(--tug-font-family-sans);
 }
 
-/* Recent-projects section below the path input. Clicking a button
-   fills the input rather than spawning directly; all spawns go
-   through the session-mode radio group + Open confirm below. */
-.tide-card-picker-recents {
-  display: flex;
-  flex-direction: column;
-  gap: var(--tug-space-xs, 4px);
-}
-
-.tide-card-picker-recents-list {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--tug-space-xs, 4px);
-}
-
 /* Session-option layout inside each TugRadioItem.
    The radio circle is owned by TugRadioGroup; this block only shapes
    the per-row title + subtitle stack that we pass as the item's
@@ -282,18 +266,6 @@
   padding: 0;
   cursor: pointer;
   color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-/* Pending placeholder shown under the path field while the session
-   ledger request is in flight. Subdued copy so an empty-rows render
-   never falsely advertises "no sessions to resume" during the ~10–50ms
-   the server takes to settle. */
-/* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
-.tide-card-picker-pending-placeholder {
-  padding: var(--tug-space-sm, 8px) 0;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  font-size: var(--tug-font-size-xs, 0.75rem);
-  font-style: italic;
 }
 
 /* Forget confirmation — replaces the picker form's body when the user
@@ -343,6 +315,154 @@
   display: flex;
   justify-content: flex-end;
   padding-top: var(--tug-space-xs, 4px);
+}
+
+/* ----------------------------------------------------------------------------
+   .tide-card-picker-list-view — TugListView-driven picker body
+   ----------------------------------------------------------------------------
+   Phase 2 of tugplan-tide-picker-redesign. The picker form mounts a
+   single TugListView whose data source emits seven row kinds across
+   three optional sections (RECENTS, SESSIONS, PENDING). Token
+   sovereignty per [L20]: scoped overrides under
+   `.tide-card-picker-list-view`; no reach into `--tugx-list-view-*`.
+   ----------------------------------------------------------------------------- */
+
+/* Tighten the list view's row gap inside the picker — the picker's
+   rows are short and dense; the list view's default row-gap leaves
+   too much air between sections. */
+.tide-card-picker-list-view.tug-list-view {
+  --tugx-list-view-padding-block: var(--tug-space-2xs, 2px);
+  --tugx-list-view-padding-inline: 0;
+  --tugx-list-view-row-gap: var(--tug-space-2xs, 2px);
+}
+
+/* Section-header styling — driven by the wrapper-level
+   `data-list-cell-role="header"` set by TugListView per Phase 0
+   [D02]. Sentence case (no `text-transform: uppercase` per [D08]);
+   muted weight so headers read as separators, not as actions. */
+.tide-card-picker-list-view [data-list-cell-role="header"] {
+  padding-top: var(--tug-space-sm, 8px);
+}
+
+.tide-card-picker-list-view .tide-card-picker-section-header {
+  font-size: var(--tug-font-size-xs, 0.75rem);
+  font-weight: 600;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-family: var(--tug-font-family-sans);
+  padding: var(--tug-space-2xs, 2px) 0;
+  border-bottom: 1px solid
+    var(--tug7-element-global-border-normal-default-rest);
+}
+
+/* Section-footer styling for the forget-all link. Quiet, right-
+   aligned, action-y — distinct from the primary Open button so a
+   destructive action never reads as a primary affordance. */
+.tide-card-picker-list-view [data-list-cell-role="footer"] {
+  padding-top: var(--tug-space-xs, 4px);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.tide-card-picker-forget-all-link {
+  background: transparent;
+  border: none;
+  padding: var(--tug-space-2xs, 2px) var(--tug-space-xs, 4px);
+  font: inherit;
+  font-size: var(--tug-font-size-xs, 0.75rem);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  cursor: pointer;
+  border-radius: var(--tug-radius-xs, 4px);
+}
+
+.tide-card-picker-forget-all-link:hover,
+.tide-card-picker-forget-all-link:focus-visible {
+  color: var(--tug7-element-global-text-normal-strong-rest);
+  text-decoration: underline;
+  outline: none;
+}
+
+/* path-recent — Finder-style ellipsis-at-start truncation per [D07].
+   `direction: rtl` flips the truncation onto the leading edge;
+   `unicode-bidi: plaintext` keeps the path's logical character order
+   left-to-right. The full path lives on `title` and `aria-label` for
+   tooltip + screen-reader access. */
+.tide-card-picker-list-view .tide-card-picker-path-recent {
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-sm, 0.875rem);
+  padding: var(--tug-space-2xs, 2px) var(--tug-space-xs, 4px);
+  border-radius: var(--tug-radius-xs, 4px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  unicode-bidi: plaintext;
+  color: var(--tug7-element-global-text-normal-default-rest);
+  cursor: pointer;
+}
+
+.tide-card-picker-list-view .tide-card-picker-path-recent:hover {
+  background: var(--tug7-element-global-surface-neutral-muted-rest);
+}
+
+/* Match-range highlight on path-recent (and any other surface that
+   uses the shared <mark> element). Theme-token background, no padding
+   so consecutive matched characters don't visually disjoint. */
+/* @tug-renders-on: surface.global.data.tinted */
+.tide-card-picker-match {
+  background: var(--tug7-surface-global-data-tinted-default-rest);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  border-radius: var(--tug-radius-2xs, 2px);
+  padding: 0 1px;
+}
+
+/* session-new / session-resume cells: stacked title/subtitle row.
+   Selection highlight via [data-selected="true"] per [L06] (no React
+   state on appearance). Disabled rows ([data-disabled="true"]) dim
+   the content and disable the pointer cursor. */
+.tide-card-picker-list-view .tide-card-picker-session-option {
+  flex-direction: row;
+  align-items: center;
+  padding: var(--tug-space-xs, 4px) var(--tug-space-sm, 8px);
+  border-radius: var(--tug-radius-xs, 4px);
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--tug-space-sm, 8px);
+}
+
+.tide-card-picker-list-view .tide-card-picker-session-option > .tide-card-picker-session-option-title,
+.tide-card-picker-list-view .tide-card-picker-session-option > .tide-card-picker-session-option-subtitle {
+  flex-basis: 100%;
+}
+
+.tide-card-picker-list-view .tide-card-picker-session-option:hover {
+  background: var(--tug7-element-global-surface-neutral-muted-rest);
+}
+
+.tide-card-picker-list-view
+  .tide-card-picker-session-option[data-selected="true"] {
+  background: var(--tug7-element-global-surface-action-tinted-rest);
+  color: var(--tug7-element-global-text-normal-strong-rest);
+}
+
+.tide-card-picker-list-view
+  .tide-card-picker-session-option[data-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Reveal Forget icon on row hover or focus-within. The closed-state
+   row reads clean; the destructive action only surfaces on
+   engagement. */
+.tide-card-picker-list-view
+  .tide-card-picker-session-option:hover
+  .tide-card-picker-session-forget,
+.tide-card-picker-list-view
+  .tide-card-picker-session-option:focus-within
+  .tide-card-picker-session-forget,
+.tide-card-picker-list-view .tide-card-picker-session-forget:focus,
+.tide-card-picker-list-view .tide-card-picker-session-forget:hover {
+  opacity: 1;
 }
 
 /* ----------------------------------------------------------------------------
