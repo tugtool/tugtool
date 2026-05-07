@@ -52,6 +52,7 @@ import { TugAlertProvider } from "./components/tugways/tug-alert";
 import { TugBulletinProvider } from "./components/tugways/tug-bulletin";
 import { putLayout, putCardState, putFocusedCardId } from "./settings-api";
 import { TugThemeProvider, type ThemeName } from "./contexts/theme-provider";
+import { composeProviders } from "./lib/compose-providers";
 import type { IDeckManagerStore } from "./deck-manager-store";
 import { DeckManagerContext } from "./deck-manager-context";
 import { BASE_THEME_NAME } from "./theme-constants";
@@ -504,52 +505,27 @@ export class DeckManager implements IDeckManagerStore {
     this.pushCardListToHost();
 
     this.reactRoot.render(
-      React.createElement(
-        TugThemeProvider,
-        { initialTheme: this.initialTheme },
+      composeProviders(
+        [
+          [TugThemeProvider, { initialTheme: this.initialTheme }],
+          [TugTooltipProvider, null],
+          [ErrorBoundary, null],
+          [ResponderChainProvider, null],
+          [DeckManagerContext.Provider, { value: this }],
+          [CardLifecycleContext.Provider, { value: this.cardLifecycle }],
+          [AppLifecycleContext.Provider, { value: this.appLifecycle }],
+          [SheetLifecycleContext.Provider, { value: this.sheetLifecycle }],
+          [BannerLifecycleContext.Provider, { value: this.bannerLifecycle }],
+          [TugAlertProvider, null],
+          [TugBulletinProvider, null],
+        ],
         React.createElement(
-          TugTooltipProvider,
+          React.Fragment,
           null,
-          React.createElement(
-            ErrorBoundary,
-            null,
-            React.createElement(
-              ResponderChainProvider,
-              null,
-              React.createElement(
-                DeckManagerContext.Provider,
-                { value: this },
-                React.createElement(
-                  CardLifecycleContext.Provider,
-                  { value: this.cardLifecycle },
-                  React.createElement(
-                    AppLifecycleContext.Provider,
-                    { value: this.appLifecycle },
-                    React.createElement(
-                      SheetLifecycleContext.Provider,
-                      { value: this.sheetLifecycle },
-                      React.createElement(
-                        BannerLifecycleContext.Provider,
-                        { value: this.bannerLifecycle },
-                        React.createElement(
-                          TugAlertProvider,
-                          null,
-                          React.createElement(
-                            TugBulletinProvider,
-                            null,
-                            React.createElement(TugBannerProvider, {
-                              connection: this.connection,
-                            }),
-                            React.createElement(DeckCanvas, {}),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
+          React.createElement(TugBannerProvider, {
+            connection: this.connection,
+          }),
+          React.createElement(DeckCanvas, {}),
         ),
       ),
     );
