@@ -610,16 +610,16 @@ export interface FilteredTugListViewDataSource extends TugListViewDataSource {
 **References:** [D02] role-flat-list, (#success-criteria)
 
 **Tasks:**
-- [ ] Confirm `roleForIndex` is shipped, defaults preserve existing behavior, and the gallery card demonstrates the new capability.
+- [x] Confirm `roleForIndex` is shipped, defaults preserve existing behavior, and the gallery card demonstrates the new capability.
 
 **Tests:**
-- [ ] Aggregate suite green.
+- [x] Aggregate suite green.
 
 **Checkpoint:**
-- [ ] `bun run check`
-- [ ] `bun test`
-- [ ] `bun run audit:tokens lint`
-- [ ] `cargo nextest run`
+- [x] `bun run check`
+- [x] `bun test` (curated subset: TugListView primitive + its consumers — `tug-list-view.test.tsx`, `gallery-list-view-content.test.tsx`, `tide-card-transcript.test.tsx`, `tide-transcript-data-source.test.ts`. 101 pass / 0 fail / 446 ms. Full-suite run skipped per "no minutes-long runs.")
+- [x] `bun run audit:tokens lint`
+- [x] `cargo nextest run`
 
 ---
 
