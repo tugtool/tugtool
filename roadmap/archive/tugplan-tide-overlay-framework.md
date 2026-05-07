@@ -354,6 +354,8 @@ Both are done. No third attribute needs to exist.
 
 This section is the canonical reference for *why* the overlay/focus/responder system behaves the way it does. Module docstrings reference this section; future plan authors read it before proposing changes.
 
+> **2026 update (Tide picker redesign Step 9.6):** The Portals subsystem now distinguishes *pane-modal* surfaces (sheets, future modal-class surfaces) from *anchor-relative* and *app-modal* surfaces. Pane-modal surfaces portal into the host pane's frame element via `TugPaneFrameContext`, not into the canvas-overlay tier — modal scope IS the pane stacking context. The visual scrim for pane-modal surfaces is the pane's built-in scrim layer, raised via `useTugPaneScrim()`. Anchor-relative surfaces (popovers, tooltips) and the app-modal alert continue to portal into canvas-overlay. See [pane-model.md §Pane-modal vs canvas-overlay surfaces](../../tuglaws/pane-model.md#pane-modal-vs-canvas-overlay-surfaces) and [tugplan-tide-picker-redesign §D18, D19, D20, Step 9.6](../tugplan-tide-picker-redesign.md#step-9-6) for the full architectural narrative.
+
 **The five subsystems, what each owns:**
 
 ```

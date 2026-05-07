@@ -159,6 +159,28 @@ A developer changing Swift menu strings must preserve this vocabulary: Card-leve
 
 ---
 
+## Pane-modal vs canvas-overlay surfaces
+
+**A surface that claims pane-modal semantics — "this surface blocks interaction with this pane" — is scoped to the host Pane's stacking context, not to the canvas-overlay tier.** The Pane's outer frame element (`.tug-pane`, exposed via `TugPaneFrameContext` from `tug-pane.tsx`) is its own stacking context: position-absolute with an inline z-index assigned by the deck. Anything portaled into that frame paints inside the Pane's stacking context, so peer Panes z-stacked above paint above the modal panel automatically. Bleed across Panes is structurally impossible.
+
+The visual scrim for pane-modal surfaces lives on the Pane: every Pane carries a built-in scrim layer inside its chrome (`.tug-pane-scrim`), default opacity 0. Modal-class consumers raise it via `useTugPaneScrim()`, a ref-counted hook so multiple consumers compose without fighting. The scrim's chrome containment (`.tug-pane-chrome` is its own stacking context via `isolation: isolate`) means the scrim never paints across pane boundaries either.
+
+| Surface class | Portal target | Scope | Hook | Examples |
+|---|---|---|---|---|
+| Pane-modal | Pane frame (`TugPaneFrameContext`) | Host pane only | `useTugPaneScrim()` | `TugSheet`, future modal-class surfaces |
+| Anchor-relative (transient) | Canvas overlay (`useCanvasOverlay`) | Anchored, may extend past pane | (no scrim) | popovers, tooltips, completion lists |
+| App-modal | Canvas overlay (`useCanvasOverlay`) | Whole canvas | (canvas scrim) | `TugAlert` |
+
+The distinction is **the relationship to the host Pane**:
+
+- *"Scoped"* (pane-modal) — the surface blocks interaction with one Pane, paints with the Pane's stacking, moves with the Pane. Portal into the frame.
+- *"Anchored"* (transient) — the surface points at a control inside a Pane but may need to extend past the Pane's edges (a popover at the Pane's right edge is allowed to paint over the canvas grid beyond). Portal into canvas overlay.
+- *"Whole canvas"* (app-modal) — the surface blocks all interaction across all Panes and the canvas. Portal into canvas overlay.
+
+Modal scope is the Pane stacking context, not the canvas-overlay tier — picking canvas-overlay for a surface that is supposed to be modal-to-one-Pane sets up an entire class of bleed bugs that no amount of measurement-based confinement can fully fix. See [tugplan-tide-picker-redesign §D20 and Step 9.6](../roadmap/tugplan-tide-picker-redesign.md#step-9-6) for the architectural narrative this section formalizes.
+
+---
+
 ## Relationship to Other Laws
 
 | Law | Relationship |
@@ -190,6 +212,8 @@ A developer changing Swift menu strings must preserve this vocabulary: Card-leve
 | `tugapp/Sources/AppDelegate.swift` | Swift menu definitions and IPC senders |
 | `tugdeck/src/components/tugways/tug-pane.css` | `--tugx-pane-*` token aliases + chrome CSS |
 | `tugdeck/src/components/tugways/tug-pane-banner.css` | `--tugx-pane-banner-*` token aliases |
+| `tugdeck/src/lib/pane-scrim-registry.ts` | Per-pane-chrome ref-counted scrim toggle (the `data-scrim` attribute) |
+| `tugdeck/src/components/tugways/use-tug-pane-scrim.ts` | `useTugPaneScrim()` hook — pane-modal surfaces request the chrome's built-in scrim layer here |
 
 ---
 
