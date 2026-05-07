@@ -216,3 +216,53 @@ describe("TugPane – resize handles", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Pane-owned scrim layer [D18]
+// ---------------------------------------------------------------------------
+
+describe("TugPane – pane-owned scrim", () => {
+  it("renders the .tug-pane-scrim element inside .tug-pane-chrome regardless of sheet state", () => {
+    // The scrim is permanent — it lives in the chrome's DOM from the
+    // moment the pane mounts. Visibility is driven by the chrome's
+    // `data-scrim` attribute via the pane-scrim registry, not by
+    // conditional rendering. [L06]
+    const { container } = render(wrap(<TugPane {...defaultProps} />));
+    const chrome = container.querySelector(".tug-pane-chrome");
+    expect(chrome).not.toBeNull();
+    const scrim = chrome!.querySelector(".tug-pane-scrim");
+    expect(scrim).not.toBeNull();
+    expect(scrim!.getAttribute("aria-hidden")).toBe("true");
+    // No data-scrim attribute at rest — the chrome has not been
+    // requested by any consumer yet.
+    expect(chrome!.hasAttribute("data-scrim")).toBe(false);
+  });
+
+  it("each pane in a multi-pane render carries its own scrim element", () => {
+    // Independent panes must own independent scrim layers; the
+    // registry's per-element ref count keys off the chrome ref.
+    const { container } = render(
+      wrap(
+        <>
+          <TugPane
+            {...defaultProps}
+            stackState={makeStackState({ id: "pane-a" })}
+            zIndex={1}
+          />
+          <TugPane
+            {...defaultProps}
+            stackState={makeStackState({ id: "pane-b" })}
+            zIndex={2}
+          />
+        </>,
+      ),
+    );
+    const scrims = container.querySelectorAll(".tug-pane-scrim");
+    expect(scrims.length).toBe(2);
+    // Confirm each scrim is inside its own chrome.
+    const chromes = container.querySelectorAll(".tug-pane-chrome");
+    expect(chromes.length).toBe(2);
+    expect(chromes[0]!.querySelector(".tug-pane-scrim")).not.toBeNull();
+    expect(chromes[1]!.querySelector(".tug-pane-scrim")).not.toBeNull();
+  });
+});

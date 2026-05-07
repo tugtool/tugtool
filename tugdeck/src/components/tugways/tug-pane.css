@@ -32,6 +32,7 @@
  * | --tugx-pane-control-off-fg-hover                 | --tug7-surface-card-control-normal-muted-hover   | control      | .tug-pane:not([data-focused="true"]) .tug-pane-title-bar-controls .tug-button:hover (color) |
  * | --tug7-element-selection-text-normal-plain-rest  | --tug7-surface-selection-primary-normal-plain-rest | content      | ::highlight(card-selection) (color)  |
  * | --tug7-element-global-text-normal-muted-rest     | --tug7-surface-global-primary-normal-default-rest | informational | .tug-pane-loading (color)             |
+ * | --tugx-pane-scrim-bg                             | (card surface)                                    | overlay       | .tug-pane-scrim (background-color)    |
  */
 
 
@@ -93,6 +94,9 @@ body {
   --tugx-pane-content-dim-wash-color: var(--tug7-effect-card-wash-normal-dim-inactive);
   --tugx-pane-content-dim-wash-blend: var(--tug7-effect-card-wash-normal-blend-inactive);
 
+  /* --- Pane scrim (built-in modal scrim layer inside .tug-pane-chrome) --- */
+  --tugx-pane-scrim-bg: var(--tug7-surface-overlay-primary-normal-dim-rest);
+
   /* --- Pane accessory / findbar (aliases for chrome that uses these surfaces) --- */
   --tugx-pane-accessory-bg: var(--tug7-surface-global-primary-normal-sunken-rest);
   --tugx-pane-accessory-border: var(--tug7-element-global-border-normal-default-rest);
@@ -108,6 +112,13 @@ body {
 
 .tug-pane-chrome {
   position: relative;
+  /* Establish a stacking context so the scrim, the inactive-dim
+     pseudo layers (::before/::after at z-index 10/11), and any other
+     chrome-internal positioned descendants are confined to chrome's
+     paint layer. Without this, those z-indexed children would
+     participate in the frame's stacking context and could paint above
+     the sheet clip portaled into the frame (z-index: 2). [D18, D19] */
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -386,6 +397,50 @@ body {
   mix-blend-mode: var(--tugx-pane-content-dim-wash-blend);
   pointer-events: none;
   z-index: 11;
+}
+
+/* ============================================================================
+   Pane scrim — built-in modal scrim layer [D18]
+   ========================================================================= */
+
+/*
+ * Every pane carries a permanent scrim element inside its chrome
+ * (rendered by `TugPane`, sibling of the title bar and body). Modal-
+ * class consumers (sheets, future pane-modal surfaces) request the
+ * scrim via `useTugPaneScrim()`; the registry sets `data-scrim="on"`
+ * on the chrome and the rule below fades it in.
+ *
+ * Coverage: starts below the title bar so the title bar remains
+ * interactive while a pane-modal surface is up — drag, close, and
+ * collapse all stay live. The body area is the dead zone.
+ *
+ * Z-index: 12 places the scrim ABOVE the inactive-dim pseudo layers
+ * (::before z=10, ::after z=11) so a sheet opened on an unfocused
+ * pane still presents its scrim above the dim. The chrome's
+ * `isolation: isolate` confines this z-index to the chrome's stacking
+ * context, so the scrim never paints above the sheet clip portaled
+ * into the frame at z-index 2.
+ *
+ * @tug-renders-on: --tugx-pane-scrim-bg
+ */
+.tug-pane-scrim {
+  position: absolute;
+  top: var(--tug-chrome-height);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 12;
+  background-color: var(--tugx-pane-scrim-bg);
+  pointer-events: auto;
+  opacity: 0;
+  /* Transition declared in the rest state so both fade-in (0 → 1)
+     and fade-out (1 → 0) animate in lockstep with the sheet panel's
+     enter/exit transitions (same duration token). [L06] */
+  transition: opacity var(--tug-motion-duration-moderate) ease;
+}
+
+.tug-pane-chrome[data-scrim="on"] .tug-pane-scrim {
+  opacity: 1;
 }
 
 /*

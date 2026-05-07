@@ -1431,6 +1431,13 @@ export function TugPane({
               />
             </ResponderScope>
           </div>
+
+          {/* Pane-owned scrim layer [D18]. Permanent element; visibility
+              is driven by `data-scrim` on the chrome (set imperatively
+              by `useTugPaneScrim()` consumers via the pane-scrim
+              registry). Sized below the title bar so the title bar
+              stays interactive while pane-modal surfaces are up. */}
+          <div className="tug-pane-scrim" aria-hidden="true" data-testid="tug-pane-scrim" />
         </div>
       </TugPanePortalContext>
     </div>
