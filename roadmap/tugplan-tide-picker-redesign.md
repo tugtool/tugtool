@@ -1062,7 +1062,7 @@ This step ships as five commits in order. Each builds on the previous.
 - [x] 9.5b — Add controlled-mode API to `TugConfirmPopover`; re-export `TugPopoverAnchor`; tests. Land as commit 2.
 - [x] 9.5c — Add `REQUEST_FORGET_SESSION` action constant + action-naming.md entry. Land as commit 3. (Payload docs live inline in `action-vocabulary.ts` per the project pattern; no separate table in `action-naming.md` to update.)
 - [x] 9.5d — Refactor `tide-picker-cells.tsx` to a pure renderer; refactor `TideProjectPickerForm` to own confirmation state + popover; CSS cleanup. Land as commit 4.
-- [ ] 9.5e — Documentation updates (responder-chain.md, component-authoring.md). Land as commit 5.
+- [x] 9.5e — Documentation updates (responder-chain.md, component-authoring.md). Land as commit 5.
 - [ ] Manual smoke: trash → forget → trash → forget across multiple rows in succession; no focus glitch; no dead clicks (the bug from post-Step-9 vetting is gone).
 
 ##### Tests {#step-9-5-tests}

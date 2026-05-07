@@ -786,6 +786,47 @@ For form inputs that follow the field token family.
 
 ---
 
+### Cell Renderers (TugListView)
+
+Cell renderers in `TugListView` are pure render functions. The contract is enforced by convention; downstream of the convention is a class of "second click does nothing" bugs that virtualization recycle, data updates, and Radix portal teardown produce when cells carry their own state.
+
+**The rule:** A `TugListViewCellRenderer<...>` must be a pure function — no `useState`, no `useRef`, no `useEffect` / `useLayoutEffect`, no `useImperativeHandle`. Cells receive `(index, dataSource, kind, id)` plus React context, and return JSX. Selection state, popover state, transient confirmation flows — all of that lives above the list, in the responder that wraps it (typically the form / card).
+
+**Why:** Cells operate inside a windowed list. Their lifecycle is tied to viewport position and data identity, both of which the consumer doesn't control. State stored in a cell can be lost on virtualization recycle, on data-source update, or on cell unmount — producing subtle, hard-to-reproduce bugs that look like "the second click does nothing." [L02] also implies state belongs in stores, not in renderers; cells *are* renderers in the strictest sense.
+
+**What goes where:**
+
+| Concern | Lives in |
+|---|---|
+| Per-row visual state derived from data | Read from the data source row |
+| Selection state | The responder above the list (`useState` + a context `Provider` or a payload on `dataSource`) |
+| Confirmation popovers / inline edits / transient floating UI | The responder, with a single instance addressed via a `data-id` anchor lookup — not per-cell |
+| Trailing icon actions (trash, more, info) | Dispatch a chain action via `TugIconButton` (`dispatch={...}`); the responder handles the action |
+| Cell DOM ref (e.g. for `IntersectionObserver`) | The list view itself owns the ref; cells render markup only |
+
+**Anti-patterns:** raw `<button>` for trailing actions (use `TugIconButton`), per-cell `TugConfirmPopover` instances (hoist to the form, address by data id), `useState` for popover-open visual styling (drive `data-*` attributes from upstream state). The Tide picker's session-forget flow is the case study and reference implementation — see [tugplan-tide-picker-redesign §D17](../roadmap/tugplan-tide-picker-redesign.md#d17-pure-renderer-rule).
+
+---
+
+### Trailing Actions in Lists
+
+For trash / more / info / dismiss icon buttons that sit at the trailing edge of a list row.
+
+**When to use:** Any in-list affordance that's "click the icon to do something to this row." Reach for `TugIconButton` (`tugdeck/src/components/tugways/tug-icon-button.tsx`); never drop a raw `<button>`.
+
+**Why not raw `<button>`:** A raw button accepts browser focus on click in Chrome, promotes the chain via the document-level pointerdown walk, and triggers any wrapping Radix interaction (e.g. a popover trigger). Three behaviors fight on one click. The compose pattern from [responder-chain.md §Focus acceptance](responder-chain.md#focus-acceptance) is the answer; `TugIconButton` bakes it in: `data-tug-focus="refuse"`, `useControlDispatch()` plumbing, ghost-emphasis token treatment, hit target sizing. The result is one consistent, conformant primitive.
+
+**Two click modes:**
+
+- **Chain-action** (preferred): `dispatch={{ action, value, phase: "discrete" }}` carries a full `ActionEvent` (with payload) to the parent responder via `useControlDispatch`. The responder owns the resulting state change. This is the L11 shape.
+- **Direct-action** (fallback): `onClick={callback}` for one-off side effects that don't fit the chain vocabulary. Mutually exclusive with `dispatch`; setting both dev-warns.
+
+**Sender id:** `senderId` defaults to `useId()`. Pass an explicit value only for tests that need deterministic chain logging — the payload usually carries the discriminator (e.g. a sessionId).
+
+See [tugplan-tide-picker-redesign §D16](../roadmap/tugplan-tide-picker-redesign.md#d16-tug-icon-button) for the rationale and the picker's reference usage.
+
+---
+
 ## Selection and Focus
 
 Every component participates in the selection model. See [card-state-model.md](card-state-model.md) for the full design.
