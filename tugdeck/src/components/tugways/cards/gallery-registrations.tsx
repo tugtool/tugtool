@@ -44,6 +44,7 @@ import { GalleryCheckbox } from "./gallery-checkbox";
 import { GallerySwitch } from "./gallery-switch";
 import { GalleryThemeGenerator } from "./gallery-theme-generator";
 import { GalleryPopupButton } from "./gallery-popup-button";
+import { GalleryIconButton } from "./gallery-icon-button";
 import { GallerySlider } from "./gallery-slider";
 import { GalleryValueInput } from "./gallery-value-input";
 import { GalleryRadioGroup } from "./gallery-radio-group";
@@ -302,6 +303,16 @@ export function registerGalleryCards(): void {
     componentId: "gallery-popup-button",
     contentFactory: (_cardId) => <GalleryPopupButton />,
     defaultMeta: { title: "TugPopupButton", icon: "ChevronDown", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.buttons,
+  });
+
+  registerCard({
+    componentId: "gallery-icon-button",
+    contentFactory: (_cardId) => <GalleryIconButton />,
+    defaultMeta: { title: "TugIconButton", icon: "MousePointer2", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,

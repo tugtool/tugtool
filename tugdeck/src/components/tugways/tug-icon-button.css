@@ -1,0 +1,17 @@
+/* @tug-pairings: none — visual styling delegates to internal/tug-button.css
+   (the ghost-{action,danger} emphasis-role tokens). This file is intentionally
+   minimal; it exists only to provide a documented `tug-icon-button` data-slot
+   anchor that consumers and tests can scope CSS to without reaching into
+   tug-button internals.
+
+   Per [L20]: no new tokens are introduced. The underlying TugButton's
+   emphasis-role compound class (e.g. .tug-button-ghost-danger) carries the
+   hover/focus/active treatment. */
+
+.tug-icon-button {
+  /* TugButton's icon subtype already sizes the hit target via
+     .tug-button-icon-{xs,sm,md,lg}; this rule is intentionally empty so
+     the file's presence stays as the documented authoring surface
+     without adding cascade pressure. Future icon-button-only adjustments
+     (e.g. a different focus ring than text buttons) land here. */
+}
