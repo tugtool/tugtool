@@ -1428,8 +1428,8 @@ mod tests {
         // registers a per-session stream, pushes a `system_metadata`
         // frame, and asserts the broadcast subscriber receives it.
         use crate::feeds::agent_supervisor::{
-            AgentSupervisor, AgentSupervisorConfig, NoopSessionKeysStore, NoopSessionsRecorder,
-            SessionKeysStore, SessionsRecorder, SpawnerFactory,
+            AgentSupervisor, AgentSupervisorConfig, NoopSessionsRecorder, SessionsRecorder,
+            SpawnerFactory,
         };
         use crate::feeds::workspace_registry::WorkspaceRegistry;
         use tokio::sync::mpsc;
@@ -1439,7 +1439,6 @@ mod tests {
         let (code_tx, _) = broadcast::channel(16);
         let (control_tx, _) = broadcast::channel(16);
         let factory: SpawnerFactory = Arc::new(|| unreachable!("no spawner"));
-        let store: Arc<dyn SessionKeysStore> = Arc::new(NoopSessionKeysStore);
         let recorder: Arc<dyn SessionsRecorder> = Arc::new(NoopSessionsRecorder);
         let registry = Arc::new(WorkspaceRegistry::new());
         let router_cancel = CancellationToken::new();
@@ -1448,7 +1447,6 @@ mod tests {
             session_metadata_tx,
             code_tx,
             control_tx,
-            store,
             recorder,
             factory,
             AgentSupervisorConfig::default(),

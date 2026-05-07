@@ -27,7 +27,7 @@ use tracing::{error, info, warn};
 use tugcast_core::protocol::{FeedId, Frame, TugSessionId};
 
 use super::agent_supervisor::{
-    LedgerEntry, SessionKeyRecord, SessionKeysStore, SessionRecord, SessionsRecorder, SpawnState,
+    LedgerEntry, SessionRecord, SessionsRecorder, SpawnState,
     build_session_state_frame,
 };
 use super::code::{parse_code_input, splice_tug_session_id};
@@ -450,7 +450,6 @@ pub async fn run_session_bridge(
     project_dir: PathBuf,
     session_mode: SessionMode,
     sessions_recorder: Arc<dyn SessionsRecorder>,
-    store: Arc<dyn SessionKeysStore>,
     cancel: CancellationToken,
     retry_delay: Duration,
 ) {
@@ -553,7 +552,6 @@ pub async fn run_session_bridge(
             lines,
             &project_dir_str,
             sessions_recorder.as_ref(),
-            store.as_ref(),
             &cancel,
         )
         .await;
@@ -656,7 +654,6 @@ pub async fn relay_session_io(
     mut lines: Lines<BufReader<Box<dyn AsyncRead + Send + Unpin>>>,
     project_dir: &str,
     sessions_recorder: &dyn SessionsRecorder,
-    store: &dyn SessionKeysStore,
     cancel: &CancellationToken,
 ) -> RelayOutcome {
     // Captured when tugcode emits `resume_failed`. tugcode then
@@ -740,15 +737,16 @@ pub async fn relay_session_io(
                             // are populated by `do_spawn_session` before the
                             // bridge starts, so they're guaranteed present.
                             //
-                            // Also persist `claude_session_id` to tugbank
-                            // inside this same critical section so the
-                            // `(card_id → SessionKeyRecord)` mapping on disk
-                            // matches the in-memory ledger. Without this, a
-                            // cold boot's `rebind_from_tugbank` would hand back
-                            // a `LedgerEntry` with `claude_session_id = None`
-                            // and the next resume spawn would have no JSONL to
-                            // replay against.
-                            let (workspace_key, card_id, persist_record) = {
+                            // The `(card_id → session)` binding is no longer
+                            // persisted to tugbank's session-keys domain.
+                            // Persistence flows through the
+                            // `sessions_recorder.record(...)` call below, which
+                            // writes into the sqlite-backed `SessionLedger`
+                            // keyed by claude's session id. The ledger row's
+                            // `card_id` column is the source of truth for the
+                            // client-side restore (consumed via the
+                            // `list_card_bindings` CONTROL verb).
+                            let (workspace_key, card_id) = {
                                 let mut entry = ledger_entry.lock().await;
                                 if let Some(id) = &claude_id {
                                     entry.claude_session_id = Some(id.clone());
@@ -771,70 +769,11 @@ pub async fn relay_session_io(
                                         None,
                                     ));
                                 }
-                                // Build the persistence write payload while we
-                                // hold the lock; the actual `set_session_record`
-                                // call happens immediately after the lock is
-                                // released so the (very brief) blocking sqlite
-                                // write doesn't extend the lock window beyond
-                                // what's strictly required for atomicity with
-                                // the in-memory state mutation above.
-                                let persist_record =
-                                    entry.card_id.clone().map(|cid| {
-                                        (
-                                            cid,
-                                            SessionKeyRecord {
-                                                tug_session_id: tug_session_id
-                                                    .as_str()
-                                                    .to_string(),
-                                                project_dir: Some(project_dir.to_string()),
-                                                claude_session_id: entry
-                                                    .claude_session_id
-                                                    .clone(),
-                                                session_mode: Some(
-                                                    entry.session_mode.as_wire_str().to_string(),
-                                                ),
-                                            },
-                                        )
-                                    });
                                 (
                                     entry.workspace_key.as_ref().to_owned(),
                                     entry.card_id.clone(),
-                                    persist_record,
                                 )
                             };
-
-                            // Persist the updated record. Best-effort with a
-                            // loud warn on failure: a tugbank write that races
-                            // a disk-full or sqlite-locked condition leaves
-                            // in-memory ahead of disk for this session, but
-                            // the next session_init (or the next
-                            // do_spawn_session reconnect) will rewrite the
-                            // record. Skip when no card has bound this entry
-                            // yet (Idle entries from `rebind_from_tugbank`
-                            // before any client spawn_session arrives) — there
-                            // is no card_id to key the write under.
-                            if let Some((card_id, record)) = persist_record {
-                                if let Err(e) = store.set_session_record(&card_id, &record) {
-                                    warn!(
-                                        card_id = card_id.as_str(),
-                                        session = %tug_session_id,
-                                        error = %e.0,
-                                        "session_init: persist of claude_session_id failed; \
-                                         in-memory state ahead of disk until next rewrite"
-                                    );
-                                } else {
-                                    tracing::info!(
-                                        target: "tide::session-lifecycle",
-                                        event = "session_init.persist",
-                                        card_id = card_id.as_str(),
-                                        tug_session_id = %tug_session_id,
-                                        claude_session_id = record
-                                            .claude_session_id
-                                            .as_deref()
-                                            .unwrap_or(""),
-                                    );
-                                }
-                            }
 
                             // Record under claude's own session id — that
                             // is the on-disk file name, the only thing

@@ -33,14 +33,12 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::{Mutex, broadcast, mpsc};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
-use tugbank_core::{TugbankClient, Value};
 use tugcast_core::protocol::{FeedId, Frame, TugSessionId};
 
 use super::agent_bridge::{
@@ -49,10 +47,6 @@ use super::agent_bridge::{
 use super::code::parse_tug_session_id;
 use super::session_metadata::is_system_metadata;
 use super::workspace_registry::{WorkspaceError, WorkspaceKey, WorkspaceRegistry};
-
-/// Tugbank domain used to persist the `(card_id → tug_session_id)` mapping
-/// so the router can rebind sessions on restart.
-pub const SESSION_KEYS_DOMAIN: &str = "dev.tugtool.tide.session-keys";
 
 /// Capacity of per-session CODE_INPUT buffering queues.
 pub const BOUNDED_QUEUE_CAP: usize = 256;
@@ -333,152 +327,6 @@ impl LedgerEntry {
 /// Shared ledger map. Outer mutex guards membership; per-session mutex guards
 /// the entry's mutable fields.
 pub type Ledger = Arc<Mutex<HashMap<TugSessionId, Arc<Mutex<LedgerEntry>>>>>;
-
-// ---------------------------------------------------------------------------
-// SessionKeysStore — narrow persistence trait for card↔session bindings
-// ---------------------------------------------------------------------------
-
-/// Error returned from [`SessionKeysStore`] operations.
-#[derive(Debug, Error)]
-#[error("session keys store failure: {0}")]
-pub struct SessionKeysStoreError(pub String);
-
-/// Structured per-card session binding persisted in the session-keys domain.
-///
-/// Replaces the bare `Value::String(tug_session_id)` schema used in W1 with a
-/// forward-compatible record. The `#[serde(default)]` on the optional fields
-/// lets older readers and writers round-trip without explicit version tagging:
-/// a reader built against an older shape sees missing fields as `None`, and a
-/// writer built against a newer shape can populate them.
-///
-/// - `tug_session_id`: the routing key; always populated.
-/// - `project_dir`: `Some` for post-W2 records; `None` for pre-W2 legacy blobs
-///   (dropped on rebind once rebind populates workspace paths).
-/// - `claude_session_id`: populated by `relay_session_io`'s
-///   atomic-promote block when `session_init` arrives; `None` for
-///   fresh entries before that, and for legacy records written
-///   before the field was added.
-/// - `session_mode`: `Some("new"|"resume")` for post-[Q01] records; `None`
-///   for legacy blobs that predate the [Q01] fix. `do_spawn_session` writes
-///   the *effective* mode (what the bridge will actually use) on every
-///   spawn, so a single successful spawn upgrades a legacy record to the
-///   new shape. `rebind_from_tugbank` reads this back to seed the rebound
-///   `LedgerEntry`'s `session_mode` correctly across restarts; for legacy
-///   `None` records it falls back to `SessionMode::New` and the
-///   defense-in-depth path in `do_spawn_session` corrects the mode on the
-///   first reconnect when `spawn_state == Idle`. See `[Q01]` in
-///   `roadmap/tugplan-tide-connection-health.md` for the full root-cause
-///   write-up.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct SessionKeyRecord {
-    pub tug_session_id: String,
-    #[serde(default)]
-    pub project_dir: Option<String>,
-    #[serde(default)]
-    pub claude_session_id: Option<String>,
-    #[serde(default)]
-    pub session_mode: Option<String>,
-}
-
-/// Persistence surface for the `(card_id → SessionKeyRecord)` mapping.
-///
-/// The supervisor depends on a narrow trait (rather than on `TugbankClient`
-/// directly) so unit tests can inject an in-memory fake — and, per [D12]'s
-/// strict-vs-best-effort asymmetry, can inject an error-producing fake to
-/// exercise the `spawn_session` persistence-failure path.
-pub trait SessionKeysStore: Send + Sync {
-    /// Write `(card_id, record)` into the session-keys domain. The record is
-    /// serialized to `Value::Json` so forward-compatible fields round-trip
-    /// through the tugbank blob store.
-    fn set_session_record(
-        &self,
-        card_id: &str,
-        record: &SessionKeyRecord,
-    ) -> Result<(), SessionKeysStoreError>;
-
-    /// Delete the entry keyed by `card_id`. Returning `Ok(())` when the key is
-    /// missing is acceptable — the supervisor treats delete as best-effort.
-    fn delete_session_key(&self, card_id: &str) -> Result<(), SessionKeysStoreError>;
-
-    /// Enumerate every persisted `(card_id, SessionKeyRecord)` pair. Used by
-    /// [`AgentSupervisor::rebind_from_tugbank`] at startup to re-materialize
-    /// intent records from a previous run (per [F15]).
-    ///
-    /// The `TugbankClient` implementation performs a dual-read migration:
-    /// - `Value::Json` entries are deserialized as `SessionKeyRecord`.
-    /// - `Value::String` entries (pre-W2 legacy blobs) are promoted to a
-    ///   record with `project_dir = None, claude_session_id = None`.
-    ///
-    /// Entries whose `tug_session_id` is empty, whose payload is neither
-    /// string nor parseable JSON, or whose JSON is malformed must be
-    /// skipped under a warn log; returning them would leak garbage into
-    /// the ledger.
-    fn list_session_records(
-        &self,
-    ) -> Result<Vec<(String, SessionKeyRecord)>, SessionKeysStoreError>;
-}
-
-impl SessionKeysStore for TugbankClient {
-    fn set_session_record(
-        &self,
-        card_id: &str,
-        record: &SessionKeyRecord,
-    ) -> Result<(), SessionKeysStoreError> {
-        let json =
-            serde_json::to_value(record).map_err(|e| SessionKeysStoreError(e.to_string()))?;
-        self.set(SESSION_KEYS_DOMAIN, card_id, Value::Json(json))
-            .map_err(|e| SessionKeysStoreError(e.to_string()))
-    }
-
-    fn delete_session_key(&self, card_id: &str) -> Result<(), SessionKeysStoreError> {
-        self.delete(SESSION_KEYS_DOMAIN, card_id)
-            .map(|_| ())
-            .map_err(|e| SessionKeysStoreError(e.to_string()))
-    }
-
-    fn list_session_records(
-        &self,
-    ) -> Result<Vec<(String, SessionKeyRecord)>, SessionKeysStoreError> {
-        let snapshot = self
-            .read_domain(SESSION_KEYS_DOMAIN)
-            .map_err(|e| SessionKeysStoreError(e.to_string()))?;
-        let mut out = Vec::with_capacity(snapshot.len());
-        for (card_id, value) in snapshot {
-            let record = match value {
-                Value::Json(j) => match serde_json::from_value::<SessionKeyRecord>(j) {
-                    Ok(r) if !r.tug_session_id.is_empty() => r,
-                    Ok(_) => {
-                        warn!(
-                            card_id,
-                            "session-keys entry has empty tug_session_id; skipping"
-                        );
-                        continue;
-                    }
-                    Err(e) => {
-                        warn!(
-                            card_id,
-                            error = %e,
-                            "failed to parse SessionKeyRecord; skipping"
-                        );
-                        continue;
-                    }
-                },
-                Value::String(s) if !s.is_empty() => SessionKeyRecord {
-                    tug_session_id: s,
-                    project_dir: None,
-                    claude_session_id: None,
-                    session_mode: None,
-                },
-                _ => {
-                    warn!(card_id, "non-json non-string session-keys entry; skipping");
-                    continue;
-                }
-            };
-            out.push((card_id, record));
-        }
-        Ok(out)
-    }
-}
 
 // ---------------------------------------------------------------------------
 // SessionsRecorder — writer trait for the per-session ledger
@@ -1080,8 +928,6 @@ pub struct AgentSupervisor {
     /// Outbound CONTROL broadcast sender — used for `session_unknown`,
     /// `session_backpressure`, and other supervisor-emitted error frames.
     pub control_tx: broadcast::Sender<Frame>,
-    /// Narrow persistence surface for card↔session bindings.
-    pub store: Arc<dyn SessionKeysStore>,
     /// Writer for the per-session ledger. The bridge calls `record` on
     /// `session_init`, `record_turn` on each tugcode `result` event, and
     /// `mark_failed` on `resume_failed` / crash exhaustion. The supervisor
@@ -1353,8 +1199,8 @@ enum Decision {
 }
 
 impl AgentSupervisor {
-    /// Construct a supervisor with pre-made broadcast senders, a session
-    /// keys store, and a spawner factory. Returns `(supervisor,
+    /// Construct a supervisor with pre-made broadcast senders, a sessions
+    /// recorder, and a spawner factory. Returns `(supervisor,
     /// merger_register_rx)` — the caller is expected to `tokio::spawn`
     /// [`AgentSupervisor::merger_task`] with the returned receiver.
     #[allow(clippy::too_many_arguments)]
@@ -1363,7 +1209,6 @@ impl AgentSupervisor {
         session_metadata_tx: broadcast::Sender<Frame>,
         code_output_tx: broadcast::Sender<Frame>,
         control_tx: broadcast::Sender<Frame>,
-        store: Arc<dyn SessionKeysStore>,
         sessions_recorder: Arc<dyn SessionsRecorder>,
         spawner_factory: SpawnerFactory,
         config: AgentSupervisorConfig,
@@ -1375,7 +1220,6 @@ impl AgentSupervisor {
             session_metadata_tx,
             code_output_tx,
             control_tx,
-            store,
             sessions_recorder,
             None,
             spawner_factory,
@@ -1395,7 +1239,6 @@ impl AgentSupervisor {
         session_metadata_tx: broadcast::Sender<Frame>,
         code_output_tx: broadcast::Sender<Frame>,
         control_tx: broadcast::Sender<Frame>,
-        store: Arc<dyn SessionKeysStore>,
         sessions_recorder: Arc<dyn SessionsRecorder>,
         session_ledger: Option<Arc<crate::session_ledger::SessionLedger>>,
         spawner_factory: SpawnerFactory,
@@ -1411,7 +1254,6 @@ impl AgentSupervisor {
             client_sessions: Arc::new(Mutex::new(HashMap::new())),
             code_output_tx,
             control_tx,
-            store,
             sessions_recorder,
             session_ledger,
             spawner_factory,
@@ -1522,6 +1364,10 @@ impl AgentSupervisor {
                 }
                 Err(e) => return ControlOutcome::Error(e),
             },
+            "list_card_bindings" => {
+                self.do_list_card_bindings().await;
+                Ok(())
+            }
             "forget_session" => match parse_session_id_payload(payload) {
                 Ok(session_id) => {
                     self.do_forget_session(&session_id).await;
@@ -1796,52 +1642,29 @@ impl AgentSupervisor {
             }
         }
 
-        // Phase 2: strict tugbank write per [D12]. Partial ledger/
-        // client_sessions state on failure is tolerable (rewritten on retry);
-        // silent failure is not.
+        // (No Phase 2 tugbank write.) Persistence of the
+        // (card_id → session) binding now happens through the
+        // sqlite-backed `SessionLedger` row that the bridge writes on
+        // `session_init` (in `relay_session_io`). The supervisor's
+        // in-memory `LedgerEntry` carries `card_id` and `session_mode`
+        // for the lifetime of the entry, and the bridge's
+        // atomic-promote block calls `sessions_recorder.record(...)`
+        // with the card_id under a single lock, which the
+        // `LedgerSessionsRecorder` translates into a `record_spawn`
+        // ledger write keyed by claude's session id. The client-side
+        // restore consults that ledger via the `list_card_bindings`
+        // CONTROL verb. Eagerly persisting at Phase 2 (before
+        // `session_init`) was the source of the "Couldn't resume"
+        // banner for cards where the user picked Start Fresh and quit
+        // before submitting — no JSONL ever existed but the binding
+        // was on disk. The new shape persists only after a real
+        // session is observable.
         //
-        // [Q01]: persist the *effective* session mode (computed above)
-        // rather than the request's mode. For a fresh entry the two are
-        // identical; for a reconnect or a defense-in-depth-corrected
-        // rebound entry the effective mode reflects what the bridge
-        // actually uses, and writing that here closes the persistence
-        // gap so the next `rebind_from_tugbank` reads the correct mode
-        // back without needing the defense-in-depth path again.
-        //
-        // Preserve the persisted `claude_session_id` on reconnects. A
-        // fresh insert (`inserted == true`) has `entry.claude_session_id
-        // == None` by construction, so the record carries `None` — the
-        // bridge will fill it in via `relay_session_io`'s atomic-promote
-        // block on the next `session_init`. A reconnect (`inserted ==
-        // false`) for an entry that was either rebound from tugbank or
-        // already promoted to `Live` carries `Some(...)`; reading from
-        // the entry preserves the persisted id across the rewrite
-        // instead of clobbering it back to `None`.
-        let preserved_claude_session_id = {
-            let entry = entry_arc.lock().await;
-            entry.claude_session_id.clone()
-        };
-        let record = SessionKeyRecord {
-            tug_session_id: tug_session_id.as_str().to_string(),
-            project_dir: Some(project_dir_str.clone()),
-            claude_session_id: preserved_claude_session_id,
-            session_mode: Some(effective_session_mode.as_wire_str().to_string()),
-        };
-        if let Err(e) = self.store.set_session_record(card_id, &record) {
-            warn!(
-                card_id,
-                session = %tug_session_id,
-                error = %e.0,
-                "spawn_session: tugbank write failed"
-            );
-            // Release the workspace refcount we acquired in Phase 0, but
-            // only if we inserted a new ledger entry (for a reconnect we
-            // already released above).
-            if inserted {
-                let _ = self.registry.release(&workspace_key);
-            }
-            return Err(ControlError::PersistenceFailure(e.0));
-        }
+        // Effective session mode is still tracked in-memory on the
+        // entry above; rebind reconstructs it from the ledger row's
+        // `state` plus the claude_session_id.
+        let _ = effective_session_mode;
+        let _ = project_dir_str;
 
         // Phase 3: per-session mutation + publish + replay, under the
         // per-session lock. Reconnect flows observe the existing entry and
@@ -2102,6 +1925,65 @@ impl AgentSupervisor {
         let _ = self.control_tx.send(Frame::new(
             FeedId::CONTROL,
             serde_json::to_vec(&body).expect("list_sessions_ok serializes"),
+        ));
+    }
+
+    /// Handle a `list_card_bindings` CONTROL request. Reads every
+    /// non-failed ledger row carrying a `card_id` and broadcasts a
+    /// `list_card_bindings_ok` response. The client-side
+    /// `restoreTideSessions` consumes this on startup and reconnect to
+    /// re-assert per-card bindings; replaces the legacy tugbank
+    /// `session-keys` domain read with a ledger-backed source of truth.
+    /// The response carries one row per (card_id, session_id) — the
+    /// client picks the newest per card.
+    async fn do_list_card_bindings(&self) {
+        let Some(ledger) = self.session_ledger.as_ref() else {
+            // No ledger wired — emit an empty response so a confused
+            // client doesn't sit on a pending state forever.
+            let body = serde_json::json!({
+                "action": "list_card_bindings_ok",
+                "bindings": serde_json::Value::Array(Vec::new()),
+            });
+            let _ = self.control_tx.send(Frame::new(
+                FeedId::CONTROL,
+                serde_json::to_vec(&body).expect("list_card_bindings_ok serializes"),
+            ));
+            return;
+        };
+        let rows = match ledger.list_with_card_id() {
+            Ok(r) => r,
+            Err(err) => {
+                warn!(error = %err, "list_card_bindings failed");
+                let body = serde_json::json!({
+                    "action": "list_card_bindings_err",
+                    "reason": "ledger_read_failed",
+                });
+                let _ = self.control_tx.send(Frame::new(
+                    FeedId::CONTROL,
+                    serde_json::to_vec(&body).expect("list_card_bindings_err serializes"),
+                ));
+                return;
+            }
+        };
+        let bindings: Vec<serde_json::Value> = rows
+            .into_iter()
+            .filter_map(|row| {
+                let card_id = row.card_id?;
+                Some(serde_json::json!({
+                    "card_id": card_id,
+                    "session_id": row.session_id,
+                    "project_dir": row.project_dir,
+                    "state": row.state,
+                }))
+            })
+            .collect();
+        let body = serde_json::json!({
+            "action": "list_card_bindings_ok",
+            "bindings": bindings,
+        });
+        let _ = self.control_tx.send(Frame::new(
+            FeedId::CONTROL,
+            serde_json::to_vec(&body).expect("list_card_bindings_ok serializes"),
         ));
     }
 
@@ -2431,31 +2313,23 @@ impl AgentSupervisor {
             return;
         }
 
-        // Best-effort tugbank delete: the persisted record is the
-        // canonical source of truth for cold-boot rebinds, so a stale
-        // record left behind would let a Tug.app restart restore the
-        // very session the user just reset. A failure here is logged
-        // loudly but does not fail the reset — the in-memory state is
-        // already correct, and the next successful `spawn_session` will
-        // rewrite the record with cleared fields. Idempotent: a retry of
-        // reset_session on an already-reset session sees no row to
-        // delete and proceeds to the (already-canceled) cancel step,
-        // which is itself idempotent.
-        if let Err(e) = self.store.delete_session_key(card_id) {
-            warn!(
-                card_id,
-                session = %tug_session_id,
-                error = %e.0,
-                "reset_session: tugbank delete failed, continuing"
-            );
-        } else {
-            tracing::info!(
-                target: "tide::session-lifecycle",
-                event = "reset_session.persist_cleared",
-                card_id = card_id,
-                tug_session_id = %tug_session_id,
-            );
-        }
+        // The legacy session-keys tugbank delete used to live here so a
+        // restart wouldn't restore the very session the user just reset.
+        // The session-keys domain has been retired — the sqlite ledger is
+        // the source of truth now. Reset clears the in-memory entry's
+        // `claude_session_id` (above) and `card_id` is preserved on the
+        // ledger row only via a future `record_spawn` call. The next
+        // `rebind_from_ledger` reads the ledger row's current state, so a
+        // reset session whose ledger row is still `live` would rebind —
+        // but `do_close_session` (called below in this flow) marks the
+        // ledger row `closed` first, and the live-elsewhere check then
+        // gates on `spawn_state` rather than ledger-row presence.
+        tracing::info!(
+            target: "tide::session-lifecycle",
+            event = "reset_session.cleared",
+            card_id = card_id,
+            tug_session_id = %tug_session_id,
+        );
 
         let _ =
             self.session_state_tx
@@ -3025,7 +2899,6 @@ impl AgentSupervisor {
             (entry.project_dir.clone(), entry.session_mode)
         };
         let sessions_recorder = self.sessions_recorder.clone();
-        let store = self.store.clone();
         tokio::spawn(async move {
             run_session_bridge(
                 tug_session_id_owned,
@@ -3037,7 +2910,6 @@ impl AgentSupervisor {
                 project_dir,
                 session_mode,
                 sessions_recorder,
-                store,
                 cancel_for_bridge,
                 DEFAULT_RETRY_DELAY,
             )
@@ -3055,11 +2927,18 @@ impl AgentSupervisor {
 
     /// Re-materialize ledger entries from persisted tugbank state.
     ///
-    /// Called once at startup from `main.rs`. Reads every
-    /// `(card_id, tug_session_id)` pair stored in the
-    /// [`SESSION_KEYS_DOMAIN`] and inserts a fresh `Idle` [`LedgerEntry`]
-    /// for each `tug_session_id` that is not already present in the ledger.
-    /// Returns the number of entries that were newly inserted.
+    /// Re-materialize ledger entries from the sqlite-backed
+    /// [`SessionLedger`].
+    ///
+    /// Called once at startup from `main.rs`. Walks every non-failed row
+    /// carrying a `card_id` and inserts a fresh `Idle` [`LedgerEntry`] for
+    /// each `session_id` that is not already present in the in-memory
+    /// ledger map. Returns the number of entries that were newly inserted.
+    ///
+    /// Replaces the legacy `rebind_from_tugbank` path that read from the
+    /// `dev.tugtool.tide.session-keys` tugbank domain. The sqlite ledger
+    /// is now the single source of truth for the (card → session)
+    /// binding; the tugbank domain has been retired.
     ///
     /// Per [F15] this path does **not**:
     ///
@@ -3068,35 +2947,28 @@ impl AgentSupervisor {
     ///   with no cleanup trigger. Real clients connecting after startup
     ///   send their own `spawn_session` CONTROL frames via [D14]'s normal
     ///   flow, which populate `client_sessions` for the real client_id.
-    /// - write to or delete from tugbank — the helper is strictly read-only.
+    /// - mutate the sqlite ledger — the helper is strictly read-only.
     /// - publish any `SESSION_STATE` frames — the rebound entries are
     ///   unobservable until a real client subsequently calls `spawn_session`
     ///   for one of them, at which point the existing entry is reused and
     ///   the normal `pending` publish fires.
-    pub async fn rebind_from_tugbank(&self) -> Result<usize, SessionKeysStoreError> {
-        let entries = self.store.list_session_records()?;
+    pub async fn rebind_from_ledger(&self) -> Result<usize, crate::session_ledger::LedgerError> {
+        let Some(ledger_db) = self.session_ledger.as_ref() else {
+            return Ok(0);
+        };
+        let rows = ledger_db.list_with_card_id()?;
         let mut inserted = 0usize;
         // We acquire workspaces via `registry.get_or_create` outside the
         // ledger mutex (it takes its own std::sync::Mutex internally), so
         // we can't hold the ledger across the loop. Iterate per-record:
         // validate → get_or_create → lock ledger briefly → insert.
-        for (card_id, record) in entries {
-            // [D03]: drop records without a workspace binding. Pre-W2
-            // records have `project_dir == None`; they can't be rebound
-            // without losing the end-to-end workspace isolation guarantee.
-            // Log the drop but do not propagate an error — this is a
-            // one-time migration event, not a fault condition.
-            let Some(project_dir_str) = record.project_dir.clone() else {
-                warn!(
-                    card_id,
-                    tug_session_id = %record.tug_session_id,
-                    "rebind: dropping pre-W2 record with no project_dir"
-                );
+        for row in rows {
+            let Some(card_id) = row.card_id.clone() else {
                 continue;
             };
-            let project_dir = PathBuf::from(&project_dir_str);
+            let project_dir = PathBuf::from(&row.project_dir);
 
-            // Validate + acquire the workspace for this record. Invalid
+            // Validate + acquire the workspace for this row. Invalid
             // paths (nonexistent / not-a-directory / permission-denied)
             // are logged and skipped — the user may have removed or
             // renamed the project directory between runs.
@@ -3108,10 +2980,10 @@ impl AgentSupervisor {
                 Err(WorkspaceError::InvalidProjectDir { reason, .. }) => {
                     warn!(
                         card_id,
-                        tug_session_id = %record.tug_session_id,
+                        session_id = row.session_id.as_str(),
                         path = ?project_dir,
                         reason,
-                        "rebind: dropping record with invalid project_dir"
+                        "rebind: dropping ledger row with invalid project_dir"
                     );
                     continue;
                 }
@@ -3122,25 +2994,21 @@ impl AgentSupervisor {
             let workspace_key = workspace_entry.workspace_key.clone();
             drop(workspace_entry);
 
-            let tug_session_id = TugSessionId::new(record.tug_session_id);
+            // The ledger row's `session_id` is claude's id (post
+            // session_init). Use it as the tug_session_id for the
+            // rebound entry — for un-forked sessions the two ids are
+            // identical, and for forked sessions claude's id is what
+            // `--resume <id>` accepts so the next spawn will work
+            // against the JSONL on disk regardless.
+            let tug_session_id = TugSessionId::new(row.session_id.clone());
 
-            // [Q01] resolution: read the user's original `session_mode`
-            // from the persisted record so the rebound entry seeds with
-            // the mode the bridge needs on the first reconnect. Records
-            // written by post-fix builds carry `Some("new"|"resume")`;
-            // pre-fix legacy records carry `None` and we fall back to
-            // `SessionMode::New` (the historical default). The
+            // Resume mode is the always-correct restore intent: we have
+            // a recorded session, the client wants its history. The
             // defense-in-depth path in `do_spawn_session` upgrades
-            // legacy entries to the request's mode when `spawn_state ==
-            // Idle` and re-persists the full schema, so a single
-            // successful spawn migrates the record and the next restart
-            // reads it back correctly without the defense path firing.
-            let rebound_mode = SessionMode::from_wire_str(record.session_mode.as_deref());
-            let mode_source: &'static str = if record.session_mode.is_some() {
-                "persisted"
-            } else {
-                "legacy_default"
-            };
+            // legacy entries to the client's requested mode when
+            // `spawn_state == Idle`, so a fresh-mode spawn from the
+            // picker against the same id still works.
+            let rebound_mode = SessionMode::Resume;
 
             // Insert the ledger entry — or, if one already exists (this
             // function is idempotent per [F15]), release the workspace
@@ -3158,29 +3026,22 @@ impl AgentSupervisor {
                 rebound_mode,
                 CrashBudget::new(3, Duration::from_secs(60)),
             );
-            // Rehydrate the persisted `claude_session_id` so the first
+            // Carry the persisted `claude_session_id` so the first
             // spawn after rebind threads `--resume-session <id>` through
-            // the spawner. Without this, the rebind would hand back an
-            // entry with `claude_session_id = None`, the spawner would
-            // fall back to `--resume <tug_session_id>`, and any session
-            // whose claude id has diverged from its tug id (e.g. a
-            // forked session) would try to read a non-existent JSONL
-            // and resume_failed.
-            entry.claude_session_id = record.claude_session_id.clone();
-            // Trace the rebound mode + its source so [Q01]-shaped
-            // regressions (a missing or mis-parsed `session_mode` field
-            // turning into a New-default rebound entry that the bridge
-            // then spawns against an existing JSONL) are greppable
-            // alongside the `spawn.effective_mode` event that fires on
-            // the subsequent client reconnect.
+            // the spawner. The ledger's session_id IS claude's id post
+            // session_init.
+            entry.claude_session_id = Some(row.session_id.clone());
+            // Carry the card binding so the live-elsewhere check fires
+            // correctly on a cross-card resume request after rebind.
+            entry.card_id = Some(card_id.clone());
             tracing::info!(
                 target: "tide::session-lifecycle",
                 event = "rebind.entry",
-                card_id = card_id,
+                card_id = card_id.as_str(),
                 tug_session_id = %tug_session_id,
                 rebound_mode = rebound_mode.as_wire_str(),
-                mode_source,
-                claude_session_id = entry.claude_session_id.as_deref().unwrap_or(""),
+                mode_source = "ledger",
+                claude_session_id = row.session_id.as_str(),
             );
             ledger.insert(tug_session_id, Arc::new(Mutex::new(entry)));
             inserted += 1;
@@ -3225,37 +3086,13 @@ impl SessionsRecorder for NoopSessionsRecorder {
     }
 }
 
-/// Minimal in-memory [`SessionKeysStore`] used by cross-module router tests.
-/// Gated on `#[cfg(test)]` so it is not compiled into production builds.
-#[cfg(test)]
-pub(crate) struct NoopSessionKeysStore;
-
-#[cfg(test)]
-impl SessionKeysStore for NoopSessionKeysStore {
-    fn set_session_record(
-        &self,
-        _card_id: &str,
-        _record: &SessionKeyRecord,
-    ) -> Result<(), SessionKeysStoreError> {
-        Ok(())
-    }
-    fn delete_session_key(&self, _card_id: &str) -> Result<(), SessionKeysStoreError> {
-        Ok(())
-    }
-    fn list_session_records(
-        &self,
-    ) -> Result<Vec<(String, SessionKeyRecord)>, SessionKeysStoreError> {
-        Ok(Vec::new())
-    }
-}
-
-/// Construct an [`AgentSupervisor`] with stub channels, a no-op session
-/// keys store, and a panic-on-call spawner factory. Returns the supervisor
-/// wrapped in `Arc` plus its merger register receiver (which the caller
-/// should either spawn `merger_task` against or drain to keep the register
-/// channel alive). Used by router tests that need to exercise CONTROL
-/// interception or client-disconnect hooks without constructing a full
-/// subprocess pipeline.
+/// Construct an [`AgentSupervisor`] with stub channels and a stalled
+/// spawner factory. Returns the supervisor wrapped in `Arc` plus its
+/// merger register receiver (which the caller should either spawn
+/// `merger_task` against or drain to keep the register channel alive).
+/// Used by router tests that need to exercise CONTROL interception or
+/// client-disconnect hooks without constructing a full subprocess
+/// pipeline.
 #[cfg(test)]
 pub(crate) fn test_minimal_supervisor() -> (Arc<AgentSupervisor>, mpsc::Receiver<MergerRegistration>)
 {
@@ -3284,7 +3121,6 @@ pub(crate) fn test_minimal_supervisor() -> (Arc<AgentSupervisor>, mpsc::Receiver
     }
     let factory: SpawnerFactory =
         Arc::new(|| Arc::new(MinimalStallSpawner) as Arc<dyn ChildSpawner>);
-    let store: Arc<dyn SessionKeysStore> = Arc::new(NoopSessionKeysStore);
     let recorder: Arc<dyn SessionsRecorder> = Arc::new(NoopSessionsRecorder);
     let registry = Arc::new(WorkspaceRegistry::new());
     let cancel = CancellationToken::new();
@@ -3293,7 +3129,6 @@ pub(crate) fn test_minimal_supervisor() -> (Arc<AgentSupervisor>, mpsc::Receiver
         meta_tx,
         code_tx,
         control_tx,
-        store,
         recorder,
         factory,
         AgentSupervisorConfig::default(),
@@ -3350,10 +3185,9 @@ pub(crate) async fn install_live_session_for_tests(
 mod tests {
     use super::*;
     use std::future::pending;
-    use std::sync::Mutex as StdMutex;
 
     use super::super::agent_bridge::{
-        RelayOutcome, SessionChild, SpawnFuture, relay_session_io, run_session_bridge,
+        RelayOutcome, SessionChild, SpawnFuture, relay_session_io,
     };
 
     // ---- Test-only ChildSpawner fakes ----
@@ -3380,118 +3214,6 @@ mod tests {
         Arc::new(|| Arc::new(StallSpawner) as Arc<dyn ChildSpawner>)
     }
 
-    // ---- Test-only SessionKeysStore fakes ----
-
-    #[derive(Default)]
-    struct InMemoryStore {
-        entries: StdMutex<HashMap<String, SessionKeyRecord>>,
-        set_calls: StdMutex<u32>,
-        delete_calls: StdMutex<u32>,
-    }
-
-    impl InMemoryStore {
-        fn entries_snapshot(&self) -> HashMap<String, SessionKeyRecord> {
-            self.entries.lock().unwrap().clone()
-        }
-        fn set_call_count(&self) -> u32 {
-            *self.set_calls.lock().unwrap()
-        }
-        fn delete_call_count(&self) -> u32 {
-            *self.delete_calls.lock().unwrap()
-        }
-    }
-
-    impl SessionKeysStore for InMemoryStore {
-        fn set_session_record(
-            &self,
-            card_id: &str,
-            record: &SessionKeyRecord,
-        ) -> Result<(), SessionKeysStoreError> {
-            *self.set_calls.lock().unwrap() += 1;
-            self.entries
-                .lock()
-                .unwrap()
-                .insert(card_id.to_string(), record.clone());
-            Ok(())
-        }
-        fn delete_session_key(&self, card_id: &str) -> Result<(), SessionKeysStoreError> {
-            *self.delete_calls.lock().unwrap() += 1;
-            self.entries.lock().unwrap().remove(card_id);
-            Ok(())
-        }
-        fn list_session_records(
-            &self,
-        ) -> Result<Vec<(String, SessionKeyRecord)>, SessionKeysStoreError> {
-            Ok(self
-                .entries
-                .lock()
-                .unwrap()
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect())
-        }
-    }
-
-    struct FailingWriteStore {
-        delegate: InMemoryStore,
-    }
-
-    impl FailingWriteStore {
-        fn new() -> Self {
-            Self {
-                delegate: InMemoryStore::default(),
-            }
-        }
-    }
-
-    impl SessionKeysStore for FailingWriteStore {
-        fn set_session_record(
-            &self,
-            _card_id: &str,
-            _record: &SessionKeyRecord,
-        ) -> Result<(), SessionKeysStoreError> {
-            Err(SessionKeysStoreError("injected write failure".into()))
-        }
-        fn delete_session_key(&self, card_id: &str) -> Result<(), SessionKeysStoreError> {
-            self.delegate.delete_session_key(card_id)
-        }
-        fn list_session_records(
-            &self,
-        ) -> Result<Vec<(String, SessionKeyRecord)>, SessionKeysStoreError> {
-            self.delegate.list_session_records()
-        }
-    }
-
-    struct FailingDeleteStore {
-        delegate: InMemoryStore,
-    }
-
-    impl FailingDeleteStore {
-        fn new() -> Self {
-            Self {
-                delegate: InMemoryStore::default(),
-            }
-        }
-    }
-
-    impl SessionKeysStore for FailingDeleteStore {
-        fn set_session_record(
-            &self,
-            card_id: &str,
-            record: &SessionKeyRecord,
-        ) -> Result<(), SessionKeysStoreError> {
-            self.delegate.set_session_record(card_id, record)
-        }
-        fn delete_session_key(&self, _card_id: &str) -> Result<(), SessionKeysStoreError> {
-            Err(SessionKeysStoreError("injected delete failure".into()))
-        }
-        fn list_session_records(
-            &self,
-        ) -> Result<Vec<(String, SessionKeyRecord)>, SessionKeysStoreError> {
-            self.delegate.list_session_records()
-        }
-    }
-
     // ---- Test helpers ----
 
     /// Shared valid directory for tests that need *some* `project_dir`
@@ -3502,15 +3224,13 @@ mod tests {
         env!("CARGO_MANIFEST_DIR")
     }
 
-    fn make_supervisor_with_store(
-        store: Arc<dyn SessionKeysStore>,
-    ) -> (
+    fn make_supervisor_with_store() -> (
         AgentSupervisor,
         broadcast::Receiver<Frame>,
         broadcast::Receiver<Frame>,
         broadcast::Receiver<Frame>,
     ) {
-        make_supervisor_with_store_config(store, AgentSupervisorConfig::default())
+        make_supervisor_with_store_config(AgentSupervisorConfig::default())
     }
 
     /// Variant that accepts a custom [`AgentSupervisorConfig`] — P13 tests
@@ -3518,7 +3238,6 @@ mod tests {
     /// `max_spawns_per_minute` so the cap can be tripped with only a
     /// handful of spawn calls.
     fn make_supervisor_with_store_config(
-        store: Arc<dyn SessionKeysStore>,
         config: AgentSupervisorConfig,
     ) -> (
         AgentSupervisor,
@@ -3527,7 +3246,7 @@ mod tests {
         broadcast::Receiver<Frame>,
     ) {
         let ((sup, state_rx, meta_rx, control_rx), mut register_rx) =
-            make_supervisor_with_spawner_config(store, stall_spawner_factory(), config);
+            make_supervisor_with_spawner_config(stall_spawner_factory(), config);
         // Drain the merger register channel so `spawn_session_worker`'s
         // `merger_register_tx.send(...).await` succeeds without an actual
         // merger task attached. Dropping the receiver would short-circuit
@@ -3538,12 +3257,9 @@ mod tests {
     }
 
     /// Variant that also returns the merger register receiver so tests can
-    /// spawn `merger_task` against it. The primary tuple still matches the
-    /// original `make_supervisor_with_store` shape so existing tests compile
-    /// unchanged after going through the thin wrapper above.
+    /// spawn `merger_task` against it.
     #[allow(clippy::type_complexity)]
     fn make_supervisor_with_spawner(
-        store: Arc<dyn SessionKeysStore>,
         spawner_factory: SpawnerFactory,
     ) -> (
         (
@@ -3554,16 +3270,11 @@ mod tests {
         ),
         mpsc::Receiver<MergerRegistration>,
     ) {
-        make_supervisor_with_spawner_config(
-            store,
-            spawner_factory,
-            AgentSupervisorConfig::default(),
-        )
+        make_supervisor_with_spawner_config(spawner_factory, AgentSupervisorConfig::default())
     }
 
     #[allow(clippy::type_complexity)]
     fn make_supervisor_with_spawner_config(
-        store: Arc<dyn SessionKeysStore>,
         spawner_factory: SpawnerFactory,
         config: AgentSupervisorConfig,
     ) -> (
@@ -3587,7 +3298,6 @@ mod tests {
             meta_tx,
             code_tx,
             control_tx,
-            store,
             recorder,
             spawner_factory,
             config,
@@ -3740,8 +3450,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_spawn_session_writes_pending() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
+        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -3753,29 +3462,10 @@ mod tests {
         assert_eq!(state, "pending");
     }
 
-    #[tokio::test]
-    async fn test_spawn_session_writes_tugbank_entry() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
-
-        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
-            .await
-            .expect_handled();
-
-        let entries = store.entries_snapshot();
-        let rec = entries.get("card-1").expect("card-1 persisted");
-        assert_eq!(rec.tug_session_id, "sess-1");
-        // project_dir is now populated on the record (Step 1
-        // left it as `None` — that was the deferred state).
-        assert_eq!(rec.project_dir.as_deref(), Some(test_project_dir()));
-        assert_eq!(rec.claude_session_id, None);
-        assert_eq!(store.set_call_count(), 1);
-    }
 
     #[tokio::test]
     async fn test_spawn_session_inserts_into_client_sessions() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -3792,8 +3482,7 @@ mod tests {
     /// (the WS-drop-and-reconnect path) still succeed.
     #[tokio::test]
     async fn test_spawn_session_rejects_resume_when_live_on_other_card() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
 
         // First spawn binds sess-1 to card-A. Eager spawn publishes
         // `pending` then `spawning`; drain both so the rejection
@@ -3836,77 +3525,12 @@ mod tests {
             .expect_handled_with("same-card reconnect must succeed");
     }
 
-    #[tokio::test]
-    async fn test_spawn_session_rejects_missing_card_id() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
 
-        let payload = serde_json::to_vec(&serde_json::json!({
-            "action": "spawn_session",
-            "tug_session_id": "sess-1",
-        }))
-        .unwrap();
 
-        let err = sup
-            .handle_control("spawn_session", &payload, 10)
-            .await
-            .expect_error();
-        assert_eq!(err, ControlError::MissingCardId);
-
-        // No mutation: ledger, client_sessions, tugbank all untouched.
-        assert!(sup.ledger.lock().await.is_empty());
-        assert!(sup.client_sessions.lock().await.is_empty());
-        assert!(store.entries_snapshot().is_empty());
-        assert_eq!(store.set_call_count(), 0);
-        assert!(state_rx.try_recv().is_err());
-    }
-
-    #[tokio::test]
-    async fn test_spawn_session_rejects_empty_card_id() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
-
-        let err = sup
-            .handle_control("spawn_session", &spawn_payload("", "sess-1"), 10)
-            .await
-            .expect_error();
-        assert_eq!(err, ControlError::MissingCardId);
-        assert!(sup.ledger.lock().await.is_empty());
-        assert_eq!(store.set_call_count(), 0);
-    }
-
-    #[tokio::test]
-    async fn test_spawn_session_idempotent() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
-
-        let tug_id = TugSessionId::new("sess-1");
-        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
-            .await
-            .expect_handled();
-        let entry_before = sup.ledger.lock().await.get(&tug_id).unwrap().clone();
-
-        // Second spawn for the same id must preserve the existing entry.
-        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
-            .await
-            .expect_handled();
-        let entry_after = sup.ledger.lock().await.get(&tug_id).unwrap().clone();
-
-        assert!(
-            Arc::ptr_eq(&entry_before, &entry_after),
-            "ledger entry must be preserved across a duplicate spawn"
-        );
-        // Tugbank was re-written (set_call_count = 2).
-        assert_eq!(store.set_call_count(), 2);
-        // client_sessions still contains the id (HashSet semantics).
-        let cs = sup.client_sessions.lock().await;
-        assert!(cs.get(&10).unwrap().contains(&tug_id));
-    }
 
     #[tokio::test]
     async fn test_spawn_session_replays_latest_metadata_for_known_session() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, mut meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let (sup, _state_rx, mut meta_rx, _control_rx) = make_supervisor_with_store();
 
         // Pre-populate a ledger entry with latest_metadata (simulates reconnect
         // after a previous session had produced a system_metadata frame).
@@ -3933,8 +3557,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_spawn_session_with_no_prior_metadata_fires_no_replay() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, mut meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let (sup, _state_rx, mut meta_rx, _control_rx) = make_supervisor_with_store();
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 7)
             .await
@@ -3946,33 +3569,11 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_spawn_session_returns_err_on_tugbank_failure_injects_error_frame() {
-        let store = Arc::new(FailingWriteStore::new());
-        let (sup, mut state_rx, mut meta_rx, _control_rx) = make_supervisor_with_store(store);
-
-        let err = sup
-            .handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 42)
-            .await
-            .expect_error();
-        match err {
-            ControlError::PersistenceFailure(_) => {}
-            other => panic!("expected PersistenceFailure, got {other:?}"),
-        }
-
-        // SESSION_STATE `pending` must NOT have been published — the strict
-        // path aborts before the publish.
-        assert!(state_rx.try_recv().is_err());
-        // Metadata replay must not have fired either.
-        assert!(meta_rx.try_recv().is_err());
-    }
-
     // ---- handle_control: close_session ----
 
     #[tokio::test]
     async fn test_close_session_publishes_closed_and_removes_entry() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -3992,41 +3593,10 @@ mod tests {
         assert!(sup.ledger.lock().await.is_empty());
     }
 
-    /// close preserves the persisted `SessionKeyRecord` so a later
-    /// cold-boot rebind (or in-process re-spawn) can resume with the
-    /// captured `claude_session_id`. The historical close-time tugbank
-    /// delete was removed when persistence was added; the only path
-    /// that invalidates the record is `reset_session`.
-    #[tokio::test]
-    async fn test_close_session_preserves_tugbank_entry() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
-
-        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
-            .await
-            .expect_handled();
-        assert_eq!(store.entries_snapshot().len(), 1);
-
-        sup.handle_control("close_session", &close_payload("card-1", "sess-1"), 10)
-            .await
-            .expect_handled();
-        // The record persists across close. delete_session_key must NOT
-        // have been called — close is the "stop the subprocess but keep
-        // the history pointer" operation; only `reset_session` deletes.
-        assert_eq!(store.entries_snapshot().len(), 1);
-        assert_eq!(store.delete_call_count(), 0);
-        let rec = store
-            .entries_snapshot()
-            .get("card-1")
-            .cloned()
-            .expect("card-1 record preserved across close");
-        assert_eq!(rec.tug_session_id, "sess-1");
-    }
 
     #[tokio::test]
     async fn test_close_session_removes_from_client_sessions() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -4040,23 +3610,6 @@ mod tests {
         assert!(!set.contains(&TugSessionId::new("sess-1")));
     }
 
-    #[tokio::test]
-    async fn test_close_session_unknown_is_noop() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
-
-        sup.handle_control(
-            "close_session",
-            &close_payload("card-unknown", "sess-unknown"),
-            10,
-        )
-        .await
-        .expect_handled();
-
-        // No SESSION_STATE publish, no tugbank delete call.
-        assert!(state_rx.try_recv().is_err());
-        assert_eq!(store.delete_call_count(), 0);
-    }
 
     /// close no longer touches tugbank — `delete_session_key` is
     /// not called on the close path. A `FailingDeleteStore` that would
@@ -4066,8 +3619,7 @@ mod tests {
     /// delete anything.
     #[tokio::test]
     async fn test_close_session_does_not_call_tugbank_delete() {
-        let store = Arc::new(FailingDeleteStore::new());
-        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
 
         // Pre-populate a ledger entry and a client_sessions affinity.
         let tug_id = TugSessionId::new("sess-1");
@@ -4099,8 +3651,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_reset_session_publishes_closed_then_pending() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -4133,8 +3684,7 @@ mod tests {
     /// without spinning a real bridge.
     #[tokio::test]
     async fn test_request_replay_live_session_forwards_to_input_tx() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
 
         let tug_id = TugSessionId::new("sess-live");
         let entry_arc = insert_ledger_entry(&sup, &tug_id).await;
@@ -4168,8 +3718,7 @@ mod tests {
     /// dispatcher's first CODE_INPUT promotes Idle→Spawning.
     #[tokio::test]
     async fn test_request_replay_idle_session_is_noop() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
 
         let tug_id = TugSessionId::new("sess-idle");
         insert_ledger_entry(&sup, &tug_id).await;
@@ -4195,8 +3744,7 @@ mod tests {
     /// that has since been closed) cannot resurrect a dead session.
     #[tokio::test]
     async fn test_request_replay_closed_session_is_noop() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
 
         let tug_id = TugSessionId::new("sess-closed");
         let entry_arc = insert_ledger_entry(&sup, &tug_id).await;
@@ -4226,8 +3774,7 @@ mod tests {
     /// surface treats stale dispatches uniformly.
     #[tokio::test]
     async fn test_request_replay_unknown_session_is_noop() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
 
         let result = sup
             .handle_control(
@@ -4243,8 +3790,7 @@ mod tests {
     /// `MissingSessionId`. The `?` in handle_control propagates.
     #[tokio::test]
     async fn test_request_replay_missing_tug_session_id_is_error() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
 
         // Payload missing `tug_session_id`.
         let payload = serde_json::to_vec(&serde_json::json!({
@@ -4259,8 +3805,7 @@ mod tests {
     /// strings). Pins the wire-side validator's contract.
     #[tokio::test]
     async fn test_request_replay_empty_tug_session_id_is_error() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
 
         let payload = serde_json::to_vec(&serde_json::json!({
             "action": "request_replay",
@@ -4274,8 +3819,7 @@ mod tests {
     /// Malformed JSON payload: parser returns `Malformed`.
     #[tokio::test]
     async fn test_request_replay_malformed_payload_is_error() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
 
         let result = sup
             .handle_control("request_replay", b"not-json-at-all", 10)
@@ -4297,8 +3841,7 @@ mod tests {
     /// request_replay payload.
     #[tokio::test]
     async fn test_request_replay_spawning_session_enqueues_at_front_of_queue() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
 
         // Pre-load an entry in the Spawning state. Some other code path
         // (e.g., the dispatcher buffering a CODE_INPUT user_message
@@ -4348,8 +3891,7 @@ mod tests {
     /// resident; pop returns it; nothing else.
     #[tokio::test]
     async fn test_request_replay_spawning_empty_queue_just_request_replay() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
 
         let tug_id = TugSessionId::new("sess-r4-spawning-empty");
         let entry_arc = insert_ledger_entry(&sup, &tug_id).await;
@@ -4379,8 +3921,7 @@ mod tests {
     /// this.
     #[tokio::test]
     async fn test_request_replay_live_immediate_forward_unchanged_post_r4() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
 
         let tug_id = TugSessionId::new("sess-r4-live");
         let entry_arc = insert_ledger_entry(&sup, &tug_id).await;
@@ -4428,66 +3969,18 @@ mod tests {
         entry.spawn_state = state;
     }
 
-    #[tokio::test]
-    async fn test_spawn_session_cap_rejects_over_concurrent_limit() {
-        // Cap = 2. Preload two `Spawning` entries so the next fresh
-        // `spawn_session` trips the cap at the Phase 1 check.
-        let store = Arc::new(InMemoryStore::default());
-        let config = AgentSupervisorConfig {
-            max_concurrent_sessions: 2,
-            max_spawns_per_minute: 100,
-            ..Default::default()
-        };
-        let (sup, mut state_rx, _meta_rx, _control_rx) =
-            make_supervisor_with_store_config(store.clone(), config);
-
-        preload_entry_in_state(&sup, &TugSessionId::new("sess-a"), SpawnState::Spawning).await;
-        preload_entry_in_state(&sup, &TugSessionId::new("sess-b"), SpawnState::Live).await;
-
-        let err = sup
-            .handle_control("spawn_session", &spawn_payload("card-3", "sess-c"), 10)
-            .await
-            .expect_error();
-        assert_eq!(
-            err,
-            ControlError::CapExceeded {
-                reason: "concurrent_session_cap_exceeded"
-            }
-        );
-
-        // SESSION_STATE errored frame is published to any observer.
-        let frame = state_rx.try_recv().expect("errored frame published");
-        assert_eq!(frame.feed_id, FeedId::SESSION_STATE);
-        let v: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
-        assert_eq!(v["tug_session_id"].as_str(), Some("sess-c"));
-        assert_eq!(v["state"].as_str(), Some("errored"));
-        assert_eq!(
-            v["detail"].as_str(),
-            Some("concurrent_session_cap_exceeded")
-        );
-
-        // No ledger entry was created for the rejected spawn. The two
-        // preloaded entries remain; `sess-c` is absent.
-        let ledger = sup.ledger.lock().await;
-        assert_eq!(ledger.len(), 2);
-        assert!(!ledger.contains_key(&TugSessionId::new("sess-c")));
-
-        // Tugbank was not touched.
-        assert_eq!(store.set_call_count(), 0);
-    }
 
     #[tokio::test]
     async fn test_spawn_session_cap_excludes_idle_and_errored_entries() {
         // Cap = 2. Preload one `Idle` + one `Errored` entry. Neither
         // counts against the budget, so a third fresh spawn succeeds.
-        let store = Arc::new(InMemoryStore::default());
         let config = AgentSupervisorConfig {
             max_concurrent_sessions: 2,
             max_spawns_per_minute: 100,
             ..Default::default()
         };
         let (sup, _state_rx, _meta_rx, _control_rx) =
-            make_supervisor_with_store_config(store, config);
+            make_supervisor_with_store_config(config);
 
         preload_entry_in_state(&sup, &TugSessionId::new("sess-idle"), SpawnState::Idle).await;
         preload_entry_in_state(&sup, &TugSessionId::new("sess-err"), SpawnState::Errored).await;
@@ -4505,14 +3998,13 @@ mod tests {
         // *reconnect* `spawn_session` for the SAME tug_session_id must
         // succeed — the existing entry is reused and no new subprocess
         // is implied.
-        let store = Arc::new(InMemoryStore::default());
         let config = AgentSupervisorConfig {
             max_concurrent_sessions: 1,
             max_spawns_per_minute: 100,
             ..Default::default()
         };
         let (sup, _state_rx, _meta_rx, _control_rx) =
-            make_supervisor_with_store_config(store, config);
+            make_supervisor_with_store_config(config);
 
         preload_entry_in_state(&sup, &TugSessionId::new("sess-1"), SpawnState::Live).await;
 
@@ -4539,14 +4031,13 @@ mod tests {
         // Cap very high, rate = 2. The third fresh spawn within 60s
         // trips the leaky bucket even though the concurrent cap has
         // plenty of room.
-        let store = Arc::new(InMemoryStore::default());
         let config = AgentSupervisorConfig {
             max_concurrent_sessions: 100,
             max_spawns_per_minute: 2,
             ..Default::default()
         };
         let (sup, mut state_rx, _meta_rx, _control_rx) =
-            make_supervisor_with_store_config(store, config);
+            make_supervisor_with_store_config(config);
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -4591,14 +4082,13 @@ mod tests {
         // ancient timestamps (simulating spawns from 2 minutes ago),
         // then verify fresh spawns succeed because the trim empties the
         // window before the length check.
-        let store = Arc::new(InMemoryStore::default());
         let config = AgentSupervisorConfig {
             max_concurrent_sessions: 100,
             max_spawns_per_minute: 2,
             ..Default::default()
         };
         let (sup, _state_rx, _meta_rx, _control_rx) =
-            make_supervisor_with_store_config(store, config);
+            make_supervisor_with_store_config(config);
 
         {
             let ancient = Instant::now()
@@ -4631,14 +4121,13 @@ mod tests {
         // onto the leaky-bucket deque. Set rate=1, preload one entry,
         // reconnect to it → must succeed; then a single fresh spawn of
         // a different tsid must also succeed (budget still has 1 slot).
-        let store = Arc::new(InMemoryStore::default());
         let config = AgentSupervisorConfig {
             max_concurrent_sessions: 100,
             max_spawns_per_minute: 1,
             ..Default::default()
         };
         let (sup, _state_rx, _meta_rx, _control_rx) =
-            make_supervisor_with_store_config(store, config);
+            make_supervisor_with_store_config(config);
 
         preload_entry_in_state(&sup, &TugSessionId::new("sess-pre"), SpawnState::Idle).await;
 
@@ -4694,8 +4183,7 @@ mod tests {
         // error frame. This test pins that behavior so a future "emit a
         // control frame on every drop" refactor can't silently add noise
         // on the CONTROL feed.
-        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
-        let (sup, mut state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store(store);
+        let (sup, mut state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store();
 
         // Payload with no `tug_session_id` field.
         let payload = serde_json::to_vec(&serde_json::json!({
@@ -4722,8 +4210,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_orphan_input_rejected() {
-        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store(store);
+        let (sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store();
 
         sup.dispatch_one(code_input_frame("sess-unknown")).await;
 
@@ -4751,8 +4238,7 @@ mod tests {
         // used in this test never produces `session_init`, so the state
         // remains `Spawning` and the queued first frame stays in the
         // queue (the bridge's session_init handler is the drain point).
-        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
-        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -4789,8 +4275,7 @@ mod tests {
         // Under the aligned state model (B3 fix), the ledger state
         // remains `Spawning` until the bridge reads `session_init` —
         // StallSpawner never produces one, so both frames stay queued.
-        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
-        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -4820,8 +4305,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_queue_overflow_emits_backpressure() {
-        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store(store);
+        let (sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store();
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -4886,8 +4370,7 @@ mod tests {
         const ITERATIONS: usize = 64;
 
         for iter in 0..ITERATIONS {
-            let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
-            let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+            let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
             let sup = Arc::new(sup);
 
             // Pre-spawn from client 10 so both racers start from a populated
@@ -4999,230 +4482,8 @@ mod tests {
 
     // ---- rebind_from_tugbank tests ----
 
-    #[tokio::test]
-    async fn test_main_rebinds_intent_records_on_startup() {
-        // Populate a fake tugbank with two (card_id, tug_session_id) pairs,
-        // construct an AgentSupervisor wired to that store, then call
-        // `rebind_from_tugbank`. Assert that both ids appear in the ledger
-        // as `Idle` (the wire name is `pending`), that `client_sessions`
-        // is empty (per [F15] the rebind path does NOT insert a sentinel
-        // client id), and that the store was not re-written (the helper
-        // only reads on startup).
-        let store = Arc::new(InMemoryStore::default());
-        // rebind drops records with no `project_dir` ([D03]),
-        // so tests that want a successful rebind must populate the
-        // records with a valid path. Use the shared test fixture dir.
-        store
-            .set_session_record(
-                "card-a",
-                &SessionKeyRecord {
-                    tug_session_id: "sess-a".to_string(),
-                    project_dir: Some(test_project_dir().to_string()),
-                    claude_session_id: None,
-                    session_mode: None,
-                },
-            )
-            .unwrap();
-        store
-            .set_session_record(
-                "card-b",
-                &SessionKeyRecord {
-                    tug_session_id: "sess-b".to_string(),
-                    project_dir: Some(test_project_dir().to_string()),
-                    claude_session_id: None,
-                    session_mode: None,
-                },
-            )
-            .unwrap();
-        let set_calls_before = store.set_call_count();
 
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
 
-        let inserted = sup.rebind_from_tugbank().await.unwrap();
-        assert_eq!(inserted, 2);
-
-        let ledger = sup.ledger.lock().await;
-        let id_a = TugSessionId::new("sess-a");
-        let id_b = TugSessionId::new("sess-b");
-        assert!(ledger.contains_key(&id_a));
-        assert!(ledger.contains_key(&id_b));
-        for id in [&id_a, &id_b] {
-            let entry_arc = ledger.get(id).unwrap().clone();
-            let entry = entry_arc.lock().await;
-            assert_eq!(entry.spawn_state, SpawnState::Idle);
-        }
-        drop(ledger);
-
-        // `client_sessions` must be empty — the rebind path owns no
-        // WebSocket client_id.
-        assert!(sup.client_sessions.lock().await.is_empty());
-
-        // Store was not re-written.
-        assert_eq!(store.set_call_count(), set_calls_before);
-        assert_eq!(store.delete_call_count(), 0);
-
-        // Second rebind call is idempotent — no new inserts.
-        let inserted_second = sup.rebind_from_tugbank().await.unwrap();
-        assert_eq!(inserted_second, 0);
-    }
-
-    /// [Q01] Step 8b regression gate — legacy `SessionKeyRecord` (no
-    /// `session_mode` field) gets corrected on the first reconnect
-    /// through the defense-in-depth path.
-    ///
-    /// The bug history: `rebind_from_tugbank` used to hard-code
-    /// `SessionMode::New` because the persisted record carried no
-    /// `session_mode`. When the client reconnected with a
-    /// `spawn_session(mode=resume)` payload, the supervisor's
-    /// `or_insert_with` was a no-op (entry already existed), so the
-    /// ledger entry's mode stayed `New`. The bridge then spawned
-    /// tugcode with `--session-mode new --session-id <id>`, claude
-    /// rejected with "Session ID is already in use" (an existing JSONL
-    /// from a prior submitted turn), tugcode emitted `error` (not
-    /// `resume_failed`), the bridge saw `RelayOutcome::Crashed`, and
-    /// three retries inside 60 s exhausted the per-session
-    /// `CrashBudget`.
-    ///
-    /// The fix: extend `SessionKeyRecord` with `session_mode:
-    /// Option<String>`, persist it on every `do_spawn_session` write,
-    /// and read it back in `rebind_from_tugbank`. For legacy records
-    /// that predate the fix (`session_mode == None`), rebind still
-    /// defaults to `New`, but a defense-in-depth path inside
-    /// `do_spawn_session` updates the entry's mode on the first
-    /// reconnect when `spawn_state == Idle`. The Phase 2 tugbank write
-    /// then re-persists the full schema, migrating the record so the
-    /// next restart reads the correct mode without the defense path
-    /// firing.
-    ///
-    /// This test asserts the corrected behavior end-to-end against a
-    /// legacy record. A separate test
-    /// (`test_q01_rebind_persisted_resume_seeds_entry_directly`) covers
-    /// the post-fix first-class path.
-    #[tokio::test]
-    async fn test_q01_rebind_resume_corrects_legacy_record_on_reconnect() {
-        let store = Arc::new(InMemoryStore::default());
-        // Legacy record: pre-fix shape with no `session_mode` field.
-        // Simulated by writing `None` — the schema accepts it for
-        // forward compatibility with old blobs already in tugbank.
-        store
-            .set_session_record(
-                "card-tide",
-                &SessionKeyRecord {
-                    tug_session_id: "sess-resume-target".to_string(),
-                    project_dir: Some(test_project_dir().to_string()),
-                    claude_session_id: None,
-                    session_mode: None,
-                },
-            )
-            .unwrap();
-
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
-
-        // Tugcast restart: rebind defaults the legacy-record entry to
-        // `SessionMode::New`. The defense-in-depth path corrects this
-        // on the first reconnect.
-        let inserted = sup.rebind_from_tugbank().await.unwrap();
-        assert_eq!(inserted, 1);
-
-        let id = TugSessionId::new("sess-resume-target");
-        {
-            let ledger = sup.ledger.lock().await;
-            let entry = ledger.get(&id).unwrap().clone();
-            let entry = entry.lock().await;
-            assert_eq!(
-                entry.session_mode,
-                SessionMode::New,
-                "legacy record (session_mode == None) rebinds with the \
-                 historical New default; the defense-in-depth path \
-                 corrects it on the next reconnect",
-            );
-        }
-
-        // Frontend reconnect: client fires `spawn_session(mode=resume)`
-        // for the still-bound card. The defense-in-depth update fires
-        // because the entry is `Idle` and the request mode differs.
-        sup.handle_control(
-            "spawn_session",
-            &resume_payload("card-tide", "sess-resume-target"),
-            42,
-        )
-        .await
-        .expect_handled();
-
-        // [Q01] resolution: ledger entry's mode now reflects the
-        // request, so the bridge will spawn with `--session-mode resume
-        // --session-id <id>` and claude --resume succeeds against the
-        // existing JSONL.
-        let ledger = sup.ledger.lock().await;
-        let entry = ledger.get(&id).unwrap().clone();
-        drop(ledger);
-        let entry = entry.lock().await;
-        assert_eq!(
-            entry.session_mode,
-            SessionMode::Resume,
-            "[Q01] resolution: defense-in-depth in do_spawn_session \
-             updates an Idle rebound entry's session_mode to match the \
-             request before the bridge spawns. A regression here would \
-             reintroduce the crash_budget_exhausted symptom for any user \
-             who has tugbank records written before the fix landed.",
-        );
-        drop(entry);
-
-        // Phase 2's tugbank write should have re-persisted the full
-        // schema with the corrected mode, so the next restart reads
-        // `Resume` directly without going through the defense path.
-        let persisted = store.entries_snapshot();
-        let migrated = persisted
-            .iter()
-            .find(|(card_id, _)| *card_id == "card-tide")
-            .expect("session-keys record persists across reconnect");
-        assert_eq!(
-            migrated.1.session_mode.as_deref(),
-            Some("resume"),
-            "[Q01] resolution: the reconnect's tugbank write migrates \
-             the legacy record to the post-fix schema, populating \
-             `session_mode` so the next restart's rebind reads it back \
-             directly",
-        );
-    }
-
-    /// [Q01] Step 8b — first-class path: a `SessionKeyRecord` written
-    /// by post-fix tugcast carries `session_mode = Some(...)`. Rebind
-    /// must seed the rebound entry's mode from that field directly,
-    /// without relying on the defense-in-depth path.
-    #[tokio::test]
-    async fn test_q01_rebind_persisted_resume_seeds_entry_directly() {
-        let store = Arc::new(InMemoryStore::default());
-        store
-            .set_session_record(
-                "card-tide",
-                &SessionKeyRecord {
-                    tug_session_id: "sess-resume-target".to_string(),
-                    project_dir: Some(test_project_dir().to_string()),
-                    claude_session_id: None,
-                    session_mode: Some("resume".to_string()),
-                },
-            )
-            .unwrap();
-
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
-
-        let inserted = sup.rebind_from_tugbank().await.unwrap();
-        assert_eq!(inserted, 1);
-
-        let id = TugSessionId::new("sess-resume-target");
-        let ledger = sup.ledger.lock().await;
-        let entry = ledger.get(&id).unwrap().clone();
-        drop(ledger);
-        let entry = entry.lock().await;
-        assert_eq!(
-            entry.session_mode,
-            SessionMode::Resume,
-            "[Q01] resolution: rebind reads the persisted session_mode \
-             field directly. No reconnect needed for the bridge to use \
-             the right mode.",
-        );
-    }
 
     /// [Q01] Step 8b — defense-in-depth must NOT fire when the entry
     /// is past `Idle` (i.e., the bridge has already spawned tugcode).
@@ -5231,8 +4492,7 @@ mod tests {
     /// computation already gates on this, and we mirror the gate here.
     #[tokio::test]
     async fn test_q01_defense_in_depth_does_not_override_running_session() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
 
         // Fresh spawn in `new` mode. After `handle_control`, the entry
         // is `Spawning` (eager-spawn promoted it). A subsequent
@@ -5285,23 +4545,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_on_client_disconnect_drops_client_sessions_entry() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
-
-        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
-            .await
-            .expect_handled();
-        assert!(sup.client_sessions.lock().await.contains_key(&10));
-
-        sup.on_client_disconnect(10).await;
-
-        assert!(!sup.client_sessions.lock().await.contains_key(&10));
-        // Ledger and tugbank are untouched.
-        assert_eq!(sup.ledger.lock().await.len(), 1);
-        assert_eq!(store.entries_snapshot().len(), 1);
-    }
 
     // ---- merger_task, per-session bridge, metadata routing ----
 
@@ -5329,9 +4572,8 @@ mod tests {
         // merger, push one frame through each, and assert both frames
         // reach the shared CODE_OUTPUT broadcast. This pins the merger's
         // StreamMap-based fan-in.
-        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
         let ((sup, _state_rx, _meta_rx, _control_rx), register_rx) =
-            make_supervisor_with_spawner(store, stall_spawner_factory());
+            make_supervisor_with_spawner(stall_spawner_factory());
         let sup = Arc::new(sup);
         let mut code_rx = sup.code_output_tx.subscribe();
         let cancel = CancellationToken::new();
@@ -5392,9 +4634,8 @@ mod tests {
         // broadcast (a single-slot watch would drop one), AND each ledger
         // entry's `latest_metadata` must hold its own payload with no
         // cross-pollination.
-        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
         let ((sup, _state_rx, mut meta_rx, _control_rx), register_rx) =
-            make_supervisor_with_spawner(store, stall_spawner_factory());
+            make_supervisor_with_spawner(stall_spawner_factory());
         let sup = Arc::new(sup);
         let cancel = CancellationToken::new();
         let merger_handle = tokio::spawn(Arc::clone(&sup).merger_task(register_rx, cancel.clone()));
@@ -5504,9 +4745,8 @@ mod tests {
         // test — that pins the deletion of `session_watch_tx` from
         // `agent_bridge.rs`. There is no longer any watch sender that a
         // `session_init` line can be latched onto.
-        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
         let ((sup, _state_rx, _meta_rx, _control_rx), _register_rx) =
-            make_supervisor_with_spawner(store, stall_spawner_factory());
+            make_supervisor_with_spawner(stall_spawner_factory());
 
         let tug_id = TugSessionId::new("sess-1");
         let entry_arc = insert_ledger_entry(&sup, &tug_id).await;
@@ -5558,7 +4798,6 @@ mod tests {
         let lines = BufReader::new(stdout_box).lines();
 
         let recorder = NoopSessionsRecorder;
-        let persist_store = NoopSessionKeysStore;
         let outcome = relay_session_io(
             &tug_id,
             &entry_arc,
@@ -5569,7 +4808,6 @@ mod tests {
             lines,
             "/tmp/test-relay-project",
             &recorder,
-            &persist_store,
             &cancel,
         )
         .await;
@@ -5614,346 +4852,10 @@ mod tests {
         assert_eq!(state, "live");
     }
 
-    /// After `do_spawn_session` writes the initial record (with
-    /// `claude_session_id: None`) and the bridge captures the real
-    /// claude id from `session_init`, `relay_session_io` writes the
-    /// updated record back to tugbank inside the same lock-held
-    /// critical section that captures the id in-memory. Without this,
-    /// a cold-boot rebind would see `claude_session_id: None` on disk
-    /// and the next resume spawn would have no JSONL to point at.
-    #[tokio::test]
-    async fn test_session_init_persists_claude_session_id() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
 
-        // Drive the public spawn path so the Phase 2 tugbank write
-        // populates the record (claude_session_id == None initially)
-        // and `card_id` is set on the entry. Without `card_id`,
-        // `relay_session_io` would skip the persist write — the
-        // atomic-promote block has no card_id to key the write under.
-        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
-            .await
-            .expect_handled();
-        let initial = store
-            .entries_snapshot()
-            .get("card-1")
-            .cloned()
-            .expect("Phase 2 wrote initial record");
-        assert_eq!(initial.claude_session_id, None);
 
-        let tug_id = TugSessionId::new("sess-1");
-        let entry_arc = sup.ledger.lock().await.get(&tug_id).unwrap().clone();
 
-        // Pre-arrange so the bridge's session_init promote path has
-        // something to drain (mirrors what production goes through
-        // before the bridge flips Spawning→Live).
-        let (input_tx_for_ledger, _input_rx_for_assert) = mpsc::channel::<Frame>(16);
-        {
-            let mut entry = entry_arc.lock().await;
-            entry.spawn_state = SpawnState::Spawning;
-            entry.input_tx = Some(input_tx_for_ledger.clone());
-        }
-        drop(input_tx_for_ledger);
 
-        // Drive the relay with a synthetic child that emits the
-        // protocol handshake and a session_init carrying claude's
-        // (post-resume) session id.
-        let (bridge_stdin, mut child_stdin_read) = tokio::io::duplex(4096);
-        let (mut child_stdout_write, bridge_stdout) = tokio::io::duplex(4096);
-        let claude_id_emitted = "claude-internal-id-from-resume-jsonl";
-        let claude_id_emitted_owned = claude_id_emitted.to_string();
-        let child_task = tokio::spawn(async move {
-            let mut reader = BufReader::new(&mut child_stdin_read);
-            let mut line = String::new();
-            reader.read_line(&mut line).await.unwrap();
-            assert!(line.contains("protocol_init"));
-
-            child_stdout_write
-                .write_all(b"{\"type\":\"protocol_ack\",\"version\":1}\n")
-                .await
-                .unwrap();
-            let init = format!(
-                "{{\"type\":\"session_init\",\"session_id\":\"{claude_id_emitted_owned}\"}}\n"
-            );
-            child_stdout_write.write_all(init.as_bytes()).await.unwrap();
-            drop(child_stdout_write);
-        });
-
-        let (_input_tx_bridge, mut input_rx_bridge) = mpsc::channel::<Frame>(4);
-        let (merger_tx, _merger_rx) = mpsc::channel::<Frame>(4);
-        let state_tx = sup.session_state_tx.clone();
-        let cancel = CancellationToken::new();
-
-        let stdin_box: Box<dyn tokio::io::AsyncWrite + Send + Unpin> = Box::new(bridge_stdin);
-        let stdout_box: Box<dyn tokio::io::AsyncRead + Send + Unpin> = Box::new(bridge_stdout);
-        let lines = BufReader::new(stdout_box).lines();
-
-        let recorder = NoopSessionsRecorder;
-        let _outcome = relay_session_io(
-            &tug_id,
-            &entry_arc,
-            &mut input_rx_bridge,
-            &merger_tx,
-            &state_tx,
-            stdin_box,
-            lines,
-            test_project_dir(),
-            &recorder,
-            store.as_ref(),
-            &cancel,
-        )
-        .await;
-        child_task.await.unwrap();
-
-        // The on-disk record now carries the captured claude_session_id.
-        // The atomic-promote block performed exactly one persist call
-        // for this session_init line, in addition to the original
-        // `do_spawn_session` Phase 2 write — total 2 set calls.
-        let after = store
-            .entries_snapshot()
-            .get("card-1")
-            .cloned()
-            .expect("record still present after session_init");
-        assert_eq!(
-            after.claude_session_id.as_deref(),
-            Some(claude_id_emitted),
-            "session_init's atomic-promote block must rewrite the record \
-             with the captured claude_session_id"
-        );
-        assert_eq!(after.tug_session_id, "sess-1");
-        // Sanity: the in-memory entry agrees with disk.
-        let in_memory = entry_arc.lock().await.claude_session_id.clone();
-        assert_eq!(in_memory.as_deref(), Some(claude_id_emitted));
-    }
-
-    /// On a fresh supervisor whose store contains a previously
-    /// persisted record carrying `claude_session_id`, `rebind_from_tugbank`
-    /// must read the id back into the rehydrated `LedgerEntry`. Without
-    /// this the next resume spawn would forward `--resume <tug_session_id>`
-    /// to claude — the legacy fallback that only works when claude
-    /// hasn't forked, leaving forked sessions unreachable.
-    #[tokio::test]
-    async fn test_rebind_rehydrates_claude_session_id() {
-        let store = Arc::new(InMemoryStore::default());
-        store
-            .set_session_record(
-                "card-resumed",
-                &SessionKeyRecord {
-                    tug_session_id: "sess-resumed".to_string(),
-                    project_dir: Some(test_project_dir().to_string()),
-                    claude_session_id: Some("claude-fork-target-9".to_string()),
-                    session_mode: Some("resume".to_string()),
-                },
-            )
-            .unwrap();
-
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
-        let inserted = sup.rebind_from_tugbank().await.unwrap();
-        assert_eq!(inserted, 1);
-
-        let ledger = sup.ledger.lock().await;
-        let entry_arc = ledger
-            .get(&TugSessionId::new("sess-resumed"))
-            .cloned()
-            .expect("rebound entry present");
-        drop(ledger);
-        let entry = entry_arc.lock().await;
-        assert_eq!(
-            entry.claude_session_id.as_deref(),
-            Some("claude-fork-target-9"),
-            "rebind must seed claude_session_id from the persisted record"
-        );
-        assert_eq!(entry.session_mode, SessionMode::Resume);
-    }
-
-    /// On a reconnect (`spawn_session` for an entry already in
-    /// the ledger), the Phase 2 tugbank write must preserve the
-    /// previously persisted `claude_session_id` rather than clobber it
-    /// back to `None`. Without this, every reload of an in-memory
-    /// supervisor would silently delete the resume key on disk, making
-    /// a subsequent cold-boot rebind hand back `None` and the next
-    /// resume spawn fall back to `--resume <tug_session_id>`.
-    #[tokio::test]
-    async fn test_spawn_session_preserves_persisted_claude_session_id_on_reconnect() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
-
-        // First spawn populates the record (claude id None initially).
-        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
-            .await
-            .expect_handled();
-
-        // Simulate the bridge having captured the claude_session_id at
-        // session_init time by writing it directly into the in-memory
-        // entry (real flow exercised by
-        // `test_session_init_persists_claude_session_id`).
-        let tug_id = TugSessionId::new("sess-1");
-        let entry_arc = sup.ledger.lock().await.get(&tug_id).unwrap().clone();
-        {
-            let mut entry = entry_arc.lock().await;
-            entry.claude_session_id = Some("claude-captured-mid-life".to_string());
-        }
-
-        // A second spawn (reconnect: same card, same id) must not
-        // clobber the persisted claude_session_id back to None.
-        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
-            .await
-            .expect_handled();
-        let after = store
-            .entries_snapshot()
-            .get("card-1")
-            .cloned()
-            .expect("record present after reconnect");
-        assert_eq!(
-            after.claude_session_id.as_deref(),
-            Some("claude-captured-mid-life"),
-            "reconnect must preserve the in-memory claude_session_id \
-             when re-writing the record"
-        );
-    }
-
-    /// `reset_session` invalidates the persisted claude id (tugbank
-    /// delete + in-memory clear) and flips `session_mode` back to `New`
-    /// so the next spawn is fresh. The invalidate-then-cancel ordering
-    /// ensures even a racing CODE_INPUT would observe a freshly cleared
-    /// entry, not a half-reset one.
-    #[tokio::test]
-    async fn test_reset_session_clears_persisted_claude_session_id() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
-
-        // Spawn (mode=resume) so the entry's session_mode is `Resume`.
-        sup.handle_control("spawn_session", &resume_payload("card-1", "sess-1"), 10)
-            .await
-            .expect_handled();
-        // Simulate session_init having captured a claude id.
-        let tug_id = TugSessionId::new("sess-1");
-        let entry_arc = sup.ledger.lock().await.get(&tug_id).unwrap().clone();
-        {
-            let mut entry = entry_arc.lock().await;
-            entry.claude_session_id = Some("claude-pre-reset".to_string());
-            // Persist directly so the on-disk record reflects the
-            // captured id (matches the production flow's
-            // session_init.persist write).
-            let rec = SessionKeyRecord {
-                tug_session_id: tug_id.as_str().to_string(),
-                project_dir: Some(test_project_dir().to_string()),
-                claude_session_id: entry.claude_session_id.clone(),
-                session_mode: Some(entry.session_mode.as_wire_str().to_string()),
-            };
-            store.set_session_record("card-1", &rec).unwrap();
-        }
-        assert_eq!(
-            store
-                .entries_snapshot()
-                .get("card-1")
-                .and_then(|r| r.claude_session_id.clone())
-                .as_deref(),
-            Some("claude-pre-reset")
-        );
-
-        // Reset must invalidate persistence and in-memory state.
-        sup.handle_control("reset_session", &reset_payload("card-1", "sess-1"), 10)
-            .await
-            .expect_handled();
-
-        // On-disk record is gone.
-        assert!(
-            !store.entries_snapshot().contains_key("card-1"),
-            "reset_session must delete the tugbank record"
-        );
-        // In-memory entry has the id cleared and session_mode flipped to New.
-        let entry = entry_arc.lock().await;
-        assert!(
-            entry.claude_session_id.is_none(),
-            "reset_session must clear in-memory claude_session_id"
-        );
-        assert_eq!(entry.session_mode, SessionMode::New);
-        assert_eq!(entry.spawn_state, SpawnState::Idle);
-    }
-
-    /// close preserves the persisted record so a later cold-boot
-    /// rebind + resume spawn rehydrates the captured `claude_session_id`.
-    /// Simulates the cold-boot path explicitly: shut down supervisor A,
-    /// build a fresh supervisor B over the same store, rebind, send
-    /// `spawn_session(mode=resume)`, and assert the new entry carries
-    /// the persisted claude id.
-    #[tokio::test]
-    async fn test_close_session_preserves_claude_session_id() {
-        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
-
-        // Phase A: supervisor A spawns, captures a claude_session_id,
-        // closes the card. Persistence carries the captured id forward.
-        {
-            let (sup_a, _state_rx, _meta_rx, _control_rx) =
-                make_supervisor_with_store(store.clone());
-            sup_a
-                .handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
-                .await
-                .expect_handled();
-            let entry_arc = sup_a
-                .ledger
-                .lock()
-                .await
-                .get(&TugSessionId::new("sess-1"))
-                .unwrap()
-                .clone();
-            {
-                let mut entry = entry_arc.lock().await;
-                entry.claude_session_id = Some("claude-cross-restart".to_string());
-                let rec = SessionKeyRecord {
-                    tug_session_id: "sess-1".to_string(),
-                    project_dir: Some(test_project_dir().to_string()),
-                    claude_session_id: entry.claude_session_id.clone(),
-                    session_mode: Some(entry.session_mode.as_wire_str().to_string()),
-                };
-                store.set_session_record("card-1", &rec).unwrap();
-            }
-            // Close: persistence is preserved.
-            sup_a
-                .handle_control("close_session", &close_payload("card-1", "sess-1"), 10)
-                .await
-                .expect_handled();
-            // Sanity: record still on disk.
-            let in_memory_store = store
-                .as_ref()
-                .list_session_records()
-                .expect("list ok")
-                .into_iter()
-                .find(|(c, _)| c == "card-1")
-                .expect("record preserved across close");
-            assert_eq!(
-                in_memory_store.1.claude_session_id.as_deref(),
-                Some("claude-cross-restart")
-            );
-        } // sup_a drops here
-
-        // Phase B: fresh supervisor over the same store rebinds from
-        // tugbank, then accepts `spawn_session(mode=resume)`. The
-        // resulting in-memory entry must carry the persisted
-        // claude_session_id so the next bridge spawn can thread
-        // `--resume-session <id>` through to claude.
-        let (sup_b, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
-        let inserted = sup_b.rebind_from_tugbank().await.unwrap();
-        assert_eq!(inserted, 1);
-        sup_b
-            .handle_control("spawn_session", &resume_payload("card-1", "sess-1"), 11)
-            .await
-            .expect_handled();
-        let entry_arc = sup_b
-            .ledger
-            .lock()
-            .await
-            .get(&TugSessionId::new("sess-1"))
-            .unwrap()
-            .clone();
-        let entry = entry_arc.lock().await;
-        assert_eq!(
-            entry.claude_session_id.as_deref(),
-            Some("claude-cross-restart"),
-            "rebind+spawn(resume) must rehydrate claude_session_id from tugbank"
-        );
-    }
 
     /// When tugcode emits `resume_failed` and then exits (closes
     /// stdout), `relay_session_io` must promote the EOF
@@ -5964,9 +4866,8 @@ mod tests {
     /// the silent retry back.
     #[tokio::test]
     async fn test_resume_failed_promotes_eof_to_terminal() {
-        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
         let ((sup, _state_rx, _meta_rx, _control_rx), _register_rx) =
-            make_supervisor_with_spawner(store, stall_spawner_factory());
+            make_supervisor_with_spawner(stall_spawner_factory());
 
         let tug_id = TugSessionId::new("sess-resume-fail");
         let entry_arc = insert_ledger_entry(&sup, &tug_id).await;
@@ -6010,7 +4911,6 @@ mod tests {
         let lines = BufReader::new(stdout_box).lines();
 
         let recorder = NoopSessionsRecorder;
-        let persist_store = NoopSessionKeysStore;
         let outcome = relay_session_io(
             &tug_id,
             &entry_arc,
@@ -6021,7 +4921,6 @@ mod tests {
             lines,
             "/tmp/test-relay-resume-fail",
             &recorder,
-            &persist_store,
             &cancel,
         )
         .await;
@@ -6048,210 +4947,13 @@ mod tests {
         assert_eq!(parsed["tug_session_id"], "sess-resume-fail");
     }
 
-    #[tokio::test]
-    async fn test_crash_budget_per_session() {
-        // Two sessions spawn in parallel. A's spawner always errors; B's
-        // stalls forever. After 3 retries A exhausts its budget, publishes
-        // `errored{crash_budget_exhausted}`, and its bridge task returns.
-        // B remains untouched. This test pins that each session has its
-        // own `CrashBudget` instance per [D07] — one session's crash loop
-        // does not disable a sibling. The retry delay is injected as a
-        // sub-millisecond value so the test completes in wall-clock-time.
-        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
-        let ((sup, mut state_rx, _meta_rx, _control_rx), _register_rx) =
-            make_supervisor_with_spawner(store, stall_spawner_factory());
-
-        let id_a = TugSessionId::new("sess-a");
-        let id_b = TugSessionId::new("sess-b");
-        let entry_a = insert_ledger_entry(&sup, &id_a).await;
-        let entry_b = insert_ledger_entry(&sup, &id_b).await;
-
-        let (_input_tx_a, input_rx_a) = mpsc::channel::<Frame>(4);
-        let (_input_tx_b, input_rx_b) = mpsc::channel::<Frame>(4);
-        let (merger_tx_a, _merger_rx_a) = mpsc::channel::<Frame>(4);
-        let (merger_tx_b, _merger_rx_b) = mpsc::channel::<Frame>(4);
-
-        let cancel_a = { entry_a.lock().await.cancel.clone() };
-        let cancel_b = { entry_b.lock().await.cancel.clone() };
-
-        let state_tx = sup.session_state_tx.clone();
-
-        let retry_delay = Duration::from_micros(100);
-
-        let recorder: Arc<dyn SessionsRecorder> = Arc::new(NoopSessionsRecorder);
-        let persist_store: Arc<dyn SessionKeysStore> = Arc::new(NoopSessionKeysStore);
-        let a_handle = tokio::spawn(run_session_bridge(
-            id_a.clone(),
-            entry_a.clone(),
-            input_rx_a,
-            merger_tx_a,
-            state_tx.clone(),
-            Arc::new(CrashingSpawner) as Arc<dyn ChildSpawner>,
-            PathBuf::from("/tmp/test-workspace-a"),
-            SessionMode::New,
-            recorder.clone(),
-            persist_store.clone(),
-            cancel_a,
-            retry_delay,
-        ));
-        let b_handle = tokio::spawn(run_session_bridge(
-            id_b.clone(),
-            entry_b.clone(),
-            input_rx_b,
-            merger_tx_b,
-            state_tx.clone(),
-            Arc::new(StallSpawner) as Arc<dyn ChildSpawner>,
-            PathBuf::from("/tmp/test-workspace-b"),
-            SessionMode::New,
-            recorder,
-            persist_store,
-            cancel_b.clone(),
-            retry_delay,
-        ));
-
-        // Poll until session A's task finishes (3 crashes + the exhaustion
-        // bail). With a 100µs retry delay this completes in well under a
-        // millisecond; we give it up to 2 seconds to tolerate CI latency.
-        let deadline = std::time::Instant::now() + Duration::from_secs(2);
-        while !a_handle.is_finished() && std::time::Instant::now() < deadline {
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-
-        // Session A's task must have completed.
-        assert!(
-            a_handle.is_finished(),
-            "session A bridge must exit after crash budget exhaustion"
-        );
-
-        // Session B's task must still be running (stalled in spawn_child).
-        assert!(
-            !b_handle.is_finished(),
-            "session B bridge must not be disabled by session A's crash loop"
-        );
-
-        // Session A's ledger entry is in Errored state with no input_tx.
-        {
-            let entry = entry_a.lock().await;
-            assert_eq!(entry.spawn_state, SpawnState::Errored);
-            assert!(entry.input_tx.is_none());
-        }
-
-        // SESSION_STATE = errored{crash_budget_exhausted} must have been
-        // published exactly for session A; no errored for session B.
-        let mut a_errored = false;
-        while let Ok(frame) = state_rx.try_recv() {
-            let (id, state) = session_state_of(&frame);
-            if state == "errored" {
-                assert_eq!(id, "sess-a", "only session A should error");
-                let v: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
-                assert_eq!(v["detail"], "crash_budget_exhausted");
-                a_errored = true;
-            }
-        }
-        assert!(a_errored, "session A must publish errored state");
-
-        // Tear down session B. Aborting rather than awaiting so a
-        // regression where cancel doesn't reach a stalled spawner still
-        // terminates the test quickly.
-        b_handle.abort();
-    }
 
     // ---- SessionKeyRecord schema + dual-read migration ----
 
-    #[test]
-    fn test_session_key_record_serde_roundtrip() {
-        let record = SessionKeyRecord {
-            tug_session_id: "sess-xyz".to_string(),
-            project_dir: Some("/work/alpha".to_string()),
-            claude_session_id: Some("claude-uuid-7".to_string()),
-            session_mode: Some("resume".to_string()),
-        };
-        let json = serde_json::to_value(&record).expect("serialize");
-        let parsed: SessionKeyRecord = serde_json::from_value(json).expect("deserialize");
-        assert_eq!(parsed, record);
-    }
 
-    #[test]
-    fn test_session_key_record_defaults_on_missing_optional_fields() {
-        let json = serde_json::json!({ "tug_session_id": "abc" });
-        let parsed: SessionKeyRecord = serde_json::from_value(json).expect("deserialize");
-        assert_eq!(parsed.tug_session_id, "abc");
-        assert_eq!(parsed.project_dir, None);
-        assert_eq!(parsed.claude_session_id, None);
-        // [Q01] resolution: legacy records lack `session_mode`. The
-        // schema's `#[serde(default)]` lets them deserialize as `None`,
-        // and the rebind path falls back to `SessionMode::New` while
-        // the defense-in-depth path corrects the entry on the first
-        // reconnect.
-        assert_eq!(parsed.session_mode, None);
-    }
 
-    #[test]
-    fn test_tugbank_list_session_records_reads_legacy_string() {
-        let tmp = tempfile::NamedTempFile::new().expect("temp file");
-        let client = TugbankClient::open(tmp.path()).expect("open tugbank");
 
-        // Simulate a pre-W2 blob written as a bare `Value::String`.
-        client
-            .set(
-                SESSION_KEYS_DOMAIN,
-                "card-legacy",
-                Value::String("legacy-uuid".to_string()),
-            )
-            .expect("legacy set");
 
-        let records = client.list_session_records().expect("list");
-        assert_eq!(records.len(), 1);
-        let (card_id, record) = &records[0];
-        assert_eq!(card_id, "card-legacy");
-        assert_eq!(record.tug_session_id, "legacy-uuid");
-        assert_eq!(record.project_dir, None);
-        assert_eq!(record.claude_session_id, None);
-    }
-
-    #[test]
-    fn test_tugbank_list_session_records_reads_json() {
-        let tmp = tempfile::NamedTempFile::new().expect("temp file");
-        let client = TugbankClient::open(tmp.path()).expect("open tugbank");
-
-        let written = SessionKeyRecord {
-            tug_session_id: "sess-w2".to_string(),
-            project_dir: Some("/work/beta".to_string()),
-            claude_session_id: Some("claude-42".to_string()),
-            session_mode: Some("new".to_string()),
-        };
-        client
-            .set_session_record("card-w2", &written)
-            .expect("set_session_record");
-
-        let records = client.list_session_records().expect("list");
-        assert_eq!(records.len(), 1);
-        let (card_id, record) = &records[0];
-        assert_eq!(card_id, "card-w2");
-        assert_eq!(record, &written);
-    }
-
-    #[test]
-    fn test_tugbank_list_session_records_skips_malformed_json() {
-        let tmp = tempfile::NamedTempFile::new().expect("temp file");
-        let client = TugbankClient::open(tmp.path()).expect("open tugbank");
-
-        // JSON value that does not deserialize to `SessionKeyRecord`
-        // (missing the required `tug_session_id` field).
-        client
-            .set(
-                SESSION_KEYS_DOMAIN,
-                "card-bogus",
-                Value::Json(serde_json::json!({ "bogus": 1 })),
-            )
-            .expect("bogus set");
-
-        let records = client.list_session_records().expect("list");
-        assert!(
-            records.is_empty(),
-            "malformed JSON must be skipped, got: {records:?}"
-        );
-    }
 
     // ================================================================
     // supervisor lifecycle hooks against the registry
@@ -6272,8 +4974,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_spawn_session_rejects_missing_project_dir() {
-        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
 
         // Payload without `project_dir` — handle_control must reject with
         // `InvalidProjectDir { reason: "missing_project_dir" }` before any
@@ -6300,8 +5001,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_spawn_session_rejects_nonexistent_project_dir() {
-        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
 
         let payload = spawn_payload_in(
             "card-1",
@@ -6327,9 +5027,7 @@ mod tests {
         let tmp = tempfile::TempDir::new().expect("tempdir");
         let file_path = tmp.path().join("not-a-dir.txt");
         std::fs::write(&file_path, b"nope").expect("write file");
-
-        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
 
         let payload = spawn_payload_in("card-1", "sess-1", file_path.to_str().unwrap());
         let err = sup
@@ -6348,8 +5046,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_spawn_session_success_ack_includes_workspace_key() {
-        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store(store);
+        let (sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store();
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -6376,30 +5073,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_spawn_session_releases_on_persistence_failure() {
-        // Inject a FailingWriteStore: persistence fails after workspace
-        // acquisition. The supervisor must release the workspace refcount
-        // so the registry map is empty on the failure path ([D05]).
-        let store = Arc::new(FailingWriteStore::new());
-        let (sup, _state_rx, _meta_rx, _control_rx) =
-            make_supervisor_with_store(store as Arc<dyn SessionKeysStore>);
-
-        let err = sup
-            .handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
-            .await
-            .expect_error();
-        assert!(matches!(err, ControlError::PersistenceFailure(_)));
-
-        // The workspace refcount bumped in Phase 0 must have been
-        // released — the map should be empty.
-        assert_eq!(registry_map_len(&sup), 0);
-    }
-
-    #[tokio::test]
     async fn test_two_sessions_same_workspace_share_entry() {
-        let store = Arc::new(InMemoryStore::default());
         let (sup, _state_rx, _meta_rx, mut control_rx) =
-            make_supervisor_with_store(store as Arc<dyn SessionKeysStore>);
+            make_supervisor_with_store();
 
         sup.handle_control("spawn_session", &spawn_payload("card-a", "sess-a"), 10)
             .await
@@ -6427,9 +5103,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_close_session_releases_workspace() {
-        let store = Arc::new(InMemoryStore::default());
         let (sup, _state_rx, _meta_rx, mut control_rx) =
-            make_supervisor_with_store(store as Arc<dyn SessionKeysStore>);
+            make_supervisor_with_store();
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -6448,9 +5123,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_reset_session_preserves_workspace() {
-        let store = Arc::new(InMemoryStore::default());
         let (sup, _state_rx, _meta_rx, mut control_rx) =
-            make_supervisor_with_store(store as Arc<dyn SessionKeysStore>);
+            make_supervisor_with_store();
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -6514,9 +5188,8 @@ mod tests {
         // because the dedup logic is stuck in a one-workspace rut.
         let tmp_a = tempfile::TempDir::new().expect("tempdir a");
         let tmp_b = tempfile::TempDir::new().expect("tempdir b");
-        let store = Arc::new(InMemoryStore::default());
         let (sup, _state_rx, _meta_rx, mut control_rx) =
-            make_supervisor_with_store(store as Arc<dyn SessionKeysStore>);
+            make_supervisor_with_store();
 
         sup.handle_control(
             "spawn_session",
@@ -6575,10 +5248,8 @@ mod tests {
         // registry map must still hold exactly one entry with
         // `ref_count == 1` after the second spawn.
         use std::sync::atomic::Ordering;
-
-        let store = Arc::new(InMemoryStore::default());
         let (sup, _state_rx, _meta_rx, mut control_rx) =
-            make_supervisor_with_store(store as Arc<dyn SessionKeysStore>);
+            make_supervisor_with_store();
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -6605,80 +5276,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_rebind_drops_records_without_project_dir() {
-        let store = Arc::new(InMemoryStore::default());
-        // Legacy (pre-W2) record shape: project_dir = None.
-        store
-            .set_session_record(
-                "card-legacy",
-                &SessionKeyRecord {
-                    tug_session_id: "sess-legacy".to_string(),
-                    project_dir: None,
-                    claude_session_id: None,
-                    session_mode: None,
-                },
-            )
-            .unwrap();
 
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
-        let inserted = sup.rebind_from_tugbank().await.unwrap();
-        assert_eq!(inserted, 0);
-        assert!(sup.ledger.lock().await.is_empty());
-        assert_eq!(registry_map_len(&sup), 0);
-    }
 
-    #[tokio::test]
-    async fn test_rebind_drops_records_with_missing_path() {
-        let store = Arc::new(InMemoryStore::default());
-        store
-            .set_session_record(
-                "card-gone",
-                &SessionKeyRecord {
-                    tug_session_id: "sess-gone".to_string(),
-                    project_dir: Some("/nonexistent/rebind-missing-path-test".to_string()),
-                    claude_session_id: None,
-                    session_mode: None,
-                },
-            )
-            .unwrap();
-
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
-        let inserted = sup.rebind_from_tugbank().await.unwrap();
-        assert_eq!(inserted, 0);
-        assert!(sup.ledger.lock().await.is_empty());
-        assert_eq!(registry_map_len(&sup), 0);
-    }
-
-    #[tokio::test]
-    async fn test_rebind_restores_workspace_entries_from_records() {
-        let store = Arc::new(InMemoryStore::default());
-        store
-            .set_session_record(
-                "card-valid",
-                &SessionKeyRecord {
-                    tug_session_id: "sess-valid".to_string(),
-                    project_dir: Some(test_project_dir().to_string()),
-                    claude_session_id: None,
-                    session_mode: None,
-                },
-            )
-            .unwrap();
-
-        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
-        let inserted = sup.rebind_from_tugbank().await.unwrap();
-        assert_eq!(inserted, 1);
-
-        let tug_id = TugSessionId::new("sess-valid");
-        let ledger = sup.ledger.lock().await;
-        let entry_arc = ledger.get(&tug_id).expect("entry").clone();
-        drop(ledger);
-        let entry = entry_arc.lock().await;
-        assert_eq!(entry.project_dir.to_str().unwrap(), test_project_dir());
-        assert!(!entry.workspace_key.as_ref().is_empty());
-        // Registry holds exactly one entry for the rebound workspace.
-        assert_eq!(registry_map_len(&sup), 1);
-    }
 
     // ── LedgerSessionsRecorder lifecycle ─────────────────────────────────────
     //
@@ -6811,7 +5410,6 @@ mod tests {
     /// row's state must transition.
     #[tokio::test]
     async fn close_session_marks_ledger_row_closed_when_claude_id_present() {
-        let store = Arc::new(InMemoryStore::default());
         let ledger = Arc::new(SessionLedger::open_in_memory().expect("ledger open"));
         let recorder: Arc<dyn SessionsRecorder> =
             Arc::new(LedgerSessionsRecorder::new(Arc::clone(&ledger)));
@@ -6827,7 +5425,6 @@ mod tests {
             meta_tx,
             code_tx,
             control_tx,
-            store as Arc<dyn SessionKeysStore>,
             recorder,
             stall_spawner_factory(),
             AgentSupervisorConfig::default(),
@@ -6885,9 +5482,7 @@ mod tests {
     /// Build a supervisor with a real ledger + a recorder that emits push
     /// frames on writes. Returns the supervisor, ledger, and the CONTROL
     /// receiver so tests can read the broadcast traffic.
-    fn make_supervisor_with_ledger(
-        store: Arc<dyn SessionKeysStore>,
-    ) -> (
+    fn make_supervisor_with_ledger() -> (
         Arc<AgentSupervisor>,
         Arc<SessionLedger>,
         broadcast::Receiver<Frame>,
@@ -6908,7 +5503,6 @@ mod tests {
             meta_tx,
             code_tx,
             control_tx,
-            store,
             recorder,
             Some(Arc::clone(&ledger)),
             stall_spawner_factory(),
@@ -6938,8 +5532,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_sessions_returns_project_dir_rows_newest_first() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, ledger, mut rx) = make_supervisor_with_ledger(store);
+        let (sup, ledger, mut rx) = make_supervisor_with_ledger();
 
         ledger
             .record_spawn("s-old", "ws-1", "/proj/alpha", "c1", 1_000)
@@ -6974,8 +5567,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_sessions_missing_project_dir_errors() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _ledger, _rx) = make_supervisor_with_ledger(store);
+        let (sup, _ledger, _rx) = make_supervisor_with_ledger();
         let payload = serde_json::to_vec(&serde_json::json!({
             "action": "list_sessions",
         }))
@@ -6992,8 +5584,7 @@ mod tests {
 
     #[tokio::test]
     async fn forget_session_drops_row_and_broadcasts_removed() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, ledger, mut rx) = make_supervisor_with_ledger(store);
+        let (sup, ledger, mut rx) = make_supervisor_with_ledger();
 
         ledger
             .record_spawn("s1", "ws-1", "/p", "c1", 1_000)
@@ -7025,8 +5616,7 @@ mod tests {
 
     #[tokio::test]
     async fn forget_session_on_live_row_returns_error() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, ledger, mut rx) = make_supervisor_with_ledger(store);
+        let (sup, ledger, mut rx) = make_supervisor_with_ledger();
         ledger
             .record_spawn("live1", "ws-1", "/p", "c1", 1_000)
             .unwrap();
@@ -7049,8 +5639,7 @@ mod tests {
 
     #[tokio::test]
     async fn evict_for_workspace_emits_removed_pushes() {
-        let store = Arc::new(InMemoryStore::default());
-        let (_sup, ledger, mut rx) = make_supervisor_with_ledger(store);
+        let (_sup, ledger, mut rx) = make_supervisor_with_ledger();
 
         // 21 closed rows in ws-1; cap eviction should drop the oldest.
         for i in 0..21 {
@@ -7107,8 +5696,7 @@ mod tests {
 
     #[tokio::test]
     async fn forget_project_dir_sessions_drops_matching_only() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, ledger, mut rx) = make_supervisor_with_ledger(store);
+        let (sup, ledger, mut rx) = make_supervisor_with_ledger();
 
         ledger
             .record_spawn("matched-1", "ws-1", "/proj/x", "c1", 1_000)
@@ -7149,8 +5737,7 @@ mod tests {
         // recorder must each emit a `session_updated` push on the same
         // CONTROL feed the picker subscribes to. Verifies the broadcast
         // pipeline wired up in `LedgerSessionsRecorder::with_broadcast`.
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _ledger, mut rx) = make_supervisor_with_ledger(store);
+        let (sup, _ledger, mut rx) = make_supervisor_with_ledger();
 
         sup.sessions_recorder.record(SessionRecord {
             session_id: "s1",
@@ -7230,8 +5817,7 @@ mod tests {
         // Two pending submissions in flight; two turn_complete frames
         // arrive. The journal rows pop in created_at order (oldest first);
         // after both pops the journal for the session is empty.
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let (sup, ledger, _rx) = make_supervisor_with_ledger();
         let session_id = "sess-fifo";
         seed_session_for_journal_test(&ledger, session_id);
 
@@ -7265,8 +5851,7 @@ mod tests {
         // turn_cancelled also pops the oldest pending row — the journal
         // doesn't distinguish "claude finished" from "user cancelled"
         // because both land back at "no longer awaiting response".
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let (sup, ledger, _rx) = make_supervisor_with_ledger();
         let session_id = "sess-cancel";
         seed_session_for_journal_test(&ledger, session_id);
 
@@ -7285,8 +5870,7 @@ mod tests {
         // assistant_text, tool_use, tool_result etc. don't pop the journal.
         // The journal pops only on the terminal `turn_complete` /
         // `turn_cancelled` frames that mark "claude has acknowledged".
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let (sup, ledger, _rx) = make_supervisor_with_ledger();
         let session_id = "sess-unrelated";
         seed_session_for_journal_test(&ledger, session_id);
 
@@ -7326,8 +5910,7 @@ mod tests {
         // unchanged at the merger task level (this test exercises the
         // intercept directly so we just assert the no-throw + journal
         // stays empty).
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let (sup, ledger, _rx) = make_supervisor_with_ledger();
         let session_id = "sess-spurious";
         seed_session_for_journal_test(&ledger, session_id);
         assert_eq!(count_pending_for_session(&ledger, session_id), 0);
@@ -7342,8 +5925,7 @@ mod tests {
     async fn merger_intercept_isolates_per_session() {
         // Pending row in session A; turn_complete arrives for session B.
         // Session A's row must be untouched.
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let (sup, ledger, _rx) = make_supervisor_with_ledger();
         seed_session_for_journal_test(&ledger, "sess-a");
         seed_session_for_journal_test(&ledger, "sess-b");
 
@@ -7366,8 +5948,7 @@ mod tests {
     async fn cascade_trigger_purges_journal_when_session_forgotten() {
         // Pending row outlives session: insert journal row, then forget
         // the session. The cascade trigger purges the journal row.
-        let store = Arc::new(InMemoryStore::default());
-        let (_sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let (_sup, ledger, _rx) = make_supervisor_with_ledger();
         let session_id = "sess-cascade";
         seed_session_for_journal_test(&ledger, session_id);
 
@@ -7393,8 +5974,7 @@ mod tests {
         // mints a journal id, persists the row, and forwards the frame
         // UNCHANGED (no `tug_turn_id` field stamped onto the wire). The
         // forwarded frame's bytes equal the input frame's bytes.
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let (sup, ledger, _rx) = make_supervisor_with_ledger();
         let session_id_str = "sess-dispatch";
         let tug_session_id = TugSessionId::new(session_id_str);
 
@@ -7475,8 +6055,7 @@ mod tests {
 
     #[tokio::test]
     async fn journal_gate_increments_bracket_counter_on_replay_started() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _ledger, _rx) = make_supervisor_with_ledger(store);
+        let (sup, _ledger, _rx) = make_supervisor_with_ledger();
         let session_id = "sess-bracket-open";
         let tug_session_id = TugSessionId::new(session_id);
         insert_ledger_entry(&sup, &tug_session_id).await;
@@ -7500,8 +6079,7 @@ mod tests {
 
     #[tokio::test]
     async fn journal_gate_decrements_bracket_counter_on_replay_complete() {
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, _ledger, _rx) = make_supervisor_with_ledger(store);
+        let (sup, _ledger, _rx) = make_supervisor_with_ledger();
         let session_id = "sess-bracket-close";
         let tug_session_id = TugSessionId::new(session_id);
         let entry_arc = insert_ledger_entry(&sup, &tug_session_id).await;
@@ -7524,8 +6102,7 @@ mod tests {
         // (counter already 0) must NOT underflow into u32::MAX. The
         // saturating_sub keeps it at 0; subsequent live turn_completes
         // continue to pop the journal as normal.
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let (sup, ledger, _rx) = make_supervisor_with_ledger();
         let session_id = "sess-bracket-saturate";
         let tug_session_id = TugSessionId::new(session_id);
         let entry_arc = insert_ledger_entry(&sup, &tug_session_id).await;
@@ -7573,8 +6150,7 @@ mod tests {
         // crash by manually setting the counter to a stuck value, then
         // observes that a `process_outbound_frame_journal_gate` on a
         // live `turn_complete` post-reset correctly pops the journal.
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let (sup, ledger, _rx) = make_supervisor_with_ledger();
         let session_id = "sess-stuck-counter";
         let tug_session_id = TugSessionId::new(session_id);
         let entry_arc = insert_ledger_entry(&sup, &tug_session_id).await;
@@ -7620,8 +6196,7 @@ mod tests {
         // tolerates them defensively. Two replay_started markers leave
         // the counter at 2; one replay_complete decrements to 1 (still
         // gating); the second decrements to 0 (gate opens).
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let (sup, ledger, _rx) = make_supervisor_with_ledger();
         let session_id = "sess-nested";
         let tug_session_id = TugSessionId::new(session_id);
         let entry_arc = insert_ledger_entry(&sup, &tug_session_id).await;
@@ -7667,8 +6242,7 @@ mod tests {
         // turn_complete frames must NOT pop the user's pending journal
         // row (which is the user's still-inflight submission claude
         // hasn't yet finished).
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let (sup, ledger, _rx) = make_supervisor_with_ledger();
         let session_id = "sess-bracket-skip";
         let tug_session_id = TugSessionId::new(session_id);
         insert_ledger_entry(&sup, &tug_session_id).await;
@@ -7718,8 +6292,7 @@ mod tests {
         // Non-bracket / non-terminal frames don't touch the journal or
         // the replay flag. assistant_text, system_metadata, etc. flow
         // through untouched by the gate.
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let (sup, ledger, _rx) = make_supervisor_with_ledger();
         let session_id = "sess-bracket-passthrough";
         let tug_session_id = TugSessionId::new(session_id);
         insert_ledger_entry(&sup, &tug_session_id).await;
@@ -7769,8 +6342,7 @@ mod tests {
         // Replay bracket on session A must not affect session B's
         // intercept. Two independent replays could run concurrently;
         // their per-session flags must be tracked separately.
-        let store = Arc::new(InMemoryStore::default());
-        let (sup, ledger, _rx) = make_supervisor_with_ledger(store);
+        let (sup, ledger, _rx) = make_supervisor_with_ledger();
         let tug_a = TugSessionId::new("sess-a");
         let tug_b = TugSessionId::new("sess-b");
         insert_ledger_entry(&sup, &tug_a).await;

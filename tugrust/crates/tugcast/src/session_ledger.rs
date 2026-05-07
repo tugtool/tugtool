@@ -344,6 +344,28 @@ impl SessionLedger {
         rows.into_iter().collect()
     }
 
+    /// All non-failed rows that carry a `card_id`, ordered newest-first
+    /// by `last_used_at`. The client-side restore consumes this through
+    /// the `list_card_bindings` CONTROL verb: for each tide card in the
+    /// deck, the most recent matching row drives a
+    /// `spawn_session(mode=resume)`. Failed rows are excluded — they
+    /// represent sessions known to be unrecoverable, so the client
+    /// should drop into the picker rather than re-attempting.
+    pub fn list_with_card_id(&self) -> Result<Vec<SessionRow>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(
+            "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
+                    turn_count, first_user_prompt, state, card_id
+             FROM sessions
+             WHERE card_id IS NOT NULL AND state != 'failed'
+             ORDER BY last_used_at DESC",
+        )?;
+        let rows = stmt
+            .query_map([], row_from_query)?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows.into_iter().collect()
+    }
+
     /// Look up a single row by session id.
     pub fn get(&self, session_id: &str) -> Result<Option<SessionRow>, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");

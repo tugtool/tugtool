@@ -240,13 +240,14 @@ if (!container) {
   attachTideSessionLedgerStore(connection);
 
   // Re-assert session bindings for tide cards that were alive before
-  // this page reload. The tugbank cache is already populated (we awaited
-  // `tugbankClient.ready()` above) and the deck layout is materialized;
-  // `restoreTideSessions` reads per-card records from tugbank and emits
-  // `spawn_session(mode=resume)` for each. The server's ack populates
-  // `cardSessionBindingStore`, which flips each card from picker to
-  // bound body before `cardDidActivate` fires for any of them.
-  restoreTideSessions(deck, tugbankClient, connection);
+  // this page reload. The deck layout is materialized;
+  // `restoreTideSessions` sends a `list_card_bindings` CONTROL request
+  // (the server reads from its sqlite ledger) and emits
+  // `spawn_session(mode=resume)` per matching card. The server's ack
+  // populates `cardSessionBindingStore`, which flips each card from
+  // picker to bound body before `cardDidActivate` fires for any of
+  // them.
+  restoreTideSessions(deck, connection);
 
   // Reconnect path: every WebSocket recovery from a close re-runs the
   // restore loop so cards rebind without a page reload after a tugcast
@@ -261,7 +262,7 @@ if (!container) {
   // the close-then-open gating so this subscriber never has to.
   connectionLifecycle.observeConnectionDidReconnect(() => {
     cardSessionBindingStore.clearAll();
-    restoreTideSessions(deck, tugbankClient, connection, {
+    restoreTideSessions(deck, connection, {
       reason: "reconnect",
     });
   });

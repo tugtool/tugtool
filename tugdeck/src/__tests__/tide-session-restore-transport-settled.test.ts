@@ -145,7 +145,6 @@ describe("tide-session-restore — transport_settled on binding arrival (Step 5)
     );
     restoreTideSessions(
       fakeDeck as unknown as Parameters<typeof restoreTideSessions>[0],
-      fakeTugbank as unknown as Parameters<typeof restoreTideSessions>[1],
       fakeConnection,
     );
 
@@ -227,7 +226,6 @@ describe("tide-session-restore — transport_settled on binding arrival (Step 5)
     );
     restoreTideSessions(
       fakeDeck as unknown as Parameters<typeof restoreTideSessions>[0],
-      fakeTugbank as unknown as Parameters<typeof restoreTideSessions>[1],
       fakeConnection,
     );
 

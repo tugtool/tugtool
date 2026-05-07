@@ -22,7 +22,7 @@
  * own listeners.
  */
 
-import type { SessionRow, SessionUpdatedPush } from "../protocol.ts";
+import type { CardBinding, SessionRow, SessionUpdatedPush } from "../protocol.ts";
 
 type Listener<T> = (payload: T) => void;
 
@@ -51,6 +51,8 @@ function makeBus<T>() {
 const sessionUpdatedBus = makeBus<SessionUpdatedPush>();
 const listSessionsOkBus = makeBus<{ project_dir: string; sessions: SessionRow[] }>();
 const listSessionsErrBus = makeBus<{ project_dir: string; reason: string }>();
+const listCardBindingsOkBus = makeBus<{ bindings: CardBinding[] }>();
+const listCardBindingsErrBus = makeBus<{ reason: string }>();
 const forgetSessionOkBus = makeBus<{ session_id: string }>();
 const forgetSessionErrBus = makeBus<{ session_id: string; reason: string }>();
 const forgetProjectDirSessionsOkBus = makeBus<{ project_dir: string; count: number }>();
@@ -64,6 +66,12 @@ export const publishListSessionsOk = listSessionsOkBus.publish;
 
 export const subscribeToListSessionsErr = listSessionsErrBus.subscribe;
 export const publishListSessionsErr = listSessionsErrBus.publish;
+
+export const subscribeToListCardBindingsOk = listCardBindingsOkBus.subscribe;
+export const publishListCardBindingsOk = listCardBindingsOkBus.publish;
+
+export const subscribeToListCardBindingsErr = listCardBindingsErrBus.subscribe;
+export const publishListCardBindingsErr = listCardBindingsErrBus.publish;
 
 export const subscribeToForgetSessionOk = forgetSessionOkBus.subscribe;
 export const publishForgetSessionOk = forgetSessionOkBus.publish;
@@ -81,6 +89,8 @@ export function _resetTideSessionLedgerEventsForTest(): void {
   sessionUpdatedBus.reset();
   listSessionsOkBus.reset();
   listSessionsErrBus.reset();
+  listCardBindingsOkBus.reset();
+  listCardBindingsErrBus.reset();
   forgetSessionOkBus.reset();
   forgetSessionErrBus.reset();
   forgetProjectDirSessionsOkBus.reset();

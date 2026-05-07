@@ -61,6 +61,7 @@ export const CONTROL_ACTION_SPAWN_SESSION = "spawn_session";
 export const CONTROL_ACTION_CLOSE_SESSION = "close_session";
 export const CONTROL_ACTION_RESET_SESSION = "reset_session";
 export const CONTROL_ACTION_LIST_SESSIONS = "list_sessions";
+export const CONTROL_ACTION_LIST_CARD_BINDINGS = "list_card_bindings";
 export const CONTROL_ACTION_FORGET_SESSION = "forget_session";
 export const CONTROL_ACTION_FORGET_PROJECT_DIR_SESSIONS = "forget_project_dir_sessions";
 export const CONTROL_ACTION_REQUEST_REPLAY = "request_replay";
@@ -69,6 +70,11 @@ export const CONTROL_ACTION_REQUEST_REPLAY = "request_replay";
  * Wire shape for one row of the tugcast-side session ledger.
  * Mirrors `tugrust/crates/tugcast/src/session_ledger.rs::SessionRow` —
  * keep the fields in lockstep when the schema evolves.
+ *
+ * The wire emits `card_id_live` (legacy key, sourced from the ledger
+ * column `card_id`) for backward compatibility with older clients; the
+ * field semantically reads as "the card this session is bound to" and
+ * is preserved across `mark_closed` / `mark_failed`.
  */
 export interface SessionRow {
   session_id: string;
@@ -80,6 +86,19 @@ export interface SessionRow {
   first_user_prompt: string | null;
   state: "live" | "closed" | "failed";
   card_id_live: string | null;
+}
+
+/**
+ * Wire shape for one row of `list_card_bindings_ok`. Each row is a
+ * persisted (card_id, session_id) binding the client uses to re-assert
+ * `spawn_session(mode=resume)` for cards in the deck on startup or
+ * reconnect.
+ */
+export interface CardBinding {
+  card_id: string;
+  session_id: string;
+  project_dir: string;
+  state: "live" | "closed";
 }
 
 /** Frame flags */
@@ -365,6 +384,22 @@ export function encodeListSessions(projectDir: string): Frame {
   return controlFrame(CONTROL_ACTION_LIST_SESSIONS, {
     project_dir: projectDir,
   });
+}
+
+/**
+ * Build a `list_card_bindings` CONTROL request frame.
+ *
+ * The response broadcasts `list_card_bindings_ok` carrying
+ * `{ bindings: CardBinding[] }`, one row per persisted (card_id,
+ * session_id) ledger pair. The client-side `restoreTideSessions` uses
+ * this on startup and reconnect to re-assert `spawn_session(mode=resume)`
+ * for cards in the deck. Replaces the legacy tugbank `session-keys`
+ * domain read with a ledger-backed source of truth, so a card whose
+ * user picked Start Fresh and quit before a real `session_init` won't
+ * surface as a phantom resumable record.
+ */
+export function encodeListCardBindings(): Frame {
+  return controlFrame(CONTROL_ACTION_LIST_CARD_BINDINGS, {});
 }
 
 /**

@@ -11,19 +11,23 @@
  * initial-sync) and only dismiss once the `spawn_session_ok` ack
  * arrives — a brief but ugly "half-dismissed sheet" flash.
  *
- * Server-side prerequisites are already in place:
- *   - Tugcast persists `{ tug_session_id, project_dir, claude_session_id }`
- *     into tugbank under `dev.tugtool.tide.session-keys`, keyed by
- *     `cardId`, on every successful `spawn_session_ok`.
- *   - `AgentSupervisor::rebind_from_tugbank` re-materializes those
- *     records into the ledger at startup.
+ * Server-side prerequisites:
+ *   - Tugcast's sqlite-backed `SessionLedger` records each session's
+ *     `(card_id, project_dir, session_id)` on `session_init` (via
+ *     `LedgerSessionsRecorder::record_spawn`). The row's `card_id`
+ *     column is preserved across the session's lifecycle (close/fail),
+ *     so the binding persists across tugcast restarts.
+ *   - `AgentSupervisor::rebind_from_ledger` re-materializes the
+ *     in-memory ledger map from sqlite at startup.
  *   - `on_client_disconnect` explicitly does not touch the ledger, so
  *     sessions survive a WS drop.
  *
  * Client-side flow:
- *   1. `restoreTideSessions` walks the deck's tide cards, reads each
- *      one's tugbank record, and — for each record present — fires
- *      `spawn_session(mode=resume)` via `sendSpawnSession`.
+ *   1. `restoreTideSessions` sends a `list_card_bindings` CONTROL
+ *      request and waits for the `list_card_bindings_ok` response.
+ *      Each binding is matched against the deck's tide cards by
+ *      `card_id`; for matches it fires `spawn_session(mode=resume)`
+ *      via `sendSpawnSession`.
  *   2. The expectation is recorded in `tideRestoreRegistry` with a
  *      10-second timeout. `TideCardContent` subscribes to the
  *      registry and renders `TideRestoring` whenever a card has a
@@ -45,24 +49,28 @@
  *      design choice: server state is preserved (no `close_session`
  *      fires), so next reload will retry the restore.
  *
+ * The legacy tugbank `dev.tugtool.tide.session-keys` domain that this
+ * module previously read has been retired — the sqlite ledger is now
+ * the single source of truth for the (card → session) binding. This
+ * also fixes a phantom-resume bug: a card whose user picked Start
+ * Fresh and quit before the first user message no longer surfaces a
+ * "Couldn't resume the previous session" banner on relaunch, because
+ * the ledger only inserts on `session_init` (after a real JSONL
+ * exists).
+ *
  * @module lib/tide-session-restore
  */
 
 import type { DeckManager } from "../deck-manager";
 import type { TugConnection } from "../connection";
-import type { TugbankClient } from "./tugbank-client";
 import { sendSpawnSession } from "./session-lifecycle";
 import { logSessionLifecycle } from "./session-lifecycle-log";
 import { cardSessionBindingStore } from "./card-session-binding-store";
 import { cardServicesStore } from "./card-services-store";
 import { pickerNoticeStore } from "./picker-notice-store";
-import { FeedId } from "../protocol";
-
-/**
- * Tugbank domain where tugcast writes per-card session records. Mirrors
- * `SESSION_KEYS_DOMAIN` in `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs`.
- */
-const SESSION_KEYS_DOMAIN = "dev.tugtool.tide.session-keys";
+import { subscribeToListCardBindingsOk } from "./tide-session-ledger-events";
+import { encodeListCardBindings, FeedId } from "../protocol";
+import type { CardBinding } from "../protocol";
 
 /** Component id for tide cards. Matches `registerTideCard`'s registration. */
 const TIDE_COMPONENT_ID = "tide";
@@ -71,33 +79,10 @@ const TIDE_COMPONENT_ID = "tide";
  * Per-card restore timeout. Long enough to survive a slow subprocess
  * spawn, short enough that a dead server is caught quickly. On
  * timeout the entry is cleared and the picker presents with a
- * `restore_timed_out` notice; the tugbank record is preserved so the
- * next reload retries.
+ * `restore_timed_out` notice; the ledger row is preserved so the next
+ * reload retries.
  */
 const RESTORE_TIMEOUT_MS = 10_000;
-
-/**
- * Shape of the per-card value in `SESSION_KEYS_DOMAIN`. Mirrors the
- * Rust `SessionKeyRecord` struct — `project_dir` is optional in the
- * wire format (`None` for pre-W2 legacy records), but we require it
- * for restore since `spawn_session` takes it as a mandatory argument.
- */
-interface PersistedSessionRecord {
-  tug_session_id: string;
-  project_dir?: string;
-  claude_session_id?: string;
-}
-
-function isRestoreCandidate(value: unknown): value is PersistedSessionRecord {
-  if (value === null || typeof value !== "object") return false;
-  const obj = value as Record<string, unknown>;
-  return (
-    typeof obj.tug_session_id === "string" &&
-    obj.tug_session_id.length > 0 &&
-    typeof obj.project_dir === "string" &&
-    obj.project_dir.length > 0
-  );
-}
 
 /** Per-card restore context — enough to drive Retry and Cancel copy. */
 export interface RestoreExpectation {
@@ -188,15 +173,6 @@ function installRegistrySubscriptions(connection: TugConnection): void {
   // re-acked, transport is settled" semantic belongs to this restore
   // module, which already owns the corresponding restore-registry
   // bookkeeping.
-  //
-  // Subscriber ordering (production): `cardServicesStore.attachDeckManager`
-  // (called from `main.tsx` before `restoreTideSessions`) calls
-  // `_ensureInitialized`, so cardServicesStore subscribed to the
-  // binding store first. By the time this callback runs,
-  // cardServicesStore has already reconciled and the per-card store
-  // is constructed. `notifyTransportSettled()` is a no-op on a fresh
-  // store (already `online`); it only changes state when a store
-  // survives a `restoring` phase, which is the contract under test.
   cardSessionBindingStore.subscribe(() => {
     const bindings = cardSessionBindingStore.getSnapshot();
     for (const cardId of Array.from(tideRestoreRegistry.getSnapshot().keys())) {
@@ -279,53 +255,87 @@ export interface RestoreOptions {
 }
 
 /**
- * Re-assert session bindings for every tide card in the deck that has
- * a persisted tugbank record. Callers should invoke after
- * `tugbankClient.ready()` has resolved and `DeckManager` has loaded
- * the layout — typically right after `initActionDispatch` in
- * `main.tsx`.
+ * Re-assert session bindings for every tide card in the deck that the
+ * server's ledger has a binding for. Sends a `list_card_bindings`
+ * CONTROL request and dispatches `spawn_session(mode=resume)` per
+ * matching deck card on the response. Callers should invoke after
+ * `DeckManager` has loaded the layout — typically right after
+ * `initActionDispatch` in `main.tsx`.
  *
- * Idempotent across calls. The module-level `installRegistrySubscriptions`
- * guard ensures the binding-arrival and SESSION_STATE subscribers are
- * wired exactly once even when this function runs again on reconnect;
- * `fireRestore` itself clears any stale per-card timer before arming a
- * new one, so a re-fire after a previous restore is well-defined.
+ * Idempotent across calls. The module-level
+ * `installRegistrySubscriptions` guard ensures the binding-arrival and
+ * SESSION_STATE subscribers are wired exactly once even when this
+ * function runs again on reconnect; `fireRestore` itself clears any
+ * stale per-card timer before arming a new one, so a re-fire after a
+ * previous restore is well-defined.
  */
 export function restoreTideSessions(
   deck: DeckManager,
-  tugbank: TugbankClient,
   connection: TugConnection,
   opts?: RestoreOptions,
 ): void {
   installRegistrySubscriptions(connection);
 
-  const cards = deck
-    .getSnapshot()
-    .cards.filter((c) => c.componentId === TIDE_COMPONENT_ID);
-  if (cards.length === 0) return;
+  const tideCardIds = new Set(
+    deck
+      .getSnapshot()
+      .cards.filter((c) => c.componentId === TIDE_COMPONENT_ID)
+      .map((c) => c.id),
+  );
+  if (tideCardIds.size === 0) return;
 
-  let restoredCount = 0;
-  for (const card of cards) {
-    const record = tugbank.getValue(SESSION_KEYS_DOMAIN, card.id);
-    if (!isRestoreCandidate(record)) continue;
-    fireRestore(
-      card.id,
-      record.tug_session_id,
-      record.project_dir as string,
-      connection,
-    );
-    restoredCount += 1;
-  }
+  // Subscribe once for the matching response, then drop the
+  // subscription. The bus is process-global, so we filter by the
+  // deck's tide cards here.
+  const reason = opts?.reason ?? "startup";
+  const unsubscribe = subscribeToListCardBindingsOk(({ bindings }) => {
+    unsubscribe();
+    let restoredCount = 0;
+    // Track which cards we've already fired for. Multiple ledger rows
+    // can map to the same card_id (sequential sessions on that card);
+    // the wire orders rows newest-first by `last_used_at`, so the
+    // first match per card_id is the one to resume.
+    const fired = new Set<string>();
+    for (const binding of bindings) {
+      if (!isCardBinding(binding)) continue;
+      if (!tideCardIds.has(binding.card_id)) continue;
+      if (fired.has(binding.card_id)) continue;
+      fired.add(binding.card_id);
+      fireRestore(
+        binding.card_id,
+        binding.session_id,
+        binding.project_dir,
+        connection,
+      );
+      restoredCount += 1;
+    }
+    if (restoredCount > 0) {
+      logSessionLifecycle("restore.fired_resume_spawns", {
+        card_count: tideCardIds.size,
+        restore_count: restoredCount,
+        reason,
+      });
+    }
+  });
 
-  if (restoredCount > 0) {
-    logSessionLifecycle("restore.fired_resume_spawns", {
-      card_count: cards.length,
-      restore_count: restoredCount,
-      reason: opts?.reason ?? "startup",
-    });
-  }
+  // Fire the request. `action-dispatch` decodes the response and
+  // publishes onto `listCardBindingsOkBus`, which the subscription
+  // above consumes.
+  connection.send(encodeListCardBindings());
 }
 
+function isCardBinding(value: unknown): value is CardBinding {
+  if (value === null || typeof value !== "object") return false;
+  const obj = value as Record<string, unknown>;
+  return (
+    typeof obj.card_id === "string" &&
+    obj.card_id.length > 0 &&
+    typeof obj.session_id === "string" &&
+    obj.session_id.length > 0 &&
+    typeof obj.project_dir === "string" &&
+    obj.project_dir.length > 0
+  );
+}
 
 /**
  * Send the `spawn_session(mode=resume)` frame and register the
@@ -369,7 +379,7 @@ export function fireRestore(
  * User clicked Cancel in `TideRestoring`. Clear the in-flight
  * expectation and drop to the picker with a `restore_canceled`
  * notice. Per design: server state is preserved — no `close_session`
- * frame fires, so next reload will retry the restore from tugbank.
+ * frame fires, so next reload will retry the restore from the ledger.
  */
 export function cancelTideRestore(cardId: string): void {
   const expectation = tideRestoreRegistry.get(cardId);

@@ -30,8 +30,8 @@ use tugcast_core::{FeedId, Frame, StreamFeed};
 
 use crate::auth::new_shared_auth_state;
 use crate::feeds::agent_supervisor::{
-    AgentSupervisor, AgentSupervisorConfig, LedgerSessionsRecorder, SessionKeysStore,
-    SessionsRecorder, SpawnerFactory, default_spawner_factory,
+    AgentSupervisor, AgentSupervisorConfig, LedgerSessionsRecorder, SessionsRecorder,
+    SpawnerFactory, default_spawner_factory,
 };
 use crate::feeds::filetree::FileTreeQuery;
 #[cfg(debug_assertions)]
@@ -329,19 +329,15 @@ async fn main() {
     let (session_state_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
     let (session_metadata_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
-    // Build the SessionKeysStore from the tugbank client. Per [D15], tugbank
-    // unavailability is a fatal startup error: without persistent session
-    // intent records, cards cannot reliably resume their sessions across
-    // restart, and the supervisor has no business running in that state.
-    let Some(ref bank_client_ref) = bank_client else {
+    // Per [D15], tugbank unavailability is still a fatal startup error
+    // because other tugcast subsystems (defaults, recents, layout) need it.
+    if bank_client.is_none() {
         eprintln!(
-            "tugcast: error: tugbank unavailable at {}, cannot start without persistent session store",
+            "tugcast: error: tugbank unavailable at {}, cannot start without it",
             bank_path.display()
         );
         std::process::exit(1);
-    };
-    let session_keys_store: Arc<dyn SessionKeysStore> =
-        Arc::clone(bank_client_ref) as Arc<dyn SessionKeysStore>;
+    }
 
     // Open the session ledger. The data dir is created on demand. A failure
     // here is fatal: the supervisor depends on the ledger to track session
@@ -422,7 +418,6 @@ async fn main() {
         session_metadata_tx.clone(),
         code_tx.clone(),
         client_action_tx.clone(),
-        session_keys_store,
         sessions_recorder,
         Some(Arc::clone(&ledger)),
         spawner_factory,
@@ -432,14 +427,14 @@ async fn main() {
     );
     let supervisor = Arc::new(supervisor);
 
-    // Rebind persisted intent records from tugbank. Per [F15] this only
-    // populates the ledger — `client_sessions` is left untouched and real
+    // Rebind persisted ledger rows. Per [F15] this only populates the
+    // in-memory ledger — `client_sessions` is left untouched and real
     // clients connecting after startup send their own `spawn_session`
     // CONTROL frames.
-    match supervisor.rebind_from_tugbank().await {
-        Ok(count) if count > 0 => info!(count, "rebound intent records from tugbank"),
+    match supervisor.rebind_from_ledger().await {
+        Ok(count) if count > 0 => info!(count, "rebound ledger rows on startup"),
         Ok(_) => {}
-        Err(e) => warn!(error = %e, "rebind_from_tugbank failed (non-fatal)"),
+        Err(e) => warn!(error = %e, "rebind_from_ledger failed (non-fatal)"),
     }
 
     // Spawn the supervisor's dispatcher task (consumes CODE_INPUT, routes

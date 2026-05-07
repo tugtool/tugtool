@@ -46,11 +46,13 @@ import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
 import { getAppLifecycle } from "./lib/app-lifecycle";
 import { decodeSessionUpdated } from "./protocol";
-import type { SessionRow } from "./protocol";
+import type { CardBinding, SessionRow } from "./protocol";
 import {
   publishSessionUpdated,
   publishListSessionsOk,
   publishListSessionsErr,
+  publishListCardBindingsOk,
+  publishListCardBindingsErr,
   publishForgetSessionOk,
   publishForgetSessionErr,
   publishForgetProjectDirSessionsOk,
@@ -470,6 +472,26 @@ export function initActionDispatch(
       return;
     }
     publishListSessionsErr({ project_dir: projectDir, reason });
+  });
+
+  // list_card_bindings_ok / _err: response to a startup/reconnect
+  // request from `restoreTideSessions`. Replaces the legacy tugbank
+  // `session-keys` domain read with a ledger-backed source of truth.
+  registerAction("list_card_bindings_ok", (payload) => {
+    const bindings = payload.bindings;
+    if (!Array.isArray(bindings)) {
+      console.warn("list_card_bindings_ok: missing or invalid bindings", payload);
+      return;
+    }
+    publishListCardBindingsOk({ bindings: bindings as CardBinding[] });
+  });
+  registerAction("list_card_bindings_err", (payload) => {
+    const reason = payload.reason;
+    if (typeof reason !== "string") {
+      console.warn("list_card_bindings_err: missing reason", payload);
+      return;
+    }
+    publishListCardBindingsErr({ reason });
   });
 
   // forget_session_ok / _err
