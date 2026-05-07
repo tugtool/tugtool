@@ -397,6 +397,70 @@ This plan follows tugplan-skeleton v2. Anchors are explicit and stable; design d
 
 ---
 
+#### [D14] Per-cell floating surfaces are an anti-pattern (DECIDED) {#d14-no-per-cell-popovers}
+
+**Decision:** A `TugListView` cell renderer must not mount its own popover, alert, sheet, or context menu. Confirmation flows for in-list row actions are owned by the responder *above* the list (typically the form), with a single floating surface that anchors to the requesting row at request time.
+
+**Rationale:**
+- Per-cell floating surfaces register N parallel responders with overlapping lifetimes. When a row unmounts on confirm-action, the popover's cleanup cascade (Radix portal teardown, `useServicePopupBinding` listener removal, focus restoration) collides with the row's React-tree unmount. Symptoms in the wild: leaked document listeners, indeterminate DOM focus, controls that go dead after a single use.
+- The chain (`tuglaws/responder-chain.md` §The three principals, §First responder) expects responder lifetimes to track *semantic boundaries* — an editor, a card, a sheet. "One responder per virtualized list row" is not a semantic boundary; it's an accidental one tied to viewport position and data identity.
+- The picker's pre-Step-9.5 implementation is the case study. Per-row `TugConfirmPopover` instances on each session row produce a structurally fragile interaction even after the chain-pollution fix (DISMISS_POPOVER instead of CANCEL_DIALOG in `TugPopover.handleOpenChange`). The popover lifecycle is not the problem; *N popover lifecycles in cells that recycle* is.
+
+**Implications:**
+- Step 9.5 refactors the picker to hoist the confirmation popover to the form responder, anchored via a `data-session-id` lookup at render time.
+- This rule joins the anti-patterns list in `tuglaws/responder-chain.md` §Anti-patterns alongside "Callback props for user interactions" and "Per-component keyboard listeners."
+
+---
+
+#### [D15] TugConfirmPopover gains a controlled-mode API (DECIDED) {#d15-tug-confirm-popover-controlled}
+
+**Decision:** `TugConfirmPopover` adds a controlled-mode props API (`open`, `anchorEl`, `onConfirm`, `onCancel`) alongside its existing imperative `ref.confirm() → Promise<boolean>` API. The controlled API becomes the primary surface for new consumers; the Promise API stays for legacy callers but is no longer the recommended shape.
+
+**Rationale:**
+- The imperative Promise API is what forces consumers into the [D14] anti-pattern. Each caller mounts its own popover and `await`s a per-instance promise, so confirmation lifecycle is necessarily local to the caller — exactly what produces N popovers per list.
+- A controlled API lets a single popover instance serve N rows: the form holds `pendingForgetSessionId: string | null`, the popover is rendered open when that's non-null, and its anchor target is derived from the same id. One instance, repositioned by the responder, is the chain-aligned shape.
+- The controlled API also threads cleanly through the responder model: the popover is now a render-time *consequence* of form state (driven by a chain action handler), not an imperative side effect inside a click handler.
+
+**Implications:**
+- New props on `TugConfirmPopover`: `open?: boolean`, `anchorEl?: HTMLElement | null`, `onConfirm?: () => void`, `onCancel?: () => void`.
+- When `open` is provided, the inner `TugPopover` is driven controlled-mode (`open` + `onOpenChange` round-trip). When `open` is omitted, the imperative path is in effect.
+- Anchoring: TugConfirmPopover gains a sibling render branch that uses Radix's `<Popover.Anchor>` primitive (re-exported as `<TugPopoverAnchor>` from `tug-popover.tsx`) so the popover content positions against an arbitrary `anchorEl` without needing to render it as the trigger.
+- The two APIs are mutually exclusive at the call site (caller picks one).
+
+---
+
+#### [D16] Trailing in-list actions use TugIconButton, not raw `<button>` (DECIDED) {#d16-tug-icon-button}
+
+**Decision:** A new `TugIconButton` primitive is introduced for trailing icon-shaped actions on `TugListView` cells (trash, more, info, etc.). It wraps `<button type="button">` with `data-tug-focus="refuse"`, `useControlDispatch()` plumbing, and standard hover/focus/active styling. Cells must not embed raw `<button>` elements.
+
+**Rationale:**
+- A raw `<button>` accepts browser focus on click (in Chrome), promotes the chain via DOM-walk, AND fires Radix-Trigger handlers when wrapped in a popover trigger — three behaviors fighting on one click event. Per `tuglaws/responder-chain.md` §Focus acceptance: *"Authoring an attribute that turns on only one half is incoherent — a button that takes browser focus but not chain promotion (or vice versa) is a bug, not a feature."*
+- The picker's pre-Step-9.5 trash button hand-rolled four conflicting behaviors into a single `onClick`: `e.preventDefault()` to suppress Radix-Trigger toggle, `e.stopPropagation()` to suppress the cell wrapper's `onSelect`, `setConfirmOpen(true)` to drive React state, `confirmRef.confirm()` to open the popover imperatively. The compose pattern (`data-tug-focus="refuse"` + targeted dispatch via `useControlDispatch`) replaces all four with one bake-it-in primitive.
+- Standardizing the icon-button primitive also gives us one place to apply consistent hover/focus token treatment across in-list actions.
+
+**Implications:**
+- New primitive: `TugIconButton` in `tug-icon-button.tsx` + `tug-icon-button.css`.
+- Step 9.5 migrates the picker's trash button as the first consumer.
+- Future in-list raw `<button>` usages are migrated as the codebase touches them; the rule lands in `component-authoring.md`.
+
+---
+
+#### [D17] List cell renderers are pure functions (DECIDED) {#d17-pure-renderer-rule}
+
+**Decision:** `TugListView` cell renderers (functions matching the `TugListViewCellRenderer<…>` shape) must be pure render functions. No `useState`, `useRef`, `useEffect`, `useLayoutEffect`, `useImperativeHandle`. Cell renderers receive `(index, dataSource, kind, id)` plus React context, and return JSX. Mutable state belongs either in the data source (chain-observable, `useSyncExternalStore`-shaped) or in the responder above the list.
+
+**Rationale:**
+- Cell renderers operate inside a windowed list. Their lifecycle is tied to viewport position and data identity, both of which the consumer doesn't control. State stored in a cell can be lost on virtualization recycle, on data-source update, or on cell unmount — producing subtle, hard-to-reproduce bugs that resemble "the second click does nothing."
+- The picker's pre-Step-9.5 `SessionResumeCell` violated this rule with `useState(confirmOpen)`, a `useRef<TugConfirmPopoverHandle>(null)`, and an `async` click handler whose `finally` block called `setConfirmOpen(false)` on a possibly-unmounted component. Each piece looked harmless in isolation; together they produced the leaked-listener / dead-trash bug class.
+- L02 (external state via `useSyncExternalStore` only) implies state belongs in stores, not in renderers. Cells *are* renderers in the strictest sense — they should be the cleanest expression of that rule.
+
+**Implications:**
+- Step 9.5 deletes the cell-local `confirmOpen` useState, the `confirmRef`, and the `onConfirmForgetSession` callback context.
+- `tuglaws/component-authoring.md` adds a "Cell renderer rules" section.
+- A future lint rule in the tugdeck eslint config can enforce the constraint mechanically (out of scope for this plan, recorded in the roadmap).
+
+---
+
 ### Specification {#specification}
 
 #### Spec S01: Picker Row Vocabulary {#s01-row-vocabulary}
@@ -884,9 +948,154 @@ export interface FilteredTugListViewDataSource extends TugListViewDataSource {
 
 ---
 
-#### Step 10: Phase 2 — Tuglaws walkthrough + cleanup {#step-10}
+#### Step 9.5: Phase 2.5 — Chain-native confirmation refactor {#step-9-5}
 
 **Depends on:** #step-9
+
+**Commit:** Multiple (one per sub-task in the order below). The phase closes with `tide(picker): hoist confirmation to form, eliminate per-cell popovers`.
+
+**References:** [D14] no-per-cell-popovers, [D15] tug-confirm-popover-controlled, [D16] tug-icon-button, [D17] pure-renderer-rule, [responder-chain.md §The three principals](../tuglaws/responder-chain.md#the-three-principals), [responder-chain.md §Anti-patterns](../tuglaws/responder-chain.md#anti-patterns), [responder-chain.md §Focus acceptance](../tuglaws/responder-chain.md#focus-acceptance), L11, L06, L02, (#context, #strategy)
+
+##### Findings (post-Step 9 vetting) {#step-9-5-findings}
+
+After landing the master/detail picker (Step 9) and the chain-pollution fix in `TugPopover.handleOpenChange` (DISMISS_POPOVER instead of CANCEL_DIALOG, already shipped during Step 9 vetting and required regardless of this step), HMR vetting surfaced a deeper structural issue: **per-cell `TugConfirmPopover` instances produce a fragile interaction lifecycle that the chain alone cannot rescue.** After a single trash+forget on a session row, DOM focus enters an indeterminate state and subsequent trash clicks become inert.
+
+The root cause is not a single bug. It is a stack of tuglaw violations on the per-row trash button:
+
+1. **L11 violation — callback props for user interactions.** The cell calls `onConfirmForgetSession` from `PickerCellContextValue` instead of dispatching a chain action. `responder-chain.md §Anti-patterns` lists this as the first prohibited pattern.
+2. **L06 violation — appearance via React state.** The cell uses `useState(confirmOpen)` to drive the row's `data-popover-open` attribute. Visual state should derive from the chain or from CSS, not from a parallel React `useState`.
+3. **Per-cell floating surfaces ([D14]).** N parallel `TugConfirmPopover` instances register N responders with overlapping lifetimes; when a row unmounts on confirm, the popover's cleanup cascade collides with the cell's React-tree teardown. Listeners installed by `useServicePopupBinding.captureOnOpen` leak, focus restoration runs against detached trigger elements, and the next trash click finds the chain in an inconsistent state.
+4. **Mixed focus models on one control.** The trash is a raw `<button>`, not a focus-refusing `TugButton`. Click promotes the chain (DOM-walk), moves browser focus (Chrome), AND fires Radix's `Popover.Trigger` toggle — three behaviors fighting on one click. The hand-rolled `e.preventDefault()` to suppress Radix's toggle also disables `useServicePopupBinding.captureOnOpen`, so close-focus restoration is half-broken even on the happy path.
+5. **Imperative Promise as a parallel control flow path.** `confirmRef.current?.confirm()` returns a `Promise<boolean>` the cell `await`s, then calls a callback, then `setConfirmOpen(false)` in a `finally` block on a possibly-unmounted component. The chain is the canonical dispatch currency (`responder-chain.md §ActionEvent — the sole dispatch currency`); a parallel Promise lane creates ordering and unmount seams where bugs land.
+
+The chain is built on ownership boundaries (responders own state, controls dispatch). The picker's per-row trash places state, control, side-effect, and floating-surface lifecycle in the cell — violating every part of the model. More patches won't fix it. The model has to change.
+
+##### Approach {#step-9-5-approach}
+
+Hoist confirmation ownership to the picker form (the chain responder). The cell becomes a pure renderer with a focus-refusing `TugIconButton` that emits one chain action with a `{sessionId}` payload. The form responder handles the action by setting `pendingForgetSessionId` state, which drives a single `TugConfirmPopover` (controlled mode) anchored to the requesting row's trash button via a `data-session-id` lookup.
+
+```
+┌─────────────────────────────────────────────────┐
+│  TideProjectPickerForm (chain responder)        │   actions:
+│    pendingForgetSessionId: string | null        │     request-forget-session
+│    one <TugConfirmPopover open={…} anchorEl={…}/>│
+└──────────────────────▲──────────────────────────┘
+                       │ parentId
+┌──────────────────────┴──────────────────────────┐
+│  SessionResumeCell (pure renderer)              │
+│    data-session-id={row.session_id}             │
+│    <TugIconButton dispatch={request-forget-     │  ← targeted dispatch
+│      session, {sessionId}}/>                    │     to parent responder
+└─────────────────────────────────────────────────┘
+```
+
+##### Sub-steps and commits {#step-9-5-substeps}
+
+This step ships as five commits in order. Each builds on the previous.
+
+**9.5a — `TugIconButton` primitive.**
+- New: `tug-icon-button.tsx`, `tug-icon-button.css`, `__tests__/tug-icon-button.test.tsx`.
+- Props: `icon: ReactNode`, `ariaLabel: string`, `title?: string`, `dispatch?: ActionEvent`, `onClick?: (e) => void`, `disabled?: boolean`, `senderId?: string`, `size?: "sm" | "md"`, `tone?: "default" | "danger"`.
+- Renders `<button type="button" data-tug-focus="refuse" data-slot="tug-icon-button">`.
+- Uses `useControlDispatch()` when `dispatch` is provided. Falls back to `onClick` otherwise. Both are mutually exclusive (typed via discriminated union or runtime warn).
+- Hover / focus / active states scoped under `tug-icon-button.css` per L20.
+- Add a small gallery card (`gallery-icon-button.tsx` registered in `gallery-registrations.tsx`).
+- Commit: `tugways(tug-icon-button): add focus-refusing icon button primitive`.
+
+**9.5b — `TugConfirmPopover` controlled-mode API + `TugPopoverAnchor` re-export.**
+- Edit `tug-popover.tsx`: re-export `Popover.Anchor` as `TugPopoverAnchor`. Document its purpose (anchor without trigger).
+- Edit `tug-confirm-popover.tsx`: add `open?: boolean`, `anchorEl?: HTMLElement | null`, `onConfirm?: () => void`, `onCancel?: () => void` props. When `open` is a boolean, render `<TugPopoverAnchor>` over the supplied `anchorEl`'s position (via a synthetic positioned element or by passing the element ref through to Radix), drive the inner `TugPopover` controlled-mode (pass `open` and `onOpenChange`), and invoke `onConfirm`/`onCancel` from the action handlers in lieu of resolving the imperative Promise.
+- Caller picks one API: imperative `ref.confirm()` OR controlled props. Document mutual exclusivity in JSDoc.
+- Tests: existing imperative tests pass unchanged; new tests cover controlled-mode open/close + onConfirm/onCancel firing.
+- Commit: `tugways(tug-confirm-popover): add controlled-mode props API`.
+
+**9.5c — `request-forget-session` chain action.**
+- Edit `action-vocabulary.ts`: add `REQUEST_FORGET_SESSION: "request-forget-session"`. Document payload `{ sessionId: string }` inline.
+- Edit `tuglaws/action-naming.md`: add the action to the per-action payload table.
+- Commit: `tugways(action-vocabulary): add request-forget-session`.
+
+**9.5d — Picker refactor.**
+- Edit `tide-picker-cells.tsx`:
+  - Delete `useState(confirmOpen)`, `confirmRef`, the in-cell `<TugConfirmPopover>`, and the `handleTrashClick` async function.
+  - Replace the raw `<button>` trash with `<TugIconButton dispatch={{ action: REQUEST_FORGET_SESSION, value: { sessionId: row.session_id }, phase: "discrete" }} icon={<Trash2 size={14} />} ariaLabel={…} tone="danger" size="sm" />`.
+  - Add `data-session-id={row.session_id}` to the row's outer wrapper for anchor lookup.
+  - Delete `onConfirmForgetSession` from `PickerCellContextValue` and `NULL_CONTEXT`.
+  - Drop all imports made unused by the deletion.
+- Edit `tide-card.tsx` (`TideProjectPickerForm`):
+  - Add `pendingForgetSessionId: string | null` state.
+  - Register chain handler for `REQUEST_FORGET_SESSION` on the form responder via `useResponderForm` (or hand-rolled `useResponder` if `useResponderForm` doesn't have a slot for free-form actions). Payload's `sessionId` populates `pendingForgetSessionId`. Defensive payload narrowing per L07.
+  - Resolve the anchor element via a `useLayoutEffect` that, when `pendingForgetSessionId !== null`, queries `formRef.current?.querySelector(`[data-session-id="${id}"] [data-slot="tug-icon-button"]`)` and stores it in a ref-backed state for the popover.
+  - Render ONE `<TugConfirmPopover open={pendingForgetSessionId !== null} anchorEl={anchorEl} message={…} confirmLabel="Forget" confirmRole="danger" side="left" onConfirm={() => { forgetSession(pendingForgetSessionId!); setPendingForgetSessionId(null); }} onCancel={() => setPendingForgetSessionId(null)} />` near the form's footer — sibling to the existing forget-all popover.
+  - Delete `onConfirmForgetSession: forgetSession` from `cellContextValue`.
+- Edit `tide-card.css`:
+  - Remove the `.tide-card-picker-session-option[data-popover-open="true"]` rules — no longer needed (popover open state is form-owned, the row no longer has its own attribute).
+  - Adjust the trash icon hover-reveal CSS to read `:hover` and `:focus-within` on the row plus the form's `[data-pending-forget="<id>"]` marker, OR drop the hover-only reveal entirely (icon button is always visible on the row when non-live; its tone="danger" gives the visual weight).
+- Manual smoke: trash → forget on row A → trash on row B → forget on row B → trash on row C → cancel — all interactions remain crisp; no focus indeterminacy; no dead clicks.
+- Commit: `tide(picker): hoist confirmation to form, eliminate per-cell popovers`.
+
+**9.5e — Documentation updates.**
+- Edit `tuglaws/responder-chain.md` §Anti-patterns: add a new bullet for "Per-cell floating surfaces" per [D14].
+- Edit `tuglaws/component-authoring.md`: add "Cell renderer rules" section per [D17] and "Trailing actions in lists use TugIconButton" rule per [D16].
+- Update [tugplan-tug-list-view.md §roadmap](./archive/tugplan-tug-list-view.md#roadmap): note cell-renderer purity rule landed via this plan.
+- Commit: `tuglaws(responder-chain,component-authoring): document cell-renderer + icon-button rules`.
+
+##### Artifacts (consolidated) {#step-9-5-artifacts}
+
+- New file `tugdeck/src/components/tugways/tug-icon-button.tsx`.
+- New file `tugdeck/src/components/tugways/tug-icon-button.css`.
+- New file `tugdeck/src/components/tugways/__tests__/tug-icon-button.test.tsx`.
+- New file `tugdeck/src/components/tugways/cards/gallery-icon-button.tsx`.
+- Edit `tugdeck/src/components/tugways/tug-popover.tsx`: re-export `TugPopoverAnchor`.
+- Edit `tugdeck/src/components/tugways/tug-confirm-popover.tsx`: add controlled-mode props API; existing imperative API preserved.
+- Edit `tugdeck/src/components/tugways/__tests__/tug-confirm-popover.test.tsx`: add controlled-mode test cases.
+- Edit `tugdeck/src/components/tugways/action-vocabulary.ts`: add `REQUEST_FORGET_SESSION`.
+- Edit `tuglaws/action-naming.md`: document `request-forget-session`.
+- Edit `tugdeck/src/components/tugways/cards/tide-picker-cells.tsx`: delete cell-local state/refs/popover/callback; replace raw trash with `TugIconButton`; add `data-session-id`.
+- Edit `tugdeck/src/components/tugways/cards/tide-card.tsx`: add `pendingForgetSessionId` state, chain handler, anchor resolution, single controlled-mode `TugConfirmPopover`.
+- Edit `tugdeck/src/components/tugways/cards/tide-card.css`: remove `[data-popover-open]` rules; adjust trash visibility.
+- Edit `tuglaws/responder-chain.md` §Anti-patterns: add per-cell-floating-surfaces entry.
+- Edit `tuglaws/component-authoring.md`: add cell-renderer-purity + trailing-actions sections.
+
+##### Tasks {#step-9-5-tasks}
+
+- [ ] 9.5a — Implement `TugIconButton` + CSS + tests + gallery card. Land as commit 1.
+- [ ] 9.5b — Add controlled-mode API to `TugConfirmPopover`; re-export `TugPopoverAnchor`; tests. Land as commit 2.
+- [ ] 9.5c — Add `REQUEST_FORGET_SESSION` action constant + action-naming.md entry. Land as commit 3.
+- [ ] 9.5d — Refactor `tide-picker-cells.tsx` to a pure renderer; refactor `TideProjectPickerForm` to own confirmation state + popover; CSS cleanup. Land as commit 4.
+- [ ] 9.5e — Documentation updates (responder-chain.md, component-authoring.md). Land as commit 5.
+- [ ] Manual smoke: trash → forget → trash → forget across multiple rows in succession; no focus glitch; no dead clicks (the bug from post-Step-9 vetting is gone).
+
+##### Tests {#step-9-5-tests}
+
+- [ ] `bun test src/components/tugways/__tests__/tug-icon-button.test.tsx` — all cases pass.
+- [ ] `bun test src/components/tugways/__tests__/tug-confirm-popover.test.tsx` — existing imperative tests + new controlled-mode tests all pass.
+- [ ] `bun test src/components/tugways/__tests__/tug-popover.test.tsx` — unchanged from Step 9 (the DISMISS_POPOVER fix already shipped, tests already pass).
+- [ ] `bun test src/__tests__/tide-card.test.tsx` — picker tests pass with new DOM shape (pre-existing rot in `tide-picker-cells.test.tsx` still deferred per Step 9 note).
+- [ ] Cell-renderer purity check — lint or manual: `rg '\buseState\b|\buseRef\b|\buseEffect\b|\buseLayoutEffect\b|\buseImperativeHandle\b' tugdeck/src/components/tugways/cards/tide-picker-cells.tsx` returns zero matches.
+- [ ] Raw-button check: `rg '<button\b' tugdeck/src/components/tugways/cards/tide-picker-cells.tsx` returns zero matches.
+
+##### Checkpoint {#step-9-5-checkpoint}
+
+- [ ] `bun run check`
+- [ ] `bun test` (curated subset matching Step 9's pattern; full run optional)
+- [ ] `bun run audit:tokens lint`
+- [ ] `cargo nextest run`
+- [ ] Manual smoke: trash + forget interaction is stable across repeated use; no focus indeterminacy; clicking trash on different rows in succession Just Works.
+
+##### Risks specific to Step 9.5 {#step-9-5-risks}
+
+| Risk | Impact | Likelihood | Mitigation |
+|------|--------|------------|------------|
+| Anchor-element resolution races on first render of the popover (querySelector returns null because the row isn't painted yet) | med | low | Use a `useLayoutEffect` for resolution; null `anchorEl` keeps the popover closed in render; the next layout pass re-resolves. Tests cover the race. |
+| Existing imperative-mode TugConfirmPopover consumers (forget-all in the same form, future callers) regress on the API change | med | low | Imperative API is preserved as-is; new props are purely additive; existing tests pass without modification. |
+| TugIconButton's `dispatch` prop conflicts with consumers that need both dispatch AND a side-effect onClick | low | med | Discriminated union: caller picks `dispatch` OR `onClick`. If both are needed, the responder's handler does the side effect — that's the chain way. |
+| Refactor introduces a new sheet-close-on-popover-dismiss bug | high | low | The DISMISS_POPOVER fix from Step 9 vetting addresses this category at the primitive level; refactor doesn't reintroduce it. Verify in manual smoke. |
+
+---
+
+#### Step 10: Phase 2 — Tuglaws walkthrough + cleanup {#step-10}
+
+**Depends on:** #step-9, #step-9-5
 
 **Commit:** `tide(picker): tuglaws walkthrough and cleanup`
 
@@ -925,7 +1134,7 @@ export interface FilteredTugListViewDataSource extends TugListViewDataSource {
 
 #### Step 11: Phase 2 Integration Checkpoint (Plan close) {#step-11}
 
-**Depends on:** #step-7, #step-8, #step-9, #step-10
+**Depends on:** #step-7, #step-8, #step-9, #step-9-5, #step-10
 
 **Commit:** `N/A (verification only)`
 
