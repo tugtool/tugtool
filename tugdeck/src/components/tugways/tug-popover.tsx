@@ -415,21 +415,59 @@ export function TugPopoverTrigger({ asChild = true, children }: TugPopoverTrigge
 /** TugPopoverAnchor props. */
 export interface TugPopoverAnchorProps {
   /**
-   * Render as child element, merging anchor behavior onto it.
+   * Render as child element, merging anchor behavior onto it. Honored
+   * only when `children` is provided; ignored when `virtualRef` is the
+   * anchor source.
    * @default true
    */
   asChild?: boolean;
-  children: React.ReactNode;
+  /**
+   * Virtual anchor: a ref to an external `HTMLElement` that the popover
+   * positions itself against. When provided, the anchor renders no DOM
+   * node of its own — Radix reads `ref.current` on every Popper update
+   * to compute the anchor rectangle. Lets a single popover instance
+   * point at different DOM nodes across renders by swapping the ref's
+   * `current` (or by passing a different ref object).
+   *
+   * The ref's `current` is permitted to be `null` transiently. Radix
+   * only reads `current` while the popover is mounted (i.e., the
+   * `open` prop on the surrounding `TugPopover` is `true`); callers
+   * that want the popover to stay closed while the anchor is
+   * unresolved should gate the surrounding popover's `open` state on
+   * a non-null anchor at the call site.
+   *
+   * Mutually exclusive with `children`. When `virtualRef` is set,
+   * `children` is ignored.
+   */
+  virtualRef?: React.RefObject<HTMLElement | null>;
+  /**
+   * Anchor element rendered in the React tree. Pass when the anchor IS
+   * a component in the tree (the typical "anchor a popover to this
+   * tab's <button>" case). Mutually exclusive with `virtualRef`.
+   */
+  children?: React.ReactNode;
 }
 
 /**
  * Thin wrapper on Radix `Popover.Anchor`. Use when the popover should
  * position relative to an element WITHOUT composing the trigger's
- * auto-toggle `onClick` onto that element. Pair with imperative
- * `popoverRef.current.open()` / `.close()` for purely
- * imperative-control popovers — i.e., a popover whose visibility is
- * driven by a parent's logic (matrix branches, async work, etc.)
- * rather than a single click on a button.
+ * auto-toggle `onClick` onto that element. Two anchoring modes:
+ *
+ *  - **Tree-anchored** (`children` prop): the anchor element lives in
+ *    the React tree and is used directly as the anchor. Pair with
+ *    imperative `popoverRef.current.open()` / `.close()` for purely
+ *    imperative-control popovers — i.e., a popover whose visibility is
+ *    driven by a parent's logic (matrix branches, async work, etc.)
+ *    rather than a single click on a button.
+ *  - **Virtual-anchored** (`virtualRef` prop): the anchor element is
+ *    referenced from outside the React tree (a `useRef` populated by
+ *    `querySelector` in a layout effect, a callback ref registered by
+ *    a child cell, etc.). Renders no DOM of its own. Lets one popover
+ *    instance serve N anchor targets by swapping the ref's `current`.
+ *    This is the shape `TugConfirmPopover`'s controlled-mode API uses
+ *    to point at whichever in-list row owns the current confirmation
+ *    request — see [tugplan-tide-picker-redesign §D14](
+ *    ../../roadmap/tugplan-tide-picker-redesign.md#d14-no-per-cell-popovers).
  *
  * Why this exists: composing `Popover.Trigger` onto an element that
  * already participates in pointerdown / pointerup / click event
@@ -444,9 +482,26 @@ export interface TugPopoverAnchorProps {
  * because no `onClick` toggle is composed onto the host element.
  *
  * Defaults to `asChild` so the caller's element is used directly as
- * the anchor without a wrapper div.
+ * the anchor without a wrapper div (tree-anchored mode only).
  */
-export function TugPopoverAnchor({ asChild = true, children }: TugPopoverAnchorProps) {
+export function TugPopoverAnchor({
+  asChild = true,
+  virtualRef,
+  children,
+}: TugPopoverAnchorProps) {
+  if (virtualRef !== undefined) {
+    // Radix's `virtualRef` is typed `RefObject<Measurable>` where Measurable
+    // is non-nullable. Our prop type is intentionally permissive — `current`
+    // may be null transiently, with the caller gating the surrounding
+    // popover's `open` state to ensure Radix only reads the ref while
+    // `current` is non-null. The cast bridges the typing gap at this single
+    // boundary; the caller-side gate is the runtime guarantee.
+    return (
+      <Popover.Anchor
+        virtualRef={virtualRef as React.RefObject<HTMLElement>}
+      />
+    );
+  }
   return <Popover.Anchor asChild={asChild}>{children}</Popover.Anchor>;
 }
 
@@ -660,6 +715,7 @@ function TugPopoverContentShell({ children }: { children: React.ReactNode }) {
  * when activated. Use with asChild to render a custom element.
  */
 export const TugPopoverClose = Popover.Close;
+
 
 /* ---------------------------------------------------------------------------
  * useTugPopoverClose

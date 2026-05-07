@@ -1059,7 +1059,7 @@ This step ships as five commits in order. Each builds on the previous.
 ##### Tasks {#step-9-5-tasks}
 
 - [x] 9.5a — Implement `TugIconButton` + CSS + tests + gallery card. Land as commit 1.
-- [ ] 9.5b — Add controlled-mode API to `TugConfirmPopover`; re-export `TugPopoverAnchor`; tests. Land as commit 2.
+- [x] 9.5b — Add controlled-mode API to `TugConfirmPopover`; re-export `TugPopoverAnchor`; tests. Land as commit 2.
 - [ ] 9.5c — Add `REQUEST_FORGET_SESSION` action constant + action-naming.md entry. Land as commit 3.
 - [ ] 9.5d — Refactor `tide-picker-cells.tsx` to a pure renderer; refactor `TideProjectPickerForm` to own confirmation state + popover; CSS cleanup. Land as commit 4.
 - [ ] 9.5e — Documentation updates (responder-chain.md, component-authoring.md). Land as commit 5.

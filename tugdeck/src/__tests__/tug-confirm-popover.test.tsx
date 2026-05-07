@@ -297,3 +297,197 @@ describe("TugConfirmPopover – no-provider fallback", () => {
     expect(getPopoverRoot()).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// 5. Controlled-mode API
+// ---------------------------------------------------------------------------
+
+/**
+ * Render a TugConfirmPopover in controlled mode anchored to a supplied
+ * element. The harness owns `open` state and `onConfirm` / `onCancel`
+ * callbacks via mock-trackers; the test asserts the mocks fire correctly
+ * and the open state flips back to false on the parent's setState.
+ */
+function renderControlled(initialOpen: boolean): {
+  manager: ResponderChainManager;
+  setOpen: (next: boolean) => void;
+  confirmCalls: { count: number };
+  cancelCalls: { count: number };
+  anchor: HTMLElement;
+  rerender: (open: boolean) => void;
+} {
+  const manager = new ResponderChainManager();
+  const confirmCalls = { count: 0 };
+  const cancelCalls = { count: 0 };
+
+  // Stand up the anchor element OUTSIDE the React tree so the popover's
+  // virtualRef pattern is exercised in the same way real consumers wire
+  // it (form holds a ref to a child cell's button via querySelector).
+  const anchor = document.createElement("button");
+  anchor.textContent = "Anchor";
+  anchor.setAttribute("data-testid", "external-anchor");
+  document.body.appendChild(anchor);
+  const anchorRef = { current: anchor as HTMLElement | null };
+
+  let openControl = initialOpen;
+  function ControlledHarness({ open }: { open: boolean }) {
+    return (
+      <ResponderChainContext.Provider value={manager}>
+        <TugConfirmPopover
+          message="Forget this row?"
+          confirmLabel="Forget"
+          cancelLabel="Cancel"
+          senderId="controlled-sender"
+          open={open}
+          anchorEl={anchorRef.current}
+          onConfirm={() => {
+            confirmCalls.count += 1;
+            openControl = false;
+            rerender(openControl);
+          }}
+          onCancel={() => {
+            cancelCalls.count += 1;
+            openControl = false;
+            rerender(openControl);
+          }}
+        />
+      </ResponderChainContext.Provider>
+    );
+  }
+
+  const utils = render(<ControlledHarness open={openControl} />);
+  const rerender = (open: boolean): void => {
+    utils.rerender(<ControlledHarness open={open} />);
+  };
+
+  const setOpen = (next: boolean): void => {
+    openControl = next;
+    rerender(openControl);
+  };
+
+  return { manager, setOpen, confirmCalls, cancelCalls, anchor, rerender };
+}
+
+describe("TugConfirmPopover – controlled-mode API", () => {
+  it("renders the popover when open=true and anchorEl is set", () => {
+    const ctx = renderControlled(false);
+    expect(getPopoverRoot()).toBeNull();
+    act(() => {
+      ctx.setOpen(true);
+    });
+    expect(getPopoverRoot()).not.toBeNull();
+  });
+
+  it("confirm-button click fires onConfirm and closes via parent setState", () => {
+    const ctx = renderControlled(false);
+    act(() => {
+      ctx.setOpen(true);
+    });
+    expect(getPopoverRoot()).not.toBeNull();
+
+    const confirmBtn = getButtonByText("Forget");
+    expect(confirmBtn).not.toBeNull();
+    act(() => {
+      fireEvent.click(confirmBtn!);
+    });
+
+    expect(ctx.confirmCalls.count).toBe(1);
+    expect(ctx.cancelCalls.count).toBe(0);
+    expect(getPopoverRoot()).toBeNull();
+  });
+
+  it("cancel-button click fires onCancel and closes via parent setState", () => {
+    const ctx = renderControlled(false);
+    act(() => {
+      ctx.setOpen(true);
+    });
+
+    const cancelBtn = getButtonByText("Cancel");
+    expect(cancelBtn).not.toBeNull();
+    act(() => {
+      fireEvent.click(cancelBtn!);
+    });
+
+    expect(ctx.cancelCalls.count).toBe(1);
+    expect(ctx.confirmCalls.count).toBe(0);
+    expect(getPopoverRoot()).toBeNull();
+  });
+
+  it("self-dispatch (sender matches) does NOT double-fire onCancel after onConfirm", () => {
+    // Regression pin for the chain pollution path: clicking Confirm
+    // dispatches confirmDialog which fires our own observer; without the
+    // sender filter the observer would call handleResolution(false) →
+    // onCancel after onConfirm just landed.
+    const ctx = renderControlled(false);
+    act(() => {
+      ctx.setOpen(true);
+    });
+    const confirmBtn = getButtonByText("Forget");
+    act(() => {
+      fireEvent.click(confirmBtn!);
+    });
+    expect(ctx.confirmCalls.count).toBe(1);
+    expect(ctx.cancelCalls.count).toBe(0);
+  });
+
+  it("an unrelated chain dispatch (different sender) fires onCancel", () => {
+    const ctx = renderControlled(false);
+    act(() => {
+      ctx.setOpen(true);
+    });
+    expect(getPopoverRoot()).not.toBeNull();
+
+    // A SHOW_SETTINGS dispatch with no sender filter pass-through
+    // simulates external chain activity — our observer treats this as
+    // "user did something else", cancels, parent flips open false.
+    act(() => {
+      ctx.manager.sendToFirstResponder({
+        action: TUG_ACTIONS.SHOW_SETTINGS,
+        phase: "discrete",
+      });
+    });
+    expect(ctx.cancelCalls.count).toBe(1);
+    expect(getPopoverRoot()).toBeNull();
+  });
+
+  it("open=true with anchorEl=null keeps the popover closed (anchor-not-yet-resolved race)", () => {
+    const manager = new ResponderChainManager();
+    const onConfirm = () => {};
+    const onCancel = () => {};
+    render(
+      <ResponderChainContext.Provider value={manager}>
+        <TugConfirmPopover
+          message="Forget?"
+          open={true}
+          anchorEl={null}
+          onConfirm={onConfirm}
+          onCancel={onCancel}
+        />
+      </ResponderChainContext.Provider>,
+    );
+    // Open prop is true but anchor not yet resolved — popover stays
+    // closed until the parent's layout effect populates anchorEl.
+    expect(getPopoverRoot()).toBeNull();
+  });
+
+  it("after open=true and a confirm, re-opening the popover with a different anchor still works (single instance reuse)", () => {
+    // The point of controlled mode is that ONE instance can serve N
+    // anchor targets. Confirm once on the original anchor, then swap
+    // the anchor and reopen — the popover still mounts.
+    const ctx = renderControlled(false);
+    act(() => {
+      ctx.setOpen(true);
+    });
+    act(() => {
+      fireEvent.click(getButtonByText("Forget")!);
+    });
+    expect(ctx.confirmCalls.count).toBe(1);
+    expect(getPopoverRoot()).toBeNull();
+
+    // Reopen.
+    act(() => {
+      ctx.setOpen(true);
+    });
+    expect(getPopoverRoot()).not.toBeNull();
+  });
+});

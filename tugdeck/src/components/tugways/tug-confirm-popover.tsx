@@ -2,9 +2,25 @@
  * TugConfirmPopover — Pre-built confirmation pattern composing TugPopover.
  *
  * Renders an anchored popover with a message, a cancel button, and a confirm
- * button. Exposes a single ergonomic entry point: the imperative Promise API
- * via `TugConfirmPopoverHandle.confirm()`, which opens the popover and
- * resolves when the user confirms, cancels, or dismisses it.
+ * button. Exposes two interchangeable APIs:
+ *
+ *  - **Imperative API** (legacy): `ref.current.confirm() → Promise<boolean>`
+ *    opens the popover and resolves when the user confirms, cancels, or
+ *    dismisses it. The popover is anchored to a `<children>` trigger
+ *    element. Each call site mounts its own popover instance.
+ *  - **Controlled API** (preferred): `open`, `anchorEl`, `onConfirm`,
+ *    `onCancel` props. The caller drives the popover's open state from
+ *    its own state; the popover anchors to an arbitrary external element
+ *    via `<TugPopoverAnchor virtualRef>`. One instance can serve N
+ *    distinct anchor targets — the canonical "in-list confirmation"
+ *    shape (see [tugplan-tide-picker-redesign §D15](
+ *    ../../roadmap/tugplan-tide-picker-redesign.md#d15-tug-confirm-popover-controlled)).
+ *
+ * The two APIs are mutually exclusive at the call site: a controlled-mode
+ * caller passes `open` and skips the imperative `ref.confirm()` path
+ * entirely; an imperative-mode caller passes `<children>` as the trigger
+ * and never sets `open`. The component dev-warns when both shapes are
+ * used together.
  *
  * Composition: TugPopover owns the popover chrome (bg, border, shadow,
  * animation). This component adds only the confirmation-specific layout:
@@ -15,8 +31,9 @@
  * The confirm and cancel buttons dispatch `confirmDialog` / `cancelDialog`
  * through the responder chain rather than calling local handlers directly.
  * The popover registers itself as a responder via `useOptionalResponder`
- * with matching handlers that resolve the pending promise and close the
- * popover.
+ * with matching handlers that resolve the pending promise (imperative
+ * mode) or invoke the `onConfirm` / `onCancel` callbacks (controlled
+ * mode), in either case ending in a close.
  *
  * Buttons dispatch via `sendToTarget(responderId, ...)` — explicitly
  * addressing the popover's own responder rather than relying on
@@ -39,25 +56,27 @@
  *
  * TugConfirmPopover subscribes to `manager.observeDispatch` on mount
  * and keeps the subscription active for the lifetime of the
- * component. Any action flowing through the chain that is not this
- * popover's own confirm/cancel resolves the pending promise with
- * `false` and closes the popover. Self-dispatches (confirm or cancel
- * from our own buttons) are skipped because by the time the observer
- * fires, the primary handler has already nulled `resolverRef` — the
- * observer sees the empty resolver and returns without doing
- * anything. The same null-resolver guard makes the subscription a
- * no-op when the popover is closed (no `confirm()` call in flight),
- * so there is no need to gate the effect on an `open` state.
+ * component. Any chain action whose sender is NOT this popover's
+ * own `senderId` resolves the pending confirmation negatively (via
+ * `handleResolution(false)`) and triggers the close path. Self-
+ * dispatches from our own confirm/cancel buttons carry our `senderId`
+ * and are filtered out by the sender check. The same gating means the
+ * subscription is a no-op when no confirmation is in flight (no
+ * `confirm()` Promise pending in imperative mode AND `open !== true`
+ * in controlled mode), so there is no need for a separate open-state
+ * gate on the effect.
  *
  * **Double subscription with the underlying `TugPopover` is
  * intentional.** `TugPopoverContentShell` also subscribes to
  * `observeDispatch` while the popover is open, and its handler also
  * closes the popover on external chain activity. We need BOTH
  * subscriptions: the shell closes the popover, but it has no way to
- * resolve `TugConfirmPopover`'s pending promise. Without the
- * confirm-popover subscription here, an external dispatch would
- * silently close the popover while leaving the `confirm()` promise
- * hanging forever. Do not "optimize" by deleting either subscription.
+ * resolve `TugConfirmPopover`'s pending promise or invoke its
+ * controlled-mode callbacks. Without the confirm-popover subscription
+ * here, an external dispatch would silently close the popover while
+ * leaving the `confirm()` promise hanging or the parent's `pending*`
+ * state stuck non-null. Do not "optimize" by deleting either
+ * subscription.
  *
  * Laws: [L06] appearance via CSS/DOM, never React state,
  *       [L11] controls emit actions; responders handle actions,
@@ -77,6 +96,7 @@ import {
   TugPopover,
   TugPopoverTrigger,
   TugPopoverContent,
+  TugPopoverAnchor,
   type TugPopoverHandle,
 } from "./tug-popover";
 import { TugLabel } from "./tug-label";
@@ -91,11 +111,15 @@ import { TUG_ACTIONS } from "./action-vocabulary";
  * TugConfirmPopoverHandle
  * ---------------------------------------------------------------------------*/
 
-/** Imperative handle for TugConfirmPopover. */
+/** Imperative handle for TugConfirmPopover (imperative-mode API only). */
 export interface TugConfirmPopoverHandle {
   /**
    * Opens the popover and returns a promise.
    * Resolves true if confirmed, false if cancelled or dismissed.
+   *
+   * Imperative-mode only: callers in controlled mode (`open` prop set)
+   * should not use this method. Calling it in controlled mode dev-warns
+   * and returns a promise that never resolves.
    */
   confirm: () => Promise<boolean>;
 }
@@ -124,23 +148,68 @@ export interface TugConfirmPopoverProps {
    */
   cancelLabel?: string;
   /**
-   * Which side of the trigger to place the popover.
+   * Which side of the trigger / anchor to place the popover.
    * @default "bottom"
    */
   side?: "top" | "bottom" | "left" | "right";
   /**
-   * Distance from trigger in px.
+   * Distance from trigger / anchor in px.
    * @default 6
    */
   sideOffset?: number;
   /**
    * Stable opaque sender id for chain dispatches. Auto-derived via
    * `useId()` if omitted. Parent responders disambiguate multi-popover
-   * pages by matching this id when observing dispatches. [L11]
+   * pages by matching this id when observing dispatches. The sender
+   * also gates this component's own `observeDispatch` listener — chain
+   * traffic carrying this `senderId` is treated as a self-dispatch and
+   * skipped. [L11]
    */
   senderId?: string;
-  /** The trigger element. Wrapped with asChild by TugPopoverTrigger. */
-  children: React.ReactElement;
+  /**
+   * Controlled-mode open state. When `open !== undefined`, the popover
+   * runs in controlled mode: the caller drives open/close state and
+   * receives confirm/cancel via the `onConfirm` / `onCancel` callbacks
+   * instead of an awaited Promise. Pair with `anchorEl` to position
+   * the popover against an arbitrary external element.
+   *
+   * Controlled mode is mutually exclusive with the imperative
+   * `<children>` trigger + `ref.confirm()` API.
+   */
+  open?: boolean;
+  /**
+   * Controlled-mode anchor element. The popover positions itself
+   * relative to this element via `<TugPopoverAnchor virtualRef>`.
+   * Required (but allowed to be `null` transiently) in controlled mode;
+   * ignored in imperative mode.
+   *
+   * When `open === true` but `anchorEl == null`, the popover stays
+   * closed — useful for callers that resolve the anchor in a layout
+   * effect after the open-flipping render. The popover opens on the
+   * next render once both `open === true` and a non-null `anchorEl`
+   * are observed.
+   */
+  anchorEl?: HTMLElement | null;
+  /**
+   * Controlled-mode confirm callback. Fires when the user clicks the
+   * confirm button or presses the corresponding key binding. Use the
+   * callback to update parent state — typically clearing whatever
+   * pending-id field drove the popover's `open` to `true`.
+   */
+  onConfirm?: () => void;
+  /**
+   * Controlled-mode cancel callback. Fires when the user clicks the
+   * cancel button, presses Escape, clicks outside the popover, or any
+   * unrelated chain action causes external dismissal. Use the callback
+   * to update parent state.
+   */
+  onCancel?: () => void;
+  /**
+   * Imperative-mode trigger element. Wrapped with `asChild` by
+   * `TugPopoverTrigger`. Ignored in controlled mode (where the popover
+   * is anchored to `anchorEl` and opened via the `open` prop).
+   */
+  children?: React.ReactElement;
 }
 
 /* ---------------------------------------------------------------------------
@@ -150,10 +219,10 @@ export interface TugConfirmPopoverProps {
 /**
  * TugConfirmPopover — confirmation popover composing TugPopover.
  *
- * Use `ref.current.confirm()` for the imperative Promise API. Internally
- * the confirm and cancel buttons dispatch `confirmDialog` / `cancelDialog`
- * through the chain; the popover's own registered handlers resolve the
- * promise and close.
+ * Use `ref.current.confirm()` for the imperative Promise API, or set
+ * `open` + `anchorEl` + `onConfirm` + `onCancel` for the controlled API
+ * (preferred for in-list confirmation flows). The two APIs are mutually
+ * exclusive at the call site.
  */
 export const TugConfirmPopover = React.forwardRef<
   TugConfirmPopoverHandle,
@@ -167,26 +236,30 @@ export const TugConfirmPopover = React.forwardRef<
     side = "bottom",
     sideOffset = 6,
     senderId: senderIdProp,
+    open: openProp,
+    anchorEl,
+    onConfirm,
+    onCancel,
     children,
   },
   ref,
 ) {
-  // Handle on the inner TugPopover. `confirm()` opens it; the
-  // chain-action handlers close it. TugPopover now owns its open
-  // state internally — there is no controlled open/onOpenChange
-  // boundary.
+  const isControlled = openProp !== undefined;
+
+  // Handle on the inner TugPopover. In imperative mode `confirm()` opens
+  // it and chain-action handlers close it. In controlled mode the parent
+  // owns open state via the `open` prop, but we still pass `popoverRef`
+  // for parity with imperative-mode close-helpers.
   const popoverRef = React.useRef<TugPopoverHandle>(null);
 
-  // Resolver for the imperative confirm() Promise. Null when no
-  // call is in flight. Doubles as the observeDispatch subscription's
-  // no-op guard — when `resolverRef.current === null`, the popover
-  // is not active and the observer has nothing to do.
+  // Resolver for the imperative `confirm()` Promise. Null when no
+  // imperative call is in flight or when running in controlled mode.
   const resolverRef = React.useRef<((value: boolean) => void) | null>(null);
 
   // Chain manager — null when rendered outside a ResponderChainProvider
-  // (standalone previews, unit tests). In that case the responder
-  // registration is skipped and the buttons fall back to calling the
-  // handler functions directly.
+  // (standalone previews, unit tests). The responder registration is
+  // skipped and the buttons fall back to calling the handler functions
+  // directly when no manager is in scope.
   const manager = useResponderChain();
 
   const fallbackResponderId = React.useId();
@@ -194,27 +267,64 @@ export const TugConfirmPopover = React.forwardRef<
   const responderId = fallbackResponderId;
   const senderId = senderIdProp ?? fallbackSenderId;
 
-  // Primary handlers — resolve the pending promise and close. Shared by
-  // the chain action handlers, the direct-invocation fallback used
-  // when no provider is in scope, and the Radix dismissal path (which
-  // reaches us via TugPopover's cancelDialog re-emission when Escape /
-  // click-outside fires). Idempotent: a second call with the resolver
-  // already null just closes redundantly.
-  const resolveAndClose = React.useCallback((value: boolean) => {
+  // Refs for controlled-mode policy parameters. The chain handlers
+  // and the observeDispatch listener read these at dispatch time so
+  // they always see the latest callbacks and open state without
+  // re-subscribing on every prop change.
+  const isControlledRef = React.useRef(isControlled);
+  isControlledRef.current = isControlled;
+  const openPropRef = React.useRef(openProp);
+  openPropRef.current = openProp;
+  const onConfirmRef = React.useRef(onConfirm);
+  onConfirmRef.current = onConfirm;
+  const onCancelRef = React.useRef(onCancel);
+  onCancelRef.current = onCancel;
+
+  // Dev-mode warning when both API shapes are used together. The
+  // controlled API takes precedence at runtime; the imperative
+  // `<children>` trigger is silently ignored in controlled mode.
+  React.useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    if (isControlled && children !== undefined) {
+      console.warn(
+        "TugConfirmPopover: controlled mode (`open` prop) is mutually exclusive with " +
+          "the imperative `children` trigger. Drop one or the other; the controlled API is preferred.",
+      );
+    }
+  }, [isControlled, children]);
+
+  // Single resolution path for both modes. Imperative mode: resolves
+  // the pending Promise and closes via the popover handle. Controlled
+  // mode: invokes the appropriate callback so the parent flips
+  // `open` to false on its next render.
+  const handleResolution = React.useCallback((value: boolean) => {
     if (resolverRef.current) {
+      // Imperative mode.
       resolverRef.current(value);
       resolverRef.current = null;
+      popoverRef.current?.close();
+      return;
     }
+    if (isControlledRef.current) {
+      // Controlled mode.
+      if (value) onConfirmRef.current?.();
+      else onCancelRef.current?.();
+      // Parent flips `open` -> TugPopover unmounts content. No imperative
+      // close required.
+      return;
+    }
+    // Neither mode active — spurious dispatch (no open in flight). Close
+    // redundantly so a stale state can't keep the popover visible.
     popoverRef.current?.close();
   }, []);
 
   const handleConfirmAction = React.useCallback(() => {
-    resolveAndClose(true);
-  }, [resolveAndClose]);
+    handleResolution(true);
+  }, [handleResolution]);
 
   const handleCancelAction = React.useCallback(() => {
-    resolveAndClose(false);
-  }, [resolveAndClose]);
+    handleResolution(false);
+  }, [handleResolution]);
 
   // Register the popover as a chain responder so buttons inside the
   // portaled content can dispatch confirmDialog / cancelDialog and have
@@ -227,27 +337,42 @@ export const TugConfirmPopover = React.forwardRef<
     },
   });
 
-  // External dismissal: any chain activity cancels the popover if a
-  // `confirm()` call is in flight. Self-dispatches (our own
-  // confirm/cancel buttons) are handled by the primary handler above
-  // before this observer fires, so resolverRef is already null and
-  // the observer is a no-op for them. Any other dispatch — a
-  // keyboard shortcut elsewhere, a button click in an unrelated
-  // control — lands here with resolverRef still set and triggers
-  // the cancel-and-close path. When no `confirm()` is in flight,
-  // resolverRef is null and the observer returns without doing
-  // anything, so the subscription runs for the lifetime of the
-  // component without needing an explicit open-state gate.
+  // External dismissal: any chain activity (other than our own
+  // confirm/cancel button dispatches, identified by sender id) cancels
+  // the open confirmation.
+  //
+  //  - Imperative mode: gated on `resolverRef !== null`.
+  //  - Controlled mode: gated on `openPropRef.current === true`.
+  //
+  // Self-dispatches (our own confirmDialog / cancelDialog buttons) carry
+  // the popover's own `senderId` and are filtered out so we don't
+  // re-fire `onCancel` after `onConfirm` has just landed. The
+  // self-filter also makes the listener correct in controlled mode,
+  // where the resolverRef-null guard alone is insufficient (the parent
+  // hasn't yet flipped `open` to `false` when our self-dispatch's
+  // observer runs — without the sender filter, we'd see "controlled
+  // active" still true and call onCancel after onConfirm fired).
   React.useLayoutEffect(() => {
     if (!manager) return;
-    return manager.observeDispatch(() => {
-      if (resolverRef.current === null) return;
-      resolveAndClose(false);
+    return manager.observeDispatch((event) => {
+      if (event.sender === senderId) return;
+      const imperativeActive = resolverRef.current !== null;
+      const controlledActive =
+        isControlledRef.current && openPropRef.current === true;
+      if (!imperativeActive && !controlledActive) return;
+      handleResolution(false);
     });
-  }, [manager, resolveAndClose]);
+  }, [manager, handleResolution, senderId]);
 
   React.useImperativeHandle(ref, () => ({
     confirm(): Promise<boolean> {
+      if (process.env.NODE_ENV !== "production" && isControlledRef.current) {
+        console.warn(
+          "TugConfirmPopover.confirm(): imperative API called on a controlled-mode " +
+            "popover (the `open` prop is set). The Promise will never resolve. Drive open/close " +
+            "via the parent's state and `onConfirm`/`onCancel` callbacks instead.",
+        );
+      }
       return new Promise<boolean>((resolve) => {
         resolverRef.current = resolve;
         popoverRef.current?.open();
@@ -294,9 +419,43 @@ export const TugConfirmPopover = React.forwardRef<
     });
   }
 
+  // ---- Anchor element wiring (controlled mode) ----
+  //
+  // Radix Popover.Anchor accepts a `virtualRef` (a ref-shaped object
+  // whose `current` is anything with `getBoundingClientRect`). The
+  // `current` is read on every Popper update, so a parent that swaps
+  // `anchorEl` between renders gets correct repositioning without us
+  // re-creating the ref object.
+  //
+  // The inner popover's effective open state in controlled mode is
+  // `openProp && anchorEl != null`. This handles the brief race where
+  // a parent flips `open` to `true` in render N and resolves the
+  // anchor in a layout effect after that render — the popover stays
+  // closed for one render, then opens on the next once `anchorEl` is
+  // available. Without this gate, Radix would mount Popper with no
+  // anchor and warn.
+  const virtualAnchorRef = React.useRef<HTMLElement | null>(anchorEl ?? null);
+  virtualAnchorRef.current = anchorEl ?? null;
+
+  const effectiveOpenForControlled = isControlled
+    ? openProp === true && anchorEl != null
+    : undefined;
+
   return (
-    <TugPopover ref={popoverRef}>
-      <TugPopoverTrigger asChild>{children}</TugPopoverTrigger>
+    <TugPopover
+      ref={popoverRef}
+      open={effectiveOpenForControlled}
+      // No `onOpenChange` in controlled mode: the chain-action handlers
+      // and observeDispatch own the close path; Radix's open-state
+      // changes flow through the chain re-emit (DISMISS_POPOVER) and
+      // back into our observer.
+    >
+      {!isControlled && children !== undefined && (
+        <TugPopoverTrigger asChild>{children}</TugPopoverTrigger>
+      )}
+      {isControlled && (
+        <TugPopoverAnchor virtualRef={virtualAnchorRef} />
+      )}
       <TugPopoverContent side={side} sideOffset={sideOffset}>
         <div
           data-slot="tug-confirm-popover"
