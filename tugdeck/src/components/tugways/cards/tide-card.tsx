@@ -1263,7 +1263,7 @@ function TideProjectPickerForm({
         </TugBox>
         <TugBox
           variant="bordered"
-          label="Previous Sessions"
+          label="Sessions"
           labelPosition="legend"
           className="tide-card-picker-box"
         >
