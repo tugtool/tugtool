@@ -1250,7 +1250,7 @@ This step ships as five commits in order. Each builds on the previous.
 
 ##### Tasks {#step-9-6-tasks}
 
-- [ ] 9.6a — pane-scrim registry + hook + tests. Land as commit 1.
+- [x] 9.6a — pane-scrim registry + hook + tests. Land as commit 1.
 - [ ] 9.6b — scrim element built into `TugPane` chrome + CSS + tests. Land as commit 2.
 - [ ] 9.6c — `TugPaneFrameContext` provider + tests. Land as commit 3.
 - [ ] 9.6d — `TugSheet` refactor: portal into pane frame, use pane-scrim hook, drop applier + canvas-overlay portal + scrim element. Land as commit 4.
@@ -1259,8 +1259,8 @@ This step ships as five commits in order. Each builds on the previous.
 
 ##### Tests {#step-9-6-tests}
 
-- [ ] `bun test src/lib/__tests__/pane-scrim-registry.test.ts` — ref-count semantics, attribute toggling, no-element fallback.
-- [ ] `bun test src/components/tugways/__tests__/use-tug-pane-scrim.test.tsx` — hook show/hide drives registry; cleanup on unmount; no-provider returns no-op callbacks.
+- [x] `bun test src/lib/__tests__/pane-scrim-registry.test.ts` — ref-count semantics, attribute toggling, no-element fallback.
+- [x] `bun test src/components/tugways/__tests__/use-tug-pane-scrim.test.tsx` — hook show/hide drives registry; cleanup on unmount; no-provider returns no-op callbacks.
 - [ ] `bun test src/__tests__/tug-sheet.test.tsx` — existing sheet tests pass with selector updates; verify portal target is now the pane frame, not document.body / canvas overlay.
 - [ ] `bun test` curated subset — no regressions in `tug-popover`, `tug-confirm-popover`, `tug-icon-button`, `tide-card-banner-spec`.
 - [ ] `bun run audit:tokens lint` — new `--tugx-pane-scrim-bg` alias declared and paired correctly.
