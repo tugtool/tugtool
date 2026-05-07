@@ -62,12 +62,26 @@
  * `handleOpenChange` on the root runs and:
  *
  * 1. Flips internal state to false so React re-renders Radix as closed.
- * 2. Dispatches `cancelDialog` through the responder chain so any inner
- *    composite (e.g. `TugConfirmPopover`) whose responder is registered
- *    under the popover content can observe the dismissal and resolve
- *    its pending promise. Without this re-emission, consumers would
- *    have no chain-native way to hear about Radix-initiated closes
- *    and their Promise adapters would hang.
+ * 2. Dispatches `dismissPopover` through the responder chain so any
+ *    inner composite (e.g. `TugConfirmPopover`) whose responder is
+ *    registered under the popover content can observe the dismissal
+ *    via `observeDispatch` and resolve its pending promise. Without
+ *    this re-emission, consumers would have no chain-native way to
+ *    hear about Radix-initiated closes and their Promise adapters
+ *    would hang.
+ *
+ * The action is `dismissPopover`, NOT `cancelDialog`, because
+ * `cancelDialog` is also handled by `TugSheet`. A popover rendered
+ * inside a sheet that auto-dismisses (click-outside, Escape) cannot
+ * assume the popover's own responder is the first responder at the
+ * moment the dismissal fires — the walk routinely starts at the
+ * picker form / card and proceeds upward via parentId. With
+ * `cancelDialog`, that walk passes the popover and lands on the
+ * sheet's handler, closing the surrounding sheet. `dismissPopover`
+ * is popover-private (only `TugPopoverContentShell` handles it), so
+ * the walk either lands on the shell and stops or falls off the
+ * chain harmlessly. Inner composites still observe the dispatch
+ * unchanged because `observeDispatch` does not filter by action.
  *
  * The dispatch carries the popover's own `senderId`, so the
  * `observeDispatch` subscription in `TugPopoverContent` filters it
@@ -81,12 +95,12 @@
  * on, but it is not an invariant Radix documents explicitly. If a
  * future Radix release starts firing `onOpenChange` on every
  * controlled close, every programmatic `close()` will cascade
- * through `handleOpenChange` and emit an extra `cancelDialog` — not
- * wrong semantically (both the shell's responder handler and any
- * inner resolver are idempotent once `resolverRef` is nulled), but
- * noisy. If the gallery starts showing duplicate close animations
- * or tests start seeing double-resolve warnings, check Radix's
- * release notes first.
+ * through `handleOpenChange` and emit an extra `dismissPopover` —
+ * not wrong semantically (both the shell's responder handler and
+ * any inner resolver are idempotent once `resolverRef` is nulled),
+ * but noisy. If the gallery starts showing duplicate close
+ * animations or tests start seeing double-resolve warnings, check
+ * Radix's release notes first.
  *
  * ## External dismissal via observeDispatch
  *
@@ -151,7 +165,7 @@ export interface TugPopoverHandle {
 interface TugPopoverInternalContextValue {
   /** Close the popover. Called by chain action handlers and observeDispatch. */
   close: () => void;
-  /** Stable sender id used by the root when re-emitting cancelDialog from Radix dismissal. */
+  /** Stable sender id used by the root when re-emitting dismissPopover from Radix dismissal. */
   senderId: string;
   /** When false, the inner shell skips its `observeDispatch` subscription —
    *  the popover stays open across nested chain traffic (e.g. a TugPopupButton
@@ -318,18 +332,31 @@ export const TugPopover = React.forwardRef<TugPopoverHandle, TugPopoverProps>(
     // Radix-level dismissal (Escape via DismissableLayer, click-outside
     // via DismissableLayer, explicit TugPopoverClose activation). In
     // uncontrolled mode, flip internal state; in controlled mode, let
-    // the caller's onOpenChange drive it. Always re-emit cancelDialog
-    // through the chain on close so inner composites (e.g.
-    // TugConfirmPopover) can observe the dismissal. The dispatch
-    // carries our own senderId so the observeDispatch subscription in
-    // TugPopoverContent filters it out.
+    // the caller's onOpenChange drive it. Always re-emit a popover-
+    // scoped dismiss action through the chain on close so inner
+    // composites (e.g. TugConfirmPopover) can observe the dismissal
+    // via `observeDispatch` (action-agnostic). The dispatch carries
+    // our own senderId so the observeDispatch subscription in
+    // TugPopoverContent filters its own re-entry out.
+    //
+    // We dispatch `DISMISS_POPOVER`, not `CANCEL_DIALOG`. CANCEL_DIALOG
+    // is also handled by `TugSheet`, so a click-outside dismissal of a
+    // popover rendered inside a sheet would walk up the chain past the
+    // popover (whose responder may not be the first responder when the
+    // dismissal fires) and hit the sheet's `cancelDialog` handler —
+    // closing the surrounding sheet along with the popover. That is
+    // chain pollution, not the intended behavior. DISMISS_POPOVER is
+    // popover-private (only `TugPopoverContentShell` handles it), so
+    // the walk either lands on the shell and stops, or falls off the
+    // chain harmlessly. Inner composites still observe the dispatch
+    // unchanged because `observeDispatch` does not filter by action.
     function handleOpenChange(nextOpen: boolean) {
       if (!nextOpen) {
         if (!isControlled) setInternalOpen(false);
         onOpenChangeProp?.(false);
         if (manager) {
           manager.sendToFirstResponder({
-            action: TUG_ACTIONS.CANCEL_DIALOG,
+            action: TUG_ACTIONS.DISMISS_POPOVER,
             sender: senderId,
             phase: "discrete",
           });
@@ -646,13 +673,20 @@ export const TugPopoverClose = Popover.Close;
  * button — e.g. a "Save Changes" button in a form-content popover, a
  * custom confirmation flow, or any imperative "close now" trigger.
  *
- * The returned function dispatches `cancelDialog` through the responder
- * chain with the popover's own senderId. The walk reaches
+ * The returned function dispatches `dismissPopover` through the
+ * responder chain with the popover's own senderId. The walk reaches
  * `TugPopoverContentShell`'s registered handler, which closes the
- * popover via the internal context. If the dispatch isn't handled (no
- * chain-native responder in scope), the function falls back to calling
- * the context `close` callback directly so the popover still closes in
- * no-provider contexts.
+ * popover via the internal context. If the dispatch isn't handled
+ * (no chain-native responder in scope), the function falls back to
+ * calling the context `close` callback directly so the popover still
+ * closes in no-provider contexts.
+ *
+ * The action is `dismissPopover`, not `cancelDialog`, for the same
+ * reason `handleOpenChange` re-emits `dismissPopover` (see the file
+ * docstring's "Radix-level dismissal → chain dispatch" section):
+ * `cancelDialog` is also handled by `TugSheet`, so dismissing a
+ * popover-in-sheet via this hook would walk past the popover and
+ * close the sheet too. `dismissPopover` is popover-private.
  *
  * When called outside a TugPopover context, the returned function is a
  * no-op.
@@ -670,7 +704,7 @@ export function useTugPopoverClose(): () => void {
     if (!ctx) return;
     if (manager) {
       const handled = manager.sendToFirstResponder({
-        action: TUG_ACTIONS.CANCEL_DIALOG,
+        action: TUG_ACTIONS.DISMISS_POPOVER,
         sender: ctx.senderId,
         phase: "discrete",
       });

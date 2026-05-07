@@ -62,6 +62,6 @@ export function formatSessionRowSubtitle(row: SessionRow): string {
       ? `${row.turn_count} ${row.turn_count === 1 ? "turn" : "turns"}`
       : null;
   const ts = formatRelativeTimestamp(row.last_used_at, Date.now());
-  const id = `id ${row.session_id}`;
+  const id = `id ${row.session_id.slice(0, 8)}`;
   return [ts, turns, id].filter((p) => p !== null).join(" · ");
 }
