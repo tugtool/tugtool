@@ -1253,7 +1253,7 @@ This step ships as five commits in order. Each builds on the previous.
 - [x] 9.6a — pane-scrim registry + hook + tests. Land as commit 1.
 - [x] 9.6b — scrim element built into `TugPane` chrome + CSS + tests. Land as commit 2.
 - [x] 9.6c — `TugPaneFrameContext` provider + tests. Land as commit 3.
-- [ ] 9.6d — `TugSheet` refactor: portal into pane frame, use pane-scrim hook, drop applier + canvas-overlay portal + scrim element. Land as commit 4.
+- [x] 9.6d — `TugSheet` refactor: portal into pane frame, use pane-scrim hook, drop applier + canvas-overlay portal + scrim element. Land as commit 4.
 - [ ] 9.6e — Documentation updates (`pane-model.md`, `responder-chain.md`, `tugplan-tide-overlay-framework.md`, `tug-sheet.tsx` docstring). Land as commit 5.
 - [ ] Manual smoke: open Tide picker → choose session → close. With a peer pane stacked above the Tide pane partially overlapping it: scrim does NOT bleed into peer pane; sheet panel does NOT paint over peer pane where they overlap (peer pane covers the panel). With a peer pane below the Tide pane vertically: panel extends into empty canvas grid where peer pane isn't, peer pane covers the panel where it is. Sheet open / cancel / submit / Escape all work.
 
@@ -1261,10 +1261,10 @@ This step ships as five commits in order. Each builds on the previous.
 
 - [x] `bun test src/lib/__tests__/pane-scrim-registry.test.ts` — ref-count semantics, attribute toggling, no-element fallback.
 - [x] `bun test src/components/tugways/__tests__/use-tug-pane-scrim.test.tsx` — hook show/hide drives registry; cleanup on unmount; no-provider returns no-op callbacks.
-- [ ] `bun test src/__tests__/tug-sheet.test.tsx` — existing sheet tests pass with selector updates; verify portal target is now the pane frame, not document.body / canvas overlay.
-- [ ] `bun test` curated subset — no regressions in `tug-popover`, `tug-confirm-popover`, `tug-icon-button`, `tide-card-banner-spec`.
-- [ ] `bun run audit:tokens lint` — new `--tugx-pane-scrim-bg` alias declared and paired correctly.
-- [ ] Greppable invariants:
+- [x] `bun test src/__tests__/tug-sheet.test.tsx` — existing sheet tests pass with selector updates; verify portal target is now the pane frame, not document.body / canvas overlay.
+- [x] `bun test` curated subset — no regressions in `tug-popover`, `tug-confirm-popover`, `tug-icon-button`, `tide-card-banner-spec`.
+- [x] `bun run audit:tokens lint` — new `--tugx-pane-scrim-bg` alias declared and paired correctly.
+- [x] Greppable invariants:
   - `rg 'useCanvasOverlay' tugdeck/src/components/tugways/tug-sheet.tsx` returns zero matches.
   - `rg '\.tug-sheet-overlay' tugdeck/src/components/tugways/tug-sheet.css tugdeck/src/components/tugways/tug-sheet.tsx` returns zero matches.
   - `rg 'tug-pane-scrim' tugdeck/src/components/chrome/tug-pane.tsx` returns matches.

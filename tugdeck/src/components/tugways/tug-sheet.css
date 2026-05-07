@@ -10,13 +10,17 @@
  * | --tugx-sheet-fg            | --tugx-sheet-bg          | content       | .tug-sheet-content (color)                   |
  * | --tugx-sheet-border        | --tugx-sheet-bg          | informational | .tug-sheet-content (border-color)            |
  * | --tugx-sheet-header-fg     | --tugx-sheet-bg          | content       | .tug-sheet-header (color)                    |
- * | --tugx-sheet-overlay-bg    | (card surface)           | overlay       | .tug-sheet-overlay (background-color)        |
  */
 
-/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
+/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ----
+ *
+ * The pane-modal scrim token (`--tugx-pane-scrim-bg`) lives on the
+ * pane's chrome ([D18] — pane owns the scrim primitive). The sheet
+ * does not declare a scrim alias of its own; the visual dim comes
+ * from the host pane's built-in scrim layer raised via
+ * `useTugPaneScrim()`. */
 
 body {
-  --tugx-sheet-overlay-bg: var(--tug7-surface-overlay-primary-normal-dim-rest);
   --tugx-sheet-bg:         var(--tug7-surface-global-primary-normal-overlay-rest);
   --tugx-sheet-fg:         var(--tug7-element-global-text-normal-default-rest);
   --tugx-sheet-border:     var(--tug7-element-global-border-normal-default-rest);
@@ -27,50 +31,39 @@ body {
   --tugx-sheet-space-b: 1.5rem;
 }
 
-/* ---- Canvas-tier wrapper (scrim host) ----
+/* ---- Clip container — portaled into the pane frame [D19] ----
  *
- * Positioned via direct-DOM writes in TugSheetContent's applier effect
- * ([L06] / [L22]). `position: fixed` and `pointer-events: auto` are set
- * inline; the dialog tier z-index is the only token reference here so
- * the sheet stacks above peer popups (popup 9200 / menu 9300) and the
- * canvas overlay base (9000) but below in-dialog elevations (9500/9600).
+ * The clip is a child of `.tug-pane` (the outer frame, its own
+ * stacking context via inline z-index). Pure CSS positioning — no
+ * applier, no observers, no inline styles.
  *
- * Sized to the card body (cardRect minus chrome height) so the visible
- * scrim is clipped to the pane. The sheet panel lives in a separate
- * sibling `.tug-sheet-clip` that extends past the wrapper.
- */
-.tug-sheet-anchor {
-  z-index: var(--tug-z-overlay-dialog);
-}
-
-/* ---- Overlay (scrim) ---- */
-
-.tug-sheet-overlay {
-  /* @tug-renders-on: --tugx-sheet-overlay-bg */
-  background-color: var(--tugx-sheet-overlay-bg);
-  /* Fills the canvas-tier wrapper. Wrapper covers the card body, so
-     the scrim is clipped to the pane. */
-  position: absolute;
-  inset: 0;
-  /* Above card content, below sheet panel */
-  z-index: 10;
-  /* Base state: hidden. TugAnimator's fill:forwards holds the final opacity after each animation. */
-  opacity: 0;
-}
-
-/* ---- Clip container — sibling of the wrapper ----
- *
- * Separate `position: fixed` element, top/left/width match the wrapper
- * but height extends from the card body top down to the viewport
- * bottom (set via direct-DOM write). Its `overflow: hidden` clips the
- * sheet panel during the slide-in enter animation; the panel can grow
- * past the wrapper's bottom edge (i.e., past the card) without
- * disturbing the scrim, which is hosted by the wrapper above.
+ *   * `top: calc(var(--tug-chrome-height) + 1px)` aligns with the
+ *     title-bar bottom in frame coordinates. The `+ 1px` accounts
+ *     for `.tug-pane-chrome`'s 1px border (the gap between the
+ *     frame top and the chrome's content origin).
+ *   * `height: 100vh` accommodates panels taller than the host
+ *     pane (panel scrolls inside `.tug-sheet-content` via
+ *     `overflow-y: auto`). Where the clip extends past the
+ *     chrome's bottom edge into the canvas grid below, the panel
+ *     paints over empty canvas if there is no peer pane there, or
+ *     under a higher-z peer pane otherwise — both correct stacking
+ *     behavior for an in-pane modal.
+ *   * `pointer-events: none` makes the empty clip area pass
+ *     clicks through; the panel sets `pointer-events: auto` to
+ *     absorb interaction.
+ *   * `z-index: 2` puts the clip above sibling resize handles
+ *     (z-index 1) so a tall panel that overlaps the south
+ *     resize-handle band paints and hit-tests above it.
  */
 .tug-sheet-clip {
+  position: absolute;
+  top: calc(var(--tug-chrome-height) + 1px);
+  left: 0;
+  right: 0;
+  height: 100vh;
+  z-index: 2;
   overflow: hidden;
-  /* Above the wrapper so the panel paints above the scrim. */
-  z-index: var(--tug-z-overlay-dialog);
+  pointer-events: none;
 }
 
 /* ---- Content panel (the sheet itself) ---- */

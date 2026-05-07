@@ -1,18 +1,24 @@
 /**
- * TugSheet — Card-modal dialog scoped to a single card.
+ * TugSheet — pane-modal dialog scoped to a single pane.
  *
- * Original component (not a Radix wrapper). Drops from the card title bar
- * like a window shade. Uses Radix FocusScope for focus trapping. Card body
- * gets `inert` attribute for card-scoped blocking. Other cards remain
+ * Original component (not a Radix wrapper). Drops from the pane title bar
+ * like a window shade. Uses Radix FocusScope for focus trapping. The
+ * pane body gets `inert` for keyboard-routing scope; the pane's
+ * built-in scrim layer (raised via `useTugPaneScrim()`) provides the
+ * visual + pointer dead zone within the host pane. Peer panes remain
  * fully interactive.
  *
  * Compound API: TugSheet (Root) / TugSheetTrigger / TugSheetContent.
- * Portals into the card root element via TugPanePortalContext. Open
- * state is internal — consumers open the sheet via `TugSheetTrigger`
- * (click-to-open), an imperative ref handle (`TugSheetHandle.open()`),
- * or the `useTugSheet()` hook's `showSheet()` Promise API. There is no
- * public `open`/`onOpenChange` controlled-mode prop; the sheet owns
- * its own open state and exposes close as a chain action.
+ * The panel + slide-in clip portal into the host pane's frame element
+ * via `TugPaneFrameContext` so the panel sits inside the pane's
+ * stacking context [D19, D20]. Peer panes z-stacked above paint above
+ * the panel without manual z coordination — modal scope IS the pane.
+ * Open state is internal — consumers open the sheet via
+ * `TugSheetTrigger` (click-to-open), an imperative ref handle
+ * (`TugSheetHandle.open()`), or the `useTugSheet()` hook's
+ * `showSheet()` Promise API. There is no public `open`/`onOpenChange`
+ * controlled-mode prop; the sheet owns its own open state and exposes
+ * close as a chain action.
  *
  * Imperative hook: useTugSheet() — returns { showSheet, renderSheet }.
  * Call renderSheet() once in your component's JSX; call showSheet() anywhere
@@ -36,13 +42,14 @@
  * onOpenChange directly. Consumer buttons must provide their own
  * close path (e.g., via the imperative ref) in that case.
  *
- * ## No observeDispatch subscription — card-modal semantics
+ * ## No observeDispatch subscription — pane-modal semantics
  *
- * Like TugAlert, TugSheet is modal (card-scoped via `inert` on the
- * card body). External chain activity — including activity in other
- * cards on the same canvas — should not auto-dismiss a sheet the user
- * has opened. The sheet stays open until the user explicitly closes
- * it via a Cancel button, Save button, Escape, or Cmd+.
+ * Like TugAlert, TugSheet is modal (pane-scoped via the pane's
+ * built-in scrim and `inert` on the pane body). External chain
+ * activity — including activity in other panes on the same canvas —
+ * should not auto-dismiss a sheet the user has opened. The sheet
+ * stays open until the user explicitly closes it via a Cancel
+ * button, Save button, Escape, or Cmd+.
  *
  * Laws: [L06] appearance via CSS,
  *       [L11] controls emit actions; responders handle actions,
@@ -74,11 +81,11 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import * as FocusScopeRadix from "@radix-ui/react-focus-scope";
-import { TugPanePortalContext } from "@/components/chrome/tug-pane";
+import { TugPaneFrameContext, TugPanePortalContext } from "@/components/chrome/tug-pane";
 import { CardIdContext } from "@/lib/card-id-context";
 import { useSheetLifecycle } from "@/lib/sheet-lifecycle";
-import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { group } from "@/components/tugways/tug-animator";
+import { useTugPaneScrim } from "@/components/tugways/use-tug-pane-scrim";
 import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
 import { TUG_ACTIONS } from "./action-vocabulary";
@@ -333,11 +340,18 @@ export interface TugSheetContentProps {
 }
 
 /**
- * TugSheetContent — the sheet panel, overlay, focus scope, and portal logic.
+ * TugSheetContent — the sheet panel, focus scope, and portal logic.
  *
- * Portals into the pane root element (from TugPanePortalContext). Sets `inert`
- * on `.tug-pane-body` for card-scoped modality. Restores focus to the trigger
- * element on close.
+ * Portals into the pane frame element (from `TugPaneFrameContext`),
+ * which is the `.tug-pane` outer frame and its own stacking context.
+ * The panel paints inside the pane's stacking context — peer panes
+ * z-stacked above paint above the panel automatically [D19, D20].
+ *
+ * Visual scrim is provided by the pane's built-in scrim layer raised
+ * via `useTugPaneScrim()`; this component does not own a scrim
+ * element of its own. `inert` is applied to `.tug-pane-body` (read
+ * from `TugPanePortalContext`) for keyboard-routing scope. Restores
+ * focus to the trigger element on close.
  */
 export function TugSheetContent({
   title,
@@ -348,8 +362,15 @@ export function TugSheetContent({
   children,
 }: TugSheetContentProps) {
   const { open, onOpenChange, contentId, responderId } = useTugSheetContext();
+  // Chrome ref drives the inert effect (`inert` on `.tug-pane-body`).
   const cardEl = useContext(TugPanePortalContext);
-  const overlayRoot = useCanvasOverlay();
+  // Frame ref is the portal target. Pane-modal surfaces portal here so
+  // they paint inside the pane's stacking context [D19, D20]; standalone
+  // consumers (no TugPane ancestor) fall back to document.body.
+  const paneFrameEl = useContext(TugPaneFrameContext);
+  // Pane's built-in scrim layer. Show on open, hide on close — the
+  // pane's CSS handles the fade transition. [D18]
+  const paneScrim = useTugPaneScrim();
 
   const titleId = `${contentId}-title`;
   const descriptionId = `${contentId}-desc`;
@@ -399,23 +420,7 @@ export function TugSheetContent({
   // Presence: keep the portal mounted during the exit animation.
   // `mounted` becomes true when open goes true, and false only after the exit animation completes.
   const [mounted, setMounted] = useState(false);
-  const overlayRef = useRef<HTMLDivElement | null>(null);
   const sheetContentRef = useRef<HTMLDivElement | null>(null);
-  // Canvas-tier wrapper and clip elements. Their `top` / `left` /
-  // `width` / `height` are written via direct DOM mutation by the
-  // applier effect below per [L06]: anchor coords are appearance-zone
-  // state (only the renderer reads them, no non-rendering consumer
-  // cares about pixel values), so they belong in the DOM, not in
-  // React state. [L24]
-  //
-  // The wrapper is sized to the card body so the visible scrim is
-  // clipped to the pane. The clip is sized to extend from the card body
-  // top all the way to the viewport bottom — its `overflow: hidden`
-  // hides the panel during its `translateY(-100%) → 0` enter
-  // animation while letting the panel's natural height extend past the
-  // card's bottom edge per [Q01].
-  const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const clipRef = useRef<HTMLDivElement | null>(null);
 
   // ---- Sheet-lifecycle event emission ----
   //
@@ -503,14 +508,16 @@ export function TugSheetContent({
   }, [mounted, cardIdForLifecycle, sheetLifecycle, getResult]);
 
   // Enter animation: runs after mount when open && mounted (DOM is present).
+  // The scrim animates separately via the pane's CSS transition (driven
+  // by the `data-scrim` attribute toggled in the show/hide effect below).
+  // Both transitions use `--tug-motion-duration-moderate`, so they finish
+  // visually together without explicit synchronization. [L13, D18]
   useLayoutEffect(() => {
     if (!open || !mounted) return;
-    const overlayEl = overlayRef.current;
     const contentEl = sheetContentRef.current;
-    if (!overlayEl || !contentEl) return;
+    if (!contentEl) return;
 
     const g = group({ duration: "--tug-motion-duration-moderate" });
-    g.animate(overlayEl, [{ opacity: 0 }, { opacity: 1 }], { key: "sheet-overlay" });
     g.animate(contentEl, [{ transform: "translateY(-100%)" }, { transform: "translateY(0)" }], {
       key: "sheet-content",
       easing: "ease-out",
@@ -534,23 +541,17 @@ export function TugSheetContent({
   // Exit animation: runs when !open && mounted (DOM still present for animation).
   useLayoutEffect(() => {
     if (open || !mounted) return;
-    const overlayEl = overlayRef.current;
     const contentEl = sheetContentRef.current;
-    if (!overlayEl && !contentEl) {
+    if (!contentEl) {
       setMounted(false);
       return;
     }
 
     const g = group({ duration: "--tug-motion-duration-moderate" });
-    if (overlayEl) {
-      g.animate(overlayEl, [{ opacity: 1 }, { opacity: 0 }], { key: "sheet-overlay" });
-    }
-    if (contentEl) {
-      g.animate(contentEl, [{ transform: "translateY(0)" }, { transform: "translateY(-100%)" }], {
-        key: "sheet-content",
-        easing: "ease-in",
-      });
-    }
+    g.animate(contentEl, [{ transform: "translateY(0)" }, { transform: "translateY(-100%)" }], {
+      key: "sheet-content",
+      easing: "ease-in",
+    });
     g.finished.then(() => {
       setMounted(false);
     }).catch(() => {
@@ -558,6 +559,19 @@ export function TugSheetContent({
       setMounted(false);
     });
   }, [open, mounted]);
+
+  // Scrim show/hide: raise the host pane's built-in scrim while the
+  // sheet is open. The cleanup return guarantees a balanced decrement
+  // when the sheet closes (open transitions true→false) and on
+  // unmount-while-open (e.g. cross-pane card move with sheet up). The
+  // pane-scrim registry's ref-count handles overlapping consumers
+  // (multiple sheets, future modal-class surfaces sharing the chrome).
+  // No-op fallback when no TugPane ancestor is in scope. [D18]
+  useLayoutEffect(() => {
+    if (!open) return;
+    paneScrim.show();
+    return () => paneScrim.hide();
+  }, [open, paneScrim]);
 
   // Dev warning: aria-labelledby requires a target.
   if (process.env.NODE_ENV !== "production" && !title) {
@@ -567,83 +581,11 @@ export function TugSheetContent({
   // Track trigger element for focus restoration on close.
   const triggerElRef = useRef<Element | null>(null);
 
-  // Anchor applier: direct-DOM-write of the canvas-tier wrapper and
-  // clip's top/left/width/height from the owning card's bounding rect.
-  // Per [L06] these are appearance-zone DOM writes, not React state.
-  //
-  // Two elements, two responsibilities:
-  //   * `wrapper` covers exactly the card body (cardRect minus chrome
-  //     height). The scrim inside fills the wrapper via `inset: 0`, so
-  //     the visible dim is clipped to the pane.
-  //   * `clip` covers the same top/left/width but extends down to the
-  //     viewport bottom. Its `overflow: hidden` hides the sheet panel
-  //     during `translateY(-100%) → 0` enter animation, while still
-  //     letting the panel's natural height grow past the card's bottom
-  //     edge per [Q01] (option a — accept; sheet on canvas tier paints
-  //     past the card).
-  //
-  // The applier observes three geometry signals so the wrapper and
-  // clip track every kind of card geometry change ([L22]:
-  // store-observer-API for layout changes drives DOM writes directly):
-  //
-  //   1. ResizeObserver on cardEl — sash drag, programmatic resize.
-  //      Fires only when the card's *size* changes.
-  //   2. MutationObserver on cardEl AND its parent `.tug-pane` for
-  //      `style` mutations — pane drag updates `frame.style.left/top`
-  //      on the outer `.tug-pane` (`tug-pane.tsx`'s drag handler at
-  //      `frameRef`); these are position changes that ResizeObserver
-  //      does not see, and they happen on the parent of cardEl, not
-  //      cardEl itself. We observe both elements to catch any future
-  //      style-driven motion regardless of which level it lands on.
-  //   3. Window resize — viewport-relative coords shift even when the
-  //      card's own size and position attrs are unchanged.
-  //
-  // The effect only runs once the wrapper is actually mounted
-  // (`mounted`), so `wrapperRef.current` and `clipRef.current` are
-  // populated when `apply()` first reads them.
-  useLayoutEffect(() => {
-    if (!cardEl || !mounted) return;
-    const apply = (): void => {
-      const wrapper = wrapperRef.current;
-      const clip = clipRef.current;
-      if (!wrapper) return;
-      const r = cardEl.getBoundingClientRect();
-      const chromeH = parseFloat(
-        getComputedStyle(document.documentElement)
-          .getPropertyValue("--tug-chrome-height") || "36",
-      );
-      const top = r.top + chromeH;
-      // Wrapper: clipped to the card body — scrim must not bleed
-      // past the pane.
-      wrapper.style.top = `${top}px`;
-      wrapper.style.left = `${r.left}px`;
-      wrapper.style.width = `${r.width}px`;
-      wrapper.style.height = `${r.height - chromeH}px`;
-      // Clip: same top/left/width but extends to the viewport bottom
-      // so the sheet panel inside can paint past the card.
-      if (clip) {
-        clip.style.top = `${top}px`;
-        clip.style.left = `${r.left}px`;
-        clip.style.width = `${r.width}px`;
-        clip.style.height = `${window.innerHeight - top}px`;
-      }
-    };
-    apply();
-    const ro = new ResizeObserver(apply);
-    ro.observe(cardEl);
-    const mo = new MutationObserver(apply);
-    mo.observe(cardEl, { attributes: true, attributeFilter: ["style"] });
-    const paneEl = cardEl.parentElement;
-    if (paneEl) {
-      mo.observe(paneEl, { attributes: true, attributeFilter: ["style"] });
-    }
-    window.addEventListener("resize", apply);
-    return () => {
-      ro.disconnect();
-      mo.disconnect();
-      window.removeEventListener("resize", apply);
-    };
-  }, [cardEl, mounted]);
+  // No anchor applier: the panel's clip is positioned by pure CSS in
+  // `tug-sheet.css` (`position: absolute` inside the pane frame). The
+  // canvas-tier wrapper, scrim, ResizeObserver, MutationObserver, and
+  // window-resize listener are gone — when the pane moves or resizes,
+  // the panel follows via the frame's own layout. [D19]
 
   // Inertness management: set/remove `inert` on .tug-pane-body synchronized with open state [L03].
   useLayoutEffect(() => {
@@ -701,50 +643,19 @@ export function TugSheetContent({
     }
   }
 
-  if (!mounted || !cardEl) return null;
+  if (!mounted) return null;
 
   return createPortal(
-    // Two siblings, both positioned via direct DOM writes in the applier
-    // effect above:
-    //   * `.tug-sheet-anchor` — the wrapper. Sized to the card body
-    //     so the visible scrim inside is clipped to the pane.
-    //   * `.tug-sheet-clip` — the panel container. Top/left/width
-    //     match the wrapper but it extends down to the viewport
-    //     bottom; its `overflow: hidden` hides the sliding panel
-    //     during enter animation while the panel's natural height
-    //     can grow past the card's bottom edge per [Q01].
-    // Inline `position: fixed` is the only inline style — coords come
-    // from the applier. `pointer-events: auto` is set inline as
-    // belt-and-suspenders alongside the overlay-root's
-    // `> * { pointer-events: auto }` rule.
+    // Single clip element positioned by CSS inside the pane frame.
+    // `overflow: hidden` clips the panel during the
+    // `translateY(-100%) → 0` enter animation; `pointer-events: none`
+    // makes the empty clip area pass clicks through to the (inert)
+    // pane body, while the panel itself absorbs interaction via
+    // `pointer-events: auto`. The clip extends below the chrome so
+    // a tall panel can paint into the canvas grid without being
+    // clipped by the chrome's overflow:hidden.
     <TugSheetStackingContext.Provider value={true}>
-      <div
-        ref={wrapperRef}
-        data-slot="tug-sheet-anchor"
-        className="tug-sheet-anchor"
-        style={{ position: "fixed", pointerEvents: "auto" }}
-      >
-        {/* Overlay (scrim) — fills the wrapper, dims the card body.
-             No click-to-dismiss: sheets are card-modal and require explicit
-             dismissal via Cancel button, Escape, or Cmd+.
-             onPointerDown preventDefault stops the browser from clearing
-             selection or moving focus — the scrim is a dead zone that
-             swallows all pointer events. */}
-        <div
-          ref={overlayRef}
-          className="tug-sheet-overlay"
-          onPointerDown={(e) => e.preventDefault()}
-        />
-      </div>
-
-      {/* Clip container: separate sibling so its bottom edge can extend
-           past the wrapper. `overflow: hidden` clips the panel during
-           the slide-in `translateY(-100%) → 0` enter animation. */}
-      <div
-        ref={clipRef}
-        className="tug-sheet-clip"
-        style={{ position: "fixed", pointerEvents: "auto" }}
-      >
+      <div className="tug-sheet-clip">
         {/* FocusScope wraps content to trap Tab/Shift-Tab */}
         <FocusScopeRadix.FocusScope
           trapped={open}
@@ -781,7 +692,7 @@ export function TugSheetContent({
         </FocusScopeRadix.FocusScope>
       </div>
     </TugSheetStackingContext.Provider>,
-    overlayRoot,
+    paneFrameEl ?? document.body,
   );
 }
 

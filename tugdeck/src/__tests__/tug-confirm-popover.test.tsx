@@ -120,6 +120,15 @@ function renderImperative(): {
 
 afterEach(() => {
   cleanup();
+  // Remove any external-anchor buttons left in the document body by
+  // tests that exercise the controlled-mode harness (the anchor is
+  // appended outside the React tree to mirror real consumer wiring,
+  // so RTL's cleanup() does not see it). Lingering anchors leak into
+  // sibling test files via document.body and cause spurious failures
+  // in tests that query `document.querySelector("button")`.
+  document
+    .querySelectorAll('[data-testid="external-anchor"]')
+    .forEach((el) => el.remove());
 });
 
 // ---------------------------------------------------------------------------
