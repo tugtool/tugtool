@@ -43,7 +43,7 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { Copy, OctagonX } from "lucide-react";
+import { Check, Copy, OctagonX } from "lucide-react";
 
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { TugBadge } from "@/components/tugways/tug-badge";
@@ -351,6 +351,10 @@ const UserRowCell: React.FC<UserRowCellProps> = ({ index, dataSource }) => {
                 role="action"
                 size="sm"
                 icon={<Copy size={12} />}
+                confirmation={{
+                  icon: <Check size={12} />,
+                  ariaLabel: "Copied",
+                }}
                 aria-label="Copy"
                 onClick={handleCopyButton}
               />
@@ -438,6 +442,10 @@ const CodeCommittedRowCell: React.FC<CodeCommittedRowCellProps> = ({
                 role="action"
                 size="sm"
                 icon={<Copy size={12} />}
+                confirmation={{
+                  icon: <Check size={12} />,
+                  ariaLabel: "Copied",
+                }}
                 aria-label="Copy"
                 onClick={handleCopyButton}
               />

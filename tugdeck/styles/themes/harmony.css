@@ -508,15 +508,19 @@ body {
   --tug7-surface-control-primary-ghost-action-rest: transparent;
   --tug7-surface-control-primary-ghost-action-hover: --tug-color(white, a: 10);
   --tug7-surface-control-primary-ghost-action-active: --tug-color(white, a: 100);
+  --tug7-surface-control-primary-ghost-action-confirmed: transparent;
   --tug7-element-control-text-ghost-action-rest: --tug-color(blue, i: 4, t: 8);
   --tug7-element-control-text-ghost-action-hover: --tug-color(blue, i: 4, t: 8);
   --tug7-element-control-text-ghost-action-active: --tug-color(blue, i: 4, t: 8);
+  --tug7-element-control-text-ghost-action-confirmed: --tug-color(green, i: 4, t: 8);
   --tug7-element-control-icon-ghost-action-rest: --tug-color(blue, i: 4, t: 8);
   --tug7-element-control-icon-ghost-action-hover: --tug-color(blue, i: 4, t: 8);
   --tug7-element-control-icon-ghost-action-active: --tug-color(blue, i: 4, t: 8);
+  --tug7-element-control-icon-ghost-action-confirmed: --tug-color(green, i: 4, t: 8);
   --tug7-element-control-border-ghost-action-rest: transparent;
   --tug7-element-control-border-ghost-action-hover: --tug-color(blue, i: 20, t: 35);
   --tug7-element-control-border-ghost-action-active: --tug-color(blue, i: 20, t: 35);
+  --tug7-element-control-border-ghost-action-confirmed: transparent;
 
   /* Ghost Option */
   --tug7-surface-control-primary-ghost-option-rest: transparent;

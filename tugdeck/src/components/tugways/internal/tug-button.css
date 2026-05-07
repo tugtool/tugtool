@@ -3,6 +3,9 @@
    ========================================================================= */
 
 /* @tug-pairings {
+  --tug7-element-control-text-ghost-action-confirmed   | --tug7-surface-control-primary-ghost-action-confirmed   | control
+  --tug7-element-control-icon-ghost-action-confirmed   | --tug7-surface-global-primary-normal-default-rest       | control
+  --tug7-element-control-border-ghost-action-confirmed | --tug7-surface-control-primary-ghost-action-confirmed   | control
   --tug7-element-control-text-outlined-action-rest     | --tug7-surface-control-primary-outlined-action-rest     | control
   --tug7-element-control-border-outlined-action-rest   | --tug7-surface-control-primary-outlined-action-rest     | control
   --tug7-element-control-icon-outlined-action-rest     | --tug7-surface-control-primary-outlined-action-rest     | control
@@ -171,6 +174,9 @@
  * | --tug7-element-control-text-ghost-option-active        | --tug7-surface-control-primary-ghost-option-active      | control | .tug-button-ghost-option:active:not(:disabled):not([aria-disabled="true"]) (color)                   |
  * | --tug7-element-control-border-ghost-option-active      | --tug7-surface-control-primary-ghost-option-active      | control | .tug-button-ghost-option:active:not(:disabled):not([aria-disabled="true"]) (border-color)            |
  * | --tug7-element-control-icon-ghost-option-active        | --tug7-surface-global-primary-normal-default-rest       | control | .tug-button-ghost-option:active:not(:disabled):not([aria-disabled="true"]) svg (color)               |
+ * | --tug7-element-control-text-ghost-action-confirmed     | --tug7-surface-control-primary-ghost-action-confirmed   | control | .tug-button-ghost-action[data-tug-confirming="true"] (color)                                         |
+ * | --tug7-element-control-border-ghost-action-confirmed   | --tug7-surface-control-primary-ghost-action-confirmed   | control | .tug-button-ghost-action[data-tug-confirming="true"] (border-color)                                  |
+ * | --tug7-element-control-icon-ghost-action-confirmed     | --tug7-surface-global-primary-normal-default-rest       | control | .tug-button-ghost-action[data-tug-confirming="true"] svg (color)                                     |
  */
 
 
@@ -855,4 +861,76 @@
   flex-shrink: 0;
   margin-left: 0.125rem;
   opacity: 0.6;
+}
+
+/* ============================================================================
+   Confirmation State ([data-tug-confirming="true"])
+   ========================================================================= */
+
+/*
+ * The button always renders a rest-content sub-tree and (when `confirmation`
+ * is configured) a sibling confirm-content sub-tree. Both wrappers use
+ * `display: contents` so the button's own flex layout (gap, alignment) still
+ * applies to the leaf icon/label/trailing-icon nodes — the wrappers are pure
+ * visibility hooks for the swap, not layout boxes.
+ *
+ * Toggling `[data-tug-confirming="true"]` on the button swaps which sub-tree
+ * is rendered. The transition is appearance-only — driven by DOM attribute
+ * mutation, never React state. [L06]
+ */
+.tug-button-rest-content {
+  display: contents;
+}
+
+.tug-button-confirm-content {
+  display: none;
+}
+
+.tug-button[data-tug-confirming="true"] .tug-button-rest-content {
+  display: none;
+}
+
+.tug-button[data-tug-confirming="true"] .tug-button-confirm-content {
+  display: contents;
+}
+
+/*
+ * The confirmation state is visually static — green check on the confirmed
+ * backdrop, no hover or active treatment. We rely on the existing
+ * `:hover:not([aria-disabled="true"])` and `:active:not([aria-disabled="true"])`
+ * exclusions on the rest-state rules: setting `aria-disabled="true"` during
+ * the confirmation window naturally suppresses every interactive variant
+ * rule, and we deliberately do NOT add `[data-tug-confirming="true"]:hover`
+ * or `:active` rules — there is no second state machine layered on top.
+ *
+ * Pointer events stay enabled so the button remains a click target (the JS
+ * `confirmingRef` guard ignores the click), preventing clicks from falling
+ * through to the transcript text behind it.
+ *
+ * The aria-disabled opacity dimming declared in the chain-action disabled
+ * section is cancelled here so the check icon stays full-strength.
+ */
+[aria-disabled="true"][data-tug-confirming="true"].tug-button-filled-accent,
+[aria-disabled="true"][data-tug-confirming="true"].tug-button-filled-action,
+[aria-disabled="true"][data-tug-confirming="true"].tug-button-filled-danger,
+[aria-disabled="true"][data-tug-confirming="true"].tug-button-outlined-action,
+[aria-disabled="true"][data-tug-confirming="true"].tug-button-outlined-option,
+[aria-disabled="true"][data-tug-confirming="true"].tug-button-ghost-action,
+[aria-disabled="true"][data-tug-confirming="true"].tug-button-ghost-danger,
+[aria-disabled="true"][data-tug-confirming="true"].tug-button-ghost-option {
+  opacity: 1;
+  cursor: default;
+}
+
+/* --- ghost-action confirmed: success-y green check feedback --- */
+
+.tug-button-ghost-action[data-tug-confirming="true"] {
+  background-color: var(--tug7-surface-control-primary-ghost-action-confirmed);
+  color: var(--tug7-element-control-text-ghost-action-confirmed);
+  border-color: var(--tug7-element-control-border-ghost-action-confirmed);
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-button-ghost-action[data-tug-confirming="true"] svg {
+  color: var(--tug7-element-control-icon-ghost-action-confirmed);
 }

@@ -738,6 +738,19 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     surface: "--tug7-surface-global-primary-normal-default-rest",
     role: "control",
   },
+  {
+    // Confirmed-state feedback (transient post-click) — green check on the
+    // ghost-action button. Effective background is the parent surface since
+    // ghost-action-confirmed bg is transparent.
+    element: "--tug7-element-control-text-ghost-action-confirmed",
+    surface: "--tug7-surface-global-primary-normal-default-rest",
+    role: "control",
+  },
+  {
+    element: "--tug7-element-control-icon-ghost-action-confirmed",
+    surface: "--tug7-surface-global-primary-normal-default-rest",
+    role: "control",
+  },
 
   // =========================================================================
   // Control — Ghost Danger (fg/icon over surface-default; bg-rest is transparent)
@@ -2064,6 +2077,16 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug7-element-control-border-ghost-action-active",
     surface: "--tug7-surface-control-primary-ghost-action-active",
+    role: "decorative",
+  },
+  {
+    element: "--tug7-element-control-text-ghost-action-confirmed",
+    surface: "--tug7-surface-control-primary-ghost-action-confirmed",
+    role: "decorative",
+  },
+  {
+    element: "--tug7-element-control-border-ghost-action-confirmed",
+    surface: "--tug7-surface-control-primary-ghost-action-confirmed",
     role: "decorative",
   },
   // Ghost danger

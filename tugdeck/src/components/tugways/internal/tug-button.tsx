@@ -27,6 +27,14 @@ import { ResponderParentContext } from "../responder-chain";
 const NOOP_SUBSCRIBE = (_cb: () => void): (() => void) => () => {};
 const NOOP_SNAPSHOT = (): number => 0;
 
+// ---- Confirmation defaults ----
+//
+// Default dwell time for the confirmation feedback state. Long enough that
+// a glance-and-look-away user catches the swap (the "✔ Copied" idiom on the
+// web converges on ~1.5–2s); short enough that re-clicks aren't blocked
+// for a noticeable beat. Override per call site via `confirmation.duration`.
+const DEFAULT_CONFIRMATION_DURATION_MS = 1500;
+
 
 // ---- Types ----
 
@@ -63,6 +71,33 @@ export type TugButtonSubtype = "text" | "icon" | "icon-text";
 
 /** TugButton border-radius tokens (proportional, rem-based like Tailwind) */
 export type TugButtonRounded = "none" | "sm" | "md" | "lg" | "full";
+
+/**
+ * TugButton confirmation configuration.
+ *
+ * When set, clicking the button enters the `confirmed` state ([token-naming.md])
+ * for `duration` ms — swapping the icon and/or label to the confirmation values —
+ * then automatically restores to rest. The button is non-interactive during the
+ * confirmation window. Mirrors the "✔ Copied" pattern used by Copy buttons across
+ * the web.
+ *
+ * The confirmation transition is appearance-zone state per [L06]: the swap is
+ * driven by a `data-tug-confirming` attribute and CSS visibility rules rather
+ * than React state, so re-rendering subtrees stay quiet during the duration window.
+ */
+export interface TugButtonConfirmation {
+  /** Icon shown in the `confirmed` state. Falls back to the rest icon when omitted. */
+  icon?: React.ReactNode;
+  /** Label shown in the `confirmed` state. Falls back to rest children when omitted. */
+  label?: React.ReactNode;
+  /**
+   * Milliseconds to remain in the confirmed state before restoring rest.
+   * Default `DEFAULT_CONFIRMATION_DURATION_MS` (2000).
+   */
+  duration?: number;
+  /** Optional aria-label override for the confirmed state (icon-only buttons). */
+  ariaLabel?: string;
+}
 
 /**
  * TugButton props interface.
@@ -155,6 +190,13 @@ export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButt
   /** Accessibility label (required for "icon" subtype without visible text) */
   "aria-label"?: string;
 
+  /**
+   * Confirmation feedback configuration. When set, clicking the button briefly
+   * swaps to the confirmation icon/label and disables interaction, then restores.
+   * @selector [data-tug-confirming="true"]
+   */
+  confirmation?: TugButtonConfirmation;
+
   /** Border radius token. Default is size-proportional (sm→"sm", md→"md", lg→"lg"). */
   rounded?: TugButtonRounded;
 
@@ -232,6 +274,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   children,
   icon,
   trailingIcon,
+  confirmation,
   rounded,
   "aria-label": ariaLabel,
   className,
@@ -339,6 +382,66 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   // Border radius: explicit token wins, otherwise size-proportional default
   const resolvedRadius = ROUNDED_MAP[rounded ?? SIZE_ROUNDED_DEFAULT[size]];
 
+  // ---- Confirmation state (appearance-zone, [L06]) ----
+  //
+  // The confirmed state is driven entirely by DOM attributes and CSS, not by
+  // React state. The ref tracks "are we currently confirming?" so the click
+  // handler can short-circuit; the timer ref owns the restore-to-rest schedule.
+  // Both are mutated imperatively — no setState, no re-render — per [L06].
+
+  const internalButtonRef = React.useRef<HTMLButtonElement | null>(null);
+  const confirmingRef = React.useRef(false);
+  const timerRef = React.useRef<number | null>(null);
+
+  // Merged ref forwards to the caller while keeping our internal handle for
+  // imperative DOM mutation during the confirmation cycle. Stable across
+  // renders so React doesn't tear down/re-attach the ref on every render.
+  const setRefs = React.useCallback(
+    (node: HTMLButtonElement | null) => {
+      internalButtonRef.current = node;
+      if (typeof ref === "function") ref(node);
+      else if (ref !== null && ref !== undefined) {
+        (ref as React.MutableRefObject<HTMLButtonElement | null>).current = node;
+      }
+    },
+    [ref],
+  );
+
+  const enterConfirmation = React.useCallback(() => {
+    const node = internalButtonRef.current;
+    if (node === null) return;
+    confirmingRef.current = true;
+    node.dataset.tugConfirming = "true";
+    node.setAttribute("aria-disabled", "true");
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+    }
+    const duration = confirmation?.duration ?? DEFAULT_CONFIRMATION_DURATION_MS;
+    timerRef.current = window.setTimeout(() => {
+      const el = internalButtonRef.current;
+      confirmingRef.current = false;
+      timerRef.current = null;
+      if (el !== null) {
+        delete el.dataset.tugConfirming;
+        // Only strip aria-disabled if the chain isn't holding it for its own
+        // disabled gate — otherwise we'd clobber the chain's a11y signal.
+        if (!isChainDisabled) {
+          el.removeAttribute("aria-disabled");
+        }
+      }
+    }, duration);
+  }, [confirmation?.duration, isChainDisabled]);
+
+  // Clear any pending timer on unmount so we never touch a detached node.
+  React.useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) {
+        window.clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, []);
+
   // ---- Click handler ----
 
   const handleClick = (e?: React.MouseEvent<HTMLButtonElement>) => {
@@ -348,6 +451,11 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
     // events (unlike HTML disabled). Return early without dispatching.
     if (isChainDisabled) return;
 
+    // Confirmation guard: button is non-interactive during its confirmation
+    // window. The ref check beats the React render cycle so a click that
+    // arrives mid-confirmation doesn't sneak through a stale closure.
+    if (confirmingRef.current) return;
+
     if (chainActive && chainCanHandle) {
       // Chain-action mode: targeted dispatch. [D01]
       // Explicit `target` prop overrides the default parent dispatch.
@@ -356,10 +464,15 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
       } else {
         controlDispatch({ action, phase: "discrete" });
       }
-      return;
+    } else {
+      onClick?.(e);
     }
 
-    onClick?.(e);
+    // Enter the confirmed state after the click logic runs so a downstream
+    // `preventDefault`-style abort still gets the chance to run first.
+    if (confirmation !== undefined) {
+      enterConfirmation();
+    }
   };
 
   // aria-disabled for chain-action disabled state.
@@ -392,25 +505,28 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
       return (
         <>
           <span className="tug-button-loading-content" aria-hidden="true">
-            {renderSubtypeContent()}
+            {renderSubtypeContent(icon, children)}
           </span>
           <Spinner />
         </>
       );
     }
-    return renderSubtypeContent();
+    return renderSubtypeContent(icon, children);
   }
 
-  function renderSubtypeContent() {
+  function renderSubtypeContent(
+    iconNode: React.ReactNode,
+    labelNode: React.ReactNode,
+  ) {
     switch (subtype) {
       case "icon":
-        return icon ?? null;
+        return iconNode ?? null;
 
       case "icon-text":
         return (
           <span className="tug-button-icon-text">
-            {icon}
-            {children}
+            {iconNode}
+            {labelNode}
             {trailingIcon && (
               <span className="tug-button-trailing-icon" aria-hidden="true">
                 {trailingIcon}
@@ -423,7 +539,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
       default:
         return (
           <>
-            {children}
+            {labelNode}
             {trailingIcon && (
               <span className="tug-button-trailing-icon" aria-hidden="true">
                 {trailingIcon}
@@ -434,12 +550,19 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
     }
   }
 
+  // Confirmation content: falls back to the rest icon/label when only one
+  // half of the swap is provided. Rendered as a sibling sub-tree that CSS
+  // toggles via `[data-tug-confirming]` — no React state churn during the
+  // restore-to-rest window. [L06]
+  const confirmIconResolved = confirmation?.icon ?? icon;
+  const confirmLabelResolved = confirmation?.label ?? children;
+
   // Use Radix Slot for asChild polymorphism; plain button otherwise.
   const Comp = asChild ? Slot : "button";
 
   return (
     <Comp
-      ref={ref}
+      ref={setRefs}
       data-slot="tug-button"
       data-tug-focus="refuse"
       disabled={effectiveDisabled}
@@ -452,7 +575,15 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
       style={{ borderRadius: resolvedRadius }}
       {...rest}
     >
-      {renderContent()}
+      <span className="tug-button-rest-content">{renderContent()}</span>
+      {confirmation !== undefined && (
+        <span
+          className="tug-button-confirm-content"
+          aria-label={confirmation.ariaLabel}
+        >
+          {renderSubtypeContent(confirmIconResolved, confirmLabelResolved)}
+        </span>
+      )}
     </Comp>
   );
 });

@@ -113,7 +113,7 @@ Roles fall into several categories:
 
 The interaction condition. Every token has a state — non-interactive tokens use `rest`.
 
-`rest` · `hover` · `active` · `focus` · `disabled` · `readonly` · `mixed` · `inactive` · `collapsed`
+`rest` · `hover` · `active` · `focus` · `disabled` · `confirmed` · `readonly` · `mixed` · `inactive` · `collapsed`
 
 ---
 
@@ -122,6 +122,8 @@ The interaction condition. Every token has a state — non-interactive tokens us
 These rules make seven-slot parsing deterministic:
 
 **`disabled` is always a state, never a role.** Disabled tokens use `role=plain` with `state=disabled`. Example: `--tug7-element-global-text-normal-plain-disabled`.
+
+**`confirmed` is a state, not a role.** A control enters the `confirmed` state for a brief, transient moment after an action successfully fires (e.g., a Copy button showing a check icon after copy succeeds), then automatically restores to `rest`. Like `disabled`, it occupies the state slot — an interaction condition that influences appearance independent of role. Example: `--tug7-element-control-icon-ghost-action-confirmed`.
 
 **`on`, `off`, `mixed`, `selected`, `highlighted` are roles, not states.** They describe persistent visual treatments that combine with interaction states. Example: `--tug7-surface-toggle-track-normal-on-hover` (role=`on`, state=`hover`).
 
