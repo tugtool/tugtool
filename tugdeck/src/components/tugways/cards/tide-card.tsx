@@ -101,6 +101,7 @@ import {
   SESSIONS_CELL_RENDERERS,
   type PickerSelection,
 } from "./tide-picker-cells";
+import { truncateForDisplay } from "./tide-picker-format";
 
 import "./tide-card.css";
 
@@ -763,6 +764,11 @@ function TideProjectPickerForm({
   onRetryRestore,
 }: TideProjectPickerFormProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // Form's outer DOM node — used to scope the anchor querySelector for
+  // the form-owned forget-confirmation popover so the lookup never
+  // walks outside the picker form's own subtree.
+  const formRootRef = useRef<HTMLDivElement | null>(null);
+  const formResponderId = useId();
 
   // External state via `useSyncExternalStore` per [L02]. Recents
   // ride on tugbank; sessions flow through the tugcast-side
@@ -815,10 +821,19 @@ function TideProjectPickerForm({
     }
   }, [sessionsReady, ledgerRows, selection]);
 
-  // Forget actions — invoked after the cell-local (per-row trash) or
-  // picker-level (forget-all) `TugConfirmPopover` resolves true. No
-  // intermediate `pendingForget` state: the popover is the
-  // confirmation UI, so these helpers unconditionally delete.
+  // Forget actions — the picker form owns the confirmation flow per
+  // [tugplan-tide-picker-redesign §D14] (no per-cell popovers).
+  //
+  // Per-row forget: the trash `TugIconButton` in `SessionResumeCell`
+  // dispatches `request-forget-session` with `{ sessionId }` payload.
+  // The chain handler below populates `pendingForgetSessionId`. A
+  // single anchored `TugConfirmPopover` rendered at the form level
+  // confirms, and its `onConfirm` callback unconditionally deletes.
+  //
+  // Forget-all: the picker-level button uses the imperative-mode
+  // `TugConfirmPopover` API (legacy). It does not need the chain-
+  // dispatch path because the button is always visible at a fixed
+  // location, not anchored to a specific row.
 
   const forgetSession = useCallback(
     (sessionId: string): void => {
@@ -835,6 +850,110 @@ function TideProjectPickerForm({
     },
     [ledgerRows],
   );
+
+  // ---- Form-owned forget confirmation ----
+  //
+  // `pendingForgetSessionId` is `null` when no forget is in flight.
+  // The chain handler for `request-forget-session` (registered below)
+  // sets it; the popover's `onConfirm` and `onCancel` both clear it.
+  // The anchor is resolved in a layout effect by querying the trash
+  // icon's DOM node within this form's own subtree — the cell's
+  // `data-session-id="<id>"` attribute on the row + the
+  // `data-slot="tug-icon-button"` on the trash button form a stable
+  // selector that survives row reordering and virtualization recycle.
+  const [pendingForgetSessionId, setPendingForgetSessionId] = useState<
+    string | null
+  >(null);
+  const [pendingForgetAnchorEl, setPendingForgetAnchorEl] =
+    useState<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    if (pendingForgetSessionId === null) {
+      setPendingForgetAnchorEl(null);
+      return;
+    }
+    const root = formRootRef.current;
+    if (root === null) return;
+    const escaped =
+      typeof CSS !== "undefined" && typeof CSS.escape === "function"
+        ? CSS.escape(pendingForgetSessionId)
+        : pendingForgetSessionId;
+    const selector =
+      `[data-session-id="${escaped}"] [data-slot="tug-icon-button"]`;
+    const el = root.querySelector<HTMLElement>(selector);
+    setPendingForgetAnchorEl(el ?? null);
+  }, [pendingForgetSessionId]);
+
+  // Chain handler for `request-forget-session` dispatched by the per-
+  // row trash button. The cell carries the sessionId on the event's
+  // `value`; we narrow defensively per [L07] and ignore malformed
+  // payloads. Setting `pendingForgetSessionId` triggers the layout
+  // effect above (anchor resolution) and the popover render below.
+  const handleRequestForgetSession = useCallback((event: ActionEvent) => {
+    const v = event.value;
+    if (
+      v !== null &&
+      typeof v === "object" &&
+      "sessionId" in v &&
+      typeof (v as { sessionId: unknown }).sessionId === "string"
+    ) {
+      setPendingForgetSessionId((v as { sessionId: string }).sessionId);
+    }
+  }, []);
+
+  const { ResponderScope: PickerFormResponderScope, responderRef: pickerFormResponderRef } =
+    useResponder({
+      id: formResponderId,
+      actions: {
+        [TUG_ACTIONS.REQUEST_FORGET_SESSION]: handleRequestForgetSession,
+      },
+    });
+
+  // Merged ref: the form's root div carries BOTH the form responder's
+  // `data-responder-id` (so the chain DOM walk lands here) AND our
+  // own `formRootRef` (so the anchor querySelector is scoped to the
+  // form's subtree). React calls function refs with the element on
+  // mount and `null` on unmount, so the merge mirrors the same
+  // calling shape both ways.
+  const setFormRootRef = useCallback(
+    (el: HTMLDivElement | null): void => {
+      formRootRef.current = el;
+      pickerFormResponderRef(el);
+    },
+    [pickerFormResponderRef],
+  );
+
+  // Confirm / cancel callbacks for the form-owned popover. Both
+  // unconditionally clear `pendingForgetSessionId`, which flips the
+  // popover's controlled `open` to `false`. Confirm additionally runs
+  // the deletion via the existing `forgetSession` helper.
+  const handleConfirmForget = useCallback(() => {
+    if (pendingForgetSessionId !== null) {
+      forgetSession(pendingForgetSessionId);
+    }
+    setPendingForgetSessionId(null);
+  }, [pendingForgetSessionId, forgetSession]);
+
+  const handleCancelForget = useCallback(() => {
+    setPendingForgetSessionId(null);
+  }, []);
+
+  // Compose the popover's confirm message from the pending row's
+  // first-user-prompt snippet so the user sees what they're about to
+  // forget. Falls back to a generic prompt when no snippet is
+  // available.
+  const pendingForgetMessage = useMemo<string>(() => {
+    if (pendingForgetSessionId === null) return "Forget this session?";
+    const row = ledgerRows.find(
+      (r) => r.session_id === pendingForgetSessionId,
+    );
+    const prompt = row?.first_user_prompt ?? null;
+    if (prompt !== null && prompt.length > 0) {
+      const truncated = truncateForDisplay(prompt, 64);
+      return `Forget "${truncated}"?`;
+    }
+    return "Forget this session?";
+  }, [pendingForgetSessionId, ledgerRows]);
 
   const forgetAll = useCallback((): void => {
     const store = getTideSessionLedgerStore();
@@ -1049,15 +1168,15 @@ function TideProjectPickerForm({
 
   // Cell-context value — `currentPath` drives path-recent's
   // `data-selected`; `selection` drives session cells' selection
-  // state; `onConfirmForgetSession` is invoked by the per-row trash
-  // popover after the user confirms.
+  // state. The per-row forget flow does NOT pass through context;
+  // the trash button dispatches `request-forget-session` through the
+  // chain, and the form's chain handler above owns the response.
   const cellContextValue = useMemo(
     () => ({
       currentPath: path,
       selection,
-      onConfirmForgetSession: forgetSession,
     }),
-    [path, selection, forgetSession],
+    [path, selection],
   );
 
   // Master/detail layout: project-path input → Recents list →
@@ -1067,7 +1186,12 @@ function TideProjectPickerForm({
   const openDisabled = trimmedPath.length === 0;
 
   return (
-    <div className="tide-card-picker-form" onKeyDown={handleFormKeyDown}>
+    <PickerFormResponderScope>
+      <div
+        ref={setFormRootRef}
+        className="tide-card-picker-form"
+        onKeyDown={handleFormKeyDown}
+      >
       {notice !== null && (
         <div
           className="tide-card-picker-notice"
@@ -1205,7 +1329,25 @@ function TideProjectPickerForm({
           Open
         </TugPushButton>
       </div>
-    </div>
+      {/*
+        Form-owned forget-session confirmation popover. Driven by
+        `pendingForgetSessionId` state set by the chain handler on
+        `request-forget-session`. Anchored to the requesting row's
+        trash icon via a virtualRef populated in the layout effect.
+        One instance, N anchor targets — see [D14] / [D15].
+      */}
+      <TugConfirmPopover
+        open={pendingForgetSessionId !== null}
+        anchorEl={pendingForgetAnchorEl}
+        message={pendingForgetMessage}
+        confirmLabel="Forget"
+        confirmRole="danger"
+        side="left"
+        onConfirm={handleConfirmForget}
+        onCancel={handleCancelForget}
+      />
+      </div>
+    </PickerFormResponderScope>
   );
 }
 

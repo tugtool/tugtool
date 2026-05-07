@@ -257,35 +257,28 @@
 }
 
 /* Rich resume row: snippet title + subtitle take the leading edge,
-   the Forget button (or state pill) anchors to the trailing edge.
-   The session option block is the leading flex child; the Forget
-   button gets `margin-inline-start: auto` to push to the trailing edge.
-   Inherited from each TugRadioItem's child layout. */
+   the Forget icon button (or state pill) anchors to the trailing
+   edge. The trash control is a TugIconButton, which owns its hit
+   target, border, hover/focus token treatment, and focus refusal —
+   see [tugplan-tide-picker-redesign §D16]. This rule only adds
+   layout (trailing-edge alignment) and the hover-reveal opacity
+   pattern; visual chrome is delegated to tug-button.css. */
 .tide-card-picker-session-forget {
   margin-inline-start: auto;
   /* Hidden by default so closed-state rows read as clean snippets;
-     surfaced on row hover/focus + on direct keyboard focus. The radio
-     row's keyboard reachability is unchanged. */
+     surfaced on row hover/focus-within and on direct icon focus. */
   opacity: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  background: transparent;
-  border: 1px solid var(--tug7-element-field-border-normal-muted-rest);
-  border-radius: var(--tug-radius-xs, 4px);
-  padding: 0;
-  cursor: pointer;
-  color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-/* Reveal Forget on row hover or focus-within. Either of those signals
-   "user is engaging with this row" — surfacing the destructive action
-   then keeps the closed-state read clean. */
+/* Reveal Forget on row hover or focus-within. The form-owned popover
+   does not need a CSS hook here: while the popover is open the user's
+   pointer is on the popover itself (portaled outside the row), but
+   the trash icon is already visible from the originating click and
+   the popover sits directly to its left (`side="left"`). */
 .tide-card-picker-form [role="radio"]:hover .tide-card-picker-session-forget,
 .tide-card-picker-form [role="radio"]:focus-within .tide-card-picker-session-forget,
 .tide-card-picker-session-forget:focus,
+.tide-card-picker-session-forget:focus-within,
 .tide-card-picker-session-forget:hover {
   opacity: 1;
 }
@@ -490,9 +483,7 @@
 }
 
 .tide-card-picker-sessions-list
-  .tide-card-picker-session-option:hover,
-.tide-card-picker-sessions-list
-  .tide-card-picker-session-option[data-popover-open="true"] {
+  .tide-card-picker-session-option:hover {
   background: var(--tug7-surface-control-primary-ghost-action-hover);
 }
 
@@ -508,24 +499,15 @@
   cursor: not-allowed;
 }
 
-/* Trailing affordance — forget button or state badge. Anchored to
-   the trailing edge by the `flex: 1` text column above. The forget
+/* Trailing affordance — forget icon button or state badge. Anchored
+   to the trailing edge by the `flex: 1` text column above. The
    icon hides until row hover / focus-within so closed-state rows
-   read clean. */
+   read clean. The TugIconButton owns its visual chrome (border,
+   hit target, hover/active token treatment); this scope only adds
+   `flex-shrink: 0` and the hover-reveal opacity gate. */
 .tide-card-picker-sessions-list .tide-card-picker-session-forget {
   flex-shrink: 0;
   opacity: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  background: transparent;
-  border: 1px solid var(--tug7-element-field-border-normal-muted-rest);
-  border-radius: var(--tug-radius-xs, 4px);
-  padding: 0;
-  cursor: pointer;
-  color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 .tide-card-picker-sessions-list
@@ -534,20 +516,10 @@
 .tide-card-picker-sessions-list
   .tide-card-picker-session-option:focus-within
   .tide-card-picker-session-forget,
-.tide-card-picker-sessions-list
-  .tide-card-picker-session-option[data-popover-open="true"]
-  .tide-card-picker-session-forget,
 .tide-card-picker-sessions-list .tide-card-picker-session-forget:focus,
+.tide-card-picker-sessions-list .tide-card-picker-session-forget:focus-within,
 .tide-card-picker-sessions-list .tide-card-picker-session-forget:hover {
   opacity: 1;
-}
-
-/* Pointer-on-button affordance — tint background and border so the
-   button reads as a hot target distinct from its row hover. */
-.tide-card-picker-sessions-list .tide-card-picker-session-forget:hover {
-  background: var(--tug7-surface-control-primary-ghost-action-hover);
-  border-color: var(--tug7-element-field-border-normal-default-rest);
-  color: var(--tug7-element-global-text-normal-default-rest);
 }
 
 .tide-card-picker-sessions-list
