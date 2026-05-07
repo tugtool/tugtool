@@ -107,6 +107,7 @@ import {
   deckTrace,
   formatElement,
 } from "../../deck-trace";
+import { CardIdContext } from "@/lib/card-id-context";
 
 export interface CardHostProps {
   /** Stable identity of this card — survives cross-pane moves. */
@@ -1398,8 +1399,9 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
         }}
       >
         <TugPanePortalContext value={hostCardRootEl}>
-          <ResponderScope>
-            <CardDataProvider feedData={feedData}>
+          <CardIdContext value={cardId}>
+            <ResponderScope>
+              <CardDataProvider feedData={feedData}>
               <CardPropertyContext value={registerPropertyStore}>
                 <CardStatePreservationContext value={cardStatePreservationContextValue}>
                   <CardComponentStatePreservationContext.Provider
@@ -1421,7 +1423,8 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
                 </CardStatePreservationContext>
               </CardPropertyContext>
             </CardDataProvider>
-          </ResponderScope>
+            </ResponderScope>
+          </CardIdContext>
         </TugPanePortalContext>
       </div>
     </CardPortal>

@@ -108,6 +108,11 @@ import { TugPanePortalContext } from "@/components/chrome/tug-pane";
 import { FeedId } from "@/protocol";
 import type { SessionRow } from "@/protocol";
 import { CardLifecycle, CardLifecycleContext } from "@/lib/card-lifecycle";
+import {
+  SheetLifecycle,
+  SheetLifecycleContext,
+} from "@/lib/sheet-lifecycle";
+import { CardIdContext } from "@/lib/card-id-context";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { waitFor } from "@testing-library/react";
 import {
@@ -167,14 +172,19 @@ function renderTideCard(cardId: string) {
   };
   const lifecycle = new CardLifecycle(lifecycleStore);
   lifecycle.notifyCardDidFinishConstruction(cardId);
+  const sheetLifecycle = new SheetLifecycle();
 
   const rtl = render(
     <CardLifecycleContext.Provider value={lifecycle}>
-      <ResponderChainProvider>
-        <TugPanePortalContext value={cardEl}>
-          <TideCardContent cardId={cardId} />
-        </TugPanePortalContext>
-      </ResponderChainProvider>
+      <SheetLifecycleContext.Provider value={sheetLifecycle}>
+        <CardIdContext.Provider value={cardId}>
+          <ResponderChainProvider>
+            <TugPanePortalContext value={cardEl}>
+              <TideCardContent cardId={cardId} />
+            </TugPanePortalContext>
+          </ResponderChainProvider>
+        </CardIdContext.Provider>
+      </SheetLifecycleContext.Provider>
     </CardLifecycleContext.Provider>,
   );
 
@@ -783,14 +793,19 @@ describe("TideProjectPicker – cancel-cascade dispatches via sendToTarget", () 
     };
     const lifecycle = new CardLifecycle(lifecycleStore);
     lifecycle.notifyCardDidFinishConstruction(CARD_ID);
+    const sheetLifecycle = new SheetLifecycle();
 
     const rtl = render(
       <CardLifecycleContext.Provider value={lifecycle}>
-        <ResponderChainContext.Provider value={manager}>
-          <TugPanePortalContext value={cardEl}>
-            <TideCardContent cardId={CARD_ID} />
-          </TugPanePortalContext>
-        </ResponderChainContext.Provider>
+        <SheetLifecycleContext.Provider value={sheetLifecycle}>
+          <CardIdContext.Provider value={CARD_ID}>
+            <ResponderChainContext.Provider value={manager}>
+              <TugPanePortalContext value={cardEl}>
+                <TideCardContent cardId={CARD_ID} />
+              </TugPanePortalContext>
+            </ResponderChainContext.Provider>
+          </CardIdContext.Provider>
+        </SheetLifecycleContext.Provider>
       </CardLifecycleContext.Provider>,
     );
 
@@ -883,14 +898,19 @@ describe("TideProjectPicker – cancel-cascade dispatches via sendToTarget", () 
     };
     const lifecycle = new CardLifecycle(lifecycleStore);
     lifecycle.notifyCardDidFinishConstruction(CARD_ID);
+    const sheetLifecycle = new SheetLifecycle();
 
     const rtl = render(
       <CardLifecycleContext.Provider value={lifecycle}>
-        <ResponderChainContext.Provider value={manager}>
-          <TugPanePortalContext value={cardEl}>
-            <TideCardContent cardId={CARD_ID} />
-          </TugPanePortalContext>
-        </ResponderChainContext.Provider>
+        <SheetLifecycleContext.Provider value={sheetLifecycle}>
+          <CardIdContext.Provider value={CARD_ID}>
+            <ResponderChainContext.Provider value={manager}>
+              <TugPanePortalContext value={cardEl}>
+                <TideCardContent cardId={CARD_ID} />
+              </TugPanePortalContext>
+            </ResponderChainContext.Provider>
+          </CardIdContext.Provider>
+        </SheetLifecycleContext.Provider>
       </CardLifecycleContext.Provider>,
     );
 

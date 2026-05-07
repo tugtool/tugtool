@@ -43,6 +43,11 @@ import {
   ResponderChainManager,
   ResponderParentContext,
 } from "@/components/tugways/responder-chain";
+import {
+  SheetLifecycle,
+  SheetLifecycleContext,
+} from "@/lib/sheet-lifecycle";
+import { CardIdContext } from "@/lib/card-id-context";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -54,8 +59,11 @@ import {
  * document.body. The `.tug-pane-body` child satisfies the inert-
  * attribute lifecycle effect in TugSheetContent.
  */
+const TEST_CARD_ID = "test-card";
+
 function renderWithChainAndCard(ui: React.ReactElement) {
   const manager = new ResponderChainManager();
+  const sheetLifecycle = new SheetLifecycle();
   const cardEl = document.createElement("div");
   cardEl.className = "tug-pane-chrome";
   const cardBody = document.createElement("div");
@@ -65,15 +73,20 @@ function renderWithChainAndCard(ui: React.ReactElement) {
 
   const result = render(
     <ResponderChainContext.Provider value={manager}>
-      <TugPanePortalContext.Provider value={cardEl}>
-        {ui}
-      </TugPanePortalContext.Provider>
+      <SheetLifecycleContext.Provider value={sheetLifecycle}>
+        <CardIdContext.Provider value={TEST_CARD_ID}>
+          <TugPanePortalContext.Provider value={cardEl}>
+            {ui}
+          </TugPanePortalContext.Provider>
+        </CardIdContext.Provider>
+      </SheetLifecycleContext.Provider>
     </ResponderChainContext.Provider>,
   );
 
   return {
     ...result,
     manager,
+    sheetLifecycle,
     cardEl,
     cleanupCard: () => {
       if (cardEl.parentNode) {
@@ -541,25 +554,26 @@ function resolveAllWaapiAnimations() {
   }
 }
 
-describe("TugSheet – onClosed callback", () => {
+describe("TugSheet – sheetDidHide / sheetDidReturnResult lifecycle events", () => {
   afterEach(() => {
     const mock = (global as unknown as { __waapi_mock__: { reset: () => void } }).__waapi_mock__;
     mock.reset();
   });
 
-  it("TugSheetContent onClosed fires after the exit animation finishes", async () => {
-    let invocations = 0;
-    const onClosed = () => {
-      invocations += 1;
-    };
-
-    const { manager, cleanupCard } = renderWithChainAndCard(
+  it("TugSheetContent fires sheetDidHide after the exit animation finishes", async () => {
+    const { manager, sheetLifecycle, cleanupCard } = renderWithChainAndCard(
       <TugSheet defaultOpen>
-        <TugSheetContent title="Settings" senderId="onclosed-sender" onClosed={onClosed}>
+        <TugSheetContent title="Settings" senderId="onclosed-sender">
           <div>body</div>
         </TugSheetContent>
       </TugSheet>,
     );
+
+    let invocations = 0;
+    sheetLifecycle.observeSheetDidHide(TEST_CARD_ID, () => {
+      invocations += 1;
+    });
+
     expect(getSheetContent()).not.toBeNull();
     expect(invocations).toBe(0);
 
@@ -587,7 +601,7 @@ describe("TugSheet – onClosed callback", () => {
     cleanupCard();
   });
 
-  it("useTugSheet onClosed receives the result passed to close()", async () => {
+  it("useTugSheet's sheet emits sheetDidReturnResult with the result passed to close()", async () => {
     const results: Array<string | undefined> = [];
     let closeFn: ((result?: string) => void) | null = null;
 
@@ -600,15 +614,15 @@ describe("TugSheet – onClosed callback", () => {
             closeFn = close;
             return <div>body</div>;
           },
-          onClosed: (result) => {
-            results.push(result);
-          },
         });
       }, [showSheet]);
       return <>{renderSheet()}</>;
     }
 
-    const { cleanupCard } = renderWithChainAndCard(<Harness />);
+    const { sheetLifecycle, cleanupCard } = renderWithChainAndCard(<Harness />);
+    sheetLifecycle.observeSheetDidReturnResult(TEST_CARD_ID, (_id, result) => {
+      results.push(result);
+    });
 
     await waitFor(() => {
       expect(closeFn).not.toBeNull();
@@ -640,10 +654,11 @@ describe("TugSheet – onClosed callback", () => {
  * `cascadeTargetId` is a `ShowSheetOptions` field added in the tide-
  * overlay-framework Step 2. The canonical [D02] pattern is for the
  * consumer to capture the id in the same closure where they call
- * `showSheet`, then read it from that closure inside `onClosed` and
- * dispatch via `manager.sendToTarget(cascadeTargetId, ...)` — first-
- * responder state at close time is fragile and using
- * `sendToFirstResponder` from `onClosed` is a known bug class.
+ * `showSheet`, then read it from that closure when the sheet's
+ * `sheetDidReturnResult` lifecycle event fires and dispatch via
+ * `manager.sendToTarget(cascadeTargetId, ...)` — first-responder
+ * state at close time is fragile and using `sendToFirstResponder`
+ * from a close handler is a known bug class.
  *
  * Per Step 2 of the framework plan, `useTugSheet` itself does not
  * consume the value; it stores it on `UseTugSheetState.options` for
@@ -652,10 +667,11 @@ describe("TugSheet – onClosed callback", () => {
  *   - Passing `cascadeTargetId` to `showSheet` is accepted by the
  *     `ShowSheetOptions` type (compile-time, enforced by tsc).
  *   - The presence of the option does not perturb the showSheet /
- *     renderSheet / close / onClosed lifecycle (runtime).
- *   - The consumer's open-time closure capture round-trips into
- *     `onClosed` — the canonical [D02] pattern works end-to-end and
- *     the captured id is available for the cascade dispatch.
+ *     renderSheet / close / sheetDidReturnResult lifecycle (runtime).
+ *   - The consumer's open-time closure capture round-trips into a
+ *     `sheetDidReturnResult` handler — the canonical [D02] pattern
+ *     works end-to-end and the captured id is available for the
+ *     cascade dispatch.
  */
 describe("useTugSheet – cascadeTargetId option", () => {
   afterEach(() => {
@@ -709,11 +725,16 @@ describe("useTugSheet – cascadeTargetId option", () => {
   it("round-trips through the consumer's open-time closure (canonical [D02] pattern)", async () => {
     // Mimics tide-card's presentSheet pattern: capture the cascade
     // target in the consumer's closure at open time, and read it
-    // back inside onClosed for a follow-up dispatch.
+    // back from a sheetDidReturnResult subscription for a follow-
+    // up dispatch.
     const captured: Array<string | undefined> = [];
     let closeFn: ((result?: string) => void) | null = null;
 
-    function Harness() {
+    function Harness({
+      sheetLifecycle,
+    }: {
+      sheetLifecycle: SheetLifecycle;
+    }) {
       const { showSheet, renderSheet } = useTugSheet();
       React.useEffect(() => {
         const cascadeTargetId = "host-pane-id-B";
@@ -724,18 +745,43 @@ describe("useTugSheet – cascadeTargetId option", () => {
             closeFn = close;
             return <div>body</div>;
           },
-          onClosed: (_result) => {
-            // The consumer reads its own captured id — this is the
-            // robust [D02] pattern. The id is in the consumer's
-            // closure, independent of first-responder state.
+        });
+        // The consumer reads its own captured id — this is the
+        // robust [D02] pattern. The id is in the consumer's
+        // closure, independent of first-responder state.
+        return sheetLifecycle.observeSheetDidReturnResult(
+          TEST_CARD_ID,
+          () => {
             captured.push(cascadeTargetId);
           },
-        });
-      }, [showSheet]);
+        );
+      }, [showSheet, sheetLifecycle]);
       return <>{renderSheet()}</>;
     }
 
-    const { cleanupCard } = renderWithChainAndCard(<Harness />);
+    // Pre-construct the SheetLifecycle so the harness can reference
+    // it. The render helper would otherwise create one internally.
+    const sheetLifecycle = new SheetLifecycle();
+    const cardEl = document.createElement("div");
+    cardEl.className = "tug-pane-chrome";
+    const cardBody = document.createElement("div");
+    cardBody.className = "tug-pane-body";
+    cardEl.appendChild(cardBody);
+    document.body.appendChild(cardEl);
+
+    const manager = new ResponderChainManager();
+
+    render(
+      <ResponderChainContext.Provider value={manager}>
+        <SheetLifecycleContext.Provider value={sheetLifecycle}>
+          <CardIdContext.Provider value={TEST_CARD_ID}>
+            <TugPanePortalContext.Provider value={cardEl}>
+              <Harness sheetLifecycle={sheetLifecycle} />
+            </TugPanePortalContext.Provider>
+          </CardIdContext.Provider>
+        </SheetLifecycleContext.Provider>
+      </ResponderChainContext.Provider>,
+    );
 
     await waitFor(() => {
       expect(closeFn).not.toBeNull();
@@ -754,7 +800,7 @@ describe("useTugSheet – cascadeTargetId option", () => {
     await waitFor(() => {
       expect(captured).toEqual(["host-pane-id-B"]);
     });
-    cleanupCard();
+    if (cardEl.parentNode) cardEl.parentNode.removeChild(cardEl);
   });
 
   it("hook state is replaced cleanly when a second showSheet uses a different cascadeTargetId", async () => {
@@ -763,15 +809,27 @@ describe("useTugSheet – cascadeTargetId option", () => {
     // on each call (callIdRef++ + setState), the second sheet's
     // cascadeTargetId must not leak the first one's value into the
     // second consumer's closure.
+    //
+    // The consumer subscribes to `sheetDidReturnResult` once at
+    // mount and reads its own per-call captured id from a ref
+    // updated each time `showSheet` is called. This mirrors the
+    // production cascade pattern and avoids re-subscribing on
+    // each `showSheet`.
     const seenInOnClosed: Array<string | undefined> = [];
     let triggerSecond: (() => Promise<string | undefined>) | null = null;
     let firstClose: ((result?: string) => void) | null = null;
     let secondClose: ((result?: string) => void) | null = null;
 
-    function Harness() {
+    function Harness({
+      sheetLifecycle,
+    }: {
+      sheetLifecycle: SheetLifecycle;
+    }) {
       const { showSheet, renderSheet } = useTugSheet();
+      const lastIdRef = React.useRef<string | undefined>(undefined);
       React.useEffect(() => {
         const firstId = "host-A";
+        lastIdRef.current = firstId;
         void showSheet({
           title: "First",
           cascadeTargetId: firstId,
@@ -779,12 +837,10 @@ describe("useTugSheet – cascadeTargetId option", () => {
             firstClose = close;
             return <div>first body</div>;
           },
-          onClosed: () => {
-            seenInOnClosed.push(firstId);
-          },
         });
         triggerSecond = () => {
           const secondId = "host-B";
+          lastIdRef.current = secondId;
           return showSheet({
             title: "Second",
             cascadeTargetId: secondId,
@@ -792,16 +848,40 @@ describe("useTugSheet – cascadeTargetId option", () => {
               secondClose = close;
               return <div>second body</div>;
             },
-            onClosed: () => {
-              seenInOnClosed.push(secondId);
-            },
           });
         };
-      }, [showSheet]);
+        return sheetLifecycle.observeSheetDidReturnResult(
+          TEST_CARD_ID,
+          () => {
+            seenInOnClosed.push(lastIdRef.current);
+          },
+        );
+      }, [showSheet, sheetLifecycle]);
       return <>{renderSheet()}</>;
     }
 
-    const { cleanupCard } = renderWithChainAndCard(<Harness />);
+    const sheetLifecycle = new SheetLifecycle();
+    const cardEl = document.createElement("div");
+    cardEl.className = "tug-pane-chrome";
+    const cardBody = document.createElement("div");
+    cardBody.className = "tug-pane-body";
+    cardEl.appendChild(cardBody);
+    document.body.appendChild(cardEl);
+    const manager = new ResponderChainManager();
+    render(
+      <ResponderChainContext.Provider value={manager}>
+        <SheetLifecycleContext.Provider value={sheetLifecycle}>
+          <CardIdContext.Provider value={TEST_CARD_ID}>
+            <TugPanePortalContext.Provider value={cardEl}>
+              <Harness sheetLifecycle={sheetLifecycle} />
+            </TugPanePortalContext.Provider>
+          </CardIdContext.Provider>
+        </SheetLifecycleContext.Provider>
+      </ResponderChainContext.Provider>,
+    );
+    const cleanupCard = () => {
+      if (cardEl.parentNode) cardEl.parentNode.removeChild(cardEl);
+    };
 
     await waitFor(() => {
       expect(firstClose).not.toBeNull();

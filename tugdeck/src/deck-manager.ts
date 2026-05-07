@@ -67,6 +67,16 @@ import {
   AppLifecycleContext,
   registerAppLifecycle,
 } from "./lib/app-lifecycle";
+import {
+  SheetLifecycle,
+  SheetLifecycleContext,
+  registerSheetLifecycle,
+} from "./lib/sheet-lifecycle";
+import {
+  BannerLifecycle,
+  BannerLifecycleContext,
+  registerBannerLifecycle,
+} from "./lib/banner-lifecycle";
 import { registerDeckStore, getDeckStore } from "./lib/deck-store-registry";
 import { isDevEnv } from "./lib/dev-env";
 import {
@@ -293,6 +303,10 @@ export class DeckManager implements IDeckManagerStore {
 
   public readonly appLifecycle: AppLifecycle;
 
+  public readonly sheetLifecycle: SheetLifecycle;
+
+  public readonly bannerLifecycle: BannerLifecycle;
+
   private readonly lifecycleCascade: LifecycleCascadeHandle;
 
   public addCardToPane: (paneId: string, componentId: string) => string | null;
@@ -443,6 +457,10 @@ export class DeckManager implements IDeckManagerStore {
     registerCardLifecycle(this.cardLifecycle);
     this.appLifecycle = new AppLifecycle();
     registerAppLifecycle(this.appLifecycle);
+    this.sheetLifecycle = new SheetLifecycle();
+    registerSheetLifecycle(this.sheetLifecycle);
+    this.bannerLifecycle = new BannerLifecycle();
+    registerBannerLifecycle(this.bannerLifecycle);
     // Expose this store to non-React singletons (notably `selectionGuard`,
     // which `ResponderChainProvider` attaches from a `useLayoutEffect`
     // that sits outside the `DeckManagerContext` provider and so cannot
@@ -508,15 +526,23 @@ export class DeckManager implements IDeckManagerStore {
                     AppLifecycleContext.Provider,
                     { value: this.appLifecycle },
                     React.createElement(
-                      TugAlertProvider,
-                      null,
+                      SheetLifecycleContext.Provider,
+                      { value: this.sheetLifecycle },
                       React.createElement(
-                        TugBulletinProvider,
-                        null,
-                        React.createElement(TugBannerProvider, {
-                          connection: this.connection,
-                        }),
-                        React.createElement(DeckCanvas, {}),
+                        BannerLifecycleContext.Provider,
+                        { value: this.bannerLifecycle },
+                        React.createElement(
+                          TugAlertProvider,
+                          null,
+                          React.createElement(
+                            TugBulletinProvider,
+                            null,
+                            React.createElement(TugBannerProvider, {
+                              connection: this.connection,
+                            }),
+                            React.createElement(DeckCanvas, {}),
+                          ),
+                        ),
                       ),
                     ),
                   ),

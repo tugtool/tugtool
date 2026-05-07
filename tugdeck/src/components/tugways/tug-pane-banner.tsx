@@ -52,6 +52,8 @@ import * as FocusScopeRadix from "@radix-ui/react-focus-scope";
 import { icons } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TugPanePortalContext } from "@/components/chrome/tug-pane";
+import { CardIdContext } from "@/lib/card-id-context";
+import { useBannerLifecycle } from "@/lib/banner-lifecycle";
 import { group } from "@/components/tugways/tug-animator";
 
 /* ---------------------------------------------------------------------------
@@ -128,6 +130,13 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
     ref,
   ) {
     const cardEl = useContext(TugPanePortalContext);
+    // Per-card banner-lifecycle plumbing. cardId is read from
+    // `CardIdContext` (provided by `CardHost`); when this banner is
+    // rendered outside a card host (gallery preview, standalone
+    // harness) cardId is null and lifecycle emission is skipped —
+    // there's no per-card subscriber to notify.
+    const cardIdForLifecycle = useContext(CardIdContext);
+    const bannerLifecycle = useBannerLifecycle();
 
     const rootRef = useRef<HTMLDivElement | null>(null);
     const stripRef = useRef<HTMLDivElement | null>(null);
@@ -205,9 +214,47 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
 
     // Promote to mounted on first visible=true. Exit flips mounted back to
     // false in the exit-animation effect below.
+    //
+    // Banner-lifecycle event emission. willShow / willHide fire on
+    // `visible` transitions (and the first-render `visible=true`
+    // case, where prevVisible starts false). didShow fires when the
+    // enter animation finishes; didHide fires when `mounted`
+    // transitions to false (in a separate effect below). Per-card
+    // scope: cardId comes from CardIdContext; null cardId skips
+    // emission cleanly. [L24]
+    const prevVisibleForLifecycleRef = useRef(false);
     useLayoutEffect(() => {
       if (visible) setMounted(true);
-    }, [visible]);
+      if (cardIdForLifecycle !== null && bannerLifecycle !== null) {
+        const prev = prevVisibleForLifecycleRef.current;
+        if (visible && !prev) {
+          bannerLifecycle.notifyBannerWillShow(cardIdForLifecycle);
+        } else if (!visible && prev) {
+          bannerLifecycle.notifyBannerWillHide(cardIdForLifecycle);
+        }
+      }
+      prevVisibleForLifecycleRef.current = visible;
+    }, [visible, cardIdForLifecycle, bannerLifecycle]);
+
+    // didHide: fires when mounted transitions from true to false
+    // (the exit animation's `g.finished` handler has set
+    // `mounted=false`, the inert effect has cleared its attribute,
+    // and the portaled DOM has been removed). This is the moment
+    // body interactivity is restored — focus-claim handlers on a
+    // card subscribe here to land focus into the editor after the
+    // banner is fully gone.
+    const prevMountedForLifecycleRef = useRef(false);
+    useLayoutEffect(() => {
+      if (
+        prevMountedForLifecycleRef.current
+        && !mounted
+        && cardIdForLifecycle !== null
+        && bannerLifecycle !== null
+      ) {
+        bannerLifecycle.notifyBannerDidHide(cardIdForLifecycle);
+      }
+      prevMountedForLifecycleRef.current = mounted;
+    }, [mounted, cardIdForLifecycle, bannerLifecycle]);
 
     // Inert management keyed on `mounted`. When the banner is in the DOM the
     // card body is inert; when the exit animation finishes and mounted goes
@@ -249,7 +296,18 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
           key: "pane-banner-detail",
         });
       }
-    }, [visible, mounted]);
+      // didShow fires after the enter animation completes — the
+      // banner is fully presented and (for non-`contained` banners)
+      // inert is set on `.tug-pane-body`.
+      g.finished.then(() => {
+        if (cardIdForLifecycle !== null && bannerLifecycle !== null) {
+          bannerLifecycle.notifyBannerDidShow(cardIdForLifecycle);
+        }
+      }).catch(() => {
+        // Animation interrupted — the next visible→mounted transition
+        // (or unmount) will fire its own lifecycle event.
+      });
+    }, [visible, mounted, cardIdForLifecycle, bannerLifecycle]);
 
     // Exit animation: runs when (!visible && mounted). Unmounts the portal
     // content only after `.finished` resolves so the exit animation plays

@@ -49,6 +49,8 @@ import { useResponderForm } from "../use-responder-form";
 import { useResponder } from "../use-responder";
 import type { ActionEvent } from "../responder-chain";
 import { useCardDelegate, useCardLifecycle } from "@/lib/card-lifecycle";
+import { useSheetDelegate } from "@/lib/sheet-lifecycle";
+import { useBannerDelegate } from "@/lib/banner-lifecycle";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import type { CodeSessionSnapshot, CodeSessionStore } from "@/lib/code-session-store";
 import { deriveTideCardBannerSpec } from "./tide-card-banner-spec";
@@ -580,36 +582,47 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
         />
       ),
       // Fire after the sheet's exit animation finishes so the card
-      // close chains visibly after the sheet has disappeared rather
-      // than unmounting underneath it. "open" leaves the card
-      // mounted; the binding subscription flips it into the
-      // split-pane body once `spawn_session_ok` arrives. "retry"
-      // leaves the card mounted too — the retry path has already
-      // fired a fresh `fireRestore` which registers a new
-      // expectation, so `TideCardContent` will re-render into
-      // `TideRestoring` and the close-chain must not fire.
-      //
-      // Cascade dispatch via `sendToTarget(cardId, …)` per [D02]:
-      // first-responder state at this moment is fragile (it settles
-      // via the unregister fallback after FocusScope unmount, focusin
-      // handlers, and stale-focus re-promotion) and was the source of
-      // the cancel-cascade bug fixed here. `sendToTarget` walks
-      // `parentId` from a known node, independent of focus settling.
-      onClosed: (result) => {
-        if (result === "open" || result === "retry") return;
-        manager?.sendToTarget(cardId, {
-          action: TUG_ACTIONS.CLOSE,
-          sender: senderId,
-          phase: "discrete",
-        });
-      },
     });
-  }, [showSheet, cardId, manager, senderId]);
+  }, [showSheet, cardId]);
 
   useLayoutEffect(() => {
     if (cardLifecycle === null) return;
     return cardLifecycle.observeCardDidActivate(cardId, () => presentSheet());
   }, [cardLifecycle, cardId, presentSheet]);
+
+  // Cancel-cascade dispatch when the picker closes with no
+  // success result (Escape / Cmd+. / Cancel button →
+  // `result === undefined`). Cancellation should dismiss the host
+  // card via the chain. Migrated from the legacy
+  // `useTugSheet().showSheet({ onClosed })` closure-callback to
+  // the per-card `sheetDidReturnResult` lifecycle event so the
+  // dispatch composes with other lifecycle subscribers (e.g.,
+  // `TideCardBody`'s `sheetDidHide` focus claim) on a single
+  // observable pipe.
+  //
+  // Cascade dispatch via `sendToTarget(cardId, …)` per [D02]:
+  // first-responder state at this moment is fragile (it settles
+  // via the unregister fallback after FocusScope unmount, focusin
+  // handlers, and stale-focus re-promotion) and was the source of
+  // the cancel-cascade bug fixed here. `sendToTarget` walks
+  // `parentId` from a known node, independent of focus settling.
+  //
+  // `result === "open"` and `"retry"` leave the card mounted (the
+  // binding subscription flips into the split-pane body when
+  // `spawn_session_ok` arrives, or `fireRestore` triggers a
+  // re-render into `TideRestoring`); only the implicit
+  // `undefined` result and any other future cancel-class result
+  // close the card.
+  useSheetDelegate(cardId, {
+    sheetDidReturnResult: (_id, result) => {
+      if (result === "open" || result === "retry") return;
+      manager?.sendToTarget(cardId, {
+        action: TUG_ACTIONS.CLOSE,
+        sender: senderId,
+        phase: "discrete",
+      });
+    },
+  });
 
   return (
     <div
@@ -1478,6 +1491,7 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   // drift from the composite bit when `activePaneId` does not match
   // the top pane (post-detach or post-move edge cases).
   const cardLifecycle = useCardLifecycle();
+
   useCardDelegate(cardId, {
     cardDidActivate: () => entryDelegateRef.current?.focus(),
     // `cardWillDeactivate` deliberately does NOT call
@@ -1496,6 +1510,49 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
       entryDelegateRef.current?.focus();
     },
     cardDidResize: () => {
+      if (cardLifecycle?.getFirstResponderCardId() !== cardId) return;
+      entryDelegateRef.current?.focus();
+    },
+  });
+
+  // Sheet- and banner-lifecycle handlers: claim editor focus when a
+  // sheet or banner finishes hiding for *this* card AND this card is
+  // the focused card. The chain promotion + DOM focus run together
+  // through `entryDelegate.focus()` (post Plan A: routes through
+  // `manager.focusResponder(editorResponderId)` for atomic chain +
+  // DOM focus, with substrate-supplied focus callback).
+  //
+  // Why both:
+  //
+  //   - sheetDidHide covers the picker → "Open" → bind → editor
+  //     mount path. The picker's TugSheet emits sheetDidHide AFTER
+  //     its FocusScope has unmounted, its onUnmountAutoFocus has
+  //     run, and its inert (on `.tug-pane-body`) has been cleared
+  //     — i.e., body is genuinely interactive again.
+  //
+  //   - bannerDidHide covers the case where a status banner
+  //     (replay-loading, transport-restoring) mounted during
+  //     session-init, set inert on `.tug-pane-body`, blurred the
+  //     editor, and then unmounted when its triggering condition
+  //     resolved. bannerDidHide fires after the inert clears.
+  //
+  // The handler is idempotent — calling
+  // `manager.focusResponder(editorId)` against an already-focused
+  // editor is a no-op for state and a no-op for DOM focus when
+  // contentDOM is already activeElement.
+  //
+  // Subscribed via `useSheetDelegate` / `useBannerDelegate` (see
+  // `lib/sheet-lifecycle.ts` and `lib/banner-lifecycle.ts`). The
+  // `cardId` argument scopes the subscription so we only react to
+  // this card's lifecycle traffic. [L11], [L23], [L24]
+  useSheetDelegate(cardId, {
+    sheetDidHide: () => {
+      if (cardLifecycle?.getFirstResponderCardId() !== cardId) return;
+      entryDelegateRef.current?.focus();
+    },
+  });
+  useBannerDelegate(cardId, {
+    bannerDidHide: () => {
       if (cardLifecycle?.getFirstResponderCardId() !== cardId) return;
       entryDelegateRef.current?.focus();
     },

@@ -145,6 +145,7 @@ import { useTextSurfaceContextMenu } from "./use-text-surface-context-menu";
 import { useCardId } from "./use-card-state-preservation";
 import { useCompanionPopupBinding } from "./use-companion-popup-binding";
 import { useOptionalResponder } from "./use-responder";
+import { useResponderChain } from "./responder-chain-provider";
 import type { ActionHandler, ActionHandlerResult } from "./responder-chain";
 import { TUG_ACTIONS, type TugAction } from "./action-vocabulary";
 import type {
@@ -796,6 +797,16 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
   ) {
     const hostRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
+    // Stable id for this editor's responder, declared up here so
+    // `useImperativeHandle`'s focus closure can address the chain via
+    // `manager.focusResponder(responderId)`. The actual responder
+    // registration happens later (`useOptionalResponder` below) using
+    // this same id. `useResponderChain()` returns null outside a
+    // chain provider — TugTextEditor uses `useOptionalResponder` so
+    // it can render in chain-less harness contexts; the focus
+    // delegate falls back to `view.focus()` in that case.
+    const responderId = useId();
+    const responderChainManager = useResponderChain();
     // Render-flow signal: child <CompletionOverlay /> mounts only when
     // a non-null view is available. The view itself is canonical in
     // `viewRef` (used by every imperative consumer); this state is a
@@ -1133,6 +1144,24 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
         clearEditor(view);
       },
       focus() {
+        // Route focus through the chain primitive when available:
+        // `manager.focusResponder(responderId)` promotes the editor
+        // to first responder AND invokes the responder's registered
+        // `focus` callback (line below in `useOptionalResponder`),
+        // which lands DOM focus on `viewRef.current?.focus()`. Going
+        // through the chain keeps first-responder state in sync with
+        // DOM focus, runs the focus-theft gate, and emits a chain
+        // log for the transition — none of which a direct
+        // `view.focus()` call would do. [L11]
+        //
+        // Fallback to direct `view.focus()` outside a
+        // `ResponderChainProvider` (standalone harness, unit tests)
+        // where the manager is null — same behavior the editor had
+        // before this delegate routed through the chain.
+        if (responderChainManager !== null) {
+          responderChainManager.focusResponder(responderId);
+          return;
+        }
         const view = viewRef.current;
         if (view === null) return;
         view.focus();
@@ -1428,7 +1457,9 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       cursorGroupBackward(view);
     }, []);
 
-    const responderId = useId();
+    // `responderId` is declared near the top of the component
+    // (next to `viewRef`) so `useImperativeHandle`'s focus closure
+    // can reference it; the registration here uses the same id.
     const actions: Partial<Record<TugAction, ActionHandler>> = {
       [TUG_ACTIONS.SELECT_ALL]: handleSelectAll,
       [TUG_ACTIONS.UNDO]: handleUndo,

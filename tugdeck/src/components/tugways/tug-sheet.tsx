@@ -75,6 +75,8 @@ import React, {
 import { createPortal } from "react-dom";
 import * as FocusScopeRadix from "@radix-ui/react-focus-scope";
 import { TugPanePortalContext } from "@/components/chrome/tug-pane";
+import { CardIdContext } from "@/lib/card-id-context";
+import { useSheetLifecycle } from "@/lib/sheet-lifecycle";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { group } from "@/components/tugways/tug-animator";
 import { useResponderChain } from "./responder-chain-provider";
@@ -301,19 +303,25 @@ export interface TugSheetContentProps {
    */
   onOpenAutoFocus?: (event: Event) => void;
   /**
-   * Called exactly once, after the exit animation completes and the
-   * sheet's portaled DOM has been removed from the card. Use this
-   * hook to sequence follow-up work with the visual exit — for
-   * example, dismissing the host card or releasing focus to a
-   * follow-up responder only after the sheet has disappeared.
+   * Optional supplier of the close-result, read at the moment
+   * `mounted` transitions to false (sheet fully torn down). When
+   * provided, the sheet emits `sheetLifecycle.notifySheetDidReturnResult(cardId, getResult())`
+   * immediately after `sheetDidHide`, so consumers subscribed via
+   * `useSheetDelegate({ sheetDidReturnResult })` receive the
+   * result alongside the structural transition.
    *
-   * Fires strictly after any close signal available at dispatch time
-   * (the `useTugSheet()` hook's Promise resolution, a Cancel button's
-   * onClick, etc.). Does not fire if the sheet is torn down before
-   * the exit animation completes (parent unmount, React key change
-   * forcing remount).
+   * Hook-driven sheets (`useTugSheet`) supply this automatically
+   * by closing over the hook's `lastResultRef`. Direct
+   * `<TugSheetContent>` consumers that don't track a result omit
+   * it; in that case `sheetDidReturnResult` does not fire (only
+   * the structural `sheetDidHide` does).
+   *
+   * The closure-based `onClosed(result)` callback that older code
+   * used has been removed in favor of this lifecycle event — a
+   * single, observable, per-card pipe replaces N closure-handler
+   * threads. See `lib/sheet-lifecycle.ts` for the full contract.
    */
-  onClosed?: () => void;
+  getResult?: () => string | undefined;
   /**
    * Stable opaque sender id for chain dispatches. Auto-derived via
    * `useId()` if omitted. Parent responders disambiguate multi-sheet
@@ -335,7 +343,7 @@ export function TugSheetContent({
   title,
   description,
   onOpenAutoFocus,
-  onClosed,
+  getResult,
   senderId: senderIdProp,
   children,
 }: TugSheetContentProps) {
@@ -409,15 +417,39 @@ export function TugSheetContent({
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const clipRef = useRef<HTMLDivElement | null>(null);
 
-  // Stable access to the consumer's `onClosed` callback from inside
-  // layout effects. Consumers may pass a fresh function identity each
-  // render; the ref decouples the transition firing from their
-  // memoization discipline. [L07]
-  const onClosedRef = useRef(onClosed);
-  useLayoutEffect(() => {
-    onClosedRef.current = onClosed;
-  });
+  // ---- Sheet-lifecycle event emission ----
+  //
+  // Per-card scope: the cardId comes from `CardIdContext` (provided
+  // by `CardHost`). When the sheet mounts outside a card host
+  // (gallery previews, standalone tests), cardId is null and
+  // emission is skipped silently — there is no subscriber that
+  // cares about non-card sheets.
+  //
+  // Four events fire at the structural transitions of the sheet's
+  // lifecycle, plus a result-bearing `sheetDidReturnResult`:
+  //   - sheetWillShow:        `open` first becomes true.
+  //   - sheetDidShow:         enter animation finishes (sheet fully
+  //                           presented; inert set on `.tug-pane-body`).
+  //   - sheetWillHide:        `open` flips from true to false (close
+  //                           initiated; exit animation pending).
+  //   - sheetDidHide:         `mounted` transitions from true to
+  //                           false (exit animation done, portaled
+  //                           DOM removed, inert cleared, FocusScope
+  //                           teardown done). This is the focus-
+  //                           claim signal.
+  //   - sheetDidReturnResult: fires *after* sheetDidHide, carrying
+  //                           the close-result returned by `close(result)`.
+  //                           Hook-driven sheets (`useTugSheet`)
+  //                           supply `getResult` to surface the
+  //                           result; direct `<TugSheetContent>`
+  //                           consumers without `getResult` skip
+  //                           this event.
+  const cardIdForLifecycle = useContext(CardIdContext);
+  const sheetLifecycle = useSheetLifecycle();
 
+  // Effect 1: state mutation. When `open` flips true, promote
+  // `mounted` so the portal is in the DOM for the enter animation.
+  // No event emission here — that responsibility lives in effect 2.
   useLayoutEffect(() => {
     if (open) {
       setMounted(true);
@@ -425,18 +457,50 @@ export function TugSheetContent({
     // When open goes false, mounted stays true — exit animation will set it false.
   }, [open]);
 
-  // Fire the `onClosed` callback when `mounted` transitions from true
-  // to false — i.e., after the exit animation's `g.finished` handler
-  // has called `setMounted(false)` and React has committed the render
-  // where the portal returns null. By this point the sheet's DOM is
-  // gone from the card.
+  // Effect 2: emit will-show / will-hide on `open` transitions
+  // (including the first-render `open=true` case, where prevOpen
+  // starts false). Pure event emission — no React state mutation.
+  const prevOpenForLifecycleRef = useRef(false);
+  useLayoutEffect(() => {
+    if (cardIdForLifecycle !== null && sheetLifecycle !== null) {
+      const prev = prevOpenForLifecycleRef.current;
+      if (open && !prev) {
+        sheetLifecycle.notifySheetWillShow(cardIdForLifecycle);
+      } else if (!open && prev) {
+        sheetLifecycle.notifySheetWillHide(cardIdForLifecycle);
+      }
+    }
+    prevOpenForLifecycleRef.current = open;
+  }, [open, cardIdForLifecycle, sheetLifecycle]);
+
+  // Effect 3: emit did-hide / did-return-result when `mounted`
+  // transitions from true to false. By this point the exit animation
+  // has completed, the portaled DOM has been removed, the inert
+  // effect's cleanup has cleared the attribute, and Radix's
+  // FocusScope unmount-autofocus has run. Body interactivity is
+  // restored.
+  //
+  // `sheetDidHide` fires first (structural-only, all subscribers).
+  // `sheetDidReturnResult` fires immediately after (carries the
+  // close-result), only when `getResult` is provided by the consumer
+  // — it's the result-bearing layer that knows the result. No-op
+  // when `getResult` is omitted (direct `<TugSheetContent>` users
+  // that don't track results).
   const prevMountedRef = useRef(false);
   useLayoutEffect(() => {
     if (prevMountedRef.current && !mounted) {
-      onClosedRef.current?.();
+      if (cardIdForLifecycle !== null && sheetLifecycle !== null) {
+        sheetLifecycle.notifySheetDidHide(cardIdForLifecycle);
+        if (getResult !== undefined) {
+          sheetLifecycle.notifySheetDidReturnResult(
+            cardIdForLifecycle,
+            getResult(),
+          );
+        }
+      }
     }
     prevMountedRef.current = mounted;
-  }, [mounted]);
+  }, [mounted, cardIdForLifecycle, sheetLifecycle, getResult]);
 
   // Enter animation: runs after mount when open && mounted (DOM is present).
   useLayoutEffect(() => {
@@ -451,7 +515,21 @@ export function TugSheetContent({
       key: "sheet-content",
       easing: "ease-out",
     });
-  }, [open, mounted]);
+    // Fire `sheetDidShow` after the enter animation completes — the
+    // sheet is fully presented and any subscriber that wants to
+    // capture pre-modal state ("what was focused before this sheet
+    // took over?") has its signal.
+    g.finished.then(() => {
+      if (cardIdForLifecycle !== null && sheetLifecycle !== null) {
+        sheetLifecycle.notifySheetDidShow(cardIdForLifecycle);
+      }
+    }).catch(() => {
+      // Animation interrupted (a rapid close-then-open or the sheet
+      // unmounting during enter). The transition to "fully shown"
+      // didn't complete; subscribers will hear about the next
+      // transition (will-hide / did-hide) instead.
+    });
+  }, [open, mounted, cardIdForLifecycle, sheetLifecycle]);
 
   // Exit animation: runs when !open && mounted (DOM still present for animation).
   useLayoutEffect(() => {
@@ -774,22 +852,6 @@ export interface ShowSheetOptions {
   /** Override initial focus target. */
   onOpenAutoFocus?: (event: Event) => void;
   /**
-   * Called after the sheet's exit animation completes and the portaled
-   * DOM has been removed. Receives the result passed to `close(result)`
-   * (or undefined for Escape / Cmd+. dismissals).
-   *
-   * Fires strictly after the `showSheet()` Promise resolves: the
-   * Promise resolves at close-dispatch time so callers can react
-   * immediately; this callback fires once the visual exit finishes so
-   * callers can sequence follow-up transitions without running them
-   * during the animation.
-   *
-   * Does not fire if the sheet is replaced by a rapid `showSheet()`
-   * call that remounts via a new React key (see the state-machine
-   * diagram on this hook's JSDoc).
-   */
-  onClosed?: (result: string | undefined) => void;
-  /**
    * Cascade-target responder id captured at sheet-open time.
    *
    * Per `tugplan-tide-overlay-framework.md` [D02]
@@ -921,35 +983,44 @@ interface UseTugSheetState {
  *
  * ## Cascade-target pattern (modal close → follow-up chain dispatch)
  *
- * When a sheet's `onClosed` consumer needs to dispatch a follow-up
- * action through the responder chain — for example, the Tide picker
+ * When a sheet's consumer needs to dispatch a follow-up action
+ * through the responder chain — for example, the Tide picker
  * canceling and dismissing its host card — it must capture the
  * cascade dispatch's target id at sheet-open time, not at close time.
  * Per `tugplan-tide-overlay-framework.md` [D02]
  * (#sheet-cascade-rationale), `firstResponderId` at close time is
  * fragile (it settles via the unregister fallback after FocusScope
  * unmount, focusin handlers, etc.) and using
- * `manager.sendToFirstResponder(...)` from inside `onClosed` is a
+ * `manager.sendToFirstResponder(...)` from a close handler is a
  * known bug class.
  *
- * The canonical pattern:
+ * The canonical pattern subscribes to the sheet's
+ * `sheetDidReturnResult` lifecycle event (per
+ * `lib/sheet-lifecycle.ts`) — fires after the exit animation
+ * completes and carries the close-result. The consumer's own
+ * closure holds the captured cascade target id, so the dispatch is
+ * robust regardless of focus settling:
  *
  * ```ts
+ * const senderId = useId();
  * const presentSheet = useCallback(() => {
  *   void showSheet({
  *     title: "Open Project",
  *     content: (close) => (...),
- *     cascadeTargetId: hostStackId,            // captured at open
- *     onClosed: (result) => {
- *       if (result === "open") return;         // user did the thing — no cascade
- *       manager?.sendToTarget(hostStackId, {   // captured in closure
- *         action: TUG_ACTIONS.CLOSE,
- *         sender: senderId,
- *         phase: "discrete",
- *       });
- *     },
+ *     cascadeTargetId: hostStackId,         // stored on hook state
  *   });
- * }, [showSheet, hostStackId, manager, senderId]);
+ * }, [showSheet, hostStackId]);
+ *
+ * useSheetDelegate(cardId, {
+ *   sheetDidReturnResult: (_id, result) => {
+ *     if (result === "open") return;        // user did the thing
+ *     manager?.sendToTarget(hostStackId, {  // captured in closure
+ *       action: TUG_ACTIONS.CLOSE,
+ *       sender: senderId,
+ *       phase: "discrete",
+ *     });
+ *   },
+ * });
  * ```
  *
  * The hook stores `cascadeTargetId` on its active state for parity
@@ -1109,12 +1180,16 @@ export function useTugSheet(): {
       }
     };
 
-    // Bridge TugSheetContent's post-animation `onClosed` to the
-    // consumer's option. Reads `lastResultRef` — set by `close` above
-    // or left at its showSheet-reset undefined for Escape dismissals.
-    const onClosedForContent = options.onClosed
-      ? () => options.onClosed?.(lastResultRef.current)
-      : undefined;
+    // Surface the close-result to TugSheetContent's didReturnResult
+    // emitter. `getResult` is read at the moment the sheet's
+    // `mounted` flips false (post exit animation, post inert clear)
+    // and the resulting `notifySheetDidReturnResult(cardId, result)`
+    // event reaches subscribers via `useSheetDelegate({ sheetDidReturnResult })`.
+    // Reads `lastResultRef.current` — set by `close(result)` above
+    // or left at its showSheet-reset `undefined` for Escape /
+    // Cmd+. dismissals.
+    const getResultForContent = (): string | undefined =>
+      lastResultRef.current;
 
     return (
       <TugSheet key={callId} defaultOpen responderId={responderId}>
@@ -1122,7 +1197,7 @@ export function useTugSheet(): {
           title={options.title}
           description={options.description}
           onOpenAutoFocus={options.onOpenAutoFocus}
-          onClosed={onClosedForContent}
+          getResult={getResultForContent}
           senderId={senderId}
         >
           {options.content(close)}
