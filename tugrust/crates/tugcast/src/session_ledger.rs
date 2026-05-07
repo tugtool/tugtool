@@ -344,28 +344,22 @@ impl SessionLedger {
         rows.into_iter().collect()
     }
 
-    /// All resumable rows that carry a `card_id`, ordered newest-first
+    /// All non-failed rows that carry a `card_id`, ordered newest-first
     /// by `last_used_at`. The client-side restore consumes this through
     /// the `list_card_bindings` CONTROL verb: for each tide card in the
-    /// deck, the most recent matching row drives a
-    /// `spawn_session(mode=resume)`.
+    /// deck, the most recent matching row drives either
+    /// `spawn_session(mode=resume)` (if `turn_count > 0`, i.e. claude
+    /// has a JSONL on disk) or `spawn_session(mode=new)` with a fresh
+    /// session id but the same `project_dir` (if `turn_count == 0`,
+    /// the card was bound to a project but no real conversation
+    /// happened). Either way the card opens to its bound project on
+    /// relaunch — no picker, no misleading "Couldn't resume" banner.
     ///
-    /// Three filters define "resumable":
+    /// Filters:
     ///
     /// - `card_id IS NOT NULL` — the row was spawned through a tide
     ///   card path (not a headless test).
     /// - `state != 'failed'` — failed rows are known-unrecoverable.
-    /// - `turn_count > 0` — the session had at least one round-trip
-    ///   with claude. Without this filter, a card whose user picked
-    ///   "Start Fresh + Open" but quit before submitting any prompt
-    ///   would surface as resumable: `record_spawn` fires on
-    ///   `session_init` (claude's startup handshake), so the ledger
-    ///   row exists, but claude only writes its JSONL once a real
-    ///   conversation begins. On relaunch, restore would fire
-    ///   `spawn_session(mode=resume)` and claude would resume_failed
-    ///   for missing JSONL — surfacing a misleading "Couldn't resume
-    ///   the previous session" banner for a session the user never
-    ///   actually had.
     pub fn list_with_card_id(&self) -> Result<Vec<SessionRow>, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
@@ -374,7 +368,6 @@ impl SessionLedger {
              FROM sessions
              WHERE card_id IS NOT NULL
                AND state != 'failed'
-               AND turn_count > 0
              ORDER BY last_used_at DESC",
         )?;
         let rows = stmt
@@ -1200,27 +1193,31 @@ mod tests {
 
     // ── list_with_card_id ────────────────────────────────────────────────────
 
-    /// A row with `turn_count == 0` is not resumable — the user opened
-    /// a fresh session, claude emitted `session_init` (which triggers
-    /// `record_spawn`), but no real conversation happened so claude
-    /// never wrote a JSONL. Restore must skip these rows.
+    /// Both turn-having and zero-turn rows are returned. The client
+    /// distinguishes them by `turn_count` and uses `mode=resume` for
+    /// real conversations, `mode=new` (with same project_dir) for
+    /// bound-but-empty sessions. This keeps the card's project
+    /// binding across relaunches even when no conversation happened
+    /// before the user quit.
     #[test]
-    fn list_with_card_id_excludes_zero_turn_rows() {
+    fn list_with_card_id_includes_zero_turn_rows() {
         let l = fresh();
-        // s_used: had a real conversation → resumable.
+        // s_used: had a real conversation.
         seed_live(&l, "s_used", WS_A, "card-1", millis(1));
         l.record_turn("s_used", millis(2)).unwrap();
-        // s_unused: spawn happened but no turns → not resumable.
+        // s_unused: spawn happened but no turns. Still surfaced so
+        // the client retains the card→project binding on restore.
         seed_live(&l, "s_unused", WS_A, "card-2", millis(3));
 
         let rows = l.list_with_card_id().unwrap();
-        let ids: Vec<&str> = rows.iter().map(|r| r.session_id.as_str()).collect();
-        assert_eq!(
-            ids,
-            vec!["s_used"],
-            "zero-turn rows must be filtered out so a Start-Fresh-then-quit \
-             card doesn't surface a phantom resumable session"
-        );
+        let mut ids: Vec<&str> = rows.iter().map(|r| r.session_id.as_str()).collect();
+        ids.sort();
+        assert_eq!(ids, vec!["s_unused", "s_used"]);
+        // turn_count is preserved on the row so the client can branch.
+        let used = rows.iter().find(|r| r.session_id == "s_used").unwrap();
+        let unused = rows.iter().find(|r| r.session_id == "s_unused").unwrap();
+        assert_eq!(used.turn_count, 1);
+        assert_eq!(unused.turn_count, 0);
     }
 
     /// `card_id IS NULL` rows (headless tests, pre-binding spawns) are

@@ -89,15 +89,25 @@ export interface SessionRow {
 
 /**
  * Wire shape for one row of `list_card_bindings_ok`. Each row is a
- * persisted (card_id, session_id) binding the client uses to re-assert
- * `spawn_session(mode=resume)` for cards in the deck on startup or
- * reconnect.
+ * persisted (card_id → project_dir) binding the client uses on
+ * startup/reconnect to put a tide card back into a usable state
+ * without showing the picker.
+ *
+ * `turn_count` distinguishes two paths:
+ *
+ * - `turn_count > 0` — claude has a JSONL on disk. Restore fires
+ *   `spawn_session(mode=resume, session_id, project_dir, card_id)`.
+ * - `turn_count === 0` — the card was bound to a project but no real
+ *   conversation happened (user picked Start Fresh and quit). Restore
+ *   fires `spawn_session(mode=new, FRESH_UUID, project_dir, card_id)`
+ *   so the card opens to its bound project with a fresh claude session.
  */
 export interface CardBinding {
   card_id: string;
   session_id: string;
   project_dir: string;
   state: "live" | "closed";
+  turn_count: number;
 }
 
 /** Frame flags */

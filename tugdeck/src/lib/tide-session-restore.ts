@@ -26,8 +26,12 @@
  *   1. `restoreTideSessions` sends a `list_card_bindings` CONTROL
  *      request and waits for the `list_card_bindings_ok` response.
  *      Each binding is matched against the deck's tide cards by
- *      `card_id`; for matches it fires `spawn_session(mode=resume)`
- *      via `sendSpawnSession`.
+ *      `card_id`. The match's `turn_count` decides the mode:
+ *      - `> 0` → `spawn_session(mode=resume)` with the persisted
+ *        `session_id`. claude reopens the JSONL and replays history.
+ *      - `=== 0` → `spawn_session(mode=new)` with a fresh
+ *        `session_id` but the same `project_dir`. The card opens to
+ *        its bound project with a fresh claude session.
  *   2. The expectation is recorded in `tideRestoreRegistry` with a
  *      10-second timeout. `TideCardContent` subscribes to the
  *      registry and renders `TideRestoring` whenever a card has a
@@ -49,12 +53,12 @@
  *      design choice: server state is preserved (no `close_session`
  *      fires), so next reload will retry the restore.
  *
- * Resumability: a binding only appears in `list_card_bindings_ok` if
- * the row had at least one round-trip with claude (`turn_count > 0`).
- * Sessions that emitted `session_init` but never had a real
- * conversation are excluded — they have no JSONL on disk, so resuming
- * them would surface a misleading "Couldn't resume the previous
- * session" banner.
+ * Resumability: every non-failed binding surfaces in
+ * `list_card_bindings_ok` regardless of `turn_count`. Sessions that
+ * had at least one turn (`turn_count > 0`) take the `mode=resume`
+ * path; sessions that never had a turn take the `mode=new`-with-same-
+ * project_dir path so the card still opens to its bound project
+ * without dropping the user back to the picker.
  *
  * @module lib/tide-session-restore
  */
@@ -288,29 +292,42 @@ export function restoreTideSessions(
   const reason = opts?.reason ?? "startup";
   const unsubscribe = subscribeToListCardBindingsOk(({ bindings }) => {
     unsubscribe();
-    let restoredCount = 0;
+    let resumedCount = 0;
+    let freshCount = 0;
     // Track which cards we've already fired for. Multiple ledger rows
     // can map to the same card_id (sequential sessions on that card);
     // the wire orders rows newest-first by `last_used_at`, so the
-    // first match per card_id is the one to resume.
+    // first match per card_id wins.
     const fired = new Set<string>();
     for (const binding of bindings) {
       if (!isCardBinding(binding)) continue;
       if (!tideCardIds.has(binding.card_id)) continue;
       if (fired.has(binding.card_id)) continue;
       fired.add(binding.card_id);
-      fireRestore(
-        binding.card_id,
-        binding.session_id,
-        binding.project_dir,
-        connection,
-      );
-      restoredCount += 1;
+      if (binding.turn_count > 0) {
+        // Real conversation on disk → resume into history.
+        fireRestore(
+          binding.card_id,
+          binding.session_id,
+          binding.project_dir,
+          connection,
+        );
+        resumedCount += 1;
+      } else {
+        // Card was bound to a project but no turn ever happened
+        // (Start Fresh + quit). claude has no JSONL, so resume
+        // would fail — but the project binding is still meaningful.
+        // Fire a fresh spawn with the same project so the card
+        // opens straight to its bound state.
+        fireFreshSpawn(binding.card_id, binding.project_dir, connection);
+        freshCount += 1;
+      }
     }
-    if (restoredCount > 0) {
+    if (resumedCount > 0 || freshCount > 0) {
       logSessionLifecycle("restore.fired_resume_spawns", {
         card_count: tideCardIds.size,
-        restore_count: restoredCount,
+        restore_count: resumedCount,
+        fresh_spawn_count: freshCount,
         reason,
       });
     }
@@ -331,8 +348,34 @@ function isCardBinding(value: unknown): value is CardBinding {
     typeof obj.session_id === "string" &&
     obj.session_id.length > 0 &&
     typeof obj.project_dir === "string" &&
-    obj.project_dir.length > 0
+    obj.project_dir.length > 0 &&
+    typeof obj.turn_count === "number"
   );
+}
+
+/**
+ * Spawn a fresh claude session under an existing card→project
+ * binding. Used by `restoreTideSessions` for zero-turn rows: the
+ * user's previous session never had a real conversation (so there's
+ * no JSONL to resume), but the card was bound to a project — keep
+ * that binding by spawning a new session under the same project.
+ *
+ * Mints a fresh `tug_session_id`. The supervisor will allocate a new
+ * ledger row; the previous zero-turn row remains as a closed-state
+ * crumb (eventually swept by age).
+ */
+function fireFreshSpawn(
+  cardId: string,
+  projectDir: string,
+  connection: TugConnection,
+): void {
+  const tugSessionId = crypto.randomUUID();
+  // Drop any prior in-flight restore timer for this card. The fresh
+  // spawn doesn't go through the restore-registry — there's nothing
+  // to "restore," and a `spawn_session_ok` ack will populate
+  // `cardSessionBindingStore` directly.
+  tideRestoreRegistry._clear(cardId);
+  sendSpawnSession(connection, cardId, tugSessionId, projectDir, "new");
 }
 
 /**

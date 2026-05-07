@@ -1930,6 +1930,7 @@ impl AgentSupervisor {
                     "session_id": row.session_id,
                     "project_dir": row.project_dir,
                     "state": row.state,
+                    "turn_count": row.turn_count,
                 }))
             })
             .collect();
@@ -5430,27 +5431,27 @@ mod tests {
         panic!("CONTROL frame with action `{action}` not observed");
     }
 
-    /// End-to-end wire test for the bug fix: a card whose user picked
-    /// "Start Fresh + Open" but quit before submitting any prompt
-    /// produces a ledger row with `turn_count == 0`. On relaunch, the
-    /// `list_card_bindings` request must NOT include that row — claude
-    /// never wrote a JSONL for it, so resuming would surface a
-    /// misleading "Couldn't resume the previous session" banner.
+    /// `list_card_bindings` returns every non-failed row carrying a
+    /// `card_id`, including rows with `turn_count == 0`. The wire
+    /// shape includes `turn_count` so the client can branch:
+    /// `mode=resume` for rows with history (claude has a JSONL),
+    /// `mode=new` for zero-turn rows (no JSONL but the card→project
+    /// binding should be preserved across relaunches).
     #[tokio::test]
-    async fn list_card_bindings_excludes_zero_turn_rows() {
+    async fn list_card_bindings_returns_all_card_rows_with_turn_count() {
         let (sup, ledger, mut rx) = make_supervisor_with_ledger();
 
-        // The phantom row: spawned, claude emitted session_init (so the
-        // row exists), but no real conversation happened so turn_count
-        // stays at 0. Then closed (e.g. user quit).
+        // A card whose user picked Start Fresh and quit before any
+        // prompt: spawned (record_spawn fires on session_init) but
+        // never had a turn.
         ledger
-            .record_spawn("phantom", "ws-1", "/proj/alpha", "card-A", 1_000)
+            .record_spawn("empty", "ws-1", "/proj/alpha", "card-A", 1_000)
             .unwrap();
-        ledger.mark_closed("phantom").unwrap();
+        ledger.mark_closed("empty").unwrap();
 
-        // A second card had a real conversation — that one IS resumable.
+        // A card with a real conversation.
         ledger
-            .record_spawn("real", "ws-1", "/proj/alpha", "card-B", 2_000)
+            .record_spawn("real", "ws-1", "/proj/beta", "card-B", 2_000)
             .unwrap();
         ledger.record_turn("real", 3_000).unwrap();
         ledger.mark_closed("real").unwrap();
@@ -5459,7 +5460,6 @@ mod tests {
             "action": "list_card_bindings",
         }))
         .unwrap();
-
         sup.handle_control("list_card_bindings", &payload, 10)
             .await
             .expect_handled();
@@ -5468,12 +5468,22 @@ mod tests {
         let bindings = response["bindings"].as_array().expect("bindings array");
         assert_eq!(
             bindings.len(),
-            1,
-            "phantom (turn_count=0) row must be filtered out; only the \
-             real conversation row should surface for restore. response: {response}",
+            2,
+            "both rows surface — client decides resume vs new on turn_count. \
+             response: {response}",
         );
-        assert_eq!(bindings[0]["card_id"], "card-B");
-        assert_eq!(bindings[0]["session_id"], "real");
+        let by_card: std::collections::HashMap<&str, &serde_json::Value> = bindings
+            .iter()
+            .map(|b| (b["card_id"].as_str().unwrap(), b))
+            .collect();
+        let empty = by_card["card-A"];
+        assert_eq!(empty["session_id"], "empty");
+        assert_eq!(empty["project_dir"], "/proj/alpha");
+        assert_eq!(empty["turn_count"], 0);
+        let real = by_card["card-B"];
+        assert_eq!(real["session_id"], "real");
+        assert_eq!(real["project_dir"], "/proj/beta");
+        assert_eq!(real["turn_count"], 1);
     }
 
     #[tokio::test]
