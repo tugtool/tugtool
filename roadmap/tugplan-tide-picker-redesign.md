@@ -461,6 +461,60 @@ This plan follows tugplan-skeleton v2. Anchors are explicit and stable; design d
 
 ---
 
+#### [D18] Each pane owns a built-in scrim layer (DECIDED) {#d18-pane-owned-scrim}
+
+**Decision:** Every `TugPane` carries a permanent scrim DOM element inside `.tug-pane-chrome`, default `opacity: 0`. Modal-class consumers (sheets, alerts, future modal surfaces) request the scrim via a `useTugPaneScrim()` hook that ref-counts show / hide calls; when the count is non-zero, a `data-scrim="on"` attribute on the chrome triggers the CSS transition that fades the scrim in. The scrim element is in the chrome's DOM from the moment the pane mounts and never leaves.
+
+**Rationale:**
+- The previous architecture had every modal-class surface portal a scrim wrapper into a canvas-wide overlay root and try to size it to the host pane via `getBoundingClientRect()` + `MutationObserver` choreography. That pattern is structurally incapable of guaranteeing pane scoping: anything portaled to the canvas-overlay tier sits in a single global stacking context, ABOVE every pane, so any pixel of bleed (subpixel rounding, drop-shadow extension, animation overshoot, miscalculated bounds) paints over peer panes — the source of the visual artifacts vetted at the end of Step 9.5.
+- Building the scrim into the pane chrome moves the entire problem class into static CSS. The scrim element lives inside `.tug-pane-chrome`'s `overflow: hidden` clip, inside the `.tug-pane` frame's stacking context (the frame carries an inline `z-index` on its `position: absolute` rect, so it IS its own stacking context). Both the geometric clip and the stacking-context boundary are guaranteed by the chrome — bleed is structurally impossible regardless of z-index, animation interpolation, or measurement edge cases.
+- A ref-counted registry handles the "two consumers want scrim simultaneously" case (e.g., sheet open + future imaginary loading-scrim). One element, multiple consumers, deterministic toggle.
+- The hook reads the pane id from existing context (`TugPanePortalContext`'s chrome element). Standalone consumers (gallery previews, tests) where no pane is in scope get a no-op hook and the scrim activation silently degrades — same fallback shape as `useCanvasOverlay`, `useOptionalResponder`, etc.
+
+**Implications:**
+- New module `pane-scrim-registry.ts` owns the per-chrome ref count. Imperative `increment(chromeEl)` / `decrement(chromeEl)` mutate a `data-scrim` attribute on the chrome.
+- New hook `useTugPaneScrim()` returns `{ show, hide }` callbacks. Stable identities via `useCallback` so consumers can put them in `useEffect` dep arrays without re-firing.
+- `TugPane` renders one extra div inside `.tug-pane-chrome` (sibling of title bar + body). One CSS rule animates `.tug-pane-scrim` opacity based on the chrome's `[data-scrim="on"]` attribute.
+- `TugSheet` (and any future modal-class surface) replaces its own scrim element with a `useTugPaneScrim()` call. The visual transition is decoupled from the panel's slide-in animation: scrim uses a CSS transition matching the panel animation's duration token (`--tug-motion-duration-moderate`), so they finish together visually without explicit synchronization.
+
+---
+
+#### [D19] Sheets portal into the pane frame, not canvas overlay (DECIDED) {#d19-sheet-in-pane-frame}
+
+**Decision:** `TugSheet`'s panel + slide-in clip portal into the host pane's `.tug-pane` frame element (via a new `TugPaneFrameContext`), not into the canvas-overlay root. The frame is its own stacking context (inline z-index on `position: absolute`). The clip is positioned by pure CSS (`position: absolute; top: var(--tug-chrome-height); left: 0; right: 0; height: 100vh; overflow: hidden`) — no measurement applier, no DOM-write coords, no observers.
+
+**Rationale:**
+- Per-pane stacking is what the canvas already provides via the `.tug-pane` frame's inline z-index. Portaling sheet content into the frame means the sheet's z-index is local to the pane, and peer panes z-stacked above naturally paint above the sheet (and below) without manual coordination.
+- The `.tug-pane` frame has `overflow: visible` (default), so the clip + panel can extend past the chrome's bottom edge into the canvas grid below. Where the panel extends into empty canvas, it paints visibly; where it extends into a higher-z peer pane's territory, the peer pane paints above it. Both behaviors are correct stacking — neither is bleed.
+- Eliminates the canvas-overlay applier entirely: ResizeObserver + MutationObserver + window-resize all go away. Pane drag, sash resize, viewport resize all flow through the chrome's existing CSS layout naturally.
+- Z-tier coordination simplifies. The `--tug-z-overlay-dialog` token isn't applied to the sheet anymore (it's at the pane's frame z-index, scoped). Popovers opened from inside the sheet still portal to canvas overlay (transient, not modal) and elevate via the existing `--tug-z-overlay-popup-in-dialog` token to stack above the panel — `TugSheetStackingContext.Provider value={true}` around the panel still drives that elevation correctly.
+
+**Implications:**
+- New `TugPaneFrameContext` exports the `.tug-pane` element from `TugPane` (alongside the existing `TugPanePortalContext` which exports `.tug-pane-chrome`). Sheets read this context for their portal target.
+- `TugSheet` drops `useCanvasOverlay()`. Drops the wrapperRef + clipRef applier effect entirely (~80 lines deleted). Sheet props/contracts unchanged.
+- `.tug-sheet-clip` CSS becomes `position: absolute` (in pane-frame coordinate space) instead of `position: fixed` (in viewport coordinate space). `pointer-events: none` so the empty clip area passes clicks through; the panel itself absorbs interaction via `pointer-events: auto`.
+- `.tug-sheet-anchor` and `.tug-sheet-overlay` CSS rules are deleted entirely — replaced by the pane-scrim primitive ([D18]).
+- Sheet panel's slide-in animation (`translateY(-100%) → 0`) and the clip's `overflow: hidden` work unchanged. Panel max-height stays constrained by `.tug-sheet-content`'s existing `max-height: calc(100% - padding)` rule and `overflow-y: auto` for tall content.
+- Sheets rendered outside a `TugPane` (gallery previews, tests) where the frame context is null fall back to portaling into `document.body`, matching the existing `useCanvasOverlay` no-provider fallback shape. Production code always renders sheets inside panes.
+
+---
+
+#### [D20] Modal scoping is the pane stacking context, not the canvas overlay tier (DECIDED) {#d20-modal-scope-is-pane}
+
+**Decision:** "Card-modal" surfaces (sheets, future modal-class surfaces) are scoped to a single pane via the pane's own stacking context. The canvas-overlay tier (and `useCanvasOverlay()`) remains the right portal target for transient surfaces (popovers, tooltips, context menus, the alert) but is NOT the right target for any surface that claims pane-modal semantics.
+
+**Rationale:**
+- The modal scope ("this surface blocks interaction with this thing") is a pane property — sheets are card-modal per the existing tuglaw semantics. The pane already provides a stacking-context boundary; using it as the modal scope eliminates an entire class of bugs (visual bleed, pointer-event bleed, z-index miscalculation) at the architectural level.
+- Transient surfaces (popovers, tooltips) are NOT pane-modal. They are anchor-relative and may need to extend past the pane (a popover anchored to a button at the pane's edge naturally paints outside the pane). They keep their canvas-overlay portal because the relationship to the host pane is "anchored" not "scoped."
+- The distinction is now explicit in the framework: the scope of a modal surface IS the pane it's hosted in, full stop. No "modal but rendered globally with measurement-based confinement" ambiguity.
+
+**Implications:**
+- `tuglaws/pane-model.md` documents this rule: pane-modal surfaces portal into the pane frame; transient surfaces portal into canvas overlay.
+- `tug-alert` is a future migration candidate. Alerts are app-modal today (block ALL interaction across the canvas). They could be re-scoped to the active pane for consistency, OR remain app-modal with their own design — out of scope for this plan, but documented as a follow-on in [#roadmap].
+- `tugplan-tide-overlay-framework.md` (system-level architecture for portals + responder chain + pane focus controller) gets a section update reflecting the pane-modal boundary.
+
+---
+
 ### Specification {#specification}
 
 #### Spec S01: Picker Row Vocabulary {#s01-row-vocabulary}
@@ -1093,9 +1147,152 @@ This step ships as five commits in order. Each builds on the previous.
 
 ---
 
+#### Step 9.6: Phase 2.6 — Pane-scoped overlay framework {#step-9-6}
+
+**Depends on:** #step-9-5
+
+**Commit:** Multiple commits (one per sub-task in the order below). The phase closes with `tugways(tug-sheet): portal into pane frame, use pane-owned scrim`.
+
+**References:** [D18] pane-owned-scrim, [D19] sheet-in-pane-frame, [D20] modal-scope-is-pane, [pane-model.md](../tuglaws/pane-model.md), [responder-chain.md §Focus acceptance](../tuglaws/responder-chain.md#focus-acceptance), L06, L20, L24, (#context, #strategy)
+
+##### Findings (post-Step 9.5 vetting) {#step-9-6-findings}
+
+After landing the chain-native confirmation refactor in Step 9.5, HMR vetting surfaced a deeper bug class in how modal-class surfaces (specifically `TugSheet`) interact with multi-pane canvases. Two failed remediation attempts before this step landed converged on the same root cause:
+
+1. **Attempt 1 — split portal (scrim → pane chrome, panel → canvas overlay):** The scrim moved into pane chrome where it's structurally bounded, but the panel + clip stayed on canvas overlay at `--tug-z-overlay-dialog`. Pointer-events on the clip were narrowed to `none` so empty clip area passed clicks through. *Result:* visual bleed gone, but the panel itself still painted above peer panes wherever it overlapped them — modal-class surface sitting "above the canvas" can never not paint over peer panes that happen to occupy the same pixels.
+2. **Attempt 2 — single portal into pane chrome:** Both scrim and panel portaled into the chrome. *Result:* the chrome's `overflow: hidden` clipped the panel at the chrome's bottom edge — the picker form's Cancel/Open buttons disappeared. Dealbreaker.
+
+The architectural mismatch underlying both attempts: the canvas-overlay tier is a single global stacking context. Anything portaled there is above ALL panes by construction. "Pane-modal but rendered on canvas-overlay with measurement-based confinement" is a class of patch on top of the wrong portal target — every pixel of bleed (subpixel rounding, drop-shadow extension, animation overshoot, miscalculated bounds, future Radix internals) is a potential bug. Confining to the right pixels was always going to be a losing game.
+
+The right answer is **scope the modal to the pane's stacking context, not to a measured rectangle on canvas-overlay**. The canvas already gives us per-pane stacking via `.tug-pane`'s inline z-index — we just weren't using it for sheets. Each pane is its own stacking context; peer panes stack with each other independently of one pane's internal z-index choices. Anything inside a pane's stacking context is structurally incapable of affecting peer panes.
+
+##### Approach {#step-9-6-approach}
+
+Two complementary primitives, both rooted in the host pane's stacking context:
+
+**1. Pane-owned scrim (built into TugPane).** Every pane carries a permanent scrim element inside its chrome from mount. Modal-class consumers control it via a `useTugPaneScrim()` hook with ref-counted show/hide. The chrome's `overflow: hidden` and the frame's stacking-context boundary make bleed structurally impossible. See [D18].
+
+**2. Sheets portal into the pane frame.** `TugSheet`'s panel + slide-in clip portal into the `.tug-pane` frame element, not into canvas overlay. Frame is its own stacking context. Frame has `overflow: visible` so the panel can extend past the chrome's bottom edge into the canvas grid below — without escaping the pane's stacking context. Pure CSS positioning; no applier, no observers, no measurement. See [D19], [D20].
+
+```
+.tug-pane (frame, position: absolute, z-index: N, overflow: visible)
+  resize-handles (siblings)
+  .tug-pane-chrome (position: relative, overflow: hidden)
+    .tug-pane-titlebar
+    .tug-pane-body
+    .tug-pane-scrim   ← built-in, opacity:0, [data-scrim] gates
+  .tug-sheet-clip     ← portaled here by TugSheet (sibling of chrome)
+    .tug-sheet-content (the panel)
+```
+
+Peer panes z-stacked above paint on top of everything in this pane's stacking context — including the scrim AND the sheet panel. That's correct: peer panes are NOT inside this pane's modal scope; they SHOULD paint above. The modal scope is the pane.
+
+##### Sub-steps and commits {#step-9-6-substeps}
+
+This step ships as five commits in order. Each builds on the previous.
+
+**9.6a — Pane-scrim registry + hook.**
+- New: `tugdeck/src/lib/pane-scrim-registry.ts`. Module-scope `Map<HTMLElement, number>` ref-counts per chrome. `increment(chromeEl)` adds to count and sets `data-scrim="on"` when count crosses 0→1; `decrement(chromeEl)` removes from count and clears the attribute when count drops to 0. Idempotent on a missing element.
+- New: `tugdeck/src/components/tugways/use-tug-pane-scrim.ts`. Hook reads chrome from `TugPanePortalContext`. Returns `{ show, hide }` callbacks stable via `useCallback` over the chrome ref. No-op when chrome is null (standalone preview / test).
+- Tests: ref-count semantics (multiple show/hide), no-provider fallback (no crash, no DOM mutation), attribute toggling at count boundaries, cleanup on consumer unmount.
+- Commit: `tugways(pane-scrim): add ref-counted pane-scoped scrim primitive`.
+
+**9.6b — Build the scrim element into TugPane chrome.**
+- Edit `tug-pane.tsx`: render `<div className="tug-pane-scrim" aria-hidden="true" />` inside `.tug-pane-chrome` as a sibling of `.tug-pane-titlebar` and `.tug-pane-body`. Default state: opacity 0.
+- Edit `tug-pane.css`: add `.tug-pane-scrim` rule. `position: absolute; top: var(--tug-chrome-height); inset: 0; pointer-events: auto; z-index: 10`. Background uses the existing `--tugx-sheet-overlay-bg` token (rename to `--tugx-pane-scrim-bg` since it's no longer sheet-specific) — register the new alias in the chrome's component-tier alias section.
+- Add `.tug-pane-chrome[data-scrim="on"] .tug-pane-scrim { opacity: 1; transition: opacity var(--tug-motion-duration-moderate) ease; }`. Also a transition on the rest state so the fade-out runs cleanly.
+- `pointer-events: auto` makes the scrim a dead zone within the pane body. The existing `inert` on `.tug-pane-body` (set by `TugSheet` when open) handles keyboard-routing semantics; the scrim is the visual + pointer dead zone.
+- Tests: pane renders the scrim element regardless of sheet state; CSS rules apply when attribute set; transition timing token resolves; pane bodies in a multi-pane gallery card all carry their own independent scrims.
+- Commit: `tugways(tug-pane): build pane-scoped scrim layer into chrome`.
+
+**9.6c — TugPaneFrameContext.**
+- Edit `tug-pane.tsx`: add `TugPaneFrameContext` (alongside the existing `TugPanePortalContext`), provide the `.tug-pane` frame element via `frameRef`. Same context-provider lifecycle as `TugPanePortalContext` — value updates when the frame is rendered.
+- Re-export: name + type from `tug-pane.tsx`. Keep `TugPanePortalContext` as the chrome target (used by everything else); the frame context is sheet-specific (and any future pane-frame-scoped surface).
+- Tests: context provides the right element; context is null outside a pane; provider value updates when frame remounts.
+- Commit: `tugways(tug-pane): expose TugPaneFrameContext for pane-frame-scoped portals`.
+
+**9.6d — TugSheet refactor.**
+- Edit `tug-sheet.tsx`:
+  - Drop `useCanvasOverlay()` import + call.
+  - Read `paneFrameEl` from `TugPaneFrameContext`. Use it as the `createPortal` target in place of the canvas overlay root. Fall back to `document.body` when null (matches existing `useCanvasOverlay` fallback shape for standalone tests/previews).
+  - Drop the entire wrapper applier `useLayoutEffect` (~80 lines): no more `wrapperRef`, no more `clipRef.style.top/left/width/height` writes, no more ResizeObserver, no more MutationObserver, no more window-resize listener.
+  - Drop the `<div ref={wrapperRef} className="tug-sheet-anchor">` + nested `<div ref={overlayRef} className="tug-sheet-overlay">`. Replace with a `useTugPaneScrim()` call: `useLayoutEffect(() => { if (open) { scrim.show(); return () => scrim.hide(); } }, [open, scrim])`.
+  - The remaining JSX is just the clip + content portal: `<div className="tug-sheet-clip"><FocusScope>...<div className="tug-sheet-content">...</div></FocusScope></div>` — sized by CSS, no inline styles.
+  - Drop the `overlayRef` (no longer used; the scrim is no longer animated by TugAnimator group). The panel's `g.animate(contentEl, ...)` stays — it's the only animated element on the sheet's side now.
+- Edit `tug-sheet.css`:
+  - Delete `.tug-sheet-anchor` and `.tug-sheet-overlay` rules entirely.
+  - `.tug-sheet-clip`: change to `position: absolute; top: var(--tug-chrome-height); left: 0; right: 0; height: 100vh; overflow: hidden; pointer-events: none`. The 100vh height accommodates panels taller than the pane (panel scrolls inside via `.tug-sheet-content`'s `overflow-y: auto`); shorter panels just don't extend that far.
+  - `.tug-sheet-content` keeps its existing rules; no changes needed.
+  - Drop the `--tugx-sheet-overlay-bg` alias (moved to `--tugx-pane-scrim-bg` in step 9.6b's chrome alias block).
+- Tests: existing TugSheet tests should pass with minor selector adjustments. The portal target check (`document.body` vs canvas overlay root) needs an update — the sheet now lives inside `.tug-pane` instead of the overlay root. `.tug-sheet-content` selector is unchanged.
+- Commit: `tugways(tug-sheet): portal into pane frame; use pane-owned scrim`.
+
+**9.6e — Documentation updates.**
+- Edit `tuglaws/pane-model.md`: new section "Pane-modal vs canvas-overlay surfaces" documenting [D20]'s rule and the per-pane stacking model. Cross-references [pane-scrim-registry] and [TugPaneFrameContext].
+- Edit `tuglaws/responder-chain.md`: a brief note in §Anti-patterns that "modal surfaces portaling to canvas overlay" was an architectural anti-pattern fixed by this step — reference [D20] and Step 9.6.
+- Edit `roadmap/tugplan-tide-overlay-framework.md` (#mental-model): update the system-level architecture description to reflect the pane-modal boundary.
+- Update `tug-sheet.tsx` module docstring: replace the canvas-overlay-portal language with pane-frame-portal language. Reference [D19] / [D20].
+- Commit: `tuglaws(pane-model,responder-chain): document pane-scoped modal scope`.
+
+##### Artifacts (consolidated) {#step-9-6-artifacts}
+
+- New file `tugdeck/src/lib/pane-scrim-registry.ts`.
+- New file `tugdeck/src/components/tugways/use-tug-pane-scrim.ts`.
+- New file `tugdeck/src/lib/__tests__/pane-scrim-registry.test.ts`.
+- New file `tugdeck/src/components/tugways/__tests__/use-tug-pane-scrim.test.tsx`.
+- Edit `tugdeck/src/components/chrome/tug-pane.tsx`: render scrim element inside chrome; add `TugPaneFrameContext` provider.
+- Edit `tugdeck/src/components/tugways/tug-pane.css`: add `.tug-pane-scrim` rules + `[data-scrim="on"]` selector + `--tugx-pane-scrim-bg` alias.
+- Edit `tugdeck/src/components/tugways/tug-sheet.tsx`: portal target → pane frame; drop scrim element + applier; use `useTugPaneScrim()`.
+- Edit `tugdeck/src/components/tugways/tug-sheet.css`: drop `.tug-sheet-anchor` + `.tug-sheet-overlay` rules; update `.tug-sheet-clip` positioning.
+- Edit `tuglaws/pane-model.md`: add pane-modal vs canvas-overlay section.
+- Edit `tuglaws/responder-chain.md`: anti-pattern note + cross-reference.
+- Edit `roadmap/tugplan-tide-overlay-framework.md`: mental-model update.
+
+##### Tasks {#step-9-6-tasks}
+
+- [ ] 9.6a — pane-scrim registry + hook + tests. Land as commit 1.
+- [ ] 9.6b — scrim element built into `TugPane` chrome + CSS + tests. Land as commit 2.
+- [ ] 9.6c — `TugPaneFrameContext` provider + tests. Land as commit 3.
+- [ ] 9.6d — `TugSheet` refactor: portal into pane frame, use pane-scrim hook, drop applier + canvas-overlay portal + scrim element. Land as commit 4.
+- [ ] 9.6e — Documentation updates (`pane-model.md`, `responder-chain.md`, `tugplan-tide-overlay-framework.md`, `tug-sheet.tsx` docstring). Land as commit 5.
+- [ ] Manual smoke: open Tide picker → choose session → close. With a peer pane stacked above the Tide pane partially overlapping it: scrim does NOT bleed into peer pane; sheet panel does NOT paint over peer pane where they overlap (peer pane covers the panel). With a peer pane below the Tide pane vertically: panel extends into empty canvas grid where peer pane isn't, peer pane covers the panel where it is. Sheet open / cancel / submit / Escape all work.
+
+##### Tests {#step-9-6-tests}
+
+- [ ] `bun test src/lib/__tests__/pane-scrim-registry.test.ts` — ref-count semantics, attribute toggling, no-element fallback.
+- [ ] `bun test src/components/tugways/__tests__/use-tug-pane-scrim.test.tsx` — hook show/hide drives registry; cleanup on unmount; no-provider returns no-op callbacks.
+- [ ] `bun test src/__tests__/tug-sheet.test.tsx` — existing sheet tests pass with selector updates; verify portal target is now the pane frame, not document.body / canvas overlay.
+- [ ] `bun test` curated subset — no regressions in `tug-popover`, `tug-confirm-popover`, `tug-icon-button`, `tide-card-banner-spec`.
+- [ ] `bun run audit:tokens lint` — new `--tugx-pane-scrim-bg` alias declared and paired correctly.
+- [ ] Greppable invariants:
+  - `rg 'useCanvasOverlay' tugdeck/src/components/tugways/tug-sheet.tsx` returns zero matches.
+  - `rg '\.tug-sheet-overlay' tugdeck/src/components/tugways/tug-sheet.css tugdeck/src/components/tugways/tug-sheet.tsx` returns zero matches.
+  - `rg 'tug-pane-scrim' tugdeck/src/components/chrome/tug-pane.tsx` returns matches.
+
+##### Checkpoint {#step-9-6-checkpoint}
+
+- [ ] `bun run check`
+- [ ] `bun test` (curated subset; full run optional)
+- [ ] `bun run audit:tokens lint`
+- [ ] `cargo nextest run`
+- [ ] Manual smoke: pane-modal scope is correct in all the geometric configurations under (#step-9-6-tasks)' manual smoke item.
+
+##### Risks specific to Step 9.6 {#step-9-6-risks}
+
+| Risk | Impact | Likelihood | Mitigation |
+|------|--------|------------|------------|
+| Slide-in animation no longer sequenced with scrim fade (decoupled per [D18]) — visible mistiming on slow machines | low | low | Both transitions use `--tug-motion-duration-moderate`. End-time skew is a few ms; visually they finish together. If anyone reports a problem, hoist scrim animation back into TugAnimator's `group()` via a ref-based escape hatch. |
+| `TugSheetStackingContext` z-tier coordination breaks for popover-in-sheet now that the sheet is inside a pane's stacking context (lower than canvas-overlay) | med | low | Popovers still portal to canvas-overlay (transient surface, not pane-modal). Their z-tier (`--tug-z-overlay-popup-in-dialog` when inside a sheet) is on canvas overlay tier, ABOVE all panes — so popovers always stack above the sheet's panel in the pane. Verify in manual smoke (open picker → click trash → confirm popover should appear above the sheet panel). |
+| Cross-pane card move with sheet open: portal target changes mid-interaction | med | low | `TugPaneFrameContext` value updates atomically when card moves. `createPortal` re-targets on the next render. `useTugPaneScrim()` re-derives from new context, decrement old pane's count, increment new pane's count. Sheet visually moves with card, scrim follows. Smoke-check by dragging the host card to a different pane while a sheet is open. |
+| Component State Preservation restore-on-mount: timing race where the sheet wants to render before the pane chrome has mounted | low | low | The `useTugPaneScrim()` no-provider fallback handles the transient null-chrome window; the sheet's existing `if (!cardEl) return null` already gates the portal until chrome is in scope. Restore is idempotent (re-runs effect on next render). |
+| Standalone TugSheet rendering in tests / gallery without a pane | low | low | Sheet falls back to `document.body` portal target when frame context is null; pane-scrim hook no-ops. Existing standalone tests stay green; new gallery sheet card (if added) renders cleanly. |
+| TugAlert's app-modal semantic conflicts with [D20]'s pane-scope rule | low | low | TugAlert is explicitly out of scope for Step 9.6 (pane-modal surfaces only). Documented as a follow-on candidate in [#roadmap]. Alert continues to use canvas overlay until a future plan decides whether to migrate it (and re-scope its blocking semantic to a pane). |
+
+---
+
 #### Step 10: Phase 2 — Tuglaws walkthrough + cleanup {#step-10}
 
-**Depends on:** #step-9, #step-9-5
+**Depends on:** #step-9, #step-9-5, #step-9-6
 
 **Commit:** `tide(picker): tuglaws walkthrough and cleanup`
 
@@ -1134,7 +1331,7 @@ This step ships as five commits in order. Each builds on the previous.
 
 #### Step 11: Phase 2 Integration Checkpoint (Plan close) {#step-11}
 
-**Depends on:** #step-7, #step-8, #step-9, #step-9-5, #step-10
+**Depends on:** #step-7, #step-8, #step-9, #step-9-5, #step-9-6, #step-10
 
 **Commit:** `N/A (verification only)`
 
