@@ -61,6 +61,22 @@
  *   gating is purely about wrapper-level selection dispatch. See
  *   `tugplan-tide-picker-redesign.md` [D02] for the rationale and the
  *   relationship to a future `numberOfSections` migration.
+ *
+ * Filtering:
+ * - `TugListView` itself does NOT host a search field or own a
+ *   filter predicate. UIKit's `UITableView` doesn't either —
+ *   `UISearchController` projects a filtered data source the table
+ *   consumes. The same split applies here: a host component owns the
+ *   search input (a `TugInput` or any other text surface) and
+ *   composes a `FilteredTugListViewDataSource` via
+ *   `useFilteredDataSource` (in `./use-filtered-data-source.ts`). The
+ *   wrapper's filtered enumeration is fed to `<TugListView
+ *   dataSource={...} />` in place of the base — the primitive doesn't
+ *   know it's filtered, and the consumer doesn't have to teach it.
+ *   See `gallery-list-view-filter` for the canonical pattern (host-
+ *   owned `TugInput` + `useFilteredDataSource` + `baseIndexFor`-aware
+ *   cell renderer) and `tugplan-tide-picker-redesign.md` [D01] /
+ *   [Spec S06] for the rationale.
  */
 
 import "./tug-list-view.css";

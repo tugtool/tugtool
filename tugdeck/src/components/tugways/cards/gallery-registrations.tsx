@@ -65,6 +65,7 @@ import { GallerySheet } from "./gallery-sheet";
 import { GalleryBulletin } from "./gallery-bulletin";
 import { GalleryMarkdownView } from "./gallery-markdown-view";
 import { GalleryListView } from "./gallery-list-view";
+import { GalleryListViewFilter } from "./gallery-list-view-filter";
 import { GalleryListViewHeaders } from "./gallery-list-view-headers";
 import { GalleryTranscriptEntry } from "./gallery-transcript-entry";
 import { GalleryAtom } from "./gallery-atom";
@@ -443,6 +444,20 @@ export function registerGalleryCards(): void {
     componentId: "gallery-list-view-headers",
     contentFactory: (_cardId) => <GalleryListViewHeaders />,
     defaultMeta: { title: "TugListView (headers)", icon: "List", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.textInput,
+  });
+
+  // Visual smoke for `useFilteredDataSource` — the Phase 1
+  // UISearchController-style decorator hook. A `TugInput` above the
+  // list view drives a substring predicate; the host owns the input
+  // and the primitive consumes the derived data source.
+  registerCard({
+    componentId: "gallery-list-view-filter",
+    contentFactory: (_cardId) => <GalleryListViewFilter />,
+    defaultMeta: { title: "TugListView (filter)", icon: "Search", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,

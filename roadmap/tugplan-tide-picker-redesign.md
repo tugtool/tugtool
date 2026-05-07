@@ -380,6 +380,23 @@ This plan follows tugplan-skeleton v2. Anchors are explicit and stable; design d
 
 ---
 
+#### [D13] Filter matcher is a shared utility, default case-insensitive substring (DECIDED) {#d13-shared-text-matcher}
+
+**Decision:** Filter matching for the picker, the gallery filter card, and any future small-list consumer goes through `caseInsensitiveSubstring()` in `tugdeck/src/lib/text-match.ts`. The matcher returns a `MatchResult { score?: number; matches: ReadonlyArray<[number, number]> }` whose match ranges drive `<mark>` highlight rendering in the cell. Case-insensitive is the default; case-sensitive matching is not currently exposed (a follow-on decision if a consumer earns it). A scored fuzzy variant (`fuzzyMatch`) is deferred to its own follow-on.
+
+**Rationale:**
+- Filesystem case-sensitivity does not dictate typeahead case-sensitivity. Users typing into a search box expect to find `Tugtool` when they type `tugtool` — independent of how the filesystem disambiguates.
+- A shared matcher unifies the look-and-feel of every filter surface in the app at the level of "what does the highlight cover" — consumers don't roll their own substring/lowercase combinations and produce subtly different UX.
+- Server-side fuzzy (the `fuzzy_scorer.rs` route file completion uses) is the right shape for project-scale candidate sets where a wire round-trip is cheaper than walking thousands of paths in JavaScript. It is the wrong shape for ≤ 50 recents — which is the picker's and the gallery card's load. Hence: client-side matcher for short lists, server-side fuzzy for big ones.
+- Returning `MatchResult` shape (with optional `score`) keeps the door open for fuzzy parity later: cell renderers paint highlights identically; only the predicate and the optional sort-by-score change.
+
+**Implications:**
+- The picker's `path-recent` rows highlight their matched span ([Spec S01]). The gallery filter card's path rows do the same.
+- Consumers that want case-sensitive matching write their own predicate against the wrapper (the primitive doesn't enforce a matcher).
+- A future `fuzzyMatch(query, target): MatchResult | null` lands in `text-match.ts` when a short-list consumer wants fzf-feel scored matches; cell renderers don't change because the return shape is the same.
+
+---
+
 ### Specification {#specification}
 
 #### Spec S01: Picker Row Vocabulary {#s01-row-vocabulary}
@@ -391,7 +408,7 @@ This plan follows tugplan-skeleton v2. Anchors are explicit and stable; design d
 | Kind | Section | Role | Visibility | Click behavior |
 |---|---|---|---|---|
 | `header-recents`  | RECENTS  | header | filtered recents non-empty | no-op |
-| `path-recent`     | RECENTS  | cell   | one per recent that case-sensitively contains `query` AND is not exactly equal to `query`. (Empty `query` → all recents qualify.) | `setPath(recent)`; list re-enumerates. Does NOT take selection. |
+| `path-recent`     | RECENTS  | cell   | one per recent matching `query` via `caseInsensitiveSubstring()` from `@/lib/text-match` AND not exactly equal to `query`. (Empty `query` → all recents qualify; the matcher returns an empty `matches` array, which is intent-equivalent to "no filter active.") | `setPath(recent)`; list re-enumerates. Does NOT take selection. |
 | `header-sessions` | SESSIONS | header | `ledger.status === "ready"` AND `query.length > 0` | no-op |
 | `session-new`     | SESSIONS | cell   | same as above; always present in the section | becomes the current selection |
 | `session-resume`  | SESSIONS | cell   | one per non-deleted ledger row | becomes the current selection unless `state === "live"` (renders disabled) |
@@ -401,7 +418,7 @@ This plan follows tugplan-skeleton v2. Anchors are explicit and stable; design d
 **Visual treatments:**
 
 - `header-recents` / `header-sessions`: muted weight + small size, sentence case (`Recents`, `Sessions`). No `text-transform: uppercase`. Under `[data-list-cell-role="header"]`.
-- `path-recent`: monospace family from `--tug-font-family-mono`; ellipsis-at-start truncation per [D07]; `title` and `aria-label` carry the full path.
+- `path-recent`: monospace family from `--tug-font-family-mono`; ellipsis-at-start truncation per [D07]; `title` and `aria-label` carry the full path. Match ranges from `caseInsensitiveSubstring(query, path)` (see [D13]) drive `<mark>` highlight rendering inside the cell so the user sees which substring satisfied the filter.
 - `session-new`, `session-resume`: existing rich row layout (title + subtitle stack, optional trailing icon/badge), preserved verbatim.
 - `forget-all`: rendered as a quiet footer link; `[data-list-cell-role="footer"]`.
 - `loading`: subdued "checking…" placeholder; `aria-live="polite"`.
@@ -482,6 +499,8 @@ export interface FilteredTugListViewDataSource extends TugListViewDataSource {
 |------|---------|
 | `tugdeck/src/components/tugways/use-filtered-data-source.ts` | `useFilteredDataSource` hook + `FilteredTugListViewDataSource` interface |
 | `tugdeck/src/components/tugways/__tests__/use-filtered-data-source.test.ts` | Filter-wrapper tests |
+| `tugdeck/src/lib/text-match.ts` | Shared text-matching utility (`MatchResult`, `caseInsensitiveSubstring`) per [D13] |
+| `tugdeck/src/lib/__tests__/text-match.test.ts` | Text-matcher tests |
 | `tugdeck/src/components/tugways/cards/gallery-list-view-headers.tsx` | Gallery card demonstrating header/footer roles |
 | `tugdeck/src/components/tugways/cards/gallery-list-view-filter.tsx` | Gallery card demonstrating filter wrapper |
 | `tugdeck/src/lib/tide-picker-data-source.ts` | `TidePickerDataSource` composite + `PickerRow` typed access |
@@ -495,6 +514,8 @@ export interface FilteredTugListViewDataSource extends TugListViewDataSource {
 | `data-list-cell-role` attribute | DOM attribute | `tug-list-view.tsx` cell wrapper | Set when role ≠ `"cell"` |
 | `useFilteredDataSource` | hook | `tugdeck/src/components/tugways/use-filtered-data-source.ts` | Per [Spec S06](#s06-filter-api) |
 | `FilteredTugListViewDataSource` | interface | same | Extends `TugListViewDataSource` with `baseIndexFor` |
+| `caseInsensitiveSubstring` | function | `tugdeck/src/lib/text-match.ts` | Returns `MatchResult \| null` per [D13]; UTF-16 offsets |
+| `MatchResult` | interface | same | `{ score?: number; matches: ReadonlyArray<[start, end]> }` |
 | `TidePickerDataSource` | class | `tugdeck/src/lib/tide-picker-data-source.ts` | Implements `TugListViewDataSource`; typed `rowAt(i): PickerRow` |
 | `PickerRow` | discriminated union | same | Seven kinds per [Spec S01](#s01-row-vocabulary) |
 | `useTidePickerDataSource` | hook | same | Constructs the composite from `(recents, query, ledger)` |
@@ -674,16 +695,16 @@ export interface FilteredTugListViewDataSource extends TugListViewDataSource {
 - Edit `tugdeck/src/components/tugways/tug-list-view.tsx`: add a "Filtering" subsection to the module docstring with a link to `use-filtered-data-source.ts`.
 
 **Tasks:**
-- [ ] Implement the gallery card.
-- [ ] Register in gallery.
-- [ ] Update `tug-list-view.tsx` JSDoc.
+- [x] Implement the gallery card.
+- [x] Register in gallery.
+- [x] Update `tug-list-view.tsx` JSDoc.
 
 **Tests:**
 - [ ] Manual smoke: typing narrows the list; deleting widens it; scroll position is stable across filter changes.
 
 **Checkpoint:**
-- [ ] `bun run check`
-- [ ] `bun run audit:tokens lint`
+- [x] `bun run check`
+- [x] `bun run audit:tokens lint`
 - [ ] Manual: filter card behaves per the smoke checklist.
 
 ---
