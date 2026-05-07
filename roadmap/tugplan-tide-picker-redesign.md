@@ -642,18 +642,18 @@ export interface FilteredTugListViewDataSource extends TugListViewDataSource {
   - Empty base; all-pass; no-pass; predicate change; promotion of a previously-filtered item; drop of a previously-projected item; version-token reference stability under no change; `baseIndexFor` correctness across base reorder.
 
 **Tasks:**
-- [ ] Implement the `FilteredDataSource` class.
-- [ ] Implement the `useFilteredDataSource` hook.
-- [ ] Write the module docstring.
-- [ ] Write the tests listed above.
+- [x] Implement the `FilteredDataSource` class.
+- [x] Implement the `useFilteredDataSource` hook.
+- [x] Write the module docstring.
+- [x] Write the tests listed above.
 
 **Tests:**
-- [ ] `bun test src/components/tugways/__tests__/use-filtered-data-source.test.ts` — all cases pass.
+- [x] `bun test src/components/tugways/__tests__/use-filtered-data-source.test.ts` — all cases pass.
 
 **Checkpoint:**
-- [ ] `bun run check`
-- [ ] `bun test src/components/tugways/__tests__/use-filtered-data-source.test.ts`
-- [ ] `bun run audit:tokens lint`
+- [x] `bun run check`
+- [x] `bun test src/components/tugways/__tests__/use-filtered-data-source.test.ts`
+- [x] `bun run audit:tokens lint`
 
 ---
 
