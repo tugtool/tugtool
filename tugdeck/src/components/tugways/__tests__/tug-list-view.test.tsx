@@ -31,6 +31,7 @@ import {
   TugListView,
   type TugListViewCellProps,
   type TugListViewCellRenderer,
+  type TugListViewCellRole,
   type TugListViewDataSource,
   type TugListViewDelegate,
   type TugListViewHandle,
@@ -2557,6 +2558,534 @@ describe("TugListView (Step 8.5 — keyboard activation + ARIA + block default)"
       expect(pinCount).toBeGreaterThan(pinsBeforeGrow);
     } finally {
       SmartScroll.prototype.pinToBottom = originalPin;
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 0 — Row roles (header / footer / cell)
+// ---------------------------------------------------------------------------
+//
+// `TugListViewDataSource` accepts an optional `roleForIndex(index)` method
+// that classifies each item as `"cell"` (default), `"header"`, or
+// `"footer"`. The list view:
+//
+//   - Sets `data-list-cell-role` on the cell wrapper for non-default roles.
+//     Default-role wrappers omit the attribute, preserving the prior DOM.
+//   - Sets `tabIndex={-1}` on header / footer wrappers so they are not in
+//     the tab order; default-role wrappers keep `tabIndex={0}`.
+//   - Short-circuits `delegate.onSelect` dispatch on click and Space/Enter
+//     keydown for non-default roles. The cell renderer can still attach
+//     its own `onClick` for action-bearing headers/footers.
+//   - Re-reads `roleForIndex` at click/keydown time so a role transition
+//     between render and click is reflected (no stale closure).
+//
+// All-cell data sources (every existing consumer pre-Phase-0) continue
+// to behave identically — the default fallback at every read point is
+// `"cell"`. The drift-prevention test at the bottom of this block pins
+// that.
+
+interface RoledItem {
+  readonly id: string;
+  readonly kind: string;
+  readonly role: TugListViewCellRole;
+  readonly label: string;
+}
+
+class RoledDataSource implements TugListViewDataSource {
+  private items: ReadonlyArray<RoledItem>;
+  private readonly listeners = new Set<() => void>();
+  private version = 0;
+
+  constructor(items: ReadonlyArray<RoledItem>) {
+    this.items = items;
+  }
+
+  numberOfItems(): number {
+    return this.items.length;
+  }
+
+  idForIndex(index: number): string {
+    return this.items[index].id;
+  }
+
+  kindForIndex(index: number): string {
+    return this.items[index].kind;
+  }
+
+  roleForIndex(index: number): TugListViewCellRole {
+    return this.items[index].role;
+  }
+
+  rowAt(index: number): RoledItem {
+    return this.items[index];
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  getVersion(): unknown {
+    return this.version;
+  }
+
+  _setItemsForTest(next: ReadonlyArray<RoledItem>): void {
+    this.items = next;
+    this.version += 1;
+    for (const listener of this.listeners) listener();
+  }
+}
+
+const RoledLabelCell: TugListViewCellRenderer<RoledDataSource> = ({
+  index,
+  dataSource,
+}: TugListViewCellProps<RoledDataSource>) => (
+  <div data-testid={`roled-${dataSource.rowAt(index).role}`}>
+    {dataSource.rowAt(index).label}
+  </div>
+);
+
+const ROLED_CELL_RENDERERS: Record<
+  string,
+  TugListViewCellRenderer<RoledDataSource>
+> = {
+  "header-recents": RoledLabelCell,
+  "path-recent": RoledLabelCell,
+  "session-new": RoledLabelCell,
+  "session-resume": RoledLabelCell,
+  "forget-all": RoledLabelCell,
+  "loading": RoledLabelCell,
+};
+
+describe("TugListView (Phase 0 — row roles)", () => {
+  test("default role is 'cell' — data sources without roleForIndex are unaffected", () => {
+    // Drift check: a data source that does not implement
+    // `roleForIndex` continues to produce default-shape cells. The
+    // wrapper has `tabIndex=0`, no `data-list-cell-role` attribute,
+    // and a click fires `onSelect` exactly as before.
+    const ds = new DemoDataSource([
+      { id: "a", kind: "row", label: "Alpha" },
+      { id: "b", kind: "row", label: "Beta" },
+    ]);
+    const onSelectCalls: number[] = [];
+    const delegate: TugListViewDelegate = {
+      onSelect: (i) => {
+        onSelectCalls.push(i);
+      },
+    };
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        delegate={delegate}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    const cells = container.querySelectorAll(".tug-list-view-cell");
+    expect(cells.length).toBe(2);
+    for (const cell of cells) {
+      expect(cell.getAttribute("tabindex")).toBe("0");
+      expect(cell.hasAttribute("data-list-cell-role")).toBe(false);
+    }
+
+    const cell0 = cells[0] as HTMLElement;
+    act(() => {
+      cell0.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onSelectCalls).toEqual([0]);
+  });
+
+  test("'header' cells set data-list-cell-role='header' and tabIndex=-1", () => {
+    const ds = new RoledDataSource([
+      { id: "h-r", kind: "header-recents", role: "header", label: "Recents" },
+      { id: "p-1", kind: "path-recent", role: "cell", label: "/Users/Ken/foo" },
+      { id: "p-2", kind: "path-recent", role: "cell", label: "/Users/Ken/bar" },
+    ]);
+    const { container } = render(
+      <TugListView<RoledDataSource>
+        dataSource={ds}
+        cellRenderers={ROLED_CELL_RENDERERS}
+      />,
+    );
+    const headerCell = container.querySelector(
+      '[data-tug-list-cell-index="0"]',
+    ) as HTMLElement | null;
+    expect(headerCell).not.toBeNull();
+    expect(headerCell?.getAttribute("data-list-cell-role")).toBe("header");
+    expect(headerCell?.getAttribute("tabindex")).toBe("-1");
+
+    // Adjacent default-role cells are unaffected.
+    const dataCell = container.querySelector(
+      '[data-tug-list-cell-index="1"]',
+    ) as HTMLElement | null;
+    expect(dataCell).not.toBeNull();
+    expect(dataCell?.hasAttribute("data-list-cell-role")).toBe(false);
+    expect(dataCell?.getAttribute("tabindex")).toBe("0");
+  });
+
+  test("'footer' cells set data-list-cell-role='footer' and tabIndex=-1", () => {
+    const ds = new RoledDataSource([
+      { id: "s-n", kind: "session-new", role: "cell", label: "Start fresh" },
+      { id: "f-a", kind: "forget-all", role: "footer", label: "Forget all" },
+    ]);
+    const { container } = render(
+      <TugListView<RoledDataSource>
+        dataSource={ds}
+        cellRenderers={ROLED_CELL_RENDERERS}
+      />,
+    );
+    const footerCell = container.querySelector(
+      '[data-tug-list-cell-index="1"]',
+    ) as HTMLElement | null;
+    expect(footerCell).not.toBeNull();
+    expect(footerCell?.getAttribute("data-list-cell-role")).toBe("footer");
+    expect(footerCell?.getAttribute("tabindex")).toBe("-1");
+  });
+
+  test("clicking a 'header' cell does NOT fire delegate.onSelect", () => {
+    const ds = new RoledDataSource([
+      { id: "h-r", kind: "header-recents", role: "header", label: "Recents" },
+      { id: "p-1", kind: "path-recent", role: "cell", label: "/Users/Ken/foo" },
+    ]);
+    const onSelectCalls: number[] = [];
+    const delegate: TugListViewDelegate = {
+      onSelect: (i) => {
+        onSelectCalls.push(i);
+      },
+    };
+    const { container } = render(
+      <TugListView<RoledDataSource>
+        dataSource={ds}
+        delegate={delegate}
+        cellRenderers={ROLED_CELL_RENDERERS}
+      />,
+    );
+    const headerCell = container.querySelector(
+      '[data-tug-list-cell-index="0"]',
+    ) as HTMLElement | null;
+    expect(headerCell).not.toBeNull();
+    act(() => {
+      headerCell?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onSelectCalls).toEqual([]);
+
+    // The default-role neighbor still fires onSelect — the gate is
+    // per-cell, not per-list.
+    const dataCell = container.querySelector(
+      '[data-tug-list-cell-index="1"]',
+    ) as HTMLElement | null;
+    act(() => {
+      dataCell?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onSelectCalls).toEqual([1]);
+  });
+
+  test("clicking a 'footer' cell does NOT fire delegate.onSelect", () => {
+    const ds = new RoledDataSource([
+      { id: "s-n", kind: "session-new", role: "cell", label: "Start fresh" },
+      { id: "f-a", kind: "forget-all", role: "footer", label: "Forget all" },
+    ]);
+    const onSelectCalls: number[] = [];
+    const delegate: TugListViewDelegate = {
+      onSelect: (i) => {
+        onSelectCalls.push(i);
+      },
+    };
+    const { container } = render(
+      <TugListView<RoledDataSource>
+        dataSource={ds}
+        delegate={delegate}
+        cellRenderers={ROLED_CELL_RENDERERS}
+      />,
+    );
+    const footerCell = container.querySelector(
+      '[data-tug-list-cell-index="1"]',
+    ) as HTMLElement | null;
+    act(() => {
+      footerCell?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onSelectCalls).toEqual([]);
+  });
+
+  test("Enter / Space on a 'header' cell does NOT fire delegate.onSelect", () => {
+    const ds = new RoledDataSource([
+      { id: "h-r", kind: "header-recents", role: "header", label: "Recents" },
+      { id: "p-1", kind: "path-recent", role: "cell", label: "/Users/Ken/foo" },
+    ]);
+    const onSelectCalls: number[] = [];
+    const delegate: TugListViewDelegate = {
+      onSelect: (i) => {
+        onSelectCalls.push(i);
+      },
+    };
+    const { container } = render(
+      <TugListView<RoledDataSource>
+        dataSource={ds}
+        delegate={delegate}
+        cellRenderers={ROLED_CELL_RENDERERS}
+      />,
+    );
+    const headerCell = container.querySelector(
+      '[data-tug-list-cell-index="0"]',
+    ) as HTMLElement | null;
+    expect(headerCell).not.toBeNull();
+    for (const key of ["Enter", " "]) {
+      act(() => {
+        headerCell?.dispatchEvent(
+          new KeyboardEvent("keydown", { key, bubbles: true }),
+        );
+      });
+    }
+    expect(onSelectCalls).toEqual([]);
+  });
+
+  test("Enter / Space on a 'footer' cell does NOT fire delegate.onSelect", () => {
+    const ds = new RoledDataSource([
+      { id: "s-n", kind: "session-new", role: "cell", label: "Start fresh" },
+      { id: "f-a", kind: "forget-all", role: "footer", label: "Forget all" },
+    ]);
+    const onSelectCalls: number[] = [];
+    const delegate: TugListViewDelegate = {
+      onSelect: (i) => {
+        onSelectCalls.push(i);
+      },
+    };
+    const { container } = render(
+      <TugListView<RoledDataSource>
+        dataSource={ds}
+        delegate={delegate}
+        cellRenderers={ROLED_CELL_RENDERERS}
+      />,
+    );
+    const footerCell = container.querySelector(
+      '[data-tug-list-cell-index="1"]',
+    ) as HTMLElement | null;
+    for (const key of ["Enter", " "]) {
+      act(() => {
+        footerCell?.dispatchEvent(
+          new KeyboardEvent("keydown", { key, bubbles: true }),
+        );
+      });
+    }
+    expect(onSelectCalls).toEqual([]);
+  });
+
+  test("mixed list with header + cells + footer dispatches onSelect only on cells", () => {
+    // End-to-end picker-shaped enumeration: header-recents, three
+    // selectable cells, header-sessions, two more selectable cells,
+    // a footer. Click each in order and confirm onSelect fires only
+    // for the five non-default rows.
+    const ds = new RoledDataSource([
+      { id: "h-r", kind: "header-recents", role: "header", label: "Recents" },
+      { id: "p-1", kind: "path-recent", role: "cell", label: "/Users/Ken/foo" },
+      { id: "p-2", kind: "path-recent", role: "cell", label: "/Users/Ken/bar" },
+      { id: "p-3", kind: "path-recent", role: "cell", label: "/Users/Ken/baz" },
+      { id: "h-s", kind: "header-recents", role: "header", label: "Sessions" },
+      { id: "s-n", kind: "session-new", role: "cell", label: "Start fresh" },
+      { id: "s-r-1", kind: "session-resume", role: "cell", label: "first" },
+      { id: "f-a", kind: "forget-all", role: "footer", label: "Forget all" },
+    ]);
+    const onSelectCalls: number[] = [];
+    const delegate: TugListViewDelegate = {
+      onSelect: (i) => {
+        onSelectCalls.push(i);
+      },
+    };
+    // `inline` so every cell mounts under happy-dom's zero-clientHeight
+    // viewport; the windowed path with viewport=0 would mount only the
+    // first overscan cells. Inline matches the picker's usage anyway.
+    const { container } = render(
+      <TugListView<RoledDataSource>
+        dataSource={ds}
+        delegate={delegate}
+        cellRenderers={ROLED_CELL_RENDERERS}
+        inline
+      />,
+    );
+
+    for (let i = 0; i < ds.numberOfItems(); i += 1) {
+      const cell = container.querySelector(
+        `[data-tug-list-cell-index="${i}"]`,
+      ) as HTMLElement | null;
+      expect(cell).not.toBeNull();
+      act(() => {
+        cell?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+    }
+    expect(onSelectCalls).toEqual([1, 2, 3, 5, 6]);
+  });
+
+  test("role transition is reflected on the next render", () => {
+    // A data source ticks and changes role for an existing index. The
+    // cell at that index re-renders with the new wrapper attributes
+    // and the click gate updates accordingly.
+    const ds = new RoledDataSource([
+      { id: "x", kind: "session-new", role: "cell", label: "Start fresh" },
+    ]);
+    const onSelectCalls: number[] = [];
+    const delegate: TugListViewDelegate = {
+      onSelect: (i) => {
+        onSelectCalls.push(i);
+      },
+    };
+    const { container } = render(
+      <TugListView<RoledDataSource>
+        dataSource={ds}
+        delegate={delegate}
+        cellRenderers={ROLED_CELL_RENDERERS}
+      />,
+    );
+    const cellBefore = container.querySelector(
+      '[data-tug-list-cell-index="0"]',
+    ) as HTMLElement | null;
+    expect(cellBefore?.hasAttribute("data-list-cell-role")).toBe(false);
+    expect(cellBefore?.getAttribute("tabindex")).toBe("0");
+
+    act(() => {
+      ds._setItemsForTest([
+        { id: "x", kind: "header-recents", role: "header", label: "Recents" },
+      ]);
+    });
+
+    const cellAfter = container.querySelector(
+      '[data-tug-list-cell-index="0"]',
+    ) as HTMLElement | null;
+    expect(cellAfter?.getAttribute("data-list-cell-role")).toBe("header");
+    expect(cellAfter?.getAttribute("tabindex")).toBe("-1");
+
+    // The cached click callback re-reads role at call time, so a click
+    // after the transition does NOT fire onSelect.
+    act(() => {
+      cellAfter?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onSelectCalls).toEqual([]);
+  });
+
+  test("data source returning undefined from roleForIndex falls back to 'cell'", () => {
+    // Defensive fallback: a data source whose `roleForIndex` returns
+    // `undefined` for some indices is treated as the default role.
+    // This shape comes up when a consumer's typed data source has an
+    // optional internal classifier and an early exit.
+    interface PartialItem {
+      readonly id: string;
+      readonly kind: string;
+    }
+    class PartialDataSource implements TugListViewDataSource {
+      private items: PartialItem[];
+      private readonly listeners = new Set<() => void>();
+      constructor(items: PartialItem[]) {
+        this.items = items;
+      }
+      numberOfItems(): number {
+        return this.items.length;
+      }
+      idForIndex(i: number): string {
+        return this.items[i].id;
+      }
+      kindForIndex(i: number): string {
+        return this.items[i].kind;
+      }
+      roleForIndex(_i: number): TugListViewCellRole {
+        // Simulates a partial classifier — production code wouldn't
+        // return undefined from a typed signature, but a `?? "cell"`
+        // fallback is the contract documented in the JSDoc.
+        return undefined as unknown as TugListViewCellRole;
+      }
+      subscribe(listener: () => void): () => void {
+        this.listeners.add(listener);
+        return () => {
+          this.listeners.delete(listener);
+        };
+      }
+      getVersion(): unknown {
+        return 0;
+      }
+    }
+
+    const ds = new PartialDataSource([{ id: "a", kind: "row" }]);
+    const onSelectCalls: number[] = [];
+    const delegate: TugListViewDelegate = {
+      onSelect: (i) => {
+        onSelectCalls.push(i);
+      },
+    };
+    const RowOnly: TugListViewCellRenderer<PartialDataSource> = () => (
+      <div data-testid="row-only" />
+    );
+    const { container } = render(
+      <TugListView<PartialDataSource>
+        dataSource={ds}
+        delegate={delegate}
+        cellRenderers={{ row: RowOnly }}
+      />,
+    );
+    const cell = container.querySelector(
+      '[data-tug-list-cell-index="0"]',
+    ) as HTMLElement | null;
+    expect(cell?.hasAttribute("data-list-cell-role")).toBe(false);
+    expect(cell?.getAttribute("tabindex")).toBe("0");
+    act(() => {
+      cell?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onSelectCalls).toEqual([0]);
+  });
+
+  test("transcript-shaped data source (no roleForIndex) is unaffected", () => {
+    // Drift-prevention: pin that the existing TideTranscriptDataSource
+    // shape — no `roleForIndex` method at all — produces default-cell
+    // wrappers exactly as in the v1 contract. This test mirrors the
+    // shape of `tide-transcript-data-source.ts` (typed adapter, no
+    // role method) without depending on the live tide module.
+    interface TranscriptItem {
+      readonly id: string;
+      readonly kind: "user" | "code-committed";
+    }
+    class TranscriptShapedDataSource implements TugListViewDataSource {
+      private readonly items: TranscriptItem[];
+      private readonly listeners = new Set<() => void>();
+      constructor(items: TranscriptItem[]) {
+        this.items = items;
+      }
+      numberOfItems(): number {
+        return this.items.length;
+      }
+      idForIndex(i: number): string {
+        return this.items[i].id;
+      }
+      kindForIndex(i: number): string {
+        return this.items[i].kind;
+      }
+      // NB: no `roleForIndex` — matches the existing transcript shape.
+      subscribe(listener: () => void): () => void {
+        this.listeners.add(listener);
+        return () => {
+          this.listeners.delete(listener);
+        };
+      }
+      getVersion(): unknown {
+        return 0;
+      }
+    }
+    const ds = new TranscriptShapedDataSource([
+      { id: "u-1", kind: "user" },
+      { id: "c-1", kind: "code-committed" },
+    ]);
+    const Renderer: TugListViewCellRenderer<TranscriptShapedDataSource> = () => (
+      <div />
+    );
+    const { container } = render(
+      <TugListView<TranscriptShapedDataSource>
+        dataSource={ds}
+        cellRenderers={{ user: Renderer, "code-committed": Renderer }}
+      />,
+    );
+    const cells = container.querySelectorAll(".tug-list-view-cell");
+    expect(cells.length).toBe(2);
+    for (const cell of cells) {
+      expect(cell.getAttribute("tabindex")).toBe("0");
+      expect(cell.hasAttribute("data-list-cell-role")).toBe(false);
     }
   });
 });

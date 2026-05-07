@@ -45,6 +45,22 @@
  *   [D04] cell reuse is a conceptual API — v1 implementation is React
  *   item-keyed mount/unmount; [D07] SmartScroll owns scroll-position
  *   writes; [D08] no chain-driven scroll commands in v1.
+ *
+ * Row roles:
+ * - The data source may classify each item as a `"cell"` (the
+ *   default), a `"header"`, or a `"footer"` via the optional
+ *   `TugListViewDataSource.roleForIndex` method. Cells with a non-
+ *   default role render with `data-list-cell-role` set on the wrapper,
+ *   are NOT focusable (`tabIndex={-1}`), and do NOT fire
+ *   `delegate.onSelect` on click or Space/Enter — they are inert
+ *   section dividers. Visibility lifecycle (`willDisplay` /
+ *   `didEndDisplaying`) and ResizeObserver measurement still apply,
+ *   so headers and footers participate in windowing math identically
+ *   to ordinary cells. Cell renderers may attach their own click
+ *   handlers if a header/footer needs an action; the primitive's
+ *   gating is purely about wrapper-level selection dispatch. See
+ *   `tugplan-tide-picker-redesign.md` [D02] for the rationale and the
+ *   relationship to a future `numberOfSections` migration.
  */
 
 import "./tug-list-view.css";
@@ -55,6 +71,30 @@ import { SmartScroll } from "@/lib/smart-scroll";
 
 import { HeightIndex } from "./internal/list-view-height-index";
 import { computeWindow } from "./internal/list-view-window";
+
+// ---------------------------------------------------------------------------
+// Row roles — structural classification of an item in the list
+// ---------------------------------------------------------------------------
+
+/**
+ * Structural role of a row.
+ *
+ * - `"cell"` (default) — an interactive list item. Focusable
+ *   (`tabIndex={0}`); click and Space/Enter dispatch
+ *   `delegate.onSelect(index)`.
+ * - `"header"` / `"footer"` — an inert section divider. The cell
+ *   wrapper renders `data-list-cell-role="header"` (or `"footer"`),
+ *   `tabIndex={-1}`, and ignores wrapper-level click / Space / Enter
+ *   for the purposes of `delegate.onSelect`. Cell renderers may still
+ *   attach their own `onClick` handlers if a header/footer needs to
+ *   trigger an action — the primitive's gating is wrapper-level only.
+ *
+ * Headers and footers participate in windowing, ResizeObserver
+ * measurement, and visibility lifecycle (`willDisplay` /
+ * `didEndDisplaying`) identically to ordinary cells. The role only
+ * affects focusability and the `onSelect` dispatch contract.
+ */
+export type TugListViewCellRole = "cell" | "header" | "footer";
 
 // ---------------------------------------------------------------------------
 // Data source — what consumers implement
@@ -99,6 +139,27 @@ export interface TugListViewDataSource {
    * remount if the id also changes.
    */
   kindForIndex(index: number): string;
+
+  /**
+   * Structural role of the item at `index`. See `TugListViewCellRole`
+   * for the role contract. Optional — when omitted, every index is
+   * treated as `"cell"`, preserving the v1 single-role flat-list
+   * shape. Implementing this method is purely additive: existing
+   * consumers and tests are unaffected.
+   *
+   * Role may change across data-source updates (e.g. a header that
+   * collapses into a regular cell when its section is empty). The
+   * list view re-reads `roleForIndex` on every render, so a tick that
+   * promotes a cell to a header or vice versa updates the wrapper's
+   * focusability and `onSelect`-gating on the next commit.
+   *
+   * Click and keydown handlers also re-read `roleForIndex` at call
+   * time (via the live data source reference), so a role transition
+   * between render and click is reflected — a cell that has just
+   * become a header will not fire `onSelect` even if the click
+   * handler closure was created when the role was `"cell"`.
+   */
+  roleForIndex?(index: number): TugListViewCellRole;
 
   /**
    * Subscribe to data-source changes. Listener fires on every change
@@ -389,6 +450,14 @@ const OVERSCAN_COUNT = 3;
 const SCROLL_CORRECTION_THRESHOLD_PX = 4;
 
 /**
+ * Role assigned to a cell when the data source omits `roleForIndex`
+ * or returns `undefined` for an index. Single source of truth for the
+ * "cell" default so the inline reads in render, click, and keydown
+ * paths agree on the fallback identity.
+ */
+const DEFAULT_CELL_ROLE: TugListViewCellRole = "cell";
+
+/**
  * `TugListView` implementation — windowing + cell reuse + delegate
  * lifecycle + SmartScroll-driven scroll-position writes, layered on
  * a sparse height index.
@@ -418,7 +487,12 @@ const SCROLL_CORRECTION_THRESHOLD_PX = 4;
  *   spacer.
  * - Cell wrapper carries `data-tug-list-cell-index` and
  *   `data-tug-list-cell-kind` for test addressability, observer
- *   index lookup, and (later) reuse-pool routing.
+ *   index lookup, and (later) reuse-pool routing. Wrappers for cells
+ *   whose `roleForIndex` is `"header"` or `"footer"` additionally
+ *   carry `data-list-cell-role` set to that value, render with
+ *   `tabIndex={-1}`, and short-circuit the wrapper-level `onSelect`
+ *   dispatch on click and Space/Enter keydown — see the top-of-file
+ *   "Row roles" docstring for the full contract.
  * - Spacer heights write directly to the DOM via `style.height`
  *   ([L06], mirroring `TugMarkdownView`).
  * - Imperative handle: `scrollToIndex` routes through SmartScroll
@@ -1048,10 +1122,17 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // Render the windowed slice. Cells are keyed by
     // `dataSource.idForIndex(i)` per the [D04] item-stable contract so
     // React reconciler matches identity across data-source updates.
+    //
+    // Each entry also carries the cell's role (see "Row roles" in the
+    // top-of-file docstring): captured here at render time so the JSX
+    // below sets `tabIndex` and `data-list-cell-role` consistently for
+    // both the registered-renderer branch and the unknown-kind
+    // placeholder branch.
     const renderedRange: Array<{
       index: number;
       id: string;
       kind: string;
+      role: TugListViewCellRole;
     }> = [];
     // Defensive against a data-source shrink mid-render: if itemCount
     // dropped below the previously-computed window, skip indices that
@@ -1062,6 +1143,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         index: i,
         id: dataSource.idForIndex(i),
         kind: dataSource.kindForIndex(i),
+        role: dataSource.roleForIndex?.(i) ?? DEFAULT_CELL_ROLE,
       });
     }
 
@@ -1089,6 +1171,17 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     const delegateRef = React.useRef(delegate);
     delegateRef.current = delegate;
 
+    // The click and keydown handlers also read `dataSource.roleForIndex`
+    // from a ref so a role transition between render and click is
+    // reflected — e.g. a cell that ticks to `"header"` between mount
+    // and the user's click does NOT fire `onSelect`, even though the
+    // cached click-callback was minted when the role was still
+    // `"cell"`. Reading from the live ref also keeps the cached
+    // callback identity-stable across data-source identity swaps,
+    // mirroring the `delegateRef` pattern above.
+    const dataSourceRef = React.useRef(dataSource);
+    dataSourceRef.current = dataSource;
+
     interface CellCallbacks {
       readonly ref: (el: HTMLDivElement | null) => void;
       readonly click: () => void;
@@ -1115,6 +1208,15 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         }
       };
       const clickCb = (): void => {
+        // Role-aware gate. Header / footer rows are inert section
+        // dividers — clicking them must NOT promote them to first-
+        // responder-style selection. The cell renderer may still
+        // attach its own `onClick` for action-bearing
+        // headers/footers (e.g. a "Forget all" footer); that
+        // listener fires before this wrapper-level handler runs.
+        const role =
+          dataSourceRef.current.roleForIndex?.(index) ?? DEFAULT_CELL_ROLE;
+        if (role !== "cell") return;
         delegateRef.current?.onSelect?.(index);
       };
       // Keyboard activation per [Q06] — cell wrappers are
@@ -1132,9 +1234,18 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // to `onSelect`). Without the guard, the keydown ALSO fires
       // before the synthetic click, and the consumer sees two
       // selections per activation.
+      //
+      // The role gate runs BEFORE `preventDefault`/`stopPropagation`:
+      // a header/footer with a programmatically-focused descendant
+      // that received Enter should not have its event suppressed by
+      // the list view; the descendant's own handler (if any) gets
+      // the unmodified event.
       const keyDownCb = (e: React.KeyboardEvent<HTMLDivElement>): void => {
         if (e.target !== e.currentTarget) return;
         if (e.key !== "Enter" && e.key !== " ") return;
+        const role =
+          dataSourceRef.current.roleForIndex?.(index) ?? DEFAULT_CELL_ROLE;
+        if (role !== "cell") return;
         e.preventDefault();
         e.stopPropagation();
         delegateRef.current?.onSelect?.(index);
@@ -1165,7 +1276,17 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           aria-hidden="true"
         />
         <div className="tug-list-view-window">
-          {renderedRange.map(({ index, id, kind }) => {
+          {renderedRange.map(({ index, id, kind, role }) => {
+            // Role-aware wrapper attributes:
+            //  - `tabIndex` is `0` for cells (focusable, in tab order)
+            //    and `-1` for headers/footers (not focusable). See
+            //    "Row roles" in the top-of-file docstring.
+            //  - `data-list-cell-role` is set only for non-default
+            //    roles, keeping the existing default-cell DOM shape
+            //    byte-identical for backwards-compatible CSS
+            //    selectors that don't yet know about roles.
+            const wrapperTabIndex = role === "cell" ? 0 : -1;
+            const wrapperRoleAttr = role === "cell" ? undefined : role;
             const Renderer = cellRenderers[kind];
             if (Renderer === undefined) {
               // Unknown kind — no renderer registered. Render an
@@ -1182,8 +1303,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                   className="tug-list-view-cell"
                   data-tug-list-cell-index={index}
                   data-tug-list-cell-kind={kind}
+                  data-list-cell-role={wrapperRoleAttr}
                   role="listitem"
-                  tabIndex={0}
+                  tabIndex={wrapperTabIndex}
                   ref={getCellCallbacks(index).ref}
                   onClick={getCellCallbacks(index).click}
                   onKeyDown={getCellCallbacks(index).keyDown}
@@ -1196,8 +1318,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                 className="tug-list-view-cell"
                 data-tug-list-cell-index={index}
                 data-tug-list-cell-kind={kind}
+                data-list-cell-role={wrapperRoleAttr}
                 role="listitem"
-                tabIndex={0}
+                tabIndex={wrapperTabIndex}
                 ref={getCellCallbacks(index).ref}
                 onClick={getCellCallbacks(index).click}
                 onKeyDown={getCellCallbacks(index).keyDown}

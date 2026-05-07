@@ -555,21 +555,21 @@ export interface FilteredTugListViewDataSource extends TugListViewDataSource {
   - Add cases: default role is `"cell"` for data sources without the method; `"header"` cells set the data attribute and `tabIndex={-1}`; clicking a `"header"` cell does not fire `onSelect`; existing transcript-shaped data sources are unaffected.
 
 **Tasks:**
-- [ ] Add the `roleForIndex` declaration to `TugListViewDataSource`.
-- [ ] Thread the role through cell rendering.
-- [ ] Gate focus and `onSelect` on role.
-- [ ] Update the module docstring.
-- [ ] Add unit + integration tests.
-- [ ] Verify existing tests pass without modification.
+- [x] Add the `roleForIndex` declaration to `TugListViewDataSource`.
+- [x] Thread the role through cell rendering.
+- [x] Gate focus and `onSelect` on role.
+- [x] Update the module docstring.
+- [x] Add unit + integration tests.
+- [x] Verify existing tests pass without modification.
 
 **Tests:**
-- [ ] `bun test src/components/tugways/__tests__/tug-list-view.test.tsx` covers the new cases.
-- [ ] `bun test src/lib/__tests__/tide-transcript-data-source.test.ts` continues to pass (drift check).
+- [x] `bun test src/components/tugways/__tests__/tug-list-view.test.tsx` covers the new cases.
+- [x] `bun test src/lib/__tests__/tide-transcript-data-source.test.ts` continues to pass (drift check).
 
 **Checkpoint:**
-- [ ] `bun run check`
-- [ ] `bun test src/components/tugways/__tests__/tug-list-view.test.tsx`
-- [ ] `bun run audit:tokens lint`
+- [x] `bun run check`
+- [x] `bun test src/components/tugways/__tests__/tug-list-view.test.tsx`
+- [x] `bun run audit:tokens lint`
 
 ---
 
