@@ -764,19 +764,19 @@ export interface FilteredTugListViewDataSource extends TugListViewDataSource {
   - Subscribe/unsubscribe: one tick per upstream change.
 
 **Tasks:**
-- [ ] Define `PickerRow`.
-- [ ] Implement `TidePickerDataSource`.
-- [ ] Implement `useTidePickerDataSource`.
-- [ ] Write the module docstring.
-- [ ] Write the tests listed above.
+- [x] Define `PickerRow`.
+- [x] Implement `TidePickerDataSource`.
+- [x] Implement `useTidePickerDataSource`.
+- [x] Write the module docstring.
+- [x] Write the tests listed above.
 
 **Tests:**
-- [ ] `bun test src/lib/__tests__/tide-picker-data-source.test.ts` — all cases pass.
+- [x] `bun test src/lib/__tests__/tide-picker-data-source.test.ts` — all cases pass.
 
 **Checkpoint:**
-- [ ] `bun run check`
-- [ ] `bun test src/lib/__tests__/tide-picker-data-source.test.ts`
-- [ ] `bun run audit:tokens lint`
+- [x] `bun run check`
+- [x] `bun test src/lib/__tests__/tide-picker-data-source.test.ts`
+- [x] `bun run audit:tokens lint`
 
 ---
 
