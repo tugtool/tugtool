@@ -132,7 +132,13 @@ export const TugBanner = React.forwardRef<HTMLDivElement, TugBannerProps>(
     // down mid-deferral or mid-exit-animation), release it so the
     // attribute doesn't leak past the component's lifetime. Empty
     // deps ensure this cleanup runs only once, on unmount.
-    React.useEffect(() => {
+    //
+    // useLayoutEffect (not useEffect) so the inert release happens
+    // synchronously with the unmount commit — same paint as the
+    // banner disappearing. With useEffect, the inert clear would land
+    // a frame after the banner is gone, leaving the canvas briefly
+    // non-interactive even though there's nothing on top of it.
+    React.useLayoutEffect(() => {
       return () => {
         if (inertOwnerRef.current) {
           inertOwnerRef.current.removeAttribute("inert");

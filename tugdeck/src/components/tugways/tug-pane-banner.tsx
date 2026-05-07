@@ -201,6 +201,26 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
     // and abandon the deferral.
     const deferredExitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+    // Unmount-only safety net for the deferral timer. The gate's
+    // commitment is binding once `committedToExitRef` is set, which
+    // means the exit effect intentionally does NOT return a cleanup
+    // that clears the timer on re-runs (so visible: true mid-deferral
+    // doesn't unwind the gate). The trade-off: when the parent
+    // unmounts the banner mid-deferral, no effect cleanup catches the
+    // pending timer, the closure stays alive until the timer fires,
+    // and `runExit` runs on detached DOM (harmless but wasteful). This
+    // empty-deps effect closes that gap — its cleanup runs once on
+    // unmount and clears any pending timer so the closure can be
+    // collected promptly. Mirrors the same pattern in TugBanner.
+    useLayoutEffect(() => {
+      return () => {
+        if (deferredExitTimerRef.current !== null) {
+          clearTimeout(deferredExitTimerRef.current);
+          deferredExitTimerRef.current = null;
+        }
+      };
+    }, []);
+
     // Stable renderable props through the exit animation. When the
     // parent flips `visible` from true → false, it commonly drops
     // the matching content props at the same render — message, icon,
@@ -482,12 +502,24 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
         g.finished.then(finishExit).catch(finishExit);
       };
 
-      // shownAt is null only if the banner was unmounted before its
-      // enter-animation effect ran — degenerate case; treat as "no
-      // dwell required, exit immediately". The `?? nowFnRef.current()`
-      // makes `remaining` zero in that case.
-      const shownAt = shownAtRef.current ?? nowFnRef.current();
-      const remaining = Math.max(0, minMountedMs - (nowFnRef.current() - shownAt));
+      // shownAt is null only if the banner reached the exit branch
+      // without the enter-animation effect having run — unreachable
+      // in normal flow because (!visible && mounted) implies a prior
+      // (visible && mounted) commit, which would have recorded
+      // shownAt. Handle defensively: an unrecorded shownAt means we
+      // have no dwell history to honor, so skip the deferral and run
+      // the exit immediately. (A `?? now` fallback would compute
+      // `remaining = minMountedMs` and defer the FULL floor, which is
+      // the opposite of the intent here.)
+      if (shownAtRef.current === null) {
+        runExit();
+        return;
+      }
+
+      const remaining = Math.max(
+        0,
+        minMountedMs - (nowFnRef.current() - shownAtRef.current),
+      );
 
       if (remaining > 0) {
         deferredExitTimerRef.current = setTimeout(runExit, remaining);
