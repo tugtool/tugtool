@@ -2,11 +2,12 @@
 
 ## Tide Transcript — Interrupt, Atoms, Prefetching, Close-out {#tide-transcript-followon}
 
-**Purpose:** Three small follow-ons to the [Tide transcript resume work](./tugplan-tide-transcript-resume.md) that were absorbed from the parent [tugplan-tug-list-view.md](./tugplan-tug-list-view.md) roadmap during planning but didn't ship in the resume plan's recovery saga. This is the cleanup pass:
+**Purpose:** Four small follow-ons to the [Tide transcript resume work](./tugplan-tide-transcript-resume.md). Three were absorbed from the parent [tugplan-tug-list-view.md](./tugplan-tug-list-view.md) roadmap during planning but didn't ship in the resume plan's recovery saga; the fourth (banner mount-time gate) surfaced from dogfooding the loading strip on fast replays. This is the cleanup pass:
 
 1. **Phase-aware interrupt** — split cancellation into the pre-first-delta case (CASE A — `phase === "submitting"`, the wire is silent, no `activeMsgId` exists) and the post-first-delta cases (CASE B — `phase ∈ {awaiting_first_token, streaming, tool_work, awaiting_approval}`, claude has produced content under an `activeMsgId`). CASE A returns the user's prompt text + atoms to the editor for re-edit and emits no transcript entry; CASE B keeps the existing committed-interrupted-turn path unchanged.
 2. **Atom-aware user rows** — `UserRowCell` switches from a plain `<span>` body to a body that renders `userMessage.attachments` as inline atoms when present, falling back to plain text for legacy or attachment-empty turns.
-3. **`TugListView` prefetching protocol** — `delegate.prefetchForIndices(indices)` / `delegate.cancelPrefetchForIndices(indices)` plus a viewport-prediction window. Delegate-only; consumers decide what to prefetch.
+3. **Banner minimum-mount-time gate** — `TugBanner` and `TugPaneBanner` gain a `minMountedMs` prop (default 500) that holds the visible state for at least that long after first appearing, so a fast order-in / order-out cycle can't produce a sub-perceptual flash. Adopted for the "Loading conversation" pane banner in tide cards.
+4. **`TugListView` prefetching protocol** — `delegate.prefetchForIndices(indices)` / `delegate.cancelPrefetchForIndices(indices)` plus a viewport-prediction window. Delegate-only; consumers decide what to prefetch.
 
 Concludes with a tuglaws cross-check pass and updates the parent roadmap rows to "shipped."
 
@@ -19,7 +20,7 @@ Concludes with a tuglaws cross-check pass and updates the parent roadmap rows to
 | Owner | Ken Kocienda |
 | Status | draft |
 | Target branch | tugplan-tide-transcript-followon |
-| Last updated | 2026-05-05 |
+| Last updated | 2026-05-07 |
 | Roadmap anchor | [tugplan-tug-list-view.md #roadmap](./tugplan-tug-list-view.md#roadmap) — atom-aware user rows + prefetching protocol were absorbed from this anchor; the sticky-seed item shipped via other means and a phase-aware interrupt step joined the plan in its place |
 | Predecessors | [tugplan-tide-transcript-resume.md](./tugplan-tide-transcript-resume.md) (closed 2026-05-04 — resume from JSONL ships, mid-turn deferred to its own investigation). The work here builds on the surfaces that plan put in place: `TideTranscriptDataSource`, `UserRowCell`, `TugListView` |
 | Successors | parent [tugplan-tide-card-polish.md](./tugplan-tide-card-polish.md) §step-12 (markdown styling) and §step-13 (thinking + tool surfaces); an eventual `tugplan-tug-list-view-v2-imperative-pool.md` resolves live-turn flicker via imperative DOM pooling |
@@ -49,6 +50,7 @@ The mid-turn case (Smoke D) is *not* in this plan. It's its own investigation in
 - An interrupt fired while `phase === "submitting"` (CASE A — no `activeMsgId`, scratch empty) restores the user's prompt text + atoms back into the editor surface, leaves the transcript untouched, and lands the snapshot at `phase: "idle"` after the wire's `turn_complete(error)` rolls in. (Verified: reducer tests for the submitting-phase interrupt path; integration assertion that the editor reflects the restored draft.)
 - An interrupt fired while `phase ∈ {awaiting_first_token, streaming, tool_work, awaiting_approval}` (CASE B) preserves today's behavior — partial scratch commits as a `TurnEntry` with `result: "interrupted"`. (Verified: existing `code-session-store.interrupt.test.ts` regression coverage continues to pass; one additional case for the `awaiting_first_token` boundary.)
 - The `user` cell renderer accepts `AtomSegment[]` content and renders atoms inline alongside text once `userMessage.attachments` carries the typed shape. (Verified: cell-renderer unit test against a fixture turn whose `attachments` is `AtomSegment[]`.)
+- A banner with `minMountedMs={500}` that flips `visible: true → false` within ~50ms of mount stays on screen for at least 500ms before its exit animation begins; once committed to exit, a re-asserted `visible: true` is ignored until the banner has fully unmounted. The replay-loading pane banner in tide cards exhibits this behavior on fast resumes. (Verified: `TugPaneBanner` and `TugBanner` unit tests for fast-unmount, slow-unmount, re-entry-rejection, and `minMountedMs={0}` opt-out.)
 - The `TugListView` prefetching protocol exposes `delegate.prefetchForIndices` and `delegate.cancelPrefetchForIndices` and dispatches them based on a viewport-prediction window; a delegate that opts in observes prefetch / cancel calls in correct order on scroll. (Verified: `TugListView` unit tests.)
 - Tuglaws cross-check passes per-step.
 - `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run` green at every step.
@@ -57,8 +59,9 @@ The mid-turn case (Smoke D) is *not* in this plan. It's its own investigation in
 
 1. **Phase-aware interrupt path** in `CodeSessionStore`'s reducer + `TugPromptEntry`'s submit/interrupt handler. The reducer's `handleInterrupt` branches on phase: when `state.phase === "submitting"` (CASE A — wire was silent, no `activeMsgId`, scratch empty), it captures `pendingUserMessage` into a one-shot snapshot slot for the editor to consume, marks the in-flight cycle so the eventual `turn_complete(error)` does not append a phantom transcript entry, and clears `pendingUserMessage` immediately so the in-flight pair stops rendering. CASE B (post-first-delta) is unchanged from today.
 2. **Atom-aware user rows.** `UserRowCell` switches from a plain `<span>` body to a body that renders `userMessage.attachments` as inline atoms when present, falling back to plain text for legacy or attachment-empty turns.
-3. **`TugListView` prefetching protocol.** `delegate.prefetchForIndices(indices)` / `delegate.cancelPrefetchForIndices(indices)` plus a viewport-prediction window. Delegate-only — `TugListView` does not assume any specific prefetch behavior; consumers decide.
-4. **Tuglaws walkthrough + plan close-out**, mirroring the parent plan's pattern.
+3. **Banner minimum-mount-time gate.** `TugPaneBanner` and `TugBanner` (status variant) accept a `minMountedMs` prop (default 500). When a parent flips `visible: true → false` before the floor has elapsed, the exit animation is deferred until the floor is reached; the banner then runs its existing exit and unmount path. Once committed to exit, the gate ignores any subsequent `visible: true` until the unmount completes — matching the user-stated rule that an ordered-out banner "can't be revived/canceled/restored." Adopted for the `replay-loading` branch of `renderTideCardBanner` in `tide-card.tsx`.
+4. **`TugListView` prefetching protocol.** `delegate.prefetchForIndices(indices)` / `delegate.cancelPrefetchForIndices(indices)` plus a viewport-prediction window. Delegate-only — `TugListView` does not assume any specific prefetch behavior; consumers decide.
+5. **Tuglaws walkthrough + plan close-out**, mirroring the parent plan's pattern.
 
 Out of scope:
 
@@ -71,7 +74,7 @@ Out of scope:
 
 ### Phases and Steps {#phases-and-steps}
 
-#### Phase A — Transcript surfaces (interrupt + atom rendering) {#phase-a}
+#### Phase A — Transcript surfaces (interrupt, atom rendering, banner gate) {#phase-a}
 
 #### Step 1.1: Phase-aware interrupt — restore prompt for CASE A, commit-interrupted for CASE B {#step-1-1}
 
@@ -184,11 +187,109 @@ CASE B — `state.phase ∈ {awaiting_first_token, streaming, tool_work, awaitin
 
 ---
 
-#### Phase B — TugListView prefetching {#phase-b}
-
-#### Step 3: `TugListView` prefetching protocol {#step-3}
+#### Step 3: Banner minimum-mount-time gate {#step-3}
 
 **Depends on:** [Step 2](#step-2)
+
+**Commit:** `tugways(banners): minMountedMs gate to suppress flash-and-vanish`
+
+**Background:** Card-level surfaces driven by short-lived state can mount and unmount inside a single perceptual frame. Concretely: when `deriveTideCardBannerSpec` flips from `replay-loading` to `none` within ~50–200ms (a JSONL replay that resolves before the soft-budget ever fires), the loading strip gets just enough screen time for the user to see motion but not enough to read it — the visual reads as "something flashed and broke." The same pattern applies to any of `TugPaneBanner`'s transient kinds (transport blip during reconnect, `replay-timeout` dwell collapsing under a fast retry).
+
+`TugPaneBanner` already owns a presence-across-exit-animation hold via its internal `mounted` state and `lastVisiblePropsRef`. The gate is a small extension: don't let the *exit animation* start until the banner has been visible for at least `minMountedMs` since first becoming visible. The hold reuses the existing `mounted` machinery so the parent's reconciliation contract doesn't change.
+
+`renderTideCardBanner` in `tide-card.tsx` already returns a single `<TugPaneBanner>` from each spec branch — React reconciles those JSX returns as the same instance, so adopting the gate is a one-prop change on the active branch; no parent restructuring required.
+
+**Semantics:**
+
+- `minMountedMs` is the floor on visibility duration, measured from the first paint where `visible: true`. Default `500`.
+- When `visible` flips false: if `now - shownAt >= minMountedMs`, the exit animation runs immediately (today's behavior). Otherwise the exit is deferred by `minMountedMs - (now - shownAt)` ms; after the deferral, the existing exit animation starts and the existing `g.finished → setMounted(false)` chain unmounts the portal.
+- During the deferral, the banner keeps showing the *held* props (today's `lastVisiblePropsRef` value), exactly as it would during a normal exit-in-flight.
+- Once an exit is committed (deferral pending or animation in flight), subsequent `visible: true` from the parent is **ignored** until `mounted` flips back to false. After that, a fresh `visible: true` starts a normal enter cycle and resets `shownAt`. ("It can't be revived/canceled/restored" — the user's rule.)
+- `minMountedMs={0}` opts out — the gate is a no-op and today's behavior is preserved exactly.
+- Timing uses `performance.now()` (monotonic; survives wall-clock skew) and a single `setTimeout` for the deferral. The cleanup function clears the timer; there is no in-flight animation to cancel during the deferral window because we haven't started one yet. Once the timeout fires and the existing exit animation begins, today's `g.finished.then(setMounted(false)).catch(setMounted(false))` chain runs unchanged — including the case where the parent unmounts the banner mid-animation (React swallows the late `setMounted` on an unmounted component, same as today).
+
+**Lifecycle event behavior under the gate:**
+
+The existing `useBannerLifecycle` events (`bannerWillShow` / `bannerDidShow` / `bannerWillHide` / `bannerDidHide`) keep their meanings; the gate changes their *timing* in two ways:
+
+- **`bannerWillHide` fires on the parent's `visible: true → false` transition (today's contract), even when the actual unmount is deferred.** A subscriber that uses `willHide` to start prefetching focus restoration will start that work `dwell + exit-anim` ms before `didHide`, instead of just `exit-anim` ms before. Acceptable; the contract is still "the parent intends the banner to leave."
+- **`bannerDidShow` is *more* reliable under the gate.** Today, a fast `visible: true → false` interrupts the enter animation and `g.finished` rejects, so `didShow` is swallowed by the `.catch` on its emission. With the gate, the enter animation has time to complete (because the floor is at least 500ms and a typical enter is 200–300ms), so `didShow` fires reliably for short-lived banners. Subscribers that depend on `didShow` to land focus or finalize layout get a more deterministic signal.
+- **Late `visible: true → false → true → false` flips during the deferral do not emit additional `willHide` or `willShow` events.** Once `committedToExitRef` is true, the gate ignores both directions until `mounted` returns to false. The next *clean-cycle* `visible: true` (after a real unmount) re-arms `prevVisibleForLifecycleRef` and emits a fresh `willShow`.
+- **`bannerDidHide` fires once, at the moment `mounted` flips false** (after the deferred exit completes). Unchanged from today's contract; the gate just pushes the moment later.
+
+**Artifacts:**
+
+- `tugdeck/src/components/tugways/tug-pane-banner.tsx`:
+  - Add `minMountedMs?: number` to `TugPaneBannerProps`. Default `500`.
+  - Add `shownAtRef: React.MutableRefObject<number | null>` initialised null. **Record it in the enter-animation effect** (the `(visible && mounted)` `useLayoutEffect` that calls `g.animate(...)` for the slide-in), guarded by `if (shownAtRef.current === null) shownAtRef.current = performance.now();`. This keeps the timestamp ~one frame closer to actual paint than recording it in the presence effect — the presence effect runs *before* `mounted` flips, so its `setMounted(true)` is followed by a re-render and a second `useLayoutEffect` cycle before paint. Recording in the enter-animation effect (which runs in the post-`setMounted` render, just before paint) gives a more honest "first visible on screen" floor.
+  - Add `committedToExitRef: React.MutableRefObject<boolean>` initialised false. Add `deferredExitTimerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>` initialised null so cleanup paths can find the pending timer.
+  - Modify the existing exit-animation effect so that on `(!visible && mounted)`: set `committedToExitRef.current = true`; compute `remaining = max(0, minMountedMs - (performance.now() - (shownAtRef.current ?? performance.now())))`; if `remaining > 0`, schedule the existing exit-animation body via `setTimeout(remaining)`, store the handle in `deferredExitTimerRef`, and return a cleanup that clears the timer; otherwise run today's body directly.
+  - Modify the presence effect so it short-circuits when `committedToExitRef.current === true` and `visible: true` arrives — i.e., do not flip `mounted: false → true`, do not call `bannerWillShow`, and (by extension) do not affect `prevVisibleForLifecycleRef` so a later real-cycle `false → true` flip is still detected. The gate owns presence until `mounted` returns to false.
+  - When the existing `g.finished` → `setMounted(false)` runs, also reset `shownAtRef.current = null`, `committedToExitRef.current = false`, and `deferredExitTimerRef.current = null` so the next `visible: true` starts cleanly.
+- `tugdeck/src/components/tugways/tug-banner.tsx`:
+  - Add `minMountedMs?: number` to `TugBannerProps`. Default `500`. Apply the gate to the **status variant only** — that's the variant with the slide-in / slide-out pair the gate makes sense for. The error variant is conditionally rendered by `ErrorBoundary` as terminal fallback UI (it never toggles), so passing `minMountedMs` is silently ignored there.
+  - The status variant's animation logic lives inside one `useLayoutEffect`; track `shownAtRef` and `committedToExitRef` analogously, and defer the slide-out branch by `remaining` ms when needed. The inert-removal `.finished` chain naturally follows the deferred exit.
+- `tugdeck/src/components/tugways/cards/tide-card.tsx`:
+  - In `renderTideCardBanner`'s `replay-loading` branch, pass `minMountedMs={500}` explicitly (the default would suffice, but the explicit prop reads as intent at the motivating call site).
+  - In `renderTideCardBanner`'s `error` branch, pass `minMountedMs={0}` — user-visible failures should exit on dismiss without a 500ms hold (see Tasks).
+  - Add a docstring note to `renderTideCardBanner`: *"All branches return `<TugPaneBanner>` at the same JSX position with no `key` — this is intentional. React reconciles them as a single instance so the banner can hold props and gate min-mount-time across kind transitions. Do not key these branches by `spec.kind`; doing so would unmount-then-mount on every kind change and silently disable the gate."*
+- Test extensions in `tugdeck/src/__tests__/tug-pane-banner.test.tsx`:
+  - **Fast unmount**: render `<TugPaneBanner visible={true} minMountedMs={500} … />`, advance fake timers to `t = 50ms`, re-render with `visible={false}`. Assert the banner DOM is still in the document at `t = 200ms` and at `t = 499ms`; assert it is gone by `t = 500ms + exit-anim-duration + 1`.
+  - **Slow unmount**: render visible, advance to `t = 600ms`, re-render visible=false. Assert the exit animation starts immediately (no deferral observed — the banner DOM begins unmounting on the same tick the exit animation finishes).
+  - **Re-entry rejection**: render visible at `t = 0`, re-render visible=false at `t = 100ms`, re-render visible=true at `t = 200ms`. Assert the banner still unmounts at `~t = 500ms + exit-anim-duration` (the late `visible: true` was ignored). After unmount, a subsequent re-render with `visible=true` starts a fresh enter cycle (`shownAt` resets).
+  - **Opt-out**: `minMountedMs={0}` — fast unmount path matches today's behavior exactly (exit animation starts on the same tick `visible` flips false).
+  - **Test-harness setup caveat**: the gate compares `performance.now()` to `shownAt`. happy-dom's `performance.now()` reads the real clock by default, so `vi.useFakeTimers()` alone will *not* fake the gate's clock — the test will appear green while actually racing the wall clock, and a slow CI runner can flip the result. Configure the test with `vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance', 'Date'] })`, *or* expose a `nowMs?: () => number` prop on the banner (default `performance.now`) and inject a fake clock from tests. Pick one approach and use it consistently across both banner test files.
+- Test extensions in `tugdeck/src/__tests__/tug-banner.test.tsx` (or create the file if it doesn't exist) — the same four cases for the status variant, with the same fake-clock setup.
+
+**Tasks:**
+
+- [ ] Add `minMountedMs` prop + gate to `TugPaneBanner` (record `shownAt` in the enter-animation effect; track `committedToExitRef` and `deferredExitTimerRef`; reset all three when `mounted` flips false).
+- [ ] Add `minMountedMs` prop + gate to `TugBanner` (status variant only).
+- [ ] Adopt `minMountedMs={500}` for the `replay-loading` branch in `renderTideCardBanner`.
+- [ ] Adopt `minMountedMs={0}` for the `error` branch in `renderTideCardBanner` (opt-out — user-visible failures should not be held).
+- [ ] Add the reconciliation-invariant docstring note to `renderTideCardBanner` (see Artifacts).
+- [ ] Pick a fake-clock strategy (vitest `toFake: ['performance', ...]` *or* a `nowMs` injection prop) and use it consistently across both banner test files.
+- [ ] Author the test cases for both components.
+
+**Tests:**
+
+- [ ] `TugPaneBanner` fast unmount: held visible for at least `minMountedMs`, then exits cleanly.
+- [ ] `TugPaneBanner` slow unmount: exit starts immediately, no deferral observed.
+- [ ] `TugPaneBanner` re-entry rejection: visible=true → false → true within the dwell → banner exits at the floor; the late true is ignored. A fresh true after unmount starts a new enter cycle.
+- [ ] `TugPaneBanner` opt-out (`minMountedMs={0}`): behavior identical to pre-step baseline.
+- [ ] `TugPaneBanner` lifecycle events: `bannerWillHide` fires once on `visible: true → false` (not on every flap during deferral); `bannerDidShow` fires reliably for short-lived banners now that the enter animation isn't interrupted; `bannerDidHide` fires once on the deferred unmount.
+- [ ] `TugBanner` (status): same four cases.
+- [ ] Tide replay-loading adoption: a `replay_complete` arriving < 100ms after `replay_started` does not collapse the loading strip — it stays up until the floor.
+- [ ] Tide error-branch opt-out: dismissing an `error` banner exits on the same tick (no 500ms hold).
+
+**Tuglaws cross-check:**
+
+- **L06** — gate state lives in refs + the existing `setMounted` flow, not in additional React state for appearance. The visual hold rides the existing `mounted` + `lastVisiblePropsRef` machinery; no new appearance-routed state.
+- **L13** — the deferral is a `setTimeout` around the existing `TugAnimator` group call; we don't switch motion regimes. Cleanup clears the pending timer (no animation has started during the deferral, so there is nothing to cancel; once the timer fires, today's `g.finished` chain runs unchanged).
+- **L14** — no CSS keyframes added; the gate works by deferring the imperative animation start, which TugAnimator owns.
+- **L19** — `data-slot`, `data-visible`, and `data-variant` on the root continue to reflect the *visible-on-screen* state, not the parent's last-asked `visible` prop, for selectors that query "is the banner up right now."
+- **L24** — the gate is a structural concern owned by the structure-zone primitive (the banner). Consumers configure with one number; they don't reach into the gate's internals.
+
+**Open questions / decisions:**
+
+- *Default value.* `500ms` matches the user's spec. Worth revisiting after first dogfood — if the loading strip still feels stuttery on a fast resume, bump to 750–1000ms.
+- *Cross-kind transitions are intentionally not gated.* When the spec moves from one kind to another (e.g. `replay-loading` → `transport`), `visible` stays true across the transition; the gate doesn't fire. Today's `lastVisiblePropsRef` handles the prop swap. The user sees one banner the whole time, with content that updates — which is the desired behavior. Documented here so a future implementer doesn't try to "fix" what isn't broken.
+- *Other consumers of `TugPaneBanner` / `TugBanner` (status variant) inherit the 500ms default.* Audit at adoption time: if any existing call site renders a banner whose visibility is driven by short-lived state similar to `replay-loading`, the gate helps it for free. If any call site renders a banner that should dismiss instantly (e.g., a user-acknowledged confirmation), pass `minMountedMs={0}`. Recommended sweep: grep for `TugPaneBanner` and `TugBanner` call sites at adoption time and tag each with the chosen value, even if it's the default.
+
+**Checkpoint:**
+
+- [ ] `bun x tsc --noEmit` — exit 0.
+- [ ] `bun test` — green.
+- [ ] `bun run audit:tokens lint` — zero violations.
+- [ ] `cargo nextest run` — green.
+
+---
+
+#### Phase B — TugListView prefetching {#phase-b}
+
+#### Step 4: `TugListView` prefetching protocol {#step-4}
+
+**Depends on:** [Step 3](#step-3)
 
 **Commit:** `tug-list-view: delegate.prefetchForIndices + cancelPrefetchForIndices`
 
@@ -231,9 +332,9 @@ CASE B — `state.phase ∈ {awaiting_first_token, streaming, tool_work, awaitin
 
 #### Phase C — Tuglaws walkthrough + close-out {#phase-c}
 
-#### Step 4: Tuglaws walkthrough + plan close-out {#step-4}
+#### Step 5: Tuglaws walkthrough + plan close-out {#step-5}
 
-**Depends on:** [Step 3](#step-3)
+**Depends on:** [Step 4](#step-4)
 
 **Commit:** `tide(transcript): tuglaws walkthrough; close out follow-on plan`
 
@@ -243,12 +344,12 @@ CASE B — `state.phase ∈ {awaiting_first_token, streaming, tool_work, awaitin
 
 - Per-step compliance review against each tuglaws document. Findings either land as small fixes in this commit or are explicitly logged.
 - `tugplan-tug-list-view.md #roadmap` updated: `Atom-aware rendering for user rows`, `Prefetching protocol` rows flipped to "shipped — see [tugplan-tide-transcript-followon.md]". (`Stable in-flight ↔ committed id` was completed by other means and is reflected on the parent roadmap independently of this plan.)
-- `tide.md §T3.4.a` (or successor anchor) updated to reflect that JSONL replay on resume + phase-aware interrupt + atom-aware user rows + prefetching are all shipped.
+- `tide.md §T3.4.a` (or successor anchor) updated to reflect that JSONL replay on resume + phase-aware interrupt + atom-aware user rows + banner min-mount-time gate + prefetching are all shipped.
 - Plan Metadata `Status` flips to `shipped`.
 
 **Tasks:**
 
-- [ ] Walk each tuglaw against this plan's diff (Steps 1.1–3).
+- [ ] Walk each tuglaw against this plan's diff (Steps 1.1–4).
 - [ ] Update parent roadmap rows in `tugplan-tug-list-view.md`.
 - [ ] Update `tide.md` reference if needed.
 
@@ -264,12 +365,13 @@ CASE B — `state.phase ∈ {awaiting_first_token, streaming, tool_work, awaitin
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** Three small transcript / list-view polish items: a phase-aware interrupt path that distinguishes CASE A (`submitting`, restore prompt to editor) from CASE B (post-first-delta, commit interrupted turn), atom-aware user rows, and the `TugListView` prefetching protocol. Plus a tuglaws walkthrough that closes out this plan and updates the parent roadmap rows.
+**Deliverable:** Four small transcript / list-view / banner polish items: a phase-aware interrupt path that distinguishes CASE A (`submitting`, restore prompt to editor) from CASE B (post-first-delta, commit interrupted turn), atom-aware user rows, a banner minimum-mount-time gate (adopted for the "Loading conversation" pane banner), and the `TugListView` prefetching protocol. Plus a tuglaws walkthrough that closes out this plan and updates the parent roadmap rows.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
 - [ ] CASE A interrupt restores the user's prompt (text + atoms) to the editor and emits no transcript entry; CASE B continues to commit an interrupted `TurnEntry` with the partial scratch content.
 - [ ] `UserRowCell` renders inline atoms when `attachments` is non-empty.
+- [ ] `TugPaneBanner` and `TugBanner` (status variant) honor `minMountedMs` (default 500): a fast `visible: true → false` cycle holds the banner on screen for at least the floor before the exit animation starts; once committed to exit, re-asserted `visible: true` is ignored. The replay-loading pane banner adopts the gate.
 - [ ] `TugListView` dispatches `prefetchForIndices` / `cancelPrefetchForIndices` on a working window.
 - [ ] Tuglaws cross-check passes per-step.
 - [ ] `tugplan-tug-list-view.md #roadmap` rows for absorbed items flipped to "shipped".
@@ -279,7 +381,8 @@ CASE B — `state.phase ∈ {awaiting_first_token, streaming, tool_work, awaitin
 
 - [ ] Phase-aware interrupt tests (Step 1.1).
 - [ ] Atom-aware user-row tests (Step 2).
-- [ ] `TugListView` prefetch tests (Step 3).
+- [ ] Banner min-mount-time gate tests (Step 3).
+- [ ] `TugListView` prefetch tests (Step 4).
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
@@ -291,7 +394,8 @@ CASE B — `state.phase ∈ {awaiting_first_token, streaming, tool_work, awaitin
 |-|-|
 | Tokens lint clean | `bun run audit:tokens lint` |
 | Phase-aware interrupt tests | `bun test src/lib/code-session-store/__tests__/code-session-store.interrupt.test.ts` |
-| List-view prefetch tests | `bun test src/components/tugways/__tests__/tug-list-view.test.tsx` |
 | Atom-aware user-row tests | `bun test src/__tests__/tide-card-transcript.test.tsx` |
+| Banner min-mount-time gate tests | `bun test src/__tests__/tug-pane-banner.test.tsx src/__tests__/tug-banner.test.tsx` |
+| List-view prefetch tests | `bun test src/components/tugways/__tests__/tug-list-view.test.tsx` |
 | TS clean | `bun x tsc --noEmit` |
 | Rust clean | `cargo nextest run` |
