@@ -13,7 +13,7 @@
  * into React state) and produced a class of bugs where services tore
  * themselves down on a binding-field update, sent a stray
  * `close_session` frame to the supervisor, and remounted the picker
- * mid-conversation.
+ * mid-session.
  *
  * This store is the structure-zone source of truth ([L24]). It
  * subscribes to `cardSessionBindingStore` *once* at module init,

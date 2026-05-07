@@ -270,7 +270,7 @@ export interface CodeSessionSnapshot {
    * without leaving the phase. Reset when phase leaves replaying
    * (or on the next `replay_started`). Drives count-aware banner
    * copy per [D10] — the banner can promote from generic
-   * "Loading conversation…" to "Loading conversation… (N turns)"
+   * "Loading session…" to "Loading session… (N turns)"
    * once the user has been waiting long enough that progress detail
    * is reassuring rather than noisy.
    */

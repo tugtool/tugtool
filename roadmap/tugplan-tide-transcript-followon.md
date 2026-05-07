@@ -6,7 +6,7 @@
 
 1. **Phase-aware interrupt** — split cancellation into the pre-first-delta case (CASE A — `phase === "submitting"`, the wire is silent, no `activeMsgId` exists) and the post-first-delta cases (CASE B — `phase ∈ {awaiting_first_token, streaming, tool_work, awaiting_approval}`, claude has produced content under an `activeMsgId`). CASE A returns the user's prompt text + atoms to the editor for re-edit and emits no transcript entry; CASE B keeps the existing committed-interrupted-turn path unchanged.
 2. **Atom-aware user rows** — `UserRowCell` switches from a plain `<span>` body to a body that renders `userMessage.attachments` as inline atoms when present, falling back to plain text for legacy or attachment-empty turns.
-3. **Banner minimum-mount-time gate** — `TugBanner` and `TugPaneBanner` gain a `minMountedMs` prop (default 500) that holds the visible state for at least that long after first appearing, so a fast order-in / order-out cycle can't produce a sub-perceptual flash. Adopted for the "Loading conversation" pane banner in tide cards.
+3. **Banner minimum-mount-time gate** — `TugBanner` and `TugPaneBanner` gain a `minMountedMs` prop (default 500) that holds the visible state for at least that long after first appearing, so a fast order-in / order-out cycle can't produce a sub-perceptual flash. Adopted for the "Loading session" pane banner in tide cards.
 4. **`TugListView` prefetching protocol** — `delegate.prefetchForIndices(indices)` / `delegate.cancelPrefetchForIndices(indices)` plus a viewport-prediction window. Delegate-only; consumers decide what to prefetch.
 
 Concludes with a tuglaws cross-check pass and updates the parent roadmap rows to "shipped."
@@ -262,7 +262,7 @@ Per the user-stated constraint that happy-dom must not host cross-render React l
 
 - [x] Pre-existing `tug-pane-banner.test.tsx` continues to pass with `minMountedMs={0}` opt-outs on the two animation-path tests.
 - [x] Pre-existing `tide-card-banner-spec.test.ts` continues to pass unchanged.
-- [ ] Manual HMR verification: trigger a fast replay (a session whose JSONL replay completes in < 100ms) and confirm the "Loading conversation…" strip remains visible for ~500ms before sliding out, instead of flashing and vanishing. (Pending dogfood; not a blocker for landing the gate.)
+- [ ] Manual HMR verification: trigger a fast replay (a session whose JSONL replay completes in < 100ms) and confirm the "Loading session…" strip remains visible for ~500ms before sliding out, instead of flashing and vanishing. (Pending dogfood; not a blocker for landing the gate.)
 
 **Tuglaws cross-check:**
 
@@ -369,7 +369,7 @@ Per the user-stated constraint that happy-dom must not host cross-render React l
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** Four small transcript / list-view / banner polish items: a phase-aware interrupt path that distinguishes CASE A (`submitting`, restore prompt to editor) from CASE B (post-first-delta, commit interrupted turn), atom-aware user rows, a banner minimum-mount-time gate (adopted for the "Loading conversation" pane banner), and the `TugListView` prefetching protocol. Plus a tuglaws walkthrough that closes out this plan and updates the parent roadmap rows.
+**Deliverable:** Four small transcript / list-view / banner polish items: a phase-aware interrupt path that distinguishes CASE A (`submitting`, restore prompt to editor) from CASE B (post-first-delta, commit interrupted turn), atom-aware user rows, a banner minimum-mount-time gate (adopted for the "Loading session" pane banner), and the `TugListView` prefetching protocol. Plus a tuglaws walkthrough that closes out this plan and updates the parent roadmap rows.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 

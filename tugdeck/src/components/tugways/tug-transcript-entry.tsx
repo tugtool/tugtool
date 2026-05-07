@@ -51,7 +51,7 @@ export type Participant = "user" | "code" | "shell" | "command";
  * Icon rendered in the gutter for each participant. Lucide glyphs picked
  * to read at a glance:
  *
- *   - `User` for `user` — the human in the conversation.
+ *   - `User` for `user` — the human in the session.
  *   - `Bot` for `code` — the assistant.
  *   - `Shell` for `shell` — shell command output.
  *   - `Command` for `command` — `:` surface built-ins.

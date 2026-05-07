@@ -229,7 +229,7 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
   // via `useLayoutEffect` keyed on the binding. That violated [L02]
   // and produced a class of bugs where any React-side dep change tore
   // services down, sent a stray `close_session` frame, and remounted
-  // the picker mid-conversation. The wire close is now sent only by
+  // the picker mid-session. The wire close is now sent only by
   // explicit `cardServicesStore.closeCard(cardId)` calls from the
   // deck-canvas's user-close handler.
   const services = useSyncExternalStore<CardServices | null>(
@@ -1071,7 +1071,7 @@ function TideProjectPickerForm({ notice, onOpen, onCancel, onRetryRestore }: Tid
                 Start fresh
               </span>
               <span className="tide-card-picker-session-option-subtitle">
-                New conversation
+                New session
               </span>
             </span>
           </TugRadioItem>
@@ -1331,8 +1331,8 @@ function renderTideCardBanner(
     // redundant bold label that just repeats the message text).
     const message =
       typeof spec.turnsCount === "number" && spec.turnsCount > 0
-        ? `Loading conversation… (${spec.turnsCount} ${spec.turnsCount === 1 ? "turn" : "turns"})`
-        : "Loading conversation…";
+        ? `Loading session… (${spec.turnsCount} ${spec.turnsCount === 1 ? "turn" : "turns"})`
+        : "Loading session…";
     return (
       <TugPaneBanner
         visible={true}
@@ -1350,7 +1350,7 @@ function renderTideCardBanner(
           <TugProgress
             variant="spinner"
             size="sm"
-            aria-label="Loading conversation"
+            aria-label="Loading session"
           />
         }
         message={message}
@@ -1368,7 +1368,7 @@ function renderTideCardBanner(
         variant="status"
         tone="caution"
         icon="alert-triangle"
-        label="Conversation history unavailable"
+        label="Session history unavailable"
         message="Resuming with empty transcript"
       />
     );

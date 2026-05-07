@@ -305,7 +305,7 @@ export function restoreTideSessions(
       if (fired.has(binding.card_id)) continue;
       fired.add(binding.card_id);
       if (binding.turn_count > 0) {
-        // Real conversation on disk → resume into history.
+        // Real session on disk → resume into history.
         fireRestore(
           binding.card_id,
           binding.session_id,
@@ -356,7 +356,7 @@ function isCardBinding(value: unknown): value is CardBinding {
 /**
  * Spawn a fresh claude session under an existing card→project
  * binding. Used by `restoreTideSessions` for zero-turn rows: the
- * user's previous session never had a real conversation (so there's
+ * user's previous session never had any turns (so there's
  * no JSONL to resume), but the card was bound to a project — keep
  * that binding by spawning a new session under the same project.
  *

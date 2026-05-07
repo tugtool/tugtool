@@ -13,7 +13,7 @@
  *      first `replay_started` event is informational; the user
  *      explicitly asked to resume a session and is waiting for it.
  *      During this window we suppress transient errors and transport
- *      blips so the banner stays a stable "Loading conversation"
+ *      blips so the banner stays a stable "Loading session"
  *      beat instead of flashing through error / transport / loading
  *      kinds during a noisy startup. Preflight clears on the first
  *      of `replay_started` / `replay_complete` / `transport_close` /
@@ -31,8 +31,8 @@
  *      active. Surfaces the failure copy briefly before dismissing.
  *   5. **replay-loading via active phase** — `phase === "replaying"`
  *      (live replay window). The soft-budget flag promotes the
- *      banner copy from the generic "Loading conversation…" to the
- *      count-aware "Loading conversation… (N turns)" once the wait
+ *      banner copy from the generic "Loading session…" to the
+ *      count-aware "Loading session… (N turns)" once the wait
  *      has lasted long enough that progress detail reads as
  *      reassurance rather than noise.
  *   6. **none** — no banner.
@@ -84,8 +84,8 @@ export type TideCardBannerSpec =
        * Number of turns committed to the transcript so far in this
        * replay window. `null` until the soft-budget flag elapses (or
        * during the preflight beat where no replay window has opened
-       * yet). The body promotes the copy from "Loading conversation…"
-       * to "Loading conversation… (N turns)" once a non-null count
+       * yet). The body promotes the copy from "Loading session…"
+       * to "Loading session… (N turns)" once a non-null count
        * lands.
        */
       turnsCount: number | null;
