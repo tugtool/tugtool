@@ -586,18 +586,18 @@ export interface FilteredTugListViewDataSource extends TugListViewDataSource {
 - Edit `tugdeck/src/components/tugways/cards/gallery-registrations.tsx`: register the new gallery card.
 
 **Tasks:**
-- [ ] Implement `GalleryListViewHeadersDataSource`.
-- [ ] Cell renderers for `cell`, `header`, `footer` kinds with distinct visual treatments.
-- [ ] Register in gallery.
+- [x] Implement `GalleryListViewHeadersDataSource`.
+- [x] Cell renderers for `cell`, `header`, `footer` kinds with distinct visual treatments.
+- [x] Register in gallery.
 
 **Tests:**
-- [ ] Manual smoke: open the gallery card; Tab through the list — focus skips header and footer cells.
-- [ ] Manual smoke: cells are visually distinct; the data attribute appears in DevTools.
+- [x] Manual smoke: open the gallery card; Tab through the list — focus skips header and footer cells.
+- [x] Manual smoke: cells are visually distinct; the data attribute appears in DevTools.
 
 **Checkpoint:**
-- [ ] `bun run check`
-- [ ] `bun run audit:tokens lint`
-- [ ] Manual: gallery card mounts, headers visually distinct, focus skips them.
+- [x] `bun run check`
+- [x] `bun run audit:tokens lint`
+- [x] Manual: gallery card mounts, headers visually distinct, focus skips them.
 
 ---
 

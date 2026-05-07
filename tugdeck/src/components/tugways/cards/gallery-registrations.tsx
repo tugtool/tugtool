@@ -65,6 +65,7 @@ import { GallerySheet } from "./gallery-sheet";
 import { GalleryBulletin } from "./gallery-bulletin";
 import { GalleryMarkdownView } from "./gallery-markdown-view";
 import { GalleryListView } from "./gallery-list-view";
+import { GalleryListViewHeaders } from "./gallery-list-view-headers";
 import { GalleryTranscriptEntry } from "./gallery-transcript-entry";
 import { GalleryAtom } from "./gallery-atom";
 import { GalleryPromptEntry } from "./gallery-prompt-entry";
@@ -429,6 +430,22 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.textInput,
+  });
+
+  // Visual smoke for `TugListView`'s row-role feature
+  // (`roleForIndex` → `data-list-cell-role` + `tabIndex={-1}` +
+  // `onSelect` gating). Companion to `gallery-list-view` above:
+  // that card exercises mutation, streaming, and windowing; this
+  // one scopes to the role contract introduced by Phase 0 of
+  // `tugplan-tide-picker-redesign`.
+  registerCard({
+    componentId: "gallery-list-view-headers",
+    contentFactory: (_cardId) => <GalleryListViewHeaders />,
+    defaultMeta: { title: "TugListView (headers)", icon: "List", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
     category: CATEGORIES.textInput,
   });
 
