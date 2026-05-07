@@ -720,11 +720,7 @@ pub fn build_session_updated_frame(row: &crate::session_ledger::SessionRow) -> F
             "turn_count": row.turn_count,
             "first_user_prompt": row.first_user_prompt,
             "state": row.state,
-            // Wire key remains `card_id_live` for backward compatibility
-            // with the existing tugdeck consumer; the column was renamed
-            // to `card_id` (and is now preserved across close/fail) in
-            // step A of the session-keys retirement.
-            "card_id_live": row.card_id,
+            "card_id": row.card_id,
         },
     });
     Frame::new(

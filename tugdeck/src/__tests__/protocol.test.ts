@@ -265,7 +265,7 @@ describe("session ledger CONTROL encoders / decoders", () => {
         turn_count: 0,
         first_user_prompt: null,
         state: "live",
-        card_id_live: "card-1",
+        card_id: "card-1",
       },
     });
     expect(decoded).toEqual({
@@ -279,7 +279,7 @@ describe("session ledger CONTROL encoders / decoders", () => {
         turn_count: 0,
         first_user_prompt: null,
         state: "live",
-        card_id_live: "card-1",
+        card_id: "card-1",
       },
     });
   });

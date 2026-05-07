@@ -71,10 +71,9 @@ export const CONTROL_ACTION_REQUEST_REPLAY = "request_replay";
  * Mirrors `tugrust/crates/tugcast/src/session_ledger.rs::SessionRow` —
  * keep the fields in lockstep when the schema evolves.
  *
- * The wire emits `card_id_live` (legacy key, sourced from the ledger
- * column `card_id`) for backward compatibility with older clients; the
- * field semantically reads as "the card this session is bound to" and
- * is preserved across `mark_closed` / `mark_failed`.
+ * `card_id` is the card this session is bound to. Set on
+ * `record_spawn` and preserved across `mark_closed` / `mark_failed`,
+ * so the persisted row keeps the binding for client-side restore.
  */
 export interface SessionRow {
   session_id: string;
@@ -85,7 +84,7 @@ export interface SessionRow {
   turn_count: number;
   first_user_prompt: string | null;
   state: "live" | "closed" | "failed";
-  card_id_live: string | null;
+  card_id: string | null;
 }
 
 /**

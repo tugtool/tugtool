@@ -229,7 +229,7 @@ function makeSessionRow(partial: Partial<SessionRow> & { session_id: string }): 
     turn_count: partial.turn_count ?? 0,
     first_user_prompt: partial.first_user_prompt ?? null,
     state: partial.state ?? "closed",
-    card_id_live: partial.card_id_live ?? null,
+    card_id: partial.card_id ?? null,
   };
 }
 

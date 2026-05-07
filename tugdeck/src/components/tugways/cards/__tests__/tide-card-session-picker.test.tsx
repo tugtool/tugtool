@@ -155,7 +155,7 @@ function makeSessionRow(partial: Partial<SessionRow> & { session_id: string }): 
     turn_count: partial.turn_count ?? 0,
     first_user_prompt: partial.first_user_prompt ?? null,
     state: partial.state ?? "closed",
-    card_id_live: partial.card_id_live ?? null,
+    card_id: partial.card_id ?? null,
   };
 }
 
@@ -224,7 +224,7 @@ describe("Tide picker — session-list view (ledger-backed)", () => {
         project_dir: "/work/live",
         last_used_at: 1000,
         state: "live",
-        card_id_live: "other-card",
+        card_id: "other-card",
       }),
     ]);
 
@@ -298,7 +298,7 @@ describe("Tide picker — session-list view (ledger-backed)", () => {
         project_dir: "/work/all",
         last_used_at: 3000,
         state: "live",
-        card_id_live: "other",
+        card_id: "other",
       }),
     ]);
     sentFrames.length = 0;
@@ -379,7 +379,7 @@ describe("Tide picker — session-list view (ledger-backed)", () => {
         project_dir: "/work/live",
         last_used_at: 1000,
         state: "live",
-        card_id_live: "other-card",
+        card_id: "other-card",
       }),
     ]);
 

@@ -86,7 +86,7 @@ function seedJournal(
       turn_count        INTEGER NOT NULL DEFAULT 0,
       first_user_prompt TEXT,
       state             TEXT NOT NULL,
-      card_id_live      TEXT
+      card_id           TEXT
     );
     CREATE TABLE IF NOT EXISTS turns (
       journal_id        TEXT PRIMARY KEY,
