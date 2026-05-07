@@ -1259,6 +1259,16 @@ interface TideCardBodyProps {
  * — the component runs its exit animation and unmounts via its
  * internal `mounted` state, so a switch from kind="error" to "none"
  * (e.g. from a successful retry) animates out cleanly.
+ *
+ * Reconciliation invariant: every branch returns `<TugPaneBanner>` at
+ * the same JSX position with no `key`. React reconciles the branches
+ * as a single instance, so the banner can hold props through cross-kind
+ * transitions and gate min-mount-time on the way out. Do not key these
+ * branches by `spec.kind`; keying would unmount the prior banner
+ * instance on every kind change, silently disabling the min-mount-time
+ * gate (the new instance has no `shownAtRef` to compare against) and
+ * losing the `lastVisiblePropsRef` hold that keeps content stable
+ * during exit.
  */
 function renderTideCardBanner(
   spec: ReturnType<typeof deriveTideCardBannerSpec>,
@@ -1270,6 +1280,11 @@ function renderTideCardBanner(
         visible={true}
         variant="error"
         tone="danger"
+        // Opt out of the min-mount-time gate. A user-visible failure
+        // should exit on dismiss without an artificial 500ms hold;
+        // dismissal is an explicit user action and any delay reads as
+        // unresponsive UI.
+        minMountedMs={0}
         label={CAUSE_LABELS[spec.cause]}
         message={spec.message}
         detailIcon="unplug"
@@ -1323,6 +1338,14 @@ function renderTideCardBanner(
         visible={true}
         variant="status"
         tone="default"
+        // Hold the loading strip for at least 500ms after first paint.
+        // The motivating case: a JSONL replay that resolves before the
+        // soft-budget fires (well under 100ms) would otherwise flash
+        // the strip and vanish — the user sees motion they can't read,
+        // which reads as "something flashed and broke." The default is
+        // 500 anyway; passing it explicitly here documents intent at
+        // the motivating call site.
+        minMountedMs={500}
         iconSlot={
           <TugProgress
             variant="spinner"

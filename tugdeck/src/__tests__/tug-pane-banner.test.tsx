@@ -85,8 +85,11 @@ describe("TugPaneBanner — mount + props", () => {
   // -------------------------------------------------------------------------
 
   it("T-CARDBANNER-02: visible=true mounts, visible=false removes after exit animation", async () => {
+    // Opt out of the min-mount-time gate so the exit animation runs
+    // immediately on visible=false (this test verifies the bare
+    // animation path, not the gate's deferral).
     const { rerender, cleanupCard } = renderInCard(
-      <TugPaneBanner visible={false} message="m" />,
+      <TugPaneBanner visible={false} minMountedMs={0} message="m" />,
     );
     expect(getBanner()).toBeNull();
 
@@ -94,7 +97,7 @@ describe("TugPaneBanner — mount + props", () => {
     act(() => {
       rerender(
         <TugPanePortalContext.Provider value={document.querySelector(".tug-pane-chrome")!}>
-          <TugPaneBanner visible={true} message="m" />
+          <TugPaneBanner visible={true} minMountedMs={0} message="m" />
         </TugPanePortalContext.Provider>,
       );
     });
@@ -105,7 +108,7 @@ describe("TugPaneBanner — mount + props", () => {
     act(() => {
       rerender(
         <TugPanePortalContext.Provider value={document.querySelector(".tug-pane-chrome")!}>
-          <TugPaneBanner visible={false} message="m" />
+          <TugPaneBanner visible={false} minMountedMs={0} message="m" />
         </TugPanePortalContext.Provider>,
       );
     });
@@ -147,15 +150,18 @@ describe("TugPaneBanner — mount + props", () => {
   // -------------------------------------------------------------------------
 
   it("T-CARDBANNER-04: inert on .tug-pane-body while mounted; released after exit animation", async () => {
+    // Opt out of the min-mount-time gate so the exit animation runs
+    // immediately and inert release happens on the same WAAPI .finished
+    // tick (not after the gate's deferral).
     const { cardBody, rerender, cleanupCard } = renderInCard(
-      <TugPaneBanner visible={true} message="m" />,
+      <TugPaneBanner visible={true} minMountedMs={0} message="m" />,
     );
     expect(cardBody.hasAttribute("inert")).toBe(true);
 
     act(() => {
       rerender(
         <TugPanePortalContext.Provider value={document.querySelector(".tug-pane-chrome")!}>
-          <TugPaneBanner visible={false} message="m" />
+          <TugPaneBanner visible={false} minMountedMs={0} message="m" />
         </TugPanePortalContext.Provider>,
       );
     });
@@ -262,3 +268,4 @@ describe("TugPaneBanner — mount + props", () => {
     cleanupCard();
   });
 });
+

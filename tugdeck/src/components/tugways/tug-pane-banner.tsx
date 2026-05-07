@@ -102,6 +102,36 @@ export interface TugPaneBannerProps {
    * @default false
    */
   contained?: boolean;
+  /**
+   * Floor on visibility duration in milliseconds. After the banner first
+   * paints with `visible: true`, subsequent `visible: false` requests are
+   * held until at least this many milliseconds have elapsed since first
+   * paint, then the existing exit animation runs.
+   *
+   * The hold prevents flash-and-vanish: a parent that mounts the banner
+   * for a transient state and tears it down within ~50ms (e.g. a JSONL
+   * replay that resolves before the soft-budget fires) would otherwise
+   * leave the user looking at sub-perceptual motion they can't read.
+   *
+   * Once an exit is committed (deferral pending or animation in flight),
+   * subsequent `visible: true` is ignored until the banner has fully
+   * unmounted — matching the rule that an ordered-out banner cannot be
+   * revived. After the unmount, a fresh `visible: true` starts a new
+   * enter cycle.
+   *
+   * Pass `0` to opt out entirely.
+   * @default 500
+   */
+  minMountedMs?: number;
+  /**
+   * Clock injection for tests. Defaults to `performance.now`. The gate
+   * compares `nowMs() - shownAt` against `minMountedMs`; tests can inject
+   * a controllable clock so the deferral computation is deterministic
+   * without racing the wall clock. Production code never needs to set
+   * this.
+   * @internal
+   */
+  nowMs?: () => number;
   /** Additional CSS class names. */
   className?: string;
 }
@@ -125,11 +155,18 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
       children,
       footer,
       contained = false,
+      minMountedMs = 500,
+      nowMs,
       className,
     },
     ref,
   ) {
     const cardEl = useContext(TugPanePortalContext);
+    // Stable clock reference. The default (performance.now) is monotonic and
+    // unaffected by wall-clock skew. Captured in a ref so the gate's logic
+    // doesn't depend on prop identity for re-runs.
+    const nowFnRef = useRef<() => number>(nowMs ?? (() => performance.now()));
+    nowFnRef.current = nowMs ?? (() => performance.now());
     // Per-card banner-lifecycle plumbing. cardId is read from
     // `CardIdContext` (provided by `CardHost`); when this banner is
     // rendered outside a card host (gallery preview, standalone
@@ -146,6 +183,23 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
     // becomes true when visible first goes true; it only becomes false after
     // the exit animation's `.finished` resolves.
     const [mounted, setMounted] = useState(false);
+
+    // ---- Min-mount-time gate state ------------------------------------
+    // Recorded on the first paint of visible content (in the enter-animation
+    // effect, guarded by a null check). The exit branch reads this to
+    // compute how much longer the banner must stay before the slide-out
+    // can begin. Cleared when the gated exit completes so the next
+    // visible: true cycle starts fresh.
+    const shownAtRef = useRef<number | null>(null);
+    // Set to true the first time (!visible && mounted) fires. Once true,
+    // the parent's visible: true / visible: false toggles are ignored
+    // until the unmount completes — the user-stated rule that an
+    // ordered-out banner cannot be revived.
+    const committedToExitRef = useRef(false);
+    // Pending setTimeout handle for the deferred exit. Cleanup paths
+    // (effect re-run, component unmount) read this to clear the timer
+    // and abandon the deferral.
+    const deferredExitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Stable renderable props through the exit animation. When the
     // parent flips `visible` from true → false, it commonly drops
@@ -212,30 +266,6 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
       [ref],
     );
 
-    // Promote to mounted on first visible=true. Exit flips mounted back to
-    // false in the exit-animation effect below.
-    //
-    // Banner-lifecycle event emission. willShow / willHide fire on
-    // `visible` transitions (and the first-render `visible=true`
-    // case, where prevVisible starts false). didShow fires when the
-    // enter animation finishes; didHide fires when `mounted`
-    // transitions to false (in a separate effect below). Per-card
-    // scope: cardId comes from CardIdContext; null cardId skips
-    // emission cleanly. [L24]
-    const prevVisibleForLifecycleRef = useRef(false);
-    useLayoutEffect(() => {
-      if (visible) setMounted(true);
-      if (cardIdForLifecycle !== null && bannerLifecycle !== null) {
-        const prev = prevVisibleForLifecycleRef.current;
-        if (visible && !prev) {
-          bannerLifecycle.notifyBannerWillShow(cardIdForLifecycle);
-        } else if (!visible && prev) {
-          bannerLifecycle.notifyBannerWillHide(cardIdForLifecycle);
-        }
-      }
-      prevVisibleForLifecycleRef.current = visible;
-    }, [visible, cardIdForLifecycle, bannerLifecycle]);
-
     // didHide: fires when mounted transitions from true to false
     // (the exit animation's `g.finished` handler has set
     // `mounted=false`, the inert effect has cleared its attribute,
@@ -243,6 +273,13 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
     // body interactivity is restored — focus-claim handlers on a
     // card subscribe here to land focus into the editor after the
     // banner is fully gone.
+    //
+    // Registered BEFORE the presence effect so that during a gated
+    // auto-restart (finishExit calls setMounted(false), then the
+    // presence effect's `mounted` dep re-fires it with visible still
+    // true), didHide fires first and willShow fires second. The
+    // intuitive order is "the prior cycle finished, then a new one
+    // begins."
     const prevMountedForLifecycleRef = useRef(false);
     useLayoutEffect(() => {
       if (
@@ -255,6 +292,47 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
       }
       prevMountedForLifecycleRef.current = mounted;
     }, [mounted, cardIdForLifecycle, bannerLifecycle]);
+
+    // Promote to mounted on first visible=true. Exit flips mounted back to
+    // false in the exit-animation effect below.
+    //
+    // Banner-lifecycle event emission. willShow / willHide fire on
+    // `visible` transitions (and the first-render `visible=true`
+    // case, where prevVisible starts false). didShow fires when the
+    // enter animation finishes; didHide fires when `mounted`
+    // transitions to false (in a separate effect above). Per-card
+    // scope: cardId comes from CardIdContext; null cardId skips
+    // emission cleanly. [L24]
+    const prevVisibleForLifecycleRef = useRef(false);
+    useLayoutEffect(() => {
+      // Once the gate has committed to exit, the parent's visible toggles
+      // are ignored — no presence flips, no lifecycle event emission, no
+      // prev-tracking updates. The reset in the exit-finished handler
+      // re-arms prev-tracking so a fresh post-unmount visible: true is
+      // detected as a clean new cycle. Note: the order of effects is
+      // (didHide above) then (presence) then (exit). On the FIRST
+      // visible: true → false transition, committedToExitRef is still
+      // false here, so the willHide event fires correctly; the exit
+      // effect that follows in the same render flips committedToExitRef.
+      //
+      // `mounted` is in the dep list so this effect re-runs when
+      // finishExit calls setMounted(false). That re-run is what restarts
+      // a fresh enter cycle if the parent re-asserted visible: true
+      // while the gate was committed (the presence effect ignored the
+      // re-entry then; honoring it here, after the gate resets, is the
+      // "fresh visible: true after the unmount" case from the spec).
+      if (committedToExitRef.current) return;
+      if (visible) setMounted(true);
+      if (cardIdForLifecycle !== null && bannerLifecycle !== null) {
+        const prev = prevVisibleForLifecycleRef.current;
+        if (visible && !prev) {
+          bannerLifecycle.notifyBannerWillShow(cardIdForLifecycle);
+        } else if (!visible && prev) {
+          bannerLifecycle.notifyBannerWillHide(cardIdForLifecycle);
+        }
+      }
+      prevVisibleForLifecycleRef.current = visible;
+    }, [visible, mounted, cardIdForLifecycle, bannerLifecycle]);
 
     // Inert management keyed on `mounted`. When the banner is in the DOM the
     // card body is inert; when the exit animation finishes and mounted goes
@@ -281,9 +359,23 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
     // re-render with DOM present → this effect runs on the DOM.
     useLayoutEffect(() => {
       if (!visible || !mounted) return;
+      // If the gate has committed to exit, the parent flipping visible
+      // back to true does not restart the enter animation. The dwell +
+      // exit completes; only after the unmount can a fresh cycle begin.
+      if (committedToExitRef.current) return;
       const strip = stripRef.current;
       const detail = detailRef.current;
       if (!strip) return;
+
+      // Record shownAt at first paint of visible content. The null
+      // guard ensures dependency-only re-runs (cardIdForLifecycle /
+      // bannerLifecycle changing under a stable visible+mounted) don't
+      // reset the timestamp. This effect runs in the post-`setMounted`
+      // commit, ~one frame closer to actual paint than the presence
+      // effect — a more honest "first visible on screen" floor.
+      if (shownAtRef.current === null) {
+        shownAtRef.current = nowFnRef.current();
+      }
 
       const g = group({ duration: "--tug-motion-duration-moderate" });
       g.animate(
@@ -312,35 +404,98 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
     // Exit animation: runs when (!visible && mounted). Unmounts the portal
     // content only after `.finished` resolves so the exit animation plays
     // to completion.
+    //
+    // Min-mount-time gate: if the banner has been visible for less than
+    // `minMountedMs`, the slide-out is deferred until the floor is reached.
+    // During the deferral the banner keeps rendering its held props
+    // (`lastVisiblePropsRef` already handles the prop hold). Once the
+    // deferral fires, today's animation + .finished → setMounted(false)
+    // chain runs unchanged.
+    //
+    // The gate's commitment is one-shot and binding: once
+    // committedToExitRef is set, the deferral runs to completion
+    // regardless of subsequent visible toggles. The exit effect is
+    // idempotent — re-runs while committed are no-ops, and the cleanup
+    // does not tear down a pending timer because the gate's contract is
+    // "an ordered-out banner cannot be revived." The `if (committed)
+    // return` guard at the top is what makes mid-deferral visible
+    // toggles harmless: the deferral keeps its original schedule.
     useLayoutEffect(() => {
+      // Already committed: the deferral or in-flight animation owns the
+      // exit. Subsequent (!visible && mounted) re-runs are no-ops; we
+      // also intentionally do not return a cleanup that clears the
+      // timer, so the deferral survives effect re-runs caused by
+      // visible flipping back to true mid-deferral. (The auto-restart
+      // logic in finishExit handles the "visible is still true after
+      // the gate resets" case.)
+      if (committedToExitRef.current) return;
       if (visible || !mounted) return;
+
       const strip = stripRef.current;
       const detail = detailRef.current;
-      if (!strip && !detail) {
+
+      // Commit to exit on the first (!visible && mounted) edge. Reset
+      // happens in `runExit`'s finished/catch handlers.
+      committedToExitRef.current = true;
+
+      const finishExit = () => {
         setMounted(false);
+        // Reset all gate state so the next visible: true starts a clean
+        // cycle. Doing this in both .then and .catch (and the no-DOM
+        // shortcut below) keeps the invariant: refs are null/false
+        // exactly when `mounted` is false.
+        shownAtRef.current = null;
+        committedToExitRef.current = false;
+        deferredExitTimerRef.current = null;
+        // Re-arm willShow for the auto-restart case: if the parent
+        // re-asserted visible: true while the gate was committed, the
+        // presence effect's re-run (triggered by setMounted(false)
+        // above) will see visible=true and prev=false, fire willShow,
+        // and call setMounted(true) — starting a fresh enter cycle
+        // without the parent needing to toggle visible.
+        prevVisibleForLifecycleRef.current = false;
+      };
+
+      // No DOM to animate (refs cleared between renders). Skip animation
+      // and unmount directly. Still resets gate state so a fresh enter
+      // cycle starts clean.
+      if (!strip && !detail) {
+        finishExit();
         return;
       }
 
-      const g = group({ duration: "--tug-motion-duration-moderate" });
-      if (strip) {
-        g.animate(
-          strip,
-          [{ transform: "translateY(0)" }, { transform: "translateY(-100%)" }],
-          { key: "pane-banner-strip", easing: "ease-in" },
-        );
+      const runExit = () => {
+        deferredExitTimerRef.current = null;
+        const g = group({ duration: "--tug-motion-duration-moderate" });
+        if (strip) {
+          g.animate(
+            strip,
+            [{ transform: "translateY(0)" }, { transform: "translateY(-100%)" }],
+            { key: "pane-banner-strip", easing: "ease-in" },
+          );
+        }
+        if (detail) {
+          g.animate(detail, [{ opacity: 1 }, { opacity: 0 }], {
+            key: "pane-banner-detail",
+          });
+        }
+        g.finished.then(finishExit).catch(finishExit);
+      };
+
+      // shownAt is null only if the banner was unmounted before its
+      // enter-animation effect ran — degenerate case; treat as "no
+      // dwell required, exit immediately". The `?? nowFnRef.current()`
+      // makes `remaining` zero in that case.
+      const shownAt = shownAtRef.current ?? nowFnRef.current();
+      const remaining = Math.max(0, minMountedMs - (nowFnRef.current() - shownAt));
+
+      if (remaining > 0) {
+        deferredExitTimerRef.current = setTimeout(runExit, remaining);
+        return;
       }
-      if (detail) {
-        g.animate(detail, [{ opacity: 1 }, { opacity: 0 }], {
-          key: "pane-banner-detail",
-        });
-      }
-      g.finished
-        .then(() => setMounted(false))
-        .catch(() => {
-          // Animation interrupted — unmount anyway so we don't stick.
-          setMounted(false);
-        });
-    }, [visible, mounted]);
+
+      runExit();
+    }, [visible, mounted, minMountedMs]);
 
     if (!mounted) return null;
     // Contained mode (gallery demos) renders inline inside the caller's
