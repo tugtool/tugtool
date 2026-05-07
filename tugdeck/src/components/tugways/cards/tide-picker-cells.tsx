@@ -105,11 +105,20 @@ interface PickerCellContextValue {
   readonly currentPath: string;
   /** Current session selection. `null` when no session row is selected. */
   readonly selection: PickerSelection | null;
+  /**
+   * Session id whose forget-confirmation popover is currently open
+   * (driven by the form's `pendingForgetSessionId` state). The
+   * matching row marks itself with `data-pending-forget="true"` so
+   * its trash icon stays visible AND highlighted while the popover
+   * is up — Mac-menu-open style. `null` when no forget is pending.
+   */
+  readonly pendingForgetSessionId: string | null;
 }
 
 const NULL_CONTEXT: PickerCellContextValue = {
   currentPath: "",
   selection: null,
+  pendingForgetSessionId: null,
 };
 
 const PickerCellContext = createContext<PickerCellContextValue>(NULL_CONTEXT);
@@ -216,7 +225,7 @@ export const SessionResumeCell: TugListViewCellRenderer<TideSessionsDataSource> 
   index,
   dataSource,
 }: TugListViewCellProps<TideSessionsDataSource>) => {
-  const { selection } = usePickerCellContext();
+  const { selection, pendingForgetSessionId } = usePickerCellContext();
   const data = dataSource.rowAt(index) as Extract<
     SessionsRow,
     { kind: "session-resume" }
@@ -227,6 +236,11 @@ export const SessionResumeCell: TugListViewCellRenderer<TideSessionsDataSource> 
   const isSelected =
     selection?.kind === "session-resume" &&
     selection.sessionId === row.session_id;
+  // While a forget-confirmation popover is pending FOR THIS ROW, the
+  // row marks itself so CSS can keep the trash icon visible AND
+  // highlighted (Mac-menu-open style). Pure render derivation from
+  // the context value — no per-cell state.
+  const isPendingForget = pendingForgetSessionId === row.session_id;
 
   const fullPrompt =
     row.first_user_prompt !== null && row.first_user_prompt.length > 0
@@ -255,6 +269,7 @@ export const SessionResumeCell: TugListViewCellRenderer<TideSessionsDataSource> 
       data-selected={isSelected ? "true" : undefined}
       data-disabled={isLive ? "true" : undefined}
       data-session-id={row.session_id}
+      data-pending-forget={isPendingForget ? "true" : undefined}
     >
       <div className="tide-card-picker-session-option-text">
         <span

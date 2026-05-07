@@ -516,10 +516,37 @@
 .tide-card-picker-sessions-list
   .tide-card-picker-session-option:focus-within
   .tide-card-picker-session-forget,
+.tide-card-picker-sessions-list
+  .tide-card-picker-session-option[data-pending-forget="true"]
+  .tide-card-picker-session-forget,
 .tide-card-picker-sessions-list .tide-card-picker-session-forget:focus,
 .tide-card-picker-sessions-list .tide-card-picker-session-forget:focus-within,
 .tide-card-picker-sessions-list .tide-card-picker-session-forget:hover {
   opacity: 1;
+}
+
+/* Mac-menu-open style: while the form-owned confirm popover is up
+   for THIS row, paint the trash button with the danger-active
+   token so it reads as "this is the affordance whose menu is
+   open." The button stays at full opacity (above) and gets the
+   active visual treatment regardless of cursor position — even
+   when the cursor moves off onto the popover. TugIconButton
+   composes `.tide-card-picker-session-forget` directly onto the
+   `<button>` element (no inner wrapper), so the selector targets
+   the button itself; the active-token overrides apply on top of
+   TugButton's `.tug-button-ghost-danger` rest classes. */
+/* @tug-renders-on: --tug7-surface-control-primary-ghost-danger-active */
+.tide-card-picker-sessions-list
+  .tide-card-picker-session-option[data-pending-forget="true"]
+  .tide-card-picker-session-forget {
+  background-color: var(--tug7-surface-control-primary-ghost-danger-active);
+  border-color: var(--tug7-element-control-border-ghost-danger-active);
+  color: var(--tug7-element-control-text-ghost-danger-active);
+}
+.tide-card-picker-sessions-list
+  .tide-card-picker-session-option[data-pending-forget="true"]
+  .tide-card-picker-session-forget svg {
+  color: var(--tug7-element-control-icon-ghost-danger-active);
 }
 
 .tide-card-picker-sessions-list

@@ -1168,15 +1168,20 @@ function TideProjectPickerForm({
 
   // Cell-context value — `currentPath` drives path-recent's
   // `data-selected`; `selection` drives session cells' selection
-  // state. The per-row forget flow does NOT pass through context;
-  // the trash button dispatches `request-forget-session` through the
-  // chain, and the form's chain handler above owns the response.
+  // state; `pendingForgetSessionId` drives the matching row's
+  // `data-pending-forget="true"` marker so its trash icon stays
+  // visible + highlighted while the form-owned confirm popover is
+  // up. The per-row forget flow does NOT pass a callback through
+  // context; the trash button dispatches `request-forget-session`
+  // through the chain, and the form's chain handler above owns the
+  // response.
   const cellContextValue = useMemo(
     () => ({
       currentPath: path,
       selection,
+      pendingForgetSessionId,
     }),
-    [path, selection],
+    [path, selection, pendingForgetSessionId],
   );
 
   // Master/detail layout: project-path input → Recents list →
