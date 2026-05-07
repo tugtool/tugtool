@@ -49,14 +49,12 @@
  *      design choice: server state is preserved (no `close_session`
  *      fires), so next reload will retry the restore.
  *
- * The legacy tugbank `dev.tugtool.tide.session-keys` domain that this
- * module previously read has been retired — the sqlite ledger is now
- * the single source of truth for the (card → session) binding. This
- * also fixes a phantom-resume bug: a card whose user picked Start
- * Fresh and quit before the first user message no longer surfaces a
- * "Couldn't resume the previous session" banner on relaunch, because
- * the ledger only inserts on `session_init` (after a real JSONL
- * exists).
+ * Resumability: a binding only appears in `list_card_bindings_ok` if
+ * the row had at least one round-trip with claude (`turn_count > 0`).
+ * Sessions that emitted `session_init` but never had a real
+ * conversation are excluded — they have no JSONL on disk, so resuming
+ * them would surface a misleading "Couldn't resume the previous
+ * session" banner.
  *
  * @module lib/tide-session-restore
  */
@@ -69,7 +67,7 @@ import { cardSessionBindingStore } from "./card-session-binding-store";
 import { cardServicesStore } from "./card-services-store";
 import { pickerNoticeStore } from "./picker-notice-store";
 import { subscribeToListCardBindingsOk } from "./tide-session-ledger-events";
-import { encodeListCardBindings, FeedId } from "../protocol";
+import { CONTROL_ACTION_LIST_CARD_BINDINGS, FeedId } from "../protocol";
 import type { CardBinding } from "../protocol";
 
 /** Component id for tide cards. Matches `registerTideCard`'s registration. */
@@ -321,7 +319,7 @@ export function restoreTideSessions(
   // Fire the request. `action-dispatch` decodes the response and
   // publishes onto `listCardBindingsOkBus`, which the subscription
   // above consumes.
-  connection.send(encodeListCardBindings());
+  connection.sendControlFrame(CONTROL_ACTION_LIST_CARD_BINDINGS, {});
 }
 
 function isCardBinding(value: unknown): value is CardBinding {

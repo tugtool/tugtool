@@ -385,21 +385,6 @@ export function encodeListSessions(projectDir: string): Frame {
   });
 }
 
-/**
- * Build a `list_card_bindings` CONTROL request frame.
- *
- * The response broadcasts `list_card_bindings_ok` carrying
- * `{ bindings: CardBinding[] }`, one row per persisted (card_id,
- * session_id) ledger pair. The client-side `restoreTideSessions` uses
- * this on startup and reconnect to re-assert `spawn_session(mode=resume)`
- * for cards in the deck. Replaces the legacy tugbank `session-keys`
- * domain read with a ledger-backed source of truth, so a card whose
- * user picked Start Fresh and quit before a real `session_init` won't
- * surface as a phantom resumable record.
- */
-export function encodeListCardBindings(): Frame {
-  return controlFrame(CONTROL_ACTION_LIST_CARD_BINDINGS, {});
-}
 
 /**
  * Build a `forget_session` CONTROL request frame.

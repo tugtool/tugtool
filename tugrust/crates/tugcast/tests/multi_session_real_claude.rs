@@ -468,8 +468,9 @@ async fn test_supervisor_rebind_on_startup() {
     require_real_claude!();
 
     // Round 1: spawn tugcast, open a WS, send spawn_session so the
-    // supervisor persists the (card_id, tug_session_id) mapping into
-    // tugbank under `dev.tugtool.tide.session-keys`.
+    // supervisor records the (card_id → session) binding in the
+    // sqlite-backed `SessionLedger` (writes happen in the bridge's
+    // atomic-promote block once claude emits `session_init`).
     let bank_file = NamedTempFile::new().expect("temp bank");
     let bank_path = bank_file.path().to_path_buf();
     drop(bank_file);
@@ -490,9 +491,9 @@ async fn test_supervisor_rebind_on_startup() {
         drop(tc);
     }
 
-    // Round 2: fresh tugcast instance with the SAME bank path. On
-    // startup the supervisor reads `dev.tugtool.tide.session-keys`
-    // and re-materializes an Idle ledger entry for `tug_session_id`.
+    // Round 2: fresh tugcast instance. On startup `rebind_from_ledger`
+    // reads non-failed sqlite rows with a non-null `card_id` and
+    // re-materializes an Idle in-memory `LedgerEntry` for each.
     // A fresh WebSocket sending `spawn_session` for the same
     // (card_id, tug_session_id) reuses the ledger entry and drives
     // the normal pending → spawning → live flow. CODE_INPUT must

@@ -1523,33 +1523,16 @@ impl AgentSupervisor {
         };
         let (entry_arc, inserted) = phase1;
 
-        // [Q01] resolution: compute (and persist) the *effective* session
-        // mode — the mode the bridge will actually use when it spawns
-        // tugcode. For a fresh insert (Phase 1's `or_insert_with` fired)
-        // the effective mode is the request's mode. For an existing entry
-        // that's still `Idle` (rebound from tugbank but not yet spawned),
-        // we propagate the request's mode into the entry so legacy
-        // `SessionKeyRecord`s that lack the `session_mode` field — which
-        // rebind defaults to `SessionMode::New` — don't lock the bridge
-        // into the wrong mode after a restart. The defense-in-depth is
+        // Compute the *effective* session mode — the mode the bridge
+        // will actually use when it spawns tugcode. For a fresh insert
+        // (Phase 1's `or_insert_with` fired) the effective mode is the
+        // request's mode. For an existing entry that's still `Idle`
+        // (rebound from the ledger but not yet spawned), we propagate
+        // the request's mode into the entry. The defense-in-depth is
         // gated on `Idle` so we never silently switch the mode of a
-        // running subprocess (the comment on the ack's `effective_mode`
-        // computation already calls this out: "the running tugcode
-        // subprocess was spawned with the original mode and silently
-        // switching it client-side would misrepresent live state").
-        //
-        // Without this fix, the chain that produced [Q01]'s
-        // `crash_budget_exhausted` symptom plays out: rebind defaults the
-        // entry to `New`, the client's `spawn_session(mode=resume)` is a
-        // no-op for `entry.session_mode`, the bridge spawns
-        // `--session-mode new --session-id <id>` against an existing
-        // per-session JSONL, claude rejects "is already in use", tugcode
-        // emits `error` (not `resume_failed`), the bridge sees stdout EOF
-        // as `Crashed`, and three retries inside the 60 s budget exhaust
-        // it. With the fix, the rebind-side schema read populates the
-        // mode correctly for new records; the defense-in-depth covers
-        // every legacy record on its first reconnect and re-persists the
-        // full schema in the Phase 2 write below.
+        // running subprocess: the running tugcode subprocess was
+        // spawned with the original mode and silently switching it
+        // client-side would misrepresent live state.
         let effective_session_mode = {
             let mut entry = entry_arc.lock().await;
             if !inserted
@@ -1638,30 +1621,17 @@ impl AgentSupervisor {
             }
         }
 
-        // (No Phase 2 tugbank write.) Persistence of the
-        // (card_id → session) binding now happens through the
-        // sqlite-backed `SessionLedger` row that the bridge writes on
-        // `session_init` (in `relay_session_io`). The supervisor's
-        // in-memory `LedgerEntry` carries `card_id` and `session_mode`
-        // for the lifetime of the entry, and the bridge's
+        // Persistence of the (card_id → session) binding happens
+        // through the sqlite-backed `SessionLedger` row that the bridge
+        // writes on `session_init` (in `relay_session_io`). The
+        // supervisor's in-memory `LedgerEntry` carries `card_id` and
+        // `session_mode` for the lifetime of the entry; the bridge's
         // atomic-promote block calls `sessions_recorder.record(...)`
-        // with the card_id under a single lock, which the
-        // `LedgerSessionsRecorder` translates into a `record_spawn`
-        // ledger write keyed by claude's session id. The client-side
-        // restore consults that ledger via the `list_card_bindings`
-        // CONTROL verb. Eagerly persisting at Phase 2 (before
-        // `session_init`) was the source of the "Couldn't resume"
-        // banner for cards where the user picked Start Fresh and quit
-        // before submitting — no JSONL ever existed but the binding
-        // was on disk. The new shape persists only after a real
-        // session is observable.
+        // under a single lock, and the `LedgerSessionsRecorder`
+        // translates that into a `record_spawn` ledger write keyed by
+        // claude's session id. The client-side restore consults that
+        // ledger via the `list_card_bindings` CONTROL verb.
         //
-        // Effective session mode is still tracked in-memory on the
-        // entry above; rebind reconstructs it from the ledger row's
-        // `state` plus the claude_session_id.
-        let _ = effective_session_mode;
-        let _ = project_dir_str;
-
         // Phase 3: per-session mutation + publish + replay, under the
         // per-session lock. Reconnect flows observe the existing entry and
         // its `latest_metadata`; fresh flows observe a just-minted Idle
@@ -1846,21 +1816,12 @@ impl AgentSupervisor {
             );
         }
 
-        // Phase 4: persistence is preserved across close. A closed card
-        // can be reopened with history — either via in-process re-spawn
-        // (the persisted record's `claude_session_id` is available via
-        // tugbank lookup) or via cold-boot rebind (the record is what
-        // `rebind_from_tugbank` reads at startup). The explicit
+        // The persisted ledger row is preserved across close — a
+        // closed card can be reopened with history through
+        // `rebind_from_ledger` on the next startup. The explicit
         // `reset_session` flow is the only path that invalidates the
-        // persisted id; close is a "stop the subprocess but keep the
+        // session_id; close is a "stop the subprocess but keep the
         // history pointer" operation.
-        //
-        // A historical close-time `delete_session_key` call used to live
-        // here; removing it shifts the cleanup responsibility to
-        // explicit reset and to a future age-sweep on tugbank. Lingering
-        // closed-card records are benign — they only consume a few
-        // hundred bytes per card and contribute nothing to the bridge or
-        // dispatcher hot paths.
 
         // Phase 5: publish `closed`. (The `Arc<Mutex<LedgerEntry>>` we hold
         // is dropped at the end of this scope.)
@@ -1925,12 +1886,11 @@ impl AgentSupervisor {
     }
 
     /// Handle a `list_card_bindings` CONTROL request. Reads every
-    /// non-failed ledger row carrying a `card_id` and broadcasts a
-    /// `list_card_bindings_ok` response. The client-side
-    /// `restoreTideSessions` consumes this on startup and reconnect to
-    /// re-assert per-card bindings; replaces the legacy tugbank
-    /// `session-keys` domain read with a ledger-backed source of truth.
-    /// The response carries one row per (card_id, session_id) — the
+    /// resumable ledger row (see `list_with_card_id` for the filter)
+    /// and broadcasts a `list_card_bindings_ok` response. The
+    /// client-side `restoreTideSessions` consumes this on startup and
+    /// reconnect to re-assert per-card bindings. Multiple rows can
+    /// share a `card_id` (sequential sessions on that card); the
     /// client picks the newest per card.
     async fn do_list_card_bindings(&self) {
         let Some(ledger) = self.session_ledger.as_ref() else {
@@ -2309,17 +2269,6 @@ impl AgentSupervisor {
             return;
         }
 
-        // The legacy session-keys tugbank delete used to live here so a
-        // restart wouldn't restore the very session the user just reset.
-        // The session-keys domain has been retired — the sqlite ledger is
-        // the source of truth now. Reset clears the in-memory entry's
-        // `claude_session_id` (above) and `card_id` is preserved on the
-        // ledger row only via a future `record_spawn` call. The next
-        // `rebind_from_ledger` reads the ledger row's current state, so a
-        // reset session whose ledger row is still `live` would rebind —
-        // but `do_close_session` (called below in this flow) marks the
-        // ledger row `closed` first, and the live-elsewhere check then
-        // gates on `spawn_state` rather than ledger-row presence.
         tracing::info!(
             target: "tide::session-lifecycle",
             event = "reset_session.cleared",
@@ -2921,20 +2870,14 @@ impl AgentSupervisor {
         cs.remove(&client_id);
     }
 
-    /// Re-materialize ledger entries from persisted tugbank state.
-    ///
     /// Re-materialize ledger entries from the sqlite-backed
     /// [`SessionLedger`].
     ///
-    /// Called once at startup from `main.rs`. Walks every non-failed row
-    /// carrying a `card_id` and inserts a fresh `Idle` [`LedgerEntry`] for
-    /// each `session_id` that is not already present in the in-memory
-    /// ledger map. Returns the number of entries that were newly inserted.
-    ///
-    /// Replaces the legacy `rebind_from_tugbank` path that read from the
-    /// `dev.tugtool.tide.session-keys` tugbank domain. The sqlite ledger
-    /// is now the single source of truth for the (card → session)
-    /// binding; the tugbank domain has been retired.
+    /// Called once at startup from `main.rs`. Walks every resumable row
+    /// (see [`SessionLedger::list_with_card_id`] for the filter) and
+    /// inserts a fresh `Idle` [`LedgerEntry`] for each `session_id`
+    /// that is not already present in the in-memory ledger map.
+    /// Returns the number of entries that were newly inserted.
     ///
     /// Per [F15] this path does **not**:
     ///
@@ -3606,42 +3549,6 @@ mod tests {
         assert!(!set.contains(&TugSessionId::new("sess-1")));
     }
 
-
-    /// close no longer touches tugbank — `delete_session_key` is
-    /// not called on the close path. A `FailingDeleteStore` that would
-    /// have triggered the historical warn-and-continue branch can no
-    /// longer reach it, so this test pins the new contract by verifying
-    /// the in-memory cleanup proceeds without the store being asked to
-    /// delete anything.
-    #[tokio::test]
-    async fn test_close_session_does_not_call_tugbank_delete() {
-        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
-
-        // Pre-populate a ledger entry and a client_sessions affinity.
-        let tug_id = TugSessionId::new("sess-1");
-        insert_ledger_entry(&sup, &tug_id).await;
-        sup.client_sessions
-            .lock()
-            .await
-            .entry(10)
-            .or_default()
-            .insert(tug_id.clone());
-
-        // Close succeeds even though the store's delete path would have
-        // failed — because close no longer calls delete at all.
-        let result = sup
-            .handle_control("close_session", &close_payload("card-1", "sess-1"), 10)
-            .await;
-        assert!(result.is_handled());
-
-        // In-memory cleanup proceeded.
-        assert!(sup.ledger.lock().await.is_empty());
-        let cs = sup.client_sessions.lock().await;
-        assert!(!cs.get(&10).unwrap().contains(&tug_id));
-        let (id, state) = session_state_of(&state_rx.try_recv().unwrap());
-        assert_eq!(id, "sess-1");
-        assert_eq!(state, "closed");
-    }
 
     // ---- handle_control: reset_session ----
 
@@ -4476,18 +4383,15 @@ mod tests {
         );
     }
 
-    // ---- rebind_from_tugbank tests ----
+    // ---- rebind tests ----
 
-
-
-
-    /// [Q01] Step 8b — defense-in-depth must NOT fire when the entry
+    /// Defense-in-depth must NOT fire when the entry
     /// is past `Idle` (i.e., the bridge has already spawned tugcode).
     /// Silently switching the mode of a running subprocess would
     /// misrepresent live state — the existing `effective_mode` ack
     /// computation already gates on this, and we mirror the gate here.
     #[tokio::test]
-    async fn test_q01_defense_in_depth_does_not_override_running_session() {
+    async fn test_defense_in_depth_does_not_override_running_session() {
         let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
 
         // Fresh spawn in `new` mode. After `handle_control`, the entry
@@ -4534,10 +4438,10 @@ mod tests {
         assert_eq!(
             entry.session_mode,
             SessionMode::New,
-            "[Q01] guard: defense-in-depth must NOT switch the mode of \
-             a running session — the bridge has already spawned tugcode \
-             with the original mode and the running subprocess is \
-             load-bearing. The gate is `spawn_state == Idle`.",
+            "defense-in-depth must NOT switch the mode of a running \
+             session — the bridge has already spawned tugcode with the \
+             original mode and the running subprocess is load-bearing. \
+             The gate is `spawn_state == Idle`.",
         );
     }
 
@@ -5524,6 +5428,52 @@ mod tests {
             }
         }
         panic!("CONTROL frame with action `{action}` not observed");
+    }
+
+    /// End-to-end wire test for the bug fix: a card whose user picked
+    /// "Start Fresh + Open" but quit before submitting any prompt
+    /// produces a ledger row with `turn_count == 0`. On relaunch, the
+    /// `list_card_bindings` request must NOT include that row — claude
+    /// never wrote a JSONL for it, so resuming would surface a
+    /// misleading "Couldn't resume the previous session" banner.
+    #[tokio::test]
+    async fn list_card_bindings_excludes_zero_turn_rows() {
+        let (sup, ledger, mut rx) = make_supervisor_with_ledger();
+
+        // The phantom row: spawned, claude emitted session_init (so the
+        // row exists), but no real conversation happened so turn_count
+        // stays at 0. Then closed (e.g. user quit).
+        ledger
+            .record_spawn("phantom", "ws-1", "/proj/alpha", "card-A", 1_000)
+            .unwrap();
+        ledger.mark_closed("phantom").unwrap();
+
+        // A second card had a real conversation — that one IS resumable.
+        ledger
+            .record_spawn("real", "ws-1", "/proj/alpha", "card-B", 2_000)
+            .unwrap();
+        ledger.record_turn("real", 3_000).unwrap();
+        ledger.mark_closed("real").unwrap();
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "list_card_bindings",
+        }))
+        .unwrap();
+
+        sup.handle_control("list_card_bindings", &payload, 10)
+            .await
+            .expect_handled();
+
+        let response = drain_until_action(&mut rx, "list_card_bindings_ok");
+        let bindings = response["bindings"].as_array().expect("bindings array");
+        assert_eq!(
+            bindings.len(),
+            1,
+            "phantom (turn_count=0) row must be filtered out; only the \
+             real conversation row should surface for restore. response: {response}",
+        );
+        assert_eq!(bindings[0]["card_id"], "card-B");
+        assert_eq!(bindings[0]["session_id"], "real");
     }
 
     #[tokio::test]

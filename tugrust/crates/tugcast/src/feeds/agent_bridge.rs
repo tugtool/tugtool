@@ -737,15 +737,13 @@ pub async fn relay_session_io(
                             // are populated by `do_spawn_session` before the
                             // bridge starts, so they're guaranteed present.
                             //
-                            // The `(card_id → session)` binding is no longer
-                            // persisted to tugbank's session-keys domain.
-                            // Persistence flows through the
-                            // `sessions_recorder.record(...)` call below, which
-                            // writes into the sqlite-backed `SessionLedger`
-                            // keyed by claude's session id. The ledger row's
-                            // `card_id` column is the source of truth for the
-                            // client-side restore (consumed via the
-                            // `list_card_bindings` CONTROL verb).
+                            // Persistence of the (card_id → session) binding
+                            // flows through the `sessions_recorder.record(...)`
+                            // call below, which writes into the sqlite-backed
+                            // `SessionLedger` keyed by claude's session id. The
+                            // ledger row's `card_id` column is the source of
+                            // truth for the client-side restore (consumed via
+                            // the `list_card_bindings` CONTROL verb).
                             let (workspace_key, card_id) = {
                                 let mut entry = ledger_entry.lock().await;
                                 if let Some(id) = &claude_id {

@@ -344,20 +344,37 @@ impl SessionLedger {
         rows.into_iter().collect()
     }
 
-    /// All non-failed rows that carry a `card_id`, ordered newest-first
+    /// All resumable rows that carry a `card_id`, ordered newest-first
     /// by `last_used_at`. The client-side restore consumes this through
     /// the `list_card_bindings` CONTROL verb: for each tide card in the
     /// deck, the most recent matching row drives a
-    /// `spawn_session(mode=resume)`. Failed rows are excluded — they
-    /// represent sessions known to be unrecoverable, so the client
-    /// should drop into the picker rather than re-attempting.
+    /// `spawn_session(mode=resume)`.
+    ///
+    /// Three filters define "resumable":
+    ///
+    /// - `card_id IS NOT NULL` — the row was spawned through a tide
+    ///   card path (not a headless test).
+    /// - `state != 'failed'` — failed rows are known-unrecoverable.
+    /// - `turn_count > 0` — the session had at least one round-trip
+    ///   with claude. Without this filter, a card whose user picked
+    ///   "Start Fresh + Open" but quit before submitting any prompt
+    ///   would surface as resumable: `record_spawn` fires on
+    ///   `session_init` (claude's startup handshake), so the ledger
+    ///   row exists, but claude only writes its JSONL once a real
+    ///   conversation begins. On relaunch, restore would fire
+    ///   `spawn_session(mode=resume)` and claude would resume_failed
+    ///   for missing JSONL — surfacing a misleading "Couldn't resume
+    ///   the previous session" banner for a session the user never
+    ///   actually had.
     pub fn list_with_card_id(&self) -> Result<Vec<SessionRow>, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
                     turn_count, first_user_prompt, state, card_id
              FROM sessions
-             WHERE card_id IS NOT NULL AND state != 'failed'
+             WHERE card_id IS NOT NULL
+               AND state != 'failed'
+               AND turn_count > 0
              ORDER BY last_used_at DESC",
         )?;
         let rows = stmt
@@ -1179,6 +1196,110 @@ mod tests {
         assert_eq!(r.last_used_at, t1);
         assert_eq!(r.state, SessionState::Live);
         assert_eq!(r.card_id.as_deref(), Some("card-2"));
+    }
+
+    // ── list_with_card_id ────────────────────────────────────────────────────
+
+    /// A row with `turn_count == 0` is not resumable — the user opened
+    /// a fresh session, claude emitted `session_init` (which triggers
+    /// `record_spawn`), but no real conversation happened so claude
+    /// never wrote a JSONL. Restore must skip these rows.
+    #[test]
+    fn list_with_card_id_excludes_zero_turn_rows() {
+        let l = fresh();
+        // s_used: had a real conversation → resumable.
+        seed_live(&l, "s_used", WS_A, "card-1", millis(1));
+        l.record_turn("s_used", millis(2)).unwrap();
+        // s_unused: spawn happened but no turns → not resumable.
+        seed_live(&l, "s_unused", WS_A, "card-2", millis(3));
+
+        let rows = l.list_with_card_id().unwrap();
+        let ids: Vec<&str> = rows.iter().map(|r| r.session_id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["s_used"],
+            "zero-turn rows must be filtered out so a Start-Fresh-then-quit \
+             card doesn't surface a phantom resumable session"
+        );
+    }
+
+    /// `card_id IS NULL` rows (headless tests, pre-binding spawns) are
+    /// also excluded — restore is per-card, so a row without a card
+    /// can't be matched to any deck card.
+    #[test]
+    fn list_with_card_id_excludes_null_card_id() {
+        let l = fresh();
+        // Insert a row directly with no card binding by recording a
+        // spawn under "(empty)" then nulling the binding. The
+        // `record_spawn` API requires a card_id, so we use raw SQL.
+        let conn = l.db.lock().unwrap();
+        conn.execute(
+            "INSERT INTO sessions (session_id, workspace_key, project_dir,
+                                   created_at, last_used_at, turn_count,
+                                   first_user_prompt, state, card_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, 1, NULL, 'live', NULL)",
+            params!["headless", WS_A, "/proj", millis(0), millis(0)],
+        )
+        .unwrap();
+        drop(conn);
+
+        let rows = l.list_with_card_id().unwrap();
+        assert!(rows.is_empty());
+    }
+
+    /// `state == 'failed'` rows are excluded — they're known
+    /// unrecoverable, restoring would just resume_failed again.
+    #[test]
+    fn list_with_card_id_excludes_failed_rows() {
+        let l = fresh();
+        seed_live(&l, "s_failed", WS_A, "card-1", millis(0));
+        l.record_turn("s_failed", millis(1)).unwrap();
+        l.mark_failed("s_failed").unwrap();
+
+        seed_live(&l, "s_ok", WS_A, "card-2", millis(2));
+        l.record_turn("s_ok", millis(3)).unwrap();
+
+        let rows = l.list_with_card_id().unwrap();
+        let ids: Vec<&str> = rows.iter().map(|r| r.session_id.as_str()).collect();
+        assert_eq!(ids, vec!["s_ok"]);
+    }
+
+    /// Closed rows that had real turns are still resumable — that's
+    /// the whole point: a card whose user had a conversation, closed
+    /// it, then reopened expects to see history.
+    #[test]
+    fn list_with_card_id_includes_closed_rows_with_turns() {
+        let l = fresh();
+        seed_live(&l, "s1", WS_A, "card-1", millis(0));
+        l.record_turn("s1", millis(1)).unwrap();
+        l.mark_closed("s1").unwrap();
+
+        let rows = l.list_with_card_id().unwrap();
+        let ids: Vec<&str> = rows.iter().map(|r| r.session_id.as_str()).collect();
+        assert_eq!(ids, vec!["s1"]);
+        assert_eq!(rows[0].state, SessionState::Closed);
+        assert_eq!(rows[0].card_id.as_deref(), Some("card-1"));
+    }
+
+    /// Newest-first ordering by `last_used_at` so the client can pick
+    /// the most recent binding per card. `millis(N)` returns a
+    /// timestamp N days *ago*, so smaller `N` is more recent.
+    #[test]
+    fn list_with_card_id_orders_newest_first() {
+        let l = fresh();
+        // "fresh" was used most recently (smallest days-ago).
+        seed_live(&l, "fresh", WS_A, "card-1", millis(5));
+        l.record_turn("fresh", millis(1)).unwrap();
+        // "stale" was used long ago.
+        seed_live(&l, "stale", WS_A, "card-2", millis(20));
+        l.record_turn("stale", millis(15)).unwrap();
+        // "mid" sits between them.
+        seed_live(&l, "mid", WS_A, "card-3", millis(10));
+        l.record_turn("mid", millis(8)).unwrap();
+
+        let rows = l.list_with_card_id().unwrap();
+        let ids: Vec<&str> = rows.iter().map(|r| r.session_id.as_str()).collect();
+        assert_eq!(ids, vec!["fresh", "mid", "stale"]);
     }
 
     // ── list_for_workspace ───────────────────────────────────────────────────

@@ -475,8 +475,7 @@ export function initActionDispatch(
   });
 
   // list_card_bindings_ok / _err: response to a startup/reconnect
-  // request from `restoreTideSessions`. Replaces the legacy tugbank
-  // `session-keys` domain read with a ledger-backed source of truth.
+  // request from `restoreTideSessions`.
   registerAction("list_card_bindings_ok", (payload) => {
     const bindings = payload.bindings;
     if (!Array.isArray(bindings)) {
