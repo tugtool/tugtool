@@ -97,23 +97,23 @@ function buildDataSource(inputs: PickerInputs): TidePickerDataSource {
 
 interface ProviderHarnessProps {
   selection?: PickerSelection | null;
-  onRequestForgetSession?: (sessionId: string) => void;
-  onRequestForgetAll?: () => void;
+  currentPath?: string;
+  onConfirmForgetSession?: (sessionId: string) => void;
   children: React.ReactNode;
 }
 
 function Harness({
   selection = null,
-  onRequestForgetSession = () => {},
-  onRequestForgetAll = () => {},
+  currentPath = "",
+  onConfirmForgetSession = () => {},
   children,
 }: ProviderHarnessProps): React.ReactElement {
   return (
     <PickerCellProvider
       value={{
+        currentPath,
         selection,
-        onRequestForgetSession,
-        onRequestForgetAll,
+        onConfirmForgetSession,
       }}
     >
       {children}
@@ -259,7 +259,7 @@ describe("PathRecentCell", () => {
 // ---------------------------------------------------------------------------
 
 describe("SessionNewCell", () => {
-  test("paints 'Start fresh' / 'New session' stack", () => {
+  test("paints 'New session' single-row label", () => {
     const ds = buildDataSource({
       recents: [],
       query: "/Users/Ken/projects/foo",
@@ -277,7 +277,6 @@ describe("SessionNewCell", () => {
     const el = container.querySelector(
       '[data-testid="tide-card-picker-session-new"]',
     );
-    expect(el?.textContent).toContain("Start fresh");
     expect(el?.textContent).toContain("New session");
   });
 
@@ -461,7 +460,7 @@ describe("SessionResumeCell", () => {
 
     const { container } = render(
       <div onClick={() => { parentClickFired = true; }}>
-        <Harness onRequestForgetSession={(sid) => calls.push(sid)}>
+        <Harness onConfirmForgetSession={(sid: string) => { calls.push(sid); }}>
           <SessionResumeCell
             index={idx}
             id={ds.idForIndex(idx)}
@@ -585,7 +584,7 @@ describe("ForgetAllCell", () => {
 
     const { container } = render(
       <div onClick={() => { parentClickFired = true; }}>
-        <Harness onRequestForgetAll={() => { calls += 1; }}>
+        <Harness>
           <ForgetAllCell
             index={idx}
             id={ds.idForIndex(idx)}

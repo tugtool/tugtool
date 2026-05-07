@@ -348,27 +348,21 @@ describe("TideCardContent – binding gate and project picker", () => {
     cardSessionBindingStore.clearBinding(CARD_ID);
   });
 
-  it("T-TIDE-RESUME-06: a recent-project button fills the path input without sending a frame (4.5 regression from 4m)", () => {
+  it("T-TIDE-RESUME-06: clicking a path-recent row fills the path input without sending a frame", () => {
     tugbankStore["dev.tugtool.tide"] = {
       "recent-projects": { kind: "json", value: { paths: ["/u/src/tugtool", "/tmp"] } },
     };
 
     renderTideCard(CARD_ID);
 
-    const recentButton = Array.from(
-      document.querySelectorAll<HTMLButtonElement>(".tug-sheet-content button"),
-    ).find((b) => b.textContent?.trim() === "/u/src/tugtool");
-    expect(recentButton).not.toBeUndefined();
+    clickRecent("/u/src/tugtool");
 
-    act(() => {
-      fireEvent.click(recentButton!);
-    });
-
-    // 4.5 replaced the single-click spawn with a fill-the-input gesture so
-    // every path flows through the Start-fresh / Resume-last radio group.
-    // The picker's `useSessionLedger` does dispatch a `list_sessions`
-    // CONTROL request when the path becomes non-empty — that's expected;
-    // the regression we guard against is `spawn_session`.
+    // The path-recent click is a navigation action, not a spawn —
+    // every spawn flows through `session-new` / `session-resume`
+    // selection + Open per [D04]. The picker's `useSessionLedger`
+    // does dispatch a `list_sessions` CONTROL request when the
+    // path becomes non-empty — that's expected; the regression we
+    // guard against is `spawn_session`.
     const spawnFrames = sentFrames.filter((f) => {
       try {
         const decoded = JSON.parse(new TextDecoder().decode(f.payload)) as {
@@ -389,15 +383,43 @@ describe("TideCardContent – binding gate and project picker", () => {
   // The picker wires path changes through React's onChange, which does not
   // fire synthetically via fireEvent.change under bun-test + happy-dom (see
   // the debug trace in the commit that landed these tests). Tests that need
-  // to change the typed path do so by clicking a recents button — that path
-  // goes through React's onClick, which DOES fire cleanly under this setup.
+  // to change the typed path do so by clicking a path-recent row — clicks
+  // route through React's onClick on the cell wrapper, which fires
+  // `delegate.onSelect` and calls `setPath`.
   function clickRecent(label: string): void {
-    const btn = Array.from(
-      document.querySelectorAll<HTMLButtonElement>(".tug-sheet-content button"),
-    ).find((b) => b.textContent?.trim() === label);
-    expect(btn).not.toBeUndefined();
+    const cells = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '.tug-sheet-content [data-testid="tide-card-picker-path-recent"]',
+      ),
+    );
+    const cell = cells.find((c) => c.textContent?.includes(label));
+    expect(cell).not.toBeUndefined();
+    const wrapper = cell!.closest<HTMLElement>("[data-tug-list-cell-index]");
+    expect(wrapper).not.toBeNull();
     act(() => {
-      fireEvent.click(btn!);
+      fireEvent.click(wrapper!);
+    });
+  }
+
+  // Helpers for the rewritten picker's DOM shape.
+
+  /** Returns the count of selectable session rows visible in the list view. */
+  function sessionCellCount(): number {
+    return document.querySelectorAll(
+      '.tug-sheet-content [data-testid="tide-card-picker-session-new"], .tug-sheet-content [data-testid="tide-card-picker-session-resume"]',
+    ).length;
+  }
+
+  /** Returns the session-resume cell wrappers in render (newest-first) order. */
+  function sessionResumeWrappers(): HTMLElement[] {
+    return Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '.tug-sheet-content [data-testid="tide-card-picker-session-resume"]',
+      ),
+    ).map((cell) => {
+      const wrapper = cell.closest<HTMLElement>("[data-tug-list-cell-index]");
+      if (wrapper === null) throw new Error("session-resume cell wrapper missing");
+      return wrapper;
     });
   }
 
@@ -413,14 +435,15 @@ describe("TideCardContent – binding gate and project picker", () => {
     // picker renders the empty-state shape (Start-fresh only).
     seedLedgerForPath("/work/fresh-only", []);
 
-    const radios = document.querySelectorAll<HTMLButtonElement>(
-      '.tug-sheet-content [role="radio"]',
+    // No prior sessions for this path → only Start-fresh cell rendered.
+    expect(sessionCellCount()).toBe(1);
+    const sessionNew = document.querySelector<HTMLElement>(
+      '.tug-sheet-content [data-testid="tide-card-picker-session-new"]',
     );
-    // No prior sessions for this path → only Start-fresh rendered.
-    expect(radios.length).toBe(1);
-    expect(radios[0]!.textContent).toContain("Start fresh");
-    expect(radios[0]!.getAttribute("aria-checked")).toBe("true");
-    expect(radios[0]!.disabled).toBe(false);
+    expect(sessionNew).not.toBeNull();
+    expect(sessionNew!.textContent).toContain("New session");
+    // Auto-default selection on first SESSIONS render per [D06].
+    expect(sessionNew!.getAttribute("data-selected")).toBe("true");
     // No Forget-all footer when there are no rows.
     const forgetAll = document.querySelector(
       '[data-testid="tide-card-picker-forget-all"]',
@@ -443,16 +466,20 @@ describe("TideCardContent – binding gate and project picker", () => {
       }),
     ]);
 
-    const radios = document.querySelectorAll<HTMLButtonElement>(
-      '.tug-sheet-content [role="radio"]',
-    );
     // Start fresh + 1 resume row.
-    expect(radios.length).toBe(2);
-    expect(radios[0]!.textContent).toContain("Start fresh");
-    expect(radios[0]!.getAttribute("aria-checked")).toBe("true");
-    // Resume rows carry the session-id-bearing subtitle, not the legacy
-    // "Resume last session" label.
-    expect(radios[1]!.getAttribute("aria-checked")).toBe("false");
+    expect(sessionCellCount()).toBe(2);
+    const sessionNew = document.querySelector<HTMLElement>(
+      '.tug-sheet-content [data-testid="tide-card-picker-session-new"]',
+    );
+    expect(sessionNew!.textContent).toContain("New session");
+    // Auto-default per [D06].
+    expect(sessionNew!.getAttribute("data-selected")).toBe("true");
+    const resumes = sessionResumeWrappers();
+    expect(resumes.length).toBe(1);
+    expect(
+      resumes[0].querySelector('[data-testid="tide-card-picker-session-resume"]')
+        ?.getAttribute("data-selected"),
+    ).not.toBe("true");
     const subtitle = document.querySelector(
       '[data-testid="tide-card-picker-resume-subtitle"]',
     );
@@ -478,16 +505,12 @@ describe("TideCardContent – binding gate and project picker", () => {
     // ignore the request frame.
     sentFrames.length = 0;
 
-    // The Resume rows are radio items beyond the initial Start-fresh
-    // row. With one ledger row seeded above, picking radios[1] is the
-    // resume action.
-    const radios = document.querySelectorAll<HTMLButtonElement>(
-      '.tug-sheet-content [role="radio"]',
-    );
-    const resumeRadio = radios[1];
-    expect(resumeRadio).not.toBeUndefined();
+    // With one ledger row seeded above, the first session-resume cell
+    // is the resume action.
+    const resumes = sessionResumeWrappers();
+    expect(resumes.length).toBe(1);
     act(() => {
-      fireEvent.click(resumeRadio!);
+      fireEvent.click(resumes[0]);
     });
 
     const openButton = Array.from(
@@ -541,15 +564,12 @@ describe("TideCardContent – binding gate and project picker", () => {
     );
     expect(subtitle?.textContent).toContain("sess-new");
 
-    // Pick the newest resume row (radios[1] — radios[0] is Start fresh,
-    // newest-first ordering puts sess-newer next) and submit. The frame
-    // must carry the newest id.
-    const radios = document.querySelectorAll<HTMLButtonElement>(
-      '.tug-sheet-content [role="radio"]',
-    );
-    const resumeRadio = radios[1];
+    // Pick the newest resume row (resumes[0] — newest-first ordering
+    // puts sess-newer first) and submit. The frame must carry the
+    // newest id.
+    const resumes = sessionResumeWrappers();
     act(() => {
-      fireEvent.click(resumeRadio!);
+      fireEvent.click(resumes[0]);
     });
     const openButton = Array.from(
       document.querySelectorAll<HTMLButtonElement>(".tug-sheet-content button"),
@@ -564,24 +584,16 @@ describe("TideCardContent – binding gate and project picker", () => {
     expect(payload.tug_session_id).toBe("sess-newer");
   });
 
-  it("T-TIDE-RESUME-04: switching paths re-reads the ledger and enables/disables the Resume row", () => {
+  it("T-TIDE-RESUME-04a: a path with a ledger row renders Start fresh + Resume", () => {
     tugbankStore["dev.tugtool.tide"] = {
       "recent-projects": {
         kind: "json",
-        value: { paths: ["/work/resumable", "/work/nope"] },
+        value: { paths: ["/work/resumable"] },
       },
     };
 
     renderTideCard(CARD_ID);
 
-    function radioCount(): number {
-      return document.querySelectorAll<HTMLButtonElement>(
-        '.tug-sheet-content [role="radio"]',
-      ).length;
-    }
-
-    // With a ledger row for /work/resumable: 2 radios (Start fresh + 1
-    // resume row).
     clickRecent("/work/resumable");
     act(() => {
       publishListSessionsOk({
@@ -595,14 +607,26 @@ describe("TideCardContent – binding gate and project picker", () => {
         ],
       });
     });
-    expect(radioCount()).toBe(2);
+    // Start fresh + 1 resume row.
+    expect(sessionCellCount()).toBe(2);
+  });
 
-    // Switch to a path with no rows: just Start fresh.
+  it("T-TIDE-RESUME-04c: a path with no ledger rows renders Start fresh only", () => {
+    tugbankStore["dev.tugtool.tide"] = {
+      "recent-projects": {
+        kind: "json",
+        value: { paths: ["/work/nope"] },
+      },
+    };
+
+    renderTideCard(CARD_ID);
+
     clickRecent("/work/nope");
     act(() => {
       publishListSessionsOk({ project_dir: "/work/nope", sessions: [] });
     });
-    expect(radioCount()).toBe(1);
+    // Start fresh only.
+    expect(sessionCellCount()).toBe(1);
   });
 
   it("T-TIDE-07: bind success persists the project path to recent-projects", () => {

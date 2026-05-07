@@ -16,11 +16,19 @@
  * through the responder chain rather than calling local handlers directly.
  * The popover registers itself as a responder via `useOptionalResponder`
  * with matching handlers that resolve the pending promise and close the
- * popover. The dispatch walks from the innermost responder (promoted by
- * the pointerdown capture from the button click to the `.tug-confirm-popover`
- * div, which carries `data-responder-id`) and lands back on the popover's
- * own handler — a short self-loop that keeps the resolver logic behind a
- * chain handler instead of inline button callbacks. [L11]
+ * popover.
+ *
+ * Buttons dispatch via `sendToTarget(responderId, ...)` — explicitly
+ * addressing the popover's own responder rather than relying on
+ * pointerdown-driven first-responder promotion. The buttons (TugPushButton)
+ * carry `data-tug-focus="refuse"`, which the responder-chain provider's
+ * pointerdown handler treats as a signal to SKIP first-responder promotion.
+ * Without explicit targeting, the dispatch would land on whatever ambient
+ * responder happens to be first when the click fires (commonly a TugSheet
+ * ancestor that also registers a `cancelDialog` handler), and clicking our
+ * Cancel would dismiss the host modal instead of just the popover.
+ * Targeting ourselves keeps the dispatch a true self-loop, independent of
+ * promotion state. [L11]
  *
  * Rendered outside a `ResponderChainProvider` (standalone previews,
  * tests), `useOptionalResponder` no-ops and the buttons fall back to
@@ -250,12 +258,24 @@ export const TugConfirmPopover = React.forwardRef<
   // Button click handlers. In the normal chain-native path they
   // dispatch through the manager; with no provider in scope they call
   // the primary handler directly.
+  //
+  // We target the popover's OWN responder id explicitly via
+  // `sendToTarget` rather than `sendToFirstResponder`. The buttons
+  // (TugPushButton) carry `data-tug-focus="refuse"`, which blocks the
+  // pointerdown promotion the responder-chain provider would otherwise
+  // run on click — so the popover's responder is never promoted to
+  // first responder and `sendToFirstResponder` would land on whatever
+  // ambient responder happens to be first (e.g., a TugSheet ancestor
+  // that also handles `cancelDialog`, in which case clicking our
+  // Cancel would dismiss the sheet, not just the popover). Targeting
+  // ourselves keeps the dispatch a true self-loop independent of
+  // promotion state.
   function onConfirmClick() {
     if (!manager) {
       handleConfirmAction();
       return;
     }
-    manager.sendToFirstResponder({
+    manager.sendToTarget(responderId, {
       action: TUG_ACTIONS.CONFIRM_DIALOG,
       sender: senderId,
       phase: "discrete",
@@ -267,7 +287,7 @@ export const TugConfirmPopover = React.forwardRef<
       handleCancelAction();
       return;
     }
-    manager.sendToFirstResponder({
+    manager.sendToTarget(responderId, {
       action: TUG_ACTIONS.CANCEL_DIALOG,
       sender: senderId,
       phase: "discrete",

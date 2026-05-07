@@ -37,12 +37,18 @@ import { TugBox } from "../tug-box";
 import { TugBadge } from "../tug-badge";
 import { TugInput } from "../tug-input";
 import { TugPushButton } from "../tug-push-button";
-import { TugRadioGroup, TugRadioItem } from "../tug-radio-group";
+import {
+  TugConfirmPopover,
+  type TugConfirmPopoverHandle,
+} from "../tug-confirm-popover";
 import { TugPopupButton } from "../tug-popup-button";
 import type { TugPopupButtonItem } from "../tug-popup-button";
 import { TugSwitch } from "../tug-switch";
 import { TugSeparator } from "../tug-separator";
-import { Trash2 } from "lucide-react";
+import {
+  TugListView,
+  type TugListViewDelegate,
+} from "../tug-list-view";
 import { useTugSheet } from "../tug-sheet";
 import { useResponderChain } from "../responder-chain-provider";
 import { useResponderForm } from "../use-responder-form";
@@ -86,9 +92,15 @@ import type { SessionRow } from "@/protocol";
 import type { TaggedValue } from "@/lib/tugbank-client";
 import { wrapPositionZero } from "./completion-providers/position-zero";
 import {
-  formatSessionRowSubtitle,
-  truncateForDisplay,
-} from "./tide-picker-format";
+  useTideRecentsDataSource,
+  useTideSessionsDataSource,
+} from "@/lib/tide-picker-data-source";
+import {
+  PickerCellProvider,
+  RECENTS_CELL_RENDERERS,
+  SESSIONS_CELL_RENDERERS,
+  type PickerSelection,
+} from "./tide-picker-cells";
 
 import "./tide-card.css";
 
@@ -125,6 +137,19 @@ const LETTER_SPACING_OPTIONS: TugPopupButtonItem<number>[] = [
 /** Percentage the entry panel pegs to when the user clicks Maximize.
  *  Mirrors the panel's `maxSize="90%"` upper bound — keep them in sync. */
 const ENTRY_PANEL_MAX_PCT = 90;
+
+/**
+ * The picker sheet's exit animation duration, in milliseconds. Used
+ * by the Open / Retry paths in `TideProjectPicker` to defer the
+ * binding-mutating wire frame until after the sheet has finished
+ * animating out, so the resulting card-body flip doesn't unmount the
+ * picker mid-animation.
+ *
+ * Mirrors `--tug-motion-duration-moderate` (~200ms) plus a small
+ * buffer so we wait for the animation to fully settle before the
+ * binding update lands.
+ */
+const SHEET_EXIT_ANIMATION_MS = 220;
 
 const LINE_HEIGHT_OPTIONS: TugPopupButtonItem<number>[] = [
   { action: TUG_ACTIONS.SET_VALUE, value: 1.0, label: "1.0" },
@@ -528,7 +553,7 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
       retryTugSessionId !== undefined && retryProjectDir !== undefined;
 
     void showSheet({
-      title: "Open Project",
+      title: "Choose Session",
       // Capture the cascade target at sheet-open time per
       // `tugplan-tide-overlay-framework.md` [D02]. `cardId` is the
       // card-host's responder id; the chain walk from `cardId`
@@ -553,14 +578,27 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
               console.warn("TideProjectPicker: connection unavailable");
               return;
             }
-            sendSpawnSession(
-              connection,
-              cardId,
-              sessionId,
-              projectDir,
-              sessionMode,
-            );
+            // Start the sheet's exit animation FIRST. Defer
+            // `sendSpawnSession` until after the animation has
+            // played: `spawn_session_ok` arrives in single-digit
+            // milliseconds in-process, and the resulting binding
+            // update flips this card from picker → body, unmounting
+            // the picker (and its sheet host) mid-animation. The
+            // user-visible symptom is the sheet "just disappearing"
+            // on Open while Cancel animates correctly. Deferring the
+            // wire send by the sheet's exit duration lets the sheet
+            // play its exit cleanly before the binding flip cascades
+            // through the card.
             close("open");
+            window.setTimeout(() => {
+              sendSpawnSession(
+                connection,
+                cardId,
+                sessionId,
+                projectDir,
+                sessionMode,
+              );
+            }, SHEET_EXIT_ANIMATION_MS);
           }}
           onCancel={() => close("cancel")}
           onRetryRestore={
@@ -573,13 +611,18 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
                     );
                     return;
                   }
-                  fireRestore(
-                    cardId,
-                    retryTugSessionId as string,
-                    retryProjectDir as string,
-                    connection,
-                  );
+                  // Same exit-animation deferral as Open above —
+                  // `fireRestore` triggers a binding restore that can
+                  // unmount this picker.
                   close("retry");
+                  window.setTimeout(() => {
+                    fireRestore(
+                      cardId,
+                      retryTugSessionId as string,
+                      retryProjectDir as string,
+                      connection,
+                    );
+                  }, SHEET_EXIT_ANIMATION_MS);
                 }
               : null
           }
@@ -713,17 +756,17 @@ function noticeText(notice: PickerNotice): string {
   }
 }
 
-function TideProjectPickerForm({ notice, onOpen, onCancel, onRetryRestore }: TideProjectPickerFormProps) {
+function TideProjectPickerForm({
+  notice,
+  onOpen,
+  onCancel,
+  onRetryRestore,
+}: TideProjectPickerFormProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // External state reaches React via `useSyncExternalStore` (per [L02]).
-  // - `recents` still rides on tugbank (a small, mostly-static set of
-  //   recent project paths).
-  // - The session list now flows through the tugcast-side
-  //   `TideSessionLedgerStore` via `useSessionLedger`. The store
-  //   dispatches a `list_sessions` request keyed on the user-typed
-  //   path; the response settles to a snapshot, and `session_updated`
-  //   pushes patch the cache in place.
+  // External state via `useSyncExternalStore` per [L02]. Recents
+  // ride on tugbank; sessions flow through the tugcast-side
+  // `TideSessionLedgerStore` keyed on the user-typed path.
   const recents = useTugbankValue(
     "dev.tugtool.tide",
     "recent-projects",
@@ -731,464 +774,438 @@ function TideProjectPickerForm({ notice, onOpen, onCancel, onRetryRestore }: Tid
     EMPTY_STRING_ARRAY as string[],
   );
 
-  // Live path state drives the resume-option visibility. The input
-  // is controlled; recents clicks call setPath so every path flows
-  // through the Start-fresh / Resume choice rather than
-  // spawning directly.
   const [path, setPath] = useState("");
-  // Selected radio row. `"new"` is the synthetic Start-fresh row;
-  // any other value is a `session_id` from the ledger snapshot. The
-  // stored value is the wire identity of the chosen action — submit
-  // forwards `"new"` → fresh + new uuid, anything else → resume with
-  // that exact session id.
-  const [selectedRow, setSelectedRow] = useState<string>("new");
-
-  // The TugRadioGroup dispatches `selectValue` actions through the
-  // responder chain per L11 — `useResponderForm` installs a handler
-  // that routes the dispatch to `setSelectedRow` by sender id.
-  const sessionRowSenderId = useId();
-  const { ResponderScope, responderRef } = useResponderForm({
-    selectValue: {
-      [sessionRowSenderId]: (next) => {
-        // Accept "new" or any non-empty string (a session id). Empty
-        // values are ignored as a defensive guard.
-        if (typeof next === "string" && next.length > 0) {
-          setSelectedRow(next);
-        }
-      },
-    },
-  });
-
-  // Subscribe the picker to the session-ledger store keyed on the
-  // user's typed path. Pre-typing: empty path → idle snapshot, no
-  // request. Post-typing: pending → ready as the server's
-  // `list_sessions_ok` lands. Live `session_updated` pushes during
-  // the picker's lifetime patch the snapshot in place.
   const trimmedPath = path.trim();
   const sessionLedger = useSessionLedger(trimmedPath);
 
-  // Non-live rows the picker offers as Resume targets. Live rows are
-  // shown but disabled — they belong to another card and clicking them
-  // would race the live-elsewhere rejection.
-  const sessionRows: ReadonlyArray<SessionRow> =
-    sessionLedger.status === "ready" ? sessionLedger.rows : [];
-
-  // True while the ledger request is in flight (after the user types or
-  // selects a recent, before `list_sessions_ok` lands). The picker shows
-  // a subdued placeholder so the empty row list during pending doesn't
-  // falsely advertise "no sessions to resume".
-  const resumePending =
-    trimmedPath.length > 0 && sessionLedger.status === "pending";
-
-  // Track the currently-resolved resume candidate (the selected
-  // session id, when not "new"). Used by `submit` to forward the right
-  // session id on the wire.
-  const resumeCandidate = useMemo<SessionRow | null>(() => {
-    if (selectedRow === "new") return null;
-    return sessionRows.find((r) => r.session_id === selectedRow) ?? null;
-  }, [selectedRow, sessionRows]);
-
-  // The selected row is "live elsewhere" when its `state === "live"` —
-  // some other card is holding it. Submission is gated to prevent the
-  // race; the server's `session_live_elsewhere` is the safety net.
-  const selectedRowLiveElsewhere =
-    resumeCandidate !== null && resumeCandidate.state === "live";
-
-  // Revert the selection to "new" if the user edits the path into a
-  // workspace where the previously-selected session id no longer
-  // appears (e.g., they switched projects). Prevents a stale id from
-  // silently being the active choice on submit.
-  useLayoutEffect(() => {
-    if (selectedRow === "new") return;
-    const stillVisible = sessionRows.some((r) => r.session_id === selectedRow);
-    if (!stillVisible) setSelectedRow("new");
-  }, [selectedRow, sessionRows]);
-
-  const submit = useCallback(() => {
-    const trimmed = inputRef.current?.value.trim() ?? "";
-    if (!trimmed) return;
-    // Defense-in-depth: if selectedRow points at a session id but the
-    // candidate vanished (race), downgrade to "new" on the wire.
-    const effectiveMode: CardSessionMode =
-      resumeCandidate !== null && !selectedRowLiveElsewhere ? "resume" : "new";
-    const effectiveSessionId =
-      effectiveMode === "resume" && resumeCandidate !== null
-        ? resumeCandidate.session_id
-        : crypto.randomUUID();
-    logSessionLifecycle("picker.submit", {
-      project_dir: trimmed,
-      session_mode: effectiveMode,
-      session_id: effectiveSessionId,
-      resume_candidate_id: resumeCandidate?.session_id ?? null,
-    });
-    onOpen(trimmed, effectiveMode, effectiveSessionId);
-  }, [onOpen, resumeCandidate, selectedRowLiveElsewhere]);
-
-  // Forget is destructive — the JSONL is preserved in trash for 7 days
-  // but the row drops from the picker immediately. The plan's picker UX
-  // requires a confirmation step on click and on the Backspace shortcut.
-  // `pendingForget` holds the in-flight intent; rendering swaps the
-  // picker for a confirmation panel inside the same TugSheet body so
-  // there's no nested overlay.
-  type PendingForget =
-    | { kind: "session"; sessionId: string; firstPrompt: string | null }
-    | { kind: "all"; count: number };
-  const [pendingForget, setPendingForget] = useState<PendingForget | null>(null);
-
-  const requestForgetSession = useCallback(
-    (sessionId: string): void => {
-      const row = sessionRows.find((r) => r.session_id === sessionId);
-      if (row === undefined || row.state === "live") return;
-      setPendingForget({
-        kind: "session",
-        sessionId,
-        firstPrompt: row.first_user_prompt,
-      });
-    },
-    [sessionRows],
+  // Two data sources for the master/detail layout: Recents (always
+  // visible — clicking one fills the input but the list does not
+  // collapse) above Sessions (always visible — placeholder when no
+  // path / ledger pending).
+  const recentsDataSource = useTideRecentsDataSource(recents, trimmedPath);
+  const sessionsDataSource = useTideSessionsDataSource(
+    trimmedPath,
+    sessionLedger,
   );
 
-  const requestForgetAll = useCallback((): void => {
-    const count = sessionRows.filter((r) => r.state !== "live").length;
-    if (count === 0) return;
-    setPendingForget({ kind: "all", count });
-  }, [sessionRows]);
+  // Session selection. Owned here, read by cells via context. Open
+  // resolves submission per [Spec S02].
+  const [selection, setSelection] = useState<PickerSelection | null>(null);
 
-  const cancelPendingForget = useCallback((): void => {
-    setPendingForget(null);
-  }, []);
-
-  // Forget actions go through the singleton ledger store. The store
-  // dispatches the CONTROL request and the eventual `session_updated`
-  // push patches the picker's snapshot — the row vanishes without
-  // re-mount.
-  const confirmPendingForget = useCallback((): void => {
-    const store = getTideSessionLedgerStore();
-    if (store === null || pendingForget === null) {
-      setPendingForget(null);
+  // [Spec S03] selection invalidation — sessions only. Auto-default
+  // to `session-new` on first SESSIONS visibility per [D06]; clear
+  // when sessions go away; snap-back when the selected resume row
+  // vanishes from the ledger.
+  const sessionsReady = sessionsDataSource.isReady();
+  const ledgerRows = sessionLedger.rows;
+  useLayoutEffect(() => {
+    if (!sessionsReady) {
+      if (selection !== null) setSelection(null);
       return;
     }
-    if (pendingForget.kind === "session") {
-      void store.forgetSession(pendingForget.sessionId);
-      setSelectedRow((prev) =>
-        prev === pendingForget.sessionId ? "new" : prev,
-      );
-    } else {
-      // Forget all: by-typed-path is implemented client-side as N
-      // per-row forget calls. The server's `forget_workspace_sessions`
-      // matches by canonical workspace_key, which the picker doesn't
-      // have for an arbitrary typed path; per-row forgets each match
-      // by session_id.
-      for (const row of sessionRows) {
-        if (row.state === "live") continue;
-        void store.forgetSession(row.session_id);
-      }
-      setSelectedRow("new");
+    if (selection === null) {
+      setSelection({ kind: "session-new" });
+      return;
     }
-    setPendingForget(null);
-  }, [pendingForget, sessionRows]);
+    if (selection.kind === "session-resume") {
+      const stillVisible = ledgerRows.some(
+        (r) => r.session_id === selection.sessionId,
+      );
+      if (!stillVisible) setSelection({ kind: "session-new" });
+    }
+  }, [sessionsReady, ledgerRows, selection]);
 
-  // Backspace on a focused row triggers Forget — but flows through the
-  // confirmation panel, not directly. The form-level handler reads the
-  // focused element's `value` attribute (Radix passes the radio's value
-  // through to the DOM) to find the row's session_id; "new" is ignored
-  // because Start-fresh has nothing to forget.
-  const handleFormKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLDivElement>): void => {
-      if (e.key !== "Backspace") return;
-      const target = e.target;
-      if (!(target instanceof HTMLElement)) return;
-      if (target.getAttribute("role") !== "radio") return;
-      const value = target.getAttribute("value");
-      if (value === null || value === "new" || value.length === 0) return;
-      e.preventDefault();
-      requestForgetSession(value);
+  // Forget actions — invoked after the cell-local (per-row trash) or
+  // picker-level (forget-all) `TugConfirmPopover` resolves true. No
+  // intermediate `pendingForget` state: the popover is the
+  // confirmation UI, so these helpers unconditionally delete.
+
+  const forgetSession = useCallback(
+    (sessionId: string): void => {
+      const store = getTideSessionLedgerStore();
+      if (store === null) return;
+      const row = ledgerRows.find((r) => r.session_id === sessionId);
+      if (row === undefined || row.state === "live") return;
+      void store.forgetSession(sessionId);
+      setSelection((prev) =>
+        prev?.kind === "session-resume" && prev.sessionId === sessionId
+          ? { kind: "session-new" }
+          : prev,
+      );
     },
-    [requestForgetSession],
+    [ledgerRows],
   );
 
-  const nonLiveRowCount = sessionRows.filter((r) => r.state !== "live").length;
+  const forgetAll = useCallback((): void => {
+    const store = getTideSessionLedgerStore();
+    if (store === null) return;
+    let any = false;
+    for (const row of ledgerRows) {
+      if (row.state === "live") continue;
+      void store.forgetSession(row.session_id);
+      any = true;
+    }
+    if (any) setSelection({ kind: "session-new" });
+  }, [ledgerRows]);
 
-  // Confirmation panel renders in place of the picker form when a Forget
-  // action is pending, so the user gets a single-screen affirm/cancel
-  // gesture without nested overlays. Cancel returns to the picker; the
-  // typed path and selected row are preserved (the picker state is held
-  // in the same component instance).
-  if (pendingForget !== null) {
-    const fullPrompt =
-      pendingForget.kind === "session" ? pendingForget.firstPrompt : null;
-    const previewSnippet =
-      fullPrompt !== null && fullPrompt.length > 0
-        ? truncateForDisplay(fullPrompt, 80)
-        : null;
-    return (
-      <ResponderScope>
-        <div
-          className="tide-card-picker-form tide-card-picker-confirm"
-          data-testid="tide-card-picker-forget-confirm"
-        >
-          <div className="tide-card-picker-confirm-title">
-            {pendingForget.kind === "session"
-              ? "Forget session"
-              : `Forget all ${pendingForget.count} session${
-                  pendingForget.count === 1 ? "" : "s"
-                }`}
-          </div>
-          {pendingForget.kind === "session" && previewSnippet !== null && (
-            <div
-              className="tide-card-picker-confirm-preview"
-              title={fullPrompt ?? undefined}
-            >
-              <em>{previewSnippet}</em>
-            </div>
-          )}
-          <div className="tide-card-picker-confirm-body">
-            This is destructive but recoverable for 7 days. Continue?
-          </div>
-          <div className="tug-sheet-actions">
-            <TugPushButton
-              emphasis="outlined"
-              role="action"
-              onClick={cancelPendingForget}
-              data-testid="tide-card-picker-forget-cancel"
-            >
-              Cancel
-            </TugPushButton>
-            <TugPushButton
-              emphasis="filled"
-              role="danger"
-              onClick={confirmPendingForget}
-              data-testid="tide-card-picker-forget-confirm-button"
-            >
-              Forget
-            </TugPushButton>
-          </div>
-        </div>
-      </ResponderScope>
-    );
-  }
+  // Imperative handle for the forget-all confirm popover anchored to
+  // the FORGET ALL button. Click flow: open popover → await
+  // confirmation → run `forgetAll`.
+  const forgetAllConfirmRef = useRef<TugConfirmPopoverHandle>(null);
+  const handleForgetAllClick = useCallback(async (): Promise<void> => {
+    const ok = await forgetAllConfirmRef.current?.confirm();
+    if (ok === true) forgetAll();
+  }, [forgetAll]);
+
+  // Submit per [Spec S02] — resolves `(mode, sessionId)` from the
+  // effective selection. The override parameter lets the form-level
+  // Enter handler pass a synchronously-resolved selection from a
+  // focused cell wrapper, since `setSelection` calls in the same
+  // event don't reach state until the next render.
+  const submitWith = useCallback(
+    (effectiveSelection: PickerSelection | null): void => {
+      const trimmed = inputRef.current?.value.trim() ?? "";
+      if (!trimmed) return;
+
+      let mode: CardSessionMode;
+      let sessionId: string;
+      let resumeCandidateId: string | null = null;
+
+      if (effectiveSelection?.kind === "session-resume") {
+        resumeCandidateId = effectiveSelection.sessionId;
+        const row = ledgerRows.find(
+          (r) => r.session_id === effectiveSelection.sessionId,
+        );
+        if (row !== undefined && row.state !== "live") {
+          mode = "resume";
+          sessionId = row.session_id;
+        } else {
+          mode = "new";
+          sessionId = crypto.randomUUID();
+        }
+      } else {
+        mode = "new";
+        sessionId = crypto.randomUUID();
+      }
+
+      logSessionLifecycle("picker.submit", {
+        project_dir: trimmed,
+        session_mode: mode,
+        session_id: sessionId,
+        resume_candidate_id: resumeCandidateId,
+      });
+      onOpen(trimmed, mode, sessionId);
+    },
+    [onOpen, ledgerRows],
+  );
+
+  const submit = useCallback((): void => {
+    submitWith(selection);
+  }, [submitWith, selection]);
+
+  // Recents list delegate — onSelect fills the input.
+  const recentsDelegate = useMemo<TugListViewDelegate>(
+    () => ({
+      onSelect: (index) => {
+        const row = recentsDataSource.rowAt(index);
+        if (row.kind === "path-recent") setPath(row.path);
+      },
+    }),
+    [recentsDataSource],
+  );
+
+  // Sessions list delegate — onSelect updates the session selection
+  // (or no-ops on live / loading rows).
+  const sessionsDelegate = useMemo<TugListViewDelegate>(
+    () => ({
+      onSelect: (index) => {
+        const row = sessionsDataSource.rowAt(index);
+        switch (row.kind) {
+          case "session-new":
+            setSelection({ kind: "session-new" });
+            return;
+          case "session-resume":
+            if (row.row.state === "live") return;
+            setSelection({
+              kind: "session-resume",
+              sessionId: row.row.session_id,
+            });
+            return;
+          case "loading":
+            return;
+        }
+      },
+    }),
+    [sessionsDataSource],
+  );
+
+  // [D10] Arrow-key navigation across the Sessions list's selectable
+  // rows. Builds the list of selectables (session-new + non-live
+  // session-resume) and steps through with wrap.
+  const handleArrowKey = useCallback(
+    (direction: "up" | "down"): void => {
+      const selectables: Array<{ sel: PickerSelection }> = [];
+      for (let i = 0; i < sessionsDataSource.numberOfItems(); i += 1) {
+        const row = sessionsDataSource.rowAt(i);
+        if (row.kind === "session-new") {
+          selectables.push({ sel: { kind: "session-new" } });
+        } else if (
+          row.kind === "session-resume" &&
+          row.row.state !== "live"
+        ) {
+          selectables.push({
+            sel: {
+              kind: "session-resume",
+              sessionId: row.row.session_id,
+            },
+          });
+        }
+      }
+      if (selectables.length === 0) return;
+
+      let currentIdx = -1;
+      if (selection !== null) {
+        currentIdx = selectables.findIndex(({ sel }) => {
+          if (sel.kind !== selection.kind) return false;
+          if (
+            sel.kind === "session-resume" &&
+            selection.kind === "session-resume"
+          ) {
+            return sel.sessionId === selection.sessionId;
+          }
+          return true;
+        });
+      }
+
+      const nextIdx =
+        currentIdx === -1
+          ? direction === "down"
+            ? 0
+            : selectables.length - 1
+          : (currentIdx + (direction === "down" ? 1 : -1) + selectables.length) %
+            selectables.length;
+
+      setSelection(selectables[nextIdx].sel);
+    },
+    [sessionsDataSource, selection],
+  );
+
+  // Form-level keyboard handling. ArrowUp/Down moves selection across
+  // selectable session rows; Enter activates Open with the user-
+  // intended selection (resolved from a focused cell wrapper if
+  // applicable, else from state). Forget is mouse-driven via the
+  // per-row trash button + confirm popover.
+  const handleFormKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>): void => {
+      const target = e.target;
+      const inInput =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement;
+
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        if (inInput) return;
+        e.preventDefault();
+        handleArrowKey(e.key === "ArrowDown" ? "down" : "up");
+        return;
+      }
+
+      if (e.key === "Enter") {
+        if (inInput) return;
+        let effective = selection;
+        if (target instanceof HTMLElement) {
+          const indexAttr = target.getAttribute("data-tug-list-cell-index");
+          // Resolve from a focused sessions-list cell — recents-list
+          // cells (path-recent) are click-to-fill-input, not
+          // selection, so they're skipped here.
+          if (indexAttr !== null && target.closest(".tide-card-picker-sessions-list") !== null) {
+            const i = Number.parseInt(indexAttr, 10);
+            if (
+              !Number.isNaN(i) &&
+              i >= 0 &&
+              i < sessionsDataSource.numberOfItems()
+            ) {
+              const row = sessionsDataSource.rowAt(i);
+              if (row.kind === "session-new") {
+                effective = { kind: "session-new" };
+              } else if (
+                row.kind === "session-resume" &&
+                row.row.state !== "live"
+              ) {
+                effective = {
+                  kind: "session-resume",
+                  sessionId: row.row.session_id,
+                };
+              }
+            }
+          }
+        }
+        e.preventDefault();
+        submitWith(effective);
+        return;
+      }
+    },
+    [handleArrowKey, sessionsDataSource, selection, submitWith],
+  );
+
+  // Cell-context value — `currentPath` drives path-recent's
+  // `data-selected`; `selection` drives session cells' selection
+  // state; `onConfirmForgetSession` is invoked by the per-row trash
+  // popover after the user confirms.
+  const cellContextValue = useMemo(
+    () => ({
+      currentPath: path,
+      selection,
+      onConfirmForgetSession: forgetSession,
+    }),
+    [path, selection, forgetSession],
+  );
+
+  // Master/detail layout: project-path input → Recents list →
+  // Sessions list (+ Forget-all button) → Cancel/Open.
+  const sessionsPending = sessionsDataSource.isPending();
+  const nonLiveCount = sessionsDataSource.nonLiveCount();
+  const openDisabled = trimmedPath.length === 0;
 
   return (
-    <ResponderScope>
-      <div
-        className="tide-card-picker-form"
-        ref={responderRef}
-        onKeyDown={handleFormKeyDown}
-      >
-        {notice !== null && (
-          <div
-            className="tide-card-picker-notice"
-            role="status"
-            data-testid="tide-card-picker-notice"
-            data-notice-category={notice.category}
-          >
-            {noticeText(notice)}
-            {onRetryRestore !== null && (
-              <div className="tide-card-picker-notice-actions">
-                <TugPushButton
-                  emphasis="outlined"
-                  onClick={onRetryRestore}
-                  data-testid="tide-card-picker-notice-retry"
-                >
-                  Retry
-                </TugPushButton>
+    <div className="tide-card-picker-form" onKeyDown={handleFormKeyDown}>
+      {notice !== null && (
+        <div
+          className="tide-card-picker-notice"
+          role="status"
+          data-testid="tide-card-picker-notice"
+          data-notice-category={notice.category}
+        >
+          {noticeText(notice)}
+          {onRetryRestore !== null && (
+            <div className="tide-card-picker-notice-actions">
+              <TugPushButton
+                emphasis="outlined"
+                onClick={onRetryRestore}
+                data-testid="tide-card-picker-notice-retry"
+              >
+                Retry
+              </TugPushButton>
+            </div>
+          )}
+        </div>
+      )}
+      <label className="tide-card-picker-field">
+        <span className="tide-card-picker-label">Project path</span>
+        <TugInput
+          ref={inputRef}
+          type="text"
+          value={path}
+          onChange={(e) => setPath((e.target as HTMLInputElement).value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          placeholder="/path/to/project"
+          autoFocus
+        />
+      </label>
+      <PickerCellProvider value={cellContextValue}>
+        <TugBox
+          variant="bordered"
+          label="Recent Project Paths"
+          labelPosition="legend"
+          className="tide-card-picker-box"
+        >
+          <div className="tide-card-picker-recents-host">
+            {recents.length > 0 ? (
+              <TugListView
+                dataSource={recentsDataSource}
+                delegate={recentsDelegate}
+                cellRenderers={RECENTS_CELL_RENDERERS}
+                scrollKey="tide-card-picker-recents"
+                className="tide-card-picker-recents-list tide-card-picker-list-view"
+              />
+            ) : (
+              <div
+                className="tide-card-picker-empty"
+                data-testid="tide-card-picker-recents-empty"
+              >
+                No recent projects
               </div>
             )}
           </div>
-        )}
-        <label className="tide-card-picker-field">
-          <span className="tide-card-picker-label">Project path</span>
-          <TugInput
-            ref={inputRef}
-            type="text"
-            value={path}
-            onChange={(e) => setPath((e.target as HTMLInputElement).value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                submit();
-              }
-            }}
-            placeholder="/path/to/project"
-            autoFocus
-          />
-        </label>
-        {recents.length > 0 && (
-          <div className="tide-card-picker-recents">
-            <span className="tide-card-picker-label">Recent</span>
-            <div className="tide-card-picker-recents-list">
-              {recents.map((p) => (
-                // 4.5 regression from 4m: a recent click now fills the
-                // input. Single-click spawn was removed so every path
-                // goes through the Start-fresh / Resume-last radio
-                // group below.
-                <TugPushButton
-                  key={p}
-                  emphasis="ghost"
-                  role="action"
-                  onClick={() => setPath(p)}
-                >
-                  {p}
-                </TugPushButton>
-              ))}
-            </div>
-          </div>
-        )}
-        {/*
-          Start-fresh is always present and selected by default. Resume
-          rows render one per non-empty ledger row (newest first) once
-          the snapshot is `ready`. Live rows are visible but disabled —
-          another card holds them; the server's `session_live_elsewhere`
-          rejection is the safety net.
-
-          Each row keeps the user-facing detail (snippet + relative
-          timestamp + turn count + state pill) inside the radio label so
-          a single click both selects the radio and conveys what the row
-          represents.
-
-          Loading state: while the ledger request is in flight (typically
-          <50ms after the user types or selects a recent), render a
-          subdued "checking…" placeholder under the radio group. An empty
-          row list during pending would falsely advertise "no sessions
-          to resume"; the placeholder makes the loading state legible.
-        */}
-        {resumePending && (
-          <div
-            className="tide-card-picker-pending-placeholder"
-            data-testid="tide-card-picker-pending-placeholder"
-            role="status"
-            aria-live="polite"
-          >
-            checking…
-          </div>
-        )}
-        <TugRadioGroup
-          aria-label="Session mode"
-          value={selectedRow}
-          senderId={sessionRowSenderId}
-          size="md"
-          orientation="vertical"
+        </TugBox>
+        <TugBox
+          variant="bordered"
+          label="Previous Sessions"
+          labelPosition="legend"
+          className="tide-card-picker-box"
         >
-          <TugRadioItem value="new">
-            <span className="tide-card-picker-session-option">
-              <span className="tide-card-picker-session-option-title">
-                Start fresh
-              </span>
-              <span className="tide-card-picker-session-option-subtitle">
-                New session
-              </span>
-            </span>
-          </TugRadioItem>
-          {sessionRows.map((row) => {
-            const isLive = row.state === "live";
-            const isFailed = row.state === "failed";
-            const fullPrompt =
-              row.first_user_prompt !== null && row.first_user_prompt.length > 0
-                ? row.first_user_prompt
-                : null;
-            const snippet =
-              fullPrompt !== null ? truncateForDisplay(fullPrompt, 64) : null;
-            // Subtitle copy is state-driven so the user always understands
-            // why a row is unavailable. Closed rows show the contextual
-            // metadata (timestamp · turns · short id); live and failed
-            // rows show the diagnostic from the plan's picker UX spec.
-            const subtitleText = isLive
-              ? "Live in another card"
-              : isFailed
-                ? "Couldn't resume — JSONL missing"
-                : formatSessionRowSubtitle(row);
-            const idShort = row.session_id.slice(0, 8);
-            return (
-              <TugRadioItem
-                key={row.session_id}
-                value={row.session_id}
-                disabled={isLive}
+          <div className="tide-card-picker-sessions-host">
+            {sessionsReady ? (
+              <TugListView
+                dataSource={sessionsDataSource}
+                delegate={sessionsDelegate}
+                cellRenderers={SESSIONS_CELL_RENDERERS}
+                scrollKey="tide-card-picker-sessions"
+                className="tide-card-picker-sessions-list tide-card-picker-list-view"
+              />
+            ) : sessionsPending ? (
+              <div
+                className="tide-card-picker-empty"
+                role="status"
+                aria-live="polite"
+                data-testid="tide-card-picker-pending-placeholder"
               >
-                <span
-                  className="tide-card-picker-session-option"
-                  data-state={row.state}
-                >
-                  {/* Title carries the truncated snippet for the row's
-                      visual; the full text lives on `title` so a hover
-                      tooltip reveals long prompts the truncation hid.
-                      `aria-label` on the title lets screen readers
-                      announce the full prompt rather than the truncated
-                      span text. */}
-                  <span
-                    className="tide-card-picker-session-option-title"
-                    title={fullPrompt ?? undefined}
-                    aria-label={fullPrompt ?? undefined}
-                  >
-                    {snippet ?? <em>No prompts yet</em>}
-                  </span>
-                  <span
-                    className="tide-card-picker-session-option-subtitle"
-                    data-testid={
-                      row === sessionRows[0]
-                        ? "tide-card-picker-resume-subtitle"
-                        : undefined
-                    }
-                  >
-                    {subtitleText}
-                  </span>
-                </span>
-                {!isLive && (
-                  <button
-                    type="button"
-                    className="tide-card-picker-session-forget"
-                    aria-label={`Forget session ${idShort}`}
-                    title={`Forget session ${idShort}`}
-                    onClick={(e) => {
-                      // Stop the click from selecting the radio — the
-                      // user is forgetting, not choosing this row.
-                      e.stopPropagation();
-                      e.preventDefault();
-                      requestForgetSession(row.session_id);
-                    }}
-                    onPointerDown={(e) => e.stopPropagation()}
-                  >
-                    {/* Icon-only Forget per the plan's picker UX. The
-                        accessible label is on the button itself; the
-                        glyph is decorative. */}
-                    <Trash2 size={14} aria-hidden="true" />
-                  </button>
-                )}
-                {isLive && (
-                  <TugBadge emphasis="tinted" role="action">
-                    live
-                  </TugBadge>
-                )}
-                {isFailed && (
-                  <TugBadge emphasis="tinted" role="danger">
-                    failed
-                  </TugBadge>
-                )}
-              </TugRadioItem>
-            );
-          })}
-        </TugRadioGroup>
-        {nonLiveRowCount > 0 && (
-          <div className="tide-card-picker-forget-all">
-            <TugPushButton
-              emphasis="ghost"
-              role="action"
-              onClick={requestForgetAll}
-              data-testid="tide-card-picker-forget-all"
-            >
-              Forget all sessions for this path
-            </TugPushButton>
+                checking…
+              </div>
+            ) : (
+              <div
+                className="tide-card-picker-empty"
+                data-testid="tide-card-picker-sessions-empty"
+              >
+                Type or select a project path to see sessions
+              </div>
+            )}
           </div>
-        )}
-        <div className="tug-sheet-actions">
-          <TugPushButton emphasis="outlined" role="action" onClick={onCancel}>
-            Cancel
-          </TugPushButton>
-          <TugPushButton emphasis="filled" role="action" onClick={submit}>
-            Open
-          </TugPushButton>
-        </div>
+          <div className="tide-card-picker-forget-all">
+            <TugConfirmPopover
+              ref={forgetAllConfirmRef}
+              message={
+                nonLiveCount > 1
+                  ? `Forget all ${nonLiveCount} sessions for this path?`
+                  : "Forget this session?"
+              }
+              confirmLabel="Forget"
+              confirmRole="danger"
+              side="top"
+            >
+              <TugPushButton
+                emphasis="ghost"
+                role="action"
+                onClick={handleForgetAllClick}
+                disabled={nonLiveCount === 0}
+                data-testid="tide-card-picker-forget-all"
+              >
+                {nonLiveCount > 1
+                  ? `Forget all sessions for this path (${nonLiveCount})`
+                  : "Forget all sessions for this path"}
+              </TugPushButton>
+            </TugConfirmPopover>
+          </div>
+        </TugBox>
+      </PickerCellProvider>
+      <div className="tug-sheet-actions">
+        <TugPushButton emphasis="outlined" role="action" onClick={onCancel}>
+          Cancel
+        </TugPushButton>
+        <TugPushButton
+          emphasis="filled"
+          role="action"
+          onClick={submit}
+          disabled={openDisabled}
+        >
+          Open
+        </TugPushButton>
       </div>
-    </ResponderScope>
+    </div>
   );
 }
 
@@ -1927,7 +1944,13 @@ export function registerTideCard(): void {
     ],
     sizePolicy: {
       min: { width: 320, height: 240 },
-      preferred: { width: 720, height: 540 },
+      // Default size accommodates the Choose Session sheet's full
+      // height (Recents box + Previous Sessions box + actions) with
+      // a little headroom so the sheet doesn't have to scroll the
+      // moment the user opens a fresh card. Width stays compact —
+      // the sheet itself caps at 460px, so a 720px card width gives
+      // the sheet room to breathe with the surrounding card body.
+      preferred: { width: 720, height: 920 },
     },
     engineKind: "em",
   });

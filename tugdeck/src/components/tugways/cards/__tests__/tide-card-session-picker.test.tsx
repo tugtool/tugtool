@@ -15,9 +15,7 @@
  * - T-TIDE-LEDGER-08: pending placeholder appears/disappears across the
  *   list_sessions request lifetime.
  * - T-TIDE-LEDGER-09: icon-only Forget button and full-prompt title attr.
- * - T-TIDE-LEDGER-10: Cancel on the confirmation panel returns to the picker.
- * - T-TIDE-LEDGER-11/12: Backspace shortcut wires through the same
- *   confirmation flow; Backspace on Start-fresh is a no-op.
+ * - T-TIDE-LEDGER-10: Cancel on the confirm popover returns to the picker.
  *
  * Mirrors the setup pattern in `tide-card.test.tsx` — module mocks must
  * be installed in the consuming test file (bun-test mock hoisting), so
@@ -166,13 +164,72 @@ function seedLedgerForPath(path: string, sessions: SessionRow[]): void {
 }
 
 function clickRecent(label: string): void {
-  const btn = Array.from(
-    document.querySelectorAll<HTMLButtonElement>(".tug-sheet-content button"),
-  ).find((b) => b.textContent?.trim() === label);
-  expect(btn).not.toBeUndefined();
+  const cells = Array.from(
+    document.querySelectorAll<HTMLElement>(
+      '.tug-sheet-content [data-testid="tide-card-picker-path-recent"]',
+    ),
+  );
+  const cell = cells.find((c) => c.textContent?.includes(label));
+  expect(cell).not.toBeUndefined();
+  const wrapper = cell!.closest<HTMLElement>("[data-tug-list-cell-index]");
+  expect(wrapper).not.toBeNull();
   act(() => {
-    fireEvent.click(btn!);
+    fireEvent.click(wrapper!);
   });
+}
+
+/** All session cells (Start fresh + each Resume row) in render order. */
+function sessionCells(): HTMLElement[] {
+  return Array.from(
+    document.querySelectorAll<HTMLElement>(
+      '.tug-sheet-content [data-testid="tide-card-picker-session-new"], .tug-sheet-content [data-testid="tide-card-picker-session-resume"]',
+    ),
+  );
+}
+
+/** Resume cells only (excludes Start fresh) in render order. */
+function resumeCells(): HTMLElement[] {
+  return Array.from(
+    document.querySelectorAll<HTMLElement>(
+      '.tug-sheet-content [data-testid="tide-card-picker-session-resume"]',
+    ),
+  );
+}
+
+/** Resume cell wrappers (the elements `TugListView` makes focusable). */
+function resumeCellWrappers(): HTMLElement[] {
+  return resumeCells().map((cell) => {
+    const wrapper = cell.closest<HTMLElement>("[data-tug-list-cell-index]");
+    if (wrapper === null) throw new Error("session-resume wrapper missing");
+    return wrapper;
+  });
+}
+
+/**
+ * Find a button rendered inside an open `TugConfirmPopover` by exact
+ * text content. The popover content is portaled to `document.body`,
+ * outside the picker's sheet. Returns null when the button isn't
+ * rendered (popover closed or portal not mounted).
+ */
+function popoverButtonByText(label: string): HTMLButtonElement | null {
+  const buttons = document.querySelectorAll<HTMLButtonElement>(
+    ".tug-confirm-popover button",
+  );
+  for (const btn of buttons) {
+    if (btn.textContent?.trim() === label) return btn;
+  }
+  return null;
+}
+
+/** Start-fresh cell wrapper. */
+function startFreshWrapper(): HTMLElement {
+  const cell = document.querySelector<HTMLElement>(
+    '.tug-sheet-content [data-testid="tide-card-picker-session-new"]',
+  );
+  if (cell === null) throw new Error("session-new cell missing");
+  const wrapper = cell.closest<HTMLElement>("[data-tug-list-cell-index]");
+  if (wrapper === null) throw new Error("session-new wrapper missing");
+  return wrapper;
 }
 
 describe("Tide picker — session-list view (ledger-backed)", () => {
@@ -201,12 +258,14 @@ describe("Tide picker — session-list view (ledger-backed)", () => {
       }),
     ]);
 
-    const radios = document.querySelectorAll<HTMLButtonElement>(
-      '.tug-sheet-content [role="radio"]',
+    const cells = sessionCells();
+    expect(cells.length).toBe(4);
+    expect(cells[0]!.getAttribute("data-testid")).toBe(
+      "tide-card-picker-session-new",
     );
-    expect(radios.length).toBe(4);
-    expect(radios[0]!.textContent).toContain("Start fresh");
-    const firstResumeSubtitle = radios[1]!.querySelector(
+    expect(cells[0]!.textContent).toContain("New session");
+    // Resume rows in newest-first order: cells[1] is sess-c-newest.
+    const firstResumeSubtitle = cells[1]!.querySelector(
       '[data-testid="tide-card-picker-resume-subtitle"]',
     );
     expect(firstResumeSubtitle?.textContent).toContain("sess-c-n");
@@ -228,15 +287,13 @@ describe("Tide picker — session-list view (ledger-backed)", () => {
       }),
     ]);
 
-    const radios = document.querySelectorAll<HTMLButtonElement>(
-      '.tug-sheet-content [role="radio"]',
-    );
-    expect(radios.length).toBe(2);
-    expect(radios[1]!.disabled).toBe(true);
-    expect(radios[1]!.textContent).toContain("live");
+    const cells = sessionCells();
+    expect(cells.length).toBe(2);
+    expect(cells[1]!.getAttribute("data-disabled")).toBe("true");
+    expect(cells[1]!.textContent).toContain("live");
   });
 
-  it("T-TIDE-LEDGER-03: clicking Forget routes through the confirmation panel; affirm dispatches forget_session", () => {
+  it("T-TIDE-LEDGER-03: clicking Forget opens the confirm popover; Forget there dispatches forget_session", () => {
     tugbankStore["dev.tugtool.tide"] = {
       "recent-projects": { kind: "json", value: { paths: ["/work/forget"] } },
     };
@@ -260,9 +317,7 @@ describe("Tide picker — session-list view (ledger-backed)", () => {
     });
     expect(sentFrames.length).toBe(0);
 
-    const confirmButton = document.querySelector<HTMLButtonElement>(
-      '[data-testid="tide-card-picker-forget-confirm-button"]',
-    );
+    const confirmButton = popoverButtonByText("Forget");
     expect(confirmButton).not.toBeNull();
     act(() => {
       fireEvent.click(confirmButton!);
@@ -276,7 +331,7 @@ describe("Tide picker — session-list view (ledger-backed)", () => {
     expect(decoded).toEqual({ action: "forget_session", session_id: "sess-doomed" });
   });
 
-  it("T-TIDE-LEDGER-04: Forget all routes through confirmation; one forget_session per non-live row", () => {
+  it("T-TIDE-LEDGER-04: Forget all opens the confirm popover; Forget there fires one forget_session per non-live row", () => {
     tugbankStore["dev.tugtool.tide"] = {
       "recent-projects": { kind: "json", value: { paths: ["/work/all"] } },
     };
@@ -312,9 +367,8 @@ describe("Tide picker — session-list view (ledger-backed)", () => {
     });
     expect(sentFrames.length).toBe(0);
 
-    const confirmAll = document.querySelector<HTMLButtonElement>(
-      '[data-testid="tide-card-picker-forget-confirm-button"]',
-    );
+    const confirmAll = popoverButtonByText("Forget");
+    expect(confirmAll).not.toBeNull();
     act(() => {
       fireEvent.click(confirmAll!);
     });
@@ -463,7 +517,7 @@ describe("Tide picker — session-list view (ledger-backed)", () => {
     expect(resumeTitle.getAttribute("aria-label")).toBe(longPrompt);
   });
 
-  it("T-TIDE-LEDGER-10: Cancel on the confirmation panel returns to the picker without dispatching a frame", () => {
+  it("T-TIDE-LEDGER-10: Cancel on the confirm popover dismisses without dispatching a frame", () => {
     tugbankStore["dev.tugtool.tide"] = {
       "recent-projects": { kind: "json", value: { paths: ["/work/cancel"] } },
     };
@@ -484,99 +538,210 @@ describe("Tide picker — session-list view (ledger-backed)", () => {
     act(() => {
       fireEvent.click(forgetButton!);
     });
-    expect(
-      document.querySelector('[data-testid="tide-card-picker-forget-confirm"]'),
-    ).not.toBeNull();
 
-    const cancelButton = document.querySelector<HTMLButtonElement>(
-      '[data-testid="tide-card-picker-forget-cancel"]',
-    );
+    const cancelButton = popoverButtonByText("Cancel");
+    expect(cancelButton).not.toBeNull();
     act(() => {
       fireEvent.click(cancelButton!);
     });
 
     expect(sentFrames.length).toBe(0);
-    expect(
-      document.querySelector('[data-testid="tide-card-picker-forget-confirm"]'),
-    ).toBeNull();
-    expect(
-      document.querySelectorAll('.tug-sheet-content [role="radio"]').length,
-    ).toBeGreaterThan(0);
+    // Picker rows still rendered: at least New session + the resume row.
+    expect(sessionCells().length).toBeGreaterThan(0);
     expect(
       document.querySelector('[data-testid="tide-card-picker-resume-subtitle"]'),
     ).not.toBeNull();
   });
 
-  it("T-TIDE-LEDGER-11: Backspace on a focused resume row opens the confirmation panel; confirm dispatches forget_session", () => {
+  // ---------------------------------------------------------------------------
+  // Phase 2 picker rewrite — select-then-Open, navigation, selection
+  // invalidation, arrow-key navigation. References tide-picker-redesign
+  // [D03], [D04], [D05], [D06], [D10] and [Spec S01], [S02], [S03].
+  // ---------------------------------------------------------------------------
+
+  it("T-TIDE-PICKER-D06: SESSIONS first appears with Start fresh auto-selected", () => {
     tugbankStore["dev.tugtool.tide"] = {
-      "recent-projects": { kind: "json", value: { paths: ["/work/kbd"] } },
+      "recent-projects": { kind: "json", value: { paths: ["/work/auto"] } },
     };
     renderTideCard(CARD_ID);
-    clickRecent("/work/kbd");
-    seedLedgerForPath("/work/kbd", [
+    clickRecent("/work/auto");
+    seedLedgerForPath("/work/auto", [
       makeSessionRow({
-        session_id: "sess-kbd-target",
-        project_dir: "/work/kbd",
+        session_id: "sess-1",
+        project_dir: "/work/auto",
         last_used_at: 1000,
       }),
     ]);
-    sentFrames.length = 0;
 
-    const radios = document.querySelectorAll<HTMLButtonElement>(
-      '.tug-sheet-content [role="radio"]',
+    const startFreshCell = document.querySelector<HTMLElement>(
+      '.tug-sheet-content [data-testid="tide-card-picker-session-new"]',
     );
-    const resumeRadio = radios[1]!;
-    act(() => {
-      fireEvent.keyDown(resumeRadio, { key: "Backspace" });
-    });
-
-    expect(
-      document.querySelector('[data-testid="tide-card-picker-forget-confirm"]'),
-    ).not.toBeNull();
-    const confirmButton = document.querySelector<HTMLButtonElement>(
-      '[data-testid="tide-card-picker-forget-confirm-button"]',
-    );
-    act(() => {
-      fireEvent.click(confirmButton!);
-    });
-
-    expect(sentFrames.length).toBe(1);
-    const decoded = JSON.parse(new TextDecoder().decode(sentFrames[0]!.payload)) as {
-      action: string;
-      session_id: string;
-    };
-    expect(decoded).toEqual({
-      action: "forget_session",
-      session_id: "sess-kbd-target",
-    });
+    expect(startFreshCell?.getAttribute("data-selected")).toBe("true");
   });
 
-  it("T-TIDE-LEDGER-12: Backspace on the Start-fresh row is a no-op (nothing to forget)", () => {
+  it("T-TIDE-PICKER-D03: clicking a non-live resume row marks it data-selected; Open submits resume", () => {
     tugbankStore["dev.tugtool.tide"] = {
-      "recent-projects": { kind: "json", value: { paths: ["/work/kbd2"] } },
+      "recent-projects": { kind: "json", value: { paths: ["/work/select"] } },
     };
     renderTideCard(CARD_ID);
-    clickRecent("/work/kbd2");
-    seedLedgerForPath("/work/kbd2", [
+    clickRecent("/work/select");
+    seedLedgerForPath("/work/select", [
       makeSessionRow({
-        session_id: "sess-not-target",
-        project_dir: "/work/kbd2",
+        session_id: "sess-pick",
+        project_dir: "/work/select",
         last_used_at: 1000,
       }),
     ]);
     sentFrames.length = 0;
 
-    const radios = document.querySelectorAll<HTMLButtonElement>(
-      '.tug-sheet-content [role="radio"]',
-    );
-    const startFresh = radios[0]!;
+    // Click the resume cell wrapper — selection swaps from session-new
+    // to session-resume.
+    const resumeWrapper = resumeCellWrappers()[0];
     act(() => {
-      fireEvent.keyDown(startFresh, { key: "Backspace" });
+      fireEvent.click(resumeWrapper);
     });
 
-    expect(
-      document.querySelector('[data-testid="tide-card-picker-forget-confirm"]'),
-    ).toBeNull();
-    expect(sentFrames.length).toBe(0);
+    const resumeCell = resumeCells()[0];
+    expect(resumeCell.getAttribute("data-selected")).toBe("true");
+    const startFreshCell = document.querySelector<HTMLElement>(
+      '.tug-sheet-content [data-testid="tide-card-picker-session-new"]',
+    );
+    expect(startFreshCell?.getAttribute("data-selected")).not.toBe("true");
+
+    // Open submits resume with the picked session id.
+    const openButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".tug-sheet-content button"),
+    ).find((b) => b.textContent?.trim().toLowerCase() === "open");
+    act(() => {
+      fireEvent.click(openButton!);
+    });
+    const payload = JSON.parse(
+      new TextDecoder().decode(sentFrames[0]!.payload),
+    ) as { session_mode: string; tug_session_id: string };
+    expect(payload.session_mode).toBe("resume");
+    expect(payload.tug_session_id).toBe("sess-pick");
+  });
+
+  it("T-TIDE-PICKER-D04: clicking a live resume row does NOT promote it to selected", () => {
+    tugbankStore["dev.tugtool.tide"] = {
+      "recent-projects": { kind: "json", value: { paths: ["/work/live2"] } },
+    };
+    renderTideCard(CARD_ID);
+    clickRecent("/work/live2");
+    seedLedgerForPath("/work/live2", [
+      makeSessionRow({
+        session_id: "sess-live",
+        project_dir: "/work/live2",
+        last_used_at: 1000,
+        state: "live",
+        card_id: "other",
+      }),
+    ]);
+
+    const resumeWrapper = resumeCellWrappers()[0];
+    act(() => {
+      fireEvent.click(resumeWrapper);
+    });
+
+    const resumeCell = resumeCells()[0];
+    expect(resumeCell.getAttribute("data-selected")).not.toBe("true");
+    // Start fresh stays selected per [D06].
+    const startFreshCell = document.querySelector<HTMLElement>(
+      '.tug-sheet-content [data-testid="tide-card-picker-session-new"]',
+    );
+    expect(startFreshCell?.getAttribute("data-selected")).toBe("true");
+  });
+
+  it("T-TIDE-PICKER-S03: when the selected session vanishes, selection snaps back to Start fresh", () => {
+    tugbankStore["dev.tugtool.tide"] = {
+      "recent-projects": { kind: "json", value: { paths: ["/work/snap"] } },
+    };
+    renderTideCard(CARD_ID);
+    clickRecent("/work/snap");
+    seedLedgerForPath("/work/snap", [
+      makeSessionRow({
+        session_id: "sess-vanish",
+        project_dir: "/work/snap",
+        last_used_at: 1000,
+      }),
+    ]);
+
+    // Select the resume row.
+    act(() => {
+      fireEvent.click(resumeCellWrappers()[0]);
+    });
+    expect(resumeCells()[0].getAttribute("data-selected")).toBe("true");
+
+    // Ledger ticks with the row removed (the user forgot it from
+    // another card, or the workspace was deleted server-side).
+    act(() => {
+      publishListSessionsOk({ project_dir: "/work/snap", sessions: [] });
+    });
+
+    // Selection invalidation per [Spec S03] — snap back to Start fresh.
+    const startFreshCell = document.querySelector<HTMLElement>(
+      '.tug-sheet-content [data-testid="tide-card-picker-session-new"]',
+    );
+    expect(startFreshCell?.getAttribute("data-selected")).toBe("true");
+  });
+
+  it("T-TIDE-PICKER-D10: ArrowDown moves selection across selectable rows; ArrowUp wraps", () => {
+    tugbankStore["dev.tugtool.tide"] = {
+      "recent-projects": { kind: "json", value: { paths: ["/work/nav"] } },
+    };
+    renderTideCard(CARD_ID);
+    clickRecent("/work/nav");
+    seedLedgerForPath("/work/nav", [
+      makeSessionRow({
+        session_id: "sess-a",
+        project_dir: "/work/nav",
+        last_used_at: 2000,
+      }),
+      makeSessionRow({
+        session_id: "sess-live",
+        project_dir: "/work/nav",
+        last_used_at: 1500,
+        state: "live",
+        card_id: "other",
+      }),
+      makeSessionRow({
+        session_id: "sess-b",
+        project_dir: "/work/nav",
+        last_used_at: 1000,
+      }),
+    ]);
+
+    // Start fresh is the default selection.
+    const startFresh = startFreshWrapper();
+
+    // ArrowDown from Start fresh → first non-live resume (sess-a).
+    act(() => {
+      fireEvent.keyDown(startFresh, { key: "ArrowDown" });
+    });
+    expect(resumeCells()[0].getAttribute("data-selected")).toBe("true");
+
+    // ArrowDown again — skips the live row, lands on sess-b.
+    act(() => {
+      fireEvent.keyDown(startFresh, { key: "ArrowDown" });
+    });
+    // resumeCells()[1] is sess-live (rendered but disabled);
+    // resumeCells()[2] is sess-b (the next non-live).
+    expect(resumeCells()[1].getAttribute("data-selected")).not.toBe("true");
+    expect(resumeCells()[2].getAttribute("data-selected")).toBe("true");
+
+    // ArrowDown again — wraps to Start fresh.
+    act(() => {
+      fireEvent.keyDown(startFresh, { key: "ArrowDown" });
+    });
+    const startFreshCell = document.querySelector<HTMLElement>(
+      '.tug-sheet-content [data-testid="tide-card-picker-session-new"]',
+    );
+    expect(startFreshCell?.getAttribute("data-selected")).toBe("true");
+
+    // ArrowUp from Start fresh wraps to last selectable (sess-b).
+    act(() => {
+      fireEvent.keyDown(startFresh, { key: "ArrowUp" });
+    });
+    expect(resumeCells()[2].getAttribute("data-selected")).toBe("true");
   });
 });
