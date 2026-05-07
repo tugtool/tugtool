@@ -1252,7 +1252,7 @@ This step ships as five commits in order. Each builds on the previous.
 
 - [x] 9.6a — pane-scrim registry + hook + tests. Land as commit 1.
 - [x] 9.6b — scrim element built into `TugPane` chrome + CSS + tests. Land as commit 2.
-- [ ] 9.6c — `TugPaneFrameContext` provider + tests. Land as commit 3.
+- [x] 9.6c — `TugPaneFrameContext` provider + tests. Land as commit 3.
 - [ ] 9.6d — `TugSheet` refactor: portal into pane frame, use pane-scrim hook, drop applier + canvas-overlay portal + scrim element. Land as commit 4.
 - [ ] 9.6e — Documentation updates (`pane-model.md`, `responder-chain.md`, `tugplan-tide-overlay-framework.md`, `tug-sheet.tsx` docstring). Land as commit 5.
 - [ ] Manual smoke: open Tide picker → choose session → close. With a peer pane stacked above the Tide pane partially overlapping it: scrim does NOT bleed into peer pane; sheet panel does NOT paint over peer pane where they overlap (peer pane covers the panel). With a peer pane below the Tide pane vertically: panel extends into empty canvas grid where peer pane isn't, peer pane covers the panel where it is. Sheet open / cancel / submit / Escape all work.

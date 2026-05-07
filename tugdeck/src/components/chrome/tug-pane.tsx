@@ -361,6 +361,25 @@ export function CardTitleBar({
  */
 export const TugPanePortalContext = createContext<HTMLDivElement | null>(null);
 
+/**
+ * React context: the pane frame element (`HTMLDivElement`, the `.tug-pane`
+ * outer frame, parent of the chrome). Pane-modal surfaces (`TugSheet`,
+ * future modal-class surfaces) portal into this element so their panel
+ * sits inside the pane's stacking context — peer panes z-stacked above
+ * paint above the panel without manual z coordination [D19, D20].
+ *
+ * The frame's `position: absolute` + inline `z-index` makes it its own
+ * stacking context. The frame has `overflow: visible` (default) so a
+ * panel whose natural height exceeds the chrome's body can extend into
+ * the canvas grid below — without escaping the pane's stacking context.
+ *
+ * Standalone consumers (gallery preview, tests rendered without a
+ * `TugPane` ancestor) read `null` and fall back to `document.body` —
+ * same shape as `useCanvasOverlay`'s null fallback. Production code
+ * always renders pane-modal surfaces inside a `TugPane`.
+ */
+export const TugPaneFrameContext = createContext<HTMLDivElement | null>(null);
+
 export const CardDirtyContext = createContext<(() => void) | null>(null);
 
 /**
@@ -1366,9 +1385,20 @@ export function TugPane({
     [responderRef],
   );
 
+  // Frame element exposed via TugPaneFrameContext. The same DOM node
+  // is also tracked through frameRef.current for direct DOM access in
+  // drag/resize handlers; the callback ref keeps both in sync. State
+  // (not just the ref) is required so React-tree consumers re-render
+  // when the frame mounts. [D19]
+  const [frameEl, setFrameEl] = useState<HTMLDivElement | null>(null);
+  const frameRefCallback = useCallback((el: HTMLDivElement | null) => {
+    frameRef.current = el;
+    setFrameEl(el);
+  }, []);
+
   return (
     <div
-      ref={frameRef}
+      ref={frameRefCallback}
       className="tug-pane"
       data-testid="tug-pane"
       data-pane-id={id}
@@ -1392,6 +1422,7 @@ export function TugPane({
         />
       ))}
 
+      <TugPaneFrameContext value={frameEl}>
       <TugPanePortalContext value={cardEl}>
         <div
           ref={rootRefCallback}
@@ -1440,6 +1471,7 @@ export function TugPane({
           <div className="tug-pane-scrim" aria-hidden="true" data-testid="tug-pane-scrim" />
         </div>
       </TugPanePortalContext>
+      </TugPaneFrameContext>
     </div>
   );
 }

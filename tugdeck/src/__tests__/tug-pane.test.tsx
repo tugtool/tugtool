@@ -20,7 +20,9 @@ import React from "react";
 import { describe, it, expect, mock } from "bun:test";
 import { render, fireEvent, act } from "@testing-library/react";
 
-import { TugPane } from "@/components/chrome/tug-pane";
+import { useContext } from "react";
+
+import { TugPane, TugPaneFrameContext } from "@/components/chrome/tug-pane";
 import type { TugPaneState } from "@/layout-tree";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { withDeckManager } from "./mock-deck-manager-store";
@@ -264,5 +266,61 @@ describe("TugPane – pane-owned scrim", () => {
     expect(chromes.length).toBe(2);
     expect(chromes[0]!.querySelector(".tug-pane-scrim")).not.toBeNull();
     expect(chromes[1]!.querySelector(".tug-pane-scrim")).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TugPaneFrameContext [D19]
+// ---------------------------------------------------------------------------
+
+describe("TugPane – TugPaneFrameContext", () => {
+  it("returns null when read outside any provider", () => {
+    let frameFromContext: HTMLDivElement | null | undefined;
+    function FrameProbe(): null {
+      frameFromContext = useContext(TugPaneFrameContext);
+      return null;
+    }
+    render(<FrameProbe />);
+    // Standalone consumer (no TugPane ancestor) reads null. Pane-modal
+    // surfaces fall back to document.body in this case.
+    expect(frameFromContext).toBeNull();
+  });
+
+  it("a context provider supplies the value to descendants", () => {
+    // TugPane does not accept React children — its content area is
+    // populated through `paneContentRegistry` via `CardHost`. The
+    // pane wires the frame element through `TugPaneFrameContext`
+    // around its chrome subtree (which is where pane-modal surfaces
+    // like TugSheet read it). This test pins the context shape: a
+    // provider supplies the value, descendants read it, no provider
+    // reads null. Live integration with the rendered pane is verified
+    // via the sheet's portal-target tests in step 9.6d.
+    const fakeFrame = document.createElement("div") as HTMLDivElement;
+    fakeFrame.className = "tug-pane";
+    let observed: HTMLDivElement | null | undefined;
+    function FrameProbe(): null {
+      observed = useContext(TugPaneFrameContext);
+      return null;
+    }
+    render(
+      <TugPaneFrameContext.Provider value={fakeFrame}>
+        <FrameProbe />
+      </TugPaneFrameContext.Provider>,
+    );
+    expect(observed).toBe(fakeFrame);
+  });
+
+  it("renders the frame element with the .tug-pane class for portals to target", () => {
+    // The frame context provides the .tug-pane element (the outer
+    // frame), not the chrome. Pane-modal surfaces portal here so they
+    // sit inside the pane's stacking context but outside the chrome's
+    // overflow:hidden clip. Verify the frame is identifiable.
+    const { container } = render(wrap(<TugPane {...defaultProps} />));
+    const frameEl = container.querySelector(".tug-pane") as HTMLDivElement;
+    expect(frameEl).not.toBeNull();
+    expect(frameEl.classList.contains("tug-pane")).toBe(true);
+    // The chrome lives inside the frame.
+    const chromeEl = frameEl.querySelector(".tug-pane-chrome");
+    expect(chromeEl).not.toBeNull();
   });
 });
