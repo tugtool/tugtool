@@ -27,8 +27,7 @@ use tracing::{error, info, warn};
 use tugcast_core::protocol::{FeedId, Frame, TugSessionId};
 
 use super::agent_supervisor::{
-    LedgerEntry, SessionRecord, SessionsRecorder, SpawnState,
-    build_session_state_frame,
+    LedgerEntry, SessionRecord, SessionsRecorder, SpawnState, build_session_state_frame,
 };
 use super::code::{parse_code_input, splice_tug_session_id};
 

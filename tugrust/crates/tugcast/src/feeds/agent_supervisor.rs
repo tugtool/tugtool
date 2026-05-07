@@ -3126,9 +3126,7 @@ mod tests {
     use super::*;
     use std::future::pending;
 
-    use super::super::agent_bridge::{
-        RelayOutcome, SessionChild, SpawnFuture, relay_session_io,
-    };
+    use super::super::agent_bridge::{RelayOutcome, SessionChild, SpawnFuture, relay_session_io};
 
     // ---- Test-only ChildSpawner fakes ----
 
@@ -3402,7 +3400,6 @@ mod tests {
         assert_eq!(state, "pending");
     }
 
-
     #[tokio::test]
     async fn test_spawn_session_inserts_into_client_sessions() {
         let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
@@ -3464,9 +3461,6 @@ mod tests {
             .await
             .expect_handled_with("same-card reconnect must succeed");
     }
-
-
-
 
     #[tokio::test]
     async fn test_spawn_session_replays_latest_metadata_for_known_session() {
@@ -3533,7 +3527,6 @@ mod tests {
         assert!(sup.ledger.lock().await.is_empty());
     }
 
-
     #[tokio::test]
     async fn test_close_session_removes_from_client_sessions() {
         let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
@@ -3549,7 +3542,6 @@ mod tests {
         let set = cs.get(&10).expect("client 10 still has a set");
         assert!(!set.contains(&TugSessionId::new("sess-1")));
     }
-
 
     // ---- handle_control: reset_session ----
 
@@ -3873,7 +3865,6 @@ mod tests {
         entry.spawn_state = state;
     }
 
-
     #[tokio::test]
     async fn test_spawn_session_cap_excludes_idle_and_errored_entries() {
         // Cap = 2. Preload one `Idle` + one `Errored` entry. Neither
@@ -3883,8 +3874,7 @@ mod tests {
             max_spawns_per_minute: 100,
             ..Default::default()
         };
-        let (sup, _state_rx, _meta_rx, _control_rx) =
-            make_supervisor_with_store_config(config);
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store_config(config);
 
         preload_entry_in_state(&sup, &TugSessionId::new("sess-idle"), SpawnState::Idle).await;
         preload_entry_in_state(&sup, &TugSessionId::new("sess-err"), SpawnState::Errored).await;
@@ -3907,8 +3897,7 @@ mod tests {
             max_spawns_per_minute: 100,
             ..Default::default()
         };
-        let (sup, _state_rx, _meta_rx, _control_rx) =
-            make_supervisor_with_store_config(config);
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store_config(config);
 
         preload_entry_in_state(&sup, &TugSessionId::new("sess-1"), SpawnState::Live).await;
 
@@ -3940,8 +3929,7 @@ mod tests {
             max_spawns_per_minute: 2,
             ..Default::default()
         };
-        let (sup, mut state_rx, _meta_rx, _control_rx) =
-            make_supervisor_with_store_config(config);
+        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store_config(config);
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -3991,8 +3979,7 @@ mod tests {
             max_spawns_per_minute: 2,
             ..Default::default()
         };
-        let (sup, _state_rx, _meta_rx, _control_rx) =
-            make_supervisor_with_store_config(config);
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store_config(config);
 
         {
             let ancient = Instant::now()
@@ -4030,8 +4017,7 @@ mod tests {
             max_spawns_per_minute: 1,
             ..Default::default()
         };
-        let (sup, _state_rx, _meta_rx, _control_rx) =
-            make_supervisor_with_store_config(config);
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store_config(config);
 
         preload_entry_in_state(&sup, &TugSessionId::new("sess-pre"), SpawnState::Idle).await;
 
@@ -4446,7 +4432,6 @@ mod tests {
         );
     }
 
-
     // ---- merger_task, per-session bridge, metadata routing ----
 
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -4753,11 +4738,6 @@ mod tests {
         assert_eq!(state, "live");
     }
 
-
-
-
-
-
     /// When tugcode emits `resume_failed` and then exits (closes
     /// stdout), `relay_session_io` must promote the EOF
     /// from `Crashed` (would retry) to `ResumeFailed { ... }` so the
@@ -4848,13 +4828,7 @@ mod tests {
         assert_eq!(parsed["tug_session_id"], "sess-resume-fail");
     }
 
-
     // ---- SessionKeyRecord schema + dual-read migration ----
-
-
-
-
-
 
     // ================================================================
     // supervisor lifecycle hooks against the registry
@@ -4975,8 +4949,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_two_sessions_same_workspace_share_entry() {
-        let (sup, _state_rx, _meta_rx, mut control_rx) =
-            make_supervisor_with_store();
+        let (sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store();
 
         sup.handle_control("spawn_session", &spawn_payload("card-a", "sess-a"), 10)
             .await
@@ -5004,8 +4977,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_close_session_releases_workspace() {
-        let (sup, _state_rx, _meta_rx, mut control_rx) =
-            make_supervisor_with_store();
+        let (sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store();
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -5024,8 +4996,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_reset_session_preserves_workspace() {
-        let (sup, _state_rx, _meta_rx, mut control_rx) =
-            make_supervisor_with_store();
+        let (sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store();
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -5089,8 +5060,7 @@ mod tests {
         // because the dedup logic is stuck in a one-workspace rut.
         let tmp_a = tempfile::TempDir::new().expect("tempdir a");
         let tmp_b = tempfile::TempDir::new().expect("tempdir b");
-        let (sup, _state_rx, _meta_rx, mut control_rx) =
-            make_supervisor_with_store();
+        let (sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store();
 
         sup.handle_control(
             "spawn_session",
@@ -5149,8 +5119,7 @@ mod tests {
         // registry map must still hold exactly one entry with
         // `ref_count == 1` after the second spawn.
         use std::sync::atomic::Ordering;
-        let (sup, _state_rx, _meta_rx, mut control_rx) =
-            make_supervisor_with_store();
+        let (sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store();
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -5176,9 +5145,6 @@ mod tests {
             "reconnect must release the just-acquired refcount"
         );
     }
-
-
-
 
     // ── LedgerSessionsRecorder lifecycle ─────────────────────────────────────
     //
