@@ -1,9 +1,14 @@
 /**
  * tide-card.tsx — Tide card (Unified Command Surface).
  *
- * Mounts `TugPromptEntry` inside a horizontal `TugSplitPane` (top 70% —
- * `TideTranscriptHost` rendering the multi-turn transcript; bottom 30% —
- * entry, clamped at 90%). The card wires:
+ * Mounts `TugPromptEntry` inside a horizontal `TugSplitPane`. The top
+ * pane (`TideTranscriptHost`) renders the multi-turn transcript and
+ * absorbs all height growth as the card grows. The bottom pane (the
+ * prompt entry) is pinned to a pixel size — defaults to 240px, floored
+ * at 180px, capped at 90% of the card — and uses
+ * `groupResizeBehavior="preserve-pixel-size"` so the entry stays the
+ * same number of visible rows regardless of card height. The card
+ * wires:
  *
  *   • A live `CodeSessionStore` bound to the supervisor-issued
  *     `tugSessionId` via the card-session binding store.
@@ -2198,13 +2203,16 @@ export function registerTideCard(): void {
     ],
     sizePolicy: {
       min: { width: 320, height: 240 },
-      // Default size accommodates the Choose Session sheet's full
-      // height (Recents box + Previous Sessions box + actions) with
-      // a little headroom so the sheet doesn't have to scroll the
-      // moment the user opens a fresh card. Width stays compact —
-      // the sheet itself caps at 460px, so a 720px card width gives
-      // the sheet room to breathe with the surrounding card body.
-      preferred: { width: 720, height: 920 },
+      // Default size opens the card tall enough for an extended
+      // transcript to read as a continuous column, not a porthole.
+      // The chosen height intentionally exceeds many laptop canvases;
+      // `addCard` clamps the preferred height to 90% of the live
+      // canvas at creation, so on smaller screens the card opens at
+      // canvas * 0.9 instead of pushing past the viewport. Width
+      // stays compact — the Choose Session sheet caps at 460px, so a
+      // 720px card width gives the sheet room to breathe with the
+      // surrounding card body.
+      preferred: { width: 720, height: 1200 },
     },
     engineKind: "em",
   });

@@ -3,9 +3,13 @@
    ============================================================================
    Tide card — the Unified Command Surface.
 
-   Horizontal TugSplitPane (top 70% / bottom 30%, bottom capped at 90%).
-   The card itself is a full-height flex column so the split pane has a
-   concrete height to measure against.
+   Horizontal TugSplitPane. The top pane (transcript) absorbs height
+   growth; the bottom pane (entry) is pinned to a pixel size — defaults
+   to 240px, floored at 180px, capped at 90% — via
+   `groupResizeBehavior="preserve-pixel-size"`, so the entry stays the
+   same number of visible rows as the card grows or shrinks. The card
+   itself is a full-height flex column so the split pane has a concrete
+   height to measure against.
    ========================================================================= */
 
 .tide-card {

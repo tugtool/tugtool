@@ -628,7 +628,21 @@ export class DeckManager implements IDeckManagerStore {
 
     const paneId = crypto.randomUUID();
     const sizePolicy = getSizePolicy(componentId);
-    const position = this.nextCascadePosition(sizePolicy.preferred);
+    // Clamp preferred height to 90% of the live canvas so registrations
+    // with tall preferred sizes (e.g. tide-card) open at a sensible
+    // ceiling on small canvases instead of pushing past the viewport.
+    // Width is left alone — wide cards behave fine off-canvas via the
+    // existing horizontal-position clamps; height is the dimension
+    // users want bounded by the canvas at creation.
+    const canvasHeightForCap = this.container.clientHeight || 600;
+    const cappedPreferredHeight = Math.min(
+      sizePolicy.preferred.height,
+      Math.max(sizePolicy.min.height, Math.floor(canvasHeightForCap * 0.9)),
+    );
+    const position = this.nextCascadePosition({
+      width: sizePolicy.preferred.width,
+      height: cappedPreferredHeight,
+    });
 
     const seededCards: CardState[] = [];
     if (registration.defaultCards && registration.defaultCards.length > 0) {
@@ -653,7 +667,7 @@ export class DeckManager implements IDeckManagerStore {
     const win: TugPaneState = {
       id: paneId,
       position,
-      size: { width: sizePolicy.preferred.width, height: sizePolicy.preferred.height },
+      size: { width: sizePolicy.preferred.width, height: cappedPreferredHeight },
       cardIds: seededCards.map((c) => c.id),
       activeCardId: firstCardId,
       title: registration.defaultTitle ?? "",
