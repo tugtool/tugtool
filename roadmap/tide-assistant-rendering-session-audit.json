@@ -1,0 +1,677 @@
+{
+  "filesRead": 1031,
+  "filesSkipped": 0,
+  "totalLines": 232031,
+  "parseErrors": 0,
+  "topLevelTypes": {
+    "queue-operation": 2624,
+    "user": 73156,
+    "attachment": 21598,
+    "ai-title": 2312,
+    "assistant": 103693,
+    "last-prompt": 9914,
+    "system": 3831,
+    "permission-mode": 8538,
+    "file-history-snapshot": 6306,
+    "worktree-state": 59
+  },
+  "assistantContentTypes": {
+    "text": 22420,
+    "tool_use": 64267,
+    "thinking": 17032
+  },
+  "userContentTypes": {
+    "text": 8989,
+    "tool_result": 64284,
+    "image": 488
+  },
+  "toolUseCounts": {
+    "Read": 13748,
+    "Bash": 25521,
+    "Glob": 104,
+    "ToolSearch": 145,
+    "WebSearch": 41,
+    "Write": 955,
+    "TaskCreate": 1789,
+    "TaskUpdate": 3426,
+    "Edit": 15286,
+    "TaskList": 34,
+    "EnterWorktree": 1,
+    "ExitWorktree": 1,
+    "Agent": 342,
+    "Grep": 2708,
+    "Skill": 10,
+    "AskUserQuestion": 35,
+    "Monitor": 38,
+    "WebFetch": 22,
+    "TaskOutput": 37,
+    "TaskStop": 7,
+    "ScheduleWakeup": 17
+  },
+  "toolResultErrorCounts": {
+    "Bash": 394,
+    "(unknown)": 38,
+    "Edit": 281,
+    "Read": 228,
+    "Write": 11,
+    "Grep": 37,
+    "AskUserQuestion": 10,
+    "Agent": 11,
+    "Skill": 4,
+    "TaskCreate": 3,
+    "TaskOutput": 4,
+    "WebFetch": 3
+  },
+  "toolResultOkCounts": {
+    "Read": 13257,
+    "Bash": 25148,
+    "Glob": 104,
+    "ToolSearch": 141,
+    "WebSearch": 41,
+    "Write": 897,
+    "TaskCreate": 1786,
+    "TaskUpdate": 3426,
+    "(unknown)": 1813,
+    "Edit": 13484,
+    "TaskList": 34,
+    "EnterWorktree": 1,
+    "ExitWorktree": 1,
+    "Agent": 331,
+    "Grep": 2656,
+    "Skill": 6,
+    "AskUserQuestion": 21,
+    "Monitor": 38,
+    "WebFetch": 19,
+    "TaskOutput": 33,
+    "TaskStop": 7,
+    "ScheduleWakeup": 16
+  },
+  "toolInputLengthsSummary": {
+    "Read": {
+      "count": 13748,
+      "p50": 119,
+      "p95": 138,
+      "p99": 156,
+      "max": 181,
+      "mean": 115.86
+    },
+    "Bash": {
+      "count": 25521,
+      "p50": 174,
+      "p95": 614,
+      "p99": 1371,
+      "max": 7804,
+      "mean": 229.98
+    },
+    "Glob": {
+      "count": 104,
+      "p50": 39,
+      "p95": 97,
+      "p99": 114,
+      "max": 138,
+      "mean": 47.28
+    },
+    "ToolSearch": {
+      "count": 145,
+      "p50": 65,
+      "p95": 65,
+      "p99": 89,
+      "max": 109,
+      "mean": 59.31
+    },
+    "WebSearch": {
+      "count": 41,
+      "p50": 85,
+      "p95": 127,
+      "p99": 134,
+      "max": 134,
+      "mean": 87.27
+    },
+    "Write": {
+      "count": 955,
+      "p50": 8192,
+      "p95": 38717,
+      "p99": 75664,
+      "max": 113475,
+      "mean": 12279.15
+    },
+    "TaskCreate": {
+      "count": 1789,
+      "p50": 227,
+      "p95": 431,
+      "p99": 568,
+      "max": 906,
+      "mean": 249.27
+    },
+    "TaskUpdate": {
+      "count": 3426,
+      "p50": 37,
+      "p95": 39,
+      "p99": 102,
+      "max": 651,
+      "mean": 39.32
+    },
+    "Edit": {
+      "count": 15286,
+      "p50": 1259,
+      "p95": 6508,
+      "p99": 13521,
+      "max": 61227,
+      "mean": 2100.81
+    },
+    "TaskList": {
+      "count": 34,
+      "p50": 2,
+      "p95": 2,
+      "p99": 2,
+      "max": 2,
+      "mean": 2
+    },
+    "EnterWorktree": {
+      "count": 1,
+      "p50": 26,
+      "p95": 26,
+      "p99": 26,
+      "max": 26,
+      "mean": 26
+    },
+    "ExitWorktree": {
+      "count": 1,
+      "p50": 17,
+      "p95": 17,
+      "p99": 17,
+      "max": 17,
+      "mean": 17
+    },
+    "Agent": {
+      "count": 342,
+      "p50": 646,
+      "p95": 5756,
+      "p99": 12975,
+      "max": 14627,
+      "mean": 1346.16
+    },
+    "Grep": {
+      "count": 2708,
+      "p50": 168,
+      "p95": 231,
+      "p99": 294,
+      "max": 684,
+      "mean": 171.22
+    },
+    "Skill": {
+      "count": 10,
+      "p50": 66,
+      "p95": 5586,
+      "p99": 5586,
+      "max": 5586,
+      "mean": 1196.5
+    },
+    "AskUserQuestion": {
+      "count": 35,
+      "p50": 749,
+      "p95": 3595,
+      "p99": 4027,
+      "max": 4027,
+      "mean": 1201.09
+    },
+    "Monitor": {
+      "count": 38,
+      "p50": 552,
+      "p95": 599,
+      "p99": 599,
+      "max": 599,
+      "mean": 510.87
+    },
+    "WebFetch": {
+      "count": 22,
+      "p50": 388,
+      "p95": 720,
+      "p99": 1073,
+      "max": 1073,
+      "mean": 440.41
+    },
+    "TaskOutput": {
+      "count": 37,
+      "p50": 53,
+      "p95": 53,
+      "p99": 53,
+      "max": 53,
+      "mean": 52.46
+    },
+    "TaskStop": {
+      "count": 7,
+      "p50": 23,
+      "p95": 23,
+      "p99": 23,
+      "max": 23,
+      "mean": 23
+    },
+    "ScheduleWakeup": {
+      "count": 17,
+      "p50": 179,
+      "p95": 293,
+      "p99": 293,
+      "max": 293,
+      "mean": 200.47
+    }
+  },
+  "toolResultLengthsSummary": {
+    "Read": {
+      "count": 13485,
+      "p50": 2317,
+      "p95": 13849,
+      "p99": 32109,
+      "max": 64103,
+      "mean": 4136.01
+    },
+    "Bash": {
+      "count": 25542,
+      "p50": 264,
+      "p95": 2938,
+      "p99": 7273,
+      "max": 27403,
+      "mean": 749.22
+    },
+    "Glob": {
+      "count": 104,
+      "p50": 73,
+      "p95": 4201,
+      "p99": 4201,
+      "max": 4201,
+      "mean": 961.34
+    },
+    "ToolSearch": {
+      "count": 141,
+      "p50": 0,
+      "p95": 0,
+      "p99": 32,
+      "max": 32,
+      "mean": 0.91
+    },
+    "WebSearch": {
+      "count": 41,
+      "p50": 3090,
+      "p95": 3687,
+      "p99": 4214,
+      "max": 4214,
+      "mean": 3112.78
+    },
+    "Write": {
+      "count": 908,
+      "p50": 177,
+      "p95": 209,
+      "p99": 216,
+      "max": 226,
+      "mean": 169.02
+    },
+    "TaskCreate": {
+      "count": 1789,
+      "p50": 69,
+      "p95": 94,
+      "p99": 107,
+      "max": 148,
+      "mean": 70.71
+    },
+    "TaskUpdate": {
+      "count": 3426,
+      "p50": 23,
+      "p95": 24,
+      "p99": 34,
+      "max": 56,
+      "mean": 23.28
+    },
+    "(unknown)": {
+      "count": 1851,
+      "p50": 187,
+      "p95": 4249,
+      "p99": 9858,
+      "max": 23864,
+      "mean": 713.56
+    },
+    "Edit": {
+      "count": 13765,
+      "p50": 184,
+      "p95": 208,
+      "p99": 231,
+      "max": 5744,
+      "mean": 178.71
+    },
+    "TaskList": {
+      "count": 34,
+      "p50": 14,
+      "p95": 14,
+      "p99": 593,
+      "max": 593,
+      "mean": 31.03
+    },
+    "EnterWorktree": {
+      "count": 1,
+      "p50": 245,
+      "p95": 245,
+      "p99": 245,
+      "max": 245,
+      "mean": 245
+    },
+    "ExitWorktree": {
+      "count": 1,
+      "p50": 210,
+      "p95": 210,
+      "p99": 210,
+      "max": 210,
+      "mean": 210
+    },
+    "Agent": {
+      "count": 342,
+      "p50": 3226,
+      "p95": 15483,
+      "p99": 25161,
+      "max": 34263,
+      "mean": 4789.05
+    },
+    "Grep": {
+      "count": 2693,
+      "p50": 336,
+      "p95": 4028,
+      "p99": 8442,
+      "max": 16638,
+      "mean": 937.25
+    },
+    "Skill": {
+      "count": 10,
+      "p50": 34,
+      "p95": 108,
+      "p99": 108,
+      "max": 108,
+      "mean": 60
+    },
+    "AskUserQuestion": {
+      "count": 31,
+      "p50": 301,
+      "p95": 1182,
+      "p99": 1441,
+      "max": 1441,
+      "mean": 456.45
+    },
+    "Monitor": {
+      "count": 38,
+      "p50": 208,
+      "p95": 208,
+      "p99": 208,
+      "max": 208,
+      "mean": 207.58
+    },
+    "WebFetch": {
+      "count": 22,
+      "p50": 1528,
+      "p95": 17284,
+      "p99": 38526,
+      "max": 38526,
+      "mean": 4876.5
+    },
+    "TaskOutput": {
+      "count": 37,
+      "p50": 470,
+      "p95": 3726,
+      "p99": 6312,
+      "max": 6312,
+      "mean": 681.89
+    },
+    "TaskStop": {
+      "count": 7,
+      "p50": 383,
+      "p95": 591,
+      "p99": 591,
+      "max": 591,
+      "mean": 408.71
+    },
+    "ScheduleWakeup": {
+      "count": 16,
+      "p50": 45,
+      "p95": 45,
+      "p99": 45,
+      "max": 45,
+      "mean": 44.94
+    }
+  },
+  "toolResultLineCountsSummary": {
+    "Read": {
+      "count": 13485,
+      "p50": 50,
+      "p95": 275,
+      "p99": 658,
+      "max": 1548,
+      "mean": 85.77
+    },
+    "Bash": {
+      "count": 25542,
+      "p50": 6,
+      "p95": 40,
+      "p99": 100,
+      "max": 706,
+      "mean": 12.16
+    },
+    "Glob": {
+      "count": 104,
+      "p50": 2,
+      "p95": 101,
+      "p99": 101,
+      "max": 101,
+      "mean": 23.28
+    },
+    "ToolSearch": {
+      "count": 141,
+      "p50": 0,
+      "p95": 0,
+      "p99": 1,
+      "max": 1,
+      "mean": 0.03
+    },
+    "WebSearch": {
+      "count": 41,
+      "p50": 24,
+      "p95": 32,
+      "p99": 38,
+      "max": 38,
+      "mean": 25.17
+    },
+    "Write": {
+      "count": 908,
+      "p50": 1,
+      "p95": 1,
+      "p99": 1,
+      "max": 2,
+      "mean": 1
+    },
+    "TaskCreate": {
+      "count": 1789,
+      "p50": 1,
+      "p95": 1,
+      "p99": 1,
+      "max": 2,
+      "mean": 1
+    },
+    "TaskUpdate": {
+      "count": 3426,
+      "p50": 1,
+      "p95": 1,
+      "p99": 1,
+      "max": 1,
+      "mean": 1
+    },
+    "(unknown)": {
+      "count": 1851,
+      "p50": 1,
+      "p95": 90,
+      "p99": 226,
+      "max": 601,
+      "mean": 13.07
+    },
+    "Edit": {
+      "count": 13765,
+      "p50": 1,
+      "p95": 1,
+      "p99": 1,
+      "max": 143,
+      "mean": 1.13
+    },
+    "TaskList": {
+      "count": 34,
+      "p50": 1,
+      "p95": 1,
+      "p99": 9,
+      "max": 9,
+      "mean": 1.24
+    },
+    "EnterWorktree": {
+      "count": 1,
+      "p50": 1,
+      "p95": 1,
+      "p99": 1,
+      "max": 1,
+      "mean": 1
+    },
+    "ExitWorktree": {
+      "count": 1,
+      "p50": 1,
+      "p95": 1,
+      "p99": 1,
+      "max": 1,
+      "mean": 1
+    },
+    "Agent": {
+      "count": 342,
+      "p50": 51,
+      "p95": 217,
+      "p99": 348,
+      "max": 476,
+      "mean": 73.95
+    },
+    "Grep": {
+      "count": 2693,
+      "p50": 6,
+      "p95": 46,
+      "p99": 99,
+      "max": 253,
+      "mean": 12.57
+    },
+    "Skill": {
+      "count": 10,
+      "p50": 1,
+      "p95": 1,
+      "p99": 1,
+      "max": 1,
+      "mean": 1
+    },
+    "AskUserQuestion": {
+      "count": 31,
+      "p50": 1,
+      "p95": 15,
+      "p99": 15,
+      "max": 15,
+      "mean": 3.58
+    },
+    "Monitor": {
+      "count": 38,
+      "p50": 1,
+      "p95": 1,
+      "p99": 1,
+      "max": 1,
+      "mean": 1
+    },
+    "WebFetch": {
+      "count": 22,
+      "p50": 34,
+      "p95": 397,
+      "p99": 1189,
+      "max": 1189,
+      "mean": 124
+    },
+    "TaskOutput": {
+      "count": 37,
+      "p50": 18,
+      "p95": 72,
+      "p99": 92,
+      "max": 92,
+      "mean": 18.89
+    },
+    "TaskStop": {
+      "count": 7,
+      "p50": 1,
+      "p95": 1,
+      "p99": 1,
+      "max": 1,
+      "mean": 1
+    },
+    "ScheduleWakeup": {
+      "count": 16,
+      "p50": 1,
+      "p95": 1,
+      "p99": 1,
+      "max": 1,
+      "mean": 1
+    }
+  },
+  "readNumLinesSummary": {
+    "count": 13485,
+    "p50": 50,
+    "p95": 275,
+    "p99": 658,
+    "max": 1548,
+    "mean": 85.77
+  },
+  "editOldLinesSummary": {
+    "count": 15280,
+    "p50": 8,
+    "p95": 47,
+    "p99": 104,
+    "max": 491,
+    "mean": 14.33
+  },
+  "editNewLinesSummary": {
+    "count": 15279,
+    "p50": 12,
+    "p95": 84,
+    "p99": 190,
+    "max": 626,
+    "mean": 23.99
+  },
+  "globResultCountsSummary": {
+    "count": 104,
+    "p50": 2,
+    "p95": 101,
+    "p99": 101,
+    "max": 101,
+    "mean": 23.28
+  },
+  "bashStdoutLinesSummary": {
+    "count": 25542,
+    "p50": 6,
+    "p95": 40,
+    "p99": 100,
+    "max": 706,
+    "mean": 12.16
+  },
+  "fencedLangs": {
+    "(none)": 1247,
+    "css": 11,
+    "js": 23,
+    "ts": 118,
+    "typescript": 8,
+    "swift": 5,
+    "tsx": 30,
+    "sh": 8,
+    "bash": 13,
+    "jsx": 3,
+    "markdown": 1,
+    "json": 2,
+    "rust": 9,
+    "sql": 2,
+    "makefile": 2
+  },
+  "sessionsWithAgent": 53,
+  "sessionsWithMermaid": 0,
+  "sessionsWithMath": 14,
+  "maxAgentDepth": 1,
+  "totalSessions": 1031
+}

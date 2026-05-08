@@ -197,7 +197,7 @@ The assistant-side rendering bar for Tug is *not* "comparable to a terminal." Th
 
 **Plan to resolve:** Default 10k retained with truncation indicator; expose via tugbank if a user surfaces a need.
 
-**Resolution:** OPEN — default chosen in [#step-5](#step-5).
+**Resolution:** RESOLVED. [Audit §5.2](./tide-assistant-rendering-session-audit.md) confirms real-corpus Bash stdout: P50=6, P95=40, P99=100, max=706 lines. Default **10k retained** is two orders of magnitude above the observed maximum across 25,542 Bash invocations — safe without a configurable knob. The tugbank knob is **not shipped in v1**; revisit only if a user reports a long-running streaming Bash output (`watch`, log tail) that hits the cap.
 
 ---
 
@@ -474,21 +474,30 @@ A `toolRendererRegistry` keyed on `tool_name` makes lever 1 trivial; lever 2 is 
 
 #### [D16] `assistant-renderer-dispatch` registry is keyed on `tool_name` (case-insensitive) with explicit aliases (DECIDED) {#d16-registry-key}
 
-**Decision:** The tool-wrapper registry is a `Map<string, ToolWrapperFactory>` keyed on the lowercased `tool_name`. Aliases are declared explicitly (e.g., `multiedit → edit`, `mcp__*__bash → bash` — though MCP tools are explicitly a non-goal in v1).
+**Decision:** The tool-wrapper registry is a `Map<string, ToolWrapperFactory>` keyed on the lowercased `tool_name`. Aliases are declared explicitly:
+
+| Canonical | Aliases |
+|-----------|---------|
+| `edit` | `multiedit` |
+| `agent` | `task` (historical name; renamed by Claude Code; **per [audit §4.3](./tide-assistant-rendering-session-audit.md), real sessions emit `Agent`**) |
+
+(MCP tools are explicitly a non-goal in v1; alias entries reserved for future MCP-server-aware wrappers.)
 
 **Rationale:**
 - Case sensitivity has been observed to vary by event; lowercase normalizes.
-- Explicit aliases avoid surprise dispatch.
+- Explicit aliases avoid surprise dispatch and absorb tool renames cleanly.
 - Easy to test: `dispatch.match("Read") === ReadToolBlock`.
 
 **Implications:**
 - Registry construction is centralized in `assistant-renderer-dispatch.ts`.
 - Aliases declared as a sibling object next to the registry.
-- Unknown lookups return `DefaultToolWrapper` per [D11].
+- Unknown lookups return `DefaultToolWrapper` per [D11]; *known* tools routed through Default (per [Table T02](#t02-tool-wrappers) audit-confirmed list) get registry entries that suppress the unknown-tool caution flag.
 
 #### [D17] `AgentTranscriptBlock` recurses through the same dispatch (DECIDED) {#d17-agent-transcript-recurses}
 
 **Decision:** When `tool_use_structured` for `Task`/`Agent` arrives with nested `content[].tool_use` entries, those nested tool calls render through the same dispatch pipeline — including their own per-tool wrappers and bodies. Recursion is bounded by a max depth (default 3); deeper levels collapse with a "+N nested calls" affordance.
+
+*Audit footnote ([§5.1](./tide-assistant-rendering-session-audit.md)):* No real-session subagent depth > 1 observed in the 1,031-session corpus. Default cap of 3 is generous; 2 would be safe. Keep cap at 3 for paranoia headroom.
 
 **Rationale:**
 - The same rendering quality across recursion depth.
@@ -867,6 +876,22 @@ Each new file follows L19 (component-authoring) and L20 (token sovereignty).
 | NotebookEditToolBlock | NotebookEdit | DiffBlock | notebook + cell |
 | DefaultToolWrapper | * (registry miss) | JsonTreeBlock + dynamic body | tool_name + summary + caution badge |
 
+**Audit-confirmed routes through `DefaultToolWrapper`** (per [session audit §4.2](./tide-assistant-rendering-session-audit.md)) — the dispatch registry includes explicit entries for these so they're documented coverage rather than silent unknowns. They're all low-volume harness/management tools whose JsonTree-based default rendering is sufficient, but the registry entry suppresses the `caution: { reason: "unknown_tool" }` flag (these are *known* tools, just generically rendered). Promote any of them to a bespoke wrapper later if dogfooding warrants:
+
+| Tool name | Audit volume | Notes |
+|-----------|-------------:|-------|
+| TaskCreate | 1,789 (2.78%) | Background-task creation; short structured input |
+| TaskUpdate | 3,426 (5.33%) | Background-task status update; ~1-line responses |
+| TaskList | 34 (0.05%) | List background tasks |
+| TaskOutput | 37 (0.06%) | Read background-task output |
+| TaskStop | 7 (0.01%) | Stop a background task |
+| Monitor | 38 (0.06%) | Process/log monitoring |
+| Skill | 10 (0.02%) | Skill invocation |
+| ScheduleWakeup | 17 (0.03%) | Self-pacing wakeup |
+| ToolSearch | 145 (0.23%) | Tool schema lookup |
+| EnterWorktree | 1 (0.00%) | Worktree management |
+| ExitWorktree | 1 (0.00%) | Worktree management |
+
 **Table T03: Stream-event chrome catalog** {#t03-chrome}
 
 | Renderer | Source event | Placement |
@@ -1084,22 +1109,22 @@ ThinkingBlock, PermissionDialog, QuestionDialog, CostChrome (with CostBadge sub-
 - The audit document is the load-bearing artifact; it informs but does not gate later steps
 
 **Tasks:**
-- [ ] Walk every `*.jsonl` file under `~/.claude/projects/-Users-kocienda-Mounts-u-src-tugtool/` (~1k+ session transcripts as of 2026-05-08; sample size large enough for stable distributions)
-- [ ] Compute frequency distribution of `tool_use` events by `tool_name` — produces a percentage table that calibrates which wrappers ship bespoke vs. through `DefaultToolWrapper`
-- [ ] Compute size distributions (P50/P95/P99) for: `tool_use_structured.file.numLines` (Read), Bash `stdout` line count, Edit `(old_string, new_string)` line counts, Glob `filenames.length`, agent transcript depth — calibrates collapse thresholds in [Table T01](#t01-body-kinds) and [Q04]
-- [ ] Enumerate any tools in real sessions that aren't in [Table T02](#t02-tool-wrappers) — promotes missing wrappers from "unknown" to "explicit" or confirms `DefaultToolWrapper` is the right home
-- [ ] Count occurrences of fenced-code-block languages in `assistant_text` (`mermaid`, `math`/`latex`, `diff`, `json`, language-name distribution) — validates [D08]/[D10] lazy-load investments
-- [ ] Count `control_request_forward` events: ratio of `is_question:true` vs. `false`; tools that most frequently trigger permission requests — drives priority of [#step-18](#step-18) / [#step-19](#step-19)
-- [ ] Count `is_error: true` ratios per tool — informs error-state design in every wrapper
-- [ ] Subagent depth in real sessions (max observed nesting in `tool_use_structured` for `Task`/`Agent`) — validates [D17] depth cap
-- [ ] Write up findings as a frequency-table appendix in the new audit doc; cross-reference each subsequent step's calibration-relevant tasks
+- [x] Walk every `*.jsonl` file under `~/.claude/projects/-Users-kocienda-Mounts-u-src-tugtool/` (1,031 files, 232,031 JSONL lines, 0 parse errors as of 2026-05-08)
+- [x] Compute frequency distribution of `tool_use` events by `tool_name` — produces a percentage table that calibrates which wrappers ship bespoke vs. through `DefaultToolWrapper`
+- [x] Compute size distributions (P50/P95/P99) for: Read line count, Bash `stdout` line count, Edit `(old_string, new_string)` line counts, Glob result count, agent transcript depth — calibrates collapse thresholds in [Table T01](#t01-body-kinds) and [Q04]
+- [x] Enumerate any tools in real sessions that aren't in [Table T02](#t02-tool-wrappers) — 11 new tool names found; dispositions captured in audit §4.2
+- [x] Count occurrences of fenced-code-block languages in `assistant_text` — Mermaid 0%, math 1.4%, validates [D10] lazy-load decisively
+- [ ] ~~Count `control_request_forward` events~~ — *Not measurable from session-log format; requires wire-level capture; documented as limitation in audit §6*
+- [x] Count `is_error: true` ratios per tool — informs error-state design in every wrapper
+- [x] Subagent depth in real sessions — max observed = 1; [D17] depth cap of 3 is generous; default could drop to 2 safely
+- [x] Write up findings as a frequency-table appendix in the new audit doc; cross-reference each subsequent step's calibration-relevant tasks
 
 **Tests:**
-- [ ] N/A — research artifact, not code
+- [x] N/A — research artifact, not code
 
 **Checkpoint:**
-- [ ] Audit doc reviewed; threshold-calibration table captured
-- [ ] Any tool surfaced by the audit but missing from [Table T02](#t02-tool-wrappers) is either added or explicitly noted as `DefaultToolWrapper`-routed
+- [x] Audit doc reviewed; threshold-calibration table captured at [§5.1 of audit](./tide-assistant-rendering-session-audit.md)
+- [x] All 11 tools surfaced by audit but missing from [Table T02](#t02-tool-wrappers) added below as audit-confirmed `DefaultToolWrapper` routes; [D16] alias map updated; [#step-7](#step-7) collapse threshold updated; [Q04] resolved
 
 ---
 
@@ -1308,7 +1333,7 @@ ThinkingBlock, PermissionDialog, QuestionDialog, CostChrome (with CostBadge sub-
 **Tasks:**
 - [ ] Line-numbered gutter; honor `startLine` offset
 - [ ] Language inferred from `filePath` extension; highlight via existing Shiki integration
-- [ ] Long-content collapse (default folded if > 50 lines; calibrate per Step 0 audit findings if available)
+- [ ] Long-content collapse (**default folded if > 80 lines** per [audit §5.1](./tide-assistant-rendering-session-audit.md); audit shows Read P50 = 50 lines, so 50 was too aggressive — would fold half of all reads. 80 lines catches ~upper-40% which is the natural "long enough to scan-or-skip" bar.)
 - [ ] "Showing N of M lines" header
 - [ ] Click-line-to-copy
 - [ ] Search-within-file (Cmd+F) when expanded — scoped to the FileBlock instance, not the whole transcript
