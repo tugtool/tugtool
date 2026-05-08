@@ -511,7 +511,11 @@ export function transferFocusForActivation(
         });
       }
     }
-    if (bag !== undefined && cardRoot !== null) {
+    if (
+      bag !== undefined &&
+      cardRoot !== null &&
+      outgoingCardId !== incomingCardId
+    ) {
       installFormControlReapplyOnNextMousedown(bag, cardRoot, incomingCardId);
     }
     return;
@@ -546,7 +550,7 @@ export function transferFocusForActivation(
         via: "restoreCardDomSelection",
       });
     }
-    if (bag !== undefined) {
+    if (bag !== undefined && outgoingCardId !== incomingCardId) {
       installFormControlReapplyOnNextMousedown(bag, target.cardRoot, incomingCardId);
     }
     return;
@@ -607,6 +611,20 @@ export function transferFocusForActivation(
  * `installPreventMousedown`. In practice, every activation
  * transition is click-driven, so the listener gets consumed by the
  * intended click. [L23]
+ *
+ * ## Only on cross-card transitions
+ *
+ * Callers must gate installation on `outgoingCardId !== incomingCardId`.
+ * A same-card pointerdown (clicking inside the already-active card)
+ * still flows through `transferFocusForActivation`, but the live DOM
+ * state IS the truth at that point — there is no save→restore cycle
+ * to recover from. Installing the listener anyway would `preventDefault`
+ * the user's mousedown on a `data-tug-state-key` input/textarea,
+ * killing native drag-to-select and re-applying a stale selection
+ * snapshot on top of a click the user meant to position a caret /
+ * start a selection drag. tug-text-editor (CodeMirror contenteditable)
+ * does not match the `input/textarea` selector, which is why the
+ * symptom only showed up on TugInput / TugTextarea.
  */
 function installFormControlReapplyOnNextMousedown(
   bag: CardStateBag,
