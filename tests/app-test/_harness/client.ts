@@ -709,6 +709,10 @@ export async function awaitEngineReady(
  *   - `tugSessionId` defaults to `test-session-${cardId}`
  *   - `workspaceKey` defaults to `test-workspace-${cardId}`
  *   - `projectDir`   defaults to `/tmp/test-project`
+ *   - `sessionMode`  defaults to `"new"` — the most common test path.
+ *                    Tests that exercise resume behavior
+ *                    (cold-boot preflight, replay-loading banner)
+ *                    pass `"resume"` explicitly.
  */
 export function bindTideSession(
   caller: HarnessCaller,
@@ -717,6 +721,7 @@ export function bindTideSession(
     tugSessionId?: string;
     workspaceKey?: string;
     projectDir?: string;
+    sessionMode?: "new" | "resume";
   },
   evalOpts?: EvalJsOptions,
 ): Promise<void> {

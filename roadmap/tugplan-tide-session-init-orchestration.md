@@ -484,16 +484,19 @@ Specific test additions:
 - Test docstring updated.
 
 **Tasks:**
-- [ ] Add a new-mode test path (separate `test()` block) that seeds a new-mode binding and waits for caret-layer presence while polling for banner absence.
-- [ ] Adjust harness helpers if needed (`bindTideSession` may already accept a `sessionMode` param; if not, extend it minimally).
-- [ ] Update the test's docstring: name the no-banner contract for new mode and the lifecycle-event focus contract for resume mode (carries forward).
+- [x] Add a new-mode test path (separate `test()` block titled "new-mode bind: no banner mounts during the bind window; caret stays focused") that seeds a new-mode binding and uses a MutationObserver to record every `<TugPaneBanner>` element addition under the card subtree during the bind window. Asserts both `total === 0` (no additions seen) and `current === 0` (no banner present at end of window). Re-asserts the focus contract for the new-mode path.
+- [x] Extended harness helpers: `bindTideSession` now accepts `sessionMode?: "new" | "resume"` (defaulting to `"new"` for backward compatibility) at three layers:
+  - `tugdeck/src/test-surface.ts` (interface + implementation, with `CardSessionMode` import and JSDoc explaining the resume-test usage).
+  - `tests/app-test/_harness/client.ts` (forward-through to the WebView).
+  - `tests/app-test/_harness/index.ts` (App method).
+- [x] Updated the test's docstring to name the two contracts the file pins (focus contract from Spec [S02]; no-banner contract from Spec [S01]) and the two earlier symptoms each guards against. Added new helpers `installBannerWatch` / `readBannerWatch` with their own JSDocs.
 
 **Tests:**
-- [ ] `just app-test at0051-tide-mount-focus` — both new-mode and resume-mode assertions pass.
-- [ ] Greppable `VERDICT: PASS` line at end of the recipe output (per the project's `feedback_just_app_test` rule).
+- [x] `just app-test at0051-tide-mount-focus` — both new-mode and existing-focus tests pass.
+- [x] Greppable `VERDICT: PASS  (1/1 files green; 2/2 tests passed)` line at end of recipe output.
 
 **Checkpoint:**
-- [ ] `just app-test at0051-tide-mount-focus`
+- [x] `just app-test at0051-tide-mount-focus` — VERDICT: PASS
 
 ---
 

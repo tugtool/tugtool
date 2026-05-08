@@ -519,6 +519,14 @@ export class App {
       tugSessionId?: string;
       workspaceKey?: string;
       projectDir?: string;
+      /**
+       * `"new" | "resume"` — defaults to `"new"`. Threaded through
+       * to `cardSessionBindingStore.setBinding` and onward to
+       * `CodeSessionSnapshot.sessionMode`. Pass `"resume"` for tests
+       * that exercise resume-path behavior (preflight banner,
+       * replay-loading copy, etc.).
+       */
+      sessionMode?: "new" | "resume";
     },
   ): Promise<void> {
     return client.bindTideSession(this as HarnessCaller, cardId, options);

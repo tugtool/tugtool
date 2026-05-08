@@ -4,32 +4,62 @@
  * (CodeMirror's contentDOM) gains DOM focus AND the custom caret
  * layer renders, all without a user click.
  *
- * Pins the integration contract for the focus-claim chain:
+ * Pins TWO related contracts:
  *
- *   - Plan A (`tug-text-editor.tsx`): `focus()` delegate routes
- *     through `manager.focusResponder(responderId)` → atomic chain
- *     promotion + DOM focus.
- *   - `cardDidActivate` handler in `TideCardBody` calls
- *     `entryDelegate.focus()` on initial-sync via `useCardDelegate`.
- *   - `sheetDidHide` / `bannerDidHide` lifecycle handlers (per
- *     `lib/sheet-lifecycle.ts` + `lib/banner-lifecycle.ts`) re-claim
- *     editor focus when a sheet or banner finishes hiding (covers
- *     the case where a session-init banner mounts during the bind
- *     and clears inert on unmount).
+ *   1. **Editor focus contract** (Spec [S02] in
+ *      `roadmap/tugplan-tide-session-init-orchestration.md`): every
+ *      overlay that sets `inert` on `.tug-pane-body` MUST emit a
+ *      per-card `xxxDidHide` lifecycle event after `inert` clears,
+ *      and `TideCardBody` MUST subscribe with an idempotent focus
+ *      claim. The mechanism:
+ *        - `tug-text-editor.tsx` `focus()` delegate routes through
+ *          `manager.focusResponder(responderId)` → atomic chain
+ *          promotion + DOM focus.
+ *        - `cardDidActivate` in `TideCardBody` calls
+ *          `entryDelegate.focus()` on initial-sync via
+ *          `useCardDelegate`.
+ *        - `sheetDidHide` / `bannerDidHide` lifecycle handlers
+ *          (per `lib/sheet-lifecycle.ts` + `lib/banner-lifecycle.ts`)
+ *          re-claim editor focus when a sheet or banner finishes
+ *          hiding.
  *
- * The earlier symptom this guards against: caret flashes and is
- * stolen as a banner mounts (sets `inert` on `.tug-pane-body`,
- * blurs the contentDOM), then the banner hides without anyone
- * re-focusing the editor. With the lifecycle plumbing in place,
- * `bannerDidHide` fires after the inert clears and `TideCardBody`'s
- * delegate handler claims focus through the chain.
+ *   2. **No-banner contract for new-mode bindings** (Spec [S01]):
+ *      `deriveTideCardBannerSpec` returns `kind: "none"` for the
+ *      `phase === "replaying"` branch when `sessionMode === "new"`,
+ *      so the JSONL-missing replay round-trip that fires for every
+ *      binding land does not light up a "Loading session…" banner
+ *      with no referent. The test verifies that `<TugPaneBanner>`
+ *      is never mounted under the card during the bind window.
+ *
+ * Earlier symptoms this guards against:
+ *   - Caret flashes and is stolen as a banner mounts (sets `inert`
+ *     on `.tug-pane-body`, blurs the contentDOM), then the banner
+ *     hides without anyone re-focusing the editor. Fixed by the
+ *     lifecycle-event focus-claim handlers in `TideCardBody`.
+ *   - "Loading session…" banner shows for ~700ms during a new
+ *     session's bind window even though there's no JSONL to
+ *     replay, stealing focus and producing a flicker. Fixed by
+ *     the mode-gate on banner-spec branch 5.
  *
  * Test strategy: seed a tide card + bind a fake session, wait for
- * the editor to mount, capture focus + caret + chain state at
- * multiple timepoints. The harness skips the picker UI by binding
- * the session directly — the production picker has its own UI
- * surface that's awkward to drive in the harness, but the focus-
- * claim plumbing on the post-bind path is what matters here.
+ * the editor to mount, capture focus + caret + banner-mount state
+ * at multiple timepoints. The harness skips the picker UI by
+ * binding the session directly — the production picker has its
+ * own UI surface that's awkward to drive in the harness, but the
+ * focus-claim plumbing and banner-spec derivation on the post-bind
+ * path are what matter here.
+ *
+ * The two test blocks below cover the two contracts independently:
+ *   - The first ("after seed + bind…") asserts the focus contract:
+ *     contentDOM is activeElement, `.cm-focused` is set, exactly
+ *     one caret renders, and state is stable across a 1s settling
+ *     window.
+ *   - The second ("new-mode bind: no banner mounts…") installs a
+ *     MutationObserver before bind to record any banner-element
+ *     addition under the card subtree, then asserts the count is
+ *     zero through the bind window — pinning the no-banner contract
+ *     and ensuring that focus is never gated on a banner exit for
+ *     new-mode sessions.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -96,6 +126,102 @@ async function captureFocus(app: App, cardId: string): Promise<FocusState> {
         caretCount: carets.length,
         cmFocused: cmEditor !== null && cmEditor.classList.contains("cm-focused"),
       };
+    })()`,
+  );
+}
+
+/**
+ * Counter shape returned by the banner-mount observer installed in
+ * the WebView. `total` is the number of `<TugPaneBanner>` element
+ * additions seen under the card subtree since `installBannerWatch`
+ * was called; a non-zero value violates the no-banner contract for
+ * the new-mode bind window.
+ */
+interface BannerWatchSnapshot {
+  /** Number of banner element additions observed under the card. */
+  total: number;
+  /** Banner element count present in the DOM at read time. */
+  current: number;
+}
+
+/**
+ * Install a `MutationObserver` in the WebView that records every
+ * `[data-slot="tug-pane-banner"]` addition under the given card's
+ * subtree until `readBannerWatch(app)` is called and the observer is
+ * disconnected.
+ *
+ * Polling for banner presence at fixed timepoints would miss a
+ * brief mount/unmount that fits between two samples. The observer
+ * sees every mutation and records a monotonic count, so a single
+ * read at the end of the bind window proves "banner never mounted"
+ * for the entire window.
+ */
+async function installBannerWatch(app: App, cardId: string): Promise<void> {
+  const cardSelector = `[data-card-id="${cardId}"]`;
+  await app.evalJS<null>(
+    `(function(){
+      var bannerSel = '[data-slot="tug-pane-banner"]';
+      var cardSel = ${JSON.stringify(cardSelector)};
+      window.__at0051BannerTotal = 0;
+      window.__at0051BannerObserver = new MutationObserver(function(muts){
+        for (var i = 0; i < muts.length; i++) {
+          var m = muts[i];
+          for (var j = 0; j < m.addedNodes.length; j++) {
+            var node = m.addedNodes[j];
+            if (node.nodeType !== 1) continue;
+            var el = node;
+            // Direct match.
+            if (el.matches && el.matches(bannerSel)) {
+              window.__at0051BannerTotal++;
+              continue;
+            }
+            // Banner mounted as a descendant of an added subtree
+            // (the typical case — TugPaneBanner portals into the
+            // pane chrome, which lands under the card subtree).
+            if (el.querySelectorAll) {
+              window.__at0051BannerTotal +=
+                el.querySelectorAll(bannerSel).length;
+            }
+          }
+        }
+      });
+      // Observe the whole document because TugPaneBanner portals into
+      // \`TugPanePortalContext\` (the host pane's chrome), which lives
+      // under the card subtree but isn't a direct child of the card
+      // root. A subtree:true observation on the document body covers
+      // every reachable mount path.
+      var card = document.querySelector(cardSel);
+      var root = card !== null ? card : document.body;
+      window.__at0051BannerObserver.observe(root, {
+        childList: true,
+        subtree: true,
+      });
+      return null;
+    })()`,
+  );
+}
+
+/**
+ * Read the banner-watch counter and disconnect the observer.
+ * Returns both the running total of additions seen since
+ * `installBannerWatch` and the current banner count in the DOM.
+ * Both are expected to be zero through a new-mode bind window.
+ */
+async function readBannerWatch(
+  app: App,
+  cardId: string,
+): Promise<BannerWatchSnapshot> {
+  const bannerSelector = `[data-card-id="${cardId}"] [data-slot="tug-pane-banner"]`;
+  return app.evalJS<BannerWatchSnapshot>(
+    `(function(){
+      var total = window.__at0051BannerTotal || 0;
+      var current = document.querySelectorAll(${JSON.stringify(bannerSelector)}).length;
+      if (window.__at0051BannerObserver) {
+        window.__at0051BannerObserver.disconnect();
+        window.__at0051BannerObserver = undefined;
+      }
+      window.__at0051BannerTotal = undefined;
+      return { total: total, current: current };
     })()`,
   );
 }
@@ -178,6 +304,103 @@ describe.skipIf(!SHOULD_RUN)(
             expect(
               t0.caretCount,
               `expected caret rendered at t+0 too; saw t0=${JSON.stringify(t0)} t1000=${JSON.stringify(t1000)}`,
+            ).toBe(1);
+          } finally {
+            await app.close();
+          }
+        } finally {
+          rmTempTugbank(tugbankPath);
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "new-mode bind: no banner mounts during the bind window; caret stays focused",
+      async () => {
+        // Pins Spec [S01] from `tugplan-tide-session-init-orchestration.md`:
+        // for `sessionMode === "new"`, `deriveTideCardBannerSpec`
+        // returns `kind: "none"` for the active-phase replay-loading
+        // branch, so the JSONL-missing replay round-trip that fires
+        // for every binding-land doesn't paint a "Loading session…"
+        // banner with no referent. This in turn means the editor's
+        // caret claim from `cardDidActivate` is never interrupted by
+        // a banner-induced `inert`/blur cycle.
+        //
+        // Method: install a MutationObserver before the bind that
+        // records every `<TugPaneBanner>` element addition under the
+        // card subtree. After the bind window settles, assert the
+        // count is zero. A polling-based approach would miss a brief
+        // banner that fits between two samples; the observer sees
+        // every mutation and gives a monotonic, sample-free witness
+        // that "the banner never mounted."
+        //
+        // Also asserts the caret-presence claim from the focus
+        // contract holds for the new-mode path — same expectations
+        // as the test above, but explicitly under
+        // `sessionMode: "new"` to document the path.
+        const tugbankPath = mkTempTugbank();
+        try {
+          seedTugbankForLaunch(tugbankPath);
+
+          const app = await launchTugApp({
+            testName: "at0051-tide-mount-focus-new-mode",
+            env: { TUGBANK_PATH: tugbankPath },
+            persistInTestMode: true,
+          });
+
+          try {
+            await app.enableDeckTrace(true);
+            await app.seedDeckState({ state: TIDE_DECK_STATE, focusCardId: "A" });
+            await new Promise<void>((r) => setTimeout(r, 1500));
+
+            // Install the banner-mount observer BEFORE bind so we
+            // catch any banner that mounts and unmounts entirely
+            // within the bind window — the case the contract is
+            // designed to prevent.
+            await installBannerWatch(app, "A");
+
+            // Explicit `sessionMode: "new"` documents the path. The
+            // harness defaults to "new" anyway, but pinning it here
+            // makes the test's intent unambiguous to a future reader.
+            await app.bindTideSession("A", { sessionMode: "new" });
+            await waitForEditor(app, "A");
+
+            // Settling window: catches any late banner activity
+            // (replay_started / replay_complete{jsonl_missing}
+            // round-trip). Pre-Step 2 of the orchestration plan,
+            // this window would have shown a ~700ms banner cycle
+            // (500ms minMountedMs + 200ms exit). Post-Step 2, the
+            // observer should record zero mounts.
+            await new Promise<void>((r) => setTimeout(r, 1500));
+
+            const focus = await captureFocus(app, "A");
+            const banner = await readBannerWatch(app, "A");
+
+            // No-banner contract: zero additions, zero present.
+            expect(
+              banner.total,
+              `expected no banner mounts during the new-mode bind window; observer recorded ${banner.total} addition(s)`,
+            ).toBe(0);
+            expect(
+              banner.current,
+              `expected no banner element in the DOM at end of bind window; saw ${banner.current}`,
+            ).toBe(0);
+
+            // Focus contract: caret claimed without banner gate.
+            expect(
+              focus.matchesPromptEntry,
+              `expected editor contentDOM activeElement after new-mode bind; saw ${JSON.stringify(focus)}`,
+            ).toBe(true);
+            expect(focus.underCardId).toBe("A");
+            expect(focus.hasFocus, "expected document.hasFocus()").toBe(true);
+            expect(
+              focus.cmFocused,
+              `expected .cm-focused on .cm-editor for new-mode bind; saw ${JSON.stringify(focus)}`,
+            ).toBe(true);
+            expect(
+              focus.caretCount,
+              `expected exactly one caret element rendered after new-mode bind; saw ${JSON.stringify(focus)}`,
             ).toBe(1);
           } finally {
             await app.close();

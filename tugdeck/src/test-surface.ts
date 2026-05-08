@@ -39,7 +39,10 @@ import type { DeckManager } from "./deck-manager";
 import type { DeckState, CardStateBag } from "./layout-tree";
 import { deckTrace, type DeckTraceEvent } from "./deck-trace";
 import { nodeToPath, selectionGuard } from "./components/tugways/selection-guard";
-import { cardSessionBindingStore } from "./lib/card-session-binding-store";
+import {
+  cardSessionBindingStore,
+  type CardSessionMode,
+} from "./lib/card-session-binding-store";
 import { dispatchAction } from "./action-dispatch";
 
 // ---------------------------------------------------------------------------
@@ -524,6 +527,17 @@ export interface TugTestSurface {
       tugSessionId?: string;
       workspaceKey?: string;
       projectDir?: string;
+      /**
+       * `"new" | "resume"` — the user's session-mode intent at
+       * card-open time. Threaded onto `CodeSessionSnapshot.sessionMode`
+       * by `cardServicesStore` so pure derivations (e.g.
+       * `deriveTideCardBannerSpec`) can branch on it. Defaults to
+       * `"new"` so existing tests, which model the fresh-bind path,
+       * keep their current semantics; tests that exercise resume
+       * behavior (cold-boot preflight, replay-loading banner, etc.)
+       * pass `"resume"` explicitly.
+       */
+      sessionMode?: CardSessionMode;
     },
   ): void;
 
@@ -1260,13 +1274,14 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
         tugSessionId?: string;
         workspaceKey?: string;
         projectDir?: string;
+        sessionMode?: CardSessionMode;
       },
     ): void {
       cardSessionBindingStore.setBinding(cardId, {
         tugSessionId: options?.tugSessionId ?? `test-session-${cardId}`,
         workspaceKey: options?.workspaceKey ?? `test-workspace-${cardId}`,
         projectDir: options?.projectDir ?? "/tmp/test-project",
-        sessionMode: "new",
+        sessionMode: options?.sessionMode ?? "new",
       });
     },
 
