@@ -150,7 +150,10 @@ function makeSessionRow(partial: Partial<SessionRow> & { session_id: string }): 
     project_dir: partial.project_dir ?? "/proj",
     created_at: partial.created_at ?? 1000,
     last_used_at: partial.last_used_at ?? partial.created_at ?? 1000,
-    turn_count: partial.turn_count ?? 0,
+    // Default to 1 so the picker's empty-session filter (turn_count
+    // === 0 hidden) does not eat the row in the tests below. Tests
+    // that explicitly want an empty row pass `turn_count: 0`.
+    turn_count: partial.turn_count ?? 1,
     first_user_prompt: partial.first_user_prompt ?? null,
     state: partial.state ?? "closed",
     card_id: partial.card_id ?? null,

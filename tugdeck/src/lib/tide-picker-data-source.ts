@@ -269,16 +269,18 @@ export class TideSessionsDataSource implements TugListViewDataSource {
   }
 
   /**
-   * Count of non-live ledger rows. Used by the picker form to gate
-   * the visibility of the Forget-all button. Returns 0 when the
-   * ledger is not in `ready` status.
+   * Count of non-live ledger rows that are visible in the picker
+   * (turn_count > 0). Used by the picker form to gate the visibility
+   * of the Forget-all button. Returns 0 when the ledger is not in
+   * `ready` status. Mirrors the `recompute` filter so the count
+   * agrees with what the user sees in the SESSIONS list.
    */
   nonLiveCount(): number {
     const { ledger } = this.inputs;
     if (ledger.status !== "ready") return 0;
     let n = 0;
     for (const row of ledger.rows) {
-      if (row.state !== "live") n += 1;
+      if (row.state !== "live" && row.turn_count > 0) n += 1;
     }
     return n;
   }
@@ -320,6 +322,16 @@ export class TideSessionsDataSource implements TugListViewDataSource {
       if (ledger.status === "ready") {
         next.push({ kind: "session-new" });
         for (const row of ledger.rows) {
+          // Hide empty sessions (turn_count === 0) regardless of
+          // state. Closed-with-zero is just a card that opened and
+          // closed without a prompt — equivalent to "New session"
+          // and offers nothing to resume. Live-with-zero is a card
+          // open elsewhere with nothing in it; surfacing it as a
+          // disabled "live" row would be noise. Failed-with-zero
+          // never had a turn to resume; the originating card
+          // surfaces the failure via lastError, no need for a
+          // duplicate ghost row in the picker.
+          if (row.turn_count === 0) continue;
           next.push({ kind: "session-resume", row });
         }
       } else if (ledger.status === "pending") {
