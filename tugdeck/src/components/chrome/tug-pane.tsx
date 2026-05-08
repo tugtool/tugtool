@@ -52,6 +52,7 @@ import {
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import * as paneContentRegistry from "@/components/chrome/pane-content-registry";
+import * as paneFrameRegistry from "@/components/chrome/pane-frame-registry";
 import * as paneRootRegistry from "@/components/chrome/pane-root-registry";
 import {
   captureFocusForDragStart,
@@ -587,6 +588,18 @@ export function TugPane({
   const store = useDeckManager();
 
   const [cardEl, setCardEl] = useState<HTMLDivElement | null>(null);
+  // Frame element exposed via TugPaneFrameContext and bridged through
+  // `pane-frame-registry` for consumers (card content) that live
+  // outside the pane's React tree. The same DOM node is also tracked
+  // through frameRef.current for direct DOM access in drag/resize
+  // handlers; the callback ref keeps both in sync. State (not just
+  // the ref) is required so React-tree consumers re-render when the
+  // frame mounts. [D19]
+  const [frameEl, setFrameEl] = useState<HTMLDivElement | null>(null);
+  const frameRefCallback = useCallback((el: HTMLDivElement | null) => {
+    frameRef.current = el;
+    setFrameEl(el);
+  }, []);
   const contentRef = useRef<HTMLDivElement>(null);
   const manager = useRequiredResponderChain();
   const keyboardTabNavSenderId = useId();
@@ -641,6 +654,20 @@ export function TugPane({
       paneRootRegistry.unregister(stackId);
     };
   }, [stackId, cardEl]);
+
+  // Bridge the frame element through `pane-frame-registry` so card
+  // content rendered via `CardPortal` (which lives outside the pane's
+  // React tree) can subscribe and re-provide `TugPaneFrameContext` at
+  // the card-host position. Without this bridge, pane-modal surfaces
+  // inside card content would fall back to `document.body` and lose
+  // per-pane stacking. [D19, D20]
+  useLayoutEffect(() => {
+    if (!frameEl) return;
+    paneFrameRegistry.register(stackId, frameEl);
+    return () => {
+      paneFrameRegistry.unregister(stackId);
+    };
+  }, [stackId, frameEl]);
 
   // Chain-action close (Cmd-W via TUG_ACTIONS.CLOSE). Browser-standard
   // "close the active tab" semantics: multi-tab → remove the active
@@ -1384,17 +1411,6 @@ export function TugPane({
     },
     [responderRef],
   );
-
-  // Frame element exposed via TugPaneFrameContext. The same DOM node
-  // is also tracked through frameRef.current for direct DOM access in
-  // drag/resize handlers; the callback ref keeps both in sync. State
-  // (not just the ref) is required so React-tree consumers re-render
-  // when the frame mounts. [D19]
-  const [frameEl, setFrameEl] = useState<HTMLDivElement | null>(null);
-  const frameRefCallback = useCallback((el: HTMLDivElement | null) => {
-    frameRef.current = el;
-    setFrameEl(el);
-  }, []);
 
   return (
     <div

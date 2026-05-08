@@ -84,7 +84,7 @@ import {
   CardComponentStatePreservationContext,
   type CardComponentStatePreservationContextValue,
 } from "../tugways/use-component-state-preservation";
-import { CardDirtyContext, TugPanePortalContext } from "./tug-pane";
+import { CardDirtyContext, TugPaneFrameContext, TugPanePortalContext } from "./tug-pane";
 import { useResponder } from "../tugways/use-responder";
 import type { ActionEvent } from "../tugways/responder-chain";
 import { TUG_ACTIONS } from "../tugways/action-vocabulary";
@@ -101,6 +101,7 @@ import type {
   RegionScrollSnapshot,
 } from "../../layout-tree";
 import * as paneContentRegistry from "./pane-content-registry";
+import * as paneFrameRegistry from "./pane-frame-registry";
 import * as paneRootRegistry from "./pane-root-registry";
 import { CardPortal } from "./card-portal";
 import {
@@ -630,11 +631,29 @@ function useHostStackRootElement(hostStackId: string): HTMLDivElement | null {
   );
 }
 
+/**
+ * Look up the host pane's outer frame element from
+ * `pane-frame-registry`, reactively. Used to bridge
+ * `TugPaneFrameContext` — pane-modal surfaces (`TugSheet`) inside card
+ * content need access to the `.tug-pane` frame as their portal target
+ * so the panel paints inside the pane's stacking context [D19, D20].
+ * Same parallel-registry pattern as `useHostStackRootElement` for
+ * `TugPanePortalContext`.
+ */
+function useHostStackFrameElement(hostStackId: string): HTMLDivElement | null {
+  return useSyncExternalStore(
+    (cb) => paneFrameRegistry.subscribe(hostStackId, cb),
+    () => paneFrameRegistry.getElement(hostStackId),
+    () => null,
+  );
+}
+
 export function CardHost({ cardId, hostStackId, componentId, isActive = true }: CardHostProps): React.ReactElement | null {
   const store = useDeckManager();
   const registration = getRegistration(componentId);
   const hostContentEl = useHostContentElement(hostStackId);
   const hostCardRootEl = useHostStackRootElement(hostStackId);
+  const hostPaneFrameEl = useHostStackFrameElement(hostStackId);
 
   const { register: registerPropertyStore, ref: propertyStoreRef } = useCardPropertyStore();
 
@@ -1398,6 +1417,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
           display: isActive ? "contents" : "none",
         }}
       >
+        <TugPaneFrameContext value={hostPaneFrameEl}>
         <TugPanePortalContext value={hostCardRootEl}>
           <CardIdContext value={cardId}>
             <ResponderScope>
@@ -1426,6 +1446,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
             </ResponderScope>
           </CardIdContext>
         </TugPanePortalContext>
+        </TugPaneFrameContext>
       </div>
     </CardPortal>
   );
