@@ -258,16 +258,30 @@ export function usePaneFocusController(
       //
       // `activateCard` is safe on the already-active card id:
       // `_flipFirstResponder`'s same-bit branch short-circuits
-      // will/didActivate events (deck-manager.ts:262–266). Our
-      // didActivate observer's `if (deselectedRef.current)` check
-      // also avoids redundant DOM writes on repeated same-pane
-      // clicks.
+      // will/didActivate events (deck-manager.ts:822-836). The
+      // didActivate observer below clears `deselectedRef` for real
+      // cross-pane flips; the explicit clear after this call covers
+      // the same-bit case so a click back onto the only / already-
+      // active pane still restores `data-focused="true"`.
       transferFocusForActivation({
         outgoingCardId: store.getFirstResponderCardId(),
         incomingCardId: pane.activeCardId,
         store,
         commitMutation: () => store.activateCard(pane.activeCardId),
       });
+
+      // Same-bit deselect-clear. When a canvas-background click set
+      // `deselectedRef` and the user then clicks the only / already-
+      // active pane, `_flipFirstResponder` short-circuits on
+      // `oldFR === newFR` and `notifyCardDidActivate` never fires —
+      // so the didActivate observer below cannot clear the ref. Do
+      // it here so the activation gesture deterministically restores
+      // `data-focused="true"` regardless of whether the flip was a
+      // real transition or a same-bit refresh.
+      if (deselectedRef.current) {
+        deselectedRef.current = false;
+        applyFocusRef.current();
+      }
     }
 
     // Mousedown capture listener: suppress the browser's default focus-
