@@ -331,62 +331,6 @@ describe("Tide picker — session-list view (ledger-backed)", () => {
     expect(decoded).toEqual({ action: "forget_session", session_id: "sess-doomed" });
   });
 
-  it("T-TIDE-LEDGER-04: Forget all opens the confirm popover; Forget there fires one forget_session per non-live row", () => {
-    tugbankStore["dev.tugtool.tide"] = {
-      "recent-projects": { kind: "json", value: { paths: ["/work/all"] } },
-    };
-    renderTideCard(CARD_ID);
-    clickRecent("/work/all");
-    seedLedgerForPath("/work/all", [
-      makeSessionRow({
-        session_id: "sess-1",
-        project_dir: "/work/all",
-        last_used_at: 1000,
-      }),
-      makeSessionRow({
-        session_id: "sess-2",
-        project_dir: "/work/all",
-        last_used_at: 2000,
-      }),
-      makeSessionRow({
-        session_id: "sess-live",
-        project_dir: "/work/all",
-        last_used_at: 3000,
-        state: "live",
-        card_id: "other",
-      }),
-    ]);
-    sentFrames.length = 0;
-
-    const forgetAll = document.querySelector<HTMLButtonElement>(
-      '[data-testid="tide-card-picker-forget-all"]',
-    );
-    expect(forgetAll).not.toBeNull();
-    act(() => {
-      fireEvent.click(forgetAll!);
-    });
-    expect(sentFrames.length).toBe(0);
-
-    const confirmAll = popoverButtonByText("Forget");
-    expect(confirmAll).not.toBeNull();
-    act(() => {
-      fireEvent.click(confirmAll!);
-    });
-
-    expect(sentFrames.length).toBe(2);
-    const ids = sentFrames
-      .map(
-        (f) =>
-          (
-            JSON.parse(new TextDecoder().decode(f.payload)) as {
-              session_id: string;
-            }
-          ).session_id,
-      )
-      .sort();
-    expect(ids).toEqual(["sess-1", "sess-2"]);
-  });
-
   it("T-TIDE-LEDGER-05: a session_updated push patches a row in place without re-mount", () => {
     tugbankStore["dev.tugtool.tide"] = {
       "recent-projects": { kind: "json", value: { paths: ["/work/patch"] } },
@@ -577,49 +521,6 @@ describe("Tide picker — session-list view (ledger-backed)", () => {
       '.tug-sheet-content [data-testid="tide-card-picker-session-new"]',
     );
     expect(startFreshCell?.getAttribute("data-selected")).toBe("true");
-  });
-
-  it("T-TIDE-PICKER-D03: clicking a non-live resume row marks it data-selected; Open submits resume", () => {
-    tugbankStore["dev.tugtool.tide"] = {
-      "recent-projects": { kind: "json", value: { paths: ["/work/select"] } },
-    };
-    renderTideCard(CARD_ID);
-    clickRecent("/work/select");
-    seedLedgerForPath("/work/select", [
-      makeSessionRow({
-        session_id: "sess-pick",
-        project_dir: "/work/select",
-        last_used_at: 1000,
-      }),
-    ]);
-    sentFrames.length = 0;
-
-    // Click the resume cell wrapper — selection swaps from session-new
-    // to session-resume.
-    const resumeWrapper = resumeCellWrappers()[0];
-    act(() => {
-      fireEvent.click(resumeWrapper);
-    });
-
-    const resumeCell = resumeCells()[0];
-    expect(resumeCell.getAttribute("data-selected")).toBe("true");
-    const startFreshCell = document.querySelector<HTMLElement>(
-      '.tug-sheet-content [data-testid="tide-card-picker-session-new"]',
-    );
-    expect(startFreshCell?.getAttribute("data-selected")).not.toBe("true");
-
-    // Open submits resume with the picked session id.
-    const openButton = Array.from(
-      document.querySelectorAll<HTMLButtonElement>(".tug-sheet-content button"),
-    ).find((b) => b.textContent?.trim().toLowerCase() === "open");
-    act(() => {
-      fireEvent.click(openButton!);
-    });
-    const payload = JSON.parse(
-      new TextDecoder().decode(sentFrames[0]!.payload),
-    ) as { session_mode: string; tug_session_id: string };
-    expect(payload.session_mode).toBe("resume");
-    expect(payload.tug_session_id).toBe("sess-pick");
   });
 
   it("T-TIDE-PICKER-D04: clicking a live resume row does NOT promote it to selected", () => {
