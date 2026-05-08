@@ -1984,9 +1984,10 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
         <TugSplitPanel
           ref={entryPanelRef}
           id="tide-card-bottom"
-          defaultSize="30%"
+          defaultSize="240px"
           minSize="180px"
           maxSize="90%"
+          groupResizeBehavior="preserve-pixel-size"
         >
           <ResponderScope>
             <TugBox

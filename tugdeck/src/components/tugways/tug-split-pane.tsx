@@ -46,6 +46,22 @@
  * before mounting React, so the cache is guaranteed warm at mount and
  * `defaultLayout` alone is sufficient to restore.
  *
+ * ## Pixel-pinned panels
+ *
+ * Panels with `groupResizeBehavior="preserve-pixel-size"` opt out of
+ * proportional scaling on container resize: the library holds their
+ * pixel size constant and reflows the relative-size siblings to absorb
+ * the delta. To preserve the pixel size across reloads and card
+ * switches (where container size may differ), the persistence schema
+ * stores both flex-grow ratios (in `layout`) and pixel sizes (in
+ * `pixels`). Pinned panels register with the pane via
+ * `TugSplitPaneWriteContext.registerPanel` in a `useLayoutEffect` [L03];
+ * the pane reads the registry at `onLayoutChanged` time to compute
+ * pixel sizes, and at mount applies the stored pixel sizes via
+ * `panel.resize("Npx")` — an imperative library call, not React state
+ * [L22]. The sync flag gates this restore so the write does not echo
+ * back through the user-drag path.
+ *
  * ## Content-driven sizing is a consumer concern
  *
  * This primitive does not observe content to grow/shrink panels. Consumers
@@ -54,9 +70,11 @@
  * hook (sibling file) covers the common scroll-source case.
  *
  * Laws: [L02] external state enters React through useSyncExternalStore,
- *       [L06] appearance via CSS, [L07] event handlers read refs,
- *       [L15] token-driven states, [L16] pairings declared,
- *       [L19] component authoring guide, [L20] token sovereignty.
+ *       [L03] registrations in useLayoutEffect, [L06] appearance via CSS,
+ *       [L07] event handlers read refs, [L15] token-driven states,
+ *       [L16] pairings declared, [L19] component authoring guide,
+ *       [L20] token sovereignty, [L22] DOM-only updates from store
+ *       observers, not React state.
  */
 
 import "./tug-split-pane.css";
@@ -73,7 +91,11 @@ import {
 import { GripHorizontal, GripVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
-import { putSplitPaneLayout, readSplitPaneLayout } from "@/settings-api";
+import {
+  putSplitPaneLayout,
+  readSplitPaneLayout,
+  type SplitPaneLayout,
+} from "@/settings-api";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { animate as tugAnimate } from "./tug-animator";
 
@@ -119,6 +141,11 @@ function subscribeSplitPaneDomain(notify: () => void): () => void {
  * the synchronous window of a `panel.resize()` call; the library's
  * synchronous `onLayoutChanged` dispatch happens inside that window.
  */
+interface RegisteredPanelEntry {
+  panelRef: React.RefObject<PanelImperativeHandle | null>;
+  pinned: boolean;
+}
+
 interface TugSplitPaneWriteContextValue {
   syncFlagRef: React.MutableRefObject<boolean>;
   /**
@@ -127,6 +154,14 @@ interface TugSplitPaneWriteContextValue {
    * the pane has no `storageKey`, or the id is unknown).
    */
   getUserSize(panelId: string | number): number;
+  /**
+   * Register a panel with its enclosing TugSplitPane. Returns an
+   * unregister function for use as a `useLayoutEffect` cleanup. The
+   * pane reads the registry at `onLayoutChanged` to compute pixel
+   * sizes for `pinned` panels, and at mount to drive the pixel-pin
+   * restore.
+   */
+  registerPanel(id: string, entry: RegisteredPanelEntry): () => void;
 }
 const TugSplitPaneWriteContext =
   React.createContext<TugSplitPaneWriteContextValue | null>(null);
@@ -136,6 +171,7 @@ const TugSplitPaneWriteContext =
 // its identity never changes — keeps `useImperativeHandle` stable
 // across renders in the standalone case.
 const FALLBACK_GET_USER_SIZE = (): number => 0;
+const FALLBACK_REGISTER_PANEL = (): (() => void) => () => {};
 
 // ---- Types ----
 
@@ -233,7 +269,7 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
     // `useSyncExternalStore`. `main.tsx` awaits `tugbankClient.ready()`
     // before mount, so the cache is warm and the first snapshot already
     // reflects the stored layout.
-    const getSnapshot = React.useCallback((): Layout | null => {
+    const getSnapshot = React.useCallback((): SplitPaneLayout | null => {
       if (!storageKey) return null;
       const client = getTugbankClient();
       if (!client) return null;
@@ -243,12 +279,53 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
       subscribeSplitPaneDomain,
       getSnapshot,
     );
+    const storedFlexGrow = storedLayout?.layout;
+    const storedPixels = storedLayout?.pixels;
 
     // Sync flag shared with descendant panels via context. Descendants
     // set it `true` around `panel.resize()` calls from
     // `setTransientSize` / `restoreUserSize`; our `onLayoutChanged`
     // handler checks it to decide which path to take.
     const syncFlagRef = React.useRef(false);
+
+    // --- Group element ref (merged with forwarded outer ref) ---
+    //
+    // Internal ref used to measure the group's size for pixel
+    // computation in `handleLayoutChanged`. Bridges the forwarded
+    // outer `ref` with the library's `elementRef` so the same DOM node
+    // satisfies both.
+    const groupElRef = React.useRef<HTMLDivElement | null>(null);
+    const setGroupElRef = React.useCallback(
+      (el: HTMLDivElement | null) => {
+        groupElRef.current = el;
+        if (typeof ref === "function") {
+          ref(el);
+        } else if (ref) {
+          ref.current = el;
+        }
+      },
+      [ref],
+    );
+
+    // --- Panel registry (populated by descendant TugSplitPanels) ---
+    //
+    // Descendants register themselves in `useLayoutEffect` so the
+    // registry is complete before any drag handler fires [L03]. Read
+    // by `handleLayoutChanged` (to compute pixel sizes for pinned
+    // panels) and by the pixel-pin restore effect (to apply stored
+    // pixel sizes via `panel.resize`).
+    const registryRef = React.useRef<Map<string, RegisteredPanelEntry>>(
+      new Map(),
+    );
+    const registerPanel = React.useCallback(
+      (id: string, entry: RegisteredPanelEntry): (() => void) => {
+        registryRef.current.set(id, entry);
+        return () => {
+          registryRef.current.delete(id);
+        };
+      },
+      [],
+    );
 
     // --- User-size map (the persisted, authoritative dimension) ---
     //
@@ -258,10 +335,10 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
     // value that `TugSplitPanelHandle.restoreUserSize` snaps back to.
     const userSizeMapRef = React.useRef<Layout>({});
     React.useLayoutEffect(() => {
-      if (storedLayout) {
-        userSizeMapRef.current = { ...storedLayout };
+      if (storedFlexGrow) {
+        userSizeMapRef.current = { ...storedFlexGrow };
       }
-    }, [storedLayout]);
+    }, [storedFlexGrow]);
 
     const getUserSize = React.useCallback(
       (panelId: string | number): number => {
@@ -271,17 +348,25 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
     );
 
     const contextValue = React.useMemo<TugSplitPaneWriteContextValue>(
-      () => ({ syncFlagRef, getUserSize }),
-      [getUserSize],
+      () => ({ syncFlagRef, getUserSize, registerPanel }),
+      [getUserSize, registerPanel],
     );
 
-    // --- Path A: user drag ---
+    // --- Path A: user drag and library-driven container resize ---
     //
-    // The library fires `onLayoutChanged` at pointerup for drags. When
-    // the sync flag is clear, we're on the user-drag path: update
-    // userSize and persist. When the flag is set, we're inside a
-    // transient write from `setTransientSize` or `restoreUserSize` —
+    // The library fires `onLayoutChanged` at pointerup for drags AND
+    // when its group ResizeObserver recomputes layout for
+    // `preserve-pixel-size` panels. When the sync flag is clear, we're
+    // on a user-/library-driven path: update userSize and persist.
+    // When the flag is set, we're inside a transient write from
+    // `setTransientSize` / `restoreUserSize` / pixel-pin restore —
     // bail out so neither userSize nor tugbank gets clobbered.
+    //
+    // For pinned panels (registered with `pinned: true`), we additionally
+    // read their pixel size from the layout map and the group's
+    // measured size and persist it under `pixels` so the pixel
+    // dimension survives reloads and card switches at different
+    // container sizes.
     //
     // This is the ONLY place that writes userSize or tugbank. By
     // construction, it cannot run for auto-resize writes.
@@ -289,10 +374,60 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
       (layout: Layout) => {
         if (syncFlagRef.current) return;
         userSizeMapRef.current = { ...layout };
-        if (storageKey) putSplitPaneLayout(storageKey, layout);
+        if (!storageKey) return;
+
+        let pixels: Record<string, number> | undefined;
+        const groupEl = groupElRef.current;
+        if (groupEl) {
+          const groupSize =
+            orientation === "horizontal"
+              ? groupEl.offsetHeight
+              : groupEl.offsetWidth;
+          if (groupSize > 0) {
+            for (const [id, entry] of registryRef.current) {
+              if (!entry.pinned) continue;
+              const flex = layout[id];
+              if (typeof flex !== "number") continue;
+              const px = (flex / 100) * groupSize;
+              if (!Number.isFinite(px) || px <= 0) continue;
+              if (!pixels) pixels = {};
+              pixels[id] = px;
+            }
+          }
+        }
+
+        putSplitPaneLayout(storageKey, { layout, pixels });
       },
-      [storageKey],
+      [storageKey, orientation],
     );
+
+    // --- Pixel-pin restore ---
+    //
+    // Stored pixel sizes are reapplied imperatively via `panel.resize`
+    // [L22] — this is a DOM/library write, not React state. The sync
+    // flag gates the resize so it does not echo back through
+    // `handleLayoutChanged` and re-persist the same data. Runs after
+    // descendant `useLayoutEffect`s (so the registry is populated)
+    // and any time `storedPixels` changes (cross-card persistence
+    // updates).
+    React.useLayoutEffect(() => {
+      if (!storedPixels) return;
+      for (const [id, entry] of registryRef.current) {
+        if (!entry.pinned) continue;
+        const px = storedPixels[id];
+        if (typeof px !== "number" || px <= 0) continue;
+        const panel = entry.panelRef.current;
+        if (!panel) continue;
+        const currentPx = panel.getSize().inPixels;
+        if (Math.abs(currentPx - px) < 0.5) continue;
+        syncFlagRef.current = true;
+        try {
+          panel.resize(`${px}px`);
+        } finally {
+          syncFlagRef.current = false;
+        }
+      }
+    }, [storedPixels]);
 
     const GripIcon = orientation === "vertical" ? GripVertical : GripHorizontal;
     const libraryOrientation = orientation === "horizontal" ? "vertical" : "horizontal";
@@ -329,8 +464,8 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
       <TugSplitPaneWriteContext.Provider value={contextValue}>
         <Group
           orientation={libraryOrientation}
-          defaultLayout={storedLayout ?? undefined}
-          elementRef={ref}
+          defaultLayout={storedFlexGrow ?? undefined}
+          elementRef={setGroupElRef}
           onLayoutChanged={handleLayoutChanged}
           className={cn("tug-split-pane", `tug-split-pane-${orientation}`, className)}
           data-slot="tug-split-pane"
@@ -449,6 +584,23 @@ export interface TugSplitPanelProps
    */
   maxSize?: TugSplitSize;
   /**
+   * How this panel behaves when the parent group is resized.
+   *
+   * - `"preserve-relative-size"` (default): the panel's percentage of
+   *   the group is preserved, so it scales proportionally with the
+   *   group.
+   * - `"preserve-pixel-size"`: the panel's pixel size is held constant
+   *   on group resize; relative-size siblings absorb the delta.
+   *
+   * When set to `"preserve-pixel-size"`, the enclosing TugSplitPane
+   * also persists this panel's pixel size in tugbank (under `pixels`
+   * within the layout entry) so the dimension is preserved across
+   * card switches and reloads at different container sizes. The
+   * library requires at least one sibling with the default
+   * `"preserve-relative-size"` behavior.
+   */
+  groupResizeBehavior?: "preserve-relative-size" | "preserve-pixel-size";
+  /**
    * Panel can snap closed when the user drags its neighboring sash past
    * this panel's `minSize`. Default: false.
    */
@@ -473,6 +625,7 @@ export const TugSplitPanel = React.forwardRef<TugSplitPanelHandle, TugSplitPanel
       defaultSize,
       minSize,
       maxSize,
+      groupResizeBehavior,
       collapsible,
       collapsedSize,
       onCollapsedChange,
@@ -502,6 +655,17 @@ export const TugSplitPanel = React.forwardRef<TugSplitPanelHandle, TugSplitPanel
     const localSyncFlagRef = React.useRef(false);
     const syncFlagRef = writeContext?.syncFlagRef ?? localSyncFlagRef;
     const getUserSize = writeContext?.getUserSize ?? FALLBACK_GET_USER_SIZE;
+    const registerPanel = writeContext?.registerPanel ?? FALLBACK_REGISTER_PANEL;
+
+    // Register with the enclosing TugSplitPane so it can read this
+    // panel's imperative handle for pixel-aware persistence and pixel-
+    // pin restore. [L03] useLayoutEffect — must complete before any
+    // pointer-driven `onLayoutChanged` fires.
+    const pinned = groupResizeBehavior === "preserve-pixel-size";
+    React.useLayoutEffect(() => {
+      const resolvedIdStr = String(resolvedId);
+      return registerPanel(resolvedIdStr, { panelRef, pinned });
+    }, [registerPanel, resolvedId, pinned]);
 
     // onResize drives the (synthesized) collapse-change callback.
     const handleResize = React.useCallback(
@@ -593,6 +757,7 @@ export const TugSplitPanel = React.forwardRef<TugSplitPanelHandle, TugSplitPanel
         defaultSize={defaultSize}
         minSize={minSize}
         maxSize={maxSize}
+        groupResizeBehavior={groupResizeBehavior}
         collapsible={collapsible}
         collapsedSize={collapsedSize}
         panelRef={panelRef}
