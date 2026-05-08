@@ -33,6 +33,7 @@ import { TideTranscriptHost } from "./tide-card-transcript";
 import { TugPaneBanner } from "../tug-pane-banner";
 import { TugSplitPane, TugSplitPanel, type TugSplitPanelHandle } from "../tug-split-pane";
 import { useContentDrivenPanelSize } from "../use-content-driven-panel-size";
+import { group } from "../tug-animator";
 import { TugBox } from "../tug-box";
 import { TugBadge } from "../tug-badge";
 import { TugInput } from "../tug-input";
@@ -1499,6 +1500,16 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   useTideCardObserver(cardId, codeSessionStore);
 
   const entryPanelRef = useRef<TugSplitPanelHandle | null>(null);
+  // Captured by the JSX's composed ref below for the first-mount
+  // fade-in animation. Read by a useLayoutEffect with empty deps —
+  // the effect runs once when this card first acquires services
+  // (binding flip from picker → body, or initial mount on a session
+  // restore), animates `.tide-card` opacity 0 → 1 via TugAnimator,
+  // and never re-runs. CardHost portals into the host pane and is
+  // never remounted across cross-pane moves ([L23] minimal mutation),
+  // so empty-deps semantics correctly maps to "once per fresh
+  // session bind."
+  const tideCardRootRef = useRef<HTMLDivElement | null>(null);
 
   const codeSnap = useSyncExternalStore(
     codeSessionStore.subscribe,
@@ -1715,6 +1726,70 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
     },
   });
 
+  // ── First-mount fade-in ─────────────────────────────────────────────────
+  //
+  // Coordinate the picker → body handoff: the picker sheet is in the
+  // last frames of its exit translate when binding lands and this
+  // body mounts. Without an enter animation the body snaps in
+  // abruptly while the sheet is still translating — the two motions
+  // don't share a beat. A brief opacity fade lets the body materialize
+  // alongside the sheet's exit so the transition reads as a single
+  // gesture rather than a hard appearance.
+  //
+  // Mechanics: empty-deps `useLayoutEffect` runs exactly once when
+  // this card first acquires services. It captures the root element
+  // via `tideCardRootRef.current`, sets opacity to "0" synchronously
+  // (so the first paint after commit shows the start state without a
+  // flash), then opens a TugAnimator group that animates opacity
+  // 0 → 1 over `--tug-motion-duration-moderate` with `ease-out`. The
+  // group's `commitStyles()` lands the final value (opacity 1) on
+  // the element when the animation finishes; `cancel()` removes the
+  // animation handle. Reduced-motion users opt out automatically via
+  // `isTugMotionEnabled()` inside `tug-animator` (the spatial-strip
+  // path doesn't apply here — opacity has no spatial component — but
+  // duration shortens to `--tug-motion-duration-fast`).
+  //
+  // [L13] TugAnimator owns programmatic motion that coordinates with
+  //       React mount; CSS keyframes would require a parallel "first-
+  //       mount-only" attribute, which is needless complexity for a
+  //       one-shot animation.
+  // [L14] Radix Presence is not in play here — the body's mount is
+  //       driven by the binding flip, not a Radix `data-state`
+  //       transition, so we are firmly in TugAnimator's lane.
+  // [L23] opacity is appearance-zone state and the animation does
+  //       not touch focus, selection, or scroll position. The
+  //       editor's caret-layer paints behind the fade and ramps in
+  //       with the rest of the body. The focus contract documented
+  //       above is unaffected — the fade does not set `inert` and
+  //       does not interfere with `view.hasFocus`.
+  // [L24] structure-zone (`TideCardBody` mount) drives appearance-
+  //       zone (opacity ramp); the WAAPI animation writes directly
+  //       to the DOM, never round-tripping through React state ([L02]
+  //       does not apply because this is appearance, not data).
+  //
+  // No cleanup is registered: if the body unmounts mid-fade, the
+  // WAAPI animation is garbage-collected with the detached element.
+  // `commitStyles()` inside tug-animator catches the
+  // `InvalidStateError` thrown when the element is no longer
+  // rendered, so the late `.finished` resolution is harmless.
+  useLayoutEffect(() => {
+    const el = tideCardRootRef.current;
+    if (el === null) return;
+    // Set the start state inline so the first paint after commit
+    // shows opacity:0 — WAAPI's pending-phase doesn't apply the
+    // first keyframe with the default `fill: forwards`. Cleared on
+    // animation completion via tug-animator's commitStyles() path.
+    el.style.opacity = "0";
+    const g = group({ duration: "--tug-motion-duration-moderate" });
+    g.animate(
+      el,
+      [{ opacity: 0 }, { opacity: 1 }],
+      { key: "tide-card-enter", easing: "ease-out" },
+    );
+    // Run once on first mount; never re-run.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Snap-back-to-userSize on explicit user submit — not on any other
   // data-empty transition (manual delete, undo, etc.). Fires before
   // `input.clear()` so the restore commits to the library store
@@ -1865,6 +1940,18 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
     <CardContentResponderScope>
       <div
         ref={(el) => {
+          // Compose two ref consumers onto a single DOM node:
+          //   - `cardContentResponderRef` registers this element as
+          //     the card-content responder for chain dispatch.
+          //   - `tideCardRootRef` captures the same element for the
+          //     first-mount fade-in `useLayoutEffect` declared above.
+          // The composition is inline rather than `useCallback`-wrapped
+          // because both consumers are reference-stable for this
+          // component's lifetime; React calls this lambda on mount
+          // (with the element) and on unmount (with `null`), and a
+          // one-shot identity churn doesn't trigger any re-attach
+          // observable from the consumers.
+          tideCardRootRef.current = (el as HTMLDivElement | null);
           (cardContentResponderRef as (node: Element | null) => void)(el);
         }}
         className="tide-card"

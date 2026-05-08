@@ -451,20 +451,20 @@ Specific test additions:
 - No new CSS tokens; existing `--tug-motion-duration-moderate` is reused.
 
 **Tasks:**
-- [ ] Capture `.tide-card` via a ref (`tideCardRootRef`).
-- [ ] Add a `useLayoutEffect` with empty deps that runs `group({ duration: "--tug-motion-duration-moderate" }).animate(el, [{ opacity: 0 }, { opacity: 1 }], { key: "tide-card-enter", easing: "ease-out" })`.
-- [ ] Verify the WAAPI animation does not interfere with `cardDidActivate`'s focus claim — focus runs synchronously on the lifecycle event, which fires from `useCardDelegate`'s `useLayoutEffect`; the fade is a separate effect.
-- [ ] Verify the fade does not interfere with banner enter for resume sessions: the banner is portaled into the pane chrome, sits on top of the body in stacking, and animates independently. Manual smoke for resume.
+- [x] Capture `.tide-card` via a ref (`tideCardRootRef`). Composed inline with the existing `cardContentResponderRef` callback ref on the JSX.
+- [x] Add a `useLayoutEffect` with empty deps that runs `group({ duration: "--tug-motion-duration-moderate" }).animate(el, [{ opacity: 0 }, { opacity: 1 }], { key: "tide-card-enter", easing: "ease-out" })`. Sets `el.style.opacity = "0"` synchronously before `animate()` so the first paint shows the start state without flash; tug-animator's `commitStyles()` lands the final value at completion.
+- [x] Verify the WAAPI animation does not interfere with `cardDidActivate`'s focus claim — focus runs synchronously on the lifecycle event, which fires from `useCardDelegate`'s `useLayoutEffect`; the fade is a separate effect that runs after focus is claimed. The fade is opacity-only and does not set `inert` or otherwise affect `view.hasFocus`, so the editor's caret-layer paints behind the fade and ramps in with the rest of the body.
+- [x] Verify the fade does not interfere with banner enter for resume sessions: the banner is portaled into the pane chrome via `TugPanePortalContext`, parented above `.tide-card` in stacking, and animates independently. Banner enter (translate from -100% to 0) and body fade (opacity 0 → 1) coexist cleanly in the same 200ms window.
 
 **Tests:**
-- [ ] Manual: open a new session, observe body fade-in.
-- [ ] Manual: open a resume session, observe banner-over-fading-body sequence.
-- [ ] No new vitest asserting WAAPI behavior — happy-dom is the wrong substrate per the user's `feedback_no_happy_dom_tests` rule. The at0051 augmentation in Step 5 covers the integration.
+- [x] No new vitest asserting WAAPI behavior — happy-dom is the wrong substrate per the user's `feedback_no_happy_dom_tests` rule. The at0051 augmentation in Step 5 covers the integration.
+- [x] Manual: open a new session, observe body fade-in. (User-verified: passed.)
+- [x] Manual: open a resume session, observe banner-over-fading-body sequence. (User-verified: passed.)
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun run check`
-- [ ] `cd tugdeck && bun test`
-- [ ] Manual: `cd tugapp && just app-build && just app-run`, open a Tide card, hit Open with a fresh path; observe body fade.
+- [x] `cd tugdeck && bun run check`
+- [x] `cd tugdeck && bun test` — 3150 pass, 0 fail
+- [x] Manual: `cd tugapp && just app-build && just app-run`, open a Tide card, hit Open with a fresh path; observe body fade. (User-verified: passed.)
 
 ---
 
