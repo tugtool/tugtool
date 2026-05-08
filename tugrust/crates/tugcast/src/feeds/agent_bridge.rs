@@ -661,6 +661,14 @@ pub async fn relay_session_io(
     // (terminal).
     let mut resume_failed: Option<(String, String)> = None;
 
+    // Replay-window flag. Set when tugcode emits `replay_started`,
+    // cleared on `replay_complete`. Gates `record_turn` so replayed
+    // `turn_complete` frames (one per persisted turn from JSONL) do
+    // NOT re-bump the ledger row's `turn_count` — only LIVE turns
+    // count. Without this gate every reconnect / restore inflates
+    // the picker's "N turns" subtitle by the full transcript length.
+    let mut in_replay = false;
+
     // Handshake: write protocol_init, then wait up to 5s for protocol_ack.
     let protocol_init = b"{\"type\":\"protocol_init\",\"version\":1}\n";
     if let Err(e) = stdin.write_all(protocol_init).await {
@@ -822,16 +830,36 @@ pub async fn relay_session_io(
                             );
                         }
 
+                        // Track replay window so the LIVE-turn check
+                        // below skips replayed `turn_complete` frames.
+                        // Tugcode brackets every replay run with
+                        // `replay_started` ... `replay_complete`; turn
+                        // events between those markers are persisted
+                        // history, not new turns, and must not re-bump
+                        // the ledger's `turn_count`.
+                        if line.contains("\"type\":\"replay_started\"") {
+                            in_replay = true;
+                        }
+                        if line.contains("\"type\":\"replay_complete\"") {
+                            in_replay = false;
+                        }
+
                         // `turn_complete` events mark the end of an
-                        // assistant turn. Each one bumps the ledger row's
-                        // `turn_count` and `last_used_at`. Tugcode emits
-                        // this once per turn — substring match is
+                        // assistant turn. Each LIVE one bumps the ledger
+                        // row's `turn_count` and `last_used_at`. Tugcode
+                        // emits this once per turn — substring match is
                         // sufficient given the surrounding stream-json
                         // shape; a more careful parser would be
                         // `serde_json::from_str` over the whole line, but
                         // that pays the deserialize cost on every output
                         // line for negligible benefit.
-                        if line.contains("\"type\":\"turn_complete\"") {
+                        //
+                        // Replay-bracketed `turn_complete` frames are
+                        // skipped: they re-emit persisted history on
+                        // every reconnect / restore, and counting them
+                        // would inflate the picker subtitle by the full
+                        // transcript length on every restart.
+                        if line.contains("\"type\":\"turn_complete\"") && !in_replay {
                             let claude_id = {
                                 let entry = ledger_entry.lock().await;
                                 entry.claude_session_id.clone()
