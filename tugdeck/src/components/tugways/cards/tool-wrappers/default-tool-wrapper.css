@@ -1,0 +1,44 @@
+/* @tug-pairings: none — scaffold placeholder for a registry-fallback wrapper.
+   `DefaultToolWrapper` is the fallback dispatch result for `tool_use`
+   events whose `tool_name` is not in the wrapper registry, plus an
+   audit-confirmed long tail of low-volume tools that route here by
+   design. The full implementation (JsonTreeBlock over input, smart-pick
+   body for output, caution badge) lands later in this phase; this
+   scaffold renders only the tool name and a "(default)" marker so the
+   dispatch wiring can be tested in isolation.
+
+   This stylesheet introduces no `--tugx-*` slot tokens of its own; the
+   final tokens land alongside the body-kind composition in the
+   default-tool-wrapper full step. The scaffold uses font and layout
+   inherited from the host transcript row — no contrast surface owned
+   here.
+*/
+
+/**
+ * default-tool-wrapper.css — scaffold styling for the registry fallback.
+ *
+ * Tuglaw cross-check:
+ *   - [L06] appearance via CSS / DOM, not React state.
+ *   - [L19] file pair (`.tsx` + `.css`) with module docstring on each.
+ *   - [L20] component-token sovereignty — no tokens introduced here;
+ *     full slot vocabulary lands with the body composition step.
+ */
+
+.default-tool-wrapper {
+  box-sizing: border-box;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-sm);
+}
+
+.default-tool-wrapper-name {
+  font-weight: 600;
+}
+
+.default-tool-wrapper-marker {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-style: italic;
+}

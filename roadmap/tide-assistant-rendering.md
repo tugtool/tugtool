@@ -596,24 +596,44 @@ Web research conducted for this phase (cited in §[Library citations](#library-c
 
 #### Spec S01: `AssistantRendererDispatch` interface {#s01-dispatch-interface}
 
+The dispatch is stateless logic over a discriminated-union input. The real `TurnEntry` (`tugdeck/src/lib/code-session-store/types.ts`) is a *full-turn* record without a `kind` discriminator — it carries `userMessage`, `thinking`, `assistant`, `toolCalls`, etc. The transcript view turns each `TurnEntry` (and any in-flight content) into a series of `RenderInput` values, each of which the dispatch routes to a renderer.
+
 ```typescript
 // tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.ts
 
+/**
+ * Discriminated input for the dispatch. Each kind routes to a specific
+ * renderer per the architecture mental model. Sources include TurnEntry
+ * fields (assistant / thinking / toolCalls / userMessage), in-flight
+ * streaming content (streamingPaths.*), and chrome-shaped events
+ * (control_request_forward, cost_update, system_metadata, error).
+ */
+export type RenderInput =
+  | { kind: "assistant_text"; text: string; status: "streaming" | "complete"; msgId: string }
+  | { kind: "thinking"; text: string; status: "streaming" | "complete"; msgId: string }
+  | { kind: "tool_call"; toolCall: ToolCallState; msgId: string }
+  | { kind: "user_text"; text: string; submitAt: number }
+  | { kind: "permission"; request: ControlRequestForward }
+  | { kind: "question"; request: ControlRequestForward }
+  | { kind: "cost"; cost: CostSnapshot; cumulative?: CostSnapshot }
+  | { kind: "system_metadata"; metadata: unknown; previousMetadata?: unknown }
+  | { kind: "error"; message: string; recoverable: boolean };
+
 export interface DispatchResult {
-  Component: React.ComponentType<any>;
+  Component: React.ComponentType<unknown>;
   props: Record<string, unknown>;
   /** Caution flag; surfaces caution badge per [D04]. */
   caution?: { reason: "unknown_tool" | "unknown_shape" | "version_drift"; detail?: string };
 }
 
 export interface AssistantRendererDispatch {
-  /** Map a turn entry to a renderer + props. Always returns; never throws. */
-  dispatch(entry: TurnEntry, context: DispatchContext): DispatchResult;
+  /** Route a RenderInput to a renderer + props. Always returns; never throws. */
+  dispatch(input: RenderInput, context: DispatchContext): DispatchResult;
 
-  /** Look up a tool wrapper by name. Returns DefaultToolWrapper for misses. */
+  /** Look up a tool wrapper by name (case-insensitive). Returns DefaultToolWrapper for misses. */
   resolveToolWrapper(toolName: string): ToolWrapperFactory;
 
-  /** Test-only: enumerate all registered tool wrappers (for the success-criteria test). */
+  /** Test-only: enumerate all registered tool wrappers. */
   registeredTools(): ReadonlyArray<string>;
 }
 
@@ -624,10 +644,10 @@ export interface DispatchContext {
   session: CodeSessionStore;
   /** Recursion depth for AgentTranscriptBlock; default 0. */
   depth?: number;
-  /** Previous system_metadata snapshot for [D03] diff. */
-  prevSystemMetadata?: SystemMetadataShape;
 }
 ```
+
+`previousMetadata` for [D03]'s on-change comparison rides on the `system_metadata` `RenderInput` itself rather than `DispatchContext`, so the dispatch is fully stateless over the registry: callers stay responsible for tracking their per-session previous-snapshot reference.
 
 #### Spec S02: Body-kind contract {#s02-body-kind-contract}
 
@@ -1141,22 +1161,27 @@ ThinkingBlock, PermissionDialog, QuestionDialog, CostChrome (with CostBadge sub-
 - A no-op `DefaultToolWrapper` (just enough to pass the dispatch test; full body lands in [#step-13](#step-13))
 
 **Tasks:**
-- [ ] Define `AssistantRendererDispatch`, `DispatchResult`, `DispatchContext` per Spec S01
-- [ ] Build `toolWrapperRegistry: Map<string, ToolWrapperFactory>` keyed lowercase per [D16]
-- [ ] Build alias map (e.g., `multiedit → edit`) per [D16]
-- [ ] Implement `dispatch(entry, context)`: routes by `entry.kind`; for tool entries, looks up by lowercased `entry.toolName`; falls back to `DefaultToolWrapper` per [D11] with `caution: { reason: "unknown_tool" }`
-- [ ] Implement `resolveToolWrapper(name)` and `registeredTools()`
-- [ ] Implement scaffold-only `DefaultToolWrapper` rendering tool_name + a "(default)" marker for now
+- [x] Define `AssistantRendererDispatch`, `DispatchResult`, `DispatchContext` per Spec S01 (Spec S01 reconciled with real `TurnEntry` shape — input is `RenderInput` discriminated union, not raw `TurnEntry`)
+- [x] Build `toolWrapperRegistry: Map<string, ToolWrapperFactory>` keyed lowercase per [D16]
+- [x] Build alias map per [D16] — `multiedit → edit` and `task → agent` (historical rename per audit §4.3)
+- [x] Implement `dispatch(input, context)`: routes by `input.kind`; for `tool_call`, looks up by lowercased `toolCall.toolName`; falls back to `DefaultToolWrapper` per [D11] with `caution: { reason: "unknown_tool" }`; suppresses caution for the audit-confirmed default-routed tools
+- [x] Implement `resolveToolWrapper(name)` and `registeredTools()`
+- [x] Implement scaffold-only `DefaultToolWrapper` rendering tool_name + "(default)" marker; full body lands at [#step-13](#step-13)
 
 **Tests:**
-- [ ] `dispatch.test`: dispatch an `assistant_text` entry → `AssistantTurnRenderer`
-- [ ] `dispatch.test`: dispatch a `tool_use` with unknown name → `DefaultToolWrapper` + caution
-- [ ] `dispatch.test`: alias resolution (`MultiEdit` → `EditToolBlock` once registered)
-- [ ] `dispatch.test`: case-insensitive lookup
+- [x] `dispatch.test`: dispatch an `assistant_text` input → `KIND_RENDERERS.assistant_text` (the per-kind scaffold; replaced wholesale by the real renderer at [#step-3](#step-3))
+- [x] `dispatch.test`: dispatch a `tool_call` with unknown name → `DefaultToolWrapper` + caution `{ reason: "unknown_tool" }`
+- [x] `dispatch.test`: alias resolution — `MultiEdit` / `multiedit` / `MULTIEDIT` all resolve to the registered `edit` wrapper; `Task` / `task` resolve to the registered `agent` wrapper
+- [x] `dispatch.test`: case-insensitive lookup — `Read` / `READ` / `reAd` all resolve identically
+- [x] `dispatch.test`: audit-confirmed default-routed tools (e.g., `TaskUpdate`) → `DefaultToolWrapper` *without* caution (suppressed by design)
+- [x] `dispatch.test`: store status `pending`/`error` map to wrapper status `streaming`/`error` and `isError` flag; canonical wrapper props (`toolUseId`, `toolName`, `msgId`, `input`, `structuredResult`) are threaded onto the prop bag
+- [x] 19 tests, 38 assertions — all pass
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit`
-- [ ] `cd tugdeck && bun test src/components/tugways/cards/tide-assistant-renderer-dispatch.test.ts`
+- [x] `bun x tsc --noEmit` — clean
+- [x] `bun test src/components/tugways/cards/tide-assistant-renderer-dispatch.test.ts` — 19 pass / 0 fail
+- [x] `bun run audit:tokens lint` — zero violations
+- [x] Full test suite still green (3,169 pass, 0 fail across 188 files)
 
 ---
 
