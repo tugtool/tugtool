@@ -1,102 +1,489 @@
-# Tide Assistant Rendering — Content & Data Type Renderers
+<!-- tugplan-skeleton v2 -->
 
-*Design proposal. Sibling to [tide.md §Phase T1 — Content Block Types](./tide.md#content-block-types) and the styling pass deferred at [tugplan-tide-card-polish.md §Step 12](./tugplan-tide-card-polish.md#step-12) / §Step 13. Not yet a tugplan; promote to one once the design is ratified.*
+## Tide Assistant Rendering — Content & Data Type Renderers {#tide-assistant-rendering}
 
-**Status:** Pending review — 2026-05-08.
-**Author:** captured in conversation; ratify before promoting to a step-numbered plan.
-
----
-
-## 1. Purpose
-
-Define how Tide renders every content and data type that arrives from a Claude Code session — and a few we synthesize ourselves — so that the assistant surface is *materially* better than what a TUI can show. The terminal rendering bar is "ANSI escapes + monospace + nothing else." Tug's bar is: typography that reads like a publication, content-aware renderers per data shape, and progressive disclosure for long content (collapse/expand for diffs, file viewers, agent transcripts, etc.).
-
-This proposal:
-
-1. Inventories every content and data type we currently receive (or could synthesize) on the assistant side.
-2. Lays out a two-layer rendering architecture — reusable **body kinds** + thin **per-tool wrappers** — that lets every Claude tool look hand-crafted without 14 redundant copies of the same diff renderer.
-3. Picks libraries and parsers (WASM where the speed/correctness win is real; JS where it isn't).
-4. Sequences the work so we can land a great-looking baseline early, then promote individual tools to bespoke treatment as design needs surface.
-
-It does **not** redesign the Phase T1 stub in `tide.md`; it elaborates it. Phase T1's "GFM markdown / TugCodeBlock / thinking / tool use / monospace" line items are the start of the catalog, not the catalog itself.
+**Purpose:** Build the full content-type rendering layer for Tide's assistant surface — a two-layer system of reusable body kinds + thin per-tool wrappers, plus the dispatcher, stream-event chrome, and parsers/formatters that make Claude Code output materially better than what a TUI can show. Replaces the placeholder rendering currently used by `streamingPaths.assistant`, wires the so-far-unwired `streamingPaths.thinking` and `streamingPaths.tools`, and ships the `--tugx-*` typography/chrome polish that `tugplan-tide-card-polish.md` Steps 12 and 13 are stubs for.
 
 ---
 
-## 2. Where we are today
+### Plan Metadata {#plan-metadata}
 
-### 2.1 What renders right now
-
-- **Markdown body via the WASM pipeline.** `tugmark-wasm` (pulldown-cmark compiled to WASM) lexes markdown into packed binary block metadata, then re-parses each block to HTML. `parseMarkdownToSanitizedBlocks` runs each block through DOMPurify under a strict allowlist. `TugMarkdownView` consumes this stream with virtualization (`BlockHeightIndex`, `RenderedBlockWindow`); `TugMarkdownBlock` is the natural-flow sibling for bounded-content cells. Both are streaming-aware via `PropertyStore.observe`.
-- **Code blocks inside markdown.** Shiki provides VS Code-grade syntax highlighting via the legacy `enhanceCodeBlocks` path. Lazy language loading. `--tugx-md-*` token surface for typography.
-- **Tide card transcript.** `TideTranscriptDataSource` feeds `TugListView` with `(user, code)` row pairs. The `code` row body slots in `TugMarkdownView`/`TugMarkdownBlock` for assistant text.
-- **Streaming.** `assistant_text` deltas are accumulated in `CodeSessionStore.streamingPaths.assistant`, observed by `TugMarkdownBlock`, rendered with rAF-coalesced incremental updates.
-
-### 2.2 What's missing (the work this proposal frames)
-
-- **Typography is unstyled.** Default `--tugx-md-*` tokens are still placeholders. `tugplan-tide-card-polish.md §Step 12` is the dedicated styling pass, currently pending.
-- **Thinking blocks are unwired.** `streamingPaths.thinking` exists but no UI consumes it.
-- **Tool surfaces are unwired.** `streamingPaths.tools` exists. `tool_use` / `tool_result` / `tool_use_structured` arrive but go to `JSON.stringify`-equivalent placeholder rendering (or nothing).
-- **No content-aware rendering.** A `tool_result` with structured `file` data is rendered as raw text, not as a file viewer. A `tool_use_structured` for Bash with stdout/stderr split is collapsed back into a single text blob. Edits arrive as `{ old_string, new_string }` and never become a diff. Graphs and math are rendered as fenced code blocks, not diagrams or typeset math.
-- **Cost chrome and session metadata are not visualized.** `cost_update` carries per-model token counts; we discard them.
-- **Permission and AskUserQuestion dialogs are unbuilt.**
-- **No collapse/expand on long content.** A 2000-line diff dominates the transcript.
-
-### 2.3 The data we have to work with
-
-Stream-json events (from `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.105/`):
-
-| Event | Use |
-|-------|-----|
-| `protocol_ack`, `session_init` | Session lifecycle chrome |
-| `system_metadata` | Per-turn metadata: model, tools, plugins, agents, mcp_servers, version, permissionMode |
-| `thinking_text` | Pre-response reasoning. Delta-streamed. |
-| `assistant_text` | Response body. Delta-streamed; `complete` event has full text. |
-| `tool_use` | Tool invocation. Input streams empty → full. |
-| `tool_result` | Tool output as text + `is_error` flag. |
-| `tool_use_structured` | Tool output as typed structured data (file viewer, bash stdout/stderr, agent transcript, etc.). |
-| `control_request_forward` | Permission (`is_question: false`) or AskUserQuestion (`is_question: true`). |
-| `cost_update` | Per-turn token + USD breakdown. |
-| `turn_complete` | End-of-turn signal. |
-| `error` | Error with `recoverable` flag. |
-
-Each of these has a renderer in this proposal.
+| Field | Value |
+|------|-------|
+| Owner | Ken Kocienda |
+| Status | draft |
+| Target branch | tugplan-tide-assistant-rendering |
+| Last updated | 2026-05-08 |
 
 ---
 
-## 3. Design ambition
+### Phase Overview {#phase-overview}
 
-The rendering bar:
+#### Context {#context}
 
-- **Typography reads like a designed document.** Heading scale, paragraph rhythm, list indentation, inline-code chrome, blockquote treatment — all explicitly designed against both `brio` and `harmony` themes. Text should pass the squint test against a high-quality web publication, not a terminal.
-- **Every data type has a renderer that fits it.** A file is shown as a file. A diff is shown as a diff. A directory listing is a list with icons and metadata. A bash command is a terminal block with stdout/stderr separation, ANSI colors mapped to CSS, exit code badge. A subagent run is a transcript-within-a-transcript. JSON is a collapsible tree. Math is typeset. Diagrams are diagrams.
-- **Progressive disclosure is the default for long content.** Diff blocks > 40 lines, file blocks > 200 lines, agent transcripts of any depth — all render collapsed by default with a one-line summary header and an expand affordance. The user opts in to detail.
-- **Streaming feels alive but not jittery.** Deltas land with rAF coalescing; no fade-in/out churn on already-rendered content. New blocks appear at the bottom; existing blocks don't reflow when an unrelated upstream event arrives.
-- **Every tool gets a polished renderer the day it lands.** Even unknown tools (a future Claude release; a new MCP server) render usefully via a default wrapper. We're never blank or ugly.
-- **Theme tokens are the only customization surface.** No inline styles. Seven-slot naming convention per L19/L20. Both themes verified for every renderer.
+Tide is the unified command surface that hosts Claude Code conversations alongside (eventually) shell commands. Today the Tide card streams assistant text through `TugMarkdownView` with default `--tugx-md-*` tokens, but the surrounding rendering is bare: thinking blocks are unwired, tool calls render as raw JSON-ish text, permission requests have no UI, cost data is dropped on the floor, and there are no content-aware renderers for the structured shapes Claude Code already sends (`tool_use_structured.file`, `.stdout/.stderr`, agent transcripts, etc.).
+
+The assistant-side rendering bar for Tug is *not* "comparable to a terminal." The bar is "comparable to a hand-crafted GUI app" — typography that reads like a publication, dedicated renderers per data shape, progressive disclosure for long content, lazy-loaded stretch content (Mermaid diagrams, KaTeX math), and never-blank fallback for unknown shapes. This phase ships that surface.
+
+#### Strategy {#strategy}
+
+- **Two-layer hybrid architecture.** ~14 reusable Layer-1 body kinds (FileBlock, DiffBlock, TerminalBlock, etc.) carry the heavy rendering work; ~14 thin Layer-2 per-tool wrappers compose them with tool-specific chrome and interactions. See [D05].
+- **Renderer dispatch lives outside the store.** A separate `assistant-renderer-dispatch.ts` module maps `TurnEntry` records to renderer kinds; `CodeSessionStore` stays state-only. See [D01].
+- **WASM only where it earns its keep.** New `tugdiff-wasm` crate (`imara-diff` bindings) for diff parsing; ANSI, JSON-tree, and inline math stay in JS. See [D06].
+- **Day-one coverage via `DefaultToolWrapper`.** Any tool we haven't built a bespoke wrapper for renders cleanly through a generic JsonTree-based wrapper, and a caution badge surfaces drift. See [D11], [D04].
+- **Lazy-load stretch content.** KaTeX (~350 KB), Mermaid (~1 MB), Shiki language packs, and the diff WASM module load on first encounter, not at boot. See [D10].
+- **Stream-aware per body kind.** Markdown, terminal, agent-transcript stream incrementally; diff, file, JSON-tree, math, mermaid wait for `complete`. Wrappers show a "streaming…" placeholder during the gap. See [D12].
+- **Theme-token sovereignty per L20.** Every component owns its slot under the seven-slot naming convention; consumers tune via wrapping selectors, not by reaching into primitives.
+
+#### Success Criteria (Measurable) {#success-criteria}
+
+> Each criterion is verifiable by replaying a stream-json catalog fixture, by automated tests, or by manual inspection in a Tide card against `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.105/`.
+
+- Replaying every fixture in `v2.1.105/` produces a fully rendered Tide transcript with no `[object Object]`, no raw JSON in tool bodies, and no blank components. (Replay test: see [Spec S06](#s06-fixture-replay).)
+- Every Claude tool currently emitted by the catalog (`Read`, `Bash`, `Edit`, `Glob`, `Grep`, `Task`/`Agent`, `WebFetch`, `WebSearch`, `TodoWrite`, `NotebookEdit`, `Write`) renders through its bespoke Layer-2 wrapper, not `DefaultToolWrapper`. Verify by enumerating dispatch-registry entries.
+- A tool name absent from the registry (verify by injecting a synthetic `tool_use` with `tool_name: "ZzzUnknownToolZzz"`) renders through `DefaultToolWrapper` with a caution badge ([D04]) and never throws.
+- `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint` all green.
+- Both `brio` and `harmony` themes render every component without missing tokens, verified by visual snapshot tests.
+- Long-content collapse: a fixture-injected 500-line Bash output, 200-line Read result, and 40-hunk Edit diff all default to collapsed with single-line summary headers and an expand affordance. Verify by automated DOM assertion + manual smoke.
+- KaTeX `$E=mc^2$` and `$$\\int_0^1 x^2 dx$$` typeset correctly in assistant prose. Mermaid ` ```mermaid\\nflowchart…\\n``` ` renders as a diagram once the fenced block reaches `complete`. Both lazy-loaded — initial Tide card mount has no KaTeX or Mermaid bytes downloaded.
+- A version-mismatch fixture (`system_metadata.version` ≠ pinned catalog) surfaces a caution badge in the card chrome per [D04].
+- All work in this phase respects [L01] (one root.render), [L02] (external state via useSyncExternalStore), [L03] (useLayoutEffect for registrations), [L06] (appearance via DOM/CSS), [L19] (component-authoring guide), [L20] (token sovereignty), [L22] (streaming binding).
+
+#### Scope {#scope}
+
+1. Layer-1 body kinds: MarkdownBlock extensions, TerminalBlock, DiffBlock, FileBlock, PathListBlock, SearchResultBlock, JsonTreeBlock, TodoListBlock, AgentTranscriptBlock, ImageBlock, MermaidBlock, KaTeXBlock, TableBlock (rich), PlainTextBlock.
+2. Layer-2 tool wrappers: ReadToolBlock, WriteToolBlock, EditToolBlock, BashToolBlock, GlobToolBlock, GrepToolBlock, TaskToolBlock, WebFetchToolBlock, WebSearchToolBlock, TodoWriteToolBlock, NotebookEditToolBlock, DefaultToolWrapper.
+3. Stream-event chrome: ThinkingBlock, PermissionDialog (`is_question:false`), QuestionDialog (`is_question:true`), CostChrome (per-turn footer + expanded breakdown + card-level cumulative), SessionInitBanner, ErrorBlock.
+4. Renderer dispatch infrastructure (`assistant-renderer-dispatch.ts`) and the block-transformer pass over markdown blocks.
+5. New `tugdeck/crates/tugdiff-wasm/` Rust crate with `imara-diff` bindings.
+6. Library integrations: `ansi_up`, KaTeX (lazy), Mermaid (lazy), `diff-match-patch` (word-level intra-line diff inside DiffBlock).
+7. `--tugx-md-*` typography pass (subsumes `tugplan-tide-card-polish.md` §Step 12).
+8. Drift detection + caution-badge surface (per [D04]).
+9. Tests: unit, integration via fixture replay, theme-snapshot, audit:tokens lint clean.
+10. Both `brio` and `harmony` theme verification for every component.
+
+#### Non-goals (Explicitly out of scope) {#non-goals}
+
+- **MCP tool support.** Adoption has slowed and the long-term viability is uncertain. Unknown MCP tools fall back through `DefaultToolWrapper`; bespoke MCP-server wrappers are not in this phase. Revisit if/when MCP becomes load-bearing for our users.
+- **Re-run buttons on `BashToolBlock` (and similar).** Security-policy-laden; the permission-mode story for re-run isn't settled. Defer to a follow-on phase. (Listed in [Roadmap](#roadmap).)
+- **"Allow with edits" on `PermissionDialog`.** Requires a structured editor over `tool_use.input` (a command-line editor for Bash, an editable diff for Edit). Defer to a follow-on phase.
+- **`AgentTranscriptBlock` as a Slack-like participant variant.** Initial implementation is an inline collapsible block within the parent `code` row; the participant-variant A/B is deferred until the inline form has shipped.
+- **Tree-sitter syntax highlighting.** Shiki stays in place. Reevaluate only if a measurable Shiki bottleneck shows up in profiling. (Open question [Q02].)
+- **NotebookCellBlock specialization.** `NotebookEditToolBlock` v1 uses generic `DiffBlock`. Cell-aware specialization deferred. (Open question [Q01].)
+- **Phase T2 shell-command adapter blocks** (`GitStatusBlock`, `BuildOutputBlock`, etc.). Those land in `tide.md` Phase T2/T6; this phase only ships the Layer-1 primitives those adapters will reuse.
+- **Editing the `marked`-based legacy markdown path** (`tugdeck/src/lib/markdown.ts`). Slated for removal in its own dedicated cleanup; not touched here unless the pipeline surface forces it.
+- **Persisting renderer-level UI state** (e.g., per-block expand/collapse remembered across reload). Optional polish, deferred.
+- **Re-rendering of historical `system_metadata` events** for cosmetic reasons. Per [D03], we render only on change.
+
+#### Dependencies / Prerequisites {#dependencies}
+
+- `tugmark-wasm` (pulldown-cmark + WASM block lex/parse) — exists at `tugdeck/crates/tugmark-wasm/`.
+- `TugMarkdownView` and `TugMarkdownBlock` — exist at `tugdeck/src/components/tugways/`.
+- `parseMarkdownToSanitizedBlocks` and `dompurify-instance` — exist at `tugdeck/src/lib/markdown/`.
+- `CodeSessionStore` and its `streamingPaths.{assistant,thinking,tools}` — exist; produce `TurnEntry` records this phase consumes.
+- `TugListView` + `TideTranscriptDataSource` — landed via `tugplan-tug-list-view.md`. The transcript surface this phase renders into.
+- `TugTranscriptEntry` row primitive — landed via `tugplan-tide-card-polish.md` Step 9.
+- `tugplan-tide-session-ledger.md` — Step 10 of card-polish — for session lifecycle that drives `SessionInitBanner`.
+- `BlockHeightIndex` / `RenderedBlockWindow` — exist; reused by `TerminalBlock` self-virtualization per [D02].
+- `PropertyStore` + `observe` — exists; the streaming-binding contract per Spec S05.
+- Stream-json catalog at `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.105/` (and `v2.1.112/`) — ground truth for fixture replay tests.
+- Both theme files: `tugdeck/styles/themes/brio.css` and `harmony.css` — extended with per-component slots.
+- The seven-slot token convention from `tuglaws/token-naming.md`.
+- The component-authoring guide from `tuglaws/component-authoring.md`.
+
+#### Constraints {#constraints}
+
+- All new components must pass the L19 component-authoring checklist (file pair `.tsx` + `.css`, module docstring, exported props interface, `data-slot` attribute).
+- All new tokens must conform to the seven-slot naming per L19/L20: `--tugx-<kind>-<plane>-control-<constituent>-<emphasis>-<role>-<state>`. `bun run audit:tokens lint` exits 0.
+- No `box-shadow` elevation, no `translateY` press-down, no gradients. Color transitions only ([D85, D70, D82]).
+- No `localStorage` / `sessionStorage` / IndexedDB. Persistent UI state — none in this phase, but if any is added it goes through tugbank's `/api/defaults/<domain>/<key>` model.
+- HMR is always running; no manual builds for tugdeck.
+- `bun`, never `npm` / `npx`.
+- WASM modules must initialize before any code that uses them runs; main.tsx pattern is the existing template.
+- Lazy-loaded stretch content (KaTeX, Mermaid, tugdiff-wasm) must not appear in the main bundle.
+- No new IndexedDB dependencies (D-T3-10).
+- Vitest test names must encode the spec they cover. Rust nextest tests with `-D warnings`.
+- `happy-dom` is forbidden for tests that exercise focus, selection, or event ordering across React renders (per `feedback_no_happy_dom_tests`). Use the `app-test` harness for those.
+- All work is on the `tugplan-tide-assistant-rendering` branch; no commits to `main` directly.
+- Both `brio` and `harmony` themes verified for every component.
+
+#### Assumptions {#assumptions}
+
+- `pulldown-cmark` block output remains stable across patch versions. Drift caught by the markdown unit tests.
+- The stream-json catalog at `v2.1.105` is representative; new event shapes that arrive in `v2.1.112+` are caught by the drift detection in [D04].
+- Anthropic continues to delta-stream `assistant_text` and `thinking_text` (full-text only on `complete`).
+- `Shiki` performance is acceptable for syntax highlighting — confirmed by qualitative use; revisit if profiling shows otherwise (per [Q02]).
+- The `imara-diff` Rust crate compiles to WASM cleanly — to be verified in [#step-9](#step-9).
+- KaTeX bundle size is ~350 KB and loads synchronously after import; Mermaid is ~1 MB with lazy diagram-type loading.
+- Users do not need bidirectional/RTL math layout in v1 (KaTeX supports it but we don't surface controls).
+- Image attachments arrive only on inbound user messages, not in assistant output. Markdown `![alt](url)` references in assistant prose go through the `MarkdownBlock` → `ImageBlock` delegation.
 
 ---
 
-## 4. Architecture — two-layer hybrid
+### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-### 4.1 The two layers
+#### [Q01] When do we ship `NotebookCellBlock`? (OPEN) {#q01-notebook-cell-block}
 
-**Layer 1 — Body kinds (reusable rendering primitives).** ~10–14 components, each polished to a high bar, each owning a single content shape. These are where the heavy lifting lives.
+**Question:** `NotebookEditToolBlock` v1 uses generic `DiffBlock`. When do we promote to a cell-aware `NotebookCellBlock` body kind that knows about cell types (markdown vs. code) and their intra-cell semantics?
 
-**Layer 2 — Tool wrappers (thin per-tool composition).** One component per Claude tool. Each is small: tool-specific chrome (icon, name, args summary, timing/exit-code badges) + a body that's a Layer-1 component (or a small composition of them) + tool-specific interactions (re-run, jump-to-source, copy, approve).
+**Why it matters:** Premature specialization burns design time on a low-frequency tool. Late specialization leaves notebook-edit ergonomics subpar for users who do live in notebooks.
 
-Plus three orthogonal pieces:
+**Options:**
+- Ship after the first Tide user complains in qualitative feedback.
+- Schedule for the first quarter after this phase closes if no user surfaces it.
+- Defer indefinitely; revisit only if NotebookEdit traffic crosses a measured threshold.
 
-- A **dispatch registry** that maps a stream event → renderer.
-- A **block transformer pass** over markdown blocks that promotes special fenced code blocks (mermaid, latex, diff, json) to richer renderers.
-- A **streaming binding** so any Layer-1 component can consume a `PropertyStore` path and update incrementally.
+**Plan to resolve:** Track `NotebookEdit` tool-use frequency in dogfooding for ~4 weeks after this phase ships. Decide based on observed traffic and user feedback.
 
-### 4.2 Mental model
+**Resolution:** OPEN.
+
+#### [Q02] When do we evaluate Tree-sitter migration vs. Shiki? (OPEN) {#q02-tree-sitter-evaluation}
+
+**Question:** Shiki is fast enough today but doesn't do incremental highlighting. When (if ever) do we migrate to `web-tree-sitter`?
+
+**Why it matters:** Tree-sitter would handle streaming/incremental code-block highlighting better, but the per-language WASM blob + async init complexity is substantial.
+
+**Options:**
+- After this phase, profile a Tide session with heavy code-block traffic; migrate only if a measurable bottleneck appears.
+- Stay on Shiki indefinitely; revisit only if a user complaint forces it.
+
+**Plan to resolve:** Add a one-shot benchmark in [#step-30](#step-30) that paste-loads 10k lines of code into a Tide card and measures highlight latency on Shiki. If > 5s on the reference machine, file a follow-up plan.
+
+**Resolution:** OPEN — benchmark is an artifact of this phase but the migration decision is deferred.
+
+#### [Q03] How does the drift "caution" badge surface? (OPEN) {#q03-caution-badge-surface}
+
+**Question:** When [D04]'s drift detection fires, does the caution badge appear (a) in the card chrome row alongside the cumulative cost chrome, (b) inline at the offending event, or (c) both?
+
+**Why it matters:** Chrome-only is discoverable but doesn't anchor the user to the offending event. Inline is anchored but invisible if the user scrolled past. Both is loud but possibly correct.
+
+**Options:**
+- (a) Chrome only — quiet; loses provenance.
+- (b) Inline only — loud at the site; misses overall awareness.
+- (c) Chrome (subtle, "drift detected: 3 events") + inline (subtle, on the offending event) — discoverable from either direction.
+
+**Plan to resolve:** Implement option (c) in [#step-21](#step-21) and adjust based on dogfooding feel.
+
+**Resolution:** OPEN — initial implementation is (c).
+
+#### [Q04] What's the cap on retained lines for very large Bash output? (OPEN) {#q04-terminal-line-cap}
+
+**Question:** [D02] virtualizes long output via `BlockHeightIndex`, but virtualization manages *visible* lines, not retained-in-memory lines. What's the cap on how many lines we hold for a single `BashToolBlock`?
+
+**Why it matters:** A `Bash` tool that streams 50 MB of output will OOM the tab if we retain everything. But aggressive truncation loses information the user might want to scroll back to.
+
+**Options:**
+- 10k lines retained, drop earliest with "… 12,345 earlier lines truncated" indicator.
+- 100k lines retained — generous; might still hit memory under pathological inputs.
+- Configurable via tugbank `/api/defaults/tide/terminal-line-cap`, default 10k.
+
+**Plan to resolve:** Default 10k retained with truncation indicator; expose via tugbank if a user surfaces a need.
+
+**Resolution:** OPEN — default chosen in [#step-5](#step-5).
+
+---
+
+### Risks and Mitigations {#risks}
+
+| Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
+|------|--------|------------|------------|--------------------|
+| Bundle bloat from eager-loading stretch libs | high | low | Lazy-load KaTeX, Mermaid, tugdiff-wasm; per Tables [T04](#t04-library-picks) and [T06](#t06-bundle-budget) | Initial-bundle measurement crosses configured budget |
+| Drift breaks renderers when Anthropic ships new shapes | medium | medium | DefaultToolWrapper covers unknown tools; JsonTree fallback for unknown structured shapes; caution badge surfaces drift; align with `tide.md#p15-stream-json-version-gate` | Capture-test catalog drift > N events |
+| Mid-stream rerender churn | medium | medium | Per [D12] only streaming bodies subscribe; non-streaming bodies render once on completion | Profile shows > 5% time in render commits during heavy streams |
+| Mermaid / KaTeX runtime errors crash a row | medium | low | Error boundary per instance; fall back to CodeBlock with toast | First runtime crash in dogfooding |
+| Component sprawl + token sprawl | medium | medium | Strict L19/L20 compliance; cross-component snapshot tests against both themes | audit:tokens lint failure or theme-mismatch report |
+| Streaming + virtualization perf under high-frequency updates | medium | low | rAF coalescing in TugMarkdownView (already in place); profile and adjust | Pathological prompts > 50 deltas/sec land jank in scroll |
+
+**Risk R01: Bundle bloat from eager-loading stretch libs** {#r01-bundle-bloat}
+
+- **Risk:** KaTeX (~350 KB), Mermaid (~1 MB), `tugdiff-wasm` (~hundreds of KB), and Shiki language packs together blow past a Tide card's first-paint budget if loaded eagerly.
+- **Mitigation:** All four are lazy — KaTeX on first `$...$` or `$$...$$` encounter; Mermaid on first ` ```mermaid `; tugdiff-wasm on first `DiffBlock` mount; Shiki language packs already lazy. The first encounter pays a one-time load; subsequent uses hit the cache.
+- **Residual risk:** First encounter with each lazy module has a load delay (typically < 500ms on warm cache). Acceptable; we surface a placeholder spinner.
+
+**Risk R02: Drift breaks renderers when Anthropic ships new event shapes** {#r02-drift-breaks-renderers}
+
+- **Risk:** A future Claude Code release adds a new `tool_name`, a new `structured_result` shape, or a new top-level event type. Our renderers crash or render blank.
+- **Mitigation:** `DefaultToolWrapper` ([D11]) handles unknown `tool_name`s. `JsonTreeBlock` fallback ([D04]) handles unknown structured shapes. The drift detector ([D04]) compares incoming `system_metadata.version` to the pinned golden catalog and surfaces a caution badge when shapes diverge ([Q03]).
+- **Residual risk:** Caution badge requires user acknowledgement; drift is silently rendered through the generic fallback until a user reports.
+
+**Risk R03: Mid-stream rerender churn** {#r03-rerender-churn}
+
+- **Risk:** rAF coalescing helps, but a `code` row that contains both a streaming `MarkdownBlock` and a non-streaming `FileBlock` may have React render churn from upstream prop changes.
+- **Mitigation:** Per [D12] / Spec S05, only streaming bodies subscribe to `PropertyStore`; non-streaming bodies render once on `tool_use_structured` completion and use `React.memo` to skip prop-equal rerenders.
+- **Residual risk:** Mixed streaming/non-streaming compositions need profiling; high-frequency `assistant_text` deltas can still land work in the React commit phase.
+
+**Risk R04: Mermaid / KaTeX runtime errors crash a row** {#r04-stretch-runtime-errors}
+
+- **Risk:** Malformed diagram or math syntax causes the third-party renderer to throw. Without isolation, it tears down the parent transcript row.
+- **Mitigation:** Each `MermaidBlock` and `KaTeXBlock` instance wraps in an error boundary; on throw, fall back to plain `CodeBlock` rendering with a small "Diagram failed to render" or "Math failed to render" toast.
+- **Residual risk:** First user encounter with broken diagram is jarring even with fallback.
+
+**Risk R05: Component sprawl + token sprawl** {#r05-component-sprawl}
+
+- **Risk:** ~14 body kinds + ~14 wrappers + chrome = 30+ new components, each with their own token slot. Theming consistency suffers.
+- **Mitigation:** Strict L19/L20 compliance enforced by `bun run audit:tokens lint`; cross-component snapshot tests against both themes in `__tests__/`.
+- **Residual risk:** Each new component is one more touchpoint when a theme axis changes — but this is the cost of the rendering bar.
+
+**Risk R06: Streaming + virtualization perf under high-frequency updates** {#r06-streaming-perf}
+
+- **Risk:** When `assistant_text` fires 30+ deltas/sec interleaved with tool events, `BlockHeightIndex` recomputes thrash and scroll fidelity drops.
+- **Mitigation:** rAF coalescing in `TugMarkdownView` already in place; profile and tune if needed.
+- **Residual risk:** Pathological prompts (~100 deltas/sec) might still degrade. Mitigation: deferred adaptive coalescing window if observed.
+
+---
+
+### Design Decisions {#design-decisions}
+
+#### [D01] Renderer dispatch lives in `assistant-renderer-dispatch.ts`, not in `CodeSessionStore` (DECIDED) {#d01-dispatch-separate}
+
+**Decision:** A new module `tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.ts` owns the `TurnEntry` → renderer mapping. `CodeSessionStore` stays state-only and is unchanged by this phase.
+
+**Rationale:**
+- Keeps the store concerned with state, the dispatch concerned with presentation.
+- Lets the registry evolve (new tools, new event types) without touching the store reducer.
+- Easier to unit-test the dispatch table in isolation.
+
+**Implications:**
+- `TurnEntry` records do *not* carry a `rendererKind` tag; the dispatch derives it from `entry.kind` + `entry.toolName` + structured shape.
+- The dispatch module exports a `dispatch(entry: TurnEntry): { Component, props }` shape that the transcript view consumes.
+- The dispatch module owns the `toolWrapperRegistry` keyed on `tool_name` (case-insensitive, with `MultiEdit` aliasing to `Edit`).
+
+#### [D02] `TerminalBlock` self-virtualizes long output via `BlockHeightIndex` (DECIDED) {#d02-terminal-virtualizes}
+
+**Decision:** When a `TerminalBlock` exceeds N visible lines (default 40), it self-virtualizes using the same `BlockHeightIndex` + `RenderedBlockWindow` machinery `TugMarkdownView` uses. Up to a retained-line cap ([Q04], default 10k); beyond that, drop the earliest with a "… N earlier lines truncated" indicator.
+
+**Rationale:**
+- Reuses existing virtualization infrastructure rather than building a parallel path.
+- 10k retained is enough for typical `cargo build`, `npm test`, multi-MB log dumps; pathological streams degrade gracefully rather than OOM.
+- Truncation indicator preserves user awareness of dropped content.
+
+**Implications:**
+- `TerminalBlock` accepts the same `BlockHeightIndex` host plumbing as `TugMarkdownView`.
+- Retained-line cap is configurable via tugbank `/api/defaults/tide/terminal-line-cap` (deferred unless surfaced).
+- Stream parsing (ANSI → spans) runs incrementally as deltas arrive.
+
+#### [D03] `system_metadata` renders per-turn only when something changed (DECIDED) {#d03-system-metadata-on-change}
+
+**Decision:** `SessionInitBanner` and `CostChrome` both read `system_metadata`; either re-renders only when one of `model`, `permissionMode`, `version`, or the tool/skill enumeration differs from the previous `system_metadata` event in this session. Identical-shape `system_metadata` events are dropped without re-rendering.
+
+**Rationale:**
+- Per-turn render is noisy; session-init-only loses mid-session model and permission-mode changes.
+- Diff-based render keeps the user informed only when state actually changes.
+
+**Implications:**
+- Dispatch module owns a per-session "previous system_metadata" reference for shallow comparison.
+- Comparison is shallow on the fields named above; deep compare on tools/skills/agents arrays.
+- A test fixture replay where every event includes `system_metadata` should produce exactly one banner render plus one re-render at any change.
+
+#### [D04] Drift fallback is `JsonTreeBlock` + caution badge (DECIDED) {#d04-drift-fallback-caution-badge}
+
+**Decision:** When the dispatch encounters an unknown tool_name (registry miss) or a `structured_result` shape that doesn't match its expected schema, render via `JsonTreeBlock` and surface a caution badge per [Q03]. The caution badge is also surfaced when `system_metadata.version` doesn't match the pinned golden catalog (per `tide.md#p15-stream-json-version-gate`).
+
+**Rationale:**
+- Never render blank or crash on drift.
+- Caution badge gives the user provenance to report drift to us.
+- Aligns with the `tide.md#p15-stream-json-version-gate` story.
+
+**Implications:**
+- `JsonTreeBlock` is a permanent body kind, not just a fallback — it's also the default body for unknown tool inputs in `DefaultToolWrapper`.
+- Caution badge is surfaced both in the card chrome (subtle aggregate) and inline at the offending event (subtle marker), per [Q03] option (c).
+- Drift events are logged to the console (and, longer-term, to the supervisor telemetry feed if/when that ships).
+- Schema-mismatch detection is shallow: we check field presence and types at top level, not deep validation.
+
+#### [D05] Two-layer hybrid architecture: body kinds + thin per-tool wrappers (DECIDED) {#d05-two-layer-hybrid}
+
+**Decision:** Layer 1 is ~14 reusable body kinds that own all the heavy rendering. Layer 2 is one wrapper per Claude tool, each wrapper is thin (~50-100 lines) and composes Layer 1.
+
+**Rationale:**
+- Per-tool components for "great rendering," but the bulk of code is shared so the per-tool layer is cheap.
+- Three concrete upgrade levers: tune the wrapper, swap the body, specialize the body. All three are localized.
+- Same body kinds reused in `tide.md` Phase T2 for shell adapters.
+
+**Implications:**
+- See Tables [T01](#t01-body-kinds) and [T02](#t02-tool-wrappers).
+- All wrappers conform to the [Spec S03](#s03-tool-wrapper-contract) shape.
+- Adding a new tool = new wrapper file + registry entry; never touches body kinds.
+
+#### [D06] WASM only where it earns its keep (DECIDED) {#d06-wasm-where-earns}
+
+**Decision:** New WASM crates only for parsers where the speed/correctness win is clear: `tugdiff-wasm` (imara-diff) for diff parsing. Stay JS for ANSI parsing (`ansi_up`), JSON-tree, KaTeX (already JS), Mermaid (already JS), word-level intra-line diff (`diff-match-patch`).
+
+**Rationale:**
+- WASM has real costs: build complexity, async init, an extra crate to maintain.
+- `imara-diff` is 10-30× faster than JS alternatives on large diffs and pathological-input safe — wins justify the cost.
+- ANSI / JSON / inline math don't have the input scale to need WASM.
+
+**Implications:**
+- One new crate this phase: `tugdeck/crates/tugdiff-wasm/`.
+- Vite config extended for the new WASM module.
+- Possible future migration: `vtparse` (Rust) for ANSI if we hit pathological terminal sequences.
+
+#### [D07] Block-transformer pass over markdown blocks (DECIDED) {#d07-block-transformer-pass}
+
+**Decision:** `parseMarkdownToSanitizedBlocks` adds a transformer hook that runs after sanitize. Transformers can replace a block's `html`, change its `type`, or insert sibling blocks. Initial transformers: mermaid (lang === "mermaid"), latex/math (lang === "math" or "latex"), diff (lang === "diff"), large-json (lang === "json", > N tokens).
+
+**Rationale:**
+- The fenced-code-block lang hint is a natural promotion point.
+- Pure function over the block list — no side effects, easy to test.
+- Streaming-friendly: transformers run on each parse pass.
+
+**Implications:**
+- `parseMarkdownToSanitizedBlocks` signature gains an optional `transformers: BlockTransformer[]` parameter.
+- Each transformer is a small, testable unit with the [Spec S04](#s04-block-transformer-pass) shape.
+- Inline math (`$...$`, `$$...$$`) is handled via a separate post-DOMPurify text-node walk inside `MarkdownBlock` rendering, not the block-transformer pass.
+
+#### [D08] KaTeX (not MathJax) for math typesetting (DECIDED) {#d08-katex-over-mathjax}
+
+**Decision:** Use KaTeX for inline (`$...$`) and display (`$$...$$`) math. Lazy-loaded, ~350 KB total, synchronous render. Local font bundling, no CDN.
+
+**Rationale:**
+- Smaller bundle than MathJax (350 KB vs. 1+ MB).
+- Synchronous render — no reflow churn during streaming.
+- Faster than MathJax v3 in our latency profile.
+- Sufficient LaTeX coverage for the math the assistant typically emits.
+
+**Implications:**
+- KaTeX bundle loads on first `$...$` or `$$...$$` encounter.
+- WOFF2 fonts bundled, not pulled from CDN.
+- Error boundary per instance per [R04].
+
+#### [D09] `imara-diff` for `DiffBlock` backbone (DECIDED) {#d09-imara-diff-backbone}
+
+**Decision:** Compile `imara-diff` (Rust) to WASM via a new `tugdeck/crates/tugdiff-wasm/` crate. Use it to compute unified diffs and parse upstream unified-diff strings. Fall back to JS `jsdiff` for first-paint before the WASM module loads.
+
+**Rationale:**
+- 10-30× faster than `similar` on large inputs.
+- Histogram + Myers algorithms; pathological-input safe.
+- WASM is the right home — diff is exactly the kind of work where WASM shines.
+
+**Implications:**
+- New crate at `tugdeck/crates/tugdiff-wasm/`.
+- Vite config + WASM init pattern matching `tugmark-wasm`.
+- `DiffBlock` mounts in JS-fallback mode if the WASM module isn't ready, swaps once it loads.
+
+#### [D10] Lazy-load all stretch content modules (DECIDED) {#d10-lazy-load-stretch}
+
+**Decision:** KaTeX, Mermaid, `tugdiff-wasm`, and Shiki language packs all load on first encounter. The Tide card boot bundle excludes them.
+
+**Rationale:**
+- Initial bundle stays bounded — Tide card mount is fast.
+- A session that never sees a diagram pays no Mermaid cost.
+- First encounter has a one-time load (cached for session); subsequent uses are instant.
+
+**Implications:**
+- Each lazy module has a placeholder shown during fetch (small spinner, not jarring).
+- Bundle-size budget enforced via [T06](#t06-bundle-budget).
+- Once loaded for a session, modules persist in the JS heap; no GC trickery.
+
+#### [D11] `DefaultToolWrapper` covers unknown tools day-one (DECIDED) {#d11-default-tool-wrapper}
+
+**Decision:** Any `tool_use` with a `tool_name` not in the registry renders through `DefaultToolWrapper` — `JsonTreeBlock` over input + smart-pick body for output (text → MarkdownBlock; object → JsonTreeBlock) — with a caution badge per [D04].
+
+**Rationale:**
+- Day-one guarantee: we never render blank or ugly when a new tool ships.
+- Upgrade path is "promote from default to bespoke" by adding a wrapper.
+- Drift surfaces visibly to the user.
+
+**Implications:**
+- Always-shipped fallback; cannot be conditionally absent.
+- Caution badge required for unknown-tool dispatches.
+- The dispatch logs the unknown tool name for telemetry.
+
+#### [D12] Streaming-aware behavior per body kind (DECIDED) {#d12-streaming-per-body}
+
+**Decision:** Streaming behavior is a per-body-kind property documented in Table [T05](#t05-streaming-matrix). Streaming bodies subscribe to `PropertyStore`; non-streaming bodies render once on completion. Wrappers handle the "tool input is streaming, body isn't ready yet" gap with a placeholder.
+
+**Rationale:**
+- Not all data shapes benefit from streaming. A diff isn't a diff until both sides exist.
+- Subscribing every body to `PropertyStore` would multiply rerender work for no visible gain.
+- Wrappers handle the gap state once, consistently.
+
+**Implications:**
+- See Table [T05](#t05-streaming-matrix).
+- All body-kind components use `React.memo` and equality-by-data-version on props.
+- Wrappers expose a `WrapperState = "streaming" | "ready" | "error"` that drives chrome.
+
+#### [D13] Inline (not modal) Permission and Question dialogs (DECIDED) {#d13-inline-dialogs}
+
+**Decision:** Both `PermissionDialog` (`control_request_forward` with `is_question:false`) and `QuestionDialog` (`is_question:true`) render as inline blocks within the transcript flow, not as modal overlays.
+
+**Rationale:**
+- Modals break the top-to-bottom transcript reading model.
+- Inline blocks preserve the conversation's spatial logic (the request appeared at a point in time).
+- After resolution, the inline block becomes a static record showing what was asked and how it was answered — a permanent transcript artifact.
+
+**Implications:**
+- Both dialogs participate in the transcript scroll and selection model.
+- After response, the block collapses to a one-line summary with an expand affordance.
+- Focus management on dialog mount: focus the primary action button via `useLayoutEffect`.
+
+#### [D14] Thinking blocks always collapsed by default after `turn_complete` (DECIDED) {#d14-thinking-collapse-default}
+
+**Decision:** `ThinkingBlock` shows a streaming preview during partials but, once `turn_complete` fires, snaps to a collapsed state showing only "Thinking…" + a one-line preview. User opts in to expand.
+
+**Rationale:**
+- Thinking is supplementary; the user wants the response, not the reasoning trail by default.
+- Collapsing during streaming would be jittery; collapsing on completion is stable.
+- Aligns with `tugplan-tide-card-polish.md` §Step 13's default recommendation.
+
+**Implications:**
+- `ThinkingBlock` watches the parent turn's status and self-collapses on transition to `complete`.
+- User-expanded state persists for the lifetime of the row (not across reload).
+- Collapse animation respects reduced-motion preference.
+
+#### [D15] Token compliance via seven-slot convention per L19/L20 (RESTATED) {#d15-token-compliance}
+
+**Decision:** Every body kind and every wrapper introduces tokens under `--tugx-<kind>-<plane>-control-<constituent>-<emphasis>-<role>-<state>`. Wrappers do not reach into body-kind CSS. `bun run audit:tokens lint` exits 0.
+
+**Rationale:**
+- Tuglaw L19/L20 compliance is non-negotiable for component authoring.
+- Theme switching (`brio` ↔ `harmony`) must work uniformly for every component.
+
+**Implications:**
+- Each new component pairs `.tsx` + `.css` files.
+- `data-slot="..."` attribute on each component root.
+- Token slot names enumerated in [Table T07](#t07-token-slots).
+
+#### [D16] `assistant-renderer-dispatch` registry is keyed on `tool_name` (case-insensitive) with explicit aliases (DECIDED) {#d16-registry-key}
+
+**Decision:** The tool-wrapper registry is a `Map<string, ToolWrapperFactory>` keyed on the lowercased `tool_name`. Aliases are declared explicitly (e.g., `multiedit → edit`, `mcp__*__bash → bash` — though MCP tools are explicitly a non-goal in v1).
+
+**Rationale:**
+- Case sensitivity has been observed to vary by event; lowercase normalizes.
+- Explicit aliases avoid surprise dispatch.
+- Easy to test: `dispatch.match("Read") === ReadToolBlock`.
+
+**Implications:**
+- Registry construction is centralized in `assistant-renderer-dispatch.ts`.
+- Aliases declared as a sibling object next to the registry.
+- Unknown lookups return `DefaultToolWrapper` per [D11].
+
+#### [D17] `AgentTranscriptBlock` recurses through the same dispatch (DECIDED) {#d17-agent-transcript-recurses}
+
+**Decision:** When `tool_use_structured` for `Task`/`Agent` arrives with nested `content[].tool_use` entries, those nested tool calls render through the same dispatch pipeline — including their own per-tool wrappers and bodies. Recursion is bounded by a max depth (default 3); deeper levels collapse with a "+N nested calls" affordance.
+
+**Rationale:**
+- The same rendering quality across recursion depth.
+- Unbounded recursion would melt the layout for pathological inputs.
+- Same dispatch keeps consistency.
+
+**Implications:**
+- Dispatch is recursive in shape but iterative in implementation.
+- Depth tracked as a prop on each render.
+- Tests cover at least depth 2 explicitly (sub-subagent).
+
+---
+
+### Deep Dives {#deep-dives}
+
+#### Architecture mental model {#architecture-mental-model}
 
 ```
 ┌─────────────────────────── stream-json events ───────────────────────────┐
 │                                                                          │
 │  thinking_text   assistant_text   tool_use   tool_result                 │
 │  tool_use_structured   control_request_forward   cost_update             │
+│  system_metadata   session_init   error                                  │
 │                                                                          │
 └────────┬─────────────────────────────────────────────────────────────────┘
          │
@@ -104,16 +491,18 @@ Plus three orthogonal pieces:
 ┌─────────────────────── CodeSessionStore reducer ─────────────────────────┐
 │ Accumulates deltas; produces TurnEntry records:                          │
 │   { kind, msg_id, seq, body | toolEvents, status, ... }                  │
+│ (Unchanged by this phase. State-only.) [D01]                             │
 └────────┬─────────────────────────────────────────────────────────────────┘
          │
          ▼
-┌────────────── Renderer dispatch registry (per TurnEntry kind) ───────────┐
-│  user_text          → UserTurnRenderer                                   │
+┌──── tide-assistant-renderer-dispatch.ts (this phase) [D01] [D16] ────────┐
+│  user_text          → UserTurnRenderer (existing)                        │
 │  assistant_text     → AssistantTurnRenderer (markdown + transformers)    │
-│  thinking           → ThinkingBlockRenderer                              │
-│  tool_use[name]     → ToolWrapperRegistry[name] | DefaultToolWrapper     │
-│  control_request    → PermissionRenderer | QuestionRenderer              │
+│  thinking           → ThinkingBlock                                      │
+│  tool_use[name]     → toolWrapperRegistry[name] | DefaultToolWrapper     │
+│  control_request    → PermissionDialog | QuestionDialog                  │
 │  cost_update        → CostBadge / CostChrome                             │
+│  system_metadata    → SessionInitBanner (on change) [D03]                │
 │  error              → ErrorBlock                                         │
 └────────┬─────────────────────────────────────────────────────────────────┘
          │
@@ -122,7 +511,7 @@ Plus three orthogonal pieces:
 │  ReadToolBlock, WriteToolBlock, EditToolBlock, BashToolBlock,            │
 │  GlobToolBlock, GrepToolBlock, TaskToolBlock, WebFetchToolBlock,         │
 │  WebSearchToolBlock, TodoWriteToolBlock, NotebookEditToolBlock,          │
-│  AgentToolBlock, MCP*ToolBlock, DefaultToolWrapper                       │
+│  DefaultToolWrapper                                                      │
 │                                                                          │
 │  Each wrapper: chrome (header/footer/badges) + body ← Layer 1            │
 └────────┬─────────────────────────────────────────────────────────────────┘
@@ -136,490 +525,1456 @@ Plus three orthogonal pieces:
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 4.3 Why this answers "is per-tool overkill?"
+#### Block-transformer pass {#block-transformer-pass}
 
-Per-tool wrappers exist for every tool — exactly what "great rendering" demands. But the bulk of the rendering code is shared, so a wrapper is ~50 lines of decoration over composition. The rendering polish accumulates in body kinds, where it gets reused by every tool that needs that shape.
+Transformers run after `parseMarkdownToSanitizedBlocks` and before render. Each transformer takes the block list and returns a (possibly modified) list. Initial transformers in this phase:
 
-### 4.4 Three concrete upgrade levers
+- **`mermaidTransformer`** — replaces `{ type: "code", lang: "mermaid", text }` with `{ type: "tug-mermaid", text }`. The renderer treats `tug-*` types as opaque and delegates to the matching component. Streaming-aware: stays as a plain code block while the parent block's status is `partial`; promotes to mermaid only on `complete`.
+- **`mathTransformer`** — replaces `{ type: "code", lang: "math" | "latex" | "tex", text }` with `{ type: "tug-math-display", text }`. Always display mode for fenced blocks.
+- **`diffTransformer`** — replaces `{ type: "code", lang: "diff", text }` with `{ type: "tug-diff", text }` (read-only mode of `DiffBlock`).
+- **`largeJsonTransformer`** — for `{ type: "code", lang: "json", text }` where `text.length > 2048`, replaces with `{ type: "tug-json-tree", text }` — a deeper interactive view than syntax-highlighted JSON.
 
-When a tool needs more bespoke treatment over time, the upgrade path is:
+Inline math is handled separately, after sanitize, by a text-node walk inside `MarkdownBlock` rendering. Pattern: `$<latex>$` (inline) and `$$<latex>$$` (display). Escaped `\\$` is preserved.
 
-1. **Tune the wrapper.** Add a re-run button to `BashToolBlock`. Add a permalink to `ReadToolBlock`. No body-kind or sibling-tool changes.
-2. **Swap the body.** `BashToolBlock` initially uses `<TerminalBlock>`. We later detect `git status --porcelain=v2` output and swap to `<GitStatusBlock>` (which Phase T2 in tide.md already plans for shell adapters — *the same body kind serves both halves*). One-line change in the wrapper.
-3. **Specialize a body kind.** `EditToolBlock` initially uses generic `<DiffBlock>`. Notebook edits need cell-aware diffing → ship `<NotebookDiffBlock>` as a sibling primitive; `EditToolBlock` switches based on file extension. The generic `<DiffBlock>` is untouched.
+#### Streaming behavior matrix {#streaming-matrix}
 
-A `toolRendererRegistry` keyed on `tool_name` makes lever-1 trivial. Lever-2 is internal to the wrapper. Lever-3 is the most invasive but localized. New Claude releases / new MCP tools fall back to `DefaultToolWrapper` until promoted.
+See [Table T05](#t05-streaming-matrix).
 
----
+#### Library landscape (May 2026) {#library-landscape}
 
-## 5. Body-kind catalog (Layer 1)
+Web research conducted for this phase (cited in §[Library citations](#library-citations)) confirms:
 
-Each body kind is a self-contained primitive. All consume tokens scoped to their own slot per L20; consumers tune via wrapping selectors, not by reaching in.
-
-### 5.1 `MarkdownBlock` (existing — `TugMarkdownBlock` / `TugMarkdownView`)
-
-The current WASM-backed renderer. Already handles streaming via `PropertyStore`. **Extensions for this proposal:**
-
-- Block-transformer pass that runs after `parseMarkdownToSanitizedBlocks` and rewrites special fenced code blocks:
-  - `lang === "mermaid"` → `MermaidBlock`
-  - `lang === "math"` or `lang === "latex"` (display) → `KaTeXBlock` (display mode)
-  - `lang === "diff"` → `DiffBlock` (read-only)
-  - `lang === "json"` → optionally `JsonTreeBlock` for blocks > N tokens; otherwise stays as `CodeBlock`
-- Inline-math support: detect `$...$` (inline) and `$$...$$` (display) in paragraph blocks, swap to KaTeX-rendered spans / blocks. Done as a post-DOMPurify text-node walk so the sanitizer sees only the markdown HTML.
-- pulldown-cmark options to enable: `ENABLE_FOOTNOTES`, `ENABLE_SMART_PUNCTUATION` (typography upgrade).
-- Collapse/expand support on the block container (any block over a height threshold gets a "show more" affordance — opt-in per consumer).
-
-Streaming behavior is unchanged; the transformer pass and inline-math walk are pure functions over the parsed block list.
-
-### 5.2 `TerminalBlock`
-
-Renders stdout/stderr from `Bash` (and any future shell adapter) with ANSI SGR colors mapped to CSS. Visual model:
-
-- Command line at top (already in the wrapper's chrome, but `TerminalBlock` itself can show a `$ ...` synopsis if used standalone).
-- Body: monospace block, optional stdout/stderr column split, ANSI color/styling preserved.
-- Footer: exit code badge (zero = subtle, non-zero = strong), wallclock duration, "interrupted" indicator if applicable.
-- Long-output collapse: > 40 lines auto-collapse with "Show all 234 lines" affordance.
-- Copy-to-clipboard button.
-
-ANSI parsing strategy: see §7 — JS-side `ansi_up` is fine for most cases; a Rust `vtparse` WASM crate is justified only if we hit pathological inputs.
-
-### 5.3 `DiffBlock`
-
-Unified or split-view diff renderer. Inputs:
-
-- A pair of `(beforeText, afterText)` (e.g., from `Edit` tool input) with a language hint, OR
-- A pre-formatted unified diff string (e.g., from `git diff` adapter, or a fenced `diff` code block).
-
-Capabilities:
-
-- Side-by-side or inline view. Default inline; user toggle persists per-card.
-- Hunk-by-hunk collapse (each hunk is its own collapsible region).
-- Syntax highlighting per language inside hunks (via the same Shiki/Tree-sitter pipeline `MarkdownBlock` uses for code blocks).
-- Word-level diff highlighting within a changed line (via `diff-match-patch` or equivalent at the JS layer).
-- Filename + change-counts header (e.g., `tide-card.tsx · +12 −3`).
-- Click-line-to-jump (when paired with a file URL via the wrapper).
-
-Parser: see §7 — `imara-diff` (Rust + WASM) earns its keep here for large diffs; small diffs can fall back to JS `jsdiff` for simplicity.
-
-### 5.4 `FileBlock`
-
-Read-only file viewer. Shape is exactly `tool_use_structured.file` from a `Read` tool call: `{ content, filePath, numLines, startLine, totalLines }`.
-
-- Syntax-highlighted by language (inferred from `filePath` extension).
-- Line-numbered gutter, with `startLine` offset honored.
-- "Showing N of M lines" indicator.
-- Long-content collapse (default folded if > ~50 lines).
-- Click-line-to-copy or click-line-to-jump.
-- Search-within-file (Cmd+F) when expanded.
-
-### 5.5 `PathListBlock`
-
-Renders a list of file paths. Used by `Glob`, `Grep` (file-only mode), and shell adapters for `ls`/`find`. Shape: `string[]` paths plus optional metadata per path (size, mtime, etc.).
-
-- Icons by file type (extension-driven).
-- Path-shortening: collapse common prefixes into `…/`. Hover reveals full path.
-- Click → open in editor / select in tugdeck filetree.
-- Sortable when count > 20.
-- "Truncated at N (showing first K)" indicator when the source flagged truncation.
-
-### 5.6 `SearchResultBlock`
-
-Grouped file:line:content matches. Used by `Grep`, `WebSearch` (with adaptation), and shell adapters for `rg --json`.
-
-- Grouped by file with collapsible headers.
-- Highlighted match span per result line.
-- Surrounding context lines (configurable).
-- Click → open file at that line.
-
-### 5.7 `JsonTreeBlock`
-
-Collapsible JSON tree viewer. Used by:
-
-- Tool inputs/outputs whose shape is unknown or arbitrary (default fallback).
-- MCP tool results.
-- Any user-pasted JSON that we want to render richly inline.
-
-Standard behavior: keys sortable, search-within-tree, copy-as-path (`response.data[0].id`), copy-subtree.
-
-### 5.8 `TodoListBlock`
-
-Renders the `TodoWrite` tool's todo array — a list of `{ content, status: "pending"|"in_progress"|"completed", activeForm }` items. Visual: checklist with status indicators, in-progress highlighted.
-
-### 5.9 `AgentTranscriptBlock`
-
-The most structurally complex body kind. Renders a subagent's run as a *nested transcript* — the same shape as the outer Tide transcript, but inline. Source: `tool_use_structured` for the `Task`/`Agent` tool, which carries `{ agentType, prompt, content, status, toolStats, totalDurationMs, totalTokens }`.
-
-- Header: agent type + status badge + duration + tool-call count.
-- Body: the agent's `content` array as nested message blocks. Recursive: an agent's `tool_use` events render through the same Layer-1/Layer-2 pipeline. Subagent of a subagent? Same pipeline. Recursion is bounded by a max depth that collapses deeper levels with a "+N nested calls" affordance.
-- Cost summary line at bottom.
-
-This is also where the "Bash-as-its-own-participant" idea from Step 13 lands cleanly: subagent-flavored runs naturally read as their own speaker.
-
-### 5.10 `ImageBlock`
-
-Inline image renderer. Two sources:
-
-- User-attached images via the `atoms-attachments.md` plan (assistant doesn't generate images, but the user message may contain them, and the transcript renders user messages too).
-- Markdown `![alt](url)` references (handled by `MarkdownBlock` today; this primitive is the underlying renderer the markdown pipeline delegates to for richer behavior — thumbnail + click-to-zoom + lazy load + fallback).
-
-Lazy-loaded with a low-res placeholder. EXIF orientation honored. Click-to-fullscreen modal.
-
-### 5.11 `MermaidBlock`
-
-Renders Mermaid diagrams. Activated by the `MarkdownBlock` block transformer when a fenced code block has language `mermaid`. Lazy-loaded — the mermaid bundle (~1 MB even minified) only loads on first encounter, with a placeholder spinner during fetch.
-
-- During streaming: show the raw fenced code as a code block; only swap to the rendered diagram once the block reaches `complete` (avoids partial-syntax render attempts).
-- Theme-aware: pass `brio` / `harmony` token values into Mermaid's theme config.
-- Pan/zoom on click (large diagrams).
-- Fallback to plain code rendering on parse error, with a "Diagram failed to render" toast.
-
-### 5.12 `KaTeXBlock`
-
-Math typesetting via KaTeX (smaller, faster, synchronous; better for streaming than MathJax). Two modes:
-
-- Inline: `$...$` spans inside paragraph text, rendered as KaTeX HTML inline.
-- Display: `$$...$$` blocks or fenced `math`/`latex` code blocks, rendered as centered display equations.
-
-Bundle is ~350 KB (core + base font); load lazily on first encounter. Fonts WOFF2 from local bundle (no CDN).
-
-### 5.13 `TableBlock` (rich)
-
-The default GFM table renderer in `MarkdownBlock` produces a plain `<table>`. For tables over ~10 rows or ~5 columns, the block transformer can promote to `TableBlock` with:
-
-- Sortable columns (click header).
-- Sticky header on scroll.
-- Cell overflow handling (truncate + tooltip).
-- Optional row striping by theme.
-- Future: cell-content type detection (numbers right-aligned, dates parsed).
-
-Most tables in assistant output are small; this only kicks in above a threshold.
-
-### 5.14 `PlainTextBlock`
-
-The fallback. Monospace, line-wrapped, copy-to-clipboard. Used when nothing else fits or when an upstream parser fails — guarantees we never render blank.
+- **`imara-diff`**: 10-30× faster than `similar` on linux-kernel-scale diffs; histogram + Myers; pathological-input safe. WASM compilation is supported; build pattern matches `tugmark-wasm`.
+- **Shiki**: VS Code-grade highlighting via TextMate grammars and themes. Modern versions run in browser. Lazy language loading. ~3.5s for 10k lines in browser tests — adequate for our virtualized rendering.
+- **Tree-sitter** via `web-tree-sitter`: better incremental highlighting under streaming, but per-language WASM blob + async init complexity. Reserved for future evaluation per [Q02].
+- **Mermaid**: lazy-loading API since v9.2; ~1 MB main bundle, smaller "Tiny" variant available. Diagram-specific code loads on first use. Late-binding pattern per [Rick Strahl 2025](#library-citations).
+- **`ansi_up`**: zero-deps, ~6 KB, sufficient linear ANSI parser for our scale.
+- **KaTeX vs MathJax (Nov 2025 comparison)**: KaTeX wins on bundle (~350 KB vs. 1+ MB), synchronous render, faster on most inputs. MathJax v3 has better LaTeX coverage; KaTeX coverage is sufficient for our use case.
 
 ---
 
-## 6. Tool-wrapper catalog (Layer 2)
+### Specification {#specification}
 
-Each wrapper composes Layer-1 bodies plus tool-specific chrome. All wrappers participate in collapse/expand at the wrapper level (so the entire tool block can be collapsed to a one-line summary).
+#### Spec S01: `AssistantRendererDispatch` interface {#s01-dispatch-interface}
 
-The shape of every wrapper:
+```typescript
+// tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.ts
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ [icon] tool_name · args_summary       [duration] [exit] [⌃▾]    │  ← chrome header
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   <Layer-1 body kind, possibly composed>                        │
-│                                                                 │
-├─────────────────────────────────────────────────────────────────┤
-│ footer badges (file path, lines added/removed, etc.)            │  ← optional
-└─────────────────────────────────────────────────────────────────┘
+export interface DispatchResult {
+  Component: React.ComponentType<any>;
+  props: Record<string, unknown>;
+  /** Caution flag; surfaces caution badge per [D04]. */
+  caution?: { reason: "unknown_tool" | "unknown_shape" | "version_drift"; detail?: string };
+}
+
+export interface AssistantRendererDispatch {
+  /** Map a turn entry to a renderer + props. Always returns; never throws. */
+  dispatch(entry: TurnEntry, context: DispatchContext): DispatchResult;
+
+  /** Look up a tool wrapper by name. Returns DefaultToolWrapper for misses. */
+  resolveToolWrapper(toolName: string): ToolWrapperFactory;
+
+  /** Test-only: enumerate all registered tool wrappers (for the success-criteria test). */
+  registeredTools(): ReadonlyArray<string>;
+}
+
+export interface DispatchContext {
+  /** PropertyStore for streaming-binding access. */
+  store: PropertyStore;
+  /** The session's CodeSessionStore handle (read-only access). */
+  session: CodeSessionStore;
+  /** Recursion depth for AgentTranscriptBlock; default 0. */
+  depth?: number;
+  /** Previous system_metadata snapshot for [D03] diff. */
+  prevSystemMetadata?: SystemMetadataShape;
+}
 ```
 
-### 6.1 `ReadToolBlock`
-
-- Header: `Read · {filePath}` (path-shortened) + line range badge if `startLine` / `numLines` set.
-- Body: `FileBlock` with structured_result.file.
-- Footer: "Showing N of M lines" if truncated.
-- Interaction: click filename → reveal in tugdeck filetree.
-
-### 6.2 `WriteToolBlock`
-
-- Header: `Write · {filePath}` + size badge.
-- Body: `FileBlock` showing the written content (preview).
-- Footer: file-was-new vs. file-was-overwritten indicator (derived from prior state).
-
-### 6.3 `EditToolBlock`
-
-- Header: `Edit · {filePath}` + change-counts (`+5 −2`).
-- Body: `DiffBlock` comparing `old_string` → `new_string` (or full-file diff if `replace_all`).
-- Footer: link to the file in tugdeck.
-- Interaction: hover-line annotates with "added/removed/unchanged" status.
-
-`MultiEdit` (if/when present): same wrapper, multiple `DiffBlock`s in sequence with shared filename header.
-
-### 6.4 `BashToolBlock`
-
-- Header: `Bash · {command}` (shell-syntax-highlighted, truncated if long with hover-expand) + duration + exit-code badge.
-- Body: `TerminalBlock` with stdout/stderr from `tool_use_structured`.
-- Footer: re-run button (when re-run is safe — TBD per security policy), copy-command button.
-- Specialization opportunity: detect command name (e.g., `git status`, `cargo build`) and swap to a Phase T2 adapter block (`GitStatusBlock`, `BuildOutputBlock`) — this is exactly the upgrade lever §4.4 (2). Until those land, `TerminalBlock` is the universal fallback.
-
-### 6.5 `GlobToolBlock`
-
-- Header: `Glob · {pattern}` + result count + "truncated" indicator.
-- Body: `PathListBlock` with `structured_result.filenames`.
-- Footer: duration.
-
-### 6.6 `GrepToolBlock`
-
-- Header: `Grep · {pattern}` + match count + file count.
-- Body: `SearchResultBlock` (when output_mode is `content`) or `PathListBlock` (when output_mode is `files_with_matches`).
-- Footer: duration.
-
-### 6.7 `TaskToolBlock` / `AgentToolBlock`
-
-- Header: `Agent · {agentType}` + status badge + duration + nested-tool-count.
-- Body: `AgentTranscriptBlock`.
-- Footer: total tokens + cost contribution.
-
-### 6.8 `WebFetchToolBlock`
-
-- Header: `WebFetch · {url}` (favicon + truncated URL).
-- Body: rendered as `MarkdownBlock` (the assistant's prompt-shaped extraction is markdown-compatible) — or as `FileBlock` if we surface the raw fetched HTML/text.
-- Footer: cache-hit indicator, response time.
-
-### 6.9 `WebSearchToolBlock`
-
-- Header: `WebSearch · {query}` + result count.
-- Body: `SearchResultBlock` adapted (each result = title + URL + snippet).
-- Footer: search engine attribution.
-
-### 6.10 `TodoWriteToolBlock`
-
-- Header: `TodoWrite` + total-count + in-progress-count.
-- Body: `TodoListBlock`.
-- Footer: progress bar (completed / total).
-
-### 6.11 `NotebookEditToolBlock`
-
-- Header: `NotebookEdit · {notebookPath} · cell {cellId}` + edit-mode badge (insert/replace/delete).
-- Body: `DiffBlock` for replace; `FileBlock` for insert; struck-through cell preview for delete.
-- Specialization opportunity: a `NotebookCellBlock` body kind that knows about cell types (markdown vs. code) and renders appropriately. Default to `DiffBlock` until the need is clear.
-
-### 6.12 MCP tool wrappers
-
-MCP tools (`mcp__claude_ai_Gmail__*`, etc.) have wildly varying shapes. Strategy:
-
-- A small set of MCP-server-aware wrappers for high-traffic servers (Gmail, Calendar, Drive) that know the structured shapes and use specific bodies.
-- Everything else → `DefaultToolWrapper` until promoted.
-
-### 6.13 `DefaultToolWrapper`
-
-The fallback. Used for any `tool_use` whose `tool_name` isn't in the registry.
-
-- Header: `{tool_name}` + a one-line input-summary (best-effort: extract a `command`/`path`/`url` field if present, else `"…"`).
-- Body: `JsonTreeBlock` over `tool_use.input` (collapsed by default), then a separator, then the body of `tool_result`/`tool_use_structured` rendered as: if string → `MarkdownBlock`; if object → `JsonTreeBlock`.
-- Footer: duration.
-
-Day-1 guarantee: every tool we've never seen still renders cleanly through this wrapper.
-
----
-
-## 7. Stream-event chrome (outside the markdown body)
-
-Not every event goes inside a `code` row's transcript body. These are the surrounding chrome renderers.
-
-### 7.1 `ThinkingBlock`
-
-Inline-collapsible block that lives at the *top* of the assistant turn (ahead of `assistant_text`). During streaming: shows "Thinking…" with a low-key animated indicator + a streaming preview that the user can opt into. After `turn_complete`: collapsible block with the full thinking text (italic, dimmed treatment) — the user opens it when curious.
-
-This aligns with `tugplan-tide-card-polish.md §Step 13`'s default recommendation ("inline + collapsible inside the `code` row") but goes further: thinking is *always* collapsed by default after the turn completes. The active-stream display is kept understated so it doesn't dominate the response.
-
-### 7.2 `CostChrome`
-
-`cost_update` events carry `{ total_cost_usd, num_turns, duration_ms, duration_api_ms, modelUsage: {model: {inputTokens, outputTokens, cacheReadInputTokens, cacheCreationInputTokens, costUSD}}, usage }`. Three render levels:
-
-- **Per-turn footer badge.** Tiny chrome at the bottom of each `code` row: `$0.04 · 1.2k tok · 3.4s`. Click to expand.
-- **Expanded breakdown.** Stacked bar of input/output/cache tokens per model used in the turn, plus the dollar contribution per model. Useful when a turn used both Opus and Haiku.
-- **Card-level cumulative chrome.** Status row already exists per `tide-card.tsx`; replace the gallery placeholder with cumulative session cost + total tokens + turn count for the active session.
-
-### 7.3 `PermissionDialog` (`control_request_forward` with `is_question: false`)
-
-Inline block in the transcript (not a modal — modals break flow). Shape:
-
-- Header: "Permission requested" + tool icon + tool name.
-- Body: tool input rendered as a `JsonTreeBlock` (or, where applicable, a body kind that fits — e.g., `Bash` permission shows the command in a `CodeBlock`; `Edit` permission shows the diff via `DiffBlock`).
-- Reason line: `decision_reason` if present (e.g., "Path is outside allowed working directories").
-- Suggestions: `permission_suggestions` (e.g., "Allow Read for `/foo/**` in this session") rendered as buttons.
-- Allow / Deny buttons + an inline "Allow with edits" affordance that lets the user modify `tool_use.input` before allowing.
-- After response: the block becomes a static record showing the decision.
-
-### 7.4 `QuestionDialog` (`control_request_forward` with `is_question: true`)
-
-Inline block. Renders the AskUserQuestion shape:
-
-- Question text (markdown-rendered).
-- Options as clickable choice cards. Single-select default; `multiSelect` flips to checkboxes.
-- "Other" input (free text) per the AskUserQuestion convention.
-- Submit button. After response: collapses to a one-line summary.
-
-### 7.5 `SessionInitBanner`
-
-Subtle inline banner at the top of a fresh session (one per Tide card lifetime, dismissable). Shows:
-
-- Project path.
-- Model + permission mode.
-- A drift-detection warning if `system_metadata.version` doesn't match the pinned golden catalog (per `tide.md §p15-stream-json-version-gate`).
-
-### 7.6 `ErrorBlock`
-
-`error` events with `{ message, recoverable }`. Renders:
-
-- Recoverable: amber inline notice with retry affordance.
-- Non-recoverable: red inline notice with copy-error-and-report affordance.
-
----
-
-## 8. Library and parser strategy
-
-Per the answer to clarifying question 4: **WASM where it earns its keep; JS otherwise.**
-
-### 8.1 Already in the pipeline
-
-| Library | Use | Status |
-|---------|-----|--------|
-| `pulldown-cmark` (Rust) → `tugmark-wasm` | Markdown lex + parse | Shipped; extending here for footnotes, smart-punct, transformer pass |
-| `DOMPurify` (JS) | HTML sanitization | Shipped |
-| `Shiki` (JS, OnigWASM) | Code-block syntax highlighting | Shipped via legacy `enhanceCodeBlocks` |
-| `marked` (JS) | Legacy markdown path (still in `lib/markdown.ts`) | Slated for removal once WASM pipeline owns everything |
-
-### 8.2 New libraries — recommendations
-
-**Diff parsing → `imara-diff` compiled to WASM.**
-`imara-diff` is the strongest Rust diff library for this use case: histogram + Myers algorithms, pathological-input safe (no UI freezes on large diffs — measured 10×–30× faster than `similar` on linux-kernel-scale inputs). Add as a new crate in `tugdeck/crates/tugdiff-wasm/` parallel to `tugmark-wasm`. Gives `DiffBlock` a fast, correct backbone.
-*Alternative considered:* `jsdiff` (~30 KB JS). Fine for tiny diffs (single Edit operations) but degrades on large multi-file diffs and word-level intra-line diffs. Use as a JS fallback when the WASM module isn't loaded yet (first-paint), promote to WASM once warm.
-
-**ANSI parsing → `ansi_up` (JS), keep WASM in our back pocket.**
-`ansi_up` (zero-deps, 6 KB minified) is sufficient for `TerminalBlock`. Bash output rarely exceeds a few hundred KB and `ansi_up` parses linearly. Only if we hit pathological `top`-style ANSI streams (cursor positioning, unusual escape sequences) do we need `vtparse` (Rust) compiled to WASM.
-
-**Syntax highlighting → keep Shiki for now; evaluate `tree-sitter` later.**
-Shiki is fast (3.5 s for 10k lines is acceptable when blocks are virtualized), VS Code-grade quality, lazy language loading. Tree-sitter via `web-tree-sitter` would give us better incremental highlighting under streaming, but the tooling complexity (per-language WASM blobs, async init, query files) isn't worth it until we hit a measurable Shiki bottleneck. Revisit after T1 ships and we have real load profiles.
-
-**Mermaid → `mermaid` with lazy import.**
-Per the v9.2+ lazy-loading API, the diagram-specific code only loads on first encounter. Bundle is large (~1 MB) but the cost is paid lazily. The "Tiny" variant (no Mindmap, Architecture, KaTeX) is half the size and probably enough.
-
-**Math → `KaTeX` (not MathJax).**
-~350 KB total (core + fonts), synchronous render (no reflow churn during streaming), faster than MathJax v3 in our latency profile. Inline (`$...$`) and display (`$$...$$`) handled by a post-DOMPurify text-node walk inside `MarkdownBlock`. Local font bundling, no CDN.
-
-**JSON tree → custom JS component.**
-Don't pull in a heavy library. `JsonTreeBlock` is straightforward to write and we want full control over collapse/expand semantics, copy-as-path, and theming.
-
-**Word-level diff → `diff-match-patch` (JS, ~50 KB).**
-Used inside `DiffBlock` to compute character-level diffs *within* a changed line. JS is fine here because the inputs are small (line-pairs, not full files).
-
-### 8.3 Bundle-size budget
-
-Lazy-load aggressively:
-
-- KaTeX (350 KB): loads on first `$...$` or `$$...$$` encounter, or first fenced math block.
-- Mermaid (~1 MB): loads on first ` ```mermaid ` encounter.
-- `imara-diff` WASM: loads on first `DiffBlock` mount.
-- Shiki language packs: already lazy.
-- `ansi_up`: small enough to ship in the main bundle.
-- `diff-match-patch`: ships with `DiffBlock`.
-
-A Tide card that never sees a diagram, math, or diff pays zero cost for those primitives. The first time the user encounters one, there's a brief load — acceptable, and the result is cached for the session.
-
----
-
-## 9. Streaming and incremental rendering
-
-The `MarkdownBlock` pipeline already handles streaming via `PropertyStore` + rAF coalescing. Body kinds that *need* to participate in streaming are limited:
-
-| Body kind | Streams? | Approach |
-|-----------|----------|----------|
-| `MarkdownBlock` | Yes — assistant_text deltas | Existing pipeline |
-| `TerminalBlock` | Yes when output streams (Bash) | Re-parse on each delta; ANSI parser is linear |
-| `DiffBlock` | No — Edit input arrives whole | Render once on `tool_use_structured` |
-| `FileBlock` | No — Read result arrives whole | Render once |
-| `PathListBlock` / `SearchResultBlock` | No | Render once |
-| `JsonTreeBlock` | No — tool inputs stream but render once on completion | Render once |
-| `AgentTranscriptBlock` | Yes recursively — nested tool events stream | Same pipeline as outer transcript |
-| `MermaidBlock` | No — wait for complete | Show raw code during stream, swap on complete |
-| `KaTeXBlock` | No | Render once |
-| `TodoListBlock` | Tool input streams; render once on complete | Render once |
-| `ImageBlock` | No | Render once |
-
-For non-streaming primitives, the wrapper still renders them streamingly *at the wrapper level* — i.e., the wrapper shows a "streaming…" placeholder while `tool_use.input` is still empty / partial, and swaps to the body kind when the tool input or `tool_use_structured` arrives. This avoids the ugly intermediate state where a half-formed JSON input is rendered as a tree.
-
----
-
-## 10. Theming and tokens
-
-Every body kind and every tool wrapper introduces a component slot under the seven-slot convention (L19/L20):
-
-```
---tugx-{kind}-{plane}-control-{constituent}-{emphasis}-{role}-{state}
+#### Spec S02: Body-kind contract {#s02-body-kind-contract}
+
+Every Layer-1 body kind exports:
+
+```typescript
+export interface BodyKindProps<TData = unknown> {
+  data: TData;
+  /** When true, the body subscribes to the streaming store. [D12] */
+  streamingStore?: PropertyStore;
+  /** PropertyStore path key; default "text". */
+  streamingPath?: string;
+  /** Initial collapse state; respects each body's defaultCollapsedThreshold. */
+  collapsed?: boolean;
+  onToggleCollapsed?: (next: boolean) => void;
+  className?: string;
+}
 ```
 
-Where `{kind}` is one of: `md` (already exists), `term`, `diff`, `file`, `paths`, `search`, `json`, `todo`, `agent`, `image`, `mermaid`, `katex`, `tooltip-toolblock` (or per-wrapper).
+Each component:
+- Pairs a `.tsx` + `.css` file (L19).
+- Sets `data-slot="<kind>-body"` on the root.
+- Owns its `--tugx-<kind>-*` token slot (L20).
+- Renders nothing if `data` is null/undefined; renders fallback `PlainTextBlock` on parse error.
 
-Compliance hooks:
+#### Spec S03: Tool-wrapper contract {#s03-tool-wrapper-contract}
 
-- `bun run audit:tokens lint` exits 0 for every new component.
-- Every component pairs a `.tsx` file with a `.css` file per L19 component-authoring.
-- `data-slot="..."` attributes on every primitive root.
-- Theme verification: every component snapshot-tested against both `brio` and `harmony` themes at `tugdeck/styles/themes/`.
+Every Layer-2 wrapper exports:
 
-Token-tuning is the *only* customization surface — wrappers don't reach into body-kind CSS.
+```typescript
+export interface ToolWrapperProps<TInput = unknown, TStructured = unknown> {
+  toolUseId: string;
+  toolName: string;
+  msgId: string;
+  seq: number;
+  input?: TInput;            // streamed empty → full
+  textOutput?: string;       // tool_result.output
+  structuredResult?: TStructured; // tool_use_structured.structured_result
+  isError?: boolean;
+  durationMs?: number;
+  status: "streaming" | "ready" | "error";
+  caution?: DispatchResult["caution"];
+}
+
+export type ToolWrapperFactory = (props: ToolWrapperProps) => React.ReactElement;
+```
+
+Each wrapper:
+- Pairs `.tsx` + `.css`, `data-slot="<tool>-tool-block"` root.
+- Renders chrome (header + footer) + composed body kind.
+- Handles `status === "streaming"` with a placeholder body.
+- Handles `status === "error"` with `isError` styling + the structured error message.
+- Surfaces `caution` as an inline badge per [Q03]/[D04].
+
+#### Spec S04: Block-transformer pass {#s04-block-transformer-pass}
+
+```typescript
+export interface BlockTransformer {
+  /** Stable name for diagnostics. */
+  name: string;
+  /** Transform a single block, returning the new block list. Pure. */
+  transform(block: SanitizedMarkdownBlock, context: BlockTransformContext): SanitizedMarkdownBlock[];
+}
+
+export interface BlockTransformContext {
+  /** Whether the source text has reached `complete` status. */
+  isComplete: boolean;
+  /** Block index in the parent block list. */
+  index: number;
+}
+```
+
+Composition: `parseMarkdownToSanitizedBlocks(text, { transformers })` flat-maps each block through every registered transformer in order. A transformer may return `[block]` (no change), `[]` (drop), `[modified]` (replace), or `[a, b, c]` (split).
+
+#### Spec S05: Streaming binding {#s05-streaming-binding}
+
+Every body kind that participates in streaming:
+- Accepts `streamingStore: PropertyStore` + `streamingPath: string`.
+- On mount in a `useLayoutEffect`, reads `store.get(path)` synchronously and renders that initial value (G1 contract — `observe` does NOT fire on subscribe).
+- Subscribes via `store.observe(path, listener)`, coalescing rapid updates with `requestAnimationFrame`.
+- Writes DOM imperatively per L06; React state holds only the container ref.
+- Cleans up by calling unsubscribe in the effect's cleanup.
+
+Reference implementation: `TugMarkdownBlock` already follows this contract.
+
+#### Spec S06: Fixture-replay test contract {#s06-fixture-replay}
+
+A single integration test file (`tugdeck/src/__tests__/assistant-rendering-fixture-replay.test.tsx`) walks every `*.jsonl` file under `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.105/` and `v2.1.112/`, replays each event sequence into a `CodeSessionStore`, mounts a Tide card, and asserts:
+
+1. No render throws.
+2. No `[object Object]` string literal appears in the rendered DOM.
+3. No raw JSON-line text bleeds through outside `JsonTreeBlock` or `CodeBlock`.
+4. Every `tool_use` event in the fixture produces exactly one `[data-slot$="-tool-block"]` element in the DOM.
+5. For tool names enumerated in [Table T02](#t02-tool-wrappers), the dispatched component is bespoke (not `DefaultToolWrapper`).
+6. Caution badge appears exactly when expected (synthetic-drift fixtures).
+
+Fixture replay is the load-bearing test for the success criteria.
+
+#### Internal Architecture {#internal-architecture}
+
+**File layout (proposed):**
+
+```
+tugdeck/
+  src/
+    components/
+      tugways/
+        cards/
+          tide-assistant-renderer-dispatch.ts          [D01]
+          tide-assistant-renderer-dispatch.test.ts
+          tool-wrappers/
+            read-tool-block.tsx + .css
+            write-tool-block.tsx + .css
+            edit-tool-block.tsx + .css
+            bash-tool-block.tsx + .css
+            glob-tool-block.tsx + .css
+            grep-tool-block.tsx + .css
+            task-tool-block.tsx + .css
+            web-fetch-tool-block.tsx + .css
+            web-search-tool-block.tsx + .css
+            todo-write-tool-block.tsx + .css
+            notebook-edit-tool-block.tsx + .css
+            default-tool-wrapper.tsx + .css
+            tool-wrapper-chrome.tsx + .css   ← shared header/footer
+        body-kinds/
+          terminal-block.tsx + .css
+          diff-block.tsx + .css
+          file-block.tsx + .css
+          path-list-block.tsx + .css
+          search-result-block.tsx + .css
+          json-tree-block.tsx + .css
+          todo-list-block.tsx + .css
+          agent-transcript-block.tsx + .css
+          image-block.tsx + .css
+          mermaid-block.tsx + .css
+          katex-block.tsx + .css
+          table-block.tsx + .css
+          plain-text-block.tsx + .css
+        chrome/
+          tide-thinking-block.tsx + .css
+          tide-permission-dialog.tsx + .css
+          tide-question-dialog.tsx + .css
+          tide-cost-chrome.tsx + .css
+          tide-session-init-banner.tsx + .css
+          tide-error-block.tsx + .css
+          tide-caution-badge.tsx + .css     [D04]
+    lib/
+      markdown/
+        block-transformers/
+          mermaid-transformer.ts            [D07]
+          math-transformer.ts
+          diff-transformer.ts
+          large-json-transformer.ts
+          inline-math-walker.ts
+          parse-markdown-to-sanitized-blocks.ts  ← extended
+      ansi/
+        ansi-to-html.ts                      ← uses ansi_up
+      lazy/
+        load-katex.ts                        [D10]
+        load-mermaid.ts
+        load-tugdiff-wasm.ts
+  crates/
+    tugdiff-wasm/                            [D09]
+      Cargo.toml
+      src/lib.rs
+      pkg/                                   ← built artifact
+  styles/
+    themes/
+      brio.css                               ← extended
+      harmony.css                            ← extended
+```
+
+Each new file follows L19 (component-authoring) and L20 (token sovereignty).
+
+#### Modes / Policies {#modes}
+
+- **Collapse-by-default thresholds** per body kind, see [Table T01](#t01-body-kinds).
+- **Streaming behavior** per body kind, see [Table T05](#t05-streaming-matrix).
+- **Lazy loading** per [D10] for KaTeX, Mermaid, tugdiff-wasm.
+- **Error fallback**: every primitive falls back to `PlainTextBlock` (text content) or `JsonTreeBlock` (structured) on internal error; never blank, never throws.
+- **Theme switching** is uniform: `data-theme="brio"` ↔ `data-theme="harmony"` swaps token values; no component-level branching on theme name.
+
+#### Tables {#tables}
+
+**Table T01: Layer-1 body-kind catalog** {#t01-body-kinds}
+
+| Body kind | Source data | Streams? | Default collapse threshold | Lazy module |
+|-----------|-------------|----------|----------------------------|-------------|
+| MarkdownBlock (existing) | text | yes | per-block height | none |
+| TerminalBlock | stdout/stderr + ANSI | yes (stream) | 40 lines | none (ansi_up shipped) |
+| DiffBlock | (old, new) or unified | no | 40 hunks | tugdiff-wasm |
+| FileBlock | { content, filePath, ... } | no | 50 lines | none |
+| PathListBlock | string[] | no | 100 paths | none |
+| SearchResultBlock | { groups } | no | 50 results | none |
+| JsonTreeBlock | unknown | no | depth 3 | none |
+| TodoListBlock | { todos } | tool input | none | none |
+| AgentTranscriptBlock | { content[] } | yes recursively | depth 2 | none |
+| ImageBlock | { url, alt } | no | none | none |
+| MermaidBlock | text | no (wait for complete) | none | mermaid |
+| KaTeXBlock | text | no | none | katex |
+| TableBlock (rich) | rows | no | 20 rows | none |
+| PlainTextBlock | string | yes | 100 lines | none |
+
+**Table T02: Layer-2 tool-wrapper catalog** {#t02-tool-wrappers}
+
+| Wrapper | Tool name(s) | Body kind composed | Chrome |
+|---------|--------------|---------------------|--------|
+| ReadToolBlock | Read | FileBlock | filePath + line range |
+| WriteToolBlock | Write | FileBlock | filePath + size, new vs overwrite |
+| EditToolBlock | Edit, MultiEdit | DiffBlock | filePath + change counts |
+| BashToolBlock | Bash | TerminalBlock | command + duration + exit code |
+| GlobToolBlock | Glob | PathListBlock | pattern + count + truncated |
+| GrepToolBlock | Grep | SearchResultBlock or PathListBlock | pattern + counts |
+| TaskToolBlock | Task | AgentTranscriptBlock | agentType + status + tokens |
+| WebFetchToolBlock | WebFetch | MarkdownBlock or FileBlock | url + favicon |
+| WebSearchToolBlock | WebSearch | SearchResultBlock | query + count |
+| TodoWriteToolBlock | TodoWrite | TodoListBlock | counts + progress |
+| NotebookEditToolBlock | NotebookEdit | DiffBlock | notebook + cell |
+| DefaultToolWrapper | * (registry miss) | JsonTreeBlock + dynamic body | tool_name + summary + caution badge |
+
+**Table T03: Stream-event chrome catalog** {#t03-chrome}
+
+| Renderer | Source event | Placement |
+|----------|--------------|-----------|
+| ThinkingBlock | thinking_text | inline at top of code row |
+| AssistantBody (existing MarkdownBlock) | assistant_text | code row body |
+| Tool wrapper (per Table T02) | tool_use family | code row body, in turn order |
+| PermissionDialog | control_request_forward (is_question:false) | inline, transcript flow |
+| QuestionDialog | control_request_forward (is_question:true) | inline, transcript flow |
+| CostBadge | cost_update (per turn) | code row footer |
+| CostChrome (cumulative) | aggregate cost_update | card status row |
+| SessionInitBanner | session_init / system_metadata change [D03] | top of card |
+| ErrorBlock | error | inline, transcript flow |
+| CautionBadge | drift detection [D04] | both card chrome + inline at offending event |
+
+**Table T04: Library picks** {#t04-library-picks}
+
+| Need | Pick | WASM? | Lazy? | Rationale |
+|------|------|-------|-------|-----------|
+| Markdown lex/parse | pulldown-cmark via tugmark-wasm | yes | no | already shipped |
+| HTML sanitize | DOMPurify | no | no | already shipped |
+| Code highlighting | Shiki | no | per-language | shipped; revisit per [Q02] |
+| Diff backbone | imara-diff via tugdiff-wasm | yes | yes | 10-30× faster than alternatives [D09] |
+| Word-level diff | diff-match-patch | no | with DiffBlock | small JS, sufficient for line pairs |
+| ANSI parsing | ansi_up | no | no | small, sufficient |
+| Math typesetting | KaTeX | no | yes | smaller + faster than MathJax [D08] |
+| Diagrams | mermaid | no | yes | bundle large; lazy [D10] |
+| JSON tree | custom JS component | no | no | small, full control over UX |
+
+**Table T05: Streaming behavior matrix** {#t05-streaming-matrix}
+
+| Body kind | Streams? | Approach during stream | On `complete` |
+|-----------|----------|------------------------|---------------|
+| MarkdownBlock | yes — assistant_text deltas | Existing pipeline | finalize via full text |
+| TerminalBlock | yes — Bash output streams | Re-parse on each delta; ANSI parser is linear | unchanged |
+| DiffBlock | no | Wrapper shows placeholder | Render once on tool_use_structured |
+| FileBlock | no | Wrapper shows placeholder | Render once |
+| PathListBlock | no | Wrapper shows placeholder | Render once |
+| SearchResultBlock | no | Wrapper shows placeholder | Render once |
+| JsonTreeBlock | no | Wrapper shows placeholder | Render once |
+| AgentTranscriptBlock | yes recursively | Same pipeline as outer transcript | finalize on agent status:"completed" |
+| MermaidBlock | no | Show raw code as CodeBlock | Swap to mermaid render |
+| KaTeXBlock | no | Show raw `$...$` text | Render once |
+| TodoListBlock | tool input streams | Wrapper shows placeholder | Render once |
+| ImageBlock | no | n/a | Render once |
+| TableBlock | no | n/a | Render once |
+| PlainTextBlock | yes | Update on each delta | finalize |
+
+**Table T06: Bundle-size budget** {#t06-bundle-budget}
+
+| Module | Approx size | Loaded when |
+|--------|-------------|-------------|
+| tugmark-wasm (existing) | ~200 KB | Tide card boot |
+| Shiki core | ~80 KB | first code block |
+| Shiki language pack (per language) | 5-30 KB | first encounter of that language |
+| ansi_up | 6 KB | shipped in main |
+| diff-match-patch | ~50 KB | with DiffBlock |
+| tugdiff-wasm | ~150-300 KB | first DiffBlock |
+| KaTeX core + fonts | ~350 KB | first `$...$` or fenced math |
+| Mermaid core | ~600 KB | first ` ```mermaid ` |
+| Mermaid diagram packs (per type) | 100-200 KB | first encounter of that diagram type |
+
+A Tide card with no diagrams, no math, no diffs, no code blocks pays only the tugmark-wasm + ansi_up cost on boot.
+
+**Table T07: Token-slot enumeration** {#t07-token-slots}
+
+Per L19/L20, every component owns a slot. Slot prefix → component:
+
+| Slot prefix | Component(s) |
+|-------------|--------------|
+| `--tugx-md-*` | MarkdownBlock (existing — extended) |
+| `--tugx-term-*` | TerminalBlock |
+| `--tugx-diff-*` | DiffBlock |
+| `--tugx-file-*` | FileBlock |
+| `--tugx-paths-*` | PathListBlock |
+| `--tugx-search-*` | SearchResultBlock |
+| `--tugx-json-*` | JsonTreeBlock |
+| `--tugx-todo-*` | TodoListBlock |
+| `--tugx-agent-*` | AgentTranscriptBlock |
+| `--tugx-image-*` | ImageBlock |
+| `--tugx-mermaid-*` | MermaidBlock |
+| `--tugx-katex-*` | KaTeXBlock |
+| `--tugx-tabrich-*` | TableBlock (rich) |
+| `--tugx-toolblock-*` | shared tool-wrapper chrome |
+| `--tugx-thinking-*` | ThinkingBlock |
+| `--tugx-perm-*` | PermissionDialog |
+| `--tugx-quest-*` | QuestionDialog |
+| `--tugx-cost-*` | CostChrome |
+| `--tugx-banner-*` | SessionInitBanner |
+| `--tugx-err-*` | ErrorBlock |
+| `--tugx-caut-*` | CautionBadge |
+
+**List L01: Pulldown-cmark options enabled (existing + new)** {#l01-cmark-options}
+
+- ENABLE_TABLES (existing)
+- ENABLE_STRIKETHROUGH (existing)
+- ENABLE_TASKLISTS (existing)
+- ENABLE_FOOTNOTES (new — typography upgrade)
+- ENABLE_SMART_PUNCTUATION (new — typography upgrade)
+
+**List L02: Block transformers shipped this phase** {#l02-block-transformers}
+
+- mermaidTransformer
+- mathTransformer (display)
+- diffTransformer
+- largeJsonTransformer
+
+**List L03: Layer-1 body kinds (one-line names)** {#l03-body-kinds}
+
+MarkdownBlock, TerminalBlock, DiffBlock, FileBlock, PathListBlock, SearchResultBlock, JsonTreeBlock, TodoListBlock, AgentTranscriptBlock, ImageBlock, MermaidBlock, KaTeXBlock, TableBlock, PlainTextBlock.
+
+**List L04: Layer-2 tool wrappers (one-line names)** {#l04-tool-wrappers}
+
+ReadToolBlock, WriteToolBlock, EditToolBlock, BashToolBlock, GlobToolBlock, GrepToolBlock, TaskToolBlock, WebFetchToolBlock, WebSearchToolBlock, TodoWriteToolBlock, NotebookEditToolBlock, DefaultToolWrapper.
+
+**List L05: Stream-event chrome renderers (one-line names)** {#l05-chrome}
+
+ThinkingBlock, PermissionDialog, QuestionDialog, CostChrome (with CostBadge sub-component), SessionInitBanner, ErrorBlock, CautionBadge.
 
 ---
 
-## 11. Sequencing (recommended order of implementation)
+### Definitive Symbol Inventory {#symbol-inventory}
 
-This is the order that ships value early and unlocks each subsequent step. Each step is sized so a coder/coder-agent can land it in one focused pass.
+#### New crates {#new-crates}
 
-1. **Markdown typography pass.** Tune `--tugx-md-*` tokens against both themes. (This is `tugplan-tide-card-polish.md §Step 12`. Land it first — every other body kind inherits the typographic baseline.)
-2. **`MarkdownBlock` extensions.** Block-transformer pass infrastructure + footnotes + smart-punctuation + collapse-tall-blocks. No new body kinds yet.
-3. **`ThinkingBlock`.** Wire `streamingPaths.thinking`. Inline + collapsible. (Step 13's first half.)
-4. **`TerminalBlock` + `BashToolBlock`.** Highest-value tool wrapper, simplest body. ANSI via `ansi_up`. Lands content-aware tool rendering.
-5. **`FileBlock` + `ReadToolBlock`.** Second-highest-value tool. File viewer with line numbers, language highlight (Shiki, already present), collapse on long files.
-6. **`DiffBlock` + `EditToolBlock`.** Land `imara-diff` WASM crate. Inline diff first; side-by-side toggle as a follow-up.
-7. **`JsonTreeBlock` + `DefaultToolWrapper`.** Once these exist, every unknown tool renders cleanly. Unblocks shipping the framework with confidence even before Mr-MCP-Tomorrow ships a new tool.
-8. **`PathListBlock` + `GlobToolBlock`** and **`SearchResultBlock` + `GrepToolBlock`.**
-9. **`AgentTranscriptBlock` + `TaskToolBlock`.** Nested rendering. Most architecturally interesting; do it once the simpler wrappers have shaken out the registry pattern.
-10. **`PermissionDialog` + `QuestionDialog`.** Inline block style; integrate with `CodeSessionStore` request → response flow.
-11. **`CostChrome`.** Per-turn footer + expanded breakdown + card-level cumulative.
-12. **`KaTeXBlock`** (lazy-loaded). Inline + display math.
-13. **`MermaidBlock`** (lazy-loaded).
-14. **`TodoWriteToolBlock`, `WebFetchToolBlock`, `WebSearchToolBlock`, `NotebookEditToolBlock`, `WriteToolBlock`.** The remaining first-party tools.
-15. **MCP-aware wrappers** for Gmail / Calendar / Drive (or whichever shows up in user traffic).
-16. **`TableBlock` (rich)**, **`ImageBlock`**, **`SessionInitBanner`**, **`ErrorBlock`** — polish round.
+| Crate | Purpose |
+|-------|---------|
+| `tugdiff-wasm` | Rust crate at `tugdeck/crates/tugdiff-wasm/`; exposes `imara-diff` to JS as `parse_unified_diff(text: &str) -> Vec<DiffHunk>` and `two_text_diff(before: &str, after: &str) -> Vec<DiffHunk>` |
 
-Each step lands as: new body kind / new wrapper + tests + theme verification + `bun run audit:tokens lint` green + manual smoke against fixture replay (we have the v2.1.105 stream-json catalog as ground truth).
+#### New files {#new-files}
 
----
+| File | Purpose |
+|------|---------|
+| `tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.ts` | [D01] dispatch module |
+| `tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.test.ts` | dispatch unit tests |
+| `tugdeck/src/components/tugways/cards/tool-wrappers/{read,write,edit,bash,glob,grep,task,web-fetch,web-search,todo-write,notebook-edit,default}-tool-block.{tsx,css}` | tool wrappers (12 × 2 = 24 files) |
+| `tugdeck/src/components/tugways/cards/tool-wrappers/tool-wrapper-chrome.{tsx,css}` | shared chrome |
+| `tugdeck/src/components/tugways/body-kinds/{terminal,diff,file,path-list,search-result,json-tree,todo-list,agent-transcript,image,mermaid,katex,table,plain-text}-block.{tsx,css}` | body kinds (13 × 2 = 26 files) |
+| `tugdeck/src/components/tugways/chrome/tide-thinking-block.{tsx,css}` | [D14] |
+| `tugdeck/src/components/tugways/chrome/tide-permission-dialog.{tsx,css}` | [D13] |
+| `tugdeck/src/components/tugways/chrome/tide-question-dialog.{tsx,css}` | [D13] |
+| `tugdeck/src/components/tugways/chrome/tide-cost-chrome.{tsx,css}` | per-turn + cumulative |
+| `tugdeck/src/components/tugways/chrome/tide-session-init-banner.{tsx,css}` | [D03] |
+| `tugdeck/src/components/tugways/chrome/tide-error-block.{tsx,css}` | error rendering |
+| `tugdeck/src/components/tugways/chrome/tide-caution-badge.{tsx,css}` | [D04] |
+| `tugdeck/src/lib/markdown/block-transformers/{mermaid,math,diff,large-json}-transformer.ts` | [D07] |
+| `tugdeck/src/lib/markdown/block-transformers/inline-math-walker.ts` | inline `$...$` detection |
+| `tugdeck/src/lib/ansi/ansi-to-html.ts` | ansi_up wrapper |
+| `tugdeck/src/lib/lazy/{load-katex,load-mermaid,load-tugdiff-wasm}.ts` | [D10] lazy loaders |
+| `tugdeck/src/__tests__/assistant-rendering-fixture-replay.test.tsx` | Spec S06 |
 
-## 12. Open questions
+#### Symbols to add / modify {#symbols}
 
-1. **Where does the renderer dispatch live?** Two reasonable homes: (a) inside `CodeSessionStore` as part of the reducer's output shape (each `TurnEntry` carries a renderer kind tag); (b) as a separate `assistant-renderer-dispatch.ts` consumed by the transcript view, leaving the store kind-agnostic. Recommendation: (b) — keeps the store concerned with state, the dispatch concerned with presentation. Worth confirming.
-2. **Re-run buttons on `BashToolBlock` (and similar).** Security-policy-laden. Default to off until the permission-mode story for re-run is clear.
-3. **"Allow with edits" on `PermissionDialog`.** Requires a structured editor over `tool_use.input` — for `Bash`, that's a command-line editor; for `Edit`, that's the diff view editable. Worth designing as a follow-up rather than baking into v1.
-4. **Should `AgentTranscriptBlock` be a participant variant on the transcript** (i.e., a Slack-like nested thread) **rather than an inline block?** `tugplan-tide-card-polish.md §Step 13` flags this as a possible follow-up. Defer until we have a working `AgentTranscriptBlock` and can A/B the two layouts.
-5. **Streaming behavior for long Bash output.** If a `Bash` tool streams 50 MB of output, what's the cap? Recommendation: TerminalBlock self-virtualizes when length > N lines (reuse the `BlockHeightIndex` machinery from `TugMarkdownView`).
-6. **Do we render `system_metadata` per-turn or only on session-init banner?** Per-turn is noisy; session-init-only loses model/permissionMode changes mid-session. Recommendation: per-turn render only when something changed since the previous `system_metadata`. Worth confirming.
-7. **MCP-tool taxonomy.** What's the right granularity for MCP wrappers — one per server, one per tool, or one per common shape? Probably per-server with internal dispatch on tool name. Decide when we actually wire the first MCP server.
-8. **Drift handling.** When a future Claude Code release ships a new event type or changes a structured_result shape, what's the user-visible behavior? Recommendation: drift telemetry + a "fallback to JsonTreeBlock for the unknown shape" rule + an inline banner. Aligns with `tide.md §p15-stream-json-version-gate`.
-
----
-
-## 13. Cross-references
-
-- [tide.md §Phase T1 — Content Block Types](./tide.md#content-block-types) — the stub this proposal elaborates.
-- [tide.md §Phase T2 — Shell Command Blocks](./tide.md#shell-command-blocks) — the same Layer-1 body kinds serve shell adapters; this proposal reuses them.
-- [tugplan-tide-card-polish.md §Step 12](./tugplan-tide-card-polish.md#step-12) — markdown typography pass; first step in §11 above.
-- [tugplan-tide-card-polish.md §Step 13](./tugplan-tide-card-polish.md#step-13) — thinking + tool surfaces; this proposal is the design that step is currently a stub for.
-- [tide.md §p15-stream-json-version-gate](./tide.md#p15-stream-json-version-gate) — drift detection; mentioned in §12 (8) above.
-- [transport-exploration.md](./transport-exploration.md) — empirical event-shape catalog.
-- [tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.105/](../tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.105/) — machine-readable fixtures used for manual replay testing of every renderer.
-- [tuglaws/component-authoring.md](../tuglaws/component-authoring.md), [tuglaws/token-naming.md](../tuglaws/token-naming.md) — L19, L20, seven-slot convention every component complies with.
-- [atoms-attachments.md](./atoms-attachments.md) — the user-side image attachment story; `ImageBlock` cooperates with it.
+| Symbol | Kind | Location | Notes |
+|--------|------|----------|-------|
+| `AssistantRendererDispatch` | interface | dispatch.ts | Spec S01 |
+| `DispatchResult` | interface | dispatch.ts | Spec S01 |
+| `DispatchContext` | interface | dispatch.ts | Spec S01 |
+| `BodyKindProps<T>` | interface | shared types | Spec S02 |
+| `ToolWrapperProps<I,O>` | interface | shared types | Spec S03 |
+| `ToolWrapperFactory` | type | shared types | Spec S03 |
+| `BlockTransformer` | interface | block-transformers/index.ts | Spec S04 |
+| `BlockTransformContext` | interface | block-transformers/index.ts | Spec S04 |
+| `parseMarkdownToSanitizedBlocks` | fn (modify) | parse-markdown-to-sanitized-blocks.ts | gain optional `transformers` param [D07] |
+| `parser_options` | fn (modify) | tugmark-wasm/src/lib.rs | enable FOOTNOTES + SMART_PUNCTUATION [L01] |
+| `toolWrapperRegistry` | const Map | dispatch.ts | [D16] |
+| `parse_unified_diff` | wasm fn | tugdiff-wasm/src/lib.rs | [D09] |
+| `two_text_diff` | wasm fn | tugdiff-wasm/src/lib.rs | [D09] |
 
 ---
 
-## 14. Library citations (web research, May 2026)
+### Documentation Plan {#documentation-plan}
 
-- [imara-diff (GitHub)](https://github.com/pascalkuthe/imara-diff) — performance-stable Rust diff library with histogram + Myers algorithms. 10×–30× faster than `similar` on large inputs.
-- [imara-diff announcement (Rust forum)](https://users.rust-lang.org/t/announcing-imara-diff-a-reliably-performant-diffing-library-for-rust/83276)
-- [similar (Rust diff)](https://docs.rs/similar) — comparison baseline.
-- [Shiki](https://shiki.style/guide/) — current syntax-highlighter; modern versions run in browser.
-- [Tree-sitter Syntax Highlighting](https://tree-sitter.github.io/tree-sitter/3-syntax-highlighting.html) — alternative, deferred until a measured Shiki bottleneck.
-- [Mermaid lazy loading (Rick Strahl)](https://weblog.west-wind.com/posts/2025/May/10/Lazy-Loading-the-Mermaid-Diagram-Library) — late-binding + per-diagram-type loading recipe.
-- [Mermaid bundle size discussion](https://www.sidharth.dev/posts/shrinking-mermaid/) — "Tiny" variant trade-offs.
-- [ansi_up (GitHub)](https://github.com/drudru/ansi_up) — zero-dependency JS ANSI → HTML.
-- [vtparse (Rust)](https://docs.rs/vtparse/) — heavier, full VT escape parser; reserved for pathological inputs.
-- [KaTeX](https://katex.org/) — fast synchronous math typesetting; ~350 KB total.
-- [KaTeX vs MathJax comparison (BigGo News, Nov 2025)](https://biggo.com/news/202511040733_KaTeX_MathJax_Web_Rendering_Comparison) — KaTeX wins on bundle and speed; MathJax wins on LaTeX coverage. KaTeX is the right call here.
+- [ ] Update `tide.md` §Phase T1 — Content Block Types: replace the stub bullet list with a back-link to this plan and a one-paragraph summary.
+- [ ] Update `tugplan-tide-card-polish.md` §Step 12 and §Step 13: mark as absorbed by this plan and link forward.
+- [ ] Add a section to `tugdeck/README.md` describing the body-kind / tool-wrapper architecture and the dispatch module's public API.
+- [ ] Add a developer guide at `tugdeck/src/components/tugways/body-kinds/README.md` explaining how to add a new body kind (file-pair convention, token slot, streaming contract).
+- [ ] Add a developer guide at `tugdeck/src/components/tugways/cards/tool-wrappers/README.md` for adding a new tool wrapper (registry entry, alias declaration, body composition).
+- [ ] Add a guide at `tugdeck/crates/tugdiff-wasm/README.md` matching the `tugmark-wasm` pattern (Cargo.toml conventions, build commands, exported API).
+- [ ] Update `tuglaws/INDEX.md` if any new tuglaws are introduced (none anticipated; this plan is implementation, not law).
+
+---
+
+### Test Plan Concepts {#test-plan-concepts}
+
+#### Test Categories {#test-categories}
+
+| Category | Purpose | When to use |
+|----------|---------|-------------|
+| **Unit** | Test individual body kinds, wrappers, transformers, dispatch functions in isolation | Per-component happy paths and edge cases |
+| **Integration (fixture replay)** | Replay every stream-json fixture into a Tide card and verify rendering | Per Spec S06; the load-bearing success-criteria test |
+| **Snapshot (theme)** | Visual snapshot of every component in both `brio` and `harmony` | Theme drift detection |
+| **app-test** | Full-app harness for focus / selection / event-ordering scenarios | Permission/Question dialog focus management; expand/collapse interactions |
+| **Drift Prevention** | Synthetic-drift fixtures that introduce unknown tools, unknown shapes, version mismatches | Verify [D04] caution badge and `DefaultToolWrapper` fallback |
+| **Performance** | Microbenchmarks for diff parse, ANSI parse, and high-frequency streaming | Verify [R03], [R06], inform [Q02] |
+
+---
+
+### Execution Steps {#execution-steps}
+
+> **Commit after all checkpoints pass.** Each step is one commit. Integration checkpoint steps use `Commit: N/A (verification only)`.
+
+#### Step 1: Renderer dispatch infrastructure {#step-1}
+
+**Commit:** `feat(tide-rendering): add assistant-renderer-dispatch module and registry scaffolding`
+
+**References:** [D01], [D11], [D16], Spec S01, (#architecture-mental-model)
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.ts`
+- `tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.test.ts`
+- Shared `BodyKindProps` / `ToolWrapperProps` / `ToolWrapperFactory` types in `tugdeck/src/components/tugways/cards/tool-wrappers/types.ts`
+- A no-op `DefaultToolWrapper` (just enough to pass the dispatch test; full body lands in [#step-13](#step-13))
+
+**Tasks:**
+- [ ] Define `AssistantRendererDispatch`, `DispatchResult`, `DispatchContext` per Spec S01
+- [ ] Build `toolWrapperRegistry: Map<string, ToolWrapperFactory>` keyed lowercase per [D16]
+- [ ] Build alias map (e.g., `multiedit → edit`) per [D16]
+- [ ] Implement `dispatch(entry, context)`: routes by `entry.kind`; for tool entries, looks up by lowercased `entry.toolName`; falls back to `DefaultToolWrapper` per [D11] with `caution: { reason: "unknown_tool" }`
+- [ ] Implement `resolveToolWrapper(name)` and `registeredTools()`
+- [ ] Implement scaffold-only `DefaultToolWrapper` rendering tool_name + a "(default)" marker for now
+
+**Tests:**
+- [ ] `dispatch.test`: dispatch an `assistant_text` entry → `AssistantTurnRenderer`
+- [ ] `dispatch.test`: dispatch a `tool_use` with unknown name → `DefaultToolWrapper` + caution
+- [ ] `dispatch.test`: alias resolution (`MultiEdit` → `EditToolBlock` once registered)
+- [ ] `dispatch.test`: case-insensitive lookup
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit`
+- [ ] `cd tugdeck && bun test src/components/tugways/cards/tide-assistant-renderer-dispatch.test.ts`
+
+---
+
+#### Step 2: Markdown typography pass (subsumes card-polish §Step 12) {#step-2}
+
+**Depends on:** #step-1
+
+**Commit:** `style(tide-rendering): tune --tugx-md-* tokens for both brio and harmony themes`
+
+**References:** [D15], [Table T07](#t07-token-slots), [tugplan-tide-card-polish.md §Step 12](./tugplan-tide-card-polish.md#step-12), (#success-criteria)
+
+**Artifacts:**
+- `tugdeck/styles/themes/brio.css` (extended `--tugx-md-*` slots)
+- `tugdeck/styles/themes/harmony.css` (extended `--tugx-md-*` slots)
+- `tugdeck/src/components/tugways/tug-markdown-view.css` and `tug-markdown-block.css` adjustments if needed for new slots
+
+**Tasks:**
+- [ ] Define and tune token values for: paragraph, headings (h1-h6), inline code, fenced code chrome, bold/italic, strikethrough, blockquote, hr, ul/ol, table, link, footnote, image
+- [ ] Vertical rhythm: paragraph margins, heading margins, list indent, code-block padding
+- [ ] Both themes: verify visually
+- [ ] Mark `tugplan-tide-card-polish.md §Step 12` as absorbed (link forward to this plan)
+
+**Tests:**
+- [ ] Snapshot test of `TugMarkdownBlock` rendering a representative markdown document under both themes
+- [ ] `bun run audit:tokens lint` exits 0
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun run audit:tokens lint`
+- [ ] Manual: open Tide card in both themes; render a fixture with headings, lists, blockquotes, inline code, tables, fenced code; visually verify
+
+---
+
+#### Step 3: MarkdownBlock extensions — block-transformer pass + footnotes + smart-punct + collapse {#step-3}
+
+**Depends on:** #step-2
+
+**Commit:** `feat(tide-rendering): block-transformer pass + pulldown-cmark footnotes + smart-punctuation + collapse-tall-blocks`
+
+**References:** [D07], Spec S04, List L01, List L02, (#block-transformer-pass)
+
+**Artifacts:**
+- `tugdeck/crates/tugmark-wasm/src/lib.rs` (extended `parser_options`)
+- `tugdeck/src/lib/markdown/block-transformers/index.ts`
+- `tugdeck/src/lib/markdown/parse-markdown-to-sanitized-blocks.ts` (gain `transformers` param)
+- Empty transformer files (mermaid, math, diff, large-json) created here, populated in later steps when consumed
+- Collapse-tall-block UX in `TugMarkdownBlock` (and corresponding `TugMarkdownView` region affordance)
+
+**Tasks:**
+- [ ] Enable `Options::ENABLE_FOOTNOTES` and `Options::ENABLE_SMART_PUNCTUATION` in `tugmark-wasm`
+- [ ] Define `BlockTransformer` and `BlockTransformContext` interfaces per Spec S04
+- [ ] Add optional `transformers: BlockTransformer[]` parameter to `parseMarkdownToSanitizedBlocks`; flat-map each block through every transformer
+- [ ] Add token slots `--tugx-md-collapse-*` for collapse affordance chrome
+- [ ] Implement collapse on `TugMarkdownBlock` for blocks above height threshold
+
+**Tests:**
+- [ ] Footnote markdown round-trips through pulldown-cmark and renders with footnote chrome
+- [ ] Smart-punctuation: `--` becomes em-dash, `"..."` becomes curly quotes
+- [ ] Block transformer pass: a no-op transformer leaves blocks identical; a swap-type transformer changes a block type; a split transformer produces multiple blocks
+- [ ] Collapse: a paragraph above the threshold shows the affordance; clicking expands
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run -p tugmark-wasm` (if a Rust-side test exists; otherwise just `cargo build`)
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test src/lib/markdown`
+
+---
+
+#### Step 4: ThinkingBlock + wire `streamingPaths.thinking` {#step-4}
+
+**Depends on:** #step-1, #step-2
+
+**Commit:** `feat(tide-rendering): ThinkingBlock — inline collapsible thinking with default-collapse-on-complete`
+
+**References:** [D14], Spec S05, [tugplan-tide-card-polish.md §Step 13](./tugplan-tide-card-polish.md#step-13), (#chrome)
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/chrome/tide-thinking-block.tsx` + `.css`
+- Wire-up in `tide-card.tsx` to consume `streamingPaths.thinking`
+
+**Tasks:**
+- [ ] New token slot `--tugx-thinking-*` per [Table T07](#t07-token-slots), tuned for both themes
+- [ ] Streaming binding to `streamingPaths.thinking` per Spec S05
+- [ ] Collapse animation respecting `prefers-reduced-motion`
+- [ ] Snap-to-collapsed on parent turn `complete` per [D14]
+- [ ] User-expanded state persists for the row's lifetime (not across reload)
+
+**Tests:**
+- [ ] Renders streaming thinking text incrementally
+- [ ] On `turn_complete`, collapses to one-line preview
+- [ ] User expand → persists; row unmount → state lost (expected)
+- [ ] Both themes verify
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [ ] Manual: replay `test-22-subagent-spawn.jsonl` in a Tide card; verify thinking renders, then collapses
+
+---
+
+#### Step 5: TerminalBlock body kind {#step-5}
+
+**Depends on:** #step-1
+
+**Commit:** `feat(tide-rendering): TerminalBlock — ANSI-aware streaming terminal renderer with virtualization`
+
+**References:** [D02], [D06], [Q04], Spec S02, Spec S05, (#streaming-matrix)
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/body-kinds/terminal-block.tsx` + `.css`
+- `tugdeck/src/lib/ansi/ansi-to-html.ts` (ansi_up wrapper)
+- Token slot `--tugx-term-*` for both themes
+- `bun add ansi_up` to package.json
+
+**Tasks:**
+- [ ] Implement ANSI parsing via `ansi_up`; expose `ansiToHtml(text: string): string`
+- [ ] TerminalBlock with stdout/stderr split; respect ANSI SGR
+- [ ] Streaming binding per Spec S05; re-parse on each delta
+- [ ] Self-virtualization: when retained-line count > threshold (default 40 visible, 10k retained per [Q04]), use BlockHeightIndex
+- [ ] Truncation indicator at top: "… N earlier lines truncated" when over retention cap
+- [ ] Copy-to-clipboard button
+- [ ] Footer: exit code badge (zero subtle, non-zero strong), interrupted indicator, duration
+
+**Tests:**
+- [ ] ANSI: `\\x1b[31mred\\x1b[0m` produces a red-styled span
+- [ ] Stream: deltas accumulate without flicker
+- [ ] Virtualization: retained > visible threshold; correct rows visible on scroll
+- [ ] Both themes verify
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test src/components/tugways/body-kinds/terminal-block`
+
+---
+
+#### Step 6: BashToolBlock wrapper {#step-6}
+
+**Depends on:** #step-1, #step-5
+
+**Commit:** `feat(tide-rendering): BashToolBlock — composes TerminalBlock with command/duration/exit chrome`
+
+**References:** [D05], Spec S03, (#t02-tool-wrappers)
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/cards/tool-wrappers/bash-tool-block.tsx` + `.css`
+- `tugdeck/src/components/tugways/cards/tool-wrappers/tool-wrapper-chrome.tsx` + `.css` (shared header/footer)
+- Token slot `--tugx-toolblock-*` (shared) and the wrapper composes existing `--tugx-term-*`
+- Registry entry in dispatch.ts
+
+**Tasks:**
+- [ ] Shared `ToolWrapperChrome` component: header (icon + tool name + args summary) + footer (badges)
+- [ ] BashToolBlock: header shows shell-syntax-highlighted command (truncated, hover-expand); duration; exit code; interrupted indicator
+- [ ] Body: TerminalBlock fed from `tool_use_structured.{stdout,stderr}` (or `tool_result.output` if `tool_use_structured` absent)
+- [ ] Status placeholder during stream
+
+**Tests:**
+- [ ] Replay `test-09-bash-auto-approved.jsonl` → BashToolBlock renders with command, stdout, exit 0
+- [ ] Synthetic non-zero exit fixture → strong-color exit badge
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [ ] Manual: invoke `> use bash to echo hello` against live tugcode; verify rendering
+
+---
+
+#### Step 7: FileBlock body kind {#step-7}
+
+**Depends on:** #step-1
+
+**Commit:** `feat(tide-rendering): FileBlock — read-only file viewer with line numbers and language highlight`
+
+**References:** [D05], Spec S02, (#t01-body-kinds)
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/body-kinds/file-block.tsx` + `.css`
+- Token slot `--tugx-file-*`
+
+**Tasks:**
+- [ ] Line-numbered gutter; honor `startLine` offset
+- [ ] Language inferred from `filePath` extension; highlight via existing Shiki integration
+- [ ] Long-content collapse (default folded if > 50 lines)
+- [ ] "Showing N of M lines" header
+- [ ] Click-line-to-copy
+
+**Tests:**
+- [ ] Renders content with line numbers starting at `startLine`
+- [ ] Long file collapses
+- [ ] Language detection produces correct highlight class
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+
+---
+
+#### Step 8: ReadToolBlock wrapper {#step-8}
+
+**Depends on:** #step-1, #step-7
+
+**Commit:** `feat(tide-rendering): ReadToolBlock — composes FileBlock with filePath and line-range chrome`
+
+**References:** [D05], Spec S03
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/cards/tool-wrappers/read-tool-block.tsx` + `.css`
+- Registry entry
+
+**Tasks:**
+- [ ] Header: `Read · {filePath-shortened}` + line-range badge if `startLine`/`numLines` set
+- [ ] Body: FileBlock from `tool_use_structured.file`
+- [ ] Footer: "Showing N of M lines" if truncated
+
+**Tests:**
+- [ ] Replay `test-05-tool-use-read.jsonl` → ReadToolBlock with FileBlock, correct path, content
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+
+---
+
+#### Step 9: tugdiff-wasm crate {#step-9}
+
+**Depends on:** #step-1
+
+**Commit:** `feat(tugdiff-wasm): new crate exposing imara-diff to JS via wasm-bindgen`
+
+**References:** [D06], [D09], (#new-crates)
+
+**Artifacts:**
+- `tugdeck/crates/tugdiff-wasm/Cargo.toml`
+- `tugdeck/crates/tugdiff-wasm/src/lib.rs`
+- `tugdeck/crates/tugdiff-wasm/README.md`
+- `tugdeck/crates/tugdiff-wasm/pkg/` (built artifact, .gitignored if convention follows tugmark-wasm)
+- Vite config extension if needed
+
+**Tasks:**
+- [ ] Cargo manifest mirroring `tugmark-wasm`'s pattern; add `imara-diff = "..."` and `wasm-bindgen`
+- [ ] Export `parse_unified_diff(text: &str) -> JsValue` (JSON-serialized hunks)
+- [ ] Export `two_text_diff(before: &str, after: &str) -> JsValue` (JSON-serialized hunks)
+- [ ] Build script + bun command analogous to tugmark-wasm
+- [ ] README describing the API
+
+**Tests:**
+- [ ] Rust-side: `parse_unified_diff` round-trips a known fixture
+- [ ] Rust-side: `two_text_diff` produces correct hunks for a known input pair
+- [ ] -D warnings clean
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo build -p tugdiff-wasm` (if path-included) — or invoke the crate's bun-driven build
+- [ ] `cd tugrust && cargo nextest run -p tugdiff-wasm` (if tests added)
+
+---
+
+#### Step 10: DiffBlock body kind {#step-10}
+
+**Depends on:** #step-1, #step-9
+
+**Commit:** `feat(tide-rendering): DiffBlock — inline unified-diff renderer with hunk collapse and word-level intra-line diff`
+
+**References:** [D05], [D09], Spec S02
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/body-kinds/diff-block.tsx` + `.css`
+- `tugdeck/src/lib/lazy/load-tugdiff-wasm.ts`
+- Token slot `--tugx-diff-*`
+- `bun add diff-match-patch` for word-level intra-line
+
+**Tasks:**
+- [ ] Lazy-load `tugdiff-wasm` per [D10]; JS fallback (jsdiff) for first-paint
+- [ ] Inline view by default; side-by-side toggle stub (full toggle deferred)
+- [ ] Hunk-by-hunk collapse
+- [ ] Word-level highlighting via `diff-match-patch`
+- [ ] Filename + change-counts header (e.g., `tide-card.tsx · +12 −3`)
+- [ ] Syntax highlight inside hunks per file extension (Shiki)
+
+**Tests:**
+- [ ] Two-text input produces correct hunks
+- [ ] Unified-diff input parses correctly
+- [ ] Hunk collapse works
+- [ ] Word-level highlight on a single-line change
+- [ ] Both themes verify
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+
+---
+
+#### Step 11: EditToolBlock wrapper {#step-11}
+
+**Depends on:** #step-1, #step-10
+
+**Commit:** `feat(tide-rendering): EditToolBlock — composes DiffBlock with filePath and change-count chrome`
+
+**References:** [D05], Spec S03
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/cards/tool-wrappers/edit-tool-block.tsx` + `.css`
+- Registry entry; alias `MultiEdit → Edit` per [D16]
+
+**Tasks:**
+- [ ] Header: `Edit · {filePath}` + change counts (computed from diff)
+- [ ] Body: DiffBlock fed from `(old_string, new_string)` or full-file diff if `replace_all`
+- [ ] Footer: link-to-file in tugdeck filetree (deferred to follow-on if filetree integration isn't ready)
+
+**Tests:**
+- [ ] Synthetic Edit fixture → DiffBlock with correct hunks
+- [ ] MultiEdit alias dispatches correctly
+- [ ] `replace_all` produces full-file diff
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+
+---
+
+#### Step 12: JsonTreeBlock body kind {#step-12}
+
+**Depends on:** #step-1
+
+**Commit:** `feat(tide-rendering): JsonTreeBlock — collapsible JSON tree viewer with copy-as-path`
+
+**References:** [D04], [D05], [D11], Spec S02
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/body-kinds/json-tree-block.tsx` + `.css`
+- Token slot `--tugx-json-*`
+
+**Tasks:**
+- [ ] Collapsible tree, default depth 3
+- [ ] Type-aware coloring (string, number, bool, null, array, object)
+- [ ] Search-within-tree (basic; full search deferred to polish)
+- [ ] Copy-as-path (`response.data[0].id`) and copy-subtree
+- [ ] Both themes verify
+
+**Tests:**
+- [ ] Renders nested object correctly
+- [ ] Collapse beyond default depth shows expand affordance
+- [ ] Copy-as-path produces correct path string
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+
+---
+
+#### Step 13: DefaultToolWrapper {#step-13}
+
+**Depends on:** #step-1, #step-12
+
+**Commit:** `feat(tide-rendering): DefaultToolWrapper — JsonTree-based fallback with caution badge`
+
+**References:** [D04], [D11], Spec S03, (#chrome)
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/cards/tool-wrappers/default-tool-wrapper.tsx` + `.css`
+- `tugdeck/src/components/tugways/chrome/tide-caution-badge.tsx` + `.css`
+- Token slots `--tugx-caut-*` and `--tugx-toolblock-*` (extension)
+
+**Tasks:**
+- [ ] DefaultToolWrapper: JsonTree over `tool_use.input` (collapsed by default), separator, then body picked from `tool_result.output`/`tool_use_structured.structured_result`: text → MarkdownBlock; object → JsonTreeBlock
+- [ ] CautionBadge: small inline chip with hover tooltip showing reason
+- [ ] Update [#step-1](#step-1) scaffold's no-op DefaultToolWrapper to this real implementation
+
+**Tests:**
+- [ ] Inject synthetic `tool_use { tool_name: "ZzzUnknown" }` → DefaultToolWrapper + caution badge
+- [ ] Object output renders via JsonTreeBlock
+- [ ] Text output renders via MarkdownBlock
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+
+---
+
+#### Step 14: Integration checkpoint — day-1 coverage {#step-14}
+
+**Depends on:** #step-6, #step-8, #step-11, #step-13
+
+**Commit:** `N/A (verification only)`
+
+**References:** [D04], [D05], [D11], Spec S06, (#success-criteria)
+
+**Tasks:**
+- [ ] Verify Bash, Read, Edit wrappers + DefaultToolWrapper all dispatch correctly across the v2.1.105 fixture catalog
+- [ ] Verify caution badge appears for synthetic unknown-tool fixture
+- [ ] Run the `assistant-rendering-fixture-replay.test.tsx` against the four shipped wrappers (other tools still go through DefaultToolWrapper at this point — that's fine, the test asserts what's known to be wired)
+
+**Tests:**
+- [ ] All v2.1.105 fixtures replay without throw or `[object Object]` content
+- [ ] Read/Bash/Edit fixtures produce bespoke wrappers; other tools use DefaultToolWrapper
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test src/__tests__/assistant-rendering-fixture-replay.test.tsx`
+- [ ] `cd tugdeck && bun run audit:tokens lint`
+
+---
+
+#### Step 15: PathListBlock + GlobToolBlock {#step-15}
+
+**Depends on:** #step-1
+
+**Commit:** `feat(tide-rendering): PathListBlock + GlobToolBlock`
+
+**References:** [D05], Spec S02, Spec S03
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/body-kinds/path-list-block.tsx` + `.css`
+- `tugdeck/src/components/tugways/cards/tool-wrappers/glob-tool-block.tsx` + `.css`
+- Token slot `--tugx-paths-*`
+- Registry entry
+
+**Tasks:**
+- [ ] PathListBlock: icons by file type, path-shortening (`…/`), sortable when count > 20, "Truncated at N" indicator
+- [ ] GlobToolBlock: header `Glob · {pattern}` + count + truncated indicator; body PathListBlock
+
+**Tests:**
+- [ ] Replay `test-21-glob-tool.jsonl` → GlobToolBlock with PathListBlock, correct count
+- [ ] Truncation indicator appears when `truncated: true`
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+
+---
+
+#### Step 16: SearchResultBlock + GrepToolBlock {#step-16}
+
+**Depends on:** #step-1, #step-15
+
+**Commit:** `feat(tide-rendering): SearchResultBlock + GrepToolBlock with content-mode and files-only-mode`
+
+**References:** [D05], Spec S02, Spec S03
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/body-kinds/search-result-block.tsx` + `.css`
+- `tugdeck/src/components/tugways/cards/tool-wrappers/grep-tool-block.tsx` + `.css`
+- Token slot `--tugx-search-*`
+- Registry entry
+
+**Tasks:**
+- [ ] SearchResultBlock: grouped by file with collapsible headers; highlighted match span; surrounding context lines
+- [ ] GrepToolBlock: header `Grep · {pattern}` + match count + file count; body SearchResultBlock (content mode) or PathListBlock (files-only mode)
+
+**Tests:**
+- [ ] Synthetic Grep fixture (content mode) → SearchResultBlock with grouped matches
+- [ ] Synthetic Grep fixture (files-only mode) → PathListBlock
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+
+---
+
+#### Step 17: AgentTranscriptBlock + TaskToolBlock (recursive) {#step-17}
+
+**Depends on:** #step-1, #step-13
+
+**Commit:** `feat(tide-rendering): AgentTranscriptBlock + TaskToolBlock — recursive nested tool rendering`
+
+**References:** [D05], [D17], Spec S02, Spec S03
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/body-kinds/agent-transcript-block.tsx` + `.css`
+- `tugdeck/src/components/tugways/cards/tool-wrappers/task-tool-block.tsx` + `.css`
+- Token slot `--tugx-agent-*`
+- Registry entry; alias `Agent → Task` per [D16] if needed
+
+**Tasks:**
+- [ ] AgentTranscriptBlock: header (agent type + status + duration + tool-call count); body iterates `content[]` rendering each entry through the same dispatch (`depth + 1`); footer (cost summary)
+- [ ] Recursion bounded by max depth (default 3); deeper levels collapse with "+N nested calls"
+- [ ] TaskToolBlock: composes AgentTranscriptBlock; header shows agent type + status
+
+**Tests:**
+- [ ] Replay `test-22-subagent-spawn.jsonl` → TaskToolBlock with AgentTranscriptBlock; nested Grep call renders via GrepToolBlock
+- [ ] Synthetic depth-3 fixture → depth-3 renders; depth-4 shows collapse
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+
+---
+
+#### Step 18: PermissionDialog (`control_request_forward`, `is_question:false`) {#step-18}
+
+**Depends on:** #step-1, #step-12
+
+**Commit:** `feat(tide-rendering): PermissionDialog — inline allow/deny dialog with permission_suggestions`
+
+**References:** [D13], Spec S03 (chrome variant), (#chrome)
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/chrome/tide-permission-dialog.tsx` + `.css`
+- Token slot `--tugx-perm-*`
+- Wire-up: dispatch routes `control_request_forward` (is_question:false) here
+
+**Tasks:**
+- [ ] Header: "Permission requested" + tool icon + tool name
+- [ ] Body: tool input rendered via JsonTreeBlock (or matched body kind for known tools)
+- [ ] Reason line from `decision_reason`
+- [ ] Suggestions from `permission_suggestions` rendered as buttons
+- [ ] Allow / Deny buttons; disable while pending
+- [ ] After response: collapse to one-line static record showing decision
+
+**Tests:**
+- [ ] Replay `test-11-permission-deny-roundtrip.jsonl` → PermissionDialog renders, deny click sends `tool_approval { decision: "deny" }`
+- [ ] Allow click sends `tool_approval { decision: "allow" }`
+- [ ] Focus management: primary button focused on mount
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [ ] Manual smoke against live tugcode
+
+---
+
+#### Step 19: QuestionDialog (`control_request_forward`, `is_question:true`) {#step-19}
+
+**Depends on:** #step-1, #step-18
+
+**Commit:** `feat(tide-rendering): QuestionDialog — inline single/multi-select with Other input`
+
+**References:** [D13], Spec S03 (chrome variant)
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/chrome/tide-question-dialog.tsx` + `.css`
+- Token slot `--tugx-quest-*`
+- Wire-up: dispatch routes `control_request_forward` (is_question:true) here
+
+**Tasks:**
+- [ ] Question text rendered via MarkdownBlock
+- [ ] Options as choice cards; single-select default; `multiSelect:true` flips to checkboxes
+- [ ] "Other" free-text input
+- [ ] Submit button sends `question_answer { request_id, answers }`
+- [ ] After response: collapse to one-line summary
+
+**Tests:**
+- [ ] Synthetic AskUserQuestion fixture → QuestionDialog with options
+- [ ] Submitting selection produces correct `question_answer` payload
+- [ ] Multi-select mode toggles checkboxes
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+
+---
+
+#### Step 20: CostChrome — per-turn footer + expanded breakdown + cumulative {#step-20}
+
+**Depends on:** #step-1
+
+**Commit:** `feat(tide-rendering): CostChrome — per-turn cost badge, expanded modelUsage breakdown, card-level cumulative`
+
+**References:** [D03], (#chrome), (#t03-chrome)
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/chrome/tide-cost-chrome.tsx` + `.css`
+- Token slot `--tugx-cost-*`
+- Replace placeholder `"Project path /gallery/demo"` in `tide-card.tsx` status row
+
+**Tasks:**
+- [ ] CostBadge sub-component: `$0.04 · 1.2k tok · 3.4s` per `code` row footer
+- [ ] Click expands to per-model breakdown (input/output/cache tokens stacked bar; cost contribution per model)
+- [ ] CostChrome cumulative: card-level status row showing session total (turn count + tokens + USD)
+- [ ] Hook: card binding's `projectDir` (or shortened form) replaces gallery placeholder
+
+**Tests:**
+- [ ] Replay any fixture → CostBadge shows correct values
+- [ ] Multi-turn fixture → cumulative chrome aggregates correctly
+- [ ] Both themes verify
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+
+---
+
+#### Step 21: Drift detection + caution badge surfacing {#step-21}
+
+**Depends on:** #step-13, #step-20
+
+**Commit:** `feat(tide-rendering): drift detection — caution badge in card chrome and inline at offending events`
+
+**References:** [D04], [Q03], `tide.md#p15-stream-json-version-gate`, (#chrome)
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.ts` (drift detector logic)
+- Extension to `tide-cost-chrome.tsx` for aggregate caution chip in card chrome
+- Inline caution at the offending event already lands via the [#step-13](#step-13) DefaultToolWrapper integration
+- Pinned-catalog version constant alongside the dispatch (read from a build-time constant)
+
+**Tasks:**
+- [ ] Detect three drift signals: (1) unknown tool name (already wired in step 1), (2) unknown structured_result shape (shallow schema check), (3) `system_metadata.version` ≠ pinned catalog
+- [ ] Aggregate caution counter on card chrome: "drift detected: 3 events" with click-expand listing the offending events
+- [ ] Inline caution chip on each offending event (DefaultToolWrapper already; extend to bespoke wrappers when their structured_result fails the schema check)
+- [ ] Console-log every drift event for triage; include event type, tool_name, version, summary
+
+**Tests:**
+- [ ] Synthetic version-mismatch fixture → both card-chrome chip and inline-event marker
+- [ ] Synthetic unknown-tool fixture → caution chip present
+- [ ] Synthetic shape-mismatch fixture (e.g., `tool_use_structured.file` missing `content`) → caution + JsonTree fallback
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+
+---
+
+#### Step 22: KaTeXBlock (lazy-loaded) {#step-22}
+
+**Depends on:** #step-3
+
+**Commit:** `feat(tide-rendering): KaTeXBlock — lazy-loaded math typesetting for inline and display modes`
+
+**References:** [D08], [D10], List L02, (#block-transformer-pass)
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/body-kinds/katex-block.tsx` + `.css`
+- `tugdeck/src/lib/lazy/load-katex.ts`
+- `tugdeck/src/lib/markdown/block-transformers/math-transformer.ts` (populated)
+- `tugdeck/src/lib/markdown/block-transformers/inline-math-walker.ts` (populated)
+- Token slot `--tugx-katex-*`
+- KaTeX font WOFF2 bundled locally
+
+**Tasks:**
+- [ ] Lazy-load KaTeX on first encounter
+- [ ] Display mode: replace fenced ` ```math ` / ` ```latex ` blocks via mathTransformer
+- [ ] Inline mode: text-node walk inside MarkdownBlock for `$...$` and `$$...$$` (post-DOMPurify, pre-render)
+- [ ] Error boundary per instance (R04); fallback to `CodeBlock` with toast
+- [ ] Bundle KaTeX fonts locally; no CDN
+
+**Tests:**
+- [ ] Inline `$E=mc^2$` typesets
+- [ ] Display `$$\\int_0^1 x^2\\,dx$$` typesets
+- [ ] Malformed math falls back without crashing parent
+- [ ] Boot bundle excludes KaTeX (verify via build artifact inspection)
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [ ] Manual: prompt `> render the quadratic formula` → expect typeset output
+
+---
+
+#### Step 23: MermaidBlock (lazy-loaded) {#step-23}
+
+**Depends on:** #step-3
+
+**Commit:** `feat(tide-rendering): MermaidBlock — lazy-loaded diagram rendering with theme-aware config`
+
+**References:** [D10], List L02, (#block-transformer-pass), R04
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/body-kinds/mermaid-block.tsx` + `.css`
+- `tugdeck/src/lib/lazy/load-mermaid.ts`
+- `tugdeck/src/lib/markdown/block-transformers/mermaid-transformer.ts` (populated)
+- Token slot `--tugx-mermaid-*`
+
+**Tasks:**
+- [ ] Lazy-load mermaid on first encounter
+- [ ] Streaming-safe: stay as plain `CodeBlock` until parent block reaches `complete`; promote then
+- [ ] Theme-aware config: pass current theme tokens into mermaid's config object
+- [ ] Pan/zoom on click for large diagrams
+- [ ] Error boundary; fallback to plain code with toast on parse error
+
+**Tests:**
+- [ ] ` ```mermaid\\nflowchart LR\\n  a-->b\\n``` ` renders as diagram on `complete`
+- [ ] During streaming (parent block partial), shows raw code
+- [ ] Malformed diagram falls back without crashing parent
+- [ ] Boot bundle excludes Mermaid (verify via build artifact inspection)
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+
+---
+
+#### Step 24: TodoListBlock + TodoWriteToolBlock {#step-24}
+
+**Depends on:** #step-1
+
+**Commit:** `feat(tide-rendering): TodoListBlock + TodoWriteToolBlock — task checklist with status indicators`
+
+**References:** [D05], Spec S02, Spec S03
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/body-kinds/todo-list-block.tsx` + `.css`
+- `tugdeck/src/components/tugways/cards/tool-wrappers/todo-write-tool-block.tsx` + `.css`
+- Token slot `--tugx-todo-*`
+- Registry entry
+
+**Tasks:**
+- [ ] TodoListBlock: checklist with status indicators (pending/in_progress/completed); in_progress highlighted
+- [ ] TodoWriteToolBlock: header with counts + progress bar; body TodoListBlock
+
+**Tests:**
+- [ ] Synthetic TodoWrite fixture → renders checklist correctly
+- [ ] In-progress item visually distinct
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+
+---
+
+#### Step 25: WebFetchToolBlock + WebSearchToolBlock {#step-25}
+
+**Depends on:** #step-1, #step-7, #step-16
+
+**Commit:** `feat(tide-rendering): WebFetchToolBlock + WebSearchToolBlock`
+
+**References:** [D05], Spec S03
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/cards/tool-wrappers/web-fetch-tool-block.tsx` + `.css`
+- `tugdeck/src/components/tugways/cards/tool-wrappers/web-search-tool-block.tsx` + `.css`
+- Registry entries
+
+**Tasks:**
+- [ ] WebFetchToolBlock: header `WebFetch · {url}` + favicon + cache-hit indicator; body MarkdownBlock (default) or FileBlock (raw text)
+- [ ] WebSearchToolBlock: header `WebSearch · {query}` + result count; body SearchResultBlock adapted for web results (title + URL + snippet)
+
+**Tests:**
+- [ ] Synthetic WebFetch/WebSearch fixtures render correctly
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+
+---
+
+#### Step 26: WriteToolBlock + NotebookEditToolBlock {#step-26}
+
+**Depends on:** #step-1, #step-7, #step-10
+
+**Commit:** `feat(tide-rendering): WriteToolBlock + NotebookEditToolBlock (notebook uses generic DiffBlock for v1)`
+
+**References:** [D05], [Q01], Spec S03
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/cards/tool-wrappers/write-tool-block.tsx` + `.css`
+- `tugdeck/src/components/tugways/cards/tool-wrappers/notebook-edit-tool-block.tsx` + `.css`
+- Registry entries
+
+**Tasks:**
+- [ ] WriteToolBlock: header `Write · {filePath}` + size; body FileBlock; new-vs-overwrite indicator
+- [ ] NotebookEditToolBlock: header `NotebookEdit · {notebookPath} · cell {cellId}` + edit-mode badge; body DiffBlock (generic v1 per [Q01])
+
+**Tests:**
+- [ ] Synthetic Write fixture renders FileBlock
+- [ ] Synthetic NotebookEdit replace renders DiffBlock
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+
+---
+
+#### Step 27: ImageBlock {#step-27}
+
+**Depends on:** #step-1
+
+**Commit:** `feat(tide-rendering): ImageBlock — inline image with lazy load and click-to-zoom`
+
+**References:** [D05], Spec S02, [atoms-attachments.md](./atoms-attachments.md)
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/body-kinds/image-block.tsx` + `.css`
+- Token slot `--tugx-image-*`
+- Markdown-block delegation: when `MarkdownBlock` encounters an `<img>` element after parse, it can render through ImageBlock
+
+**Tasks:**
+- [ ] Lazy-load with low-res placeholder
+- [ ] EXIF orientation honored
+- [ ] Click-to-fullscreen modal
+- [ ] Cooperate with atoms-attachments user-side rendering
+
+**Tests:**
+- [ ] Renders an image URL with placeholder until load
+- [ ] Click → fullscreen modal
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+
+---
+
+#### Step 28: TableBlock (rich) {#step-28}
+
+**Depends on:** #step-3
+
+**Commit:** `feat(tide-rendering): TableBlock — rich table with sorting and sticky header for large tables`
+
+**References:** [D05], [D07], Spec S02
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/body-kinds/table-block.tsx` + `.css`
+- Token slot `--tugx-tabrich-*`
+- A new transformer `largeTableTransformer` in block-transformers (promotes to TableBlock when rows > 10 or columns > 5)
+
+**Tasks:**
+- [ ] Sortable columns
+- [ ] Sticky header on scroll
+- [ ] Cell overflow handling (truncate + tooltip)
+- [ ] Optional row striping
+- [ ] Block transformer promotes large GFM tables
+
+**Tests:**
+- [ ] Small table stays as plain GFM table
+- [ ] Table with > 10 rows promotes to TableBlock; sort/sticky-header work
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+
+---
+
+#### Step 29: SessionInitBanner + ErrorBlock {#step-29}
+
+**Depends on:** #step-1, #step-21
+
+**Commit:** `feat(tide-rendering): SessionInitBanner (on system_metadata change) + ErrorBlock`
+
+**References:** [D03], (#chrome), (#t03-chrome)
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/chrome/tide-session-init-banner.tsx` + `.css`
+- `tugdeck/src/components/tugways/chrome/tide-error-block.tsx` + `.css`
+- Token slots `--tugx-banner-*` and `--tugx-err-*`
+- Wire dispatch to compare `system_metadata` against previous and emit banner only on change
+
+**Tasks:**
+- [ ] SessionInitBanner: project path, model, permissionMode; integrates with drift caution chip from [#step-21](#step-21) when version mismatches
+- [ ] Diff logic per [D03]: shallow on (model, permissionMode, version) + deep on tools/skills/agents
+- [ ] ErrorBlock: amber for `recoverable: true` (with retry); red for `recoverable: false` (with copy-error button)
+
+**Tests:**
+- [ ] First system_metadata renders banner
+- [ ] Identical-shape system_metadata does NOT re-render
+- [ ] Changed model produces banner re-render
+- [ ] Recoverable error shows retry; non-recoverable shows copy
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+
+---
+
+#### Step 30: Phase exit integration checkpoint {#step-30}
+
+**Depends on:** #step-2, #step-3, #step-4, #step-14, #step-15, #step-16, #step-17, #step-18, #step-19, #step-20, #step-21, #step-22, #step-23, #step-24, #step-25, #step-26, #step-27, #step-28, #step-29
+
+**Commit:** `N/A (verification only)`
+
+**References:** All decisions, Spec S06, (#success-criteria), (#exit-criteria)
+
+**Tasks:**
+- [ ] Run the full assistant-rendering-fixture-replay test against both `v2.1.105/` and `v2.1.112/` catalogs
+- [ ] Verify dispatch.registeredTools() enumerates exactly the wrappers from [Table T02](#t02-tool-wrappers) (minus DefaultToolWrapper)
+- [ ] Verify caution-badge appears on synthetic-drift fixtures
+- [ ] Visual snapshot pass: every component in both `brio` and `harmony`
+- [ ] Bundle audit: confirm KaTeX, Mermaid, tugdiff-wasm absent from boot bundle (verify via build-artifact inspection)
+- [ ] Shiki paste-load benchmark: 10k lines highlight latency on reference machine; record for [Q02]
+- [ ] `bun run audit:tokens lint` exits 0
+- [ ] `bun x tsc --noEmit` exits 0
+- [ ] `bun test` all green
+- [ ] `cd tugrust && cargo nextest run` all green
+- [ ] Manual smoke: replay multi-turn live session, verify thinking + tool wrappers + cost chrome + permission dialog round-trip
+
+**Tests:**
+- [ ] Full fixture-replay test exits 0
+- [ ] Bundle-audit script reports excluded modules
+- [ ] Theme-snapshot test exits 0
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test && bun run audit:tokens lint`
+- [ ] `cd tugrust && cargo nextest run`
+- [ ] Manual smoke against live tugcode covers: streaming response, tool use (Read/Bash/Edit at minimum), thinking, permission flow, cost chrome, drift caution (synthetic), both themes
+
+---
+
+### Deliverables and Checkpoints {#deliverables}
+
+**Deliverable:** A complete content-and-data-type rendering layer for Tide's assistant surface — body kinds + tool wrappers + dispatch + chrome — that ships every renderer enumerated in [Tables T01-T03](#t01-body-kinds), passes the full fixture-replay test against both `v2.1.105/` and `v2.1.112/` catalogs, and visually verifies on both `brio` and `harmony` themes.
+
+#### Phase Exit Criteria ("Done means…") {#exit-criteria}
+
+- [ ] All 30 execution steps committed with green checkpoints.
+- [ ] `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cd tugrust && cargo nextest run` all green.
+- [ ] Replaying the full v2.1.105 + v2.1.112 fixture catalogs produces no render errors, no `[object Object]` text, no raw JSON bleed, and every fixture's `tool_use` events route to the bespoke wrapper enumerated in [Table T02](#t02-tool-wrappers).
+- [ ] Synthetic-drift fixtures produce caution badges in both card chrome and inline at the offending event.
+- [ ] Bundle audit confirms KaTeX, Mermaid, and tugdiff-wasm are excluded from the boot bundle.
+- [ ] Both `brio` and `harmony` themes verified for every component.
+- [ ] `tide.md` §Phase T1 updated with a back-link to this plan.
+- [ ] `tugplan-tide-card-polish.md` §Step 12 and §Step 13 marked as absorbed.
+
+**Acceptance tests:**
+- [ ] `tugdeck/src/__tests__/assistant-rendering-fixture-replay.test.tsx` — full catalog replay.
+- [ ] `tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.test.ts` — registry coverage.
+- [ ] Theme-snapshot test across all body kinds, wrappers, and chrome.
+- [ ] Drift-caution synthetic-fixture test.
+- [ ] Bundle-audit script run.
+
+#### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
+
+- [ ] Re-run buttons on `BashToolBlock` (and shell-adapter wrappers when Phase T2 lands). Pending permission-mode story for re-run.
+- [ ] "Allow with edits" structured editor on `PermissionDialog` (command-line editor for Bash, editable diff for Edit).
+- [ ] `AgentTranscriptBlock` as a Slack-like participant variant (A/B against the inline form).
+- [ ] `NotebookCellBlock` cell-aware specialization, gated on observed NotebookEdit traffic per [Q01].
+- [ ] Tree-sitter migration evaluation per [Q02], gated on Shiki bottleneck observation.
+- [ ] Caution-badge surface refinement per [Q03] feedback.
+- [ ] Configurable retained-line cap on `TerminalBlock` via tugbank, if [Q04] surfaces a need.
+- [ ] MCP-server-aware wrappers (Gmail, Calendar, Drive) — currently a non-goal; revisit if MCP becomes load-bearing.
+- [ ] Persisting per-block expand/collapse state across reload via tugbank.
+- [ ] Side-by-side diff view toggle on `DiffBlock` (inline only in v1).
+- [ ] In-file search (Cmd+F) inside expanded `FileBlock`.
+- [ ] Adaptive coalescing window for streaming under > 50 deltas/sec, if [R06] residual surfaces.
+
+| Checkpoint | Verification |
+|------------|--------------|
+| Dispatch infrastructure | `bun test src/components/tugways/cards/tide-assistant-renderer-dispatch.test.ts` |
+| Markdown typography | Visual snapshot, both themes; `bun run audit:tokens lint` |
+| ThinkingBlock | Replay `test-22-subagent-spawn.jsonl`; verify thinking renders + collapses on complete |
+| TerminalBlock + BashToolBlock | Replay `test-09-bash-auto-approved.jsonl`; verify command, stdout, exit |
+| FileBlock + ReadToolBlock | Replay `test-05-tool-use-read.jsonl`; verify file viewer with line numbers |
+| DiffBlock + EditToolBlock | Synthetic Edit fixture; verify hunks; word-level highlight |
+| JsonTreeBlock + DefaultToolWrapper | Synthetic unknown-tool fixture; verify caution badge |
+| Day-1 coverage integration | Step 14 fixture-replay run |
+| PathListBlock + GlobToolBlock | Replay `test-21-glob-tool.jsonl` |
+| SearchResultBlock + GrepToolBlock | Synthetic Grep fixture |
+| AgentTranscriptBlock + TaskToolBlock | Replay `test-22-subagent-spawn.jsonl`; nested call renders correctly |
+| PermissionDialog | Replay `test-11-permission-deny-roundtrip.jsonl` |
+| QuestionDialog | Synthetic AskUserQuestion fixture |
+| CostChrome | Replay any fixture; verify badge + breakdown + cumulative |
+| Drift detection | Synthetic version-mismatch + unknown-shape fixtures |
+| KaTeXBlock | Inline + display math fixtures; lazy-load verified |
+| MermaidBlock | Diagram fixture; lazy-load verified |
+| TodoListBlock + TodoWriteToolBlock | Synthetic TodoWrite fixture |
+| WebFetch + WebSearch | Synthetic web fixtures |
+| WriteToolBlock + NotebookEditToolBlock | Synthetic Write + NotebookEdit fixtures |
+| ImageBlock | Markdown image reference fixture |
+| TableBlock (rich) | Large-table fixture |
+| SessionInitBanner + ErrorBlock | system_metadata change fixture; error fixture |
+| Phase exit | Step 30 full integration |
+
+---
+
+### Library citations {#library-citations}
+
+Web research for this phase, May 2026:
+
+- [imara-diff (GitHub)](https://github.com/pascalkuthe/imara-diff) — performance-stable Rust diff library; histogram + Myers; 10×–30× faster than `similar` on large inputs. Justifies [D09].
+- [imara-diff announcement](https://users.rust-lang.org/t/announcing-imara-diff-a-reliably-performant-diffing-library-for-rust/83276)
+- [similar (Rust)](https://docs.rs/similar) — comparison baseline.
+- [Shiki](https://shiki.style/guide/) — current syntax highlighter; modern versions run in browser.
+- [Tree-sitter syntax highlighting](https://tree-sitter.github.io/tree-sitter/3-syntax-highlighting.html) — alternative; deferred per [Q02].
+- [Mermaid lazy loading (Rick Strahl, 2025)](https://weblog.west-wind.com/posts/2025/May/10/Lazy-Loading-the-Mermaid-Diagram-Library) — late-binding pattern referenced by [D10].
+- [Mermaid bundle size (Sidharth Vinod)](https://www.sidharth.dev/posts/shrinking-mermaid/) — "Tiny" variant trade-offs.
+- [ansi_up (GitHub)](https://github.com/drudru/ansi_up) — zero-dep JS ANSI → HTML.
+- [vtparse (Rust)](https://docs.rs/vtparse/) — heavier full VT escape parser; reserved for pathological inputs.
+- [KaTeX](https://katex.org/) — fast synchronous math typesetting; ~350 KB total. Justifies [D08].
+- [KaTeX vs MathJax (BigGo, Nov 2025)](https://biggo.com/news/202511040733_KaTeX_MathJax_Web_Rendering_Comparison) — bundle and speed analysis.
