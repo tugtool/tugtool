@@ -934,7 +934,9 @@ The component renders a `data-participant` attribute on its root for theme overr
 
 #### Step 12 — Markdown styling pass for assistant output {#step-12}
 
-**Status: Pending — refresh required.** Authored 2026-04-19. Confirm the current `--tugx-md-*` token surface and any `harmony.css` / `brio.css` adjustments that landed after the editor-settings sheet shipped haven't already absorbed pieces of this step.
+**Status: Absorbed by [tugplan-tide-assistant-rendering.md §Step 2](./tide-assistant-rendering.md#step-2).** The typography pass — full `--tugx-md-*` token vocabulary in both `brio.css` and `harmony.css`, theme-as-sole-source rule (no fallback literals), comprehensive coverage of headings, lists, blockquotes, inline code, fenced code, tables, links, strong/em/strikethrough, footnotes, images, task-list checkboxes — landed via that plan's Step 2. See the plan file for design rationale, token surface, and the test suite (`tug-markdown-typography.test.ts` + `tide-md-token-coverage.test.ts`) that guards against future drift.
+
+*Original (now-superseded) authoring notes follow for archival purposes:*
 
 **Files:**
 - `tugdeck/styles/themes/brio.css` and `tugdeck/styles/themes/harmony.css` (`--tugx-md-*` token tuning).

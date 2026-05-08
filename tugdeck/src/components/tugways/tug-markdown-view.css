@@ -74,7 +74,7 @@
  * Height is configurable via --tugx-md-bottom-buffer.
  */
 .tugx-md-bottom-buffer {
-  height: var(--tugx-md-bottom-buffer, 2rem);
+  height: var(--tugx-md-bottom-buffer);
   width: 100%;
   flex-shrink: 0;
 }
@@ -130,87 +130,217 @@
  * to a visible color for debugging.
  */
 .tugx-md-placeholder {
-  background: var(--tugx-md-placeholder-bg, transparent);
+  background: var(--tugx-md-placeholder-bg);
 }
 
-/* ---- Typography defaults ---- */
+/* ---- Typography ---- */
 /*
- * Prose styles scoped to the markdown block container.
- * These mirror conversation-prose defaults from the legacy markdown.ts path.
- * Phase 3B will replace with proper theme tokens.
+ * Prose styles scoped to the markdown block container. Every visual
+ * axis is driven by a `--tugx-md-*` token declared per-theme in
+ * `styles/themes/{brio,harmony}.css`; this stylesheet declares no
+ * theme-specific literals.
+ *
+ * Tokens cover: body color and rhythm; heading scale (h1-h6, with
+ * descending weight + a muted h6); inline emphasis (strong, em, del);
+ * links; inline and fenced code; blockquote; hr; lists (incl. task
+ * lists); tables; images; footnotes.
+ *
+ * The whole vocabulary is documented in the parent theme files; the
+ * test at `tug-markdown-typography.test.ts` enforces that brio.css
+ * and harmony.css declare the same set of `--tugx-md-*` tokens, so a
+ * new token added here without theme-side declarations fails CI.
  */
 
+/* Body — every block inherits these unless overridden by an
+   element-specific rule below. */
+.tugx-md-block {
+  color: var(--tugx-md-body-color);
+  line-height: var(--tugx-md-body-line-height);
+}
+
+/* Headings — shared rhythm + per-level size and weight. The
+   first-child reset zeros the heading's top margin so a markdown
+   document that begins with a heading does not push extra space at
+   the top of the block container. */
 .tugx-md-block h1,
 .tugx-md-block h2,
 .tugx-md-block h3,
 .tugx-md-block h4,
 .tugx-md-block h5,
 .tugx-md-block h6 {
-  margin: 0.5em 0 0.25em;
-  line-height: 1.3;
+  color: var(--tugx-md-heading-color);
+  line-height: var(--tugx-md-heading-line-height);
+  margin: var(--tugx-md-heading-margin-top) 0 var(--tugx-md-heading-margin-bottom);
 }
 
+.tugx-md-block > h1:first-child,
+.tugx-md-block > h2:first-child,
+.tugx-md-block > h3:first-child,
+.tugx-md-block > h4:first-child,
+.tugx-md-block > h5:first-child,
+.tugx-md-block > h6:first-child {
+  margin-top: 0;
+}
+
+.tugx-md-block h1 { font-size: var(--tugx-md-h1-size); font-weight: var(--tugx-md-h1-weight); }
+.tugx-md-block h2 { font-size: var(--tugx-md-h2-size); font-weight: var(--tugx-md-h2-weight); }
+.tugx-md-block h3 { font-size: var(--tugx-md-h3-size); font-weight: var(--tugx-md-h3-weight); }
+.tugx-md-block h4 { font-size: var(--tugx-md-h4-size); font-weight: var(--tugx-md-h4-weight); }
+.tugx-md-block h5 { font-size: var(--tugx-md-h5-size); font-weight: var(--tugx-md-h5-weight); }
+.tugx-md-block h6 {
+  font-size: var(--tugx-md-h6-size);
+  font-weight: var(--tugx-md-h6-weight);
+  color: var(--tugx-md-h6-color);
+}
+
+/* Paragraph */
 .tugx-md-block p {
-  margin: 0.4em 0;
-  line-height: 1.5;
+  margin: var(--tugx-md-paragraph-margin) 0;
 }
 
-.tugx-md-block pre {
-  background: var(--tugx-md-code-bg, rgba(0, 0, 0, 0.06));
-  border-radius: 4px;
-  padding: 0.75rem 1rem;
-  overflow-x: auto;
-  font-size: 0.875em;
-  line-height: 1.4;
-  margin: 0.5em 0;
-}
+.tugx-md-block > p:first-child { margin-top: 0; }
+.tugx-md-block > p:last-child { margin-bottom: 0; }
 
-.tugx-md-block code {
-  font-family: var(--tugx-md-mono-font, ui-monospace, "SFMono-Regular", Consolas, monospace);
-  font-size: 0.875em;
+/* Inline emphasis */
+.tugx-md-block strong { font-weight: var(--tugx-md-strong-weight); }
+.tugx-md-block em { font-style: var(--tugx-md-em-style); }
+.tugx-md-block del,
+.tugx-md-block s {
+  text-decoration: var(--tugx-md-strikethrough-decoration);
+  color: var(--tugx-md-strikethrough-color);
 }
 
 /* @tug-renders-on: --tugx-md-surface */
-.tugx-md-block blockquote {
-  border-left: 3px solid var(--tugx-md-blockquote-border, currentColor);
-  margin: 0.5em 0;
-  padding-left: 1em;
-  opacity: 0.75;
+.tugx-md-block a {
+  color: var(--tugx-md-link-color);
+  text-decoration: var(--tugx-md-link-decoration);
 }
 
+.tugx-md-block a:hover {
+  color: var(--tugx-md-link-color-hover);
+}
+
+/* Inline code — `<code>` outside of `<pre>`. The descendant rule
+   `.tugx-md-block pre code` below resets the inline chrome so that
+   fenced blocks aren't double-styled. */
+/* @tug-renders-on: --tugx-md-inline-code-bg */
+.tugx-md-block code {
+  font-family: var(--tugx-md-mono-font);
+  font-size: var(--tugx-md-inline-code-size);
+  color: var(--tugx-md-inline-code-color);
+  background: var(--tugx-md-inline-code-bg);
+  padding: var(--tugx-md-inline-code-padding);
+  border-radius: var(--tugx-md-inline-code-radius);
+}
+
+/* Fenced code */
+/* @tug-renders-on: --tugx-md-fenced-code-bg */
+.tugx-md-block pre {
+  background: var(--tugx-md-fenced-code-bg);
+  color: var(--tugx-md-fenced-code-color);
+  border-radius: var(--tugx-md-fenced-code-radius);
+  padding: var(--tugx-md-fenced-code-padding);
+  font-size: var(--tugx-md-fenced-code-size);
+  line-height: var(--tugx-md-fenced-code-line-height);
+  margin: var(--tugx-md-fenced-code-margin) 0;
+  overflow-x: auto;
+}
+
+/* The inline-code chrome (background, padding, radius) is for inline
+   `<code>` only; reset it inside `<pre>` so fenced blocks aren't
+   double-styled. */
+.tugx-md-block pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+  color: inherit;
+}
+
+/* Blockquote */
+/* @tug-renders-on: --tugx-md-surface */
+.tugx-md-block blockquote {
+  border-left: var(--tugx-md-blockquote-border-width) solid var(--tugx-md-blockquote-border);
+  color: var(--tugx-md-blockquote-color);
+  margin: var(--tugx-md-blockquote-margin) 0;
+  padding-left: var(--tugx-md-blockquote-padding);
+}
+
+/* Lists */
 .tugx-md-block ul,
 .tugx-md-block ol {
-  margin: 0.4em 0;
-  padding-left: 1.5em;
+  margin: var(--tugx-md-list-margin) 0;
+  padding-left: var(--tugx-md-list-indent);
 }
 
 .tugx-md-block li {
-  margin: 0.2em 0;
-  line-height: 1.5;
+  margin: var(--tugx-md-list-item-margin) 0;
 }
 
+/* Task-list checkboxes (GFM) — disabled but visible. */
+.tugx-md-block li input[type="checkbox"] {
+  margin-right: 0.5em;
+  vertical-align: middle;
+  cursor: default;
+}
+
+/* Horizontal rule */
 /* @tug-renders-on: --tugx-md-surface */
 .tugx-md-block hr {
   border: none;
-  border-top: 1px solid var(--tugx-md-hr-color, currentColor);
-  opacity: 0.2;
-  margin: 0.75em 0;
+  border-top: 1px solid var(--tugx-md-hr-color);
+  margin: var(--tugx-md-hr-margin) 0;
 }
 
+/* Tables */
 .tugx-md-block table {
   border-collapse: collapse;
   width: 100%;
-  margin: 0.5em 0;
+  margin: var(--tugx-md-table-margin) 0;
 }
 
 /* @tug-renders-on: --tugx-md-surface */
 .tugx-md-block th,
 .tugx-md-block td {
-  border: 1px solid var(--tugx-md-table-border, rgba(0, 0, 0, 0.15));
-  padding: 0.35em 0.6em;
+  border: 1px solid var(--tugx-md-table-border);
+  padding: var(--tugx-md-table-cell-padding);
   text-align: left;
 }
 
+/* @tug-renders-on: --tugx-md-table-header-bg */
 .tugx-md-block th {
-  font-weight: 600;
+  font-weight: var(--tugx-md-table-header-weight);
+  background: var(--tugx-md-table-header-bg);
+}
+
+/* @tug-renders-on: --tugx-md-table-row-bg-alt */
+.tugx-md-block tbody tr:nth-child(even) {
+  background: var(--tugx-md-table-row-bg-alt);
+}
+
+/* Images */
+.tugx-md-block img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--tugx-md-image-radius);
+  margin: var(--tugx-md-image-margin) 0;
+}
+
+/* Footnotes — pulldown-cmark renders a definition section as
+   `<section class="footnotes">` containing an `<ol>` of
+   `<li id="fn-N">`. */
+/* @tug-renders-on: --tugx-md-surface */
+.tugx-md-block .footnotes,
+.tugx-md-block section[class*="footnote"] {
+  margin-top: var(--tugx-md-paragraph-margin);
+  padding-top: var(--tugx-md-paragraph-margin);
+  border-top: 1px solid var(--tugx-md-footnote-border);
+  font-size: var(--tugx-md-footnote-size);
+  color: var(--tugx-md-footnote-color);
+}
+
+.tugx-md-block sup,
+.tugx-md-block sub {
+  font-size: var(--tugx-md-footnote-size);
+  line-height: 0;
 }

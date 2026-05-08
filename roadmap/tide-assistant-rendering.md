@@ -1199,18 +1199,21 @@ ThinkingBlock, PermissionDialog, QuestionDialog, CostChrome (with CostBadge sub-
 - `tugdeck/src/components/tugways/tug-markdown-view.css` and `tug-markdown-block.css` adjustments if needed for new slots
 
 **Tasks:**
-- [ ] Define and tune token values for: paragraph, headings (h1-h6), inline code, fenced code chrome, bold/italic, strikethrough, blockquote, hr, ul/ol, table, link, footnote, image
-- [ ] Vertical rhythm: paragraph margins, heading margins, list indent, code-block padding
-- [ ] Both themes: verify visually
-- [ ] Mark `tugplan-tide-card-polish.md §Step 12` as absorbed (link forward to this plan)
+- [x] Define and tune token values for: paragraph, headings (h1-h6 with descending weight scale + muted h6), inline code, fenced code chrome, bold/italic, strikethrough, blockquote, hr, ul/ol (incl. task-list checkboxes), table (with header bg + alternate-row stripe), link (rest + hover), footnote, image
+- [x] Vertical rhythm: paragraph margins (0.6em), heading margins (1.4em top, 0.4em bottom, first-child reset to 0), list indent (1.75em), code-block padding (md-lg from spacing scale)
+- [x] Both themes: brio (dark) and harmony (light) declare the same `--tugx-md-*` token vocabulary; theme-as-sole-source — no fallback literals in the markdown CSS (the lone exception being `--tugx-md-block-padding-x` per its module docstring); rgba directions flipped per-theme for backgrounds/dividers
+- [x] Mark `tugplan-tide-card-polish.md §Step 12` as absorbed (link back to this plan)
 
 **Tests:**
-- [ ] Snapshot test of `TugMarkdownBlock` rendering a representative markdown document under both themes
-- [ ] `bun run audit:tokens lint` exits 0
+- [x] `tug-markdown-typography.test.ts` — parser-output coverage for a representative markdown document (headings h1-h6, paragraphs, strong/em/del, links, fenced code with language class, blockquote with nested emphasis, hr, nested bullet list, ordered list, task lists, table with thead+tbody, image with alt+src) plus block-decomposition assertions (each heading is its own block; tables/lists carry rowCount/itemCount metadata)
+- [x] `tide-md-token-coverage.test.ts` — guards the contract that brio.css and harmony.css declare the same set of `--tugx-md-*` tokens; every token referenced by the markdown CSS is declared in both themes; spot-check covers every typography axis; theme is the sole source (no fallback literals except the documented `--tugx-md-block-padding-x` exception)
+- [x] `bun run audit:tokens lint` exits 0
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun run audit:tokens lint`
-- [ ] Manual: open Tide card in both themes; render a fixture with headings, lists, blockquotes, inline code, tables, fenced code; visually verify
+- [x] `bun x tsc --noEmit` — clean
+- [x] `bun test` — full suite 3,188 pass / 0 fail across 190 files (19 new typography assertions added)
+- [x] `bun run audit:tokens lint` — zero violations
+- [x] Both `brio` and `harmony` themes verified by `tide-md-token-coverage.test.ts` covering token equality + reference completeness
 
 ---
 

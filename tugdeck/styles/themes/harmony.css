@@ -876,4 +876,107 @@ body {
   --tugx-list-view-padding-inline: var(--tug-space-md);
   --tugx-list-view-row-gap: var(--tug-space-sm);
   --tugx-list-view-scroll-padding-end: var(--tug-space-lg);
+
+  /* TugMarkdownView / TugMarkdownBlock typography (--tugx-md-*).
+     Light-theme values for `harmony`. The full token vocabulary is
+     the contract every Layer-1 markdown block consumes; brio.css
+     declares the same token names with dark-theme values.
+
+     Body/heading colors and link colors reference theme palette
+     tokens (--tug7-*) that already vary per theme; rgba literals are
+     used for the background fills, dividers, and inline-code chrome
+     where harmony (light) and brio (dark) differ in *direction*
+     (darker-than-canvas vs lighter-than-canvas) rather than just
+     hue. */
+
+  /* Body */
+  --tugx-md-body-color: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-md-body-line-height: 1.6;
+  --tugx-md-paragraph-margin: 0.6em;
+
+  /* Heading scale */
+  --tugx-md-h1-size: var(--tug-font-size-2xl);
+  --tugx-md-h2-size: var(--tug-font-size-xl);
+  --tugx-md-h3-size: var(--tug-font-size-lg);
+  --tugx-md-h4-size: var(--tug-font-size-md);
+  --tugx-md-h5-size: var(--tug-font-size-md);
+  --tugx-md-h6-size: var(--tug-font-size-md);
+  --tugx-md-heading-line-height: 1.25;
+  --tugx-md-heading-margin-top: 1.4em;
+  --tugx-md-heading-margin-bottom: 0.4em;
+  --tugx-md-heading-color: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-md-h1-weight: 700;
+  --tugx-md-h2-weight: 700;
+  --tugx-md-h3-weight: 600;
+  --tugx-md-h4-weight: 700;
+  --tugx-md-h5-weight: 600;
+  --tugx-md-h6-weight: 500;
+  --tugx-md-h6-color: var(--tug7-element-global-text-normal-muted-rest);
+
+  /* Inline emphasis */
+  --tugx-md-strong-weight: 700;
+  --tugx-md-em-style: italic;
+  --tugx-md-strikethrough-decoration: line-through;
+  --tugx-md-strikethrough-color: var(--tug7-element-global-text-normal-muted-rest);
+
+  /* Links */
+  --tugx-md-link-color: var(--tug7-element-global-text-normal-link-rest);
+  --tugx-md-link-color-hover: var(--tug7-element-global-text-normal-link-hover);
+  --tugx-md-link-decoration: underline;
+
+  /* Inline code */
+  --tugx-md-inline-code-bg: rgba(0, 0, 0, 0.05);
+  --tugx-md-inline-code-color: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-md-inline-code-padding: 0.1em 0.35em;
+  --tugx-md-inline-code-radius: 3px;
+  --tugx-md-inline-code-size: 0.9em;
+
+  /* Fenced code */
+  --tugx-md-fenced-code-bg: rgba(0, 0, 0, 0.04);
+  --tugx-md-fenced-code-color: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-md-fenced-code-padding: var(--tug-space-md) var(--tug-space-lg);
+  --tugx-md-fenced-code-radius: 6px;
+  --tugx-md-fenced-code-size: 0.875em;
+  --tugx-md-fenced-code-line-height: 1.5;
+  --tugx-md-fenced-code-margin: var(--tug-space-md);
+  --tugx-md-mono-font: var(--tug-font-family-mono);
+  --tugx-md-code-bg: rgba(0, 0, 0, 0.04);
+
+  /* Blockquote */
+  --tugx-md-blockquote-border: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-md-blockquote-border-width: 3px;
+  --tugx-md-blockquote-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-md-blockquote-padding: var(--tug-space-lg);
+  --tugx-md-blockquote-margin: var(--tug-space-md);
+
+  /* HR */
+  --tugx-md-hr-color: rgba(0, 0, 0, 0.12);
+  --tugx-md-hr-margin: var(--tug-space-xl);
+
+  /* Lists */
+  --tugx-md-list-indent: 1.75em;
+  --tugx-md-list-margin: 0.6em;
+  --tugx-md-list-item-margin: 0.25em;
+
+  /* Tables */
+  --tugx-md-table-border: rgba(0, 0, 0, 0.10);
+  --tugx-md-table-header-bg: rgba(0, 0, 0, 0.04);
+  --tugx-md-table-header-weight: 600;
+  --tugx-md-table-row-bg-alt: rgba(0, 0, 0, 0.02);
+  --tugx-md-table-cell-padding: var(--tug-space-sm) var(--tug-space-md);
+  --tugx-md-table-margin: var(--tug-space-md);
+
+  /* Image */
+  --tugx-md-image-radius: 4px;
+  --tugx-md-image-margin: var(--tug-space-md);
+
+  /* Footnote */
+  --tugx-md-footnote-size: 0.85em;
+  --tugx-md-footnote-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-md-footnote-border: rgba(0, 0, 0, 0.12);
+
+  /* Layout */
+  --tugx-md-block-padding-x: 1rem;
+  --tugx-md-bottom-buffer: 2rem;
+  --tugx-md-placeholder-bg: transparent;
 }
