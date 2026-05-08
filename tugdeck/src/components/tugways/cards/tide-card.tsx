@@ -1653,36 +1653,55 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
     },
   });
 
-  // Sheet- and banner-lifecycle handlers: claim editor focus when a
-  // sheet or banner finishes hiding for *this* card AND this card is
-  // the focused card. The chain promotion + DOM focus run together
-  // through `entryDelegate.focus()` (post Plan A: routes through
-  // `manager.focusResponder(editorResponderId)` for atomic chain +
-  // DOM focus, with substrate-supplied focus callback).
+  // ── Editor focus contract — `inert` / `didHide` invariant ───────────────
   //
-  // Why both:
+  // **Contract** ([L24] structure-zone events drive structure-zone
+  // effects): every overlay that sets `inert` on this card's
+  // `.tug-pane-body` MUST emit a per-card `xxxDidHide` lifecycle event
+  // after `inert` is cleared, and `TideCardBody` MUST subscribe with
+  // an idempotent focus claim gated on this card being first
+  // responder. Adding a new overlay that violates the contract
+  // silently breaks the editor's caret on dismissal.
   //
-  //   - sheetDidHide covers the picker → "Open" → bind → editor
-  //     mount path. The picker's TugSheet emits sheetDidHide AFTER
-  //     its FocusScope has unmounted, its onUnmountAutoFocus has
-  //     run, and its inert (on `.tug-pane-body`) has been cleared
-  //     — i.e., body is genuinely interactive again.
+  // Why it matters: the browser strips focus from any element inside
+  // an `inert` subtree, and CodeMirror's caret layer paints only
+  // while `view.hasFocus`. Without a re-focus after `inert` clears,
+  // the editor is reachable but unfocused — the user clicks the
+  // pane, sees no caret, and types into a void. The
+  // `<overlay>DidHide` event fires from inside the same React commit
+  // that clears `inert` (see `tug-pane-banner.tsx` /
+  // `tug-sheet.tsx`), so claiming focus here lands DOM focus the
+  // moment the body becomes interactive again — no race window.
   //
-  //   - bannerDidHide covers the case where a status banner
-  //     (replay-loading, transport-restoring) mounted during
-  //     session-init, set inert on `.tug-pane-body`, blurred the
-  //     editor, and then unmounted when its triggering condition
-  //     resolved. bannerDidHide fires after the inert clears.
+  // **Today's overlays satisfying the contract:**
   //
-  // The handler is idempotent — calling
-  // `manager.focusResponder(editorId)` against an already-focused
-  // editor is a no-op for state and a no-op for DOM focus when
-  // contentDOM is already activeElement.
+  //   - `TugSheet` → `sheetDidHide`. Covers the picker → "Open" →
+  //     bind → editor-mount path; also covers the editor-settings
+  //     sheet's open/close cycle for an already-mounted body.
+  //   - `TugPaneBanner` → `bannerDidHide`. Covers status banners
+  //     (resume-loading, transport-restoring) that mount during
+  //     session-init, set inert, blur the editor, then unmount
+  //     when their triggering condition resolves.
   //
-  // Subscribed via `useSheetDelegate` / `useBannerDelegate` (see
-  // `lib/sheet-lifecycle.ts` and `lib/banner-lifecycle.ts`). The
-  // `cardId` argument scopes the subscription so we only react to
-  // this card's lifecycle traffic. [L11], [L23], [L24]
+  // The focus call is idempotent — `manager.focusResponder(editorId)`
+  // against an already-focused editor is a no-op for chain state
+  // AND for DOM focus when contentDOM is already `activeElement`.
+  // Composing two emitters (sheet + banner) costs one stale call
+  // per cycle; the cost is bounded and worth the simpler invariant.
+  //
+  // Pinned by `tests/app-test/at0051-tide-mount-focus.test.ts`. A
+  // future overlay that sets `inert` without emitting `didHide`
+  // breaks at0051; the test exists exactly so the contract isn't
+  // re-discovered the hard way. See
+  // `roadmap/tugplan-tide-session-init-orchestration.md` [V03] for
+  // the bug history.
+  //
+  // [L11] the banner / sheet are status surfaces that emit lifecycle
+  //       events; this card is the responder that re-claims focus.
+  // [L23] focus + caret are user-visible state — preserved across
+  //       every overlay show/hide cycle by this contract.
+  // [L24] structure-zone (`inert` clearing) drives structure-zone
+  //       (focus reclaim) via the per-overlay event pipe.
   useSheetDelegate(cardId, {
     sheetDidHide: () => {
       if (cardLifecycle?.getFirstResponderCardId() !== cardId) return;

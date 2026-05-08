@@ -485,6 +485,22 @@ export function TugSheetContent({
   // FocusScope unmount-autofocus has run. Body interactivity is
   // restored.
   //
+  // **`sheetDidHide` is load-bearing for editor focus restoration.**
+  // The sheet sets `inert` on `.tug-pane-body` while open, which
+  // strips DOM focus from anything inside (including CodeMirror's
+  // contentDOM). When the sheet exits, the editor is reachable again
+  // but unfocused — Radix's `onUnmountAutoFocus` returns focus to
+  // the trigger element, but Tide's editor is not the trigger here.
+  // `TideCardBody` subscribes to `sheetDidHide` and re-focuses the
+  // prompt-entry editor, gated on first-responder state. Per the
+  // contract documented in `tide-card.tsx` (the focus-claim handlers
+  // block) and pinned by
+  // `tests/app-test/at0051-tide-mount-focus.test.ts`: any modal-class
+  // surface that portals into the pane chrome and sets `inert` on
+  // the pane body MUST emit a per-card `didHide` lifecycle event
+  // after `inert` clears, mirroring this emission. Removing or
+  // gating this emission breaks at0051 — that's intentional.
+  //
   // `sheetDidHide` fires first (structural-only, all subscribers).
   // `sheetDidReturnResult` fires immediately after (carries the
   // close-result), only when `getResult` is provided by the consumer

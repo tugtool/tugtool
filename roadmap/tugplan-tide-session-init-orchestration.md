@@ -425,16 +425,16 @@ Specific test additions:
 - Module docstring update on `tide-card-banner-spec.ts` (folded in if natural alongside Step 2; otherwise here).
 
 **Tasks:**
-- [ ] Write the docblock for `tide-card.tsx`. Include the rule: "every overlay that sets `inert` on `.tug-pane-body` for this card MUST emit a per-card `xxxDidHide` lifecycle event; this card's focus-claim handlers subscribe to that event and re-claim editor focus, gated on this card being first responder. The claim is idempotent." Reference [L24] and `tests/app-test/at0051-tide-mount-focus.test.ts`.
-- [ ] Write the inline comments in `tug-pane-banner.tsx` and `tug-sheet.tsx`. Keep them short (one short paragraph each), following the project's commenting voice.
-- [ ] No code logic changes in this step.
+- [x] Write the docblock for `tide-card.tsx`. Replaced the prior comment with one that opens with the universal contract ("every overlay that sets `inert` on `.tug-pane-body` MUST emit a per-card `xxxDidHide`…"), explains the inert / `view.hasFocus` / caret-layer mechanism, lists today's overlays satisfying the contract, names `at0051-tide-mount-focus.test.ts` as the contract pin, and cites [L11] / [L23] / [L24].
+- [x] Write the inline comments in `tug-pane-banner.tsx` and `tug-sheet.tsx`. Each `notifyXxxDidHide` site now carries a "**Load-bearing for editor focus restoration**" callout that names the contract, points readers at the focus-claim block in `tide-card.tsx`, and flags `at0051` as the regression pin. Voice matches the codebase's existing inline comments.
+- [x] No code logic changes in this step. Pure documentation.
 
 **Tests:**
-- [ ] Existing tests pass; this step is documentation-only.
+- [x] Existing tests pass; this step is documentation-only — 3150 pass, 0 fail.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun run check`
-- [ ] `cd tugdeck && bun test` (sanity)
+- [x] `cd tugdeck && bun run check`
+- [x] `cd tugdeck && bun test` (sanity) — 3150 pass
 
 ---
 

@@ -294,6 +294,21 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
     // card subscribe here to land focus into the editor after the
     // banner is fully gone.
     //
+    // **Load-bearing for editor focus restoration.** The banner sets
+    // `inert` on `.tug-pane-body` while mounted, which strips DOM
+    // focus from anything inside (including CodeMirror's
+    // contentDOM). When the banner exits, the editor is reachable
+    // again but unfocused — the user sees no caret. `TideCardBody`
+    // subscribes to `bannerDidHide` and re-focuses the prompt-entry
+    // editor here, gated on first-responder state. Per the contract
+    // documented in `tide-card.tsx` (the focus-claim handlers
+    // block) and pinned by
+    // `tests/app-test/at0051-tide-mount-focus.test.ts`: any new
+    // overlay-class component that sets `inert` on the pane body
+    // MUST emit a per-card `didHide` lifecycle event after `inert`
+    // clears, mirroring this emission. Removing or gating this
+    // emission breaks at0051 — that's intentional.
+    //
     // Registered BEFORE the presence effect so that during a gated
     // auto-restart (finishExit calls setMounted(false), then the
     // presence effect's `mounted` dep re-fires it with visible still
