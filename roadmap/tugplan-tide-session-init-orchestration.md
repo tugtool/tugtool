@@ -390,21 +390,23 @@ Specific test additions:
 - Module docstring updated to document the rule.
 
 **Tasks:**
-- [ ] Single-line guard in `tide-card-banner-spec.ts`: `if (snap.phase === "replaying" && snap.sessionMode === "new") return { kind: "none" }` — placed between branch 4 (replay-timeout) and branch 5's existing logic, OR fold into branch 5's guard. Match existing style of the helper.
-- [ ] Update the module-top docstring's "Precedence" section to record the rule.
-- [ ] Verify branches 1–4 are unchanged (no edit to error / transport / preflight / replay-timeout).
+- [x] Single-line guard in `tide-card-banner-spec.ts`: folded into branch 5 as `if (snap.phase === "replaying" && snap.sessionMode === "resume")`. Matches the existing one-condition-per-branch style; new-mode `replaying` falls through to `kind: "none"`.
+- [x] Update the module-top docstring's "Precedence" section to record the rule. Also updated the function-level docstring's bulleted list.
+- [x] Verify branches 1–4 are unchanged (no edit to error / transport / preflight / replay-timeout).
 
 **Tests:**
-- [ ] `tide-card-banner-spec.test.ts` — add cases:
+- [x] `tide-card-banner-spec.test.ts` — added cases:
   - `phase: "replaying"` + `sessionMode: "new"` + everything-else-clear → `{ kind: "none" }`.
-  - `phase: "replaying"` + `sessionMode: "resume"` + everything-else-clear → `{ kind: "replay-loading", turnsCount: <expected> }` (unchanged from today).
-  - Defensive: `replayPreflightActive: true` + `sessionMode: "new"` → still returns `{ kind: "replay-loading", turnsCount: null }` (helper itself doesn't gate branch 1 on mode; production never emits this combination, but the unit test pins the helper's surface).
-- [ ] Existing helper tests pass unmodified.
+  - `phase: "replaying"` + `sessionMode: "resume"` (pre-soft-budget) → `{ kind: "replay-loading", turnsCount: null }`.
+  - `phase: "replaying"` + `sessionMode: "resume"` + soft-budget elapsed + 2 turns → `{ kind: "replay-loading", turnsCount: 2 }`.
+  - Defensive: `replayPreflightActive: true` + `sessionMode: "new"` → still returns `{ kind: "replay-loading", turnsCount: null }` (pins helper's mode-agnostic preflight surface).
+  - Edge-case: `phase: "replaying"` + `sessionMode: "new"` + soft-budget elapsed + transcript content → `{ kind: "none" }` (pins short-circuit ordering).
+- [x] Existing helper tests pass unmodified (12 prior tests, all green).
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun run check`
-- [ ] `cd tugdeck && bun test src/components/tugways/cards/__tests__/tide-card-banner-spec.test.ts`
-- [ ] `cd tugdeck && bun test`
+- [x] `cd tugdeck && bun run check`
+- [x] `cd tugdeck && bun test src/components/tugways/cards/__tests__/tide-card-banner-spec.test.ts` — 17 pass (12 prior + 5 new)
+- [x] `cd tugdeck && bun test` — 3150 pass, 0 fail
 
 ---
 

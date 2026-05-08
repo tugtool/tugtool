@@ -30,11 +30,31 @@
  *      `replay_timeout` outcome and the dwell window (1.5s) is still
  *      active. Surfaces the failure copy briefly before dismissing.
  *   5. **replay-loading via active phase** — `phase === "replaying"`
- *      (live replay window). The soft-budget flag promotes the
- *      banner copy from the generic "Loading session…" to the
- *      count-aware "Loading session… (N turns)" once the wait
- *      has lasted long enough that progress detail reads as
- *      reassurance rather than noise.
+ *      (live replay window) AND `sessionMode === "resume"`. The
+ *      soft-budget flag promotes the banner copy from the generic
+ *      "Loading session…" to the count-aware "Loading session…
+ *      (N turns)" once the wait has lasted long enough that progress
+ *      detail reads as reassurance rather than noise.
+ *
+ *      The `sessionMode === "resume"` gate is what suppresses the
+ *      "Loading session…" flash that new-mode bindings would
+ *      otherwise see during their JSONL-missing replay round-trip.
+ *      `sendRequestReplay` fires on every binding land
+ *      (`cardServicesStore._construct`) so the post-content rebind
+ *      case — a session that started new but accumulated turns now
+ *      has JSONL to replay on reconnect — still works; for a fresh
+ *      new session, the wire returns `replay_complete{jsonl_missing}`
+ *      within ~50ms and there is nothing user-visible to communicate.
+ *      Banner mount during that window would set `inert` on
+ *      `.tug-pane-body`, blur the just-focused editor, and force a
+ *      ~700ms refocus dance (`minMountedMs` + exit) for no benefit —
+ *      see `tugplan-tide-session-init-orchestration.md` [V03] for
+ *      the focus-contract analysis. Branch 1 (preflight) is already
+ *      implicitly resume-only upstream because
+ *      `notifyResumeBindingLanded()` is gated on
+ *      `binding.sessionMode === "resume"` in `cardServicesStore`;
+ *      this branch's mode guard mirrors that semantics at the
+ *      active-phase branch.
  *   6. **none** — no banner.
  *
  * Why a separate module: the helper is pure, takes a snapshot, and
@@ -111,7 +131,9 @@ export interface TideCardBannerCtx {
  * - replay-timeout wins over the active-phase replay-loading (the
  *   dwell is brief and stamps the most-recent outcome before any new
  *   window opens)
- * - replay-loading covers the live replay window
+ * - replay-loading covers the live replay window when
+ *   `sessionMode === "resume"` (see branch 5 / module docstring for
+ *   why new-mode bindings skip this branch)
  * - none otherwise
  */
 export function deriveTideCardBannerSpec(
@@ -139,7 +161,17 @@ export function deriveTideCardBannerSpec(
   if (snap.replayTimeoutDwellActive) {
     return { kind: "replay-timeout" };
   }
-  if (snap.phase === "replaying") {
+  // Branch 5 — replay-loading via active phase. Resume-mode only.
+  // For new-mode bindings, the JSONL replay is a brief no-op
+  // round-trip (`replay_started` → `replay_complete{jsonl_missing}`)
+  // with nothing to communicate; banner mount + `inert` toggle
+  // would just steal caret focus from the just-mounted editor for
+  // ~700ms ([V03] in `tugplan-tide-session-init-orchestration.md`).
+  // Branch 1 (preflight) is already implicitly resume-only because
+  // `notifyResumeBindingLanded()` is gated on
+  // `binding.sessionMode === "resume"` in `cardServicesStore`; this
+  // mode guard mirrors that semantics at the active-phase branch.
+  if (snap.phase === "replaying" && snap.sessionMode === "resume") {
     return {
       kind: "replay-loading",
       turnsCount: snap.replaySoftBudgetElapsed ? snap.transcript.length : null,
