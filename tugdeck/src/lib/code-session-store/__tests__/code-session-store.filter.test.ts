@@ -36,6 +36,7 @@ function constructStore(
     conn: conn as unknown as TugConnection,
     lifecycle: new ConnectionLifecycle(),
     tugSessionId,
+    sessionMode: "new",
   });
 }
 

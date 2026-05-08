@@ -43,6 +43,7 @@ function makeStore(): StoreFixture {
     conn: conn as unknown as TugConnection,
     lifecycle: new ConnectionLifecycle(),
     tugSessionId: TUG,
+    sessionMode: "new",
   });
   return { store, conn };
 }

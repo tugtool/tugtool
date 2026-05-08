@@ -12,6 +12,9 @@
  */
 
 import type { AtomSegment } from "../tug-atom-img";
+import type { CardSessionMode } from "../card-session-binding-store";
+
+export type { CardSessionMode } from "../card-session-binding-store";
 
 /**
  * Discrete phases of the Claude Code turn state machine. Terminal
@@ -144,6 +147,24 @@ export interface CodeSessionSnapshot {
 
   tugSessionId: string;
   displayLabel: string;
+  /**
+   * The `"new" | "resume"` discriminator carried on the per-card
+   * `CardSessionBinding` and threaded onto the snapshot so pure
+   * derivations can branch on the user's intent at session-open
+   * time. Stable for the lifetime of the store — the mode is captured
+   * once at construction from the binding `cardServicesStore` reads
+   * and never changes thereafter; a re-bind (close + reopen) builds
+   * a fresh services bag with a fresh store.
+   *
+   * Consumed today by `deriveTideCardBannerSpec` to suppress the
+   * "Loading session…" banner during the JSONL replay round-trip
+   * for new sessions (where there is no JSONL to replay). Branch 1
+   * (the cold-boot preflight beat) is gated upstream — only resume
+   * mode triggers `notifyResumeBindingLanded()` — so the helper
+   * does not need to read `sessionMode` to keep that branch
+   * resume-only.
+   */
+  sessionMode: CardSessionMode;
 
   activeMsgId: string | null;
   canSubmit: boolean;

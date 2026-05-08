@@ -29,6 +29,7 @@ describe("CodeSessionStore — basic round-trip (Step 3)", () => {
       conn: conn as unknown as TugConnection,
       lifecycle: new ConnectionLifecycle(),
       tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
+      sessionMode: "new",
     });
 
     const phases: string[] = [];
@@ -94,6 +95,7 @@ describe("CodeSessionStore — basic round-trip (Step 3)", () => {
       conn: conn as unknown as TugConnection,
       lifecycle: new ConnectionLifecycle(),
       tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
+      sessionMode: "new",
     });
 
     // Idle store: no pending message.
@@ -135,6 +137,7 @@ describe("CodeSessionStore — basic round-trip (Step 3)", () => {
       conn: conn as unknown as TugConnection,
       lifecycle: new ConnectionLifecycle(),
       tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
+      sessionMode: "new",
     });
 
     store.send("hello", []);
@@ -154,6 +157,7 @@ describe("CodeSessionStore — basic round-trip (Step 3)", () => {
       conn: conn as unknown as TugConnection,
       lifecycle: new ConnectionLifecycle(),
       tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
+      sessionMode: "new",
     });
 
     store.send("hello", []);

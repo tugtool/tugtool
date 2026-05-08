@@ -108,6 +108,14 @@ function makeStore(): StoreFixture {
     conn: conn as unknown as TugConnection,
     lifecycle: new ConnectionLifecycle(),
     tugSessionId: TUG,
+    // The replay-clock surfaces (preflight, soft-budget, timeout dwell)
+    // are exercised in production only for resume-mode bindings — the
+    // upstream call to `notifyResumeBindingLanded()` is gated on
+    // `binding.sessionMode === "resume"` (`card-services-store.ts`).
+    // Mirror that here so the fixture matches the production scenario,
+    // even though the reducer itself is mode-agnostic for these
+    // transitions.
+    sessionMode: "resume",
     timerSource: timers.source,
   });
   return { store, conn, timers };
@@ -246,6 +254,7 @@ describe("CodeSessionStore — replayPreflightActive lifecycle", () => {
       conn: conn as unknown as TugConnection,
       lifecycle,
       tugSessionId: TUG,
+      sessionMode: "resume",
       timerSource: timers.source,
     });
     store2.notifyResumeBindingLanded();
@@ -298,6 +307,7 @@ describe("CodeSessionStore — replayPreflightActive lifecycle", () => {
       conn: conn as unknown as TugConnection,
       lifecycle,
       tugSessionId: TUG,
+      sessionMode: "resume",
       timerSource: timers.source,
     });
     lifecycle.notifyConnectionDidClose();

@@ -41,12 +41,14 @@ import { logSessionLifecycle } from "./session-lifecycle-log";
 import type { CodeSessionEvent } from "./code-session-store/events";
 import type { Effect } from "./code-session-store/effects";
 import type {
+  CardSessionMode,
   CodeSessionSnapshot,
   TurnEntry,
 } from "./code-session-store/types";
 import { STREAMING_PATHS } from "./code-session-store/types";
 
 export type {
+  CardSessionMode,
   CodeSessionSnapshot,
   CodeSessionPhase,
   TurnEntry,
@@ -128,6 +130,17 @@ export interface CodeSessionStoreOptions {
   tugSessionId: string;
   displayLabel?: string;
   /**
+   * The user's session-mode intent at card-open time, captured from
+   * the per-card `CardSessionBinding`. Threaded onto
+   * `CodeSessionSnapshot.sessionMode` so pure derivations (e.g.
+   * `deriveTideCardBannerSpec`) can branch on it without a second
+   * subscription to `cardSessionBindingStore`. Required: every binding
+   * carries a mode, so every store has one. Stable for the store's
+   * lifetime — a re-bind constructs a fresh services bag with a
+   * fresh store.
+   */
+  sessionMode: CardSessionMode;
+  /**
    * Test seam — defaults to globalThis `setTimeout` / `clearTimeout`.
    * Production callers omit this. Tests inject a captured-table
    * timer source so they can advance time deterministically.
@@ -146,6 +159,7 @@ export class CodeSessionStore {
   private readonly lifecycle: ConnectionLifecycle;
   private readonly tugSessionId: string;
   private readonly displayLabel: string;
+  private readonly sessionMode: CardSessionMode;
   private readonly feedStore: FeedStore;
   private readonly timerSource: TimerSource;
   /**
@@ -178,6 +192,7 @@ export class CodeSessionStore {
     this.lifecycle = options.lifecycle;
     this.tugSessionId = options.tugSessionId;
     this.displayLabel = options.displayLabel ?? options.tugSessionId.slice(0, 8);
+    this.sessionMode = options.sessionMode;
     this.timerSource = options.timerSource ?? DEFAULT_TIMER_SOURCE;
 
     const descriptors: PropertyDescriptor[] = [
@@ -207,7 +222,11 @@ export class CodeSessionStore {
       },
     });
 
-    this.state = createInitialState(this.tugSessionId, this.displayLabel);
+    this.state = createInitialState(
+      this.tugSessionId,
+      this.displayLabel,
+      this.sessionMode,
+    );
 
     this.feedStore = new FeedStore(
       this.conn,
@@ -276,6 +295,7 @@ export class CodeSessionStore {
       transportState: this.state.transportState,
       tugSessionId: this.tugSessionId,
       displayLabel: this.displayLabel,
+      sessionMode: this.sessionMode,
       activeMsgId: this.state.activeMsgId,
       // [D01] submit is gated on the conjunction of phase and
       // transport health. An idle card whose wire is offline must

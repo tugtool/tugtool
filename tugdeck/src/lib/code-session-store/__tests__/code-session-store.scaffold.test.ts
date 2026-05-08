@@ -29,6 +29,7 @@ describe("CodeSessionStore — Step 1 scaffold", () => {
       conn: makeInertConnection(),
       lifecycle: makeInertLifecycle(),
       tugSessionId: TUG_SESSION_ID,
+      sessionMode: "new",
     });
 
     const snap = store.getSnapshot();
@@ -36,6 +37,7 @@ describe("CodeSessionStore — Step 1 scaffold", () => {
     expect(snap.phase).toBe("idle");
     expect(snap.tugSessionId).toBe(TUG_SESSION_ID);
     expect(snap.displayLabel).toBe(TUG_SESSION_ID.slice(0, 8));
+    expect(snap.sessionMode).toBe("new");
     expect(snap.activeMsgId).toBeNull();
     expect(snap.canSubmit).toBe(true);
     expect(snap.canInterrupt).toBe(false);
@@ -56,6 +58,7 @@ describe("CodeSessionStore — Step 1 scaffold", () => {
       conn: makeInertConnection(),
       lifecycle: makeInertLifecycle(),
       tugSessionId: TUG_SESSION_ID,
+      sessionMode: "new",
     });
 
     expect(store.streamingDocument.get("inflight.assistant")).toBe("");
@@ -68,6 +71,7 @@ describe("CodeSessionStore — Step 1 scaffold", () => {
       conn: makeInertConnection(),
       lifecycle: makeInertLifecycle(),
       tugSessionId: TUG_SESSION_ID,
+      sessionMode: "new",
     });
 
     const snap1 = store.getSnapshot();
@@ -83,6 +87,7 @@ describe("CodeSessionStore — Step 1 scaffold", () => {
       lifecycle: makeInertLifecycle(),
       tugSessionId: TUG_SESSION_ID,
       displayLabel: "card-A",
+      sessionMode: "new",
     });
 
     expect(store.getSnapshot().displayLabel).toBe("card-A");
@@ -93,6 +98,7 @@ describe("CodeSessionStore — Step 1 scaffold", () => {
       conn: makeInertConnection(),
       lifecycle: makeInertLifecycle(),
       tugSessionId: TUG_SESSION_ID,
+      sessionMode: "new",
     });
 
     store.dispose();
@@ -102,5 +108,66 @@ describe("CodeSessionStore — Step 1 scaffold", () => {
     expect(store.streamingDocument.get("inflight.tools")).toBe("[]");
     // [L23] transcript is user-visible — dispose does not touch it.
     expect(store.getSnapshot().transcript.length).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sessionMode plumbing
+// ---------------------------------------------------------------------------
+
+/**
+ * `sessionMode` is captured from the per-card `CardSessionBinding` at
+ * construction and threaded onto the snapshot so pure derivations (e.g.
+ * `deriveTideCardBannerSpec`) can branch on the user's session-open
+ * intent without a second subscription. The store itself does not act
+ * on the value — the field is a passive carrier — so these tests only
+ * verify the plumbing: ctor arg → snapshot field, both values
+ * round-trip, and the field is reference-stable across snapshots.
+ *
+ * [L02] external state enters React via `useSyncExternalStore`; the
+ *       snapshot is what `useSyncExternalStore` reads, so adding a
+ *       field here is the L02-compliant way to expose it.
+ * [L24] `sessionMode` is structure-zone metadata — it parameterizes
+ *       the store's externally observable shape and never mutates;
+ *       it lives on the snapshot, not in component-local React state.
+ */
+describe("CodeSessionStore — sessionMode plumbing", () => {
+  it("threads sessionMode='new' from the constructor onto the snapshot", () => {
+    const store = new CodeSessionStore({
+      conn: makeInertConnection(),
+      lifecycle: makeInertLifecycle(),
+      tugSessionId: TUG_SESSION_ID,
+      sessionMode: "new",
+    });
+
+    expect(store.getSnapshot().sessionMode).toBe("new");
+  });
+
+  it("threads sessionMode='resume' from the constructor onto the snapshot", () => {
+    const store = new CodeSessionStore({
+      conn: makeInertConnection(),
+      lifecycle: makeInertLifecycle(),
+      tugSessionId: TUG_SESSION_ID,
+      sessionMode: "resume",
+    });
+
+    expect(store.getSnapshot().sessionMode).toBe("resume");
+  });
+
+  it("preserves sessionMode reference-stably across snapshot reads", () => {
+    const store = new CodeSessionStore({
+      conn: makeInertConnection(),
+      lifecycle: makeInertLifecycle(),
+      tugSessionId: TUG_SESSION_ID,
+      sessionMode: "resume",
+    });
+
+    // Two reads with no intervening dispatch must return the same
+    // snapshot instance — required by useSyncExternalStore. The
+    // sessionMode field rides on that same identity.
+    const snap1 = store.getSnapshot();
+    const snap2 = store.getSnapshot();
+    expect(snap1).toBe(snap2);
+    expect(snap1.sessionMode).toBe(snap2.sessionMode);
   });
 });

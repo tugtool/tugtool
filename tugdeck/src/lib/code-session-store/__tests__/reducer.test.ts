@@ -26,7 +26,7 @@ import { FIXTURE_IDS } from "@/lib/code-session-store/testing/golden-catalog";
 import type { ToolCallState } from "@/lib/code-session-store/types";
 
 function fresh(): CodeSessionState {
-  return createInitialState(FIXTURE_IDS.TUG_SESSION_ID, "test");
+  return createInitialState(FIXTURE_IDS.TUG_SESSION_ID, "test", "new");
 }
 
 function applyAll(

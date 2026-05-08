@@ -150,6 +150,10 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
       conn: connection as unknown as TugConnection,
       lifecycle,
       tugSessionId: GALLERY_TUG_SESSION_ID,
+      // Gallery card models a fresh session for visual demos; no
+      // resume binding is in play. The choice is purely cosmetic
+      // here since the gallery never wires up a real binding store.
+      sessionMode: "new",
     });
     mockSessionRef.current = { connection, codeSessionStore };
   }

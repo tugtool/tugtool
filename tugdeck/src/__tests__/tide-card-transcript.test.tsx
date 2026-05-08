@@ -117,6 +117,7 @@ function buildHarness(
     conn: conn as unknown as TugConnection,
     lifecycle: new ConnectionLifecycle(),
     tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
+    sessionMode: "new",
   });
   const metadataFeed = new MockFeedStore();
   const sessionMetadataStore = new SessionMetadataStore(

@@ -360,20 +360,20 @@ Specific test additions:
 - Reducer initial-state helper accepts `sessionMode`.
 
 **Tasks:**
-- [ ] Add the field to the snapshot type and the store class.
-- [ ] Update the reducer's initial-state factory to thread `sessionMode` from the constructor.
-- [ ] Update `cardServicesStore._construct` to pass `binding.sessionMode`.
-- [ ] Update test fixtures (any place that constructs a `CodeSessionStore` or builds a snapshot directly) to add `sessionMode`. Default fixtures to `"new"` unless a test specifically exercises resume.
-- [ ] Verify no consumer reads `sessionMode` yet (it's purely additive in this step).
+- [x] Add the field to the snapshot type and the store class.
+- [x] Update the reducer's initial-state factory to thread `sessionMode` from the constructor.
+- [x] Update `cardServicesStore._construct` to pass `binding.sessionMode`.
+- [x] Update test fixtures (any place that constructs a `CodeSessionStore` or builds a snapshot directly) to add `sessionMode`. Default fixtures to `"new"` unless a test specifically exercises resume.
+- [x] Verify no consumer reads `sessionMode` yet (it's purely additive in this step).
 
 **Tests:**
-- [ ] Existing `code-session-store.*.test.ts` suites compile and pass with the new field.
-- [ ] Add a smoke test asserting `store.getSnapshot().sessionMode === "new"` and `=== "resume"` for the two construction modes.
+- [x] Existing `code-session-store.*.test.ts` suites compile and pass with the new field.
+- [x] Add a smoke test asserting `store.getSnapshot().sessionMode === "new"` and `=== "resume"` for the two construction modes.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun run check`
-- [ ] `cd tugdeck && bun test`
-- [ ] `cd tugrust && cargo nextest run`
+- [x] `cd tugdeck && bun run check`
+- [x] `cd tugdeck && bun test`
+- [x] `cd tugrust && cargo nextest run`
 
 ---
 

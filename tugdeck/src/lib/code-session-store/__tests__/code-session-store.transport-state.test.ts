@@ -40,6 +40,7 @@ function constructStore(
     conn: conn as unknown as TugConnection,
     lifecycle,
     tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
+    sessionMode: "new",
   });
 }
 

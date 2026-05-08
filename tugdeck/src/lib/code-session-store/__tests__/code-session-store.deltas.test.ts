@@ -32,6 +32,7 @@ describe("CodeSessionStore — assistant_text delta accumulation (Step 4)", () =
       conn: conn as unknown as TugConnection,
       lifecycle: new ConnectionLifecycle(),
       tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
+      sessionMode: "new",
     });
 
     store.send("please write", []);
@@ -105,6 +106,7 @@ describe("CodeSessionStore — assistant_text delta accumulation (Step 4)", () =
       conn: conn as unknown as TugConnection,
       lifecycle: new ConnectionLifecycle(),
       tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
+      sessionMode: "new",
     });
 
     store.send("hi", []);
@@ -169,6 +171,7 @@ describe("CodeSessionStore — thinking_text delta accumulation (Step 4)", () =>
       conn: conn as unknown as TugConnection,
       lifecycle: new ConnectionLifecycle(),
       tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
+      sessionMode: "new",
     });
 
     store.send("why?", []);
@@ -243,6 +246,7 @@ describe("CodeSessionStore — thinking_text delta accumulation (Step 4)", () =>
       conn: conn as unknown as TugConnection,
       lifecycle: new ConnectionLifecycle(),
       tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
+      sessionMode: "new",
     });
 
     store.send("interleave", []);

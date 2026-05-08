@@ -45,6 +45,7 @@ import type {
   WireErrorEvent,
 } from "./events";
 import type {
+  CardSessionMode,
   CodeSessionPhase,
   ControlRequestForward,
   CostSnapshot,
@@ -61,6 +62,15 @@ export interface CodeSessionState {
 
   tugSessionId: string;
   displayLabel: string;
+  /**
+   * Captured at construction from the per-card `CardSessionBinding`'s
+   * `sessionMode`. Mirrored onto `CodeSessionSnapshot.sessionMode` for
+   * pure-derivation consumers. Reducer transitions never mutate this
+   * field — a re-bind builds a fresh state via `createInitialState`,
+   * and the in-flight reducer is mode-agnostic for everything except
+   * derivations that read the snapshot.
+   */
+  sessionMode: CardSessionMode;
 
   activeMsgId: string | null;
   scratch: Map<string, { assistant: string; thinking: string }>;
@@ -198,12 +208,14 @@ export const REPLAY_PREFLIGHT_TIMEOUT_MS = 12_000;
 export function createInitialState(
   tugSessionId: string,
   displayLabel: string,
+  sessionMode: CardSessionMode,
 ): CodeSessionState {
   return {
     phase: "idle",
     transportState: "online",
     tugSessionId,
     displayLabel,
+    sessionMode,
     activeMsgId: null,
     scratch: new Map(),
     toolCallMap: new Map(),

@@ -105,6 +105,7 @@ function buildMockServices(): MockServices {
     conn,
     lifecycle: new ConnectionLifecycle(),
     tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
+    sessionMode: "new",
   });
   const inertFeed = new InertFeedStore() as never;
   const sessionMetadataStore = new SessionMetadataStore(inertFeed, 0x40 as never);
@@ -451,6 +452,7 @@ function defaultSnapshot(): CodeSessionSnapshot {
     transportState: "online",
     tugSessionId: "tug-session-id",
     displayLabel: "test",
+    sessionMode: "new",
     activeMsgId: null,
     canSubmit: true,
     canInterrupt: false,

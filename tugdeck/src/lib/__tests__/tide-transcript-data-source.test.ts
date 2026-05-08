@@ -37,6 +37,7 @@ function buildStore(): { store: CodeSessionStore; conn: TestFrameChannel } {
     conn: conn as unknown as TugConnection,
     lifecycle: new ConnectionLifecycle(),
     tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
+    sessionMode: "new",
   });
   return { store, conn };
 }

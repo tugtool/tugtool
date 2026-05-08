@@ -209,6 +209,13 @@ class CardServicesStore {
       conn: connection,
       lifecycle,
       tugSessionId: binding.tugSessionId,
+      // Thread the user's session-mode intent onto the store so
+      // pure derivations (notably `deriveTideCardBannerSpec`) can
+      // suppress the JSONL-replay banner for new bindings without
+      // a second subscription to `cardSessionBindingStore`. Stable
+      // for the store's lifetime — a re-bind builds a fresh services
+      // bag with a fresh store, so the mode field never goes stale.
+      sessionMode: binding.sessionMode,
     });
     const editorStore = new EditorSettingsStore();
 

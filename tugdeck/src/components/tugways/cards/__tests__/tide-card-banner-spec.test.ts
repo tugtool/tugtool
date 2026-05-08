@@ -26,6 +26,11 @@ function baseSnap(
     transportState: "online",
     tugSessionId: "tug-1",
     displayLabel: "test",
+    // Default fixtures to "new" — Step 2 will exercise both modes
+    // explicitly. Step 1 is purely additive (the helper does not yet
+    // read sessionMode), so this default does not affect any existing
+    // assertion in this file.
+    sessionMode: "new",
     activeMsgId: null,
     canSubmit: true,
     canInterrupt: false,
