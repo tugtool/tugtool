@@ -324,3 +324,73 @@ describe("TugPane – TugPaneFrameContext", () => {
     expect(chromeEl).not.toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Pane scrim CSS contract [D18]
+//
+// happy-dom does not simulate browser pointer-events hit-testing, so a
+// click-on-tab test cannot catch the case where an invisible scrim
+// covers the body but still steals the click. We pin the contract at
+// the source level: read tug-pane.css and assert the two
+// pointer-events declarations are correct.
+//
+// Regression history: 2026-05-07, the scrim shipped with
+// `pointer-events: auto` at rest. The scrim was invisible (opacity 0)
+// but the body-area dead zone made every tab-bar / accessory click a
+// no-op. Keyboard shortcuts kept working because they route through
+// the chain instead of DOM hit-testing.
+// ---------------------------------------------------------------------------
+
+describe("TugPane – pane scrim pointer-events contract", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { readFileSync } = require("node:fs") as typeof import("node:fs");
+  const cssSource = readFileSync(
+    new URL("../components/tugways/tug-pane.css", import.meta.url),
+    "utf-8",
+  );
+
+  /**
+   * Extract the body of a CSS rule by selector. Returns the text
+   * between the rule's opening `{` and matching `}`. Throws when the
+   * selector is not found so an accidental rule rename surfaces as a
+   * test failure rather than a silent miss.
+   */
+  function ruleBody(source: string, selector: string): string {
+    const idx = source.indexOf(selector);
+    if (idx === -1) throw new Error(`selector not found: ${selector}`);
+    const open = source.indexOf("{", idx);
+    if (open === -1) throw new Error(`opening brace not found for: ${selector}`);
+    let depth = 1;
+    let i = open + 1;
+    while (i < source.length && depth > 0) {
+      const c = source[i];
+      if (c === "{") depth += 1;
+      else if (c === "}") depth -= 1;
+      i += 1;
+    }
+    return source.slice(open + 1, i - 1);
+  }
+
+  it("at rest: .tug-pane-scrim sets pointer-events: none", () => {
+    const body = ruleBody(cssSource, ".tug-pane-scrim {");
+    expect(body).toMatch(/pointer-events:\s*none/);
+  });
+
+  it("when raised: [data-scrim=\"on\"] flips pointer-events to auto", () => {
+    const body = ruleBody(cssSource, '.tug-pane-chrome[data-scrim="on"] .tug-pane-scrim {');
+    expect(body).toMatch(/pointer-events:\s*auto/);
+  });
+
+  it("at rest: opacity is 0 (invisible)", () => {
+    // The pair "opacity 0 / pointer-events none" must travel together
+    // — flipping one without the other reproduces the regression
+    // class (visible-but-clickable, or invisible-but-blocking).
+    const body = ruleBody(cssSource, ".tug-pane-scrim {");
+    expect(body).toMatch(/opacity:\s*0/);
+  });
+
+  it("when raised: opacity is 1 (visible)", () => {
+    const body = ruleBody(cssSource, '.tug-pane-chrome[data-scrim="on"] .tug-pane-scrim {');
+    expect(body).toMatch(/opacity:\s*1/);
+  });
+});

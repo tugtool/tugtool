@@ -431,7 +431,12 @@ body {
   left: 0;
   z-index: 12;
   background-color: var(--tugx-pane-scrim-bg);
-  pointer-events: auto;
+  /* Pointer-events gate: at rest the scrim is invisible AND
+     non-interactive, so the tab bar, accessory, content, and any
+     in-card controls below the title bar still receive clicks. The
+     `[data-scrim="on"]` selector below flips the scrim into a
+     visual + pointer dead zone when a pane-modal surface raises it. */
+  pointer-events: none;
   opacity: 0;
   /* Transition declared in the rest state so both fade-in (0 → 1)
      and fade-out (1 → 0) animate in lockstep with the sheet panel's
@@ -441,6 +446,7 @@ body {
 
 .tug-pane-chrome[data-scrim="on"] .tug-pane-scrim {
   opacity: 1;
+  pointer-events: auto;
 }
 
 /*
