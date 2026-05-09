@@ -310,6 +310,20 @@ body {
   border-color: var(--tugx-pane-control-on-border-active);
 }
 
+/* Title-bar `…` button: paint as if hovered while the active card's
+   menu is currently presented. `data-active` is set by `CardTitleBar`
+   from the `menuActive` prop, which `TugPane` reads reactively from
+   `cardMenuStore` via `useSyncExternalStore`. The treatment matches
+   `:hover` so the user reads the button as "engaged with the open
+   sheet" without introducing a new visual register. */
+/* @tug-renders-on: --tug7-surface-card-primary-normal-titlebar-active */
+.tug-pane[data-focused="true"] .tug-pane-title-bar-controls .tug-button[data-active="true"]:not(:disabled),
+.tug-pane[data-focused="true"] .tug-pane-title-bar-controls .tug-button[data-active="true"]:hover:not(:disabled) {
+  color: var(--tugx-pane-control-on-fg-hover);
+  background-color: var(--tugx-pane-control-on-bg-hover);
+  border-color: var(--tugx-pane-control-on-border-hover);
+}
+
 /* Pane title bar control buttons — unfocused pane (muted role) */
 /* @tug-renders-on: --tug7-surface-card-primary-normal-titlebar-inactive */
 .tug-pane:not([data-focused="true"]) .tug-pane-title-bar-controls .tug-button {
@@ -318,6 +332,7 @@ body {
   border-color: var(--tugx-pane-control-off-border-rest);
 }
 
+.tug-pane:not([data-focused="true"]) .tug-pane-title-bar-controls .tug-button[data-active="true"]:not(:disabled),
 .tug-pane:not([data-focused="true"]) .tug-pane-title-bar-controls .tug-button:hover:not(:disabled) {
   color: var(--tugx-pane-control-off-fg-hover);
   background-color: var(--tugx-pane-control-off-bg-hover);

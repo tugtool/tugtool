@@ -29,6 +29,7 @@ import React, {
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { ChevronDown, ChevronUp, Ellipsis, X, icons } from "lucide-react";
 import type { CardState, TugPaneState } from "@/layout-tree";
@@ -51,6 +52,7 @@ import {
 } from "@/components/tugways/tug-popover";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { cardMenuStore } from "@/lib/card-menu-store";
 import * as paneContentRegistry from "@/components/chrome/pane-content-registry";
 import * as paneFrameRegistry from "@/components/chrome/pane-frame-registry";
 import * as paneRootRegistry from "@/components/chrome/pane-root-registry";
@@ -76,12 +78,22 @@ export interface CardTitleBarProps {
   collapsed: boolean;
   /**
    * Click handler for the title bar's `…` (Ellipsis) menu button.
-   * Wired by TugPane to dispatch `TUG_ACTIONS.OPEN_MENU` through the
-   * responder chain so the active card content can present its
-   * card-level menu (typically as a TugSheet). When omitted, the
+   * Wired by TugPane to invoke the active card's menu controller
+   * (registered in `cardMenuStore` via `useCardMenu`) — `toggle()`
+   * on each click, so a second press dismisses the sheet. When the
+   * active card has no controller, falls back to a chain dispatch
+   * of `TUG_ACTIONS.OPEN_MENU`. When `onMenuClick` is omitted, the
    * button still renders but is a no-op.
    */
   onMenuClick?: () => void;
+  /**
+   * Whether the active card's menu is currently presented. When true,
+   * the title bar's `…` button paints as highlighted so the user
+   * sees the button's state mirror the sheet's. Driven by
+   * `cardMenuStore.isOpen(activeCardId)` via `useSyncExternalStore`
+   * in the surrounding TugPane. [L02]
+   */
+  menuActive?: boolean;
   /**
    * Number of cards in this pane. Drives the close-confirmation
    * behavior of the title-bar X button:
@@ -116,6 +128,7 @@ export function CardTitleBar({
   onClose,
   onDragStart,
   onMenuClick,
+  menuActive = false,
 }: CardTitleBarProps) {
   const handleTitleBarPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
@@ -236,6 +249,8 @@ export function CardTitleBar({
           onPointerDown={(e: React.PointerEvent) => e.stopPropagation()}
           onClick={onMenuClick}
           aria-label="Card menu"
+          aria-expanded={menuActive}
+          data-active={menuActive ? "true" : undefined}
           data-testid="tug-pane-title-bar-menu-button"
         />
 
@@ -609,6 +624,16 @@ export function TugPane({
   const activeCardIdRef = useRef(activeCardId);
   activeCardIdRef.current = activeCardId;
 
+  // Reactive read of the active card's menu open state for the title
+  // bar's `…` button highlight. The store notifies on register /
+  // unregister and on every open / close transition; the snapshot
+  // selector keys off the current `activeCardId` so a tab switch
+  // re-evaluates the highlight against the newly-active card. [L02]
+  const menuOpenForActive = useSyncExternalStore(
+    cardMenuStore.subscribe,
+    useCallback(() => cardMenuStore.isOpen(activeCardId ?? null), [activeCardId]),
+  );
+
   const performSelectCard = useCallback(
     (newCardId: string) => {
       // Route the intra-pane tab switch through `transferFocusForActivation`
@@ -693,18 +718,26 @@ export function TugPane({
     onClose?.();
   }, [onClose]);
 
-  // Title-bar `…` button. Dispatches `TUG_ACTIONS.OPEN_MENU` to the
-  // active card's content responder by id (the convention is
-  // `${cardId}-card-content`, matching what `useResponder({ kind:
-  // "card-content" })` consumers register). Targets directly rather
-  // than walking from the first responder so the menu opens even
-  // before the user has focused inside the card. Cards that don't
-  // register a card-content responder, or that don't bind
-  // `OPEN_MENU`, get a silent no-op — the button remains harmless.
-  // [L11].
+  // Title-bar `…` button. The active card declares a menu via
+  // `useCardMenu`, which registers a stable controller in
+  // `cardMenuStore` keyed by card id. The button calls
+  // `controller.toggle()` directly — no chain walk, no
+  // intermediate action handler. Cards that don't register a
+  // controller get a silent no-op (the button remains harmless).
+  //
+  // The chain dispatch path is preserved as a fallback so future
+  // keyboard shortcuts that emit `OPEN_MENU` reach the same toggle:
+  // when no controller is registered, fall through to the chain
+  // dispatch so the card-content responder's `OPEN_MENU` handler
+  // (if any) still runs. [L11]
   const handleTitleBarMenuClick = useCallback(() => {
     const activeId = activeCardIdRef.current;
     if (!activeId) return;
+    const controller = cardMenuStore.getController(activeId);
+    if (controller !== null) {
+      controller.toggle();
+      return;
+    }
     const targetId = `${activeId}-card-content`;
     try {
       manager.sendToTarget(targetId, {
@@ -1457,6 +1490,7 @@ export function TugPane({
             onClose={handleTitleBarClose}
             onDragStart={handleDragStart}
             onMenuClick={handleTitleBarMenuClick}
+            menuActive={menuOpenForActive}
           />
 
           <div className="tug-pane-body" data-testid="tug-pane-body">

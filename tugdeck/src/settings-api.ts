@@ -217,6 +217,55 @@ export async function getEditorSettings(): Promise<EditorSettings | null> {
   }
 }
 
+// ── Response (transcript) settings ──────────────────────────────────────────
+
+/**
+ * Response-settings shape stored in tugbank. Drives the typography and
+ * inter-entry spacing of the Tide card's transcript pane (the top
+ * pane, distinct from the editor pane below it).
+ *
+ * Two parallel font groups: one for entry headers (the bold identifier
+ * row at the top of each transcript entry) and one for entry content
+ * (the markdown body). Plus a single `entryMargin` value in pixels for
+ * the gap between adjacent entries.
+ */
+export interface ResponseSettings {
+  headerFontId: string;
+  headerFontSize: number;
+  headerLetterSpacing: number;
+  headerLineHeight: number;
+  contentFontId: string;
+  contentFontSize: number;
+  contentLetterSpacing: number;
+  contentLineHeight: number;
+  /** Inter-entry gap in CSS pixels. */
+  entryMargin: number;
+}
+
+/**
+ * Read response settings from the TugbankClient cache.
+ */
+export function readResponseSettings(client: TugbankClient): ResponseSettings | null {
+  const entry = client.get("dev.tugtool.tide.response", "settings");
+  if (entry && entry.kind === "json" && entry.value !== undefined) {
+    return entry.value as ResponseSettings;
+  }
+  return null;
+}
+
+/**
+ * PUT response settings to tugbank (fire-and-forget).
+ */
+export function putResponseSettings(settings: ResponseSettings): void {
+  fetch("/api/defaults/dev.tugtool.tide.response/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "json", value: settings }),
+  }).catch((err) => {
+    console.warn("[settings] PUT responseSettings failed:", err);
+  });
+}
+
 // ── Split pane layouts ──────────────────────────────────────────────────────
 
 /**

@@ -33,6 +33,7 @@
 
 import { CodeSessionStore } from "./code-session-store";
 import { EditorSettingsStore } from "./editor-settings-store";
+import { ResponseSettingsStore } from "./response-settings-store";
 import { SessionMetadataStore } from "./session-metadata-store";
 import { FileTreeStore } from "./filetree-store";
 import { FeedStore, type FeedStoreFilter } from "./feed-store";
@@ -58,6 +59,7 @@ import { logSessionLifecycle } from "./session-lifecycle-log";
 export interface CardServices {
   readonly codeSessionStore: CodeSessionStore;
   readonly editorStore: EditorSettingsStore;
+  readonly responseStore: ResponseSettingsStore;
   readonly sessionMetadataStore: SessionMetadataStore;
   readonly sessionMetadataFeedStore: FeedStore;
   readonly fileTreeStore: FileTreeStore;
@@ -218,6 +220,7 @@ class CardServicesStore {
       sessionMode: binding.sessionMode,
     });
     const editorStore = new EditorSettingsStore();
+    const responseStore = new ResponseSettingsStore();
 
     // Filter by workspace_key for feeds that carry it. SESSION_METADATA
     // does not carry workspace_key on the wire, so it stays unfiltered.
@@ -321,6 +324,7 @@ class CardServicesStore {
     return {
       codeSessionStore,
       editorStore,
+      responseStore,
       sessionMetadataStore,
       sessionMetadataFeedStore,
       fileTreeStore,
@@ -335,6 +339,7 @@ class CardServicesStore {
     logSessionLifecycle("services_store.dispose", { card_id: cardId });
     this._services.delete(cardId);
     services.codeSessionStore.dispose();
+    services.responseStore.dispose();
     services.sessionMetadataStore.dispose();
     services.sessionMetadataFeedStore.dispose();
     services.fileTreeStore.dispose();

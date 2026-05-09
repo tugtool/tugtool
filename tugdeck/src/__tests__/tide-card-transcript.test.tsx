@@ -47,6 +47,7 @@ import {
 } from "@/lib/code-session-store/testing/golden-catalog";
 import { FeedId } from "@/protocol";
 import { SessionMetadataStore } from "@/lib/session-metadata-store";
+import { ResponseSettingsStore } from "@/lib/response-settings-store";
 
 // ---------------------------------------------------------------------------
 // WASM initialisation — load once. `TugMarkdownBlock` uses the markdown
@@ -139,6 +140,7 @@ function renderHost(h: Harness) {
       <TideTranscriptHost
         codeSessionStore={h.codeSessionStore}
         sessionMetadataStore={h.sessionMetadataStore}
+        responseStore={new ResponseSettingsStore()}
       />
     </ResponderChainProvider>,
   );

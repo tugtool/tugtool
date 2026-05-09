@@ -49,13 +49,31 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
+
+  /* Per-card response-settings token defaults. The `ResponseSettings
+     Store` overrides these via inline custom properties on this same
+     element; descendant rules below consume them so the typography of
+     entry headers / content and the inter-entry gap track the user's
+     choices in the `…` settings sheet. Defaults mirror
+     `DEFAULT_RESPONSE_SETTINGS` in `lib/response-settings-store.ts`. */
+  --tugx-tide-header-font-family:
+    "IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --tugx-tide-header-font-size: 14px;
+  --tugx-tide-header-line-height: 1.4;
+  --tugx-tide-header-letter-spacing: normal;
+  --tugx-tide-content-font-family:
+    "IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --tugx-tide-content-font-size: 14px;
+  --tugx-tide-content-line-height: 1.6;
+  --tugx-tide-content-letter-spacing: normal;
+  --tugx-tide-entry-margin: 16px;
 }
 
 .tide-card-transcript .tug-list-view {
-  /* Vertical breathing room between (user, code) row pairs and the
-     pad on the scroll-bottom so the last row's controls don't kiss
-     the prompt-entry pane. */
-  --tugx-list-view-row-gap: var(--tug-space-xl);
+  /* Inter-entry margin is driven by the response-settings store via
+     the cascade variable above; the rest mirror the previous
+     hand-tuned values. */
+  --tugx-list-view-row-gap: var(--tugx-tide-entry-margin);
   --tugx-list-view-padding-block: var(--tug-space-md);
   --tugx-list-view-scroll-padding-end: var(--tug-space-2xl);
 }
@@ -71,12 +89,28 @@
   --tugx-transcript-controls-margin-top: var(--tug-space-2xs);
 }
 
+/* Header typography — applied to both the bold identifier and the
+   trailing timestamp so the row's leading line reads as a single
+   typographic block. Driven by the response-settings store. */
+.tide-card-transcript .tug-transcript-entry__identifier,
+.tide-card-transcript .tug-transcript-entry__timestamp {
+  font-family: var(--tugx-tide-header-font-family);
+  font-size: var(--tugx-tide-header-font-size);
+  line-height: var(--tugx-tide-header-line-height);
+  letter-spacing: var(--tugx-tide-header-letter-spacing);
+}
+
 /* User-row body — plain text per [D11]. Wraps long lines, preserves
-   user-typed whitespace inside the prompt verbatim. */
+   user-typed whitespace inside the prompt verbatim. Typography
+   tracks the response-content tokens. */
 .tide-card-transcript-user-body {
   display: block;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  font-family: var(--tugx-tide-content-font-family);
+  font-size: var(--tugx-tide-content-font-size);
+  line-height: var(--tugx-tide-content-line-height);
+  letter-spacing: var(--tugx-tide-content-letter-spacing);
 }
 
 /* Code-row body — `TugMarkdownBlock`. Width-100% so streaming text
@@ -89,6 +123,20 @@
 .tide-card-transcript-code-body {
   width: 100%;
   --tugx-md-block-padding-x: 0;
+}
+
+/* Apply response-content typography to every markdown block inside a
+   transcript code row. We target the block (not the body wrapper) so
+   the values cascade onto headings, lists, paragraphs, and inline
+   text rendered by `TugMarkdownView` / `TugMarkdownBlock`. Inline
+   `<code>` and fenced `<pre>` keep their own monospace font via the
+   `--tugx-md-mono-font` token — neither rule references our family
+   token, so they're unaffected. */
+.tide-card-transcript-code-body .tugx-md-block {
+  font-family: var(--tugx-tide-content-font-family);
+  font-size: var(--tugx-tide-content-font-size);
+  line-height: var(--tugx-tide-content-line-height);
+  letter-spacing: var(--tugx-tide-content-letter-spacing);
 }
 
 /* Trailing interrupted indicator on a committed code row whose
@@ -571,24 +619,25 @@
 }
 
 /* ----------------------------------------------------------------------------
-   .tide-card-settings — body of the editor-settings sheet
+   .tide-card-settings — body of the title-bar `…` settings sheet
    ----------------------------------------------------------------------------
-   Shown when the user taps the title bar's `…` button. Two sections:
-   a row of typography popups (Font / Size / Line / Spacing) and a
-   stack of view switches (Line wrap / Line numbers / Active line).
+   Two stacked sections: Response Settings (transcript pane typography
+   plus the inter-entry margin slider) and Editor Settings (prompt
+   editor typography and view toggles). Each section opens with an
+   uppercase headline and contains one or more subsections.
    ----------------------------------------------------------------------------- */
 
-/* Widen the sheet only when its body is the editor-settings content,
-   so the four popup buttons sit on one row without wrapping. Sized
-   to the row's natural width (popups + gaps + sheet padding); the
+/* Widen the sheet only when its body is the settings content, so the
+   four typography popups sit on one row without wrapping. Sized to
+   the row's natural width (popups + gaps + sheet padding); the
    default 460px is appropriate for short-form confirmations. */
 .tug-sheet-content:has(.tide-card-settings) {
   max-width: 560px;
 }
 
-/* All-caps treatment for the sheet title when it heads the editor
-   settings — matches the in-body section titles (View) for visual
-   consistency without changing the global sheet header style. */
+/* All-caps treatment for the sheet title — matches the in-body
+   section headlines for visual consistency without changing the
+   global sheet header style. */
 .tug-sheet-content:has(.tide-card-settings) .tug-sheet-title {
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -599,8 +648,49 @@
 .tide-card-settings {
   display: flex;
   flex-direction: column;
-  gap: var(--tug-space-md);
+  gap: var(--tug-space-2xl);
   padding: var(--tug-space-xs) 0;
+}
+
+/* Each settings group is a TugBox with a `<legend>` label. The body
+   stacks the popup row above any view switches with the standard
+   medium gap.
+
+   `box-sizing: border-box` and `width: 100%` override `.tug-box`'s
+   default `width: fit-content` so each box fills the sheet's
+   content area. */
+.tide-card-settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-lg);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* WebKit (and some other browsers) gives `<legend>` an intrinsic
+   inline-size that can extend past its visible text, leaving the
+   top border on the right side of the legend looking truncated or
+   missing entirely. Constraining the legend to `inline-size:
+   max-content` clamps its bounding box to the visible text + padding
+   so the fieldset's top border continues normally on both sides of
+   the legend label. */
+.tide-card-settings-group > .tug-box-legend {
+  inline-size: max-content;
+}
+
+/* The Editor group stacks a typography row above three switches.
+   Tug-space-md is comfortable between the popups and the first
+   switch but the boxes-with-legend layout needs a touch more
+   breathing room above the switch column so the legend gap and
+   the popup row don't crowd the first switch. */
+.tide-card-settings-group .tide-card-settings-switches {
+  margin-top: var(--tug-space-sm);
+}
+
+/* The Response Entry Gap group hosts a single slider and reads as a
+   half-width "knob" rather than a full-width band. */
+.tide-card-settings-group-entry-gap {
+  width: 50%;
 }
 
 /* All four typography popups on one row. `flex-wrap: nowrap` keeps

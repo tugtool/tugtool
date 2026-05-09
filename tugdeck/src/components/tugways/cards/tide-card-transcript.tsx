@@ -62,6 +62,7 @@ import { useResponder } from "@/components/tugways/use-responder";
 import { useTextSurfaceContextMenu } from "@/components/tugways/use-text-surface-context-menu";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
+import type { ResponseSettingsStore } from "@/lib/response-settings-store";
 import {
   TideTranscriptDataSource,
   useTideTranscriptDataSource,
@@ -509,11 +510,19 @@ const ESTIMATED_HEIGHT_CODE = 120;
 export interface TideTranscriptHostProps {
   codeSessionStore: CodeSessionStore;
   sessionMetadataStore: SessionMetadataStore;
+  /**
+   * Per-card response-settings store. The host binds it to the
+   * `.tide-card-transcript` root via `useLayoutEffect` so the store's
+   * CSS custom properties cascade onto every entry header and content
+   * body without round-tripping through React state ([L06] / [L22]).
+   */
+  responseStore: ResponseSettingsStore;
 }
 
 export const TideTranscriptHost: React.FC<TideTranscriptHostProps> = ({
   codeSessionStore,
   sessionMetadataStore,
+  responseStore,
 }) => {
   const dataSource = useTideTranscriptDataSource(codeSessionStore);
   const modelName = useSessionModelName(sessionMetadataStore);
@@ -553,8 +562,22 @@ export const TideTranscriptHost: React.FC<TideTranscriptHostProps> = ({
     [],
   );
 
+  // Bind the transcript root for response-settings CSS variable
+  // cascade. The store sets inline custom properties (header /
+  // content typography + entry margin); descendant rules in
+  // `tide-card.css` consume them on entry headers, markdown content,
+  // and the inner list view's row gap.
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    responseStore.bind(el);
+    return () => responseStore.unbind();
+  }, [responseStore]);
+
   return (
     <div
+      ref={rootRef}
       className="tide-card-transcript"
       data-slot="tide-card-transcript"
       data-testid="tide-card-transcript"
