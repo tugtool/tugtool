@@ -1,19 +1,26 @@
 /**
  * ResponseSettingsStore — subscribable store for the Tide transcript's
- * typography and inter-entry spacing.
+ * presentation knobs.
  *
- * Mirrors `EditorSettingsStore` in shape but targets a different
- * surface: the assistant-response transcript pane at the top of the
- * Tide card (vs. the prompt editor at the bottom). Two parallel font
- * groups (header / content) plus an `entryMargin` slider value drive
- * a small set of CSS custom properties on the bound transcript root,
- * scoped via descendant rules in `tide-card.css` so the settings only
- * affect the Tide transcript and never bleed into other markdown
- * consumers in the deck.
+ * Two settings only:
  *
- * Reads initial state synchronously from the TugbankClient cache (no
- * async load, no placeholder flash). Observes `onDomainChanged` for
- * live updates from external processes.
+ *   - `magnification` (0.5 – 1.5, default 1.0): scales the entire
+ *     transcript view — text, headings, icons, controls — by treating
+ *     it as a font-size multiplier on `.tide-card-transcript` and
+ *     letting `em`-relative descendants scale by cascade. Pixel-baked
+ *     icons and identifiers get explicit `em` overrides in
+ *     `tide-card.css` so they track the multiplier too.
+ *   - `entryMargin` (px): inter-entry vertical gap, written through to
+ *     `--tugx-list-view-row-gap` via the cascade variable
+ *     `--tugx-tide-entry-margin`.
+ *
+ * The store applies both as CSS custom properties on the bound
+ * transcript root, so the transcript pane reads exactly the user's
+ * choices and no other markdown surface in the deck is affected.
+ *
+ * Reads initial state synchronously from the TugbankClient cache
+ * (no async load, no placeholder flash). Observes `onDomainChanged`
+ * for live updates from external processes.
  *
  * **Laws:** [L02] useSyncExternalStore-compatible subscribe/getSnapshot.
  * [L06] Appearance via CSS custom properties, not React state.
@@ -26,22 +33,21 @@
 import { getTugbankClient } from "./tugbank-singleton";
 import { putResponseSettings } from "@/settings-api";
 import type { ResponseSettings } from "@/settings-api";
-import { FONT_STACKS } from "./editor-settings-store";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
 const DOMAIN = "dev.tugtool.tide.response";
 const KEY = "settings";
 
+/** Lower bound on the magnification slider. Below 0.5x the icon
+ *  gutter starts colliding with body text on small panes. */
+export const MIN_MAGNIFICATION = 0.5;
+/** Upper bound. Past 1.5x a single line of body text begins to
+ *  overflow at default pane widths. */
+export const MAX_MAGNIFICATION = 1.5;
+
 export const DEFAULT_RESPONSE_SETTINGS: ResponseSettings = {
-  headerFontId: "plex-sans",
-  headerFontSize: 14,
-  headerLetterSpacing: 0,
-  headerLineHeight: 1.4,
-  contentFontId: "plex-sans",
-  contentFontSize: 14,
-  contentLetterSpacing: 0,
-  contentLineHeight: 1.6,
+  magnification: 1.0,
   entryMargin: 16,
 };
 
@@ -122,8 +128,12 @@ export class ResponseSettingsStore {
   // ── Internal ────────────────────────────────────────────────────────────
 
   private _applySettings(next: ResponseSettings, persist: boolean): void {
-    if (!FONT_STACKS[next.headerFontId]) next.headerFontId = DEFAULT_RESPONSE_SETTINGS.headerFontId;
-    if (!FONT_STACKS[next.contentFontId]) next.contentFontId = DEFAULT_RESPONSE_SETTINGS.contentFontId;
+    // Clamp out-of-range values from a stale persisted shape so the
+    // slider never lands on an invalid position on a fresh load.
+    next.magnification = Math.max(
+      MIN_MAGNIFICATION,
+      Math.min(MAX_MAGNIFICATION, next.magnification),
+    );
 
     this._settings = next;
 
@@ -138,25 +148,7 @@ export class ResponseSettingsStore {
     const el = this._targetEl;
     if (!el) return;
     const s = this._settings;
-
-    const headerStack = FONT_STACKS[s.headerFontId];
-    if (headerStack) el.style.setProperty("--tugx-tide-header-font-family", headerStack);
-    el.style.setProperty("--tugx-tide-header-font-size", `${s.headerFontSize}px`);
-    el.style.setProperty(
-      "--tugx-tide-header-letter-spacing",
-      s.headerLetterSpacing === 0 ? "normal" : `${s.headerLetterSpacing}px`,
-    );
-    el.style.setProperty("--tugx-tide-header-line-height", String(s.headerLineHeight));
-
-    const contentStack = FONT_STACKS[s.contentFontId];
-    if (contentStack) el.style.setProperty("--tugx-tide-content-font-family", contentStack);
-    el.style.setProperty("--tugx-tide-content-font-size", `${s.contentFontSize}px`);
-    el.style.setProperty(
-      "--tugx-tide-content-letter-spacing",
-      s.contentLetterSpacing === 0 ? "normal" : `${s.contentLetterSpacing}px`,
-    );
-    el.style.setProperty("--tugx-tide-content-line-height", String(s.contentLineHeight));
-
+    el.style.setProperty("--tugx-tide-magnification", String(s.magnification));
     el.style.setProperty("--tugx-tide-entry-margin", `${s.entryMargin}px`);
   }
 }

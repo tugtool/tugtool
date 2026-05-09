@@ -212,6 +212,21 @@ export interface TugSliderProps
    */
   disabled?: boolean;
   /**
+   * Override the trailing value input's width with an explicit CSS
+   * length (`"3rem"`, `"56px"`, etc.). When omitted, `TugValueInput`
+   * auto-sizes to fit the longest formatted boundary value
+   * (`Math.max(displayMin.length, displayMax.length) + 2 ch`) — the
+   * right default for a standalone slider whose value column should
+   * be just wide enough for its own range. Set `valueWidth` when a
+   * group of sliders rendered together must align their value-column
+   * right edge regardless of how many digits each slider's max
+   * happens to format to (e.g., a settings sheet with one slider for
+   * `0..1.5` and another for `0..48`). The value is passed straight
+   * through as inline `style.width` on `TugValueInput` so it
+   * overrides the hook-computed default.
+   */
+  valueWidth?: string;
+  /**
    * Opt the slider into the Component State Preservation Protocol
    * ([D13], [A9]). When provided (and rendered inside a card), the
    * numeric value is captured into
@@ -248,6 +263,7 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
       formatter,
       size = "md",
       disabled = false,
+      valueWidth,
       className,
       style,
       componentStatePreservationKey,
@@ -542,7 +558,14 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
             step={step}
             size={size}
             disabled={effectiveDisabled}
-            style={layout === "stacked" && label ? { width: "56px" } : undefined}
+            // When `valueWidth` is set, override the hook-computed
+            // width — the consumer wants its sliders to align as a
+            // group. Otherwise, leave style undefined so
+            // `TugValueInput` falls back to its default of sizing to
+            // the longest formatted boundary value (the right default
+            // for a standalone slider whose value column should
+            // shrink-to-fit its own range).
+            style={valueWidth !== undefined ? { width: valueWidth } : undefined}
           />
         )}
       </>

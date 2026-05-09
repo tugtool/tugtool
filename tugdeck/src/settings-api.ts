@@ -220,25 +220,17 @@ export async function getEditorSettings(): Promise<EditorSettings | null> {
 // ── Response (transcript) settings ──────────────────────────────────────────
 
 /**
- * Response-settings shape stored in tugbank. Drives the typography and
- * inter-entry spacing of the Tide card's transcript pane (the top
- * pane, distinct from the editor pane below it).
+ * Response-settings shape stored in tugbank. Two presentation knobs
+ * for the Tide card's transcript pane (top pane, distinct from the
+ * editor pane below it):
  *
- * Two parallel font groups: one for entry headers (the bold identifier
- * row at the top of each transcript entry) and one for entry content
- * (the markdown body). Plus a single `entryMargin` value in pixels for
- * the gap between adjacent entries.
+ *   - `magnification`: scale factor for the entire transcript view —
+ *     text, headings, icons, controls. 1.0 = default; sliders typically
+ *     range 0.5..1.5.
+ *   - `entryMargin`: inter-entry vertical gap in CSS pixels.
  */
 export interface ResponseSettings {
-  headerFontId: string;
-  headerFontSize: number;
-  headerLetterSpacing: number;
-  headerLineHeight: number;
-  contentFontId: string;
-  contentFontSize: number;
-  contentLetterSpacing: number;
-  contentLineHeight: number;
-  /** Inter-entry gap in CSS pixels. */
+  magnification: number;
   entryMargin: number;
 }
 

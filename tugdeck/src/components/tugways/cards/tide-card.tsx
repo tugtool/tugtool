@@ -110,6 +110,7 @@ import {
   type PickerSelection,
 } from "./tide-picker-cells";
 import { truncateForDisplay } from "./tide-picker-format";
+import { createNumberFormatter } from "@/lib/tug-format";
 
 import "./tide-card.css";
 
@@ -171,6 +172,14 @@ const LINE_HEIGHT_OPTIONS: TugPopupButtonItem<number>[] = [
   { action: TUG_ACTIONS.SET_VALUE, value: 1.7, label: "1.7" },
   { action: TUG_ACTIONS.SET_VALUE, value: 1.8, label: "1.8" },
 ];
+
+/**
+ * Two-decimal formatter for the magnification slider's value input.
+ * `0.5` → `"0.50"`, `1` → `"1.00"`, `1.5` → `"1.50"`. Module-scope so
+ * the formatter object identity stays stable across renders — no
+ * useMemo needed at the call site.
+ */
+const MAGNIFICATION_FORMATTER = createNumberFormatter({ decimals: 2 });
 
 /** Stable empty completion provider for the unbound / no-connection window. */
 const EMPTY_FILE_COMPLETION_PROVIDER = ((_q: string) => []) as CompletionProvider;
@@ -1846,14 +1855,7 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   const lineWrapId = useId();
   const lineNumbersId = useId();
   const activeLineGutterId = useId();
-  const responseHeaderFontPopupId = useId();
-  const responseHeaderSizePopupId = useId();
-  const responseHeaderLinePopupId = useId();
-  const responseHeaderSpacingPopupId = useId();
-  const responseContentFontPopupId = useId();
-  const responseContentSizePopupId = useId();
-  const responseContentLinePopupId = useId();
-  const responseContentSpacingPopupId = useId();
+  const responseMagnificationSliderId = useId();
   const responseEntryMarginSliderId = useId();
 
   // --- Settings menu (title-bar `…` button). ---
@@ -1878,14 +1880,7 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
         lineWrapId={lineWrapId}
         lineNumbersId={lineNumbersId}
         activeLineGutterId={activeLineGutterId}
-        responseHeaderFontPopupId={responseHeaderFontPopupId}
-        responseHeaderSizePopupId={responseHeaderSizePopupId}
-        responseHeaderLinePopupId={responseHeaderLinePopupId}
-        responseHeaderSpacingPopupId={responseHeaderSpacingPopupId}
-        responseContentFontPopupId={responseContentFontPopupId}
-        responseContentSizePopupId={responseContentSizePopupId}
-        responseContentLinePopupId={responseContentLinePopupId}
-        responseContentSpacingPopupId={responseContentSpacingPopupId}
+        responseMagnificationSliderId={responseMagnificationSliderId}
         responseEntryMarginSliderId={responseEntryMarginSliderId}
         onClose={close}
       />
@@ -1927,20 +1922,15 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   const { ResponderScope, responderRef } = useResponderForm({
     setValueString: {
       [fontPopupId]: (v: string) => editorStore.set({ fontId: v }),
-      [responseHeaderFontPopupId]: (v: string) => responseStore.set({ headerFontId: v }),
-      [responseContentFontPopupId]: (v: string) => responseStore.set({ contentFontId: v }),
     },
     setValueNumber: {
       [fontSizePopupId]: (v: number) => editorStore.set({ fontSize: v }),
       [letterSpacingPopupId]: (v: number) => editorStore.set({ letterSpacing: v }),
       [lineHeightPopupId]: (v: number) => editorStore.set({ lineHeight: v }),
-      [responseHeaderSizePopupId]: (v: number) => responseStore.set({ headerFontSize: v }),
-      [responseHeaderLinePopupId]: (v: number) => responseStore.set({ headerLineHeight: v }),
-      [responseHeaderSpacingPopupId]: (v: number) => responseStore.set({ headerLetterSpacing: v }),
-      [responseContentSizePopupId]: (v: number) => responseStore.set({ contentFontSize: v }),
-      [responseContentLinePopupId]: (v: number) => responseStore.set({ contentLineHeight: v }),
-      [responseContentSpacingPopupId]: (v: number) => responseStore.set({ contentLetterSpacing: v }),
-      [responseEntryMarginSliderId]: (v: number) => responseStore.set({ entryMargin: v }),
+      [responseMagnificationSliderId]: (v: number) =>
+        responseStore.set({ magnification: v }),
+      [responseEntryMarginSliderId]: (v: number) =>
+        responseStore.set({ entryMargin: v }),
     },
     toggle: {
       [lineWrapId]: (v: boolean) => editorStore.set({ lineWrap: v }),
@@ -2082,26 +2072,6 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
 // SettingsSheetBody — combined settings sheet for the title-bar `…` menu
 // ---------------------------------------------------------------------------
 
-/** Font choices shared by both response and editor settings groups. */
-const RESPONSE_FONT_OPTIONS: TugPopupButtonItem<string>[] = EDITOR_FONT_OPTIONS;
-
-/** Font sizes for the response groups (transcript reads larger by default). */
-const RESPONSE_FONT_SIZE_OPTIONS: TugPopupButtonItem<number>[] = [
-  { action: TUG_ACTIONS.SET_VALUE, value: 12, label: "12 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 13, label: "13 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 14, label: "14 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 15, label: "15 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 16, label: "16 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 17, label: "17 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 18, label: "18 px" },
-];
-
-/** Line-height options reused for response header / content groups. */
-const RESPONSE_LINE_HEIGHT_OPTIONS: TugPopupButtonItem<number>[] = LINE_HEIGHT_OPTIONS;
-
-/** Letter-spacing options reused for response header / content groups. */
-const RESPONSE_LETTER_SPACING_OPTIONS: TugPopupButtonItem<number>[] = LETTER_SPACING_OPTIONS;
-
 /**
  * Props for {@link SettingsSheetBody}.
  *
@@ -2121,14 +2091,7 @@ interface SettingsSheetBodyProps {
   lineWrapId: string;
   lineNumbersId: string;
   activeLineGutterId: string;
-  responseHeaderFontPopupId: string;
-  responseHeaderSizePopupId: string;
-  responseHeaderLinePopupId: string;
-  responseHeaderSpacingPopupId: string;
-  responseContentFontPopupId: string;
-  responseContentSizePopupId: string;
-  responseContentLinePopupId: string;
-  responseContentSpacingPopupId: string;
+  responseMagnificationSliderId: string;
   responseEntryMarginSliderId: string;
   /** Dismiss callback supplied by `useTugSheet`'s render closure. */
   onClose: () => void;
@@ -2144,10 +2107,10 @@ function letterSpacingLabel(value: number): string {
  * button in the Tide card's title bar.
  *
  * Two stacked sections:
- *   1. **Response Settings** — typography for transcript entry headers
- *      and entry content, plus a slider for the inter-entry margin.
- *   2. **Editor Settings** — typography and view toggles for the
- *      prompt editor (the bottom pane).
+ *   1. **Response** — magnification (scales the entire transcript view
+ *      including icons and headings) plus the inter-entry vertical gap.
+ *   2. **Editor** — typography and view toggles for the prompt editor
+ *      (the bottom pane).
  */
 function SettingsSheetBody({
   editorStore,
@@ -2159,14 +2122,7 @@ function SettingsSheetBody({
   lineWrapId,
   lineNumbersId,
   activeLineGutterId,
-  responseHeaderFontPopupId,
-  responseHeaderSizePopupId,
-  responseHeaderLinePopupId,
-  responseHeaderSpacingPopupId,
-  responseContentFontPopupId,
-  responseContentSizePopupId,
-  responseContentLinePopupId,
-  responseContentSpacingPopupId,
+  responseMagnificationSliderId,
   responseEntryMarginSliderId,
   onClose,
 }: SettingsSheetBodyProps) {
@@ -2182,103 +2138,40 @@ function SettingsSheetBody({
   return (
     <div className="tide-card-settings">
       <TugBox
-        label="Response Headers"
+        label="Response"
         labelPosition="legend"
         variant="bordered"
         className="tide-card-settings-group"
       >
-        <div className="tide-card-settings-row">
-          <TugPopupButton
-            className="tide-card-settings-popup tide-card-settings-popup-font"
-            topLabel="Font"
-            label={RESPONSE_FONT_OPTIONS.find(f => f.value === responseSettings.headerFontId)?.label ?? "Font"}
-            items={RESPONSE_FONT_OPTIONS}
-            senderId={responseHeaderFontPopupId}
-            size="sm"
+        {/* 2-column grid (label / slider) so both rows share a
+            single label column auto-sized to the longest entry,
+            keeping labels close to their slider track. Both sliders
+            share `valueWidth` so their value columns also align. */}
+        <div className="tide-card-settings-slider-grid">
+          <span className="tide-card-settings-slider-label">Magnification</span>
+          <TugSlider
+            className="tide-card-settings-slider"
+            value={responseSettings.magnification}
+            min={0.5}
+            max={1.5}
+            step={0.05}
+            senderId={responseMagnificationSliderId}
+            size="md"
+            valueWidth="3.5rem"
+            formatter={MAGNIFICATION_FORMATTER}
           />
-          <TugPopupButton
-            className="tide-card-settings-popup tide-card-settings-popup-size"
-            topLabel="Size"
-            label={`${responseSettings.headerFontSize}px`}
-            items={RESPONSE_FONT_SIZE_OPTIONS}
-            senderId={responseHeaderSizePopupId}
-            size="sm"
-          />
-          <TugPopupButton
-            className="tide-card-settings-popup tide-card-settings-popup-line"
-            topLabel="Line"
-            label={responseSettings.headerLineHeight.toFixed(1)}
-            items={RESPONSE_LINE_HEIGHT_OPTIONS}
-            senderId={responseHeaderLinePopupId}
-            size="sm"
-          />
-          <TugPopupButton
-            className="tide-card-settings-popup tide-card-settings-popup-spacing"
-            topLabel="Spacing"
-            label={letterSpacingLabel(responseSettings.headerLetterSpacing)}
-            items={RESPONSE_LETTER_SPACING_OPTIONS}
-            senderId={responseHeaderSpacingPopupId}
-            size="sm"
+          <span className="tide-card-settings-slider-label">Entry Gap</span>
+          <TugSlider
+            className="tide-card-settings-slider"
+            value={responseSettings.entryMargin}
+            min={0}
+            max={48}
+            step={1}
+            senderId={responseEntryMarginSliderId}
+            size="md"
+            valueWidth="3.5rem"
           />
         </div>
-      </TugBox>
-
-      <TugBox
-        label="Response Content"
-        labelPosition="legend"
-        variant="bordered"
-        className="tide-card-settings-group"
-      >
-        <div className="tide-card-settings-row">
-          <TugPopupButton
-            className="tide-card-settings-popup tide-card-settings-popup-font"
-            topLabel="Font"
-            label={RESPONSE_FONT_OPTIONS.find(f => f.value === responseSettings.contentFontId)?.label ?? "Font"}
-            items={RESPONSE_FONT_OPTIONS}
-            senderId={responseContentFontPopupId}
-            size="sm"
-          />
-          <TugPopupButton
-            className="tide-card-settings-popup tide-card-settings-popup-size"
-            topLabel="Size"
-            label={`${responseSettings.contentFontSize}px`}
-            items={RESPONSE_FONT_SIZE_OPTIONS}
-            senderId={responseContentSizePopupId}
-            size="sm"
-          />
-          <TugPopupButton
-            className="tide-card-settings-popup tide-card-settings-popup-line"
-            topLabel="Line"
-            label={responseSettings.contentLineHeight.toFixed(1)}
-            items={RESPONSE_LINE_HEIGHT_OPTIONS}
-            senderId={responseContentLinePopupId}
-            size="sm"
-          />
-          <TugPopupButton
-            className="tide-card-settings-popup tide-card-settings-popup-spacing"
-            topLabel="Spacing"
-            label={letterSpacingLabel(responseSettings.contentLetterSpacing)}
-            items={RESPONSE_LETTER_SPACING_OPTIONS}
-            senderId={responseContentSpacingPopupId}
-            size="sm"
-          />
-        </div>
-      </TugBox>
-
-      <TugBox
-        label="Response Entry Gap"
-        labelPosition="legend"
-        variant="bordered"
-        className="tide-card-settings-group tide-card-settings-group-entry-gap"
-      >
-        <TugSlider
-          value={responseSettings.entryMargin}
-          min={0}
-          max={48}
-          step={1}
-          senderId={responseEntryMarginSliderId}
-          size="md"
-        />
       </TugBox>
 
       <TugBox

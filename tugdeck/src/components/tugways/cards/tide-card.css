@@ -50,29 +50,25 @@
   display: flex;
   flex-direction: column;
 
-  /* Per-card response-settings token defaults. The `ResponseSettings
-     Store` overrides these via inline custom properties on this same
-     element; descendant rules below consume them so the typography of
-     entry headers / content and the inter-entry gap track the user's
-     choices in the `…` settings sheet. Defaults mirror
-     `DEFAULT_RESPONSE_SETTINGS` in `lib/response-settings-store.ts`. */
-  --tugx-tide-header-font-family:
-    "IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --tugx-tide-header-font-size: 14px;
-  --tugx-tide-header-line-height: 1.4;
-  --tugx-tide-header-letter-spacing: normal;
-  --tugx-tide-content-font-family:
-    "IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --tugx-tide-content-font-size: 14px;
-  --tugx-tide-content-line-height: 1.6;
-  --tugx-tide-content-letter-spacing: normal;
+  /* Per-card response-settings tokens. The `ResponseSettingsStore`
+     overrides these via inline custom properties on this same
+     element; descendants consume them via the cascade rules below.
+     Defaults mirror `DEFAULT_RESPONSE_SETTINGS` in
+     `lib/response-settings-store.ts`. [L06 / L24] */
+  --tugx-tide-magnification: 1;
   --tugx-tide-entry-margin: 16px;
+
+  /* Magnified root font-size. The transcript's nominal body size is
+     14px; multiplying by the magnification lets every `em`-relative
+     descendant (markdown body, paragraph margins, heading rhythm,
+     icon overrides below) scale by the same factor without each
+     surface having to read the magnification token directly. The
+     `…` settings sheet's slider drives `--tugx-tide-magnification`
+     between 0.5 and 1.5, so the font-size sweeps 7px through 21px. */
+  font-size: calc(14px * var(--tugx-tide-magnification));
 }
 
 .tide-card-transcript .tug-list-view {
-  /* Inter-entry margin is driven by the response-settings store via
-     the cascade variable above; the rest mirror the previous
-     hand-tuned values. */
   --tugx-list-view-row-gap: var(--tugx-tide-entry-margin);
   --tugx-list-view-padding-block: var(--tug-space-md);
   --tugx-list-view-scroll-padding-end: var(--tug-space-2xl);
@@ -89,28 +85,48 @@
   --tugx-transcript-controls-margin-top: var(--tug-space-2xs);
 }
 
-/* Header typography — applied to both the bold identifier and the
-   trailing timestamp so the row's leading line reads as a single
-   typographic block. Driven by the response-settings store. */
-.tide-card-transcript .tug-transcript-entry__identifier,
+/* Identifier + timestamp scale via `em` so the magnification root
+   font-size pulls them with it. The em values (0.875 / 0.75)
+   match `--tug-font-size-sm` / `--tug-font-size-xs` against the
+   nominal 14px root used by `.tide-card-transcript`. */
+.tide-card-transcript .tug-transcript-entry__identifier {
+  font-size: 0.875em;
+}
+
 .tide-card-transcript .tug-transcript-entry__timestamp {
-  font-family: var(--tugx-tide-header-font-family);
-  font-size: var(--tugx-tide-header-font-size);
-  line-height: var(--tugx-tide-header-line-height);
-  letter-spacing: var(--tugx-tide-header-letter-spacing);
+  font-size: 0.75em;
+}
+
+/* Gutter icons (User / Bot / Shell / Command). Lucide renders SVGs
+   with width / height pixel attributes — override via CSS so the
+   icon column scales with magnification. The transcript primitive's
+   `--tugx-transcript-icon-column-width` token is also redeclared in
+   `em` so the column itself widens / narrows alongside. */
+.tide-card-transcript .tug-transcript-entry {
+  --tugx-transcript-icon-column-width: 2.5em;
+}
+
+.tide-card-transcript .tug-transcript-entry__icon svg {
+  width: 1em;
+  height: 1em;
+}
+
+/* Per-entry control row icons (the trailing copy button). The
+   TugPushButton's `icon` SVG is sized in pixels via the lucide
+   `size` prop; override here so the button glyph scales too. */
+.tide-card-transcript .tug-transcript-entry__controls .lucide {
+  width: 1em;
+  height: 1em;
 }
 
 /* User-row body — plain text per [D11]. Wraps long lines, preserves
-   user-typed whitespace inside the prompt verbatim. Typography
-   tracks the response-content tokens. */
+   user-typed whitespace inside the prompt verbatim. `1em` font-size
+   anchors to the magnified root. */
 .tide-card-transcript-user-body {
   display: block;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-family: var(--tugx-tide-content-font-family);
-  font-size: var(--tugx-tide-content-font-size);
-  line-height: var(--tugx-tide-content-line-height);
-  letter-spacing: var(--tugx-tide-content-letter-spacing);
+  font-size: 1em;
 }
 
 /* Code-row body — `TugMarkdownBlock`. Width-100% so streaming text
@@ -125,18 +141,20 @@
   --tugx-md-block-padding-x: 0;
 }
 
-/* Apply response-content typography to every markdown block inside a
-   transcript code row. We target the block (not the body wrapper) so
-   the values cascade onto headings, lists, paragraphs, and inline
-   text rendered by `TugMarkdownView` / `TugMarkdownBlock`. Inline
-   `<code>` and fenced `<pre>` keep their own monospace font via the
-   `--tugx-md-mono-font` token — neither rule references our family
-   token, so they're unaffected. */
+/* Apply magnification to markdown content. Body text uses 1em so it
+   scales with the transcript root. Heading sizes are overridden in
+   em units (matching the `--tug-font-size-*` ratios at a 14px root)
+   so they magnify together. [L20] cascade-scoped overrides — the
+   primitive's tokens are read globally, and we redeclare them only
+   inside the transcript. */
 .tide-card-transcript-code-body .tugx-md-block {
-  font-family: var(--tugx-tide-content-font-family);
-  font-size: var(--tugx-tide-content-font-size);
-  line-height: var(--tugx-tide-content-line-height);
-  letter-spacing: var(--tugx-tide-content-letter-spacing);
+  font-size: 1em;
+  --tugx-md-h1-size: 1.5em;
+  --tugx-md-h2-size: 1.25em;
+  --tugx-md-h3-size: 1.125em;
+  --tugx-md-h4-size: 1em;
+  --tugx-md-h5-size: 1em;
+  --tugx-md-h6-size: 1em;
 }
 
 /* Trailing interrupted indicator on a committed code row whose
@@ -687,10 +705,26 @@
   margin-top: var(--tug-space-sm);
 }
 
-/* The Response Entry Gap group hosts a single slider and reads as a
-   half-width "knob" rather than a full-width band. */
-.tide-card-settings-group-entry-gap {
-  width: 50%;
+/* Two-column grid (label / slider) for the Response group. The
+   `auto` first column sizes to the longest label across all rows
+   (so "Magnification" and "Entry Gap" share one label column);
+   the `1fr` second column lets the slider fill the remaining
+   width. `column-gap` keeps the label hugging its slider track. */
+.tide-card-settings-slider-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: var(--tug-space-md);
+  row-gap: var(--tug-space-md);
+  align-items: center;
+}
+
+.tide-card-settings-slider-label {
+  font-size: var(--tug-font-size-sm, 0.875rem);
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+.tide-card-settings-slider {
+  min-width: 0;
 }
 
 /* All four typography popups on one row. `flex-wrap: nowrap` keeps

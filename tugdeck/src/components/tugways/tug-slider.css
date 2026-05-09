@@ -41,9 +41,22 @@ body {
 .tug-slider {
   display: inline-flex;
   align-items: center;
-  gap: var(--tug-space-xs);
+  /* Generous gap between the track and the trailing value input so
+     the digits sit clearly off the end of the slider rather than
+     hugging the thumb's max-position. */
+  gap: var(--tug-space-lg);
   flex: 1;
   min-width: 0;
+}
+
+/* Value input pinned to a uniform width per size variant — see
+   `SLIDER_VALUE_INPUT_WIDTH` in tug-slider.tsx for the mapping. The
+   slider sets `style={{ width: ... }}` on its `<TugValueInput>`,
+   which overrides the hook-computed `inputWidth` and aligns multiple
+   stacked sliders' value columns. This rule pins flex behaviour
+   (don't shrink) so the inline width is honoured inside flex rows. */
+.tug-slider .tug-value-input {
+  flex: 0 0 auto;
 }
 
 /* ---- Layout variants ---- */
