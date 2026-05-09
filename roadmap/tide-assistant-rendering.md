@@ -1270,21 +1270,25 @@ ThinkingBlock, PermissionDialog, QuestionDialog, CostChrome (with CostBadge sub-
 - Wire-up in `tide-card.tsx` to consume `streamingPaths.thinking`
 
 **Tasks:**
-- [ ] New token slot `--tugx-thinking-*` per [Table T07](#t07-token-slots), tuned for both themes
-- [ ] Streaming binding to `streamingPaths.thinking` per Spec S05
-- [ ] Collapse animation respecting `prefers-reduced-motion`
-- [ ] Snap-to-collapsed on parent turn `complete` per [D14]
-- [ ] User-expanded state persists for the row's lifetime (not across reload)
+- [x] New token slot `--tugx-thinking-*` per [Table T07](#t07-token-slots), tuned for both themes (brio + harmony) — bg / border / radius / margin / header padding+gap+hover / label color+size+weight / chevron color / preview color+size+weight / content padding+color+size+style / collapse duration+easing / focus ring
+- [x] Streaming binding to `streamingPaths.thinking` per Spec S05 — chrome subscribes for preview text + visibility, body composes `TugMarkdownBlock` which subscribes for prose, both rAF-coalesced and unsubscribe on unmount
+- [x] Collapse animation via `grid-template-rows: 0fr ↔ 1fr` (no max-height cap), `prefers-reduced-motion: reduce` disables transition
+- [x] Snap-to-collapsed on parent turn `complete` per [D14] — implemented by the row swap: streaming cell unmounts, committed cell mounts a fresh `TideThinkingBlock` with the static-mode default-collapsed
+- [x] User-expanded state persists for the cell's lifetime via React state; remount restores the mode default
 
 **Tests:**
-- [ ] Renders streaming thinking text incrementally
-- [ ] On `turn_complete`, collapses to one-line preview
-- [ ] User expand → persists; row unmount → state lost (expected)
-- [ ] Both themes verify
+- [x] Renders streaming thinking text incrementally — `tide-thinking-block.test.tsx` `becomes visible after the first non-empty store emission`, `preview text updates on subsequent emissions`
+- [x] On `turn_complete`, the new cell's static-mode block mounts default-collapsed with first-line preview — `non-empty initialText → strip is visible and default-collapsed [D14]`, `preview is the computed first-line summary`
+- [x] User expand persists across stream deltas — `user can collapse a streaming block; toggle persists for the cell's lifetime`
+- [x] Unmount unsubscribes — `unmount unsubscribes — subsequent store writes do not throw or schedule rAF`
+- [x] `computePreview` unit pass: empty / leading-blank / whitespace-only / interior-collapse / truncation
+- [x] Both themes declare the full `--tugx-thinking-*` token set (enforced via existing `audit:tokens lint`)
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
-- [ ] Manual: replay `test-22-subagent-spawn.jsonl` in a Tide card; verify thinking renders, then collapses
+- [x] `cd tugdeck && bun x tsc --noEmit` — clean
+- [x] `cd tugdeck && bun test` — 3247 pass / 0 fail (195 files); 20 new tests
+- [x] `cd tugdeck && bun run audit:tokens lint` — zero violations
+- [ ] Manual: replay `test-22-subagent-spawn.jsonl` in a Tide card; verify thinking renders, then collapses (deferred to user — HMR is always running)
 
 ---
 

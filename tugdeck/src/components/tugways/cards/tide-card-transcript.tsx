@@ -54,6 +54,7 @@ import {
   type TugListViewCellRenderer,
   type TugListViewDelegate,
 } from "@/components/tugways/tug-list-view";
+import { TideThinkingBlock } from "@/components/tugways/chrome/tide-thinking-block";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
@@ -384,6 +385,7 @@ const CodeCommittedRowCell: React.FC<CodeCommittedRowCellProps> = ({
   // re-render against a shrunk transcript) we render an empty body
   // rather than crash on `undefined.assistant`.
   const assistantText = turn?.assistant ?? "";
+  const thinkingText = turn?.thinking ?? "";
   const isInterrupted = turn?.result === "interrupted";
   const timestamp = turn !== undefined
     ? formatTranscriptTimestamp(turn.endedAt)
@@ -413,7 +415,14 @@ const CodeCommittedRowCell: React.FC<CodeCommittedRowCellProps> = ({
             // content the assistant produced before being cut off, and is
             // the only visible body for a CASE A interrupt where no
             // content ever landed (assistantText === "").
+            //
+            // The thinking strip (when present) renders above the
+            // assistant markdown per Table T03 ("inline at top of code
+            // row") with default-collapsed-on-complete chrome per [D14].
             <div ref={(el) => { bodyRef.current = el; }}>
+              {thinkingText !== "" ? (
+                <TideThinkingBlock initialText={thinkingText} />
+              ) : null}
               <TugMarkdownBlock
                 initialText={assistantText}
                 className="tide-card-transcript-code-body"
@@ -463,12 +472,14 @@ interface CodeStreamingRowCellProps extends TugListViewCellProps<TideTranscriptD
   modelName: string | null;
   streamingStore: PropertyStore;
   streamingPath: string;
+  thinkingStreamingPath: string;
 }
 
 const CodeStreamingRowCell: React.FC<CodeStreamingRowCellProps> = ({
   modelName,
   streamingStore,
   streamingPath,
+  thinkingStreamingPath,
 }) => {
   const { ResponderScope, cellProps, bodyRef, menu } =
     useTranscriptCellMenu();
@@ -479,7 +490,17 @@ const CodeStreamingRowCell: React.FC<CodeStreamingRowCellProps> = ({
           participant="code"
           identifier={modelName ?? CODE_DEFAULT_IDENTIFIER}
           body={
+            // Thinking strip subscribes to `streamingPaths.thinking`
+            // and self-hides until non-empty content arrives — a turn
+            // that produces no thinking shows no chrome. On
+            // `turn_complete`, this streaming row unmounts and the
+            // committed row above mounts a fresh `TideThinkingBlock`
+            // in static mode (default-collapsed per [D14]).
             <div ref={(el) => { bodyRef.current = el; }}>
+              <TideThinkingBlock
+                streamingStore={streamingStore}
+                streamingPath={thinkingStreamingPath}
+              />
               <TugMarkdownBlock
                 streamingStore={streamingStore}
                 streamingPath={streamingPath}
@@ -527,12 +548,16 @@ export const TideTranscriptHost: React.FC<TideTranscriptHostProps> = ({
   const dataSource = useTideTranscriptDataSource(codeSessionStore);
   const modelName = useSessionModelName(sessionMetadataStore);
   const streamingStore = codeSessionStore.streamingDocument;
-  // The streaming-path token is a literal on the snapshot's
-  // `streamingPaths.assistant`; read once per store binding so the
-  // value participates in the `cellRenderers` memo without churning
-  // identity on every snapshot tick.
+  // The streaming-path tokens are literals on the snapshot's
+  // `streamingPaths.{assistant,thinking}`; read once per store
+  // binding so the values participate in the `cellRenderers` memo
+  // without churning identity on every snapshot tick.
   const streamingPath = useMemo(
     () => codeSessionStore.getSnapshot().streamingPaths.assistant,
+    [codeSessionStore],
+  );
+  const thinkingStreamingPath = useMemo(
+    () => codeSessionStore.getSnapshot().streamingPaths.thinking,
     [codeSessionStore],
   );
 
@@ -548,10 +573,11 @@ export const TideTranscriptHost: React.FC<TideTranscriptHostProps> = ({
           modelName={modelName}
           streamingStore={streamingStore}
           streamingPath={streamingPath}
+          thinkingStreamingPath={thinkingStreamingPath}
         />
       ),
     }),
-    [modelName, streamingStore, streamingPath],
+    [modelName, streamingStore, streamingPath, thinkingStreamingPath],
   );
 
   const delegate = useMemo<TugListViewDelegate>(

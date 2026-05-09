@@ -1,0 +1,162 @@
+/* @tug-pairings:
+   - --tugx-thinking-bg / --tugx-thinking-content-color
+   - --tugx-thinking-header-bg-hover / --tugx-thinking-label-color
+   - --tugx-thinking-bg / --tugx-thinking-preview-color
+   `TideThinkingBlock` paints a tinted strip under the assistant
+   reasoning preview. Foreground roles split between the strong
+   "Thinking" label and the muted preview / body text. Hover paints a
+   darker tint on the header to signal the toggle is interactive.
+*/
+
+/**
+ * tide-thinking-block.css — `TideThinkingBlock` chrome.
+ *
+ * Renders the thinking strip inline at the top of a Tide code row:
+ * a tinted button-row (chevron + "Thinking" label + collapsed-state
+ * preview) above a grid-animated body that holds the streaming
+ * `TugMarkdownBlock`.
+ *
+ * Two state surfaces drive every visual:
+ *   - `[data-collapsed="true|false"]` on the root → animates the body
+ *     row between `grid-template-rows: 0fr` (collapsed) and `1fr`
+ *     (expanded). Smooth, no max-height cap. Per L06, the toggle is
+ *     a class swap; the rule below interpolates.
+ *   - `[data-empty="true|false"]` on the root → in streaming mode,
+ *     hides the chrome entirely until thinking content arrives so a
+ *     turn that produces no thinking shows nothing. The static-mode
+ *     parent should already skip the mount when `turn.thinking ===
+ *     ""`, but the rule below is a belt-and-braces guard.
+ *
+ * The collapse animation respects `prefers-reduced-motion`: instant
+ * snap when the user has reduced motion enabled.
+ *
+ * Tuglaw cross-check:
+ *   - [L06] appearance via DOM-mutation + CSS, not React state. The
+ *     React side only flips `data-collapsed`; the rule below does
+ *     the visual.
+ *   - [L19] component-authoring guide — file-pair, module docstring,
+ *     `data-slot="tide-thinking-block"`.
+ *   - [L20] component-token sovereignty — every visible declaration
+ *     consumes a `--tugx-thinking-*` token. No literal colors here.
+ */
+
+.tide-thinking-block {
+  display: block;
+  margin: var(--tugx-thinking-margin);
+  padding: 0;
+  background: var(--tugx-thinking-bg);
+  border: 1px solid var(--tugx-thinking-border);
+  border-radius: var(--tugx-thinking-radius);
+  overflow: hidden;
+}
+
+/* ---- Hide the entire strip when there is no thinking content yet.
+ * Streaming-mode default — the chrome appears only after the first
+ * non-empty observation. Static mode usually skips the mount, so this
+ * branch only fires in defensive cases.
+ */
+.tide-thinking-block[data-empty="true"] {
+  display: none;
+}
+
+/* ---- Header (the toggle button) ---- */
+
+.tide-thinking-block-header {
+  display: flex;
+  align-items: center;
+  gap: var(--tugx-thinking-header-gap);
+  width: 100%;
+  padding: var(--tugx-thinking-header-padding);
+  background: transparent;
+  border: 0;
+  color: var(--tugx-thinking-label-color);
+  font-family: inherit;
+  font-size: var(--tugx-thinking-label-size);
+  font-weight: var(--tugx-thinking-label-weight);
+  text-align: left;
+  cursor: pointer;
+}
+
+.tide-thinking-block-header:hover {
+  background: var(--tugx-thinking-header-bg-hover);
+  color: var(--tugx-thinking-label-color-hover);
+}
+
+.tide-thinking-block-header:focus-visible {
+  outline: 2px solid var(--tugx-thinking-focus-ring);
+  outline-offset: -2px;
+}
+
+.tide-thinking-block-chevron {
+  flex: 0 0 auto;
+  color: var(--tugx-thinking-chevron-color);
+  transition: transform var(--tugx-thinking-collapse-duration)
+    var(--tugx-thinking-collapse-easing);
+}
+
+.tide-thinking-block[data-collapsed="false"] .tide-thinking-block-chevron {
+  transform: rotate(90deg);
+}
+
+.tide-thinking-block-label {
+  flex: 0 0 auto;
+}
+
+/* ---- Preview (collapsed-only one-line summary) ---- */
+
+.tide-thinking-block-preview {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tugx-thinking-preview-color);
+  font-size: var(--tugx-thinking-preview-size);
+  font-weight: var(--tugx-thinking-preview-weight);
+}
+
+/* While expanded the preview is irrelevant — body content is visible.
+ * Hidden visually but kept in the DOM so the imperative text-content
+ * write path is identical regardless of collapse state.
+ */
+.tide-thinking-block[data-collapsed="false"] .tide-thinking-block-preview {
+  visibility: hidden;
+}
+
+/* ---- Body (grid-template-rows animation) ---- */
+
+.tide-thinking-block-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--tugx-thinking-collapse-duration)
+    var(--tugx-thinking-collapse-easing);
+}
+
+.tide-thinking-block[data-collapsed="true"] .tide-thinking-block-body {
+  grid-template-rows: 0fr;
+}
+
+.tide-thinking-block-viewport {
+  /* The grid child must clip during the 0fr→1fr interpolation —
+   * without `overflow: hidden`, the body text spills out of its
+   * intended height during the animation.
+   */
+  overflow: hidden;
+  min-height: 0;
+}
+
+.tide-thinking-block-content {
+  padding: var(--tugx-thinking-content-padding);
+  color: var(--tugx-thinking-content-color);
+  font-size: var(--tugx-thinking-content-size);
+  font-style: var(--tugx-thinking-content-style);
+}
+
+/* ---- Reduced motion ---- */
+
+@media (prefers-reduced-motion: reduce) {
+  .tide-thinking-block-body,
+  .tide-thinking-block-chevron {
+    transition: none;
+  }
+}

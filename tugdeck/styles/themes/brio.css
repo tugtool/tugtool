@@ -999,4 +999,34 @@ body {
   --tugx-md-block-padding-x: 1rem;
   --tugx-md-bottom-buffer: 2rem;
   --tugx-md-placeholder-bg: transparent;
+
+  /* ---- Thinking block (TideThinkingBlock per Table T07) ----
+   * Inline collapsible chrome at the top of a Tide code row that
+   * surfaces the assistant's reasoning stream. Tinted just enough
+   * to read as a related-but-supplementary surface; muted prose
+   * inside the body keeps the answer (rendered below) the visual
+   * focus.
+   */
+  --tugx-thinking-bg: rgba(255, 255, 255, 0.03);
+  --tugx-thinking-border: rgba(255, 255, 255, 0.08);
+  --tugx-thinking-radius: 6px;
+  --tugx-thinking-margin: var(--tug-space-lg) 0 var(--tug-space-lg) 0;
+  --tugx-thinking-header-padding: var(--tug-space-xs) var(--tug-space-md);
+  --tugx-thinking-header-gap: var(--tug-space-sm);
+  --tugx-thinking-header-bg-hover: rgba(255, 255, 255, 0.06);
+  --tugx-thinking-label-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-thinking-label-color-hover: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-thinking-label-size: var(--tug-font-size-sm);
+  --tugx-thinking-label-weight: 600;
+  --tugx-thinking-chevron-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-thinking-preview-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-thinking-preview-size: var(--tug-font-size-sm);
+  --tugx-thinking-preview-weight: 400;
+  --tugx-thinking-content-padding: var(--tug-space-xs) var(--tug-space-md) var(--tug-space-md);
+  --tugx-thinking-content-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-thinking-content-size: var(--tug-font-size-sm);
+  --tugx-thinking-content-style: italic;
+  --tugx-thinking-collapse-duration: 180ms;
+  --tugx-thinking-collapse-easing: cubic-bezier(0.4, 0, 0.2, 1);
+  --tugx-thinking-focus-ring: var(--tug7-element-global-text-normal-link-rest);
 }
