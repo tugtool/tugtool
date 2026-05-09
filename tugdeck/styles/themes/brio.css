@@ -949,6 +949,19 @@ body {
   --tugx-md-mono-font: var(--tug-font-family-mono);
   --tugx-md-code-bg: rgba(255, 255, 255, 0.05);
 
+  /* Fenced code — header chrome (language label + copy button) */
+  --tugx-md-fenced-code-header-padding: var(--tug-space-xs) var(--tug-space-md);
+  --tugx-md-fenced-code-header-border: rgba(255, 255, 255, 0.08);
+  --tugx-md-fenced-code-header-size: var(--tug-font-size-2xs);
+  --tugx-md-fenced-code-lang-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-md-fenced-code-lang-weight: 600;
+  --tugx-md-fenced-code-copy-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-md-fenced-code-copy-color-hover: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-md-fenced-code-copy-color-copied: var(--tug7-element-global-text-normal-success-rest);
+  --tugx-md-fenced-code-copy-bg-hover: rgba(255, 255, 255, 0.08);
+  --tugx-md-fenced-code-copy-padding: var(--tug-space-2xs) var(--tug-space-xs);
+  --tugx-md-fenced-code-copy-radius: 3px;
+
   /* Blockquote */
   --tugx-md-blockquote-border: var(--tug7-element-global-text-normal-muted-rest);
   --tugx-md-blockquote-border-width: 3px;
