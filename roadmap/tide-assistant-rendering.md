@@ -1401,35 +1401,37 @@ ThinkingBlock, PermissionDialog, QuestionDialog, CostChrome (with CostBadge sub-
 - Optional minimal export from `tide-assistant-renderer-dispatch.ts`: a small helper that maps a `ToolCallState` + `msgId` to the `(Component, props)` pair. Today's `dispatch()` requires a `DispatchContext` ({store, session}) that the tool-call branch ignores; the helper avoids constructing a fake context at the call site. Name TBD during implementation (`composeToolCallRender`, `dispatchToolCallState`, etc.) — the choice is purely an internal API ergonomic.
 
 **Tasks:**
-- [ ] Build `<TranscriptToolCalls />` with two mutually exclusive modes:
+- [x] Build `<TranscriptToolCalls />` with two mutually exclusive modes:
   - Static: `toolCalls: ReadonlyArray<ToolCallState>; msgId: string`
   - Streaming: `streamingStore: PropertyStore; streamingPath: string; msgId: string`
   - Streaming subscribes via `useSyncExternalStore`; the snapshot getter returns the parsed `ToolCallState[]` (with a stable empty-array sentinel when the path is empty / `"[]"` to keep `Object.is` stable across no-op emissions)
-- [ ] Map each `ToolCallState` through dispatch (or the new helper); render `<Component {...props} />` keyed by `toolUseId`
-- [ ] Container element `<div data-slot="tide-transcript-tool-calls">` for selectors; no own visible chrome — flex column with a single CSS gap variable composed from the existing `--tug-space-*` palette
-- [ ] CodeCommittedRowCell: insert the static-mode `<TranscriptToolCalls />` between `<TideThinkingBlock>` and `<TugMarkdownBlock>`. Render only when `turn?.toolCalls` is non-empty (avoid an empty container in the DOM for tool-free turns)
-- [ ] CodeStreamingRowCell: insert the streaming-mode `<TranscriptToolCalls />` between `<TideThinkingBlock>` and the streaming `<TugMarkdownBlock>`. The component itself self-hides when the parsed list is empty
-- [ ] Plumb `toolsStreamingPath` from `TideTranscriptHost` to `CodeStreamingRowCell` (mirrors `thinkingStreamingPath`)
-- [ ] Plumb `inflightMsgId` from `TideTranscriptHost` (read `snapshot.activeMsgId` via `useSyncExternalStore`) so streaming-row wrapper props have a stable `msgId`. Until `activeMsgId` is set the in-flight `msgId` is `""` — the wrapper consumers don't depend on identity for their visual output, so this is acceptable
-- [ ] Import the dispatch module from `<TranscriptToolCalls />` so module-load-time `registerToolWrapper(...)` calls execute in production (today only test imports trigger them)
+- [x] Map each `ToolCallState` through dispatch (or the new helper); render `<Component {...props} />` keyed by `toolUseId`
+- [x] Container element `<div data-slot="tide-transcript-tool-calls">` for selectors; no own visible chrome — flex column. (No new `--tugx-*` token slot was needed: per-call vertical rhythm is owned by each wrapper's `--tugx-toolblock-margin`; the container is purely structural, so introducing a token slot would have been ceremony with no theme-tunable behavior to expose.)
+- [x] CodeCommittedRowCell: insert the static-mode `<TranscriptToolCalls />` between `<TideThinkingBlock>` and `<TugMarkdownBlock>`. Render only when `turn?.toolCalls` is non-empty (avoid an empty container in the DOM for tool-free turns)
+- [x] CodeStreamingRowCell: insert the streaming-mode `<TranscriptToolCalls />` between `<TideThinkingBlock>` and the streaming `<TugMarkdownBlock>`. The component itself self-hides when the parsed list is empty
+- [x] Plumb `toolsStreamingPath` from `TideTranscriptHost` to `CodeStreamingRowCell` (mirrors `thinkingStreamingPath`)
+- [x] Plumb `inflightMsgId` from `TideTranscriptHost` (read `snapshot.activeMsgId` via `useSyncExternalStore`) so streaming-row wrapper props have a stable `msgId`. Until `activeMsgId` is set the in-flight `msgId` is `""` — the wrapper consumers don't depend on identity for their visual output, so this is acceptable
+- [x] Import the dispatch module from `<TranscriptToolCalls />` so module-load-time `registerToolWrapper(...)` calls execute in production (today only test imports trigger them)
+- [x] Refactor: hoist the tool-call branch out of `dispatch()` and export it as `dispatchToolCallState(toolCall, msgId)`. The old internal `dispatchToolCall(input, _context)` ignored its context anyway; the public helper avoids fabricating a fake `DispatchContext` at call sites that only have a `ToolCallState` in hand. `dispatch()` now delegates to the helper for the `tool_call` branch.
 
 **Tests:**
-- [ ] Pure-helper test (if a new helper is introduced): mapping `ToolCallState` of every `status` (`pending`, `done`, `error`) yields the expected wrapper status (`streaming`, `ready`, `error`) and `isError` flag
-- [ ] `TranscriptToolCalls` static mode — single Bash tool call: BashToolBlock mounts; container has the right `data-slot`; the rendered command appears in the wrapper header
-- [ ] `TranscriptToolCalls` static mode — unknown-tool entry: DefaultToolWrapper mounts with `caution` painted via the chrome's caution slot
-- [ ] `TranscriptToolCalls` static mode — multiple tool calls render in insertion order (`toolUseId` keys preserved)
-- [ ] `TranscriptToolCalls` static mode — empty `toolCalls`: renders the container `data-slot` but no children, OR (preferred per "Tasks" above) renders nothing at all when the array is empty
-- [ ] `TranscriptToolCalls` streaming mode — initial subscribe path: the snapshot is read synchronously on mount (G1 contract); the wrapper for the seed `inflight.tools` value paints before the first observer emission
-- [ ] `TranscriptToolCalls` streaming mode — emission path: emit a new `inflight.tools` value where the same `toolUseId` transitions `pending → done` with a `structuredResult`; assert the wrapper instance's container `data-slot` keeps the same DOM node (in-place reconciliation, not remount). This is happy-dom-safe because we're observing post-render DOM identity, not focus / event ordering
-- [ ] No `console.error` from React for missing keys (a reconciliation regression check)
+- [x] Pure-helper test: mapping `ToolCallState` of every `status` (`pending`, `done`, `error`) yields the expected wrapper status (`streaming`, `ready`, `error`) and `isError` flag; threading of `msgId` / `toolUseId` / `toolName` / `input` / `structuredResult`; `Bash → BashToolBlock` no caution; unknown tool name → `DefaultToolWrapper` + `caution { reason: "unknown_tool" }`
+- [x] `TranscriptToolCalls` static mode — single Bash tool call: BashToolBlock mounts; container has the right `data-slot`; the rendered command appears in the wrapper header
+- [x] `TranscriptToolCalls` static mode — unknown-tool entry: DefaultToolWrapper mounts and stamps `data-caution="unknown_tool"` on its root. (Full caution-badge chrome on `DefaultToolWrapper` lands at [#step-13](#step-13); the scaffold today only stamps the attribute, so this test pins the threading without anticipating that step's UI.)
+- [x] `TranscriptToolCalls` static mode — multiple tool calls render in insertion order (`toolUseId` keys preserved)
+- [x] `TranscriptToolCalls` static mode — empty `toolCalls`: renders nothing at all (no container in the DOM)
+- [x] `TranscriptToolCalls` streaming mode — initial subscribe path: the snapshot is read synchronously on mount (G1 contract); the wrapper for the seed `inflight.tools` value paints before the first observer emission
+- [x] `TranscriptToolCalls` streaming mode — emission path: emit a new `inflight.tools` value where the same `toolUseId` transitions `pending → done` with a `structuredResult`; assert the wrapper instance's container `data-slot` keeps the same DOM node (in-place reconciliation, not remount). Verified additionally that the BashToolBlock body flips from `<StreamingPlaceholder>` to `<TerminalBlock>` with the structured stdout rendered, and that adding a *new* tool call to the list keeps the existing wrapper's DOM node identical while appending the new one. This is happy-dom-safe because we're observing post-render DOM identity, not focus / event ordering.
+- [x] Streaming mode — empty seed (`"[]"`): no DOM container.
+- [x] Streaming mode — unsubscribe on unmount: setting a new value after unmount does not throw (no leaked listener).
 
 **Manual:**
 - [ ] Re-run the [#step-6](#step-6) deferred manual: in the live tugcode session, prompt `use bash to echo hello`. Expected: while the command runs, the streaming row paints a `<TranscriptToolCalls>` containing a Bash wrapper with the streaming-stripe and the placeholder body. After `turn_complete`, the committed row mounts the same wrapper with the structured `stdout: "hello"` rendered through `<TerminalBlock>`, and the assistant's summary follows below.
 - [ ] On confirmation, check the [#step-6](#step-6) "Manual: invoke `> use bash to echo hello`…" checkbox.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
-- [ ] `cd tugdeck && bun run audit:tokens lint`
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — typecheck clean; full suite **3359 pass / 0 fail across 200 files**
+- [x] `cd tugdeck && bun run audit:tokens lint` — zero violations
 
 ---
 

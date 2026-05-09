@@ -55,6 +55,7 @@ import {
   type TugListViewDelegate,
 } from "@/components/tugways/tug-list-view";
 import { TideThinkingBlock } from "@/components/tugways/chrome/tide-thinking-block";
+import { TranscriptToolCalls } from "@/components/tugways/cards/tide-card-transcript-tool-calls";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
@@ -419,9 +420,20 @@ const CodeCommittedRowCell: React.FC<CodeCommittedRowCellProps> = ({
             // The thinking strip (when present) renders above the
             // assistant markdown per Table T03 ("inline at top of code
             // row") with default-collapsed-on-complete chrome per [D14].
+            //
+            // Tool calls render between thinking and assistant per
+            // [#step-6-5] (the natural conversation order: tool runs,
+            // then the assistant summarizes). `<TranscriptToolCalls>`
+            // self-hides for tool-free turns.
             <div ref={(el) => { bodyRef.current = el; }}>
               {thinkingText !== "" ? (
                 <TideThinkingBlock initialText={thinkingText} />
+              ) : null}
+              {turn !== undefined && turn.toolCalls.length > 0 ? (
+                <TranscriptToolCalls
+                  toolCalls={turn.toolCalls}
+                  msgId={turn.msgId}
+                />
               ) : null}
               <TugMarkdownBlock
                 initialText={assistantText}
@@ -473,6 +485,15 @@ interface CodeStreamingRowCellProps extends TugListViewCellProps<TideTranscriptD
   streamingStore: PropertyStore;
   streamingPath: string;
   thinkingStreamingPath: string;
+  toolsStreamingPath: string;
+  /**
+   * In-flight `msg_id` for the streaming turn. Threaded onto each
+   * tool wrapper's props via `<TranscriptToolCalls>`. Empty string
+   * is acceptable while `activeMsgId` is null (cold start of a turn
+   * before the first event arrives) — wrapper visual output doesn't
+   * depend on `msgId` identity.
+   */
+  inflightMsgId: string;
 }
 
 const CodeStreamingRowCell: React.FC<CodeStreamingRowCellProps> = ({
@@ -480,6 +501,8 @@ const CodeStreamingRowCell: React.FC<CodeStreamingRowCellProps> = ({
   streamingStore,
   streamingPath,
   thinkingStreamingPath,
+  toolsStreamingPath,
+  inflightMsgId,
 }) => {
   const { ResponderScope, cellProps, bodyRef, menu } =
     useTranscriptCellMenu();
@@ -496,10 +519,22 @@ const CodeStreamingRowCell: React.FC<CodeStreamingRowCellProps> = ({
             // `turn_complete`, this streaming row unmounts and the
             // committed row above mounts a fresh `TideThinkingBlock`
             // in static mode (default-collapsed per [D14]).
+            //
+            // Tool calls render between thinking and assistant per
+            // [#step-6-5]. `<TranscriptToolCalls>` subscribes to
+            // `inflight.tools` directly via `useSyncExternalStore`
+            // ([L02]); each emission re-routes through the dispatch.
+            // The same wrapper instance reconciles in place across a
+            // `pending → done` transition (keyed by `toolUseId`).
             <div ref={(el) => { bodyRef.current = el; }}>
               <TideThinkingBlock
                 streamingStore={streamingStore}
                 streamingPath={thinkingStreamingPath}
+              />
+              <TranscriptToolCalls
+                streamingStore={streamingStore}
+                streamingPath={toolsStreamingPath}
+                msgId={inflightMsgId}
               />
               <TugMarkdownBlock
                 streamingStore={streamingStore}
@@ -549,7 +584,7 @@ export const TideTranscriptHost: React.FC<TideTranscriptHostProps> = ({
   const modelName = useSessionModelName(sessionMetadataStore);
   const streamingStore = codeSessionStore.streamingDocument;
   // The streaming-path tokens are literals on the snapshot's
-  // `streamingPaths.{assistant,thinking}`; read once per store
+  // `streamingPaths.{assistant,thinking,tools}`; read once per store
   // binding so the values participate in the `cellRenderers` memo
   // without churning identity on every snapshot tick.
   const streamingPath = useMemo(
@@ -559,6 +594,25 @@ export const TideTranscriptHost: React.FC<TideTranscriptHostProps> = ({
   const thinkingStreamingPath = useMemo(
     () => codeSessionStore.getSnapshot().streamingPaths.thinking,
     [codeSessionStore],
+  );
+  const toolsStreamingPath = useMemo(
+    () => codeSessionStore.getSnapshot().streamingPaths.tools,
+    [codeSessionStore],
+  );
+
+  // In-flight `msg_id` for the streaming row's tool-call props
+  // ([#step-6-5]). `activeMsgId` is null until the first event of a
+  // turn lands; the streaming card is allowed to render with an
+  // empty msgId in that window — wrapper visual output doesn't
+  // depend on identity. Subscribed via `useSyncExternalStore` ([L02])
+  // so the streaming row picks up the id the moment the reducer
+  // populates it.
+  const inflightMsgId = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    useCallback(
+      () => codeSessionStore.getSnapshot().activeMsgId ?? "",
+      [codeSessionStore],
+    ),
   );
 
   const cellRenderers = useMemo<
@@ -574,10 +628,19 @@ export const TideTranscriptHost: React.FC<TideTranscriptHostProps> = ({
           streamingStore={streamingStore}
           streamingPath={streamingPath}
           thinkingStreamingPath={thinkingStreamingPath}
+          toolsStreamingPath={toolsStreamingPath}
+          inflightMsgId={inflightMsgId}
         />
       ),
     }),
-    [modelName, streamingStore, streamingPath, thinkingStreamingPath],
+    [
+      modelName,
+      streamingStore,
+      streamingPath,
+      thinkingStreamingPath,
+      toolsStreamingPath,
+      inflightMsgId,
+    ],
   );
 
   const delegate = useMemo<TugListViewDelegate>(

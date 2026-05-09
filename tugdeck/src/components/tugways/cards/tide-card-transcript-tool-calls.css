@@ -1,0 +1,24 @@
+/**
+ * tide-card-transcript-tool-calls.css — `TranscriptToolCalls`.
+ *
+ * Structural container only. No own visible chrome — wrappers
+ * (BashToolBlock, DefaultToolWrapper, …) own their borders, headers,
+ * footers, etc. via the `--tugx-toolblock-*` token slot family.
+ *
+ * The container is a flex column so consecutive wrappers stack
+ * naturally; vertical spacing between calls comes from the wrappers'
+ * own `--tugx-toolblock-margin` (so a nested `<TranscriptToolCalls>`
+ * — should one ever appear, e.g. inside an agent transcript — has
+ * the same per-call rhythm as the outer call site).
+ *
+ * Tuglaw cross-check:
+ *  - [L19] file pair, `data-slot="tide-transcript-tool-calls"`.
+ *  - [L20] no `--tugx-tide-transcript-tool-calls-*` token slot is
+ *    introduced — the container is structural and reuses the
+ *    enclosing row's whitespace; no theme-tunable knobs are needed.
+ */
+
+.tide-transcript-tool-calls {
+  display: flex;
+  flex-direction: column;
+}

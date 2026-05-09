@@ -361,7 +361,7 @@ export function dispatch(
   context: DispatchContext,
 ): DispatchResult {
   if (input.kind === "tool_call") {
-    return dispatchToolCall(input, context);
+    return dispatchToolCallState(input.toolCall, input.msgId);
   }
   // Everything else routes through KIND_RENDERERS. The exhaustive
   // check below makes this branch type-safe — every kind in
@@ -392,12 +392,17 @@ function extractTextOutput(result: unknown): string | undefined {
  * Tool-call dispatch — looks up the tool name in the registry, with
  * alias resolution, and surfaces a caution flag for unknown names
  * that aren't in the audit-confirmed default-routed list.
+ *
+ * Exported so the transcript view can route a `ToolCallState` (from
+ * `TurnEntry.toolCalls` or the parsed `inflight.tools` snapshot) to a
+ * `(Component, props)` pair without fabricating a full
+ * `DispatchContext` — the tool-call branch never consumed it.
  */
-function dispatchToolCall(
-  input: Extract<RenderInput, { kind: "tool_call" }>,
-  _context: DispatchContext,
+export function dispatchToolCallState(
+  toolCall: ToolCallState,
+  msgId: string,
 ): DispatchResult {
-  const lower = input.toolCall.toolName.toLowerCase();
+  const lower = toolCall.toolName.toLowerCase();
   const canonical = TOOL_ALIASES.get(lower) ?? lower;
   const factory = TOOL_WRAPPER_REGISTRY.get(canonical);
 
@@ -405,21 +410,21 @@ function dispatchToolCall(
   // ./tool-wrappers/types.ts). Status maps the store's `pending |
   // done | error` to the wrapper's `streaming | ready | error`.
   const status =
-    input.toolCall.status === "pending"
+    toolCall.status === "pending"
       ? "streaming"
-      : input.toolCall.status === "error"
+      : toolCall.status === "error"
         ? "error"
         : "ready";
 
   const baseProps = {
-    toolUseId: input.toolCall.toolUseId,
-    toolName: input.toolCall.toolName,
-    msgId: input.msgId,
+    toolUseId: toolCall.toolUseId,
+    toolName: toolCall.toolName,
+    msgId,
     seq: 0, // populated by the transcript view from event ordering
-    input: input.toolCall.input,
-    structuredResult: input.toolCall.structuredResult,
-    textOutput: extractTextOutput(input.toolCall.result),
-    isError: input.toolCall.status === "error",
+    input: toolCall.input,
+    structuredResult: toolCall.structuredResult,
+    textOutput: extractTextOutput(toolCall.result),
+    isError: toolCall.status === "error",
     status,
   };
 
@@ -436,7 +441,7 @@ function dispatchToolCall(
   // Truly unknown — DefaultToolWrapper plus caution.
   const caution: CautionFlag = {
     reason: "unknown_tool",
-    detail: input.toolCall.toolName,
+    detail: toolCall.toolName,
   };
   return {
     Component: DefaultToolWrapper,
