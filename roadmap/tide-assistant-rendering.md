@@ -1307,22 +1307,28 @@ ThinkingBlock, PermissionDialog, QuestionDialog, CostChrome (with CostBadge sub-
 - `bun add ansi_up` to package.json
 
 **Tasks:**
-- [ ] Implement ANSI parsing via `ansi_up`; expose `ansiToHtml(text: string): string`
-- [ ] TerminalBlock with stdout/stderr split; respect ANSI SGR
-- [ ] Streaming binding per Spec S05; re-parse on each delta
-- [ ] Self-virtualization: when retained-line count > threshold (default 40 visible, 10k retained per [Q04]), use BlockHeightIndex
-- [ ] Truncation indicator at top: "… N earlier lines truncated" when over retention cap
-- [ ] Copy-to-clipboard button
-- [ ] Footer: exit code badge (zero subtle, non-zero strong), interrupted indicator, duration
+- [x] Implement ANSI parsing via `ansi_up` (v6.0.6, MIT); expose `ansiToHtml(text: string): string` in `lib/ansi/ansi-to-html.ts` — fresh `AnsiUp` instance per call (no cross-call SGR state), `use_classes = true` so 16-color SGR codes emit `class="ansi-{color}-fg|bg"` markup that the `--tugx-term-ansi-*` token slots paint
+- [x] TerminalBlock with stdout/stderr split; per-line `<div class="tugx-term-line tugx-term-line--{stdout|stderr}">`, ANSI SGR parsed into theme-mapped spans
+- [x] Streaming binding per Spec S05 — `useLayoutEffect` G1 sync read on mount, `observe()` for updates, `requestAnimationFrame`-coalesced re-parse on each delta, unsubscribe + cancel pending rAF on unmount
+- [x] Self-virtualization at `VISIBLE_THRESHOLD = 40` lines using `BlockHeightIndex` + `RenderedBlockWindow` — explicit-height scroll container, top + bottom spacers reflect prefix-sum heights, scroll listener diffs windowed range and applies enter/exit ranges to the DOM imperatively
+- [x] Truncation indicator at top — `"… N earlier lines truncated"` banner when total parsed lines exceed `RETAINED_LINE_CAP = 10_000` ([Q04])
+- [x] Copy-to-clipboard button overlaid on the body, fades in on hover, writes composed `stdout + "\n" + stderr` text, toggles `is-copied` for ~1.2s
+- [x] Footer: `exit ${code}` badge (zero subtle, non-zero strong via separate token slots), `interrupted` indicator, `formatDuration(ms)` mm:ss / N s / N ms
 
 **Tests:**
-- [ ] ANSI: `\\x1b[31mred\\x1b[0m` produces a red-styled span
-- [ ] Stream: deltas accumulate without flicker
-- [ ] Virtualization: retained > visible threshold; correct rows visible on scroll
-- [ ] Both themes verify
+- [x] ANSI: `\x1b[31mred\x1b[0m` produces `<span class="ansi-red-fg">red</span>` (`ansi-to-html.test.ts`)
+- [x] Stream: deltas accumulate without flicker — rAF coalesces a 3-emission burst into one render, final value reflects cumulative content (`terminal-block.test.tsx`)
+- [x] Virtualization: 200-line input switches to scroller with spacers; rendered DOM lines < total (`terminal-block.test.tsx`)
+- [x] Truncation: `RETAINED_LINE_CAP + 5` lines produces the indicator with the exact dropped count (`terminal-block.test.tsx`)
+- [x] Footer variants: exit-zero subtle, exit-nonzero strong, interrupted badge, duration formatted, footer-only data (no body) still renders the post-mortem badges (`terminal-block.test.tsx`)
+- [x] Copy interaction: writes composed text, toggles `is-copied`, no-throw when `navigator.clipboard` is missing (`terminal-block.test.tsx`)
+- [x] Both themes declare the full `--tugx-term-*` token set including the 16 ANSI palette slots — enforced via `audit:tokens lint`; ANSI palette uses `--tug-color()` recipes so the postcss plugin expands them at build time and the "zero standalone hex" gate (`step8-roundtrip-integration.test.ts`) stays green
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test src/components/tugways/body-kinds/terminal-block`
+- [x] `cd tugdeck && bun x tsc --noEmit` — clean
+- [x] `cd tugdeck && bun test src/lib/ansi src/components/tugways/body-kinds` — 39 pass / 0 fail (14 + 25)
+- [x] `cd tugdeck && bun test` — 3286 pass / 0 fail (197 files)
+- [x] `cd tugdeck && bun run audit:tokens lint` — zero violations
 
 ---
 

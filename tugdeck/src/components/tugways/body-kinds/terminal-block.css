@@ -1,0 +1,266 @@
+/* @tug-pairings:
+   - --tugx-term-bg / --tugx-term-text-color
+   - --tugx-term-stderr-bg / --tugx-term-stderr-color
+   - --tugx-term-truncation-bg / --tugx-term-truncation-color
+   - --tugx-term-footer-bg / --tugx-term-footer-color
+   `TerminalBlock` paints a dark code-background with bright
+   monospace text plus a stderr stripe variant and a footer surface
+   for badges.
+*/
+
+/**
+ * terminal-block.css — `TerminalBlock` body-kind.
+ *
+ * Renders ANSI-aware terminal output inline in the transcript.
+ * Two visual modes are styled here:
+ *
+ *   1. **Flat** (`.tugx-term-pre--flat`): natural document flow,
+ *      every line in the DOM. Used at or below the
+ *      `VISIBLE_THRESHOLD` line count.
+ *   2. **Virtualized** (`.tugx-term-scroller` + spacers + windowed
+ *      `.tugx-term-pre--virtualized`): self-scrolling viewport with
+ *      explicit pixel height, top/bottom spacers shrink-wrap the
+ *      total content height, only the visible window is in the
+ *      DOM. Used above the threshold.
+ *
+ * The 16 ANSI color classes (`ansi-{black,red,…}-fg|bg`) are mapped
+ * to `--tugx-term-ansi-*` tokens so brio and harmony can paint the
+ * terminal palette consistently with their broader theme.
+ *
+ * Tuglaw cross-check:
+ *   - [L06] no React state for visible state. Class-driven; the
+ *     scroll listener writes spacer heights and reorders line
+ *     elements imperatively.
+ *   - [L19] component-authoring guide — file pair, module
+ *     docstring, `data-slot="terminal-body"`.
+ *   - [L20] component-token sovereignty — every visible declaration
+ *     consumes a `--tugx-term-*` token.
+ */
+
+.tugx-term {
+  position: relative;
+  display: block;
+  margin: var(--tugx-term-margin);
+  background: var(--tugx-term-bg);
+  border: 1px solid var(--tugx-term-border);
+  border-radius: var(--tugx-term-radius);
+  overflow: hidden;
+  color: var(--tugx-term-text-color);
+  font-family: var(--tugx-term-font);
+  font-size: var(--tugx-term-font-size);
+  line-height: var(--tugx-term-line-height);
+}
+
+/* Empty terminal still shows the footer when `interrupted` /
+ * `exitCode` are set, so it isn't purely decorative — keep it
+ * visible. Only hide when the empty state has zero footer fields.
+ */
+.tugx-term[data-empty="true"]:not(:has(.tugx-term-footer)) {
+  display: none;
+}
+
+/* ---- Truncation indicator ---- */
+
+.tugx-term-truncation {
+  padding: var(--tugx-term-truncation-padding);
+  background: var(--tugx-term-truncation-bg);
+  border-bottom: 1px solid var(--tugx-term-truncation-border);
+  color: var(--tugx-term-truncation-color);
+  font-style: italic;
+  font-size: var(--tugx-term-truncation-size);
+}
+
+/* ---- Bodies (flat + virtualized) ---- */
+
+.tugx-term-pre {
+  margin: 0;
+  padding: var(--tugx-term-padding);
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.tugx-term-pre--virtualized {
+  padding: 0 var(--tugx-term-padding-x);
+}
+
+.tugx-term-line {
+  display: block;
+  min-height: var(--tugx-term-line-height-px);
+  white-space: pre;
+}
+
+.tugx-term-line--stdout {
+  color: var(--tugx-term-text-color);
+}
+
+.tugx-term-line--stderr {
+  color: var(--tugx-term-stderr-color);
+  background: var(--tugx-term-stderr-bg);
+}
+
+/* ---- Virtualized scroller ---- */
+
+.tugx-term-scroller {
+  position: relative;
+  overflow-y: auto;
+  overflow-x: auto;
+  /* `height` is set inline by the renderer (viewportPx) so the
+   * scroll container shrink-wraps to the configured viewport.
+   */
+}
+
+.tugx-term-spacer {
+  /* Spacer divs grow to the heights the windowing engine reports;
+   * height is set inline.
+   */
+  width: 100%;
+  flex: 0 0 auto;
+}
+
+/* ---- Copy button (overlaid on the body) ---- */
+
+.tugx-term-copy {
+  position: absolute;
+  top: var(--tugx-term-copy-offset);
+  right: var(--tugx-term-copy-offset);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tugx-term-copy-gap);
+  padding: var(--tugx-term-copy-padding);
+  background: var(--tugx-term-copy-bg);
+  border: 1px solid var(--tugx-term-copy-border);
+  border-radius: var(--tugx-term-copy-radius);
+  color: var(--tugx-term-copy-color);
+  font-family: inherit;
+  font-size: var(--tugx-term-copy-size);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--tugx-term-copy-fade) ease;
+}
+
+.tugx-term:hover .tugx-term-copy,
+.tugx-term-copy:focus-visible {
+  opacity: 1;
+}
+
+.tugx-term-copy:hover {
+  background: var(--tugx-term-copy-bg-hover);
+  color: var(--tugx-term-copy-color-hover);
+}
+
+.tugx-term-copy:focus-visible {
+  outline: 2px solid var(--tugx-term-focus-ring);
+  outline-offset: -2px;
+}
+
+.tugx-term-copy-icon {
+  flex: 0 0 auto;
+}
+
+.tugx-term-copy-icon--check {
+  display: none;
+}
+
+.tugx-term-copy.is-copied .tugx-term-copy-icon--copy {
+  display: none;
+}
+
+.tugx-term-copy.is-copied .tugx-term-copy-icon--check {
+  display: inline-block;
+  color: var(--tugx-term-copy-color-copied);
+}
+
+.tugx-term-copy.is-copied .tugx-term-copy-label {
+  color: var(--tugx-term-copy-color-copied);
+}
+
+.tugx-term-copy.is-copied .tugx-term-copy-label::after {
+  content: "ied!";
+}
+
+.tugx-term-copy:not(.is-copied) .tugx-term-copy-label::after {
+  content: "";
+}
+
+/* ---- Footer (exit / duration / interrupted) ---- */
+
+.tugx-term-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--tugx-term-footer-gap);
+  padding: var(--tugx-term-footer-padding);
+  background: var(--tugx-term-footer-bg);
+  border-top: 1px solid var(--tugx-term-footer-border);
+  color: var(--tugx-term-footer-color);
+  font-size: var(--tugx-term-footer-size);
+  font-family: var(--tugx-term-footer-font);
+}
+
+.tugx-term-exit {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--tugx-term-exit-padding);
+  border-radius: var(--tugx-term-exit-radius);
+  font-weight: var(--tugx-term-exit-weight);
+}
+
+.tugx-term-exit--zero {
+  background: var(--tugx-term-exit-bg-zero);
+  color: var(--tugx-term-exit-color-zero);
+}
+
+.tugx-term-exit--nonzero {
+  background: var(--tugx-term-exit-bg-nonzero);
+  color: var(--tugx-term-exit-color-nonzero);
+}
+
+.tugx-term-interrupted {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--tugx-term-exit-padding);
+  border-radius: var(--tugx-term-exit-radius);
+  background: var(--tugx-term-interrupted-bg);
+  color: var(--tugx-term-interrupted-color);
+  font-weight: var(--tugx-term-exit-weight);
+}
+
+.tugx-term-duration {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- ANSI 16-color palette mapping ---- */
+
+.tugx-term .ansi-black-fg   { color: var(--tugx-term-ansi-black); }
+.tugx-term .ansi-red-fg     { color: var(--tugx-term-ansi-red); }
+.tugx-term .ansi-green-fg   { color: var(--tugx-term-ansi-green); }
+.tugx-term .ansi-yellow-fg  { color: var(--tugx-term-ansi-yellow); }
+.tugx-term .ansi-blue-fg    { color: var(--tugx-term-ansi-blue); }
+.tugx-term .ansi-magenta-fg { color: var(--tugx-term-ansi-magenta); }
+.tugx-term .ansi-cyan-fg    { color: var(--tugx-term-ansi-cyan); }
+.tugx-term .ansi-white-fg   { color: var(--tugx-term-ansi-white); }
+
+.tugx-term .ansi-bright-black-fg   { color: var(--tugx-term-ansi-bright-black); }
+.tugx-term .ansi-bright-red-fg     { color: var(--tugx-term-ansi-bright-red); }
+.tugx-term .ansi-bright-green-fg   { color: var(--tugx-term-ansi-bright-green); }
+.tugx-term .ansi-bright-yellow-fg  { color: var(--tugx-term-ansi-bright-yellow); }
+.tugx-term .ansi-bright-blue-fg    { color: var(--tugx-term-ansi-bright-blue); }
+.tugx-term .ansi-bright-magenta-fg { color: var(--tugx-term-ansi-bright-magenta); }
+.tugx-term .ansi-bright-cyan-fg    { color: var(--tugx-term-ansi-bright-cyan); }
+.tugx-term .ansi-bright-white-fg   { color: var(--tugx-term-ansi-bright-white); }
+
+.tugx-term .ansi-black-bg   { background-color: var(--tugx-term-ansi-black); }
+.tugx-term .ansi-red-bg     { background-color: var(--tugx-term-ansi-red); }
+.tugx-term .ansi-green-bg   { background-color: var(--tugx-term-ansi-green); }
+.tugx-term .ansi-yellow-bg  { background-color: var(--tugx-term-ansi-yellow); }
+.tugx-term .ansi-blue-bg    { background-color: var(--tugx-term-ansi-blue); }
+.tugx-term .ansi-magenta-bg { background-color: var(--tugx-term-ansi-magenta); }
+.tugx-term .ansi-cyan-bg    { background-color: var(--tugx-term-ansi-cyan); }
+.tugx-term .ansi-white-bg   { background-color: var(--tugx-term-ansi-white); }

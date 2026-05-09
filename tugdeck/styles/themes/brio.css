@@ -1029,4 +1029,93 @@ body {
   --tugx-thinking-collapse-duration: 180ms;
   --tugx-thinking-collapse-easing: cubic-bezier(0.4, 0, 0.2, 1);
   --tugx-thinking-focus-ring: var(--tug7-element-global-text-normal-link-rest);
+
+  /* ---- Terminal block (TerminalBlock per Table T07) ----
+   * Renders ANSI-aware Bash output. Brio uses near-black
+   * background and the high-contrast brio palette for ANSI 16-color
+   * mapping; bright variants pop a touch more saturated than their
+   * dim counterparts. The footer is a darker stripe so post-mortem
+   * badges (exit code, duration) read as a separate surface.
+   */
+  --tugx-term-bg: rgba(0, 0, 0, 0.32);
+  --tugx-term-border: rgba(255, 255, 255, 0.08);
+  --tugx-term-radius: 6px;
+  --tugx-term-margin: var(--tug-space-md) 0;
+  --tugx-term-padding: var(--tug-space-sm) var(--tug-space-md);
+  --tugx-term-padding-x: var(--tug-space-md);
+  --tugx-term-font: var(--tug-font-family-mono);
+  --tugx-term-font-size: var(--tug-font-size-sm);
+  --tugx-term-line-height: 1.45;
+  --tugx-term-line-height-px: 20px;
+  --tugx-term-text-color: var(--tug7-element-global-text-normal-default-rest);
+
+  /* stderr stripe — slightly muted red foreground on a faint red wash */
+  --tugx-term-stderr-color: --tug-color(red, t: 80);
+  --tugx-term-stderr-bg: rgba(255, 0, 0, 0.06);
+
+  /* Truncation banner */
+  --tugx-term-truncation-padding: var(--tug-space-xs) var(--tug-space-md);
+  --tugx-term-truncation-bg: rgba(255, 255, 255, 0.04);
+  --tugx-term-truncation-border: rgba(255, 255, 255, 0.08);
+  --tugx-term-truncation-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-term-truncation-size: var(--tug-font-size-2xs);
+
+  /* Copy button — overlaid on the body, fades in on hover */
+  --tugx-term-copy-offset: var(--tug-space-xs);
+  --tugx-term-copy-padding: var(--tug-space-2xs) var(--tug-space-xs);
+  --tugx-term-copy-gap: var(--tug-space-2xs);
+  --tugx-term-copy-radius: 4px;
+  --tugx-term-copy-size: var(--tug-font-size-2xs);
+  --tugx-term-copy-fade: 120ms;
+  --tugx-term-copy-bg: rgba(255, 255, 255, 0.04);
+  --tugx-term-copy-bg-hover: rgba(255, 255, 255, 0.10);
+  --tugx-term-copy-border: rgba(255, 255, 255, 0.08);
+  --tugx-term-copy-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-term-copy-color-hover: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-term-copy-color-copied: var(--tug7-element-global-text-normal-success-rest);
+
+  /* Footer chrome */
+  --tugx-term-footer-padding: var(--tug-space-xs) var(--tug-space-md);
+  --tugx-term-footer-gap: var(--tug-space-md);
+  --tugx-term-footer-bg: rgba(0, 0, 0, 0.20);
+  --tugx-term-footer-border: rgba(255, 255, 255, 0.06);
+  --tugx-term-footer-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-term-footer-size: var(--tug-font-size-2xs);
+  --tugx-term-footer-font: var(--tug-font-family-base);
+
+  /* Exit badge: zero subtle, non-zero strong */
+  --tugx-term-exit-padding: var(--tug-space-2xs) var(--tug-space-xs);
+  --tugx-term-exit-radius: 3px;
+  --tugx-term-exit-weight: 600;
+  --tugx-term-exit-bg-zero: rgba(64, 200, 100, 0.10);
+  --tugx-term-exit-color-zero: var(--tug7-element-global-text-normal-success-rest);
+  --tugx-term-exit-bg-nonzero: rgba(220, 80, 80, 0.18);
+  --tugx-term-exit-color-nonzero: var(--tug7-element-global-text-normal-danger-rest);
+  --tugx-term-interrupted-bg: rgba(220, 160, 60, 0.18);
+  --tugx-term-interrupted-color: var(--tug7-element-global-text-normal-warning-rest);
+
+  --tugx-term-focus-ring: var(--tug7-element-global-text-normal-link-rest);
+
+  /* ANSI 16-color palette — calibrated for the dark brio surface
+   * via --tug-color() recipes so brio + harmony stay theme-aware
+   * (the postcss plugin expands these to oklch() at build time).
+   * Magenta maps to `violet`, cyan to `teal` — closest hues in the
+   * tug palette to the canonical SGR names.
+   */
+  --tugx-term-ansi-black:           --tug-color(gray, t: 25);
+  --tugx-term-ansi-red:             --tug-color(red, i: 70, t: 65);
+  --tugx-term-ansi-green:           --tug-color(green, i: 70, t: 70);
+  --tugx-term-ansi-yellow:          --tug-color(yellow, i: 70, t: 70);
+  --tugx-term-ansi-blue:            --tug-color(blue, t: 75);
+  --tugx-term-ansi-magenta:         --tug-color(violet, i: 70, t: 70);
+  --tugx-term-ansi-cyan:            --tug-color(teal, t: 75);
+  --tugx-term-ansi-white:           --tug-color(gray, t: 85);
+  --tugx-term-ansi-bright-black:    --tug-color(gray, t: 50);
+  --tugx-term-ansi-bright-red:      --tug-color(red, i: 70, t: 78);
+  --tugx-term-ansi-bright-green:    --tug-color(green, i: 70, t: 80);
+  --tugx-term-ansi-bright-yellow:   --tug-color(yellow, i: 70, t: 80);
+  --tugx-term-ansi-bright-blue:     --tug-color(blue, t: 85);
+  --tugx-term-ansi-bright-magenta:  --tug-color(violet, i: 70, t: 80);
+  --tugx-term-ansi-bright-cyan:     --tug-color(teal, t: 85);
+  --tugx-term-ansi-bright-white:    --tug-color(white);
 }
