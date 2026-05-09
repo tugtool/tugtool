@@ -1387,21 +1387,21 @@ ThinkingBlock, PermissionDialog, QuestionDialog, CostChrome (with CostBadge sub-
 - Token slot `--tugx-file-*`
 
 **Tasks:**
-- [ ] Line-numbered gutter; honor `startLine` offset
-- [ ] Language inferred from `filePath` extension; highlight via existing Shiki integration
-- [ ] Long-content collapse (**default folded if > 80 lines** per [audit §5.1](./tide-assistant-rendering-session-audit.md); audit shows Read P50 = 50 lines, so 50 was too aggressive — would fold half of all reads. 80 lines catches ~upper-40% which is the natural "long enough to scan-or-skip" bar.)
-- [ ] "Showing N of M lines" header
-- [ ] Click-line-to-copy
-- [ ] Search-within-file (Cmd+F) when expanded — scoped to the FileBlock instance, not the whole transcript
+- [x] Line-numbered gutter; honor `startLine` offset
+- [x] Language inferred from `filePath` extension; highlight via existing Shiki integration
+- [x] Long-content collapse (**default folded if > 80 lines** per [audit §5.1](./tide-assistant-rendering-session-audit.md); audit shows Read P50 = 50 lines, so 50 was too aggressive — would fold half of all reads. 80 lines catches ~upper-40% which is the natural "long enough to scan-or-skip" bar.)
+- [x] "Showing N of M lines" header
+- [x] Click-line-to-copy
+- [x] Search-within-file (Cmd+F) when expanded — scoped to the FileBlock instance, not the whole transcript
 
 **Tests:**
-- [ ] Renders content with line numbers starting at `startLine`
-- [ ] Long file collapses
-- [ ] Language detection produces correct highlight class
-- [ ] Cmd+F inside an expanded FileBlock highlights matches and supports next/previous navigation
+- [x] Renders content with line numbers starting at `startLine`
+- [x] Long file collapses
+- [x] Language detection produces correct highlight class
+- [x] Cmd+F inside an expanded FileBlock highlights matches and supports next/previous navigation — search markup verified in unit tests; full interactive flow (Cmd+F focus, typing, next/prev, Escape) belongs in a real-browser surface per the project's happy-dom test scoping rule, deferred to gallery/e2e
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test`
 
 ---
 

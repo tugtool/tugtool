@@ -1172,4 +1172,96 @@ body {
   --tugx-toolblock-streaming-padding: var(--tug-space-sm) var(--tug-space-md);
   --tugx-toolblock-streaming-gap: 4px;
   --tugx-toolblock-streaming-dot-size: 6px;
+
+  /* ---- FileBlock body kind (--tugx-file-*) per Table T07 ----
+   * Read-only file viewer with line-numbered gutter, optional Shiki
+   * highlight, in-instance Cmd+F search. Brio is a dark surface — the
+   * file body sits on a slightly recessed code-tone background.
+   */
+  --tugx-file-bg: rgba(0, 0, 0, 0.28);
+  --tugx-file-border: rgba(255, 255, 255, 0.08);
+  --tugx-file-radius: 6px;
+  --tugx-file-margin: var(--tug-space-md) 0;
+  --tugx-file-font: var(--tug-font-family-mono);
+  --tugx-file-font-size: var(--tug-font-size-sm);
+  --tugx-file-line-height: 1.55;
+  --tugx-file-text-color: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-file-focus-ring: var(--tug7-element-global-text-normal-link-rest);
+
+  /* Header */
+  --tugx-file-header-padding: var(--tug-space-xs) var(--tug-space-md);
+  --tugx-file-header-gap: var(--tug-space-sm);
+  --tugx-file-header-bg: rgba(0, 0, 0, 0.22);
+  --tugx-file-header-border: rgba(255, 255, 255, 0.06);
+  --tugx-file-header-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-file-header-size: var(--tug-font-size-2xs);
+  --tugx-file-header-font: var(--tug-font-family-base);
+  --tugx-file-path-color: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-file-path-weight: 600;
+
+  /* Language badge */
+  --tugx-file-lang-padding: var(--tug-space-2xs) var(--tug-space-xs);
+  --tugx-file-lang-bg: rgba(255, 255, 255, 0.08);
+  --tugx-file-lang-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-file-lang-radius: 3px;
+  --tugx-file-lang-size: var(--tug-font-size-3xs);
+  --tugx-file-lang-font: var(--tug-font-family-mono);
+
+  /* Line counts */
+  --tugx-file-counts-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-file-counts-size: var(--tug-font-size-2xs);
+
+  /* Icon button (search toggle, prev/next, close) */
+  --tugx-file-icon-size: 22px;
+  --tugx-file-icon-radius: 4px;
+  --tugx-file-icon-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-file-icon-color-hover: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-file-icon-bg-hover: rgba(255, 255, 255, 0.08);
+
+  /* Collapse toggle */
+  --tugx-file-toggle-padding: var(--tug-space-2xs) var(--tug-space-sm);
+  --tugx-file-toggle-border: rgba(255, 255, 255, 0.12);
+  --tugx-file-toggle-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-file-toggle-color-hover: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-file-toggle-bg-hover: rgba(255, 255, 255, 0.06);
+  --tugx-file-toggle-radius: 4px;
+  --tugx-file-toggle-size: var(--tug-font-size-2xs);
+
+  /* Search bar */
+  --tugx-file-search-padding: var(--tug-space-xs) var(--tug-space-md);
+  --tugx-file-search-gap: var(--tug-space-xs);
+  --tugx-file-search-bg: rgba(0, 0, 0, 0.16);
+  --tugx-file-search-border: rgba(255, 255, 255, 0.06);
+  --tugx-file-search-input-padding: var(--tug-space-2xs) var(--tug-space-xs);
+  --tugx-file-search-input-bg: rgba(255, 255, 255, 0.04);
+  --tugx-file-search-input-border: rgba(255, 255, 255, 0.08);
+  --tugx-file-search-input-color: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-file-search-input-radius: 4px;
+  --tugx-file-search-input-size: var(--tug-font-size-sm);
+  --tugx-file-search-count-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-file-search-count-size: var(--tug-font-size-2xs);
+  --tugx-file-search-step-size: var(--tug-font-size-sm);
+  --tugx-file-search-step-border: rgba(255, 255, 255, 0.08);
+
+  /* Body rows */
+  --tugx-file-rows-padding: var(--tug-space-2xs) 0;
+  --tugx-file-gutter-width: 3.5em;
+  --tugx-file-gutter-padding-x: var(--tug-space-sm);
+  --tugx-file-gutter-bg: transparent;
+  --tugx-file-gutter-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-file-content-padding-x: var(--tug-space-md);
+  --tugx-file-row-hover-bg: rgba(255, 255, 255, 0.04);
+  --tugx-file-row-active-bg: rgba(64, 200, 100, 0.10);
+
+  /* Match overlay */
+  --tugx-file-mark-bg: rgba(252, 192, 60, 0.30);
+  --tugx-file-mark-active-bg: rgba(252, 192, 60, 0.55);
+  --tugx-file-mark-active-outline: rgba(252, 192, 60, 0.85);
+  --tugx-file-mark-radius: 2px;
+
+  /* Collapsed hint */
+  --tugx-file-collapsed-padding: var(--tug-space-sm) var(--tug-space-md);
+  --tugx-file-collapsed-bg: rgba(0, 0, 0, 0.16);
+  --tugx-file-collapsed-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-file-collapsed-size: var(--tug-font-size-2xs);
 }

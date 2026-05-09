@@ -1,0 +1,303 @@
+/* @tug-pairings:
+   - --tugx-file-bg / --tugx-file-text-color
+   - --tugx-file-gutter-bg / --tugx-file-gutter-color
+   - --tugx-file-header-bg / --tugx-file-header-color
+   - --tugx-file-row-hover-bg / --tugx-file-row-active-bg
+   - --tugx-file-mark-bg / --tugx-file-mark-active-bg
+   `FileBlock` paints a code-surface frame with a left gutter strip
+   that holds the line numbers, a content area whose default render
+   is plain monospace and whose Shiki-enhanced render is swapped in
+   imperatively. The token slot family is `--tugx-file-*` per
+   [Table T07].
+*/
+
+/**
+ * file-block.css — `FileBlock` body-kind.
+ *
+ * Two visual layers:
+ *  - The base content row (gutter + content), always present.
+ *  - The match-highlight overlay, painted as a sibling absolutely
+ *    positioned over the content row. The overlay carries the same
+ *    monospace metrics as the content so a `<mark>` aligns with the
+ *    text it highlights regardless of whether Shiki has filled the
+ *    content with span'd HTML.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] all match-highlight, copy-flash, and Shiki-swap behavior
+ *    is DOM-imperative; React state holds only logical UI state.
+ *  - [L19] file pair, module docstring, `data-slot="file-body"`.
+ *  - [L20] every visible declaration consumes a `--tugx-file-*` token.
+ */
+
+.tugx-file {
+  position: relative;
+  display: block;
+  margin: var(--tugx-file-margin);
+  background: var(--tugx-file-bg);
+  border: 1px solid var(--tugx-file-border);
+  border-radius: var(--tugx-file-radius);
+  overflow: hidden;
+  color: var(--tugx-file-text-color);
+  font-family: var(--tugx-file-font);
+  font-size: var(--tugx-file-font-size);
+}
+
+.tugx-file[data-empty="true"]:not(:has(.tugx-file-header)) {
+  display: none;
+}
+
+/* ---------- Header ---------- */
+
+.tugx-file-header {
+  display: flex;
+  align-items: center;
+  gap: var(--tugx-file-header-gap);
+  padding: var(--tugx-file-header-padding);
+  background: var(--tugx-file-header-bg);
+  border-bottom: 1px solid var(--tugx-file-header-border);
+  color: var(--tugx-file-header-color);
+  font-family: var(--tugx-file-header-font);
+  font-size: var(--tugx-file-header-size);
+}
+
+.tugx-file-path {
+  font-weight: var(--tugx-file-path-weight);
+  color: var(--tugx-file-path-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60%;
+}
+
+.tugx-file-lang {
+  padding: var(--tugx-file-lang-padding);
+  background: var(--tugx-file-lang-bg);
+  color: var(--tugx-file-lang-color);
+  border-radius: var(--tugx-file-lang-radius);
+  font-size: var(--tugx-file-lang-size);
+  font-family: var(--tugx-file-lang-font);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.tugx-file-counts {
+  color: var(--tugx-file-counts-color);
+  font-size: var(--tugx-file-counts-size);
+  font-variant-numeric: tabular-nums;
+}
+
+.tugx-file-spacer {
+  flex: 1 1 auto;
+}
+
+.tugx-file-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tugx-file-icon-size);
+  height: var(--tugx-file-icon-size);
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--tugx-file-icon-radius);
+  color: var(--tugx-file-icon-color);
+  cursor: pointer;
+}
+
+.tugx-file-icon-btn:hover,
+.tugx-file-icon-btn[aria-pressed="true"] {
+  background: var(--tugx-file-icon-bg-hover);
+  color: var(--tugx-file-icon-color-hover);
+}
+
+.tugx-file-icon-btn:focus-visible {
+  outline: 2px solid var(--tugx-file-focus-ring);
+  outline-offset: -2px;
+}
+
+.tugx-file-toggle {
+  padding: var(--tugx-file-toggle-padding);
+  background: transparent;
+  border: 1px solid var(--tugx-file-toggle-border);
+  border-radius: var(--tugx-file-toggle-radius);
+  color: var(--tugx-file-toggle-color);
+  font-family: inherit;
+  font-size: var(--tugx-file-toggle-size);
+  cursor: pointer;
+}
+
+.tugx-file-toggle:hover {
+  background: var(--tugx-file-toggle-bg-hover);
+  color: var(--tugx-file-toggle-color-hover);
+}
+
+.tugx-file-toggle:focus-visible {
+  outline: 2px solid var(--tugx-file-focus-ring);
+  outline-offset: -2px;
+}
+
+/* ---------- Search bar ---------- */
+
+.tugx-file-search-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--tugx-file-search-gap);
+  padding: var(--tugx-file-search-padding);
+  background: var(--tugx-file-search-bg);
+  border-bottom: 1px solid var(--tugx-file-search-border);
+}
+
+.tugx-file-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--tugx-file-search-input-padding);
+  background: var(--tugx-file-search-input-bg);
+  border: 1px solid var(--tugx-file-search-input-border);
+  border-radius: var(--tugx-file-search-input-radius);
+  color: var(--tugx-file-search-input-color);
+  font-family: var(--tugx-file-font);
+  font-size: var(--tugx-file-search-input-size);
+}
+
+.tugx-file-search-input:focus-visible {
+  outline: 2px solid var(--tugx-file-focus-ring);
+  outline-offset: -2px;
+}
+
+.tugx-file-search-count {
+  color: var(--tugx-file-search-count-color);
+  font-size: var(--tugx-file-search-count-size);
+  font-variant-numeric: tabular-nums;
+  min-width: 4em;
+  text-align: right;
+}
+
+.tugx-file-search-step,
+.tugx-file-search-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tugx-file-icon-size);
+  height: var(--tugx-file-icon-size);
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--tugx-file-search-step-border);
+  border-radius: var(--tugx-file-icon-radius);
+  color: var(--tugx-file-icon-color);
+  cursor: pointer;
+  font-family: var(--tugx-file-font);
+  font-size: var(--tugx-file-search-step-size);
+  line-height: 1;
+}
+
+.tugx-file-search-step:not(:disabled):hover,
+.tugx-file-search-close:hover {
+  background: var(--tugx-file-icon-bg-hover);
+  color: var(--tugx-file-icon-color-hover);
+}
+
+.tugx-file-search-step:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.tugx-file-search-step:focus-visible,
+.tugx-file-search-close:focus-visible {
+  outline: 2px solid var(--tugx-file-focus-ring);
+  outline-offset: -2px;
+}
+
+/* ---------- Body rows ---------- */
+
+.tugx-file-rows {
+  display: block;
+  padding: var(--tugx-file-rows-padding);
+  background: transparent;
+  font-family: inherit;
+  line-height: var(--tugx-file-line-height);
+}
+
+.tugx-file-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--tugx-file-gutter-width) 1fr;
+  align-items: baseline;
+  cursor: pointer;
+}
+
+.tugx-file-row:hover {
+  background: var(--tugx-file-row-hover-bg);
+}
+
+.tugx-file-row.is-copied {
+  background: var(--tugx-file-row-active-bg);
+}
+
+.tugx-file-gutter {
+  display: inline-block;
+  padding: 0 var(--tugx-file-gutter-padding-x);
+  background: var(--tugx-file-gutter-bg);
+  color: var(--tugx-file-gutter-color);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.tugx-file-content {
+  display: inline-block;
+  padding: 0 var(--tugx-file-content-padding-x);
+  white-space: pre;
+  overflow-x: auto;
+  font-family: inherit;
+  color: inherit;
+}
+
+/* Shiki injects its own background on the .line span; we want our
+ * theme's background to win, so reset Shiki's inline bg + color when
+ * the highlighted attribute is set.
+ */
+.tugx-file-content[data-highlighted="true"] .line {
+  background: transparent !important;
+}
+
+/* ---------- Match overlay ---------- */
+
+.tugx-file-overlay {
+  position: absolute;
+  top: 0;
+  left: var(--tugx-file-gutter-width);
+  right: 0;
+  height: 100%;
+  padding: 0 var(--tugx-file-content-padding-x);
+  pointer-events: none;
+  white-space: pre;
+  color: transparent;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  display: none;
+}
+
+.tugx-file-mark {
+  background: var(--tugx-file-mark-bg);
+  color: transparent;
+  border-radius: var(--tugx-file-mark-radius);
+  pointer-events: none;
+}
+
+.tugx-file-mark--active {
+  background: var(--tugx-file-mark-active-bg);
+  outline: 1px solid var(--tugx-file-mark-active-outline);
+}
+
+/* ---------- Collapsed state ---------- */
+
+.tugx-file-collapsed-hint {
+  padding: var(--tugx-file-collapsed-padding);
+  background: var(--tugx-file-collapsed-bg);
+  color: var(--tugx-file-collapsed-color);
+  font-size: var(--tugx-file-collapsed-size);
+  font-style: italic;
+  text-align: center;
+}
