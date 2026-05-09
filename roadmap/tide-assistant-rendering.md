@@ -1347,18 +1347,30 @@ ThinkingBlock, PermissionDialog, QuestionDialog, CostChrome (with CostBadge sub-
 - Registry entry in dispatch.ts
 
 **Tasks:**
-- [ ] Shared `ToolWrapperChrome` component: header (icon + tool name + args summary) + footer (badges)
-- [ ] BashToolBlock: header shows shell-syntax-highlighted command (truncated, hover-expand); duration; exit code; interrupted indicator
-- [ ] Body: TerminalBlock fed from `tool_use_structured.{stdout,stderr}` (or `tool_result.output` if `tool_use_structured` absent)
-- [ ] Status placeholder during stream
+- [x] Shared `ToolWrapperChrome` component (`tool-wrapper-chrome.{tsx,css}`) — header (icon slot + tool name + args summary + inline caution badge) + body slot + optional inline error message + footer slot for badges; `data-status` attribute on the root drives streaming / ready / error stripe coloring; exports a `<StreamingPlaceholder />` companion for wrappers that paint a placeholder body while input streams in
+- [x] `BashToolBlock` (`bash-tool-block.{tsx,css}`) — header shows the command from `input.command` as a `<code>` args summary (CSS truncate-with-hover-expand; full Shiki shell-syntax highlight is a follow-up polish since pulling in shell highlighting for one inline phrase is heavy compared to the truncate-and-expand affordance); footer renders synthesized exit badge + interrupted badge + duration
+- [x] Body: `TerminalBlock` fed from `tool_use_structured.{stdout,stderr}` with `tool_result.output` as the `stdout` fallback when `tool_use_structured` is absent (older catalog versions / drift)
+- [x] Status placeholder during stream — `status === "streaming"` swaps the body for `<StreamingPlaceholder />`; the chrome's left-edge stripe paints the streaming color so the row reads as in-flight at a glance
+- [x] Token slot `--tugx-toolblock-*` declared in both themes (bg / border / radius / margin / status stripes / header / icon / name / args / caution / error band / footer / streaming placeholder); the wrapper composes the existing `--tugx-term-*` tokens for body chrome
+- [x] Registry entry — `registerToolWrapper("bash", BashToolBlock)` runs at the bottom of `tide-assistant-renderer-dispatch.ts` (after `registerToolWrapper` is defined) so the import graph stays one-directional (dispatch → wrapper → chrome → types). Dispatch also gained an `extractTextOutput` helper that reads `tool_result.output` into `ToolWrapperProps.textOutput` as the structured-result fallback
 
 **Tests:**
-- [ ] Replay `test-09-bash-auto-approved.jsonl` → BashToolBlock renders with command, stdout, exit 0
-- [ ] Synthetic non-zero exit fixture → strong-color exit badge
+- [x] Bash fixture shape — props matching `test-09-bash-auto-approved.jsonl`'s `{ input: { command }, structured_result: { stdout, stderr, interrupted: false } }` render BashToolBlock with the command in the header, stdout in the body, exit 0 (zero subtle) in the footer (`bash-tool-block.test.tsx`)
+- [x] Synthetic non-zero exit — `isError: true` with empty stderr renders the exit-1 (nonzero strong) badge with `data-exit="nonzero"` (`bash-tool-block.test.tsx`)
+- [x] Interrupted: `structured_result.interrupted === true` replaces the exit badge with the interrupted indicator (`bash-tool-block.test.tsx`)
+- [x] (no output) hint: success path with empty stdout/stderr surfaces a "(no output)" footer hint so the row doesn't read as missing data (`bash-tool-block.test.tsx`)
+- [x] Streaming: `status === "streaming"` renders `<StreamingPlaceholder />`, NOT `<TerminalBlock />` (`bash-tool-block.test.tsx`)
+- [x] Error band: `status === "error"` with a plain-text `tool_result.output` paints the chrome error stripe and surfaces the message inline (`bash-tool-block.test.tsx`)
+- [x] Caution: `caution: { reason, detail }` paints the inline caution badge in the header and stamps `data-caution` on the root (`bash-tool-block.test.tsx`)
+- [x] Helpers: `composeTerminalData` derives the `TerminalData` payload (structured / fallback / synthetic exit / interrupt suppression of exit); `formatBashDuration` covers ms / s / m formatting (`bash-tool-block.test.tsx`)
+- [x] Dispatch resolution: `resolveToolWrapper("Bash" | "bash" | "BASH")` returns `BashToolBlock` (`bash-tool-block.test.tsx`)
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
-- [ ] Manual: invoke `> use bash to echo hello` against live tugcode; verify rendering
+- [x] `cd tugdeck && bun x tsc --noEmit` — clean
+- [x] `cd tugdeck && bun test src/components/tugways/cards/tool-wrappers` — 20 pass / 0 fail
+- [x] `cd tugdeck && bun test` — 3306 pass / 0 fail (198 files)
+- [x] `cd tugdeck && bun run audit:tokens lint` — zero violations
+- [ ] Manual: invoke `> use bash to echo hello` against live tugcode; verify rendering (deferred to user — HMR is always running)
 
 ---
 

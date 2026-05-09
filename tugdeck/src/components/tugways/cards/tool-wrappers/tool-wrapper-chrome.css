@@ -1,0 +1,195 @@
+/* @tug-pairings:
+   - --tugx-toolblock-bg / --tugx-toolblock-name-color
+   - --tugx-toolblock-header-bg / --tugx-toolblock-args-color
+   - --tugx-toolblock-footer-bg / --tugx-toolblock-footer-color
+   - --tugx-toolblock-caution-bg / --tugx-toolblock-caution-color
+   The chrome paints a subtle bordered card around tool-call content
+   with a header row (icon + name + args summary) and an optional
+   footer for badges. The `data-status` attribute on the root
+   selects the streaming / ready / error stripe color.
+*/
+
+/**
+ * tool-wrapper-chrome.css — shared frame for Layer-2 tool wrappers.
+ *
+ * The chrome is intentionally small: a header row, a body region
+ * (whose contents are the body-kind component the wrapper composes),
+ * and an optional footer. Every visible declaration consumes a
+ * `--tugx-toolblock-*` token so brio + harmony can tune the
+ * tool-call surface independently of body-kind primitives.
+ *
+ * Tuglaw cross-check:
+ *   - [L06] all visible state lives on data attributes / class
+ *     swaps; React state never drives appearance.
+ *   - [L19] component-authoring guide — file pair, module
+ *     docstring, `data-slot="tool-wrapper-chrome"`.
+ *   - [L20] component-token sovereignty — every visible declaration
+ *     consumes a `--tugx-toolblock-*` token; the chrome never
+ *     reaches into a body kind's tokens.
+ */
+
+.tool-wrapper-chrome {
+  display: flex;
+  flex-direction: column;
+  margin: var(--tugx-toolblock-margin);
+  background: var(--tugx-toolblock-bg);
+  border: 1px solid var(--tugx-toolblock-border);
+  border-radius: var(--tugx-toolblock-radius);
+  overflow: hidden;
+}
+
+.tool-wrapper-chrome[data-status="streaming"] {
+  border-left: 3px solid var(--tugx-toolblock-stripe-streaming);
+}
+
+.tool-wrapper-chrome[data-status="error"] {
+  border-left: 3px solid var(--tugx-toolblock-stripe-error);
+}
+
+.tool-wrapper-chrome[data-status="ready"] {
+  border-left: 3px solid var(--tugx-toolblock-stripe-ready);
+}
+
+/* ---- Header row ---- */
+
+.tool-wrapper-chrome-header {
+  display: flex;
+  align-items: center;
+  gap: var(--tugx-toolblock-header-gap);
+  padding: var(--tugx-toolblock-header-padding);
+  background: var(--tugx-toolblock-header-bg);
+  border-bottom: 1px solid var(--tugx-toolblock-header-border);
+  font-size: var(--tugx-toolblock-header-size);
+  font-family: var(--tugx-toolblock-header-font);
+  color: var(--tugx-toolblock-name-color);
+}
+
+.tool-wrapper-chrome-icon {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  color: var(--tugx-toolblock-icon-color);
+}
+
+.tool-wrapper-chrome-name {
+  flex: 0 0 auto;
+  font-weight: var(--tugx-toolblock-name-weight);
+  color: var(--tugx-toolblock-name-color);
+}
+
+.tool-wrapper-chrome-args {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tugx-toolblock-args-color);
+  font-family: var(--tugx-toolblock-args-font);
+}
+
+/* Hover-expand: reveal the full args text on header hover. The
+ * contained scrolling avoids reflowing surrounding elements while
+ * still letting the user read a long command. Per L06, this is a
+ * pure CSS state — no React rerender. */
+.tool-wrapper-chrome-header:hover .tool-wrapper-chrome-args {
+  white-space: pre-wrap;
+  overflow: auto;
+  max-height: 4lh;
+}
+
+.tool-wrapper-chrome-args code {
+  display: inline;
+  font-family: inherit;
+  font-size: inherit;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+
+/* ---- Caution badge (inline in header) ---- */
+
+.tool-wrapper-chrome-caution {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  padding: var(--tugx-toolblock-caution-padding);
+  border-radius: var(--tugx-toolblock-caution-radius);
+  background: var(--tugx-toolblock-caution-bg);
+  color: var(--tugx-toolblock-caution-color);
+  font-size: var(--tugx-toolblock-caution-size);
+  font-weight: var(--tugx-toolblock-caution-weight);
+  cursor: help;
+}
+
+/* ---- Body region ---- */
+
+.tool-wrapper-chrome-body {
+  display: block;
+  /* Body-kind component owns its own padding / margin. The chrome
+   * just hosts the region. */
+}
+
+/* ---- Error message (between body and footer) ---- */
+
+.tool-wrapper-chrome-error {
+  padding: var(--tugx-toolblock-error-padding);
+  background: var(--tugx-toolblock-error-bg);
+  border-top: 1px solid var(--tugx-toolblock-error-border);
+  color: var(--tugx-toolblock-error-color);
+  font-family: var(--tugx-toolblock-error-font);
+  font-size: var(--tugx-toolblock-error-size);
+}
+
+/* ---- Footer (badges) ---- */
+
+.tool-wrapper-chrome-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--tugx-toolblock-footer-gap);
+  padding: var(--tugx-toolblock-footer-padding);
+  background: var(--tugx-toolblock-footer-bg);
+  border-top: 1px solid var(--tugx-toolblock-footer-border);
+  color: var(--tugx-toolblock-footer-color);
+  font-size: var(--tugx-toolblock-footer-size);
+  font-family: var(--tugx-toolblock-footer-font);
+}
+
+/* ---- Streaming placeholder ---- */
+
+.tool-wrapper-streaming-placeholder {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tugx-toolblock-streaming-gap);
+  padding: var(--tugx-toolblock-streaming-padding);
+  color: var(--tugx-toolblock-streaming-color);
+}
+
+.tool-wrapper-streaming-dot {
+  display: inline-block;
+  width: var(--tugx-toolblock-streaming-dot-size);
+  height: var(--tugx-toolblock-streaming-dot-size);
+  border-radius: 50%;
+  background: currentColor;
+  animation: tool-wrapper-streaming-pulse 1.4s ease-in-out infinite;
+}
+
+.tool-wrapper-streaming-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.tool-wrapper-streaming-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes tool-wrapper-streaming-pulse {
+  0%, 80%, 100% { opacity: 0.25; transform: scale(0.85); }
+  40%           { opacity: 1;    transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-wrapper-streaming-dot {
+    animation: none;
+    opacity: 0.6;
+  }
+}

@@ -1,0 +1,103 @@
+/* @tug-pairings: none — `BashToolBlock` is decoration over composition.
+   Header / footer chrome inherits `--tugx-toolblock-*` from
+   `tool-wrapper-chrome.css`; the body inherits `--tugx-term-*` from
+   `terminal-block.css`. The exit / interrupted badges below
+   intentionally ride the body's `--tugx-term-exit-*` / `--tugx-term-
+   interrupted-*` tokens so the badge color matches the same exit
+   semantics the standalone TerminalBlock uses.
+*/
+
+/**
+ * bash-tool-block.css — `BashToolBlock` wrapper styles.
+ *
+ * Most of the wrapper is composition — the chrome lives in
+ * `tool-wrapper-chrome.css`, the terminal body lives in
+ * `terminal-block.css`. This file holds the small bash-specific
+ * pieces:
+ *
+ *   1. The footer badges — `exit N` (zero / nonzero variants) and
+ *      `interrupted` indicator. Tokens reused from the
+ *      `--tugx-term-*` family for color consistency with the
+ *      standalone TerminalBlock footer.
+ *   2. The error-output `<pre>` — when the tool result reports
+ *      `is_error`, the chrome surfaces `tool_result.output` as an
+ *      inline error band. The `<pre>` styling matches the body's
+ *      mono font.
+ *
+ * Tuglaw cross-check:
+ *   - [L06] no React state for appearance — every visible state is
+ *     an attribute or class swap.
+ *   - [L19] file pair, module docstring, owns no new data-slot beyond
+ *     the chrome's `bash-tool-block` root.
+ *   - [L20] no new tokens beyond what the chrome / body already
+ *     declare; the badges intentionally ride `--tugx-term-exit-*` /
+ *     `--tugx-term-interrupted-*`.
+ */
+
+/* The body region of the bash chrome strips the body kind's own
+ * outer margin so the terminal sits flush against the chrome
+ * border. The body kind's vertical margin would otherwise produce
+ * an unwelcome gap inside the chrome's already-bordered surface.
+ */
+.bash-tool-block-terminal {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+/* Footer badge — exit code (matches TerminalBlock footer semantics). */
+.bash-tool-block-exit {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--tugx-term-exit-padding);
+  border-radius: var(--tugx-term-exit-radius);
+  font-weight: var(--tugx-term-exit-weight);
+}
+
+.bash-tool-block-exit--zero {
+  background: var(--tugx-term-exit-bg-zero);
+  color: var(--tugx-term-exit-color-zero);
+}
+
+.bash-tool-block-exit--nonzero {
+  background: var(--tugx-term-exit-bg-nonzero);
+  color: var(--tugx-term-exit-color-nonzero);
+}
+
+.bash-tool-block-interrupted {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--tugx-term-exit-padding);
+  border-radius: var(--tugx-term-exit-radius);
+  background: var(--tugx-term-interrupted-bg);
+  color: var(--tugx-term-interrupted-color);
+  font-weight: var(--tugx-term-exit-weight);
+}
+
+.bash-tool-block-no-output {
+  display: inline-flex;
+  align-items: center;
+  font-style: italic;
+  color: var(--tugx-toolblock-footer-color);
+}
+
+.bash-tool-block-duration {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Error message <pre> — inherits chrome's error tokens. The wrapper
+ * forwards the plain-text `tool_result.output` to the chrome's
+ * errorMessage slot, which paints it on the error-band surface.
+ * Override `<pre>`'s default whitespace so long error lines wrap
+ * rather than overflow horizontally.
+ */
+.bash-tool-block-error-output {
+  margin: 0;
+  font-family: var(--tugx-term-font);
+  font-size: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

@@ -70,6 +70,7 @@ import type {
   ToolCallState,
 } from "@/lib/code-session-store";
 
+import { BashToolBlock } from "./tool-wrappers/bash-tool-block";
 import { DefaultToolWrapper } from "./tool-wrappers/default-tool-wrapper";
 import type { CautionFlag, ToolWrapperFactory } from "./tool-wrappers/types";
 
@@ -373,6 +374,21 @@ export function dispatch(
 }
 
 /**
+ * Read the plain-text `output` field from a `tool_result` payload.
+ * Returns `undefined` when the result is null / absent / non-string.
+ *
+ * The `tool_result` payload's wire shape is `{ is_error, output,
+ * tool_use_id }`; wrappers consume `output` as a fallback when the
+ * matching `tool_use_structured` event hasn't arrived (older catalog
+ * versions, drift, mid-stream).
+ */
+function extractTextOutput(result: unknown): string | undefined {
+  if (result === null || typeof result !== "object") return undefined;
+  const r = result as Record<string, unknown>;
+  return typeof r.output === "string" ? r.output : undefined;
+}
+
+/**
  * Tool-call dispatch — looks up the tool name in the registry, with
  * alias resolution, and surfaces a caution flag for unknown names
  * that aren't in the audit-confirmed default-routed list.
@@ -402,6 +418,7 @@ function dispatchToolCall(
     seq: 0, // populated by the transcript view from event ordering
     input: input.toolCall.input,
     structuredResult: input.toolCall.structuredResult,
+    textOutput: extractTextOutput(input.toolCall.result),
     isError: input.toolCall.status === "error",
     status,
   };
@@ -451,3 +468,12 @@ export const assistantRendererDispatch: AssistantRendererDispatch = {
   resolveToolWrapper,
   registeredTools,
 };
+
+// ---------------------------------------------------------------------------
+// Wrapper registrations — done here (not at the wrapper site) so the
+// import graph flows in one direction: dispatch imports each wrapper,
+// each wrapper imports types + chrome, no cycles. New wrappers add a
+// line here as they ship.
+// ---------------------------------------------------------------------------
+
+registerToolWrapper("bash", BashToolBlock);
