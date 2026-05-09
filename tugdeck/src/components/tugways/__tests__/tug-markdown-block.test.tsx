@@ -264,11 +264,11 @@ describe("TugMarkdownBlock — streaming streamingStore mode", () => {
     expect(root?.querySelectorAll(".tugx-md-block").length).toBe(0);
 
     act(() => {
-      store.set("text", "now there's content", "test");
+      store.set("text", "now there is content", "test");
       flushRaf();
     });
 
-    expect(root?.textContent).toContain("now there's content");
+    expect(root?.textContent).toContain("now there is content");
   });
 
   test("unmount unsubscribes — subsequent store writes do not throw", () => {

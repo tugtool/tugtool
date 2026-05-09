@@ -33,6 +33,10 @@ export const SANITIZE_CONFIG = {
     "blockquote",
     "table", "thead", "tbody", "tr", "th", "td",
     "img",
+    // `div` survives so pulldown-cmark's `<div class="footnote-definition"
+    // id="N">` wrapper can keep its `id` for fragment back-references from
+    // the matching `<sup class="footnote-reference"><a href="#N">…</a></sup>`.
+    "div",
   ],
   ALLOWED_ATTR: ["href", "src", "alt", "title", "class", "id"],
   FORBID_TAGS: ["script", "iframe", "object", "embed", "form", "style", "link", "meta", "base", "svg", "math"],

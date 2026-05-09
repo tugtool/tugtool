@@ -1217,37 +1217,43 @@ ThinkingBlock, PermissionDialog, QuestionDialog, CostChrome (with CostBadge sub-
 
 ---
 
-#### Step 3: MarkdownBlock extensions — block-transformer pass + footnotes + smart-punct + collapse {#step-3}
+#### Step 3: MarkdownBlock extensions — block-transformer pass + footnotes + smart-punct {#step-3}
 
 **Depends on:** #step-2
 
-**Commit:** `feat(tide-rendering): block-transformer pass + pulldown-cmark footnotes + smart-punctuation + collapse-tall-blocks`
+**Commit:** `feat(tide-rendering): block-transformer pass + pulldown-cmark footnotes + smart-punctuation`
 
 **References:** [D07], Spec S04, List L01, List L02, (#block-transformer-pass)
+
+**Scope note (deferred):** The "collapse-tall-block" affordance originally bundled in this step is deferred pending UX direction — controls at the top vs. bottom of long sections both have ergonomic issues that need a deliberate design pass. Nothing downstream depends on the collapse work (#step-12 / #step-13 / #step-15 only consume the block-transformer pass), so the deferral is structural-cost-zero. When picked back up, it gets its own step with `--tugx-md-collapse-*` tokens declared in both themes and its own gallery card.
 
 **Artifacts:**
 - `tugdeck/crates/tugmark-wasm/src/lib.rs` (extended `parser_options`)
 - `tugdeck/src/lib/markdown/block-transformers/index.ts`
-- `tugdeck/src/lib/markdown/parse-markdown-to-sanitized-blocks.ts` (gain `transformers` param)
-- Empty transformer files (mermaid, math, diff, large-json) created here, populated in later steps when consumed
-- Collapse-tall-block UX in `TugMarkdownBlock` (and corresponding `TugMarkdownView` region affordance)
+- `tugdeck/src/lib/markdown/block-transformers/{mermaid,math,diff,large-json}.ts` (no-op stubs; populated in later steps when consumed)
+- `tugdeck/src/lib/markdown/parse-markdown-to-sanitized-blocks.ts` (gains `transformers` param)
+- `tugdeck/src/lib/markdown/dompurify-instance.ts` (allow `div` for `footnote-definition`)
 
 **Tasks:**
-- [ ] Enable `Options::ENABLE_FOOTNOTES` and `Options::ENABLE_SMART_PUNCTUATION` in `tugmark-wasm`
-- [ ] Define `BlockTransformer` and `BlockTransformContext` interfaces per Spec S04
-- [ ] Add optional `transformers: BlockTransformer[]` parameter to `parseMarkdownToSanitizedBlocks`; flat-map each block through every transformer
-- [ ] Add token slots `--tugx-md-collapse-*` for collapse affordance chrome
-- [ ] Implement collapse on `TugMarkdownBlock` for blocks above height threshold
+- [x] Enable `Options::ENABLE_FOOTNOTES` and `Options::ENABLE_SMART_PUNCTUATION` in `tugmark-wasm`
+- [x] Define `BlockTransformer` and `BlockTransformContext` interfaces per Spec S04
+- [x] Add optional `transformers: BlockTransformer[]` parameter to `parseMarkdownToSanitizedBlocks`; flat-map each block through every transformer in order, with `BlockTransformContext.isComplete` for streaming-aware deferral per [D07]
+- [x] Create no-op stub transformer files for mermaid / math / diff / large-json so the dispatch contract compiles; consuming steps populate the bodies
+- [x] Allow `div` in DOMPurify so pulldown-cmark's `<div class="footnote-definition" id="N">` keeps its `id` for fragment back-references
 
 **Tests:**
-- [ ] Footnote markdown round-trips through pulldown-cmark and renders with footnote chrome
-- [ ] Smart-punctuation: `--` becomes em-dash, `"..."` becomes curly quotes
-- [ ] Block transformer pass: a no-op transformer leaves blocks identical; a swap-type transformer changes a block type; a split transformer produces multiple blocks
-- [ ] Collapse: a paragraph above the threshold shows the affordance; clicking expands
+- [x] Footnote markdown round-trips through pulldown-cmark and produces the expected `<sup class="footnote-reference">` + `<div class="footnote-definition" id="…">` chrome (`cmark-extensions.test.ts`)
+- [x] Smart-punctuation: `--` / `---` produce en/em-dashes, straight quotes become curly quotes, `...` becomes `…` (`cmark-extensions.test.ts`)
+- [x] Block transformer pass: a no-op transformer leaves blocks identical; a swap-type transformer changes a block's `type`; a split transformer produces multiple blocks; an empty-result transformer drops a block; transformer order is preserved when chained (`block-transformers.test.ts`)
+- [x] `BlockTransformContext.isComplete` propagates from `parseMarkdownToSanitizedBlocks(text, { isComplete: false })` into each transformer invocation (`block-transformers.test.ts`)
+
+**Implementation note:** Footnote ref ↔ definition linking only works when pulldown-cmark sees the whole document at parse time. The original pipeline parsed each block independently (sliced byte-range → `parse_to_html`), which left `[^name]` references rendering as plaintext. To fix this, a new `parse_blocks_to_html(text)` was added to `tugmark-wasm` — it walks the document in a single parser pass, buckets events into top-level blocks, and emits per-block HTML. `parseMarkdownToSanitizedBlocks` now zips `lex_blocks`'s metadata with `parse_blocks_to_html`'s HTML; the per-block `parse_to_html` is preserved for the incremental update path in `TugMarkdownView`.
 
 **Checkpoint:**
-- [ ] `cd tugrust && cargo nextest run -p tugmark-wasm` (if a Rust-side test exists; otherwise just `cargo build`)
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test src/lib/markdown`
+- [x] `cd tugdeck/crates/tugmark-wasm && cargo build --target wasm32-unknown-unknown --release` — clean
+- [x] `cd tugdeck && bun x tsc --noEmit` — clean
+- [x] `cd tugdeck && bun test src/lib/markdown` — 45 pass / 0 fail (4 files)
+- [x] Full suite: `cd tugdeck && bun test` — 3227 pass / 0 fail (194 files); `bun run audit:tokens lint` — zero violations
 
 ---
 

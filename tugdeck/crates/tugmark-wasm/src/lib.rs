@@ -3,7 +3,9 @@
 //! # API
 //!
 //! - [`lex_blocks`] — lex markdown into packed binary block metadata (4 × u32 per block)
-//! - [`parse_to_html`] — parse markdown to an HTML string
+//! - [`parse_to_html`] — parse a single fragment to an HTML string (no cross-block linking)
+//! - [`parse_blocks_to_html`] — parse a whole document in one pass and emit per-block HTML
+//!   so cross-block features (notably footnote ref ↔ definition linking) work correctly.
 
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use wasm_bindgen::prelude::*;
@@ -36,6 +38,8 @@ fn parser_options() -> Options {
     opts.insert(Options::ENABLE_TABLES);
     opts.insert(Options::ENABLE_STRIKETHROUGH);
     opts.insert(Options::ENABLE_TASKLISTS);
+    opts.insert(Options::ENABLE_FOOTNOTES);
+    opts.insert(Options::ENABLE_SMART_PUNCTUATION);
     opts
 }
 
@@ -117,11 +121,77 @@ pub fn lex_blocks(text: &str) -> Vec<u32> {
 }
 
 /// Parse a markdown fragment to HTML.
+///
+/// Suitable for re-parsing a single block during incremental updates.
+/// Cross-block features (e.g. footnote reference → definition linking,
+/// reference-style links spanning blocks) require the whole document
+/// to be visible during parsing — for that, prefer
+/// [`parse_blocks_to_html`].
 #[wasm_bindgen]
 pub fn parse_to_html(text: &str) -> String {
     let parser = Parser::new_ext(text, parser_options());
     let mut html = String::with_capacity(text.len() * 2);
     pulldown_cmark::html::push_html(&mut html, parser);
     html
+}
+
+/// Parse a whole markdown document in a single pulldown-cmark pass and
+/// emit one HTML string per top-level block, preserving cross-block
+/// features like footnote ref ↔ definition linking and reference-style
+/// links.
+///
+/// Block boundaries are computed inline by tracking nesting depth: a
+/// `Tag::Start(_)` at `nesting == 0` opens a new block, the matching
+/// `Tag::End(_)` at `nesting == 1 → 0` closes it; `Event::Rule` emits a
+/// stand-alone block. The block sequence here matches [`lex_blocks`]'s
+/// in count and order — both walk the same parser with the same options
+/// and bucket events into the same top-level groups — so callers can
+/// zip the two outputs together.
+#[wasm_bindgen]
+pub fn parse_blocks_to_html(text: &str) -> Box<[JsValue]> {
+    let parser = Parser::new_ext(text, parser_options());
+
+    let mut blocks: Vec<Vec<Event>> = Vec::with_capacity(64);
+    let mut current: Vec<Event> = Vec::with_capacity(64);
+    let mut nesting: usize = 0;
+
+    for event in parser {
+        match &event {
+            Event::Start(_) => {
+                if nesting == 0 {
+                    current.clear();
+                }
+                nesting += 1;
+                current.push(event);
+            }
+            Event::End(_) => {
+                nesting = nesting.saturating_sub(1);
+                current.push(event);
+                if nesting == 0 {
+                    blocks.push(std::mem::take(&mut current));
+                }
+            }
+            Event::Rule => {
+                if nesting == 0 {
+                    blocks.push(vec![event]);
+                } else {
+                    current.push(event);
+                }
+            }
+            _ => {
+                current.push(event);
+            }
+        }
+    }
+
+    blocks
+        .into_iter()
+        .map(|events| {
+            let mut html = String::new();
+            pulldown_cmark::html::push_html(&mut html, events.into_iter());
+            JsValue::from_str(&html)
+        })
+        .collect::<Vec<_>>()
+        .into_boxed_slice()
 }
 

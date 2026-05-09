@@ -18,9 +18,15 @@
  *      `BlockMeta` records the rest of the pipeline can read.
  *   3. `buildByteToCharMap(text)` — lex returns UTF-8 byte offsets;
  *      JS string slicing uses UTF-16 code units. The map closes that
- *      gap so we can feed correct slices into `parse_to_html`.
- *   4. `parse_to_html(rawBlockText)` — pulldown-cmark WASM call
- *      returns raw HTML for that single block.
+ *      gap so consumers reading `startChar` / `endChar` see correct
+ *      JS indices.
+ *   4. `parse_blocks_to_html(text)` — pulldown-cmark WASM call that
+ *      walks the whole document in a single pass and emits one HTML
+ *      string per top-level block. Single-pass parsing is what makes
+ *      footnote ref ↔ definition linking and reference-style links
+ *      work — both are cross-block features that a per-block
+ *      reparse cannot resolve. The function's block bucketing matches
+ *      `lex_blocks`'s in count and order so the two can be zipped.
  *   5. `getDOMPurify().sanitize(rawHtml, SANITIZE_CONFIG)` — strip
  *      anything the allowlist doesn't permit.
  *
@@ -43,8 +49,15 @@
  * file is a pure consumer.
  */
 
-import { lex_blocks, parse_to_html } from "../../../crates/tugmark-wasm/pkg/tugmark_wasm.js";
+import {
+  lex_blocks,
+  parse_blocks_to_html,
+} from "../../../crates/tugmark-wasm/pkg/tugmark_wasm.js";
 
+import {
+  applyBlockTransformers,
+  type BlockTransformer,
+} from "./block-transformers";
 import { getDOMPurify, SANITIZE_CONFIG } from "./dompurify-instance";
 
 // ---------------------------------------------------------------------------
@@ -181,6 +194,22 @@ export function buildByteToCharMap(text: string): Uint32Array {
 // ---------------------------------------------------------------------------
 
 /**
+ * Optional knobs for the post-sanitize block-transformer pass.
+ *
+ * - `transformers` — ordered list of `BlockTransformer` instances. Each
+ *   transformer flat-maps over the (current) block list and may
+ *   replace, drop, or split a block. See `block-transformers/index.ts`.
+ * - `isComplete` — passed through into each `BlockTransformContext`.
+ *   Streaming-aware transformers (e.g. `mermaid`) defer their
+ *   promotion until completion; for static documents callers leave
+ *   this `true` (the default).
+ */
+export interface ParseMarkdownOptions {
+  transformers?: ReadonlyArray<BlockTransformer>;
+  isComplete?: boolean;
+}
+
+/**
  * Lex, parse, and sanitize markdown text into a list of safe HTML
  * blocks plus their lex metadata. Empty input returns an empty array
  * without invoking the WASM pipeline.
@@ -188,15 +217,31 @@ export function buildByteToCharMap(text: string): Uint32Array {
  * The WASM module (`tugmark-wasm`) must be initialized before this
  * function is called. Production initialization happens in
  * `main.tsx`; tests use `initSync({ module: wasmBytes })`.
+ *
+ * If `options.transformers` is supplied, the result of the lex →
+ * parse → sanitize pipeline runs through `applyBlockTransformers`
+ * before being returned. Transformers may change a block's `type`
+ * (e.g. promote a `code` block with `lang === "mermaid"` to a
+ * `tug-mermaid` block), drop a block, or split it into siblings —
+ * see Spec S04.
  */
 export function parseMarkdownToSanitizedBlocks(
   text: string,
+  options?: ParseMarkdownOptions,
 ): SanitizedMarkdownBlock[] {
   if (text === "") return [];
 
   const packed = lex_blocks(text);
   const blocks = decodeBlocks(packed);
   if (blocks.length === 0) return [];
+
+  // Single-pass full-document parse for cross-block correctness
+  // (footnote ref ↔ definition linking, reference-style links). The
+  // count must match `lex_blocks`'s — both walk the same parser with
+  // the same options — but we guard against any future drift by
+  // capping the iteration at the shorter of the two and falling back
+  // to an empty html for any extra lexer-reported blocks.
+  const htmlPerBlock = parse_blocks_to_html(text) as string[];
 
   const byteToChar = buildByteToCharMap(text);
   const sanitizer = getDOMPurify();
@@ -206,8 +251,7 @@ export function parseMarkdownToSanitizedBlocks(
     const block = blocks[i];
     const startChar = byteToChar[block.startByte] ?? block.startByte;
     const endChar = byteToChar[block.endByte] ?? block.endByte;
-    const raw = text.slice(startChar, endChar);
-    const rawHtml = parse_to_html(raw);
+    const rawHtml = htmlPerBlock[i] ?? "";
     const sanitized = sanitizer.sanitize(rawHtml, SANITIZE_CONFIG);
     result[i] = {
       html: sanitized,
@@ -219,5 +263,10 @@ export function parseMarkdownToSanitizedBlocks(
       rowCount: block.rowCount,
     };
   }
-  return result;
+
+  const transformers = options?.transformers;
+  if (transformers === undefined || transformers.length === 0) return result;
+  return applyBlockTransformers(result, transformers, {
+    isComplete: options?.isComplete,
+  });
 }

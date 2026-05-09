@@ -16,7 +16,38 @@ export function lex_blocks(text) {
 }
 
 /**
+ * Parse a whole markdown document in a single pulldown-cmark pass and
+ * emit one HTML string per top-level block, preserving cross-block
+ * features like footnote ref ↔ definition linking and reference-style
+ * links.
+ *
+ * Block boundaries are computed inline by tracking nesting depth: a
+ * `Tag::Start(_)` at `nesting == 0` opens a new block, the matching
+ * `Tag::End(_)` at `nesting == 1 → 0` closes it; `Event::Rule` emits a
+ * stand-alone block. The block sequence here matches [`lex_blocks`]'s
+ * in count and order — both walk the same parser with the same options
+ * and bucket events into the same top-level groups — so callers can
+ * zip the two outputs together.
+ * @param {string} text
+ * @returns {any[]}
+ */
+export function parse_blocks_to_html(text) {
+    const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.parse_blocks_to_html(ptr0, len0);
+    var v2 = getArrayJsValueFromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+    return v2;
+}
+
+/**
  * Parse a markdown fragment to HTML.
+ *
+ * Suitable for re-parsing a single block during incremental updates.
+ * Cross-block features (e.g. footnote reference → definition linking,
+ * reference-style links spanning blocks) require the whole document
+ * to be visible during parsing — for that, prefer
+ * [`parse_blocks_to_html`].
  * @param {string} text
  * @returns {string}
  */
@@ -38,6 +69,11 @@ export function parse_to_html(text) {
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
+        __wbindgen_cast_0000000000000001: function(arg0, arg1) {
+            // Cast intrinsic for `Ref(String) -> Externref`.
+            const ret = getStringFromWasm0(arg0, arg1);
+            return ret;
+        },
         __wbindgen_init_externref_table: function() {
             const table = wasm.__wbindgen_externrefs;
             const offset = table.grow(4);
@@ -54,9 +90,28 @@ function __wbg_get_imports() {
     };
 }
 
+function getArrayJsValueFromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    const mem = getDataViewMemory0();
+    const result = [];
+    for (let i = ptr; i < ptr + 4 * len; i += 4) {
+        result.push(wasm.__wbindgen_externrefs.get(mem.getUint32(i, true)));
+    }
+    wasm.__externref_drop_slice(ptr, len);
+    return result;
+}
+
 function getArrayU32FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getUint32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
+}
+
+let cachedDataViewMemory0 = null;
+function getDataViewMemory0() {
+    if (cachedDataViewMemory0 === null || cachedDataViewMemory0.buffer.detached === true || (cachedDataViewMemory0.buffer.detached === undefined && cachedDataViewMemory0.buffer !== wasm.memory.buffer)) {
+        cachedDataViewMemory0 = new DataView(wasm.memory.buffer);
+    }
+    return cachedDataViewMemory0;
 }
 
 function getStringFromWasm0(ptr, len) {
@@ -150,6 +205,7 @@ let wasmModule, wasm;
 function __wbg_finalize_init(instance, module) {
     wasm = instance.exports;
     wasmModule = module;
+    cachedDataViewMemory0 = null;
     cachedUint32ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
     wasm.__wbindgen_start();

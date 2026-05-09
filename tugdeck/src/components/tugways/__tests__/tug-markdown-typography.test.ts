@@ -29,8 +29,9 @@
  *  - task list (GFM)
  *  - table (GFM, with header row)
  *  - image (`<img>`)
- *  - footnote (pulldown-cmark `ENABLE_FOOTNOTES` enabled in #step-3;
- *    until then this assertion is gated as `pending`)
+ *  - footnote (pulldown-cmark `ENABLE_FOOTNOTES` enabled in #step-3 —
+ *    the assertion below uses the pulldown-cmark / DOMPurify markup
+ *    confirmed in `lib/markdown/__tests__/cmark-extensions.test.ts`)
  */
 
 import { join, dirname } from "node:path";
@@ -113,6 +114,10 @@ const x: number = 1;
 | c     | d     |
 
 ![Alt text](https://example.com/img.png)
+
+A claim with a footnote[^src].
+
+[^src]: Source for the claim.
 `;
 
 // ---------------------------------------------------------------------------
@@ -193,6 +198,14 @@ describe("markdown typography — representative document", () => {
     // self-closing slash (pulldown-cmark + DOMPurify emit `<img ...>`).
     expect(html).toMatch(/<img\s+[^>]*src="https:\/\/example\.com\/img\.png"[^>]*\/?>/);
     expect(html).toMatch(/<img\s+[^>]*alt="Alt text"[^>]*\/?>/);
+  });
+
+  test("footnote reference + definition both render with chrome", () => {
+    const html = renderAll(REPRESENTATIVE_MD);
+    expect(html).toMatch(
+      /<sup class="footnote-reference"><a href="#src">[^<]+<\/a><\/sup>/,
+    );
+    expect(html).toMatch(/<div class="footnote-definition" id="src">/);
   });
 });
 
