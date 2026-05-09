@@ -233,9 +233,118 @@
   border-radius: var(--tugx-md-inline-code-radius);
 }
 
-/* Fenced code */
+/* Fenced code chrome — `enhanceFencedCode` wraps each `<pre>` in a
+   `.tugx-md-fenced-code` div with a `.tugx-md-fenced-code-header`
+   containing the language label and a copy-to-clipboard button. The
+   wrapper owns the bg / radius / margin so the header sits flush
+   inside the same surface as the code. */
 /* @tug-renders-on: --tugx-md-fenced-code-bg */
-.tugx-md-block pre {
+.tugx-md-block .tugx-md-fenced-code {
+  background: var(--tugx-md-fenced-code-bg);
+  color: var(--tugx-md-fenced-code-color);
+  border-radius: var(--tugx-md-fenced-code-radius);
+  margin: var(--tugx-md-fenced-code-margin) 0;
+  overflow: hidden;
+}
+
+/* Header — language label on the left, copy button on the right. */
+/* @tug-renders-on: --tugx-md-fenced-code-bg */
+.tugx-md-block .tugx-md-fenced-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--tugx-md-fenced-code-header-padding);
+  border-bottom: 1px solid var(--tugx-md-fenced-code-header-border);
+  font-family: var(--tugx-md-mono-font);
+  font-size: var(--tugx-md-fenced-code-header-size);
+  user-select: none;
+}
+
+.tugx-md-block .tugx-md-fenced-code-lang {
+  color: var(--tugx-md-fenced-code-lang-color);
+  font-weight: var(--tugx-md-fenced-code-lang-weight);
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+}
+
+/* Copy button — icon-first, with text label that fades in only on
+   the "copied" state. The default rest state shows the icon alone;
+   hover gets a subtle background. */
+/* @tug-renders-on: --tugx-md-fenced-code-bg */
+.tugx-md-block .tugx-md-fenced-code-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tug-space-2xs);
+  padding: var(--tugx-md-fenced-code-copy-padding);
+  border: none;
+  background: transparent;
+  color: var(--tugx-md-fenced-code-copy-color);
+  border-radius: var(--tugx-md-fenced-code-copy-radius);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+  transition:
+    background var(--tug-motion-duration-fast) var(--tug-motion-easing-standard),
+    color var(--tug-motion-duration-fast) var(--tug-motion-easing-standard);
+}
+
+/* @tug-renders-on: --tugx-md-fenced-code-copy-bg-hover */
+.tugx-md-block .tugx-md-fenced-code-copy:hover {
+  background: var(--tugx-md-fenced-code-copy-bg-hover);
+  color: var(--tugx-md-fenced-code-copy-color-hover);
+}
+
+.tugx-md-block .tugx-md-fenced-code-copy:focus-visible {
+  outline: 2px solid var(--tugx-md-fenced-code-copy-color-hover);
+  outline-offset: 1px;
+}
+
+/* The button toggles `is-copied` for ~1.2s after a successful clipboard
+   write; CSS swaps which icon and label are visible. */
+.tugx-md-block .tugx-md-fenced-code-copy-icon--copied,
+.tugx-md-block .tugx-md-fenced-code-copy-label--copied {
+  display: none;
+}
+
+.tugx-md-block .tugx-md-fenced-code-copy.is-copied .tugx-md-fenced-code-copy-icon--default,
+.tugx-md-block .tugx-md-fenced-code-copy.is-copied .tugx-md-fenced-code-copy-label--default {
+  display: none;
+}
+
+.tugx-md-block .tugx-md-fenced-code-copy.is-copied .tugx-md-fenced-code-copy-icon--copied,
+.tugx-md-block .tugx-md-fenced-code-copy.is-copied .tugx-md-fenced-code-copy-label--copied {
+  display: inline;
+  color: var(--tugx-md-fenced-code-copy-color-copied);
+}
+
+/* Copy-button labels are only shown in the copied state; the default
+   state is icon-only so the header reads compactly. The "Copy" label
+   stays in the DOM for screen readers via `aria-label="Copy code"` on
+   the button itself. */
+.tugx-md-block .tugx-md-fenced-code-copy-label--default {
+  display: none;
+}
+
+/* Code body — sits flush below the header. The wrapper owns the
+   surface, so the `<pre>` itself drops bg/radius/margin and just
+   handles the code's padding + scroll. */
+.tugx-md-block .tugx-md-fenced-code > pre {
+  background: transparent;
+  border-radius: 0;
+  margin: 0;
+  padding: var(--tugx-md-fenced-code-padding);
+  font-size: var(--tugx-md-fenced-code-size);
+  line-height: var(--tugx-md-fenced-code-line-height);
+  color: var(--tugx-md-fenced-code-color);
+  overflow-x: auto;
+}
+
+/* Pre-enhancement fallback: any `<pre>` that *isn't* yet wrapped (e.g.,
+   measurement pass before `enhanceFencedCode` runs, or a consumer
+   that bypasses the helper) still renders correctly with the same
+   chrome on the `<pre>` directly. */
+/* @tug-renders-on: --tugx-md-fenced-code-bg */
+.tugx-md-block > pre {
   background: var(--tugx-md-fenced-code-bg);
   color: var(--tugx-md-fenced-code-color);
   border-radius: var(--tugx-md-fenced-code-radius);

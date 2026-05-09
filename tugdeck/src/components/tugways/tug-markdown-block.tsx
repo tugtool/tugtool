@@ -65,6 +65,7 @@ import "./tug-markdown-block.css";
 import React from "react";
 
 import type { PropertyStore } from "@/components/tugways/property-store";
+import { enhanceFencedCode } from "@/lib/markdown/enhance-fenced-code";
 import { parseMarkdownToSanitizedBlocks } from "@/lib/markdown/parse-markdown-to-sanitized-blocks";
 
 const DEFAULT_STREAMING_PATH = "text";
@@ -126,6 +127,7 @@ function renderBlocks(container: HTMLElement, text: string): void {
     blockEl.className = "tugx-md-block";
     blockEl.dataset.blockType = block.type;
     blockEl.innerHTML = block.html;
+    enhanceFencedCode(blockEl);
     container.appendChild(blockEl);
   }
 }

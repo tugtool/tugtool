@@ -52,6 +52,7 @@ import {
   getDOMPurify,
   SANITIZE_CONFIG,
 } from "@/lib/markdown/dompurify-instance";
+import { enhanceFencedCode } from "@/lib/markdown/enhance-fenced-code";
 import {
   buildByteToCharMap,
   decodeBlocks,
@@ -347,6 +348,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     el.className = "tugx-md-block";
     el.dataset.blockIndex = String(index);
     el.innerHTML = cachedHtml;
+    enhanceFencedCode(el);
 
     // Find the first child with a higher block index to insert before it.
     // This preserves ascending document order regardless of insertion sequence.
@@ -723,6 +725,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
         const existingEl = engine.blockNodes.get(globalIdx);
         if (existingEl) {
           existingEl.innerHTML = sanitized;
+          enhanceFencedCode(existingEl);
           // Store estimate here; real measurement happens in doSetRegion's
           // consolidated measurement pass (one forced layout for all blocks).
           engine.heightIndex.setHeight(globalIdx, estimateBlockHeight(newRegionBlocks[i]));
