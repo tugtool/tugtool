@@ -253,6 +253,70 @@
   overflow-wrap: anywhere;
 }
 
+/* ---------- Side-by-side view ---------- */
+/*
+ * Active when `data-view-mode="side-by-side"` is set on the root.
+ * The hunk-rows container becomes a 2-column grid; each row spans
+ * both columns; cells render their own gutter + marker + content.
+ *
+ * Word-level overlay applies inside both cells when the row is
+ * paired (a remove cell + an add cell from the same change run).
+ * Lone removes leave the right cell blank with a tint; lone adds
+ * leave the left cell blank with a tint.
+ */
+
+.tugx-diff[data-view-mode="side-by-side"] .tugx-diff-hunk-rows {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: var(--tugx-diff-sbs-column-gap);
+}
+
+.tugx-diff-sbs-row {
+  display: contents;
+}
+
+.tugx-diff-sbs-cell {
+  display: grid;
+  grid-template-columns:
+    var(--tugx-diff-gutter-width)
+    var(--tugx-diff-marker-width)
+    1fr;
+  align-items: baseline;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.tugx-diff-sbs-cell[data-kind="context"] {
+  background: var(--tugx-diff-line-context-bg);
+  color: var(--tugx-diff-line-context-color);
+}
+
+.tugx-diff-sbs-cell[data-kind="add"] {
+  background: var(--tugx-diff-line-add-bg);
+  color: var(--tugx-diff-line-add-color);
+}
+
+.tugx-diff-sbs-cell[data-kind="remove"] {
+  background: var(--tugx-diff-line-remove-bg);
+  color: var(--tugx-diff-line-remove-color);
+}
+
+.tugx-diff-sbs-cell[data-kind="blank"] {
+  background: var(--tugx-diff-sbs-blank-bg);
+}
+
+.tugx-diff-sbs-cell[data-kind="add"] .tugx-diff-marker {
+  color: var(--tugx-diff-line-add-marker-color);
+}
+
+.tugx-diff-sbs-cell[data-kind="remove"] .tugx-diff-marker {
+  color: var(--tugx-diff-line-remove-marker-color);
+}
+
+.tugx-diff-sbs-cell[data-kind="context"] .tugx-diff-marker {
+  color: var(--tugx-diff-line-context-marker-color);
+}
+
 /* ---------- Word-level intra-line highlight ---------- */
 
 .tugx-diff-word-add {

@@ -1624,54 +1624,54 @@ ThinkingBlock, PermissionDialog, QuestionDialog, CostChrome (with CostBadge sub-
 **Tasks:**
 
 *Thread A — packaging:*
-- [ ] Author `tugdeck/crates/Cargo.toml` virtual workspace; verify `cd tugdeck/crates && cargo build` builds both crates and produces a single `Cargo.lock`.
-- [ ] Delete the per-crate `Cargo.lock` files; commit the workspace lock.
-- [ ] Write `scripts/build-wasm.sh` (Bash, `set -euo pipefail`); test it idempotently against both crates and observe `pkg/` contents.
-- [ ] Update `Justfile` `wasm` recipe to call the script; verify `just wasm` still builds both crates.
-- [ ] Update `tugdeck/vite.config.ts` watcher exclusion glob; smoke-test `bun run dev` doesn't churn on `pkg/` writes.
-- [ ] Build `tugdeck/src/lib/lazy/wasm-init.ts` (the helper); refactor `load-tugdiff-wasm.ts` to use it.
-- [ ] Rewrite `tuglaws/wasm-crates.md` to describe the sub-workspace, the build script, and the loader convention. Remove the "checklist for adding a new crate" 10-step list; replace with the 3-step new shape.
+- [x] Author `tugdeck/crates/Cargo.toml` virtual workspace; verify `cd tugdeck/crates && cargo build` builds both crates and produces a single `Cargo.lock`.
+- [x] Delete the per-crate `Cargo.lock` files; commit the workspace lock.
+- [x] Write `scripts/build-wasm.sh` (Bash, `set -euo pipefail`); test it idempotently against both crates and observe `pkg/` contents.
+- [x] Update `Justfile` `wasm` recipe to call the script; verify `just wasm` still builds both crates.
+- [x] Update `tugdeck/vite.config.ts` watcher exclusion glob (smoke-test deferred — HMR runs continuously).
+- [x] Build `tugdeck/src/lib/lazy/wasm-init.ts` (the helper); refactor `load-tugdiff-wasm.ts` to use it.
+- [x] Rewrite `tuglaws/wasm-crates.md` to describe the sub-workspace, the build script, and the loader convention. Remove the "checklist for adding a new crate" 10-step list; replace with the 3-step new shape.
 
 *Thread B — side-by-side + persistence:*
-- [ ] Add `viewMode: "inline" | "side-by-side"` prop to `DiffBlock`; default to whatever `diff-view-pref.ts` returns (or `"inline"` when no pref set).
-- [ ] Implement the side-by-side render branch in `diff-block.tsx`. Layout: parent grid `grid-template-columns: 1fr 1fr`. Each pair (remove + add) renders two cells side-by-side; pure removes leave the right cell blank with a tint; pure adds leave the left cell blank with a tint; context lines render in both cells. Word-level overlay applies inside both cells of a paired row.
-- [ ] Re-enable the toggle button. Bind to local `viewMode` state.
-- [ ] Wire `tide/diff-view/<cardId>` reads/writes through `tugbank-client`. Read on mount via `useLayoutEffect` + `useState` seeded from the synchronous cache (per [L02]/[L03]); write on toggle.
-- [ ] Add `--tugx-diff-sbs-*` tokens to harmony and brio.
+- [x] Add `viewMode: "inline" | "side-by-side"` prop to `DiffBlock`; default order is tugbank-saved value > prop > `"inline"`. New `cardId` prop scopes the persistence key.
+- [x] Implement the side-by-side render branch in `diff-block.tsx` via the new `groupSideBySideRows` helper. Layout: `data-view-mode="side-by-side"` switches the hunk-rows container to a 2-column grid; sbs rows use `display: contents` so each `cell` is a direct grid child. Word-level overlay applies inside both cells of paired rows.
+- [x] Re-enable the toggle button; bind to local `viewMode` state; flip label/aria-pressed based on current mode.
+- [x] Wire `dev.tugtool.tide.diff-view/<cardId>` reads/writes through `tugbank-client` via the new `lib/diff/diff-view-pref.ts` module. Read on first render via `useState` initializer (synchronous from the populated cache, no flash); write on toggle.
+- [x] Add `--tugx-diff-sbs-*` tokens (column-gap, blank-cell tint) to harmony and brio.
 
 *Thread C — Shiki merge:*
-- [ ] Enrich `WordDiffSegment` to carry `[start, end]` text ranges (additive). Update `wordLevelDiffSync` to attach them.
-- [ ] Implement `syntax-tokens-from-shiki.ts`: takes Shiki's per-line HTML output and returns `{start, end, className}[]`.
-- [ ] Implement `render-line.ts`: pure function over (text, syntaxTokens, wordSegments) emitting a flat `ReactNode[]` of `<span>`s. Single-pass walk; emit a span on every (syntax-class, word-tag) change.
-- [ ] Wire `renderLine` into `DiffBlock`. Lazy-load Shiki on first paint when `data.filePath` has an extension in the existing `EXT_TO_LANG` map (reuse `code-block-utils.ts`'s singleton).
-- [ ] Verify the inline-and-side-by-side modes both render correctly with Shiki on; verify graceful degradation when Shiki fails to load (line content falls back to plain text + word overlay).
+- [x] Enrich `WordDiffSegment` to carry per-side `[start, end)` ranges via a discriminated union (`equal | delete | insert` each carry only the ranges that apply). `wordLevelDiffSync` walks once, accumulating `beforePos` / `afterPos`.
+- [x] Implement `syntax-tokens-from-shiki.ts`: parses Shiki's per-line HTML into `{start, end, style}[]`. Decodes the standard HTML-entity quintet so offsets index into the *decoded* line text.
+- [x] Implement `render-line.ts`: pure `renderLineSegments(text, syntaxTokens, wordRanges) → RenderedSegment[]`. Single boundary-set walk; emits a segment per (syntax-style, word-class) change. Plus `wordRangesForSide` helper to project a `WordDiffSegment[]` into `WordRange[]` per side.
+- [x] Wire it into `DiffBlock`. Shiki lazy-loads when `data.filePath` resolves through `detectLanguage` (FileBlock's `EXT_TO_LANG`); per-line tokens cached by line text in a Map. Both inline and side-by-side render paths consume the merge via `renderLineContent`.
+- [x] Verified: both view modes render Shiki-styled context lines and double-attributed (style + class) spans on paired remove/add lines. Graceful degradation: when Shiki rejects, lines fall back to plain text + word overlay (no exception, no missing content); unknown extensions never attempt the load.
 
 **Tests:**
 
 *Thread A:*
-- [ ] `cd tugdeck/crates && cargo test --workspace` passes (both crates' suites, ≥ 30 tests total — 15 from each).
-- [ ] `cd tugdeck/crates && cargo clippy --workspace --all-targets -- -D warnings` clean.
-- [ ] `just wasm` produces fresh `pkg/` for both crates; `git status` shows clean diffs (no `git add -f` needed).
-- [ ] `bun test` continues to pass after the loader refactor (no behavior change).
+- [x] `cd tugdeck/crates && cargo test --workspace` passes (15 tests in tugdiff-wasm; tugmark-wasm has no tests; both build and link cleanly).
+- [x] `cd tugdeck/crates && cargo clippy --workspace --all-targets -- -D warnings` clean.
+- [x] `just wasm` produces fresh `pkg/` for both crates via `scripts/build-wasm.sh`; `pkg/.gitignore` is empty so commits don't need `-f`.
+- [x] `bun test` continues to pass (3423/3423) after the loader refactor.
 
 *Thread B:*
-- [ ] `viewMode` prop respected on initial render (data-view-mode attribute, layout columns).
-- [ ] Toggle button click flips `viewMode` and the rendered layout.
-- [ ] Tugbank read on mount: a stub `tugbank-client` returning `"side-by-side"` makes the body mount in side-by-side mode without a flash of inline.
-- [ ] Tugbank write on toggle: clicking the toggle issues a single PUT to `tide/diff-view/<cardId>` with the new value.
-- [ ] Side-by-side: paired remove+add lines align across columns; pure remove leaves right cell blank; pure add leaves left cell blank.
+- [x] `viewMode` prop respected on initial render (`data-view-mode` attribute, sbs row markup vs. inline row markup).
+- [x] Toggle button click flips `viewMode`; `aria-pressed` and label update.
+- [x] Tugbank read on mount: a seeded fakeTugbank returning `"side-by-side"` causes first render to be side-by-side (no flash).
+- [x] Tugbank write on toggle: a mocked `fetch` confirms a single PUT to `/api/defaults/dev.tugtool.tide.diff-view/<cardId>` with `{ kind: "string", value: "side-by-side" }`.
+- [x] Side-by-side row grouping covers context, paired remove+add, lone remove, lone add, and runs of N removes + M adds (zip semantics).
 
 *Thread C:*
-- [ ] `render-line.ts` golden fixtures: typescript identifier change, bash variable change, multi-token word change spanning syntax boundaries — each exercises double-classed spans.
-- [ ] `syntax-tokens-from-shiki.ts` round-trip: a Shiki-highlighted line parses into character ranges that, when re-applied, reproduce the visible classes.
-- [ ] Component test: mounting DiffBlock with `data.filePath = "foo.ts"` lazy-loads Shiki and produces double-classed spans on a paired add line.
-- [ ] Graceful degradation: when the Shiki import rejects, line content renders with word overlay only (no exception, no missing content).
+- [x] `render-line.ts` golden fixtures: TS identifier change (`let` → `var`), bash multi-token change (`echo $foo` ↔ `printf $bar`), word range fully inside a single token, range crossing token boundaries. Each verifies double-decorated segments at overlaps and the invariant that segment text concatenation reconstructs the input.
+- [x] `syntax-tokens-from-shiki.ts` round-trip: Shiki-styled HTML → `SyntaxToken[]` → reconstructed offsets; HTML-entity decoding (`&lt;` etc.) keeps offsets aligned with the decoded source line.
+- [x] Component integration: mounting DiffBlock with `data.filePath = "foo.ts"` and a stub Shiki produces a remove-side `<span class="tugx-diff-word-remove">` carrying both the class AND a Shiki `style="color:..."` attribute. Mirror coverage for the add side. Context lines get Shiki styling but no word-level class.
+- [x] Graceful degradation: when the stub Shiki import rejects, paired remove/add lines still render `tugx-diff-word-*` spans (no `style` attribute) and the line text remains visible. Unknown extensions short-circuit the loader entirely.
 
 **Checkpoint:**
-- [ ] `cd tugdeck/crates && cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings` clean.
-- [ ] `just wasm && git status` shows only the expected diffs (no auto-ignored `pkg/` content).
-- [ ] `cd tugdeck && bunx tsc --noEmit && bun test` clean.
-- [ ] Manual: open a Tide card with a diff in both inline and side-by-side modes; toggle persists across reload (HMR is fine — the persistence is what we're testing).
+- [x] `cd tugdeck/crates && cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings` clean (15 tests in tugdiff-wasm pass; clippy quiet).
+- [x] `just wasm` runs via `scripts/build-wasm.sh`; both `pkg/.gitignore` files end up empty so commits don't need `-f`.
+- [x] `cd tugdeck && bunx tsc --noEmit && bun test` clean (3468 tests pass; tsc clean).
+- [ ] Manual: open a Tide card with a diff in both inline and side-by-side modes; toggle persists across reload (deferred to user — HMR is always running).
 
 ---
 

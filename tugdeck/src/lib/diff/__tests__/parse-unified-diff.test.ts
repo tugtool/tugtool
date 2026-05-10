@@ -173,24 +173,57 @@ describe("parseUnifiedDiffText", () => {
 // ---------------------------------------------------------------------------
 
 describe("wordLevelDiffSync", () => {
-  test("equal text → single equal segment", () => {
+  test("equal text → single equal segment with full ranges on both sides", () => {
     const segments = wordLevelDiffSync("hello", "hello", dmp);
     expect(segments).toHaveLength(1);
-    expect(segments[0]).toEqual({ tag: "equal", text: "hello" });
+    const seg = segments[0];
+    expect(seg.tag).toBe("equal");
+    expect(seg.text).toBe("hello");
+    if (seg.tag === "equal") {
+      expect(seg.beforeStart).toBe(0);
+      expect(seg.beforeEnd).toBe(5);
+      expect(seg.afterStart).toBe(0);
+      expect(seg.afterEnd).toBe(5);
+    }
   });
 
-  test("single-character change emits delete + insert + equal trail", () => {
+  test("single-character change emits delete + insert + equal trail with monotonic ranges", () => {
     const segments = wordLevelDiffSync(
       "println!(\"hello world\")",
       "println!(\"hello world\");",
       dmp,
     );
-    // Expect a leading equal and a trailing insert ";".
+    // Leading equal covers the shared prefix.
     expect(segments[0].tag).toBe("equal");
-    expect(segments[segments.length - 1]).toEqual({
-      tag: "insert",
-      text: ";",
-    });
+    // Trailing insert: ";".
+    const last = segments[segments.length - 1];
+    expect(last.tag).toBe("insert");
+    expect(last.text).toBe(";");
+    if (last.tag === "insert") {
+      // Inserted ";" lands at the end of the after-text.
+      expect(last.afterEnd).toBe("println!(\"hello world\");".length);
+      expect(last.afterStart).toBe(last.afterEnd - 1);
+    }
+  });
+
+  test("ranges are monotonic and reconstruct the inputs", () => {
+    const before = "var x = 1";
+    const after = "let x = 2";
+    const segments = wordLevelDiffSync(before, after, dmp);
+    let beforeReconstructed = "";
+    let afterReconstructed = "";
+    for (const seg of segments) {
+      if (seg.tag === "equal") {
+        beforeReconstructed += seg.text;
+        afterReconstructed += seg.text;
+      } else if (seg.tag === "delete") {
+        beforeReconstructed += seg.text;
+      } else {
+        afterReconstructed += seg.text;
+      }
+    }
+    expect(beforeReconstructed).toBe(before);
+    expect(afterReconstructed).toBe(after);
   });
 
   test("disjoint inputs yield delete then insert", () => {

@@ -13,8 +13,11 @@ import type { TugbankClient } from "./tugbank-client";
 
 let _client: TugbankClient | null = null;
 
-/** Set the shared TugbankClient instance. Called once from main.tsx. */
-export function setTugbankClient(client: TugbankClient): void {
+/**
+ * Set the shared TugbankClient instance. Called once from main.tsx.
+ * Tests can pass `null` to clear the singleton between cases.
+ */
+export function setTugbankClient(client: TugbankClient | null): void {
   _client = client;
 }
 

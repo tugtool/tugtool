@@ -61,6 +61,7 @@ import "./diff-block.css";
 
 import React from "react";
 
+import { detectLanguage } from "./file-block";
 import {
   parseUnifiedDiffText,
   wordLevelDiffSync,
@@ -70,7 +71,23 @@ import {
   countDiffStats,
   type DiffData,
   type DiffHunk,
+  type DiffLine,
 } from "@/lib/diff/types";
+import {
+  readDiffViewMode,
+  writeDiffViewMode,
+  type DiffViewMode,
+} from "@/lib/diff/diff-view-pref";
+import {
+  renderLineSegments,
+  wordRangesForSide,
+  type RenderedSegment,
+  type WordRange,
+} from "@/lib/diff/render-line";
+import {
+  parseShikiLineHtml,
+  type SyntaxToken,
+} from "@/lib/diff/syntax-tokens-from-shiki";
 import { loadTugdiffWasm } from "@/lib/lazy/load-tugdiff-wasm";
 
 // ---------------------------------------------------------------------------
@@ -105,6 +122,31 @@ export interface DiffBlockProps {
    * the body sits flush with the host.
    */
   embedded?: boolean;
+
+  /**
+   * Identifier used for tugbank-persisted per-card preferences.
+   * Currently scopes the inline ↔ side-by-side `viewMode`. When
+   * omitted, `viewMode` falls back to the prop / default and is not
+   * persisted. The Tide card consumer normally passes its own
+   * `cardId` through.
+   */
+  cardId?: string;
+
+  /**
+   * Initial render mode. When `cardId` is set and a saved preference
+   * exists, that wins over this prop on first render so the user's
+   * choice survives reload. Falls back to `"inline"`.
+   */
+  viewMode?: DiffViewMode;
+
+  /**
+   * Notification callback fired when the user clicks the view-mode
+   * toggle. The component still updates its own internal state and
+   * (when `cardId` is present) writes the new value to tugbank — this
+   * callback is purely informational for hosts that want to mirror
+   * the choice elsewhere.
+   */
+  onViewModeChange?: (next: DiffViewMode) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -118,6 +160,8 @@ const DATA_SLOT_HUNK = "diff-hunk";
 const DATA_SLOT_HUNK_HEADER = "diff-hunk-header";
 const DATA_SLOT_HUNK_ROWS = "diff-hunk-rows";
 const DATA_SLOT_LINE = "diff-line";
+const DATA_SLOT_SBS_ROW = "diff-sbs-row";
+const DATA_SLOT_SBS_CELL = "diff-sbs-cell";
 const DATA_SLOT_VIEW_TOGGLE = "diff-view-toggle";
 const DATA_SLOT_TOGGLE = "diff-toggle";
 const DATA_SLOT_PATH = "diff-path";
@@ -174,6 +218,66 @@ export function pairRemoveAddIndices(
   return pairs;
 }
 
+/**
+ * One row of the side-by-side layout. Either cell may be null when
+ * the row is a lone remove (right blank) or lone add (left blank).
+ * Context lines emit the same line on both sides.
+ *
+ * `paired` is `true` when both cells are present *and* the row is a
+ * remove + add pair (not a context-on-both-sides row) — this is what
+ * the word-level overlay keys on.
+ */
+export interface SideBySideRow {
+  left: DiffLine | null;
+  right: DiffLine | null;
+  paired: boolean;
+}
+
+/**
+ * Group a hunk's flat line list into side-by-side rows.
+ *
+ * Algorithm: walk the lines once. Context lines emit a single shared
+ * row. Runs of consecutive non-context lines are partitioned into
+ * removes and adds, then zipped index-for-index — `[remove, remove,
+ * add, add]` becomes `(remove, add), (remove, add)`; `[remove, add,
+ * add]` becomes `(remove, add), (blank, add)`. This matches the way
+ * `git diff --color-words` and most side-by-side viewers align
+ * paired changes.
+ */
+export function groupSideBySideRows(
+  lines: readonly DiffLine[],
+): SideBySideRow[] {
+  const rows: SideBySideRow[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.kind === "context") {
+      rows.push({ left: line, right: line, paired: false });
+      i += 1;
+      continue;
+    }
+    // Collect a run of consecutive non-context lines.
+    const removes: DiffLine[] = [];
+    const adds: DiffLine[] = [];
+    while (i < lines.length && lines[i].kind !== "context") {
+      if (lines[i].kind === "remove") removes.push(lines[i]);
+      else adds.push(lines[i]);
+      i += 1;
+    }
+    const max = Math.max(removes.length, adds.length);
+    for (let k = 0; k < max; k++) {
+      const left = removes[k] ?? null;
+      const right = adds[k] ?? null;
+      rows.push({
+        left,
+        right,
+        paired: left !== null && right !== null,
+      });
+    }
+  }
+  return rows;
+}
+
 // ---------------------------------------------------------------------------
 // Hunk preparation: source → DiffHunk[]
 // ---------------------------------------------------------------------------
@@ -201,6 +305,7 @@ export function prepareHunksSync(data: DiffData): DiffHunk[] | null {
 // ---------------------------------------------------------------------------
 
 const EMPTY_HUNKS: DiffHunk[] = [];
+const EMPTY_SYNTAX_MAP: ReadonlyMap<string, SyntaxToken[]> = new Map();
 
 export const DiffBlock: React.FC<DiffBlockProps> = ({
   data,
@@ -208,7 +313,39 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   onToggleCollapsed,
   className,
   embedded = false,
+  cardId,
+  viewMode: viewModeProp,
+  onViewModeChange,
 }) => {
+  // -- View mode (inline | side-by-side) ------------------------------------
+  //
+  // Initial value priority: tugbank persistence > prop > "inline".
+  // The synchronous read in the useState initializer means the first
+  // paint already reflects the user's saved choice — no flash of
+  // inline-then-flip.
+  const [viewMode, setViewMode] = React.useState<DiffViewMode>(() => {
+    if (cardId !== undefined) {
+      const saved = readDiffViewMode(cardId);
+      if (saved !== null) return saved;
+    }
+    return viewModeProp ?? "inline";
+  });
+
+  // If the parent flips the controlled `viewModeProp` after mount,
+  // honor it (mirrors how `collapsed` is handled below).
+  React.useEffect(() => {
+    if (viewModeProp !== undefined) setViewMode(viewModeProp);
+  }, [viewModeProp]);
+
+  const toggleViewMode = React.useCallback(() => {
+    setViewMode((prev) => {
+      const next: DiffViewMode = prev === "inline" ? "side-by-side" : "inline";
+      if (cardId !== undefined) writeDiffViewMode(cardId, next);
+      onViewModeChange?.(next);
+      return next;
+    });
+  }, [cardId, onViewModeChange]);
+
   // -- Hunk resolution -------------------------------------------------------
 
   const syncHunks = React.useMemo(
@@ -286,13 +423,9 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
 
   // -- Word-level engine load -----------------------------------------------
 
-  const [wordEngine, setWordEngine] = React.useState<
-    | (new () => {
-        diff_main(a: string, b: string): Array<[number, string]>;
-        diff_cleanupSemantic(diffs: Array<[number, string]>): void;
-      })
-    | null
-  >(null);
+  const [wordEngine, setWordEngine] = React.useState<WordEngineCtor | null>(
+    null,
+  );
 
   React.useEffect(() => {
     if (hunks === null || hunks.length === 0) return;
@@ -301,11 +434,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
       try {
         const mod = await import("diff-match-patch");
         if (cancelled) return;
-        type Ctor = new () => {
-          diff_main(a: string, b: string): Array<[number, string]>;
-          diff_cleanupSemantic(diffs: Array<[number, string]>): void;
-        };
-        const Engine = (mod.default ?? mod) as unknown as Ctor;
+        const Engine = (mod.default ?? mod) as unknown as WordEngineCtor;
         setWordEngine(() => Engine);
       } catch {
         // Word-level highlighting is a polish layer; failure is fine.
@@ -315,6 +444,79 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
       cancelled = true;
     };
   }, [hunks]);
+
+  // -- Syntax-highlight tokens (Shiki) --------------------------------------
+  //
+  // When `data.filePath` has a recognized extension, we lazy-load
+  // Shiki and compute per-line syntax tokens. Tokens are stored in
+  // a Map<line-content, SyntaxToken[]> keyed on the line text — same
+  // text reuses the same tokenization regardless of which hunk it
+  // appears in. Empty / unknown languages leave the map empty and
+  // the renderer falls back to plain text + word-level overlay.
+  const language = data === undefined ? undefined : detectLanguage(data.filePath ?? "");
+  const [syntaxByLine, setSyntaxByLine] = React.useState<
+    ReadonlyMap<string, SyntaxToken[]>
+  >(EMPTY_SYNTAX_MAP);
+
+  React.useEffect(() => {
+    if (hunks === null || hunks.length === 0) return;
+    if (language === undefined) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const utils = await import(
+          "@/_archive/cards/conversation/code-block-utils"
+        );
+        const highlighter = await utils.getHighlighter();
+        if (cancelled) return;
+        const normalized = utils.normalizeLanguage(language);
+        const loaded = highlighter.getLoadedLanguages() as string[];
+        if (!loaded.includes(normalized)) {
+          try {
+            await (highlighter as { loadLanguage: (l: string) => Promise<void> })
+              .loadLanguage(normalized);
+          } catch {
+            return;
+          }
+          if (cancelled) return;
+        }
+
+        // Collect every unique line text across all hunks.
+        const uniqueLines = new Set<string>();
+        for (const hunk of hunks) {
+          for (const line of hunk.lines) {
+            if (line.content.length > 0) uniqueLines.add(line.content);
+          }
+        }
+
+        const map = new Map<string, SyntaxToken[]>();
+        for (const text of uniqueLines) {
+          const html = highlighter.codeToHtml(text, {
+            lang: normalized,
+            theme: "github-dark",
+          });
+          // Shiki wraps in <pre><code><span class="line">…</span></code></pre>.
+          // Use a lookahead to anchor on the line-span's actual close
+          // (the one followed by `\n` or `</code>`), since the inner
+          // styled spans also use `</span>`.
+          const lineMatch = html.match(
+            /<span class="line"[^>]*>([\s\S]*?)<\/span>(?=\n|<\/code>)/,
+          );
+          const inner = lineMatch === null ? "" : lineMatch[1];
+          map.set(text, parseShikiLineHtml(inner));
+        }
+
+        if (!cancelled) setSyntaxByLine(map);
+      } catch {
+        // Syntax highlighting is a polish layer; failure is fine.
+        // The renderer falls back to plain text + word overlay.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hunks, language]);
 
   // -- Render ----------------------------------------------------------------
 
@@ -342,6 +544,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
         data-slot={DATA_SLOT_ROOT}
         data-loading="true"
         data-embedded={embedded ? "true" : undefined}
+        data-view-mode={viewMode}
         className={rootClass}
       >
         {embedded ? null : (
@@ -374,6 +577,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
       data-empty={empty ? "true" : "false"}
       data-collapsed={collapsed ? "true" : "false"}
       data-embedded={embedded ? "true" : undefined}
+      data-view-mode={viewMode}
       className={rootClass}
     >
       {embedded ? null : (
@@ -400,11 +604,15 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
             type="button"
             className="tugx-diff-view-toggle"
             data-slot={DATA_SLOT_VIEW_TOGGLE}
-            disabled
-            aria-label="Side-by-side view (coming soon)"
-            title="Side-by-side view — coming soon"
+            aria-pressed={viewMode === "side-by-side"}
+            aria-label={
+              viewMode === "side-by-side"
+                ? "Switch to inline diff"
+                : "Switch to side-by-side diff"
+            }
+            onClick={toggleViewMode}
           >
-            Side by side
+            {viewMode === "side-by-side" ? "Inline" : "Side by side"}
           </button>
           {empty ? null : (
             <button
@@ -477,61 +685,9 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
                   className="tugx-diff-hunk-rows"
                   data-slot={DATA_SLOT_HUNK_ROWS}
                 >
-                  {hunk.lines.map((line, lineIndex) => {
-                    const wordSegments =
-                      wordEngine !== null && pairs.has(lineIndex)
-                        ? computeWordSegments(
-                            wordEngine,
-                            line.content,
-                            hunk.lines[pairs.get(lineIndex) as number].content,
-                            "remove",
-                          )
-                        : wordEngine !== null && isPairedAdd(pairs, lineIndex)
-                          ? computeWordSegments(
-                              wordEngine,
-                              hunk.lines[
-                                findPairedRemove(pairs, lineIndex) as number
-                              ].content,
-                              line.content,
-                              "add",
-                            )
-                          : null;
-                    return (
-                      <div
-                        key={lineIndex}
-                        className="tugx-diff-line"
-                        data-slot={DATA_SLOT_LINE}
-                        data-kind={line.kind}
-                        data-line-index={lineIndex}
-                      >
-                        <span
-                          className="tugx-diff-gutter-before"
-                          aria-hidden="true"
-                        >
-                          {line.before_lineno ?? ""}
-                        </span>
-                        <span
-                          className="tugx-diff-gutter-after"
-                          aria-hidden="true"
-                        >
-                          {line.after_lineno ?? ""}
-                        </span>
-                        <span
-                          className="tugx-diff-marker"
-                          aria-hidden="true"
-                        >
-                          {markerFor(line.kind)}
-                        </span>
-                        <span className="tugx-diff-content">
-                          {wordSegments === null
-                            ? line.content === ""
-                              ? " "
-                              : line.content
-                            : renderWordSegments(wordSegments)}
-                        </span>
-                      </div>
-                    );
-                  })}
+                  {viewMode === "inline"
+                    ? renderInlineHunkBody(hunk, pairs, wordEngine, syntaxByLine)
+                    : renderSideBySideHunkBody(hunk, wordEngine, syntaxByLine)}
                 </div>
               </div>
             );
@@ -566,51 +722,226 @@ function findPairedRemove(
   return undefined;
 }
 
-/**
- * Compute the segments to render for one side of a paired remove/add.
- * `side` selects which segments to keep: `"remove"` keeps `equal` +
- * `delete`; `"add"` keeps `equal` + `insert`.
- */
-function computeWordSegments(
-  Engine: new () => {
-    diff_main(a: string, b: string): Array<[number, string]>;
-    diff_cleanupSemantic(diffs: Array<[number, string]>): void;
-  },
-  before: string,
-  after: string,
-  side: "remove" | "add",
-): WordDiffSegment[] {
-  const all = wordLevelDiffSync(before, after, Engine);
-  return all.filter((segment) => {
-    if (segment.tag === "equal") return true;
-    if (side === "remove") return segment.tag === "delete";
-    return segment.tag === "insert";
-  });
-}
-
-function renderWordSegments(segments: WordDiffSegment[]): React.ReactNode {
-  return segments.map((segment, i) => {
-    if (segment.tag === "equal") {
-      return (
-        <React.Fragment key={i}>
-          {segment.text}
-        </React.Fragment>
-      );
-    }
-    const className =
-      segment.tag === "insert"
-        ? "tugx-diff-word-add"
-        : "tugx-diff-word-remove";
-    return (
-      <span key={i} className={className} data-slot="diff-word">
-        {segment.text}
-      </span>
-    );
-  });
-}
-
 function markerFor(kind: string): string {
   if (kind === "add") return "+";
   if (kind === "remove") return "−";
   return " ";
+}
+
+// ---------------------------------------------------------------------------
+// Per-mode render helpers
+// ---------------------------------------------------------------------------
+
+type WordEngineCtor = new () => {
+  diff_main(a: string, b: string): Array<[number, string]>;
+  diff_cleanupSemantic(diffs: Array<[number, string]>): void;
+};
+
+/**
+ * Render the inner content of a line. When syntax tokens or word
+ * ranges are present, the merge happens via `renderLineSegments` and
+ * each output segment becomes a `<span>` carrying both its inline
+ * style (Shiki) and word-level class (overlay) where applicable.
+ * Empty input collapses to a single non-breaking space so the row
+ * preserves its baseline height.
+ */
+function renderLineContent(
+  text: string,
+  syntaxTokens: SyntaxToken[] | null,
+  wordRanges: WordRange[] | null,
+): React.ReactNode {
+  if (text.length === 0) return " ";
+  if (
+    (syntaxTokens === null || syntaxTokens.length === 0) &&
+    (wordRanges === null || wordRanges.length === 0)
+  ) {
+    return text;
+  }
+  const segments = renderLineSegments(text, syntaxTokens, wordRanges);
+  return segments.map((seg, i) => renderSegment(seg, i));
+}
+
+function renderSegment(
+  segment: RenderedSegment,
+  key: number,
+): React.ReactNode {
+  const { text, style, className } = segment;
+  if (style === "" && className === null) {
+    return <React.Fragment key={key}>{text}</React.Fragment>;
+  }
+  return (
+    <span
+      key={key}
+      className={className ?? undefined}
+      data-slot={className === null ? undefined : "diff-word"}
+      style={style === "" ? undefined : parseInlineStyle(style)}
+    >
+      {text}
+    </span>
+  );
+}
+
+/**
+ * Convert a `;`-separated CSS string from Shiki (e.g.
+ * `"color:#79B8FF;font-style:italic"`) into the React `style` prop
+ * shape (`{ color: "#79B8FF", fontStyle: "italic" }`).
+ */
+function parseInlineStyle(css: string): React.CSSProperties {
+  const out: Record<string, string> = {};
+  for (const decl of css.split(";")) {
+    const colon = decl.indexOf(":");
+    if (colon < 0) continue;
+    const prop = decl.slice(0, colon).trim();
+    const value = decl.slice(colon + 1).trim();
+    if (prop.length === 0 || value.length === 0) continue;
+    // Convert kebab-case to camelCase.
+    const camel = prop.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+    out[camel] = value;
+  }
+  return out as React.CSSProperties;
+}
+
+/** Inline view: one row per line, 4-column grid. */
+function renderInlineHunkBody(
+  hunk: DiffHunk,
+  pairs: Map<number, number>,
+  wordEngine: WordEngineCtor | null,
+  syntaxByLine: ReadonlyMap<string, SyntaxToken[]>,
+): React.ReactNode {
+  return hunk.lines.map((line, lineIndex) => {
+    const pairedAddIndex = pairs.get(lineIndex);
+    const isRemovePair = pairedAddIndex !== undefined;
+    const removePartnerIndex = isPairedAdd(pairs, lineIndex)
+      ? findPairedRemove(pairs, lineIndex)
+      : undefined;
+
+    let wordRanges: WordRange[] | null = null;
+    if (wordEngine !== null) {
+      if (isRemovePair) {
+        const segments = wordLevelDiffSync(
+          line.content,
+          hunk.lines[pairedAddIndex].content,
+          wordEngine,
+        );
+        wordRanges = wordRangesForSide(segments, "remove");
+      } else if (removePartnerIndex !== undefined) {
+        const segments = wordLevelDiffSync(
+          hunk.lines[removePartnerIndex].content,
+          line.content,
+          wordEngine,
+        );
+        wordRanges = wordRangesForSide(segments, "add");
+      }
+    }
+
+    const syntaxTokens = syntaxByLine.get(line.content) ?? null;
+
+    return (
+      <div
+        key={lineIndex}
+        className="tugx-diff-line"
+        data-slot={DATA_SLOT_LINE}
+        data-kind={line.kind}
+        data-line-index={lineIndex}
+      >
+        <span className="tugx-diff-gutter-before" aria-hidden="true">
+          {line.before_lineno ?? ""}
+        </span>
+        <span className="tugx-diff-gutter-after" aria-hidden="true">
+          {line.after_lineno ?? ""}
+        </span>
+        <span className="tugx-diff-marker" aria-hidden="true">
+          {markerFor(line.kind)}
+        </span>
+        <span className="tugx-diff-content">
+          {renderLineContent(line.content, syntaxTokens, wordRanges)}
+        </span>
+      </div>
+    );
+  });
+}
+
+/**
+ * Side-by-side view: rows of (left, right) cells.
+ *
+ *   - Context lines occupy both cells with the same content.
+ *   - Paired remove+add: word-level overlay applies to both cells
+ *     (delete-tagged segments visible on the left, insert-tagged on
+ *     the right; equal segments show on both).
+ *   - Lone remove leaves the right cell blank with a tint;
+ *     lone add leaves the left cell blank with a tint.
+ */
+function renderSideBySideHunkBody(
+  hunk: DiffHunk,
+  wordEngine: WordEngineCtor | null,
+  syntaxByLine: ReadonlyMap<string, SyntaxToken[]>,
+): React.ReactNode {
+  const rows = groupSideBySideRows(hunk.lines);
+  return rows.map((row, rowIndex) => {
+    let leftRanges: WordRange[] | null = null;
+    let rightRanges: WordRange[] | null = null;
+    if (row.paired && row.left !== null && row.right !== null && wordEngine !== null) {
+      const segments = wordLevelDiffSync(
+        row.left.content,
+        row.right.content,
+        wordEngine,
+      );
+      leftRanges = wordRangesForSide(segments, "remove");
+      rightRanges = wordRangesForSide(segments, "add");
+    }
+    return (
+      <div
+        key={rowIndex}
+        className="tugx-diff-sbs-row"
+        data-slot={DATA_SLOT_SBS_ROW}
+        data-row-index={rowIndex}
+        data-paired={row.paired ? "true" : "false"}
+      >
+        {renderSideBySideCell("left", row.left, leftRanges, syntaxByLine)}
+        {renderSideBySideCell("right", row.right, rightRanges, syntaxByLine)}
+      </div>
+    );
+  });
+}
+
+function renderSideBySideCell(
+  side: "left" | "right",
+  line: DiffLine | null,
+  wordRanges: WordRange[] | null,
+  syntaxByLine: ReadonlyMap<string, SyntaxToken[]>,
+): React.ReactNode {
+  if (line === null) {
+    return (
+      <div
+        className="tugx-diff-sbs-cell"
+        data-slot={DATA_SLOT_SBS_CELL}
+        data-side={side}
+        data-kind="blank"
+      >
+        <span className="tugx-diff-gutter-before" aria-hidden="true" />
+        <span className="tugx-diff-marker" aria-hidden="true" />
+        <span className="tugx-diff-content" />
+      </div>
+    );
+  }
+  const lineno = side === "left" ? line.before_lineno : line.after_lineno;
+  const syntaxTokens = syntaxByLine.get(line.content) ?? null;
+  return (
+    <div
+      className="tugx-diff-sbs-cell"
+      data-slot={DATA_SLOT_SBS_CELL}
+      data-side={side}
+      data-kind={line.kind}
+    >
+      <span className="tugx-diff-gutter-before" aria-hidden="true">
+        {lineno ?? ""}
+      </span>
+      <span className="tugx-diff-marker" aria-hidden="true">
+        {markerFor(line.kind)}
+      </span>
+      <span className="tugx-diff-content">
+        {renderLineContent(line.content, syntaxTokens, wordRanges)}
+      </span>
+    </div>
+  );
 }

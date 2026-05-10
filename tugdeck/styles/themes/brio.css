@@ -1360,4 +1360,8 @@ body {
   --tugx-diff-loading-padding: var(--tug-space-md);
   --tugx-diff-loading-color: var(--tug7-element-global-text-normal-muted-rest);
   --tugx-diff-loading-size: var(--tug-font-size-2xs);
+
+  /* Side-by-side mode (data-view-mode="side-by-side") */
+  --tugx-diff-sbs-column-gap: 1px;
+  --tugx-diff-sbs-blank-bg: rgba(0, 0, 0, 0.18);
 }

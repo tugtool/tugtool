@@ -29,15 +29,72 @@
 
 import "../../../../__tests__/setup-rtl";
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import dmp from "diff-match-patch";
 import React from "react";
+
+// Mock the tugbank singleton so this test file controls what
+// `readDiffViewMode` sees. Other test files mock the same module with
+// their own fakeTugbank, and bun workers do not isolate
+// `mock.module` state cleanly across files (see setup-rtl.ts on the
+// same isolation issue) — owning our own mock here keeps us insulated
+// from those neighbors.
+const tugbankDomains: Record<string, Record<string, unknown>> = {};
+const fakeTugbank = {
+  getValue(domain: string, key: string): unknown {
+    return tugbankDomains[domain]?.[key];
+  },
+};
+mock.module("@/lib/tugbank-singleton", () => ({
+  getTugbankClient: () => fakeTugbank,
+  setTugbankClient: () => {},
+}));
+
+// Mock the Shiki utils module so we can inject a stub highlighter
+// without the heavy real Shiki bundle. Tests opt in by setting
+// `shikiBehavior` before mounting.
+type ShikiBehavior =
+  | { kind: "off" }
+  | {
+      kind: "stub";
+      // Map: line text → HTML output Shiki would produce.
+      htmlByLine: Map<string, string>;
+    }
+  | { kind: "throw" };
+let shikiBehavior: ShikiBehavior = { kind: "off" };
+mock.module("@/_archive/cards/conversation/code-block-utils", () => ({
+  getHighlighter: async () => {
+    if (shikiBehavior.kind === "throw") {
+      throw new Error("test: Shiki failed to load");
+    }
+    if (shikiBehavior.kind === "off") {
+      throw new Error("test: shikiBehavior not configured");
+    }
+    const htmlByLine = shikiBehavior.htmlByLine;
+    return {
+      getLoadedLanguages: () => ["typescript", "javascript", "tsx"],
+      loadLanguage: async () => {},
+      codeToHtml: (text: string) => {
+        const inner = htmlByLine.get(text) ?? "";
+        return (
+          '<pre class="shiki"><code>' +
+          '<span class="line">' +
+          inner +
+          "</span>" +
+          "</code></pre>"
+        );
+      },
+    };
+  },
+  normalizeLanguage: (l: string) => l,
+}));
 
 import {
   DiffBlock,
   basename,
   composeHunkHeader,
+  groupSideBySideRows,
   pairRemoveAddIndices,
   prepareHunksSync,
 } from "../diff-block";
@@ -46,12 +103,27 @@ import {
   resetTugdiffWasmForTests,
   type TugdiffEngine,
 } from "@/lib/lazy/load-tugdiff-wasm";
-import type { DiffData, DiffHunk } from "@/lib/diff/types";
+import type { DiffData, DiffHunk, DiffLine } from "@/lib/diff/types";
 
 afterEach(() => {
   cleanup();
   resetTugdiffWasmForTests();
+  for (const domain of Object.keys(tugbankDomains)) {
+    delete tugbankDomains[domain];
+  }
+  shikiBehavior = { kind: "off" };
 });
+
+/**
+ * Seed `fakeTugbank` for the current test. Cleared in `afterEach`.
+ */
+function seedTugbank(
+  domains: Record<string, Record<string, unknown>>,
+): void {
+  for (const [domain, entries] of Object.entries(domains)) {
+    tugbankDomains[domain] = { ...entries };
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -221,7 +293,7 @@ describe("DiffBlock — unified source render", () => {
     expect(stats?.textContent).toContain("1");
   });
 
-  test("renders side-by-side toggle as a disabled stub", () => {
+  test("renders an enabled view-mode toggle (label depends on mode)", () => {
     const { container } = render(
       <DiffBlock data={{ source: "unified", text: FIXTURE_UNIFIED }} />,
     );
@@ -229,8 +301,10 @@ describe("DiffBlock — unified source render", () => {
       '[data-slot="diff-view-toggle"]',
     ) as HTMLButtonElement | null;
     expect(toggle).not.toBeNull();
-    expect(toggle?.disabled).toBe(true);
-    expect(toggle?.getAttribute("title")).toContain("coming soon");
+    expect(toggle?.disabled).toBe(false);
+    // Inline mode: button offers to switch *to* side-by-side.
+    expect(toggle?.textContent).toBe("Side by side");
+    expect(toggle?.getAttribute("aria-pressed")).toBe("false");
   });
 
   test("renders one band per hunk with the @@ header", () => {
@@ -356,6 +430,330 @@ describe("DiffBlock — collapse", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Side-by-side row grouping
+// ---------------------------------------------------------------------------
+
+describe("groupSideBySideRows", () => {
+  function makeLine(
+    kind: DiffLine["kind"],
+    content: string,
+    before: number | null,
+    after: number | null,
+  ): DiffLine {
+    return {
+      kind,
+      content,
+      before_lineno: before,
+      after_lineno: after,
+    };
+  }
+
+  test("context lines render in both cells, paired = false", () => {
+    const lines = [makeLine("context", "hello", 1, 1)];
+    const rows = groupSideBySideRows(lines);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].left).toBe(lines[0]);
+    expect(rows[0].right).toBe(lines[0]);
+    expect(rows[0].paired).toBe(false);
+  });
+
+  test("a single remove + add pair zips into one paired row", () => {
+    const lines = [
+      makeLine("remove", "old", 1, null),
+      makeLine("add", "new", null, 1),
+    ];
+    const rows = groupSideBySideRows(lines);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].left).toBe(lines[0]);
+    expect(rows[0].right).toBe(lines[1]);
+    expect(rows[0].paired).toBe(true);
+  });
+
+  test("two removes + two adds zip index-for-index", () => {
+    const lines = [
+      makeLine("remove", "r1", 1, null),
+      makeLine("remove", "r2", 2, null),
+      makeLine("add", "a1", null, 1),
+      makeLine("add", "a2", null, 2),
+    ];
+    const rows = groupSideBySideRows(lines);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].left?.content).toBe("r1");
+    expect(rows[0].right?.content).toBe("a1");
+    expect(rows[1].left?.content).toBe("r2");
+    expect(rows[1].right?.content).toBe("a2");
+    expect(rows.every((r) => r.paired)).toBe(true);
+  });
+
+  test("lone remove leaves right cell null (not paired)", () => {
+    const lines = [makeLine("remove", "gone", 1, null)];
+    const rows = groupSideBySideRows(lines);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].left).toBe(lines[0]);
+    expect(rows[0].right).toBeNull();
+    expect(rows[0].paired).toBe(false);
+  });
+
+  test("lone add leaves left cell null (not paired)", () => {
+    const lines = [makeLine("add", "new", null, 1)];
+    const rows = groupSideBySideRows(lines);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].left).toBeNull();
+    expect(rows[0].right).toBe(lines[0]);
+    expect(rows[0].paired).toBe(false);
+  });
+
+  test("[remove, add, add] yields one paired + one lone-add", () => {
+    const lines = [
+      makeLine("remove", "r1", 1, null),
+      makeLine("add", "a1", null, 1),
+      makeLine("add", "a2", null, 2),
+    ];
+    const rows = groupSideBySideRows(lines);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].paired).toBe(true);
+    expect(rows[1].left).toBeNull();
+    expect(rows[1].right?.content).toBe("a2");
+  });
+
+  test("context surrounded by changes preserves boundaries", () => {
+    const lines = [
+      makeLine("context", "ctx1", 1, 1),
+      makeLine("remove", "r1", 2, null),
+      makeLine("add", "a1", null, 2),
+      makeLine("context", "ctx2", 3, 3),
+    ];
+    const rows = groupSideBySideRows(lines);
+    expect(rows).toHaveLength(3);
+    expect(rows[0].paired).toBe(false); // context
+    expect(rows[1].paired).toBe(true);
+    expect(rows[2].paired).toBe(false); // context
+  });
+});
+
+// ---------------------------------------------------------------------------
+// View mode + tugbank persistence
+// ---------------------------------------------------------------------------
+
+describe("DiffBlock — viewMode toggle and persistence", () => {
+  test("default mode is inline; data-view-mode reflects it", () => {
+    const { container } = render(
+      <DiffBlock data={{ source: "unified", text: FIXTURE_UNIFIED }} />,
+    );
+    const root = container.querySelector(
+      '[data-slot="diff-body"]',
+    ) as HTMLElement;
+    expect(root.getAttribute("data-view-mode")).toBe("inline");
+  });
+
+  test("viewMode prop is honored on initial render", () => {
+    const { container } = render(
+      <DiffBlock
+        data={{ source: "unified", text: FIXTURE_UNIFIED }}
+        viewMode="side-by-side"
+      />,
+    );
+    const root = container.querySelector(
+      '[data-slot="diff-body"]',
+    ) as HTMLElement;
+    expect(root.getAttribute("data-view-mode")).toBe("side-by-side");
+    // Side-by-side: rows render `data-slot="diff-sbs-row"` cells, not
+    // the inline `diff-line` rows.
+    expect(
+      container.querySelectorAll('[data-slot="diff-sbs-row"]').length,
+    ).toBeGreaterThan(0);
+    expect(
+      container.querySelectorAll('[data-slot="diff-line"]').length,
+    ).toBe(0);
+  });
+
+  test("clicking the toggle flips the mode and updates the layout", () => {
+    const { container } = render(
+      <DiffBlock data={{ source: "unified", text: FIXTURE_UNIFIED }} />,
+    );
+    const toggle = container.querySelector(
+      '[data-slot="diff-view-toggle"]',
+    ) as HTMLButtonElement;
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    act(() => {
+      fireEvent.click(toggle);
+    });
+    const root = container.querySelector(
+      '[data-slot="diff-body"]',
+    ) as HTMLElement;
+    expect(root.getAttribute("data-view-mode")).toBe("side-by-side");
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    expect(toggle.textContent).toBe("Inline");
+  });
+
+  test("controlled viewMode prop wins on rerender", () => {
+    const { container, rerender } = render(
+      <DiffBlock
+        data={{ source: "unified", text: FIXTURE_UNIFIED }}
+        viewMode="inline"
+      />,
+    );
+    const root = container.querySelector(
+      '[data-slot="diff-body"]',
+    ) as HTMLElement;
+    expect(root.getAttribute("data-view-mode")).toBe("inline");
+    rerender(
+      <DiffBlock
+        data={{ source: "unified", text: FIXTURE_UNIFIED }}
+        viewMode="side-by-side"
+      />,
+    );
+    expect(root.getAttribute("data-view-mode")).toBe("side-by-side");
+  });
+
+  test("tugbank-saved preference seeds the initial mode (no flash)", () => {
+    seedTugbank({
+      "dev.tugtool.tide.diff-view": { "card-42": "side-by-side" },
+    });
+    const { container } = render(
+      <DiffBlock
+        data={{ source: "unified", text: FIXTURE_UNIFIED }}
+        cardId="card-42"
+      />,
+    );
+    const root = container.querySelector(
+      '[data-slot="diff-body"]',
+    ) as HTMLElement;
+    // First render already reflects the saved preference.
+    expect(root.getAttribute("data-view-mode")).toBe("side-by-side");
+  });
+
+  test("clicking the toggle PUTs to /api/defaults/dev.tugtool.tide.diff-view/<cardId>", () => {
+    const fetchMock = mock(() =>
+      Promise.resolve(new Response(null, { status: 200 })),
+    );
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    try {
+      const { container } = render(
+        <DiffBlock
+          data={{ source: "unified", text: FIXTURE_UNIFIED }}
+          cardId="card-99"
+        />,
+      );
+      const toggle = container.querySelector(
+        '[data-slot="diff-view-toggle"]',
+      ) as HTMLButtonElement;
+      act(() => {
+        fireEvent.click(toggle);
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+      const [url, init] = call;
+      expect(url).toBe("/api/defaults/dev.tugtool.tide.diff-view/card-99");
+      expect(init.method).toBe("PUT");
+      expect(init.body).toBe(
+        JSON.stringify({ kind: "string", value: "side-by-side" }),
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("onViewModeChange callback fires on toggle", () => {
+    const onChange = mock(() => {});
+    const { container } = render(
+      <DiffBlock
+        data={{ source: "unified", text: FIXTURE_UNIFIED }}
+        onViewModeChange={onChange}
+      />,
+    );
+    const toggle = container.querySelector(
+      '[data-slot="diff-view-toggle"]',
+    ) as HTMLButtonElement;
+    act(() => {
+      fireEvent.click(toggle);
+    });
+    expect(onChange).toHaveBeenCalledWith("side-by-side");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Side-by-side render markup
+// ---------------------------------------------------------------------------
+
+describe("DiffBlock — side-by-side render", () => {
+  test("paired remove+add appears as a single row with both cells filled", () => {
+    const fixture = [
+      "@@ -1,1 +1,1 @@",
+      "-old",
+      "+new",
+      "",
+    ].join("\n");
+    const { container } = render(
+      <DiffBlock
+        data={{ source: "unified", text: fixture }}
+        viewMode="side-by-side"
+      />,
+    );
+    const rows = container.querySelectorAll('[data-slot="diff-sbs-row"]');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].getAttribute("data-paired")).toBe("true");
+    const cells = rows[0].querySelectorAll('[data-slot="diff-sbs-cell"]');
+    expect(cells).toHaveLength(2);
+    expect(cells[0].getAttribute("data-side")).toBe("left");
+    expect(cells[0].getAttribute("data-kind")).toBe("remove");
+    expect(cells[1].getAttribute("data-side")).toBe("right");
+    expect(cells[1].getAttribute("data-kind")).toBe("add");
+  });
+
+  test("lone remove leaves right cell as kind=blank", () => {
+    const fixture = ["@@ -1,2 +1,1 @@", " keep", "-gone", ""].join("\n");
+    const { container } = render(
+      <DiffBlock
+        data={{ source: "unified", text: fixture }}
+        viewMode="side-by-side"
+      />,
+    );
+    const rows = container.querySelectorAll('[data-slot="diff-sbs-row"]');
+    // Row 0: context. Row 1: lone remove + blank.
+    expect(rows).toHaveLength(2);
+    const removeRowCells = rows[1].querySelectorAll(
+      '[data-slot="diff-sbs-cell"]',
+    );
+    expect(removeRowCells[0].getAttribute("data-kind")).toBe("remove");
+    expect(removeRowCells[1].getAttribute("data-kind")).toBe("blank");
+  });
+
+  test("lone add leaves left cell as kind=blank", () => {
+    const fixture = ["@@ -1,1 +1,2 @@", " keep", "+new", ""].join("\n");
+    const { container } = render(
+      <DiffBlock
+        data={{ source: "unified", text: fixture }}
+        viewMode="side-by-side"
+      />,
+    );
+    const rows = container.querySelectorAll('[data-slot="diff-sbs-row"]');
+    const addRowCells = rows[1].querySelectorAll(
+      '[data-slot="diff-sbs-cell"]',
+    );
+    expect(addRowCells[0].getAttribute("data-kind")).toBe("blank");
+    expect(addRowCells[1].getAttribute("data-kind")).toBe("add");
+  });
+
+  test("context line emits the same content in both cells", () => {
+    const fixture = ["@@ -1,1 +1,1 @@", " same", ""].join("\n");
+    const { container } = render(
+      <DiffBlock
+        data={{ source: "unified", text: fixture }}
+        viewMode="side-by-side"
+      />,
+    );
+    const rows = container.querySelectorAll('[data-slot="diff-sbs-row"]');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].getAttribute("data-paired")).toBe("false");
+    const contents = rows[0].querySelectorAll(".tugx-diff-content");
+    expect(contents[0].textContent).toBe("same");
+    expect(contents[1].textContent).toBe("same");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Two-text source — lazy WASM resolution
 // ---------------------------------------------------------------------------
 
@@ -470,5 +868,160 @@ describe("DiffBlock — empty / undefined inputs", () => {
     const stats = container.querySelector('[data-slot="diff-stats"]');
     expect(stats?.textContent).toContain("+0");
     expect(stats?.textContent).toContain("0");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Shiki + word-level merge — integration tests
+// ---------------------------------------------------------------------------
+
+describe("DiffBlock — Shiki integration", () => {
+  test("known-extension filePath triggers Shiki load and produces a styled segment", async () => {
+    // Stub Shiki: pretend `let x = 1` and `var x = 1` come out with
+    // distinct color tokens so we can verify the merge plumbing.
+    shikiBehavior = {
+      kind: "stub",
+      htmlByLine: new Map([
+        [
+          "let x = 1",
+          '<span style="color:#79B8FF">let</span>' +
+            '<span style="color:#E1E4E8"> x = </span>' +
+            '<span style="color:#79B8FF">1</span>',
+        ],
+        [
+          "var x = 1",
+          '<span style="color:#79B8FF">var</span>' +
+            '<span style="color:#E1E4E8"> x = </span>' +
+            '<span style="color:#79B8FF">1</span>',
+        ],
+      ]),
+    };
+    const fixture = ["@@ -1,1 +1,1 @@", "-let x = 1", "+var x = 1", ""].join(
+      "\n",
+    );
+
+    const { container, findAllByText } = render(
+      <DiffBlock
+        data={{ source: "unified", text: fixture, filePath: "foo.ts" }}
+      />,
+    );
+
+    // Wait for the async Shiki effect to populate the syntax map and
+    // re-render. Both the remove and add lines are paired, so the
+    // word-level overlay also runs.
+    await findAllByText("let", { selector: ".tugx-diff-word-remove" });
+
+    // The remove line's `let` should carry both the remove class
+    // AND a Shiki color style. happy-dom's CSSOM may not roundtrip
+    // hex colors via `style.color` (returns ""), so check the raw
+    // attribute instead.
+    const removeWord = container.querySelector(
+      ".tugx-diff-line[data-kind='remove'] .tugx-diff-word-remove",
+    ) as HTMLElement;
+    expect(removeWord).not.toBeNull();
+    expect(removeWord.textContent).toBe("let");
+    // happy-dom's CSSOM may not roundtrip hex colors via `style.color`
+    // (returns ""), so check the raw attribute instead.
+    expect(removeWord.getAttribute("style") ?? "").toContain("color");
+
+    // The add line's `var` mirrors that for the add side.
+    const addWord = container.querySelector(
+      ".tugx-diff-line[data-kind='add'] .tugx-diff-word-add",
+    ) as HTMLElement;
+    expect(addWord).not.toBeNull();
+    expect(addWord.textContent).toBe("var");
+    expect(addWord.getAttribute("style") ?? "").toContain("color");
+  });
+
+  test("unchanged context line gets Shiki styling but no word-level class", async () => {
+    shikiBehavior = {
+      kind: "stub",
+      htmlByLine: new Map([
+        [
+          "fn foo()",
+          '<span style="color:#79B8FF">fn</span>' +
+            '<span style="color:#E1E4E8"> foo()</span>',
+        ],
+        ["-old", '<span style="color:#abc">-old</span>'],
+        ["+new", '<span style="color:#abc">+new</span>'],
+      ]),
+    };
+    const fixture = [
+      "@@ -1,2 +1,2 @@",
+      " fn foo()",
+      "-old",
+      "+new",
+      "",
+    ].join("\n");
+
+    const { container, findByText } = render(
+      <DiffBlock
+        data={{ source: "unified", text: fixture, filePath: "foo.ts" }}
+      />,
+    );
+
+    // Wait for Shiki to populate.
+    await findByText("fn", { selector: ".tugx-diff-line[data-kind='context'] span" });
+
+    const contextLine = container.querySelector(
+      ".tugx-diff-line[data-kind='context'] .tugx-diff-content",
+    ) as HTMLElement;
+    // No word-level class on context spans:
+    expect(contextLine.querySelector(".tugx-diff-word-add")).toBeNull();
+    expect(contextLine.querySelector(".tugx-diff-word-remove")).toBeNull();
+    // But Shiki styled spans are present:
+    const styledSpans = contextLine.querySelectorAll("span[style]");
+    expect(styledSpans.length).toBeGreaterThan(0);
+  });
+
+  test("graceful degradation: Shiki load failure leaves word overlay intact", async () => {
+    shikiBehavior = { kind: "throw" };
+    const fixture = ["@@ -1,1 +1,1 @@", "-old", "+new", ""].join("\n");
+
+    const { container, findAllByText } = render(
+      <DiffBlock
+        data={{ source: "unified", text: fixture, filePath: "foo.ts" }}
+      />,
+    );
+
+    // Even though Shiki failed, the word-level overlay (loaded
+    // separately via `diff-match-patch`) should still produce
+    // `tugx-diff-word-*` spans.
+    await findAllByText("old", { selector: ".tugx-diff-word-remove" });
+
+    // No `style` attribute on the highlighted word — that would be
+    // present only if Shiki had succeeded.
+    const removeWord = container.querySelector(
+      ".tugx-diff-word-remove",
+    ) as HTMLElement;
+    expect(removeWord.textContent).toBe("old");
+    expect(removeWord.getAttribute("style")).toBeNull();
+
+    // The add line's text remains visible (no missing content).
+    const addLine = container.querySelector(
+      ".tugx-diff-line[data-kind='add'] .tugx-diff-content",
+    ) as HTMLElement;
+    expect(addLine.textContent).toBe("new");
+  });
+
+  test("unknown extension does not attempt to load Shiki", async () => {
+    // Configure shikiBehavior to throw if invoked. Using an unknown
+    // extension means the loader effect early-returns and never
+    // reaches the mocked import.
+    shikiBehavior = { kind: "throw" };
+    const fixture = ["@@ -1,1 +1,1 @@", "-old", "+new", ""].join("\n");
+
+    const { container } = render(
+      <DiffBlock
+        data={{ source: "unified", text: fixture, filePath: "data.unknownext" }}
+      />,
+    );
+    // Synchronous content render: line text is present.
+    const removeContent = container.querySelector(
+      ".tugx-diff-line[data-kind='remove'] .tugx-diff-content",
+    ) as HTMLElement;
+    expect(removeContent.textContent).toBe("old");
+    // No styled span (Shiki didn't run).
+    expect(removeContent.querySelector("span[style]")).toBeNull();
   });
 });

@@ -178,10 +178,36 @@ function parseRange(s: string): { start: number; count: number } | null {
  */
 export type WordDiffTag = "equal" | "delete" | "insert";
 
-export interface WordDiffSegment {
-  tag: WordDiffTag;
-  text: string;
-}
+/**
+ * One contiguous segment from a word-level diff.
+ *
+ * Each variant carries the half-open `[start, end)` ranges in the
+ * texts where it applies. `equal` segments live in *both* the
+ * before and after streams; `delete` only in before; `insert` only
+ * in after. The merge into Shiki syntax tokens (see `render-line.ts`)
+ * keys on these ranges to emit double-classed spans.
+ */
+export type WordDiffSegment =
+  | {
+      tag: "equal";
+      text: string;
+      beforeStart: number;
+      beforeEnd: number;
+      afterStart: number;
+      afterEnd: number;
+    }
+  | {
+      tag: "delete";
+      text: string;
+      beforeStart: number;
+      beforeEnd: number;
+    }
+  | {
+      tag: "insert";
+      text: string;
+      afterStart: number;
+      afterEnd: number;
+    };
 
 /**
  * Word-level (technically character-level with semantic cleanup) diff
@@ -191,7 +217,9 @@ export interface WordDiffSegment {
  *
  * The implementation lazy-loads `diff-match-patch` and runs
  * `diff_cleanupSemantic` to coalesce the raw character runs into
- * human-readable word-ish chunks.
+ * human-readable word-ish chunks. Each returned segment is enriched
+ * with per-side `[start, end)` ranges so consumers can merge with
+ * Shiki syntax tokens (see `render-line.ts`).
  */
 export async function wordLevelDiff(
   before: string,
@@ -205,14 +233,7 @@ export async function wordLevelDiff(
     diff_cleanupSemantic(diffs: Array<[number, string]>): void;
   };
   const Engine = (mod.default ?? mod) as unknown as Ctor;
-  const engine = new Engine();
-  const raw = engine.diff_main(before, after);
-  engine.diff_cleanupSemantic(raw);
-  return raw.map(([op, text]): WordDiffSegment => {
-    if (op === 1) return { tag: "insert", text };
-    if (op === -1) return { tag: "delete", text };
-    return { tag: "equal", text };
-  });
+  return wordLevelDiffSync(before, after, Engine);
 }
 
 /**
@@ -231,9 +252,40 @@ export function wordLevelDiffSync(
   const engine = new Engine();
   const raw = engine.diff_main(before, after);
   engine.diff_cleanupSemantic(raw);
-  return raw.map(([op, text]): WordDiffSegment => {
-    if (op === 1) return { tag: "insert", text };
-    if (op === -1) return { tag: "delete", text };
-    return { tag: "equal", text };
-  });
+
+  let beforePos = 0;
+  let afterPos = 0;
+  const segments: WordDiffSegment[] = [];
+  for (const [op, text] of raw) {
+    const len = text.length;
+    if (op === 1) {
+      segments.push({
+        tag: "insert",
+        text,
+        afterStart: afterPos,
+        afterEnd: afterPos + len,
+      });
+      afterPos += len;
+    } else if (op === -1) {
+      segments.push({
+        tag: "delete",
+        text,
+        beforeStart: beforePos,
+        beforeEnd: beforePos + len,
+      });
+      beforePos += len;
+    } else {
+      segments.push({
+        tag: "equal",
+        text,
+        beforeStart: beforePos,
+        beforeEnd: beforePos + len,
+        afterStart: afterPos,
+        afterEnd: afterPos + len,
+      });
+      beforePos += len;
+      afterPos += len;
+    }
+  }
+  return segments;
 }
