@@ -34,16 +34,38 @@ import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import dmp from "diff-match-patch";
 import React from "react";
 
-// Mock the tugbank singleton so this test file controls what
-// `readDiffViewMode` sees. Other test files mock the same module with
-// their own fakeTugbank, and bun workers do not isolate
+// Mock the tugbank singleton so this test file controls what the
+// diff-view-pref hook sees. Other test files mock the same module
+// with their own fakeTugbank, and bun workers do not isolate
 // `mock.module` state cleanly across files (see setup-rtl.ts on the
-// same isolation issue) — owning our own mock here keeps us insulated
-// from those neighbors.
+// same isolation issue) — owning our own mock here keeps us
+// insulated from those neighbors.
 const tugbankDomains: Record<string, Record<string, unknown>> = {};
+const tugbankListeners = new Set<(domain: string, entries: Record<string, unknown>) => void>();
 const fakeTugbank = {
   getValue(domain: string, key: string): unknown {
     return tugbankDomains[domain]?.[key];
+  },
+  onDomainChanged(
+    cb: (domain: string, entries: Record<string, unknown>) => void,
+  ): () => void {
+    tugbankListeners.add(cb);
+    return () => {
+      tugbankListeners.delete(cb);
+    };
+  },
+  // Mirrors `TugbankClient.setLocalValue` — bumps the cache and fires
+  // listeners synchronously.
+  setLocalValue(
+    domain: string,
+    key: string,
+    value: { kind: string; value: unknown },
+  ): void {
+    if (tugbankDomains[domain] === undefined) tugbankDomains[domain] = {};
+    tugbankDomains[domain][key] = value.value;
+    for (const listener of tugbankListeners) {
+      listener(domain, tugbankDomains[domain]);
+    }
   },
 };
 mock.module("@/lib/tugbank-singleton", () => ({
@@ -111,6 +133,7 @@ afterEach(() => {
   for (const domain of Object.keys(tugbankDomains)) {
     delete tugbankDomains[domain];
   }
+  tugbankListeners.clear();
   shikiBehavior = { kind: "off" };
 });
 
@@ -196,17 +219,73 @@ describe("pairRemoveAddIndices", () => {
     expect(pairRemoveAddIndices(lines)).toEqual(new Map([[1, 2]]));
   });
 
-  test("remove without immediate add → unpaired", () => {
+  test("balanced run [r, r, a, a] zips index-for-index", () => {
+    // Real-world case: a function with 2 args changing 2 args. The
+    // first remove pairs with the first add; the second remove pairs
+    // with the second add. The previous "adjacent only" implementation
+    // got this wrong (paired r2↔a1 and dropped r1, a2).
+    const lines = [
+      { kind: "remove" },
+      { kind: "remove" },
+      { kind: "add" },
+      { kind: "add" },
+    ];
+    expect(pairRemoveAddIndices(lines)).toEqual(
+      new Map([
+        [0, 2],
+        [1, 3],
+      ]),
+    );
+  });
+
+  test("uneven run [r, r, a] zips removes with adds, leaving extras unpaired", () => {
+    // Two removes, one add. The first remove pairs with the add;
+    // the second remove has no partner.
     const lines = [
       { kind: "remove" },
       { kind: "remove" },
       { kind: "add" },
     ];
-    expect(pairRemoveAddIndices(lines)).toEqual(new Map([[1, 2]]));
+    expect(pairRemoveAddIndices(lines)).toEqual(new Map([[0, 2]]));
+  });
+
+  test("uneven run [r, a, a] zips removes with adds, leaving extras unpaired", () => {
+    // One remove, two adds. The remove pairs with the first add;
+    // the second add has no partner.
+    const lines = [
+      { kind: "remove" },
+      { kind: "add" },
+      { kind: "add" },
+    ];
+    expect(pairRemoveAddIndices(lines)).toEqual(new Map([[0, 1]]));
+  });
+
+  test("multiple disjoint runs each zip independently", () => {
+    const lines = [
+      { kind: "remove" },
+      { kind: "add" },
+      { kind: "context" },
+      { kind: "remove" },
+      { kind: "remove" },
+      { kind: "add" },
+      { kind: "add" },
+    ];
+    expect(pairRemoveAddIndices(lines)).toEqual(
+      new Map([
+        [0, 1],
+        [3, 5],
+        [4, 6],
+      ]),
+    );
   });
 
   test("only adds → no pairs", () => {
     const lines = [{ kind: "add" }, { kind: "add" }];
+    expect(pairRemoveAddIndices(lines)).toEqual(new Map());
+  });
+
+  test("only removes → no pairs", () => {
+    const lines = [{ kind: "remove" }, { kind: "remove" }];
     expect(pairRemoveAddIndices(lines)).toEqual(new Map());
   });
 });
@@ -528,6 +607,35 @@ describe("groupSideBySideRows", () => {
     expect(rows[0].paired).toBe(false); // context
     expect(rows[1].paired).toBe(true);
     expect(rows[2].paired).toBe(false); // context
+  });
+
+  test("rows carry leftIndex / rightIndex into the source hunk", () => {
+    // Crucial for the inline + sbs renderers to share a single
+    // precomputed `wordRangesByLineIndex` map without an O(n)
+    // `indexOf` scan per row.
+    const lines = [
+      makeLine("context", "c", 1, 1),
+      makeLine("remove", "r1", 2, null),
+      makeLine("remove", "r2", 3, null),
+      makeLine("add", "a1", null, 2),
+      makeLine("add", "a2", null, 3),
+    ];
+    const rows = groupSideBySideRows(lines);
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toMatchObject({ leftIndex: 0, rightIndex: 0 });
+    expect(rows[1]).toMatchObject({ leftIndex: 1, rightIndex: 3, paired: true });
+    expect(rows[2]).toMatchObject({ leftIndex: 2, rightIndex: 4, paired: true });
+  });
+
+  test("blank cells get leftIndex/rightIndex = null", () => {
+    const lines = [
+      makeLine("remove", "gone", 1, null),
+      makeLine("add", "new", null, 1),
+      makeLine("add", "extra", null, 2),
+    ];
+    const rows = groupSideBySideRows(lines);
+    expect(rows[0]).toMatchObject({ leftIndex: 0, rightIndex: 1, paired: true });
+    expect(rows[1]).toMatchObject({ leftIndex: null, rightIndex: 2, paired: false });
   });
 });
 

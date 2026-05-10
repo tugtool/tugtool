@@ -96,8 +96,12 @@ export function wordRangesForSide(
  *
  * Tokens and ranges are assumed to be sorted by `start` and
  * non-overlapping within their own list (Shiki's output is naturally
- * non-overlapping; word-range derivation also preserves this).
- * Behavior with overlapping inputs within a list is undefined.
+ * non-overlapping; word-range derivation also preserves this). The
+ * algorithm is two-pointer: a single forward pass through the
+ * boundary list with `tokenIdx` and `rangeIdx` cursors that advance
+ * monotonically, giving true `O(syntaxTokens.length +
+ * wordRanges.length)` time. Behavior with overlapping inputs within
+ * a list is undefined.
  */
 export function renderLineSegments(
   text: string,
@@ -125,15 +129,41 @@ export function renderLineSegments(
   }
   const sorted = Array.from(boundaries).sort((a, b) => a - b);
 
+  // Two-pointer walk: advance `tokenIdx` past tokens that end ≤ start,
+  // and `rangeIdx` past ranges that end ≤ start. Since tokens/ranges
+  // are sorted and non-overlapping, neither pointer ever moves
+  // backward across the whole walk — total work is bounded by
+  // `tokens.length + ranges.length + boundaries.size`.
   const result: RenderedSegment[] = [];
+  let tokenIdx = 0;
+  let rangeIdx = 0;
   for (let i = 0; i < sorted.length - 1; i++) {
     const start = sorted[i];
     const end = sorted[i + 1];
     if (start >= end) continue;
     const slice = text.slice(start, end);
     if (slice.length === 0) continue;
-    const tok = findContainingToken(tokens, start, end);
-    const range = findContainingRange(ranges, start, end);
+
+    while (tokenIdx < tokens.length && tokens[tokenIdx].end <= start) {
+      tokenIdx += 1;
+    }
+    const tok =
+      tokenIdx < tokens.length &&
+      tokens[tokenIdx].start <= start &&
+      end <= tokens[tokenIdx].end
+        ? tokens[tokenIdx]
+        : undefined;
+
+    while (rangeIdx < ranges.length && ranges[rangeIdx].end <= start) {
+      rangeIdx += 1;
+    }
+    const range =
+      rangeIdx < ranges.length &&
+      ranges[rangeIdx].start <= start &&
+      end <= ranges[rangeIdx].end
+        ? ranges[rangeIdx]
+        : undefined;
+
     result.push({
       text: slice,
       style: tok?.style ?? "",
@@ -147,26 +177,4 @@ function clamp(n: number, lo: number, hi: number): number {
   if (n < lo) return lo;
   if (n > hi) return hi;
   return n;
-}
-
-function findContainingToken(
-  tokens: readonly SyntaxToken[],
-  start: number,
-  end: number,
-): SyntaxToken | undefined {
-  for (const t of tokens) {
-    if (t.start <= start && end <= t.end) return t;
-  }
-  return undefined;
-}
-
-function findContainingRange(
-  ranges: readonly WordRange[],
-  start: number,
-  end: number,
-): WordRange | undefined {
-  for (const r of ranges) {
-    if (r.start <= start && end <= r.end) return r;
-  }
-  return undefined;
 }

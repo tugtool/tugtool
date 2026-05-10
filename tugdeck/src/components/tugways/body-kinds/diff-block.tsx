@@ -35,17 +35,26 @@
  *     same DOM-imperative swap; failures leave the plain-text fallback.
  *
  * Laws:
+ *  - [L02] External state enters React via `useSyncExternalStore`. The
+ *    persisted view-mode preference is owned by tugbank and accessed
+ *    through the `useDiffViewMode` hook in `diff-view-pref.ts`. The
+ *    ephemeral view-mode (when no `cardId` is provided) is local
+ *    component data per [L24] and lives in `useState`.
  *  - [L03] No event listeners that depend on mount-then-paint timing
  *    in this body — the collapse / view-toggle handlers are React
  *    onClicks, not document-level listeners.
- *  - [L06] appearance — Shiki swap and word-highlight rendering are
- *    DOM-imperative writes; React state holds only logical UI state
- *    (the collapsed-hunk Set, the view-mode flag, the loaded-engine
- *    promise resolution counter).
+ *  - [L06] appearance — line-row backgrounds, view-mode layout, and
+ *    collapse visibility flow through `data-*` attributes and CSS;
+ *    React state holds only logical UI state (the collapsed-hunk Set,
+ *    the local-fallback view mode, the loaded-engine handles).
  *  - [L19] file pair (`.tsx` + `.css`), exported props interface,
  *    `data-slot="diff-body"` on the root, this docstring.
  *  - [L20] component-token sovereignty — owns the `--tugx-diff-*`
  *    slot family ([Table T07]).
+ *  - [L24] state zoning — appearance via DOM (data-attrs + CSS); local
+ *    data via `useState` (collapsed-set, ephemeral view mode, async
+ *    hunk results, loaded engines); structure / external state via
+ *    `useSyncExternalStore` (the persisted view-mode hook).
  *
  * Decisions:
  *  - [D05] two-layer split: body kind (this file) vs. tool wrapper
@@ -65,7 +74,6 @@ import { detectLanguage } from "./file-block";
 import {
   parseUnifiedDiffText,
   wordLevelDiffSync,
-  type WordDiffSegment,
 } from "@/lib/diff/parse-unified-diff";
 import {
   countDiffStats,
@@ -74,7 +82,7 @@ import {
   type DiffLine,
 } from "@/lib/diff/types";
 import {
-  readDiffViewMode,
+  useDiffViewMode,
   writeDiffViewMode,
   type DiffViewMode,
 } from "@/lib/diff/diff-view-pref";
@@ -200,28 +208,50 @@ function formatRange(start: number, count: number): string {
 }
 
 /**
- * Pair adjacent (remove, add) lines in a hunk for word-level
- * highlighting. A "pair" is `lines[i]` of kind `remove` followed
- * directly by `lines[i + 1]` of kind `add`. Returns a `Map` keyed
- * on the index of the `remove` line, with the `add` line's index as
- * value.
+ * Pair removes and adds in a hunk for word-level highlighting.
+ *
+ * Algorithm matches `groupSideBySideRows`: walk the lines once, and
+ * inside each run of consecutive non-context lines, zip the removes
+ * with the adds index-for-index. `[r1, r2, a1, a2]` produces
+ * `r1↔a1, r2↔a2`; `[r1, r2, a1]` produces `r1↔a1` (r2 unpaired);
+ * `[r1, a1, a2]` produces `r1↔a1` (a2 unpaired).
+ *
+ * This is the same pairing semantics as `git diff --color-words`
+ * and is the only way the inline view's word-level overlay agrees
+ * with the side-by-side view on the same hunk.
+ *
+ * Returns a `Map<removeIndex, addIndex>`.
  */
 export function pairRemoveAddIndices(
   lines: readonly { kind: string }[],
 ): Map<number, number> {
   const pairs = new Map<number, number>();
-  for (let i = 0; i < lines.length - 1; i++) {
-    if (lines[i].kind === "remove" && lines[i + 1].kind === "add") {
-      pairs.set(i, i + 1);
+  let i = 0;
+  while (i < lines.length) {
+    if (lines[i].kind === "context") {
+      i += 1;
+      continue;
+    }
+    const removeIndices: number[] = [];
+    const addIndices: number[] = [];
+    while (i < lines.length && lines[i].kind !== "context") {
+      if (lines[i].kind === "remove") removeIndices.push(i);
+      else if (lines[i].kind === "add") addIndices.push(i);
+      i += 1;
+    }
+    const max = Math.min(removeIndices.length, addIndices.length);
+    for (let k = 0; k < max; k++) {
+      pairs.set(removeIndices[k], addIndices[k]);
     }
   }
   return pairs;
 }
 
 /**
- * One row of the side-by-side layout. Either cell may be null when
- * the row is a lone remove (right blank) or lone add (left blank).
- * Context lines emit the same line on both sides.
+ * One row of the side-by-side layout. Each cell carries both its
+ * `DiffLine` (for content rendering) and its `lineIndex` in the
+ * source hunk (for keying into the precomputed
+ * `wordRangesByLineIndex` map without an `indexOf` scan).
  *
  * `paired` is `true` when both cells are present *and* the row is a
  * remove + add pair (not a context-on-both-sides row) — this is what
@@ -230,19 +260,23 @@ export function pairRemoveAddIndices(
 export interface SideBySideRow {
   left: DiffLine | null;
   right: DiffLine | null;
+  /** Index of `left` in the source hunk's `lines` array, or `null` if the cell is blank. */
+  leftIndex: number | null;
+  /** Index of `right` in the source hunk's `lines` array, or `null` if the cell is blank. */
+  rightIndex: number | null;
   paired: boolean;
 }
 
 /**
  * Group a hunk's flat line list into side-by-side rows.
  *
- * Algorithm: walk the lines once. Context lines emit a single shared
- * row. Runs of consecutive non-context lines are partitioned into
- * removes and adds, then zipped index-for-index — `[remove, remove,
- * add, add]` becomes `(remove, add), (remove, add)`; `[remove, add,
- * add]` becomes `(remove, add), (blank, add)`. This matches the way
- * `git diff --color-words` and most side-by-side viewers align
- * paired changes.
+ * Algorithm: walk the lines once, tracking each line's own index.
+ * Context lines emit a single shared row. Runs of consecutive
+ * non-context lines are partitioned into removes and adds, then
+ * zipped index-for-index — `[remove, remove, add, add]` becomes
+ * `(remove, add), (remove, add)`; `[remove, add, add]` becomes
+ * `(remove, add), (blank, add)`. Same pairing semantics as
+ * `pairRemoveAddIndices` and `git diff --color-words`.
  */
 export function groupSideBySideRows(
   lines: readonly DiffLine[],
@@ -252,26 +286,34 @@ export function groupSideBySideRows(
   while (i < lines.length) {
     const line = lines[i];
     if (line.kind === "context") {
-      rows.push({ left: line, right: line, paired: false });
+      rows.push({
+        left: line,
+        right: line,
+        leftIndex: i,
+        rightIndex: i,
+        paired: false,
+      });
       i += 1;
       continue;
     }
-    // Collect a run of consecutive non-context lines.
-    const removes: DiffLine[] = [];
-    const adds: DiffLine[] = [];
+    // Collect a run of consecutive non-context lines, tracking indices.
+    const removes: Array<{ line: DiffLine; index: number }> = [];
+    const adds: Array<{ line: DiffLine; index: number }> = [];
     while (i < lines.length && lines[i].kind !== "context") {
-      if (lines[i].kind === "remove") removes.push(lines[i]);
-      else adds.push(lines[i]);
+      if (lines[i].kind === "remove") removes.push({ line: lines[i], index: i });
+      else adds.push({ line: lines[i], index: i });
       i += 1;
     }
     const max = Math.max(removes.length, adds.length);
     for (let k = 0; k < max; k++) {
-      const left = removes[k] ?? null;
-      const right = adds[k] ?? null;
+      const r = removes[k];
+      const a = adds[k];
       rows.push({
-        left,
-        right,
-        paired: left !== null && right !== null,
+        left: r?.line ?? null,
+        right: a?.line ?? null,
+        leftIndex: r?.index ?? null,
+        rightIndex: a?.index ?? null,
+        paired: r !== undefined && a !== undefined,
       });
     }
   }
@@ -319,32 +361,41 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
 }) => {
   // -- View mode (inline | side-by-side) ------------------------------------
   //
-  // Initial value priority: tugbank persistence > prop > "inline".
-  // The synchronous read in the useState initializer means the first
-  // paint already reflects the user's saved choice — no flash of
-  // inline-then-flip.
-  const [viewMode, setViewMode] = React.useState<DiffViewMode>(() => {
-    if (cardId !== undefined) {
-      const saved = readDiffViewMode(cardId);
-      if (saved !== null) return saved;
-    }
-    return viewModeProp ?? "inline";
-  });
-
-  // If the parent flips the controlled `viewModeProp` after mount,
-  // honor it (mirrors how `collapsed` is handled below).
-  React.useEffect(() => {
-    if (viewModeProp !== undefined) setViewMode(viewModeProp);
-  }, [viewModeProp]);
+  // Two distinct shapes coexist:
+  //
+  //   1. Persisted (per-card): the preference is owned by tugbank.
+  //      Per [L02] it enters React via `useSyncExternalStore`
+  //      (`useDiffViewMode` subscribes to tugbank's domain-changed
+  //      callback). Toggling writes optimistically through tugbank's
+  //      local cache so the subscription re-fires synchronously and
+  //      the UI updates without waiting for a server round-trip.
+  //   2. Ephemeral (no `cardId`): the consumer hasn't opted into
+  //      persistence — e.g., gallery cards, ad-hoc usage. The toggle
+  //      flips local React state. This local state is purely
+  //      component-scoped per [L24]'s "local data" zone, so `useState`
+  //      is the correct mechanism.
+  //
+  // Composition order: controlled prop > persisted (when cardId) >
+  // local fallback > "inline".
+  const persistedViewMode = useDiffViewMode(cardId);
+  const [localViewMode, setLocalViewMode] = React.useState<DiffViewMode | null>(
+    null,
+  );
+  const viewMode: DiffViewMode =
+    viewModeProp ??
+    (cardId !== undefined ? persistedViewMode : null) ??
+    localViewMode ??
+    "inline";
 
   const toggleViewMode = React.useCallback(() => {
-    setViewMode((prev) => {
-      const next: DiffViewMode = prev === "inline" ? "side-by-side" : "inline";
-      if (cardId !== undefined) writeDiffViewMode(cardId, next);
-      onViewModeChange?.(next);
-      return next;
-    });
-  }, [cardId, onViewModeChange]);
+    const next: DiffViewMode = viewMode === "inline" ? "side-by-side" : "inline";
+    if (cardId !== undefined) {
+      writeDiffViewMode(cardId, next);
+    } else {
+      setLocalViewMode(next);
+    }
+    onViewModeChange?.(next);
+  }, [viewMode, cardId, onViewModeChange]);
 
   // -- Hunk resolution -------------------------------------------------------
 
@@ -518,6 +569,22 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
     };
   }, [hunks, language]);
 
+  // -- Per-hunk derived render data (memoized) ------------------------------
+  //
+  // `pairs`, `wordRangesByLineIndex`, and `sbsRows` are all functions
+  // of `(hunks, wordEngine)`. Recomputing them on every render
+  // (including viewMode/collapse toggles) was wasteful — `useMemo`
+  // pins the work to the inputs that actually drive it.
+  const renderData = React.useMemo(
+    () => (hunks === null ? null : deriveHunkRenderData(hunks, wordEngine)),
+    [hunks, wordEngine],
+  );
+
+  const stats = React.useMemo(
+    () => (hunks === null ? { added: 0, removed: 0 } : countDiffStats(hunks)),
+    [hunks],
+  );
+
   // -- Render ----------------------------------------------------------------
 
   if (data === undefined) {
@@ -568,7 +635,6 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
     );
   }
 
-  const stats = countDiffStats(hunks);
   const empty = hunks.length === 0;
 
   return (
@@ -638,11 +704,10 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
         </div>
       ) : null}
 
-      {!collapsed ? (
+      {!collapsed && renderData !== null ? (
         <div className="tugx-diff-hunks" data-slot={DATA_SLOT_HUNKS}>
-          {hunks.map((hunk, index) => {
+          {renderData.map((hunkData, index) => {
             const isHunkCollapsed = collapsedHunks.has(index);
-            const pairs = pairRemoveAddIndices(hunk.lines);
             return (
               <div
                 key={index}
@@ -666,7 +731,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
                   }}
                 >
                   <span className="tugx-diff-hunk-header-text">
-                    {composeHunkHeader(hunk)}
+                    {composeHunkHeader(hunkData.hunk)}
                   </span>
                   <span className="tugx-diff-spacer" />
                   <button
@@ -686,8 +751,8 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
                   data-slot={DATA_SLOT_HUNK_ROWS}
                 >
                   {viewMode === "inline"
-                    ? renderInlineHunkBody(hunk, pairs, wordEngine, syntaxByLine)
-                    : renderSideBySideHunkBody(hunk, wordEngine, syntaxByLine)}
+                    ? renderInlineHunkBody(hunkData, syntaxByLine)
+                    : renderSideBySideHunkBody(hunkData, syntaxByLine)}
                 </div>
               </div>
             );
@@ -699,28 +764,68 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
 };
 
 // ---------------------------------------------------------------------------
-// Word-level helpers
+// Per-hunk derived render data
 // ---------------------------------------------------------------------------
 
-function isPairedAdd(
-  pairs: Map<number, number>,
-  lineIndex: number,
-): boolean {
-  for (const addIndex of pairs.values()) {
-    if (addIndex === lineIndex) return true;
-  }
-  return false;
+/**
+ * Per-hunk derived state used by the renderer. Computed once per
+ * `(hunks, wordEngine)` change via `useMemo` so re-renders that
+ * don't change the diff (toggling viewMode, expand/collapse, etc.)
+ * don't re-walk the hunk lines.
+ */
+interface HunkRenderData {
+  hunk: DiffHunk;
+  pairs: Map<number, number>;
+  /**
+   * Per-line word-level ranges keyed by `lineIndex`. Only populated
+   * for lines participating in a (remove, add) pair. One
+   * `wordLevelDiffSync` call per *pair*, not per line — both sides
+   * share the same `WordDiffSegment[]` projected onto opposite sides
+   * via `wordRangesForSide`.
+   */
+  wordRangesByLineIndex: Map<number, WordRange[]>;
+  /** Side-by-side row layout for this hunk. Computed eagerly so the
+   * SBS render path is a pure lookup. */
+  sbsRows: SideBySideRow[];
 }
 
-function findPairedRemove(
-  pairs: Map<number, number>,
-  addIndex: number,
-): number | undefined {
-  for (const [removeIndex, mappedAdd] of pairs.entries()) {
-    if (mappedAdd === addIndex) return removeIndex;
-  }
-  return undefined;
+/**
+ * Compute everything the renderer needs for one hunk: pairing,
+ * per-line word ranges, side-by-side row layout. Called once per
+ * `(hunks, wordEngine)` tuple via `useMemo`.
+ */
+function deriveHunkRenderData(
+  hunks: readonly DiffHunk[],
+  wordEngine: WordEngineCtor | null,
+): HunkRenderData[] {
+  return hunks.map((hunk) => {
+    const pairs = pairRemoveAddIndices(hunk.lines);
+    const wordRangesByLineIndex = new Map<number, WordRange[]>();
+    if (wordEngine !== null) {
+      for (const [removeIdx, addIdx] of pairs) {
+        const segments = wordLevelDiffSync(
+          hunk.lines[removeIdx].content,
+          hunk.lines[addIdx].content,
+          wordEngine,
+        );
+        wordRangesByLineIndex.set(
+          removeIdx,
+          wordRangesForSide(segments, "remove"),
+        );
+        wordRangesByLineIndex.set(
+          addIdx,
+          wordRangesForSide(segments, "add"),
+        );
+      }
+    }
+    const sbsRows = groupSideBySideRows(hunk.lines);
+    return { hunk, pairs, wordRangesByLineIndex, sbsRows };
+  });
 }
+
+// ---------------------------------------------------------------------------
+// Word-level helpers
+// ---------------------------------------------------------------------------
 
 function markerFor(kind: string): string {
   if (kind === "add") return "+";
@@ -803,39 +908,13 @@ function parseInlineStyle(css: string): React.CSSProperties {
 
 /** Inline view: one row per line, 4-column grid. */
 function renderInlineHunkBody(
-  hunk: DiffHunk,
-  pairs: Map<number, number>,
-  wordEngine: WordEngineCtor | null,
+  data: HunkRenderData,
   syntaxByLine: ReadonlyMap<string, SyntaxToken[]>,
 ): React.ReactNode {
+  const { hunk, wordRangesByLineIndex } = data;
   return hunk.lines.map((line, lineIndex) => {
-    const pairedAddIndex = pairs.get(lineIndex);
-    const isRemovePair = pairedAddIndex !== undefined;
-    const removePartnerIndex = isPairedAdd(pairs, lineIndex)
-      ? findPairedRemove(pairs, lineIndex)
-      : undefined;
-
-    let wordRanges: WordRange[] | null = null;
-    if (wordEngine !== null) {
-      if (isRemovePair) {
-        const segments = wordLevelDiffSync(
-          line.content,
-          hunk.lines[pairedAddIndex].content,
-          wordEngine,
-        );
-        wordRanges = wordRangesForSide(segments, "remove");
-      } else if (removePartnerIndex !== undefined) {
-        const segments = wordLevelDiffSync(
-          hunk.lines[removePartnerIndex].content,
-          line.content,
-          wordEngine,
-        );
-        wordRanges = wordRangesForSide(segments, "add");
-      }
-    }
-
+    const wordRanges = wordRangesByLineIndex.get(lineIndex) ?? null;
     const syntaxTokens = syntaxByLine.get(line.content) ?? null;
-
     return (
       <div
         key={lineIndex}
@@ -870,25 +949,28 @@ function renderInlineHunkBody(
  *     the right; equal segments show on both).
  *   - Lone remove leaves the right cell blank with a tint;
  *     lone add leaves the left cell blank with a tint.
+ *
+ * Word-level ranges come from `data.wordRangesByLineIndex` —
+ * precomputed once per `(hunks, wordEngine)` change via
+ * `deriveHunkRenderData`. The SBS row's `paired` flag and the
+ * inline `pairs` Map agree by construction (both routed through
+ * `pairRemoveAddIndices`'s run-zip), so a paired SBS row always
+ * has corresponding entries in `wordRangesByLineIndex`.
  */
 function renderSideBySideHunkBody(
-  hunk: DiffHunk,
-  wordEngine: WordEngineCtor | null,
+  data: HunkRenderData,
   syntaxByLine: ReadonlyMap<string, SyntaxToken[]>,
 ): React.ReactNode {
-  const rows = groupSideBySideRows(hunk.lines);
-  return rows.map((row, rowIndex) => {
-    let leftRanges: WordRange[] | null = null;
-    let rightRanges: WordRange[] | null = null;
-    if (row.paired && row.left !== null && row.right !== null && wordEngine !== null) {
-      const segments = wordLevelDiffSync(
-        row.left.content,
-        row.right.content,
-        wordEngine,
-      );
-      leftRanges = wordRangesForSide(segments, "remove");
-      rightRanges = wordRangesForSide(segments, "add");
-    }
+  const { sbsRows, wordRangesByLineIndex } = data;
+  return sbsRows.map((row, rowIndex) => {
+    const leftRanges =
+      row.leftIndex !== null
+        ? (wordRangesByLineIndex.get(row.leftIndex) ?? null)
+        : null;
+    const rightRanges =
+      row.rightIndex !== null
+        ? (wordRangesByLineIndex.get(row.rightIndex) ?? null)
+        : null;
     return (
       <div
         key={rowIndex}

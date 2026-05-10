@@ -117,6 +117,37 @@ export class TugbankClient {
     };
   }
 
+  /**
+   * Optimistically update the local cache for a single key.
+   *
+   * Used by callers that issue an HTTP PUT and want the cache (and
+   * any `useSyncExternalStore` subscriber) to reflect the new value
+   * before the server's DEFAULTS round-trip arrives. The next
+   * server-pushed DEFAULTS frame may overwrite this entry — that's
+   * the expected reconciliation behavior.
+   *
+   * Bumps the domain's `generation` by 1 so the next inbound DEFAULTS
+   * frame for the same domain only wins if its generation is higher.
+   * Fires `onDomainChanged` listeners synchronously, mirroring the
+   * server-driven path.
+   */
+  setLocalValue(domain: string, key: string, value: TaggedValue): void {
+    const existing = this.cache.get(domain);
+    const entries: Record<string, TaggedValue> = {
+      ...(existing?.entries ?? {}),
+      [key]: value,
+    };
+    const generation = (existing?.generation ?? 0) + 1;
+    this.cache.set(domain, { generation, entries });
+    for (const cb of this.listeners) {
+      try {
+        cb(domain, entries);
+      } catch (err) {
+        console.warn("[TugbankClient] callback error:", err);
+      }
+    }
+  }
+
   // ── Internal ─────────────────────────────────────────────────────────────
 
   private handleDefaultsFrame(payload: Uint8Array): void {

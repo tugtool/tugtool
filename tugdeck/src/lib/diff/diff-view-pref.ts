@@ -2,9 +2,12 @@
  * Per-card persistence helpers for `<DiffBlock>`'s view-mode
  * preference (inline ↔ side-by-side).
  *
- * Wraps the shared `tugbank-client` singleton. Reads are synchronous
- * from the cache (the DEFAULTS frame populates it before any UI
- * mounts). Writes are fire-and-forget HTTP PUTs.
+ * Reads go through `useSyncExternalStore` per [L02] — the tugbank
+ * cache is the source of truth, the React component subscribes for
+ * updates, and the toggle handler writes optimistically through
+ * `setLocalValue` so the UI reflects the change without waiting for
+ * the server's DEFAULTS round-trip. The PUT to `/api/defaults/...`
+ * runs fire-and-forget after the local cache update.
  *
  * Tugbank coordinates:
  *  - domain: `dev.tugtool.tide.diff-view` (matches the
@@ -17,6 +20,8 @@
  * @module lib/diff/diff-view-pref
  */
 
+import React from "react";
+
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 
 export type DiffViewMode = "inline" | "side-by-side";
@@ -25,17 +30,32 @@ export type DiffViewMode = "inline" | "side-by-side";
 export const DIFF_VIEW_DOMAIN = "dev.tugtool.tide.diff-view";
 
 /**
- * Read the saved diff-view mode for `cardId`, or `null` if no
- * preference is set. Synchronous: the tugbank cache is populated
- * before the first render, so this is safe to call from a render
- * `useState` initializer.
+ * Subscribe to tugbank changes for the diff-view domain. The callback
+ * fires whenever any key in the domain updates (including via
+ * `setLocalValue`'s optimistic-write path). Returns an unsubscribe
+ * function.
  *
- * Returns `null` when:
- *  - The tugbank singleton hasn't been wired (test environments).
- *  - No entry exists for this card.
- *  - The stored value isn't a valid `DiffViewMode` string.
+ * Returns a no-op unsubscriber when the tugbank singleton hasn't been
+ * wired (test environments without a fake client).
  */
-export function readDiffViewMode(cardId: string): DiffViewMode | null {
+function subscribeDiffViewDomain(onChange: () => void): () => void {
+  const client = getTugbankClient();
+  if (client === null) return () => {};
+  return client.onDomainChanged((domain) => {
+    if (domain === DIFF_VIEW_DOMAIN) onChange();
+  });
+}
+
+/**
+ * Read the saved diff-view mode for `cardId` from the tugbank cache,
+ * or `null` if no preference is set / the singleton isn't wired /
+ * the stored value isn't a recognized `DiffViewMode`.
+ *
+ * Synchronous: the tugbank cache is populated before the first React
+ * render, so this is safe to call from a `useSyncExternalStore`
+ * snapshot.
+ */
+function getDiffViewMode(cardId: string): DiffViewMode | null {
   const client = getTugbankClient();
   if (client === null) return null;
   const raw = client.getValue(DIFF_VIEW_DOMAIN, cardId);
@@ -44,14 +64,52 @@ export function readDiffViewMode(cardId: string): DiffViewMode | null {
 }
 
 /**
- * Persist `mode` for `cardId`. Fire-and-forget HTTP PUT — failures
- * log a warning and otherwise vanish (the next session simply falls
- * back to the default).
+ * `useSyncExternalStore`-based hook that returns the current
+ * persisted diff-view mode for `cardId`. Re-renders the consumer
+ * when tugbank's snapshot changes — including the optimistic
+ * `setLocalValue` write fired by [`writeDiffViewMode`](./diff-view-pref.ts#L_W).
  *
- * Exposed as a function (not a method on a class) so tests can mock
- * it via the standard import-replacement pattern used elsewhere.
+ * Returns `null` when no preference is set; consumers compose with
+ * a controllable prop and a default in their own state derivation.
+ *
+ * Per [L02]: this is the only sanctioned path for the tugbank value
+ * to enter React state for `DiffBlock`. No `useState` initializer
+ * sneaking in synchronous reads.
+ */
+export function useDiffViewMode(cardId: string | undefined): DiffViewMode | null {
+  // `getSnapshot` must close over the current `cardId` so it tracks
+  // re-renders if the consumer ever changes the cardId on the fly.
+  // For our canonical Tide-card consumer the cardId is stable for
+  // the component's lifetime, but the hook supports the general
+  // case.
+  const getSnapshot = React.useCallback((): DiffViewMode | null => {
+    if (cardId === undefined) return null;
+    return getDiffViewMode(cardId);
+  }, [cardId]);
+
+  return React.useSyncExternalStore(subscribeDiffViewDomain, getSnapshot);
+}
+
+/**
+ * Persist `mode` for `cardId`. Optimistically updates the local
+ * tugbank cache (so subscribers re-render instantly) *and* PUTs to
+ * the server (fire-and-forget). The server-side DEFAULTS frame may
+ * later mirror the change, which is a no-op since the local cache
+ * already has it.
+ *
+ * Failures of the HTTP PUT log a warning and otherwise vanish; the
+ * UI still reflects the optimistic value, and the next session
+ * simply falls back to the default if the PUT actually failed.
  */
 export function writeDiffViewMode(cardId: string, mode: DiffViewMode): void {
+  const client = getTugbankClient();
+  if (client !== null) {
+    client.setLocalValue(DIFF_VIEW_DOMAIN, cardId, {
+      kind: "string",
+      value: mode,
+    });
+  }
+
   const url = `/api/defaults/${DIFF_VIEW_DOMAIN}/${encodeURIComponent(cardId)}`;
   fetch(url, {
     method: "PUT",
