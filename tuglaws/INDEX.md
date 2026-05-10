@@ -30,6 +30,7 @@
 - [app-test-harness.md](app-test-harness.md) — Architecture of the `Tug.app` integration-test harness: subprocess driving, WKWebView, the trusted-event problem, fidelity envelope, lifecycle model.
 - [app-test-inventory.md](app-test-inventory.md) — The AT-tag catalog. Stable, append-only identifiers gating selection / focus / state-preservation regression tests.
 - [code-signing-mac.md](code-signing-mac.md) — The `Tug Dev` self-signed signing pipeline (macOS only). Why the app-test harness depends on it; procedures and failure modes.
+- [wasm-crates.md](wasm-crates.md) — WASM crates in tugdeck (`tugmark-wasm`, `tugdiff-wasm`). Per-crate layout, build pipeline, lazy-load convention, and the checklist for adding a new one.
 
 ## Templates
 

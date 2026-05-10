@@ -1,0 +1,15 @@
+{
+  "name": "tugdiff-wasm",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "tugdiff_wasm_bg.wasm",
+    "tugdiff_wasm.js",
+    "tugdiff_wasm.d.ts"
+  ],
+  "main": "tugdiff_wasm.js",
+  "types": "tugdiff_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

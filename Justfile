@@ -147,7 +147,7 @@ lint:
 # Full pre-merge gate (lint + test)
 ci: lint test
 
-# Build tugmark-wasm via wasm-pack (output goes to tugdeck/crates/tugmark-wasm/pkg/)
+# Build tugdeck WASM crates via wasm-pack (output goes to each crate's pkg/)
 wasm:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -157,6 +157,7 @@ wasm:
         exit 1
     fi
     "$WASM_PACK" build --target web --release tugdeck/crates/tugmark-wasm
+    "$WASM_PACK" build --target web --release tugdeck/crates/tugdiff-wasm
 
 # Build the Mac app (with all dependencies), and run/restart it
 app: build wasm

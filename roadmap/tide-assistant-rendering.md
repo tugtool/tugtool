@@ -1519,20 +1519,20 @@ ThinkingBlock, PermissionDialog, QuestionDialog, CostChrome (with CostBadge sub-
 - Vite config extension if needed
 
 **Tasks:**
-- [ ] Cargo manifest mirroring `tugmark-wasm`'s pattern; add `imara-diff = "..."` and `wasm-bindgen`
-- [ ] Export `parse_unified_diff(text: &str) -> JsValue` (JSON-serialized hunks)
-- [ ] Export `two_text_diff(before: &str, after: &str) -> JsValue` (JSON-serialized hunks)
-- [ ] Build script + bun command analogous to tugmark-wasm
-- [ ] README describing the API
+- [x] Cargo manifest mirroring `tugmark-wasm`'s pattern; add `imara-diff = "..."` and `wasm-bindgen`
+- [x] Export `parse_unified_diff(text: &str) -> JsValue` (JSON-serialized hunks)
+- [x] Export `two_text_diff(before: &str, after: &str) -> JsValue` (JSON-serialized hunks)
+- [x] Build script + bun command analogous to tugmark-wasm
+- [x] README describing the API
 
 **Tests:**
-- [ ] Rust-side: `parse_unified_diff` round-trips a known fixture
-- [ ] Rust-side: `two_text_diff` produces correct hunks for a known input pair
-- [ ] -D warnings clean
+- [x] Rust-side: `parse_unified_diff` round-trips a known fixture
+- [x] Rust-side: `two_text_diff` produces correct hunks for a known input pair
+- [x] -D warnings clean
 
 **Checkpoint:**
-- [ ] `cd tugrust && cargo build -p tugdiff-wasm` (if path-included) — or invoke the crate's bun-driven build
-- [ ] `cd tugrust && cargo nextest run -p tugdiff-wasm` (if tests added)
+- [x] `cd tugrust && cargo build -p tugdiff-wasm` (if path-included) — or invoke the crate's bun-driven build (n/a from workspace; built via `just wasm` / `wasm-pack build --target web --release tugdeck/crates/tugdiff-wasm` — produces `pkg/` with 70 KB `.wasm`)
+- [x] `cd tugrust && cargo nextest run -p tugdiff-wasm` (if tests added) — N/A from workspace; 15 unit tests pass via `cd tugdeck/crates/tugdiff-wasm && cargo test`
 
 ---
 
