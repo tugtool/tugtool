@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+#
+# build-wasm.sh — Build every WASM crate under tugdeck/crates/ in
+# release mode via wasm-pack, then normalize the per-crate `pkg/`
+# auto-generated `.gitignore` so the built artifacts can be tracked
+# without `git add -f`.
+#
+# ## Why this exists
+#
+# wasm-pack writes a `pkg/.gitignore` containing `**` after every
+# build. We want the artifacts checked in (so contributors do not
+# need wasm-pack installed for `bun run dev` and so the macOS app
+# build phase doesn't need a Rust toolchain). The wasm-pack default
+# fights that policy. This script overwrites the auto-generated file
+# with an empty one after each build, restoring our convention.
+#
+# ## Discovery
+#
+# All crates are auto-discovered by globbing for `Cargo.toml` files
+# one directory below `tugdeck/crates/`. Adding a new WASM crate
+# (e.g. for a future ANSI parser) requires zero edits here — drop
+# the crate next to its peers, ensure it's a member of
+# `tugdeck/crates/Cargo.toml`, and the next `just wasm` picks it up.
+#
+# ## Failure modes
+#
+# - wasm-pack missing: prints an actionable message and exits 1.
+# - A crate's wasm-pack build failure: propagates the non-zero exit.
+# - No crates discovered: exits 0 with a notice (treated as a no-op).
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CRATES_DIR="$REPO_ROOT/tugdeck/crates"
+
+WASM_PACK="$(command -v wasm-pack 2>/dev/null || echo "$HOME/.cargo/bin/wasm-pack")"
+if [[ ! -x "$WASM_PACK" ]]; then
+    echo "build-wasm.sh: wasm-pack not found." >&2
+    echo "  install with: cargo install wasm-pack" >&2
+    exit 1
+fi
+
+# Discover every crate (a directory containing a Cargo.toml).
+shopt -s nullglob
+crate_manifests=("$CRATES_DIR"/*/Cargo.toml)
+shopt -u nullglob
+
+if (( ${#crate_manifests[@]} == 0 )); then
+    echo "build-wasm.sh: no crates discovered under $CRATES_DIR (no-op)."
+    exit 0
+fi
+
+for manifest in "${crate_manifests[@]}"; do
+    crate_dir="$(dirname "$manifest")"
+    crate_name="$(basename "$crate_dir")"
+    echo "==> building $crate_name"
+    "$WASM_PACK" build --target web --release "$crate_dir"
+
+    pkg_gitignore="$crate_dir/pkg/.gitignore"
+    if [[ -f "$pkg_gitignore" ]]; then
+        # wasm-pack regenerates this on every build with `**`; an
+        # empty file in its place leaves the contents trackable
+        # without `git add -f`.
+        : > "$pkg_gitignore"
+    fi
+done
+
+echo "==> wasm build complete"

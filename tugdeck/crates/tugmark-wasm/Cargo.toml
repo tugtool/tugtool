@@ -10,6 +10,5 @@ crate-type = ["cdylib", "rlib"]
 pulldown-cmark = { version = "0.12", default-features = false, features = ["html", "simd"] }
 wasm-bindgen = "0.2"
 
-[profile.release]
-opt-level = 3
-lto = true
+# `[profile.release]` lives at the workspace root (../Cargo.toml).
+# Cargo ignores member-level profiles in a virtual workspace.

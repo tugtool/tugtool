@@ -147,17 +147,12 @@ lint:
 # Full pre-merge gate (lint + test)
 ci: lint test
 
-# Build tugdeck WASM crates via wasm-pack (output goes to each crate's pkg/)
+# Build every WASM crate under tugdeck/crates/ via scripts/build-wasm.sh.
+# The script auto-discovers crates by globbing tugdeck/crates/*/Cargo.toml
+# and normalizes pkg/.gitignore so the built artifacts can be committed
+# without `git add -f`. See tuglaws/wasm-crates.md for the convention.
 wasm:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    WASM_PACK="$(command -v wasm-pack 2>/dev/null || echo "$HOME/.cargo/bin/wasm-pack")"
-    if [[ ! -x "$WASM_PACK" ]]; then
-        echo "wasm-pack not found. Install with: cargo install wasm-pack"
-        exit 1
-    fi
-    "$WASM_PACK" build --target web --release tugdeck/crates/tugmark-wasm
-    "$WASM_PACK" build --target web --release tugdeck/crates/tugdiff-wasm
+    scripts/build-wasm.sh
 
 # Build the Mac app (with all dependencies), and run/restart it
 app: build wasm

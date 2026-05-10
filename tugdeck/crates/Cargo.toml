@@ -1,0 +1,17 @@
+# Virtual workspace for tugdeck's WASM crates.
+#
+# All WASM crates live as members here. One Cargo.lock is produced at
+# this directory; per-crate locks are not used. `cargo test --workspace`
+# and `cargo clippy --workspace --all-targets -- -D warnings` from this
+# directory cover every crate. New crates are added by appending to the
+# `members` list and dropping a directory next to its peers.
+#
+# Convention is documented in tuglaws/wasm-crates.md.
+
+[workspace]
+resolver = "2"
+members = ["tugmark-wasm", "tugdiff-wasm"]
+
+[profile.release]
+opt-level = 3
+lto = true

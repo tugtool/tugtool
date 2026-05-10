@@ -467,7 +467,9 @@ export default (defineConfig as any)(() => {
         // import chain (vite.config → postcss-tug-color → palette-engine),
         // so changes would trigger an auto-restart that crashes SharedWorker.
         // The paletteHotReload plugin handles it via fs.watchFile instead.
-        ignored: ["**/palette-engine.ts", "**/tugmark-wasm/pkg/**", "**/tugdiff-wasm/pkg/**"],
+        // The crates/*/pkg glob auto-covers every WASM crate's built
+        // artifacts; new crates need no edit here.
+        ignored: ["**/palette-engine.ts", "**/tugdeck/crates/*/pkg/**"],
       },
       hmr: {
         host: "127.0.0.1",
