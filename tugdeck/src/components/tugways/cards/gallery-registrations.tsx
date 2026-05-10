@@ -74,6 +74,7 @@ import { GalleryPromptEntry } from "./gallery-prompt-entry";
 import { GalleryTextEditor } from "./gallery-text-editor";
 import { GallerySplitPane } from "./gallery-split-pane";
 import { GalleryStatePreservation } from "./gallery-state-preservation";
+import { GalleryTugCue } from "./gallery-tug-cue";
 import "./gallery.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
@@ -316,6 +317,20 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.buttons,
+  });
+
+  // Phase 1 design exploration for `TugCue` — the upcoming public component
+  // for "soft inline banner that's also a click target." Six prototype
+  // variants; user vets before Phase 2 ships the production component.
+  // See roadmap/tide-assistant-rendering.md #step-10-6.
+  registerCard({
+    componentId: "gallery-tug-cue",
+    contentFactory: (_cardId) => <GalleryTugCue />,
+    defaultMeta: { title: "TugCue (design exploration)", icon: "Lightbulb", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
     category: CATEGORIES.buttons,
   });
 

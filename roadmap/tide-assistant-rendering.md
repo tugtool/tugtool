@@ -1721,9 +1721,9 @@ The split is deliberate: I don't ship the component until you've vetted the desi
 **Tasks:**
 
 *Phase 1 — Design gallery:*
-- [ ] Sketch 4–6 visual variants. Candidate axes: tone (default / accent / danger), density (compact / comfortable), border (none / hairline), text style (italic / roman), with/without leading icon (a `Hint` chevron or similar lucide glyph).
-- [ ] Build `gallery-tug-cue.tsx` with each variant labeled, mounted in a stack, click logging.
-- [ ] Register the gallery card and verify it shows up in the gallery deck.
+- [x] Sketch 4–6 visual variants. Candidate axes: tone (default / accent / danger), density (compact / comfortable), border (none / hairline), text style (italic / roman), with/without leading icon (a `Hint` chevron or similar lucide glyph).
+- [x] Build `gallery-tug-cue.tsx` with each variant labeled, mounted in a stack, click logging.
+- [x] Register the gallery card and verify it shows up in the gallery deck.
 - [ ] **Design gate: user vets variants and picks the default + which props/values to expose.**
 
 *Phase 2 — Production component (post-gate):*

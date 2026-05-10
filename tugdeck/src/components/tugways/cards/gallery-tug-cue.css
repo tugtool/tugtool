@@ -1,0 +1,305 @@
+/* gallery-tug-cue.css — prototype styles for the Phase 1 design gallery.
+ *
+ * Phase 1 is design exploration: the variants here are ad-hoc prototypes, NOT
+ * the final TugCue component. Once the user picks a default + the props/values
+ * to expose, Phase 2 lands `tug-cue.css` with a proper @tug-pairings table and
+ * the canonical `--tug-cue-*` token slot family.
+ *
+ * For now we use existing `--tug7-*` base tokens directly so each variant can
+ * be tweaked in isolation without polluting the public token surface.
+ *
+ * @module components/tugways/cards/gallery-tug-cue
+ */
+
+.cg-tug-cue-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cg-tug-cue-row {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  align-items: center;
+  gap: 12px;
+}
+
+.cg-tug-cue-row-label {
+  font-size: 11px;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-family: var(--tug-font-family-mono);
+}
+
+.cg-tug-cue-frame {
+  /* Mimic the host frame (FileBlock / DiffBlock) so the cue lives inside a
+   * card-like container, the way it will at the real call sites. */
+  border: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+  border-radius: 6px;
+  background: var(--tug7-surface-global-primary-normal-content-rest);
+  overflow: hidden;
+}
+
+/* ----------------------------------------------------------------------------
+ * Variant A — Soft Italic (today's `tugx-file-collapsed-hint` made clickable)
+ *   - italic body, muted text, no border, subtle bg lift on hover
+ * -------------------------------------------------------------------------- */
+
+.cg-tug-cue-a {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.03);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-family: inherit;
+  font-size: 11px;
+  font-style: italic;
+  text-align: center;
+  border: 0;
+  cursor: pointer;
+}
+.cg-tug-cue-a:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+.cg-tug-cue-a:focus-visible {
+  outline: 2px solid var(--tug7-element-global-border-normal-accent-rest);
+  outline-offset: -2px;
+}
+
+/* ----------------------------------------------------------------------------
+ * Variant B — Roman + hairline
+ *   - roman text, hairline top+bottom border, light bg
+ * -------------------------------------------------------------------------- */
+
+.cg-tug-cue-b {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.03);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-family: inherit;
+  font-size: 11px;
+  text-align: center;
+  border: 0;
+  border-top: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+  border-bottom: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+  cursor: pointer;
+}
+.cg-tug-cue-b:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+.cg-tug-cue-b:focus-visible {
+  outline: 2px solid var(--tug7-element-global-border-normal-accent-rest);
+  outline-offset: -2px;
+}
+
+/* ----------------------------------------------------------------------------
+ * Variant C — Leading icon, italic
+ *   - ChevronsUpDown icon, italic body, no border
+ * -------------------------------------------------------------------------- */
+
+.cg-tug-cue-c {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.03);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-family: inherit;
+  font-size: 11px;
+  font-style: italic;
+  border: 0;
+  cursor: pointer;
+}
+.cg-tug-cue-c:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+.cg-tug-cue-c:focus-visible {
+  outline: 2px solid var(--tug7-element-global-border-normal-accent-rest);
+  outline-offset: -2px;
+}
+.cg-tug-cue-c svg {
+  color: var(--tug7-element-global-icon-normal-muted-rest);
+  flex: 0 0 auto;
+}
+
+/* ----------------------------------------------------------------------------
+ * Variant D — Comfortable, dotted-underline-on-hover
+ *   - larger padding, roman, underline on hover (reads link-y)
+ * -------------------------------------------------------------------------- */
+
+.cg-tug-cue-d {
+  display: block;
+  width: 100%;
+  padding: 10px 16px;
+  background: transparent;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-family: inherit;
+  font-size: 12px;
+  text-align: center;
+  border: 0;
+  border-top: 1px solid var(--tug7-element-global-divider-normal-muted-rest);
+  cursor: pointer;
+}
+.cg-tug-cue-d:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+.cg-tug-cue-d:hover .cg-tug-cue-d-text {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.cg-tug-cue-d:focus-visible {
+  outline: 2px solid var(--tug7-element-global-border-normal-accent-rest);
+  outline-offset: -2px;
+}
+
+/* ----------------------------------------------------------------------------
+ * Variant E — Accent tint + Info icon
+ *   - subtle accent bg + leading Info icon + hairline; for "informational" cues
+ * -------------------------------------------------------------------------- */
+
+.cg-tug-cue-e {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(60, 110, 200, 0.06);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-family: inherit;
+  font-size: 11px;
+  border: 0;
+  border-top: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+  border-bottom: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+  cursor: pointer;
+}
+.cg-tug-cue-e:hover {
+  background: rgba(60, 110, 200, 0.10);
+}
+.cg-tug-cue-e:focus-visible {
+  outline: 2px solid var(--tug7-element-global-border-normal-accent-rest);
+  outline-offset: -2px;
+}
+.cg-tug-cue-e svg {
+  color: var(--tug7-element-global-fill-normal-accentCool-rest);
+  flex: 0 0 auto;
+}
+
+/* ----------------------------------------------------------------------------
+ * Variant F — Compact / ghost
+ *   - tightest density, no italic, very soft bg lift, focus-visible ring story
+ * -------------------------------------------------------------------------- */
+
+.cg-tug-cue-f {
+  display: block;
+  width: 100%;
+  padding: 4px 12px;
+  background: transparent;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  text-align: center;
+  border: 0;
+  cursor: pointer;
+}
+.cg-tug-cue-f:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+.cg-tug-cue-f:focus-visible {
+  outline: 2px solid var(--tug7-element-global-border-normal-accent-rest);
+  outline-offset: -2px;
+}
+
+/* ----------------------------------------------------------------------------
+ * Variant G — Combination pick (B + C + E)
+ *   - roman text (B)
+ *   - leading ChevronsUpDown icon (C)
+ *   - subtle accent bg + hairline borders + accentCool icon color (E)
+ * -------------------------------------------------------------------------- */
+
+.cg-tug-cue-g {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(60, 110, 200, 0.06);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-family: inherit;
+  font-size: 11px;
+  border: 0;
+  border-top: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+  border-bottom: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+  cursor: pointer;
+}
+.cg-tug-cue-g:hover {
+  background: rgba(60, 110, 200, 0.10);
+}
+.cg-tug-cue-g:focus-visible {
+  outline: 2px solid var(--tug7-element-global-border-normal-accent-rest);
+  outline-offset: -2px;
+}
+.cg-tug-cue-g svg {
+  color: var(--tug7-element-global-fill-normal-accentCool-rest);
+  flex: 0 0 auto;
+}
+
+/* ----------------------------------------------------------------------------
+ * Debug strip — shows the last fired click. Helps the user confirm each
+ * variant is wired up and keyboard activation (Enter / Space) works.
+ * -------------------------------------------------------------------------- */
+
+.cg-tug-cue-debug {
+  margin-top: 4px;
+  padding: 8px 12px;
+  border: 1px dashed var(--tug7-element-global-divider-normal-muted-rest);
+  border-radius: 4px;
+  font-family: var(--tug-font-family-mono);
+  font-size: 11px;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  background: var(--tug7-surface-global-primary-normal-inset-rest);
+  min-height: 36px;
+}
+.cg-tug-cue-debug-empty {
+  font-style: italic;
+  opacity: 0.6;
+}
+
+/* ----------------------------------------------------------------------------
+ * Real-host preview — drops the chosen variant into a fake FileBlock-like
+ * surface so the user sees it at its actual call site.
+ * -------------------------------------------------------------------------- */
+
+.cg-tug-cue-host {
+  display: block;
+  border: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+  border-radius: 6px;
+  background: var(--tug7-surface-global-primary-normal-content-rest);
+  overflow: hidden;
+}
+
+.cg-tug-cue-host-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--tug7-surface-global-primary-normal-inset-rest);
+  border-bottom: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+  font-family: var(--tug-font-family-mono);
+  font-size: 12px;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.cg-tug-cue-host-body-pre {
+  margin: 0;
+  padding: 8px 12px;
+  font-family: var(--tug-font-family-mono);
+  font-size: 12px;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  background: var(--tug7-surface-global-primary-normal-content-rest);
+  white-space: pre;
+}
