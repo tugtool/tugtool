@@ -374,15 +374,19 @@ export function dispatch(
 }
 
 /**
- * Read the plain-text `output` field from a `tool_result` payload.
- * Returns `undefined` when the result is null / absent / non-string.
+ * Read the plain-text output from a stored `ToolCallState.result`.
+ * Returns `undefined` when nothing readable is present.
  *
- * The `tool_result` payload's wire shape is `{ is_error, output,
- * tool_use_id }`; wrappers consume `output` as a fallback when the
- * matching `tool_use_structured` event hasn't arrived (older catalog
- * versions, drift, mid-stream).
+ * The reducer's `handleToolResult` stores `event.output` (the literal
+ * stdout string from the wire's `tool_result` event) directly into
+ * `ToolCallState.result`, so the live shape is a bare `string`. We
+ * also accept the wrapped `{ output: string }` shape for forward-
+ * compat with future reducer changes that might preserve the full
+ * `tool_result` payload, and for tests that historically constructed
+ * the wrapped form. Anything else collapses to `undefined`.
  */
 function extractTextOutput(result: unknown): string | undefined {
+  if (typeof result === "string") return result;
   if (result === null || typeof result !== "object") return undefined;
   const r = result as Record<string, unknown>;
   return typeof r.output === "string" ? r.output : undefined;

@@ -10,9 +10,12 @@
  *   - **Body:** `TerminalBlock` fed from
  *     `tool_use_structured.{stdout,stderr}` when present, otherwise
  *     falling back to the plain-text `tool_result.output`.
- *   - **Footer badges:** synthesized exit code (zero subtle / nonzero
- *     strong) + `interrupted` indicator when the tool result
- *     reports it.
+ *   - **Footer badges:** non-zero exit code (red), `interrupted`
+ *     indicator, "(no output)" hint for empty-success cases, and
+ *     `durationMs` when known. `exit 0` is intentionally suppressed
+ *     — a successful command reads more cleanly without it. The
+ *     footer chrome is hidden entirely when none of these would
+ *     render (the dominant `exit 0 + has output` case).
  *
  * Streaming behavior:
  *
@@ -207,18 +210,35 @@ export const BashToolBlock: React.FC<ToolWrapperProps> = ({
       </pre>
     ) : undefined;
 
-  const footerBadges = (
+  // Whether the footer would surface anything visible. Exit-zero is
+  // intentionally NOT a footer signal — a successful command without
+  // output is the dominant case and "exit 0" reads as noise.
+  // Failures (`exit N`), interrupts, the explicit "(no output)" hint,
+  // and durations are the only fields the footer carries.
+  const noBody =
+    (terminalData.stdout?.length ?? 0) === 0 &&
+    (terminalData.stderr?.length ?? 0) === 0 &&
+    status !== "streaming";
+  const showExitBadge =
+    terminalData.exitCode !== undefined &&
+    terminalData.exitCode !== 0 &&
+    terminalData.interrupted !== true;
+  const showInterrupted = terminalData.interrupted === true;
+  const showNoOutputHint =
+    noBody &&
+    terminalData.exitCode === 0 &&
+    terminalData.interrupted !== true;
+  const showDuration = durationMs !== undefined;
+  const hasFooterContent =
+    showExitBadge || showInterrupted || showNoOutputHint || showDuration;
+  const footerBadges = hasFooterContent ? (
     <BashFooterBadges
       exitCode={terminalData.exitCode}
       durationMs={durationMs}
-      interrupted={terminalData.interrupted === true}
-      noBody={
-        (terminalData.stdout?.length ?? 0) === 0 &&
-        (terminalData.stderr?.length ?? 0) === 0 &&
-        status !== "streaming"
-      }
+      interrupted={showInterrupted}
+      showNoOutputHint={showNoOutputHint}
     />
-  );
+  ) : undefined;
 
   return (
     <ToolWrapperChrome
@@ -234,7 +254,11 @@ export const BashToolBlock: React.FC<ToolWrapperProps> = ({
       {status === "streaming" ? (
         <StreamingPlaceholder />
       ) : (
-        <TerminalBlock data={bodyData} className="bash-tool-block-terminal" />
+        <TerminalBlock
+          data={bodyData}
+          embedded
+          className="bash-tool-block-terminal"
+        />
       )}
     </ToolWrapperChrome>
   );
@@ -250,14 +274,36 @@ interface BashFooterBadgesProps {
   exitCode?: number;
   durationMs?: number;
   interrupted: boolean;
-  noBody: boolean;
+  showNoOutputHint: boolean;
 }
 
+/**
+ * Compose the footer badge row. Three signals can land here, in
+ * priority order:
+ *
+ *   1. `interrupted` — user / system stopped the command mid-run.
+ *      Wins over the exit code (the underlying process was killed,
+ *      not exited).
+ *   2. Non-zero `exitCode` — the command failed. Painted with the
+ *      strong-red "nonzero" variant. `exit 0` is deliberately
+ *      suppressed: a successful command's success is implicit and
+ *      the badge reads as noise on every successful row.
+ *   3. `(no output)` hint — the command succeeded with no stdout /
+ *      stderr. Surfaced so the row doesn't read as "missing data"
+ *      when the command had nothing to print (e.g. `cd /tmp`).
+ *
+ * `durationMs` is appended on the right when known.
+ *
+ * The caller (`BashToolBlock`) is expected to pass `undefined` for
+ * `footerBadges` when none of these would render — that hides the
+ * footer chrome entirely so successful runs with output don't paint
+ * an empty bar.
+ */
 const BashFooterBadges: React.FC<BashFooterBadgesProps> = ({
   exitCode,
   durationMs,
   interrupted,
-  noBody,
+  showNoOutputHint,
 }) => {
   const elements: React.ReactNode[] = [];
   if (interrupted) {
@@ -270,22 +316,19 @@ const BashFooterBadges: React.FC<BashFooterBadgesProps> = ({
         interrupted
       </span>,
     );
-  } else if (exitCode !== undefined) {
-    const isZero = exitCode === 0;
+  } else if (exitCode !== undefined && exitCode !== 0) {
     elements.push(
       <span
         key="exit"
         data-slot="bash-tool-block-exit"
-        data-exit={isZero ? "zero" : "nonzero"}
-        className={`bash-tool-block-exit bash-tool-block-exit--${isZero ? "zero" : "nonzero"}`}
+        data-exit="nonzero"
+        className="bash-tool-block-exit bash-tool-block-exit--nonzero"
       >
         {`exit ${exitCode}`}
       </span>,
     );
   }
-  if (noBody && exitCode === 0 && !interrupted) {
-    // Bash succeeded with no output — surface a "(no output)" hint
-    // so the row doesn't read as missing data.
+  if (showNoOutputHint) {
     elements.push(
       <span
         key="no-output"

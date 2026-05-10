@@ -9,12 +9,13 @@
  *    `test-09-bash-auto-approved.jsonl` shape) — no test rig drives
  *    the JSONL replay end-to-end; the unit test asserts the
  *    rendering against the structured-result shape directly.
- *  - Footer: synthesizes `exit 0` (subtle) when `is_error` is
- *    false and `interrupted` is absent; `exit 1` (strong) when
- *    `is_error` is true; `interrupted` badge supersedes the exit
- *    badge when `structured_result.interrupted` is true.
- *  - Empty success path (`exit 0`, no stdout/stderr) renders a
- *    "(no output)" hint so the row doesn't read as missing data.
+ *  - Footer: success-with-output paints no footer (success is
+ *    implicit; `exit 0` would read as noise on every row); `exit N`
+ *    (strong) when `is_error` is true and the synthesized exit code
+ *    is non-zero; `interrupted` badge supersedes the exit badge when
+ *    `structured_result.interrupted` is true.
+ *  - Empty success path (no stdout/stderr) renders a "(no output)"
+ *    hint so the row doesn't read as missing data.
  *  - Streaming: status="streaming" hides the body in favor of the
  *    `<StreamingPlaceholder />` so the row reserves vertical
  *    space without flashing partial content.
@@ -206,18 +207,16 @@ describe("BashToolBlock — body composition (matches test-09-bash-auto-approved
 });
 
 describe("BashToolBlock — footer", () => {
-  test("success path: exit-zero subtle badge", () => {
+  test("success-with-output path: footer chrome hidden entirely (no badge, no empty bar)", () => {
     const { container } = render(<BashToolBlock {...makeProps()} />);
-    const footer = container.querySelector(
-      '[data-slot="tool-wrapper-footer"]',
-    ) as HTMLElement;
-    expect(footer).not.toBeNull();
-    const exit = footer.querySelector(
-      '[data-slot="bash-tool-block-exit"]',
-    ) as HTMLElement;
-    expect(exit.textContent).toBe("exit 0");
-    expect(exit.dataset.exit).toBe("zero");
-    expect(exit.classList.contains("bash-tool-block-exit--zero")).toBe(true);
+    // The dominant case — `echo hello` succeeded with stdout — paints
+    // no exit badge (success is implicit) and no empty footer bar.
+    expect(
+      container.querySelector('[data-slot="tool-wrapper-footer"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-slot="bash-tool-block-exit"]'),
+    ).toBeNull();
   });
 
   test("failure path: exit-nonzero strong badge", () => {

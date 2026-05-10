@@ -51,6 +51,19 @@
   line-height: var(--tugx-term-line-height);
 }
 
+/* Embedded variant — composed inside a host that already paints a
+ * container (e.g. `ToolWrapperChrome` body). Drop the standalone
+ * frame so the terminal text integrates flush with the host's
+ * surface; lines, copy button, ANSI palette, footer badges all
+ * stay unchanged. Reset values, not theme-tunable knobs.
+ */
+.tugx-term[data-embedded="true"] {
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
 /* Empty terminal still shows the footer when `interrupted` /
  * `exitCode` are set, so it isn't purely decorative — keep it
  * visible. Only hide when the empty state has zero footer fields.

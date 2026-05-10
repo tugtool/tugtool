@@ -123,6 +123,18 @@ export interface TerminalBlockProps {
    * per [L20].
    */
   className?: string;
+
+  /**
+   * "Embedded" mode — drop the terminal's own frame
+   * (background / border / radius / outer margin) so it integrates
+   * flush inside a host that already paints a container, e.g. a
+   * `ToolWrapperChrome` body region. The lines, copy button, footer
+   * badges and ANSI palette are unchanged. Default `false` —
+   * standalone usage (gallery, RenderInput-routed) keeps its frame.
+   *
+   * @default false
+   */
+  embedded?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -578,6 +590,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   streamingStore,
   streamingPath = DEFAULT_STREAMING_PATH,
   className,
+  embedded = false,
 }) => {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -639,6 +652,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
       ref={containerRef}
       data-slot={DATA_SLOT_ROOT}
       data-empty="true"
+      data-embedded={embedded ? "true" : undefined}
       className={
         className === undefined
           ? "tugx-term"
