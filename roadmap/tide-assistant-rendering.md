@@ -1675,6 +1675,215 @@ ThinkingBlock, PermissionDialog, QuestionDialog, CostChrome (with CostBadge sub-
 
 ---
 
+#### Step 10.6: `TugCue` — banner-shaped click target for body-kinds {#step-10-6}
+
+**Depends on:** none (foundation for #step-10-8)
+
+**Commit (after design gate):** `feat(tugways): add TugCue — banner-shaped inline click target`
+
+**References:** [L11], [L15], [L19], [L20], `tuglaws/component-authoring.md`, `tuglaws/responder-chain.md`, `roadmap/component-library-roadmap.md`
+
+**Why this step exists.** The body-kind layer (FileBlock, DiffBlock, and future siblings) repeatedly needs a "soft inline banner that is also a click target" — most visibly the `tugx-file-collapsed-hint` and `tugx-diff-collapsed-hint` panels that say things like *"1,230 lines folded — click to expand."* Today these are bare HTML `<button>` elements styled with `--tugx-<kind>-*` tokens; the same pattern recurs at `tugx-file-toggle`, `tugx-file-icon-btn`, `tugx-file-search-*`, `tugx-diff-toggle`, `tugx-diff-view-toggle`, `tugx-diff-hunk-toggle`. None of the existing public Tug components fit:
+
+- `TugPushButton` adds `text-transform: uppercase; letter-spacing: 0.06em` (a CTA look). Wrong tone for a soft hint, wrong shape for a full-width banner.
+- `TugIconButton` is icon-only and focus-refusing — wrong shape, wrong focus discipline.
+- `TugBanner` is an app-modal status/error strip with a scrim and `inert` blocker. Wrong layer.
+- `TugBulletin` is toast notifications via Sonner. Wrong layer.
+
+So we have a real hole. Step 10.8 ("click Expand to view does nothing") sits on top of this hole. Rather than paper over it with another bare `<button>`, this step introduces the missing primitive.
+
+**Decision: design-first, then implement.** Step 10.6 lands in two parts:
+
+  1. **Gallery card with design variants.** A new `tugdeck/src/components/tugways/cards/gallery-tug-cue.tsx` ships 4–6 visual variants of the component — variations across `tone` (default | accent | danger), `density` (compact | comfortable), border treatment (none | hairline), text style (italic | roman), and an optional leading icon. The card mounts in the gallery deck for visual inspection. **No production wiring** at this phase — pure design exploration.
+
+  2. **Production component.** Once you've picked the variant(s), the public component lands at `tugdeck/src/components/tugways/tug-cue.tsx` + `.css` with its token slot family and full a11y. The chosen variant becomes the default; non-chosen variants either become explicit `tone` / `density` props or get dropped.
+
+The split is deliberate: I don't ship the component until you've vetted the design.
+
+**Decision: chain-action + onClick, matching `TugButton`'s API.** Per [L11] every actionable control should be able to dispatch through the responder chain. The public API surface mirrors `TugButton`'s mutually-exclusive `onClick` / `action` props, plus the targeted-dispatch `target` prop, plus the standard `disabled` / `aria-*` passthrough. Future call sites that want chain-action (e.g. a TideThinkingBlock cue dispatching `revealThinking` to the card responder) get it for free.
+
+**Decision: own token slot is `--tug-cue-*` (not `--tugx-cue-*`).** TugCue is a public Tug component, not a body-kind alias. Per [L20] and [L17] it owns a component-tier alias namespace that resolves to base-tier `--tug7-*` tokens. Body-kinds that compose TugCue may pass `className` to scope-style at the host's surface.
+
+**Artifacts:**
+
+*Phase 1 — Design gallery:*
+- New: `tugdeck/src/components/tugways/cards/gallery-tug-cue.tsx` — a card that mounts 4–6 candidate variants of the component, each with its own click handler logging to a debug strip. Driven by ad-hoc prototype JSX rather than a finished component import so design iteration is fast.
+- Optionally: a small `.css` sidecar for the gallery card if the prototypes need ad-hoc layout.
+- Gallery registration in `tugdeck/src/components/tugways/cards/gallery-registrations.tsx`.
+
+*Phase 2 — Production component (after design gate):*
+- New: `tugdeck/src/components/tugways/tug-cue.tsx` + `.css`. Per [L19]: module docstring, exported props interface, `data-slot="tug-cue"`, `@tug-pairings` table in the CSS file.
+- Token slot family `--tug-cue-*` declared in `tugdeck/styles/themes/harmony.css` and `brio.css` (per-theme tuning).
+- Updated `tugdeck/src/components/tugways/cards/gallery-tug-cue.tsx` to import the finished component (not the prototype JSX) and exercise every prop / state combination.
+- New: `tugdeck/src/components/tugways/__tests__/tug-cue.test.tsx`.
+- Updated: `roadmap/component-library-roadmap.md` "New Component Ideas" — add TugCue entry, mark as implemented in the appropriate group.
+
+**Tasks:**
+
+*Phase 1 — Design gallery:*
+- [ ] Sketch 4–6 visual variants. Candidate axes: tone (default / accent / danger), density (compact / comfortable), border (none / hairline), text style (italic / roman), with/without leading icon (a `Hint` chevron or similar lucide glyph).
+- [ ] Build `gallery-tug-cue.tsx` with each variant labeled, mounted in a stack, click logging.
+- [ ] Register the gallery card and verify it shows up in the gallery deck.
+- [ ] **Design gate: user vets variants and picks the default + which props/values to expose.**
+
+*Phase 2 — Production component (post-gate):*
+- [ ] Author `tug-cue.tsx` per [L19]. Props interface includes: `children`, `onClick` xor `action`, `target` (when `action`), `icon?`, `tone?`, `density?`, `disabled?`, `aria-expanded?`, `className?`.
+- [ ] Author `tug-cue.css` with `@tug-pairings` table, `@tug-renders-on` annotations where needed, `--tug-cue-*` slot family used for every visible declaration. Hover, focus-visible, active, disabled per [L15].
+- [ ] Declare `--tug-cue-*` token slots in `harmony.css` and `brio.css`.
+- [ ] Update the gallery card to import the finished component; remove prototype JSX.
+- [ ] Tests: render markup, click → onClick, click → chain dispatch (when `action` set), keyboard activation (Enter / Space), focus-visible styling sanity check, `aria-expanded` passthrough.
+
+**Tests:**
+
+- [ ] `bun test src/components/tugways/__tests__/tug-cue.test.tsx` passes the full prop / state matrix.
+- [ ] `bunx tsc --noEmit` clean.
+- [ ] `bun run audit:tokens lint` clean (token-naming and pairings declared correctly).
+- [ ] Gallery card renders all variants without console warnings (HMR check).
+
+**Checkpoint:**
+
+- [ ] User signs off on Phase 1 design gallery before any Phase 2 work starts.
+- [ ] `cd tugdeck && bunx tsc --noEmit && bun test && bun run audit:tokens lint` all clean.
+- [ ] Gallery card visible in the gallery deck and exercises every prop.
+- [ ] Component-library-roadmap entry added.
+
+---
+
+#### Step 10.7: `BashToolBlock` detects unified-diff output and routes through `DiffBlock` {#step-10-7}
+
+**Depends on:** none (uses #step-6 BashToolBlock + #step-10 DiffBlock, both shipped)
+
+**Commit:** `feat(tide-rendering): BashToolBlock — render unified-diff output via DiffBlock`
+
+**References:** [D05], [D09], Spec S02, Spec S03
+
+**Why this step exists.** When bash runs `git show`, `git diff`, `git log -p`, or any pipeline that produces a unified diff, the output IS a diff — but it currently renders as plain terminal text because `BashToolBlock` unconditionally composes `TerminalBlock`. We have `DiffBlock` for exactly this content shape; the missing piece is the routing decision. Real user feedback from the live Tide session prompted this step: opening `git show <sha>` rendered as monospaced bash text, not as the rich diff view we just built.
+
+**Decision: heuristic-gate before parse.** Detection runs as a fast string scan on `textOutput` before any parsing. The gate matches when *any* of these markers appear at a reasonable position:
+
+  - `\ndiff --git ` — strongest signal; only `git diff` and friends emit this exact prefix.
+  - `\n@@ -<n>[,<n>] +<n>[,<n>] @@` — hunk-header marker; the JS parser already recognizes it.
+  - `^commit [0-9a-f]{7,40}\n` — `git show` and `git log -p` open with this; combined with `diff --git` below it, an excellent signal.
+
+When the gate matches, `BashToolBlock` parses the output via `parseUnifiedDiffText` (already shipped, JS-only, no WASM dependency) and feeds the resulting hunks into `DiffBlock` as `source: "hunks"`. When the parser returns zero hunks (rare, only if the markers were false positives), the wrapper falls back to `TerminalBlock` so nothing renders blank.
+
+Falling back to `TerminalBlock` on no-match is what makes this safe to enable by default: the worst case for benign bash output is "still renders as terminal" (no regression).
+
+**Decision: detection lives in `BashToolBlock`, not a shared helper.** Other tool wrappers may eventually want similar smart-pick routing, but generalizing it now would be premature. The function is small, well-tested, and self-contained — promote it to a shared helper when a second consumer needs it.
+
+**Artifacts:**
+
+- Updated: `tugdeck/src/components/tugways/cards/tool-wrappers/bash-tool-block.tsx` — adds `isUnifiedDiffOutput(text)` helper, conditional body-kind selection.
+- Updated: `tugdeck/src/components/tugways/cards/tool-wrappers/__tests__/bash-tool-block.test.tsx` — fixture coverage for `git show`, `git diff`, `git log -p`, plus benign bash output that contains a `@@` line in passing (must not mis-route).
+- Updated: `tugdeck/src/components/tugways/cards/gallery-registrations.tsx` (or the bash gallery card) — add a fixture demonstrating bash + diff routing.
+
+**Tasks:**
+
+- [ ] Implement `isUnifiedDiffOutput(text: string | undefined): boolean` in `bash-tool-block.tsx` (or a sibling util file). Heuristic scans only the first ~2 KB of output to keep the check O(1) for large outputs.
+- [ ] In the body-composition branch (where `BashToolBlock` currently always returns `<TerminalBlock>`), gate on `isUnifiedDiffOutput(textOutput) && parsed.length > 0`. Pass `<DiffBlock data={{ source: "hunks", hunks: parsed }}>` when both conditions hold.
+- [ ] When `cardId` is available to the bash wrapper, thread it through to `DiffBlock` for persistence.
+- [ ] When the bash output's first line is `commit <sha>`, use that as `data.filePath = null` (no path) and the commit-sha gets surfaced via the chrome header.
+- [ ] Gallery fixture: a bash card with stub output showing `git show <sha>` text routing through DiffBlock.
+
+**Tests:**
+
+- [ ] `isUnifiedDiffOutput` returns true for `git show`, `git diff`, `git log -p` fixture strings.
+- [ ] `isUnifiedDiffOutput` returns false for `git status`, `ls -la`, and bash output that happens to include `@@` as a literal character in some unrelated context (must not false-positive).
+- [ ] BashToolBlock with diff-shaped output renders `<DiffBlock>`, not `<TerminalBlock>`.
+- [ ] BashToolBlock with non-diff output continues to render `<TerminalBlock>`.
+- [ ] BashToolBlock with diff-shaped output but zero parsed hunks falls back to `<TerminalBlock>` (safety check).
+- [ ] BashToolBlock with `status === "streaming"` does NOT detect / route — streaming output is incomplete; defer to ready.
+
+**Checkpoint:**
+
+- [ ] `cd tugdeck && bunx tsc --noEmit && bun test` clean.
+- [ ] Manual: run `bash git show HEAD` against live tugcode and verify DiffBlock renders.
+
+---
+
+#### Step 10.8: Expand affordance for embedded FileBlock + DiffBlock {#step-10-8}
+
+**Depends on:** #step-10-6 (TugCue)
+
+**Commit:** `fix(tide-rendering): use TugCue for collapsed-hint expand affordance in FileBlock + DiffBlock`
+
+**References:** [L06], [L11], [L19]
+
+**Why this step exists.** `ReadToolBlock` (and any wrapper that wants to suppress its own body's chrome) composes `FileBlock` in `embedded` mode. That mode hides FileBlock's header — including the Expand/Collapse toggle button. When a file is over the collapse threshold (80 lines, per [#step-7](#step-7)), the user sees the `tugx-file-collapsed-hint` banner saying *"1,234 lines folded — click Expand to view,"* but the Expand button is hidden and the host's chrome doesn't add its own. The hint text is a lie; nothing happens when you click. Real user-reported regression from the live Tide session.
+
+`DiffBlock` ships an identical `tugx-diff-collapsed-hint` banner with the same dead-end shape; same fix.
+
+**Decision: the banner itself is the affordance.** Per the design that came out of #step-10-6, `TugCue` is the canonical primitive for "soft inline banner that's also a click target." Replace the current `<div className="tugx-file-collapsed-hint">` (and the diff sibling) with a `<TugCue>` whose `onClick` toggles collapsed state. The hint text changes from *"click Expand to view"* to *"click to expand"* — there's no separate Expand button anymore; the banner IS the button.
+
+**Artifacts:**
+
+- Updated: `tugdeck/src/components/tugways/body-kinds/file-block.tsx` — `.tugx-file-collapsed-hint` div becomes `<TugCue>`. Hint text updated.
+- Updated: `tugdeck/src/components/tugways/body-kinds/file-block.css` — drop the now-redundant cursor / hover styles; rely on TugCue's own appearance. Keep any layout-only declarations (margin, full-width).
+- Updated: `tugdeck/src/components/tugways/body-kinds/diff-block.tsx` — same treatment.
+- Updated: `tugdeck/src/components/tugways/body-kinds/diff-block.css` — same.
+- Updated: tests for both body kinds.
+
+**Tasks:**
+
+- [ ] Import `TugCue` into `file-block.tsx`. Replace the collapsed-hint `<div>` with `<TugCue aria-expanded={false} onClick={toggleCollapsed}>{N} lines folded — click to expand</TugCue>`.
+- [ ] Drop `.tugx-file-collapsed-hint` cursor / hover / focus-visible CSS rules in favor of TugCue's own styling. Keep any structural / layout declarations (full-width, vertical placement).
+- [ ] Repeat for DiffBlock's `tugx-diff-collapsed-hint`.
+- [ ] Update tests: the banner is now interactive — click activates the toggle.
+- [ ] Manual: open a >80-line Read result and confirm clicking the hint expands the file.
+
+**Tests:**
+
+- [ ] FileBlock test: with `collapsed={true}` and `embedded={true}`, clicking the collapsed-hint banner fires `onToggleCollapsed(false)`.
+- [ ] DiffBlock test: with `collapsed={true}` and `embedded={true}`, clicking the collapsed-hint banner fires `onToggleCollapsed(false)`.
+- [ ] Both body-kinds: the `aria-expanded="false"` attribute is present on the banner when collapsed.
+
+**Checkpoint:**
+
+- [ ] `cd tugdeck && bunx tsc --noEmit && bun test` clean.
+- [ ] Manual: open the live Tide session's Read tool result for a long file; click the banner; file expands.
+
+---
+
+#### Step 10.9: Copy button clears the scrollbar {#step-10-9}
+
+**Depends on:** none
+
+**Commit:** `fix(tide-rendering): position TerminalBlock Copy button clear of the scrollbar gutter`
+
+**References:** [L06], [L19], [L20]
+
+**Why this step exists.** `TerminalBlock` overlays a Copy button at `position: absolute; top: var(--tugx-term-copy-offset); right: var(--tugx-term-copy-offset)`. The scroller body inside has its own vertical (and sometimes horizontal) scrollbar at the right / bottom edge. With the current offset of `--tug-space-xs` (4px), the Copy button sits visually on top of the vertical scrollbar gutter — and worse, with both scrollbars showing, on top of the corner where they meet. Real user-reported visual bug from the live Tide session.
+
+**Decision: structural fix, not cosmetic offset.** Bumping `--tugx-term-copy-offset` to a larger value would clear typical scrollbars but pushes the button uncomfortably far into the content area on narrow terminals and still fails on platforms with wide scrollbars (Windows ~17px) or oversized accessibility scrollbars. The correct fix is structural: the Copy button moves into a non-scrolling overlay layer that sits above the scroller but inside the terminal frame, with `pointer-events: none` on the layer and `pointer-events: auto` on the button itself. The button's `right` offset is then relative to the *terminal*'s right edge minus a scrollbar-reservation gap.
+
+The cleanest implementation uses `scrollbar-gutter: stable` on the scroller (reserves scrollbar space in layout even when not active) plus a sibling overlay div for the button. The button always sits in the same x-position regardless of whether the scrollbar is visible.
+
+**Artifacts:**
+
+- Updated: `tugdeck/src/components/tugways/body-kinds/terminal-block.tsx` — add an overlay layer DOM structure; move the `buildCopyButton` append target.
+- Updated: `tugdeck/src/components/tugways/body-kinds/terminal-block.css` — `scrollbar-gutter: stable` on the scroller; new `.tugx-term-overlay` selector for the non-scrolling layer; updated copy-button positioning.
+- Tests / manual verification.
+
+**Tasks:**
+
+- [ ] Add a `.tugx-term-overlay` sibling of the scroller inside `.tugx-term`. Position absolute, full-size, `pointer-events: none`.
+- [ ] Move the Copy button DOM target from `.tugx-term` to `.tugx-term-overlay`. Set `pointer-events: auto` on the button so it's clickable.
+- [ ] Set `scrollbar-gutter: stable` on `.tugx-term-scroller` so the scrollbar always occupies layout space (no visual jump when content grows past the viewport).
+- [ ] Verify the button position on: short output (no scrollbars), tall output (v-scroll), wide output (h-scroll), tall + wide output (both scrollbars).
+- [ ] Verify the button doesn't intercept clicks meant for the scrollbar.
+
+**Tests:**
+
+- [ ] Markup test: TerminalBlock with long output renders `.tugx-term-overlay` containing the Copy button.
+- [ ] Markup test: clicking the Copy button still fires the clipboard write (no regression on the actual copy behavior).
+
+**Checkpoint:**
+
+- [ ] `cd tugdeck && bunx tsc --noEmit && bun test` clean.
+- [ ] Manual: scroll a tall terminal output; verify the Copy button stays in position and doesn't overlap the scrollbar.
+
+---
+
 #### Step 11: EditToolBlock wrapper {#step-11}
 
 **Depends on:** #step-1, #step-10
