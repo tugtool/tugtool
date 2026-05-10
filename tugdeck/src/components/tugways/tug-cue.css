@@ -1,0 +1,185 @@
+/* @tug-pairings {
+  --tugx-cue-fg            | --tugx-cue-bg | content
+  --tugx-cue-border        | --tugx-cue-bg | informational
+  --tugx-cue-icon-fg       | --tugx-cue-bg | informational
+  --tugx-cue-hover-overlay | --tugx-cue-bg | informational
+  --tugx-cue-focus-outline | --tugx-cue-bg | informational
+} */
+
+/**
+ * tug-cue.css — `TugCue` public component.
+ *
+ * Component-tier alias namespace per `tuglaws/token-naming.md`:
+ * `--tugx-cue-*` (matches the public-Tug-component convention used by
+ * TugAlert, TugBanner, TugPopover, TugBadge). Resolves to base-tier
+ * `--tug7-*` tokens in one hop per [L17].
+ *
+ * ## Roles
+ *
+ * The `role` prop maps to seven values that match the canonical role slot
+ * in `tuglaws/token-naming.md`. Each value selects a surface tint from the
+ * `--tug7-surface-tone-primary-normal-{role}-rest` family and a paired
+ * text + icon color:
+ *
+ *  - `[data-tug-cue-role="active"]`  → blue tint (default — variant G's pick)
+ *  - `[data-tug-cue-role="accent"]`  → orange tint
+ *  - `[data-tug-cue-role="agent"]`   → violet tint
+ *  - `[data-tug-cue-role="caution"]` → yellow tint
+ *  - `[data-tug-cue-role="danger"]`  → red tint + danger text/icon
+ *  - `[data-tug-cue-role="data"]`    → teal tint
+ *  - `[data-tug-cue-role="success"]` → green tint + success text/icon
+ *
+ * Each `[data-tug-cue-role="…"]` selector rebinds the `--tugx-cue-bg`,
+ * `--tugx-cue-fg`, and `--tugx-cue-icon-fg` slots. The base rules below
+ * never name a role-specific token directly — only the slot — so adding a
+ * new role is a single block here, no churn in the base rules.
+ *
+ * ## Density
+ *
+ *  - `[data-tug-cue-density="compact"]`      → `--tug-space-sm/-lg` padding
+ *  - `[data-tug-cue-density="comfortable"]`  → `--tug-space-md/-xl` padding
+ *
+ * ## Hover affordance
+ *
+ * The hover signal is a `box-shadow: inset` overlay rather than a bg swap
+ * so the tone surface (itself an alpha-blended tint) stays visible
+ * underneath, and a single overlay token works across all roles.
+ *
+ * Tuglaw cross-check:
+ *  - [L15] hover, focus-visible, disabled all defined
+ *  - [L17] component-tier aliases resolve to base-tier in one hop
+ *  - [L19] file pair; module docstring; @tug-pairings table; data-slot
+ *  - [L20] every visible declaration consumes a `--tugx-cue-*` token
+ *
+ * @module components/tugways/tug-cue
+ */
+
+/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ----
+ *
+ * Defaults below mirror role="active" so the OOTB shape is variant G.
+ * Per-role overrides further down rebind the same slots. */
+
+body {
+  --tugx-cue-bg:            var(--tug7-surface-tone-primary-normal-active-rest);
+  --tugx-cue-fg:            var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-cue-border:        var(--tug7-element-global-border-normal-muted-rest);
+  --tugx-cue-icon-fg:       var(--tug7-element-global-fill-normal-accentCool-rest);
+  --tugx-cue-hover-overlay: var(--tug7-surface-highlight-primary-normal-hover-rest);
+  --tugx-cue-focus-outline: var(--tug7-element-global-border-normal-accent-rest);
+
+  --tugx-cue-padding-compact:     var(--tug-space-sm) var(--tug-space-lg);
+  --tugx-cue-padding-comfortable: var(--tug-space-md) var(--tug-space-xl);
+
+  --tugx-cue-gap:        var(--tug-space-sm);
+  --tugx-cue-font-size:  var(--tug-font-size-2xs);
+  --tugx-cue-icon-size:  var(--tug-icon-size-xs);
+}
+
+/* ---- Base shape ---- */
+
+.tug-cue {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: var(--tugx-cue-gap);
+  /* @tug-renders-on: --tugx-cue-bg */
+  background: var(--tugx-cue-bg);
+  color: var(--tugx-cue-fg);
+  font-family: inherit;
+  font-size: var(--tugx-cue-font-size);
+  text-align: center;
+  border: 0;
+  border-top: 1px solid var(--tugx-cue-border);
+  border-bottom: 1px solid var(--tugx-cue-border);
+  cursor: pointer;
+}
+
+/* ---- Density variants ---- */
+
+.tug-cue[data-tug-cue-density="compact"] {
+  padding: var(--tugx-cue-padding-compact);
+}
+.tug-cue[data-tug-cue-density="comfortable"] {
+  padding: var(--tugx-cue-padding-comfortable);
+}
+
+/* ---- Role variants — rebind --tugx-cue-* slots per role ---- */
+
+.tug-cue[data-tug-cue-role="active"] {
+  --tugx-cue-bg:      var(--tug7-surface-tone-primary-normal-active-rest);
+  --tugx-cue-fg:      var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-cue-icon-fg: var(--tug7-element-global-fill-normal-accentCool-rest);
+}
+
+.tug-cue[data-tug-cue-role="accent"] {
+  --tugx-cue-bg:      var(--tug7-surface-tone-primary-normal-accent-rest);
+  --tugx-cue-fg:      var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-cue-icon-fg: var(--tug7-element-global-fill-normal-accent-rest);
+}
+
+.tug-cue[data-tug-cue-role="agent"] {
+  --tugx-cue-bg:      var(--tug7-surface-tone-primary-normal-agent-rest);
+  --tugx-cue-fg:      var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-cue-icon-fg: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.tug-cue[data-tug-cue-role="caution"] {
+  --tugx-cue-bg:      var(--tug7-surface-tone-primary-normal-caution-rest);
+  --tugx-cue-fg:      var(--tug7-element-global-text-normal-caution-rest);
+  --tugx-cue-icon-fg: var(--tug7-element-global-text-normal-caution-rest);
+}
+
+.tug-cue[data-tug-cue-role="danger"] {
+  --tugx-cue-bg:      var(--tug7-surface-tone-primary-normal-danger-rest);
+  --tugx-cue-fg:      var(--tug7-element-global-text-normal-danger-rest);
+  --tugx-cue-icon-fg: var(--tug7-element-global-text-normal-danger-rest);
+}
+
+.tug-cue[data-tug-cue-role="data"] {
+  --tugx-cue-bg:      var(--tug7-surface-tone-primary-normal-data-rest);
+  --tugx-cue-fg:      var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-cue-icon-fg: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.tug-cue[data-tug-cue-role="success"] {
+  --tugx-cue-bg:      var(--tug7-surface-tone-primary-normal-success-rest);
+  --tugx-cue-fg:      var(--tug7-element-global-text-normal-success-rest);
+  --tugx-cue-icon-fg: var(--tug7-element-global-text-normal-success-rest);
+}
+
+/* ---- Hover / focus / disabled per [L15] ---- */
+
+.tug-cue:hover:not(:disabled) {
+  /* @tug-renders-on: --tugx-cue-bg */
+  box-shadow: inset 0 0 0 9999px var(--tugx-cue-hover-overlay);
+}
+
+.tug-cue:focus-visible {
+  outline: 2px solid var(--tugx-cue-focus-outline);
+  outline-offset: -2px;
+}
+
+.tug-cue:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* ---- Icon slot ---- */
+
+.tug-cue-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tugx-cue-icon-size);
+  height: var(--tugx-cue-icon-size);
+  flex: 0 0 auto;
+  color: var(--tugx-cue-icon-fg);
+}
+
+/* ---- Label ---- */
+
+.tug-cue-label {
+  display: inline-block;
+  min-width: 0;
+}

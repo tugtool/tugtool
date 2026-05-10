@@ -1696,13 +1696,13 @@ So we have a real hole. Step 10.8 ("click Expand to view does nothing") sits on 
 
   1. **Gallery card with design variants.** A new `tugdeck/src/components/tugways/cards/gallery-tug-cue.tsx` ships 4–6 visual variants of the component — variations across `tone` (default | accent | danger), `density` (compact | comfortable), border treatment (none | hairline), text style (italic | roman), and an optional leading icon. The card mounts in the gallery deck for visual inspection. **No production wiring** at this phase — pure design exploration.
 
-  2. **Production component.** Once you've picked the variant(s), the public component lands at `tugdeck/src/components/tugways/tug-cue.tsx` + `.css` with its token slot family and full a11y. The chosen variant becomes the default; non-chosen variants either become explicit `tone` / `density` props or get dropped.
+  2. **Production component.** Once you've picked the variant(s), the public component lands at `tugdeck/src/components/tugways/tug-cue.tsx` + `.css` with its token slot family and full a11y. The chosen variant becomes the default; non-chosen variants either become explicit `role` / `density` props or get dropped. Note: per `tuglaws/token-naming.md` the canonical slot-5 term is `role` (not `tone`); the prop name follows.
 
 The split is deliberate: I don't ship the component until you've vetted the design.
 
 **Decision: chain-action + onClick, matching `TugButton`'s API.** Per [L11] every actionable control should be able to dispatch through the responder chain. The public API surface mirrors `TugButton`'s mutually-exclusive `onClick` / `action` props, plus the targeted-dispatch `target` prop, plus the standard `disabled` / `aria-*` passthrough. Future call sites that want chain-action (e.g. a TideThinkingBlock cue dispatching `revealThinking` to the card responder) get it for free.
 
-**Decision: own token slot is `--tug-cue-*` (not `--tugx-cue-*`).** TugCue is a public Tug component, not a body-kind alias. Per [L20] and [L17] it owns a component-tier alias namespace that resolves to base-tier `--tug7-*` tokens. Body-kinds that compose TugCue may pass `className` to scope-style at the host's surface.
+**Decision: own token slot is `--tugx-cue-*`.** Per `tuglaws/token-naming.md`, the `--tugx-*` prefix is the canonical namespace for component aliases — TugAlert, TugBanner, TugPopover, TugBadge all use `--tugx-<name>-*`. Reserved `--tug-*` is for global scale/dimension primitives (`--tug-space-*`, `--tug-radius-*`). TugCue follows the same convention: `--tugx-cue-*` resolves to base-tier `--tug7-*` tokens per [L17]. Body-kinds that compose TugCue may pass `className` to scope-style at the host's surface.
 
 **Artifacts:**
 
@@ -1713,7 +1713,7 @@ The split is deliberate: I don't ship the component until you've vetted the desi
 
 *Phase 2 — Production component (after design gate):*
 - New: `tugdeck/src/components/tugways/tug-cue.tsx` + `.css`. Per [L19]: module docstring, exported props interface, `data-slot="tug-cue"`, `@tug-pairings` table in the CSS file.
-- Token slot family `--tug-cue-*` declared in `tugdeck/styles/themes/harmony.css` and `brio.css` (per-theme tuning).
+- Token slot family `--tugx-cue-*` declared in the component's own `tug-cue.css` `body {}` block (matching the TugBanner / TugAlert / TugPopover convention); per-theme tuning flows through the `--tug7-*` base tokens those aliases resolve to.
 - Updated `tugdeck/src/components/tugways/cards/gallery-tug-cue.tsx` to import the finished component (not the prototype JSX) and exercise every prop / state combination.
 - New: `tugdeck/src/components/tugways/__tests__/tug-cue.test.tsx`.
 - Updated: `roadmap/component-library-roadmap.md` "New Component Ideas" — add TugCue entry, mark as implemented in the appropriate group.
@@ -1727,25 +1727,25 @@ The split is deliberate: I don't ship the component until you've vetted the desi
 - [ ] **Design gate: user vets variants and picks the default + which props/values to expose.**
 
 *Phase 2 — Production component (post-gate):*
-- [ ] Author `tug-cue.tsx` per [L19]. Props interface includes: `children`, `onClick` xor `action`, `target` (when `action`), `icon?`, `tone?`, `density?`, `disabled?`, `aria-expanded?`, `className?`.
-- [ ] Author `tug-cue.css` with `@tug-pairings` table, `@tug-renders-on` annotations where needed, `--tug-cue-*` slot family used for every visible declaration. Hover, focus-visible, active, disabled per [L15].
-- [ ] Declare `--tug-cue-*` token slots in `harmony.css` and `brio.css`.
-- [ ] Update the gallery card to import the finished component; remove prototype JSX.
-- [ ] Tests: render markup, click → onClick, click → chain dispatch (when `action` set), keyboard activation (Enter / Space), focus-visible styling sanity check, `aria-expanded` passthrough.
+- [x] Author `tug-cue.tsx` per [L19]. Props interface includes: `children`, `onClick` xor `action`, `target` (when `action`), `icon?`, `role?` (one of `active` | `accent` | `agent` | `caution` | `danger` | `data` | `success` — the seven `--tug7-surface-tone-primary-normal-{role}-rest` values from `tuglaws/token-naming.md`), `density?`, `disabled?`, `aria-expanded?`, `className?`.
+- [x] Author `tug-cue.css` with `@tug-pairings` table, `@tug-renders-on` annotations where needed, `--tugx-cue-*` slot family used for every visible declaration. Hover, focus-visible, active, disabled per [L15].
+- [x] Declare `--tugx-cue-*` token slots in `tug-cue.css` `body {}` block (per-theme variance via `--tug7-*` base tokens).
+- [x] Update the gallery card to import the finished component; remove prototype JSX.
+- [x] Tests: render markup, click → onClick, click → chain dispatch (when `action` set), keyboard activation (Enter / Space), focus-visible styling sanity check, `aria-expanded` passthrough.
 
 **Tests:**
 
-- [ ] `bun test src/components/tugways/__tests__/tug-cue.test.tsx` passes the full prop / state matrix.
-- [ ] `bunx tsc --noEmit` clean.
-- [ ] `bun run audit:tokens lint` clean (token-naming and pairings declared correctly).
-- [ ] Gallery card renders all variants without console warnings (HMR check).
+- [x] `bun test src/components/tugways/__tests__/tug-cue.test.tsx` passes the full prop / state matrix.
+- [x] `bunx tsc --noEmit` clean.
+- [x] `bun run audit:tokens lint` clean (token-naming and pairings declared correctly).
+- [x] Gallery card renders all variants without console warnings (HMR check).
 
 **Checkpoint:**
 
-- [ ] User signs off on Phase 1 design gallery before any Phase 2 work starts.
-- [ ] `cd tugdeck && bunx tsc --noEmit && bun test && bun run audit:tokens lint` all clean.
-- [ ] Gallery card visible in the gallery deck and exercises every prop.
-- [ ] Component-library-roadmap entry added.
+- [x] User signs off on Phase 1 design gallery before any Phase 2 work starts.
+- [x] `cd tugdeck && bunx tsc --noEmit && bun test && bun run audit:tokens lint` all clean.
+- [x] Gallery card visible in the gallery deck and exercises every prop.
+- [x] Component-library-roadmap entry added.
 
 ---
 

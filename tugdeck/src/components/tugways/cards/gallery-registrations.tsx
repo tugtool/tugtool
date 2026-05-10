@@ -327,7 +327,7 @@ export function registerGalleryCards(): void {
   registerCard({
     componentId: "gallery-tug-cue",
     contentFactory: (_cardId) => <GalleryTugCue />,
-    defaultMeta: { title: "TugCue (design exploration)", icon: "Lightbulb", closable: true },
+    defaultMeta: { title: "TugCue", icon: "Lightbulb", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

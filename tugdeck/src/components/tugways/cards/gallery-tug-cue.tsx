@@ -1,35 +1,20 @@
 /**
- * gallery-tug-cue.tsx — Phase 1 design exploration card for `TugCue`.
+ * gallery-tug-cue.tsx — `TugCue` Phase 2 production gallery card.
  *
- * `TugCue` (working name) is the new public component that fills a gap between
- * `TugPushButton` (CTA), `TugIconButton` (icon-only trailing), and `TugBanner`
- * (app-modal status strip): a soft, full-width *banner-shaped click target* —
- * the affordance that "1,230 lines folded — click to expand" should be.
+ * Phase 1 (now committed) shipped 7 prototype variants A–G inline so the
+ * user could vet visually. Variant G — *roman text · ChevronsUpDown leading
+ * icon · subtle accent bg · hairline borders top/bottom* — was selected. This
+ * file is now Phase 2: it imports the finished `<TugCue>` and exercises every
+ * prop / state combination the API supports.
  *
- * Phase 1 (this card) ships **ad-hoc prototype JSX**, not a finished component.
- * The six variants below sweep the design axes called out in the roadmap so
- * the user can vet visually:
- *
- *   A. Soft Italic       — today's `tugx-file-collapsed-hint` shape, made clickable
- *   B. Roman + hairline  — adds structural hairlines top/bottom
- *   C. Leading icon      — `ChevronsUpDown` glyph signals expandability
- *   D. Comfortable       — bigger padding, dotted-underline on hover (link-y)
- *   E. Accent + Info     — subtle accent bg + Info icon for informational cues
- *   F. Compact ghost     — tightest density, just a soft hover lift
- *
- * Each variant fires onClick into a shared debug strip so the user can confirm
- * pointer activation AND keyboard activation (Tab → focus-visible → Enter / Space).
- *
- * No responder-chain wiring at this phase: per [L11] the production component
- * lands with mutually-exclusive `onClick` / `action` props in Phase 2; here we
- * only need to vet shape and weight.
- *
- * Tuglaw cross-check:
- *  - [L19] this module is the .tsx half of the file-pair; the .css half is
- *    `gallery-tug-cue.css`. Module docstring; no `data-slot` because the
- *    prototypes are not the public component.
- *  - [L20] every visible declaration in the sidecar consumes a `--tug7-*` token
- *    or a documented inline rgba constant.
+ * Sections:
+ *  - Real-host preview — `<TugCue>` mounted inside a fake-FileBlock frame,
+ *    showing the cue as it'll appear at the live FileBlock / DiffBlock call
+ *    sites. A small control row drives `role`, `density`, `disabled`,
+ *    `aria-expanded`, and whether the leading icon is present.
+ *  - Role matrix — every role (active, accent, agent, caution, danger,
+ *    data, success) at compact density with leading icon.
+ *  - Disabled showcase — confirms clicks are blocked when `disabled`.
  *
  * **Authoritative reference:** `roadmap/tide-assistant-rendering.md` #step-10-6.
  *
@@ -37,22 +22,32 @@
  */
 
 import React, { useId, useState } from "react";
-import { ChevronsUpDown, Info } from "lucide-react";
+import { ChevronsUpDown } from "lucide-react";
+import { TugCue } from "@/components/tugways/tug-cue";
+import type { TugCueDensity, TugCueRole } from "@/components/tugways/tug-cue";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 import { TugBox } from "@/components/tugways/tug-box";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
+import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { TUG_ACTIONS } from "../action-vocabulary";
 import "./gallery-tug-cue.css";
 
-// ---------------------------------------------------------------------------
-// Debug strip
-// ---------------------------------------------------------------------------
+const ALL_ROLES: readonly TugCueRole[] = [
+  "active",
+  "accent",
+  "agent",
+  "caution",
+  "danger",
+  "data",
+  "success",
+];
+const ALL_DENSITIES: readonly TugCueDensity[] = ["compact", "comfortable"];
 
 interface DebugEntry {
-  variant: string;
+  source: string;
   at: number;
-  via: "pointer" | "keyboard";
 }
 
 function formatTime(t: number): string {
@@ -61,196 +56,24 @@ function formatTime(t: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Per-variant prototype JSX
-//
-// Each variant is a self-contained `<button>` (semantically correct — these
-// ARE click targets) plus an aria-expanded attribute to model the "collapsed
-// hint that expands content" call site. The production component will move
-// these into a single configurable surface; for Phase 1 they're inlined so
-// each variant's exact shape can be tuned without prop coupling.
+// HostPreview
 // ---------------------------------------------------------------------------
 
-interface VariantProps {
-  expanded: boolean;
-  label: string;
-  onActivate: (via: "pointer" | "keyboard") => void;
-}
-
-function VariantA({ expanded, label, onActivate }: VariantProps) {
-  return (
-    <button
-      type="button"
-      className="cg-tug-cue-a"
-      aria-expanded={expanded}
-      onClick={() => onActivate("pointer")}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onActivate("keyboard");
-        }
-      }}
-    >
-      {label}
-    </button>
-  );
-}
-
-function VariantB({ expanded, label, onActivate }: VariantProps) {
-  return (
-    <button
-      type="button"
-      className="cg-tug-cue-b"
-      aria-expanded={expanded}
-      onClick={() => onActivate("pointer")}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onActivate("keyboard");
-        }
-      }}
-    >
-      {label}
-    </button>
-  );
-}
-
-function VariantC({ expanded, label, onActivate }: VariantProps) {
-  return (
-    <button
-      type="button"
-      className="cg-tug-cue-c"
-      aria-expanded={expanded}
-      onClick={() => onActivate("pointer")}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onActivate("keyboard");
-        }
-      }}
-    >
-      <ChevronsUpDown size={12} aria-hidden />
-      <span>{label}</span>
-    </button>
-  );
-}
-
-function VariantD({ expanded, label, onActivate }: VariantProps) {
-  return (
-    <button
-      type="button"
-      className="cg-tug-cue-d"
-      aria-expanded={expanded}
-      onClick={() => onActivate("pointer")}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onActivate("keyboard");
-        }
-      }}
-    >
-      <span className="cg-tug-cue-d-text">{label}</span>
-    </button>
-  );
-}
-
-function VariantE({ expanded, label, onActivate }: VariantProps) {
-  return (
-    <button
-      type="button"
-      className="cg-tug-cue-e"
-      aria-expanded={expanded}
-      onClick={() => onActivate("pointer")}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onActivate("keyboard");
-        }
-      }}
-    >
-      <Info size={12} aria-hidden />
-      <span>{label}</span>
-    </button>
-  );
-}
-
-function VariantF({ expanded, label, onActivate }: VariantProps) {
-  return (
-    <button
-      type="button"
-      className="cg-tug-cue-f"
-      aria-expanded={expanded}
-      onClick={() => onActivate("pointer")}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onActivate("keyboard");
-        }
-      }}
-    >
-      {label}
-    </button>
-  );
-}
-
-function VariantG({ expanded, label, onActivate }: VariantProps) {
-  return (
-    <button
-      type="button"
-      className="cg-tug-cue-g"
-      aria-expanded={expanded}
-      onClick={() => onActivate("pointer")}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onActivate("keyboard");
-        }
-      }}
-    >
-      <ChevronsUpDown size={12} aria-hidden />
-      <span>{label}</span>
-    </button>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Variant catalog
-// ---------------------------------------------------------------------------
-
-interface VariantDef {
-  id: "A" | "B" | "C" | "D" | "E" | "F" | "G";
-  title: string;
-  blurb: string;
-  Component: React.ComponentType<VariantProps>;
-}
-
-const VARIANTS: readonly VariantDef[] = [
-  { id: "A", title: "A — Soft italic", blurb: "today's collapsed-hint shape, now clickable", Component: VariantA },
-  { id: "B", title: "B — Roman + hairline", blurb: "adds top/bottom hairlines for structure", Component: VariantB },
-  { id: "C", title: "C — Leading icon (italic)", blurb: "ChevronsUpDown glyph signals expandability", Component: VariantC },
-  { id: "D", title: "D — Comfortable (link-y)", blurb: "bigger padding, dotted-underline on hover", Component: VariantD },
-  { id: "E", title: "E — Accent + Info icon", blurb: "subtle accent bg for informational cues", Component: VariantE },
-  { id: "F", title: "F — Compact / ghost", blurb: "tightest density, ghosty hover lift", Component: VariantF },
-  { id: "G", title: "G — Combo (B + C + E)", blurb: "roman text · ChevronsUpDown leading · accent bg + hairlines", Component: VariantG },
-];
-
-// ---------------------------------------------------------------------------
-// Real-host preview helper
-// ---------------------------------------------------------------------------
-
-/**
- * Renders the focused variant inside a fake-FileBlock surface so the user can
- * judge how it reads at the actual call site (after a header, capping a
- * truncated body). When `expanded`, shows a few placeholder lines beneath
- * the cue to mimic an Expand-to-view interaction.
- */
+/** Mounts <TugCue> inside a fake-FileBlock frame. */
 function HostPreview({
-  Variant,
+  role,
+  density,
+  disabled,
   expanded,
+  withIcon,
   onActivate,
 }: {
-  Variant: React.ComponentType<VariantProps>;
+  role: TugCueRole;
+  density: TugCueDensity;
+  disabled: boolean;
   expanded: boolean;
-  onActivate: (via: "pointer" | "keyboard") => void;
+  withIcon: boolean;
+  onActivate: () => void;
 }) {
   const label = expanded
     ? "click to collapse"
@@ -274,7 +97,16 @@ function HostPreview({
  11
  12  // (… 1,230 more lines …)`}</pre>
       ) : null}
-      <Variant expanded={expanded} label={label} onActivate={onActivate} />
+      <TugCue
+        role={role}
+        density={density}
+        disabled={disabled}
+        aria-expanded={expanded}
+        icon={withIcon ? <ChevronsUpDown /> : undefined}
+        onClick={onActivate}
+      >
+        {label}
+      </TugCue>
     </div>
   );
 }
@@ -283,44 +115,46 @@ function HostPreview({
 // GalleryTugCue
 // ---------------------------------------------------------------------------
 
-/**
- * GalleryTugCue — Phase 1 design exploration card for the upcoming TugCue
- * component. Stacks 6 prototype variants, exposes a "focus" picker so the
- * Real-Host Preview at the top of the card mirrors the focused variant, and
- * logs every activation to a shared debug strip.
- */
 export function GalleryTugCue() {
   const [debug, setDebug] = useState<readonly DebugEntry[]>([]);
   const [hostExpanded, setHostExpanded] = useState(false);
-  const [focusedId, setFocusedId] = useState<VariantDef["id"]>("G");
-  const focusedDef = VARIANTS.find((v) => v.id === focusedId) ?? VARIANTS[0];
+  const [hostRole, setHostRole] = useState<TugCueRole>("active");
+  const [hostDensity, setHostDensity] = useState<TugCueDensity>("compact");
+  const [hostDisabled, setHostDisabled] = useState(false);
+  const [hostWithIcon, setHostWithIcon] = useState(true);
 
-  // Per-variant aria-expanded state — independent so users can compare
-  // the collapsed vs. expanded look of each variant in the stack.
-  const [expandedById, setExpandedById] = useState<Record<string, boolean>>({});
+  const [matrixExpandedById, setMatrixExpandedById] = useState<Record<string, boolean>>({});
 
-  const recordActivation = (variantId: string, via: "pointer" | "keyboard") => {
-    setDebug((prev) => [{ variant: variantId, at: Date.now(), via }, ...prev].slice(0, 8));
+  const record = (source: string) => {
+    setDebug((prev) => [{ source, at: Date.now() }, ...prev].slice(0, 8));
   };
 
-  const onActivateVariant = (variantId: string) => (via: "pointer" | "keyboard") => {
-    recordActivation(variantId, via);
-    setExpandedById((m) => ({ ...m, [variantId]: !m[variantId] }));
-  };
-
-  const onActivateHost = (via: "pointer" | "keyboard") => {
-    recordActivation(`host(${focusedId})`, via);
+  const onHostActivate = () => {
+    record("host-preview");
     setHostExpanded((v) => !v);
   };
 
-  // Responder-form for the small control row. Phase 1 only has one toggle
-  // (whether the host preview's body is visible), so this is a one-binding
-  // form — but using useResponderForm keeps the card consistent with the
-  // rest of the gallery and lets us add more controls later without refactor.
-  const hostExpandedId = useId();
+  const onMatrixActivate = (id: string) => () => {
+    record(`matrix:${id}`);
+    setMatrixExpandedById((m) => ({ ...m, [id]: !m[id] }));
+  };
+
+  // Responder-form for the host preview controls. Checkbox toggles bind to
+  // the toggle slot; the two pickers (role, density) bind to setValueString.
+  const expandedId = useId();
+  const disabledId = useId();
+  const withIconId = useId();
+  const roleId = useId();
+  const densityId = useId();
   const { ResponderScope, responderRef } = useResponderForm({
     toggle: {
-      [hostExpandedId]: setHostExpanded,
+      [expandedId]: setHostExpanded,
+      [disabledId]: setHostDisabled,
+      [withIconId]: setHostWithIcon,
+    },
+    setValueString: {
+      [roleId]: (v) => setHostRole(v as TugCueRole),
+      [densityId]: (v) => setHostDensity(v as TugCueDensity),
     },
   });
 
@@ -333,77 +167,81 @@ export function GalleryTugCue() {
       >
         {/* ---- Real-Host Preview ---- */}
         <div className="cg-section">
-          <TugLabel className="cg-section-title">
-            Real-host preview — focused variant at the call site
-          </TugLabel>
-          <TugBox variant="bordered" rounded="sm" style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+          <TugLabel className="cg-section-title">Real-host preview</TugLabel>
+          <TugBox variant="bordered" rounded="sm" style={{ display: "flex", gap: "16px", alignItems: "center", flexWrap: "wrap" }}>
             <div className="cg-control-group">
-              <TugLabel size="2xs" color="muted">Focused variant:</TugLabel>
-              {VARIANTS.map((v) => (
-                <button
-                  key={v.id}
-                  type="button"
-                  onClick={() => setFocusedId(v.id)}
-                  style={{
-                    padding: "2px 8px",
-                    fontSize: "11px",
-                    borderRadius: "4px",
-                    border: focusedId === v.id
-                      ? "1px solid var(--tug7-element-global-border-normal-accent-rest)"
-                      : "1px solid var(--tug7-element-global-border-normal-muted-rest)",
-                    background: focusedId === v.id
-                      ? "var(--tug7-surface-global-primary-normal-raised-rest)"
-                      : "transparent",
-                    color: "var(--tug7-element-global-text-normal-muted-rest)",
-                    cursor: "pointer",
-                  }}
-                >
-                  {v.id}
-                </button>
-              ))}
+              <TugLabel size="2xs" color="muted">Role</TugLabel>
+              <TugPopupButton
+                label={hostRole}
+                size="sm"
+                senderId={roleId}
+                items={ALL_ROLES.map((r) => ({
+                  action: TUG_ACTIONS.SET_VALUE,
+                  value: r,
+                  label: r,
+                }))}
+              />
             </div>
             <div className="cg-control-group">
-              <TugCheckbox
-                checked={hostExpanded}
-                senderId={hostExpandedId}
-                label="Expanded"
+              <TugLabel size="2xs" color="muted">Density</TugLabel>
+              <TugPopupButton
+                label={hostDensity}
                 size="sm"
+                senderId={densityId}
+                items={ALL_DENSITIES.map((d) => ({
+                  action: TUG_ACTIONS.SET_VALUE,
+                  value: d,
+                  label: d,
+                }))}
               />
+            </div>
+            <div className="cg-control-group">
+              <TugCheckbox checked={hostExpanded} senderId={expandedId} label="Expanded" size="sm" />
+            </div>
+            <div className="cg-control-group">
+              <TugCheckbox checked={hostDisabled} senderId={disabledId} label="Disabled" size="sm" />
+            </div>
+            <div className="cg-control-group">
+              <TugCheckbox checked={hostWithIcon} senderId={withIconId} label="Leading icon" size="sm" />
             </div>
           </TugBox>
           <div style={{ marginTop: "12px" }}>
             <HostPreview
-              Variant={focusedDef.Component}
+              role={hostRole}
+              density={hostDensity}
+              disabled={hostDisabled}
               expanded={hostExpanded}
-              onActivate={onActivateHost}
+              withIcon={hostWithIcon}
+              onActivate={onHostActivate}
             />
           </div>
         </div>
 
         <TugSeparator />
 
-        {/* ---- Variant Stack ---- */}
+        {/* ---- Role matrix ---- */}
         <div className="cg-section">
-          <TugLabel className="cg-section-title">Variants A–F (click each — Enter / Space also work)</TugLabel>
+          <TugLabel className="cg-section-title">Role matrix — all 7 roles at compact density</TugLabel>
           <div className="cg-tug-cue-stack">
-            {VARIANTS.map((v) => {
-              const expanded = !!expandedById[v.id];
-              const label = expanded
-                ? "click to collapse"
-                : "1,230 lines folded — click to expand";
+            {ALL_ROLES.map((role) => {
+              const id = `role-${role}`;
+              const expanded = !!matrixExpandedById[id];
               return (
-                <div key={v.id} className="cg-tug-cue-row">
-                  <div className="cg-tug-cue-row-label">{v.title}</div>
+                <div key={id} className="cg-tug-cue-row">
+                  <div className="cg-tug-cue-row-label">role={role}</div>
                   <div>
                     <div className="cg-tug-cue-frame">
-                      <v.Component
-                        expanded={expanded}
-                        label={label}
-                        onActivate={onActivateVariant(v.id)}
-                      />
-                    </div>
-                    <div style={{ fontSize: "10px", color: "var(--tug7-element-global-text-normal-muted-rest)", marginTop: "4px", opacity: 0.7 }}>
-                      {v.blurb}
+                      <TugCue
+                        role={role}
+                        density="compact"
+                        aria-expanded={expanded}
+                        icon={<ChevronsUpDown />}
+                        onClick={onMatrixActivate(id)}
+                      >
+                        {expanded
+                          ? "click to collapse"
+                          : `${role} cue — click to expand`}
+                      </TugCue>
                     </div>
                   </div>
                 </div>
@@ -414,19 +252,74 @@ export function GalleryTugCue() {
 
         <TugSeparator />
 
-        {/* ---- Debug strip ---- */}
+        {/* ---- Density matrix ---- */}
+        <div className="cg-section">
+          <TugLabel className="cg-section-title">Density matrix — active role × 2 densities × icon on/off</TugLabel>
+          <div className="cg-tug-cue-stack">
+            {ALL_DENSITIES.flatMap((density) =>
+              [true, false].map((withIcon) => {
+                const id = `density-${density}-${withIcon ? "icon" : "no-icon"}`;
+                const expanded = !!matrixExpandedById[id];
+                return (
+                  <div key={id} className="cg-tug-cue-row">
+                    <div className="cg-tug-cue-row-label">
+                      {density} · {withIcon ? "icon" : "no icon"}
+                    </div>
+                    <div>
+                      <div className="cg-tug-cue-frame">
+                        <TugCue
+                          role="active"
+                          density={density}
+                          aria-expanded={expanded}
+                          icon={withIcon ? <ChevronsUpDown /> : undefined}
+                          onClick={onMatrixActivate(id)}
+                        >
+                          {expanded
+                            ? "click to collapse"
+                            : "1,230 lines folded — click to expand"}
+                        </TugCue>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }),
+            )}
+          </div>
+        </div>
+
+        <TugSeparator />
+
+        {/* ---- Disabled showcase ---- */}
+        <div className="cg-section">
+          <TugLabel className="cg-section-title">Disabled state</TugLabel>
+          <div className="cg-tug-cue-frame">
+            <TugCue
+              role="active"
+              density="compact"
+              disabled
+              icon={<ChevronsUpDown />}
+              onClick={() => record("should-not-fire")}
+            >
+              disabled cue — clicks do not fire onClick
+            </TugCue>
+          </div>
+        </div>
+
+        <TugSeparator />
+
+        {/* ---- Activation log ---- */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">Activation log (latest 8)</TugLabel>
           <div className="cg-tug-cue-debug">
             {debug.length === 0 ? (
               <span className="cg-tug-cue-debug-empty">
-                no activations yet — click any variant or focus one and press Enter / Space
+                no activations yet — click any cue, or focus and press Enter / Space
               </span>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
                 {debug.map((e, i) => (
                   <span key={i}>
-                    {formatTime(e.at)} · variant {e.variant} · via {e.via}
+                    {formatTime(e.at)} · {e.source}
                   </span>
                 ))}
               </div>
