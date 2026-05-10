@@ -1551,23 +1551,127 @@ ThinkingBlock, PermissionDialog, QuestionDialog, CostChrome (with CostBadge sub-
 - `bun add diff-match-patch` for word-level intra-line
 
 **Tasks:**
-- [ ] Lazy-load `tugdiff-wasm` per [D10]; JS fallback (jsdiff) for first-paint
-- [ ] Inline view by default; side-by-side toggle stub in chrome (full toggle implementation deferred to [Roadmap](#roadmap))
-- [ ] When the side-by-side toggle ships, the inline-vs-side-by-side preference persists per-card via tugbank (`/api/defaults/tide/diff-view`); reload restores the user's choice
-- [ ] Hunk-by-hunk collapse
-- [ ] Word-level highlighting via `diff-match-patch`
-- [ ] Filename + change-counts header (e.g., `tide-card.tsx · +12 −3`)
-- [ ] Syntax highlight inside hunks per file extension (Shiki)
+- [x] Lazy-load `tugdiff-wasm` per [D10]; JS fallback (jsdiff) for first-paint (the JS-side `parseUnifiedDiffText` mirrors the Rust parser one-to-one and is the synchronous first-paint path for `unified` input — the rare `two-text` input shows a "Computing diff…" placeholder until the WASM engine resolves; jsdiff was not added as it would duplicate work the WASM crate already does)
+- [x] Inline view by default; side-by-side toggle stub in chrome (full toggle implementation deferred to [Roadmap](#roadmap))
+- [ ] When the side-by-side toggle ships, the inline-vs-side-by-side preference persists per-card via tugbank (`/api/defaults/tide/diff-view`); reload restores the user's choice — *closed by [#step-10-5](#step-10-5) Thread B*
+- [x] Hunk-by-hunk collapse
+- [x] Word-level highlighting via `diff-match-patch`
+- [x] Filename + change-counts header (e.g., `tide-card.tsx · +12 −3`)
+- [ ] Syntax highlight inside hunks per file extension (Shiki) — *closed by [#step-10-5](#step-10-5) Thread C, which composes Shiki with the word-level overlay via `render-line.ts`*
 
 **Tests:**
-- [ ] Two-text input produces correct hunks
-- [ ] Unified-diff input parses correctly
-- [ ] Hunk collapse works
-- [ ] Word-level highlight on a single-line change
-- [ ] Both themes verify
+- [x] Two-text input produces correct hunks (covered by stub-engine path and the Rust-side `two_text_diff_produces_correct_hunks_for_known_pair` in #step-9)
+- [x] Unified-diff input parses correctly
+- [x] Hunk collapse works
+- [x] Word-level highlight on a single-line change
+- [ ] Both themes verify (manual / browser-eyes verification — both `--tugx-diff-*` slots ship in `harmony.css` and `brio.css`)
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` (3423 tests pass; tsc clean)
+
+---
+
+#### Step 10.5: WASM packaging convention + DiffBlock follow-throughs {#step-10-5}
+
+**Depends on:** #step-9, #step-10
+
+**Commits (one per thread):**
+- Thread A: `chore(tugdeck/crates): collapse WASM crates into a sub-workspace + driver script`
+- Thread B: `feat(tide-rendering): DiffBlock side-by-side view + tugbank-persisted preference`
+- Thread C: `feat(tide-rendering): DiffBlock — Shiki syntax highlight composed with word-level overlay`
+
+**References:** [D05], [D06], [D09], [D10], (#new-crates), [`tuglaws/wasm-crates.md`](../tuglaws/wasm-crates.md)
+
+**Why this step exists.** Steps 9–10 shipped two WASM crates and a body kind, but three threads accumulated that need to close before #step-11 (EditToolBlock) lands on top of the current shape:
+
+1. **Build/packaging is ad-hoc.** The `Justfile` `wasm` recipe enumerates crates by name; the Vite watcher exclusion enumerates each `pkg/`; `pkg/.gitignore` is `**` (wasm-pack default), so every commit needs `git add -f`; per-crate `Cargo.lock` files live outside any workspace, so `cargo test -p <name>` from `tugrust/` fails. Each new WASM crate is five edits in five files. The pattern is "copy tugmark-wasm and pray" — that's not a convention.
+2. **The side-by-side toggle is a UI lie.** [#step-10](#step-10) shipped a disabled `<button>` with `title="coming soon"`. Tugbank persistence (`/api/defaults/tide/diff-view/<cardId>`) was deferred "with the toggle itself" — circular. This step ships both.
+3. **Shiki on diff hunks was deferred without a design.** The naive path (replace line `innerHTML` with Shiki HTML) wipes the word-level overlay. The right answer is to define a token stream and merge upstream of render — not to defer.
+
+**Decision: sub-workspace at `tugdeck/crates/Cargo.toml`.** Both WASM crates become members of a virtual workspace. One `Cargo.lock` at `tugdeck/crates/Cargo.lock`; per-crate locks deleted. `cargo test --workspace` and `cargo clippy --workspace -- -D warnings` from `tugdeck/crates/` cover everything. Per-crate `Cargo.toml`'s `[package]` sections stay; only the workspace declaration is centralized. This is the standard Rust pattern; the standalone-crate shape we shipped in Step 9 was the cargo-cult.
+
+**Decision: side-by-side view as a `viewMode` branch in `diff-block.tsx`.** One file, two layouts. The hunk model, word overlay, header chrome, and collapse state are shared; only the per-line layout differs (3-column inline vs. 2-column with paired before/after cells). Adds ~100 lines to the body kind; avoids duplicating the surrounding plumbing. Per-card persistence keys on `tide/diff-view/<cardId>` to match the convention used by other per-card prefs in the codebase.
+
+**Decision: Shiki + word-level merge emits double-classed spans.** `renderLine(text, syntaxTokens, wordSegments)` walks the line once, tracking the current syntax class and current word-level tag. It emits a new `<span>` whenever either changes. Spans that fall inside both a syntax run and a word-level segment carry both class names (`shiki-token-foo` AND `tugx-diff-word-add`); CSS specificity decides the visible color, but the DOM is honest about the nesting. Token count is bounded by `O(syntax-tokens + word-segments)` per line — no quadratic blowup.
+
+**Artifacts:**
+
+*Thread A — packaging:*
+- New: `tugdeck/crates/Cargo.toml` — virtual workspace; `members = ["tugmark-wasm", "tugdiff-wasm"]`.
+- New: `tugdeck/crates/Cargo.lock` — workspace lock (replaces per-crate locks).
+- New: `scripts/build-wasm.sh` — globs `tugdeck/crates/*/Cargo.toml`, runs `wasm-pack build --target web --release` on each, then writes `pkg/.gitignore` empty.
+- New: `tugdeck/src/lib/lazy/wasm-init.ts` — generic singleton-promise + reset-on-rejection helper.
+- Edits: `Justfile` `wasm` recipe shells to `scripts/build-wasm.sh` (drops per-crate enumeration).
+- Edits: `tugdeck/vite.config.ts` watcher exclusion → `**/tugdeck/crates/*/pkg/**`.
+- Edits: `tugdeck/src/lib/lazy/load-tugdiff-wasm.ts` shrinks to ~25 lines via `wasm-init.ts`.
+- Edits: `tuglaws/wasm-crates.md` — replace the per-crate checklist with the new sub-workspace shape.
+- Deletions: `tugdeck/crates/tugmark-wasm/Cargo.lock`, `tugdeck/crates/tugdiff-wasm/Cargo.lock`.
+
+*Thread B — side-by-side:*
+- Edits: `tugdeck/src/components/tugways/body-kinds/diff-block.tsx` — `viewMode` prop; side-by-side branch; toggle button no longer disabled.
+- Edits: `tugdeck/src/components/tugways/body-kinds/diff-block.css` — `[data-view-mode="side-by-side"]` selectors and the 2-column grid layout.
+- Edits: `tugdeck/styles/themes/harmony.css` and `brio.css` — add `--tugx-diff-sbs-*` tokens (column gap, paired-row backgrounds, blank-cell tint).
+- Edits: `tugdeck/src/components/tugways/body-kinds/__tests__/diff-block.test.tsx` — coverage for the new mode + persistence.
+- New (or edits to existing): `tugdeck/src/lib/diff/diff-view-pref.ts` — read/write helpers around `tugbank-client` for `tide/diff-view/<cardId>`.
+
+*Thread C — Shiki + word-level merge:*
+- New: `tugdeck/src/lib/diff/render-line.ts` — pure `renderLine(text, syntaxTokens, wordSegments) → ReactNode[]`.
+- New: `tugdeck/src/lib/diff/__tests__/render-line.test.ts` — golden fixtures.
+- New: `tugdeck/src/lib/diff/syntax-tokens-from-shiki.ts` — parses Shiki per-line HTML into `{start, end, className}[]`.
+- Edits: `tugdeck/src/components/tugways/body-kinds/diff-block.tsx` — wires `renderLine` into the line-render path; lazy-loads Shiki when `data.filePath` has a known extension.
+- Edits: `tugdeck/src/lib/diff/parse-unified-diff.ts` — enrich `WordDiffSegment` with `[start, end]` ranges (additive, non-breaking).
+
+**Tasks:**
+
+*Thread A — packaging:*
+- [ ] Author `tugdeck/crates/Cargo.toml` virtual workspace; verify `cd tugdeck/crates && cargo build` builds both crates and produces a single `Cargo.lock`.
+- [ ] Delete the per-crate `Cargo.lock` files; commit the workspace lock.
+- [ ] Write `scripts/build-wasm.sh` (Bash, `set -euo pipefail`); test it idempotently against both crates and observe `pkg/` contents.
+- [ ] Update `Justfile` `wasm` recipe to call the script; verify `just wasm` still builds both crates.
+- [ ] Update `tugdeck/vite.config.ts` watcher exclusion glob; smoke-test `bun run dev` doesn't churn on `pkg/` writes.
+- [ ] Build `tugdeck/src/lib/lazy/wasm-init.ts` (the helper); refactor `load-tugdiff-wasm.ts` to use it.
+- [ ] Rewrite `tuglaws/wasm-crates.md` to describe the sub-workspace, the build script, and the loader convention. Remove the "checklist for adding a new crate" 10-step list; replace with the 3-step new shape.
+
+*Thread B — side-by-side + persistence:*
+- [ ] Add `viewMode: "inline" | "side-by-side"` prop to `DiffBlock`; default to whatever `diff-view-pref.ts` returns (or `"inline"` when no pref set).
+- [ ] Implement the side-by-side render branch in `diff-block.tsx`. Layout: parent grid `grid-template-columns: 1fr 1fr`. Each pair (remove + add) renders two cells side-by-side; pure removes leave the right cell blank with a tint; pure adds leave the left cell blank with a tint; context lines render in both cells. Word-level overlay applies inside both cells of a paired row.
+- [ ] Re-enable the toggle button. Bind to local `viewMode` state.
+- [ ] Wire `tide/diff-view/<cardId>` reads/writes through `tugbank-client`. Read on mount via `useLayoutEffect` + `useState` seeded from the synchronous cache (per [L02]/[L03]); write on toggle.
+- [ ] Add `--tugx-diff-sbs-*` tokens to harmony and brio.
+
+*Thread C — Shiki merge:*
+- [ ] Enrich `WordDiffSegment` to carry `[start, end]` text ranges (additive). Update `wordLevelDiffSync` to attach them.
+- [ ] Implement `syntax-tokens-from-shiki.ts`: takes Shiki's per-line HTML output and returns `{start, end, className}[]`.
+- [ ] Implement `render-line.ts`: pure function over (text, syntaxTokens, wordSegments) emitting a flat `ReactNode[]` of `<span>`s. Single-pass walk; emit a span on every (syntax-class, word-tag) change.
+- [ ] Wire `renderLine` into `DiffBlock`. Lazy-load Shiki on first paint when `data.filePath` has an extension in the existing `EXT_TO_LANG` map (reuse `code-block-utils.ts`'s singleton).
+- [ ] Verify the inline-and-side-by-side modes both render correctly with Shiki on; verify graceful degradation when Shiki fails to load (line content falls back to plain text + word overlay).
+
+**Tests:**
+
+*Thread A:*
+- [ ] `cd tugdeck/crates && cargo test --workspace` passes (both crates' suites, ≥ 30 tests total — 15 from each).
+- [ ] `cd tugdeck/crates && cargo clippy --workspace --all-targets -- -D warnings` clean.
+- [ ] `just wasm` produces fresh `pkg/` for both crates; `git status` shows clean diffs (no `git add -f` needed).
+- [ ] `bun test` continues to pass after the loader refactor (no behavior change).
+
+*Thread B:*
+- [ ] `viewMode` prop respected on initial render (data-view-mode attribute, layout columns).
+- [ ] Toggle button click flips `viewMode` and the rendered layout.
+- [ ] Tugbank read on mount: a stub `tugbank-client` returning `"side-by-side"` makes the body mount in side-by-side mode without a flash of inline.
+- [ ] Tugbank write on toggle: clicking the toggle issues a single PUT to `tide/diff-view/<cardId>` with the new value.
+- [ ] Side-by-side: paired remove+add lines align across columns; pure remove leaves right cell blank; pure add leaves left cell blank.
+
+*Thread C:*
+- [ ] `render-line.ts` golden fixtures: typescript identifier change, bash variable change, multi-token word change spanning syntax boundaries — each exercises double-classed spans.
+- [ ] `syntax-tokens-from-shiki.ts` round-trip: a Shiki-highlighted line parses into character ranges that, when re-applied, reproduce the visible classes.
+- [ ] Component test: mounting DiffBlock with `data.filePath = "foo.ts"` lazy-loads Shiki and produces double-classed spans on a paired add line.
+- [ ] Graceful degradation: when the Shiki import rejects, line content renders with word overlay only (no exception, no missing content).
+
+**Checkpoint:**
+- [ ] `cd tugdeck/crates && cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings` clean.
+- [ ] `just wasm && git status` shows only the expected diffs (no auto-ignored `pkg/` content).
+- [ ] `cd tugdeck && bunx tsc --noEmit && bun test` clean.
+- [ ] Manual: open a Tide card with a diff in both inline and side-by-side modes; toggle persists across reload (HMR is fine — the persistence is what we're testing).
 
 ---
 

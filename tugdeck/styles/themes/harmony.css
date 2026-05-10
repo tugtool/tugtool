@@ -1246,4 +1246,100 @@ body {
   --tugx-file-collapsed-bg: rgba(0, 0, 0, 0.03);
   --tugx-file-collapsed-color: var(--tug7-element-global-text-normal-muted-rest);
   --tugx-file-collapsed-size: var(--tug-font-size-2xs);
+
+  /* ---- DiffBlock body kind (--tugx-diff-*) per Table T07 ----
+   * Inline unified-diff renderer with hunk collapse and word-level
+   * intra-line highlighting. Harmony's red/green pair is muted to
+   * keep the rest of the page readable; mark-active overlays are
+   * the saturated variant.
+   */
+  --tugx-diff-bg: rgba(0, 0, 0, 0.02);
+  --tugx-diff-border: rgba(0, 0, 0, 0.10);
+  --tugx-diff-radius: 6px;
+  --tugx-diff-margin: var(--tug-space-md) 0;
+  --tugx-diff-font: var(--tug-font-family-mono);
+  --tugx-diff-font-size: var(--tug-font-size-sm);
+  --tugx-diff-line-height: 1.55;
+  --tugx-diff-text-color: var(--tug7-element-global-text-normal-default-rest);
+
+  /* Header */
+  --tugx-diff-header-padding: var(--tug-space-xs) var(--tug-space-md);
+  --tugx-diff-header-gap: var(--tug-space-sm);
+  --tugx-diff-header-bg: rgba(0, 0, 0, 0.04);
+  --tugx-diff-header-border: rgba(0, 0, 0, 0.06);
+  --tugx-diff-header-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-diff-header-size: var(--tug-font-size-2xs);
+  --tugx-diff-header-font: var(--tug-font-family-base);
+  --tugx-diff-path-color: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-diff-path-weight: 600;
+
+  /* Stats badge (+12 -3) */
+  --tugx-diff-stats-add-color: rgba(40, 130, 60, 0.95);
+  --tugx-diff-stats-remove-color: rgba(180, 50, 50, 0.95);
+  --tugx-diff-stats-size: var(--tug-font-size-2xs);
+  --tugx-diff-stats-font: var(--tug-font-family-mono);
+
+  /* View-mode toggle (inline ↔ side-by-side; stub for now) */
+  --tugx-diff-view-padding: var(--tug-space-2xs) var(--tug-space-sm);
+  --tugx-diff-view-border: rgba(0, 0, 0, 0.12);
+  --tugx-diff-view-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-diff-view-color-hover: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-diff-view-bg-hover: rgba(0, 0, 0, 0.05);
+  --tugx-diff-view-radius: 4px;
+  --tugx-diff-view-size: var(--tug-font-size-2xs);
+
+  /* Collapse toggle */
+  --tugx-diff-toggle-padding: var(--tug-space-2xs) var(--tug-space-sm);
+  --tugx-diff-toggle-border: rgba(0, 0, 0, 0.12);
+  --tugx-diff-toggle-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-diff-toggle-color-hover: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-diff-toggle-bg-hover: rgba(0, 0, 0, 0.05);
+  --tugx-diff-toggle-radius: 4px;
+  --tugx-diff-toggle-size: var(--tug-font-size-2xs);
+
+  /* Hunk header band (@@ -1,5 +1,8 @@) */
+  --tugx-diff-hunk-header-padding: var(--tug-space-2xs) var(--tug-space-md);
+  --tugx-diff-hunk-header-bg: rgba(0, 0, 0, 0.03);
+  --tugx-diff-hunk-header-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-diff-hunk-header-size: var(--tug-font-size-3xs);
+  --tugx-diff-hunk-header-font: var(--tug-font-family-mono);
+  --tugx-diff-hunk-divider: rgba(0, 0, 0, 0.06);
+
+  /* Body rows */
+  --tugx-diff-rows-padding: var(--tug-space-2xs) 0;
+  --tugx-diff-gutter-width: 3em;
+  --tugx-diff-gutter-padding-x: var(--tug-space-xs);
+  --tugx-diff-gutter-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-diff-marker-width: 1.25em;
+  --tugx-diff-marker-padding-x: var(--tug-space-2xs);
+  --tugx-diff-content-padding-x: var(--tug-space-sm);
+
+  /* Line backgrounds */
+  --tugx-diff-line-add-bg: rgba(40, 200, 100, 0.10);
+  --tugx-diff-line-add-color: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-diff-line-add-marker-color: rgba(40, 130, 60, 0.95);
+  --tugx-diff-line-remove-bg: rgba(220, 60, 60, 0.10);
+  --tugx-diff-line-remove-color: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-diff-line-remove-marker-color: rgba(180, 50, 50, 0.95);
+  --tugx-diff-line-context-bg: transparent;
+  --tugx-diff-line-context-color: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-diff-line-context-marker-color: var(--tug7-element-global-text-normal-muted-rest);
+
+  /* Word-level intra-line highlight */
+  --tugx-diff-word-add-bg: rgba(40, 200, 100, 0.32);
+  --tugx-diff-word-add-color: rgba(20, 100, 40, 1);
+  --tugx-diff-word-remove-bg: rgba(220, 60, 60, 0.32);
+  --tugx-diff-word-remove-color: rgba(140, 30, 30, 1);
+  --tugx-diff-word-radius: 2px;
+
+  /* Collapsed-hunk hint */
+  --tugx-diff-collapsed-padding: var(--tug-space-2xs) var(--tug-space-md);
+  --tugx-diff-collapsed-bg: rgba(0, 0, 0, 0.03);
+  --tugx-diff-collapsed-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-diff-collapsed-size: var(--tug-font-size-2xs);
+
+  /* Async-loading placeholder */
+  --tugx-diff-loading-padding: var(--tug-space-md);
+  --tugx-diff-loading-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-diff-loading-size: var(--tug-font-size-2xs);
 }

@@ -1,0 +1,287 @@
+/* @tug-pairings:
+   - --tugx-diff-bg / --tugx-diff-text-color
+   - --tugx-diff-header-bg / --tugx-diff-header-color
+   - --tugx-diff-line-add-bg / --tugx-diff-line-add-marker-color
+   - --tugx-diff-line-remove-bg / --tugx-diff-line-remove-marker-color
+   - --tugx-diff-word-add-bg / --tugx-diff-word-add-color
+   - --tugx-diff-word-remove-bg / --tugx-diff-word-remove-color
+   `DiffBlock` paints a code-surface frame with a header (path + stats),
+   one band per hunk, and three line classes (context, add, remove)
+   inside each hunk's body. The token slot family is `--tugx-diff-*`
+   per [Table T07].
+*/
+
+/**
+ * diff-block.css — `DiffBlock` body-kind.
+ *
+ * Three concentric layers:
+ *  - The frame: outer card with a header and a stack of hunk bands.
+ *  - Each hunk: own header (the `@@` line) + a body of line rows.
+ *  - Each line row: 3-column grid of (before-lineno, after-lineno,
+ *    marker, content). Background tints the entire row; word-level
+ *    highlight overlays inside the content cell as `<ins>` / `<del>`
+ *    spans.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] hunk collapse and word-level swap-in are DOM-imperative
+ *    where required; React state holds only logical collapsed-set
+ *    and view-mode flags.
+ *  - [L19] file pair, module docstring, `data-slot="diff-body"`.
+ *  - [L20] every visible declaration consumes a `--tugx-diff-*` token.
+ */
+
+.tugx-diff {
+  position: relative;
+  display: block;
+  margin: var(--tugx-diff-margin);
+  background: var(--tugx-diff-bg);
+  border: 1px solid var(--tugx-diff-border);
+  border-radius: var(--tugx-diff-radius);
+  overflow: hidden;
+  color: var(--tugx-diff-text-color);
+  font-family: var(--tugx-diff-font);
+  font-size: var(--tugx-diff-font-size);
+  line-height: var(--tugx-diff-line-height);
+}
+
+/* Embedded variant — composed inside a host that already paints a
+ * container and a header (e.g. `ToolWrapperChrome` body region in a
+ * future `EditToolBlock`). Drop the standalone frame so the content
+ * sits flush.
+ */
+.tugx-diff[data-embedded="true"] {
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+/* ---------- Header ---------- */
+
+.tugx-diff-header {
+  display: flex;
+  align-items: center;
+  gap: var(--tugx-diff-header-gap);
+  padding: var(--tugx-diff-header-padding);
+  background: var(--tugx-diff-header-bg);
+  border-bottom: 1px solid var(--tugx-diff-header-border);
+  color: var(--tugx-diff-header-color);
+  font-family: var(--tugx-diff-header-font);
+  font-size: var(--tugx-diff-header-size);
+}
+
+.tugx-diff-path {
+  font-weight: var(--tugx-diff-path-weight);
+  color: var(--tugx-diff-path-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tugx-diff-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font-family: var(--tugx-diff-stats-font);
+  font-size: var(--tugx-diff-stats-size);
+}
+
+.tugx-diff-stats-add {
+  color: var(--tugx-diff-stats-add-color);
+}
+
+.tugx-diff-stats-remove {
+  color: var(--tugx-diff-stats-remove-color);
+}
+
+.tugx-diff-spacer {
+  flex: 1 1 auto;
+}
+
+.tugx-diff-view-toggle {
+  appearance: none;
+  border: 1px solid var(--tugx-diff-view-border);
+  background: transparent;
+  color: var(--tugx-diff-view-color);
+  padding: var(--tugx-diff-view-padding);
+  border-radius: var(--tugx-diff-view-radius);
+  font: inherit;
+  font-size: var(--tugx-diff-view-size);
+  cursor: pointer;
+}
+
+.tugx-diff-view-toggle:hover:not([disabled]) {
+  color: var(--tugx-diff-view-color-hover);
+  background: var(--tugx-diff-view-bg-hover);
+}
+
+.tugx-diff-view-toggle[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tugx-diff-toggle {
+  appearance: none;
+  border: 1px solid var(--tugx-diff-toggle-border);
+  background: transparent;
+  color: var(--tugx-diff-toggle-color);
+  padding: var(--tugx-diff-toggle-padding);
+  border-radius: var(--tugx-diff-toggle-radius);
+  font: inherit;
+  font-size: var(--tugx-diff-toggle-size);
+  cursor: pointer;
+}
+
+.tugx-diff-toggle:hover {
+  color: var(--tugx-diff-toggle-color-hover);
+  background: var(--tugx-diff-toggle-bg-hover);
+}
+
+/* ---------- Hunks ---------- */
+
+.tugx-diff-hunks {
+  display: block;
+}
+
+.tugx-diff-hunk {
+  border-bottom: 1px solid var(--tugx-diff-hunk-divider);
+}
+
+.tugx-diff-hunk:last-child {
+  border-bottom: 0;
+}
+
+.tugx-diff-hunk-header {
+  display: flex;
+  align-items: center;
+  gap: var(--tugx-diff-header-gap);
+  padding: var(--tugx-diff-hunk-header-padding);
+  background: var(--tugx-diff-hunk-header-bg);
+  color: var(--tugx-diff-hunk-header-color);
+  font-family: var(--tugx-diff-hunk-header-font);
+  font-size: var(--tugx-diff-hunk-header-size);
+  cursor: pointer;
+  user-select: none;
+}
+
+.tugx-diff-hunk-header-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tugx-diff-hunk-toggle {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.tugx-diff-hunk[data-collapsed="true"] .tugx-diff-hunk-rows {
+  display: none;
+}
+
+.tugx-diff-hunk-rows {
+  display: block;
+  padding: var(--tugx-diff-rows-padding);
+}
+
+/* ---------- Lines ---------- */
+
+.tugx-diff-line {
+  display: grid;
+  grid-template-columns:
+    var(--tugx-diff-gutter-width)
+    var(--tugx-diff-gutter-width)
+    var(--tugx-diff-marker-width)
+    1fr;
+  align-items: baseline;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.tugx-diff-line[data-kind="context"] {
+  background: var(--tugx-diff-line-context-bg);
+  color: var(--tugx-diff-line-context-color);
+}
+
+.tugx-diff-line[data-kind="add"] {
+  background: var(--tugx-diff-line-add-bg);
+  color: var(--tugx-diff-line-add-color);
+}
+
+.tugx-diff-line[data-kind="remove"] {
+  background: var(--tugx-diff-line-remove-bg);
+  color: var(--tugx-diff-line-remove-color);
+}
+
+.tugx-diff-gutter-before,
+.tugx-diff-gutter-after {
+  text-align: right;
+  padding: 0 var(--tugx-diff-gutter-padding-x);
+  color: var(--tugx-diff-gutter-color);
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.tugx-diff-marker {
+  text-align: center;
+  padding: 0 var(--tugx-diff-marker-padding-x);
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.tugx-diff-line[data-kind="context"] .tugx-diff-marker {
+  color: var(--tugx-diff-line-context-marker-color);
+}
+
+.tugx-diff-line[data-kind="add"] .tugx-diff-marker {
+  color: var(--tugx-diff-line-add-marker-color);
+}
+
+.tugx-diff-line[data-kind="remove"] .tugx-diff-marker {
+  color: var(--tugx-diff-line-remove-marker-color);
+}
+
+.tugx-diff-content {
+  padding: 0 var(--tugx-diff-content-padding-x);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Word-level intra-line highlight ---------- */
+
+.tugx-diff-word-add {
+  background: var(--tugx-diff-word-add-bg);
+  color: var(--tugx-diff-word-add-color);
+  border-radius: var(--tugx-diff-word-radius);
+}
+
+.tugx-diff-word-remove {
+  background: var(--tugx-diff-word-remove-bg);
+  color: var(--tugx-diff-word-remove-color);
+  border-radius: var(--tugx-diff-word-radius);
+}
+
+/* ---------- States ---------- */
+
+.tugx-diff-collapsed-hint {
+  padding: var(--tugx-diff-collapsed-padding);
+  background: var(--tugx-diff-collapsed-bg);
+  color: var(--tugx-diff-collapsed-color);
+  font-size: var(--tugx-diff-collapsed-size);
+  font-family: var(--tugx-diff-header-font);
+  text-align: center;
+}
+
+.tugx-diff-loading {
+  padding: var(--tugx-diff-loading-padding);
+  color: var(--tugx-diff-loading-color);
+  font-size: var(--tugx-diff-loading-size);
+  font-family: var(--tugx-diff-header-font);
+  text-align: center;
+}
