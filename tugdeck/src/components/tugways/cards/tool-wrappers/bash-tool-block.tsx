@@ -240,6 +240,30 @@ export const BashToolBlock: React.FC<ToolWrapperProps> = ({
     />
   ) : undefined;
 
+  // Body selection. On error, the chrome's error band already shows
+  // the failure message (from `textOutput`); rendering a TerminalBlock
+  // fed by the same `textOutput` fallback would duplicate the same
+  // text. So on error, only render the body when the structured
+  // result carries genuinely-distinct stdout / stderr (a process that
+  // wrote to its own streams before failing).
+  const hasStructuredBody =
+    (structured.stdout !== undefined && structured.stdout.length > 0) ||
+    (structured.stderr !== undefined && structured.stderr.length > 0);
+  let body: React.ReactNode;
+  if (status === "streaming") {
+    body = <StreamingPlaceholder />;
+  } else if (status === "error" && !hasStructuredBody) {
+    body = null;
+  } else {
+    body = (
+      <TerminalBlock
+        data={bodyData}
+        embedded
+        className="bash-tool-block-terminal"
+      />
+    );
+  }
+
   return (
     <ToolWrapperChrome
       rootSlot="bash-tool-block"
@@ -251,15 +275,7 @@ export const BashToolBlock: React.FC<ToolWrapperProps> = ({
       errorMessage={errorMessage}
       footerBadges={footerBadges}
     >
-      {status === "streaming" ? (
-        <StreamingPlaceholder />
-      ) : (
-        <TerminalBlock
-          data={bodyData}
-          embedded
-          className="bash-tool-block-terminal"
-        />
-      )}
+      {body}
     </ToolWrapperChrome>
   );
 };

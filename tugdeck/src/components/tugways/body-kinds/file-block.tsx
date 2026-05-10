@@ -144,6 +144,25 @@ export interface FileBlockProps {
    * fold by default.
    */
   collapseThreshold?: number;
+
+  /**
+   * "Embedded" mode — composed inside a host that already paints a
+   * container and a header (e.g. `ToolWrapperChrome` in
+   * `ReadToolBlock`). When `true`:
+   *
+   *   - The standalone frame (background / border / radius / outer
+   *     margin) is dropped so the body sits flush with the host.
+   *   - FileBlock's own header (basename + lang badge + line counts +
+   *     search toggle + collapse toggle) is hidden — the wrapper
+   *     owns the file's identity in its own header. Search /
+   *     collapse affordances are deferred to the wrapper UX.
+   *
+   * Default `false` — standalone usage (gallery, RenderInput-routed)
+   * keeps its frame and header.
+   *
+   * @default false
+   */
+  embedded?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -532,6 +551,7 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   onToggleCollapsed,
   className,
   collapseThreshold = DEFAULT_COLLAPSE_THRESHOLD,
+  embedded = false,
 }) => {
   // -- Lines, language, header label -----------------------------------------
 
@@ -758,9 +778,11 @@ export const FileBlock: React.FC<FileBlockProps> = ({
       data-empty={lines.length === 0 ? "true" : "false"}
       data-language={language ?? "plain"}
       data-collapsed={collapsed ? "true" : "false"}
+      data-embedded={embedded ? "true" : undefined}
       className={rootClass}
       tabIndex={-1}
     >
+      {embedded ? null : (
       <div className="tugx-file-header" data-slot={DATA_SLOT_HEADER}>
         <span
           className="tugx-file-path"
@@ -805,6 +827,7 @@ export const FileBlock: React.FC<FileBlockProps> = ({
           </button>
         ) : null}
       </div>
+      )}
 
       {searchOpen && !collapsed ? (
         <div className="tugx-file-search-bar" data-slot={DATA_SLOT_SEARCH_BAR}>

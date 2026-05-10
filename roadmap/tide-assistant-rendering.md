@@ -1479,15 +1479,27 @@ ThinkingBlock, PermissionDialog, QuestionDialog, CostChrome (with CostBadge sub-
 - Registry entry
 
 **Tasks:**
-- [ ] Header: `Read · {filePath-shortened}` + line-range badge if `startLine`/`numLines` set
-- [ ] Body: FileBlock from `tool_use_structured.file`
-- [ ] Footer: "Showing N of M lines" if truncated
+- [x] Header: `Read · {filePath}` (full path; chrome's args slot truncates with hover-expand) + line-range badge when `input.offset` / `input.limit` set (`lines N–M`, `from line N`, or `first N lines`)
+- [x] Body: FileBlock (in `embedded` mode) from `tool_use_structured.file`; falls back to a synthesized `FileData` from `input.file_path` + `tool_result.output` when only the older catalog event lands
+- [x] Footer: "Showing N of M lines" when `numLines < totalLines`; suppressed for full-file reads (no empty footer bar)
+- [x] Streaming → `<StreamingPlaceholder />`; error → chrome's error band only (body suppressed so the failure message doesn't double-render with the FileBlock fallback)
+- [x] FileBlock gained an `embedded` mode mirroring `TerminalBlock`: drops bg/border/radius/margin and hides its own header — the wrapper owns the file's identity in its own header. Reset values, no new tokens introduced. Search / collapse affordances are deferred to the wrapper UX (out of scope for v1).
+- [x] Registry entry — `registerToolWrapper("read", ReadToolBlock)` added at the bottom of `tide-assistant-renderer-dispatch.ts` (one-directional import graph).
+- [x] Drive-by fix on `BashToolBlock`: errored Bash no longer double-renders the failure message — the chrome's error band already shows it; the body is suppressed unless `structured.{stdout,stderr}` carries genuinely-distinct content.
 
 **Tests:**
-- [ ] Replay `test-05-tool-use-read.jsonl` → ReadToolBlock with FileBlock, correct path, content
+- [x] Pure helpers — `composeFileData` (structured, fallback, missing filePath, nothing renderable); `composeLineRangeBadge` (offset+limit, offset-only, limit-only, neither); `composeReadFooterHint` (subset, full read, unknown total)
+- [x] Header — tool name + file path stamp; line-range badge appears with offset+limit; missing `file_path` suppresses args
+- [x] Body — structured `file` shape lands on the embedded FileBlock with correct gutter / startLine / content; textOutput fallback drives the body when structured is absent; nothing-renderable drops the body
+- [x] Footer — "Showing N of M lines" appears for windowed reads, suppressed for full reads
+- [x] Streaming placeholder substitution; error suppresses body in favor of chrome error band
+- [x] Caution badge surfaces from dispatch
+- [x] Dispatch resolution: `resolveToolWrapper("Read" | "read" | "READ")` returns `ReadToolBlock`
+- [x] Replay `test-05-tool-use-read.jsonl` (`v2.1.112`) end-to-end through `CodeSessionStore` → committed `TurnEntry.toolCalls[0]` routes through `dispatchToolCallState` → `<ReadToolBlock {...props} />` renders with the fixture's `file_path`, three-line embedded FileBlock, gutter starting at 1, "Showing 3 of 55 lines" footer
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — typecheck clean; full suite **3384 pass / 0 fail across 202 files**
+- [x] `cd tugdeck && bun run audit:tokens lint` — zero violations
 
 ---
 

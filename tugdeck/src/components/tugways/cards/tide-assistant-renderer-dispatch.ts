@@ -71,6 +71,7 @@ import type {
 } from "@/lib/code-session-store";
 
 import { BashToolBlock } from "./tool-wrappers/bash-tool-block";
+import { ReadToolBlock } from "./tool-wrappers/read-tool-block";
 import { DefaultToolWrapper } from "./tool-wrappers/default-tool-wrapper";
 import type { CautionFlag, ToolWrapperFactory } from "./tool-wrappers/types";
 
@@ -486,3 +487,4 @@ export const assistantRendererDispatch: AssistantRendererDispatch = {
 // ---------------------------------------------------------------------------
 
 registerToolWrapper("bash", BashToolBlock);
+registerToolWrapper("read", ReadToolBlock);
