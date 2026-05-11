@@ -148,4 +148,5 @@ body {
   --tugx-block-tone-caution-bg:    var(--tug7-surface-tone-primary-normal-caution-rest);
   --tugx-block-tone-caution-color: var(--tug7-element-global-text-normal-caution-rest);
   --tugx-block-tone-active-bg:     var(--tug7-surface-tone-primary-normal-active-rest);
+  --tugx-block-tone-active-color:  var(--tug7-element-tone-text-normal-active-rest);
 }

@@ -55,12 +55,6 @@ body {
   --tugx-file-lang-radius:  var(--tug-radius-xs);
   --tugx-file-lang-size:    var(--tug-font-size-3xs);
 
-  /* Icon button — search toggle / prev / next / close */
-  --tugx-file-icon-size:        22px;
-  --tugx-file-icon-radius:      var(--tug-radius-sm);
-  --tugx-file-icon-color-hover: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-file-icon-bg-hover:    var(--tug7-surface-highlight-primary-normal-hover-rest);
-
   /* Search bar — file-specific Cmd+F panel */
   --tugx-file-search-gap:           var(--tug-space-xs);
   --tugx-file-search-input-padding: var(--tug-space-2xs) var(--tug-space-xs);
@@ -69,8 +63,6 @@ body {
   --tugx-file-search-input-radius:  var(--tug-radius-sm);
   --tugx-file-search-input-size:    var(--tug-font-size-sm);
   --tugx-file-search-count-size:    var(--tug-font-size-2xs);
-  --tugx-file-search-step-size:     var(--tug-font-size-sm);
-  --tugx-file-search-step-border:   var(--tug7-element-global-border-normal-muted-rest);
 
   /* Body rows — file-specific gutter geometry */
   --tugx-file-rows-padding:      var(--tug-space-2xs) 0;
@@ -160,36 +152,11 @@ body {
   flex: 1 1 auto;
 }
 
-.tugx-file-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--tugx-file-icon-size);
-  height: var(--tugx-file-icon-size);
-  padding: 0;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--tugx-file-icon-radius);
-  color: var(--tugx-block-text-color-muted);
-  cursor: pointer;
-}
-
-.tugx-file-icon-btn:hover,
-.tugx-file-icon-btn[aria-pressed="true"] {
-  background: var(--tugx-file-icon-bg-hover);
-  color: var(--tugx-file-icon-color-hover);
-}
-
-.tugx-file-icon-btn:focus-visible {
-  outline: 2px solid var(--tugx-file-focus-ring);
-  outline-offset: -2px;
-}
-
-/* The header collapse toggle is now a `<TugIconButton>` (paired with the
- * `Copy` button on the same surface); see file-block.tsx. The bespoke
- * `.tugx-file-toggle` rule block and its `--tugx-file-toggle-*` slot
- * family were retired — TugIconButton's own ghost-action styling owns
- * the appearance now. */
+/* The header search toggle and the header collapse toggle are both
+ * `<TugIconButton>` instances now (see file-block.tsx). The bespoke
+ * `.tugx-file-icon-btn` / `.tugx-file-toggle` rule blocks and their
+ * `--tugx-file-icon-*` / `--tugx-file-toggle-*` slot families were
+ * retired — TugIconButton's ghost-action styling owns the appearance. */
 
 /* ---------- Search bar ---------- */
 
@@ -227,40 +194,9 @@ body {
   text-align: right;
 }
 
-.tugx-file-search-step,
-.tugx-file-search-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--tugx-file-icon-size);
-  height: var(--tugx-file-icon-size);
-  padding: 0;
-  background: transparent;
-  border: 1px solid var(--tugx-file-search-step-border);
-  border-radius: var(--tugx-file-icon-radius);
-  color: var(--tugx-block-text-color-muted);
-  cursor: pointer;
-  font-family: var(--tugx-block-code-font);
-  font-size: var(--tugx-file-search-step-size);
-  line-height: 1;
-}
-
-.tugx-file-search-step:not(:disabled):hover,
-.tugx-file-search-close:hover {
-  background: var(--tugx-file-icon-bg-hover);
-  color: var(--tugx-file-icon-color-hover);
-}
-
-.tugx-file-search-step:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.tugx-file-search-step:focus-visible,
-.tugx-file-search-close:focus-visible {
-  outline: 2px solid var(--tugx-file-focus-ring);
-  outline-offset: -2px;
-}
+/* Search-bar prev / next / close are `<TugIconButton>` instances now
+ * (see file-block.tsx). Their bespoke rule blocks and slot families
+ * were retired alongside `.tugx-file-icon-btn`. */
 
 /* ---------- Body rows ---------- */
 

@@ -499,7 +499,7 @@ describe("FileBlock — search affordance markup", () => {
     };
     const { container } = render(<FileBlock data={data} />);
     expect(
-      container.querySelector('[data-slot="file-search-toggle"]'),
+      container.querySelector('button[aria-label="Search in file"]'),
     ).not.toBeNull();
   });
 
@@ -516,7 +516,7 @@ describe("FileBlock — search affordance markup", () => {
     act(() => {
       (
         container.querySelector(
-          '[data-slot="file-search-toggle"]',
+          'button[aria-label="Search in file"]',
         ) as HTMLButtonElement
       ).click();
     });
@@ -528,10 +528,10 @@ describe("FileBlock — search affordance markup", () => {
       container.querySelector('[data-slot="file-search-input"]'),
     ).not.toBeNull();
     expect(
-      container.querySelector('[data-slot="file-search-prev"]'),
+      container.querySelector('button[aria-label="Previous match"]'),
     ).not.toBeNull();
     expect(
-      container.querySelector('[data-slot="file-search-next"]'),
+      container.querySelector('button[aria-label="Next match"]'),
     ).not.toBeNull();
     expect(
       container.querySelector('[data-slot="file-search-count"]'),
@@ -545,7 +545,7 @@ describe("FileBlock — search affordance markup", () => {
     };
     const { container } = render(<FileBlock data={data} />);
     expect(
-      container.querySelector('[data-slot="file-search-toggle"]'),
+      container.querySelector('button[aria-label="Search in file"]'),
     ).toBeNull();
   });
 });

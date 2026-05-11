@@ -64,7 +64,7 @@
 import "./file-block.css";
 
 import React from "react";
-import { ChevronsDown, ChevronsUp } from "lucide-react";
+import { ChevronDown, ChevronsDown, ChevronsUp, ChevronUp, Search, X } from "lucide-react";
 
 import { TugCue } from "@/components/tugways/tug-cue";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
@@ -189,11 +189,8 @@ const DATA_SLOT_BODY = "file-body-rows";
 const DATA_SLOT_ROW = "file-row";
 const DATA_SLOT_GUTTER = "file-gutter";
 const DATA_SLOT_CONTENT = "file-content";
-const DATA_SLOT_SEARCH_TOGGLE = "file-search-toggle";
 const DATA_SLOT_SEARCH_BAR = "file-search-bar";
 const DATA_SLOT_SEARCH_INPUT = "file-search-input";
-const DATA_SLOT_SEARCH_PREV = "file-search-prev";
-const DATA_SLOT_SEARCH_NEXT = "file-search-next";
 const DATA_SLOT_SEARCH_COUNT = "file-search-count";
 
 // ---------------------------------------------------------------------------
@@ -512,37 +509,6 @@ function paintMatchOverlay(
 }
 
 // ---------------------------------------------------------------------------
-// Icons (lucide-style 14×14)
-// ---------------------------------------------------------------------------
-
-const SVG_NS = "http://www.w3.org/2000/svg";
-
-function buildSearchIcon(): SVGSVGElement {
-  const svg = document.createElementNS(SVG_NS, "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("width", "14");
-  svg.setAttribute("height", "14");
-  svg.setAttribute("fill", "none");
-  svg.setAttribute("stroke", "currentColor");
-  svg.setAttribute("stroke-width", "2");
-  svg.setAttribute("stroke-linecap", "round");
-  svg.setAttribute("stroke-linejoin", "round");
-  svg.setAttribute("aria-hidden", "true");
-  const c = document.createElementNS(SVG_NS, "circle");
-  c.setAttribute("cx", "11");
-  c.setAttribute("cy", "11");
-  c.setAttribute("r", "7");
-  svg.appendChild(c);
-  const l = document.createElementNS(SVG_NS, "line");
-  l.setAttribute("x1", "21");
-  l.setAttribute("y1", "21");
-  l.setAttribute("x2", "16.65");
-  l.setAttribute("y2", "16.65");
-  svg.appendChild(l);
-  return svg;
-}
-
-// ---------------------------------------------------------------------------
 // React component
 // ---------------------------------------------------------------------------
 
@@ -804,18 +770,10 @@ export const FileBlock: React.FC<FileBlockProps> = ({
         </span>
         <span className="tugx-file-spacer" />
         {!collapsed && lines.length > 0 ? (
-          <button
-            type="button"
-            className="tugx-file-icon-btn"
-            data-slot={DATA_SLOT_SEARCH_TOGGLE}
-            aria-label={searchOpen ? "Close search" : "Search in file"}
-            aria-pressed={searchOpen}
+          <TugIconButton
+            icon={<Search />}
+            aria-label={searchOpen ? "Hide search" : "Search in file"}
             onClick={() => (searchOpen ? closeSearch() : openSearch())}
-            ref={(node) => {
-              if (node !== null && node.childElementCount === 0) {
-                node.appendChild(buildSearchIcon());
-              }
-            }}
           />
         ) : null}
         {overThreshold ? (
@@ -851,34 +809,23 @@ export const FileBlock: React.FC<FileBlockProps> = ({
                 ? "no matches"
                 : `${activeMatch + 1}/${matchCount}`}
           </span>
-          <button
-            type="button"
-            className="tugx-file-search-step"
-            data-slot={DATA_SLOT_SEARCH_PREV}
+          <TugIconButton
+            icon={<ChevronUp />}
             aria-label="Previous match"
             disabled={matchCount === 0}
             onClick={() => stepMatch(-1)}
-          >
-            ↑
-          </button>
-          <button
-            type="button"
-            className="tugx-file-search-step"
-            data-slot={DATA_SLOT_SEARCH_NEXT}
+          />
+          <TugIconButton
+            icon={<ChevronDown />}
             aria-label="Next match"
             disabled={matchCount === 0}
             onClick={() => stepMatch(1)}
-          >
-            ↓
-          </button>
-          <button
-            type="button"
-            className="tugx-file-search-close"
+          />
+          <TugIconButton
+            icon={<X />}
             aria-label="Close search"
             onClick={closeSearch}
-          >
-            ×
-          </button>
+          />
         </div>
       ) : null}
 
