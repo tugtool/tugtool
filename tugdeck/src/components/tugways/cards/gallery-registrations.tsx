@@ -76,6 +76,7 @@ import { GallerySplitPane } from "./gallery-split-pane";
 import { GalleryStatePreservation } from "./gallery-state-preservation";
 import { GalleryTugCue } from "./gallery-tug-cue";
 import { GalleryBashToolBlock } from "./gallery-bash-tool-block";
+import { GalleryPinnedHeaders } from "./gallery-pinned-headers";
 import "./gallery.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
@@ -459,6 +460,22 @@ export function registerGalleryCards(): void {
     componentId: "gallery-bash-tool-block",
     contentFactory: (_cardId) => <GalleryBashToolBlock />,
     defaultMeta: { title: "BashToolBlock", icon: "Terminal", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.textInput,
+  });
+
+  // Diagnostic fixture for the body-kind pinned-header behavior:
+  // three standalone body kinds (FileBlock / DiffBlock / TerminalBlock)
+  // inside their own fixed-height scroll wrappers, deliberately
+  // detached from the transcript chain so the binding scrollport is
+  // unambiguous. See roadmap/tide-assistant-rendering.md
+  // Step 10.9 Phase B.1.
+  registerCard({
+    componentId: "gallery-pinned-headers",
+    contentFactory: (_cardId) => <GalleryPinnedHeaders />,
+    defaultMeta: { title: "Pinned Headers (diagnostic)", icon: "Pin", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

@@ -1,0 +1,186 @@
+/**
+ * gallery-pinned-headers.tsx — standalone-pinning fixture for body-kind headers.
+ *
+ * Mounts three body kinds (`FileBlock`, `DiffBlock`, `TerminalBlock`)
+ * inside their own fixed-height scroll wrappers so each block's
+ * sticky header pins against a scrollport with no `padding-block` —
+ * the production-mirror that proves pinning works flush in isolation,
+ * separated from the transcript chain (no `ToolWrapperChrome`, no
+ * `TugTranscriptEntry`, no `TugListView`).
+ *
+ * This card was authored as a Phase B.1 diagnostic spike. The on-screen
+ * probe panel and the dashed-border outlines that surrounded each
+ * section during the spike have been removed; what remains is the
+ * production-mirror fixture itself. Phase B.2 extends this card with
+ * a wrapped-in-chrome section that exercises the chrome + actions-row
+ * telescope.
+ *
+ * **Authoritative reference:** `roadmap/tide-assistant-rendering.md`
+ * Step 10.9 (Phase B.1 + Phase B.2).
+ *
+ * @module components/tugways/cards/gallery-pinned-headers
+ */
+
+import React from "react";
+
+import { FileBlock, type FileData } from "@/components/tugways/body-kinds/file-block";
+import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
+import { TerminalBlock, type TerminalData } from "@/components/tugways/body-kinds/terminal-block";
+import type { DiffData } from "@/lib/diff/types";
+import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
+
+// ---------------------------------------------------------------------------
+// Synthesized fixtures
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a synthetic TypeScript-ish file with `lineCount` lines so the
+ * `FileBlock` body has enough content to scroll past its wrapper's
+ * fixed height. Lines vary in length so wrap behavior is visible too.
+ */
+function buildLongFileContent(lineCount: number): string {
+  const lines: string[] = [];
+  for (let i = 1; i <= lineCount; i += 1) {
+    if (i % 12 === 0) {
+      lines.push("");
+    } else if (i % 12 === 1) {
+      lines.push(`// section ${Math.floor(i / 12) + 1} — synthesized for the pinning fixture`);
+    } else if (i % 5 === 0) {
+      lines.push(
+        `export const VALUE_${i} = { id: ${i}, label: "row-${i}", meta: { kind: "fixture", weight: ${i * 7}, payload: "${"x".repeat(40)}" } };`,
+      );
+    } else if (i % 3 === 0) {
+      lines.push(`function compute${i}(input: number): number { return input * ${i} + ${i * 13}; }`);
+    } else {
+      lines.push(`const line_${i} = ${i};`);
+    }
+  }
+  return lines.join("\n") + "\n";
+}
+
+const LONG_FILE: FileData = {
+  filePath: "src/synthesized/long-fixture.ts",
+  content: buildLongFileContent(280),
+  totalLines: 280,
+  numLines: 280,
+};
+
+/**
+ * Build a unified-diff string with `hunkCount` hunks against a single
+ * file. Each hunk has a few context lines plus one or two add/remove
+ * pairs so word-level highlighting is exercised.
+ */
+function buildLongDiffText(hunkCount: number): string {
+  const out: string[] = [
+    "diff --git a/src/synthesized/long-fixture.ts b/src/synthesized/long-fixture.ts",
+    "index 1111111..2222222 100644",
+    "--- a/src/synthesized/long-fixture.ts",
+    "+++ b/src/synthesized/long-fixture.ts",
+  ];
+  for (let h = 0; h < hunkCount; h += 1) {
+    const start = h * 20 + 1;
+    out.push(`@@ -${start},6 +${start},7 @@ section ${h + 1}`);
+    out.push(` // context above hunk ${h + 1}`);
+    out.push(` const before_${h} = ${h};`);
+    out.push(`-const stale_${h} = "old value ${h}";`);
+    out.push(`+const fresh_${h} = "new value ${h}!";`);
+    out.push(`+const added_${h} = ${h * 11};`);
+    out.push(` const after_${h} = ${h + 1};`);
+    out.push(` // context below hunk ${h + 1}`);
+  }
+  return out.join("\n") + "\n";
+}
+
+const LONG_DIFF: DiffData = {
+  source: "unified",
+  text: buildLongDiffText(20),
+  filePath: "src/synthesized/long-fixture.ts",
+};
+
+/**
+ * Build a 200-line terminal output. Lines vary in length so the inner
+ * scroller exercises both vertical scroll past the wrapper AND
+ * horizontal `scrollbar-gutter: stable` reservation.
+ */
+function buildLongTerminalStdout(lineCount: number): string {
+  const lines: string[] = [];
+  for (let i = 1; i <= lineCount; i += 1) {
+    if (i % 17 === 0) {
+      lines.push(`[warn] line ${i} — a longer message that wraps past the typical column width to exercise horizontal scroll behavior inside the terminal viewport`);
+    } else if (i % 7 === 0) {
+      lines.push(`  → step ${i} completed in ${i * 3} ms`);
+    } else {
+      lines.push(`line ${i}: synthesized terminal output`);
+    }
+  }
+  return lines.join("\n") + "\n";
+}
+
+const LONG_TERMINAL: TerminalData = {
+  stdout: buildLongTerminalStdout(200),
+  stderr: "",
+  exitCode: 0,
+  durationMs: 4_200,
+};
+
+// ---------------------------------------------------------------------------
+// PinSection — a single body kind inside a fixed-height scroll wrapper
+// ---------------------------------------------------------------------------
+
+/**
+ * Inline style for the scroll wrapper. The wrapper deliberately has
+ * `padding: 0` so sticky descendants pin flush against the
+ * padding-box top edge (per CSS Position 3 §6.5.1, `top: 0` pins
+ * against the scroll container's content-box, which equals the
+ * padding-box top when padding is zero). Any `padding-block` on a
+ * sticky-hosting scroll container would offset the pin by that
+ * amount — that was the Phase B.1 root-cause finding for the
+ * transcript-side pin offset.
+ */
+const SCROLLER_STYLE: React.CSSProperties = {
+  height: 380,
+  overflowY: "auto",
+};
+
+interface PinSectionProps {
+  title: string;
+  children: React.ReactNode;
+}
+
+function PinSection({ title, children }: PinSectionProps) {
+  return (
+    <div className="cg-section">
+      <TugLabel className="cg-section-title">{title}</TugLabel>
+      <div style={SCROLLER_STYLE} data-slot="pin-scroller">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// GalleryPinnedHeaders
+// ---------------------------------------------------------------------------
+
+export function GalleryPinnedHeaders() {
+  return (
+    <div className="cg-content" data-testid="gallery-pinned-headers">
+      <PinSection title="FileBlock — long file, sticky header">
+        <FileBlock data={LONG_FILE} collapsed={false} />
+      </PinSection>
+
+      <TugSeparator />
+
+      <PinSection title="DiffBlock — 20 hunks, sticky header">
+        <DiffBlock data={LONG_DIFF} />
+      </PinSection>
+
+      <TugSeparator />
+
+      <PinSection title="TerminalBlock — 200 lines, sticky header">
+        <TerminalBlock data={LONG_TERMINAL} headerLabel={<code>find . -type f | head -200</code>} />
+      </PinSection>
+    </div>
+  );
+}

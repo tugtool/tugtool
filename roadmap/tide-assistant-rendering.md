@@ -2164,33 +2164,56 @@ Sticky context analysis confirms the layout is safe: `TugListView` uses natural 
 
 **Tasks (Phase B.1):**
 
-- [ ] **Build the gallery card** (`gallery-pinned-headers.tsx`) with the three body-kind sections inside a single fixed-height scroll wrapper. Wire it into the gallery's registrations so it shows up alongside the existing gallery cards.
-- [ ] **Verify pin behavior in the gallery card first.** Scroll a long file inside the gallery's standalone FileBlock and confirm whether `.tugx-file-header` pins flush against the gallery's scroll wrapper.
-  - If it DOES pin flush in the gallery → the bug is somewhere in the transcript chain that the gallery card doesn't have (TugListView padding, TugTranscriptEntry, ToolWrapperChrome, or an ancestor). Document which.
-  - If it does NOT pin flush in the gallery → the bug is in the body-kind CSS itself (FileBlock surface, CM6 `.cm-scroller`, the block-root `overflow: clip`). Document which.
-- [ ] **Devtools-walk the ancestor chain in WKWebView.** Open the running Tug.app, Develop ▸ Show Web Inspector. With the Read tool block visible in a real transcript:
-  - Select `.tool-wrapper-chrome-header`.
-  - Verify `getComputedStyle(el).position === "sticky"` and `top` resolves to a pixel value matching `var(--tugx-pin-stack-top, 0)`.
-  - Walk `el.parentElement` upward; for each ancestor capture `getComputedStyle(anc).overflow{X,Y}`, `transform`, `contain`, `filter`, `will-change`, `clip-path`. The first ancestor with `overflow != visible` (and not `clip`) is the binding scrollport.
-  - Compare that scrollport's `getBoundingClientRect().top + padding-block-start` against the header's `getBoundingClientRect().top`. The delta is the offset. The delta value tells us which of the three candidates from the §"Why this phase exists" reasoning is correct.
-  - Repeat in the gallery card to compare.
-- [ ] **Record findings** in a "Findings" block appended to this phase (below). Numbered against the three candidate causes plus any surprise we discover. Each finding cites the measured values from devtools.
-- [ ] **Remove the temporary diagnostic outline** before committing the gallery card and findings.
+- [x] **Build the gallery card** (`gallery-pinned-headers.tsx`) with the three body-kind sections inside a single fixed-height scroll wrapper. Wire it into the gallery's registrations so it shows up alongside the existing gallery cards. *(Done; card was authored with an on-screen `PinProbePanel` that walked the ancestor chain at runtime — the probe and the dashed-border outlines have since been removed; what remains is the production-mirror fixture.)*
+- [x] **Verify pin behavior in the gallery card first.** Confirmed via screenshot (image 12) + probe readout: `.tugx-diff-header` (scrollTop 2249) and `.tugx-term-header` (scrollTop 167) both pin at `offsetFromScrollportTop = 0 px` — flush against the no-padding gallery wrapper. Body-kind CSS is sound. Bug must be in the transcript chain above the body-kind root.
+- [x] **Devtools-walk the ancestor chain in WKWebView.** Done in-card via `PinProbePanel`; no Web Inspector needed. Binding scrollport for `.tool-wrapper-chrome-header` is unambiguously `<div.tug-list-view>` (overflow `hidden/auto`, border-top 0, padding-top 8). Once pinned (image 13), `header.rect.top = 56`, `scrollport.rect.top = 48`, delta from `(top + border)` = 8 px, delta from `(top + border + padding)` = 0 px — sticky pins against the content-box edge, not the padding-box edge, as CSS Position 3 §6.5.1 specifies.
+- [x] **Record findings** in a "Findings" block appended to this phase (below). Numbered against the three candidate causes plus any surprise we discover. Each finding cites the measured values from devtools. *(Done; see Findings block. Candidate #1 confirmed; #2 ruled out by construction; #3 ruled out by gallery offset = 0.)*
+- [x] **Remove the temporary diagnostic outline** before committing the gallery card and findings. *(Done; dashed borders, sentinel banner, and `PinProbePanel` are all removed from `gallery-pinned-headers.tsx`. The fixture and its synthesized data remain as the standalone-pinning mirror Phase B.2 references.)*
 
-**Findings (Phase B.1 — fill in during the spike):**
+**Findings (Phase B.1):**
 
-- *To be authored during the spike; informs Phase B.2's fix selection.*
-  - Binding scrollport for `.tool-wrapper-chrome-header` in the live transcript: __
-  - Binding scrollport for `.tugx-file-header` in the gallery card: __
-  - Measured offset between header pin and scrollport top: __px
-  - Cause confirmed: __
-  - Why the wrong scrollport / wrong edge: __
+The gallery card embeds an on-screen probe (`PinProbePanel`) that walks the live ancestor chain at runtime and reports computed-style + bounding-rect data for `.tugx-file-header`, `.tugx-diff-header`, `.tugx-term-header`, and `.tool-wrapper-chrome-header`. The probe refreshes on any scroll so the offset can be watched in real time. The fields below are populated from the probe readout.
+
+**Analytic candidate ranking (pre-probe):**
+
+1. **`.tide-card-transcript .tug-list-view` `padding-block: var(--tug-space-md)`** (highest prior). `.tug-list-view` is the binding scrollport in the live transcript and sets `padding-block` via a transcript-side override (`tide-card.css:73`). Per CSS Position 3 the scrollport top edge IS the padding box's inner edge, so `top: 0` should pin flush with the visible scrollport top — but a WebKit quirk where sticky binds against the `content-box` edge (i.e. *past* the padding) would manifest as exactly the symptom: ~1 line of content visible above the bar. The probe reports `offsetFromScrollportTop` vs `offsetFromPaddedTop`; if `offsetFromScrollportTop ≈ 0` and `offsetFromPaddedTop` is negative ≈ `−paddingTop`, sticky binds against the padding box edge (spec-correct); if `offsetFromScrollportTop ≈ paddingTop` and `offsetFromPaddedTop ≈ 0`, sticky binds against the content edge (WebKit-quirk path).
+2. **CM6 `.cm-scroller` forming an inner scrollport.** `.cm-scroller` is a SIBLING subtree of `.tool-wrapper-chrome-header`, not an ancestor, so it should not be considered for sticky-pin binding. The probe's ancestor chain confirms this: `.cm-scroller` won't appear in the upward walk. Likely ruled out by construction.
+3. **An intermediate `overflow: hidden` ancestor in the transcript chain.** `.tool-wrapper-chrome` was already switched to `overflow: clip` in Phase B. Other candidates: `.tide-card-transcript-tool-call`, `.tug-transcript-entry`, `.tug-list-view-cell`, `.tug-pane-body`. The probe's chain dump will flag any ancestor with `overflowY != visible` and not `clip`; the first such ancestor below `.tug-list-view` would be the bug.
+
+**Empirical readings (populated from the probe in the running session):**
+
+- Binding scrollport for `.tugx-file-header` in the gallery card: the inline-styled `<div data-slot="pin-scroller">` (`height: 380; overflow-y: auto; border-top: 2; padding: 0`).
+- `offsetFromScrollportTop` for `.tugx-diff-header` after scroll (`scrollTop: 2249`): **0 px** — PINS FLUSH.
+- `offsetFromScrollportTop` for `.tugx-term-header` after scroll (`scrollTop: 167`): **0 px** — PINS FLUSH.
+- `offsetFromScrollportTop` for `.tugx-file-header` at `scrollTop: 0`: 48 px = height of the diagnostic "ABOVE PIN" sentinel sitting above `.tugx-file` (natural position, not pinned). Confirms the layout chain; the bar will pin flush once the user scrolls.
+- **→ Body-kind CSS empirically rules out Candidate #3 inside the body-kind subtree.** When the scrollport has no `padding-block`, the bar pins exactly at offset 0. Cause must live ABOVE the body-kind root — i.e. in the transcript chain.
+- Binding scrollport for `.tool-wrapper-chrome-header` in the live transcript: **`<div.tug-list-view>`**, overflow `hidden/auto`, `border-top: 0`, `padding-top: 8 px`.
+- `offsetFromScrollportTop` for `.tool-wrapper-chrome-header` at `scrollTop: 0` (NOT yet pinned): 313 px = natural distance from `.tug-list-view`'s scrollport top to the chrome header (entry header height + transcript spacing).
+- `offsetFromScrollportTop` for `.tool-wrapper-chrome-header` once pinned (scrolled state, `header.rect.top: 56`, `scrollport.rect.top: 48`): **8 px**. NOT flush against the padding-box edge.
+- `offsetFromPaddedTop` for `.tool-wrapper-chrome-header` once pinned: **0 px**. **Flush against the content-box edge.**
+- **Cause confirmed: Candidate #1.** Per CSS Position 3 §6.5.1, sticky `top: 0` pins against the scroll container's *content-box* top, not its padding-box top. `.tide-card-transcript .tug-list-view` sets `padding-block: var(--tug-space-md)` (= 8 px), so the chrome header pins 8 px below the visible scrollport top — exactly matching the user-visible symptom (one short line of file content drifting above the pinned bar). This is spec-compliant WebKit behavior; the bug is in our CSS choice (padding-block on a sticky-hosting scroll container always offsets the pin).
+- Why the wrong scrollport / wrong edge: the scrollport is correct (`.tug-list-view`); the wrong *edge* is being used because padding shifts the pin reference inward. `padding-block` reserves vertical breathing room INSIDE the scroll container, but sticky's `top: 0` reference is the post-padding edge, so the offset is unavoidable as long as padding is there.
+
+**Notable in the live chain** (relevant for follow-up):
+- `.tug-split-panel` (overflow `auto/auto`) and `.tug-pane-content` (overflow `auto/auto`) are *secondary* scroll containers above `.tug-list-view`. They don't bind sticky for `.tool-wrapper-chrome-header` (the probe correctly marks `.tug-list-view` as the first match), but they're potentially relevant for future entry-header pinning (Phase C) if `--tugx-pin-stack-top` needs to telescope past them.
+- `.tug-pane-body` and `.tug-pane-chrome` both have `overflow: hidden` (not `clip`). These are ABOVE the binding scrollport so they don't trap sticky for `.tool-wrapper-chrome-header`. But once Phase C makes `.tug-transcript-entry__header` sticky (with `top: 0` against `.tug-list-view`), if any descendant or sibling needs to escape `.tug-list-view`'s scrollport, these `overflow: hidden` walls would matter. Worth a flag for Phase C; not in scope for B.1/B.2.
+
+**Side-finding from the spike (informs Phase B.2 scope):** CodeMirror's `@codemirror/search` find panel mounts at the top of `.cm-editor` and visually OVERLAPS `.tugx-file-header` (and any other sticky header at the same `top` offset) — opening Find via the header's Search button covers the pinned identity bar. The Phase B.2 actions row (with Find relocated into `.tugx-file-actions`) already addresses this by construction: Find becomes a button in the actions row, not a CodeMirror-panel overlay. Captured as an explicit Phase B.2 requirement below.
+
+**Predictions for Phase B.2 fix selection** (the probe's empirical reading picks one row):
+
+| Probe reads… | Cause | Phase B.2 fix |
+|---|---|---|
+| Gallery flush (≈ 0); transcript offset ≈ `padding-block` | Candidate 1 (WebKit pins against padding box edge, padding scrolls *under* the bar visually) | Remove `padding-block` from `.tide-card-transcript .tug-list-view`; move that breathing room to entry spacing on `.tug-transcript-entry` instead. |
+| Gallery flush; transcript offset, binding scrollport ≠ `.tug-list-view` | Candidate 3 (a transcript-chain ancestor traps sticky) | Switch that ancestor's `overflow` from `hidden` to `clip` (or to `visible` if no clipping is desired). |
+| Gallery ALSO offset by the same amount | Body-kind CSS bug (the `.tugx-file-header` rule itself) | Recheck `.tugx-file-header`'s `top` value, the `--tugx-pin-stack-top` resolution, and any sibling sticky competing for the top edge. |
+| Gallery has zero binding scrollport reported | Sticky never activates here — diagnostic flaw in the wrapper | Fix the wrapper's overflow / height, then re-run. |
 
 **Checkpoint (Phase B.1):**
 
-- [ ] Gallery card exists and renders three pinning sections.
-- [ ] Findings block above is filled in with measured values, not speculation.
-- [ ] Phase B.2's "Apply the fix" task can be answered unambiguously from the findings (the diagnosis names exactly one fix path; the other two are crossed out with a note explaining why they were ruled out).
+- [x] Gallery card exists and renders three pinning sections.
+- [x] Findings block above is filled in with measured values, not speculation. Empirical readings from images 12–13 are recorded with `header.rect.top`, scrollport metadata, and computed offsets.
+- [x] Phase B.2's "Apply the fix" task can be answered unambiguously from the findings. The diagnosis names **Candidate #1** (remove `padding-block` from `.tug-list-view`); Candidate #2 (CM6 scroller) ruled out — `.cm-scroller` is a sibling subtree, not an ancestor, and the binding scrollport is empirically `<div.tug-list-view>`; Candidate #3 (transcript-chain `overflow: hidden`) ruled out — the gallery's no-padding wrapper reaches offset 0 with the same body-kind CSS, so the bug is not above-but-below the binding scrollport, it's the padding ON the binding scrollport.
 
 ---
 
@@ -2234,9 +2257,13 @@ Sticky context analysis confirms the layout is safe: `TugListView` uses natural 
 
 **Tasks (Phase B.2):**
 
-- [ ] **Apply the fix Phase B.1's findings name.** One of: a CM6 `.cm-scroller` adjustment, a `.tug-list-view` `padding`/`scroll-padding` move, an `overflow: clip` swap on a previously-unswept ancestor. The findings name exactly one; the other two are not in scope.
+- [ ] **Apply the fix Phase B.1's findings name: remove `padding-block` from `.tug-list-view` so sticky descendants pin flush against the scrollport's padding-box edge.** Phase B.1 confirmed (via on-screen probe in the running session, image 13) that the live `.tool-wrapper-chrome-header` pins at `offset = padding-top` because sticky's `top: 0` reference is the scroll container's content-box edge (per CSS Position 3 §6.5.1), not the padding-box edge. The `padding-block: var(--tug-space-md)` (= 8 px) on `.tide-card-transcript .tug-list-view` was the cause. The other two candidate fixes (CM6 `.cm-scroller`, transcript-chain `overflow: hidden`) are ruled out: the binding scrollport is unambiguously `.tug-list-view`, and the body-kind gallery card proved sticky pins flush at offset 0 when padding-block is absent. The fix:
+  - Set `--tugx-list-view-padding-block: 0` (or remove that token entirely) on `.tug-list-view`. The `padding-inline` and `scroll-padding-block-end` overrides stay.
+  - Restore the top breathing room with a fixed-height pseudo-element on `.tug-list-view` (e.g. `.tug-list-view::before { content: ""; flex: 0 0 var(--tug-space-md) }`) so the first cell still has visual padding above it without offsetting the sticky pin. Same for `::after` and the bottom edge.
+  - Verify the existing virtualization spacers (`.tug-list-view-spacer--top` / `--bottom`) still compute correctly — they were sized assuming `padding-block` was 0 OR the variable scoped them, so confirm there's no double-spacing.
+  - Re-run the gallery's standalone body-kind cards: the new no-padding `.tug-list-view` is the production scrollport; the gallery's inline-styled wrapper continues to pin flush; both must remain offset 0 after the fix.
 - [ ] **`ToolWrapperChrome` writes `--tugx-toolblock-header-height`.** `useLayoutEffect` registers a `ResizeObserver` on the `.tool-wrapper-chrome-header` element; the callback writes `el.offsetHeight + "px"` to the chrome-root's inline style. Disconnect on cleanup. Tests: variable set after mount; updates on header content change (e.g. `argsSummary` length change forces a re-measure).
-- [ ] **`FileBlock` introduces `.tugx-file-actions`.** Row contains the fold cue (chevron + count label, shortened for action-bar height) and Search `<TugIconButton>` (when expanded). Sticky at `top: calc(var(--tugx-pin-stack-top, 0) + var(--tugx-toolblock-header-height, 0))`. Z-index 1. Background: `--tugx-block-strip-bg` (same as the identity header so the two strips read as one visual stack).
+- [ ] **`FileBlock` introduces `.tugx-file-actions`.** Row contains the fold cue (chevron + count label, shortened for action-bar height) and Search `<TugIconButton>` (when expanded). Sticky at `top: calc(var(--tugx-pin-stack-top, 0) + var(--tugx-toolblock-header-height, 0))`. Z-index 1. Background: `--tugx-block-strip-bg` (same as the identity header so the two strips read as one visual stack). The Search affordance must be visible at all times (no CM6-panel overlay covering the identity header — captured as a side-finding during Phase B.1, where opening Find caused CodeMirror's `@codemirror/search` panel to mount over `.tugx-file-header` and hide the identity bar). The find UX in the actions row may either replace the CM6 panel entirely (an inline find UI inside the actions row) or trigger the CM6 panel positioned BELOW the actions row, never overlapping any sticky strip above it.
 - [ ] **`DiffBlock` introduces `.tugx-diff-actions`.** Moves view-toggle + fold-toggle out of `.tugx-diff-header`. Same sticky declarations.
 - [ ] **`TerminalBlock` introduces `.tugx-term-actions`.** Moves Copy out of `.tugx-term-header`. Same sticky declarations. The header now hosts only the optional `headerLabel`.
 - [ ] **`tug-markdown-view` fenced-code actions row.** Moves Copy out of `.tugx-md-fenced-code-header`. Same sticky declarations.
