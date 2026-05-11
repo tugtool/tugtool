@@ -677,7 +677,18 @@ function handleToolUseStructured(
   state: CodeSessionState,
   event: ToolUseStructuredEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
-  if (state.phase !== "tool_work" && state.phase !== "streaming") {
+  // Accept in the same phases that admit the paired `tool_use` and
+  // `tool_result` events. `replaying` is critical: the JSONL replay
+  // path emits `tool_use_structured` from the entry-level
+  // `toolUseResult` (see `tugcode/src/replay.ts`); a guard that
+  // excluded `replaying` would silently drop those events, leaving
+  // resumed Read tool calls with `structuredResult: null` and the
+  // wrapper rendering an empty body.
+  if (
+    state.phase !== "tool_work" &&
+    state.phase !== "streaming" &&
+    state.phase !== "replaying"
+  ) {
     return { state, effects: [] };
   }
 
@@ -696,15 +707,24 @@ function handleToolUseStructured(
     structuredResult: event.structured_result ?? null,
   });
 
+  // While replaying, suppress the `inflight.tools` write — the
+  // bracket pair owns transcript-side delivery via
+  // `append-transcript`, and the in-flight pane only reflects live
+  // turns (mirrors the same skip in `handleToolUse` / `handleToolResult`).
+  const isReplaying = state.phase === "replaying";
+  const effects: Effect[] = isReplaying
+    ? []
+    : [
+        {
+          kind: "write-inflight",
+          path: "inflight.tools",
+          value: serializeToolCalls(toolCallMap),
+        },
+      ];
+
   return {
     state: { ...state, toolCallMap },
-    effects: [
-      {
-        kind: "write-inflight",
-        path: "inflight.tools",
-        value: serializeToolCalls(toolCallMap),
-      },
-    ],
+    effects,
   };
 }
 

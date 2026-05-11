@@ -131,9 +131,13 @@ body {
   flex: 1 1 auto;
 }
 
-/* ---------- Collapsed state ---------- */
+/* ---------- Fold cue ---------- */
 
-/* The collapsed-hint banner is a `<TugCue role="active">` (see
- * file-block.tsx). The `.tugx-file-collapsed-hint` class is forwarded
- * onto the cue as a scoping hook; no rules are declared here — the
- * cue paints itself through its own `--tugx-cue-*` slots. */
+/* The fold cue is a `<TugCue role="active">` (see file-block.tsx).
+ * It's rendered whenever the file's line count exceeds the collapse
+ * threshold and is the persistent click target for the collapse <->
+ * expand toggle — visible in both states so a freshly-expanded file
+ * still has a handle to collapse back. The `.tugx-file-fold-cue`
+ * class is forwarded onto the cue as a scoping hook; no rules are
+ * declared here — the cue paints itself through its own
+ * `--tugx-cue-*` slots. */

@@ -206,26 +206,48 @@ describe("FileBlock — header markup", () => {
 // ---------------------------------------------------------------------------
 
 describe("FileBlock — body branches", () => {
-  test("expanded file renders a TugCodeView in the body", () => {
+  test("expanded short file renders a TugCodeView in the body, no fold cue", () => {
     const data: FileData = {
       filePath: "x.ts",
       content: "alpha\nbeta",
     };
     const { container } = render(<FileBlock data={data} />);
     expect(container.querySelector('[data-slot="tug-code-view"]')).not.toBeNull();
-    // No collapsed cue while expanded.
-    expect(container.querySelector(".tugx-file-collapsed-hint")).toBeNull();
+    // Under-threshold files don't get a fold cue at all — there's
+    // nothing to fold.
+    expect(container.querySelector(".tugx-file-fold-cue")).toBeNull();
   });
 
-  test("collapsed file shows the cue, not the substrate", () => {
+  test("collapsed file shows the fold cue, not the substrate", () => {
     const data: FileData = {
       filePath: "x.ts",
       content: makeContent(200),
     };
     const { container } = render(<FileBlock data={data} />);
-    // Above threshold ⇒ default collapsed.
-    expect(container.querySelector(".tugx-file-collapsed-hint")).not.toBeNull();
+    // Above threshold ⇒ default collapsed; cue is the click target.
+    const cue = container.querySelector(".tugx-file-fold-cue") as HTMLElement;
+    expect(cue).not.toBeNull();
+    expect(cue.getAttribute("aria-expanded")).toBe("false");
+    expect(cue.textContent).toContain("click to expand");
     expect(container.querySelector('[data-slot="tug-code-view"]')).toBeNull();
+  });
+
+  test("expanded long file STILL shows the fold cue (collapse handle)", () => {
+    // The fold cue is the persistent click target across both states.
+    // Without this, embedded-mode hosts (which hide the header) would
+    // lose the toggle once expanded — the user could expand but not
+    // collapse back. The cue keeps the toggle reachable in both states.
+    const data: FileData = {
+      filePath: "x.ts",
+      content: makeContent(200),
+    };
+    const { container } = render(<FileBlock data={data} collapsed={false} />);
+    const cue = container.querySelector(".tugx-file-fold-cue") as HTMLElement;
+    expect(cue).not.toBeNull();
+    expect(cue.getAttribute("aria-expanded")).toBe("true");
+    expect(cue.textContent).toContain("click to collapse");
+    // Substrate is mounted alongside the cue.
+    expect(container.querySelector('[data-slot="tug-code-view"]')).not.toBeNull();
   });
 
   test("empty data renders the empty marker only", () => {
@@ -252,7 +274,7 @@ describe("FileBlock — body branches", () => {
 // ---------------------------------------------------------------------------
 
 describe("FileBlock — collapse", () => {
-  test("under threshold: expanded by default, no collapse toggle", () => {
+  test("under threshold: expanded by default, no fold cue", () => {
     const data: FileData = {
       filePath: "x.ts",
       content: makeContent(DEFAULT_COLLAPSE_THRESHOLD),
@@ -261,15 +283,10 @@ describe("FileBlock — collapse", () => {
     expect(
       container.querySelector('[data-slot="file-body"]')?.getAttribute("data-collapsed"),
     ).toBe("false");
-    expect(
-      container.querySelector('button[aria-label="Collapse file"]'),
-    ).toBeNull();
-    expect(
-      container.querySelector('button[aria-label="Expand file"]'),
-    ).toBeNull();
+    expect(container.querySelector(".tugx-file-fold-cue")).toBeNull();
   });
 
-  test("above threshold: collapsed by default; toggle is Expand", () => {
+  test("above threshold: collapsed by default; cue shows the expand label", () => {
     const data: FileData = {
       filePath: "x.ts",
       content: makeContent(DEFAULT_COLLAPSE_THRESHOLD + 1),
@@ -278,12 +295,12 @@ describe("FileBlock — collapse", () => {
     expect(
       container.querySelector('[data-slot="file-body"]')?.getAttribute("data-collapsed"),
     ).toBe("true");
-    expect(
-      container.querySelector('button[aria-label="Expand file"]'),
-    ).not.toBeNull();
+    const cue = container.querySelector(".tugx-file-fold-cue") as HTMLElement;
+    expect(cue).not.toBeNull();
+    expect(cue.textContent).toContain("click to expand");
   });
 
-  test("controlled prop forces expanded even above threshold", () => {
+  test("controlled prop forces expanded even above threshold (cue stays)", () => {
     const data: FileData = {
       filePath: "x.ts",
       content: makeContent(DEFAULT_COLLAPSE_THRESHOLD + 5),
@@ -295,9 +312,14 @@ describe("FileBlock — collapse", () => {
     expect(
       container.querySelector('[data-slot="tug-code-view"]'),
     ).not.toBeNull();
+    // The fold cue is the persistent toggle handle — present in
+    // both collapsed and expanded states once over-threshold.
+    const cue = container.querySelector(".tugx-file-fold-cue") as HTMLElement;
+    expect(cue).not.toBeNull();
+    expect(cue.textContent).toContain("click to collapse");
   });
 
-  test("clicking Expand fires onToggleCollapsed(false)", () => {
+  test("clicking the cue from collapsed state fires onToggleCollapsed(false)", () => {
     const onToggle = mock((_next: boolean) => {});
     const data: FileData = {
       filePath: "x.ts",
@@ -306,27 +328,59 @@ describe("FileBlock — collapse", () => {
     const { container } = render(
       <FileBlock data={data} onToggleCollapsed={onToggle} />,
     );
-    const expandBtn = container.querySelector(
-      'button[aria-label="Expand file"]',
-    ) as HTMLButtonElement;
-    fireEvent.click(expandBtn);
-    expect(onToggle).toHaveBeenCalledTimes(1);
-    expect(onToggle.mock.calls[0]?.[0]).toBe(false);
-  });
-
-  test("clicking the collapsed cue also fires onToggleCollapsed(false)", () => {
-    const onToggle = mock((_next: boolean) => {});
-    const data: FileData = {
-      filePath: "x.ts",
-      content: makeContent(DEFAULT_COLLAPSE_THRESHOLD + 5),
-    };
-    const { container } = render(
-      <FileBlock data={data} onToggleCollapsed={onToggle} />,
-    );
-    const cue = container.querySelector(".tugx-file-collapsed-hint") as HTMLElement;
+    const cue = container.querySelector(".tugx-file-fold-cue") as HTMLElement;
     fireEvent.click(cue);
     expect(onToggle).toHaveBeenCalledTimes(1);
     expect(onToggle.mock.calls[0]?.[0]).toBe(false);
+  });
+
+  test("clicking the cue from expanded state fires onToggleCollapsed(true) — collapse handle never disappears", () => {
+    // Regression: when embedded-mode hides the header, the cue is the
+    // only collapse handle. If it weren't rendered in the expanded
+    // state, the user could expand but not collapse back.
+    const onToggle = mock((_next: boolean) => {});
+    const data: FileData = {
+      filePath: "x.ts",
+      content: makeContent(DEFAULT_COLLAPSE_THRESHOLD + 5),
+    };
+    const { container } = render(
+      <FileBlock data={data} collapsed={false} onToggleCollapsed={onToggle} />,
+    );
+    const cue = container.querySelector(".tugx-file-fold-cue") as HTMLElement;
+    fireEvent.click(cue);
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    expect(onToggle.mock.calls[0]?.[0]).toBe(true);
+  });
+
+  test("clicking the cue dispatches `tug-disengage-follow-bottom` (releases host list's bottom pin)", () => {
+    // The dispatch must precede the React state update so the host
+    // list's SmartScroll flips `isFollowingBottom` to false before
+    // the cell-height ResizeObserver requests a pinToBottom — without
+    // this, the click target scrolls off-screen when the file
+    // expands.
+    const data: FileData = {
+      filePath: "x.ts",
+      content: makeContent(DEFAULT_COLLAPSE_THRESHOLD + 5),
+    };
+    const { container } = render(<FileBlock data={data} />);
+    const root = container.querySelector(
+      '[data-slot="file-body"]',
+    ) as HTMLElement;
+    let receivedCount = 0;
+    let receivedBubbles = false;
+    root.addEventListener(
+      "tug-disengage-follow-bottom",
+      (e: Event) => {
+        receivedCount += 1;
+        receivedBubbles = e.bubbles;
+      },
+      // Listener attached at the same root so the bubbling event
+      // hits it via the dispatch on the same element.
+    );
+    const cue = container.querySelector(".tugx-file-fold-cue") as HTMLElement;
+    fireEvent.click(cue);
+    expect(receivedCount).toBe(1);
+    expect(receivedBubbles).toBe(true);
   });
 });
 

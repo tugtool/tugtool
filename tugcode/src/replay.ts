@@ -51,6 +51,7 @@ import type {
   ThinkingText,
   ToolResult,
   ToolUse,
+  ToolUseStructured,
   TurnComplete,
   UserMessageReplay,
 } from "./types.ts";
@@ -129,6 +130,19 @@ export interface JsonlEntry {
   uuid?: string;
   parentUuid?: string | null;
   timestamp?: string;
+  /**
+   * Structured tool result, sibling to `message.content`. Claude Code
+   * persists this as the camelCase `toolUseResult` field on `user`
+   * entries that carry a `tool_result` block (the wire-side analog is
+   * the snake_case `tool_use_result` field on stream-json events; see
+   * `session.ts:670` for the live path). Shape is tool-specific —
+   * Read carries `{type: "text", file: {filePath, content, ...}}`,
+   * Edit carries `{toolName, filePath, structuredPatch, ...}`, etc.
+   * The translator forwards this payload verbatim as the
+   * `structured_result` field of a `tool_use_structured` IPC message
+   * so the reducer/wrappers see the same shape on replay as on live.
+   */
+  toolUseResult?: Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -441,6 +455,11 @@ function handleUserEntry(
   const textParts: string[] = [];
   const attachments: Attachment[] = [];
   const out: OutboundMessage[] = [];
+  // First `tool_use_id` seen in a `tool_result` block — used to bind
+  // the entry-level `toolUseResult` payload (when present) to its
+  // initiating tool_use on the `tool_use_structured` IPC frame.
+  // Mirrors `session.ts:657` (`firstToolUseId`) on the live path.
+  let firstToolUseId = "";
 
   for (const block of content) {
     const blockType = typeof block.type === "string" ? block.type : "";
@@ -463,6 +482,7 @@ function handleUserEntry(
         // dangling frame.
         continue;
       }
+      if (firstToolUseId.length === 0) firstToolUseId = toolUseId;
       const isError = block.is_error === true;
       const output = coerceToolResultContent(block.content);
       const toolResult: ToolResult = {
@@ -494,6 +514,29 @@ function handleUserEntry(
       continue;
     }
     ctx.telemetry.unknownShape({ kind: "content_block", type: blockType });
+  }
+
+  // Entry-level `toolUseResult` (camelCase, JSONL persistence shape;
+  // wire-side equivalent is the snake_case `tool_use_result` field
+  // session.ts forwards as `structured_result`). Emit one
+  // `tool_use_structured` frame paired with the first tool_result's
+  // tool_use_id. Without this, replayed Read tool calls land in the
+  // reducer with `structuredResult: null`, and the Read tool wrapper
+  // has no clean `file.content` to render — the body comes up empty.
+  // Mirrors `session.ts:670-680` (the live path).
+  const toolUseResult = entry.toolUseResult;
+  if (toolUseResult !== undefined && firstToolUseId.length > 0) {
+    const structured: ToolUseStructured = {
+      type: "tool_use_structured",
+      tool_use_id: firstToolUseId,
+      tool_name:
+        typeof toolUseResult.toolName === "string"
+          ? toolUseResult.toolName
+          : "",
+      structured_result: toolUseResult,
+      ipc_version: IPC_VERSION,
+    };
+    out.push(structured);
   }
 
   // Combine text blocks within this single entry — multi-block within

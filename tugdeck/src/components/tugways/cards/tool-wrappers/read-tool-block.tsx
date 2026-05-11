@@ -10,11 +10,16 @@
  *     `input.limit` set, an inline line-range badge surfaces the
  *     window the model asked for.
  *   - **Body:** `FileBlock` in `embedded` mode, fed from
- *     `tool_use_structured.file` when present. The structured result
- *     carries `{ content, filePath, startLine, numLines, totalLines }`
- *     directly, mirroring `FileBlock.FileData`. Falls back to plain
- *     text from `tool_result.output` when the structured event hasn't
- *     arrived (older catalog versions / drift).
+ *     `tool_use_structured.file`. The structured result carries
+ *     `{ content, filePath, startLine, numLines, totalLines }`
+ *     directly, mirroring `FileBlock.FileData`. There is no
+ *     `tool_result.output` fallback: that payload is Claude Code's
+ *     `<n>\t<line>` cat-n readback (agent-facing metadata so the
+ *     model can reference line numbers in conversation), not file
+ *     content. Feeding it to CM6 would produce a doubled gutter —
+ *     numbers in the bytes plus CM6's own gutter. The streaming
+ *     window before `tool_use_structured` lands is covered by the
+ *     wrapper's `status === "streaming"` placeholder.
  *   - **Footer:** "Showing N of M lines" when the read window is a
  *     proper subset of the source file (i.e. `numLines < totalLines`).
  *     Otherwise the footer is hidden — successful full-file reads
@@ -151,42 +156,35 @@ function narrowStructuredFile(value: unknown): ReadStructuredFile | undefined {
 }
 
 /**
- * Compose the `FileData` payload `FileBlock` consumes. Prefer the
- * structured-result file shape; fall back to a synthesized shape
- * built from the input's `file_path` and the plain-text
- * `tool_result.output` so something useful renders even when only
- * the older catalog event lands.
+ * Compose the `FileData` payload `FileBlock` consumes from the
+ * structured-result `file` shape. `tool_use_structured` is the
+ * canonical source for Read — its `file.content` is the clean file
+ * bytes, the form CM6 expects (CM6 owns the line-number gutter).
  *
- * Returns `undefined` when there's nothing renderable — the wrapper
- * then drops the body entirely.
+ * The `tool_result.output` payload is intentionally NOT a fallback:
+ * Claude Code emits that field in a `<n>\t<line>` cat-n readback so
+ * the model can reference line numbers in conversation. Those bytes
+ * are agent-facing metadata, not file content; rendering them with
+ * CM6 produces a doubled gutter (numbers in the bytes + CM6's own
+ * gutter). The streaming window before `tool_use_structured` lands
+ * is handled by the wrapper's `status === "streaming"` placeholder.
+ *
+ * Returns `undefined` when the structured event hasn't supplied a
+ * `file.content` string — the wrapper then drops the body entirely.
  */
 export function composeFileData(
   input: ReadToolInput,
   structured: ReadStructuredResult,
-  textOutput: string | undefined,
 ): FileData | undefined {
   const sf = structured.file;
-  if (sf !== undefined && typeof sf.content === "string") {
-    return {
-      filePath: sf.filePath ?? input.file_path ?? "",
-      content: sf.content,
-      startLine: sf.startLine,
-      numLines: sf.numLines,
-      totalLines: sf.totalLines,
-    };
-  }
-  if (typeof textOutput === "string" && textOutput.length > 0) {
-    return {
-      filePath: input.file_path ?? "",
-      content: textOutput,
-      startLine: input.offset,
-      // Catalog: `tool_result.output` is the raw text; `numLines` and
-      // `totalLines` are unknown without the structured event, so we
-      // omit them and let `FileBlock` derive `numLines` from the
-      // content itself.
-    };
-  }
-  return undefined;
+  if (sf === undefined || typeof sf.content !== "string") return undefined;
+  return {
+    filePath: sf.filePath ?? input.file_path ?? "",
+    content: sf.content,
+    startLine: sf.startLine,
+    numLines: sf.numLines,
+    totalLines: sf.totalLines,
+  };
 }
 
 /**
@@ -251,8 +249,8 @@ export const ReadToolBlock: React.FC<ToolWrapperProps> = ({
     [structuredResult],
   );
   const fileData = React.useMemo(
-    () => composeFileData(readInput, structured, textOutput),
-    [readInput, structured, textOutput],
+    () => composeFileData(readInput, structured),
+    [readInput, structured],
   );
   const lineRange = React.useMemo(
     () => composeLineRangeBadge(readInput),

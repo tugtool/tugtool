@@ -466,6 +466,55 @@ describe("reduce — tool_use_structured", () => {
       state.toolCallMap.get(FIXTURE_IDS.TOOL_USE_ID)?.structuredResult,
     ).toEqual({ ok: true });
   });
+
+  it("accepts tool_use_structured in the replaying phase (JSONL bracket emits the structured frame)", () => {
+    // tugcode's replay.ts emits a `tool_use_structured` from each
+    // user-entry `toolUseResult` so resumed Read tool calls land in
+    // the reducer with structuredResult populated; the reducer must
+    // accept the frame in the `replaying` phase, otherwise the JSONL
+    // replay path silently drops it and the Read wrapper renders an
+    // empty body.
+    const map = new Map<string, ToolCallState>([
+      [FIXTURE_IDS.TOOL_USE_ID, toolEntry(FIXTURE_IDS.TOOL_USE_ID, "Read", "done")],
+    ]);
+    const s0: CodeSessionState = {
+      ...fresh(),
+      phase: "replaying",
+      toolCallMap: map,
+    };
+    const { state, effects } = reduce(s0, {
+      type: "tool_use_structured",
+      tool_use_id: FIXTURE_IDS.TOOL_USE_ID,
+      structured_result: { file: { content: "# Title\nbody" } },
+    });
+    expect(state.phase).toBe("replaying");
+    expect(
+      state.toolCallMap.get(FIXTURE_IDS.TOOL_USE_ID)?.structuredResult,
+    ).toEqual({ file: { content: "# Title\nbody" } });
+    // Replay suppresses the `inflight.tools` write — the bracket
+    // owns transcript-side delivery via `append-transcript`.
+    expect(effects.filter((e) => e.kind === "write-inflight")).toEqual([]);
+  });
+
+  it("ignores tool_use_structured outside of tool_work / streaming / replaying", () => {
+    const map = new Map<string, ToolCallState>([
+      [FIXTURE_IDS.TOOL_USE_ID, toolEntry(FIXTURE_IDS.TOOL_USE_ID, "Read", "done")],
+    ]);
+    const s0: CodeSessionState = {
+      ...fresh(),
+      phase: "idle",
+      toolCallMap: map,
+    };
+    const { state } = reduce(s0, {
+      type: "tool_use_structured",
+      tool_use_id: FIXTURE_IDS.TOOL_USE_ID,
+      structured_result: { ok: true },
+    });
+    // Untouched — entry still has its original null structuredResult.
+    expect(
+      state.toolCallMap.get(FIXTURE_IDS.TOOL_USE_ID)?.structuredResult,
+    ).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -105,9 +105,17 @@ function assistantEntry(opts: {
   };
 }
 
-/** A minimal `user` entry constructor. */
+/** A minimal `user` entry constructor.
+ *
+ * The optional second argument carries the entry-level `toolUseResult`
+ * field — Claude Code's camelCase persistence shape for structured
+ * tool results (matches the wire-side snake_case `tool_use_result`
+ * the live bridge forwards). Used by tests that exercise the replay
+ * path's `tool_use_structured` emit.
+ */
 function userEntry(
   content: NonNullable<JsonlEntry["message"]>["content"],
+  toolUseResult?: Record<string, unknown>,
 ): JsonlEntry {
   return {
     type: "user",
@@ -115,6 +123,7 @@ function userEntry(
       role: "user",
       content,
     },
+    ...(toolUseResult !== undefined ? { toolUseResult } : {}),
   };
 }
 
@@ -332,6 +341,98 @@ describe("translateJsonlSession — tool calls", () => {
     const tc = inner[5] as TurnComplete;
     expect(tc.msg_id).toBe("msg_terminal");
     expect(tc.result).toBe("success");
+  });
+
+  test("Read tool: entry-level toolUseResult emits a paired tool_use_structured", async () => {
+    // The live bridge forwards stream-json's outer `tool_use_result`
+    // field as a `tool_use_structured` IPC frame (session.ts:670-680);
+    // replay reads the same payload from the JSONL's camelCase
+    // `toolUseResult` field and must emit the same frame, otherwise
+    // resumed Read tool calls land in the reducer with
+    // structuredResult: null and the wrapper has no clean file.content
+    // to render.
+    const readToolUseResult = {
+      type: "text",
+      file: {
+        filePath: "/abs/CLAUDE.md",
+        content: "# Title\n\nbody",
+        numLines: 3,
+        startLine: 1,
+        totalLines: 55,
+      },
+    };
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "read CLAUDE.md" }]),
+      assistantEntry({
+        msgId: "msg_int",
+        stopReason: "tool_use",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_read_1",
+            name: "Read",
+            input: { file_path: "/abs/CLAUDE.md" },
+          },
+        ],
+      }),
+      userEntry(
+        [
+          {
+            type: "tool_result",
+            tool_use_id: "toolu_read_1",
+            is_error: false,
+            content: "1\t# Title\n2\t\n3\tbody",
+          },
+        ],
+        readToolUseResult,
+      ),
+      assistantEntry({
+        msgId: "msg_t",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "Read it." }],
+      }),
+    ]);
+    const out = await collectSession({ kind: "ok", jsonl });
+
+    // tool_use_structured emits right after tool_result, both keyed on
+    // the same tool_use_id; the structured_result payload is the
+    // toolUseResult field forwarded verbatim.
+    const types = out.map((m) => m.type);
+    const trIdx = types.indexOf("tool_result");
+    const tusIdx = types.indexOf("tool_use_structured");
+    expect(trIdx).toBeGreaterThan(0);
+    expect(tusIdx).toBe(trIdx + 1);
+
+    const tus = out[tusIdx] as {
+      type: "tool_use_structured";
+      tool_use_id: string;
+      tool_name: string;
+      structured_result: Record<string, unknown>;
+    };
+    expect(tus.tool_use_id).toBe("toolu_read_1");
+    // Read's toolUseResult shape has no `toolName` field — Claude Code
+    // stores `{type: "text", file: {...}}`. The live bridge maps this
+    // to `tool_name: ""` (session.ts:676 `(toolUseResult.toolName as
+    // string) || ""`); replay mirrors that.
+    expect(tus.tool_name).toBe("");
+    expect(tus.structured_result).toEqual(readToolUseResult);
+  });
+
+  test("toolUseResult without any tool_result block emits no structured frame", () => {
+    // Defense: the structured emit only fires when there's a
+    // tool_result to pair the tool_use_id with. A user entry that
+    // somehow carries toolUseResult but no tool_result block is
+    // malformed — emit nothing rather than a dangling structured
+    // frame whose tool_use_id is empty.
+    const ctx = makeTranslateContext();
+    const out = translateJsonlEntry(
+      userEntry(
+        [{ type: "text", text: "stray" }],
+        { type: "text", file: { content: "x" } },
+      ),
+      ctx,
+    );
+    expect(out.find((m) => m.type === "tool_use_structured")).toBeUndefined();
   });
 
   test("concurrent tool calls preserve insertion order", async () => {

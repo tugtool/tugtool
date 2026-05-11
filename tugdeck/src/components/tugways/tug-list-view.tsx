@@ -847,7 +847,25 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         },
       });
       smartScrollRef.current = smartScroll;
+
+      // Listen for `tug-disengage-follow-bottom` — a bubbling
+      // `CustomEvent` fired by descendants whose own click handler
+      // grows a cell's content (e.g. `FileBlock` toggling its
+      // collapsed state). Without this, the ResizeObserver flush
+      // that follows the cell growth requests a `pinToBottom`, and
+      // the click target scrolls off-screen — violating the
+      // "interacting with a control does not move that control out
+      // of view" rule. Disengaging follow-bottom flips
+      // `isFollowingBottom` to false; the post-commit pin effect
+      // then bails out (`tug-list-view.tsx`'s `if
+      // (!ss.isFollowingBottom)` gate).
+      const onDisengage = (): void => {
+        smartScroll.disengageFollowBottom();
+      };
+      el.addEventListener("tug-disengage-follow-bottom", onDisengage);
+
       return () => {
+        el.removeEventListener("tug-disengage-follow-bottom", onDisengage);
         smartScroll.dispose();
         smartScrollRef.current = null;
       };

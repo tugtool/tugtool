@@ -76,7 +76,6 @@ describe("composeFileData", () => {
           totalLines: 55,
         },
       },
-      undefined,
     );
     expect(data).toEqual({
       filePath: "/abs/CLAUDE.md",
@@ -91,27 +90,23 @@ describe("composeFileData", () => {
     const data = composeFileData(
       { file_path: "/abs/x.ts" },
       { file: { content: "x" } },
-      undefined,
     );
     expect(data?.filePath).toBe("/abs/x.ts");
   });
 
-  test("no structured.file → fall back to textOutput synthesized shape", () => {
-    const data = composeFileData(
-      { file_path: "/abs/x.ts", offset: 5 },
-      {},
-      "alpha\nbeta",
-    );
-    expect(data).toEqual({
-      filePath: "/abs/x.ts",
-      content: "alpha\nbeta",
-      startLine: 5,
-    });
-  });
-
-  test("nothing readable → undefined (wrapper drops body)", () => {
-    expect(composeFileData({}, {}, undefined)).toBeUndefined();
-    expect(composeFileData({}, {}, "")).toBeUndefined();
+  test("no structured.file → undefined (wrapper drops body)", () => {
+    // `tool_use_structured` is the canonical source for Read; without
+    // it there is nothing renderable. The `tool_result.output`
+    // cat-n readback is agent-facing metadata, not file content —
+    // feeding it to CM6 would produce a doubled gutter (numbers in
+    // the bytes plus CM6's own gutter). The wrapper's
+    // `status === "streaming"` placeholder covers the window before
+    // the structured event lands.
+    expect(composeFileData({}, {})).toBeUndefined();
+    expect(composeFileData({ file_path: "/abs/x.ts" }, {})).toBeUndefined();
+    expect(
+      composeFileData({ file_path: "/abs/x.ts" }, { file: {} }),
+    ).toBeUndefined();
   });
 });
 
@@ -262,18 +257,20 @@ describe("ReadToolBlock — body composition (matches test-05-tool-use-read.json
     );
   });
 
-  test("textOutput fallback drives the body when structured is absent", () => {
+  test("no structured.file → body is empty even when textOutput is present", () => {
+    // textOutput carries Claude Code's `<n>\t<line>` cat-n readback;
+    // it is agent-facing metadata, not file content. The body stays
+    // empty rather than route those bytes through CM6 (which would
+    // produce a doubled gutter — numbers in the bytes plus CM6's own
+    // gutter). The streaming placeholder covers the pre-structured
+    // window; this state is for a `ready` status with a malformed or
+    // missing structured event, which is rare and not worth a body.
     const props = makeProps({
       structuredResult: undefined,
-      textOutput: "alpha\nbeta",
+      textOutput: "1\talpha\n2\tbeta",
     });
     const { container } = render(<ReadToolBlock {...props} />);
-    const fileRoot = container.querySelector(
-      '[data-slot="file-body"]',
-    ) as HTMLElement;
-    expect(fileRoot).not.toBeNull();
-    expect(fileRoot.textContent).toContain("alpha");
-    expect(fileRoot.textContent).toContain("beta");
+    expect(container.querySelector('[data-slot="file-body"]')).toBeNull();
   });
 
   test("nothing renderable → body is empty (no FileBlock at all)", () => {

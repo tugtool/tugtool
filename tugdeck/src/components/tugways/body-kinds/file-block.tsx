@@ -15,22 +15,36 @@
  * Composition:
  *  - Header (chrome strip) — `path basename` + optional language pill
  *    + "N lines" / "Showing N of M lines" counts + `Search`
- *    `<TugIconButton>` (opens CM6's find panel via the viewer ref) +
- *    `Collapse` `<TugIconButton>` (when above threshold). Hidden when
- *    `embedded=true` because the host wrapper (e.g. `ToolWrapperChrome`)
- *    owns identity in those cases.
- *  - Body — either `<TugCue role="active">` (collapsed reveal cue) or
- *    `<TugCodeView>` (expanded code view). Mutually exclusive; CM6
+ *    `<TugIconButton>` (opens CM6's find panel via the viewer ref).
+ *    Hidden when `embedded=true` because the host wrapper (e.g.
+ *    `ToolWrapperChrome`) owns identity in those cases.
+ *  - Fold cue — a `<TugCue role="active">` rendered whenever the file
+ *    is `overThreshold`, in both states. Icon + label swap by state
+ *    (chevron-down + "N lines folded — click to expand" vs chevron-up
+ *    + "click to collapse"). This is the persistent toggle handle:
+ *    embedded-mode hosts hide the header, so without a cue that
+ *    spans both states the user could expand but not collapse back.
+ *  - Body — `<TugCodeView>` (expanded) or nothing (collapsed). CM6
  *    isn't mounted while collapsed so a huge file doesn't pay the
  *    mount cost until the user reveals it.
  *
  * Long-file collapse:
  *  - Lines above `collapseThreshold` (default 80, per audit §5.1) fold
- *    by default. The collapsed view shows a `<TugCue role="active">`
- *    inviting the user to reveal. The threshold and the cue are
- *    visual policy; the audit measured Read P50 at 50 lines, so the
- *    80-line threshold catches the upper ~40% — long enough to scan-
- *    or-skip, short enough not to fold the average file.
+ *    by default. The fold cue invites the user to reveal. The
+ *    threshold is visual policy; the audit measured Read P50 at 50
+ *    lines, so the 80-line threshold catches the upper ~40% — long
+ *    enough to scan-or-skip, short enough not to fold the average
+ *    file.
+ *  - The toggle dispatches a bubbling `tug-disengage-follow-bottom`
+ *    `CustomEvent` *before* the React state update. A host like
+ *    `TugListView` listens on its scroll container and calls
+ *    `SmartScroll.disengageFollowBottom()`, so the ResizeObserver
+ *    flush triggered by the cell-height change does not call
+ *    `pinToBottom` (the post-commit pin effect bails on
+ *    `!isFollowingBottom`). Without this, expanding a file inside a
+ *    `followBottom` list scrolls the cue off-screen — violating
+ *    "interacting with a control does not move that control out of
+ *    view."
  *
  * Embedded mode:
  *  - `embedded=true` drops the standalone frame (background, border,
@@ -384,6 +398,14 @@ export const FileBlock: React.FC<FileBlockProps> = ({
     collapsedProp !== undefined ? collapsedProp : overThreshold;
   const [collapsed, setCollapsed] = React.useState<boolean>(initialCollapsed);
 
+  // Root ref — used to dispatch the disengage-follow-bottom event so
+  // the host (e.g. `TugListView`) releases its auto-pin lock before
+  // the cell height change. Without that, the user clicks "expand",
+  // the cell grows, `ResizeObserver` requests a bottom pin, and the
+  // click target scrolls off-screen — violating "interacting with a
+  // control does not move that control out of view."
+  const rootRef = React.useRef<HTMLDivElement | null>(null);
+
   // Sync to controlled prop when it changes upstream so parents can
   // drive collapse from chrome elsewhere in the row.
   React.useEffect(() => {
@@ -391,6 +413,15 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   }, [collapsedProp]);
 
   const toggleCollapsed = React.useCallback(() => {
+    // Dispatch BEFORE `setCollapsed` so the listener (TugListView's
+    // SmartScroll, when present) flips `isFollowingBottom` to false
+    // before React commits the new cell size; the subsequent
+    // ResizeObserver flush then bails out of `pinToBottom` (see
+    // `tug-list-view.tsx`:`isFollowingBottom` gate). Bubbles up
+    // through the DOM tree; non-list hosts simply ignore it.
+    rootRef.current?.dispatchEvent(
+      new CustomEvent("tug-disengage-follow-bottom", { bubbles: true }),
+    );
     setCollapsed((prev) => {
       const next = !prev;
       onToggleCollapsed?.(next);
@@ -406,6 +437,12 @@ export const FileBlock: React.FC<FileBlockProps> = ({
     // Open the find panel; if collapsed, reveal first so the viewer
     // is mounted before we ask it to open its panel.
     if (collapsed) {
+      // Same disengage-on-toggle treatment as `toggleCollapsed` — the
+      // reveal grows the cell and would otherwise trip the host list's
+      // bottom pin.
+      rootRef.current?.dispatchEvent(
+        new CustomEvent("tug-disengage-follow-bottom", { bubbles: true }),
+      );
       setCollapsed(false);
       onToggleCollapsed?.(false);
       // The viewer mounts in the next layout tick; defer the panel
@@ -425,6 +462,7 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   if (data === undefined || lines.length === 0) {
     return (
       <div
+        ref={rootRef}
         data-slot={DATA_SLOT_ROOT}
         data-empty="true"
         data-embedded={embedded ? "true" : undefined}
@@ -441,8 +479,21 @@ export const FileBlock: React.FC<FileBlockProps> = ({
     `tugx-file${langClass}` +
     (className === undefined ? "" : ` ${className}`);
 
+  // Fold cue: a persistent click target that swaps icon + label by
+  // state. Always rendered when `overThreshold` so the user has a
+  // stable handle for the collapse <-> expand cycle. Without this,
+  // embedded mode loses the toggle once expanded (the wrapper hides
+  // the header). The non-embedded mode still has the header's chevron
+  // button below, but the cue lives in both — symmetric, predictable.
+  const cueIcon = collapsed ? <ChevronsDown /> : <ChevronsUp />;
+  const cueLabel = collapsed
+    ? `${lines.length.toLocaleString()} lines folded — click to expand`
+    : "click to collapse";
+  const showCue = overThreshold;
+
   return (
     <div
+      ref={rootRef}
       data-slot={DATA_SLOT_ROOT}
       data-empty="false"
       data-language={language ?? "plain"}
@@ -476,27 +527,22 @@ export const FileBlock: React.FC<FileBlockProps> = ({
               onClick={onSearchClick}
             />
           ) : null}
-          {overThreshold ? (
-            <TugIconButton
-              icon={collapsed ? <ChevronsDown /> : <ChevronsUp />}
-              aria-label={collapsed ? "Expand file" : "Collapse file"}
-              onClick={toggleCollapsed}
-            />
-          ) : null}
         </div>
       )}
 
-      {collapsed ? (
+      {showCue ? (
         <TugCue
           role="active"
-          icon={<ChevronsDown />}
-          aria-expanded={false}
+          icon={cueIcon}
+          aria-expanded={!collapsed}
           onClick={toggleCollapsed}
-          className="tugx-file-collapsed-hint"
+          className="tugx-file-fold-cue"
         >
-          {`${lines.length.toLocaleString()} lines folded — click to expand`}
+          {cueLabel}
         </TugCue>
-      ) : (
+      ) : null}
+
+      {collapsed ? null : (
         <TugCodeView
           ref={codeViewRef}
           value={data.content}
