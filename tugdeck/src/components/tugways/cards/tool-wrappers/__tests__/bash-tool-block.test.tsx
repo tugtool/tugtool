@@ -41,6 +41,8 @@ import {
   BashToolBlock,
   composeTerminalData,
   formatBashDuration,
+  isUnifiedDiffOutput,
+  tryParseBashDiff,
 } from "../bash-tool-block";
 import {
   registerToolWrapper,
@@ -311,6 +313,210 @@ describe("BashToolBlock — caution flag", () => {
     ) as HTMLElement;
     expect(badge).not.toBeNull();
     expect(badge.textContent).toContain("unknown shape");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Unified-diff detection — `isUnifiedDiffOutput`
+// ---------------------------------------------------------------------------
+
+const GIT_SHOW_FIXTURE = `commit 1234567890abcdef1234567890abcdef12345678
+Author: Test User <test@example.com>
+Date:   Mon Jan 1 00:00:00 2024 -0500
+
+    Add greeting helper
+
+diff --git a/src/greet.ts b/src/greet.ts
+index abc1234..def5678 100644
+--- a/src/greet.ts
++++ b/src/greet.ts
+@@ -1,3 +1,5 @@
+ export function greet(name: string) {
+-  return "Hello " + name;
++  return \`Hello, \${name}!\`;
+ }
++
++export const DEFAULT = greet("world");
+`;
+
+const GIT_DIFF_FIXTURE = `diff --git a/lib/foo.ts b/lib/foo.ts
+index 1111111..2222222 100644
+--- a/lib/foo.ts
++++ b/lib/foo.ts
+@@ -10,7 +10,7 @@ export function foo() {
+-  return 1;
++  return 2;
+ }
+`;
+
+const GIT_LOG_P_FIXTURE = `commit abcdef1
+Author: A <a@x.com>
+Date:   Mon Jan 1 00:00:00 2024 -0500
+
+    Bump version
+
+diff --git a/version.txt b/version.txt
+--- a/version.txt
++++ b/version.txt
+@@ -1 +1 @@
+-1.0.0
++1.0.1
+`;
+
+const GIT_STATUS_FIXTURE = `On branch main
+Your branch is up to date with 'origin/main'.
+
+nothing to commit, working tree clean
+`;
+
+const LS_LA_FIXTURE = `total 24
+drwxr-xr-x  5 user staff   160 Jan  1 00:00 .
+drwxr-xr-x 10 user staff   320 Jan  1 00:00 ..
+-rw-r--r--  1 user staff  1024 Jan  1 00:00 README.md
+`;
+
+describe("isUnifiedDiffOutput — positives", () => {
+  test("git show output (commit + diff --git + @@) is detected", () => {
+    expect(isUnifiedDiffOutput(GIT_SHOW_FIXTURE)).toBe(true);
+  });
+
+  test("git diff output (diff --git + @@, no commit header) is detected", () => {
+    expect(isUnifiedDiffOutput(GIT_DIFF_FIXTURE)).toBe(true);
+  });
+
+  test("git log -p output (commit + diff --git) is detected", () => {
+    expect(isUnifiedDiffOutput(GIT_LOG_P_FIXTURE)).toBe(true);
+  });
+
+  test("bare hunk header alone is enough (some pipelines pre-strip headers)", () => {
+    expect(isUnifiedDiffOutput("@@ -1,2 +1,3 @@\n unchanged\n+new\n")).toBe(true);
+  });
+});
+
+describe("isUnifiedDiffOutput — negatives (must not false-positive)", () => {
+  test("git status is not a diff", () => {
+    expect(isUnifiedDiffOutput(GIT_STATUS_FIXTURE)).toBe(false);
+  });
+
+  test("ls -la is not a diff", () => {
+    expect(isUnifiedDiffOutput(LS_LA_FIXTURE)).toBe(false);
+  });
+
+  test("empty / undefined returns false", () => {
+    expect(isUnifiedDiffOutput(undefined)).toBe(false);
+    expect(isUnifiedDiffOutput("")).toBe(false);
+  });
+
+  test("bash output that contains '@@' literally but not as a hunk header is not a diff", () => {
+    // The `@@` separator appears in some build / CI scripts — it must
+    // NOT match unless followed by the full `-n,n +n,n @@` shape.
+    const noise = "deploy-rev: tag@@2024-01-01\nartifact: app@@v1.2.3\nstatus: ok\n";
+    expect(isUnifiedDiffOutput(noise)).toBe(false);
+  });
+
+  test("a bare 'commit' word in narrative bash output is not a diff", () => {
+    expect(
+      isUnifiedDiffOutput("Reminder: commit your work before lunch\n"),
+    ).toBe(false);
+  });
+
+  test("scan is bounded to the first 2 KB — markers beyond it don't trigger", () => {
+    const padding = "x".repeat(3000);
+    expect(isUnifiedDiffOutput(`${padding}\ndiff --git a/foo b/foo\n`)).toBe(
+      false,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// tryParseBashDiff — heuristic + parser composition
+// ---------------------------------------------------------------------------
+
+describe("tryParseBashDiff", () => {
+  test("returns hunks for git show output", () => {
+    const hunks = tryParseBashDiff(GIT_SHOW_FIXTURE);
+    expect(hunks).not.toBeNull();
+    expect(hunks!.length).toBeGreaterThan(0);
+    expect(hunks![0]).toMatchObject({
+      before_start: 1,
+      before_count: 3,
+      after_start: 1,
+      after_count: 5,
+    });
+  });
+
+  test("returns null when the heuristic matches but the parser yields zero hunks", () => {
+    // `commit <sha>` alone with no diff body → heuristic true, parser → 0 hunks.
+    const heuristicOnlyShape = "commit abcdefg\nAuthor: x\nDate: y\n\n    empty commit\n";
+    expect(tryParseBashDiff(heuristicOnlyShape)).toBeNull();
+  });
+
+  test("returns null for plain bash output", () => {
+    expect(tryParseBashDiff(GIT_STATUS_FIXTURE)).toBeNull();
+    expect(tryParseBashDiff(undefined)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Body composition — DiffBlock routing
+// ---------------------------------------------------------------------------
+
+describe("BashToolBlock — body diff routing", () => {
+  test("diff-shaped textOutput renders DiffBlock (not TerminalBlock)", () => {
+    const props = makeProps({
+      input: { command: "git show HEAD" },
+      structuredResult: undefined,
+      textOutput: GIT_SHOW_FIXTURE,
+    });
+    const { container } = render(<BashToolBlock {...props} />);
+    expect(container.querySelector('[data-slot="diff-body"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="terminal-body"]')).toBeNull();
+  });
+
+  test("diff-shaped structured stdout also routes through DiffBlock", () => {
+    const props = makeProps({
+      input: { command: "git diff" },
+      structuredResult: { stdout: GIT_DIFF_FIXTURE, stderr: "", interrupted: false },
+    });
+    const { container } = render(<BashToolBlock {...props} />);
+    expect(container.querySelector('[data-slot="diff-body"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="terminal-body"]')).toBeNull();
+  });
+
+  test("non-diff output continues to render TerminalBlock", () => {
+    const props = makeProps({
+      input: { command: "git status" },
+      structuredResult: { stdout: GIT_STATUS_FIXTURE, stderr: "", interrupted: false },
+    });
+    const { container } = render(<BashToolBlock {...props} />);
+    expect(container.querySelector('[data-slot="terminal-body"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="diff-body"]')).toBeNull();
+  });
+
+  test("diff-shaped but zero parsed hunks falls back to TerminalBlock", () => {
+    // `commit <sha>` alone — heuristic matches, parser yields no hunks.
+    const heuristicOnly = "commit abcdef1\nAuthor: x\nDate: y\n\n    empty\n";
+    const props = makeProps({
+      input: { command: "git show HEAD" },
+      structuredResult: { stdout: heuristicOnly, stderr: "", interrupted: false },
+    });
+    const { container } = render(<BashToolBlock {...props} />);
+    expect(container.querySelector('[data-slot="terminal-body"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="diff-body"]')).toBeNull();
+  });
+
+  test("streaming does NOT detect / route — partial output may include stray markers", () => {
+    const props = makeProps({
+      status: "streaming",
+      input: { command: "git show HEAD" },
+      structuredResult: { stdout: GIT_SHOW_FIXTURE, stderr: "", interrupted: false },
+    });
+    const { container } = render(<BashToolBlock {...props} />);
+    // Streaming swaps the body for the placeholder regardless of payload.
+    expect(
+      container.querySelector('[data-slot="tool-wrapper-streaming-placeholder"]'),
+    ).not.toBeNull();
+    expect(container.querySelector('[data-slot="diff-body"]')).toBeNull();
   });
 });
 

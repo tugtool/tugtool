@@ -2,14 +2,19 @@
  * `BashToolBlock` — Layer-2 wrapper for the Bash tool.
  *
  * Composes `ToolWrapperChrome` (header / footer / status) around a
- * `TerminalBlock` body. Per [Spec S03] / [Table T02]:
+ * smart-picked body kind — usually `TerminalBlock`, but `DiffBlock`
+ * when the output looks like a unified diff. Per [Spec S03] / [Table
+ * T02]:
  *
  *   - **Header:** terminal icon + tool name "Bash" + the shell
  *     command pulled from `input.command` (truncated with hover-
  *     expand via CSS — no JS state).
  *   - **Body:** `TerminalBlock` fed from
  *     `tool_use_structured.{stdout,stderr}` when present, otherwise
- *     falling back to the plain-text `tool_result.output`.
+ *     falling back to the plain-text `tool_result.output`. When that
+ *     stdout looks like a unified diff (i.e. `git diff`, `git show`,
+ *     `git log -p`), `DiffBlock` renders instead — see the
+ *     diff-routing helpers below.
  *   - **Footer badges:** non-zero exit code (red), `interrupted`
  *     indicator, "(no output)" hint for empty-success cases, and
  *     `durationMs` when known. `exit 0` is intentionally suppressed
@@ -69,6 +74,9 @@ import {
   TerminalBlock,
   type TerminalData,
 } from "@/components/tugways/body-kinds/terminal-block";
+import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
+import { parseUnifiedDiffText } from "@/lib/diff/parse-unified-diff";
+import type { DiffHunk } from "@/lib/diff/types";
 
 import {
   StreamingPlaceholder,
@@ -169,6 +177,78 @@ function bodyDataWithoutFooter(data: TerminalData): TerminalData {
 }
 
 // ---------------------------------------------------------------------------
+// Unified-diff detection
+//
+// Smart-pick routing: when the bash output looks like a unified diff (i.e.
+// the user ran `git diff`, `git show`, `git log -p`, or any pipeline that
+// emits the standard diff shape), the wrapper renders `DiffBlock` instead
+// of `TerminalBlock`. The check is heuristic-then-parse:
+//
+//  1. `isUnifiedDiffOutput(text)` — fast string scan, scoped to the first
+//     ~2 KB so a 10 MB log doesn't pay the full regex cost.
+//  2. `parseUnifiedDiffText(text)` — actually parses the hunks. If the
+//     heuristic matched but no hunks come out (false positive), fall back
+//     to `TerminalBlock` so nothing renders blank.
+//
+// The fallback is what makes this safe to enable by default: the worst
+// case for benign bash output is "still renders as terminal" — never a
+// regression. Streaming is excluded; partial output can include an `@@`
+// marker mid-line and we'd rather wait for the complete payload.
+// ---------------------------------------------------------------------------
+
+/**
+ * How many leading bytes of `textOutput` the detection regex inspects.
+ * Bounded so a multi-MB bash log doesn't pay the full scan cost — the
+ * markers we're looking for (commit header, `diff --git`, first `@@`)
+ * always appear in the first few lines of a real diff.
+ */
+const DIFF_DETECT_SCAN_LIMIT = 2048;
+
+/** `diff --git ` line — only `git diff` / `git show` / `git log -p` emit this. */
+const DIFF_GIT_PREFIX_RE = /^diff --git /m;
+/** Unified-diff hunk header — `@@ -<n>[,<n>] +<n>[,<n>] @@`. */
+const HUNK_HEADER_RE = /^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/m;
+/** `commit <sha>` opener for `git show` / `git log -p`; 7–40 hex chars. */
+const COMMIT_HEADER_RE = /^commit [0-9a-f]{7,40}\b/m;
+
+/**
+ * Heuristic gate: does the bash output look like a unified diff?
+ *
+ * Scans the first ~2 KB for any of three markers — `diff --git `, a
+ * full `@@ -n,n +n,n @@` hunk header, or `commit <sha>` at line start.
+ * The parser runs after the gate and is the source of truth — this
+ * check exists only to skip the parse cost for the dominant non-diff
+ * case.
+ *
+ * Returns false for `undefined` / empty strings.
+ */
+export function isUnifiedDiffOutput(text: string | undefined): boolean {
+  if (text === undefined || text.length === 0) return false;
+  const slice = text.length > DIFF_DETECT_SCAN_LIMIT
+    ? text.slice(0, DIFF_DETECT_SCAN_LIMIT)
+    : text;
+  return (
+    DIFF_GIT_PREFIX_RE.test(slice) ||
+    HUNK_HEADER_RE.test(slice) ||
+    COMMIT_HEADER_RE.test(slice)
+  );
+}
+
+/**
+ * Try to parse the bash output as a unified diff. Returns the hunks
+ * when the heuristic matches AND the parser yields at least one hunk;
+ * returns `null` when either condition fails so the caller falls
+ * back to `TerminalBlock`.
+ */
+export function tryParseBashDiff(
+  text: string | undefined,
+): DiffHunk[] | null {
+  if (!isUnifiedDiffOutput(text)) return null;
+  const hunks = parseUnifiedDiffText(text!);
+  return hunks.length > 0 ? hunks : null;
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -246,6 +326,19 @@ export const BashToolBlock: React.FC<ToolWrapperProps> = ({
   // text. So on error, only render the body when the structured
   // result carries genuinely-distinct stdout / stderr (a process that
   // wrote to its own streams before failing).
+  //
+  // Diff-routing: when the (already-composed) stdout looks like a
+  // unified diff AND the parser yields at least one hunk, render
+  // `DiffBlock` instead of `TerminalBlock`. Excluded for streaming
+  // (incomplete output may include a stray `@@` marker mid-line) and
+  // for the error-with-no-body branch (chrome already shows the
+  // failure text). Memoize on the body's stdout so the parse runs
+  // once per result, not on every parent re-render.
+  const diffHunks = React.useMemo<DiffHunk[] | null>(() => {
+    if (status === "streaming") return null;
+    return tryParseBashDiff(bodyData.stdout);
+  }, [bodyData.stdout, status]);
+
   const hasStructuredBody =
     (structured.stdout !== undefined && structured.stdout.length > 0) ||
     (structured.stderr !== undefined && structured.stderr.length > 0);
@@ -254,6 +347,14 @@ export const BashToolBlock: React.FC<ToolWrapperProps> = ({
     body = <StreamingPlaceholder />;
   } else if (status === "error" && !hasStructuredBody) {
     body = null;
+  } else if (diffHunks !== null) {
+    body = (
+      <DiffBlock
+        data={{ source: "hunks", hunks: diffHunks }}
+        embedded
+        className="bash-tool-block-diff"
+      />
+    );
   } else {
     body = (
       <TerminalBlock

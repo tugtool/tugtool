@@ -101,8 +101,9 @@ import type { TugAction } from "./action-vocabulary";
 
 /**
  * Visual role. Determines surface tint, text color, and icon color via the
- * `--tug7-surface-tone-primary-normal-{role}-rest` family. The names match
- * the role slot vocabulary in `tuglaws/token-naming.md`.
+ * `--tug7-surface-tone-primary-normal-{role}-rest` family for tone roles,
+ * or via the inset surface for `"muted"`. The names match the role slot
+ * vocabulary in `tuglaws/token-naming.md`.
  *
  *  - `"active"`  (default) — blue tint, for generic informational cues like
  *    "click to expand" (variant G in the Phase 1 design gallery).
@@ -112,6 +113,9 @@ import type { TugAction } from "./action-vocabulary";
  *  - `"danger"`  — red tint + danger text color, for destructive cues.
  *  - `"data"`    — teal tint, for data-related cues.
  *  - `"success"` — green tint + success text color, for confirmation cues.
+ *  - `"muted"`   — neutral gray inset surface (no tone tint), for code-context
+ *    cues like diff hunk headers where the host already has its own emphatic
+ *    coloring and the cue should sit subdued.
  */
 export type TugCueRole =
   | "active"
@@ -120,10 +124,14 @@ export type TugCueRole =
   | "caution"
   | "danger"
   | "data"
-  | "success";
+  | "success"
+  | "muted";
 
 /** Padding density — toggles vertical and horizontal padding. */
 export type TugCueDensity = "compact" | "comfortable";
+
+/** Label alignment within the cue. Defaults to `"center"`. */
+export type TugCueAlign = "center" | "start";
 
 /** TugCue props. */
 export interface TugCueProps {
@@ -164,6 +172,20 @@ export interface TugCueProps {
 
   /** Padding density. Default: `"compact"`. */
   density?: TugCueDensity;
+
+  /**
+   * Label alignment within the cue. Default: `"center"`. Use `"start"`
+   * when the cue hosts code-shaped content that needs a stable left
+   * gutter (e.g. diff hunk headers that read down a column of `@@`).
+   */
+  align?: TugCueAlign;
+
+  /**
+   * Render the label in monospace. Default: `false`. Use for cues whose
+   * children are code-shaped (e.g. `@@ -217,21 +217,21 @@`) where the
+   * sans default would mangle alignment.
+   */
+  mono?: boolean;
 
   /** Disable interaction. Renders as HTML-disabled (`<button disabled>`). */
   disabled?: boolean;
@@ -208,6 +230,8 @@ export const TugCue = React.forwardRef<HTMLButtonElement, TugCueProps>(
       target,
       role = "active",
       density = "compact",
+      align = "center",
+      mono = false,
       disabled = false,
       "aria-expanded": ariaExpanded,
       "aria-controls": ariaControls,
@@ -271,6 +295,8 @@ export const TugCue = React.forwardRef<HTMLButtonElement, TugCueProps>(
         data-slot="tug-cue"
         data-tug-cue-role={role}
         data-tug-cue-density={density}
+        data-tug-cue-align={align}
+        data-tug-cue-mono={mono ? "true" : undefined}
         className={cn("tug-cue", className)}
         disabled={disabled}
         aria-expanded={ariaExpanded}

@@ -141,7 +141,16 @@ describe("TugCue – markup", () => {
     expect(getButton(container).getAttribute("data-tug-cue-density")).toBe("compact");
   });
 
-  it.each(["active", "accent", "agent", "caution", "danger", "data", "success"] as const)(
+  it.each([
+    "active",
+    "accent",
+    "agent",
+    "caution",
+    "danger",
+    "data",
+    "success",
+    "muted",
+  ] as const)(
     "role='%s' emits data-tug-cue-role='%s'",
     (role) => {
       const { container } = render(<TugCue role={role}>cue</TugCue>);
@@ -152,6 +161,26 @@ describe("TugCue – markup", () => {
   it("density='comfortable' emits data-tug-cue-density='comfortable'", () => {
     const { container } = render(<TugCue density="comfortable">cue</TugCue>);
     expect(getButton(container).getAttribute("data-tug-cue-density")).toBe("comfortable");
+  });
+
+  it("defaults align to 'center' when align is omitted", () => {
+    const { container } = render(<TugCue>cue</TugCue>);
+    expect(getButton(container).getAttribute("data-tug-cue-align")).toBe("center");
+  });
+
+  it("align='start' emits data-tug-cue-align='start'", () => {
+    const { container } = render(<TugCue align="start">cue</TugCue>);
+    expect(getButton(container).getAttribute("data-tug-cue-align")).toBe("start");
+  });
+
+  it("mono prop omitted → no data-tug-cue-mono attribute (default sans)", () => {
+    const { container } = render(<TugCue>cue</TugCue>);
+    expect(getButton(container).hasAttribute("data-tug-cue-mono")).toBe(false);
+  });
+
+  it("mono prop true → data-tug-cue-mono='true'", () => {
+    const { container } = render(<TugCue mono>cue</TugCue>);
+    expect(getButton(container).getAttribute("data-tug-cue-mono")).toBe("true");
   });
 
   it("passes aria-expanded through verbatim", () => {

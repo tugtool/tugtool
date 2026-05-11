@@ -75,6 +75,7 @@ import { GalleryTextEditor } from "./gallery-text-editor";
 import { GallerySplitPane } from "./gallery-split-pane";
 import { GalleryStatePreservation } from "./gallery-state-preservation";
 import { GalleryTugCue } from "./gallery-tug-cue";
+import { GalleryBashToolBlock } from "./gallery-bash-tool-block";
 import "./gallery.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
@@ -447,6 +448,20 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.textInput,
+  });
+
+  // Visual fixture for the smart-pick routing inside BashToolBlock:
+  // echo (TerminalBlock) vs git show / git diff (DiffBlock) vs git status
+  // (TerminalBlock again, must not false-positive). See roadmap
+  // tide-assistant-rendering.md #step-10-7.
+  registerCard({
+    componentId: "gallery-bash-tool-block",
+    contentFactory: (_cardId) => <GalleryBashToolBlock />,
+    defaultMeta: { title: "BashToolBlock", icon: "Terminal", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
     category: CATEGORIES.textInput,
   });
 

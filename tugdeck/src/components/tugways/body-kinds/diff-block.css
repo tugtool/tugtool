@@ -151,35 +151,13 @@
   border-bottom: 0;
 }
 
-.tugx-diff-hunk-header {
-  display: flex;
-  align-items: center;
-  gap: var(--tugx-diff-header-gap);
-  padding: var(--tugx-diff-hunk-header-padding);
-  background: var(--tugx-diff-hunk-header-bg);
-  color: var(--tugx-diff-hunk-header-color);
-  font-family: var(--tugx-diff-hunk-header-font);
-  font-size: var(--tugx-diff-hunk-header-size);
-  cursor: pointer;
-  user-select: none;
-}
-
-.tugx-diff-hunk-header-text {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.tugx-diff-hunk-toggle {
-  appearance: none;
-  background: transparent;
-  border: 0;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  padding: 0;
-  line-height: 1;
-}
+/* The hunk header itself is now a `<TugCue role="muted" align="start" mono>`
+ * — see diff-block.tsx. The `.tugx-diff-hunk-header` class is forwarded
+ * onto that cue for callers that want to scope styles to the hunk header
+ * specifically; no rules required here. The legacy `--tugx-diff-hunk-
+ * header-*` and `--tugx-diff-hunk-toggle-*` token slots were retired
+ * because TugCue's own `--tugx-cue-*` slots own the appearance now.
+ */
 
 .tugx-diff-hunk[data-collapsed="true"] .tugx-diff-hunk-rows {
   display: none;

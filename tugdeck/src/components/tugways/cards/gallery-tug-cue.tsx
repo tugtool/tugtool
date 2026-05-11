@@ -22,7 +22,7 @@
  */
 
 import React, { useId, useState } from "react";
-import { ChevronsUpDown } from "lucide-react";
+import { ChevronsUpDown, ChevronDown, ChevronRight } from "lucide-react";
 import { TugCue } from "@/components/tugways/tug-cue";
 import type { TugCueDensity, TugCueRole } from "@/components/tugways/tug-cue";
 import { TugLabel } from "@/components/tugways/tug-label";
@@ -42,6 +42,7 @@ const ALL_ROLES: readonly TugCueRole[] = [
   "danger",
   "data",
   "success",
+  "muted",
 ];
 const ALL_DENSITIES: readonly TugCueDensity[] = ["compact", "comfortable"];
 
@@ -285,6 +286,31 @@ export function GalleryTugCue() {
               }),
             )}
           </div>
+        </div>
+
+        <TugSeparator />
+
+        {/* ---- Code-context cue (the diff hunk header shape) ---- */}
+        <div className="cg-section">
+          <TugLabel className="cg-section-title">Code-context cue — role=muted, align=start, mono (diff hunk header shape)</TugLabel>
+          {(() => {
+            const id = "code-context";
+            const expanded = !!matrixExpandedById[id];
+            return (
+              <div className="cg-tug-cue-frame">
+                <TugCue
+                  role="muted"
+                  align="start"
+                  mono
+                  icon={expanded ? <ChevronDown /> : <ChevronRight />}
+                  aria-expanded={expanded}
+                  onClick={onMatrixActivate(id)}
+                >
+                  @@ -217,21 +217,21 @@ Higher-level components assembled from multiple primitives.
+                </TugCue>
+              </div>
+            );
+          })()}
         </div>
 
         <TugSeparator />

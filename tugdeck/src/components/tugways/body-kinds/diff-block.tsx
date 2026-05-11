@@ -69,7 +69,9 @@
 import "./diff-block.css";
 
 import React from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 
+import { TugCue } from "@/components/tugways/tug-cue";
 import { detectLanguage } from "./file-block";
 import {
   parseUnifiedDiffText,
@@ -165,7 +167,6 @@ const DATA_SLOT_ROOT = "diff-body";
 const DATA_SLOT_HEADER = "diff-header";
 const DATA_SLOT_HUNKS = "diff-hunks";
 const DATA_SLOT_HUNK = "diff-hunk";
-const DATA_SLOT_HUNK_HEADER = "diff-hunk-header";
 const DATA_SLOT_HUNK_ROWS = "diff-hunk-rows";
 const DATA_SLOT_LINE = "diff-line";
 const DATA_SLOT_SBS_ROW = "diff-sbs-row";
@@ -716,36 +717,24 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
                 data-hunk-index={index}
                 data-collapsed={isHunkCollapsed ? "true" : "false"}
               >
-                <div
-                  className="tugx-diff-hunk-header"
-                  data-slot={DATA_SLOT_HUNK_HEADER}
-                  onClick={() => toggleHunk(index)}
-                  role="button"
-                  tabIndex={0}
+                <TugCue
+                  role="muted"
+                  align="start"
+                  mono
+                  icon={
+                    isHunkCollapsed ? (
+                      <ChevronRight aria-hidden />
+                    ) : (
+                      <ChevronDown aria-hidden />
+                    )
+                  }
                   aria-expanded={!isHunkCollapsed}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      toggleHunk(index);
-                    }
-                  }}
+                  aria-label={isHunkCollapsed ? "Expand hunk" : "Collapse hunk"}
+                  onClick={() => toggleHunk(index)}
+                  className="tugx-diff-hunk-header"
                 >
-                  <span className="tugx-diff-hunk-header-text">
-                    {composeHunkHeader(hunkData.hunk)}
-                  </span>
-                  <span className="tugx-diff-spacer" />
-                  <button
-                    type="button"
-                    className="tugx-diff-hunk-toggle"
-                    aria-label={isHunkCollapsed ? "Expand hunk" : "Collapse hunk"}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleHunk(index);
-                    }}
-                  >
-                    {isHunkCollapsed ? "▸" : "▾"}
-                  </button>
-                </div>
+                  {composeHunkHeader(hunkData.hunk)}
+                </TugCue>
                 <div
                   className="tugx-diff-hunk-rows"
                   data-slot={DATA_SLOT_HUNK_ROWS}

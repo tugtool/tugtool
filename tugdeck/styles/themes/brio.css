@@ -1315,12 +1315,9 @@ body {
   --tugx-diff-toggle-radius: 4px;
   --tugx-diff-toggle-size: var(--tug-font-size-2xs);
 
-  /* Hunk header band (@@ -1,5 +1,8 @@) */
-  --tugx-diff-hunk-header-padding: var(--tug-space-2xs) var(--tug-space-md);
-  --tugx-diff-hunk-header-bg: rgba(0, 0, 0, 0.18);
-  --tugx-diff-hunk-header-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-diff-hunk-header-size: var(--tug-font-size-3xs);
-  --tugx-diff-hunk-header-font: var(--tug-font-family-mono);
+  /* Hunk header band — formerly its own --tugx-diff-hunk-header-* slot
+   * family; now a TugCue (role=muted, align=start, mono) with its own
+   * --tugx-cue-* slots. */
   --tugx-diff-hunk-divider: rgba(255, 255, 255, 0.04);
 
   /* Body rows */

@@ -45,6 +45,16 @@
   border-radius: 0;
 }
 
+/* Diff-routed body — when the bash output is a unified diff, DiffBlock
+ * renders in place of TerminalBlock. Same flush-to-chrome treatment as
+ * the terminal body so neither variant introduces a visible inner gap.
+ */
+.bash-tool-block-diff {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+
 /* Footer badge — exit code (matches TerminalBlock footer semantics). */
 .bash-tool-block-exit {
   display: inline-flex;

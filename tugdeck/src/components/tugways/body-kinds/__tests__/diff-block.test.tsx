@@ -392,9 +392,11 @@ describe("DiffBlock — unified source render", () => {
     );
     const hunks = container.querySelectorAll('[data-slot="diff-hunk"]');
     expect(hunks).toHaveLength(1);
-    const hunkHeader = hunks[0].querySelector(
-      '[data-slot="diff-hunk-header"]',
-    );
+    // The hunk header is a TugCue ([L19] data-slot="tug-cue") wearing the
+    // legacy .tugx-diff-hunk-header class so callers can scope styles to
+    // it. Querying by the class keeps the test stable across visual
+    // refactors that move between body kinds.
+    const hunkHeader = hunks[0].querySelector(".tugx-diff-hunk-header");
     expect(hunkHeader?.textContent).toContain("@@ -1,5 +1,8 @@");
   });
 
@@ -449,9 +451,7 @@ describe("DiffBlock — collapse", () => {
       '[data-slot="diff-hunk"]',
     ) as HTMLElement;
     expect(hunk.getAttribute("data-collapsed")).toBe("false");
-    const header = hunk.querySelector(
-      '[data-slot="diff-hunk-header"]',
-    ) as HTMLElement;
+    const header = hunk.querySelector(".tugx-diff-hunk-header") as HTMLElement;
     act(() => {
       fireEvent.click(header);
     });

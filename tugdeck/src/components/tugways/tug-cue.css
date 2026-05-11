@@ -16,10 +16,10 @@
  *
  * ## Roles
  *
- * The `role` prop maps to seven values that match the canonical role slot
- * in `tuglaws/token-naming.md`. Each value selects a surface tint from the
- * `--tug7-surface-tone-primary-normal-{role}-rest` family and a paired
- * text + icon color:
+ * The `role` prop maps to eight values from the canonical role vocabulary
+ * in `tuglaws/token-naming.md`. The seven *tone* values each select a
+ * surface tint from `--tug7-surface-tone-primary-normal-{role}-rest`;
+ * `muted` selects the neutral inset surface (no tone tint):
  *
  *  - `[data-tug-cue-role="active"]`  → blue tint (default — variant G's pick)
  *  - `[data-tug-cue-role="accent"]`  → orange tint
@@ -28,6 +28,10 @@
  *  - `[data-tug-cue-role="danger"]`  → red tint + danger text/icon
  *  - `[data-tug-cue-role="data"]`    → teal tint
  *  - `[data-tug-cue-role="success"]` → green tint + success text/icon
+ *  - `[data-tug-cue-role="muted"]`   → neutral inset surface (no tint),
+ *    for code-context cues whose host already paints emphatic content
+ *    (e.g. diff hunk headers — the +/- rows below shouldn't compete with
+ *    a tinted banner).
  *
  * Each `[data-tug-cue-role="…"]` selector rebinds the `--tugx-cue-bg`,
  * `--tugx-cue-fg`, and `--tugx-cue-icon-fg` slots. The base rules below
@@ -38,6 +42,14 @@
  *
  *  - `[data-tug-cue-density="compact"]`      → `--tug-space-sm/-lg` padding
  *  - `[data-tug-cue-density="comfortable"]`  → `--tug-space-md/-xl` padding
+ *
+ * ## Alignment + font
+ *
+ *  - `[data-tug-cue-align="center"]` (default) → centered label
+ *  - `[data-tug-cue-align="start"]`            → left-aligned label, useful
+ *    when the cue hosts code-shaped content that reads down a column
+ *  - `[data-tug-cue-mono="true"]`              → monospace font for the
+ *    label; sans default otherwise
  *
  * ## Hover affordance
  *
@@ -95,6 +107,19 @@ body {
   cursor: pointer;
 }
 
+/* ---- Alignment ---- */
+
+.tug-cue[data-tug-cue-align="start"] {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+/* ---- Monospace label ---- */
+
+.tug-cue[data-tug-cue-mono="true"] .tug-cue-label {
+  font-family: var(--tug-font-family-mono);
+}
+
 /* ---- Density variants ---- */
 
 .tug-cue[data-tug-cue-density="compact"] {
@@ -146,6 +171,14 @@ body {
   --tugx-cue-bg:      var(--tug7-surface-tone-primary-normal-success-rest);
   --tugx-cue-fg:      var(--tug7-element-global-text-normal-success-rest);
   --tugx-cue-icon-fg: var(--tug7-element-global-text-normal-success-rest);
+}
+
+.tug-cue[data-tug-cue-role="muted"] {
+  /* Neutral inset surface — same gray scrim the diff hunk header was
+   * approximating with rgba(0, 0, 0, 0.03), but now token-backed. */
+  --tugx-cue-bg:      var(--tug7-surface-global-primary-normal-inset-rest);
+  --tugx-cue-fg:      var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-cue-icon-fg: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* ---- Hover / focus / disabled per [L15] ---- */

@@ -1779,24 +1779,24 @@ Falling back to `TerminalBlock` on no-match is what makes this safe to enable by
 
 **Tasks:**
 
-- [ ] Implement `isUnifiedDiffOutput(text: string | undefined): boolean` in `bash-tool-block.tsx` (or a sibling util file). Heuristic scans only the first ~2 KB of output to keep the check O(1) for large outputs.
-- [ ] In the body-composition branch (where `BashToolBlock` currently always returns `<TerminalBlock>`), gate on `isUnifiedDiffOutput(textOutput) && parsed.length > 0`. Pass `<DiffBlock data={{ source: "hunks", hunks: parsed }}>` when both conditions hold.
-- [ ] When `cardId` is available to the bash wrapper, thread it through to `DiffBlock` for persistence.
-- [ ] When the bash output's first line is `commit <sha>`, use that as `data.filePath = null` (no path) and the commit-sha gets surfaced via the chrome header.
-- [ ] Gallery fixture: a bash card with stub output showing `git show <sha>` text routing through DiffBlock.
+- [x] Implement `isUnifiedDiffOutput(text: string | undefined): boolean` in `bash-tool-block.tsx` (or a sibling util file). Heuristic scans only the first ~2 KB of output to keep the check O(1) for large outputs.
+- [x] In the body-composition branch (where `BashToolBlock` currently always returns `<TerminalBlock>`), gate on `isUnifiedDiffOutput(textOutput) && parsed.length > 0`. Pass `<DiffBlock data={{ source: "hunks", hunks: parsed }}>` when both conditions hold. *(Implemented via the `tryParseBashDiff` helper which composes the heuristic + parse and returns `null` on either miss.)*
+- [ ] When `cardId` is available to the bash wrapper, thread it through to `DiffBlock` for persistence. *(Deferred: `cardId` is not yet on `ToolWrapperProps`. Threading it requires a broader plumbing change through `dispatchToolCallState`, `TranscriptToolCalls`, and every wrapper — orthogonal to the diff-routing shipped here. DiffBlock falls back to local view-mode state per Step 10.5 when no `cardId` is provided, so the visual behavior is identical; only cross-mount persistence is missing. Track in a follow-up that touches all wrappers at once.)*
+- [ ] When the bash output's first line is `commit <sha>`, use that as `data.filePath = null` (no path) and the commit-sha gets surfaced via the chrome header. *(Deferred: `parseUnifiedDiffText` returns hunks only — file paths from `diff --git a/foo b/foo` lines are not extracted. For v1 the file-name column in DiffBlock's header is intentionally blank; the chrome header already shows the full `git show <sha>` command so the commit context is visible. A follow-up can extend the parser to surface both filePath and commit sha when a real consumer needs them.)*
+- [x] Gallery fixture: a bash card with stub output showing `git show <sha>` text routing through DiffBlock. *(See `gallery-bash-tool-block.tsx` — four canonical states: echo, git show, git diff, git status.)*
 
 **Tests:**
 
-- [ ] `isUnifiedDiffOutput` returns true for `git show`, `git diff`, `git log -p` fixture strings.
-- [ ] `isUnifiedDiffOutput` returns false for `git status`, `ls -la`, and bash output that happens to include `@@` as a literal character in some unrelated context (must not false-positive).
-- [ ] BashToolBlock with diff-shaped output renders `<DiffBlock>`, not `<TerminalBlock>`.
-- [ ] BashToolBlock with non-diff output continues to render `<TerminalBlock>`.
-- [ ] BashToolBlock with diff-shaped output but zero parsed hunks falls back to `<TerminalBlock>` (safety check).
-- [ ] BashToolBlock with `status === "streaming"` does NOT detect / route — streaming output is incomplete; defer to ready.
+- [x] `isUnifiedDiffOutput` returns true for `git show`, `git diff`, `git log -p` fixture strings.
+- [x] `isUnifiedDiffOutput` returns false for `git status`, `ls -la`, and bash output that happens to include `@@` as a literal character in some unrelated context (must not false-positive).
+- [x] BashToolBlock with diff-shaped output renders `<DiffBlock>`, not `<TerminalBlock>`.
+- [x] BashToolBlock with non-diff output continues to render `<TerminalBlock>`.
+- [x] BashToolBlock with diff-shaped output but zero parsed hunks falls back to `<TerminalBlock>` (safety check).
+- [x] BashToolBlock with `status === "streaming"` does NOT detect / route — streaming output is incomplete; defer to ready.
 
 **Checkpoint:**
 
-- [ ] `cd tugdeck && bunx tsc --noEmit && bun test` clean.
+- [x] `cd tugdeck && bunx tsc --noEmit && bun test` clean.
 - [ ] Manual: run `bash git show HEAD` against live tugcode and verify DiffBlock renders.
 
 ---
