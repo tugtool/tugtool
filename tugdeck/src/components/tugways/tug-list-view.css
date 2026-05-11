@@ -54,9 +54,22 @@ body {
      `tug-markdown-view.css`. */
   height: 100%;
 
-  /* Tokens drive padding so consumers tune per-instance via cascade. */
-  padding-block: var(--tugx-list-view-padding-block);
+  /* Inline padding is regular CSS padding — it doesn't interact with
+     sticky pinning along the block axis, so consumers tune it via
+     cascade as usual. Block-axis breathing room is restored below via
+     `::before` / `::after` pseudo-element spacers; see the comment on
+     `padding-block: 0` for the reason. */
   padding-inline: var(--tugx-list-view-padding-inline);
+
+  /* `padding-block: 0` is deliberate. Sticky descendants pin against
+     this scroll container's content-box edge (CSS Position 3 §6.5.1),
+     so any non-zero `padding-block` would offset every `top: 0` sticky
+     header by that amount — manifesting as content visible above the
+     pinned bar. The transcript's pinned tool-wrapper header surfaced
+     this in Step 10.9 Phase B.1. Block-axis breathing room is restored
+     by the `::before` / `::after` pseudo-elements below, which scroll
+     with the content and don't shift the sticky reference. */
+  padding-block: 0;
 
   /* Scroll-padding-end keeps the last cell from sitting flush against
      the container's edge (e.g. against an entry pane below). */
@@ -67,6 +80,20 @@ body {
      scroll, but we don't want a visible ring on the surface. Cell
      content owns its own focus visuals. */
   outline: none;
+}
+
+/* Block-axis breathing room — implemented as scroll-flow children
+   rather than container padding so sticky descendants pin against
+   the scrollport's padding-box edge (flush) rather than the
+   content-box edge offset by padding. The pseudo-elements participate
+   in normal scroll flow, so they scroll out of view as the user
+   scrolls — exactly the same UX as the previous `padding-block` had,
+   without the sticky-pin penalty. */
+.tug-list-view::before,
+.tug-list-view::after {
+  content: "";
+  display: block;
+  height: var(--tugx-list-view-padding-block);
 }
 
 /* ---- Spacers ---- */

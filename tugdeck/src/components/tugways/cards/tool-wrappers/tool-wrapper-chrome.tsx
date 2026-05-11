@@ -141,14 +141,67 @@ export const ToolWrapperChrome: React.FC<ToolWrapperChromeProps> = ({
   rootSlot = "tool-wrapper-chrome",
   className,
 }) => {
+  const rootRef = React.useRef<HTMLDivElement | null>(null);
+  const headerRef = React.useRef<HTMLDivElement | null>(null);
+
+  // Telescoping pin support — write the live measured chrome-header
+  // height into `--tugx-toolblock-header-height` on the chrome root so
+  // a body-kind actions row inside can pin at
+  // `top: calc(var(--tugx-pin-stack-top, 0) + var(--tugx-toolblock-header-height, 0))`
+  // and telescope cleanly under the identity header. Mirrors the
+  // entry-header → block-header relationship one level deeper.
+  //
+  // [L03] `useLayoutEffect` so the variable is written before paint —
+  // an inner actions row reading the variable in its first sticky
+  // pass gets the correct offset rather than a one-frame-late value.
+  // [L06] DOM write, never React state — appearance flows through
+  // CSS variables, not re-renders.
+  React.useLayoutEffect(() => {
+    const root = rootRef.current;
+    const header = headerRef.current;
+    if (root === null || header === null) return;
+
+    const write = (px: number): void => {
+      root.style.setProperty("--tugx-toolblock-header-height", `${px}px`);
+    };
+
+    // Seed the variable from the current header height so the first
+    // paint already has the correct value (the ResizeObserver only
+    // fires for subsequent changes).
+    write(header.offsetHeight);
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry === undefined) return;
+      // `borderBoxSize` is preferred — it reports the box-model height
+      // the browser actually laid out, matching `offsetHeight`. Fall
+      // back to `contentRect` for older WebKit if needed.
+      const boxes = entry.borderBoxSize;
+      const next =
+        boxes !== undefined && boxes.length > 0
+          ? boxes[0].blockSize
+          : entry.contentRect.height;
+      write(next);
+    });
+    observer.observe(header);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
   return (
     <div
+      ref={rootRef}
       data-slot={rootSlot}
       data-status={status}
       data-caution={caution?.reason ?? undefined}
       className={cn("tool-wrapper-chrome", className)}
     >
-      <div className="tool-wrapper-chrome-header" data-slot="tool-wrapper-header">
+      <div
+        ref={headerRef}
+        className="tool-wrapper-chrome-header"
+        data-slot="tool-wrapper-header"
+      >
         {toolIcon !== undefined ? (
           <span className="tool-wrapper-chrome-icon" aria-hidden="true">
             {toolIcon}

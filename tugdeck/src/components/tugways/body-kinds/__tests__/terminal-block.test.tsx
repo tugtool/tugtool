@@ -434,63 +434,121 @@ describe("TerminalBlock — copy button (in pinned header)", () => {
   });
 
   test("Copy button is always rendered (even when the terminal is empty)", () => {
-    // The header is part of the React shell, not the imperative
+    // The actions row is part of the React shell, not the imperative
     // body render; it is therefore present from mount, regardless of
     // whether `data` carries stdout/stderr. Users can copy an empty
-    // terminal (no-op text) without the button hiding on them.
+    // terminal (no-op text) without the button hiding on them. Copy
+    // lives in `.tugx-term-actions` since Step 10.9 Phase B.2.
     const { container } = render(<TerminalBlock />);
-    const header = container.querySelector(
-      '[data-slot="terminal-header"]',
+    const actions = container.querySelector(
+      '[data-slot="terminal-actions"]',
     ) as HTMLElement;
-    expect(header).not.toBeNull();
+    expect(actions).not.toBeNull();
     expect(
-      header.querySelector('button[aria-label="Copy terminal output"]'),
+      actions.querySelector('button[aria-label="Copy terminal output"]'),
     ).not.toBeNull();
   });
 });
 
-describe("TerminalBlock — pinned header + Copy button", () => {
-  test("header renders as the first child of the terminal root", () => {
-    // The pinned header sits at the top of the block, above the
-    // `.tugx-term-content` body container. Sticky positioning needs
-    // the header to be a direct child of the block root with the
-    // body as a sibling below it.
+describe("TerminalBlock — pinned chrome + Copy button", () => {
+  test("standalone with `headerLabel`: header is the first child, actions row follows", () => {
+    // The identity header sits at the top, then the actions row
+    // (Copy), then the imperative body container. Sticky positioning
+    // needs all three as direct children of the block root.
     const data: TerminalData = { stdout: "ok", stderr: "" };
-    const { container } = render(<TerminalBlock data={data} />);
+    const { container } = render(
+      <TerminalBlock data={data} headerLabel="ls -la" />,
+    );
     const root = container.querySelector(
       '[data-slot="terminal-body"]',
     ) as HTMLElement;
     expect(root.firstElementChild?.getAttribute("data-slot")).toBe(
       "terminal-header",
     );
+    // Second child is the actions row.
+    expect(
+      root.firstElementChild?.nextElementSibling?.getAttribute("data-slot"),
+    ).toBe("terminal-actions");
     expect(
       root.querySelector('[data-slot="terminal-content"]'),
     ).not.toBeNull();
   });
 
-  test("`headerLabel` prop renders in the header's left slot", () => {
-    // Standalone gallery use: caller supplies the label (typically
-    // the command). Embedded callers omit it because their wrapping
-    // chrome already carries identity.
+  test("standalone without `headerLabel`: header is suppressed; actions row is the first child", () => {
+    // The identity header is meaningful only when a label is supplied.
+    // Without one, suppress the header entirely — an empty strip
+    // would just add visual noise. The actions row (Copy) remains so
+    // the Copy affordance survives.
+    const data: TerminalData = { stdout: "ok", stderr: "" };
+    const { container } = render(<TerminalBlock data={data} />);
+    const root = container.querySelector(
+      '[data-slot="terminal-body"]',
+    ) as HTMLElement;
+    expect(
+      container.querySelector('[data-slot="terminal-header"]'),
+    ).toBeNull();
+    expect(root.firstElementChild?.getAttribute("data-slot")).toBe(
+      "terminal-actions",
+    );
+  });
+
+  test("embedded mode suppresses the header even when `headerLabel` is set", () => {
+    // Embedded composition (e.g. `BashToolBlock` inside
+    // `ToolWrapperChrome`): the wrapper chrome owns identity, so the
+    // body kind's identity header is suppressed. The actions row
+    // remains (Copy is still reachable inside the embedded host).
+    const data: TerminalData = { stdout: "ok", stderr: "" };
+    const { container } = render(
+      <TerminalBlock data={data} embedded headerLabel="ls -la" />,
+    );
+    expect(
+      container.querySelector('[data-slot="terminal-header"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-slot="terminal-actions"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('button[aria-label="Copy terminal output"]'),
+    ).not.toBeNull();
+  });
+
+  test("`headerLabel` prop renders inside the identity header", () => {
     const data: TerminalData = { stdout: "out", stderr: "" };
     const { container } = render(
       <TerminalBlock data={data} headerLabel="ls -la" />,
     );
-    const label = container.querySelector(
+    const header = container.querySelector(
+      '[data-slot="terminal-header"]',
+    ) as HTMLElement;
+    expect(header).not.toBeNull();
+    const label = header.querySelector(
       '[data-slot="terminal-header-label"]',
     ) as HTMLElement;
     expect(label).not.toBeNull();
     expect(label.textContent).toBe("ls -la");
   });
 
-  test("no `headerLabel` → no label slot, but the Copy button still renders", () => {
-    const data: TerminalData = { stdout: "out", stderr: "" };
-    const { container } = render(<TerminalBlock data={data} />);
+  test("Copy lives in `.tugx-term-actions`, not in `.tugx-term-header`", () => {
+    // The actions row hosts affordances; the identity header carries
+    // only the optional label. This split is the load-bearing change
+    // in Step 10.9 Phase B.2 — without it, the wrapper-chrome header
+    // and the body-kind affordance would compete for the same sticky
+    // position and overlap.
+    const data: TerminalData = { stdout: "ok", stderr: "" };
+    const { container } = render(
+      <TerminalBlock data={data} headerLabel="ls" />,
+    );
+    const header = container.querySelector(
+      '[data-slot="terminal-header"]',
+    ) as HTMLElement;
+    const actions = container.querySelector(
+      '[data-slot="terminal-actions"]',
+    ) as HTMLElement;
     expect(
-      container.querySelector('[data-slot="terminal-header-label"]'),
+      header.querySelector('button[aria-label="Copy terminal output"]'),
     ).toBeNull();
     expect(
-      container.querySelector('button[aria-label="Copy terminal output"]'),
+      actions.querySelector('button[aria-label="Copy terminal output"]'),
     ).not.toBeNull();
   });
 
@@ -498,9 +556,8 @@ describe("TerminalBlock — pinned header + Copy button", () => {
     // Regression pin: the imperative copy overlay (`.tugx-term-copy`
     // button, with `[data-slot="terminal-copy"]`) was retired with
     // the `--tugx-term-copy-*` slot family. The Copy lives in the
-    // header now; selecting by the old hook must return null. If a
-    // future refactor reintroduces an overlay, this test will catch
-    // the regression.
+    // actions row now; selecting by the old hook must return null. If
+    // a future refactor reintroduces an overlay, this test catches it.
     const lines: string[] = [];
     for (let i = 0; i < 200; i += 1) lines.push(`line-${i}`);
     const data: TerminalData = { stdout: lines.join("\n"), stderr: "" };
@@ -526,18 +583,23 @@ describe("TerminalBlock — pinned header + Copy button", () => {
     expect(scrollerRule).toMatch(/scrollbar-gutter:\s*stable/);
   });
 
-  test("CSS source declares `position: sticky` on `.tugx-term-header`", () => {
-    // The Copy lives in a header that stays in view while the body
-    // scrolls. The sticky declaration is the load-bearing CSS.
-    // Reading the source pins it; the actual paint behavior is
-    // verified in the gallery card + a manual visual check (happy-
-    // dom can't exercise scrollport-driven sticky).
+  test("CSS source declares `position: sticky` on `.tugx-term-header` and `.tugx-term-actions`", () => {
+    // Both bars pin: the identity header at the outer pin-stack-top,
+    // and the actions row at pin-stack-top + chrome-header-height +
+    // term-header-height so they stack cleanly. happy-dom can't
+    // exercise scrollport-driven sticky behavior; the source assertion
+    // pins the declaration and the gallery card covers the visual.
     const css = readFileSync(TERMINAL_CSS_PATH, "utf8");
     const headerRule = css.match(/\.tugx-term-header\s*\{[^}]*\}/)?.[0];
     expect(headerRule).toBeDefined();
     expect(headerRule).toMatch(/position:\s*sticky/);
-    // Telescoping variable consumed with a `top: 0` fallback so
-    // standalone (no entry-header) hosts still pin at viewport top.
-    expect(headerRule).toMatch(/top:\s*var\(--tugx-pin-stack-top,\s*0\)/);
+
+    const actionsRule = css.match(/\.tugx-term-actions\s*\{[^}]*\}/)?.[0];
+    expect(actionsRule).toBeDefined();
+    expect(actionsRule).toMatch(/position:\s*sticky/);
+    // Telescoping calc includes all three pin-stack variables.
+    expect(actionsRule).toMatch(/--tugx-pin-stack-top/);
+    expect(actionsRule).toMatch(/--tugx-toolblock-header-height/);
+    expect(actionsRule).toMatch(/--tugx-term-header-height/);
   });
 });

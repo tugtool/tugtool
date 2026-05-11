@@ -22,6 +22,7 @@
  */
 
 import React from "react";
+import { FileText } from "lucide-react";
 
 import { FileBlock, type FileData } from "@/components/tugways/body-kinds/file-block";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
@@ -29,6 +30,7 @@ import { TerminalBlock, type TerminalData } from "@/components/tugways/body-kind
 import type { DiffData } from "@/lib/diff/types";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
+import { ToolWrapperChrome } from "./tool-wrappers/tool-wrapper-chrome";
 
 // ---------------------------------------------------------------------------
 // Synthesized fixtures
@@ -166,20 +168,33 @@ function PinSection({ title, children }: PinSectionProps) {
 export function GalleryPinnedHeaders() {
   return (
     <div className="cg-content" data-testid="gallery-pinned-headers">
-      <PinSection title="FileBlock — long file, sticky header">
+      <PinSection title="FileBlock — long file, identity + actions row">
         <FileBlock data={LONG_FILE} collapsed={false} />
       </PinSection>
 
       <TugSeparator />
 
-      <PinSection title="DiffBlock — 20 hunks, sticky header">
+      <PinSection title="DiffBlock — 20 hunks, identity + actions row">
         <DiffBlock data={LONG_DIFF} />
       </PinSection>
 
       <TugSeparator />
 
-      <PinSection title="TerminalBlock — 200 lines, sticky header">
+      <PinSection title="TerminalBlock — 200 lines, identity + actions row">
         <TerminalBlock data={LONG_TERMINAL} headerLabel={<code>find . -type f | head -200</code>} />
+      </PinSection>
+
+      <TugSeparator />
+
+      <PinSection title="FileBlock inside ToolWrapperChrome — two-bar telescope (chrome header + actions row)">
+        <ToolWrapperChrome
+          toolName="Read"
+          toolIcon={<FileText size={14} aria-hidden="true" />}
+          argsSummary={<code>{LONG_FILE.filePath}</code>}
+          status="ready"
+        >
+          <FileBlock data={LONG_FILE} embedded collapsed={false} />
+        </ToolWrapperChrome>
       </PinSection>
     </div>
   );

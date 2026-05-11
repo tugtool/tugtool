@@ -95,7 +95,6 @@ import "./file-block.css";
 import React from "react";
 import { ChevronsDown, ChevronsUp, Search } from "lucide-react";
 
-import { TugCue } from "@/components/tugways/tug-cue";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import {
   TugCodeView,
@@ -404,6 +403,60 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // click target scrolls off-screen — violating "interacting with a
   // control does not move that control out of view."
   const rootRef = React.useRef<HTMLDivElement | null>(null);
+  // Header ref — used by the telescoping-pin ResizeObserver below to
+  // write the visible header's measured height into
+  // `--tugx-file-header-height` on the root so the `.tugx-file-actions`
+  // row can pin BELOW the identity header in standalone mode. Null
+  // when `embedded={true}` (no header rendered).
+  const headerRef = React.useRef<HTMLDivElement | null>(null);
+
+  // Telescoping pin — write the live measured identity-header height
+  // into `--tugx-file-header-height` on the root so the actions row
+  // composed below can pin at
+  // `top: calc(var(--tugx-pin-stack-top, 0)
+  //          + var(--tugx-toolblock-header-height, 0)
+  //          + var(--tugx-file-header-height, 0))`.
+  // In embedded mode the header isn't rendered, so the ref is null
+  // and the variable stays unset (`0` via the `calc()` fallback) —
+  // the actions row then telescopes under the chrome's
+  // `--tugx-toolblock-header-height` only.
+  //
+  // [L03] `useLayoutEffect` so the variable is set before paint —
+  // first sticky pass uses the correct offset rather than a value
+  // one frame late.
+  // [L06] DOM write, never React state.
+  // [L20] FileBlock owns `--tugx-file-*` (this is in that family);
+  // the chrome's `--tugx-toolblock-header-height` is read but never
+  // written from here.
+  React.useLayoutEffect(() => {
+    const root = rootRef.current;
+    const header = headerRef.current;
+    if (root === null) return;
+    if (header === null) {
+      // Embedded mode (or empty data) — clear any stale value so
+      // the calc() fallback to 0 takes effect.
+      root.style.removeProperty("--tugx-file-header-height");
+      return;
+    }
+    const write = (px: number): void => {
+      root.style.setProperty("--tugx-file-header-height", `${px}px`);
+    };
+    write(header.offsetHeight);
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry === undefined) return;
+      const boxes = entry.borderBoxSize;
+      const next =
+        boxes !== undefined && boxes.length > 0
+          ? boxes[0].blockSize
+          : entry.contentRect.height;
+      write(next);
+    });
+    observer.observe(header);
+    return () => {
+      observer.disconnect();
+    };
+  }, [embedded, data === undefined]);
 
   // Sync to controlled prop when it changes upstream so parents can
   // drive collapse from chrome elsewhere in the row.
@@ -478,17 +531,19 @@ export const FileBlock: React.FC<FileBlockProps> = ({
     `tugx-file${langClass}` +
     (className === undefined ? "" : ` ${className}`);
 
-  // Fold cue: a persistent click target that swaps icon + label by
-  // state. Always rendered when `overThreshold` so the user has a
-  // stable handle for the collapse <-> expand cycle. Without this,
-  // embedded mode loses the toggle once expanded (the wrapper hides
-  // the header). The non-embedded mode still has the header's chevron
-  // button below, but the cue lives in both — symmetric, predictable.
+  // Fold cue: a compact click target inside the actions row that swaps
+  // icon + (optional) label by state. Always rendered when
+  // `overThreshold` so the user has a stable handle for the collapse <->
+  // expand cycle in both modes (embedded and standalone). The icon-only
+  // form when expanded keeps the actions row tight — the row also hosts
+  // Search, and the cue's count label is only informationally
+  // interesting while the body is folded.
   const cueIcon = collapsed ? <ChevronsDown /> : <ChevronsUp />;
-  const cueLabel = collapsed
-    ? `${lines.length.toLocaleString()} lines folded — click to expand`
-    : "click to collapse";
   const showCue = overThreshold;
+  // Actions row visibility: any affordance triggers it. Search appears
+  // when expanded; fold cue appears when overThreshold. Empty data was
+  // already short-circuited above, so we never render an empty row.
+  const showActions = showCue || !collapsed;
 
   return (
     <div
@@ -502,7 +557,11 @@ export const FileBlock: React.FC<FileBlockProps> = ({
       tabIndex={-1}
     >
       {embedded ? null : (
-        <div className="tugx-file-header" data-slot={DATA_SLOT_HEADER}>
+        <div
+          ref={headerRef}
+          className="tugx-file-header"
+          data-slot={DATA_SLOT_HEADER}
+        >
           <span
             className="tugx-file-path"
             data-slot="file-path"
@@ -518,7 +577,31 @@ export const FileBlock: React.FC<FileBlockProps> = ({
           <span className="tugx-file-counts" data-slot="file-counts">
             {headerLabel}
           </span>
-          <span className="tugx-file-spacer" />
+        </div>
+      )}
+
+      {showActions ? (
+        <div className="tugx-file-actions" data-slot="file-actions">
+          {showCue ? (
+            <button
+              type="button"
+              className="tugx-file-fold-cue"
+              data-slot="file-fold-cue"
+              aria-expanded={!collapsed}
+              aria-label={collapsed ? "Expand file" : "Collapse file"}
+              onClick={toggleCollapsed}
+            >
+              <span className="tugx-file-fold-cue-icon" aria-hidden="true">
+                {cueIcon}
+              </span>
+              {collapsed ? (
+                <span className="tugx-file-fold-cue-label">
+                  {`${lines.length.toLocaleString()} lines folded`}
+                </span>
+              ) : null}
+            </button>
+          ) : null}
+          <span className="tugx-file-actions-spacer" />
           {!collapsed ? (
             <TugIconButton
               icon={<Search />}
@@ -527,18 +610,6 @@ export const FileBlock: React.FC<FileBlockProps> = ({
             />
           ) : null}
         </div>
-      )}
-
-      {showCue ? (
-        <TugCue
-          role="active"
-          icon={cueIcon}
-          aria-expanded={!collapsed}
-          onClick={toggleCollapsed}
-          className="tugx-file-fold-cue"
-        >
-          {cueLabel}
-        </TugCue>
       ) : null}
 
       {collapsed ? null : (

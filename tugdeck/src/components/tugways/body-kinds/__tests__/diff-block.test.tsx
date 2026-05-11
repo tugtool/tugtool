@@ -470,24 +470,34 @@ describe("DiffBlock — collapse", () => {
       '[data-slot="diff-body"]',
     ) as HTMLElement;
     expect(root.getAttribute("data-collapsed")).toBe("false");
-    // Header collapse toggle is a TugIconButton — find by its aria-label.
-    const toggle = container.querySelector(
+    // The fold control now lives in the actions row as a custom
+    // `<button class="tugx-diff-fold-cue">` (Step 10.9 Phase B.2 —
+    // header keeps identity, actions row hosts affordances). Find it
+    // by aria-label so the test stays decoupled from the markup
+    // choice (button vs TugIconButton vs TugCue).
+    const actions = container.querySelector('[data-slot="diff-actions"]');
+    expect(actions).not.toBeNull();
+    const toggle = actions?.querySelector(
       'button[aria-label="Collapse diff"]',
     ) as HTMLElement;
+    expect(toggle).not.toBeNull();
     act(() => {
       fireEvent.click(toggle);
     });
     expect(root.getAttribute("data-collapsed")).toBe("true");
     expect(onToggleCollapsed).toHaveBeenCalledWith(true);
-    // Hunks vanish; the collapsed-hint surfaces.
+    // Hunks vanish.
     expect(container.querySelectorAll('[data-slot="diff-hunk"]')).toHaveLength(
       0,
     );
-    // Collapsed-hint banner is a TugCue (`.tugx-diff-collapsed-hint` class
-    // forwarded onto the cue for scoping).
-    expect(
-      container.querySelector(".tugx-diff-collapsed-hint"),
-    ).not.toBeNull();
+    // Fold cue stays present (now labeled "Expand diff") with the
+    // count label so the user can expand back.
+    const cue = actions?.querySelector(
+      "button.tugx-diff-fold-cue",
+    ) as HTMLElement;
+    expect(cue?.getAttribute("aria-label")).toBe("Expand diff");
+    expect(cue?.textContent).toContain("hunk");
+    expect(cue?.textContent).toContain("folded");
   });
 
   test("controlled `collapsed` prop wins over internal state on rerender", () => {

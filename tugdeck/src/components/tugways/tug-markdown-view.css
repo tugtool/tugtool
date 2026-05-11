@@ -89,6 +89,15 @@ body {
   --tugx-md-fenced-code-copy-padding: var(--tug-space-2xs) var(--tug-space-xs);
   --tugx-md-fenced-code-copy-radius:  var(--tug-radius-xs);
 
+  /* Approximate height of `.tugx-md-fenced-code-header` — used by
+   * the actions row to compute its sticky `top` so the two bars stack
+   * when both pin. Imperative `enhanceFencedCode` doesn't run a
+   * ResizeObserver (it's a DOM helper, not a React component), so the
+   * offset is a static-token approximation: padding-vertical * 2 plus
+   * the font line-height. If a theme tunes the strip padding or font
+   * size, override this token at the same time. */
+  --tugx-md-fenced-code-header-height: 28px;
+
   /* Blockquote — bespoke left-rail rhythm */
   --tugx-md-blockquote-border-width: 3px;
   --tugx-md-blockquote-padding:      var(--tug-space-lg);
@@ -338,10 +347,11 @@ body {
   overflow: clip;
 }
 
-/* Header — language label on the left, copy button on the right.
- * Pinned (`position: sticky`) so it stays visible while scrolling
- * deep into a long fenced-code block; `top: var(--tugx-pin-stack-top, 0)`
- * lets an outer pin context push it down so the two telescope. */
+/* Header — language label only. The Copy button has moved into the
+ * actions row below; the header is now identity-only (matches the
+ * FileBlock / DiffBlock / TerminalBlock pattern from Step 10.9
+ * Phase B.2). Pinned (`position: sticky`) so it stays visible while
+ * scrolling deep into a long fenced-code block. */
 /* @tug-renders-on: --tugx-block-bg */
 .tugx-md-block .tugx-md-fenced-code-header {
   position: sticky;
@@ -349,7 +359,7 @@ body {
   z-index: 1;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  min-height: var(--tugx-md-fenced-code-header-height);
   padding: var(--tugx-block-strip-padding);
   background: var(--tugx-block-strip-bg);
   border-bottom: 1px solid var(--tugx-block-strip-border);
@@ -363,6 +373,33 @@ body {
   font-weight: var(--tugx-md-fenced-code-lang-weight);
   letter-spacing: 0.02em;
   text-transform: lowercase;
+}
+
+/* Actions row — Copy `<button>`. Pinned below the identity header
+ * (sticky stack) so the affordance stays reachable across the full
+ * scroll range of the fenced-code block. The `top` calc uses the
+ * static `--tugx-md-fenced-code-header-height` approximation because
+ * `enhanceFencedCode` is an imperative DOM helper and doesn't run a
+ * ResizeObserver; the header's `min-height` is set to the same value
+ * so the two stay in lockstep. */
+.tugx-md-block .tugx-md-fenced-code-actions {
+  position: sticky;
+  top: calc(
+    var(--tugx-pin-stack-top, 0px)
+    + var(--tugx-md-fenced-code-header-height)
+  );
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  padding: var(--tugx-block-strip-padding);
+  background: var(--tugx-block-strip-bg);
+  border-bottom: 1px solid var(--tugx-block-strip-border);
+  font-family: var(--tugx-block-code-font);
+  font-size: var(--tugx-block-strip-size);
+}
+
+.tugx-md-block .tugx-md-fenced-code-actions-spacer {
+  flex: 1 1 auto;
 }
 
 /* Copy button — icon-first, with text label that fades in only on

@@ -188,6 +188,66 @@ const tugCodeViewTheme: Extension = EditorView.theme({
     color: "var(--tugx-block-text-color)",
     borderTop: "1px solid var(--tugx-block-strip-border)",
   },
+  // ---- @codemirror/search panel chrome ---------------------------------
+  //
+  // CM6's default search panel ships unstyled user-agent inputs and
+  // buttons; against our dark strip they read as nearly-invisible greys
+  // (visible at: gallery's pinned-headers card, Search icon → opens
+  // panel). The rules below replace those defaults with theme-aware
+  // paints via the `--tugx-codeview-search-*` slot family.
+  ".cm-panel.cm-search": {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: "var(--tug-space-xs)",
+    padding: "var(--tug-space-xs) var(--tug-space-sm)",
+    color: "var(--tugx-block-text-color)",
+    fontFamily: "var(--tug-font-family-sans)",
+    fontSize: "var(--tug-font-size-2xs)",
+  },
+  ".cm-panel.cm-search .cm-textfield, .cm-panel.cm-search input[type='search'], .cm-panel.cm-search input[type='text']":
+    {
+      backgroundColor: "var(--tugx-codeview-search-input-bg)",
+      color: "var(--tugx-codeview-search-input-color)",
+      border: "1px solid var(--tugx-codeview-search-input-border)",
+      padding: "var(--tugx-codeview-search-input-padding)",
+      borderRadius: "var(--tugx-codeview-search-input-radius)",
+      fontFamily: "var(--tug-font-family-sans)",
+      fontSize: "var(--tug-font-size-xs)",
+      minWidth: "10em",
+    },
+  ".cm-panel.cm-search input:focus-visible": {
+    outline: "2px solid var(--tugx-codeview-search-focus-ring)",
+    outlineOffset: "1px",
+  },
+  ".cm-panel.cm-search .cm-button, .cm-panel.cm-search button": {
+    backgroundColor: "var(--tugx-codeview-search-button-bg)",
+    color: "var(--tugx-codeview-search-button-color)",
+    border: "1px solid var(--tugx-codeview-search-button-border)",
+    padding: "var(--tugx-codeview-search-button-padding)",
+    borderRadius: "var(--tugx-codeview-search-button-radius)",
+    fontFamily: "var(--tug-font-family-sans)",
+    fontSize: "var(--tug-font-size-2xs)",
+    cursor: "pointer",
+    backgroundImage: "none",
+    textShadow: "none",
+  },
+  ".cm-panel.cm-search .cm-button:hover, .cm-panel.cm-search button:hover": {
+    backgroundColor: "var(--tugx-codeview-search-button-hover-bg)",
+    color: "var(--tugx-codeview-search-button-hover-color)",
+  },
+  ".cm-panel.cm-search label": {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "var(--tugx-codeview-search-label-gap)",
+    color: "var(--tugx-codeview-search-label-color)",
+    fontSize: "var(--tugx-codeview-search-label-size)",
+    cursor: "pointer",
+    userSelect: "none",
+  },
+  ".cm-panel.cm-search [name='close']": {
+    color: "var(--tugx-block-text-color-muted)",
+  },
   ".cm-searchMatch": {
     backgroundColor: "var(--tugx-codeview-match-bg)",
   },

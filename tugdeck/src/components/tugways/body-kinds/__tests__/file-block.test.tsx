@@ -15,9 +15,10 @@
  *    the cue, not the substrate.
  *  - Controlled collapse: `collapsed={true}` honored; collapse
  *    `<TugIconButton>` toggles via `onToggleCollapsed`.
- *  - Search affordance: header surfaces a `Search` `<TugIconButton>`
- *    when expanded; the underlying find-panel behavior (panel mount /
- *    keystroke wiring) is covered in `tug-code-view.test.tsx`.
+ *  - Search affordance: the actions row surfaces a `Search`
+ *    `<TugIconButton>` when expanded; the underlying find-panel
+ *    behavior (panel mount / keystroke wiring) is covered in
+ *    `tug-code-view.test.tsx`.
  *  - Embedded mode: header is suppressed; the body still renders.
  *
  * What this test file intentionally does NOT cover (post-recast):
@@ -228,7 +229,12 @@ describe("FileBlock — body branches", () => {
     const cue = container.querySelector(".tugx-file-fold-cue") as HTMLElement;
     expect(cue).not.toBeNull();
     expect(cue.getAttribute("aria-expanded")).toBe("false");
-    expect(cue.textContent).toContain("click to expand");
+    // Collapsed cue carries the count label so the user sees how
+    // much is folded away.
+    expect(cue.textContent).toContain("200 lines folded");
+    // ARIA label is the accessible name (chevron + label is the
+    // visual; aria-label is the screen-reader label).
+    expect(cue.getAttribute("aria-label")).toBe("Expand file");
     expect(container.querySelector('[data-slot="tug-code-view"]')).toBeNull();
   });
 
@@ -245,7 +251,13 @@ describe("FileBlock — body branches", () => {
     const cue = container.querySelector(".tugx-file-fold-cue") as HTMLElement;
     expect(cue).not.toBeNull();
     expect(cue.getAttribute("aria-expanded")).toBe("true");
-    expect(cue.textContent).toContain("click to collapse");
+    // Expanded form is icon-only (compact action-bar form); the
+    // accessible name lives on the `aria-label` attribute so screen
+    // readers still announce the control.
+    expect(cue.getAttribute("aria-label")).toBe("Collapse file");
+    expect(
+      cue.querySelector(".tugx-file-fold-cue-icon"),
+    ).not.toBeNull();
     // Substrate is mounted alongside the cue.
     expect(container.querySelector('[data-slot="tug-code-view"]')).not.toBeNull();
   });
@@ -297,7 +309,9 @@ describe("FileBlock — collapse", () => {
     ).toBe("true");
     const cue = container.querySelector(".tugx-file-fold-cue") as HTMLElement;
     expect(cue).not.toBeNull();
-    expect(cue.textContent).toContain("click to expand");
+    expect(cue.textContent).toContain(
+      `${DEFAULT_COLLAPSE_THRESHOLD + 1} lines folded`,
+    );
   });
 
   test("controlled prop forces expanded even above threshold (cue stays)", () => {
@@ -316,7 +330,7 @@ describe("FileBlock — collapse", () => {
     // both collapsed and expanded states once over-threshold.
     const cue = container.querySelector(".tugx-file-fold-cue") as HTMLElement;
     expect(cue).not.toBeNull();
-    expect(cue.textContent).toContain("click to collapse");
+    expect(cue.getAttribute("aria-label")).toBe("Collapse file");
   });
 
   test("clicking the cue from collapsed state fires onToggleCollapsed(false)", () => {
@@ -389,14 +403,16 @@ describe("FileBlock — collapse", () => {
 // ---------------------------------------------------------------------------
 
 describe("FileBlock — search affordance", () => {
-  test("expanded file shows a Search button in the header", () => {
+  test("expanded file shows a Search button in the actions row", () => {
     const data: FileData = {
       filePath: "x.ts",
       content: "alpha\nbeta",
     };
     const { container } = render(<FileBlock data={data} />);
+    const actions = container.querySelector('[data-slot="file-actions"]');
+    expect(actions).not.toBeNull();
     expect(
-      container.querySelector('button[aria-label="Search in file"]'),
+      actions?.querySelector('button[aria-label="Search in file"]'),
     ).not.toBeNull();
   });
 
@@ -446,6 +462,35 @@ describe("FileBlock — embedded mode", () => {
     expect(
       container.querySelector('[data-slot="tug-code-view"]'),
     ).not.toBeNull();
+  });
+
+  test("embedded mode STILL renders the actions row (Search affordance survives)", () => {
+    // The actions row is the only body-kind chrome that survives
+    // `embedded={true}`. The wrapper chrome owns identity, but Search
+    // and the fold cue live on the body kind and have to remain
+    // reachable inside the embedded composition.
+    const data: FileData = {
+      filePath: "x.ts",
+      content: "alpha\nbeta",
+    };
+    const { container } = render(<FileBlock data={data} embedded />);
+    const actions = container.querySelector('[data-slot="file-actions"]');
+    expect(actions).not.toBeNull();
+    expect(
+      actions?.querySelector('button[aria-label="Search in file"]'),
+    ).not.toBeNull();
+  });
+
+  test("embedded mode keeps the fold cue when over-threshold", () => {
+    // The user can still expand/collapse from inside an embedded host —
+    // there's no other handle in embedded mode (the body kind's header
+    // is suppressed), so the cue is the toggle.
+    const data: FileData = {
+      filePath: "x.ts",
+      content: makeContent(DEFAULT_COLLAPSE_THRESHOLD + 5),
+    };
+    const { container } = render(<FileBlock data={data} embedded />);
+    expect(container.querySelector(".tugx-file-fold-cue")).not.toBeNull();
   });
 });
 

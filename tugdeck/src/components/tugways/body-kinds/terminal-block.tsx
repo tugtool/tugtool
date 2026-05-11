@@ -580,6 +580,10 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // imperative `renderTerminal` writes lines/footer into `bodyRef`.
   const outerRef = React.useRef<HTMLDivElement | null>(null);
   const bodyRef = React.useRef<HTMLDivElement | null>(null);
+  // Ref to the (optional) identity header — used by the telescoping-pin
+  // ResizeObserver below. Null when embedded OR when no `headerLabel`
+  // is provided.
+  const headerRef = React.useRef<HTMLDivElement | null>(null);
   // Latest data for the Copy callback to read. Updated inside both
   // effects so streaming sees the freshest stdout/stderr without
   // forcing a React re-render of the shell.
@@ -588,6 +592,47 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // toggle a class via DOM [L06] rather than React state.
   const copyButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const copiedTimerRef = React.useRef<number | null>(null);
+
+  // Telescoping pin — write the live measured identity-header height
+  // into `--tugx-term-header-height` on the root so `.tugx-term-actions`
+  // can pin BELOW the identity header in standalone mode. See
+  // `file-block.tsx` for the full architectural rationale; same pattern
+  // applies here. In embedded mode the header isn't rendered, the ref
+  // stays null, and the variable falls back to 0 via the `calc()`
+  // default.
+  //
+  // [L03] useLayoutEffect — variable set before paint.
+  // [L06] DOM write, never React state.
+  // [L20] TerminalBlock owns `--tugx-term-*` (this variable is in that
+  //   family).
+  const showHeader = !embedded && headerLabel !== undefined;
+  React.useLayoutEffect(() => {
+    const root = outerRef.current;
+    const header = headerRef.current;
+    if (root === null) return;
+    if (header === null) {
+      root.style.removeProperty("--tugx-term-header-height");
+      return;
+    }
+    const write = (px: number): void => {
+      root.style.setProperty("--tugx-term-header-height", `${px}px`);
+    };
+    write(header.offsetHeight);
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry === undefined) return;
+      const boxes = entry.borderBoxSize;
+      const next =
+        boxes !== undefined && boxes.length > 0
+          ? boxes[0].blockSize
+          : entry.contentRect.height;
+      write(next);
+    });
+    observer.observe(header);
+    return () => {
+      observer.disconnect();
+    };
+  }, [showHeader]);
 
   // Static mode — runs once at mount, never again. Skipped when
   // streamingStore is set so the streaming effect below owns the
@@ -695,16 +740,22 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
         className === undefined ? "tugx-term" : `tugx-term ${className}`
       }
     >
-      <div className="tugx-term-header" data-slot={DATA_SLOT_HEADER}>
-        {headerLabel !== undefined ? (
+      {showHeader ? (
+        <div
+          ref={headerRef}
+          className="tugx-term-header"
+          data-slot={DATA_SLOT_HEADER}
+        >
           <span
             className="tugx-term-header-label"
             data-slot="terminal-header-label"
           >
             {headerLabel}
           </span>
-        ) : null}
-        <span className="tugx-term-header-spacer" />
+        </div>
+      ) : null}
+      <div className="tugx-term-actions" data-slot="terminal-actions">
+        <span className="tugx-term-actions-spacer" />
         <TugIconButton
           ref={copyButtonRef}
           icon={<Copy />}

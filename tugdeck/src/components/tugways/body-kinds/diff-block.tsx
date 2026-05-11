@@ -72,7 +72,6 @@ import React from "react";
 import { ChevronDown, ChevronRight, ChevronsDown, ChevronsUp } from "lucide-react";
 
 import { TugCue } from "@/components/tugways/tug-cue";
-import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import { detectLanguage } from "./file-block";
 import {
   parseUnifiedDiffText,
@@ -359,6 +358,48 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   viewMode: viewModeProp,
   onViewModeChange,
 }) => {
+  // -- Telescoping pin: write the identity-header height -------------------
+  //
+  // The actions row below pins under the identity header. In standalone
+  // mode it needs to clear the header's height; in embedded mode the
+  // header isn't rendered and the variable stays unset (calc() falls
+  // back to 0). Same architecture as FileBlock — see file-block.tsx
+  // for the full rationale and Step 10.9 Phase B.2 for the design.
+  //
+  // [L03] useLayoutEffect — variable set before paint.
+  // [L06] DOM write, never React state.
+  // [L20] DiffBlock owns `--tugx-diff-*` (the variable is in that family).
+  const rootRef = React.useRef<HTMLDivElement | null>(null);
+  const headerRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useLayoutEffect(() => {
+    const root = rootRef.current;
+    const header = headerRef.current;
+    if (root === null) return;
+    if (header === null) {
+      root.style.removeProperty("--tugx-diff-header-height");
+      return;
+    }
+    const write = (px: number): void => {
+      root.style.setProperty("--tugx-diff-header-height", `${px}px`);
+    };
+    write(header.offsetHeight);
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry === undefined) return;
+      const boxes = entry.borderBoxSize;
+      const next =
+        boxes !== undefined && boxes.length > 0
+          ? boxes[0].blockSize
+          : entry.contentRect.height;
+      write(next);
+    });
+    observer.observe(header);
+    return () => {
+      observer.disconnect();
+    };
+  }, [embedded, data === undefined]);
+
   // -- View mode (inline | side-by-side) ------------------------------------
   //
   // Two distinct shapes coexist:
@@ -590,6 +631,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   if (data === undefined) {
     return (
       <div
+        ref={rootRef}
         data-slot={DATA_SLOT_ROOT}
         data-empty="true"
         className={
@@ -608,6 +650,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   if (hunks === null) {
     return (
       <div
+        ref={rootRef}
         data-slot={DATA_SLOT_ROOT}
         data-loading="true"
         data-embedded={embedded ? "true" : undefined}
@@ -615,7 +658,11 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
         className={rootClass}
       >
         {embedded ? null : (
-          <div className="tugx-diff-header" data-slot={DATA_SLOT_HEADER}>
+          <div
+            ref={headerRef}
+            className="tugx-diff-header"
+            data-slot={DATA_SLOT_HEADER}
+          >
             {headerBasename === "" ? null : (
               <span
                 className="tugx-diff-path"
@@ -639,6 +686,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
 
   return (
     <div
+      ref={rootRef}
       data-slot={DATA_SLOT_ROOT}
       data-empty={empty ? "true" : "false"}
       data-collapsed={collapsed ? "true" : "false"}
@@ -647,7 +695,11 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
       className={rootClass}
     >
       {embedded ? null : (
-        <div className="tugx-diff-header" data-slot={DATA_SLOT_HEADER}>
+        <div
+          ref={headerRef}
+          className="tugx-diff-header"
+          data-slot={DATA_SLOT_HEADER}
+        >
           {headerBasename === "" ? null : (
             <span
               className="tugx-diff-path"
@@ -665,7 +717,29 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
             <span className="tugx-diff-stats-add">+{stats.added}</span>
             <span className="tugx-diff-stats-remove">−{stats.removed}</span>
           </span>
-          <span className="tugx-diff-spacer" />
+        </div>
+      )}
+
+      {empty ? null : (
+        <div className="tugx-diff-actions" data-slot="diff-actions">
+          <button
+            type="button"
+            className="tugx-diff-fold-cue"
+            data-slot="diff-fold-cue"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Expand diff" : "Collapse diff"}
+            onClick={toggleCollapsed}
+          >
+            <span className="tugx-diff-fold-cue-icon" aria-hidden="true">
+              {collapsed ? <ChevronsDown /> : <ChevronsUp />}
+            </span>
+            {collapsed ? (
+              <span className="tugx-diff-fold-cue-label">
+                {`${hunks.length} ${hunks.length === 1 ? "hunk" : "hunks"} folded`}
+              </span>
+            ) : null}
+          </button>
+          <span className="tugx-diff-actions-spacer" />
           <button
             type="button"
             className="tugx-diff-view-toggle"
@@ -680,27 +754,8 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
           >
             {viewMode === "side-by-side" ? "Inline" : "Side by side"}
           </button>
-          {empty ? null : (
-            <TugIconButton
-              icon={collapsed ? <ChevronsDown /> : <ChevronsUp />}
-              aria-label={collapsed ? "Expand diff" : "Collapse diff"}
-              onClick={toggleCollapsed}
-            />
-          )}
         </div>
       )}
-
-      {collapsed && !empty ? (
-        <TugCue
-          role="active"
-          icon={<ChevronsDown />}
-          aria-expanded={false}
-          onClick={toggleCollapsed}
-          className="tugx-diff-collapsed-hint"
-        >
-          {`${hunks.length} ${hunks.length === 1 ? "hunk" : "hunks"} folded — click to expand`}
-        </TugCue>
-      ) : null}
 
       {!collapsed && renderData !== null ? (
         <div className="tugx-diff-hunks" data-slot={DATA_SLOT_HUNKS}>

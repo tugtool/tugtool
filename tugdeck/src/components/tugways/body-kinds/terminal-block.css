@@ -168,16 +168,50 @@ body {
 .tugx-term-header-label {
   /* Optional caller-supplied label (typically the command, when the
    * Bash wrapper passes it through). Single-line; ellipsizes so a
-   * very long command doesn't push the Copy button out of view. */
+   * very long command doesn't push siblings out of view (in the
+   * current design the label is the only header content; ellipsis
+   * still useful in case future additions land alongside it). */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 70%;
+  max-width: 100%;
   color: var(--tugx-block-text-color);
   font-family: var(--tugx-block-code-font);
 }
 
-.tugx-term-header-spacer {
+/* ---- Actions row (Copy + future affordances) ---- */
+
+/* Hosts the Copy `<TugIconButton>` (and any future terminal-specific
+ * affordance, e.g. follow-tail). Pins under the identity header in
+ * standalone mode (consumed via `--tugx-term-header-height`, written
+ * by `terminal-block.tsx`'s ResizeObserver) and under the wrapper
+ * chrome's header in embedded mode (consumed via
+ * `--tugx-toolblock-header-height`, written by `tool-wrapper-chrome.tsx`).
+ *
+ * In embedded mode the identity header is suppressed and the actions
+ * row is the ONLY body-kind chrome — Copy stays reachable across the
+ * full scroll range without being overlaid on the body's scrollbar
+ * gutter (the original reason `.tugx-term-copy` overlay was retired). */
+.tugx-term-actions {
+  position: sticky;
+  top: calc(
+    var(--tugx-pin-stack-top, 0px)
+    + var(--tugx-toolblock-header-height, 0px)
+    + var(--tugx-term-header-height, 0px)
+  );
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--tugx-block-strip-gap);
+  padding: var(--tugx-block-strip-padding);
+  background: var(--tugx-block-strip-bg);
+  border-bottom: 1px solid var(--tugx-block-strip-border);
+  color: var(--tugx-block-strip-color);
+  font-family: var(--tugx-block-strip-font);
+  font-size: var(--tugx-block-strip-size);
+}
+
+.tugx-term-actions-spacer {
   flex: 1 1 auto;
 }
 

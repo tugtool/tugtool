@@ -158,6 +158,89 @@ body {
   flex: 1 1 auto;
 }
 
+/* ---------- Actions row ---------- */
+
+/* Hosts the fold cue and the view-toggle (and any future diff-specific
+ * affordance). Pins under the identity header in standalone mode and
+ * under the wrapper chrome's header in embedded mode (see file-block.css
+ * for the full sticky-stack rationale; same architecture applies here).
+ *
+ * Telescoping calc:
+ *  - `--tugx-pin-stack-top` (Phase C): entry-header height, set on the
+ *    transcript-entry root when its header pins.
+ *  - `--tugx-toolblock-header-height`: wrapper-chrome header height,
+ *    set by `tool-wrapper-chrome.tsx` when DiffBlock is composed inside
+ *    a Layer-2 tool wrapper.
+ *  - `--tugx-diff-header-height`: this body kind's own identity-header
+ *    height, set by `diff-block.tsx`'s ResizeObserver. Zero in embedded
+ *    mode (header suppressed). */
+.tugx-diff-actions {
+  position: sticky;
+  top: calc(
+    var(--tugx-pin-stack-top, 0px)
+    + var(--tugx-toolblock-header-height, 0px)
+    + var(--tugx-diff-header-height, 0px)
+  );
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--tugx-block-strip-gap);
+  padding: var(--tugx-block-strip-padding);
+  background: var(--tugx-block-strip-bg);
+  border-bottom: 1px solid var(--tugx-block-strip-border);
+  color: var(--tugx-block-strip-color);
+  font-family: var(--tugx-block-strip-font);
+  font-size: var(--tugx-block-strip-size);
+}
+
+.tugx-diff-actions-spacer {
+  flex: 1 1 auto;
+}
+
+/* Compact fold cue — small button with chevron icon + optional count
+ * label. Sized to fit alongside the view-toggle in the same actions
+ * row. Mirrors `FileBlock`'s fold cue pattern for visual consistency
+ * across body kinds. */
+.tugx-diff-fold-cue {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tug-space-2xs);
+  padding: var(--tug-space-2xs) var(--tug-space-xs);
+  border: 0;
+  border-radius: var(--tug-radius-xs);
+  background: transparent;
+  color: var(--tugx-block-text-color);
+  font: inherit;
+  cursor: pointer;
+}
+
+.tugx-diff-fold-cue:hover {
+  background: var(--tug7-surface-highlight-primary-normal-hover-rest);
+}
+
+.tugx-diff-fold-cue:focus-visible {
+  outline: 2px solid var(--tug7-element-global-text-normal-link-rest);
+  outline-offset: 2px;
+}
+
+.tugx-diff-fold-cue-icon {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.tugx-diff-fold-cue-icon > svg {
+  width: 16px;
+  height: 16px;
+}
+
+.tugx-diff-fold-cue-label {
+  font-size: var(--tug-font-size-2xs);
+  color: var(--tugx-block-text-color-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .tugx-diff-view-toggle {
   appearance: none;
   border: 1px solid var(--tugx-diff-view-border);
@@ -180,11 +263,11 @@ body {
   cursor: not-allowed;
 }
 
-/* The whole-diff collapse toggle is now a `<TugIconButton>` (paired with
- * the inline/side-by-side view toggle in the header). The bespoke
- * `.tugx-diff-toggle` rule block and its `--tugx-diff-toggle-*` slot
- * family were retired — TugIconButton's own ghost-action styling owns
- * the appearance now. */
+/* The whole-diff collapse toggle now lives in `.tugx-diff-actions`
+ * as `.tugx-diff-fold-cue` — a compact chevron + optional count label
+ * matching the FileBlock pattern. The old bespoke `<TugIconButton>` in
+ * the header was retired with the move to actions-row architecture
+ * (Step 10.9 Phase B.2). */
 
 /* ---------- Hunks ---------- */
 

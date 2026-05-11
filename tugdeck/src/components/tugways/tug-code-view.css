@@ -4,6 +4,8 @@
    - --tugx-codeview-gutter-bg / --tugx-codeview-gutter-text (viewer-local line-number gutter)
    - --tugx-codeview-selection-bg                        (viewer-local selection tint)
    - --tugx-codeview-match-bg / --tugx-codeview-match-active-bg (viewer-local search-match overlays)
+   - --tugx-codeview-search-input-bg / --tugx-codeview-search-input-color (search-panel input field)
+   - --tugx-codeview-search-button-color / --tugx-codeview-search-button-hover-bg (search-panel buttons)
    `TugCodeView` paints a CM6-backed read-only code viewer.
    Frame, code typography, and the strip-chrome (used by the search
    panel) are consumed directly from `--tugx-block-*` in
@@ -75,6 +77,36 @@ body {
   --tugx-codeview-match-bg:             var(--tug7-surface-card-primary-normal-findmatch-rest);
   --tugx-codeview-match-active-bg:      var(--tug7-surface-card-primary-normal-findmatch-active);
   --tugx-codeview-match-active-outline: var(--tug7-element-global-border-normal-accent-rest);
+
+  /* Search panel chrome — `@codemirror/search` mounts an input + a
+   * row of buttons (next / previous / all) + checkbox labels (match
+   * case / regexp / by word). CM6's default styles render those
+   * elements as user-agent buttons / inputs, which read as
+   * unreadable greys against our dark strip background. The slots
+   * below replace them with theme-aware paints.
+   *
+   * Geometry slots (padding / radius) reuse the shared input + button
+   * geometry from tugx-block where possible so the search-panel chrome
+   * reads as a member of the same widget family. */
+  --tugx-codeview-search-input-bg:        var(--tug7-surface-global-primary-normal-default-rest);
+  --tugx-codeview-search-input-color:     var(--tugx-block-text-color);
+  --tugx-codeview-search-input-border:    var(--tug7-element-global-border-normal-muted-rest);
+  --tugx-codeview-search-input-padding:   var(--tug-space-2xs) var(--tug-space-xs);
+  --tugx-codeview-search-input-radius:    var(--tug-radius-xs);
+
+  --tugx-codeview-search-button-color:       var(--tugx-block-text-color);
+  --tugx-codeview-search-button-bg:          transparent;
+  --tugx-codeview-search-button-border:      var(--tug7-element-global-border-normal-muted-rest);
+  --tugx-codeview-search-button-hover-bg:    var(--tug7-surface-highlight-primary-normal-hover-rest);
+  --tugx-codeview-search-button-hover-color: var(--tugx-block-text-color);
+  --tugx-codeview-search-button-padding:     var(--tug-space-2xs) var(--tug-space-sm);
+  --tugx-codeview-search-button-radius:      var(--tug-radius-xs);
+
+  --tugx-codeview-search-label-color:        var(--tugx-block-text-color);
+  --tugx-codeview-search-label-size:         var(--tug-font-size-2xs);
+  --tugx-codeview-search-label-gap:          var(--tug-space-2xs);
+
+  --tugx-codeview-search-focus-ring:         var(--tug7-element-global-text-normal-link-rest);
 }
 
 /* ---- Host wrapper ---- */

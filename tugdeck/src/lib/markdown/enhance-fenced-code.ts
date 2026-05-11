@@ -156,6 +156,10 @@ export function enhanceFencedCode(container: HTMLElement): void {
     wrapper.className = "tugx-md-fenced-code";
     if (lang !== null) wrapper.dataset.lang = lang;
 
+    // Identity header — language label only. The Copy affordance has
+    // moved into the actions row below so the two strips can stack
+    // when both pin (matches the FileBlock / DiffBlock / TerminalBlock
+    // pattern, Step 10.9 Phase B.2).
     const header = document.createElement("div");
     header.className = "tugx-md-fenced-code-header";
 
@@ -163,6 +167,17 @@ export function enhanceFencedCode(container: HTMLElement): void {
     langEl.className = "tugx-md-fenced-code-lang";
     langEl.textContent = lang ?? "code";
     header.appendChild(langEl);
+
+    // Actions row — Copy `<button>`. Sticky below the identity header
+    // (CSS uses a static-token approximation of the header height for
+    // the calc offset since `enhanceFencedCode` is an imperative DOM
+    // helper rather than a React component with a ResizeObserver).
+    const actions = document.createElement("div");
+    actions.className = "tugx-md-fenced-code-actions";
+
+    const spacer = document.createElement("span");
+    spacer.className = "tugx-md-fenced-code-actions-spacer";
+    actions.appendChild(spacer);
 
     const button = document.createElement("button");
     button.type = "button";
@@ -186,7 +201,7 @@ export function enhanceFencedCode(container: HTMLElement): void {
 
     if (codeEl !== null) attachCopyHandler(button, codeEl);
 
-    header.appendChild(button);
+    actions.appendChild(button);
 
     // Replace the `<pre>` with the wrapper. The order of operations
     // matters: insert the wrapper at the `<pre>`'s slot first, then
@@ -194,6 +209,7 @@ export function enhanceFencedCode(container: HTMLElement): void {
     // briefly loses the block.
     pre.replaceWith(wrapper);
     wrapper.appendChild(header);
+    wrapper.appendChild(actions);
     wrapper.appendChild(pre);
   }
 }
