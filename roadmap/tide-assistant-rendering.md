@@ -1801,46 +1801,108 @@ Falling back to `TerminalBlock` on no-match is what makes this safe to enable by
 
 ---
 
-#### Step 10.8: Expand affordance for embedded FileBlock + DiffBlock {#step-10-8}
+#### Step 10.8: Regularize collapse / expand affordances for FileBlock + DiffBlock {#step-10-8}
 
-**Depends on:** #step-10-6 (TugCue)
+**Depends on:** #step-10-6 (TugCue), #step-10-7 (per-hunk TugCue refactor — sets the precedent)
 
-**Commit:** `fix(tide-rendering): use TugCue for collapsed-hint expand affordance in FileBlock + DiffBlock`
+**Commit:** `feat(tide-rendering): regularize collapse/expand affordances in FileBlock + DiffBlock`
 
-**References:** [L06], [L11], [L19]
+**References:** [L06], [L11], [L15], [L19], [L20]
 
-**Why this step exists.** `ReadToolBlock` (and any wrapper that wants to suppress its own body's chrome) composes `FileBlock` in `embedded` mode. That mode hides FileBlock's header — including the Expand/Collapse toggle button. When a file is over the collapse threshold (80 lines, per [#step-7](#step-7)), the user sees the `tugx-file-collapsed-hint` banner saying *"1,234 lines folded — click Expand to view,"* but the Expand button is hidden and the host's chrome doesn't add its own. The hint text is a lie; nothing happens when you click. Real user-reported regression from the live Tide session.
+**Why this step exists.** Across `FileBlock` and `DiffBlock`, four distinct affordance shapes had accumulated: bespoke tiny chevron buttons in the header (`.tugx-file-toggle`, `.tugx-diff-toggle`), bare non-interactive collapsed-hint banners (`.tugx-file-collapsed-hint`, `.tugx-diff-collapsed-hint`), the `Copy` and other in-header icon buttons (already `TugIconButton`-style), and the per-hunk diff header (now `TugCue` after #step-10-7). The bare banners are a real bug — `ReadToolBlock` (and any wrapper suppressing its own body's chrome) composes `FileBlock` in `embedded` mode, hiding the header — including the Expand toggle. The collapsed-hint banner says *"1,234 lines folded — click Expand to view,"* but the Expand button is hidden and the banner is a non-interactive `<div>`. The text is a lie; nothing happens when you click. `DiffBlock` ships the parallel dead-end.
 
-`DiffBlock` ships an identical `tugx-diff-collapsed-hint` banner with the same dead-end shape; same fix.
+#step-10-7 already proved out the right shape for one of these — the diff per-hunk header — by replacing a bespoke `<div role="button">` + tiny inner chevron with `<TugCue role="muted" align="start" mono icon={ChevronDown|Right}>`. This step generalizes that pattern across the rest of the FileBlock + DiffBlock surface.
 
-**Decision: the banner itself is the affordance.** Per the design that came out of #step-10-6, `TugCue` is the canonical primitive for "soft inline banner that's also a click target." Replace the current `<div className="tugx-file-collapsed-hint">` (and the diff sibling) with a `<TugCue>` whose `onClick` toggles collapsed state. The hint text changes from *"click Expand to view"* to *"click to expand"* — there's no separate Expand button anymore; the banner IS the button.
+**Decision: three affordance shapes, one component each, mapped to use cases.** No more bespoke micro-buttons in body-kinds.
+
+| Shape | Use case | Component | Token family |
+|---|---|---|---|
+| **A — Reveal cue** | The whole content is folded; the cue IS the only thing visible besides the header. Click to expand. | `<TugCue role="active" icon={<ChevronsDown />} onClick={…}>` | `--tugx-cue-*` |
+| **B — Structural divider cue** | Inside expanded content, a banner separator that toggles a sub-section. (Per-hunk diff header; future siblings.) | `<TugCue role="muted" align="start" mono icon={<ChevronDown|ChevronRight />}>` | `--tugx-cue-*` |
+| **C — Header collapse toggle** | Re-collapse expanded content from the header bar. Peer to the `Copy` icon button. | `<TugIconButton tone="default" icon={<ChevronsUp />} aria-label="Collapse" />` | reuses `--tug-button-*` (no body-kind tokens) |
+
+Shape B already shipped in #step-10-7. Shapes A and C are the new work.
+
+**Decision: `role="active"` for the reveal cue.** Shape A is the cue user sees *instead of* content — it has to feel inviting, not subdued. The blue `active` tint (variant G's default) reads as "this is *the* affordance to reveal content." Shape B's `muted` is right for structural dividers between visible content, but wrong here.
+
+**Decision: paired ChevronsDown / ChevronsUp icons.** The double-chevron glyph differentiates whole-content reveal from section disclosure. Single-chevron `ChevronDown` / `ChevronRight` stay for shape B (per-hunk and future structural cues). The reveal cue uses `ChevronsDown` ("unfold downward, more below"); its symmetric counterpart in the header uses `ChevronsUp` ("fold back upward"). The pair reads as one round-trip.
+
+**Decision: header collapse toggle = `TugIconButton`, not a bespoke chevron.** The existing `.tugx-file-toggle` and `.tugx-diff-toggle` are bespoke micro-buttons with their own `--tugx-{file,diff}-toggle-*` token families. They sit next to the existing `.tugx-file-icon-btn` / `.tugx-diff-icon-btn` `Copy` controls — which themselves are bespoke. The right answer is to make all of these `TugIconButton`s: standardizes the header right-edge vocabulary, retires four token slot families, and gives focus / hover / active states the same treatment everywhere. (The view-mode toggle `inline / side-by-side` in DiffBlock is a separate concern — it's a *picker*, not a single-action button; out of scope here.)
+
+**Token surface that retires after this step:**
+
+- `--tugx-file-collapsed-*` (4 tokens) — replaced by `--tugx-cue-*`
+- `--tugx-diff-collapsed-*` (4 tokens) — replaced by `--tugx-cue-*`
+- `--tugx-file-toggle-*` (~5 tokens) — replaced by `TugIconButton`'s tokens
+- `--tugx-diff-toggle-*` (~5 tokens) — same
+- `--tugx-file-icon-btn-*` (if present) and `--tugx-diff-icon-btn-*` (Copy/etc.) — converted to `TugIconButton` (defer if any Copy button is touched by #step-10-9; otherwise convert here)
+
+Per-hunk tokens (`--tugx-diff-hunk-header-*`, `--tugx-diff-hunk-toggle-*`) were retired in #step-10-7.
+
+**Visual continuity guarantee.** The reveal cue's `active` blue tint is the same one already shipped in `TugCue` and verified in `gallery-tug-cue`. The header `TugIconButton`s reuse the same ghost-action styling as the existing `Copy` button (which is already on `TugIconButton` shape per #step-7), so the header bar reads as a row of peer icon buttons after this step — no visual surprise.
 
 **Artifacts:**
 
-- Updated: `tugdeck/src/components/tugways/body-kinds/file-block.tsx` — `.tugx-file-collapsed-hint` div becomes `<TugCue>`. Hint text updated.
-- Updated: `tugdeck/src/components/tugways/body-kinds/file-block.css` — drop the now-redundant cursor / hover styles; rely on TugCue's own appearance. Keep any layout-only declarations (margin, full-width).
-- Updated: `tugdeck/src/components/tugways/body-kinds/diff-block.tsx` — same treatment.
+*Reveal cues (Shape A):*
+- Updated: `tugdeck/src/components/tugways/body-kinds/file-block.tsx` — `.tugx-file-collapsed-hint` `<div>` becomes `<TugCue role="active" icon={<ChevronsDown />}>`. Hint text updated to *"X lines folded — click to expand"*. `onClick` calls the existing collapsed-toggle path.
+- Updated: `tugdeck/src/components/tugways/body-kinds/file-block.css` — drop `.tugx-file-collapsed-hint` style block; retire `--tugx-file-collapsed-*` slots in `harmony.css` / `brio.css` / `tug-active-theme.css`.
+- Updated: `tugdeck/src/components/tugways/body-kinds/diff-block.tsx` — same treatment for `.tugx-diff-collapsed-hint`.
 - Updated: `tugdeck/src/components/tugways/body-kinds/diff-block.css` — same.
-- Updated: tests for both body kinds.
+- Updated: theme files retire `--tugx-diff-collapsed-*` slots.
+
+*Header collapse toggles (Shape C):*
+- Updated: `tugdeck/src/components/tugways/body-kinds/file-block.tsx` — bespoke `<button className="tugx-file-toggle">` becomes `<TugIconButton icon={isCollapsed ? <ChevronsDown /> : <ChevronsUp />} aria-label={…} onClick={toggleCollapsed} />`.
+- Updated: `tugdeck/src/components/tugways/body-kinds/diff-block.tsx` — same for `.tugx-diff-toggle`.
+- Updated: `file-block.css` / `diff-block.css` — drop the `.tugx-file-toggle` / `.tugx-diff-toggle` rule blocks.
+- Updated: theme files retire `--tugx-file-toggle-*` and `--tugx-diff-toggle-*` slots.
+
+*Gallery + tests:*
+- Updated: `tugdeck/src/components/tugways/cards/gallery-tug-cue.tsx` — add a new **"Affordance use-cases"** section that shows the three regularized shapes side-by-side inside fake-host frames so the design vocabulary can be vetted in one place:
+    1. **Shape A — Reveal cue (collapsed FileBlock).** Fake FileBlock-like frame with only its header visible and a `<TugCue role="active" icon={<ChevronsDown />}>X lines folded — click to expand</TugCue>` at the bottom. Click toggles a local expanded state so the cue can be exercised live.
+    2. **Shape B — Structural divider (diff hunk header).** Keep the existing "code-context cue" section; rename its title to match the shape vocabulary so the gallery reads as a coherent set.
+    3. **Shape C — Header collapse toggle.** Fake FileBlock-like frame in *expanded* state with a `<TugIconButton icon={<ChevronsUp />} aria-label="Collapse" />` in the header row, peer to a `Copy` `TugIconButton`. Demonstrates the paired-icon vocabulary across the header and the body.
+  Each fake-host frame uses the existing `cg-tug-cue-host*` helpers so the gallery card stays visually consistent.
+- Updated: `tugdeck/src/components/tugways/body-kinds/__tests__/file-block.test.tsx` — banner is interactive; header toggle is a `TugIconButton`.
+- Updated: `tugdeck/src/components/tugways/body-kinds/__tests__/diff-block.test.tsx` — same.
 
 **Tasks:**
 
-- [ ] Import `TugCue` into `file-block.tsx`. Replace the collapsed-hint `<div>` with `<TugCue aria-expanded={false} onClick={toggleCollapsed}>{N} lines folded — click to expand</TugCue>`.
-- [ ] Drop `.tugx-file-collapsed-hint` cursor / hover / focus-visible CSS rules in favor of TugCue's own styling. Keep any structural / layout declarations (full-width, vertical placement).
-- [ ] Repeat for DiffBlock's `tugx-diff-collapsed-hint`.
-- [ ] Update tests: the banner is now interactive — click activates the toggle.
-- [ ] Manual: open a >80-line Read result and confirm clicking the hint expands the file.
+*Reveal cue (Shape A):*
+- [ ] In `file-block.tsx`: replace the `.tugx-file-collapsed-hint` `<div>` with `<TugCue role="active" icon={<ChevronsDown />} aria-expanded={false} onClick={…}>{N} lines folded — click to expand</TugCue>`. The cue replaces the entire `<div>` — no extra wrapper.
+- [ ] Drop `.tugx-file-collapsed-hint` rule block from `file-block.css`. Retire `--tugx-file-collapsed-padding`, `-bg`, `-color`, `-size` from `harmony.css` / `brio.css` / `tug-active-theme.css`.
+- [ ] Repeat in `diff-block.tsx` / `diff-block.css` / theme files for the diff sibling.
+- [ ] Confirm the cue's `aria-expanded={false}` carries through (TugCue already passes it through verbatim — test pins this).
 
-**Tests:**
+*Header collapse toggle (Shape C):*
+- [ ] In `file-block.tsx`: replace the bespoke `<button className="tugx-file-toggle">` with `<TugIconButton icon={isCollapsed ? <ChevronsDown /> : <ChevronsUp />} aria-label={isCollapsed ? "Expand file" : "Collapse file"} onClick={toggleCollapsed} />`. (Note: when the header is visible and the file is collapsed, this button is *also* a way to expand — its icon mirrors the cue's `ChevronsDown` in that state. Once expanded, it becomes `ChevronsUp`.)
+- [ ] Drop the `.tugx-file-toggle` rule block from `file-block.css`. Retire `--tugx-file-toggle-*` slots from the theme files.
+- [ ] Repeat in `diff-block.tsx` / `diff-block.css` / theme files for the diff sibling.
 
-- [ ] FileBlock test: with `collapsed={true}` and `embedded={true}`, clicking the collapsed-hint banner fires `onToggleCollapsed(false)`.
-- [ ] DiffBlock test: with `collapsed={true}` and `embedded={true}`, clicking the collapsed-hint banner fires `onToggleCollapsed(false)`.
-- [ ] Both body-kinds: the `aria-expanded="false"` attribute is present on the banner when collapsed.
+*Gallery:*
+- [ ] Add an **"Affordance use-cases"** section to `gallery-tug-cue.tsx` showing the three regularized shapes inside fake-host frames (Shape A collapsed FileBlock, Shape B diff hunk header / renamed existing section, Shape C expanded FileBlock header). Each fake host wires a local `useState` so the cue / toggle is exercisable live.
+- [ ] Add a small intro paragraph (or `TugLabel` row) at the top of the section that names the three shapes and their tokenized role so the gallery doubles as documentation for callers picking between them.
+
+*Tests:*
+- [ ] FileBlock: with `collapsed={true}`, clicking the cue fires `onToggleCollapsed(false)`. The cue has `aria-expanded="false"`.
+- [ ] FileBlock: header collapse `TugIconButton` exists, has appropriate `aria-label`, and clicking it fires `onToggleCollapsed(...)`.
+- [ ] DiffBlock: parallel coverage for both cue and header toggle.
+- [ ] Both: keyboard activation (Enter / Space) of the cue toggles collapsed (TugCue is a real `<button>`; native browser behavior — sanity check, not deep).
+- [ ] Token audit (`bun run audit:tokens lint`) stays clean after the retired slots are deleted.
+
+**Tests (commands):**
+
+- [ ] `bun test src/components/tugways/body-kinds/__tests__/file-block.test.tsx`
+- [ ] `bun test src/components/tugways/body-kinds/__tests__/diff-block.test.tsx`
+- [ ] `bunx tsc --noEmit`
+- [ ] `bun run audit:tokens lint`
+- [ ] `bun test` (full suite — no regressions)
 
 **Checkpoint:**
 
-- [ ] `cd tugdeck && bunx tsc --noEmit && bun test` clean.
-- [ ] Manual: open the live Tide session's Read tool result for a long file; click the banner; file expands.
+- [ ] All four commands above clean.
+- [ ] Theme files no longer declare the four retired slot families.
+- [ ] Gallery card renders the "Affordance use-cases" section showing all three shapes; each is exercisable (clicking toggles the local state); user signs off on the visual vocabulary before manual-verification step below.
+- [ ] Manual: in the live Tide session, open a Read tool result for a long file (`>80` lines) and confirm clicking the cue expands it; confirm the header `ChevronsUp` collapses it back. Repeat for `bash git show HEAD` against a multi-hunk commit (DiffBlock path).
 
 ---
 
