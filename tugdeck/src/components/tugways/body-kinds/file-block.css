@@ -25,9 +25,88 @@
  * Tuglaw cross-check:
  *  - [L06] all match-highlight, copy-flash, and Shiki-swap behavior
  *    is DOM-imperative; React state holds only logical UI state.
+ *  - [L17] component-tier `--tugx-file-*` aliases resolve to base-tier
+ *    `--tug7-*` tokens in one hop.
  *  - [L19] file pair, module docstring, `data-slot="file-body"`.
  *  - [L20] every visible declaration consumes a `--tugx-file-*` token.
  */
+
+/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
+
+body {
+  /* Frame */
+  --tugx-file-bg:           var(--tug7-surface-global-primary-normal-inset-rest);
+  --tugx-file-border:       var(--tug7-element-global-border-normal-muted-rest);
+  --tugx-file-radius:       var(--tug-radius-md);
+  --tugx-file-margin:       var(--tug-space-md) 0;
+  --tugx-file-font:         var(--tug-font-family-mono);
+  --tugx-file-font-size:    var(--tug-font-size-sm);
+  --tugx-file-line-height:  1.55;
+  --tugx-file-text-color:   var(--tug7-element-global-text-normal-default-rest);
+  --tugx-file-focus-ring:   var(--tug7-element-global-text-normal-link-rest);
+
+  /* Header */
+  --tugx-file-header-padding: var(--tug-space-xs) var(--tug-space-md);
+  --tugx-file-header-gap:     var(--tug-space-sm);
+  --tugx-file-header-bg:      var(--tug7-surface-global-primary-normal-raised-rest);
+  --tugx-file-header-border:  var(--tug7-element-global-divider-normal-muted-rest);
+  --tugx-file-header-color:   var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-file-header-size:    var(--tug-font-size-2xs);
+  --tugx-file-header-font:    var(--tug-font-family-base);
+  --tugx-file-path-color:     var(--tug7-element-global-text-normal-default-rest);
+  --tugx-file-path-weight:    600;
+
+  /* Language pill */
+  --tugx-file-lang-padding: var(--tug-space-2xs) var(--tug-space-xs);
+  --tugx-file-lang-bg:      var(--tug7-surface-highlight-primary-normal-hover-rest);
+  --tugx-file-lang-color:   var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-file-lang-radius:  var(--tug-radius-xs);
+  --tugx-file-lang-size:    var(--tug-font-size-3xs);
+  --tugx-file-lang-font:    var(--tug-font-family-mono);
+
+  /* Counts */
+  --tugx-file-counts-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-file-counts-size:  var(--tug-font-size-2xs);
+
+  /* Icon button slot (legacy — header now uses TugIconButton) */
+  --tugx-file-icon-size:        22px;
+  --tugx-file-icon-radius:      var(--tug-radius-sm);
+  --tugx-file-icon-color:       var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-file-icon-color-hover: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-file-icon-bg-hover:    var(--tug7-surface-highlight-primary-normal-hover-rest);
+
+  /* Search bar */
+  --tugx-file-search-padding:       var(--tug-space-xs) var(--tug-space-md);
+  --tugx-file-search-gap:           var(--tug-space-xs);
+  --tugx-file-search-bg:            var(--tug7-surface-global-primary-normal-raised-rest);
+  --tugx-file-search-border:        var(--tug7-element-global-divider-normal-muted-rest);
+  --tugx-file-search-input-padding: var(--tug-space-2xs) var(--tug-space-xs);
+  --tugx-file-search-input-bg:      var(--tug7-surface-field-primary-normal-plain-rest);
+  --tugx-file-search-input-border:  var(--tug7-element-global-border-normal-muted-rest);
+  --tugx-file-search-input-color:   var(--tug7-element-global-text-normal-default-rest);
+  --tugx-file-search-input-radius:  var(--tug-radius-sm);
+  --tugx-file-search-input-size:    var(--tug-font-size-sm);
+  --tugx-file-search-count-color:   var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-file-search-count-size:    var(--tug-font-size-2xs);
+  --tugx-file-search-step-size:     var(--tug-font-size-sm);
+  --tugx-file-search-step-border:   var(--tug7-element-global-border-normal-muted-rest);
+
+  /* Body rows */
+  --tugx-file-rows-padding:      var(--tug-space-2xs) 0;
+  --tugx-file-gutter-width:      3.5em;
+  --tugx-file-gutter-padding-x:  var(--tug-space-sm);
+  --tugx-file-gutter-bg:         transparent;
+  --tugx-file-gutter-color:      var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-file-content-padding-x: var(--tug-space-md);
+  --tugx-file-row-hover-bg:      var(--tug7-surface-highlight-primary-normal-hover-rest);
+  --tugx-file-row-active-bg:     var(--tug7-surface-tone-primary-normal-success-rest);
+
+  /* Match overlay */
+  --tugx-file-mark-bg:             var(--tug7-surface-card-primary-normal-findmatch-rest);
+  --tugx-file-mark-active-bg:      var(--tug7-surface-card-primary-normal-findmatch-active);
+  --tugx-file-mark-active-outline: var(--tug7-element-global-border-normal-accent-rest);
+  --tugx-file-mark-radius:         var(--tug-radius-xs);
+}
 
 .tugx-file {
   position: relative;
@@ -129,26 +208,11 @@
   outline-offset: -2px;
 }
 
-.tugx-file-toggle {
-  padding: var(--tugx-file-toggle-padding);
-  background: transparent;
-  border: 1px solid var(--tugx-file-toggle-border);
-  border-radius: var(--tugx-file-toggle-radius);
-  color: var(--tugx-file-toggle-color);
-  font-family: inherit;
-  font-size: var(--tugx-file-toggle-size);
-  cursor: pointer;
-}
-
-.tugx-file-toggle:hover {
-  background: var(--tugx-file-toggle-bg-hover);
-  color: var(--tugx-file-toggle-color-hover);
-}
-
-.tugx-file-toggle:focus-visible {
-  outline: 2px solid var(--tugx-file-focus-ring);
-  outline-offset: -2px;
-}
+/* The header collapse toggle is now a `<TugIconButton>` (paired with the
+ * `Copy` button on the same surface); see file-block.tsx. The bespoke
+ * `.tugx-file-toggle` rule block and its `--tugx-file-toggle-*` slot
+ * family were retired — TugIconButton's own ghost-action styling owns
+ * the appearance now. */
 
 /* ---------- Search bar ---------- */
 
@@ -307,11 +371,7 @@
 
 /* ---------- Collapsed state ---------- */
 
-.tugx-file-collapsed-hint {
-  padding: var(--tugx-file-collapsed-padding);
-  background: var(--tugx-file-collapsed-bg);
-  color: var(--tugx-file-collapsed-color);
-  font-size: var(--tugx-file-collapsed-size);
-  font-style: italic;
-  text-align: center;
-}
+/* The collapsed-hint banner is now a `<TugCue role="active">` (see
+ * file-block.tsx). The `.tugx-file-collapsed-hint` class is forwarded
+ * onto the cue as a scoping hook; the `--tugx-file-collapsed-*` slot
+ * family was retired in favor of TugCue's own `--tugx-cue-*` slots. */

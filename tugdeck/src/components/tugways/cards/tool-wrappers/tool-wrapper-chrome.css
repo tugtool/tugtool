@@ -21,12 +21,74 @@
  * Tuglaw cross-check:
  *   - [L06] all visible state lives on data attributes / class
  *     swaps; React state never drives appearance.
+ *   - [L17] component-tier `--tugx-toolblock-*` aliases resolve to
+ *     base-tier `--tug7-*` tokens in one hop.
  *   - [L19] component-authoring guide — file pair, module
  *     docstring, `data-slot="tool-wrapper-chrome"`.
  *   - [L20] component-token sovereignty — every visible declaration
  *     consumes a `--tugx-toolblock-*` token; the chrome never
  *     reaches into a body kind's tokens.
  */
+
+/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
+
+body {
+  /* Frame */
+  --tugx-toolblock-bg:     var(--tug7-surface-global-primary-normal-raised-rest);
+  --tugx-toolblock-border: var(--tug7-element-global-border-normal-muted-rest);
+  --tugx-toolblock-radius: var(--tug-radius-md);
+  --tugx-toolblock-margin: var(--tug-space-md) 0;
+
+  /* Status stripe */
+  --tugx-toolblock-stripe-streaming: var(--tug7-element-global-text-normal-link-rest);
+  --tugx-toolblock-stripe-ready:     var(--tug7-element-global-border-normal-muted-rest);
+  --tugx-toolblock-stripe-error:     var(--tug7-element-global-text-normal-danger-rest);
+
+  /* Header */
+  --tugx-toolblock-header-padding: var(--tug-space-xs) var(--tug-space-md);
+  --tugx-toolblock-header-gap:     var(--tug-space-sm);
+  --tugx-toolblock-header-bg:      var(--tug7-surface-global-primary-normal-raised-rest);
+  --tugx-toolblock-header-border:  var(--tug7-element-global-divider-normal-muted-rest);
+  --tugx-toolblock-header-size:    var(--tug-font-size-sm);
+  --tugx-toolblock-header-font:    var(--tug-font-family-base);
+
+  --tugx-toolblock-icon-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-toolblock-name-color: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-toolblock-name-weight: 600;
+  --tugx-toolblock-args-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-toolblock-args-font:  var(--tug-font-family-mono);
+
+  /* Caution chip */
+  --tugx-toolblock-caution-padding: var(--tug-space-2xs) var(--tug-space-xs);
+  --tugx-toolblock-caution-radius:  var(--tug-radius-xs);
+  --tugx-toolblock-caution-bg:      var(--tug7-surface-tone-primary-normal-caution-rest);
+  --tugx-toolblock-caution-color:   var(--tug7-element-global-text-normal-caution-rest);
+  --tugx-toolblock-caution-size:    var(--tug-font-size-2xs);
+  --tugx-toolblock-caution-weight:  600;
+
+  /* Error band */
+  --tugx-toolblock-error-padding: var(--tug-space-sm) var(--tug-space-md);
+  --tugx-toolblock-error-bg:      var(--tug7-surface-tone-primary-normal-danger-rest);
+  --tugx-toolblock-error-border:  var(--tug7-element-global-border-normal-muted-rest);
+  --tugx-toolblock-error-color:   var(--tug7-element-global-text-normal-danger-rest);
+  --tugx-toolblock-error-font:    var(--tug-font-family-mono);
+  --tugx-toolblock-error-size:    var(--tug-font-size-sm);
+
+  /* Footer */
+  --tugx-toolblock-footer-padding: var(--tug-space-xs) var(--tug-space-md);
+  --tugx-toolblock-footer-gap:     var(--tug-space-md);
+  --tugx-toolblock-footer-bg:      var(--tug7-surface-global-primary-normal-raised-rest);
+  --tugx-toolblock-footer-border:  var(--tug7-element-global-divider-normal-muted-rest);
+  --tugx-toolblock-footer-color:   var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-toolblock-footer-size:    var(--tug-font-size-2xs);
+  --tugx-toolblock-footer-font:    var(--tug-font-family-base);
+
+  /* Streaming placeholder */
+  --tugx-toolblock-streaming-color:    var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-toolblock-streaming-padding:  var(--tug-space-sm) var(--tug-space-md);
+  --tugx-toolblock-streaming-gap:      4px;
+  --tugx-toolblock-streaming-dot-size: 6px;
+}
 
 .tool-wrapper-chrome {
   display: flex;

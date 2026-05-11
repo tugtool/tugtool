@@ -470,8 +470,9 @@ describe("DiffBlock — collapse", () => {
       '[data-slot="diff-body"]',
     ) as HTMLElement;
     expect(root.getAttribute("data-collapsed")).toBe("false");
+    // Header collapse toggle is a TugIconButton — find by its aria-label.
     const toggle = container.querySelector(
-      '[data-slot="diff-toggle"]',
+      'button[aria-label="Collapse diff"]',
     ) as HTMLElement;
     act(() => {
       fireEvent.click(toggle);
@@ -482,8 +483,10 @@ describe("DiffBlock — collapse", () => {
     expect(container.querySelectorAll('[data-slot="diff-hunk"]')).toHaveLength(
       0,
     );
+    // Collapsed-hint banner is a TugCue (`.tugx-diff-collapsed-hint` class
+    // forwarded onto the cue for scoping).
     expect(
-      container.querySelector('[data-slot="diff-collapsed-hint"]'),
+      container.querySelector(".tugx-diff-collapsed-hint"),
     ).not.toBeNull();
   });
 

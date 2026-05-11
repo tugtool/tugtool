@@ -64,6 +64,10 @@
 import "./file-block.css";
 
 import React from "react";
+import { ChevronsDown, ChevronsUp } from "lucide-react";
+
+import { TugCue } from "@/components/tugways/tug-cue";
+import { TugIconButton } from "@/components/tugways/tug-icon-button";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -185,7 +189,6 @@ const DATA_SLOT_BODY = "file-body-rows";
 const DATA_SLOT_ROW = "file-row";
 const DATA_SLOT_GUTTER = "file-gutter";
 const DATA_SLOT_CONTENT = "file-content";
-const DATA_SLOT_TOGGLE = "file-toggle";
 const DATA_SLOT_SEARCH_TOGGLE = "file-search-toggle";
 const DATA_SLOT_SEARCH_BAR = "file-search-bar";
 const DATA_SLOT_SEARCH_INPUT = "file-search-input";
@@ -816,15 +819,11 @@ export const FileBlock: React.FC<FileBlockProps> = ({
           />
         ) : null}
         {overThreshold ? (
-          <button
-            type="button"
-            className="tugx-file-toggle"
-            data-slot={DATA_SLOT_TOGGLE}
-            aria-expanded={!collapsed}
+          <TugIconButton
+            icon={collapsed ? <ChevronsDown /> : <ChevronsUp />}
+            aria-label={collapsed ? "Expand file" : "Collapse file"}
             onClick={toggleCollapsed}
-          >
-            {collapsed ? "Expand" : "Collapse"}
-          </button>
+          />
         ) : null}
       </div>
       )}
@@ -915,9 +914,15 @@ export const FileBlock: React.FC<FileBlockProps> = ({
           </div>
         ))}
         {collapsed && lines.length > 0 ? (
-          <div className="tugx-file-collapsed-hint" data-slot="file-collapsed-hint">
-            {lines.length.toLocaleString()} lines folded — click Expand to view
-          </div>
+          <TugCue
+            role="active"
+            icon={<ChevronsDown />}
+            aria-expanded={false}
+            onClick={toggleCollapsed}
+            className="tugx-file-collapsed-hint"
+          >
+            {`${lines.length.toLocaleString()} lines folded — click to expand`}
+          </TugCue>
         ) : null}
       </div>
     </div>

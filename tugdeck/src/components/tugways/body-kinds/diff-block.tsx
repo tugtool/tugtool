@@ -69,9 +69,10 @@
 import "./diff-block.css";
 
 import React from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronsDown, ChevronsUp } from "lucide-react";
 
 import { TugCue } from "@/components/tugways/tug-cue";
+import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import { detectLanguage } from "./file-block";
 import {
   parseUnifiedDiffText,
@@ -172,11 +173,9 @@ const DATA_SLOT_LINE = "diff-line";
 const DATA_SLOT_SBS_ROW = "diff-sbs-row";
 const DATA_SLOT_SBS_CELL = "diff-sbs-cell";
 const DATA_SLOT_VIEW_TOGGLE = "diff-view-toggle";
-const DATA_SLOT_TOGGLE = "diff-toggle";
 const DATA_SLOT_PATH = "diff-path";
 const DATA_SLOT_STATS = "diff-stats";
 const DATA_SLOT_LOADING = "diff-loading";
-const DATA_SLOT_COLLAPSED_HINT = "diff-collapsed-hint";
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -682,27 +681,25 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
             {viewMode === "side-by-side" ? "Inline" : "Side by side"}
           </button>
           {empty ? null : (
-            <button
-              type="button"
-              className="tugx-diff-toggle"
-              data-slot={DATA_SLOT_TOGGLE}
-              aria-expanded={!collapsed}
+            <TugIconButton
+              icon={collapsed ? <ChevronsDown /> : <ChevronsUp />}
+              aria-label={collapsed ? "Expand diff" : "Collapse diff"}
               onClick={toggleCollapsed}
-            >
-              {collapsed ? "Expand" : "Collapse"}
-            </button>
+            />
           )}
         </div>
       )}
 
       {collapsed && !empty ? (
-        <div
+        <TugCue
+          role="active"
+          icon={<ChevronsDown />}
+          aria-expanded={false}
+          onClick={toggleCollapsed}
           className="tugx-diff-collapsed-hint"
-          data-slot={DATA_SLOT_COLLAPSED_HINT}
         >
-          {hunks.length} {hunks.length === 1 ? "hunk" : "hunks"} folded — click
-          Expand to view
-        </div>
+          {`${hunks.length} ${hunks.length === 1 ? "hunk" : "hunks"} folded — click to expand`}
+        </TugCue>
       ) : null}
 
       {!collapsed && renderData !== null ? (

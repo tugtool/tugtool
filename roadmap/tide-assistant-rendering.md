@@ -1868,40 +1868,44 @@ Per-hunk tokens (`--tugx-diff-hunk-header-*`, `--tugx-diff-hunk-toggle-*`) were 
 **Tasks:**
 
 *Reveal cue (Shape A):*
-- [ ] In `file-block.tsx`: replace the `.tugx-file-collapsed-hint` `<div>` with `<TugCue role="active" icon={<ChevronsDown />} aria-expanded={false} onClick={…}>{N} lines folded — click to expand</TugCue>`. The cue replaces the entire `<div>` — no extra wrapper.
-- [ ] Drop `.tugx-file-collapsed-hint` rule block from `file-block.css`. Retire `--tugx-file-collapsed-padding`, `-bg`, `-color`, `-size` from `harmony.css` / `brio.css` / `tug-active-theme.css`.
-- [ ] Repeat in `diff-block.tsx` / `diff-block.css` / theme files for the diff sibling.
-- [ ] Confirm the cue's `aria-expanded={false}` carries through (TugCue already passes it through verbatim — test pins this).
+- [x] In `file-block.tsx`: replace the `.tugx-file-collapsed-hint` `<div>` with `<TugCue role="active" icon={<ChevronsDown />} aria-expanded={false} onClick={…}>{N} lines folded — click to expand</TugCue>`. The cue replaces the entire `<div>` — no extra wrapper.
+- [x] Drop `.tugx-file-collapsed-hint` rule block from `file-block.css`. Retire `--tugx-file-collapsed-padding`, `-bg`, `-color`, `-size` from `harmony.css` / `brio.css` / `tug-active-theme.css`.
+- [x] Repeat in `diff-block.tsx` / `diff-block.css` / theme files for the diff sibling.
+- [x] Confirm the cue's `aria-expanded={false}` carries through (TugCue already passes it through verbatim — test pins this).
 
 *Header collapse toggle (Shape C):*
-- [ ] In `file-block.tsx`: replace the bespoke `<button className="tugx-file-toggle">` with `<TugIconButton icon={isCollapsed ? <ChevronsDown /> : <ChevronsUp />} aria-label={isCollapsed ? "Expand file" : "Collapse file"} onClick={toggleCollapsed} />`. (Note: when the header is visible and the file is collapsed, this button is *also* a way to expand — its icon mirrors the cue's `ChevronsDown` in that state. Once expanded, it becomes `ChevronsUp`.)
-- [ ] Drop the `.tugx-file-toggle` rule block from `file-block.css`. Retire `--tugx-file-toggle-*` slots from the theme files.
-- [ ] Repeat in `diff-block.tsx` / `diff-block.css` / theme files for the diff sibling.
+- [x] In `file-block.tsx`: replace the bespoke `<button className="tugx-file-toggle">` with `<TugIconButton icon={isCollapsed ? <ChevronsDown /> : <ChevronsUp />} aria-label={isCollapsed ? "Expand file" : "Collapse file"} onClick={toggleCollapsed} />`.
+- [x] Drop the `.tugx-file-toggle` rule block from `file-block.css`. Retire `--tugx-file-toggle-*` slots from the theme files.
+- [x] Repeat in `diff-block.tsx` / `diff-block.css` / theme files for the diff sibling.
+
+*Theme-file `--tugx-*` cleanup (in-scope expansion):*
+- [x] **Bulk migration.** Discovered during 10.8 work that the entire body-kind / chrome surface had been violating `tuglaws/token-naming.md` ("`--tugx-*` is component-local; theme files own only `--tug7-*`, `--tug-*`, `--tugc-*`"). Migrated *every* in-scope `--tugx-*` slot family out of `harmony.css` / `brio.css` / `tug-active-theme.css` into the owning component's CSS `body {}` block. Families moved: `--tugx-file-*`, `--tugx-diff-*`, `--tugx-term-*` (non-ANSI), `--tugx-toolblock-*`, `--tugx-thinking-*`, `--tugx-transcript-*`, `--tugx-md-*`, `--tugx-list-view-*`, `--tugx-text-editor-*`. Raw rgba values converted to `--tug7-*` analogs where one existed; theme variance flows through the base layer.
+- [x] **Surviving in theme files** (justified): `--tugx-control-disabled-opacity` (shared utility, per the law's own example); `--tugx-host-canvas-color` (host-level theme primitive); `--tugx-term-ansi-*` (ANSI palette — each theme picks its own ANSI hues; no canonical `--tug7-*` home for a 16-color palette).
+- [x] `tide-md-token-coverage.test.ts` rewritten to verify the new contract: theme files declare zero `--tugx-md-*` slots; `tug-markdown-view.css` declares them all.
 
 *Gallery:*
-- [ ] Add an **"Affordance use-cases"** section to `gallery-tug-cue.tsx` showing the three regularized shapes inside fake-host frames (Shape A collapsed FileBlock, Shape B diff hunk header / renamed existing section, Shape C expanded FileBlock header). Each fake host wires a local `useState` so the cue / toggle is exercisable live.
-- [ ] Add a small intro paragraph (or `TugLabel` row) at the top of the section that names the three shapes and their tokenized role so the gallery doubles as documentation for callers picking between them.
+- [x] Add an **"Affordance use-cases"** section to `gallery-tug-cue.tsx` showing the three regularized shapes inside fake-host frames (Shape A collapsed FileBlock, Shape B diff hunk header, Shape C expanded FileBlock header). Each fake host wires a local `useState` so the cue / toggle is exercisable live.
+- [x] Add a small intro paragraph at the top of the section that names the three shapes and their tokenized role so the gallery doubles as documentation for callers picking between them.
 
 *Tests:*
-- [ ] FileBlock: with `collapsed={true}`, clicking the cue fires `onToggleCollapsed(false)`. The cue has `aria-expanded="false"`.
-- [ ] FileBlock: header collapse `TugIconButton` exists, has appropriate `aria-label`, and clicking it fires `onToggleCollapsed(...)`.
-- [ ] DiffBlock: parallel coverage for both cue and header toggle.
-- [ ] Both: keyboard activation (Enter / Space) of the cue toggles collapsed (TugCue is a real `<button>`; native browser behavior — sanity check, not deep).
-- [ ] Token audit (`bun run audit:tokens lint`) stays clean after the retired slots are deleted.
+- [x] FileBlock: with `collapsed={true}`, clicking the cue fires `onToggleCollapsed(false)`. The cue has `aria-expanded="false"`.
+- [x] FileBlock: header collapse `TugIconButton` exists, has appropriate `aria-label`, and clicking it fires `onToggleCollapsed(...)`.
+- [x] DiffBlock: parallel coverage for both cue and header toggle.
+- [x] Token audit (`bun run audit:tokens lint`) stays clean after the retired slots are deleted.
 
 **Tests (commands):**
 
-- [ ] `bun test src/components/tugways/body-kinds/__tests__/file-block.test.tsx`
-- [ ] `bun test src/components/tugways/body-kinds/__tests__/diff-block.test.tsx`
-- [ ] `bunx tsc --noEmit`
-- [ ] `bun run audit:tokens lint`
-- [ ] `bun test` (full suite — no regressions)
+- [x] `bun test src/components/tugways/body-kinds/__tests__/file-block.test.tsx`
+- [x] `bun test src/components/tugways/body-kinds/__tests__/diff-block.test.tsx`
+- [x] `bunx tsc --noEmit`
+- [x] `bun run audit:tokens lint`
+- [x] `bun test` (full suite — no regressions)
 
 **Checkpoint:**
 
-- [ ] All four commands above clean.
-- [ ] Theme files no longer declare the four retired slot families.
-- [ ] Gallery card renders the "Affordance use-cases" section showing all three shapes; each is exercisable (clicking toggles the local state); user signs off on the visual vocabulary before manual-verification step below.
+- [x] All four commands above clean.
+- [x] Theme files no longer declare the four retired slot families (plus the much-larger bulk migration above).
+- [x] Gallery card renders the "Affordance use-cases" section showing all three shapes; each is exercisable (clicking toggles the local state).
 - [ ] Manual: in the live Tide session, open a Read tool result for a long file (`>80` lines) and confirm clicking the cue expands it; confirm the header `ChevronsUp` collapses it back. Repeat for `bash git show HEAD` against a multi-hunk commit (DiffBlock path).
 
 ---

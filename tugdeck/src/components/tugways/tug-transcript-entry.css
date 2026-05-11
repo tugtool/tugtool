@@ -4,9 +4,38 @@
  * header (bold identifier + optional timestamp), body, and (optional)
  * controls vertically. Per-participant variants come from the
  * [data-participant] cascade onto `--tugx-transcript-icon-color`; adding a
- * participant is a token in styles/themes + a rule below. Token
- * definitions live in styles/themes/brio.css and harmony.css.
+ * participant is a per-participant flavor slot below + a matching rule.
+ *
+ * Per [L17] the `--tugx-transcript-*` slots are component-local and
+ * resolve to base-tier `--tug7-*` tokens in one hop.
  */
+
+/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
+
+body {
+  --tugx-transcript-row-gap:            var(--tug-space-xl);
+  --tugx-transcript-icon-column-width:  36px;
+  --tugx-transcript-icon-column-gap:    var(--tug-space-xs);
+  --tugx-transcript-icon-size:          var(--tug-icon-size-md);
+  --tugx-transcript-header-gap:         var(--tug-space-sm);
+  --tugx-transcript-body-margin-top:    var(--tug-space-2xs);
+  --tugx-transcript-body-line-height:   1.5;
+  --tugx-transcript-controls-margin-top: var(--tug-space-xs);
+  --tugx-transcript-controls-gap:       var(--tug-space-sm);
+
+  --tugx-transcript-identifier-color:     var(--tug7-element-global-text-normal-default-rest);
+  --tugx-transcript-identifier-weight:    600;
+  --tugx-transcript-identifier-font-size: var(--tug-font-size-sm);
+  --tugx-transcript-timestamp-color:      var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-transcript-timestamp-font-size:  var(--tug-font-size-xs);
+  --tugx-transcript-body-color:           var(--tug7-element-global-text-normal-default-rest);
+
+  /* Per-participant icon flavors */
+  --tugx-transcript-icon-color-user:    var(--tug7-element-tone-icon-normal-accent-rest);
+  --tugx-transcript-icon-color-code:    var(--tug7-element-tone-icon-normal-agent-rest);
+  --tugx-transcript-icon-color-shell:   var(--tug7-element-tone-icon-normal-data-rest);
+  --tugx-transcript-icon-color-command: var(--tug7-element-tone-icon-normal-active-rest);
+}
 
 .tug-transcript-entry {
   display: grid;

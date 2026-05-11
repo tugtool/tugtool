@@ -358,7 +358,11 @@ describe("FileBlock — collapse", () => {
       '[data-slot="file-body"]',
     ) as HTMLElement;
     expect(root.dataset.collapsed).toBe("false");
-    expect(container.querySelector('[data-slot="file-toggle"]')).toBeNull();
+    // Header collapse toggle is absent below the threshold (no overThreshold,
+    // no TugIconButton rendered).
+    expect(
+      container.querySelector('button[aria-label="Collapse file"]'),
+    ).toBeNull();
     expect(
       container.querySelectorAll('[data-slot="file-row"]').length,
     ).toBe(DEFAULT_COLLAPSE_THRESHOLD);
@@ -374,19 +378,20 @@ describe("FileBlock — collapse", () => {
       '[data-slot="file-body"]',
     ) as HTMLElement;
     expect(root.dataset.collapsed).toBe("true");
+    // Collapsed-hint banner is a TugCue (`.tugx-file-collapsed-hint` class
+    // forwarded onto the cue for scoping).
     expect(
-      container.querySelector('[data-slot="file-collapsed-hint"]'),
+      container.querySelector(".tugx-file-collapsed-hint"),
     ).not.toBeNull();
     // No rows are rendered while collapsed.
     expect(
       container.querySelectorAll('[data-slot="file-row"]').length,
     ).toBe(0);
-    // Toggle button is present and reads "Expand".
+    // Header collapse toggle is the TugIconButton with aria-label "Expand file".
     const toggle = container.querySelector(
-      '[data-slot="file-toggle"]',
+      'button[aria-label="Expand file"]',
     ) as HTMLButtonElement;
     expect(toggle).not.toBeNull();
-    expect(toggle.textContent).toBe("Expand");
   });
 
   test("toggle button expands and notifies via onToggleCollapsed", () => {
@@ -403,7 +408,7 @@ describe("FileBlock — collapse", () => {
     ) as HTMLElement;
     expect(root.dataset.collapsed).toBe("true");
     const toggle = container.querySelector(
-      '[data-slot="file-toggle"]',
+      'button[aria-label="Expand file"]',
     ) as HTMLButtonElement;
     act(() => {
       toggle.click();

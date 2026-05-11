@@ -1,19 +1,17 @@
 /**
- * Theme-token coverage for the markdown typography pass.
+ * Token coverage for the markdown typography pass.
  *
- * The typography pass declares a vocabulary of `--tugx-md-*` tokens
- * in both `styles/themes/brio.css` (dark) and
- * `styles/themes/harmony.css` (light). The contract: both themes
- * declare the *same set* of token names, and every `--tugx-md-*`
- * token referenced by `tug-markdown-view.css` (the consumer) is
- * declared in both themes.
+ * `--tugx-md-*` slots are component-local per tuglaws/token-naming.md:
+ * declared in `tug-markdown-view.css`'s `body {}` block (the canonical
+ * home for a public component's `--tugx-*` slots). Per-theme variance
+ * flows through the `--tug7-*` base tokens those aliases resolve to.
  *
  * What this test guards:
- *  - A new token added to one theme but not the other → fails.
- *  - A token referenced in the markdown CSS but not declared in the
- *    themes → fails. (This used to be silently survivable because of
- *    `var(--name, fallback-literal)`; the typography pass dropped
- *    those fallbacks and made theme declarations the sole source.)
+ *  - Every `--tugx-md-*` token referenced by markdown CSS is declared
+ *    in `tug-markdown-view.css`.
+ *  - Theme files (`brio.css`, `harmony.css`) DO NOT declare any
+ *    `--tugx-md-*` slot — that would be the original-sin pattern this
+ *    migration cleaned up.
  *
  * Token names are extracted via a simple `--tugx-md-([a-z0-9-]+):`
  * regex; the test does NOT validate values, only declared/referenced
@@ -76,46 +74,31 @@ function read(path: string): string {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("markdown theme-token coverage", () => {
-  test("brio.css and harmony.css declare the same set of --tugx-md-* tokens", () => {
+describe("markdown token coverage", () => {
+  test("theme files declare zero --tugx-md-* slots (the component-local migration cleared them)", () => {
     const brio = extractDeclared(read(BRIO));
     const harmony = extractDeclared(read(HARMONY));
 
-    // Both themes declare a non-trivial set.
-    expect(brio.size).toBeGreaterThan(20);
-    expect(harmony.size).toBeGreaterThan(20);
-
-    const onlyInBrio = [...brio].filter((t) => !harmony.has(t)).sort();
-    const onlyInHarmony = [...harmony].filter((t) => !brio.has(t)).sort();
-
-    expect(onlyInBrio).toEqual([]);
-    expect(onlyInHarmony).toEqual([]);
+    expect(brio.size).toBe(0);
+    expect(harmony.size).toBe(0);
   });
 
-  test("every --tugx-md-* token referenced by markdown CSS is declared in both themes", () => {
+  test("every --tugx-md-* token referenced by markdown CSS is declared in tug-markdown-view.css", () => {
     const referenced = new Set<string>([
       ...extractReferenced(read(MARKDOWN_VIEW_CSS)),
       ...extractReferenced(read(MARKDOWN_BLOCK_CSS)),
     ]);
-    const brio = extractDeclared(read(BRIO));
-    const harmony = extractDeclared(read(HARMONY));
+    const declared = extractDeclared(read(MARKDOWN_VIEW_CSS));
 
-    const undeclaredInBrio = [...referenced]
-      .filter((t) => !brio.has(t))
-      .sort();
-    const undeclaredInHarmony = [...referenced]
-      .filter((t) => !harmony.has(t))
-      .sort();
+    const undeclared = [...referenced].filter((t) => !declared.has(t)).sort();
 
-    expect(undeclaredInBrio).toEqual([]);
-    expect(undeclaredInHarmony).toEqual([]);
+    expect(undeclared).toEqual([]);
   });
 
   test("token vocabulary covers every typography axis the pass commits to", () => {
     // Spot-check a representative subset of the typography surface so a
-    // future refactor that accidentally drops a category fails loudly
-    // here, even if the brio↔harmony equality test still passes.
-    const brio = extractDeclared(read(BRIO));
+    // future refactor that accidentally drops a category fails loudly here.
+    const declared = extractDeclared(read(MARKDOWN_VIEW_CSS));
     const required: ReadonlyArray<string> = [
       // Body
       "--tugx-md-body-color",
@@ -160,7 +143,7 @@ describe("markdown theme-token coverage", () => {
       "--tugx-md-block-padding-x",
       "--tugx-md-bottom-buffer",
     ];
-    const missing = required.filter((t) => !brio.has(t));
+    const missing = required.filter((t) => !declared.has(t));
     expect(missing).toEqual([]);
   });
 

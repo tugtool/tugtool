@@ -31,11 +31,81 @@
  *   - [L06] no React state for visible state. Class-driven; the
  *     scroll listener writes spacer heights and reorders line
  *     elements imperatively.
+ *   - [L17] component-tier `--tugx-term-*` aliases resolve to base-tier
+ *     `--tug7-*` tokens in one hop. The ANSI palette (`--tugx-term-ansi-*`)
+ *     is the one carve-out: it remains theme-anchored in `harmony.css` /
+ *     `brio.css` because each theme picks its own ANSI hue/tone for
+ *     terminal text, and the seven-slot vocabulary has no canonical
+ *     home for a 16-color palette.
  *   - [L19] component-authoring guide — file pair, module
  *     docstring, `data-slot="terminal-body"`.
  *   - [L20] component-token sovereignty — every visible declaration
  *     consumes a `--tugx-term-*` token.
  */
+
+/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
+
+body {
+  /* Frame */
+  --tugx-term-bg:             var(--tug7-surface-global-primary-normal-inset-rest);
+  --tugx-term-border:         var(--tug7-element-global-border-normal-muted-rest);
+  --tugx-term-radius:         var(--tug-radius-md);
+  --tugx-term-margin:         var(--tug-space-md) 0;
+  --tugx-term-padding:        var(--tug-space-sm) var(--tug-space-md);
+  --tugx-term-padding-x:      var(--tug-space-md);
+  --tugx-term-font:           var(--tug-font-family-mono);
+  --tugx-term-font-size:      var(--tug-font-size-sm);
+  --tugx-term-line-height:    1.45;
+  --tugx-term-line-height-px: 20px;
+  --tugx-term-text-color:     var(--tug7-element-global-text-normal-default-rest);
+
+  /* Stderr stripe */
+  --tugx-term-stderr-color: var(--tug7-element-global-text-normal-danger-rest);
+  --tugx-term-stderr-bg:    var(--tug7-surface-tone-primary-normal-danger-rest);
+
+  /* Truncation strip */
+  --tugx-term-truncation-padding: var(--tug-space-xs) var(--tug-space-md);
+  --tugx-term-truncation-bg:      var(--tug7-surface-global-primary-normal-raised-rest);
+  --tugx-term-truncation-border:  var(--tug7-element-global-divider-normal-muted-rest);
+  --tugx-term-truncation-color:   var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-term-truncation-size:    var(--tug-font-size-2xs);
+
+  /* Copy button */
+  --tugx-term-copy-offset:       var(--tug-space-xs);
+  --tugx-term-copy-padding:      var(--tug-space-2xs) var(--tug-space-xs);
+  --tugx-term-copy-gap:          var(--tug-space-2xs);
+  --tugx-term-copy-radius:       var(--tug-radius-sm);
+  --tugx-term-copy-size:         var(--tug-font-size-2xs);
+  --tugx-term-copy-fade:         var(--tug-motion-duration-fast);
+  --tugx-term-copy-bg:           var(--tug7-surface-global-primary-normal-raised-rest);
+  --tugx-term-copy-bg-hover:     var(--tug7-surface-highlight-primary-normal-hover-rest);
+  --tugx-term-copy-border:       var(--tug7-element-global-border-normal-muted-rest);
+  --tugx-term-copy-color:        var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-term-copy-color-hover:  var(--tug7-element-global-text-normal-default-rest);
+  --tugx-term-copy-color-copied: var(--tug7-element-global-text-normal-success-rest);
+
+  /* Footer */
+  --tugx-term-footer-padding: var(--tug-space-xs) var(--tug-space-md);
+  --tugx-term-footer-gap:     var(--tug-space-md);
+  --tugx-term-footer-bg:      var(--tug7-surface-global-primary-normal-raised-rest);
+  --tugx-term-footer-border:  var(--tug7-element-global-divider-normal-muted-rest);
+  --tugx-term-footer-color:   var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-term-footer-size:    var(--tug-font-size-2xs);
+  --tugx-term-footer-font:    var(--tug-font-family-base);
+
+  /* Exit badges */
+  --tugx-term-exit-padding:        var(--tug-space-2xs) var(--tug-space-xs);
+  --tugx-term-exit-radius:         var(--tug-radius-xs);
+  --tugx-term-exit-weight:         600;
+  --tugx-term-exit-bg-zero:        var(--tug7-surface-tone-primary-normal-success-rest);
+  --tugx-term-exit-color-zero:     var(--tug7-element-global-text-normal-success-rest);
+  --tugx-term-exit-bg-nonzero:     var(--tug7-surface-tone-primary-normal-danger-rest);
+  --tugx-term-exit-color-nonzero:  var(--tug7-element-global-text-normal-danger-rest);
+  --tugx-term-interrupted-bg:      var(--tug7-surface-tone-primary-normal-caution-rest);
+  --tugx-term-interrupted-color:   var(--tug7-element-global-text-normal-caution-rest);
+
+  --tugx-term-focus-ring: var(--tug7-element-global-text-normal-link-rest);
+}
 
 .tugx-term {
   position: relative;

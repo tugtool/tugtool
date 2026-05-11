@@ -1,3 +1,9 @@
+/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
+
+body {
+  --tugx-text-editor-selection-bg-rest: var(--tug7-surface-selection-primary-normal-plain-rest);
+}
+
 /* @tug-pairings {
   --tug7-element-field-text-normal-plain-rest        | --tug7-surface-field-primary-normal-plain-rest     | content
   --tug7-element-field-border-normal-plain-rest      | --tug7-surface-field-primary-normal-plain-rest     | informational

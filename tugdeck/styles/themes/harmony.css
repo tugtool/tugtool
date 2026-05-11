@@ -192,7 +192,7 @@ body {
      don't need this; tug-text-editor's overlay is a div whose CSS color is
      honored verbatim, so we use a higher-chroma blue here to keep the
      visual saturated. */
-  --tugx-text-editor-selection-bg-rest: --tug-color(blue, i: 50, t: 60, a: 50);
+  /* `--tugx-text-editor-*` slots live in tug-text-editor.css. */
 
   /* Element — Highlight */
   --tug7-element-highlight-fill-normal-drop-rest: --tug-color(blue, i: 45, t: 55);
@@ -840,30 +840,8 @@ body {
   /* Other */
   --tug7-element-card-title-normal-plain-rest: --tug-color(indigo, i: 4, t: 8);
 
-  /* Transcript primitive */
-  --tugx-transcript-row-gap: var(--tug-space-xl);
-  --tugx-transcript-icon-column-width: 36px;
-  --tugx-transcript-icon-column-gap: var(--tug-space-xs);
-  --tugx-transcript-icon-size: var(--tug-icon-size-md);
-  --tugx-transcript-header-gap: var(--tug-space-sm);
-  --tugx-transcript-body-margin-top: var(--tug-space-2xs);
-  --tugx-transcript-body-line-height: 1.5;
-  --tugx-transcript-controls-margin-top: var(--tug-space-xs);
-  --tugx-transcript-controls-gap: var(--tug-space-sm);
-  --tugx-transcript-identifier-color: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-transcript-identifier-weight: 600;
-  --tugx-transcript-identifier-font-size: var(--tug-font-size-sm);
-  --tugx-transcript-timestamp-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-transcript-timestamp-font-size: var(--tug-font-size-xs);
-  --tugx-transcript-body-color: var(--tug7-element-global-text-normal-default-rest);
-  /* Per-participant icon flavors. The [data-participant] cascade in
-     tug-transcript-entry.css maps the active flavor onto the rendered
-     `--tugx-transcript-icon-color`. Adding a participant is a token + a
-     cascade rule; no primitive edit. */
-  --tugx-transcript-icon-color-user: var(--tug7-element-tone-icon-normal-accent-rest);
-  --tugx-transcript-icon-color-code: var(--tug7-element-tone-icon-normal-agent-rest);
-  --tugx-transcript-icon-color-shell: var(--tug7-element-tone-icon-normal-data-rest);
-  --tugx-transcript-icon-color-command: var(--tug7-element-tone-icon-normal-active-rest);
+  /* `--tugx-transcript-*` slots live in tug-transcript-entry.css's body{}
+   * block per tuglaws/token-naming.md. */
 
   /* TugListView — windowed list primitive. Layout-only tokens; the
      primitive paints no contrast pairings of its own. Consumers customize
@@ -872,10 +850,7 @@ body {
      into the primitive's CSS. Per-card-subtree uniqueness of the
      `data-tug-scroll-key` attribute is the consumer's concern via the
      `scrollKey` prop. */
-  --tugx-list-view-padding-block: var(--tug-space-md);
-  --tugx-list-view-padding-inline: var(--tug-space-md);
-  --tugx-list-view-row-gap: var(--tug-space-sm);
-  --tugx-list-view-scroll-padding-end: var(--tug-space-lg);
+  /* `--tugx-list-view-*` slots live in tug-list-view.css. */
 
   /* TugMarkdownView / TugMarkdownBlock typography (--tugx-md-*).
      Light-theme values for `harmony`. The full token vocabulary is
@@ -889,196 +864,25 @@ body {
      (darker-than-canvas vs lighter-than-canvas) rather than just
      hue. */
 
-  /* Body */
-  --tugx-md-body-color: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-md-body-line-height: 1.6;
-  --tugx-md-paragraph-margin: 0.6em;
-
-  /* Heading scale */
-  --tugx-md-h1-size: var(--tug-font-size-2xl);
-  --tugx-md-h2-size: var(--tug-font-size-xl);
-  --tugx-md-h3-size: var(--tug-font-size-lg);
-  --tugx-md-h4-size: var(--tug-font-size-md);
-  --tugx-md-h5-size: var(--tug-font-size-md);
-  --tugx-md-h6-size: var(--tug-font-size-md);
-  --tugx-md-heading-line-height: 1.25;
-  --tugx-md-heading-margin-top: 1.4em;
-  --tugx-md-heading-margin-bottom: 0.4em;
-  --tugx-md-heading-color: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-md-h1-weight: 700;
-  --tugx-md-h2-weight: 700;
-  --tugx-md-h3-weight: 600;
-  --tugx-md-h4-weight: 700;
-  --tugx-md-h5-weight: 600;
-  --tugx-md-h6-weight: 500;
-  --tugx-md-h6-color: var(--tug7-element-global-text-normal-muted-rest);
-
-  /* Inline emphasis */
-  --tugx-md-strong-weight: 700;
-  --tugx-md-em-style: italic;
-  --tugx-md-strikethrough-decoration: line-through;
-  --tugx-md-strikethrough-color: var(--tug7-element-global-text-normal-muted-rest);
-
-  /* Links */
-  --tugx-md-link-color: var(--tug7-element-global-text-normal-link-rest);
-  --tugx-md-link-color-hover: var(--tug7-element-global-text-normal-link-hover);
-  --tugx-md-link-decoration: underline;
-
-  /* Inline code */
-  --tugx-md-inline-code-bg: rgba(0, 0, 0, 0.05);
-  --tugx-md-inline-code-color: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-md-inline-code-padding: 0.1em 0.35em;
-  --tugx-md-inline-code-radius: 3px;
-  --tugx-md-inline-code-size: 0.9em;
-
-  /* Fenced code */
-  --tugx-md-fenced-code-bg: rgba(0, 0, 0, 0.04);
-  --tugx-md-fenced-code-color: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-md-fenced-code-padding: var(--tug-space-md) var(--tug-space-lg);
-  --tugx-md-fenced-code-radius: 6px;
-  --tugx-md-fenced-code-size: 0.875em;
-  --tugx-md-fenced-code-line-height: 1.5;
-  --tugx-md-fenced-code-margin: var(--tug-space-md);
-  --tugx-md-mono-font: var(--tug-font-family-mono);
-  --tugx-md-code-bg: rgba(0, 0, 0, 0.04);
-
-  /* Fenced code — header chrome (language label + copy button) */
-  --tugx-md-fenced-code-header-padding: var(--tug-space-xs) var(--tug-space-md);
-  --tugx-md-fenced-code-header-border: rgba(0, 0, 0, 0.08);
-  --tugx-md-fenced-code-header-size: var(--tug-font-size-2xs);
-  --tugx-md-fenced-code-lang-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-md-fenced-code-lang-weight: 600;
-  --tugx-md-fenced-code-copy-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-md-fenced-code-copy-color-hover: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-md-fenced-code-copy-color-copied: var(--tug7-element-global-text-normal-success-rest);
-  --tugx-md-fenced-code-copy-bg-hover: rgba(0, 0, 0, 0.06);
-  --tugx-md-fenced-code-copy-padding: var(--tug-space-2xs) var(--tug-space-xs);
-  --tugx-md-fenced-code-copy-radius: 3px;
-
-  /* Blockquote */
-  --tugx-md-blockquote-border: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-md-blockquote-border-width: 3px;
-  --tugx-md-blockquote-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-md-blockquote-padding: var(--tug-space-lg);
-  --tugx-md-blockquote-margin: var(--tug-space-md);
-
-  /* HR */
-  --tugx-md-hr-color: rgba(0, 0, 0, 0.12);
-  --tugx-md-hr-margin: var(--tug-space-xl);
-
-  /* Lists */
-  --tugx-md-list-indent: 1.75em;
-  --tugx-md-list-margin: 0.6em;
-  --tugx-md-list-item-margin: 0.25em;
-
-  /* Tables */
-  --tugx-md-table-border: rgba(0, 0, 0, 0.10);
-  --tugx-md-table-header-bg: rgba(0, 0, 0, 0.04);
-  --tugx-md-table-header-weight: 600;
-  --tugx-md-table-row-bg-alt: rgba(0, 0, 0, 0.02);
-  --tugx-md-table-cell-padding: var(--tug-space-sm) var(--tug-space-md);
-  --tugx-md-table-margin: var(--tug-space-md);
-
-  /* Image */
-  --tugx-md-image-radius: 4px;
-  --tugx-md-image-margin: var(--tug-space-md);
-
-  /* Footnote */
-  --tugx-md-footnote-size: 0.85em;
-  --tugx-md-footnote-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-md-footnote-border: rgba(0, 0, 0, 0.12);
-
-  /* Layout */
-  --tugx-md-block-padding-x: 1rem;
-  --tugx-md-bottom-buffer: 2rem;
-  --tugx-md-placeholder-bg: transparent;
+  /* `--tugx-md-*` slots live in tug-markdown-view.css's body{} block per
+   * tuglaws/token-naming.md. */
 
   /* ---- Thinking block (TideThinkingBlock per Table T07) ----
    * Light-theme counterpart to brio.css's declarations. Same token
    * vocabulary, theme-appropriate values (rgba directions inverted,
    * accent colors mapped to the harmony palette).
    */
-  --tugx-thinking-bg: rgba(0, 0, 0, 0.025);
-  --tugx-thinking-border: rgba(0, 0, 0, 0.08);
-  --tugx-thinking-radius: 6px;
-  --tugx-thinking-margin: var(--tug-space-lg) 0 var(--tug-space-lg) 0;
-  --tugx-thinking-header-padding: var(--tug-space-xs) var(--tug-space-md);
-  --tugx-thinking-header-gap: var(--tug-space-sm);
-  --tugx-thinking-header-bg-hover: rgba(0, 0, 0, 0.05);
-  --tugx-thinking-label-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-thinking-label-color-hover: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-thinking-label-size: var(--tug-font-size-sm);
-  --tugx-thinking-label-weight: 600;
-  --tugx-thinking-chevron-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-thinking-preview-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-thinking-preview-size: var(--tug-font-size-sm);
-  --tugx-thinking-preview-weight: 400;
-  --tugx-thinking-content-padding: var(--tug-space-xs) var(--tug-space-md) var(--tug-space-md);
-  --tugx-thinking-content-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-thinking-content-size: var(--tug-font-size-sm);
-  --tugx-thinking-content-style: italic;
-  --tugx-thinking-collapse-duration: 180ms;
-  --tugx-thinking-collapse-easing: cubic-bezier(0.4, 0, 0.2, 1);
-  --tugx-thinking-focus-ring: var(--tug7-element-global-text-normal-link-rest);
+  /* `--tugx-thinking-*` slots live in tide-thinking-block.css's body{}
+   * block per tuglaws/token-naming.md. */
 
   /* ---- Terminal block (TerminalBlock per Table T07) ----
    * Light-theme counterpart. Same token vocabulary as brio.css with
    * the surface tinted toward off-white and the ANSI palette
    * remapped to readable-on-light values.
    */
-  --tugx-term-bg: rgba(0, 0, 0, 0.04);
-  --tugx-term-border: rgba(0, 0, 0, 0.10);
-  --tugx-term-radius: 6px;
-  --tugx-term-margin: var(--tug-space-md) 0;
-  --tugx-term-padding: var(--tug-space-sm) var(--tug-space-md);
-  --tugx-term-padding-x: var(--tug-space-md);
-  --tugx-term-font: var(--tug-font-family-mono);
-  --tugx-term-font-size: var(--tug-font-size-sm);
-  --tugx-term-line-height: 1.45;
-  --tugx-term-line-height-px: 20px;
-  --tugx-term-text-color: var(--tug7-element-global-text-normal-default-rest);
-
-  --tugx-term-stderr-color: --tug-color(red, t: 40);
-  --tugx-term-stderr-bg: rgba(255, 0, 0, 0.05);
-
-  --tugx-term-truncation-padding: var(--tug-space-xs) var(--tug-space-md);
-  --tugx-term-truncation-bg: rgba(0, 0, 0, 0.04);
-  --tugx-term-truncation-border: rgba(0, 0, 0, 0.08);
-  --tugx-term-truncation-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-term-truncation-size: var(--tug-font-size-2xs);
-
-  --tugx-term-copy-offset: var(--tug-space-xs);
-  --tugx-term-copy-padding: var(--tug-space-2xs) var(--tug-space-xs);
-  --tugx-term-copy-gap: var(--tug-space-2xs);
-  --tugx-term-copy-radius: 4px;
-  --tugx-term-copy-size: var(--tug-font-size-2xs);
-  --tugx-term-copy-fade: 120ms;
-  --tugx-term-copy-bg: rgba(0, 0, 0, 0.04);
-  --tugx-term-copy-bg-hover: rgba(0, 0, 0, 0.08);
-  --tugx-term-copy-border: rgba(0, 0, 0, 0.10);
-  --tugx-term-copy-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-term-copy-color-hover: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-term-copy-color-copied: var(--tug7-element-global-text-normal-success-rest);
-
-  --tugx-term-footer-padding: var(--tug-space-xs) var(--tug-space-md);
-  --tugx-term-footer-gap: var(--tug-space-md);
-  --tugx-term-footer-bg: rgba(0, 0, 0, 0.05);
-  --tugx-term-footer-border: rgba(0, 0, 0, 0.08);
-  --tugx-term-footer-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-term-footer-size: var(--tug-font-size-2xs);
-  --tugx-term-footer-font: var(--tug-font-family-base);
-
-  --tugx-term-exit-padding: var(--tug-space-2xs) var(--tug-space-xs);
-  --tugx-term-exit-radius: 3px;
-  --tugx-term-exit-weight: 600;
-  --tugx-term-exit-bg-zero: rgba(40, 160, 80, 0.10);
-  --tugx-term-exit-color-zero: var(--tug7-element-global-text-normal-success-rest);
-  --tugx-term-exit-bg-nonzero: rgba(220, 60, 60, 0.14);
-  --tugx-term-exit-color-nonzero: var(--tug7-element-global-text-normal-danger-rest);
-  --tugx-term-interrupted-bg: rgba(220, 140, 40, 0.14);
-  --tugx-term-interrupted-color: var(--tug7-element-global-text-normal-warning-rest);
-
-  --tugx-term-focus-ring: var(--tug7-element-global-text-normal-link-rest);
+  /* Non-ANSI `--tugx-term-*` slots live in terminal-block.css's body{}
+   * block per tuglaws/token-naming.md. The ANSI palette below remains
+   * theme-anchored because each theme picks its own ANSI hues. */
 
   /* ANSI 16-color palette — calibrated for the light harmony surface
    * via --tug-color() recipes (postcss expansion at build time).
@@ -1106,241 +910,15 @@ body {
    * Light-theme counterpart. Same vocabulary as brio.css with
    * directionally-flipped tints and the harmony palette.
    */
-  --tugx-toolblock-bg: rgba(0, 0, 0, 0.025);
-  --tugx-toolblock-border: rgba(0, 0, 0, 0.10);
-  --tugx-toolblock-radius: 6px;
-  --tugx-toolblock-margin: var(--tug-space-md) 0;
+  /* `--tugx-toolblock-*` slots live in tool-wrapper-chrome.css's body{}
+   * block per tuglaws/token-naming.md. */
 
-  --tugx-toolblock-stripe-streaming: --tug-color(blue, t: 45);
-  --tugx-toolblock-stripe-ready: rgba(0, 0, 0, 0.08);
-  --tugx-toolblock-stripe-error: --tug-color(red, t: 45);
+  /* `--tugx-file-*` slots live in file-block.css's body{} block per
+   * tuglaws/token-naming.md (`--tugx-` is component-local; theme files
+   * own only `--tug7-`, `--tug-`, `--tugc-`). Per-theme variance flows
+   * through `--tug7-*` base tokens those aliases resolve to. */
 
-  --tugx-toolblock-header-padding: var(--tug-space-xs) var(--tug-space-md);
-  --tugx-toolblock-header-gap: var(--tug-space-sm);
-  --tugx-toolblock-header-bg: rgba(0, 0, 0, 0.05);
-  --tugx-toolblock-header-border: rgba(0, 0, 0, 0.06);
-  --tugx-toolblock-header-size: var(--tug-font-size-sm);
-  --tugx-toolblock-header-font: var(--tug-font-family-base);
 
-  --tugx-toolblock-icon-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-toolblock-name-color: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-toolblock-name-weight: 600;
-  --tugx-toolblock-args-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-toolblock-args-font: var(--tug-font-family-mono);
-
-  --tugx-toolblock-caution-padding: var(--tug-space-2xs) var(--tug-space-xs);
-  --tugx-toolblock-caution-radius: 3px;
-  --tugx-toolblock-caution-bg: rgba(220, 140, 40, 0.14);
-  --tugx-toolblock-caution-color: var(--tug7-element-global-text-normal-warning-rest);
-  --tugx-toolblock-caution-size: var(--tug-font-size-2xs);
-  --tugx-toolblock-caution-weight: 600;
-
-  --tugx-toolblock-error-padding: var(--tug-space-sm) var(--tug-space-md);
-  --tugx-toolblock-error-bg: rgba(220, 60, 60, 0.08);
-  --tugx-toolblock-error-border: rgba(220, 60, 60, 0.20);
-  --tugx-toolblock-error-color: var(--tug7-element-global-text-normal-danger-rest);
-  --tugx-toolblock-error-font: var(--tug-font-family-mono);
-  --tugx-toolblock-error-size: var(--tug-font-size-sm);
-
-  --tugx-toolblock-footer-padding: var(--tug-space-xs) var(--tug-space-md);
-  --tugx-toolblock-footer-gap: var(--tug-space-md);
-  --tugx-toolblock-footer-bg: rgba(0, 0, 0, 0.05);
-  --tugx-toolblock-footer-border: rgba(0, 0, 0, 0.06);
-  --tugx-toolblock-footer-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-toolblock-footer-size: var(--tug-font-size-2xs);
-  --tugx-toolblock-footer-font: var(--tug-font-family-base);
-
-  --tugx-toolblock-streaming-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-toolblock-streaming-padding: var(--tug-space-sm) var(--tug-space-md);
-  --tugx-toolblock-streaming-gap: 4px;
-  --tugx-toolblock-streaming-dot-size: 6px;
-
-  /* ---- FileBlock body kind (--tugx-file-*) per Table T07 ----
-   * Read-only file viewer with line-numbered gutter, optional Shiki
-   * highlight, in-instance Cmd+F search. Harmony is a light surface —
-   * the file body sits on a near-white code-tone background.
-   */
-  --tugx-file-bg: rgba(0, 0, 0, 0.02);
-  --tugx-file-border: rgba(0, 0, 0, 0.10);
-  --tugx-file-radius: 6px;
-  --tugx-file-margin: var(--tug-space-md) 0;
-  --tugx-file-font: var(--tug-font-family-mono);
-  --tugx-file-font-size: var(--tug-font-size-sm);
-  --tugx-file-line-height: 1.55;
-  --tugx-file-text-color: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-file-focus-ring: var(--tug7-element-global-text-normal-link-rest);
-
-  /* Header */
-  --tugx-file-header-padding: var(--tug-space-xs) var(--tug-space-md);
-  --tugx-file-header-gap: var(--tug-space-sm);
-  --tugx-file-header-bg: rgba(0, 0, 0, 0.04);
-  --tugx-file-header-border: rgba(0, 0, 0, 0.06);
-  --tugx-file-header-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-file-header-size: var(--tug-font-size-2xs);
-  --tugx-file-header-font: var(--tug-font-family-base);
-  --tugx-file-path-color: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-file-path-weight: 600;
-
-  /* Language badge */
-  --tugx-file-lang-padding: var(--tug-space-2xs) var(--tug-space-xs);
-  --tugx-file-lang-bg: rgba(0, 0, 0, 0.06);
-  --tugx-file-lang-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-file-lang-radius: 3px;
-  --tugx-file-lang-size: var(--tug-font-size-3xs);
-  --tugx-file-lang-font: var(--tug-font-family-mono);
-
-  /* Line counts */
-  --tugx-file-counts-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-file-counts-size: var(--tug-font-size-2xs);
-
-  /* Icon button */
-  --tugx-file-icon-size: 22px;
-  --tugx-file-icon-radius: 4px;
-  --tugx-file-icon-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-file-icon-color-hover: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-file-icon-bg-hover: rgba(0, 0, 0, 0.06);
-
-  /* Collapse toggle */
-  --tugx-file-toggle-padding: var(--tug-space-2xs) var(--tug-space-sm);
-  --tugx-file-toggle-border: rgba(0, 0, 0, 0.12);
-  --tugx-file-toggle-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-file-toggle-color-hover: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-file-toggle-bg-hover: rgba(0, 0, 0, 0.05);
-  --tugx-file-toggle-radius: 4px;
-  --tugx-file-toggle-size: var(--tug-font-size-2xs);
-
-  /* Search bar */
-  --tugx-file-search-padding: var(--tug-space-xs) var(--tug-space-md);
-  --tugx-file-search-gap: var(--tug-space-xs);
-  --tugx-file-search-bg: rgba(0, 0, 0, 0.03);
-  --tugx-file-search-border: rgba(0, 0, 0, 0.06);
-  --tugx-file-search-input-padding: var(--tug-space-2xs) var(--tug-space-xs);
-  --tugx-file-search-input-bg: rgba(255, 255, 255, 0.95);
-  --tugx-file-search-input-border: rgba(0, 0, 0, 0.10);
-  --tugx-file-search-input-color: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-file-search-input-radius: 4px;
-  --tugx-file-search-input-size: var(--tug-font-size-sm);
-  --tugx-file-search-count-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-file-search-count-size: var(--tug-font-size-2xs);
-  --tugx-file-search-step-size: var(--tug-font-size-sm);
-  --tugx-file-search-step-border: rgba(0, 0, 0, 0.10);
-
-  /* Body rows */
-  --tugx-file-rows-padding: var(--tug-space-2xs) 0;
-  --tugx-file-gutter-width: 3.5em;
-  --tugx-file-gutter-padding-x: var(--tug-space-sm);
-  --tugx-file-gutter-bg: transparent;
-  --tugx-file-gutter-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-file-content-padding-x: var(--tug-space-md);
-  --tugx-file-row-hover-bg: rgba(0, 0, 0, 0.04);
-  --tugx-file-row-active-bg: rgba(64, 200, 100, 0.10);
-
-  /* Match overlay */
-  --tugx-file-mark-bg: rgba(252, 192, 60, 0.45);
-  --tugx-file-mark-active-bg: rgba(252, 192, 60, 0.75);
-  --tugx-file-mark-active-outline: rgba(180, 130, 30, 0.85);
-  --tugx-file-mark-radius: 2px;
-
-  /* Collapsed hint */
-  --tugx-file-collapsed-padding: var(--tug-space-sm) var(--tug-space-md);
-  --tugx-file-collapsed-bg: rgba(0, 0, 0, 0.03);
-  --tugx-file-collapsed-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-file-collapsed-size: var(--tug-font-size-2xs);
-
-  /* ---- DiffBlock body kind (--tugx-diff-*) per Table T07 ----
-   * Inline unified-diff renderer with hunk collapse and word-level
-   * intra-line highlighting. Harmony's red/green pair is muted to
-   * keep the rest of the page readable; mark-active overlays are
-   * the saturated variant.
-   */
-  --tugx-diff-bg: rgba(0, 0, 0, 0.02);
-  --tugx-diff-border: rgba(0, 0, 0, 0.10);
-  --tugx-diff-radius: 6px;
-  --tugx-diff-margin: var(--tug-space-md) 0;
-  --tugx-diff-font: var(--tug-font-family-mono);
-  --tugx-diff-font-size: var(--tug-font-size-sm);
-  --tugx-diff-line-height: 1.55;
-  --tugx-diff-text-color: var(--tug7-element-global-text-normal-default-rest);
-
-  /* Header */
-  --tugx-diff-header-padding: var(--tug-space-xs) var(--tug-space-md);
-  --tugx-diff-header-gap: var(--tug-space-sm);
-  --tugx-diff-header-bg: rgba(0, 0, 0, 0.04);
-  --tugx-diff-header-border: rgba(0, 0, 0, 0.06);
-  --tugx-diff-header-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-diff-header-size: var(--tug-font-size-2xs);
-  --tugx-diff-header-font: var(--tug-font-family-base);
-  --tugx-diff-path-color: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-diff-path-weight: 600;
-
-  /* Stats badge (+12 -3) */
-  --tugx-diff-stats-add-color: rgba(40, 130, 60, 0.95);
-  --tugx-diff-stats-remove-color: rgba(180, 50, 50, 0.95);
-  --tugx-diff-stats-size: var(--tug-font-size-2xs);
-  --tugx-diff-stats-font: var(--tug-font-family-mono);
-
-  /* View-mode toggle (inline ↔ side-by-side; stub for now) */
-  --tugx-diff-view-padding: var(--tug-space-2xs) var(--tug-space-sm);
-  --tugx-diff-view-border: rgba(0, 0, 0, 0.12);
-  --tugx-diff-view-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-diff-view-color-hover: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-diff-view-bg-hover: rgba(0, 0, 0, 0.05);
-  --tugx-diff-view-radius: 4px;
-  --tugx-diff-view-size: var(--tug-font-size-2xs);
-
-  /* Collapse toggle */
-  --tugx-diff-toggle-padding: var(--tug-space-2xs) var(--tug-space-sm);
-  --tugx-diff-toggle-border: rgba(0, 0, 0, 0.12);
-  --tugx-diff-toggle-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-diff-toggle-color-hover: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-diff-toggle-bg-hover: rgba(0, 0, 0, 0.05);
-  --tugx-diff-toggle-radius: 4px;
-  --tugx-diff-toggle-size: var(--tug-font-size-2xs);
-
-  /* Hunk header band — formerly its own --tugx-diff-hunk-header-* slot
-   * family; now a TugCue (role=muted, align=start, mono) with its own
-   * --tugx-cue-* slots. Only the hunk divider remains here. */
-  --tugx-diff-hunk-divider: rgba(0, 0, 0, 0.06);
-
-  /* Body rows */
-  --tugx-diff-rows-padding: var(--tug-space-2xs) 0;
-  --tugx-diff-gutter-width: 3em;
-  --tugx-diff-gutter-padding-x: var(--tug-space-xs);
-  --tugx-diff-gutter-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-diff-marker-width: 1.25em;
-  --tugx-diff-marker-padding-x: var(--tug-space-2xs);
-  --tugx-diff-content-padding-x: var(--tug-space-sm);
-
-  /* Line backgrounds */
-  --tugx-diff-line-add-bg: rgba(40, 200, 100, 0.10);
-  --tugx-diff-line-add-color: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-diff-line-add-marker-color: rgba(40, 130, 60, 0.95);
-  --tugx-diff-line-remove-bg: rgba(220, 60, 60, 0.10);
-  --tugx-diff-line-remove-color: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-diff-line-remove-marker-color: rgba(180, 50, 50, 0.95);
-  --tugx-diff-line-context-bg: transparent;
-  --tugx-diff-line-context-color: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-diff-line-context-marker-color: var(--tug7-element-global-text-normal-muted-rest);
-
-  /* Word-level intra-line highlight */
-  --tugx-diff-word-add-bg: rgba(40, 200, 100, 0.32);
-  --tugx-diff-word-add-color: rgba(20, 100, 40, 1);
-  --tugx-diff-word-remove-bg: rgba(220, 60, 60, 0.32);
-  --tugx-diff-word-remove-color: rgba(140, 30, 30, 1);
-  --tugx-diff-word-radius: 2px;
-
-  /* Collapsed-hunk hint */
-  --tugx-diff-collapsed-padding: var(--tug-space-2xs) var(--tug-space-md);
-  --tugx-diff-collapsed-bg: rgba(0, 0, 0, 0.03);
-  --tugx-diff-collapsed-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-diff-collapsed-size: var(--tug-font-size-2xs);
-
-  /* Async-loading placeholder */
-  --tugx-diff-loading-padding: var(--tug-space-md);
-  --tugx-diff-loading-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-diff-loading-size: var(--tug-font-size-2xs);
-
-  /* Side-by-side mode (data-view-mode="side-by-side") */
-  --tugx-diff-sbs-column-gap: 1px;
-  --tugx-diff-sbs-blank-bg: rgba(0, 0, 0, 0.025);
+  /* `--tugx-diff-*` slots live in diff-block.css's body{} block per
+   * tuglaws/token-naming.md. */
 }

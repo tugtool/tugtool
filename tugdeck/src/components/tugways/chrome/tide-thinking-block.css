@@ -34,11 +34,47 @@
  *   - [L06] appearance via DOM-mutation + CSS, not React state. The
  *     React side only flips `data-collapsed`; the rule below does
  *     the visual.
+ *   - [L17] component-tier `--tugx-thinking-*` aliases resolve to base-tier
+ *     `--tug7-*` tokens in one hop.
  *   - [L19] component-authoring guide — file-pair, module docstring,
  *     `data-slot="tide-thinking-block"`.
  *   - [L20] component-token sovereignty — every visible declaration
  *     consumes a `--tugx-thinking-*` token. No literal colors here.
  */
+
+/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
+
+body {
+  --tugx-thinking-bg:                var(--tug7-surface-global-primary-normal-inset-rest);
+  --tugx-thinking-border:            var(--tug7-element-global-border-normal-muted-rest);
+  --tugx-thinking-radius:            var(--tug-radius-md);
+  --tugx-thinking-margin:            var(--tug-space-lg) 0 var(--tug-space-lg) 0;
+
+  --tugx-thinking-header-padding:    var(--tug-space-xs) var(--tug-space-md);
+  --tugx-thinking-header-gap:        var(--tug-space-sm);
+  --tugx-thinking-header-bg-hover:   var(--tug7-surface-highlight-primary-normal-hover-rest);
+
+  --tugx-thinking-label-color:       var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-thinking-label-color-hover: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-thinking-label-size:        var(--tug-font-size-sm);
+  --tugx-thinking-label-weight:      600;
+
+  --tugx-thinking-chevron-color:     var(--tug7-element-global-text-normal-muted-rest);
+
+  --tugx-thinking-preview-color:     var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-thinking-preview-size:      var(--tug-font-size-sm);
+  --tugx-thinking-preview-weight:    400;
+
+  --tugx-thinking-content-padding:   var(--tug-space-xs) var(--tug-space-md) var(--tug-space-md);
+  --tugx-thinking-content-color:     var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-thinking-content-size:      var(--tug-font-size-sm);
+  --tugx-thinking-content-style:     italic;
+
+  --tugx-thinking-collapse-duration: var(--tug-motion-duration-moderate);
+  --tugx-thinking-collapse-easing:   var(--tug-motion-easing-standard);
+
+  --tugx-thinking-focus-ring:        var(--tug7-element-global-text-normal-link-rest);
+}
 
 .tide-thinking-block {
   display: block;

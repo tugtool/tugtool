@@ -22,7 +22,19 @@
  * Token contract: only `--tugx-list-view-*` tokens drive this file
  * ([L20]). Base `--tug-*` tokens are referenced from those component
  * tokens via `var()`, never redefined here.
+ *
+ * Per [L17] the `--tugx-list-view-*` slots are component-local; they
+ * resolve to base-tier `--tug-*` tokens in one hop.
  */
+
+/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
+
+body {
+  --tugx-list-view-padding-block:      var(--tug-space-md);
+  --tugx-list-view-padding-inline:     var(--tug-space-md);
+  --tugx-list-view-row-gap:            var(--tug-space-sm);
+  --tugx-list-view-scroll-padding-end: var(--tug-space-lg);
+}
 
 /* ---- Scroll container ---- */
 

@@ -22,9 +22,10 @@
  */
 
 import React, { useId, useState } from "react";
-import { ChevronsUpDown, ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronsUpDown, ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, Copy } from "lucide-react";
 import { TugCue } from "@/components/tugways/tug-cue";
 import type { TugCueDensity, TugCueRole } from "@/components/tugways/tug-cue";
+import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 import { TugBox } from "@/components/tugways/tug-box";
@@ -290,24 +291,92 @@ export function GalleryTugCue() {
 
         <TugSeparator />
 
-        {/* ---- Code-context cue (the diff hunk header shape) ---- */}
+        {/* ---- Affordance use-cases ---- */}
         <div className="cg-section">
-          <TugLabel className="cg-section-title">Code-context cue — role=muted, align=start, mono (diff hunk header shape)</TugLabel>
+          <TugLabel className="cg-section-title">Affordance use-cases — three shapes for collapse / expand</TugLabel>
+          <TugLabel size="xs" color="muted">
+            Shape A — reveal cue (TugCue role=active). Shape B — structural divider (TugCue role=muted align=start mono). Shape C — header collapse toggle (TugIconButton with ChevronsUp). All three pictured inside fake-FileBlock frames so the call-site context reads true.
+          </TugLabel>
+
+          {/* Shape A — collapsed FileBlock with reveal cue */}
           {(() => {
-            const id = "code-context";
+            const id = "use-case-shape-a";
             const expanded = !!matrixExpandedById[id];
             return (
-              <div className="cg-tug-cue-frame">
-                <TugCue
-                  role="muted"
-                  align="start"
-                  mono
-                  icon={expanded ? <ChevronDown /> : <ChevronRight />}
-                  aria-expanded={expanded}
-                  onClick={onMatrixActivate(id)}
-                >
-                  @@ -217,21 +217,21 @@ Higher-level components assembled from multiple primitives.
-                </TugCue>
+              <div style={{ marginTop: "12px" }}>
+                <TugLabel size="2xs" color="muted">Shape A — reveal cue (collapsed FileBlock)</TugLabel>
+                <div className="cg-tug-cue-host">
+                  <div className="cg-tug-cue-host-header">
+                    <span>src/components/tugways/big-file.tsx</span>
+                  </div>
+                  {expanded ? (
+                    <pre className="cg-tug-cue-host-body-pre">{`  1  export function BigFile() {
+  2    return <div>… 1,230 lines …</div>;
+  3  }`}</pre>
+                  ) : null}
+                  <TugCue
+                    role="active"
+                    icon={<ChevronsDown />}
+                    aria-expanded={expanded}
+                    onClick={onMatrixActivate(id)}
+                  >
+                    {expanded ? "click to collapse" : "1,230 lines folded — click to expand"}
+                  </TugCue>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Shape B — code-context (diff hunk header) */}
+          {(() => {
+            const id = "use-case-shape-b";
+            const expanded = !!matrixExpandedById[id];
+            return (
+              <div style={{ marginTop: "12px" }}>
+                <TugLabel size="2xs" color="muted">Shape B — structural divider (diff hunk header)</TugLabel>
+                <div className="cg-tug-cue-frame">
+                  <TugCue
+                    role="muted"
+                    align="start"
+                    mono
+                    icon={expanded ? <ChevronDown /> : <ChevronRight />}
+                    aria-expanded={expanded}
+                    onClick={onMatrixActivate(id)}
+                  >
+                    @@ -217,21 +217,21 @@ Higher-level components assembled from multiple primitives.
+                  </TugCue>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Shape C — expanded FileBlock with header toggle */}
+          {(() => {
+            const id = "use-case-shape-c";
+            const collapsed = !!matrixExpandedById[id]; // toggled
+            return (
+              <div style={{ marginTop: "12px" }}>
+                <TugLabel size="2xs" color="muted">Shape C — header collapse toggle (TugIconButton, paired with Copy)</TugLabel>
+                <div className="cg-tug-cue-host">
+                  <div className="cg-tug-cue-host-header">
+                    <span style={{ flex: 1 }}>src/components/tugways/big-file.tsx</span>
+                    <TugIconButton
+                      icon={<Copy />}
+                      aria-label="Copy file"
+                      onClick={() => onMatrixActivate(`${id}-copy`)()}
+                    />
+                    <TugIconButton
+                      icon={collapsed ? <ChevronsDown /> : <ChevronsUp />}
+                      aria-label={collapsed ? "Expand file" : "Collapse file"}
+                      onClick={onMatrixActivate(id)}
+                    />
+                  </div>
+                  {collapsed ? null : (
+                    <pre className="cg-tug-cue-host-body-pre">{`  1  export function BigFile() {
+  2    return <div>… visible content …</div>;
+  3  }`}</pre>
+                  )}
+                </div>
               </div>
             );
           })()}
