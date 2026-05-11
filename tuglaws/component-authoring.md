@@ -716,6 +716,38 @@ This is the pattern the A2 phases followed for every interactive control in the 
 
 ---
 
+## Text content
+
+**CodeMirror 6 is the canonical engine for any file-based text content.** Two React shells expose it to the rest of the codebase, and one of them is what you compose:
+
+- **`TugTextEditor`** — the editing surface. Owns document mutation, caret, selection, atom decorations, history, clipboard filters, drop handling, completion providers, the editing-action responder vocabulary. Compose this when the user types or pastes into the surface.
+- **`TugCodeView`** — the read-only sibling. Owns nothing mutable — `value` flows host → view, never back. Compose this when the user reads source bytes the host hands it: file viewers (`FileBlock`), code fences in rendered markdown, diff context lines, fixture panels in galleries.
+
+Both share the same CM6 substrate: line wrapping (`EditorView.lineWrapping`), the line-numbers gutter, the search panel (`@codemirror/search`), the `Compartment`-based reconfiguration pattern, and the shared theme contract (the inline `EditorView.theme(...)` extension that reads from `--tugx-block-*` for code typography). Future surface-level concerns — syntax highlighting, language extensions, bracket matching, code folding — land on the substrate once and both shells inherit.
+
+**Do not roll a bespoke text-display renderer.** Per-line `<div>` trees with `overflow-x: auto`, `<pre>` blocks with manual scrolling, hand-rolled Cmd-F search overlays, imperative match-highlight DOM mutation — all of these reimplement features the substrate already provides, and they reimplement them with the per-line scrollbars, the stale-overlay alignment bugs, and the keyboard-shortcut drift that motivated this rule. The cost of CM6 is paid once (it ships with the editor); every additional consumer pays nothing.
+
+Concretely, when composing:
+
+```tsx
+// File viewer — read-only.
+<TugCodeView
+  value={file.content}
+  language={detectLanguage(file.filePath)}
+  wrap
+  lineNumbers
+/>
+
+// Editing surface — full editor.
+<TugTextEditor
+  // ... the editor's prop set ...
+/>
+```
+
+When the substrate needs something it doesn't yet provide (e.g. a particular language grammar, a custom decoration extension), the work lands as a CM6 extension shared between both shells — not as a parallel renderer.
+
+---
+
 ## Component Patterns
 
 ### Emphasis × Role

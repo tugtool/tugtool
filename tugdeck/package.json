@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.3",
+    "@codemirror/search": "^6.7.0",
     "@codemirror/state": "^6.6.0",
     "@codemirror/view": "^6.41.1",
     "@radix-ui/react-accordion": "^1.2.12",

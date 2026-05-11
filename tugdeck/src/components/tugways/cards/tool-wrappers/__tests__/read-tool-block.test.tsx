@@ -249,15 +249,15 @@ describe("ReadToolBlock — body composition (matches test-05-tool-use-read.json
     // Embedded mode — own header is suppressed, frame is dropped.
     expect(fileRoot.dataset.embedded).toBe("true");
     expect(fileRoot.querySelector('[data-slot="file-header"]')).toBeNull();
-    // Content rows render with the structured content + line numbers
-    // honoring `startLine`.
-    const gutters = fileRoot.querySelectorAll(
-      '[data-slot="file-gutter"]',
-    );
-    expect(gutters.length).toBe(3);
-    expect(gutters[0].textContent).toBe("1");
-    expect(gutters[2].textContent).toBe("3");
-    expect(fileRoot.textContent).toContain(
+    // CM6 substrate mounts and receives the document; per-line gutter
+    // and viewport rendering are CM6-internal concerns covered in
+    // `tug-code-view.test.tsx`.
+    expect(
+      fileRoot.querySelector('[data-slot="tug-code-view"]'),
+    ).not.toBeNull();
+    const content = fileRoot.querySelector(".cm-content") as HTMLElement;
+    expect(content).not.toBeNull();
+    expect(content.textContent ?? "").toContain(
       "Claude Code Guidelines for Tugtool",
     );
   });

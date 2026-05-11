@@ -1,0 +1,100 @@
+/* @tug-pairings:
+   - --tugx-block-bg / --tugx-block-text-color           (shared block frame; from tugx-block.css)
+   - --tugx-block-code-font / --tugx-block-code-font-size / --tugx-block-code-line-height (shared code typography)
+   - --tugx-codeview-gutter-bg / --tugx-codeview-gutter-text (viewer-local line-number gutter)
+   - --tugx-codeview-selection-bg                        (viewer-local selection tint)
+   - --tugx-codeview-match-bg / --tugx-codeview-match-active-bg (viewer-local search-match overlays)
+   `TugCodeView` paints a CM6-backed read-only code viewer.
+   Frame, code typography, and the strip-chrome (used by the search
+   panel) are consumed directly from `--tugx-block-*` in
+   `styles/tugx-block.css`; viewer-specific slots stay here under
+   `--tugx-codeview-*`. The host `<div>` is transparent so the
+   composing component (e.g. `FileBlock`) owns the frame.
+*/
+
+/**
+ * tug-code-view.css — token slots and host-wrapper rules for the
+ * read-only CM6 viewer.
+ *
+ * The CM6 EditorView paints its own internal DOM via the inline
+ * `tugCodeViewTheme` extension (declared in `tug-code-view.tsx`)
+ * which reads these CSS variables directly. That keeps theme rules
+ * close to the substrate that consumes them; this CSS file's job
+ * is to declare the variable values and the small host-wrapper
+ * styling.
+ *
+ * Token sources:
+ *  - Shared block-surface code typography (`--tugx-block-code-*`,
+ *    `--tugx-block-text-color`, `--tugx-block-strip-bg`,
+ *    `--tugx-block-strip-border`) comes from
+ *    `styles/tugx-block.css` and is consumed directly by the
+ *    inline theme.
+ *  - Viewer-local slots below: gutter colors / geometry, the
+ *    selection tint, and the search-match tints. These do not
+ *    appear elsewhere — they're TugCodeView's own dimensions.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] no React state for visual state; CM6's DOM mutations
+ *    and CSS rules below own appearance entirely.
+ *  - [L17] every `--tugx-codeview-*` slot below resolves to a
+ *    `--tug7-*` or `--tug-*` base token in one hop.
+ *  - [L19] file pair, module docstring on the .tsx, a single
+ *    `body {}` declaring the slots, `data-slot="tug-code-view"`.
+ *  - [L20] component-token sovereignty — viewer-specific slots
+ *    are `--tugx-codeview-*`; the host never reaches into
+ *    `--tugx-text-editor-*` or any other component's slots.
+ */
+
+/* ---- Component-tier aliases — codeview-specific only [L17] ---- */
+
+body {
+  /* Body padding + per-line padding-x. The viewer has no outer
+   * header, so the frame chrome is the composing component's
+   * problem; we just inset the content from the edges. */
+  --tugx-codeview-content-padding: var(--tug-space-2xs) 0;
+  --tugx-codeview-line-padding-x:  var(--tug-space-md);
+
+  /* Line-number gutter — viewer-local chrome. Same surface family
+   * the editor uses for its gutter (the indicator slot), but we
+   * spell it out independently per [L20] so the two components
+   * can evolve apart. */
+  --tugx-codeview-gutter-bg:        var(--tug7-surface-indicator-primary-normal-plain-rest);
+  --tugx-codeview-gutter-border:    var(--tug7-element-indicator-border-normal-plain-rest);
+  --tugx-codeview-gutter-text:      var(--tug7-element-indicator-text-normal-plain-rest);
+  --tugx-codeview-gutter-padding-x: var(--tug-space-sm);
+  --tugx-codeview-gutter-min-width: 3.5em;
+
+  /* Selection paint. Uses the system-surface selection token so the
+   * tint is consistent with the editor's range-selection paint and
+   * with native text selection elsewhere in the app. */
+  --tugx-codeview-selection-bg: var(--tug7-surface-selection-primary-normal-plain-rest);
+
+  /* Search-match highlight. The active-match outline picks up the
+   * accent border token so the user's currently-focused match reads
+   * as a distinct element on top of the find-all overlay. */
+  --tugx-codeview-match-bg:             var(--tug7-surface-card-primary-normal-findmatch-rest);
+  --tugx-codeview-match-active-bg:      var(--tug7-surface-card-primary-normal-findmatch-active);
+  --tugx-codeview-match-active-outline: var(--tug7-element-global-border-normal-accent-rest);
+}
+
+/* ---- Host wrapper ---- */
+
+.tug-code-view {
+  display: block;
+  width: 100%;
+  /* The host is transparent — frame chrome (border, background,
+   * radius, margin) belongs to the composing component (FileBlock,
+   * future code-fence wrappers, etc.). CM6 paints the rest. */
+  background: transparent;
+  color: var(--tugx-block-text-color);
+  font-family: var(--tugx-block-code-font);
+  font-size: var(--tugx-block-code-font-size);
+  line-height: var(--tugx-block-code-line-height);
+}
+
+/* CM6's contenteditable root receives focus on click; we don't want
+ * a default browser focus ring around the entire view (focused state
+ * is signaled by the caret + selection layer the theme provides). */
+.tug-code-view .cm-editor {
+  outline: none;
+}

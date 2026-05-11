@@ -2169,11 +2169,14 @@ Sticky context analysis confirms the layout is safe: `TugListView` uses natural 
 
 **Tasks (Phase A — CM6 + FileBlock swap):**
 
-- [ ] Author `tug-code-view.tsx` with the read-only CM6 mount, lineWrapping + lineNumbers + search compartments, and a small selection-only responder.
-- [ ] Author `tug-code-view.css` with `--tugx-codeview-*` slots that consume `--tugx-block-*` (frame, code typography, strip chrome) directly; component-specific slots only for the gutter color/width and the selection highlight tones.
-- [ ] Author `tug-code-view.test.tsx` covering mount, value, wrap toggle, line-numbers toggle, language toggle, find UI reveal, selection round-trip.
-- [ ] Swap `file-block.tsx`'s body to `<TugCodeView ...>`; delete the bespoke renderer, the match overlay, the imperative search icon, and the `--tugx-file-rows/-row/-content/-overlay/-search-*` slot families.
-- [ ] Rewrite `file-block.test.tsx` against the new composition; defer line-level CM6 behavior to `tug-code-view.test.tsx`.
+- [x] Author `tug-code-view.tsx` with the read-only CM6 mount, lineWrapping + lineNumbers + search compartments, and a small selection-only responder.
+- [x] Author `tug-code-view.css` with `--tugx-codeview-*` slots that consume `--tugx-block-*` (frame, code typography, strip chrome) directly; component-specific slots only for the gutter color/width and the selection highlight tones.
+- [x] Author `tug-code-view.test.tsx` covering mount, value, wrap toggle, line-numbers toggle, find UI reveal, selection round-trip.
+- [x] Swap `file-block.tsx`'s body to `<TugCodeView ...>`; delete the bespoke renderer, the match overlay, the imperative search icon, and the `--tugx-file-rows/-row/-content/-overlay/-search-*` slot families.
+- [x] Rewrite `file-block.test.tsx` against the new composition; defer line-level CM6 behavior to `tug-code-view.test.tsx`.
+- [x] Add `@codemirror/search` to `tugdeck/package.json` — the find-panel substrate.
+- [x] Update `tuglaws/component-authoring.md` with the "Text content" section naming CM6 as the canonical engine for file-based text content.
+- [x] Update fixture-replay tests (`read-tool-block.test.tsx`, `read-tool-block.replay.test.tsx`) to assert against the substrate slot (`[data-slot="tug-code-view"]` + `.cm-content`) instead of the retired `[data-slot="file-gutter"]` bespoke markers.
 
 **Tasks (Phase B — block-header pin + TerminalBlock header):**
 

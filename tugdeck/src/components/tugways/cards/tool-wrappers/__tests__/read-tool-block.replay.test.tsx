@@ -112,24 +112,28 @@ describe("ReadToolBlock — fixture replay (test-05-tool-use-read)", () => {
     expect(path).not.toBeNull();
     expect(path.textContent).toContain("CLAUDE.md");
 
-    // FileBlock renders the structured content embedded.
+    // FileBlock renders the structured content embedded; CM6 substrate
+    // is mounted underneath.
     const fileRoot = root.querySelector(
       '[data-slot="file-body"]',
     ) as HTMLElement;
     expect(fileRoot).not.toBeNull();
     expect(fileRoot.dataset.embedded).toBe("true");
 
-    // The fixture sets `numLines: 3, startLine: 1, totalLines: 55` —
-    // the gutter shows three lines starting at 1.
-    const gutters = fileRoot.querySelectorAll(
-      '[data-slot="file-gutter"]',
-    );
-    expect(gutters.length).toBe(3);
-    expect(gutters[0].textContent).toBe("1");
-    expect(gutters[2].textContent).toBe("3");
+    // FileBlock's own header is suppressed in embedded mode (host owns
+    // identity); the substrate is mounted in its place.
+    expect(fileRoot.querySelector('[data-slot="file-header"]')).toBeNull();
+    expect(
+      fileRoot.querySelector('[data-slot="tug-code-view"]'),
+    ).not.toBeNull();
 
-    // Content is the literal opening of CLAUDE.md from the fixture.
-    expect(fileRoot.textContent).toContain(
+    // Per-line gutter elements and viewport-rendered .cm-line nodes are
+    // CM6-internal concerns covered in `tug-code-view.test.tsx`; here we
+    // just confirm the substrate received the document — CM6 paints the
+    // raw text into .cm-content synchronously on view construction.
+    const content = fileRoot.querySelector(".cm-content") as HTMLElement;
+    expect(content).not.toBeNull();
+    expect(content.textContent ?? "").toContain(
       "Claude Code Guidelines for Tugtool",
     );
 

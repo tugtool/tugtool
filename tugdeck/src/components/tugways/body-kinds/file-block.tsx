@@ -1,62 +1,78 @@
 /**
  * `FileBlock` — Layer-1 body kind for read-only file viewing.
  *
- * Renders a file's contents inline in the transcript with a
- * line-numbered gutter, a "Showing N of M lines" header, an
- * extension-derived language label, optional Shiki syntax
- * highlighting, click-line-to-copy, in-instance Cmd+F search, and
- * collapse-by-default for long files. Composed by the Layer-2
- * wrappers `ReadToolBlock` (#step-8) and `WriteToolBlock` (later) per
- * Table T02; reachable directly from `RenderInput`-routed body kinds
- * whose data shape is "a file the user wants to look at."
+ * A thin chrome around `TugCodeView`. FileBlock owns the framed look
+ * (header strip with path / language pill / line counts / `Search` and
+ * `Collapse` icon buttons), the long-file collapse-by-default behavior,
+ * the embedded-mode variant for `ReadToolBlock` composition, and
+ * nothing else. The CM6 substrate that actually renders the file
+ * lives in `TugCodeView`; the bespoke per-line renderer that this
+ * file used to ship was retired because it reimplemented features
+ * the project already owns through `tug-text-editor`'s CM6
+ * integration — and reimplemented them badly (per-line scrollbars,
+ * stale search overlay, parallel-engine drift).
  *
- * Why a body kind, not a tool wrapper:
- *   FileBlock holds the rendering for a single rectangle of file
- *   content — gutter, content, and the file-scoped affordances. The
- *   tool-specific framing (path-shortening header, line-range badge,
- *   "showing N of M" footer derived from the structured result)
- *   lives in the wrapper that composes us. This is the [D05]
- *   two-layer split.
+ * Composition:
+ *  - Header (chrome strip) — `path basename` + optional language pill
+ *    + "N lines" / "Showing N of M lines" counts + `Search`
+ *    `<TugIconButton>` (opens CM6's find panel via the viewer ref) +
+ *    `Collapse` `<TugIconButton>` (when above threshold). Hidden when
+ *    `embedded=true` because the host wrapper (e.g. `ToolWrapperChrome`)
+ *    owns identity in those cases.
+ *  - Body — either `<TugCue role="active">` (collapsed reveal cue) or
+ *    `<TugCodeView>` (expanded code view). Mutually exclusive; CM6
+ *    isn't mounted while collapsed so a huge file doesn't pay the
+ *    mount cost until the user reveals it.
  *
- * Render strategy (no streaming — Table T01: FileBlock streams = no):
- *   - Synchronous React render lays out the gutter + content rows so
- *     the layout is correct on first paint and predictable in tests.
- *   - When a language is detectable from the file extension, an
- *     async effect kicks Shiki off in parallel; on resolve, the
- *     per-line highlighted HTML is written into the line content
- *     elements directly (DOM-imperative per [L06]). Shiki failures
- *     leave the plain-text fallback in place.
- *   - Collapse is logical state, not appearance — the *number* of
- *     rendered rows changes, so it lives in `useState` (controllable
- *     via the [Spec S02] `collapsed` / `onToggleCollapsed` props).
- *     The audit (§5.1) puts the threshold at 80 lines (Read P50 = 50,
- *     so 50 was too aggressive — it would fold half of every file).
- *   - Search is in-instance: the document-level Cmd+F is intercepted
- *     only when this FileBlock contains the active element. Match
- *     highlighting is applied to a parallel layer of `<mark>` spans
- *     so it works whether or not Shiki has finished.
+ * Long-file collapse:
+ *  - Lines above `collapseThreshold` (default 80, per audit §5.1) fold
+ *    by default. The collapsed view shows a `<TugCue role="active">`
+ *    inviting the user to reveal. The threshold and the cue are
+ *    visual policy; the audit measured Read P50 at 50 lines, so the
+ *    80-line threshold catches the upper ~40% — long enough to scan-
+ *    or-skip, short enough not to fold the average file.
+ *
+ * Embedded mode:
+ *  - `embedded=true` drops the standalone frame (background, border,
+ *    radius, outer margin) and the header strip. The host wrapper
+ *    owns identity and affordances. CM6 still renders the body, so
+ *    the embedded host gets line wrapping + selection + a find UI
+ *    for free.
+ *
+ * What this body kind does NOT do (and never will):
+ *  - Render text with a bespoke DOM tree. CM6 is the canonical text
+ *    engine for any file-based content (`tuglaws/component-authoring.md`
+ *    §Text content); FileBlock composes the substrate, not bytes.
+ *  - Implement its own find / Cmd-F bar. The substrate ships
+ *    `@codemirror/search`; the header's `Search` button opens that
+ *    panel via the viewer delegate.
+ *  - Implement click-line-to-copy. CM6's native selection + Cmd-C
+ *    handles region copy more naturally and consistently across the
+ *    rest of the codebase. (The bespoke per-line click gesture used
+ *    to exist; it has been retired with the rest of the bespoke
+ *    renderer.)
+ *  - Implement syntax highlighting. The substrate is wired today
+ *    with the prop, and a follow-up step bridges Shiki (or a
+ *    Lezer-based grammar) into CM6 decorations without changing
+ *    this file's API.
  *
  * Laws:
- *  - [L03] `useLayoutEffect` for the Cmd+F document listener so the
- *    handler is registered before any keystroke can land between
- *    mount and paint.
- *  - [L06] appearance — the search match-highlight, the Shiki swap,
- *    and the copied-line flash all write the DOM directly. React
- *    state holds only logical UI state (collapsed, searchOpen,
- *    query, matchIndex).
+ *  - [L06] all FileBlock-visible state (collapse) lives in React
+ *    state because it controls *what* is rendered (one of two
+ *    branches), not *how* a rendered element looks. The substrate's
+ *    own appearance state lives in CM6 per its module docstring.
  *  - [L19] file pair (`.tsx` + `.css`), exported props interface,
  *    `data-slot="file-body"` on the root, this docstring.
  *  - [L20] component-token sovereignty — owns the `--tugx-file-*`
- *    slot family ([Table T07]).
+ *    slot family; consumes `--tugx-block-*` directly for the shared
+ *    block-surface scaffold.
  *
  * Decisions:
  *  - [D05] two-layer split: body kind (this file) vs. tool wrapper
- *    (read-tool-block.tsx in #step-8).
- *  - [D06] Shiki for syntax highlighting; lazy language load to keep
- *    the initial bundle small. The 17-language warm set in
- *    `code-block-utils.ts` covers the audit's top hits (84% of files
- *    are no-language anyway, per audit §5.4).
- *  - Audit §5.1: collapse threshold = 80 lines.
+ *    (`read-tool-block.tsx`).
+ *  - Step 10.9 Phase A: CM6 is the canonical engine for file-based
+ *    text content. See `roadmap/tide-assistant-rendering.md#step-10-9`
+ *    for the full architectural rationale.
  *
  * @module components/tugways/body-kinds/file-block
  */
@@ -64,10 +80,14 @@
 import "./file-block.css";
 
 import React from "react";
-import { ChevronDown, ChevronsDown, ChevronsUp, ChevronUp, Search, X } from "lucide-react";
+import { ChevronsDown, ChevronsUp, Search } from "lucide-react";
 
 import { TugCue } from "@/components/tugways/tug-cue";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
+import {
+  TugCodeView,
+  type TugCodeViewDelegate,
+} from "@/components/tugways/tug-code-view";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -94,8 +114,9 @@ export interface FileData {
   content: string;
 
   /**
-   * 1-based line number of the first line of `content`. Defaults to
-   * 1 when omitted.
+   * 1-based line number of the first line of `content`. Reserved for
+   * future use by the substrate (e.g. seeding `lineNumbers()`'s
+   * starting index). Defaults to 1.
    */
   startLine?: number;
 
@@ -132,9 +153,9 @@ export interface FileBlockProps {
   collapsed?: boolean;
 
   /**
-   * Notification callback fired when the user toggles the
-   * collapsed state. Stateless when omitted (the component still
-   * tracks local state internally — this is uncontrolled-mode).
+   * Notification callback fired when the user toggles the collapsed
+   * state. Stateless when omitted (the component still tracks local
+   * state internally — this is uncontrolled mode).
    */
   onToggleCollapsed?: (next: boolean) => void;
 
@@ -157,9 +178,8 @@ export interface FileBlockProps {
    *   - The standalone frame (background / border / radius / outer
    *     margin) is dropped so the body sits flush with the host.
    *   - FileBlock's own header (basename + lang badge + line counts +
-   *     search toggle + collapse toggle) is hidden — the wrapper
-   *     owns the file's identity in its own header. Search /
-   *     collapse affordances are deferred to the wrapper UX.
+   *     icon buttons) is hidden — the wrapper owns the file's
+   *     identity in its own header.
    *
    * Default `false` — standalone usage (gallery, RenderInput-routed)
    * keeps its frame and header.
@@ -183,26 +203,22 @@ export interface FileBlockProps {
 export const DEFAULT_COLLAPSE_THRESHOLD = 80;
 
 const DATA_SLOT_ROOT = "file-body";
-
 const DATA_SLOT_HEADER = "file-header";
-const DATA_SLOT_BODY = "file-body-rows";
-const DATA_SLOT_ROW = "file-row";
-const DATA_SLOT_GUTTER = "file-gutter";
-const DATA_SLOT_CONTENT = "file-content";
-const DATA_SLOT_SEARCH_BAR = "file-search-bar";
-const DATA_SLOT_SEARCH_INPUT = "file-search-input";
-const DATA_SLOT_SEARCH_COUNT = "file-search-count";
 
 // ---------------------------------------------------------------------------
-// Pure helpers
+// Pure helpers — exported because tests pin them
 // ---------------------------------------------------------------------------
 
 /**
- * Map filename extension → Shiki language identifier. Covers the
- * languages we ship preloaded plus a handful Shiki can lazy-load.
- * Returns `undefined` when the extension is unknown — the component
- * then renders plain monospace, which per audit §5.4 is the dominant
- * case anyway (84% of fenced blocks have no language).
+ * Map filename extension → language identifier. Covers the common
+ * languages used in `tugcode` sessions. Returns `undefined` when the
+ * extension is unknown — the substrate then renders plain monospace,
+ * which per audit §5.4 is the dominant case anyway (84% of fenced
+ * blocks have no language).
+ *
+ * The identifiers match Shiki's vocabulary (kept so the future
+ * Shiki-via-CM6 bridge can map directly), and a forward subset
+ * matches Lezer's grammar names.
  */
 const EXT_TO_LANG: Readonly<Record<string, string>> = Object.freeze({
   ts: "typescript",
@@ -285,11 +301,11 @@ const EXT_TO_LANG: Readonly<Record<string, string>> = Object.freeze({
 });
 
 /**
- * Detect the Shiki language identifier for a file path, by extension.
+ * Detect the language identifier for a file path, by extension.
  * Returns `undefined` when the extension is unknown.
  *
  * Special-cases bare filenames whose name is itself the language hint
- * (Dockerfile, Makefile) since they have no extension.
+ * (`Dockerfile`, `Makefile`) since they have no extension.
  */
 export function detectLanguage(filePath: string): string | undefined {
   const base = filePath.split(/[\\/]/).pop() ?? "";
@@ -319,8 +335,7 @@ export function splitContentLines(content: string): string[] {
  * Compose the "Showing N of M lines" header label.
  *  - When `totalLines` is unknown or equals `numLines`, returns
  *    "N lines".
- *  - When `totalLines > numLines`, returns
- *    "Showing N of M lines".
+ *  - When `totalLines > numLines`, returns "Showing N of M lines".
  */
 export function composeLineCountLabel(
   numLines: number,
@@ -339,180 +354,9 @@ export function basename(filePath: string): string {
   return segments[segments.length - 1] ?? "";
 }
 
-/**
- * Match a literal substring in a line, returning the [start, end]
- * ranges of every occurrence. Case-insensitive. Returns `[]` for an
- * empty query — the search bar shows zero matches without highlighting
- * the entire content.
- */
-export function findMatches(
-  text: string,
-  query: string,
-): Array<[number, number]> {
-  if (query.length === 0) return [];
-  const haystack = text.toLowerCase();
-  const needle = query.toLowerCase();
-  const ranges: Array<[number, number]> = [];
-  let from = 0;
-  while (from <= haystack.length - needle.length) {
-    const at = haystack.indexOf(needle, from);
-    if (at < 0) break;
-    ranges.push([at, at + needle.length]);
-    from = at + needle.length;
-  }
-  return ranges;
-}
-
-// ---------------------------------------------------------------------------
-// Highlighting — Shiki is loaded asynchronously per [D06].
-// ---------------------------------------------------------------------------
-
-/**
- * Pluggable async highlight function. The default implementation
- * uses the existing project-wide Shiki singleton from
- * `code-block-utils.ts`. Overridable via `injectHighlighter` for
- * tests and gallery cards.
- */
-export type LineHighlighter = (
-  content: string,
-  language: string,
-) => Promise<string[] | null>;
-
-let _highlighter: LineHighlighter | null = null;
-
-/**
- * Replace the highlighter implementation. Tests pass a synchronous
- * stub here so the Shiki path is exercised without touching the
- * shared singleton. Pass `null` to restore the default.
- */
-export function injectHighlighter(impl: LineHighlighter | null): void {
-  _highlighter = impl;
-}
-
-/**
- * Highlight content as an array of HTML strings, one per line.
- * Lazy-loads Shiki on first use; resolves to `null` when the
- * language is unsupported or Shiki isn't available (the caller then
- * keeps the plain-text fallback).
- */
-async function highlightLines(
-  content: string,
-  language: string,
-): Promise<string[] | null> {
-  if (_highlighter !== null) {
-    return _highlighter(content, language);
-  }
-  try {
-    const utils = await import(
-      "@/_archive/cards/conversation/code-block-utils"
-    );
-    const highlighter = await utils.getHighlighter();
-    const normalized = utils.normalizeLanguage(language);
-    const loaded = highlighter.getLoadedLanguages() as string[];
-    if (!loaded.includes(normalized)) {
-      try {
-        await (highlighter as { loadLanguage: (l: string) => Promise<void> })
-          .loadLanguage(normalized);
-      } catch {
-        return null;
-      }
-    }
-    const html = highlighter.codeToHtml(content, {
-      lang: normalized,
-      theme: "github-dark",
-    });
-    // Shiki output: <pre …><code>(<span class="line">…</span>\n)+</code></pre>
-    const lineMatches = html.match(
-      /<span class="line"[^>]*>[\s\S]*?<\/span>(?=\n|<\/code>)/g,
-    );
-    if (lineMatches === null) return null;
-    return lineMatches;
-  } catch {
-    return null;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Match-highlight DOM mutation
-// ---------------------------------------------------------------------------
-
-/**
- * For each `<.tugx-file-content>` row, paint match highlights as a
- * sibling overlay element rather than wrapping the existing content —
- * the existing content might be highlighted HTML from Shiki, and
- * surgery on that risks breaking spans. The overlay is plain-text
- * and uses CSS to position over the same baseline.
- *
- * Returns the flat list of rendered match elements in document order
- * so the caller can scroll / focus the active one.
- */
-function paintMatchOverlay(
-  body: HTMLElement,
-  lines: string[],
-  query: string,
-  activeMatchIndex: number,
-): HTMLElement[] {
-  const matches: HTMLElement[] = [];
-  const rows = body.querySelectorAll<HTMLElement>(
-    `[data-slot="${DATA_SLOT_ROW}"]`,
-  );
-  rows.forEach((row) => {
-    const overlay = row.querySelector<HTMLElement>(".tugx-file-overlay");
-    if (overlay === null) return;
-    overlay.replaceChildren();
-    overlay.style.display = query.length === 0 ? "none" : "";
-  });
-
-  if (query.length === 0) return matches;
-
-  rows.forEach((row, index) => {
-    const lineText = lines[index] ?? "";
-    const overlay = row.querySelector<HTMLElement>(".tugx-file-overlay");
-    if (overlay === null) return;
-
-    const ranges = findMatches(lineText, query);
-    if (ranges.length === 0) return;
-
-    let cursor = 0;
-    for (const [start, end] of ranges) {
-      if (start > cursor) {
-        overlay.appendChild(
-          document.createTextNode(lineText.slice(cursor, start)),
-        );
-      }
-      const mark = document.createElement("mark");
-      mark.className = "tugx-file-mark";
-      mark.dataset.slot = "file-search-match";
-      mark.textContent = lineText.slice(start, end);
-      overlay.appendChild(mark);
-      matches.push(mark);
-      cursor = end;
-    }
-    if (cursor < lineText.length) {
-      overlay.appendChild(
-        document.createTextNode(lineText.slice(cursor)),
-      );
-    }
-  });
-
-  matches.forEach((m, i) => {
-    if (i === activeMatchIndex) {
-      m.classList.add("tugx-file-mark--active");
-      m.dataset.active = "true";
-    } else {
-      m.classList.remove("tugx-file-mark--active");
-      m.dataset.active = "false";
-    }
-  });
-
-  return matches;
-}
-
 // ---------------------------------------------------------------------------
 // React component
 // ---------------------------------------------------------------------------
-
-const EMPTY_CONTENT_LINES: string[] = [];
 
 export const FileBlock: React.FC<FileBlockProps> = ({
   data,
@@ -522,13 +366,12 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   collapseThreshold = DEFAULT_COLLAPSE_THRESHOLD,
   embedded = false,
 }) => {
-  // -- Lines, language, header label -----------------------------------------
-
+  // Derived display state — line count + language detection drive
+  // the header label and the collapse default.
   const lines = React.useMemo(
-    () => (data === undefined ? EMPTY_CONTENT_LINES : splitContentLines(data.content)),
+    () => (data === undefined ? [] : splitContentLines(data.content)),
     [data?.content],
   );
-  const startLine = data?.startLine ?? 1;
   const language = React.useMemo(
     () => (data === undefined ? undefined : detectLanguage(data.filePath)),
     [data?.filePath],
@@ -536,15 +379,13 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   const numLines = data?.numLines ?? lines.length;
   const headerLabel = composeLineCountLabel(numLines, data?.totalLines);
 
-  // -- Collapse: controlled-ish (initial from prop, internal updates) --------
-
   const overThreshold = lines.length > collapseThreshold;
   const initialCollapsed =
     collapsedProp !== undefined ? collapsedProp : overThreshold;
   const [collapsed, setCollapsed] = React.useState<boolean>(initialCollapsed);
 
-  // Sync to controlled prop when it changes upstream (lets parents
-  // drive collapse from chrome elsewhere in the row).
+  // Sync to controlled prop when it changes upstream so parents can
+  // drive collapse from chrome elsewhere in the row.
   React.useEffect(() => {
     if (collapsedProp !== undefined) setCollapsed(collapsedProp);
   }, [collapsedProp]);
@@ -557,175 +398,36 @@ export const FileBlock: React.FC<FileBlockProps> = ({
     });
   }, [onToggleCollapsed]);
 
-  // -- Search state ----------------------------------------------------------
+  // Ref to the embedded TugCodeView so the header's Search button can
+  // open the substrate's find panel imperatively.
+  const codeViewRef = React.useRef<TugCodeViewDelegate | null>(null);
 
-  const rootRef = React.useRef<HTMLDivElement | null>(null);
-  const bodyRef = React.useRef<HTMLDivElement | null>(null);
-  const searchInputRef = React.useRef<HTMLInputElement | null>(null);
-  const [searchOpen, setSearchOpen] = React.useState<boolean>(false);
-  const [query, setQuery] = React.useState<string>("");
-  const [matchCount, setMatchCount] = React.useState<number>(0);
-  const [activeMatch, setActiveMatch] = React.useState<number>(0);
-
-  // Open / close search; closing also clears the highlight.
-  const closeSearch = React.useCallback(() => {
-    setSearchOpen(false);
-    setQuery("");
-    setMatchCount(0);
-    setActiveMatch(0);
-    if (searchInputRef.current !== null) {
-      searchInputRef.current.value = "";
-    }
-  }, []);
-
-  const openSearch = React.useCallback(() => {
+  const onSearchClick = React.useCallback(() => {
+    // Open the find panel; if collapsed, reveal first so the viewer
+    // is mounted before we ask it to open its panel.
     if (collapsed) {
       setCollapsed(false);
       onToggleCollapsed?.(false);
+      // The viewer mounts in the next layout tick; defer the panel
+      // open to the same tick so the ref is populated. Imperative
+      // DOM-side work, no React-state coupling.
+      requestAnimationFrame(() => {
+        codeViewRef.current?.openSearch();
+      });
+      return;
     }
-    setSearchOpen(true);
+    codeViewRef.current?.openSearch();
   }, [collapsed, onToggleCollapsed]);
 
-  // Cmd+F (Ctrl+F) intercept — only when this FileBlock is focused
-  // or contains the active element. [L03] mount in useLayoutEffect so
-  // a keystroke between mount and paint doesn't reach the browser.
-  React.useLayoutEffect(() => {
-    function onKeyDown(e: KeyboardEvent): void {
-      const root = rootRef.current;
-      if (root === null) return;
-      const meta = e.metaKey || e.ctrlKey;
-      const key = e.key.toLowerCase();
-      const inThisBlock =
-        document.activeElement !== null &&
-        root.contains(document.activeElement);
-      if (meta && key === "f" && inThisBlock) {
-        e.preventDefault();
-        e.stopPropagation();
-        openSearch();
-        // Defer focus to after state-flush so the rendered input
-        // exists in the DOM.
-        window.setTimeout(() => searchInputRef.current?.focus(), 0);
-        window.setTimeout(() => searchInputRef.current?.select(), 0);
-      } else if (e.key === "Escape" && searchOpen && inThisBlock) {
-        e.preventDefault();
-        closeSearch();
-      }
-    }
-    document.addEventListener("keydown", onKeyDown, true);
-    return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, [openSearch, closeSearch, searchOpen]);
-
-  // -- Search match-overlay paint --------------------------------------------
-
-  React.useLayoutEffect(() => {
-    const body = bodyRef.current;
-    if (body === null) return;
-    const matches = paintMatchOverlay(body, lines, query, activeMatch);
-    setMatchCount(matches.length);
-    if (matches.length > 0) {
-      const safeIndex = Math.min(activeMatch, matches.length - 1);
-      const target = matches[safeIndex];
-      if (typeof target.scrollIntoView === "function") {
-        target.scrollIntoView({ block: "nearest" });
-      }
-    }
-  }, [query, lines, activeMatch, collapsed]);
-
-  // Reset match index when the query changes.
-  React.useEffect(() => {
-    setActiveMatch(0);
-  }, [query]);
-
-  // -- Search nav ------------------------------------------------------------
-
-  const stepMatch = React.useCallback(
-    (delta: 1 | -1) => {
-      setActiveMatch((current) => {
-        if (matchCount === 0) return 0;
-        const next = (current + delta + matchCount) % matchCount;
-        return next;
-      });
-    },
-    [matchCount],
-  );
-
-  const onSearchKeyDown = React.useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        stepMatch(e.shiftKey ? -1 : 1);
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        closeSearch();
-      }
-    },
-    [stepMatch, closeSearch],
-  );
-
-  // -- Click-line-to-copy ----------------------------------------------------
-
-  const onRowClick = React.useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      const row = e.currentTarget;
-      const text = row.dataset.text ?? "";
-      const writeText = navigator.clipboard?.writeText.bind(navigator.clipboard);
-      if (writeText === undefined) return;
-      writeText(text)
-        .then(() => {
-          row.classList.add("is-copied");
-          window.setTimeout(() => row.classList.remove("is-copied"), 800);
-        })
-        .catch(() => {
-          // Swallow — failure is silent; the user simply doesn't see
-          // the confirmation flash.
-        });
-    },
-    [],
-  );
-
-  // -- Async Shiki highlight -------------------------------------------------
-
-  React.useEffect(() => {
-    if (data === undefined) return;
-    if (language === undefined) return;
-    if (lines.length === 0) return;
-
-    let cancelled = false;
-    (async () => {
-      const highlighted = await highlightLines(data.content, language);
-      if (cancelled) return;
-      const body = bodyRef.current;
-      if (body === null) return;
-      if (highlighted === null) return;
-
-      const rows = body.querySelectorAll<HTMLElement>(
-        `[data-slot="${DATA_SLOT_ROW}"]`,
-      );
-      rows.forEach((row, i) => {
-        const contentEl = row.querySelector<HTMLElement>(
-          `[data-slot="${DATA_SLOT_CONTENT}"]`,
-        );
-        if (contentEl === null) return;
-        const lineHtml = highlighted[i];
-        if (lineHtml === undefined) return;
-        contentEl.innerHTML = lineHtml;
-        contentEl.dataset.highlighted = "true";
-      });
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [data?.content, language, lines.length]);
-
-  // -- Render ----------------------------------------------------------------
-
-  if (data === undefined) {
+  // Empty data: render an empty marker for layout consistency. Same
+  // contract as before — consumers may depend on the data-empty
+  // attribute (e.g. for CSS rules that suppress the frame).
+  if (data === undefined || lines.length === 0) {
     return (
       <div
-        ref={rootRef}
         data-slot={DATA_SLOT_ROOT}
         data-empty="true"
+        data-embedded={embedded ? "true" : undefined}
         className={
           className === undefined ? "tugx-file" : `tugx-file ${className}`
         }
@@ -738,13 +440,11 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   const rootClass =
     `tugx-file${langClass}` +
     (className === undefined ? "" : ` ${className}`);
-  const visibleLines = collapsed ? [] : lines;
 
   return (
     <div
-      ref={rootRef}
       data-slot={DATA_SLOT_ROOT}
-      data-empty={lines.length === 0 ? "true" : "false"}
+      data-empty="false"
       data-language={language ?? "plain"}
       data-collapsed={collapsed ? "true" : "false"}
       data-embedded={embedded ? "true" : undefined}
@@ -752,126 +452,63 @@ export const FileBlock: React.FC<FileBlockProps> = ({
       tabIndex={-1}
     >
       {embedded ? null : (
-      <div className="tugx-file-header" data-slot={DATA_SLOT_HEADER}>
-        <span
-          className="tugx-file-path"
-          data-slot="file-path"
-          title={data.filePath}
-        >
-          {basename(data.filePath)}
-        </span>
-        {language !== undefined ? (
-          <span className="tugx-file-lang" data-slot="file-lang">
-            {language}
+        <div className="tugx-file-header" data-slot={DATA_SLOT_HEADER}>
+          <span
+            className="tugx-file-path"
+            data-slot="file-path"
+            title={data.filePath}
+          >
+            {basename(data.filePath)}
           </span>
-        ) : null}
-        <span className="tugx-file-counts" data-slot="file-counts">
-          {headerLabel}
-        </span>
-        <span className="tugx-file-spacer" />
-        {!collapsed && lines.length > 0 ? (
-          <TugIconButton
-            icon={<Search />}
-            aria-label={searchOpen ? "Hide search" : "Search in file"}
-            onClick={() => (searchOpen ? closeSearch() : openSearch())}
-          />
-        ) : null}
-        {overThreshold ? (
-          <TugIconButton
-            icon={collapsed ? <ChevronsDown /> : <ChevronsUp />}
-            aria-label={collapsed ? "Expand file" : "Collapse file"}
-            onClick={toggleCollapsed}
-          />
-        ) : null}
-      </div>
+          {language !== undefined ? (
+            <span className="tugx-file-lang" data-slot="file-lang">
+              {language}
+            </span>
+          ) : null}
+          <span className="tugx-file-counts" data-slot="file-counts">
+            {headerLabel}
+          </span>
+          <span className="tugx-file-spacer" />
+          {!collapsed ? (
+            <TugIconButton
+              icon={<Search />}
+              aria-label="Search in file"
+              onClick={onSearchClick}
+            />
+          ) : null}
+          {overThreshold ? (
+            <TugIconButton
+              icon={collapsed ? <ChevronsDown /> : <ChevronsUp />}
+              aria-label={collapsed ? "Expand file" : "Collapse file"}
+              onClick={toggleCollapsed}
+            />
+          ) : null}
+        </div>
       )}
 
-      {searchOpen && !collapsed ? (
-        <div className="tugx-file-search-bar" data-slot={DATA_SLOT_SEARCH_BAR}>
-          <input
-            ref={searchInputRef}
-            type="text"
-            className="tugx-file-search-input"
-            data-slot={DATA_SLOT_SEARCH_INPUT}
-            defaultValue=""
-            placeholder="Find in file"
-            aria-label="Find in file"
-            onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
-            onKeyDown={onSearchKeyDown}
-          />
-          <span
-            className="tugx-file-search-count"
-            data-slot={DATA_SLOT_SEARCH_COUNT}
-          >
-            {query.length === 0
-              ? ""
-              : matchCount === 0
-                ? "no matches"
-                : `${activeMatch + 1}/${matchCount}`}
-          </span>
-          <TugIconButton
-            icon={<ChevronUp />}
-            aria-label="Previous match"
-            disabled={matchCount === 0}
-            onClick={() => stepMatch(-1)}
-          />
-          <TugIconButton
-            icon={<ChevronDown />}
-            aria-label="Next match"
-            disabled={matchCount === 0}
-            onClick={() => stepMatch(1)}
-          />
-          <TugIconButton
-            icon={<X />}
-            aria-label="Close search"
-            onClick={closeSearch}
-          />
-        </div>
-      ) : null}
-
-      <div
-        ref={bodyRef}
-        className="tugx-file-rows"
-        data-slot={DATA_SLOT_BODY}
-        role="presentation"
-      >
-        {visibleLines.map((line, i) => (
-          <div
-            key={i}
-            className="tugx-file-row"
-            data-slot={DATA_SLOT_ROW}
-            data-line={startLine + i}
-            data-text={line}
-            onClick={onRowClick}
-          >
-            <span
-              className="tugx-file-gutter"
-              data-slot={DATA_SLOT_GUTTER}
-              aria-hidden="true"
-            >
-              {startLine + i}
-            </span>
-            <span
-              className="tugx-file-content"
-              data-slot={DATA_SLOT_CONTENT}
-            >
-              {line === "" ? " " : line}
-            </span>
-            <span className="tugx-file-overlay" aria-hidden="true" />
-          </div>
-        ))}
-        {collapsed && lines.length > 0 ? (
-          <TugCue
-            role="active"
-            icon={<ChevronsDown />}
-            aria-expanded={false}
-            onClick={toggleCollapsed}
-            className="tugx-file-collapsed-hint"
-          >
-            {`${lines.length.toLocaleString()} lines folded — click to expand`}
-          </TugCue>
-        ) : null}
-      </div>
+      {collapsed ? (
+        <TugCue
+          role="active"
+          icon={<ChevronsDown />}
+          aria-expanded={false}
+          onClick={toggleCollapsed}
+          className="tugx-file-collapsed-hint"
+        >
+          {`${lines.length.toLocaleString()} lines folded — click to expand`}
+        </TugCue>
+      ) : (
+        <TugCodeView
+          ref={codeViewRef}
+          value={data.content}
+          language={language}
+          // File viewer defaults: wrap on, line numbers on. The CM6
+          // substrate handles the per-line scrollbar bug by
+          // construction — `lineWrapping` puts wide lines on their
+          // own visual rows inside a single scroll container.
+          wrap
+          lineNumbers
+        />
+      )}
     </div>
   );
 };

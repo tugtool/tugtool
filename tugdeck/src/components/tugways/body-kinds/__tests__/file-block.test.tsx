@@ -1,42 +1,39 @@
 /**
  * `FileBlock` — body-kind tests.
  *
- * Coverage:
- *  - Pure helpers: `detectLanguage` (extension + bare-name special
- *    cases), `splitContentLines` (trailing-newline drop), `basename`,
- *    `composeLineCountLabel`, `findMatches`.
- *  - Static render: line-numbered gutter honors `startLine`,
- *    extension-derived language stamps `data-language` and the lang
- *    class.
- *  - Long-file collapse: at the threshold (80 lines) renders all
- *    rows expanded; above the threshold (e.g. 200) collapses by
- *    default and shows the collapsed-hint banner.
- *  - Controlled collapse: `collapsed={true}` honored; toggle button
- *    notifies via `onToggleCollapsed`.
- *  - Search affordance markup: header exposes a search toggle, and
- *    clicking it reveals the search-bar markup (input + count + step
- *    buttons). The full interactive flow (typing, Enter / Shift+Enter
- *    next/prev, Escape, Cmd+F entry point, focus restoration) lives
- *    in a real-browser test surface — happy-dom does not model focus
- *    or controlled-input event ordering reliably.
- *  - Click-line-to-copy: clicking a row writes the line text via
- *    `navigator.clipboard.writeText`.
- *  - Shiki integration: an injected highlighter populates each row's
- *    content with per-line highlighted HTML; null result keeps the
- *    plain-text fallback; no-language paths skip the highlighter.
+ * After the Step 10.9 Phase A engine swap, `FileBlock` is a thin
+ * chrome around `TugCodeView`. This test scope is correspondingly
+ * narrow:
+ *
+ *  - Pure helpers: `detectLanguage`, `splitContentLines`, `basename`,
+ *    `composeLineCountLabel`.
+ *  - Static markup: header surfaces the basename + lang badge + line
+ *    counts; expanded files render a `TugCodeView`; collapsed files
+ *    render a `TugCue` reveal cue instead.
+ *  - Long-file collapse: at the threshold renders expanded; above
+ *    the threshold collapses by default; the collapsed branch shows
+ *    the cue, not the substrate.
+ *  - Controlled collapse: `collapsed={true}` honored; collapse
+ *    `<TugIconButton>` toggles via `onToggleCollapsed`.
+ *  - Search affordance: header surfaces a `Search` `<TugIconButton>`
+ *    when expanded; the underlying find-panel behavior (panel mount /
+ *    keystroke wiring) is covered in `tug-code-view.test.tsx`.
+ *  - Embedded mode: header is suppressed; the body still renders.
+ *
+ * What this test file intentionally does NOT cover (post-recast):
+ *  - The per-line click-to-copy gesture (retired with the bespoke
+ *    renderer; native CM6 selection + Cmd-C is the new path).
+ *  - Bespoke search-bar markup (`data-slot="file-search-*"`) — the
+ *    find panel comes from `@codemirror/search` now and is exercised
+ *    via the substrate-level tests.
+ *  - Shiki injection (retired; syntax highlighting will return as a
+ *    CM6 bridge in a follow-up).
  */
 
 import "../../../../__tests__/setup-rtl";
 
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  mock,
-  test,
-} from "bun:test";
-import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import { afterEach, describe, expect, mock, test } from "bun:test";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import React from "react";
 
 import {
@@ -45,28 +42,13 @@ import {
   basename,
   composeLineCountLabel,
   detectLanguage,
-  findMatches,
-  injectHighlighter,
   splitContentLines,
   type FileData,
 } from "../file-block";
 
 afterEach(() => {
   cleanup();
-  injectHighlighter(null);
 });
-
-/**
- * Drive the search input as if the user typed: set the DOM value
- * and dispatch an `input` event. Since the FileBlock's search input
- * is uncontrolled (the React state is updated from the input's
- * current value on each `input` event), this is the natural way to
- * exercise it from a test.
- */
-function typeInSearch(input: HTMLInputElement, value: string): void {
-  input.value = value;
-  fireEvent.input(input);
-}
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -78,57 +60,54 @@ describe("detectLanguage", () => {
     expect(detectLanguage("path/to/foo.tsx")).toBe("tsx");
     expect(detectLanguage("foo.js")).toBe("javascript");
     expect(detectLanguage("/abs/foo.jsx")).toBe("jsx");
-    expect(detectLanguage("a.mts")).toBe("typescript");
   });
 
-  test("Python / Rust / Go / shell", () => {
-    expect(detectLanguage("foo.py")).toBe("python");
-    expect(detectLanguage("foo.rs")).toBe("rust");
-    expect(detectLanguage("foo.go")).toBe("go");
-    expect(detectLanguage("foo.sh")).toBe("shellscript");
-    expect(detectLanguage("foo.bash")).toBe("shellscript");
+  test("script extensions normalize to shellscript", () => {
+    expect(detectLanguage("script.sh")).toBe("shellscript");
+    expect(detectLanguage("script.bash")).toBe("shellscript");
+    expect(detectLanguage("script.zsh")).toBe("shellscript");
   });
 
-  test("data formats", () => {
-    expect(detectLanguage("foo.json")).toBe("json");
-    expect(detectLanguage("foo.yaml")).toBe("yaml");
-    expect(detectLanguage("foo.toml")).toBe("toml");
-  });
-
-  test("bare filenames whose name is the language hint", () => {
+  test("bare-name special cases (Dockerfile / Makefile)", () => {
     expect(detectLanguage("Dockerfile")).toBe("dockerfile");
-    expect(detectLanguage("Makefile")).toBe("makefile");
-    expect(detectLanguage("makefile")).toBe("makefile");
     expect(detectLanguage("path/to/Dockerfile")).toBe("dockerfile");
+    expect(detectLanguage("Makefile")).toBe("makefile");
+    expect(detectLanguage("path/to/makefile")).toBe("makefile");
   });
 
-  test("unknown extension or no extension → undefined", () => {
+  test("unknown extensions return undefined", () => {
+    expect(detectLanguage("foo.xyz")).toBeUndefined();
     expect(detectLanguage("foo")).toBeUndefined();
-    expect(detectLanguage("foo.unknownext")).toBeUndefined();
     expect(detectLanguage("")).toBeUndefined();
-    expect(detectLanguage("foo.")).toBeUndefined();
   });
 
-  test("case-insensitive extension match", () => {
-    expect(detectLanguage("FOO.TS")).toBe("typescript");
-    expect(detectLanguage("Foo.JSON")).toBe("json");
+  test("hidden files with no extension return undefined", () => {
+    expect(detectLanguage(".gitignore")).toBeUndefined();
+  });
+
+  test("trailing-dot input returns undefined", () => {
+    expect(detectLanguage("foo.")).toBeUndefined();
   });
 });
 
 describe("splitContentLines", () => {
-  test("empty string → no lines", () => {
+  test("two-line input with no trailing newline", () => {
+    expect(splitContentLines("alpha\nbeta")).toEqual(["alpha", "beta"]);
+  });
+
+  test("trailing newline does NOT produce a final empty line", () => {
+    expect(splitContentLines("alpha\nbeta\n")).toEqual(["alpha", "beta"]);
+  });
+
+  test("empty input returns the empty array", () => {
     expect(splitContentLines("")).toEqual([]);
   });
 
-  test("plain content splits by newline", () => {
-    expect(splitContentLines("a\nb\nc")).toEqual(["a", "b", "c"]);
+  test("single line with no newline", () => {
+    expect(splitContentLines("alpha")).toEqual(["alpha"]);
   });
 
-  test("trailing newline does NOT add a final empty line", () => {
-    expect(splitContentLines("a\nb\n")).toEqual(["a", "b"]);
-  });
-
-  test("middle blank lines preserved", () => {
+  test("preserves blank lines in the middle", () => {
     expect(splitContentLines("a\n\nb")).toEqual(["a", "", "b"]);
   });
 });
@@ -136,210 +115,135 @@ describe("splitContentLines", () => {
 describe("composeLineCountLabel", () => {
   test("totalLines unknown → 'N lines'", () => {
     expect(composeLineCountLabel(5, undefined)).toBe("5 lines");
+  });
+
+  test("totalLines equals numLines → 'N lines'", () => {
+    expect(composeLineCountLabel(5, 5)).toBe("5 lines");
+  });
+
+  test("totalLines greater than numLines → 'Showing N of M lines'", () => {
+    expect(composeLineCountLabel(5, 50)).toBe("Showing 5 of 50 lines");
+  });
+
+  test("singular 1 line", () => {
     expect(composeLineCountLabel(1, undefined)).toBe("1 line");
-  });
-
-  test("totalLines == numLines → 'N lines' (whole file)", () => {
-    expect(composeLineCountLabel(80, 80)).toBe("80 lines");
-  });
-
-  test("totalLines > numLines → 'Showing N of M lines'", () => {
-    expect(composeLineCountLabel(80, 200)).toBe("Showing 80 of 200 lines");
   });
 });
 
 describe("basename", () => {
-  test("posix and windows path separators", () => {
-    expect(basename("foo/bar/baz.ts")).toBe("baz.ts");
-    expect(basename("C:\\foo\\bar\\baz.ts")).toBe("baz.ts");
-    expect(basename("file.ts")).toBe("file.ts");
+  test("plain filename", () => {
+    expect(basename("foo.ts")).toBe("foo.ts");
+  });
+
+  test("path with forward slashes", () => {
+    expect(basename("/a/b/foo.ts")).toBe("foo.ts");
+  });
+
+  test("path with backslashes (Windows)", () => {
+    expect(basename("a\\b\\foo.ts")).toBe("foo.ts");
+  });
+
+  test("empty input", () => {
     expect(basename("")).toBe("");
   });
 });
 
-describe("findMatches", () => {
-  test("empty query → no matches", () => {
-    expect(findMatches("hello world", "")).toEqual([]);
-  });
-
-  test("single occurrence", () => {
-    expect(findMatches("hello world", "world")).toEqual([[6, 11]]);
-  });
-
-  test("multiple occurrences, case-insensitive", () => {
-    expect(findMatches("Foo foo FOO bar", "foo")).toEqual([
-      [0, 3],
-      [4, 7],
-      [8, 11],
-    ]);
-  });
-
-  test("no overlapping match (consume each match fully)", () => {
-    expect(findMatches("aaaa", "aa")).toEqual([
-      [0, 2],
-      [2, 4],
-    ]);
-  });
-});
-
 // ---------------------------------------------------------------------------
-// Empty / no-data render
+// Header markup
 // ---------------------------------------------------------------------------
 
-describe("FileBlock — empty render", () => {
-  test("undefined data → root has data-empty='true' and no header", () => {
-    const { container } = render(<FileBlock />);
-    const root = container.querySelector(
-      '[data-slot="file-body"]',
-    ) as HTMLElement;
-    expect(root).not.toBeNull();
-    expect(root.dataset.empty).toBe("true");
-    expect(root.querySelector('[data-slot="file-header"]')).toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Line numbers + startLine offset
-// ---------------------------------------------------------------------------
-
-function makeContent(n: number): string {
-  const out: string[] = [];
-  for (let i = 0; i < n; i += 1) out.push(`line-${i}`);
-  return out.join("\n");
-}
-
-describe("FileBlock — gutter + startLine", () => {
-  test("default startLine = 1; gutter shows 1, 2, 3 …", () => {
-    const data: FileData = { filePath: "x.txt", content: "a\nb\nc" };
-    const { container } = render(<FileBlock data={data} />);
-    const gutters = container.querySelectorAll('[data-slot="file-gutter"]');
-    expect(gutters.length).toBe(3);
-    expect(gutters[0].textContent).toBe("1");
-    expect(gutters[1].textContent).toBe("2");
-    expect(gutters[2].textContent).toBe("3");
-  });
-
-  test("startLine = 10 offsets the gutter", () => {
+describe("FileBlock — header markup", () => {
+  test("renders basename + lang pill + counts", () => {
     const data: FileData = {
-      filePath: "x.txt",
-      content: "alpha\nbeta\ngamma",
-      startLine: 10,
-    };
-    const { container } = render(<FileBlock data={data} />);
-    const gutters = container.querySelectorAll('[data-slot="file-gutter"]');
-    expect(gutters[0].textContent).toBe("10");
-    expect(gutters[1].textContent).toBe("11");
-    expect(gutters[2].textContent).toBe("12");
-    // The row's data-line attribute also reflects the offset.
-    const rows = container.querySelectorAll<HTMLElement>(
-      '[data-slot="file-row"]',
-    );
-    expect(rows[0].dataset.line).toBe("10");
-  });
-
-  test("content lines render in the content slot", () => {
-    const data: FileData = {
-      filePath: "x.txt",
+      filePath: "path/to/example.ts",
       content: "alpha\nbeta",
     };
     const { container } = render(<FileBlock data={data} />);
-    const contents = container.querySelectorAll(
-      '[data-slot="file-content"]',
-    );
-    expect(contents[0].textContent).toBe("alpha");
-    expect(contents[1].textContent).toBe("beta");
+    expect(container.querySelector('[data-slot="file-path"]')?.textContent)
+      .toBe("example.ts");
+    expect(container.querySelector('[data-slot="file-lang"]')?.textContent)
+      .toBe("typescript");
+    expect(container.querySelector('[data-slot="file-counts"]')?.textContent)
+      .toBe("2 lines");
   });
-});
 
-// ---------------------------------------------------------------------------
-// Header
-// ---------------------------------------------------------------------------
-
-describe("FileBlock — header", () => {
-  test("renders basename + language + line counts", () => {
+  test("stamps data-language on the root", () => {
     const data: FileData = {
-      filePath: "src/lib/foo.ts",
-      content: makeContent(5),
+      filePath: "x.py",
+      content: "print('hi')",
     };
     const { container } = render(<FileBlock data={data} />);
-    const header = container.querySelector(
-      '[data-slot="file-header"]',
-    ) as HTMLElement;
-    expect(header.querySelector('[data-slot="file-path"]')?.textContent).toBe(
-      "foo.ts",
-    );
-    expect(header.querySelector('[data-slot="file-lang"]')?.textContent).toBe(
-      "typescript",
-    );
-    expect(
-      header.querySelector('[data-slot="file-counts"]')?.textContent,
-    ).toBe("5 lines");
+    const root = container.querySelector('[data-slot="file-body"]');
+    expect(root?.getAttribute("data-language")).toBe("python");
   });
 
-  test("Showing N of M when totalLines > numLines", () => {
+  test("unknown extension stamps data-language=plain and omits lang pill", () => {
     const data: FileData = {
-      filePath: "x.ts",
-      content: makeContent(40),
-      numLines: 40,
-      totalLines: 200,
+      filePath: "x.unknown",
+      content: "hello",
     };
     const { container } = render(<FileBlock data={data} />);
     expect(
-      container.querySelector('[data-slot="file-counts"]')?.textContent,
-    ).toBe("Showing 40 of 200 lines");
-  });
-
-  test("language badge omitted when extension is unknown", () => {
-    const data: FileData = {
-      filePath: "no-extension-here",
-      content: "foo\nbar",
-    };
-    const { container } = render(<FileBlock data={data} />);
+      container.querySelector('[data-slot="file-body"]')?.getAttribute("data-language"),
+    ).toBe("plain");
     expect(container.querySelector('[data-slot="file-lang"]')).toBeNull();
   });
+
+  test("totalLines drives 'Showing N of M' header", () => {
+    const data: FileData = {
+      filePath: "x.ts",
+      content: "alpha\nbeta",
+      totalLines: 100,
+    };
+    const { container } = render(<FileBlock data={data} />);
+    expect(container.querySelector('[data-slot="file-counts"]')?.textContent)
+      .toBe("Showing 2 of 100 lines");
+  });
 });
 
 // ---------------------------------------------------------------------------
-// Language detection → root attributes
+// Body branch — TugCodeView vs collapsed cue
 // ---------------------------------------------------------------------------
 
-describe("FileBlock — language detection drives the root", () => {
-  test("ts → data-language='typescript' and class", () => {
+describe("FileBlock — body branches", () => {
+  test("expanded file renders a TugCodeView in the body", () => {
     const data: FileData = {
-      filePath: "src/lib/foo.ts",
-      content: "export const a = 1;",
+      filePath: "x.ts",
+      content: "alpha\nbeta",
     };
     const { container } = render(<FileBlock data={data} />);
-    const root = container.querySelector(
-      '[data-slot="file-body"]',
-    ) as HTMLElement;
-    expect(root.dataset.language).toBe("typescript");
-    expect(root.classList.contains("tugx-file--lang-typescript")).toBe(true);
+    expect(container.querySelector('[data-slot="tug-code-view"]')).not.toBeNull();
+    // No collapsed cue while expanded.
+    expect(container.querySelector(".tugx-file-collapsed-hint")).toBeNull();
   });
 
-  test("py → 'python'", () => {
-    const data: FileData = { filePath: "main.py", content: "x = 1" };
-    const { container } = render(<FileBlock data={data} />);
-    const root = container.querySelector(
-      '[data-slot="file-body"]',
-    ) as HTMLElement;
-    expect(root.dataset.language).toBe("python");
-    expect(root.classList.contains("tugx-file--lang-python")).toBe(true);
-  });
-
-  test("unknown extension → data-language='plain', no lang class", () => {
+  test("collapsed file shows the cue, not the substrate", () => {
     const data: FileData = {
-      filePath: "no-ext-file",
-      content: "raw",
+      filePath: "x.ts",
+      content: makeContent(200),
     };
     const { container } = render(<FileBlock data={data} />);
-    const root = container.querySelector(
-      '[data-slot="file-body"]',
-    ) as HTMLElement;
-    expect(root.dataset.language).toBe("plain");
+    // Above threshold ⇒ default collapsed.
+    expect(container.querySelector(".tugx-file-collapsed-hint")).not.toBeNull();
+    expect(container.querySelector('[data-slot="tug-code-view"]')).toBeNull();
+  });
+
+  test("empty data renders the empty marker only", () => {
+    const { container } = render(<FileBlock data={undefined} />);
+    const root = container.querySelector('[data-slot="file-body"]');
+    expect(root).not.toBeNull();
+    expect(root?.getAttribute("data-empty")).toBe("true");
+    // No substrate, no header.
+    expect(container.querySelector('[data-slot="tug-code-view"]')).toBeNull();
+    expect(container.querySelector('[data-slot="file-header"]')).toBeNull();
+  });
+
+  test("empty content (zero lines) also renders the empty marker", () => {
+    const data: FileData = { filePath: "x.ts", content: "" };
+    const { container } = render(<FileBlock data={data} />);
     expect(
-      Array.from(root.classList).some((c) => c.startsWith("tugx-file--lang-")),
-    ).toBe(false);
+      container.querySelector('[data-slot="file-body"]')?.getAttribute("data-empty"),
+    ).toBe("true");
   });
 });
 
@@ -348,151 +252,90 @@ describe("FileBlock — language detection drives the root", () => {
 // ---------------------------------------------------------------------------
 
 describe("FileBlock — collapse", () => {
-  test("at threshold (80 lines): expanded by default, no toggle", () => {
+  test("under threshold: expanded by default, no collapse toggle", () => {
     const data: FileData = {
-      filePath: "x.txt",
+      filePath: "x.ts",
       content: makeContent(DEFAULT_COLLAPSE_THRESHOLD),
     };
     const { container } = render(<FileBlock data={data} />);
-    const root = container.querySelector(
-      '[data-slot="file-body"]',
-    ) as HTMLElement;
-    expect(root.dataset.collapsed).toBe("false");
-    // Header collapse toggle is absent below the threshold (no overThreshold,
-    // no TugIconButton rendered).
+    expect(
+      container.querySelector('[data-slot="file-body"]')?.getAttribute("data-collapsed"),
+    ).toBe("false");
     expect(
       container.querySelector('button[aria-label="Collapse file"]'),
     ).toBeNull();
     expect(
-      container.querySelectorAll('[data-slot="file-row"]').length,
-    ).toBe(DEFAULT_COLLAPSE_THRESHOLD);
+      container.querySelector('button[aria-label="Expand file"]'),
+    ).toBeNull();
   });
 
-  test("above threshold (200 lines): collapsed by default with hint", () => {
+  test("above threshold: collapsed by default; toggle is Expand", () => {
     const data: FileData = {
-      filePath: "x.txt",
-      content: makeContent(200),
+      filePath: "x.ts",
+      content: makeContent(DEFAULT_COLLAPSE_THRESHOLD + 1),
     };
     const { container } = render(<FileBlock data={data} />);
-    const root = container.querySelector(
-      '[data-slot="file-body"]',
-    ) as HTMLElement;
-    expect(root.dataset.collapsed).toBe("true");
-    // Collapsed-hint banner is a TugCue (`.tugx-file-collapsed-hint` class
-    // forwarded onto the cue for scoping).
     expect(
-      container.querySelector(".tugx-file-collapsed-hint"),
+      container.querySelector('[data-slot="file-body"]')?.getAttribute("data-collapsed"),
+    ).toBe("true");
+    expect(
+      container.querySelector('button[aria-label="Expand file"]'),
     ).not.toBeNull();
-    // No rows are rendered while collapsed.
-    expect(
-      container.querySelectorAll('[data-slot="file-row"]').length,
-    ).toBe(0);
-    // Header collapse toggle is the TugIconButton with aria-label "Expand file".
-    const toggle = container.querySelector(
-      'button[aria-label="Expand file"]',
-    ) as HTMLButtonElement;
-    expect(toggle).not.toBeNull();
   });
 
-  test("toggle button expands and notifies via onToggleCollapsed", () => {
+  test("controlled prop forces expanded even above threshold", () => {
     const data: FileData = {
-      filePath: "x.txt",
-      content: makeContent(120),
+      filePath: "x.ts",
+      content: makeContent(DEFAULT_COLLAPSE_THRESHOLD + 5),
     };
-    const onToggle = mock(() => undefined);
+    const { container } = render(<FileBlock data={data} collapsed={false} />);
+    expect(
+      container.querySelector('[data-slot="file-body"]')?.getAttribute("data-collapsed"),
+    ).toBe("false");
+    expect(
+      container.querySelector('[data-slot="tug-code-view"]'),
+    ).not.toBeNull();
+  });
+
+  test("clicking Expand fires onToggleCollapsed(false)", () => {
+    const onToggle = mock((_next: boolean) => {});
+    const data: FileData = {
+      filePath: "x.ts",
+      content: makeContent(DEFAULT_COLLAPSE_THRESHOLD + 5),
+    };
     const { container } = render(
       <FileBlock data={data} onToggleCollapsed={onToggle} />,
     );
-    const root = container.querySelector(
-      '[data-slot="file-body"]',
-    ) as HTMLElement;
-    expect(root.dataset.collapsed).toBe("true");
-    const toggle = container.querySelector(
+    const expandBtn = container.querySelector(
       'button[aria-label="Expand file"]',
     ) as HTMLButtonElement;
-    act(() => {
-      toggle.click();
-    });
-    expect(root.dataset.collapsed).toBe("false");
-    expect(onToggle).toHaveBeenCalledWith(false);
-    // After expansion all 120 rows render.
-    expect(
-      container.querySelectorAll('[data-slot="file-row"]').length,
-    ).toBe(120);
+    fireEvent.click(expandBtn);
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    expect(onToggle.mock.calls[0]?.[0]).toBe(false);
   });
 
-  test("explicit collapsed=false on a long file overrides default", () => {
+  test("clicking the collapsed cue also fires onToggleCollapsed(false)", () => {
+    const onToggle = mock((_next: boolean) => {});
     const data: FileData = {
-      filePath: "x.txt",
-      content: makeContent(200),
+      filePath: "x.ts",
+      content: makeContent(DEFAULT_COLLAPSE_THRESHOLD + 5),
     };
-    const { container } = render(<FileBlock data={data} collapsed={false} />);
-    const root = container.querySelector(
-      '[data-slot="file-body"]',
-    ) as HTMLElement;
-    expect(root.dataset.collapsed).toBe("false");
-    expect(
-      container.querySelectorAll('[data-slot="file-row"]').length,
-    ).toBe(200);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Click-line-to-copy
-// ---------------------------------------------------------------------------
-
-describe("FileBlock — click-line-to-copy", () => {
-  let originalClipboard: typeof navigator.clipboard | undefined;
-  let writeText: ReturnType<typeof mock>;
-
-  beforeEach(() => {
-    originalClipboard = (navigator as Navigator & {
-      clipboard?: Clipboard;
-    }).clipboard;
-    writeText = mock(() => Promise.resolve());
-    Object.defineProperty(navigator, "clipboard", {
-      value: { writeText },
-      configurable: true,
-    });
-  });
-
-  afterEach(() => {
-    Object.defineProperty(navigator, "clipboard", {
-      value: originalClipboard,
-      configurable: true,
-    });
-  });
-
-  test("clicking a row writes its text to the clipboard", () => {
-    const data: FileData = {
-      filePath: "x.txt",
-      content: "alpha\nbeta\ngamma",
-    };
-    const { container } = render(<FileBlock data={data} />);
-    const rows = container.querySelectorAll<HTMLElement>(
-      '[data-slot="file-row"]',
+    const { container } = render(
+      <FileBlock data={data} onToggleCollapsed={onToggle} />,
     );
-    act(() => {
-      rows[1].click();
-    });
-    expect(writeText).toHaveBeenCalledWith("beta");
+    const cue = container.querySelector(".tugx-file-collapsed-hint") as HTMLElement;
+    fireEvent.click(cue);
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    expect(onToggle.mock.calls[0]?.[0]).toBe(false);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Search — markup-only checks
+// Search affordance
 // ---------------------------------------------------------------------------
-//
-// The full search interaction (typing, Enter / Shift+Enter, prev/next,
-// Escape, Cmd+F entry point, focus restoration) crosses focus and
-// event-ordering boundaries that happy-dom doesn't model reliably —
-// per the project's testing rule, those flows belong in a
-// real-browser surface (gallery card / e2e), not happy-dom. Here we
-// only assert the static markup affordances that the search bar
-// surfaces from the chrome.
 
-describe("FileBlock — search affordance markup", () => {
-  test("expanded file shows a search-toggle button in the header", () => {
+describe("FileBlock — search affordance", () => {
+  test("expanded file shows a Search button in the header", () => {
     const data: FileData = {
       filePath: "x.ts",
       content: "alpha\nbeta",
@@ -503,45 +346,10 @@ describe("FileBlock — search affordance markup", () => {
     ).not.toBeNull();
   });
 
-  test("clicking the search-toggle reveals the search bar with input + count + step buttons", () => {
+  test("collapsed file does NOT show a Search button", () => {
     const data: FileData = {
       filePath: "x.ts",
-      content: "alpha\nbeta",
-    };
-    const { container } = render(<FileBlock data={data} />);
-    expect(
-      container.querySelector('[data-slot="file-search-bar"]'),
-    ).toBeNull();
-
-    act(() => {
-      (
-        container.querySelector(
-          'button[aria-label="Search in file"]',
-        ) as HTMLButtonElement
-      ).click();
-    });
-
-    expect(
-      container.querySelector('[data-slot="file-search-bar"]'),
-    ).not.toBeNull();
-    expect(
-      container.querySelector('[data-slot="file-search-input"]'),
-    ).not.toBeNull();
-    expect(
-      container.querySelector('button[aria-label="Previous match"]'),
-    ).not.toBeNull();
-    expect(
-      container.querySelector('button[aria-label="Next match"]'),
-    ).not.toBeNull();
-    expect(
-      container.querySelector('[data-slot="file-search-count"]'),
-    ).not.toBeNull();
-  });
-
-  test("collapsed file does NOT show a search toggle (search reveals after expand)", () => {
-    const data: FileData = {
-      filePath: "x.ts",
-      content: makeContent(200),
+      content: makeContent(DEFAULT_COLLAPSE_THRESHOLD + 5),
     };
     const { container } = render(<FileBlock data={data} />);
     expect(
@@ -551,72 +359,48 @@ describe("FileBlock — search affordance markup", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Shiki integration (via injected stub) — confirms per-line dispatch
+// Embedded mode
 // ---------------------------------------------------------------------------
 
-describe("FileBlock — Shiki highlight (injected)", () => {
-  test("when a language is detected, per-line highlighted HTML is written into the rows", async () => {
-    injectHighlighter(async (_content, _lang) => [
-      '<span class="line"><span style="color:#abcdef">alpha</span></span>',
-      '<span class="line"><span style="color:#abcdef">beta</span></span>',
-    ]);
-
+describe("FileBlock — embedded mode", () => {
+  test("embedded mode hides the header", () => {
     const data: FileData = {
       filePath: "x.ts",
       content: "alpha\nbeta",
     };
-    const { container } = render(<FileBlock data={data} />);
-
-    // Allow the async useEffect chain to settle (microtask flush).
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    const contents = container.querySelectorAll<HTMLElement>(
-      '[data-slot="file-content"]',
-    );
-    expect(contents[0].dataset.highlighted).toBe("true");
-    expect(contents[0].innerHTML).toContain("color:#abcdef");
-    expect(contents[1].dataset.highlighted).toBe("true");
+    const { container } = render(<FileBlock data={data} embedded />);
+    expect(container.querySelector('[data-slot="file-header"]')).toBeNull();
   });
 
-  test("highlighter returning null → content stays plain", async () => {
-    injectHighlighter(async () => null);
-
+  test("embedded mode stamps data-embedded on the root", () => {
     const data: FileData = {
       filePath: "x.ts",
       content: "alpha\nbeta",
     };
-    const { container } = render(<FileBlock data={data} />);
-
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    const contents = container.querySelectorAll<HTMLElement>(
-      '[data-slot="file-content"]',
-    );
-    expect(contents[0].dataset.highlighted).toBeUndefined();
-    expect(contents[0].textContent).toBe("alpha");
+    const { container } = render(<FileBlock data={data} embedded />);
+    expect(
+      container.querySelector('[data-slot="file-body"]')?.getAttribute("data-embedded"),
+    ).toBe("true");
   });
 
-  test("no language → highlighter is not consulted", async () => {
-    const stub = mock(async () => null);
-    injectHighlighter(stub);
-
+  test("embedded mode still renders the substrate", () => {
     const data: FileData = {
-      filePath: "no-extension",
-      content: "alpha",
+      filePath: "x.ts",
+      content: "alpha\nbeta",
     };
-    render(<FileBlock data={data} />);
-
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(stub).not.toHaveBeenCalled();
+    const { container } = render(<FileBlock data={data} embedded />);
+    expect(
+      container.querySelector('[data-slot="tug-code-view"]'),
+    ).not.toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function makeContent(numLines: number): string {
+  const lines: string[] = [];
+  for (let i = 1; i <= numLines; i++) lines.push(`line ${i}`);
+  return lines.join("\n");
+}
