@@ -95,16 +95,22 @@ describe("markdown token coverage", () => {
     expect(undeclared).toEqual([]);
   });
 
-  test("token vocabulary covers every typography axis the pass commits to", () => {
-    // Spot-check a representative subset of the typography surface so a
+  test("token vocabulary covers every md-specific typography axis the pass commits to", () => {
+    // Spot-check a representative subset of the *md-specific* tokens so a
     // future refactor that accidentally drops a category fails loudly here.
+    //
+    // Note: tokens that were previously md-specific but are now consumed
+    // from the shared block-surface family — body color, heading color,
+    // h6 color, mono font, inline/fenced code bg, blockquote border, hr
+    // color, table border, table header bg, footnote color — are
+    // intentionally NOT in this list. They live in `--tugx-block-*` via
+    // `styles/tugx-block.css`.
     const declared = extractDeclared(read(MARKDOWN_VIEW_CSS));
     const required: ReadonlyArray<string> = [
-      // Body
-      "--tugx-md-body-color",
+      // Body rhythm
       "--tugx-md-body-line-height",
       "--tugx-md-paragraph-margin",
-      // Headings
+      // Heading scale (sizes + weights)
       "--tugx-md-h1-size",
       "--tugx-md-h2-size",
       "--tugx-md-h3-size",
@@ -115,7 +121,7 @@ describe("markdown token coverage", () => {
       "--tugx-md-heading-margin-top",
       "--tugx-md-heading-margin-bottom",
       "--tugx-md-h1-weight",
-      "--tugx-md-h6-color",
+      "--tugx-md-h6-weight",
       // Inline
       "--tugx-md-strong-weight",
       "--tugx-md-em-style",
@@ -123,22 +129,34 @@ describe("markdown token coverage", () => {
       // Links
       "--tugx-md-link-color",
       "--tugx-md-link-color-hover",
-      // Code
-      "--tugx-md-mono-font",
-      "--tugx-md-inline-code-bg",
+      "--tugx-md-link-decoration",
+      // Inline code geometry (chrome comes from --tugx-block-*)
       "--tugx-md-inline-code-padding",
       "--tugx-md-inline-code-radius",
-      "--tugx-md-fenced-code-bg",
+      "--tugx-md-inline-code-size",
+      // Fenced code geometry (chrome comes from --tugx-block-*)
       "--tugx-md-fenced-code-padding",
-      "--tugx-md-fenced-code-radius",
-      // Blockquote / hr / lists / table / image / footnote
-      "--tugx-md-blockquote-border",
-      "--tugx-md-hr-color",
+      "--tugx-md-fenced-code-size",
+      "--tugx-md-fenced-code-line-height",
+      "--tugx-md-fenced-code-margin",
+      "--tugx-md-fenced-code-lang-weight",
+      "--tugx-md-fenced-code-copy-padding",
+      "--tugx-md-fenced-code-copy-radius",
+      // Blockquote / hr / lists / table / image / footnote — bespoke
+      // dimensions only; colors come from --tugx-block-*
+      "--tugx-md-blockquote-border-width",
+      "--tugx-md-blockquote-padding",
+      "--tugx-md-blockquote-margin",
+      "--tugx-md-hr-margin",
       "--tugx-md-list-indent",
-      "--tugx-md-table-border",
-      "--tugx-md-table-header-bg",
+      "--tugx-md-list-margin",
+      "--tugx-md-list-item-margin",
+      "--tugx-md-table-header-weight",
+      "--tugx-md-table-cell-padding",
+      "--tugx-md-table-margin",
       "--tugx-md-image-radius",
-      "--tugx-md-footnote-color",
+      "--tugx-md-image-margin",
+      "--tugx-md-footnote-size",
       // Layout
       "--tugx-md-block-padding-x",
       "--tugx-md-bottom-buffer",

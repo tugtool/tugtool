@@ -1,7 +1,9 @@
 /* @tug-pairings: none — no fixed foreground-on-background contrast pairings.
    Border rules use --tugx-md-* aliases that default to currentColor (blockquote,
    hr) or a semi-transparent literal (table). All @tug-renders-on annotations are
-   present on the individual border-color rules below. */
+   present on the individual border-color rules below. The shared block-surface
+   scaffold (frame bg, header strip, hover, code typography) is consumed from
+   `--tugx-block-*` (see styles/tugx-block.css). */
 
 /**
  * tug-markdown-view.css — styles for TugMarkdownView virtualized renderer.
@@ -15,100 +17,93 @@
  * - Block nodes are in normal document flow inside the block container —
  *   no transform: translateY() needed. The spacers handle the offset.
  *
+ * Token sources:
+ *  - Shared block-surface scaffold (frame bg for code panels, header strip
+ *    for fenced-code header, hover overlay, divider for hr / footnote
+ *    border, tone-add for the "copied!" flash) comes from `--tugx-block-*`
+ *    in `styles/tugx-block.css`. Consumed directly in the rules below.
+ *  - Markdown-specific slots (heading scale, link colors, list indents,
+ *    blockquote rhythm, table padding, image radius, footnote sizing)
+ *    live in the body{} block below as `--tugx-md-*`.
+ *
  * Laws:
  * - [L06] All appearance changes go through CSS; spacer heights are set via
  *   direct style.height writes (DOM, not React state).
  * - [L16] Every border-color rule declares its rendering surface via
  *   @tug-renders-on annotation.
- * - [L17] component-tier `--tugx-md-*` aliases resolve to base-tier
- *   `--tug7-*` tokens in one hop.
+ * - [L17] `--tugx-block-*` and `--tugx-md-*` each resolve to `--tug7-*`
+ *   in one hop.
  */
 
-/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
+/* ---- Component-tier aliases — md-specific only [L17] ---- */
 
 body {
-  --tugx-md-body-color:        var(--tug7-element-global-text-normal-default-rest);
-  --tugx-md-body-line-height:  1.6;
-  --tugx-md-paragraph-margin:  0.6em;
+  /* Body rhythm */
+  --tugx-md-body-line-height: 1.6;
+  --tugx-md-paragraph-margin: 0.6em;
 
+  /* Heading scale — Major Third (1.25), capped at the available
+   * `--tug-font-size-*` steps. h1=2xl (24), h2=xl (20), h3=lg (16),
+   * h4-h6=md (14) with descending weight + a muted h6. */
   --tugx-md-h1-size: var(--tug-font-size-2xl);
   --tugx-md-h2-size: var(--tug-font-size-xl);
   --tugx-md-h3-size: var(--tug-font-size-lg);
   --tugx-md-h4-size: var(--tug-font-size-md);
   --tugx-md-h5-size: var(--tug-font-size-md);
   --tugx-md-h6-size: var(--tug-font-size-md);
-  --tugx-md-heading-line-height:    1.25;
-  --tugx-md-heading-margin-top:     1.4em;
-  --tugx-md-heading-margin-bottom:  0.4em;
-  --tugx-md-heading-color:          var(--tug7-element-global-text-normal-default-rest);
+  --tugx-md-heading-line-height:   1.25;
+  --tugx-md-heading-margin-top:    1.4em;
+  --tugx-md-heading-margin-bottom: 0.4em;
   --tugx-md-h1-weight: 700;
   --tugx-md-h2-weight: 700;
   --tugx-md-h3-weight: 600;
   --tugx-md-h4-weight: 700;
   --tugx-md-h5-weight: 600;
   --tugx-md-h6-weight: 500;
-  --tugx-md-h6-color:  var(--tug7-element-global-text-normal-muted-rest);
 
-  --tugx-md-strong-weight:           700;
-  --tugx-md-em-style:                italic;
+  /* Inline emphasis */
+  --tugx-md-strong-weight:            700;
+  --tugx-md-em-style:                 italic;
   --tugx-md-strikethrough-decoration: line-through;
-  --tugx-md-strikethrough-color:     var(--tug7-element-global-text-normal-muted-rest);
 
-  --tugx-md-link-color:        var(--tug7-element-global-text-normal-link-rest);
-  --tugx-md-link-color-hover:  var(--tug7-element-global-text-normal-link-hover);
-  --tugx-md-link-decoration:   underline;
+  /* Links — md-specific; not part of the shared block vocabulary */
+  --tugx-md-link-color:       var(--tug7-element-global-text-normal-link-rest);
+  --tugx-md-link-color-hover: var(--tug7-element-global-text-normal-link-hover);
+  --tugx-md-link-decoration:  underline;
 
-  /* Inline + fenced code */
-  --tugx-md-inline-code-bg:      var(--tug7-surface-global-primary-normal-inset-rest);
-  --tugx-md-inline-code-color:   var(--tug7-element-global-text-normal-default-rest);
+  /* Inline code chrome */
   --tugx-md-inline-code-padding: 0.1em 0.35em;
   --tugx-md-inline-code-radius:  var(--tug-radius-xs);
   --tugx-md-inline-code-size:    0.9em;
 
-  --tugx-md-fenced-code-bg:          var(--tug7-surface-global-primary-normal-inset-rest);
-  --tugx-md-fenced-code-color:       var(--tug7-element-global-text-normal-default-rest);
+  /* Fenced code body */
   --tugx-md-fenced-code-padding:     var(--tug-space-md) var(--tug-space-lg);
-  --tugx-md-fenced-code-radius:      var(--tug-radius-md);
   --tugx-md-fenced-code-size:        0.875em;
   --tugx-md-fenced-code-line-height: 1.5;
   --tugx-md-fenced-code-margin:      var(--tug-space-md);
-  --tugx-md-mono-font:               var(--tug-font-family-mono);
-  --tugx-md-code-bg:                 var(--tug7-surface-global-primary-normal-inset-rest);
 
-  /* Fenced code header (lang badge + Copy button) */
-  --tugx-md-fenced-code-header-padding:    var(--tug-space-xs) var(--tug-space-md);
-  --tugx-md-fenced-code-header-border:     var(--tug7-element-global-divider-normal-muted-rest);
-  --tugx-md-fenced-code-header-size:       var(--tug-font-size-2xs);
-  --tugx-md-fenced-code-lang-color:        var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-md-fenced-code-lang-weight:       600;
-  --tugx-md-fenced-code-copy-color:        var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-md-fenced-code-copy-color-hover:  var(--tug7-element-global-text-normal-default-rest);
-  --tugx-md-fenced-code-copy-color-copied: var(--tug7-element-global-text-normal-success-rest);
-  --tugx-md-fenced-code-copy-bg-hover:     var(--tug7-surface-highlight-primary-normal-hover-rest);
-  --tugx-md-fenced-code-copy-padding:      var(--tug-space-2xs) var(--tug-space-xs);
-  --tugx-md-fenced-code-copy-radius:       var(--tug-radius-xs);
+  /* Fenced code header — Copy button geometry. The lang label inherits
+   * the shared strip vocabulary; only Copy-button-specific lengths are
+   * here. */
+  --tugx-md-fenced-code-lang-weight:  600;
+  --tugx-md-fenced-code-copy-padding: var(--tug-space-2xs) var(--tug-space-xs);
+  --tugx-md-fenced-code-copy-radius:  var(--tug-radius-xs);
 
-  /* Blockquote */
-  --tugx-md-blockquote-border:        var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-md-blockquote-border-width:  3px;
-  --tugx-md-blockquote-color:         var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-md-blockquote-padding:       var(--tug-space-lg);
-  --tugx-md-blockquote-margin:        var(--tug-space-md);
+  /* Blockquote — bespoke left-rail rhythm */
+  --tugx-md-blockquote-border-width: 3px;
+  --tugx-md-blockquote-padding:      var(--tug-space-lg);
+  --tugx-md-blockquote-margin:       var(--tug-space-md);
 
-  /* Horizontal rule */
-  --tugx-md-hr-color:  var(--tug7-element-global-divider-normal-muted-rest);
+  /* HR — bespoke margin */
   --tugx-md-hr-margin: var(--tug-space-xl);
 
   /* Lists */
-  --tugx-md-list-indent:       1.75em;
-  --tugx-md-list-margin:       0.6em;
-  --tugx-md-list-item-margin:  0.25em;
+  --tugx-md-list-indent:      1.75em;
+  --tugx-md-list-margin:      0.6em;
+  --tugx-md-list-item-margin: 0.25em;
 
-  /* Tables */
-  --tugx-md-table-border:        var(--tug7-element-global-border-normal-muted-rest);
-  --tugx-md-table-header-bg:     var(--tug7-surface-global-primary-normal-raised-rest);
+  /* Tables — bespoke header weight, cell padding, outer margin */
   --tugx-md-table-header-weight: 600;
-  --tugx-md-table-row-bg-alt:    var(--tug7-surface-global-primary-normal-inset-rest);
   --tugx-md-table-cell-padding:  var(--tug-space-sm) var(--tug-space-md);
   --tugx-md-table-margin:        var(--tug-space-md);
 
@@ -117,9 +112,7 @@ body {
   --tugx-md-image-margin: var(--tug-space-md);
 
   /* Footnotes */
-  --tugx-md-footnote-size:   0.85em;
-  --tugx-md-footnote-color:  var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-md-footnote-border: var(--tug7-element-global-divider-normal-muted-rest);
+  --tugx-md-footnote-size: 0.85em;
 
   /* Layout */
   --tugx-md-block-padding-x: 1rem;
@@ -240,26 +233,16 @@ body {
 
 /* ---- Typography ---- */
 /*
- * Prose styles scoped to the markdown block container. Every visual
- * axis is driven by a `--tugx-md-*` token declared per-theme in
- * `styles/themes/{brio,harmony}.css`; this stylesheet declares no
- * theme-specific literals.
- *
- * Tokens cover: body color and rhythm; heading scale (h1-h6, with
- * descending weight + a muted h6); inline emphasis (strong, em, del);
- * links; inline and fenced code; blockquote; hr; lists (incl. task
- * lists); tables; images; footnotes.
- *
- * The whole vocabulary is documented in the parent theme files; the
- * test at `tug-markdown-typography.test.ts` enforces that brio.css
- * and harmony.css declare the same set of `--tugx-md-*` tokens, so a
- * new token added here without theme-side declarations fails CI.
+ * Prose styles scoped to the markdown block container. Body color, code
+ * surfaces, table chrome, and the like consume the shared `--tugx-block-*`
+ * family; per-element rhythm (heading scale, list indents, blockquote
+ * border-width, etc.) consumes md-specific `--tugx-md-*` slots.
  */
 
 /* Body — every block inherits these unless overridden by an
    element-specific rule below. */
 .tugx-md-block {
-  color: var(--tugx-md-body-color);
+  color: var(--tugx-block-text-color);
   line-height: var(--tugx-md-body-line-height);
 }
 
@@ -273,7 +256,7 @@ body {
 .tugx-md-block h4,
 .tugx-md-block h5,
 .tugx-md-block h6 {
-  color: var(--tugx-md-heading-color);
+  color: var(--tugx-block-text-color);
   line-height: var(--tugx-md-heading-line-height);
   margin: var(--tugx-md-heading-margin-top) 0 var(--tugx-md-heading-margin-bottom);
 }
@@ -295,7 +278,7 @@ body {
 .tugx-md-block h6 {
   font-size: var(--tugx-md-h6-size);
   font-weight: var(--tugx-md-h6-weight);
-  color: var(--tugx-md-h6-color);
+  color: var(--tugx-block-text-color-muted);
 }
 
 /* Paragraph */
@@ -312,10 +295,10 @@ body {
 .tugx-md-block del,
 .tugx-md-block s {
   text-decoration: var(--tugx-md-strikethrough-decoration);
-  color: var(--tugx-md-strikethrough-color);
+  color: var(--tugx-block-text-color-muted);
 }
 
-/* @tug-renders-on: --tugx-md-surface */
+/* @tug-renders-on: --tugx-block-bg */
 .tugx-md-block a {
   color: var(--tugx-md-link-color);
   text-decoration: var(--tugx-md-link-decoration);
@@ -328,12 +311,12 @@ body {
 /* Inline code — `<code>` outside of `<pre>`. The descendant rule
    `.tugx-md-block pre code` below resets the inline chrome so that
    fenced blocks aren't double-styled. */
-/* @tug-renders-on: --tugx-md-inline-code-bg */
+/* @tug-renders-on: --tugx-block-bg */
 .tugx-md-block code {
-  font-family: var(--tugx-md-mono-font);
+  font-family: var(--tugx-block-code-font);
   font-size: var(--tugx-md-inline-code-size);
-  color: var(--tugx-md-inline-code-color);
-  background: var(--tugx-md-inline-code-bg);
+  color: var(--tugx-block-text-color);
+  background: var(--tugx-block-bg);
   padding: var(--tugx-md-inline-code-padding);
   border-radius: var(--tugx-md-inline-code-radius);
 }
@@ -343,30 +326,30 @@ body {
    containing the language label and a copy-to-clipboard button. The
    wrapper owns the bg / radius / margin so the header sits flush
    inside the same surface as the code. */
-/* @tug-renders-on: --tugx-md-fenced-code-bg */
+/* @tug-renders-on: --tugx-block-bg */
 .tugx-md-block .tugx-md-fenced-code {
-  background: var(--tugx-md-fenced-code-bg);
-  color: var(--tugx-md-fenced-code-color);
-  border-radius: var(--tugx-md-fenced-code-radius);
+  background: var(--tugx-block-bg);
+  color: var(--tugx-block-text-color);
+  border-radius: var(--tugx-block-radius);
   margin: var(--tugx-md-fenced-code-margin) 0;
   overflow: hidden;
 }
 
 /* Header — language label on the left, copy button on the right. */
-/* @tug-renders-on: --tugx-md-fenced-code-bg */
+/* @tug-renders-on: --tugx-block-bg */
 .tugx-md-block .tugx-md-fenced-code-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--tugx-md-fenced-code-header-padding);
-  border-bottom: 1px solid var(--tugx-md-fenced-code-header-border);
-  font-family: var(--tugx-md-mono-font);
-  font-size: var(--tugx-md-fenced-code-header-size);
+  padding: var(--tugx-block-strip-padding);
+  border-bottom: 1px solid var(--tugx-block-strip-border);
+  font-family: var(--tugx-block-code-font);
+  font-size: var(--tugx-block-strip-size);
   user-select: none;
 }
 
 .tugx-md-block .tugx-md-fenced-code-lang {
-  color: var(--tugx-md-fenced-code-lang-color);
+  color: var(--tugx-block-text-color-muted);
   font-weight: var(--tugx-md-fenced-code-lang-weight);
   letter-spacing: 0.02em;
   text-transform: lowercase;
@@ -375,7 +358,7 @@ body {
 /* Copy button — icon-first, with text label that fades in only on
    the "copied" state. The default rest state shows the icon alone;
    hover gets a subtle background. */
-/* @tug-renders-on: --tugx-md-fenced-code-bg */
+/* @tug-renders-on: --tugx-block-bg */
 .tugx-md-block .tugx-md-fenced-code-copy {
   display: inline-flex;
   align-items: center;
@@ -383,7 +366,7 @@ body {
   padding: var(--tugx-md-fenced-code-copy-padding);
   border: none;
   background: transparent;
-  color: var(--tugx-md-fenced-code-copy-color);
+  color: var(--tugx-block-text-color-muted);
   border-radius: var(--tugx-md-fenced-code-copy-radius);
   cursor: pointer;
   font: inherit;
@@ -393,14 +376,14 @@ body {
     color var(--tug-motion-duration-fast) var(--tug-motion-easing-standard);
 }
 
-/* @tug-renders-on: --tugx-md-fenced-code-copy-bg-hover */
+/* @tug-renders-on: --tugx-block-row-hover-bg */
 .tugx-md-block .tugx-md-fenced-code-copy:hover {
-  background: var(--tugx-md-fenced-code-copy-bg-hover);
-  color: var(--tugx-md-fenced-code-copy-color-hover);
+  background: var(--tugx-block-row-hover-bg);
+  color: var(--tugx-block-text-color);
 }
 
 .tugx-md-block .tugx-md-fenced-code-copy:focus-visible {
-  outline: 2px solid var(--tugx-md-fenced-code-copy-color-hover);
+  outline: 2px solid var(--tugx-block-text-color);
   outline-offset: 1px;
 }
 
@@ -419,7 +402,7 @@ body {
 .tugx-md-block .tugx-md-fenced-code-copy.is-copied .tugx-md-fenced-code-copy-icon--copied,
 .tugx-md-block .tugx-md-fenced-code-copy.is-copied .tugx-md-fenced-code-copy-label--copied {
   display: inline;
-  color: var(--tugx-md-fenced-code-copy-color-copied);
+  color: var(--tugx-block-tone-add-color);
 }
 
 /* Copy-button labels are only shown in the copied state; the default
@@ -440,7 +423,7 @@ body {
   padding: var(--tugx-md-fenced-code-padding);
   font-size: var(--tugx-md-fenced-code-size);
   line-height: var(--tugx-md-fenced-code-line-height);
-  color: var(--tugx-md-fenced-code-color);
+  color: var(--tugx-block-text-color);
   overflow-x: auto;
 }
 
@@ -448,11 +431,11 @@ body {
    measurement pass before `enhanceFencedCode` runs, or a consumer
    that bypasses the helper) still renders correctly with the same
    chrome on the `<pre>` directly. */
-/* @tug-renders-on: --tugx-md-fenced-code-bg */
+/* @tug-renders-on: --tugx-block-bg */
 .tugx-md-block > pre {
-  background: var(--tugx-md-fenced-code-bg);
-  color: var(--tugx-md-fenced-code-color);
-  border-radius: var(--tugx-md-fenced-code-radius);
+  background: var(--tugx-block-bg);
+  color: var(--tugx-block-text-color);
+  border-radius: var(--tugx-block-radius);
   padding: var(--tugx-md-fenced-code-padding);
   font-size: var(--tugx-md-fenced-code-size);
   line-height: var(--tugx-md-fenced-code-line-height);
@@ -472,10 +455,10 @@ body {
 }
 
 /* Blockquote */
-/* @tug-renders-on: --tugx-md-surface */
+/* @tug-renders-on: --tugx-block-bg */
 .tugx-md-block blockquote {
-  border-left: var(--tugx-md-blockquote-border-width) solid var(--tugx-md-blockquote-border);
-  color: var(--tugx-md-blockquote-color);
+  border-left: var(--tugx-md-blockquote-border-width) solid var(--tugx-block-text-color-muted);
+  color: var(--tugx-block-text-color-muted);
   margin: var(--tugx-md-blockquote-margin) 0;
   padding-left: var(--tugx-md-blockquote-padding);
 }
@@ -499,10 +482,10 @@ body {
 }
 
 /* Horizontal rule */
-/* @tug-renders-on: --tugx-md-surface */
+/* @tug-renders-on: --tugx-block-bg */
 .tugx-md-block hr {
   border: none;
-  border-top: 1px solid var(--tugx-md-hr-color);
+  border-top: 1px solid var(--tugx-block-strip-border);
   margin: var(--tugx-md-hr-margin) 0;
 }
 
@@ -513,23 +496,23 @@ body {
   margin: var(--tugx-md-table-margin) 0;
 }
 
-/* @tug-renders-on: --tugx-md-surface */
+/* @tug-renders-on: --tugx-block-bg */
 .tugx-md-block th,
 .tugx-md-block td {
-  border: 1px solid var(--tugx-md-table-border);
+  border: 1px solid var(--tugx-block-border);
   padding: var(--tugx-md-table-cell-padding);
   text-align: left;
 }
 
-/* @tug-renders-on: --tugx-md-table-header-bg */
+/* @tug-renders-on: --tugx-block-strip-bg */
 .tugx-md-block th {
   font-weight: var(--tugx-md-table-header-weight);
-  background: var(--tugx-md-table-header-bg);
+  background: var(--tugx-block-strip-bg);
 }
 
-/* @tug-renders-on: --tugx-md-table-row-bg-alt */
+/* @tug-renders-on: --tugx-block-bg */
 .tugx-md-block tbody tr:nth-child(even) {
-  background: var(--tugx-md-table-row-bg-alt);
+  background: var(--tugx-block-bg);
 }
 
 /* Images */
@@ -543,14 +526,14 @@ body {
 /* Footnotes — pulldown-cmark renders a definition section as
    `<section class="footnotes">` containing an `<ol>` of
    `<li id="fn-N">`. */
-/* @tug-renders-on: --tugx-md-surface */
+/* @tug-renders-on: --tugx-block-bg */
 .tugx-md-block .footnotes,
 .tugx-md-block section[class*="footnote"] {
   margin-top: var(--tugx-md-paragraph-margin);
   padding-top: var(--tugx-md-paragraph-margin);
-  border-top: 1px solid var(--tugx-md-footnote-border);
+  border-top: 1px solid var(--tugx-block-strip-border);
   font-size: var(--tugx-md-footnote-size);
-  color: var(--tugx-md-footnote-color);
+  color: var(--tugx-block-text-color-muted);
 }
 
 .tugx-md-block sup,

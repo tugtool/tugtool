@@ -380,6 +380,56 @@ body {
 
 Never chain aliases (`--tugx-pane-bg: var(--tugx-pane-other-alias)`) — that is a second hop and violates [L17].
 
+#### Shared utility: `--tugx-block-*` for block-surface components
+
+For body-kinds (FileBlock, DiffBlock, TerminalBlock, TideThinkingBlock, the TugMarkdownView code panels) and chrome wrappers (ToolWrapperChrome), the shared "block surface" pattern lives at `tugdeck/styles/tugx-block.css` as `--tugx-block-*`. It captures the canonical scaffold once: inset card frame, optional raised chrome variant, code-typography defaults (mono font + sm size + 1.55 line-height), header / footer strip chrome, body row hover overlay, and tone-tinted feedback bands (add / remove / caution / active).
+
+When authoring a body-kind or chrome wrapper, **consume `--tugx-block-*` directly in CSS rules** for the parts that match the shared pattern. Keep `--tugx-{component}-*` slots only for parts that are genuinely component-specific (gutter widths, match-highlight overlays, ANSI palettes, heading scales, etc.).
+
+```css
+/* file-block.css — consume the shared block-surface scaffold directly */
+.tugx-file {
+  background:    var(--tugx-block-bg);
+  border:        1px solid var(--tugx-block-border);
+  border-radius: var(--tugx-block-radius);
+  margin:        var(--tugx-block-margin);
+  font-family:   var(--tugx-block-code-font);
+  font-size:     var(--tugx-block-code-font-size);
+  line-height:   var(--tugx-block-code-line-height);
+  color:         var(--tugx-block-text-color);
+}
+.tugx-file-header {
+  padding:    var(--tugx-block-strip-padding);
+  gap:        var(--tugx-block-strip-gap);
+  background: var(--tugx-block-strip-bg);
+  border-bottom: 1px solid var(--tugx-block-strip-border);
+  color:      var(--tugx-block-strip-color);
+  font-size:  var(--tugx-block-strip-size);
+  font-family: var(--tugx-block-strip-font);
+}
+
+/* file-block.css body{} — only file-specific slots */
+body {
+  --tugx-file-gutter-width:   3.5em;
+  --tugx-file-mark-bg:        var(--tug7-surface-card-primary-normal-findmatch-rest);
+  --tugx-file-mark-active-bg: var(--tug7-surface-card-primary-normal-findmatch-active);
+  /* ...other file-specific slots... */
+}
+```
+
+This is a *shared utility* per `tuglaws/token-naming.md` (`--tugx-` covers "Component aliases, shared utilities. Locally defined."). The shared family lives once in `styles/tugx-block.css` and is imported globally at app root, after the palette + base layers and before any component CSS.
+
+The chrome wrapper variant uses `--tugx-block-chrome-bg` (raised) instead of `--tugx-block-bg` (inset) since chrome sits *above* the body it wraps:
+
+```css
+.tool-wrapper-chrome {
+  background:    var(--tugx-block-chrome-bg);  /* raised, not inset */
+  border:        1px solid var(--tugx-block-border);
+  border-radius: var(--tugx-block-radius);
+  margin:        var(--tugx-block-margin);
+}
+```
+
 ### Enter/Exit Animations [L13, L14]
 
 Components that animate on mount/unmount must choose the correct regime based on **who owns the DOM lifecycle**:

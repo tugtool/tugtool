@@ -1,14 +1,14 @@
 /* @tug-pairings:
-   - --tugx-file-bg / --tugx-file-text-color
-   - --tugx-file-gutter-bg / --tugx-file-gutter-color
-   - --tugx-file-header-bg / --tugx-file-header-color
-   - --tugx-file-row-hover-bg / --tugx-file-row-active-bg
-   - --tugx-file-mark-bg / --tugx-file-mark-active-bg
+   - --tugx-block-bg / --tugx-block-text-color           (shared block frame; from tugx-block.css)
+   - --tugx-block-strip-bg / --tugx-block-strip-color    (shared header strip; from tugx-block.css)
+   - --tugx-block-row-hover-bg / --tugx-block-text-color (shared row hover; from tugx-block.css)
+   - --tugx-file-mark-bg / --tugx-file-mark-active-bg    (file-specific match overlay)
    `FileBlock` paints a code-surface frame with a left gutter strip
    that holds the line numbers, a content area whose default render
    is plain monospace and whose Shiki-enhanced render is swapped in
-   imperatively. The token slot family is `--tugx-file-*` per
-   [Table T07].
+   imperatively. The shared block-surface scaffold lives in
+   `styles/tugx-block.css` as `--tugx-block-*`; file-specific slots
+   stay here under `--tugx-file-*` per [Table T07].
 */
 
 /**
@@ -22,86 +22,63 @@
  *    text it highlights regardless of whether Shiki has filled the
  *    content with span'd HTML.
  *
+ * Token sources:
+ *  - Shared block-surface scaffold (frame, code typography, header
+ *    strip, row hover, tone tints) comes from `--tugx-block-*` in
+ *    `styles/tugx-block.css`. Consumed directly in the rules below.
+ *  - File-specific slots (gutter widths, match highlight, search-bar
+ *    chrome, language pill) live in the body{} block below as
+ *    `--tugx-file-*`.
+ *
  * Tuglaw cross-check:
  *  - [L06] all match-highlight, copy-flash, and Shiki-swap behavior
  *    is DOM-imperative; React state holds only logical UI state.
- *  - [L17] component-tier `--tugx-file-*` aliases resolve to base-tier
- *    `--tug7-*` tokens in one hop.
+ *  - [L17] `--tugx-block-*` and `--tugx-file-*` each resolve to
+ *    `--tug7-*` in one hop.
  *  - [L19] file pair, module docstring, `data-slot="file-body"`.
- *  - [L20] every visible declaration consumes a `--tugx-file-*` token.
+ *  - [L20] every visible declaration consumes a `--tugx-*` token.
  */
 
-/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
+/* ---- Component-tier aliases — file-specific only [L17] ---- */
 
 body {
-  /* Frame */
-  --tugx-file-bg:           var(--tug7-surface-global-primary-normal-inset-rest);
-  --tugx-file-border:       var(--tug7-element-global-border-normal-muted-rest);
-  --tugx-file-radius:       var(--tug-radius-md);
-  --tugx-file-margin:       var(--tug-space-md) 0;
-  --tugx-file-font:         var(--tug-font-family-mono);
-  --tugx-file-font-size:    var(--tug-font-size-sm);
-  --tugx-file-line-height:  1.55;
-  --tugx-file-text-color:   var(--tug7-element-global-text-normal-default-rest);
-  --tugx-file-focus-ring:   var(--tug7-element-global-text-normal-link-rest);
+  --tugx-file-focus-ring: var(--tug7-element-global-text-normal-link-rest);
 
-  /* Header */
-  --tugx-file-header-padding: var(--tug-space-xs) var(--tug-space-md);
-  --tugx-file-header-gap:     var(--tug-space-sm);
-  --tugx-file-header-bg:      var(--tug7-surface-global-primary-normal-raised-rest);
-  --tugx-file-header-border:  var(--tug7-element-global-divider-normal-muted-rest);
-  --tugx-file-header-color:   var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-file-header-size:    var(--tug-font-size-2xs);
-  --tugx-file-header-font:    var(--tug-font-family-base);
-  --tugx-file-path-color:     var(--tug7-element-global-text-normal-default-rest);
-  --tugx-file-path-weight:    600;
+  /* Header — file-specific identity (path + lang badge + counts) */
+  --tugx-file-path-color:   var(--tug7-element-global-text-normal-default-rest);
+  --tugx-file-path-weight:  600;
+  --tugx-file-counts-size:  var(--tug-font-size-2xs);
 
   /* Language pill */
   --tugx-file-lang-padding: var(--tug-space-2xs) var(--tug-space-xs);
   --tugx-file-lang-bg:      var(--tug7-surface-highlight-primary-normal-hover-rest);
-  --tugx-file-lang-color:   var(--tug7-element-global-text-normal-muted-rest);
   --tugx-file-lang-radius:  var(--tug-radius-xs);
   --tugx-file-lang-size:    var(--tug-font-size-3xs);
-  --tugx-file-lang-font:    var(--tug-font-family-mono);
 
-  /* Counts */
-  --tugx-file-counts-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-file-counts-size:  var(--tug-font-size-2xs);
-
-  /* Icon button slot (legacy — header now uses TugIconButton) */
+  /* Icon button — search toggle / prev / next / close */
   --tugx-file-icon-size:        22px;
   --tugx-file-icon-radius:      var(--tug-radius-sm);
-  --tugx-file-icon-color:       var(--tug7-element-global-text-normal-muted-rest);
   --tugx-file-icon-color-hover: var(--tug7-element-global-text-normal-default-rest);
   --tugx-file-icon-bg-hover:    var(--tug7-surface-highlight-primary-normal-hover-rest);
 
-  /* Search bar */
-  --tugx-file-search-padding:       var(--tug-space-xs) var(--tug-space-md);
+  /* Search bar — file-specific Cmd+F panel */
   --tugx-file-search-gap:           var(--tug-space-xs);
-  --tugx-file-search-bg:            var(--tug7-surface-global-primary-normal-raised-rest);
-  --tugx-file-search-border:        var(--tug7-element-global-divider-normal-muted-rest);
   --tugx-file-search-input-padding: var(--tug-space-2xs) var(--tug-space-xs);
   --tugx-file-search-input-bg:      var(--tug7-surface-field-primary-normal-plain-rest);
   --tugx-file-search-input-border:  var(--tug7-element-global-border-normal-muted-rest);
-  --tugx-file-search-input-color:   var(--tug7-element-global-text-normal-default-rest);
   --tugx-file-search-input-radius:  var(--tug-radius-sm);
   --tugx-file-search-input-size:    var(--tug-font-size-sm);
-  --tugx-file-search-count-color:   var(--tug7-element-global-text-normal-muted-rest);
   --tugx-file-search-count-size:    var(--tug-font-size-2xs);
   --tugx-file-search-step-size:     var(--tug-font-size-sm);
   --tugx-file-search-step-border:   var(--tug7-element-global-border-normal-muted-rest);
 
-  /* Body rows */
+  /* Body rows — file-specific gutter geometry */
   --tugx-file-rows-padding:      var(--tug-space-2xs) 0;
   --tugx-file-gutter-width:      3.5em;
   --tugx-file-gutter-padding-x:  var(--tug-space-sm);
-  --tugx-file-gutter-bg:         transparent;
-  --tugx-file-gutter-color:      var(--tug7-element-global-text-normal-muted-rest);
   --tugx-file-content-padding-x: var(--tug-space-md);
-  --tugx-file-row-hover-bg:      var(--tug7-surface-highlight-primary-normal-hover-rest);
-  --tugx-file-row-active-bg:     var(--tug7-surface-tone-primary-normal-success-rest);
 
-  /* Match overlay */
+  /* Match overlay — Cmd+F highlight */
   --tugx-file-mark-bg:             var(--tug7-surface-card-primary-normal-findmatch-rest);
   --tugx-file-mark-active-bg:      var(--tug7-surface-card-primary-normal-findmatch-active);
   --tugx-file-mark-active-outline: var(--tug7-element-global-border-normal-accent-rest);
@@ -111,14 +88,14 @@ body {
 .tugx-file {
   position: relative;
   display: block;
-  margin: var(--tugx-file-margin);
-  background: var(--tugx-file-bg);
-  border: 1px solid var(--tugx-file-border);
-  border-radius: var(--tugx-file-radius);
+  margin: var(--tugx-block-margin);
+  background: var(--tugx-block-bg);
+  border: 1px solid var(--tugx-block-border);
+  border-radius: var(--tugx-block-radius);
   overflow: hidden;
-  color: var(--tugx-file-text-color);
-  font-family: var(--tugx-file-font);
-  font-size: var(--tugx-file-font-size);
+  color: var(--tugx-block-text-color);
+  font-family: var(--tugx-block-code-font);
+  font-size: var(--tugx-block-code-font-size);
 }
 
 /* Embedded variant — composed inside a host that already paints a
@@ -144,13 +121,13 @@ body {
 .tugx-file-header {
   display: flex;
   align-items: center;
-  gap: var(--tugx-file-header-gap);
-  padding: var(--tugx-file-header-padding);
-  background: var(--tugx-file-header-bg);
-  border-bottom: 1px solid var(--tugx-file-header-border);
-  color: var(--tugx-file-header-color);
-  font-family: var(--tugx-file-header-font);
-  font-size: var(--tugx-file-header-size);
+  gap: var(--tugx-block-strip-gap);
+  padding: var(--tugx-block-strip-padding);
+  background: var(--tugx-block-strip-bg);
+  border-bottom: 1px solid var(--tugx-block-strip-border);
+  color: var(--tugx-block-strip-color);
+  font-family: var(--tugx-block-strip-font);
+  font-size: var(--tugx-block-strip-size);
 }
 
 .tugx-file-path {
@@ -165,16 +142,16 @@ body {
 .tugx-file-lang {
   padding: var(--tugx-file-lang-padding);
   background: var(--tugx-file-lang-bg);
-  color: var(--tugx-file-lang-color);
+  color: var(--tugx-block-text-color-muted);
   border-radius: var(--tugx-file-lang-radius);
   font-size: var(--tugx-file-lang-size);
-  font-family: var(--tugx-file-lang-font);
+  font-family: var(--tugx-block-code-font);
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
 
 .tugx-file-counts {
-  color: var(--tugx-file-counts-color);
+  color: var(--tugx-block-text-color-muted);
   font-size: var(--tugx-file-counts-size);
   font-variant-numeric: tabular-nums;
 }
@@ -193,7 +170,7 @@ body {
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--tugx-file-icon-radius);
-  color: var(--tugx-file-icon-color);
+  color: var(--tugx-block-text-color-muted);
   cursor: pointer;
 }
 
@@ -220,9 +197,9 @@ body {
   display: flex;
   align-items: center;
   gap: var(--tugx-file-search-gap);
-  padding: var(--tugx-file-search-padding);
-  background: var(--tugx-file-search-bg);
-  border-bottom: 1px solid var(--tugx-file-search-border);
+  padding: var(--tugx-block-strip-padding);
+  background: var(--tugx-block-strip-bg);
+  border-bottom: 1px solid var(--tugx-block-strip-border);
 }
 
 .tugx-file-search-input {
@@ -232,8 +209,8 @@ body {
   background: var(--tugx-file-search-input-bg);
   border: 1px solid var(--tugx-file-search-input-border);
   border-radius: var(--tugx-file-search-input-radius);
-  color: var(--tugx-file-search-input-color);
-  font-family: var(--tugx-file-font);
+  color: var(--tugx-block-text-color);
+  font-family: var(--tugx-block-code-font);
   font-size: var(--tugx-file-search-input-size);
 }
 
@@ -243,7 +220,7 @@ body {
 }
 
 .tugx-file-search-count {
-  color: var(--tugx-file-search-count-color);
+  color: var(--tugx-block-text-color-muted);
   font-size: var(--tugx-file-search-count-size);
   font-variant-numeric: tabular-nums;
   min-width: 4em;
@@ -261,9 +238,9 @@ body {
   background: transparent;
   border: 1px solid var(--tugx-file-search-step-border);
   border-radius: var(--tugx-file-icon-radius);
-  color: var(--tugx-file-icon-color);
+  color: var(--tugx-block-text-color-muted);
   cursor: pointer;
-  font-family: var(--tugx-file-font);
+  font-family: var(--tugx-block-code-font);
   font-size: var(--tugx-file-search-step-size);
   line-height: 1;
 }
@@ -292,7 +269,7 @@ body {
   padding: var(--tugx-file-rows-padding);
   background: transparent;
   font-family: inherit;
-  line-height: var(--tugx-file-line-height);
+  line-height: var(--tugx-block-code-line-height);
 }
 
 .tugx-file-row {
@@ -304,18 +281,18 @@ body {
 }
 
 .tugx-file-row:hover {
-  background: var(--tugx-file-row-hover-bg);
+  background: var(--tugx-block-row-hover-bg);
 }
 
 .tugx-file-row.is-copied {
-  background: var(--tugx-file-row-active-bg);
+  background: var(--tugx-block-tone-add-bg);
 }
 
 .tugx-file-gutter {
   display: inline-block;
   padding: 0 var(--tugx-file-gutter-padding-x);
-  background: var(--tugx-file-gutter-bg);
-  color: var(--tugx-file-gutter-color);
+  background: transparent;
+  color: var(--tugx-block-text-color-muted);
   text-align: right;
   font-variant-numeric: tabular-nums;
   user-select: none;

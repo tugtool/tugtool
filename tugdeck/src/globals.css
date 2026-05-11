@@ -1,5 +1,9 @@
 @import "../styles/tug-palette.css";
 @import "../styles/tug.css";
+/* Shared --tugx-* utility families. Loaded after the palette + base
+ * tokens (so `--tug7-*` / `--tug-*` references resolve) and before any
+ * component CSS (so component rules can consume them). */
+@import "../styles/tugx-block.css";
 /* Component token files (token definitions; rules are colocated with component TSX imports) */
 @import "./components/tugways/tug-dock.css";
 @import "./components/tugways/tug-dialog.css";

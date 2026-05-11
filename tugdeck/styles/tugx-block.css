@@ -1,0 +1,151 @@
+/**
+ * tugx-block.css — shared "block surface" utility token family.
+ *
+ * Captures the common visual scaffold used by FileBlock, DiffBlock,
+ * TerminalBlock, ToolWrapperChrome, TideThinkingBlock, and
+ * TugMarkdownView: an inset card-shaped frame with an optional raised
+ * header strip, an optional matching footer strip, code-typography
+ * defaults, and tone-tinted feedback bands.
+ *
+ * ## Where this fits in the three-tier architecture
+ *
+ * Per `tuglaws/color-palette.md`:
+ *  - Palette tier (`--tugc-*`) — theme-invariant hue / gray anchors.
+ *  - Base tier   (`--tug7-*`) — theme-specific seven-slot semantic tokens.
+ *  - Component   (`--tugx-*`) — component aliases AND shared utilities.
+ *
+ * Per `tuglaws/token-naming.md`:
+ *  > `--tugx-` ... Component aliases, *shared utilities*. Locally defined.
+ *
+ * This file is the shared-utility lane: a single set of `--tugx-block-*`
+ * slots that captures the block-surface pattern once. Body-kinds and chrome
+ * wrappers consume these slots directly in their CSS rules (one-hop to
+ * `--tug7-*` per [L17]) instead of declaring N parallel slot families.
+ *
+ * ## Why "block"
+ *
+ * `card` is taken by TugPane and means a different visual element.
+ * `surface` is already a slot dimension at the `--tug7-*` level and would
+ * create cross-tier name collision. `block` is the natural English word
+ * for these structures and matches the internal "body-kind / block kind"
+ * convention.
+ *
+ * ## Two frame variants
+ *
+ *  - `--tugx-block-bg` — body-kind variant. Inset surface. Used by
+ *    FileBlock, DiffBlock, TerminalBlock, TideThinkingBlock, the markdown
+ *    code-fence panel, etc.
+ *  - `--tugx-block-chrome-bg` — chrome wrapper variant. Raised surface.
+ *    Used by `ToolWrapperChrome`, which sits *above* a body-kind and so
+ *    must read as a slightly elevated surface rather than a recessed one.
+ *
+ * The two share every *other* slot (border, radius, margin, header strip,
+ * footer strip, etc.). Only the bg differs.
+ *
+ * ## Consumption pattern
+ *
+ * Component CSS rules consume `--tugx-block-*` directly for shared parts;
+ * `--tugx-{component}-*` slots remain in component CSS body{} only for
+ * parts that are genuinely component-specific (diff line bgs, file gutter
+ * widths, terminal ANSI mappings, markdown heading scale, etc.).
+ *
+ * Example, file-block.css:
+ *
+ * ```css
+ * .tugx-file {
+ *   background:    var(--tugx-block-bg);
+ *   border:        1px solid var(--tugx-block-border);
+ *   border-radius: var(--tugx-block-radius);
+ *   font-family:   var(--tugx-block-code-font);
+ * }
+ * .tugx-file-header {
+ *   padding:    var(--tugx-block-strip-padding);
+ *   background: var(--tugx-block-strip-bg);
+ *   border-bottom: 1px solid var(--tugx-block-strip-border);
+ * }
+ * ```
+ *
+ * ## What is NOT here
+ *
+ *  - ANSI palette — that's a per-theme palette anchor; lives in
+ *    `harmony.css` / `brio.css` as `--tugx-term-ansi-*`. Known carve-out.
+ *  - Component-specific affordances (diff line +/- bgs, file match
+ *    highlight overlay, markdown heading scale, terminal Copy button
+ *    geometry, etc.). Those stay in each component's body{}.
+ *
+ * Tuglaw cross-check:
+ *  - [L17] every slot below resolves to a `--tug7-*` or `--tug-*` base
+ *    token in one hop.
+ *  - [L19] this file has no companion `.tsx`; it is a *shared utility*
+ *    file in the styles/ directory, not a component file pair.
+ *  - [L20] every consumer rule that uses these slots paints through a
+ *    `--tug7-*` token via this one alias hop. No raw values.
+ *
+ * @module styles/tugx-block
+ */
+
+body {
+  /* ------------------------------------------------------------------ *
+   * Frame — body-kind variant (sits below chrome; recessed surface)    *
+   * ------------------------------------------------------------------ */
+  --tugx-block-bg:     var(--tug7-surface-global-primary-normal-inset-rest);
+  --tugx-block-border: var(--tug7-element-global-border-normal-muted-rest);
+  --tugx-block-radius: var(--tug-radius-md);
+  --tugx-block-margin: var(--tug-space-md) 0;
+
+  /* ------------------------------------------------------------------ *
+   * Frame — chrome wrapper variant (sits above body; raised surface).  *
+   * Only the bg differs; chrome wrappers consume the body-kind border, *
+   * radius, and margin unchanged.                                      *
+   * ------------------------------------------------------------------ */
+  --tugx-block-chrome-bg: var(--tug7-surface-global-primary-normal-raised-rest);
+
+  /* ------------------------------------------------------------------ *
+   * Code-typography defaults (file/diff/term/code-fence).              *
+   * ------------------------------------------------------------------ */
+  --tugx-block-code-font:        var(--tug-font-family-mono);
+  --tugx-block-code-font-size:   var(--tug-font-size-sm);
+  --tugx-block-code-line-height: 1.55;
+
+  /* ------------------------------------------------------------------ *
+   * Body text colors.                                                  *
+   * ------------------------------------------------------------------ */
+  --tugx-block-text-color:       var(--tug7-element-global-text-normal-default-rest);
+  --tugx-block-text-color-muted: var(--tug7-element-global-text-normal-muted-rest);
+
+  /* ------------------------------------------------------------------ *
+   * Header / footer strip (same shape for both). Sits above the body   *
+   * with the chrome-bg tint and a hairline divider underneath.         *
+   * ------------------------------------------------------------------ */
+  --tugx-block-strip-padding: var(--tug-space-xs) var(--tug-space-md);
+  --tugx-block-strip-gap:     var(--tug-space-sm);
+  --tugx-block-strip-bg:      var(--tug7-surface-global-primary-normal-raised-rest);
+  --tugx-block-strip-border:  var(--tug7-element-global-divider-normal-muted-rest);
+  --tugx-block-strip-color:   var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-block-strip-size:    var(--tug-font-size-2xs);
+  --tugx-block-strip-font:    var(--tug-font-family-base);
+
+  /* ------------------------------------------------------------------ *
+   * Body row interaction. Hover overlay sits above whatever the row    *
+   * background is via box-shadow inset or background-blend; consumers  *
+   * decide which compositing fits their layout.                        *
+   * ------------------------------------------------------------------ */
+  --tugx-block-row-hover-bg: var(--tug7-surface-highlight-primary-normal-hover-rest);
+
+  /* ------------------------------------------------------------------ *
+   * Tone-tinted feedback bands. Used for diff line backgrounds,        *
+   * terminal exit badges, tool-wrapper caution / error bands, and any  *
+   * future component that wants the same vocabulary.                   *
+   *                                                                    *
+   * `add` / `remove` / `caution` / `active` mirror the semantic        *
+   * vocabulary used by TugCue's role prop, so a body-kind cue and a    *
+   * structural feedback band stay visually paired.                     *
+   * ------------------------------------------------------------------ */
+  --tugx-block-tone-add-bg:        var(--tug7-surface-tone-primary-normal-success-rest);
+  --tugx-block-tone-add-color:     var(--tug7-element-global-text-normal-success-rest);
+  --tugx-block-tone-remove-bg:     var(--tug7-surface-tone-primary-normal-danger-rest);
+  --tugx-block-tone-remove-color:  var(--tug7-element-global-text-normal-danger-rest);
+  --tugx-block-tone-caution-bg:    var(--tug7-surface-tone-primary-normal-caution-rest);
+  --tugx-block-tone-caution-color: var(--tug7-element-global-text-normal-caution-rest);
+  --tugx-block-tone-active-bg:     var(--tug7-surface-tone-primary-normal-active-rest);
+}

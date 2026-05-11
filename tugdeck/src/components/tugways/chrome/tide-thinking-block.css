@@ -1,11 +1,11 @@
 /* @tug-pairings:
-   - --tugx-thinking-bg / --tugx-thinking-content-color
-   - --tugx-thinking-header-bg-hover / --tugx-thinking-label-color
-   - --tugx-thinking-bg / --tugx-thinking-preview-color
+   - --tugx-block-bg / --tugx-block-text-color-muted           (shared block frame; from tugx-block.css)
+   - --tugx-block-row-hover-bg / --tugx-block-text-color       (shared hover overlay)
    `TideThinkingBlock` paints a tinted strip under the assistant
    reasoning preview. Foreground roles split between the strong
    "Thinking" label and the muted preview / body text. Hover paints a
    darker tint on the header to signal the toggle is interactive.
+   Shared block-surface scaffold lives in `styles/tugx-block.css`.
 */
 
 /**
@@ -30,59 +30,61 @@
  * The collapse animation respects `prefers-reduced-motion`: instant
  * snap when the user has reduced motion enabled.
  *
+ * Token sources:
+ *  - Shared block-surface scaffold (frame, header strip padding, hover
+ *    overlay) comes from `--tugx-block-*` in `styles/tugx-block.css`.
+ *    Consumed directly in the rules below.
+ *  - Thinking-specific slots (wider lg margin, label size + weight,
+ *    preview size, italic content style, collapse animation) live in
+ *    the body{} block below as `--tugx-thinking-*`.
+ *
  * Tuglaw cross-check:
  *   - [L06] appearance via DOM-mutation + CSS, not React state. The
  *     React side only flips `data-collapsed`; the rule below does
  *     the visual.
- *   - [L17] component-tier `--tugx-thinking-*` aliases resolve to base-tier
- *     `--tug7-*` tokens in one hop.
+ *   - [L17] `--tugx-block-*` and `--tugx-thinking-*` each resolve to
+ *     `--tug7-*` in one hop.
  *   - [L19] component-authoring guide — file-pair, module docstring,
  *     `data-slot="tide-thinking-block"`.
  *   - [L20] component-token sovereignty — every visible declaration
- *     consumes a `--tugx-thinking-*` token. No literal colors here.
+ *     consumes a `--tugx-*` token. No literal colors here.
  */
 
-/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
+/* ---- Component-tier aliases — thinking-specific only [L17] ---- */
 
 body {
-  --tugx-thinking-bg:                var(--tug7-surface-global-primary-normal-inset-rest);
-  --tugx-thinking-border:            var(--tug7-element-global-border-normal-muted-rest);
-  --tugx-thinking-radius:            var(--tug-radius-md);
-  --tugx-thinking-margin:            var(--tug-space-lg) 0 var(--tug-space-lg) 0;
+  /* Margin — wider (lg) than the shared block-margin (md) because
+   * the thinking strip is a major chrome element that benefits from
+   * extra vertical breathing room. */
+  --tugx-thinking-margin: var(--tug-space-lg) 0 var(--tug-space-lg) 0;
 
-  --tugx-thinking-header-padding:    var(--tug-space-xs) var(--tug-space-md);
-  --tugx-thinking-header-gap:        var(--tug-space-sm);
-  --tugx-thinking-header-bg-hover:   var(--tug7-surface-highlight-primary-normal-hover-rest);
+  /* Label — strong "Thinking" header text */
+  --tugx-thinking-label-size:   var(--tug-font-size-sm);
+  --tugx-thinking-label-weight: 600;
 
-  --tugx-thinking-label-color:       var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-thinking-label-color-hover: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-thinking-label-size:        var(--tug-font-size-sm);
-  --tugx-thinking-label-weight:      600;
+  /* Preview — collapsed-only one-line summary */
+  --tugx-thinking-preview-size:   var(--tug-font-size-sm);
+  --tugx-thinking-preview-weight: 400;
 
-  --tugx-thinking-chevron-color:     var(--tug7-element-global-text-normal-muted-rest);
+  /* Content — italic body for streaming reasoning */
+  --tugx-thinking-content-padding: var(--tug-space-xs) var(--tug-space-md) var(--tug-space-md);
+  --tugx-thinking-content-size:    var(--tug-font-size-sm);
+  --tugx-thinking-content-style:   italic;
 
-  --tugx-thinking-preview-color:     var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-thinking-preview-size:      var(--tug-font-size-sm);
-  --tugx-thinking-preview-weight:    400;
-
-  --tugx-thinking-content-padding:   var(--tug-space-xs) var(--tug-space-md) var(--tug-space-md);
-  --tugx-thinking-content-color:     var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-thinking-content-size:      var(--tug-font-size-sm);
-  --tugx-thinking-content-style:     italic;
-
+  /* Collapse animation */
   --tugx-thinking-collapse-duration: var(--tug-motion-duration-moderate);
   --tugx-thinking-collapse-easing:   var(--tug-motion-easing-standard);
 
-  --tugx-thinking-focus-ring:        var(--tug7-element-global-text-normal-link-rest);
+  --tugx-thinking-focus-ring: var(--tug7-element-global-text-normal-link-rest);
 }
 
 .tide-thinking-block {
   display: block;
   margin: var(--tugx-thinking-margin);
   padding: 0;
-  background: var(--tugx-thinking-bg);
-  border: 1px solid var(--tugx-thinking-border);
-  border-radius: var(--tugx-thinking-radius);
+  background: var(--tugx-block-bg);
+  border: 1px solid var(--tugx-block-border);
+  border-radius: var(--tugx-block-radius);
   overflow: hidden;
 }
 
@@ -100,12 +102,12 @@ body {
 .tide-thinking-block-header {
   display: flex;
   align-items: center;
-  gap: var(--tugx-thinking-header-gap);
+  gap: var(--tugx-block-strip-gap);
   width: 100%;
-  padding: var(--tugx-thinking-header-padding);
+  padding: var(--tugx-block-strip-padding);
   background: transparent;
   border: 0;
-  color: var(--tugx-thinking-label-color);
+  color: var(--tugx-block-text-color-muted);
   font-family: inherit;
   font-size: var(--tugx-thinking-label-size);
   font-weight: var(--tugx-thinking-label-weight);
@@ -114,8 +116,8 @@ body {
 }
 
 .tide-thinking-block-header:hover {
-  background: var(--tugx-thinking-header-bg-hover);
-  color: var(--tugx-thinking-label-color-hover);
+  background: var(--tugx-block-row-hover-bg);
+  color: var(--tugx-block-text-color);
 }
 
 .tide-thinking-block-header:focus-visible {
@@ -125,7 +127,7 @@ body {
 
 .tide-thinking-block-chevron {
   flex: 0 0 auto;
-  color: var(--tugx-thinking-chevron-color);
+  color: var(--tugx-block-text-color-muted);
   transition: transform var(--tugx-thinking-collapse-duration)
     var(--tugx-thinking-collapse-easing);
 }
@@ -146,7 +148,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--tugx-thinking-preview-color);
+  color: var(--tugx-block-text-color-muted);
   font-size: var(--tugx-thinking-preview-size);
   font-weight: var(--tugx-thinking-preview-weight);
 }
@@ -183,7 +185,7 @@ body {
 
 .tide-thinking-block-content {
   padding: var(--tugx-thinking-content-padding);
-  color: var(--tugx-thinking-content-color);
+  color: var(--tugx-block-text-color-muted);
   font-size: var(--tugx-thinking-content-size);
   font-style: var(--tugx-thinking-content-style);
 }

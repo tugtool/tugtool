@@ -1,14 +1,15 @@
 /* @tug-pairings:
-   - --tugx-diff-bg / --tugx-diff-text-color
-   - --tugx-diff-header-bg / --tugx-diff-header-color
-   - --tugx-diff-line-add-bg / --tugx-diff-line-add-marker-color
-   - --tugx-diff-line-remove-bg / --tugx-diff-line-remove-marker-color
-   - --tugx-diff-word-add-bg / --tugx-diff-word-add-color
-   - --tugx-diff-word-remove-bg / --tugx-diff-word-remove-color
+   - --tugx-block-bg / --tugx-block-text-color                 (shared block frame; from tugx-block.css)
+   - --tugx-block-strip-bg / --tugx-block-strip-color          (shared header strip)
+   - --tugx-block-tone-add-bg / --tugx-block-tone-add-color    (shared add band)
+   - --tugx-block-tone-remove-bg / --tugx-block-tone-remove-color (shared remove band)
+   - --tugx-diff-word-add-bg / --tugx-diff-word-add-color      (diff-specific word-level overlay)
+   - --tugx-diff-word-remove-bg / --tugx-diff-word-remove-color (diff-specific word-level overlay)
    `DiffBlock` paints a code-surface frame with a header (path + stats),
    one band per hunk, and three line classes (context, add, remove)
-   inside each hunk's body. The token slot family is `--tugx-diff-*`
-   per [Table T07].
+   inside each hunk's body. The shared block-surface scaffold lives in
+   `styles/tugx-block.css` as `--tugx-block-*`; diff-specific slots stay
+   here under `--tugx-diff-*` per [Table T07].
 */
 
 /**
@@ -22,107 +23,75 @@
  *    highlight overlays inside the content cell as `<ins>` / `<del>`
  *    spans.
  *
+ * Token sources:
+ *  - Shared block-surface scaffold (frame, code typography, header
+ *    strip, tone bands) comes from `--tugx-block-*` in
+ *    `styles/tugx-block.css`. Consumed directly in the rules below.
+ *  - Diff-specific slots (gutter / marker widths, word-level
+ *    saturated text colors, loading placeholder, side-by-side column
+ *    gap) live in the body{} block below as `--tugx-diff-*`.
+ *
  * Tuglaw cross-check:
  *  - [L06] hunk collapse and word-level swap-in are DOM-imperative
  *    where required; React state holds only logical collapsed-set
  *    and view-mode flags.
- *  - [L17] component-tier `--tugx-diff-*` aliases resolve to base-tier
- *    `--tug7-*` tokens in one hop.
+ *  - [L17] `--tugx-block-*` and `--tugx-diff-*` each resolve to
+ *    `--tug7-*` in one hop.
  *  - [L19] file pair, module docstring, `data-slot="diff-body"`.
- *  - [L20] every visible declaration consumes a `--tugx-diff-*` token.
+ *  - [L20] every visible declaration consumes a `--tugx-*` token.
  */
 
-/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
+/* ---- Component-tier aliases — diff-specific only [L17] ---- */
 
 body {
-  /* Frame */
-  --tugx-diff-bg:           var(--tug7-surface-global-primary-normal-inset-rest);
-  --tugx-diff-border:       var(--tug7-element-global-border-normal-muted-rest);
-  --tugx-diff-radius:       var(--tug-radius-md);
-  --tugx-diff-margin:       var(--tug-space-md) 0;
-  --tugx-diff-font:         var(--tug-font-family-mono);
-  --tugx-diff-font-size:    var(--tug-font-size-sm);
-  --tugx-diff-line-height:  1.55;
-  --tugx-diff-text-color:   var(--tug7-element-global-text-normal-default-rest);
-
-  /* Header */
-  --tugx-diff-header-padding: var(--tug-space-xs) var(--tug-space-md);
-  --tugx-diff-header-gap:     var(--tug-space-sm);
-  --tugx-diff-header-bg:      var(--tug7-surface-global-primary-normal-raised-rest);
-  --tugx-diff-header-border:  var(--tug7-element-global-divider-normal-muted-rest);
-  --tugx-diff-header-color:   var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-diff-header-size:    var(--tug-font-size-2xs);
-  --tugx-diff-header-font:    var(--tug-font-family-base);
-  --tugx-diff-path-color:     var(--tug7-element-global-text-normal-default-rest);
-  --tugx-diff-path-weight:    600;
-
-  /* Stats (+N -M) */
-  --tugx-diff-stats-add-color:    var(--tug7-element-global-text-normal-success-rest);
-  --tugx-diff-stats-remove-color: var(--tug7-element-global-text-normal-danger-rest);
-  --tugx-diff-stats-size:         var(--tug-font-size-2xs);
-  --tugx-diff-stats-font:         var(--tug-font-family-mono);
+  /* Header — diff-specific identity (path + stats badge) */
+  --tugx-diff-path-color:  var(--tug7-element-global-text-normal-default-rest);
+  --tugx-diff-path-weight: 600;
+  --tugx-diff-stats-size:  var(--tug-font-size-2xs);
+  --tugx-diff-stats-font:  var(--tug-font-family-mono);
 
   /* View toggle (inline / side-by-side) */
-  --tugx-diff-view-padding:     var(--tug-space-2xs) var(--tug-space-sm);
-  --tugx-diff-view-border:      var(--tug7-element-global-border-normal-muted-rest);
-  --tugx-diff-view-color:       var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-diff-view-color-hover: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-diff-view-bg-hover:    var(--tug7-surface-highlight-primary-normal-hover-rest);
-  --tugx-diff-view-radius:      var(--tug-radius-sm);
-  --tugx-diff-view-size:        var(--tug-font-size-2xs);
+  --tugx-diff-view-padding:    var(--tug-space-2xs) var(--tug-space-sm);
+  --tugx-diff-view-border:     var(--tug7-element-global-border-normal-muted-rest);
+  --tugx-diff-view-radius:     var(--tug-radius-sm);
+  --tugx-diff-view-size:       var(--tug-font-size-2xs);
 
-  /* Hunk */
-  --tugx-diff-hunk-divider: var(--tug7-element-global-divider-normal-muted-rest);
-
-  /* Body rows */
+  /* Body rows — diff-specific column geometry */
   --tugx-diff-rows-padding:      var(--tug-space-2xs) 0;
   --tugx-diff-gutter-width:      3em;
   --tugx-diff-gutter-padding-x:  var(--tug-space-xs);
-  --tugx-diff-gutter-color:      var(--tug7-element-global-text-normal-muted-rest);
   --tugx-diff-marker-width:      1.25em;
   --tugx-diff-marker-padding-x:  var(--tug-space-2xs);
   --tugx-diff-content-padding-x: var(--tug-space-sm);
 
-  /* Line backgrounds */
-  --tugx-diff-line-add-bg:               var(--tug7-surface-tone-primary-normal-success-rest);
-  --tugx-diff-line-add-color:            var(--tug7-element-global-text-normal-default-rest);
-  --tugx-diff-line-add-marker-color:     var(--tug7-element-global-text-normal-success-rest);
-  --tugx-diff-line-remove-bg:            var(--tug7-surface-tone-primary-normal-danger-rest);
-  --tugx-diff-line-remove-color:         var(--tug7-element-global-text-normal-default-rest);
-  --tugx-diff-line-remove-marker-color:  var(--tug7-element-global-text-normal-danger-rest);
-  --tugx-diff-line-context-bg:           transparent;
-  --tugx-diff-line-context-color:        var(--tug7-element-global-text-normal-default-rest);
-  --tugx-diff-line-context-marker-color: var(--tug7-element-global-text-normal-muted-rest);
-
-  /* Word-level intra-line highlight */
-  --tugx-diff-word-add-bg:        var(--tug7-surface-tone-primary-normal-success-rest);
-  --tugx-diff-word-add-color:     var(--tug7-element-tone-text-normal-success-rest);
-  --tugx-diff-word-remove-bg:     var(--tug7-surface-tone-primary-normal-danger-rest);
-  --tugx-diff-word-remove-color:  var(--tug7-element-tone-text-normal-danger-rest);
-  --tugx-diff-word-radius:        var(--tug-radius-xs);
+  /* Word-level intra-line highlight — saturated text colors layered
+   * over the same tone bg as the line. The bgs reuse the shared
+   * `--tugx-block-tone-{add,remove}-bg` family; only the saturated
+   * text colors are diff-specific (`tone-text`, not `global-text`). */
+  --tugx-diff-word-add-color:    var(--tug7-element-tone-text-normal-success-rest);
+  --tugx-diff-word-remove-color: var(--tug7-element-tone-text-normal-danger-rest);
+  --tugx-diff-word-radius:       var(--tug-radius-xs);
 
   /* Async-loading placeholder */
   --tugx-diff-loading-padding: var(--tug-space-md);
-  --tugx-diff-loading-color:   var(--tug7-element-global-text-normal-muted-rest);
   --tugx-diff-loading-size:    var(--tug-font-size-2xs);
 
   /* Side-by-side mode */
   --tugx-diff-sbs-column-gap: 1px;
-  --tugx-diff-sbs-blank-bg:   var(--tug7-surface-global-primary-normal-inset-rest);
 }
 
 .tugx-diff {
   position: relative;
   display: block;
-  margin: var(--tugx-diff-margin);
-  background: var(--tugx-diff-bg);
-  border: 1px solid var(--tugx-diff-border);
-  border-radius: var(--tugx-diff-radius);
+  margin: var(--tugx-block-margin);
+  background: var(--tugx-block-bg);
+  border: 1px solid var(--tugx-block-border);
+  border-radius: var(--tugx-block-radius);
   overflow: hidden;
-  color: var(--tugx-diff-text-color);
-  font-family: var(--tugx-diff-font);
-  font-size: var(--tugx-diff-font-size);
-  line-height: var(--tugx-diff-line-height);
+  color: var(--tugx-block-text-color);
+  font-family: var(--tugx-block-code-font);
+  font-size: var(--tugx-block-code-font-size);
+  line-height: var(--tugx-block-code-line-height);
 }
 
 /* Embedded variant — composed inside a host that already paints a
@@ -142,13 +111,13 @@ body {
 .tugx-diff-header {
   display: flex;
   align-items: center;
-  gap: var(--tugx-diff-header-gap);
-  padding: var(--tugx-diff-header-padding);
-  background: var(--tugx-diff-header-bg);
-  border-bottom: 1px solid var(--tugx-diff-header-border);
-  color: var(--tugx-diff-header-color);
-  font-family: var(--tugx-diff-header-font);
-  font-size: var(--tugx-diff-header-size);
+  gap: var(--tugx-block-strip-gap);
+  padding: var(--tugx-block-strip-padding);
+  background: var(--tugx-block-strip-bg);
+  border-bottom: 1px solid var(--tugx-block-strip-border);
+  color: var(--tugx-block-strip-color);
+  font-family: var(--tugx-block-strip-font);
+  font-size: var(--tugx-block-strip-size);
 }
 
 .tugx-diff-path {
@@ -168,11 +137,11 @@ body {
 }
 
 .tugx-diff-stats-add {
-  color: var(--tugx-diff-stats-add-color);
+  color: var(--tugx-block-tone-add-color);
 }
 
 .tugx-diff-stats-remove {
-  color: var(--tugx-diff-stats-remove-color);
+  color: var(--tugx-block-tone-remove-color);
 }
 
 .tugx-diff-spacer {
@@ -183,7 +152,7 @@ body {
   appearance: none;
   border: 1px solid var(--tugx-diff-view-border);
   background: transparent;
-  color: var(--tugx-diff-view-color);
+  color: var(--tugx-block-text-color-muted);
   padding: var(--tugx-diff-view-padding);
   border-radius: var(--tugx-diff-view-radius);
   font: inherit;
@@ -192,8 +161,8 @@ body {
 }
 
 .tugx-diff-view-toggle:hover:not([disabled]) {
-  color: var(--tugx-diff-view-color-hover);
-  background: var(--tugx-diff-view-bg-hover);
+  color: var(--tugx-block-text-color);
+  background: var(--tugx-block-row-hover-bg);
 }
 
 .tugx-diff-view-toggle[disabled] {
@@ -214,7 +183,7 @@ body {
 }
 
 .tugx-diff-hunk {
-  border-bottom: 1px solid var(--tugx-diff-hunk-divider);
+  border-bottom: 1px solid var(--tugx-block-strip-border);
 }
 
 .tugx-diff-hunk:last-child {
@@ -253,25 +222,25 @@ body {
 }
 
 .tugx-diff-line[data-kind="context"] {
-  background: var(--tugx-diff-line-context-bg);
-  color: var(--tugx-diff-line-context-color);
+  background: transparent;
+  color: var(--tugx-block-text-color);
 }
 
 .tugx-diff-line[data-kind="add"] {
-  background: var(--tugx-diff-line-add-bg);
-  color: var(--tugx-diff-line-add-color);
+  background: var(--tugx-block-tone-add-bg);
+  color: var(--tugx-block-text-color);
 }
 
 .tugx-diff-line[data-kind="remove"] {
-  background: var(--tugx-diff-line-remove-bg);
-  color: var(--tugx-diff-line-remove-color);
+  background: var(--tugx-block-tone-remove-bg);
+  color: var(--tugx-block-text-color);
 }
 
 .tugx-diff-gutter-before,
 .tugx-diff-gutter-after {
   text-align: right;
   padding: 0 var(--tugx-diff-gutter-padding-x);
-  color: var(--tugx-diff-gutter-color);
+  color: var(--tugx-block-text-color-muted);
   user-select: none;
   font-variant-numeric: tabular-nums;
 }
@@ -284,15 +253,15 @@ body {
 }
 
 .tugx-diff-line[data-kind="context"] .tugx-diff-marker {
-  color: var(--tugx-diff-line-context-marker-color);
+  color: var(--tugx-block-text-color-muted);
 }
 
 .tugx-diff-line[data-kind="add"] .tugx-diff-marker {
-  color: var(--tugx-diff-line-add-marker-color);
+  color: var(--tugx-block-tone-add-color);
 }
 
 .tugx-diff-line[data-kind="remove"] .tugx-diff-marker {
-  color: var(--tugx-diff-line-remove-marker-color);
+  color: var(--tugx-block-tone-remove-color);
 }
 
 .tugx-diff-content {
@@ -335,46 +304,46 @@ body {
 }
 
 .tugx-diff-sbs-cell[data-kind="context"] {
-  background: var(--tugx-diff-line-context-bg);
-  color: var(--tugx-diff-line-context-color);
+  background: transparent;
+  color: var(--tugx-block-text-color);
 }
 
 .tugx-diff-sbs-cell[data-kind="add"] {
-  background: var(--tugx-diff-line-add-bg);
-  color: var(--tugx-diff-line-add-color);
+  background: var(--tugx-block-tone-add-bg);
+  color: var(--tugx-block-text-color);
 }
 
 .tugx-diff-sbs-cell[data-kind="remove"] {
-  background: var(--tugx-diff-line-remove-bg);
-  color: var(--tugx-diff-line-remove-color);
+  background: var(--tugx-block-tone-remove-bg);
+  color: var(--tugx-block-text-color);
 }
 
 .tugx-diff-sbs-cell[data-kind="blank"] {
-  background: var(--tugx-diff-sbs-blank-bg);
+  background: var(--tugx-block-bg);
 }
 
 .tugx-diff-sbs-cell[data-kind="add"] .tugx-diff-marker {
-  color: var(--tugx-diff-line-add-marker-color);
+  color: var(--tugx-block-tone-add-color);
 }
 
 .tugx-diff-sbs-cell[data-kind="remove"] .tugx-diff-marker {
-  color: var(--tugx-diff-line-remove-marker-color);
+  color: var(--tugx-block-tone-remove-color);
 }
 
 .tugx-diff-sbs-cell[data-kind="context"] .tugx-diff-marker {
-  color: var(--tugx-diff-line-context-marker-color);
+  color: var(--tugx-block-text-color-muted);
 }
 
 /* ---------- Word-level intra-line highlight ---------- */
 
 .tugx-diff-word-add {
-  background: var(--tugx-diff-word-add-bg);
+  background: var(--tugx-block-tone-add-bg);
   color: var(--tugx-diff-word-add-color);
   border-radius: var(--tugx-diff-word-radius);
 }
 
 .tugx-diff-word-remove {
-  background: var(--tugx-diff-word-remove-bg);
+  background: var(--tugx-block-tone-remove-bg);
   color: var(--tugx-diff-word-remove-color);
   border-radius: var(--tugx-diff-word-radius);
 }
@@ -388,8 +357,8 @@ body {
 
 .tugx-diff-loading {
   padding: var(--tugx-diff-loading-padding);
-  color: var(--tugx-diff-loading-color);
+  color: var(--tugx-block-text-color-muted);
   font-size: var(--tugx-diff-loading-size);
-  font-family: var(--tugx-diff-header-font);
+  font-family: var(--tugx-block-strip-font);
   text-align: center;
 }

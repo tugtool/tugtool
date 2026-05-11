@@ -1,12 +1,13 @@
 /* @tug-pairings:
-   - --tugx-toolblock-bg / --tugx-toolblock-name-color
-   - --tugx-toolblock-header-bg / --tugx-toolblock-args-color
-   - --tugx-toolblock-footer-bg / --tugx-toolblock-footer-color
-   - --tugx-toolblock-caution-bg / --tugx-toolblock-caution-color
+   - --tugx-block-chrome-bg / --tugx-block-text-color           (shared chrome frame; from tugx-block.css)
+   - --tugx-block-strip-bg / --tugx-block-strip-color           (shared header / footer strip)
+   - --tugx-block-tone-caution-bg / --tugx-block-tone-caution-color (shared caution chip)
+   - --tugx-block-tone-remove-bg / --tugx-block-tone-remove-color   (shared error band)
    The chrome paints a subtle bordered card around tool-call content
    with a header row (icon + name + args summary) and an optional
-   footer for badges. The `data-status` attribute on the root
-   selects the streaming / ready / error stripe color.
+   footer for badges. The `data-status` attribute on the root selects
+   the streaming / ready / error stripe color. Shared block-surface
+   scaffold lives in `styles/tugx-block.css`.
 */
 
 /**
@@ -14,77 +15,62 @@
  *
  * The chrome is intentionally small: a header row, a body region
  * (whose contents are the body-kind component the wrapper composes),
- * and an optional footer. Every visible declaration consumes a
- * `--tugx-toolblock-*` token so brio + harmony can tune the
- * tool-call surface independently of body-kind primitives.
+ * and an optional footer.
+ *
+ * Token sources:
+ *  - Shared block-surface scaffold (frame as a chrome variant, header
+ *    strip, footer strip, tone bands) comes from `--tugx-block-*` in
+ *    `styles/tugx-block.css`. Consumed directly in the rules below.
+ *    The chrome uses the *chrome-bg* variant (raised surface) since it
+ *    sits above the body kind it wraps.
+ *  - Toolblock-specific slots (status stripe colors, header text size,
+ *    name weight, caution chip geometry, error band geometry, footer
+ *    gap override, streaming placeholder geometry) live in the body{}
+ *    block below as `--tugx-toolblock-*`.
  *
  * Tuglaw cross-check:
  *   - [L06] all visible state lives on data attributes / class
  *     swaps; React state never drives appearance.
- *   - [L17] component-tier `--tugx-toolblock-*` aliases resolve to
- *     base-tier `--tug7-*` tokens in one hop.
+ *   - [L17] `--tugx-block-*` and `--tugx-toolblock-*` each resolve to
+ *     `--tug7-*` in one hop.
  *   - [L19] component-authoring guide — file pair, module
  *     docstring, `data-slot="tool-wrapper-chrome"`.
  *   - [L20] component-token sovereignty — every visible declaration
- *     consumes a `--tugx-toolblock-*` token; the chrome never
- *     reaches into a body kind's tokens.
+ *     consumes a `--tugx-*` token; the chrome never reaches into a
+ *     body kind's tokens.
  */
 
-/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
+/* ---- Component-tier aliases — toolblock-specific only [L17] ---- */
 
 body {
-  /* Frame */
-  --tugx-toolblock-bg:     var(--tug7-surface-global-primary-normal-raised-rest);
-  --tugx-toolblock-border: var(--tug7-element-global-border-normal-muted-rest);
-  --tugx-toolblock-radius: var(--tug-radius-md);
-  --tugx-toolblock-margin: var(--tug-space-md) 0;
-
-  /* Status stripe */
+  /* Status stripe — left-edge color encodes lifecycle (streaming / ready
+   * / error). These are status-semantic colors, not the generic block
+   * tone family, so they stay toolblock-local. */
   --tugx-toolblock-stripe-streaming: var(--tug7-element-global-text-normal-link-rest);
   --tugx-toolblock-stripe-ready:     var(--tug7-element-global-border-normal-muted-rest);
   --tugx-toolblock-stripe-error:     var(--tug7-element-global-text-normal-danger-rest);
 
-  /* Header */
-  --tugx-toolblock-header-padding: var(--tug-space-xs) var(--tug-space-md);
-  --tugx-toolblock-header-gap:     var(--tug-space-sm);
-  --tugx-toolblock-header-bg:      var(--tug7-surface-global-primary-normal-raised-rest);
-  --tugx-toolblock-header-border:  var(--tug7-element-global-divider-normal-muted-rest);
-  --tugx-toolblock-header-size:    var(--tug-font-size-sm);
-  --tugx-toolblock-header-font:    var(--tug-font-family-base);
+  /* Header text size — larger (sm) than the shared strip-size (2xs)
+   * because the chrome header carries the tool name + args, not just
+   * a tagline. */
+  --tugx-toolblock-header-size:  var(--tug-font-size-sm);
+  --tugx-toolblock-name-weight:  600;
 
-  --tugx-toolblock-icon-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-toolblock-name-color: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-toolblock-name-weight: 600;
-  --tugx-toolblock-args-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-toolblock-args-font:  var(--tug-font-family-mono);
-
-  /* Caution chip */
+  /* Caution chip — inline in header; bespoke geometry */
   --tugx-toolblock-caution-padding: var(--tug-space-2xs) var(--tug-space-xs);
   --tugx-toolblock-caution-radius:  var(--tug-radius-xs);
-  --tugx-toolblock-caution-bg:      var(--tug7-surface-tone-primary-normal-caution-rest);
-  --tugx-toolblock-caution-color:   var(--tug7-element-global-text-normal-caution-rest);
   --tugx-toolblock-caution-size:    var(--tug-font-size-2xs);
   --tugx-toolblock-caution-weight:  600;
 
-  /* Error band */
+  /* Error band — between body and footer; bespoke geometry */
   --tugx-toolblock-error-padding: var(--tug-space-sm) var(--tug-space-md);
-  --tugx-toolblock-error-bg:      var(--tug7-surface-tone-primary-normal-danger-rest);
-  --tugx-toolblock-error-border:  var(--tug7-element-global-border-normal-muted-rest);
-  --tugx-toolblock-error-color:   var(--tug7-element-global-text-normal-danger-rest);
-  --tugx-toolblock-error-font:    var(--tug-font-family-mono);
   --tugx-toolblock-error-size:    var(--tug-font-size-sm);
 
-  /* Footer */
-  --tugx-toolblock-footer-padding: var(--tug-space-xs) var(--tug-space-md);
-  --tugx-toolblock-footer-gap:     var(--tug-space-md);
-  --tugx-toolblock-footer-bg:      var(--tug7-surface-global-primary-normal-raised-rest);
-  --tugx-toolblock-footer-border:  var(--tug7-element-global-divider-normal-muted-rest);
-  --tugx-toolblock-footer-color:   var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-toolblock-footer-size:    var(--tug-font-size-2xs);
-  --tugx-toolblock-footer-font:    var(--tug-font-family-base);
+  /* Footer gap — wider (md) than the shared strip-gap (sm) because the
+   * footer hosts post-mortem badges with more breathing room. */
+  --tugx-toolblock-footer-gap: var(--tug-space-md);
 
-  /* Streaming placeholder */
-  --tugx-toolblock-streaming-color:    var(--tug7-element-global-text-normal-muted-rest);
+  /* Streaming placeholder — bespoke layout for the animated dots */
   --tugx-toolblock-streaming-padding:  var(--tug-space-sm) var(--tug-space-md);
   --tugx-toolblock-streaming-gap:      4px;
   --tugx-toolblock-streaming-dot-size: 6px;
@@ -93,10 +79,10 @@ body {
 .tool-wrapper-chrome {
   display: flex;
   flex-direction: column;
-  margin: var(--tugx-toolblock-margin);
-  background: var(--tugx-toolblock-bg);
-  border: 1px solid var(--tugx-toolblock-border);
-  border-radius: var(--tugx-toolblock-radius);
+  margin: var(--tugx-block-margin);
+  background: var(--tugx-block-chrome-bg);
+  border: 1px solid var(--tugx-block-border);
+  border-radius: var(--tugx-block-radius);
   overflow: hidden;
 }
 
@@ -117,26 +103,26 @@ body {
 .tool-wrapper-chrome-header {
   display: flex;
   align-items: center;
-  gap: var(--tugx-toolblock-header-gap);
-  padding: var(--tugx-toolblock-header-padding);
-  background: var(--tugx-toolblock-header-bg);
-  border-bottom: 1px solid var(--tugx-toolblock-header-border);
+  gap: var(--tugx-block-strip-gap);
+  padding: var(--tugx-block-strip-padding);
+  background: var(--tugx-block-strip-bg);
+  border-bottom: 1px solid var(--tugx-block-strip-border);
   font-size: var(--tugx-toolblock-header-size);
-  font-family: var(--tugx-toolblock-header-font);
-  color: var(--tugx-toolblock-name-color);
+  font-family: var(--tugx-block-strip-font);
+  color: var(--tugx-block-text-color);
 }
 
 .tool-wrapper-chrome-icon {
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
-  color: var(--tugx-toolblock-icon-color);
+  color: var(--tugx-block-text-color-muted);
 }
 
 .tool-wrapper-chrome-name {
   flex: 0 0 auto;
   font-weight: var(--tugx-toolblock-name-weight);
-  color: var(--tugx-toolblock-name-color);
+  color: var(--tugx-block-text-color);
 }
 
 .tool-wrapper-chrome-args {
@@ -145,8 +131,8 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--tugx-toolblock-args-color);
-  font-family: var(--tugx-toolblock-args-font);
+  color: var(--tugx-block-text-color-muted);
+  font-family: var(--tugx-block-code-font);
 }
 
 /* Hover-expand: reveal the full args text on header hover. The
@@ -176,8 +162,8 @@ body {
   align-items: center;
   padding: var(--tugx-toolblock-caution-padding);
   border-radius: var(--tugx-toolblock-caution-radius);
-  background: var(--tugx-toolblock-caution-bg);
-  color: var(--tugx-toolblock-caution-color);
+  background: var(--tugx-block-tone-caution-bg);
+  color: var(--tugx-block-tone-caution-color);
   font-size: var(--tugx-toolblock-caution-size);
   font-weight: var(--tugx-toolblock-caution-weight);
   cursor: help;
@@ -195,10 +181,10 @@ body {
 
 .tool-wrapper-chrome-error {
   padding: var(--tugx-toolblock-error-padding);
-  background: var(--tugx-toolblock-error-bg);
-  border-top: 1px solid var(--tugx-toolblock-error-border);
-  color: var(--tugx-toolblock-error-color);
-  font-family: var(--tugx-toolblock-error-font);
+  background: var(--tugx-block-tone-remove-bg);
+  border-top: 1px solid var(--tugx-block-border);
+  color: var(--tugx-block-tone-remove-color);
+  font-family: var(--tugx-block-code-font);
   font-size: var(--tugx-toolblock-error-size);
 }
 
@@ -209,12 +195,12 @@ body {
   align-items: center;
   flex-wrap: wrap;
   gap: var(--tugx-toolblock-footer-gap);
-  padding: var(--tugx-toolblock-footer-padding);
-  background: var(--tugx-toolblock-footer-bg);
-  border-top: 1px solid var(--tugx-toolblock-footer-border);
-  color: var(--tugx-toolblock-footer-color);
-  font-size: var(--tugx-toolblock-footer-size);
-  font-family: var(--tugx-toolblock-footer-font);
+  padding: var(--tugx-block-strip-padding);
+  background: var(--tugx-block-strip-bg);
+  border-top: 1px solid var(--tugx-block-strip-border);
+  color: var(--tugx-block-strip-color);
+  font-size: var(--tugx-block-strip-size);
+  font-family: var(--tugx-block-strip-font);
 }
 
 /* ---- Streaming placeholder ---- */
@@ -224,7 +210,7 @@ body {
   align-items: center;
   gap: var(--tugx-toolblock-streaming-gap);
   padding: var(--tugx-toolblock-streaming-padding);
-  color: var(--tugx-toolblock-streaming-color);
+  color: var(--tugx-block-text-color-muted);
 }
 
 .tool-wrapper-streaming-dot {

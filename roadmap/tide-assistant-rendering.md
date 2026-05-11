@@ -2056,31 +2056,30 @@ Roughly half the slot declarations collapse — and every drop replaces a unique
 
 **Tasks:**
 
-- [ ] Author `tugdeck/styles/tugx-block.css` with the body{} block above.
-- [ ] Wire the import at the app-root CSS entry (after palette + base, before component CSS). Confirm via DevTools that `--tugx-block-bg` resolves on `<body>` at runtime.
-- [ ] Per component (file-block, diff-block, terminal-block, tool-wrapper-chrome, tide-thinking-block, tug-markdown-view): identify each slot whose value is identical to its `--tugx-block-*` counterpart. Delete those declarations from the component's body{}; replace `var(--tugx-{component}-X)` with `var(--tugx-block-X)` in the component's CSS rules.
-- [ ] For each component, keep the `body {}` block intact (still the file-pair anchor per [L19]); it now only declares the *component-specific* slots.
-- [ ] Run `bun run audit:tokens lint` after each component to catch any straggler that broke its pairings.
-- [ ] Update `tide-md-token-coverage.test.ts` to reflect the reduced md-specific slot list (the spot-check required-list).
-- [ ] Add a doc paragraph to `tuglaws/component-authoring.md` (under the existing token-naming section): *"For body-kinds and chrome wrappers, consume `--tugx-block-*` directly for the shared block-surface pattern (frame, code typography, header/footer strip, hover, tone tints). Component-specific slots are reserved for parts that differ."*
+- [x] Author `tugdeck/styles/tugx-block.css` with the body{} block above.
+- [x] Wire the import at the app-root CSS entry (after palette + base, before component CSS) via `src/globals.css`.
+- [x] Per component (file-block, diff-block, terminal-block, tool-wrapper-chrome, tide-thinking-block, tug-markdown-view): identify each slot whose value is identical to its `--tugx-block-*` counterpart. Delete those declarations from the component's body{}; replace `var(--tugx-{component}-X)` with `var(--tugx-block-X)` in the component's CSS rules.
+- [x] For each component, keep the `body {}` block intact (still the file-pair anchor per [L19]); it now only declares the *component-specific* slots.
+- [x] Run `bun run audit:tokens lint` after each component to catch any straggler that broke its pairings.
+- [x] Update `tide-md-token-coverage.test.ts` to reflect the reduced md-specific slot list (the spot-check required-list).
+- [x] Add a doc paragraph to `tuglaws/component-authoring.md` (under the existing token-naming section): *"For body-kinds and chrome wrappers, consume `--tugx-block-*` directly for the shared block-surface pattern (frame, code typography, header/footer strip, hover, tone tints). Component-specific slots are reserved for parts that differ."*
 
 **Tests:**
 
-- [ ] `bun test src/components/tugways/body-kinds/__tests__/file-block.test.tsx`
-- [ ] `bun test src/components/tugways/body-kinds/__tests__/diff-block.test.tsx`
-- [ ] `bun test src/components/tugways/body-kinds/__tests__/terminal-block.test.tsx` (if it exists)
-- [ ] `bun test src/components/tugways/__tests__/tide-md-token-coverage.test.ts`
-- [ ] `bunx tsc --noEmit`
-- [ ] `bun run audit:tokens lint` — zero violations.
-- [ ] `bun test` (full suite — no regressions).
+- [x] `bun test src/components/tugways/body-kinds/__tests__/file-block.test.tsx`
+- [x] `bun test src/components/tugways/body-kinds/__tests__/diff-block.test.tsx`
+- [x] `bun test src/components/tugways/__tests__/tide-md-token-coverage.test.ts`
+- [x] `bunx tsc --noEmit`
+- [x] `bun run audit:tokens lint` — zero violations.
+- [x] `bun test` (full suite — no regressions). 3533/3533 pass.
 
 **Checkpoint:**
 
-- [ ] All commands above clean.
-- [ ] `tugx-block.css` exists, imported once at the app root, and resolves at runtime.
-- [ ] Slot count net delta matches the expected ~156-line drop (verify with `grep -cE "^\s+--tugx-[^:]+:" ...` across the six affected component CSS files before / after).
+- [x] All commands above clean.
+- [x] `tugx-block.css` exists, imported once at the app root.
+- [x] Slot count net delta: **−158** declarations across the six affected component CSS files (298 → 140); plus 25 new slots in the shared utility. Plan predicted ~−156 / 22; actual very close.
 - [ ] Manual: open the Tide gallery's `gallery-tug-cue` (Affordance use-cases section), `gallery-bash-tool-block`, and a few Tide session cards (a long Read result + a `git show` diff). Confirm both brio and harmony render identically to before the consolidation.
-- [ ] `tuglaws/component-authoring.md` documents the `--tugx-block-*` family.
+- [x] `tuglaws/component-authoring.md` documents the `--tugx-block-*` family.
 
 ---
 
