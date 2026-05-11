@@ -2147,6 +2147,121 @@ Sticky context analysis confirms the layout is safe: `TugListView` uses natural 
 - Optional polish (defer if v1 needs to ship): add `--tugx-block-strip-shadow-stuck` slot to `tugx-block.css`; wire an IntersectionObserver-driven `data-stuck` attribute on each block header.
 - Tests: TerminalBlock — header `<TugIconButton>` Copy exists; no `.tugx-term-copy` overlay DOM; `scrollbar-gutter` declared on the scroller.
 
+##### Phase B.1 — Diagnosis spike + gallery card
+
+**Why this phase exists.** Phase B applied `position: sticky` to five headers and swapped four block roots from `overflow: hidden` to `overflow: clip`. The user-visible result — the pinned chrome header sits ~one line below the scrollport top, with file content visible above the bar — proves the sticky declarations *activate* (the bar mostly stays in place while content scrolls beneath it) but bind to the *wrong* scrollport or against the *wrong* edge. Phase B.2's rollout (actions row, telescope variable, fenced-code parity) presupposes that the underlying pinning works correctly. Before doing that rollout, we need to be sure the pinning works correctly. That's this phase.
+
+**Scope is deliberately narrow:**
+- No production CSS changes beyond the temporary diagnostic outline.
+- No new prop contracts on `ToolWrapperChrome`, no actions-row CSS, no body-kind restructuring.
+- Build the gallery card so we have an isolated, controlled environment in which to exercise pinning *without* the transcript chain (TugListView, TugTranscriptEntry, ToolWrapperChrome) below it.
+- Walk the ancestor chain in both the gallery and the live transcript using WKWebView devtools and document what's actually happening. Compare.
+
+**Artifacts (Phase B.1):**
+
+- New: `tugdeck/src/components/tugways/cards/gallery-pinned-headers.tsx` — a tall-content gallery card carrying a synthesized long file inside a standalone `FileBlock`, a synthesized 20-hunk diff inside a standalone `DiffBlock`, and a synthesized 200-line terminal inside a standalone `TerminalBlock`. The card lives in a fixed-height scroll container (a single TugBox or analogous primitive) so the only scrolling ancestor is one we picked deliberately. No `ToolWrapperChrome`, no `TranscriptToolCalls`, no `TugTranscriptEntry`, no `TugListView`. The point is to take the transcript chain OUT of the picture and prove sticky works against a simple known scroller. If it doesn't pin flush there either, the bug lives in the body-kind CSS we already touched.
+- New: notes appended to this phase's "Findings" block below — three numbered candidates, each annotated with what the diagnosis turned up.
+
+**Tasks (Phase B.1):**
+
+- [ ] **Build the gallery card** (`gallery-pinned-headers.tsx`) with the three body-kind sections inside a single fixed-height scroll wrapper. Wire it into the gallery's registrations so it shows up alongside the existing gallery cards.
+- [ ] **Verify pin behavior in the gallery card first.** Scroll a long file inside the gallery's standalone FileBlock and confirm whether `.tugx-file-header` pins flush against the gallery's scroll wrapper.
+  - If it DOES pin flush in the gallery → the bug is somewhere in the transcript chain that the gallery card doesn't have (TugListView padding, TugTranscriptEntry, ToolWrapperChrome, or an ancestor). Document which.
+  - If it does NOT pin flush in the gallery → the bug is in the body-kind CSS itself (FileBlock surface, CM6 `.cm-scroller`, the block-root `overflow: clip`). Document which.
+- [ ] **Devtools-walk the ancestor chain in WKWebView.** Open the running Tug.app, Develop ▸ Show Web Inspector. With the Read tool block visible in a real transcript:
+  - Select `.tool-wrapper-chrome-header`.
+  - Verify `getComputedStyle(el).position === "sticky"` and `top` resolves to a pixel value matching `var(--tugx-pin-stack-top, 0)`.
+  - Walk `el.parentElement` upward; for each ancestor capture `getComputedStyle(anc).overflow{X,Y}`, `transform`, `contain`, `filter`, `will-change`, `clip-path`. The first ancestor with `overflow != visible` (and not `clip`) is the binding scrollport.
+  - Compare that scrollport's `getBoundingClientRect().top + padding-block-start` against the header's `getBoundingClientRect().top`. The delta is the offset. The delta value tells us which of the three candidates from the §"Why this phase exists" reasoning is correct.
+  - Repeat in the gallery card to compare.
+- [ ] **Record findings** in a "Findings" block appended to this phase (below). Numbered against the three candidate causes plus any surprise we discover. Each finding cites the measured values from devtools.
+- [ ] **Remove the temporary diagnostic outline** before committing the gallery card and findings.
+
+**Findings (Phase B.1 — fill in during the spike):**
+
+- *To be authored during the spike; informs Phase B.2's fix selection.*
+  - Binding scrollport for `.tool-wrapper-chrome-header` in the live transcript: __
+  - Binding scrollport for `.tugx-file-header` in the gallery card: __
+  - Measured offset between header pin and scrollport top: __px
+  - Cause confirmed: __
+  - Why the wrong scrollport / wrong edge: __
+
+**Checkpoint (Phase B.1):**
+
+- [ ] Gallery card exists and renders three pinning sections.
+- [ ] Findings block above is filled in with measured values, not speculation.
+- [ ] Phase B.2's "Apply the fix" task can be answered unambiguously from the findings (the diagnosis names exactly one fix path; the other two are crossed out with a note explaining why they were ruled out).
+
+---
+
+##### Phase B.2 — Visible pin + body-kind actions bar + future-controls seat
+
+**Depends on:** Phase B.1's findings.
+
+**Why this phase exists.** Phase B landed `position: sticky` on five header selectors (`.tugx-file-header`, `.tugx-diff-header`, `.tugx-term-header`, `.tugx-md-fenced-code-header`, `.tool-wrapper-chrome-header`) plus switched four block roots from `overflow: hidden` to `overflow: clip` so the sticky descendants would see the outer transcript scroller. Manual testing of a Read tool block on a long file surfaced four issues that weren't anticipated in Phase B's design:
+
+1. **The pinned chrome header is offset from the visible top of the scrollport.** Sticky activates, but the pin position is ~one line of file content below the viewport top — content is visible above the bar. The root cause has not been confirmed; candidates in priority order:
+   - **CM6 `.cm-scroller` forming an inner scrollport.** `TugCodeView`'s inline theme declares `scrollbar-gutter: stable` on `.cm-scroller` (`tug-code-view.tsx:163`). If CM6's scroller is the nearest scroll container for `.tool-wrapper-chrome-header`, sticky binds to it instead of `.tug-list-view`, and the user sees CM6 scroll content "above" the pin. The screenshot symptom (file content above the pinned bar) matches this hypothesis better than any other.
+   - **`.tide-card-transcript .tug-list-view` `padding-block`.** Set to `var(--tug-space-md)` via the transcript override. Per CSS Position 3 the sticky inset is computed against the scrollport edge (inside the border), not the padding-content edge, so `padding-block-start` should not add to a `top: 0` pin — but a WKWebView quirk or wrong-scrollport binding could change that.
+   - **An intermediate `overflow: hidden` ancestor.** Phase B swept the block roots and the wrapper chrome. The transcript-side chain (cell wrapper, transcript entry, `.tug-pane-body`, `.tug-pane-chrome`) was not swept. If any of those traps sticky, the bar binds inside that container, which doesn't actually scroll, so the bar just rides with the content (no pin at all). The fact that pin DOES seem to activate (the bar stays mostly fixed while content scrolls beneath it in the user's screenshot) argues against this — but it remains a candidate.
+
+2. **The transcript-entry header (Claude / model / timestamp) does not stay pinned above the tool block.** That's Phase C's deliverable, not B.2's. But the gallery card (next bullet) must exercise the B + C telescoping so the design composes; B.2 ships the gallery card and Phase C threads its variable through.
+
+3. **Body-kind affordances scroll away with the body.** The fold cue (`.tugx-file-fold-cue`), Search (FileBlock — currently in the hidden header), Copy (TerminalBlock — currently in the `.tugx-term-header` we made sticky), and view-toggle / fold (DiffBlock — currently in the also-sticky `.tugx-diff-header`) all live on the body kind. In embedded mode the body kind's own header is hidden, so the affordances are unreachable; in standalone mode the affordances pin with the header, but they sit ABOVE any future body-kind identity, which crowds the strip and forces consumers to pick between identity-on-strip and affordances-on-strip.
+
+4. **No architectural seat for future body-kind controls.** FileBlock's Find UI needs a button. DiffBlock's view-toggle may grow a search. TerminalBlock may gain a "follow tail" toggle. Without a designated, pinned home for these affordances, every new control is a one-off layout decision.
+
+**Decisions.**
+
+- **The pinned-bar stack inside a tool wrapper has two levels: chrome header (identity) and body-kind actions bar (affordances). They telescope.** Wrapper chrome header pins at `top: var(--tugx-pin-stack-top, 0)` and writes its measured height into `--tugx-toolblock-header-height` on the chrome root via `ResizeObserver` (mirrors Phase C's `--tugx-pin-stack-top` write on the transcript-entry root, mirrors the entry-header → block-header relationship one level deeper). Body-kind actions bar pins at `top: calc(var(--tugx-pin-stack-top, 0) + var(--tugx-toolblock-header-height, 0))`. The variable falls back to `0` outside a wrapper, so standalone usage (gallery, RenderInput-routed) pins the actions bar at `--tugx-pin-stack-top` only.
+
+- **Body kinds own their affordance row.** Each affordance-bearing body kind (`FileBlock`, `DiffBlock`, `TerminalBlock`, fenced-code in markdown) renders a `.tugx-{kind}-actions` row inside its surface, marked `position: sticky` with the calc above. The wrapper chrome stays affordance-agnostic — no new `headerActions` prop — so the body-kind tokens, layout, and React state stay inside the body-kind file. This preserves the [L20] separation that Phase A established (chrome owns `--tugx-toolblock-*`; body kinds own `--tugx-{kind}-*`).
+
+- **The actions row is part of the body-kind surface in both embedded and standalone mode.** Standalone: the body kind keeps its identity header (`.tugx-file-header` etc.) ABOVE the actions row, then content below. Embedded: the wrapper chrome owns identity, the body kind's own identity header is suppressed, and the actions row remains visible (this is the slot that survives `embedded={true}`). This makes the affordance-row the ONLY body-kind chrome that's always present, which is the right invariant — every Copy / Find / fold lives in exactly one place.
+
+- **The fold cue moves into the actions row.** Today the cue is a full-width `<TugCue role="active">` rendered above the body content. In B.2 it becomes one element inside `.tugx-file-actions`; the right side of the row carries Find. The cue text shortens from "263 lines folded — click to expand" to a chevron + small label that fits inside an action-bar height, since the row also has to host other affordances now.
+
+- **The pin offset has been diagnosed before this phase starts.** That work is Phase B.1's job. Phase B.2 consumes the finding and applies one named fix — not three candidate fixes guarded behind diagnostics.
+
+**Artifacts (Phase B.2):**
+
+- Updated: `tugdeck/src/components/tugways/cards/tool-wrappers/tool-wrapper-chrome.tsx` — `useLayoutEffect` + `ResizeObserver` on the chrome-header element writes its height to `--tugx-toolblock-header-height` on the chrome root.
+- Updated: `tugdeck/src/components/tugways/body-kinds/file-block.tsx` + `.css` + tests — `.tugx-file-actions` row hosts the fold cue (when over-threshold) and the Search `<TugIconButton>` (when expanded). Old: cue rendered as full-width banner above the substrate.
+- Updated: `tugdeck/src/components/tugways/body-kinds/diff-block.tsx` + `.css` + tests — `.tugx-diff-actions` row hosts the view-toggle, the diff-fold toggle, and (future) any other diff-specific control. `.tugx-diff-header` keeps identity (path + stats) only.
+- Updated: `tugdeck/src/components/tugways/body-kinds/terminal-block.tsx` + `.css` + tests — `.tugx-term-actions` row hosts the Copy `<TugIconButton>` (relocated from `.tugx-term-header`). The header keeps the optional label only; in embedded mode it's suppressed and the actions row is the only body-kind chrome.
+- Updated: `tugdeck/src/components/tugways/tug-markdown-view.css` + tests — fenced-code Copy moves into a `.tugx-md-fenced-code-actions` row pinned below the entry header.
+- Possibly updated (depends on diagnosis): `tugdeck/src/components/tugways/tug-list-view.css` or `tide-card.css` — the precise change depends on which of the three candidate causes the pin offset turns out to be.
+
+**Tasks (Phase B.2):**
+
+- [ ] **Apply the fix Phase B.1's findings name.** One of: a CM6 `.cm-scroller` adjustment, a `.tug-list-view` `padding`/`scroll-padding` move, an `overflow: clip` swap on a previously-unswept ancestor. The findings name exactly one; the other two are not in scope.
+- [ ] **`ToolWrapperChrome` writes `--tugx-toolblock-header-height`.** `useLayoutEffect` registers a `ResizeObserver` on the `.tool-wrapper-chrome-header` element; the callback writes `el.offsetHeight + "px"` to the chrome-root's inline style. Disconnect on cleanup. Tests: variable set after mount; updates on header content change (e.g. `argsSummary` length change forces a re-measure).
+- [ ] **`FileBlock` introduces `.tugx-file-actions`.** Row contains the fold cue (chevron + count label, shortened for action-bar height) and Search `<TugIconButton>` (when expanded). Sticky at `top: calc(var(--tugx-pin-stack-top, 0) + var(--tugx-toolblock-header-height, 0))`. Z-index 1. Background: `--tugx-block-strip-bg` (same as the identity header so the two strips read as one visual stack).
+- [ ] **`DiffBlock` introduces `.tugx-diff-actions`.** Moves view-toggle + fold-toggle out of `.tugx-diff-header`. Same sticky declarations.
+- [ ] **`TerminalBlock` introduces `.tugx-term-actions`.** Moves Copy out of `.tugx-term-header`. Same sticky declarations. The header now hosts only the optional `headerLabel`.
+- [ ] **`tug-markdown-view` fenced-code actions row.** Moves Copy out of `.tugx-md-fenced-code-header`. Same sticky declarations.
+- [ ] **Extend the gallery card.** Phase B.1 ships `gallery-pinned-headers.tsx` with the three standalone body kinds. Phase B.2 adds a section that wraps a `FileBlock` inside a `ToolWrapperChrome` (simulating a Read tool call) so the two-bar telescope — chrome header + actions row — is exercisable in the gallery too.
+- [ ] **Tests** — see Tests block below; the existing Phase B tests stay green; the new Phase B.2 tests cover the actions-row pattern and the new `--tugx-toolblock-header-height` write.
+
+**Tests (commands, Phase B.2):**
+
+- [ ] `bun test src/components/tugways/cards/tool-wrappers/__tests__/tool-wrapper-chrome.test.tsx` — `--tugx-toolblock-header-height` written on the chrome root after mount; cleans up on unmount.
+- [ ] `bun test src/components/tugways/body-kinds/__tests__/file-block.test.tsx` — `.tugx-file-actions` row renders when `overThreshold`; clicking the fold cue inside it still toggles; Search button inside it still opens CM6's find panel.
+- [ ] `bun test src/components/tugways/body-kinds/__tests__/diff-block.test.tsx` — view-toggle + fold-toggle moved into `.tugx-diff-actions`; clicks still fire the same callbacks.
+- [ ] `bun test src/components/tugways/body-kinds/__tests__/terminal-block.test.tsx` — Copy moved into `.tugx-term-actions`; existing copy-roundtrip test still passes.
+- [ ] `bunx tsc --noEmit`
+- [ ] `bun run audit:tokens lint`
+- [ ] `bun test` (full suite — no regressions)
+
+**Checkpoint (Phase B.2):**
+
+- [ ] Manual: open a Read tool on a 500-line file. Confirm: chrome header pinned FLUSH with the visible top of the transcript scrollport (no offset, no content visible above the bar); body-kind actions row pinned directly below the chrome header with chevron-up (collapse) and Find buttons; both bars remain reachable through the entire scroll range; clicking the fold from a deep-scrolled position works.
+- [ ] Manual: open the gallery's pinned-headers card. Confirm the same in a stand-alone setting (proves the pinning isn't specific to a real transcript).
+- [ ] Manual: run `find . -type f | head -300` via Bash. Confirm Copy stays reachable in the terminal's actions row throughout the scroll range.
+- [ ] After Phase C lands: re-open the gallery card. Confirm the outer entry-header pin appears above the chrome header; the three-level telescope (entry > chrome > actions) is visible during the transition.
+
+---
+
 ##### Phase C — Entry-header pin + telescoping variable
 
 - `.tug-transcript-entry__header { position: sticky; top: 0; z-index: 2 }` (higher than block headers so the entry header always wins during transient transitions when both might compete).
@@ -2180,12 +2295,13 @@ Sticky context analysis confirms the layout is safe: `TugListView` uses natural 
 
 **Tasks (Phase B — block-header pin + TerminalBlock header):**
 
-- [ ] Add sticky declarations to `.tugx-file-header`, `.tugx-diff-header`, `.tugx-md-fence-header`.
-- [ ] Add `.tugx-term-header` markup to `terminal-block.tsx` (command summary + Copy `TugIconButton`); add CSS rule consuming `--tugx-block-strip-*`.
-- [ ] Add sticky declaration to `.tugx-term-header`.
-- [ ] Add `scrollbar-gutter: stable` to `.tugx-term-scroller` (the body viewport).
-- [ ] Retire `.tugx-term-copy` overlay DOM in `terminal-block.tsx`; drop the `--tugx-term-copy-*` slot family from `terminal-block.css`.
-- [ ] Update `terminal-block.test.tsx`: header Copy `TugIconButton` exists; no `.tugx-term-copy` overlay; `scrollbar-gutter` declared on the scroller.
+- [x] Add sticky declarations to `.tugx-file-header`, `.tugx-diff-header`, `.tugx-md-fenced-code-header`.
+- [x] Add `.tugx-term-header` markup to `terminal-block.tsx` (optional label slot + Copy `TugIconButton`); add CSS rule consuming `--tugx-block-strip-*`.
+- [x] Add sticky declaration to `.tugx-term-header`.
+- [x] Add `scrollbar-gutter: stable` to `.tugx-term-scroller` (the body viewport).
+- [x] Retire `.tugx-term-copy` overlay DOM in `terminal-block.tsx`; drop the `--tugx-term-copy-*` slot family from `terminal-block.css`.
+- [x] Update `terminal-block.test.tsx`: header Copy `TugIconButton` exists; no `.tugx-term-copy` overlay; `scrollbar-gutter` declared on the scroller; `position: sticky` declared on the header.
+- [x] Switch block roots (`.tugx-file`, `.tugx-diff`, `.tugx-term`, `.tugx-md-fenced-code`) from `overflow: hidden` to `overflow: clip` so the rounded-corner clipping survives but the sticky descendants see the OUTER transcript scroller. `overflow: hidden` forms a scroll container that captures sticky positioning; `overflow: clip` clips without forming one. Supported in WebKit (Safari 16+).
 
 **Tasks (Phase C — entry-header pin):**
 
@@ -2201,14 +2317,14 @@ Sticky context analysis confirms the layout is safe: `TugListView` uses natural 
 
 **Tests (commands):**
 
-- [ ] `bun test src/components/tugways/__tests__/tug-code-view.test.tsx`
-- [ ] `bun test src/components/tugways/body-kinds/__tests__/file-block.test.tsx`
-- [ ] `bun test src/components/tugways/body-kinds/__tests__/diff-block.test.tsx`
-- [ ] `bun test src/components/tugways/body-kinds/__tests__/terminal-block.test.tsx`
-- [ ] `bun test src/components/tugways/__tests__/tug-transcript-entry.test.tsx`
-- [ ] `bunx tsc --noEmit`
-- [ ] `bun run audit:tokens lint`
-- [ ] `bun test` (full suite — no regressions)
+- [x] `bun test src/components/tugways/__tests__/tug-code-view.test.tsx`
+- [x] `bun test src/components/tugways/body-kinds/__tests__/file-block.test.tsx`
+- [x] `bun test src/components/tugways/body-kinds/__tests__/diff-block.test.tsx`
+- [x] `bun test src/components/tugways/body-kinds/__tests__/terminal-block.test.tsx`
+- [ ] `bun test src/components/tugways/__tests__/tug-transcript-entry.test.tsx` (Phase C)
+- [x] `bunx tsc --noEmit`
+- [x] `bun run audit:tokens lint`
+- [x] `bun test` (full suite — no regressions)
 
 **Checkpoint:**
 

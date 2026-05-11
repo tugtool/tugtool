@@ -332,16 +332,26 @@ body {
   color: var(--tugx-block-text-color);
   border-radius: var(--tugx-block-radius);
   margin: var(--tugx-md-fenced-code-margin) 0;
-  overflow: hidden;
+  /* `overflow: clip` clips to the rounded border-radius without
+   * forming a scroll container — `overflow: hidden` would, and
+   * would capture sticky positioning from the fenced-code header. */
+  overflow: clip;
 }
 
-/* Header — language label on the left, copy button on the right. */
+/* Header — language label on the left, copy button on the right.
+ * Pinned (`position: sticky`) so it stays visible while scrolling
+ * deep into a long fenced-code block; `top: var(--tugx-pin-stack-top, 0)`
+ * lets an outer pin context push it down so the two telescope. */
 /* @tug-renders-on: --tugx-block-bg */
 .tugx-md-block .tugx-md-fenced-code-header {
+  position: sticky;
+  top: var(--tugx-pin-stack-top, 0);
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: var(--tugx-block-strip-padding);
+  background: var(--tugx-block-strip-bg);
   border-bottom: 1px solid var(--tugx-block-strip-border);
   font-family: var(--tugx-block-code-font);
   font-size: var(--tugx-block-strip-size);

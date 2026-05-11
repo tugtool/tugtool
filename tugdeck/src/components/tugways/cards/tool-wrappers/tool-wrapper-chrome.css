@@ -83,7 +83,11 @@ body {
   background: var(--tugx-block-chrome-bg);
   border: 1px solid var(--tugx-block-border);
   border-radius: var(--tugx-block-radius);
-  overflow: hidden;
+  /* `overflow: clip` clips to the rounded border-radius without
+   * forming a scrolling container — `overflow: hidden` would form
+   * one and capture sticky positioning from any composed body kind
+   * with a `position: sticky` header. */
+  overflow: clip;
 }
 
 .tool-wrapper-chrome[data-status="streaming"] {
@@ -100,7 +104,17 @@ body {
 
 /* ---- Header row ---- */
 
+/* Pinned header — stays visible while the user scrolls the wrapper's
+ * body. In embedded-mode tool blocks (Read, Edit, Bash), this is the
+ * primary visible header; the composed body-kind's own header is
+ * suppressed by `embedded={true}`. `top: var(--tugx-pin-stack-top, 0)`
+ * lets an outer pin context (e.g. a transcript-entry header that has
+ * written its measured height into the variable) push this header
+ * down so the two telescope. */
 .tool-wrapper-chrome-header {
+  position: sticky;
+  top: var(--tugx-pin-stack-top, 0);
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: var(--tugx-block-strip-gap);

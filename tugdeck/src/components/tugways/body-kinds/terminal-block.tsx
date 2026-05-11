@@ -22,6 +22,23 @@
  *      sync read on mount, observe for updates, write the DOM
  *      imperatively).
  *
+ * Composition:
+ *
+ *  - Header (React-rendered `.tugx-term-header`): optional label
+ *    slot at left (`headerLabel` prop — typically the command for
+ *    Bash tool standalone use; embedded hosts pass `undefined`
+ *    because their own chrome carries identity), a flex spacer, and
+ *    a `Copy` `<TugIconButton>` at right. The header is
+ *    `position: sticky` so it stays visible while the user scrolls
+ *    deep into the body. The Copy overlay (`.tugx-term-copy` absolute
+ *    div) it replaces was retired: it sat on top of the scrollbar
+ *    gutter for any output tall enough to trigger scrolling.
+ *  - Body (imperatively rendered into `.tugx-term-content`): the
+ *    truncation banner, the flat / virtualized line container, and
+ *    the post-mortem footer. The line rendering, ANSI palette, and
+ *    virtualization machinery are unchanged — the header is the
+ *    only structural addition.
+ *
  * Render strategy:
  *
  *   - **Flat path** for ≤ `VISIBLE_THRESHOLD` lines (default 40):
@@ -31,8 +48,11 @@
  *     block paints its own scroll container, drives a
  *     `BlockHeightIndex` + `RenderedBlockWindow`, and only the
  *     visible window plus an overscan of two viewport heights is in
- *     the DOM. This is the [D02] decision; the audit's P95 of
- *     40 lines made 40 the natural threshold.
+ *     the DOM. The scroller declares `scrollbar-gutter: stable` so
+ *     the gutter is reserved regardless of content height (no
+ *     horizontal layout shift when output grows past the viewport).
+ *     This is the [D02] decision; the audit's P95 of 40 lines made
+ *     40 the natural threshold.
  *   - **Retention cap** at `RETAINED_LINE_CAP` (10k per [Q04]):
  *     when the parsed-line count exceeds the cap, the earliest
  *     lines are dropped and a "… N earlier lines truncated"
@@ -45,11 +65,16 @@
  *    subscription so DOM is in place before paint.
  *  - [L06] appearance changes go through CSS / DOM. The scroll
  *    listener writes spacer heights and reorders line elements
- *    imperatively — no React rerender per scroll event.
+ *    imperatively — no React rerender per scroll event. The Copy
+ *    button's `aria-label` and `onClick` are React props, but the
+ *    "I just wrote text to the clipboard" feedback is a DOM class
+ *    swap on the button ref so the imperative render path doesn't
+ *    have to roundtrip through React state.
  *  - [L19] file pair (`.tsx` + `.css`), exported props interface,
  *    `data-slot="terminal-body"` on the root.
  *  - [L20] component-token sovereignty — owns the `--tugx-term-*`
- *    slot family ([Table T07]).
+ *    slot family ([Table T07]). The retired Copy overlay's
+ *    `--tugx-term-copy-*` slots were dropped with it.
  *  - [L22] streaming binding observes the `PropertyStore` directly
  *    and rebuilds the DOM imperatively; React state holds only
  *    container refs.
@@ -68,8 +93,10 @@
 import "./terminal-block.css";
 
 import React from "react";
+import { Copy } from "lucide-react";
 
 import type { PropertyStore } from "@/components/tugways/property-store";
+import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import { ansiToHtml } from "@/lib/ansi/ansi-to-html";
 import { BlockHeightIndex } from "@/lib/block-height-index";
 import { RenderedBlockWindow } from "@/lib/rendered-block-window";
@@ -128,13 +155,25 @@ export interface TerminalBlockProps {
    * "Embedded" mode — drop the terminal's own frame
    * (background / border / radius / outer margin) so it integrates
    * flush inside a host that already paints a container, e.g. a
-   * `ToolWrapperChrome` body region. The lines, copy button, footer
-   * badges and ANSI palette are unchanged. Default `false` —
+   * `ToolWrapperChrome` body region. The lines, header strip,
+   * footer badges and ANSI palette are unchanged. Default `false` —
    * standalone usage (gallery, RenderInput-routed) keeps its frame.
    *
    * @default false
    */
   embedded?: boolean;
+
+  /**
+   * Optional label rendered at the left of the pinned header. The
+   * Bash tool wrapper (`BashToolBlock`) passes the command here for
+   * standalone gallery use; embedded callers typically pass
+   * `undefined` because their own chrome already carries identity.
+   * Strings are wrapped in a `<span>` so the consumer doesn't have
+   * to pre-wrap; arbitrary `ReactNode` is also accepted for
+   * caller-controlled markup (e.g. a `<code>` element preserving
+   * the literal command).
+   */
+  headerLabel?: React.ReactNode;
 }
 
 // ---------------------------------------------------------------------------
@@ -169,6 +208,7 @@ export const VIRTUAL_VIEWPORT_LINES = 24;
 const DEFAULT_STREAMING_PATH = "terminal";
 
 const DATA_SLOT_ROOT = "terminal-body";
+const DATA_SLOT_HEADER = "terminal-header";
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -247,8 +287,6 @@ export function formatDuration(ms: number): string {
 // Imperative DOM rendering
 // ---------------------------------------------------------------------------
 
-const SVG_NS = "http://www.w3.org/2000/svg";
-
 /** Build a single line element. */
 function buildLineElement(line: ParsedLine): HTMLElement {
   const el = document.createElement("div");
@@ -270,69 +308,6 @@ function buildTruncationIndicator(droppedCount: number): HTMLElement {
     droppedCount === 1 ? "" : "s"
   } truncated`;
   return el;
-}
-
-/** Build the copy-to-clipboard button overlaid on the body. */
-function buildCopyButton(getText: () => string): HTMLButtonElement {
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "tugx-term-copy";
-  btn.dataset.slot = "terminal-copy";
-  btn.setAttribute("aria-label", "Copy terminal output");
-  btn.appendChild(buildIcon("copy"));
-  btn.appendChild(buildIcon("check"));
-  const label = document.createElement("span");
-  label.className = "tugx-term-copy-label";
-  label.textContent = "Copy";
-  btn.appendChild(label);
-  btn.addEventListener("click", () => {
-    const writeText = navigator.clipboard?.writeText.bind(navigator.clipboard);
-    if (writeText === undefined) return;
-    writeText(getText())
-      .then(() => {
-        btn.classList.add("is-copied");
-        window.setTimeout(() => btn.classList.remove("is-copied"), 1200);
-      })
-      .catch(() => {
-        // Swallow — the user gets no positive confirmation, which is
-        // the right behavior when the write actually fails.
-      });
-  });
-  return btn;
-}
-
-/** Lucide-style 14×14 icon (currentColor stroke). */
-function buildIcon(kind: "copy" | "check"): SVGSVGElement {
-  const svg = document.createElementNS(SVG_NS, "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("width", "14");
-  svg.setAttribute("height", "14");
-  svg.setAttribute("fill", "none");
-  svg.setAttribute("stroke", "currentColor");
-  svg.setAttribute("stroke-width", "2");
-  svg.setAttribute("stroke-linecap", "round");
-  svg.setAttribute("stroke-linejoin", "round");
-  svg.setAttribute("aria-hidden", "true");
-  svg.classList.add("tugx-term-copy-icon");
-  svg.classList.add(`tugx-term-copy-icon--${kind}`);
-  if (kind === "copy") {
-    const r = document.createElementNS(SVG_NS, "rect");
-    r.setAttribute("width", "14");
-    r.setAttribute("height", "14");
-    r.setAttribute("x", "8");
-    r.setAttribute("y", "8");
-    r.setAttribute("rx", "2");
-    r.setAttribute("ry", "2");
-    svg.appendChild(r);
-    const p = document.createElementNS(SVG_NS, "path");
-    p.setAttribute("d", "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2");
-    svg.appendChild(p);
-  } else {
-    const p = document.createElementNS(SVG_NS, "path");
-    p.setAttribute("d", "M20 6 9 17l-5-5");
-    svg.appendChild(p);
-  }
-  return svg;
 }
 
 /** Build the footer (exit code badge + duration + interrupted). */
@@ -520,18 +495,26 @@ function findNextMountedAfter(
 }
 
 /**
- * Top-level imperative render. Rebuilds `container` from scratch
- * each call. Returns the cleanup callback (no-op for flat path,
- * scroll-listener detach for virtualized).
+ * Top-level imperative render. Rebuilds `body` from scratch each
+ * call and stamps `data-empty` on the `outer` root. The header is
+ * NOT touched here — React owns the header markup (label + Copy
+ * `<TugIconButton>`); this function rebuilds only what lives below
+ * the header (truncation banner, flat / virtualized line container,
+ * post-mortem footer). Returns the cleanup callback (no-op for flat
+ * path, scroll-listener detach for virtualized).
  */
-function renderTerminal(container: HTMLElement, data: TerminalData): () => void {
-  container.replaceChildren();
+function renderTerminal(
+  outer: HTMLElement,
+  body: HTMLElement,
+  data: TerminalData,
+): () => void {
+  body.replaceChildren();
   // Empty terminal: render the footer if any post-mortem fields are
   // set, but leave the body empty. (A bash command that emitted no
   // output but exited with code 0 is meaningful — exit-code 0 badge
   // tells the user it succeeded.)
   const empty = !hasContent(data);
-  container.dataset.empty = empty ? "true" : "false";
+  outer.dataset.empty = empty ? "true" : "false";
 
   let lines: ParsedLine[] = [];
   let truncated = 0;
@@ -546,23 +529,20 @@ function renderTerminal(container: HTMLElement, data: TerminalData): () => void 
   }
 
   if (truncated > 0) {
-    container.appendChild(buildTruncationIndicator(truncated));
+    body.appendChild(buildTruncationIndicator(truncated));
   }
 
   let cleanup: (() => void) | null = null;
   if (lines.length > 0) {
     if (lines.length <= VISIBLE_THRESHOLD) {
-      appendFlatBody(container, lines);
+      appendFlatBody(body, lines);
     } else {
-      cleanup = appendVirtualizedBody(container, lines);
+      cleanup = appendVirtualizedBody(body, lines);
     }
-    container.appendChild(
-      buildCopyButton(() => composeCopyText(data)),
-    );
   }
 
   const footer = buildFooter(data);
-  if (footer !== null) container.appendChild(footer);
+  if (footer !== null) body.appendChild(footer);
 
   return cleanup ?? (() => undefined);
 }
@@ -585,23 +565,41 @@ function composeCopyText(data: TerminalData): string {
 
 const EMPTY_TERMINAL: TerminalData = { stdout: "", stderr: "" };
 
+/** Duration the Copy button shows its "just-copied" cue (ms). */
+const COPIED_FLASH_MS = 1200;
+
 export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   data,
   streamingStore,
   streamingPath = DEFAULT_STREAMING_PATH,
   className,
   embedded = false,
+  headerLabel,
 }) => {
-  const containerRef = React.useRef<HTMLDivElement | null>(null);
+  // Outer card — React owns the markup (header + body container);
+  // imperative `renderTerminal` writes lines/footer into `bodyRef`.
+  const outerRef = React.useRef<HTMLDivElement | null>(null);
+  const bodyRef = React.useRef<HTMLDivElement | null>(null);
+  // Latest data for the Copy callback to read. Updated inside both
+  // effects so streaming sees the freshest stdout/stderr without
+  // forcing a React re-render of the shell.
+  const latestDataRef = React.useRef<TerminalData>(EMPTY_TERMINAL);
+  // Ref into the underlying button so the "just-copied" feedback can
+  // toggle a class via DOM [L06] rather than React state.
+  const copyButtonRef = React.useRef<HTMLButtonElement | null>(null);
+  const copiedTimerRef = React.useRef<number | null>(null);
 
   // Static mode — runs once at mount, never again. Skipped when
   // streamingStore is set so the streaming effect below owns the
   // render.
   React.useLayoutEffect(() => {
     if (streamingStore !== undefined) return;
-    const el = containerRef.current;
-    if (el === null) return;
-    const cleanup = renderTerminal(el, data ?? EMPTY_TERMINAL);
+    const outer = outerRef.current;
+    const body = bodyRef.current;
+    if (outer === null || body === null) return;
+    const d = data ?? EMPTY_TERMINAL;
+    latestDataRef.current = d;
+    const cleanup = renderTerminal(outer, body, d);
     return cleanup;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -610,20 +608,24 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // subscribes for updates, rAF-coalesces.
   React.useLayoutEffect(() => {
     if (streamingStore === undefined) return;
-    const el = containerRef.current;
-    if (el === null) return;
+    const outer = outerRef.current;
+    const body = bodyRef.current;
+    if (outer === null || body === null) return;
     const store = streamingStore;
 
     let cleanup: () => void = () => undefined;
 
     function rerender(): void {
       cleanup();
-      const target = containerRef.current;
-      if (target === null) {
+      const outerEl = outerRef.current;
+      const bodyEl = bodyRef.current;
+      if (outerEl === null || bodyEl === null) {
         cleanup = () => undefined;
         return;
       }
-      cleanup = renderTerminal(target, coerceTerminalData(store.get(streamingPath)));
+      const next = coerceTerminalData(store.get(streamingPath));
+      latestDataRef.current = next;
+      cleanup = renderTerminal(outerEl, bodyEl, next);
     }
 
     rerender();
@@ -647,17 +649,75 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
     };
   }, [streamingStore, streamingPath]);
 
+  // Clear any pending "just-copied" timer on unmount.
+  React.useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current !== null) {
+        window.clearTimeout(copiedTimerRef.current);
+        copiedTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleCopy = React.useCallback((): void => {
+    const writeText = navigator.clipboard?.writeText.bind(navigator.clipboard);
+    if (writeText === undefined) return;
+    const text = composeCopyText(latestDataRef.current);
+    writeText(text)
+      .then(() => {
+        const btn = copyButtonRef.current;
+        if (btn === null) return;
+        btn.classList.add("is-copied");
+        if (copiedTimerRef.current !== null) {
+          window.clearTimeout(copiedTimerRef.current);
+        }
+        copiedTimerRef.current = window.setTimeout(() => {
+          copiedTimerRef.current = null;
+          // Re-read the ref — the component may have unmounted
+          // between the timer's schedule and its fire.
+          const live = copyButtonRef.current;
+          if (live !== null) live.classList.remove("is-copied");
+        }, COPIED_FLASH_MS);
+      })
+      .catch(() => {
+        // Swallow — the user gets no positive confirmation, which is
+        // the right behavior when the write actually fails.
+      });
+  }, []);
+
   return (
     <div
-      ref={containerRef}
+      ref={outerRef}
       data-slot={DATA_SLOT_ROOT}
       data-empty="true"
       data-embedded={embedded ? "true" : undefined}
       className={
-        className === undefined
-          ? "tugx-term"
-          : `tugx-term ${className}`
+        className === undefined ? "tugx-term" : `tugx-term ${className}`
       }
-    />
+    >
+      <div className="tugx-term-header" data-slot={DATA_SLOT_HEADER}>
+        {headerLabel !== undefined ? (
+          <span
+            className="tugx-term-header-label"
+            data-slot="terminal-header-label"
+          >
+            {headerLabel}
+          </span>
+        ) : null}
+        <span className="tugx-term-header-spacer" />
+        <TugIconButton
+          ref={copyButtonRef}
+          icon={<Copy />}
+          aria-label="Copy terminal output"
+          onClick={handleCopy}
+          className="tugx-term-copy-button"
+        />
+      </div>
+      <div
+        ref={bodyRef}
+        className="tugx-term-content"
+        data-slot="terminal-content"
+      />
+    </div>
   );
 };

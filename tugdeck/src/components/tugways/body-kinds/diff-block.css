@@ -87,7 +87,10 @@ body {
   background: var(--tugx-block-bg);
   border: 1px solid var(--tugx-block-border);
   border-radius: var(--tugx-block-radius);
-  overflow: hidden;
+  /* `overflow: clip` clips children to the rounded border-radius
+   * without forming a scroll container — `overflow: hidden` would,
+   * and would capture sticky positioning from `.tugx-diff-header`. */
+  overflow: clip;
   color: var(--tugx-block-text-color);
   font-family: var(--tugx-block-code-font);
   font-size: var(--tugx-block-code-font-size);
@@ -108,7 +111,14 @@ body {
 
 /* ---------- Header ---------- */
 
+/* Pinned header strip — stays visible while the user scrolls deep
+ * into the diff body. `top: var(--tugx-pin-stack-top, 0)` lets an
+ * outer pin context push this header down so the two telescope;
+ * falls back to `top: 0` when no outer pin is present. */
 .tugx-diff-header {
+  position: sticky;
+  top: var(--tugx-pin-stack-top, 0);
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: var(--tugx-block-strip-gap);

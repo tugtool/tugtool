@@ -1,8 +1,8 @@
 /**
  * `FileBlock` — body-kind tests.
  *
- * After the Step 10.9 Phase A engine swap, `FileBlock` is a thin
- * chrome around `TugCodeView`. This test scope is correspondingly
+ * After the engine swap to `TugCodeView`, `FileBlock` is a thin
+ * chrome around the substrate. This test scope is correspondingly
  * narrow:
  *
  *  - Pure helpers: `detectLanguage`, `splitContentLines`, `basename`,

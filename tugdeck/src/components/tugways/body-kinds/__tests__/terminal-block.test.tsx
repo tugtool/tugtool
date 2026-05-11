@@ -30,8 +30,20 @@ import {
 } from "bun:test";
 import { act, cleanup, render } from "@testing-library/react";
 import React from "react";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 
 import { PropertyStore } from "../../property-store";
+
+// Path to the source `terminal-block.css` — used by the
+// scrollbar-gutter regression test (happy-dom doesn't honor the CSS
+// rule for `getComputedStyle`, so the assertion reads the source).
+const TERMINAL_CSS_PATH = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "terminal-block.css",
+);
 
 import {
   TerminalBlock,
@@ -366,7 +378,7 @@ describe("TerminalBlock — streaming mode", () => {
 // Copy interaction
 // ---------------------------------------------------------------------------
 
-describe("TerminalBlock — copy button", () => {
+describe("TerminalBlock — copy button (in pinned header)", () => {
   let originalClipboard: PropertyDescriptor | undefined;
 
   beforeEach(() => {
@@ -382,7 +394,7 @@ describe("TerminalBlock — copy button", () => {
     }
   });
 
-  test("clicking copy writes composed stdout+stderr text and toggles is-copied", async () => {
+  test("clicking Copy writes composed stdout+stderr text and toggles is-copied", async () => {
     const writeText = mock(() => Promise.resolve());
     Object.defineProperty(navigator, "clipboard", {
       value: { writeText },
@@ -391,8 +403,11 @@ describe("TerminalBlock — copy button", () => {
 
     const data: TerminalData = { stdout: "out1\nout2", stderr: "err1" };
     const { container } = render(<TerminalBlock data={data} />);
+    // Copy lives in the pinned header now; the previous absolute-
+    // positioned overlay (`.tugx-term-copy` / `[data-slot="terminal-copy"]`)
+    // is retired. Query by accessible name.
     const btn = container.querySelector(
-      '[data-slot="terminal-copy"]',
+      'button[aria-label="Copy terminal output"]',
     ) as HTMLButtonElement;
     expect(btn).not.toBeNull();
 
@@ -412,9 +427,117 @@ describe("TerminalBlock — copy button", () => {
     const data: TerminalData = { stdout: "ok", stderr: "" };
     const { container } = render(<TerminalBlock data={data} />);
     const btn = container.querySelector(
-      '[data-slot="terminal-copy"]',
+      'button[aria-label="Copy terminal output"]',
     ) as HTMLButtonElement;
     expect(() => btn.click()).not.toThrow();
     expect(btn.classList.contains("is-copied")).toBe(false);
+  });
+
+  test("Copy button is always rendered (even when the terminal is empty)", () => {
+    // The header is part of the React shell, not the imperative
+    // body render; it is therefore present from mount, regardless of
+    // whether `data` carries stdout/stderr. Users can copy an empty
+    // terminal (no-op text) without the button hiding on them.
+    const { container } = render(<TerminalBlock />);
+    const header = container.querySelector(
+      '[data-slot="terminal-header"]',
+    ) as HTMLElement;
+    expect(header).not.toBeNull();
+    expect(
+      header.querySelector('button[aria-label="Copy terminal output"]'),
+    ).not.toBeNull();
+  });
+});
+
+describe("TerminalBlock — pinned header + Copy button", () => {
+  test("header renders as the first child of the terminal root", () => {
+    // The pinned header sits at the top of the block, above the
+    // `.tugx-term-content` body container. Sticky positioning needs
+    // the header to be a direct child of the block root with the
+    // body as a sibling below it.
+    const data: TerminalData = { stdout: "ok", stderr: "" };
+    const { container } = render(<TerminalBlock data={data} />);
+    const root = container.querySelector(
+      '[data-slot="terminal-body"]',
+    ) as HTMLElement;
+    expect(root.firstElementChild?.getAttribute("data-slot")).toBe(
+      "terminal-header",
+    );
+    expect(
+      root.querySelector('[data-slot="terminal-content"]'),
+    ).not.toBeNull();
+  });
+
+  test("`headerLabel` prop renders in the header's left slot", () => {
+    // Standalone gallery use: caller supplies the label (typically
+    // the command). Embedded callers omit it because their wrapping
+    // chrome already carries identity.
+    const data: TerminalData = { stdout: "out", stderr: "" };
+    const { container } = render(
+      <TerminalBlock data={data} headerLabel="ls -la" />,
+    );
+    const label = container.querySelector(
+      '[data-slot="terminal-header-label"]',
+    ) as HTMLElement;
+    expect(label).not.toBeNull();
+    expect(label.textContent).toBe("ls -la");
+  });
+
+  test("no `headerLabel` → no label slot, but the Copy button still renders", () => {
+    const data: TerminalData = { stdout: "out", stderr: "" };
+    const { container } = render(<TerminalBlock data={data} />);
+    expect(
+      container.querySelector('[data-slot="terminal-header-label"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('button[aria-label="Copy terminal output"]'),
+    ).not.toBeNull();
+  });
+
+  test("retired Copy overlay DOM is gone — no `.tugx-term-copy` absolute element", () => {
+    // Regression pin: the imperative copy overlay (`.tugx-term-copy`
+    // button, with `[data-slot="terminal-copy"]`) was retired with
+    // the `--tugx-term-copy-*` slot family. The Copy lives in the
+    // header now; selecting by the old hook must return null. If a
+    // future refactor reintroduces an overlay, this test will catch
+    // the regression.
+    const lines: string[] = [];
+    for (let i = 0; i < 200; i += 1) lines.push(`line-${i}`);
+    const data: TerminalData = { stdout: lines.join("\n"), stderr: "" };
+    const { container } = render(<TerminalBlock data={data} />);
+    expect(container.querySelector(".tugx-term-copy")).toBeNull();
+    expect(
+      container.querySelector('[data-slot="terminal-copy"]'),
+    ).toBeNull();
+  });
+
+  test("CSS source declares `scrollbar-gutter: stable` on `.tugx-term-scroller`", () => {
+    // The virtualized scroller reserves the vertical scrollbar gutter
+    // in layout so the rightmost column of text doesn't reflow when
+    // a streaming command's output crosses the viewport-height
+    // threshold. happy-dom doesn't honor the property for
+    // `getComputedStyle`, so the assertion reads the source instead —
+    // sufficient to catch a regression that drops the declaration.
+    const css = readFileSync(TERMINAL_CSS_PATH, "utf8");
+    const scrollerRule = css.match(
+      /\.tugx-term-scroller\s*\{[^}]*\}/,
+    )?.[0];
+    expect(scrollerRule).toBeDefined();
+    expect(scrollerRule).toMatch(/scrollbar-gutter:\s*stable/);
+  });
+
+  test("CSS source declares `position: sticky` on `.tugx-term-header`", () => {
+    // The Copy lives in a header that stays in view while the body
+    // scrolls. The sticky declaration is the load-bearing CSS.
+    // Reading the source pins it; the actual paint behavior is
+    // verified in the gallery card + a manual visual check (happy-
+    // dom can't exercise scrollport-driven sticky).
+    const css = readFileSync(TERMINAL_CSS_PATH, "utf8");
+    const headerRule = css.match(/\.tugx-term-header\s*\{[^}]*\}/)?.[0];
+    expect(headerRule).toBeDefined();
+    expect(headerRule).toMatch(/position:\s*sticky/);
+    // Telescoping variable consumed with a `top: 0` fallback so
+    // standalone (no entry-header) hosts still pin at viewport top.
+    expect(headerRule).toMatch(/top:\s*var\(--tugx-pin-stack-top,\s*0\)/);
   });
 });

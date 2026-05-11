@@ -84,9 +84,8 @@
  * Decisions:
  *  - [D05] two-layer split: body kind (this file) vs. tool wrapper
  *    (`read-tool-block.tsx`).
- *  - Step 10.9 Phase A: CM6 is the canonical engine for file-based
- *    text content. See `roadmap/tide-assistant-rendering.md#step-10-9`
- *    for the full architectural rationale.
+ *  - CM6 is the canonical engine for file-based text content
+ *    (`tuglaws/component-authoring.md` §Text content).
  *
  * @module components/tugways/body-kinds/file-block
  */
