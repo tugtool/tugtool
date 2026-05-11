@@ -2083,43 +2083,136 @@ Roughly half the slot declarations collapse — and every drop replaces a unique
 
 ---
 
-#### Step 10.9: Copy button clears the scrollbar {#step-10-9}
+#### Step 10.9: Pinned headers + CM6 file viewer {#step-10-9}
 
-**Depends on:** none
+**Depends on:** none (foundation for future entry-level controls + the second public consumer of the CM6 substrate already in `tug-text-editor`).
 
-**Commit:** `fix(tide-rendering): position TerminalBlock Copy button clear of the scrollbar gutter`
+**Commit:** `feat(tide-rendering): pin transcript entry + content block headers; FileBlock on CM6 (TugCodeView)`
 
-**References:** [L06], [L19], [L20]
+**References:** [L02], [L03], [L06], [L19], [L20]
 
-**Why this step exists.** `TerminalBlock` overlays a Copy button at `position: absolute; top: var(--tugx-term-copy-offset); right: var(--tugx-term-copy-offset)`. The scroller body inside has its own vertical (and sometimes horizontal) scrollbar at the right / bottom edge. With the current offset of `--tug-space-xs` (4px), the Copy button sits visually on top of the vertical scrollbar gutter — and worse, with both scrollbars showing, on top of the corner where they meet. Real user-reported visual bug from the live Tide session.
+**Why this step exists.** Three problems share one structural cause, plus a fourth caused by parallel implementations of the same feature:
 
-**Decision: structural fix, not cosmetic offset.** Bumping `--tugx-term-copy-offset` to a larger value would clear typical scrollbars but pushes the button uncomfortably far into the content area on narrow terminals and still fails on platforms with wide scrollbars (Windows ~17px) or oversized accessibility scrollbars. The correct fix is structural: the Copy button moves into a non-scrolling overlay layer that sits above the scroller but inside the terminal frame, with `pointer-events: none` on the layer and `pointer-events: auto` on the button itself. The button's `right` offset is then relative to the *terminal*'s right edge minus a scrollbar-reservation gap.
+1. **Per-line horizontal scrollbars in `FileBlock`.** Each `.tugx-file-content` cell is its own `overflow-x: auto` scroll container, so wide lines render N stacked per-row scrollbars. Real user-reported visual bug from the live Tide session — see screenshot in the task that motivated this recast.
+2. **Copy button overlapping the scrollbar in `TerminalBlock`.** Copy is an `position: absolute` overlay inside the body scroller. It sits on top of the vertical scrollbar gutter — and worse, on the corner where both scrollbars meet — for any output tall enough to trigger scrolling.
+3. **Block affordances scroll away with the body.** When you scroll a long FileBlock / DiffBlock body, the Copy / Search / Collapse / view-mode controls all live in the header strip that scrolls off the top of the viewport. Users have to scroll back up to reach them.
+4. **`FileBlock` reimplements a text engine we already own.** The bespoke `.tugx-file-rows` DOM tree, per-row scroller, per-line click gesture, Shiki-overlay swap, and Cmd-F overlay are all features that `@codemirror/view` provides natively — and that `tug-text-editor` already exposes for the editing side. Maintaining two parallel text-display systems means *every* fix has to ship in two places and inevitably drift; the per-line scrollbar bug is a direct symptom of the maintenance gap.
 
-The cleanest implementation uses `scrollbar-gutter: stable` on the scroller (reserves scrollbar space in layout even when not active) plus a sibling overlay div for the button. The button always sits in the same x-position regardless of whether the scrollbar is visible.
+Problems 1–3 collapse into "affordances live at a stable visible location, never on top of a scrollbar, never scrolled away." The structural fix is **pinned headers** at two nesting levels: the `TugTranscriptEntry` header (identifier + timestamp + future entry-level controls) and each content block's own header (FileBlock path/lang/buttons; DiffBlock path/stats/buttons; new TerminalBlock header with command summary + Copy). Problem 4 collapses into "use CM6 for any file-based text content" — which dissolves the per-line scrollbar by construction (CM6's `EditorView.lineWrapping` is a single extension), brings find/search/selection/large-file virtualization for free, and aligns the read surface with the edit surface so users see one scroll behavior, one find UI, one selection model, one set of keyboard shortcuts.
+
+**Decision: CM6 is the canonical text engine for file-based content. No exceptions.** `tug-text-editor` already mounts `EditorView` from `@codemirror/state` / `@codemirror/view` / `@codemirror/commands` with the full `Compartment`-based reconfiguration plumbing (soft-wrap, line numbers, read-only, theme, active-line gutter, placeholder — all in place at `tug-text-editor.tsx:83-330`). The packages are already in `tugdeck/package.json`; the bundle cost is paid. FileBlock's bespoke renderer is retired and replaced by a thin read-only CM6-backed primitive that shares its extension stack with the editor. The "one engine, no bespoke scroll bugs ever again, consistent UX across read and edit" outcome is the whole point.
+
+**Decision: extract `TugCodeView`, a read-only sibling to `tug-text-editor`.** Not a flag on `tug-text-editor` — a peer primitive. The editor's responder/selection/focus story is sized for typing; a viewer's responder story is *selection-only* (no cursor, no IME, no edit keymaps). Both share:
+
+- The same extension set: `EditorView.lineWrapping`, `lineNumbers()`, the existing CM6 theme, the Shiki-via-`@codemirror/language` bridge (or a `tugmark` highlight bridge if we wire one).
+- The same `Compartment` reconfiguration pattern, so `wrap` / `lineNumbers` / `language` can be toggled at runtime without rebuilding the view.
+- The same focus-acceptance / responder-chain integration as the editor.
+
+`TugCodeView` deliberately differs in three ways:
+
+- `EditorState.readOnly.of(true)` permanently in its config (no editable mode).
+- No edit keymap; viewer adds `@codemirror/search` for Cmd-F find UI, optionally `@codemirror/commands` for `selectAll` / `copy` shortcuts.
+- React shell is simpler: no `onChange` callback, no value mutation, no `state-preservation` payload — the rendered text is the entire input.
+
+`FileBlock` becomes a thin chrome around a `TugCodeView`: header strip (path + lang badge + counts + Copy + Search + Collapse) above a CM6 viewport. The match-highlight overlay, the per-row scroller, the imperative `buildSearchIcon()`, the Shiki content-swap — all retired. Line numbers come from CM6's `lineNumbers()` gutter; soft-wrap from `EditorView.lineWrapping`; search from `@codemirror/search` mounted with our `TugIconButton`-driven trigger.
+
+**Decision: telescoping sticky stack, two levels.** Outer = `TugTranscriptEntry` `__header`. Inner = block header inside the entry body. Outer pins at `top: 0`; inner pins at `top: var(--tugx-pin-stack-top, 0)`. The entry root writes its measured header height to that variable via `ResizeObserver` in `useLayoutEffect` ([L03] before paint; [L06] DOM write, not React state). When both pin simultaneously, the entry header sits at the top of the viewport and the block header sits directly under it — the GitHub PR pattern, the VS Code Sticky Scroll pattern, the iOS UITableView section-header pattern.
+
+Sticky context analysis confirms the layout is safe: `TugListView` uses natural document flow (`tug-list-view.css:84-96` — `display: flex; flex-direction: column; row-gap`, with top/bottom spacers, no transforms, no `position: absolute` on cells). Sticky elements inside cells stick to the list-view's scroll container as expected. `.tugx-file { overflow: hidden }` etc. clip at the file's box, which is the *correct* behavior — the file's pinned header naturally disappears when the entire file scrolls past.
+
+**Decision: Copy moves into block headers; no overlay layer.** The original Step 10.9 added a non-scrolling overlay div for Copy and `scrollbar-gutter: stable` to reserve the gutter — a workaround for the symptom. With pinned headers, Copy lives in the header strip alongside the existing controls; it is *never* overlaid on the body, so the scrollbar conflict cannot exist. `TerminalBlock` currently has no header — this step adds one (mirroring the FileBlock strip shape) and retires the body-overlay Copy and the `--tugx-term-copy-*` slot family.
+
+**Decision: reserve the scrollbar gutter on body scrollers.** `scrollbar-gutter: stable` on `.tugx-term`'s body scroller (and on `TugCodeView`'s inner viewport, if CM6's default isn't already stable). The gutter is always present in layout even when no scrollbar is visible; no jitter when content grows past the viewport. Cheap, principled, eliminates a class of layout-shift bugs.
+
+**Decision: `[data-stuck="true"]` via IntersectionObserver for the stuck-state shadow.** Tugdeck targets WebKit (the Swift host's `WKWebView`); experimental Blink-only proposals like `:stuck` are irrelevant. The pinned-header drop-shadow (a 1px hairline under the header to visually separate it from the scrolled-under body) is driven by an `IntersectionObserver` watching a sentinel element above the header. When the sentinel scrolls out, the observer flips `data-stuck="true"` on the header and CSS paints the hairline. Standard WebKit-safe technique. (Defer to a follow-on polish if v1 ships without it; the pin works without the shadow.)
+
+**Decision: `TugListEntry` becomes the named primitive.** The pinning behavior is documented on `TugTranscriptEntry` as the canonical "named row with sticky header + scrolling body + optional controls under body" pattern. Future surfaces (history panel, audit log, permission log, session inspector) consume the same shape. Establishes the seat for future entry-level affordances (mute thread, mark unread, share entry, jump-to-related, etc.) without re-inventing.
+
+**Three phases:**
+
+##### Phase A — `TugCodeView` + `FileBlock` engine swap
+
+- New: `tugdeck/src/components/tugways/tug-code-view.tsx` + `.css`. Read-only CM6 viewer. Same extension lineage as `tug-text-editor` but shorter: `EditorView.lineWrapping`, `lineNumbers()`, `@codemirror/search`, the shared theme, language extensions, and a thin selection-only responder.
+- New: `tugdeck/src/components/tugways/__tests__/tug-code-view.test.tsx`. Mount, value, wrap toggle, line-numbers toggle, language toggle, find UI reveal, selection round-trip.
+- Updated: `tugdeck/src/components/tugways/body-kinds/file-block.tsx` — body becomes `<TugCodeView value={content} language={language} wrap lineNumbers />`; the bespoke `.tugx-file-rows` / `.tugx-file-row` / `.tugx-file-content` / `.tugx-file-overlay` DOM tree and the `buildSearchIcon` SVG builder are deleted. Header keeps its current shape (path + lang + counts + `TugIconButton`s). The Cmd-F affordance now triggers CM6's `openSearchPanel` instead of toggling the bespoke search bar — the `--tugx-file-search-*` slot family retires.
+- Updated: `tugdeck/src/components/tugways/body-kinds/file-block.css` — drop the retired row/content/overlay/search-bar rule blocks and slot families. Only the frame chrome and header-specific slots remain (path color/weight, lang pill, counts).
+- Updated: `tugdeck/src/components/tugways/body-kinds/__tests__/file-block.test.tsx` — rewrite to test the new composition (TugCodeView mount + header). Defer line-level interactive behavior to `tug-code-view.test.tsx`.
+- Per-line scrollbar bug **dissolves by construction**: CM6 with `lineWrapping` produces no per-line scrollers; the body has one horizontal-overflow-clipped viewport that vertically scrolls with `pre-wrap`-style break-spaces.
+
+##### Phase B — Block-header pin + `TerminalBlock` header + Copy relocation
+
+- Add `position: sticky; top: var(--tugx-pin-stack-top, 0); z-index: 1` to `.tugx-file-header`, `.tugx-diff-header`, and (new) `.tugx-term-header`. Background already opaque via `--tugx-block-strip-bg`; no bleed-through.
+- New `.tugx-term-header` markup in `terminal-block.tsx` — command summary at left (lifted from `ToolWrapperChrome`'s args display when embedded; for standalone use it's a thin path-or-label slot), `TugIconButton` Copy at right. Retire `.tugx-term-copy` overlay DOM and the `--tugx-term-copy-*` slot family. Existing footer (exit / duration / interrupted) stays at the bottom.
+- Add `scrollbar-gutter: stable` to `.tugx-term`'s body scroller so the gutter is reserved regardless of content height.
+- Optional polish (defer if v1 needs to ship): add `--tugx-block-strip-shadow-stuck` slot to `tugx-block.css`; wire an IntersectionObserver-driven `data-stuck` attribute on each block header.
+- Tests: TerminalBlock — header `<TugIconButton>` Copy exists; no `.tugx-term-copy` overlay DOM; `scrollbar-gutter` declared on the scroller.
+
+##### Phase C — Entry-header pin + telescoping variable
+
+- `.tug-transcript-entry__header { position: sticky; top: 0; z-index: 2 }` (higher than block headers so the entry header always wins during transient transitions when both might compete).
+- `tug-transcript-entry.tsx` adds a `useLayoutEffect` that creates a `ResizeObserver` on the `__header` element and writes `--tugx-pin-stack-top: ${height}px` onto the entry root. `[L03]` (observer registered before paint) and `[L06]` (DOM write, not React state) both satisfied. Observer disconnect in the effect's cleanup.
+- `tug-transcript-entry.tsx` module docstring documents the contract: "child block headers may consume `--tugx-pin-stack-top` to telescope under the entry header when both pin simultaneously. The variable always reflects the live measured height of `__header`."
+- Tests: entry mounts; `--tugx-pin-stack-top` is set on the root after layout; updates when `__header` content changes height (simulated via prop change).
+- Real-browser sticky behavior is not asserted in happy-dom — defer to the gallery card + manual visual check, per the happy-dom scoping rule.
 
 **Artifacts:**
 
-- Updated: `tugdeck/src/components/tugways/body-kinds/terminal-block.tsx` — add an overlay layer DOM structure; move the `buildCopyButton` append target.
-- Updated: `tugdeck/src/components/tugways/body-kinds/terminal-block.css` — `scrollbar-gutter: stable` on the scroller; new `.tugx-term-overlay` selector for the non-scrolling layer; updated copy-button positioning.
-- Tests / manual verification.
+- New: `tugdeck/src/components/tugways/tug-code-view.tsx` + `.css`.
+- New: `tugdeck/src/components/tugways/__tests__/tug-code-view.test.tsx`.
+- New: `tugdeck/src/components/tugways/cards/gallery-pinned-headers.tsx` — a tall-content card demonstrating both levels pinning, with a "scroll me" affordance and a synthesized long file + tall terminal + multi-hunk diff so the telescoping is exercisable in the gallery.
+- Updated: `tugdeck/src/components/tugways/body-kinds/file-block.tsx` + `.css` + tests — engine swap to `TugCodeView`; retire `.tugx-file-rows` / `-row` / `-content` / `-overlay` / `-search-*` and their slot families.
+- Updated: `tugdeck/src/components/tugways/body-kinds/terminal-block.tsx` + `.css` + tests — new header, Copy relocated, `scrollbar-gutter: stable`, overlay DOM retired.
+- Updated: `tugdeck/src/components/tugways/body-kinds/diff-block.css` — header pin only (no JSX change).
+- Updated: `tugdeck/src/components/tugways/tug-transcript-entry.tsx` + `.css` + tests — sticky outer header + ResizeObserver-driven `--tugx-pin-stack-top`.
+- Updated: `tugdeck/src/components/tugways/tug-markdown-view.css` — fenced-code header pin (same `var(--tugx-pin-stack-top)` consumer).
+- Updated: `tuglaws/component-authoring.md` — document the pin-telescoping contract and the `TugCodeView` / file-content rule ("CM6 is the canonical text engine for file-based content").
 
-**Tasks:**
+**Tasks (Phase A — CM6 + FileBlock swap):**
 
-- [ ] Add a `.tugx-term-overlay` sibling of the scroller inside `.tugx-term`. Position absolute, full-size, `pointer-events: none`.
-- [ ] Move the Copy button DOM target from `.tugx-term` to `.tugx-term-overlay`. Set `pointer-events: auto` on the button so it's clickable.
-- [ ] Set `scrollbar-gutter: stable` on `.tugx-term-scroller` so the scrollbar always occupies layout space (no visual jump when content grows past the viewport).
-- [ ] Verify the button position on: short output (no scrollbars), tall output (v-scroll), wide output (h-scroll), tall + wide output (both scrollbars).
-- [ ] Verify the button doesn't intercept clicks meant for the scrollbar.
+- [ ] Author `tug-code-view.tsx` with the read-only CM6 mount, lineWrapping + lineNumbers + search compartments, and a small selection-only responder.
+- [ ] Author `tug-code-view.css` with `--tugx-codeview-*` slots that consume `--tugx-block-*` (frame, code typography, strip chrome) directly; component-specific slots only for the gutter color/width and the selection highlight tones.
+- [ ] Author `tug-code-view.test.tsx` covering mount, value, wrap toggle, line-numbers toggle, language toggle, find UI reveal, selection round-trip.
+- [ ] Swap `file-block.tsx`'s body to `<TugCodeView ...>`; delete the bespoke renderer, the match overlay, the imperative search icon, and the `--tugx-file-rows/-row/-content/-overlay/-search-*` slot families.
+- [ ] Rewrite `file-block.test.tsx` against the new composition; defer line-level CM6 behavior to `tug-code-view.test.tsx`.
 
-**Tests:**
+**Tasks (Phase B — block-header pin + TerminalBlock header):**
 
-- [ ] Markup test: TerminalBlock with long output renders `.tugx-term-overlay` containing the Copy button.
-- [ ] Markup test: clicking the Copy button still fires the clipboard write (no regression on the actual copy behavior).
+- [ ] Add sticky declarations to `.tugx-file-header`, `.tugx-diff-header`, `.tugx-md-fence-header`.
+- [ ] Add `.tugx-term-header` markup to `terminal-block.tsx` (command summary + Copy `TugIconButton`); add CSS rule consuming `--tugx-block-strip-*`.
+- [ ] Add sticky declaration to `.tugx-term-header`.
+- [ ] Add `scrollbar-gutter: stable` to `.tugx-term-scroller` (the body viewport).
+- [ ] Retire `.tugx-term-copy` overlay DOM in `terminal-block.tsx`; drop the `--tugx-term-copy-*` slot family from `terminal-block.css`.
+- [ ] Update `terminal-block.test.tsx`: header Copy `TugIconButton` exists; no `.tugx-term-copy` overlay; `scrollbar-gutter` declared on the scroller.
+
+**Tasks (Phase C — entry-header pin):**
+
+- [ ] Add `position: sticky; top: 0; z-index: 2` to `.tug-transcript-entry__header`.
+- [ ] Add `useLayoutEffect` + `ResizeObserver` to `tug-transcript-entry.tsx`; write `--tugx-pin-stack-top` onto the entry root.
+- [ ] Update `tug-transcript-entry.test.tsx`: variable is set after mount; updates on header-content prop change.
+- [ ] Update the module docstring with the pin-telescoping contract.
+
+**Tasks (gallery + docs):**
+
+- [ ] Author `gallery-pinned-headers.tsx` showing both levels pinning across a synthesized long file + multi-hunk diff + tall terminal in one transcript turn.
+- [ ] Update `tuglaws/component-authoring.md`: add a "Text content" section that names CM6 (via `TugCodeView` or `tug-text-editor`) as the canonical engine for any file-based text surface, and document the `--tugx-pin-stack-top` variable as a shared contract.
+
+**Tests (commands):**
+
+- [ ] `bun test src/components/tugways/__tests__/tug-code-view.test.tsx`
+- [ ] `bun test src/components/tugways/body-kinds/__tests__/file-block.test.tsx`
+- [ ] `bun test src/components/tugways/body-kinds/__tests__/diff-block.test.tsx`
+- [ ] `bun test src/components/tugways/body-kinds/__tests__/terminal-block.test.tsx`
+- [ ] `bun test src/components/tugways/__tests__/tug-transcript-entry.test.tsx`
+- [ ] `bunx tsc --noEmit`
+- [ ] `bun run audit:tokens lint`
+- [ ] `bun test` (full suite — no regressions)
 
 **Checkpoint:**
 
-- [ ] `cd tugdeck && bunx tsc --noEmit && bun test` clean.
-- [ ] Manual: scroll a tall terminal output; verify the Copy button stays in position and doesn't overlap the scrollbar.
+- [ ] All commands above clean.
+- [ ] Manual: open Read tool on a 500-line file in both brio and harmony. Confirm: no per-line scrollbars; lines wrap; file header stays visible while scrolling deep into the body; entry header (Claude / `HH:MM AM`) stays at the top of the viewport above the file header.
+- [ ] Manual: run a `bash` command with long stdout. Confirm: Copy button sits in the pinned header, never on top of any scrollbar; scrollbar gutter reserved (no horizontal layout shift when output grows past the viewport).
+- [ ] Manual: long DiffBlock + tall TerminalBlock in one transcript turn. Confirm telescoping: entry header at top, then block header under it; scrolling between the two blocks transitions cleanly.
 
 ---
 
