@@ -1910,6 +1910,180 @@ Per-hunk tokens (`--tugx-diff-hunk-header-*`, `--tugx-diff-hunk-toggle-*`) were 
 
 ---
 
+#### Step 10.8.5: `--tugx-block-*` shared-utility token family {#step-10-8-5}
+
+**Depends on:** #step-10-8 (the bulk `--tugx-*` migration is in place; this step de-duplicates what landed there)
+
+**Commit:** `refactor(tugways): consolidate body-kind block tokens into --tugx-block-* shared utility`
+
+**References:** [L17], [L19], [L20], `tuglaws/token-naming.md`, `tuglaws/color-palette.md`
+
+**Why this step exists.** Step 10.8 relocated ~290 `--tugx-{file,diff,term,toolblock,thinking,transcript,md,list-view,text-editor}-*` slots out of theme files and into each component's CSS `body {}` block. That fixed the law violation (theme files no longer declare `--tugx-*`) but exposed a separate problem: substantial *duplication* across the now-component-local declarations. An audit of the migrated files counted ~329 slot declarations across 9 component CSS files, with the same `--tug7-*` references reused 5–12 times each:
+
+| `--tug7-*` reference | Times reused as `--tugx-{name}-*` slot value |
+|---|--:|
+| `--tug7-element-global-text-normal-muted-rest` | 12+ |
+| `--tug-font-size-2xs` | 8 |
+| `--tug7-element-global-text-normal-default-rest` | 7 |
+| `--tug7-surface-global-primary-normal-raised-rest` | 6 |
+| `--tug7-element-global-divider-normal-muted-rest` | 6 |
+| `--tug-space-xs var(--tug-space-md)` (header pad pattern) | 6 |
+| `--tug-font-family-mono`, `--tug-font-size-sm`, `--tug-font-family-base` | 5 each |
+
+That isn't coincidence; it's a coherent shared design pattern — *"code-display block-shaped surface with a chrome strip on top, optional matching strip on the bottom, and tone-tinted feedback bands inside"* — currently expressed as N parallel slot families. FileBlock, DiffBlock, TerminalBlock, ToolWrapperChrome, TideThinkingBlock, and TugMarkdownView all paint that same surface; each declared its own near-identical slot family even though every member resolves to the same `--tug7-*` token.
+
+The law allows this case explicitly. From `tuglaws/token-naming.md`: **"`--tugx-` ... Component aliases, *shared utilities*. Locally defined."** The shared-utility lane is the right home for the block pattern.
+
+**Decision: name the shared family `--tugx-block-*`.** `card` is already taken by TugPane and means a different visual element. `surface` is already a slot *dimension* at the `--tug7-*` level and would create cross-tier name collision. `block` is the natural English word for these structures and matches the internal "body-kind / block kind" convention.
+
+**Decision: shared utility CSS lives at `tugdeck/styles/tugx-block.css`.** Alongside `tug-palette.css` and `tug.css`. Imported once at app root so it loads before any component CSS and the slots are available to every component rule.
+
+**Decision: no new `--tug7-*` introductions.** The current seven-slot vocabulary is adequate. The duplication is at the alias layer, not the base layer. (Exception: the ANSI palette carve-out remains a known issue and is *not* addressed by this step.)
+
+**Decision: per-instance customization preserved.** Components keep their own `--tugx-{component}-*` slots for the parts that ARE component-specific (e.g. `--tugx-diff-line-add-bg`, `--tugx-file-gutter-width`, `--tugx-term-ansi-*`). Consumers can still scope-override per-card via `.tide-card-transcript .tug-list-view { --tugx-list-view-row-gap: ... }`. The shared `--tugx-block-*` family is the *default* for the block-surface pattern, not a ceiling.
+
+**Decision: tone tints are part of the shared family.** TerminalBlock exit badges (success / danger / caution), DiffBlock line bgs (success / danger), ToolWrapperChrome caution chip + error band (caution / danger), and TugCue role surfaces all consume the same `--tug7-surface-tone-primary-normal-{role}-rest` family. Folding these into `--tugx-block-tone-{add,remove,caution,active}-{bg,color}` saves ~12 further declarations and gives the codebase one canonical home for "tone-tinted feedback band" values.
+
+**The shared family (≈22 slots):**
+
+```css
+/* tugdeck/styles/tugx-block.css */
+body {
+  /* Frame — body-kind variant (sits below chrome) */
+  --tugx-block-bg:          var(--tug7-surface-global-primary-normal-inset-rest);
+  --tugx-block-border:      var(--tug7-element-global-border-normal-muted-rest);
+  --tugx-block-radius:      var(--tug-radius-md);
+  --tugx-block-margin:      var(--tug-space-md) 0;
+
+  /* Frame — chrome variant (sits above body — used by ToolWrapperChrome) */
+  --tugx-block-chrome-bg:   var(--tug7-surface-global-primary-normal-raised-rest);
+
+  /* Code-typography defaults */
+  --tugx-block-code-font:        var(--tug-font-family-mono);
+  --tugx-block-code-font-size:   var(--tug-font-size-sm);
+  --tugx-block-code-line-height: 1.55;
+
+  /* Body text colors */
+  --tugx-block-text-color:       var(--tug7-element-global-text-normal-default-rest);
+  --tugx-block-text-color-muted: var(--tug7-element-global-text-normal-muted-rest);
+
+  /* Header / footer strip (same shape for both) */
+  --tugx-block-strip-padding: var(--tug-space-xs) var(--tug-space-md);
+  --tugx-block-strip-gap:     var(--tug-space-sm);
+  --tugx-block-strip-bg:      var(--tug7-surface-global-primary-normal-raised-rest);
+  --tugx-block-strip-border:  var(--tug7-element-global-divider-normal-muted-rest);
+  --tugx-block-strip-color:   var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-block-strip-size:    var(--tug-font-size-2xs);
+  --tugx-block-strip-font:    var(--tug-font-family-base);
+
+  /* Body row interaction */
+  --tugx-block-row-hover-bg: var(--tug7-surface-highlight-primary-normal-hover-rest);
+
+  /* Tone-tinted feedback bands */
+  --tugx-block-tone-add-bg:        var(--tug7-surface-tone-primary-normal-success-rest);
+  --tugx-block-tone-add-color:     var(--tug7-element-global-text-normal-success-rest);
+  --tugx-block-tone-remove-bg:     var(--tug7-surface-tone-primary-normal-danger-rest);
+  --tugx-block-tone-remove-color:  var(--tug7-element-global-text-normal-danger-rest);
+  --tugx-block-tone-caution-bg:    var(--tug7-surface-tone-primary-normal-caution-rest);
+  --tugx-block-tone-caution-color: var(--tug7-element-global-text-normal-caution-rest);
+  --tugx-block-tone-active-bg:     var(--tug7-surface-tone-primary-normal-active-rest);
+}
+```
+
+**Consumption pattern.** Component CSS rules consume `--tugx-block-*` *directly* (one-hop to `--tug7-*` per [L17]) for the parts that are shared. Component-specific overrides remain in the component's `body {}` block under `--tugx-{component}-*`. Example:
+
+```css
+/* file-block.css — after Step 10.8.5 */
+body {
+  /* Component-specific slots only. The block-surface scaffold is consumed
+   * directly from `--tugx-block-*` in the rules below. */
+  --tugx-file-gutter-width:        3.5em;
+  --tugx-file-mark-bg:             var(--tug7-surface-card-primary-normal-findmatch-rest);
+  --tugx-file-mark-active-bg:      var(--tug7-surface-card-primary-normal-findmatch-active);
+  --tugx-file-mark-active-outline: var(--tug7-element-global-border-normal-accent-rest);
+  /* ...other file-specific slots... */
+}
+
+.tugx-file {
+  background:    var(--tugx-block-bg);
+  border:        1px solid var(--tugx-block-border);
+  border-radius: var(--tugx-block-radius);
+  margin:        var(--tugx-block-margin);
+  color:         var(--tugx-block-text-color);
+  font-family:   var(--tugx-block-code-font);
+  font-size:     var(--tugx-block-code-font-size);
+  line-height:   var(--tugx-block-code-line-height);
+}
+
+.tugx-file-header {
+  padding:    var(--tugx-block-strip-padding);
+  gap:        var(--tugx-block-strip-gap);
+  background: var(--tugx-block-strip-bg);
+  border:     1px solid var(--tugx-block-strip-border);
+  color:      var(--tugx-block-strip-color);
+  font-size:  var(--tugx-block-strip-size);
+  font-family: var(--tugx-block-strip-font);
+}
+```
+
+**Expected reduction.** Per-component slot counts mapped to either shared (drop) or component-specific (keep):
+
+| Component | Before | After | Drops |
+|---|--:|--:|--:|
+| FileBlock | 57 | ~25 | 32 (frame, code typography, header, hover) |
+| DiffBlock | 55 | ~25 | 30 (frame, header, stats, line-add/remove bgs+markers, hunk divider) |
+| TerminalBlock (non-ANSI) | 47 | ~12 | 35 (frame, code typography, footer, exit-zero/exit-nonzero/interrupted badges) |
+| ToolWrapperChrome | 41 | ~12 | 29 (frame-chrome, header, footer, caution chip, error band) |
+| TideThinkingBlock | 22 | ~10 | 12 (frame, header padding/bg/border) |
+| TugMarkdownView | 76 | ~58 | 18 (inline-code, fenced-code bgs, hr, table borders/header-bg/row-alt) |
+| Transcript / list-view / text-editor | 31 | 31 | 0 |
+| **Total** | **329** | **~173** | **~156 (≈47%)** |
+
+Roughly half the slot declarations collapse — and every drop replaces a unique alias name with a shared one, which makes "all body-kinds use the same header strip color" a *fact* rather than an *aspiration* maintained by ~6 parallel slot definitions kept in sync by convention.
+
+**Artifacts:**
+
+- New: `tugdeck/styles/tugx-block.css` — the shared utility family above. Module docstring documenting the role of this file in the three-tier architecture (per `tuglaws/color-palette.md`: palette → base → component).
+- Updated: `tugdeck/styles/tug.css` (or app-root entry) — import the new file. Load order: after palette, before component CSS.
+- Updated: `tugdeck/src/components/tugways/body-kinds/file-block.css` — drop frame/typography/header/hover slots from body{}; rewrite rules to consume `--tugx-block-*`.
+- Updated: `tugdeck/src/components/tugways/body-kinds/diff-block.css` — same pattern; keep diff-specific slots (line bgs, word bgs, hunk divider, sbs blanks, stats, view-toggle).
+- Updated: `tugdeck/src/components/tugways/body-kinds/terminal-block.css` — same pattern; keep ANSI palette and the bg/border/footer-specific copy button slots.
+- Updated: `tugdeck/src/components/tugways/cards/tool-wrappers/tool-wrapper-chrome.css` — use `--tugx-block-chrome-bg` for the chrome variant frame; consume strip + tone tints.
+- Updated: `tugdeck/src/components/tugways/chrome/tide-thinking-block.css` — same pattern.
+- Updated: `tugdeck/src/components/tugways/tug-markdown-view.css` — fold inline-code bg, fenced-code bg, hr color, table border/header-bg/row-alt, footnote border into `--tugx-block-*`. Markdown-specific typography (heading scale, blockquote, link decoration, list indents) stays.
+- Updated: `tugdeck/src/components/tugways/__tests__/tide-md-token-coverage.test.ts` — refresh the required-slot list since md-specific slots now exclude what folded into `--tugx-block-*`.
+- Updated: `tuglaws/component-authoring.md` — document the `--tugx-block-*` family as the canonical home for the block-surface pattern; the next body-kind author consumes it rather than rolling new parallel slots.
+
+**Tasks:**
+
+- [ ] Author `tugdeck/styles/tugx-block.css` with the body{} block above.
+- [ ] Wire the import at the app-root CSS entry (after palette + base, before component CSS). Confirm via DevTools that `--tugx-block-bg` resolves on `<body>` at runtime.
+- [ ] Per component (file-block, diff-block, terminal-block, tool-wrapper-chrome, tide-thinking-block, tug-markdown-view): identify each slot whose value is identical to its `--tugx-block-*` counterpart. Delete those declarations from the component's body{}; replace `var(--tugx-{component}-X)` with `var(--tugx-block-X)` in the component's CSS rules.
+- [ ] For each component, keep the `body {}` block intact (still the file-pair anchor per [L19]); it now only declares the *component-specific* slots.
+- [ ] Run `bun run audit:tokens lint` after each component to catch any straggler that broke its pairings.
+- [ ] Update `tide-md-token-coverage.test.ts` to reflect the reduced md-specific slot list (the spot-check required-list).
+- [ ] Add a doc paragraph to `tuglaws/component-authoring.md` (under the existing token-naming section): *"For body-kinds and chrome wrappers, consume `--tugx-block-*` directly for the shared block-surface pattern (frame, code typography, header/footer strip, hover, tone tints). Component-specific slots are reserved for parts that differ."*
+
+**Tests:**
+
+- [ ] `bun test src/components/tugways/body-kinds/__tests__/file-block.test.tsx`
+- [ ] `bun test src/components/tugways/body-kinds/__tests__/diff-block.test.tsx`
+- [ ] `bun test src/components/tugways/body-kinds/__tests__/terminal-block.test.tsx` (if it exists)
+- [ ] `bun test src/components/tugways/__tests__/tide-md-token-coverage.test.ts`
+- [ ] `bunx tsc --noEmit`
+- [ ] `bun run audit:tokens lint` — zero violations.
+- [ ] `bun test` (full suite — no regressions).
+
+**Checkpoint:**
+
+- [ ] All commands above clean.
+- [ ] `tugx-block.css` exists, imported once at the app root, and resolves at runtime.
+- [ ] Slot count net delta matches the expected ~156-line drop (verify with `grep -cE "^\s+--tugx-[^:]+:" ...` across the six affected component CSS files before / after).
+- [ ] Manual: open the Tide gallery's `gallery-tug-cue` (Affordance use-cases section), `gallery-bash-tool-block`, and a few Tide session cards (a long Read result + a `git show` diff). Confirm both brio and harmony render identically to before the consolidation.
+- [ ] `tuglaws/component-authoring.md` documents the `--tugx-block-*` family.
+
+---
+
 #### Step 10.9: Copy button clears the scrollbar {#step-10-9}
 
 **Depends on:** none
