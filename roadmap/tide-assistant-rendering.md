@@ -2213,7 +2213,7 @@ Sticky context analysis confirms the layout is safe: `TugListView` uses natural 
 **Checkpoint:**
 
 - [ ] All commands above clean.
-- [ ] Manual: open Read tool on a 500-line file in both brio and harmony. Confirm: no per-line scrollbars; lines wrap; file header stays visible while scrolling deep into the body; entry header (Claude / `HH:MM AM`) stays at the top of the viewport above the file header.
+- [x] Manual: open Read tool on a 500-line file in both brio and harmony. Confirm: no per-line scrollbars; lines wrap; file header stays visible while scrolling deep into the body; entry header (Claude / `HH:MM AM`) stays at the top of the viewport above the file header.
 - [ ] Manual: run a `bash` command with long stdout. Confirm: Copy button sits in the pinned header, never on top of any scrollbar; scrollbar gutter reserved (no horizontal layout shift when output grows past the viewport).
 - [ ] Manual: long DiffBlock + tall TerminalBlock in one transcript turn. Confirm telescoping: entry header at top, then block header under it; scrolling between the two blocks transitions cleanly.
 
