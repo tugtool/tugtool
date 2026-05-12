@@ -93,9 +93,20 @@
 import "./file-block.css";
 
 import React from "react";
-import { ChevronsDown, ChevronsUp, Search } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  ChevronsDown,
+  ChevronsUp,
+  Search,
+  X,
+} from "lucide-react";
 
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
+import { TugInput } from "@/components/tugways/tug-input";
+import { TugCheckbox } from "@/components/tugways/tug-checkbox";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 import {
   TugCodeView,
   type TugCodeViewDelegate,
@@ -409,6 +420,10 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // row can pin BELOW the identity header in standalone mode. Null
   // when `embedded={true}` (no header rendered).
   const headerRef = React.useRef<HTMLDivElement | null>(null);
+  // Actions-row ref — measured for `--tugx-file-actions-height` so the
+  // Find UI row pins BELOW the actions row. Null when no actions row
+  // renders (empty/collapsed-and-not-overThreshold edge case).
+  const actionsRef = React.useRef<HTMLDivElement | null>(null);
 
   // Telescoping pin — write the live measured identity-header height
   // into `--tugx-file-header-height` on the root so the actions row
@@ -458,6 +473,41 @@ export const FileBlock: React.FC<FileBlockProps> = ({
     };
   }, [embedded, data === undefined]);
 
+  // Mirror of the header observer for the actions row. The Find row
+  // pins below the actions row, so it consumes
+  // `--tugx-file-actions-height` in its sticky `top` calc.
+  React.useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (root === null) return;
+    const actions = actionsRef.current;
+    if (actions === null) {
+      root.style.removeProperty("--tugx-file-actions-height");
+      return;
+    }
+    const write = (px: number): void => {
+      root.style.setProperty("--tugx-file-actions-height", `${px}px`);
+    };
+    write(actions.offsetHeight);
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry === undefined) return;
+      const boxes = entry.borderBoxSize;
+      const next =
+        boxes !== undefined && boxes.length > 0
+          ? boxes[0].blockSize
+          : entry.contentRect.height;
+      write(next);
+    });
+    observer.observe(actions);
+    return () => {
+      observer.disconnect();
+    };
+    // Re-attach when the actions row mounts/unmounts. The dependency
+    // array uses `data === undefined` as a proxy for the empty-state
+    // edge case (no actions row); `embedded` is irrelevant here
+    // because the actions row renders in BOTH modes.
+  }, [data === undefined]);
+
   // Sync to controlled prop when it changes upstream so parents can
   // drive collapse from chrome elsewhere in the row.
   React.useEffect(() => {
@@ -481,32 +531,182 @@ export const FileBlock: React.FC<FileBlockProps> = ({
     });
   }, [onToggleCollapsed]);
 
-  // Ref to the embedded TugCodeView so the header's Search button can
-  // open the substrate's find panel imperatively.
+  // Ref to the embedded TugCodeView so the Find UI can drive the
+  // substrate's search state imperatively (set-query / next /
+  // previous / select-all).
   const codeViewRef = React.useRef<TugCodeViewDelegate | null>(null);
 
-  const onSearchClick = React.useCallback(() => {
-    // Open the find panel; if collapsed, reveal first so the viewer
-    // is mounted before we ask it to open its panel.
+  // ---- Find UI state ------------------------------------------------------
+  //
+  // FileBlock owns the Find UI chrome (uses `TugInput`, `TugIconButton`,
+  // `TugCheckbox`) so the look matches the rest of the Tug component
+  // vocabulary. State is local — closing the row resets to defaults so
+  // the next open is a clean find session.
+  const [findOpen, setFindOpen] = React.useState<boolean>(false);
+  const [findQuery, setFindQuery] = React.useState<string>("");
+  const [findCaseSensitive, setFindCaseSensitive] = React.useState<boolean>(false);
+  const [findRegexp, setFindRegexp] = React.useState<boolean>(false);
+  const [findWholeWord, setFindWholeWord] = React.useState<boolean>(false);
+  const [findMatchCount, setFindMatchCount] = React.useState<number>(0);
+  const findInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  // Responder form wires each checkbox's `senderId` to a state setter
+  // so toggles land in React state without each control needing its
+  // own `onChange`. TugInput uses native `onChange` (it routes typing
+  // through the standard React change event, not the responder chain),
+  // so the query string isn't a form slot here.
+  const findCaseId = React.useId();
+  const findRegexpId = React.useId();
+  const findWordId = React.useId();
+  const findForm = useResponderForm({
+    toggle: {
+      [findCaseId]: setFindCaseSensitive,
+      [findRegexpId]: setFindRegexp,
+      [findWordId]: setFindWholeWord,
+    },
+  });
+
+  // Push query + options to CM6 whenever the user types or toggles an
+  // option, then read back the live match count so the find row's
+  // count display ("N matches") reflects the current query. Empty
+  // query is a valid state — CM6 clears highlights when it sees an
+  // empty search string, and `getMatchCount` returns 0 for invalid
+  // queries.
+  React.useEffect(() => {
+    if (!findOpen) return;
+    const delegate = codeViewRef.current;
+    if (delegate === null) return;
+    delegate.setSearchQuery({
+      search: findQuery,
+      caseSensitive: findCaseSensitive,
+      regexp: findRegexp,
+      wholeWord: findWholeWord,
+    });
+    setFindMatchCount(delegate.getMatchCount());
+  }, [findOpen, findQuery, findCaseSensitive, findRegexp, findWholeWord]);
+
+  const openFind = React.useCallback(() => {
     if (collapsed) {
-      // Same disengage-on-toggle treatment as `toggleCollapsed` — the
-      // reveal grows the cell and would otherwise trip the host list's
-      // bottom pin.
+      // Reveal the body first so the substrate is mounted and the
+      // search state has somewhere to apply. Disengage the host list's
+      // bottom-pin in the same beat (mirrors `toggleCollapsed`).
       rootRef.current?.dispatchEvent(
         new CustomEvent("tug-disengage-follow-bottom", { bubbles: true }),
       );
       setCollapsed(false);
       onToggleCollapsed?.(false);
-      // The viewer mounts in the next layout tick; defer the panel
-      // open to the same tick so the ref is populated. Imperative
-      // DOM-side work, no React-state coupling.
-      requestAnimationFrame(() => {
-        codeViewRef.current?.openSearch();
-      });
-      return;
     }
-    codeViewRef.current?.openSearch();
+    setFindOpen(true);
+    // Defer focus to the next tick so the input has mounted.
+    requestAnimationFrame(() => {
+      findInputRef.current?.focus();
+      findInputRef.current?.select();
+    });
   }, [collapsed, onToggleCollapsed]);
+
+  const closeFind = React.useCallback(() => {
+    setFindOpen(false);
+    // Reopening should start fresh; clear local state and tell the
+    // substrate to drop the query + close CM6's hidden panel so the
+    // match-highlight overlay is fully torn down.
+    setFindQuery("");
+    setFindCaseSensitive(false);
+    setFindRegexp(false);
+    setFindWholeWord(false);
+    setFindMatchCount(0);
+    codeViewRef.current?.clearSearch();
+  }, []);
+
+  // Inline clear-X handler — wipes the query but keeps the find row
+  // open so the user can type a new query without a round-trip
+  // through the Search button.
+  const clearFindQuery = React.useCallback(() => {
+    setFindQuery("");
+    findInputRef.current?.focus();
+  }, []);
+
+  const handleFindKeyDown = React.useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        // Two-step Escape: first press wipes the query (keeping the
+        // find row open for a fresh search); a second press on the
+        // now-empty input closes the row. Matches common editor
+        // behavior (VS Code, Xcode).
+        if (findQuery.length > 0) {
+          clearFindQuery();
+        } else {
+          closeFind();
+        }
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        // Same guard as the navigation buttons — Enter on an empty
+        // input must NOT trigger CM6's openSearchPanel-from-selection
+        // fallback, which would resurrect the previous query.
+        if (findQuery.length === 0) return;
+        if (e.shiftKey) {
+          codeViewRef.current?.findPrevious();
+        } else {
+          codeViewRef.current?.findNext();
+        }
+      }
+    },
+    [closeFind, clearFindQuery, findQuery.length],
+  );
+
+  // Navigation guards — when the input is empty there is no active
+  // query, so a Next/Prev call must be a no-op. CM6's bundled
+  // `cmFindNext` wraps a `searchCommand` fallback that, when given an
+  // invalid query, calls `openSearchPanel(view)` — and that function
+  // re-seeds the query from the current selection. After a clear,
+  // the user's old match is still selected, so the fallback would
+  // resurrect the previous query ("for") and findNext would navigate
+  // to it. Guarding at the host keeps the no-op behavior intuitive.
+  const handleFindNext = React.useCallback(() => {
+    if (findQuery.length === 0) return;
+    codeViewRef.current?.findNext();
+  }, [findQuery.length]);
+  const handleFindPrevious = React.useCallback(() => {
+    if (findQuery.length === 0) return;
+    codeViewRef.current?.findPrevious();
+  }, [findQuery.length]);
+
+  // Cmd-G / Shift-Cmd-G (Ctrl on non-Mac) — Find-next / Find-previous
+  // while the find row is open, regardless of which element has focus
+  // (input, editor, or one of the row's buttons). The listener
+  // attaches only while `findOpen` is true so it doesn't shadow any
+  // app-level binding outside a find session. `findQueryRef` lets
+  // the static listener read the latest query without re-attaching
+  // on every keystroke.
+  const findQueryRef = React.useRef(findQuery);
+  React.useEffect(() => {
+    findQueryRef.current = findQuery;
+  }, [findQuery]);
+  React.useEffect(() => {
+    if (!findOpen) return;
+    const onKeyDown = (e: KeyboardEvent): void => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      if (e.key !== "g" && e.key !== "G") return;
+      e.preventDefault();
+      // Same guard as the buttons — empty query → no-op (avoids CM6's
+      // openSearchPanel-from-selection fallback).
+      if (findQueryRef.current.length === 0) return;
+      const delegate = codeViewRef.current;
+      if (delegate === null) return;
+      if (e.shiftKey) {
+        delegate.findPrevious();
+      } else {
+        delegate.findNext();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [findOpen]);
 
   // Empty data: render an empty marker for layout consistency. Same
   // contract as before — consumers may depend on the data-empty
@@ -581,7 +781,11 @@ export const FileBlock: React.FC<FileBlockProps> = ({
       )}
 
       {showActions ? (
-        <div className="tugx-file-actions" data-slot="file-actions">
+        <div
+          ref={actionsRef}
+          className="tugx-file-actions"
+          data-slot="file-actions"
+        >
           {showCue ? (
             <button
               type="button"
@@ -606,10 +810,119 @@ export const FileBlock: React.FC<FileBlockProps> = ({
             <TugIconButton
               icon={<Search />}
               aria-label="Search in file"
-              onClick={onSearchClick}
+              onClick={openFind}
             />
           ) : null}
         </div>
+      ) : null}
+
+      {findOpen && !collapsed ? (
+        <findForm.ResponderScope>
+          <div
+            ref={findForm.responderRef}
+            className="tugx-file-find"
+            data-slot="file-find"
+            onKeyDown={(e) => {
+              // Catch Escape at the row level too so any focused
+              // descendant (checkboxes, buttons) can dismiss with Esc.
+              // Same two-step semantics as the input handler:
+              // clear-then-close.
+              if (e.key === "Escape") {
+                e.preventDefault();
+                if (findQuery.length > 0) {
+                  clearFindQuery();
+                } else {
+                  closeFind();
+                }
+              }
+            }}
+          >
+            <div className="tugx-file-find-input-wrap">
+              <TugInput
+                ref={findInputRef}
+                className="tugx-file-find-input"
+                type="text"
+                placeholder="Find"
+                value={findQuery}
+                onChange={(e) => setFindQuery(e.target.value)}
+                aria-label="Find in file"
+                focusStyle="background"
+                borderless
+                size="sm"
+                onKeyDown={handleFindKeyDown}
+              />
+              {findQuery.length > 0 ? (
+                <button
+                  type="button"
+                  className="tugx-file-find-clear"
+                  data-slot="file-find-clear"
+                  aria-label="Clear search"
+                  onClick={clearFindQuery}
+                >
+                  <X aria-hidden="true" />
+                </button>
+              ) : null}
+            </div>
+            <TugIconButton
+              icon={<ChevronUp />}
+              aria-label="Previous match"
+              disabled={findMatchCount === 0}
+              onClick={handleFindPrevious}
+            />
+            <TugIconButton
+              icon={<ChevronDown />}
+              aria-label="Next match"
+              disabled={findMatchCount === 0}
+              onClick={handleFindNext}
+            />
+            <div className="tugx-file-find-options">
+              <TugCheckbox
+                senderId={findCaseId}
+                checked={findCaseSensitive}
+                label="match case"
+                aria-label="Match case"
+                size="sm"
+              />
+              <TugCheckbox
+                senderId={findRegexpId}
+                checked={findRegexp}
+                label="regex"
+                aria-label="Regular expression"
+                size="sm"
+              />
+              <TugCheckbox
+                senderId={findWordId}
+                checked={findWholeWord}
+                label="word"
+                aria-label="Whole word"
+                size="sm"
+              />
+            </div>
+            <span className="tugx-file-find-spacer" />
+            <span
+              className="tugx-file-find-count"
+              data-slot="file-find-count"
+              aria-live="polite"
+            >
+              {findQuery.length === 0
+                ? ""
+                : findMatchCount === 0
+                  ? "no matches"
+                  : findMatchCount === 1
+                    ? "1 match"
+                    : `${findMatchCount.toLocaleString()} matches`}
+            </span>
+            <span className="tugx-file-find-spacer" />
+            <TugPushButton
+              size="sm"
+              emphasis="ghost"
+              onClick={closeFind}
+              aria-label="Close find"
+            >
+              Done
+            </TugPushButton>
+          </div>
+        </findForm.ResponderScope>
       ) : null}
 
       {collapsed ? null : (
@@ -617,6 +930,7 @@ export const FileBlock: React.FC<FileBlockProps> = ({
           ref={codeViewRef}
           value={data.content}
           language={language}
+          onFindRequested={openFind}
           // File viewer defaults: wrap on, line numbers on. The CM6
           // substrate handles the per-line scrollbar bug by
           // construction — `lineWrapping` puts wide lines on their

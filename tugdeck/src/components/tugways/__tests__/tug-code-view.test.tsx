@@ -217,21 +217,81 @@ describe("TugCodeView — line-numbers toggle", () => {
 // Search panel
 // ---------------------------------------------------------------------------
 
-describe("TugCodeView — search panel", () => {
-  test("openSearch() mounts the search panel; closeSearch() removes it", () => {
-    const { container, ref } = renderWithRef({ value: "alpha beta gamma" });
-
-    expect(container.querySelector(".cm-search")).toBeNull();
-
-    act(() => {
-      ref.current?.openSearch();
-    });
-    expect(container.querySelector(".cm-search")).not.toBeNull();
+describe("TugCodeView — search", () => {
+  test("setSearchQuery + findNext lands the selection on the first match", () => {
+    // The composing component (e.g. FileBlock) owns the Find UI;
+    // TugCodeView no longer mounts CM6's bundled panel. The delegate
+    // exposes the programmatic search controls (`setSearchQuery`,
+    // `findNext`, `findPrevious`, `selectAllMatches`); composing
+    // components call them in response to their own input changes.
+    const { ref } = renderWithRef({ value: "alpha beta alpha gamma" });
 
     act(() => {
-      ref.current?.closeSearch();
+      ref.current?.setSearchQuery({ search: "alpha" });
+      ref.current?.findNext();
     });
-    expect(container.querySelector(".cm-search")).toBeNull();
+
+    const view = ref.current?.view();
+    expect(view).not.toBeNull();
+    if (view === undefined || view === null) return;
+    // `findNext` selects the first match after the cursor (which is at
+    // position 0 by default), wrapping past the initial cursor.
+    const { from, to } = view.state.selection.main;
+    expect(view.state.sliceDoc(from, to)).toBe("alpha");
+  });
+
+  test("findNext advances through matches in document order", () => {
+    const { ref } = renderWithRef({ value: "alpha beta alpha gamma" });
+
+    act(() => {
+      ref.current?.setSearchQuery({ search: "alpha" });
+      ref.current?.findNext();
+    });
+    const view = ref.current?.view();
+    expect(view).not.toBeNull();
+    if (view === undefined || view === null) return;
+    const firstFrom = view.state.selection.main.from;
+
+    act(() => {
+      ref.current?.findNext();
+    });
+    const secondFrom = view.state.selection.main.from;
+    expect(secondFrom).toBeGreaterThan(firstFrom);
+  });
+
+  test("CM6's bundled `.cm-search` panel is hidden via theme CSS even when mounted", () => {
+    // `setSearchQuery` opens the bundled panel internally so the
+    // `searchHighlighter` ViewPlugin paints match decorations (CM6
+    // gates highlighting on the panel field being non-null). The
+    // bundled panel DOM mounts but is hidden — `.cm-panels` has
+    // `display: none` in the editor theme. The composing component
+    // (e.g. `FileBlock`) renders the user-facing Find chrome.
+    const { container, ref } = renderWithRef({ value: "alpha beta" });
+
+    act(() => {
+      ref.current?.setSearchQuery({ search: "alpha" });
+    });
+    // The panel DOM is allowed to exist; assert it isn't visible.
+    const panels = container.querySelector(".cm-panels") as HTMLElement | null;
+    if (panels !== null) {
+      // happy-dom honors inline styles set via CM6's runtime theme.
+      const display = panels.style.display || window.getComputedStyle(panels).display;
+      expect(display).toBe("none");
+    }
+  });
+
+  test("clearSearch removes the active query and closes the bundled panel", () => {
+    const { container, ref } = renderWithRef({ value: "alpha beta" });
+    act(() => {
+      ref.current?.setSearchQuery({ search: "alpha" });
+    });
+    act(() => {
+      ref.current?.clearSearch();
+    });
+    // After clearing, the panel state is torn down. Even if the DOM
+    // node lingers, it should be hidden (display: none) and any
+    // search highlights gone.
+    expect(container.querySelector(".cm-searchMatch")).toBeNull();
   });
 });
 

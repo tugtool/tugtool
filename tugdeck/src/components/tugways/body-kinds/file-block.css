@@ -65,6 +65,17 @@ body {
   --tugx-file-fold-cue-label-size: var(--tug-font-size-2xs);
   --tugx-file-fold-cue-radius:     var(--tug-radius-xs);
   --tugx-file-fold-cue-hover-bg:   var(--tug7-surface-highlight-primary-normal-hover-rest);
+
+  /* Find UI input field — must read as visibly elevated over the
+   * strip-bg around it (rest) and elevated further when focused.
+   * The strip is `--tug7-surface-global-primary-normal-raised-rest`
+   * (indigo-violet i:5 t:11 on brio); the rest/focus tokens below
+   * pick titlebar-grade values (t:14 / t:15) so the contrast is
+   * unambiguous in both themes. The bare `field-primary-plain-*`
+   * tokens didn't contrast — `-hover` happens to match the strip's
+   * lightness, and `-active` simply doesn't exist in either theme. */
+  --tugx-file-find-input-bg:       var(--tug7-surface-card-primary-normal-titlebar-inactive);
+  --tugx-file-find-input-bg-focus: var(--tug7-surface-card-primary-normal-titlebar-active);
 }
 
 .tugx-file {
@@ -237,4 +248,125 @@ body {
   font-size: var(--tugx-file-fold-cue-label-size);
   color: var(--tugx-block-text-color-muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Find UI row ---------- */
+
+/* Find UI lives below the actions row. Sticky stack consumes the
+ * full chain of upstream pin heights so it pins flush against the
+ * bottom of the actions row regardless of composition mode:
+ *  - `--tugx-pin-stack-top`: outer entry-header height (Phase C).
+ *  - `--tugx-toolblock-header-height`: wrapper-chrome header height
+ *    in embedded composition.
+ *  - `--tugx-file-header-height`: this body kind's identity header
+ *    in standalone composition.
+ *  - `--tugx-file-actions-height`: the actions row's measured height
+ *    (always present when the Find row is open).
+ *
+ * Background: `--tugx-block-strip-bg` matches the identity / actions
+ * strips so the three stack reads as one visual stripe.
+ */
+.tugx-file-find {
+  position: sticky;
+  top: calc(
+    var(--tugx-pin-stack-top, 0px)
+    + var(--tugx-toolblock-header-height, 0px)
+    + var(--tugx-file-header-height, 0px)
+    + var(--tugx-file-actions-height, 0px)
+  );
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tug-space-xs);
+  padding: var(--tug-space-2xs) var(--tug-space-sm);
+  background: var(--tugx-block-strip-bg);
+  border-bottom: 1px solid var(--tugx-block-strip-border);
+  color: var(--tugx-block-text-color);
+  font-family: var(--tug-font-family-sans);
+  font-size: var(--tug-font-size-2xs);
+}
+
+/* Input wrap — hosts the borderless TugInput and the absolutely-
+ * positioned clear-X button. The wrap owns the input frame
+ * (background, radius) so the inline clear button can sit inside the
+ * field's visible bounds. */
+.tugx-file-find-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 14em;
+  min-width: 8em;
+  max-width: 22em;
+  border-radius: var(--tug-radius-xs);
+  background: var(--tugx-file-find-input-bg);
+  transition: background var(--tug-motion-duration-fast) var(--tug-motion-easing-standard);
+}
+
+.tugx-file-find-input-wrap:focus-within {
+  /* Focused state bumps to the brighter active titlebar token —
+   * unambiguous contrast against rest + against the surrounding
+   * strip. Border on the input stays absent (`borderless` on
+   * TugInput) so focus is signaled purely by the bg shift. */
+  background: var(--tugx-file-find-input-bg-focus);
+}
+
+.tugx-file-find-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* TugInput is `borderless` here — strip its own background so the
+   * wrap's bg shows through. The wrap owns the focus paint. */
+  background: transparent !important;
+  padding-right: var(--tug-space-lg);
+}
+
+.tugx-file-find-clear {
+  position: absolute;
+  inset-inline-end: var(--tug-space-2xs);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--tugx-block-text-color-muted);
+  cursor: pointer;
+  line-height: 0;
+}
+
+.tugx-file-find-clear:hover {
+  background: var(--tug7-surface-highlight-primary-normal-hover-rest);
+  color: var(--tugx-block-text-color);
+}
+
+.tugx-file-find-clear > svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Checkbox group — generous gap between options so the three
+ * semantic toggles read as a related cluster, not as runs of words
+ * adjacent to the navigation buttons. */
+.tugx-file-find-options {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-xl);
+  margin-inline-start: var(--tug-space-md);
+}
+
+.tugx-file-find-count {
+  color: var(--tugx-block-text-color-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* Two flex spacers — one before the count, one after — share the
+ * residual space equally so the count anchors midway between the
+ * checkbox group and the Done button. */
+.tugx-file-find-spacer {
+  flex: 1 1 auto;
 }

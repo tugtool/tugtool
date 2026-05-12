@@ -429,6 +429,77 @@ describe("FileBlock — search affordance", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Find UI — custom Tug-component chrome built into FileBlock
+// ---------------------------------------------------------------------------
+
+describe("FileBlock — find UI", () => {
+  test("find row is hidden until Search is clicked", () => {
+    const data: FileData = {
+      filePath: "x.ts",
+      content: "alpha\nbeta",
+    };
+    const { container } = render(<FileBlock data={data} />);
+    expect(container.querySelector('[data-slot="file-find"]')).toBeNull();
+  });
+
+  test("clicking Search opens the find row with Tug components", () => {
+    const data: FileData = {
+      filePath: "x.ts",
+      content: "alpha\nbeta",
+    };
+    const { container } = render(<FileBlock data={data} />);
+    const searchButton = container.querySelector(
+      'button[aria-label="Search in file"]',
+    ) as HTMLButtonElement;
+    fireEvent.click(searchButton);
+
+    const findRow = container.querySelector('[data-slot="file-find"]');
+    expect(findRow).not.toBeNull();
+    // TugInput renders an <input data-slot="tug-input">.
+    expect(findRow?.querySelector('[data-slot="tug-input"]')).not.toBeNull();
+    // Three TugCheckboxes (match case / regexp / whole word).
+    expect(
+      findRow?.querySelectorAll('button[role="checkbox"]').length,
+    ).toBe(3);
+    // Prev / Next / Close TugIconButtons (find by accessible name).
+    expect(
+      findRow?.querySelector('button[aria-label="Previous match"]'),
+    ).not.toBeNull();
+    expect(
+      findRow?.querySelector('button[aria-label="Next match"]'),
+    ).not.toBeNull();
+    expect(
+      findRow?.querySelector('button[aria-label="Close find"]'),
+    ).not.toBeNull();
+  });
+
+  test("clicking Close hides the find row", () => {
+    const data: FileData = {
+      filePath: "x.ts",
+      content: "alpha\nbeta",
+    };
+    const { container } = render(<FileBlock data={data} />);
+    fireEvent.click(
+      container.querySelector(
+        'button[aria-label="Search in file"]',
+      ) as HTMLButtonElement,
+    );
+    expect(container.querySelector('[data-slot="file-find"]')).not.toBeNull();
+    fireEvent.click(
+      container.querySelector(
+        'button[aria-label="Close find"]',
+      ) as HTMLButtonElement,
+    );
+    expect(container.querySelector('[data-slot="file-find"]')).toBeNull();
+  });
+
+  // The Escape-closes-find-row behavior is verified manually in the
+  // running app — happy-dom's event-ordering across React renders
+  // (keydown inside the input → setState → unmount of `.tugx-file-find`)
+  // is unreliable per the scoping rule.
+});
+
+// ---------------------------------------------------------------------------
 // Embedded mode
 // ---------------------------------------------------------------------------
 

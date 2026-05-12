@@ -134,7 +134,7 @@
 import React, { useCallback, useId, useRef } from "react";
 import type { ActionEvent, ActionHandler, ActionPhase, TugAction } from "./responder-chain";
 import { TUG_ACTIONS } from "./action-vocabulary";
-import { useResponder } from "./use-responder";
+import { useOptionalResponder } from "./use-responder";
 
 // ---- Types ----
 
@@ -422,5 +422,12 @@ export function useResponderForm(bindings: TugResponderFormBindings): UseRespond
   }
 
   const id = useId();
-  return useResponder({ id, actions });
+  // Tolerant of no-provider environments (gallery cards, unit tests
+  // without a chain) so consumers can host form controls in any
+  // context — same posture as TugInput / TugCheckbox via
+  // `useOptionalResponder`. Inside a provider the form participates
+  // in the chain like any other responder; outside one the responder
+  // registration silently no-ops and the controls degrade to native
+  // DOM events (useful for happy-dom unit tests).
+  return useOptionalResponder({ id, actions });
 }

@@ -102,15 +102,20 @@ import { Compartment, EditorState } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import {
   EditorView,
-  keymap,
   lineNumbers as cmLineNumbers,
 } from "@codemirror/view";
 import { selectAll as cmSelectAll } from "@codemirror/commands";
 import {
   search,
-  searchKeymap,
+  SearchQuery,
+  setSearchQuery,
+  getSearchQuery,
+  searchPanelOpen,
   openSearchPanel,
   closeSearchPanel,
+  findNext as cmFindNext,
+  findPrevious as cmFindPrevious,
+  selectMatches as cmSelectMatches,
 } from "@codemirror/search";
 import { cn } from "@/lib/utils";
 import { useOptionalResponder } from "./use-responder";
@@ -183,70 +188,17 @@ const tugCodeViewTheme: Extension = EditorView.theme({
   ".cm-selectionBackground, ::selection": {
     backgroundColor: "var(--tugx-codeview-selection-bg)",
   },
+  // CM6's bundled search panel — hidden from view but still mounted
+  // in the DOM. Mounting initializes the search-state `panel` field
+  // (which CM6's `searchHighlighter` requires to be non-null before
+  // painting match decorations — see `@codemirror/search/dist/index.js`
+  // `highlight({query, panel})`). The composing component (e.g.
+  // `FileBlock`) owns the user-facing Find chrome via the
+  // `<TugInput>` / `<TugCheckbox>` / `<TugIconButton>` row in its
+  // `.tugx-file-find` block; the bundled panel is never the visible
+  // UI in this codebase.
   ".cm-panels": {
-    backgroundColor: "var(--tugx-block-strip-bg)",
-    color: "var(--tugx-block-text-color)",
-    borderTop: "1px solid var(--tugx-block-strip-border)",
-  },
-  // ---- @codemirror/search panel chrome ---------------------------------
-  //
-  // CM6's default search panel ships unstyled user-agent inputs and
-  // buttons; against our dark strip they read as nearly-invisible greys
-  // (visible at: gallery's pinned-headers card, Search icon → opens
-  // panel). The rules below replace those defaults with theme-aware
-  // paints via the `--tugx-codeview-search-*` slot family.
-  ".cm-panel.cm-search": {
-    display: "flex",
-    flexWrap: "wrap",
-    alignItems: "center",
-    gap: "var(--tug-space-xs)",
-    padding: "var(--tug-space-xs) var(--tug-space-sm)",
-    color: "var(--tugx-block-text-color)",
-    fontFamily: "var(--tug-font-family-sans)",
-    fontSize: "var(--tug-font-size-2xs)",
-  },
-  ".cm-panel.cm-search .cm-textfield, .cm-panel.cm-search input[type='search'], .cm-panel.cm-search input[type='text']":
-    {
-      backgroundColor: "var(--tugx-codeview-search-input-bg)",
-      color: "var(--tugx-codeview-search-input-color)",
-      border: "1px solid var(--tugx-codeview-search-input-border)",
-      padding: "var(--tugx-codeview-search-input-padding)",
-      borderRadius: "var(--tugx-codeview-search-input-radius)",
-      fontFamily: "var(--tug-font-family-sans)",
-      fontSize: "var(--tug-font-size-xs)",
-      minWidth: "10em",
-    },
-  ".cm-panel.cm-search input:focus-visible": {
-    outline: "2px solid var(--tugx-codeview-search-focus-ring)",
-    outlineOffset: "1px",
-  },
-  ".cm-panel.cm-search .cm-button, .cm-panel.cm-search button": {
-    backgroundColor: "var(--tugx-codeview-search-button-bg)",
-    color: "var(--tugx-codeview-search-button-color)",
-    border: "1px solid var(--tugx-codeview-search-button-border)",
-    padding: "var(--tugx-codeview-search-button-padding)",
-    borderRadius: "var(--tugx-codeview-search-button-radius)",
-    fontFamily: "var(--tug-font-family-sans)",
-    fontSize: "var(--tug-font-size-2xs)",
-    cursor: "pointer",
-    backgroundImage: "none",
-    textShadow: "none",
-  },
-  ".cm-panel.cm-search .cm-button:hover, .cm-panel.cm-search button:hover": {
-    backgroundColor: "var(--tugx-codeview-search-button-hover-bg)",
-    color: "var(--tugx-codeview-search-button-hover-color)",
-  },
-  ".cm-panel.cm-search label": {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "var(--tugx-codeview-search-label-gap)",
-    color: "var(--tugx-codeview-search-label-color)",
-    fontSize: "var(--tugx-codeview-search-label-size)",
-    cursor: "pointer",
-    userSelect: "none",
-  },
-  ".cm-panel.cm-search [name='close']": {
-    color: "var(--tugx-block-text-color-muted)",
+    display: "none",
   },
   ".cm-searchMatch": {
     backgroundColor: "var(--tugx-codeview-match-bg)",
@@ -262,20 +214,64 @@ const tugCodeViewTheme: Extension = EditorView.theme({
 // ---------------------------------------------------------------------------
 
 /**
+ * Search-query configuration passed to `TugCodeViewDelegate.setSearchQuery`.
+ *
+ * Maps 1-1 to `@codemirror/search`'s `SearchQuery` constructor — kept
+ * as a stand-alone interface so consumers don't import CM6 types.
+ */
+export interface TugCodeViewSearchQuery {
+  /** Search string (literal substring unless `regexp` is set). */
+  search: string;
+  /** Case-sensitive match. Default `false`. */
+  caseSensitive?: boolean;
+  /** Interpret `search` as a regular expression. Default `false`. */
+  regexp?: boolean;
+  /** Match whole-word only. Default `false`. */
+  wholeWord?: boolean;
+}
+
+/**
  * Imperative handle exposed via `ref`.
  *
  * Consumers that need to reach into the live CM6 view hold this handle
  * and call methods at use time. `view()` returns `null` between unmount
  * and re-mount — for example during React 19 StrictMode's dev
  * double-mount, or after the component has been disposed.
+ *
+ * The Find UI is owned by the COMPOSING component (e.g. `FileBlock`),
+ * not by CM6's bundled panel. TugCodeView exposes the programmatic
+ * search controls below; the host composes them with its own chrome
+ * (`<TugInput>`, `<TugIconButton>`, `<TugCheckbox>`) so the Find UI is
+ * consistent with the rest of the Tug component vocabulary.
  */
 export interface TugCodeViewDelegate {
   /** Return the live `EditorView`, or `null` if not mounted. */
   view(): EditorView | null;
-  /** Open the search panel. No-op when no view is mounted. */
-  openSearch(): void;
-  /** Close the search panel. No-op when no view is mounted. */
-  closeSearch(): void;
+  /**
+   * Set / replace the active search query. The substrate paints
+   * match highlights for the resulting query — pass an empty
+   * `search` if you want to update options without showing matches.
+   */
+  setSearchQuery(query: TugCodeViewSearchQuery): void;
+  /**
+   * Tear down the active search. Drops the query and clears all match
+   * highlights from the substrate. Call when the host's Find UI closes.
+   */
+  clearSearch(): void;
+  /** Find next match against the current query. */
+  findNext(): void;
+  /** Find previous match against the current query. */
+  findPrevious(): void;
+  /** Select all matches for the current query. */
+  selectAllMatches(): void;
+  /**
+   * Count matches in the current document for the active query.
+   * Returns 0 when there is no query (or the query is invalid — e.g.
+   * an empty regex). Reads the live `EditorState` synchronously, so
+   * call after the most recent `setSearchQuery` dispatch to read the
+   * count for the new query.
+   */
+  getMatchCount(): number;
 }
 
 // ---------------------------------------------------------------------------
@@ -315,6 +311,12 @@ export interface TugCodeViewProps {
   lineNumbers?: boolean;
   /** Forwarded class name for cascade-scoped customization. */
   className?: string;
+  /**
+   * Called when the responder chain receives `FIND` (e.g. user presses
+   * Cmd-F inside the editor). Composing components wire this to their
+   * own Find-UI toggle. When unset, FIND inside the editor is a no-op.
+   */
+  onFindRequested?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -329,7 +331,14 @@ export const TugCodeView = React.forwardRef<
   TugCodeViewDelegate,
   TugCodeViewProps
 >(function TugCodeView(
-  { value, language: _language, wrap = true, lineNumbers = true, className },
+  {
+    value,
+    language: _language,
+    wrap = true,
+    lineNumbers = true,
+    className,
+    onFindRequested,
+  },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -345,35 +354,117 @@ export const TugCodeView = React.forwardRef<
   // mount [L07].
   const wrapRef = useRef(wrap);
   const lineNumbersRef = useRef(lineNumbers);
+  // Latest `onFindRequested` callback. The responder-chain `FIND`
+  // handler reads this so it picks up prop changes without recomposing
+  // the actions object on every render.
+  const onFindRequestedRef = useRef<(() => void) | undefined>(onFindRequested);
   useLayoutEffect(() => {
     wrapRef.current = wrap;
   }, [wrap]);
   useLayoutEffect(() => {
     lineNumbersRef.current = lineNumbers;
   }, [lineNumbers]);
+  useLayoutEffect(() => {
+    onFindRequestedRef.current = onFindRequested;
+  }, [onFindRequested]);
 
   // ---- Imperative handle (delegate) ----
 
-  const openSearch = useCallback(() => {
+  const setSearchQueryFn = useCallback((spec: TugCodeViewSearchQuery) => {
     const view = viewRef.current;
     if (view === null) return;
-    openSearchPanel(view);
+    // CM6's `searchHighlighter` ViewPlugin only paints decorations when
+    // `panel != null` in the search state field (see
+    // `@codemirror/search/dist/index.js`: `highlight({query, panel})`
+    // returns `Decoration.none` if panel is null). The bundled panel
+    // is hidden via the editor theme below — keeping it open is the
+    // mechanism that activates the highlighter; the composing
+    // component still owns the user-facing Find chrome (its own
+    // `<TugInput>` / `<TugCheckbox>` / `<TugIconButton>` row).
+    if (!searchPanelOpen(view.state)) {
+      openSearchPanel(view);
+    }
+    view.dispatch({
+      effects: setSearchQuery.of(
+        new SearchQuery({
+          search: spec.search,
+          caseSensitive: spec.caseSensitive ?? false,
+          regexp: spec.regexp ?? false,
+          wholeWord: spec.wholeWord ?? false,
+        }),
+      ),
+    });
   }, []);
 
-  const closeSearch = useCallback(() => {
+  const clearSearchFn = useCallback(() => {
     const view = viewRef.current;
     if (view === null) return;
-    closeSearchPanel(view);
+    // Drop the query and close the bundled panel so the highlighter
+    // returns to `Decoration.none` and the search state is fully
+    // released until the user opens find again.
+    view.dispatch({
+      effects: setSearchQuery.of(new SearchQuery({ search: "" })),
+    });
+    if (searchPanelOpen(view.state)) {
+      closeSearchPanel(view);
+    }
+  }, []);
+
+  const findNextFn = useCallback(() => {
+    const view = viewRef.current;
+    if (view === null) return;
+    cmFindNext(view);
+  }, []);
+
+  const findPreviousFn = useCallback(() => {
+    const view = viewRef.current;
+    if (view === null) return;
+    cmFindPrevious(view);
+  }, []);
+
+  const selectAllMatchesFn = useCallback(() => {
+    const view = viewRef.current;
+    if (view === null) return;
+    cmSelectMatches(view);
+  }, []);
+
+  const getMatchCountFn = useCallback((): number => {
+    const view = viewRef.current;
+    if (view === null) return 0;
+    const query = getSearchQuery(view.state);
+    // Empty / invalid queries (e.g. empty regex) yield zero matches.
+    // The `valid` flag covers both cases per the @codemirror/search
+    // SearchQuery contract.
+    if (!query.valid) return 0;
+    const cursor = query.getCursor(view.state);
+    let count = 0;
+    let next = cursor.next();
+    while (!next.done) {
+      count += 1;
+      next = cursor.next();
+    }
+    return count;
   }, []);
 
   useImperativeHandle(
     ref,
     (): TugCodeViewDelegate => ({
       view: () => viewRef.current,
-      openSearch,
-      closeSearch,
+      setSearchQuery: setSearchQueryFn,
+      clearSearch: clearSearchFn,
+      findNext: findNextFn,
+      findPrevious: findPreviousFn,
+      selectAllMatches: selectAllMatchesFn,
+      getMatchCount: getMatchCountFn,
     }),
-    [openSearch, closeSearch],
+    [
+      setSearchQueryFn,
+      clearSearchFn,
+      findNextFn,
+      findPreviousFn,
+      selectAllMatchesFn,
+      getMatchCountFn,
+    ],
   );
 
   // ---- Responder registration ----
@@ -400,9 +491,13 @@ export const TugCodeView = React.forwardRef<
     void navigator.clipboard?.writeText(text);
   }, []);
 
+  // FIND comes in via the responder chain (e.g. user presses Cmd-F).
+  // TugCodeView no longer hosts a panel itself; the action surfaces to
+  // the composing component via the `onFindRequested` prop so the host
+  // can toggle its own Tug-styled find UI.
   const handleFind = useCallback((): void => {
-    openSearch();
-  }, [openSearch]);
+    onFindRequestedRef.current?.();
+  }, []);
 
   const actions: Partial<Record<TugAction, ActionHandler>> = {
     [TUG_ACTIONS.SELECT_ALL]: handleSelectAll,
@@ -451,13 +546,13 @@ export const TugCodeView = React.forwardRef<
         lineNumbersCompartment.of(
           initialLineNumbers ? cmLineNumbers() : [],
         ),
-        // The search extension is always present; the panel toggles
-        // open/closed via `openSearchPanel` / `closeSearchPanel`. The
-        // search keymap binds Cmd/Ctrl-F inside the editor; the
-        // responder also exposes FIND so the chain can reach us from
-        // outside the editor's focus scope.
+        // The search extension is always present so `setSearchQuery`
+        // effects work; the bundled panel is NOT used (we don't bind
+        // its keymap). The composing component owns the Find UI via
+        // the delegate's `setSearchQuery`/`findNext`/`findPrevious`
+        // methods. The responder chain exposes FIND so Cmd-F surfaces
+        // to the host via `onFindRequested`.
         search({ top: true }),
-        keymap.of(searchKeymap),
         tugCodeViewTheme,
       ],
     });
