@@ -2718,10 +2718,10 @@ The first two gaps are recognized in the original Step 10.9 scope — Copy lived
 
 **Checkpoint (Phase E.4):**
 
-- [ ] Manual: open a Read tool on any file. Confirm the Copy button is present in the action row, sits left of the fold cue, and copies the full file content to the clipboard with the same "Copied" flash as TerminalBlock.
-- [ ] Manual: run a `find . | head -300` Bash command. Confirm the output renders collapsed with a fade at the bottom; the fold cue at the right edge reads "300 LINES" (or matches the actual line count). Click the cue → output expands. Click again → re-collapses.
-- [ ] Manual: pass `collapsed={false}` to a TerminalBlock from a parent harness; click the cue. Confirm the parent's `onToggleCollapsed` fires but the visible state stays expanded (parent controls it).
-- [ ] Manual: open any DiffBlock in the live transcript. Confirm the view-toggle renders as a two-segment choice group with `Columns2` + "Side by Side" and `AlignLeft` + "Inline"; the currently selected segment shows the sliding indicator pill; clicking the non-current segment swaps the diff render mode and the indicator slides to the new position; the action row does not jump (position-stable click anchor preserved); arrow-key navigation (Left / Right) moves the selection and re-renders the diff (TugChoiceGroup's native keyboard contract); Cmd-Z / Cmd-Shift-Z do nothing here (this control is not undoable, matching other tugways choice groups).
+- [x] Manual: open a Read tool on any file. Confirm the Copy button is present in the action row, sits left of the fold cue, and copies the full file content to the clipboard with the same "Copied" flash as TerminalBlock.
+- [x] Manual: run a `find . | head -300` Bash command. Confirm the output renders collapsed with a fade at the bottom; the fold cue at the right edge reads "300 LINES" (or matches the actual line count). Click the cue → output expands. Click again → re-collapses.
+- [x] Manual: pass `collapsed={false}` to a TerminalBlock from a parent harness; click the cue. Confirm the parent's `onToggleCollapsed` fires but the visible state stays expanded (parent controls it).
+- [x] Manual: open any DiffBlock in the live transcript. Confirm the view-toggle renders as a two-segment choice group with `Columns2` + "Side by Side" and `AlignLeft` + "Inline"; the currently selected segment shows the sliding indicator pill; clicking the non-current segment swaps the diff render mode and the indicator slides to the new position; the action row does not jump (position-stable click anchor preserved); arrow-key navigation (Left / Right) moves the selection and re-renders the diff (TugChoiceGroup's native keyboard contract); Cmd-Z / Cmd-Shift-Z do nothing here (this control is not undoable, matching other tugways choice groups).
 
 ---
 
