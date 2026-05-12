@@ -87,6 +87,7 @@ import { SmartScroll } from "@/lib/smart-scroll";
 
 import { HeightIndex } from "./internal/list-view-height-index";
 import { computeWindow } from "./internal/list-view-window";
+import { OuterScrollportProvider } from "./internal/outer-scrollport-context";
 
 // ---------------------------------------------------------------------------
 // Row roles — structural classification of an item in the list
@@ -423,6 +424,31 @@ export interface TugListViewProps<
    * @default false
    */
   inline?: boolean;
+
+  /**
+   * Tail spacer height — when set, renders an inert spacer div at the
+   * bottom of the scrollable area with this height. The spacer extends
+   * the scrollport's `scrollHeight` by its own height, which raises
+   * `maxScrollTop` and gives the user "headroom" to scroll the last
+   * actual cell to within (clientHeight − tailSpacer) of the top.
+   *
+   * The motivating use case is collapse-jump suppression. When a
+   * descendant click collapses a tall body kind (a long file, a big
+   * diff), the document's `scrollHeight` drops; if the user has
+   * scrolled past where the new `maxScrollTop` would be, the browser
+   * clamps `scrollTop` to the new max and content visibly jumps. A
+   * persistent tail spacer of roughly 80% of the viewport keeps
+   * `maxScrollTop` ahead of typical reading positions, so common-
+   * sized collapses don't clamp.
+   *
+   * Pass a CSS length (`"80svh"`, `"75%"`, `"720px"`) or a pixel
+   * number. Omit (default) for no tail spacer. The spacer is
+   * `aria-hidden` and `pointer-events: none` — it never receives
+   * keyboard focus or pointer events.
+   *
+   * @default undefined
+   */
+  tailSpacer?: number | string;
 }
 
 // ---------------------------------------------------------------------------
@@ -538,12 +564,40 @@ const DEFAULT_CELL_ROLE: TugListViewCellRole = "cell";
  */
 const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
   function TugListView(
-    { dataSource, delegate, cellRenderers, scrollKey, className, followBottom, inline },
+    { dataSource, delegate, cellRenderers, scrollKey, className, followBottom, inline, tailSpacer },
     ref,
   ) {
     const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
     const topSpacerRef = React.useRef<HTMLDivElement | null>(null);
     const bottomSpacerRef = React.useRef<HTMLDivElement | null>(null);
+    // Tail spacer ref — populated when `tailSpacer` is set. Read by
+    // SmartScroll via `trailingInertOffset` so pin-to-bottom and
+    // isAtBottom calculations exclude the spacer height. The ref
+    // stays in sync via the JSX `ref` callback; reading
+    // `.current?.offsetHeight ?? 0` returns the live pixel value
+    // each call so a CSS length (e.g. `80cqh`) that varies with
+    // scrollport height tracks automatically.
+    const tailSpacerRef = React.useRef<HTMLDivElement | null>(null);
+
+    // Scrollport state for descendants — `OuterScrollportContext` publishes
+    // this element so body-kind affordances can compensate `scrollTop` when
+    // their click triggers a layout change in or around the chrome header.
+    // Tracking the same node in React state (alongside the ref) lets the
+    // context re-publish the moment the scroll container mounts. The
+    // composed ref callback below updates both atomically. Same shape as
+    // `ToolWrapperChrome` uses for its actions target — and for the same
+    // reason: descendants need a non-null value on their first render-
+    // after-mount, not "a ref that fires later." See
+    // `internal/outer-scrollport-context.tsx` for the consumer hook.
+    const [scrollportEl, setScrollportEl] =
+      React.useState<HTMLDivElement | null>(null);
+    const setScrollContainerRef = React.useCallback(
+      (el: HTMLDivElement | null) => {
+        scrollContainerRef.current = el;
+        setScrollportEl(el);
+      },
+      [],
+    );
 
     // Map<index, HTMLElement> populated by cell-wrapper ref callbacks.
     // Used by `getElementForIndex` for direct DOM addressing without a
@@ -845,6 +899,14 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             scrollTick();
           },
         },
+        // Read the tail spacer's live height each time SmartScroll
+        // needs to compute the "bottom of real content." Without
+        // this, `pinToBottom` would peg the scroll to the bottom of
+        // the spacer (empty space) and `isAtBottom` would never
+        // return true while content was visible. When `tailSpacer`
+        // is undefined, `tailSpacerRef.current` is null and we
+        // return 0 — same behavior as before.
+        trailingInertOffset: () => tailSpacerRef.current?.offsetHeight ?? 0,
       });
       smartScrollRef.current = smartScroll;
 
@@ -1295,9 +1357,16 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
 
     return (
       <div
-        ref={scrollContainerRef}
+        ref={setScrollContainerRef}
         data-slot="tug-list-view"
         data-tug-scroll-key={scrollKey ?? "tug-list-view"}
+        // Phase E.3 — when `tailSpacer` is set, mark the scroll
+        // container so the CSS `container-type: size` rule (which
+        // makes `cqh` units resolve against this scrollport's height)
+        // applies only to instances that opted in. Non-tide consumers
+        // (gallery feeds, session lists, recents) don't get a
+        // layout-containment context they didn't ask for.
+        data-tail-spacer={tailSpacer !== undefined ? "true" : undefined}
         className={
           className === undefined ? "tug-list-view" : `tug-list-view ${className}`
         }
@@ -1309,6 +1378,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           className="tug-list-view-spacer tug-list-view-spacer--top"
           aria-hidden="true"
         />
+        <OuterScrollportProvider scrollport={scrollportEl}>
         <div className="tug-list-view-window">
           {renderedRange.map(({ index, id, kind, role }) => {
             // Role-aware wrapper attributes:
@@ -1369,11 +1439,33 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             );
           })}
         </div>
+        </OuterScrollportProvider>
         <div
           ref={bottomSpacerRef}
           className="tug-list-view-spacer tug-list-view-spacer--bottom"
           aria-hidden="true"
         />
+        {/* Tail spacer — see `tailSpacer` prop docstring. Extends the
+         * scrollport's scrollHeight by the given length, raising
+         * maxScrollTop and giving the user headroom to scroll the
+         * last cell up toward the top of the viewport. Inert: no
+         * pointer events, no keyboard reach. The bottom virtualization
+         * spacer above is dynamically sized by the windowing math;
+         * this one is constant and unrelated, hence a separate node. */}
+        {tailSpacer !== undefined ? (
+          <div
+            ref={tailSpacerRef}
+            className="tug-list-view-tail-spacer"
+            data-slot="tug-list-view-tail-spacer"
+            aria-hidden="true"
+            style={{
+              height:
+                typeof tailSpacer === "number"
+                  ? `${tailSpacer}px`
+                  : tailSpacer,
+            }}
+          />
+        ) : null}
       </div>
     );
   },

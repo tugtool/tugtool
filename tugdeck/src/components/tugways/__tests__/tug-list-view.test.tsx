@@ -3089,3 +3089,111 @@ describe("TugListView (Phase 0 — row roles)", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase E.3 — tailSpacer prop
+// ---------------------------------------------------------------------------
+//
+// The `tailSpacer` prop renders an inert div at the bottom of the
+// scrollable area. Its height extends the scrollport's `scrollHeight`,
+// raising `maxScrollTop` so the user has headroom for collapse
+// operations (a click that shrinks the document doesn't immediately
+// clamp scrollTop and jump the chrome on screen). The spacer is
+// `aria-hidden`, has no pointer events, and lives below the existing
+// bottom virtualization spacer. The wiring with SmartScroll's
+// `trailingInertOffset` (so follow-bottom / isAtBottom exclude this
+// region) is tested separately in `smart-scroll.test.ts`.
+
+describe("TugListView — Phase E.3 tailSpacer", () => {
+  test("renders an aria-hidden div with the given pixel height when tailSpacer is set", () => {
+    const ds = new DemoDataSource([
+      { id: "a", kind: "row", label: "Alpha" },
+    ]);
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        cellRenderers={CELL_RENDERERS}
+        tailSpacer={240}
+      />,
+    );
+    const spacer = container.querySelector(
+      '[data-slot="tug-list-view-tail-spacer"]',
+    ) as HTMLElement | null;
+    expect(spacer).not.toBeNull();
+    expect(spacer?.getAttribute("aria-hidden")).toBe("true");
+    expect(spacer?.style.height).toBe("240px");
+  });
+
+  test("accepts CSS-length strings and passes them through unmodified", () => {
+    // The wired use case in tide-card-transcript is `tailSpacer="80cqh"`
+    // — the component must NOT add units, rewrite, or normalize the
+    // value, so `cqh` (and other container-query units) resolves
+    // against `.tug-list-view`'s container-query context. happy-dom's
+    // CSSStyleDeclaration silently drops unknown units like `cqh` at
+    // assignment time, so we can't observe the value via
+    // `.style.height` or even `getAttribute("style")` for cqh.
+    // Test the pass-through contract with a unit happy-dom recognizes
+    // (`vh`) — the same code path handles both. The cqh resolution
+    // itself is exercised in the live app at runtime.
+    const ds = new DemoDataSource([
+      { id: "a", kind: "row", label: "Alpha" },
+    ]);
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        cellRenderers={CELL_RENDERERS}
+        tailSpacer="80vh"
+      />,
+    );
+    const spacer = container.querySelector(
+      '[data-slot="tug-list-view-tail-spacer"]',
+    ) as HTMLElement | null;
+    expect(spacer).not.toBeNull();
+    expect(spacer?.style.height).toBe("80vh");
+  });
+
+  test("omitting tailSpacer does NOT render a spacer div", () => {
+    // Default behavior must be unchanged for consumers that haven't
+    // opted in. Verify the spacer node is absent — and equally
+    // important, that the data-tail-spacer attribute (which the CSS
+    // scopes `container-type: size` to) is not present, so non-tide
+    // consumers don't get the layout-containment context.
+    const ds = new DemoDataSource([
+      { id: "a", kind: "row", label: "Alpha" },
+    ]);
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        cellRenderers={CELL_RENDERERS}
+      />,
+    );
+    expect(
+      container.querySelector('[data-slot="tug-list-view-tail-spacer"]'),
+    ).toBeNull();
+    const scrollContainer = container.querySelector(
+      '[data-slot="tug-list-view"]',
+    ) as HTMLElement | null;
+    expect(scrollContainer?.getAttribute("data-tail-spacer")).toBeNull();
+  });
+
+  test("setting tailSpacer marks the scroll container with data-tail-spacer for CSS scoping", () => {
+    // The scroll container gets `data-tail-spacer="true"` when the
+    // prop is set so the CSS `container-type: size` rule can scope
+    // to that selector (instead of applying to every TugListView
+    // instance). Pin the attribute presence.
+    const ds = new DemoDataSource([
+      { id: "a", kind: "row", label: "Alpha" },
+    ]);
+    const { container } = render(
+      <TugListView<DemoDataSource>
+        dataSource={ds}
+        cellRenderers={CELL_RENDERERS}
+        tailSpacer="200px"
+      />,
+    );
+    const scrollContainer = container.querySelector(
+      '[data-slot="tug-list-view"]',
+    ) as HTMLElement | null;
+    expect(scrollContainer?.getAttribute("data-tail-spacer")).toBe("true");
+  });
+});

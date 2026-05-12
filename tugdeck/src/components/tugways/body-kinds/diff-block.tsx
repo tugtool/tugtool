@@ -75,6 +75,8 @@ import { ChevronDown, ChevronRight, ChevronsDown, ChevronsUp } from "lucide-reac
 import { TugCue } from "@/components/tugways/tug-cue";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
+import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
+import { usePositionStableClick } from "@/components/tugways/internal/use-position-stable-click";
 import { detectLanguage } from "./file-block";
 import {
   parseUnifiedDiffText,
@@ -544,7 +546,51 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   const collapsed =
     collapsedProp !== undefined ? collapsedProp : localCollapsed;
 
+  // Position-stable click infrastructure. Two complementary mechanisms
+  // keep the click target stable across layout changes:
+  //
+  //   1. Scrollport-level tail spacer (`tailSpacer` prop on
+  //      `TugListView`, wired by tide-card-transcript): raises the
+  //      scrollport's `maxScrollTop` so a collapse that shrinks the
+  //      document doesn't immediately force the browser to clamp
+  //      `scrollTop` below the value the position-stable hook would
+  //      need to write.
+  //
+  //   2. `usePositionStableClick`: after the mutator runs (and the
+  //      DOM has settled via `flushSync`), measures the click target's
+  //      new viewport Y and writes the exact `scrollTop` that puts it
+  //      back at the snapshot Y. With the tail spacer raising the
+  //      ceiling, the target scrollTop typically falls inside the
+  //      valid range and the write sticks.
+  //
+  // Both buttons (fold cue, view-toggle) route through the hook. The
+  // fold cue benefits especially from the combination: collapse
+  // shrinks the document a lot, but the tail spacer absorbs the
+  // shrinkage and the hook fine-tunes the final scrollTop to keep
+  // the chrome under the user's cursor.
+  const outerScrollport = useOuterScrollport();
+  const outerScrollportRef = React.useRef<HTMLElement | null>(null);
+  outerScrollportRef.current = outerScrollport;
+  const foldCueButtonRef = React.useRef<HTMLButtonElement | null>(null);
+  const viewToggleButtonRef = React.useRef<HTMLButtonElement | null>(null);
+  const { stableClick: stableFoldClick } = usePositionStableClick({
+    targetRef: foldCueButtonRef,
+    scrollportRef: outerScrollportRef,
+  });
+  const { stableClick: stableViewToggleClick } = usePositionStableClick({
+    targetRef: viewToggleButtonRef,
+    scrollportRef: outerScrollportRef,
+  });
+
   const toggleCollapsed = React.useCallback(() => {
+    // Dispatch BEFORE the state update so the host (TugListView's
+    // SmartScroll, when present) flips `isFollowingBottom` to false
+    // before React commits the new cell height; the subsequent
+    // ResizeObserver flush then bails out of `pinToBottom`. Mirrors
+    // FileBlock's exact pattern.
+    rootRef.current?.dispatchEvent(
+      new CustomEvent("tug-disengage-follow-bottom", { bubbles: true }),
+    );
     // Controlled mode: parent owns the prop, only notify; local state
     // stays out of it. Uncontrolled mode: local state flips. Both
     // paths converge on `onToggleCollapsed` so the host can observe
@@ -767,22 +813,24 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   // the Tug components so CSS scoping and test hooks stay stable.
   const hunkCountWord = hunks.length === 1 ? "hunk" : "hunks";
   const cueLabel = `${hunks.length} ${hunkCountWord}`;
+  // Phase E.3 ordering: features (view-toggle) → fold cue (rightmost).
+  // The fold cue is the fixed-landmark affordance; the view-toggle
+  // sits to its left in the features group. Each click routes through
+  // `usePositionStableClick` so the cursor stays on top of the button
+  // across the layout change the click triggers.
+  //
+  // The view-toggle's label swings between "Side by side" and "Inline"
+  // — a ~4-character width swing that would otherwise re-flow every
+  // sibling on every toggle. `widthStabilize` renders both labels in
+  // a single grid cell so the button's intrinsic width is the max of
+  // the two; the active label paints and the alternate is hidden via
+  // `visibility: hidden` while still contributing to layout sizing.
+  const viewToggleActive = viewMode === "side-by-side" ? "Inline" : "Side by side";
+  const viewToggleAlternate = viewMode === "side-by-side" ? "Side by side" : "Inline";
   const affordances = empty ? null : (
     <>
       <TugPushButton
-        className="tugx-diff-fold-cue"
-        data-slot="diff-fold-cue"
-        icon={collapsed ? <ChevronsDown /> : <ChevronsUp />}
-        subtype="icon-text"
-        emphasis="ghost"
-        size="2xs"
-        aria-expanded={!collapsed}
-        aria-label={collapsed ? "Expand diff" : "Collapse diff"}
-        onClick={toggleCollapsed}
-      >
-        {cueLabel}
-      </TugPushButton>
-      <TugPushButton
+        ref={viewToggleButtonRef}
         className="tugx-diff-view-toggle"
         data-slot={DATA_SLOT_VIEW_TOGGLE}
         emphasis="ghost"
@@ -794,9 +842,24 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
             ? "Switch to inline diff"
             : "Switch to side-by-side diff"
         }
-        onClick={toggleViewMode}
+        onClick={() => stableViewToggleClick(toggleViewMode)}
+        widthStabilize={{ alternateLabel: viewToggleAlternate }}
       >
-        {viewMode === "side-by-side" ? "Inline" : "Side by side"}
+        {viewToggleActive}
+      </TugPushButton>
+      <TugPushButton
+        ref={foldCueButtonRef}
+        className="tugx-diff-fold-cue"
+        data-slot="diff-fold-cue"
+        icon={collapsed ? <ChevronsDown /> : <ChevronsUp />}
+        subtype="icon-text"
+        emphasis="ghost"
+        size="2xs"
+        aria-expanded={!collapsed}
+        aria-label={collapsed ? "Expand diff" : "Collapse diff"}
+        onClick={() => stableFoldClick(toggleCollapsed)}
+      >
+        {cueLabel}
       </TugPushButton>
     </>
   );

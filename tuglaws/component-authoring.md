@@ -843,11 +843,97 @@ For UI feedback whose validity depends on an asynchronous outcome — Copy showi
 - A `useLayoutEffect` keyed on the controlled prop writes `data-tug-confirming` directly into the DOM ([L03] before paint; [L06] CSS-driven swap rather than React state churn).
 - The two modes are mutually exclusive: providing both `confirmation.duration` and `isConfirming` is a programming error. Dev-mode `console.warn` flags the conflict so the author catches it at mount.
 
+**Confirming is NOT a disabled state (Phase E.3).** Do not set `aria-disabled="true"` while the confirming attribute is on. Two reasons:
+
+1. Project rest-state hover/active CSS rules use `:not([aria-disabled="true"])` exclusions to suppress interactive styles for chain-disabled buttons. Setting `aria-disabled` during confirming would trigger those same exclusions and suppress the button's hover background while the user holds the cursor over it through the "Copied" flash — exactly the regression Phase E.3 fixed.
+2. The cascade then fights itself: a sibling `[aria-disabled="true"][data-tug-confirming="true"]` override has to cancel the disabled dimming and cursor, which works for paint but leaves `:hover` matching broken because attribute-based exclusions don't re-evaluate without pointer motion.
+
+**Click suppression during confirming uses the JS `confirmingRef` guard, not DOM attributes.** The click handler returns early when `confirmingRef.current === true`. No `aria-disabled`, no `pointer-events: none` — `:hover` continues to match because the geometric hit-test is unchanged.
+
+**Hover companion rules are required.** Every emphasis-role that paints a confirming background must also declare a `[data-tug-confirming="true"]:hover` companion rule at equal-or-greater specificity than the rest-hover rule. The rest-hover rule uses 4-class specificity (e.g. `.tug-button-ghost-action:hover:not(:disabled):not([aria-disabled="true"])`), so the companion uses an equal 4-class specificity (`.tug-button-ghost-action[data-tug-confirming="true"]:hover:not(:disabled)`) and appears AFTER the rest-hover rule in source order. The composite background blends the confirming surface with a small fraction of the hover overlay via `color-mix` so the user reads "still confirming, still hovering."
+
+**The revert edge needs a selector-flush nudge.** WebKit caches `:hover` selector matching against pointer events, not against arbitrary DOM mutations. When `data-tug-confirming` clears and the resting `:hover` rule starts matching again, paint may lag until the user moves their mouse. Force re-evaluation by toggling a no-op `data-tug-flush` attribute on the same element inside the same layout effect that clears `data-tug-confirming` (set, then immediately delete — the mutation invalidates the style cache without any styling effect of its own). Both the controlled-mode layout effect and the uncontrolled-mode timer callback must do this.
+
 **Reference implementations:**
-- `tug-button.tsx` — primitive that supports both modes. The internal timer path is the default; `isConfirming` opts into controlled mode.
+- `tug-button.tsx` — primitive that supports both modes. The internal timer path is the default; `isConfirming` opts into controlled mode. Neither path sets `aria-disabled`. Both paths toggle `data-tug-flush` on revert.
 - `terminal-block.tsx` — `Copy` button consumer. Sets `isConfirming` to `true` inside the clipboard `.then()` callback only after a successful write resolves; a denied write leaves the flag at `false` and the button stays at rest. Local `setTimeout` clears the flag after a fixed flash window. The "Copied" feedback is now honest.
 
 **Why not just rely on the uncontrolled timer:** in the uncontrolled path the flash fires on every click regardless of whether the underlying operation succeeded. For Copy this means: clipboard denied → user sees "Copied" → believes the clipboard has the new content → pastes the OLD content → confused. The controlled mode pushes the success signal into a chokepoint (the `.then()` callback) that runs only on success.
+
+### Position-preserving interactions (Phase E.3)
+
+For action-row buttons whose click triggers a state change that re-flows the layout around them (a fold cue that collapses or expands a body, a Find toggle that mounts a find row, a view-mode toggle that swaps grid templates). The browser preserves *scrollTop* across the layout change, NOT the *visual* position of the click target. When the target sits inside a sticky-pinned header and the body shrinks far enough to un-pin the header, the click target's screen position drops by hundreds of pixels — the user's cursor is no longer over the button they just pressed.
+
+**When to use:** Action-row buttons whose click triggers a state mutation that changes the height of content above or around the button. Buttons whose click triggers no layout change (or whose layout change is purely *below* the button and outside any sticky frame) don't need this — adding it would be defensive overhead.
+
+**Implementation: `usePositionStableClick`.**
+
+- The hook lives at `tugdeck/src/components/tugways/internal/use-position-stable-click.ts`. It accepts `targetRef` (the button DOM ref) and `scrollportRef` (a ref to the outer scrollport — typically `useOuterScrollport()`'s return value wrapped in a ref).
+- The hook returns `stableClick(mutator)` — a wrapper the caller invokes from its onClick handler instead of running the mutator directly. The wrapper performs the full snapshot → flush → measure → adjust sequence **synchronously on the click handler's call-stack**:
+  1. Read `target.getBoundingClientRect()` and stash the snapshot in a local const.
+  2. Run the mutator inside `flushSync` so React commits all the mutator's state updates synchronously. By the time `flushSync` returns, the DOM reflects the post-mutation layout — no React batching delay, no useLayoutEffect needed.
+  3. Re-measure. If the target's viewport Y shifted, write `scrollportRef.current.scrollTop += delta`. (Pass 1.)
+  4. Re-measure once more. If still off, the target sits inside a `position: sticky` ancestor whose pin regime is decoupled from scrollTop — the simple delta couldn't move it. Walk up to the sticky ancestor and compute the exact scrollTop that places it at the desired viewport Y via the sticky positioning formula. (Pass 2.)
+
+- **No React state inside the hook.** No generation counter, no flag state, no `useState`. The compensation is purely imperative DOM work, running on the click event's call-stack between user click and next paint. An earlier draft used a `useState` generation counter to force a re-render whose `useLayoutEffect` did the measurement; that pattern routed appearance compensation through React's render cycle and crossed L06 in spirit even though the counter was never rendered.
+
+**Sticky-aware Pass 2 formula:**
+
+When the target sits inside a sticky ancestor and the ancestor's pin regime flips across pre/post (collapse → expand un-pins the chrome from clamped to fully-pinned, or expand → collapse re-clamps it), the simple delta can't move it: in the pinned regime, sticky positions itself independently of scrollTop. Pass 2 computes the exact scrollTop that places the sticky ancestor back at its pre-click viewport Y:
+
+- Find the nearest `position: sticky` ancestor of the target (inclusive of target itself).
+- The target's offset within the sticky ancestor is invariant across scrollTop changes (the target is a child of sticky), so the desired sticky viewport Y is `oldTop - targetOffsetWithinSticky`.
+- Read the sticky's CSS `top` offset (e.g. `36px`).
+- **Natural regime** (`desiredStickyY > stickyTopOffset`): sticky scrolls with its container, hasn't engaged the pin yet. `scrollTop = sticky.docY − desiredStickyY`.
+- **Clamped regime** (`desiredStickyY < stickyTopOffset`): sticky has run out of container room and sits at `parent.bottom_viewport − sticky.height`. `scrollTop = stickyParent.docBottom − desiredStickyY − stickyHeight`.
+- Clamp the result to the scrollport's valid `[0, scrollHeight − clientHeight]` range so we don't try to set a negative or beyond-end scrollTop.
+
+**Guards.**
+- Skip the entire compensation when `targetRef.current` is null (no measurable target).
+- Skip Pass 1/Pass 2 when `scrollportRef.current` is null (standalone composition: gallery, unit tests, anywhere with no outer scrollport above). The mutator still runs inside flushSync.
+- Skip when delta is below `POSITION_TOLERANCE_PX` (0.5px). Subpixel rounding shouldn't trigger an adjustment.
+
+**No off-screen guard.** An earlier version skipped the adjustment when the post-mutation rect fell outside the viewport on the theory that "the button is now off-screen, snap-scrolling something else into view would be surprising." That theory was wrong: the button was on-screen at click time (the user clicked it), so any post-state position that takes it off-screen is exactly the case the hook exists to fix. The user's contract is unconditional — clicking a button must not move the button on screen, regardless of where the layout change puts it.
+
+**Tuglaws conformance — read these before reaching for an alternative.**
+- **[L04]** No parent-triggered child setState crossed by a measurement. The hook lives in the same component that owns the state being mutated; the synchronous `flushSync` boundary guarantees the DOM is at its post-mutation layout before the measurement runs. No "stale child DOM" timing hazard.
+- **[L05]** No `requestAnimationFrame` anywhere. The compensation runs synchronously on the click handler's call-stack, before paint. rAF timing relative to React commits is a browser implementation detail; relying on it would couple the visual-fidelity contract to a non-contract.
+- **[L06]** Appearance compensation flows through DOM, not React. The snapshot is a local const inside the click handler. The scrollTop adjustment is a direct DOM write. There is NO React state inside this hook — no generation counter, no flag state, no `useState`. If you find yourself reaching for `useState` to "trigger an effect" that doesn't otherwise render anything, you are probably about to violate L06 in spirit.
+- **[L07]** Live ref reads inside the click handler — no closures over stale state.
+- **[L23]** Preserves a stronger user-visible invariant ("click point stays under cursor") at the cost of a weaker one ("numeric scrollTop is preserved by the browser"). The user-visible thing is what the user sees and where they are pointing; numeric scroll offset is an implementation detail that serves that surface.
+- **[L24]** Local const for the snapshot. Direct DOM writes for the scrollTop adjustments. No structural state. Zone boundaries respected.
+
+**Why `flushSync`.** React batches state updates inside event handlers and commits asynchronously after the handler returns. Without `flushSync`, the measurement immediately after the mutator would still see pre-mutation layout. `flushSync` forces a synchronous commit: by the time it returns, the mutator's setStates have all been applied and the DOM is at the post-mutation layout. We can then measure and adjust on the same call-stack. The alternative — bumping a state counter to force a re-render and doing the work in `useLayoutEffect` — works mechanically but routes appearance compensation through React's render cycle and is therefore a code smell.
+
+**Companion: action-row buttons refuse focus-on-click.** The browser's default click → focus path can trigger an implicit scroll-into-view if the focused element is near a viewport edge. Focus-driven scroll happens *before* React's commit, so the position-stable hook can't compensate for it. Every action-row button must carry `data-tug-focus="refuse"` so its pointerdown handler `preventDefault()`s the default focus action. `TugButton` sets this on every instance — going through `TugPushButton` / `TugIconButton` / `TugPopupButton` is enough. The cost of bypassing the Tug primitive and using a raw `<button>` is exactly this regression.
+
+**Companion: width-stable buttons.** A button whose label swings between two values (e.g. a view-toggle reading "Inline" vs "Side by side") causes a layout change every toggle — and since the button is itself a click target, the *next* click can land on a different button than the user aimed at. The `widthStabilize` prop on `TugPushButton` renders both labels inside a single CSS Grid cell (`grid-template-areas: "label"`) with both children at `grid-area: label`. The active label paints; the alternate keeps `visibility: hidden` (NOT `position: absolute` — that would remove it from layout and defeat the entire mechanism) but contributes to layout sizing. The button's intrinsic width becomes the max-content of both labels and is stable across toggles.
+
+**Reference implementations:**
+- `use-position-stable-click.ts` — the hook.
+- `outer-scrollport-context.tsx` — the context that publishes the scrollport node to descendants. `TugListView` publishes its scroll container automatically.
+- `file-block.tsx` — Find trigger routed through `usePositionStableClick`. The fold cue is NOT routed through this hook because collapse shrinks the document; see the "Document-shrink-clamp" subsection below for the separate mechanism.
+- `diff-block.tsx` — view-toggle routed through `usePositionStableClick`. View-toggle uses `widthStabilize` to keep its width stable across "Inline" ↔ "Side by side" swaps. The fold cue is NOT routed through this hook for the same reason.
+
+### Document-shrink-clamp — scrollport tail spacer (Phase E.3)
+
+The companion problem to `usePositionStableClick`: when a click *shrinks* the document — typically a fold cue collapsing a long body kind — the scrollport's `scrollHeight` drops. If the user's `scrollTop` was higher than the new `maxScrollTop = scrollHeight − clientHeight`, the browser clamps `scrollTop` down to the new max. No `scrollTop` write can put the click target back at its pre-click viewport Y, because the position we'd need to scroll to is now past the end of the document. `usePositionStableClick` cannot fix this; the only fix is to make sure the document doesn't get short enough to force a clamp.
+
+**The mechanism: scrollport tail spacer.** `TugListView` accepts a `tailSpacer` prop. When set, the list view renders an inert `aria-hidden` div at the bottom of the scrollable area with the given height (CSS length or pixels). The spacer extends `scrollHeight` by its own height; `maxScrollTop` rises accordingly. The user gets "headroom" — they can scroll the last actual cell up toward the top of the viewport, and (more importantly here) a descendant click that shrinks the document by up to the tail-spacer's height *won't clamp `scrollTop`* because the document still has scroll range left.
+
+**Why scrollport-level, not per-cell.** An earlier draft locked each body kind's outer height with `min-height` at the moment of collapse. That approach made the cell lie about its layout — a "collapsed" block sitting above a giant empty rectangle, with no visible reason for the empty space. UX failure. The tail spacer puts the empty space at a *semantically reasonable* location (after the last cell) and lets every cell honestly report its actual content height.
+
+**Sizing.** A tail spacer of roughly 80% of the scrollport's small-viewport height (`80svh`) covers the common case: typical fold operations shrink a cell by less than viewport-worth of content. For a cell that contained a viewport-or-more of content (very tall diff, very long file) the shrinkage still exceeds the spacer and the click target jumps. This is an accepted trade-off: the simple primitive handles most reading flows; the worst case (collapsing a hundred-hunk diff while scrolled to its end) is unavoidable at this complexity level, and the user can re-scroll if they care.
+
+**Tuglaws conformance.**
+- **[L05]** No `requestAnimationFrame`. The spacer is a static DOM node; its height is a CSS length set via inline style at render time. No timing dependency.
+- **[L06]** Appearance via DOM. The spacer is a real DOM element with a CSS length; no React state controls its appearance. The CSS class owns layout role; the prop owns height.
+- **[L19]** TugListView component-authoring conventions: prop is documented in the interface, the rendered node has a `data-slot` for testing, the CSS lives next to the component.
+- **[L23]** Preserves user-visible state (`scrollTop`, click target position) by ensuring the document stays scrollable to where the user was. The trade-off (empty space below the last cell) is itself a user-visible feature: reading-headroom that lets the user position the last message above the bottom edge.
+
+**Reference implementations:**
+- `tug-list-view.tsx` — exports `tailSpacer` prop; renders the inert div when set.
+- `tide-card-transcript.tsx` — opts in with `tailSpacer="80svh"`.
 
 ### Emphasis × Role
 

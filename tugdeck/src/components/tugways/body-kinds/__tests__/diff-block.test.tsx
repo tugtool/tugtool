@@ -382,8 +382,16 @@ describe("DiffBlock — unified source render", () => {
     ) as HTMLButtonElement | null;
     expect(toggle).not.toBeNull();
     expect(toggle?.disabled).toBe(false);
-    // Inline mode: button offers to switch *to* side-by-side.
-    expect(toggle?.textContent).toBe("Side by side");
+    // Phase E.3: the button renders BOTH the active and alternate
+    // labels inside a CSS-grid stable-label wrapper so the button's
+    // width is invariant across toggles. The active label is the one
+    // marked `data-tug-stable-label="active"`; the alternate is
+    // hidden via `visibility: hidden` but stays in flow for sizing.
+    // textContent on the button itself concatenates both — read the
+    // active span instead. Inline mode: button offers to switch *to*
+    // side-by-side.
+    const active = toggle?.querySelector('[data-tug-stable-label="active"]');
+    expect(active?.textContent).toBe("Side by side");
     expect(toggle?.getAttribute("aria-pressed")).toBe("false");
   });
 
@@ -586,6 +594,72 @@ describe("DiffBlock — collapse", () => {
     expect(
       cluster?.querySelector('[data-slot="diff-view-toggle"]'),
     ).not.toBeNull();
+  });
+
+  test("Phase E.3 — view-toggle sits LEFT of the fold cue (fold cue is the trailing-edge anchor)", () => {
+    // Phase E.3 ordering: features (view-toggle here) → fold cue
+    // (rightmost). The fold cue is a fixed-position landmark; feature
+    // buttons sit closer to the title-edge of the cluster.
+    const { container } = render(
+      <DiffBlock data={{ source: "unified", text: FIXTURE_UNIFIED }} />,
+    );
+    const cluster = container.querySelector(
+      '[data-slot="diff-actions"]',
+    ) as HTMLElement | null;
+    expect(cluster).not.toBeNull();
+    const buttons = cluster?.querySelectorAll("button") ?? [];
+    expect(buttons.length).toBe(2);
+    const first = buttons[0] as HTMLButtonElement;
+    const last = buttons[buttons.length - 1] as HTMLButtonElement;
+    expect(first.getAttribute("data-slot")).toBe("diff-view-toggle");
+    expect(last.classList.contains("tugx-diff-fold-cue")).toBe(true);
+  });
+
+  test("Phase E.3 — view-toggle uses widthStabilize so width is invariant across toggles", () => {
+    // The view-toggle's label swings between "Inline" and "Side by
+    // side" — a ~4-character width difference. Without
+    // widthStabilize, every toggle re-flows every sibling and the
+    // next click can land on a different button than the user aimed
+    // at. The CSS-grid stable-label wrapper renders both labels in
+    // a single grid cell so the button's intrinsic width is the max
+    // of the two and is stable across toggles.
+    const { container } = render(
+      <DiffBlock data={{ source: "unified", text: FIXTURE_UNIFIED }} />,
+    );
+    const viewToggle = container.querySelector(
+      '[data-slot="diff-view-toggle"]',
+    ) as HTMLButtonElement;
+    const stable = viewToggle.querySelector(".tug-button-stable-label");
+    expect(stable).not.toBeNull();
+    const active = stable?.querySelector('[data-tug-stable-label="active"]');
+    const alternate = stable?.querySelector(
+      '[data-tug-stable-label="alternate"]',
+    );
+    expect(active?.textContent).toBeDefined();
+    expect(alternate?.textContent).toBeDefined();
+    // The active + alternate together cover the full label set —
+    // pinning prevents a future regression that supplies only one.
+    const labels = new Set([active?.textContent, alternate?.textContent]);
+    expect(labels.has("Inline")).toBe(true);
+    expect(labels.has("Side by side")).toBe(true);
+  });
+
+  test("Phase E.3 — every diff-action button carries data-tug-focus='refuse'", () => {
+    // Same audit as the FileBlock companion. TugButton sets this on
+    // every instance; pin it structurally so a raw `<button>`
+    // accidentally introduced into the action row would fail this
+    // test rather than silently regress the focus-into-view fix.
+    const { container } = render(
+      <DiffBlock data={{ source: "unified", text: FIXTURE_UNIFIED }} />,
+    );
+    const cluster = container.querySelector(
+      '[data-slot="diff-actions"]',
+    ) as HTMLElement | null;
+    const buttons = cluster?.querySelectorAll("button") ?? [];
+    expect(buttons.length).toBeGreaterThan(0);
+    for (const btn of Array.from(buttons)) {
+      expect(btn.getAttribute("data-tug-focus")).toBe("refuse");
+    }
   });
 
   test("embedded={true} without a parent chrome fires a dev-mode console.warn", async () => {
@@ -828,7 +902,13 @@ describe("DiffBlock — viewMode toggle and persistence", () => {
     ) as HTMLElement;
     expect(root.getAttribute("data-view-mode")).toBe("side-by-side");
     expect(toggle.getAttribute("aria-pressed")).toBe("true");
-    expect(toggle.textContent).toBe("Inline");
+    // Phase E.3 — read the active label out of the stable-label
+    // wrapper; the button's textContent now includes both active and
+    // hidden alternate.
+    const activeAfter = toggle.querySelector(
+      '[data-tug-stable-label="active"]',
+    );
+    expect(activeAfter?.textContent).toBe("Inline");
   });
 
   test("controlled viewMode prop wins on rerender", () => {

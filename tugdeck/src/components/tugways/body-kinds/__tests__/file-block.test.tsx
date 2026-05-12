@@ -752,6 +752,62 @@ describe("FileBlock — embedded mode", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Phase E.3 — action-row ordering
+// ---------------------------------------------------------------------------
+
+describe("FileBlock — Phase E.3 action-row ordering", () => {
+  test("fold cue is the LAST child of the actions cluster (rightmost in LTR)", () => {
+    // Phase E.3 contract: the fold cue is the "least-mobile" affordance
+    // — its meaning is stable across body contents and serves as a
+    // fixed-position landmark at the trailing edge of the cluster.
+    // Feature buttons (Find here, view-toggle in DiffBlock, Copy)
+    // sit to its left in the features group. Pinning this with a
+    // structural test prevents an innocent JSX reorder from quietly
+    // breaking the layout invariant the user pressed for.
+    const data: FileData = {
+      filePath: "x.ts",
+      content: makeContent(DEFAULT_COLLAPSE_THRESHOLD + 20),
+    };
+    const { container } = render(<FileBlock data={data} />);
+    const cluster = container.querySelector(
+      '[data-slot="file-actions"]',
+    ) as HTMLElement | null;
+    expect(cluster).not.toBeNull();
+    const buttons = cluster?.querySelectorAll("button") ?? [];
+    // Find at first position (left), fold cue at last (right).
+    expect(buttons.length).toBeGreaterThanOrEqual(2);
+    const lastBtn = buttons[buttons.length - 1] as HTMLButtonElement;
+    const firstBtn = buttons[0] as HTMLButtonElement;
+    expect(lastBtn.classList.contains("tugx-file-fold-cue")).toBe(true);
+    expect(firstBtn.classList.contains("tugx-file-search")).toBe(true);
+  });
+
+  test("every action-row button carries data-tug-focus='refuse'", () => {
+    // Phase E.3: the browser's click → focus path can implicit-scroll
+    // a focused element into view if it sits near a viewport edge.
+    // `data-tug-focus="refuse"` suppresses the default focus action
+    // and the scroll-into-view that follows. TugButton sets this on
+    // every button instance, so the audit is structural: every action-
+    // row button must go through TugPushButton (or TugIconButton) and
+    // never be a raw `<button>`. Pin the attribute presence so a
+    // future regression that introduces a raw button gets flagged.
+    const data: FileData = {
+      filePath: "x.ts",
+      content: makeContent(DEFAULT_COLLAPSE_THRESHOLD + 20),
+    };
+    const { container } = render(<FileBlock data={data} />);
+    const cluster = container.querySelector(
+      '[data-slot="file-actions"]',
+    ) as HTMLElement | null;
+    const buttons = cluster?.querySelectorAll("button") ?? [];
+    expect(buttons.length).toBeGreaterThan(0);
+    for (const btn of Array.from(buttons)) {
+      expect(btn.getAttribute("data-tug-focus")).toBe("refuse");
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

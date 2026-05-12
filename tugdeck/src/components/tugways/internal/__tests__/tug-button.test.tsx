@@ -14,9 +14,21 @@
  * accidentally break the "honest async feedback" contract that
  * TerminalBlock's Copy depends on.
  *
+ * Phase E.3 inverted the `aria-disabled` contract for the confirming
+ * path: the attribute is NO LONGER set during the confirming window.
+ * Confirming is a transient feedback state, not a disabled state, and
+ * setting `aria-disabled` was tripping the `:not([aria-disabled="true"])`
+ * exclusions on rest-state hover rules and suppressing the button's
+ * hover background while the user held the cursor over it. The tests
+ * below pin the new contract so a future refactor can't reintroduce
+ * the symptom. Phase E.3 also added `widthStabilize` for buttons whose
+ * label swings between two values (e.g. the diff view-toggle's
+ * "Inline" ↔ "Side by side"); tests below pin the CSS-grid structure
+ * and the per-state alternate.
+ *
  * Per the happy-dom scoping rule we don't assert on visual paint
  * (CSS visibility, animation) — only on the `data-tug-confirming`
- * attribute and `aria-disabled`, which are appearance-zone DOM mutations
+ * attribute, `aria-disabled` absence/presence, and the static markup
  * the primitive owns directly.
  */
 
@@ -110,7 +122,7 @@ describe("TugButton — controlled confirmation (Phase E.1)", () => {
     expect(btn.dataset.tugConfirming).toBeUndefined();
   });
 
-  test("isConfirming={true} enters the confirmed state with aria-disabled", () => {
+  test("isConfirming={true} enters the confirmed state WITHOUT aria-disabled (Phase E.3)", () => {
     const { container } = render(
       <TugPushButton
         icon={<Copy />}
@@ -126,11 +138,16 @@ describe("TugButton — controlled confirmation (Phase E.1)", () => {
       </TugPushButton>,
     );
     const btn = container.querySelector("button") as HTMLButtonElement;
-    // The controlled-mode useLayoutEffect runs at mount and writes
-    // the attribute. aria-disabled is part of the confirmed shape
-    // so screen readers announce the locked state during the flash.
+    // Phase E.3 contract: the controlled-mode layout effect writes
+    // `data-tug-confirming` but DOES NOT set `aria-disabled`.
+    // Confirming is a transient feedback state, not a disabled state;
+    // setting aria-disabled triggers the rest-state CSS rule
+    // exclusions (`:not([aria-disabled="true"])`) and suppresses the
+    // hover background while the user holds the cursor on the button.
+    // Click suppression is handled by the JS `confirmingRef` guard
+    // inside the click handler, not by DOM-level gating.
     expect(btn.dataset.tugConfirming).toBe("true");
-    expect(btn.getAttribute("aria-disabled")).toBe("true");
+    expect(btn.getAttribute("aria-disabled")).toBeNull();
   });
 
   test("flipping isConfirming false → true → false drives the attribute exactly", () => {
@@ -198,6 +215,112 @@ describe("TugButton — controlled confirmation (Phase E.1)", () => {
     } finally {
       warnSpy.mockRestore();
     }
+  });
+});
+
+describe("TugButton — Phase E.3 width-stabilize + confirming-hover", () => {
+  test("widthStabilize renders both labels inside a single stable-label grid", () => {
+    const { container } = render(
+      <TugPushButton
+        emphasis="ghost"
+        size="2xs"
+        widthStabilize={{ alternateLabel: "Side by side" }}
+      >
+        Inline
+      </TugPushButton>,
+    );
+    const wrap = container.querySelector(".tug-button-stable-label");
+    expect(wrap).not.toBeNull();
+    const active = wrap?.querySelector('[data-tug-stable-label="active"]');
+    const alternate = wrap?.querySelector(
+      '[data-tug-stable-label="alternate"]',
+    );
+    expect(active?.textContent).toBe("Inline");
+    expect(alternate?.textContent).toBe("Side by side");
+    // The alternate is hidden from assistive tech so screen readers
+    // don't double-announce.
+    expect(alternate?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  test("widthStabilize composes with icon-text subtype (icon + grid label)", () => {
+    // The view-toggle uses text subtype; Copy could opt in with
+    // icon-text. Verify the grid wrapper sits inside the icon-text
+    // wrapper without breaking the icon adjacency.
+    const { container } = render(
+      <TugPushButton
+        icon={<Copy />}
+        subtype="icon-text"
+        emphasis="ghost"
+        size="2xs"
+        widthStabilize={{ alternateLabel: "Copied" }}
+      >
+        Copy
+      </TugPushButton>,
+    );
+    const iconText = container.querySelector(".tug-button-icon-text");
+    expect(iconText).not.toBeNull();
+    expect(iconText?.querySelector(".tug-button-stable-label")).not.toBeNull();
+  });
+
+  test("CSS source declares the confirming + hover companion rule", () => {
+    // Phase E.3: the rest-state hover rules exclude
+    // `:not([aria-disabled="true"])` but Phase E.3 stops setting
+    // aria-disabled during confirming. Without a companion hover rule
+    // the rest-state hover would paint over the confirming background
+    // when the user keeps the cursor on the button through the
+    // "Copied" flash — the exact symptom the user reported. The
+    // companion rule below ensures the confirming-hover paints at
+    // equal-or-greater specificity and source-order precedence over
+    // the rest-state hover rule.
+    const css = readFileSync(TUG_BUTTON_CSS_PATH, "utf8");
+    expect(css).toMatch(
+      /\.tug-button-ghost-action\[data-tug-confirming="true"\]:hover:not\(:disabled\)\s*\{/,
+    );
+    // It must NOT be merely a hover-less confirming rule (the bug we
+    // are fixing).
+    const matches = css.match(
+      /\.tug-button-ghost-action\[data-tug-confirming="true"\][^{]*\{/g,
+    ) ?? [];
+    const hasHoverCompanion = matches.some((m) => m.includes(":hover"));
+    expect(hasHoverCompanion).toBe(true);
+  });
+
+  test("TugButton source uses data-tug-flush to revalidate selector matching on confirming clear", () => {
+    // Phase E.3 forces WebKit to re-evaluate `:hover` selector
+    // matching after the confirming attribute is removed. The mechanism
+    // is a no-op attribute toggle (`data-tug-flush` set then unset)
+    // inside the same effect that clears `data-tug-confirming`. Without
+    // it, the resting hover background lags until the user moves their
+    // mouse. Pin the pattern in the source so a future cleanup can't
+    // accidentally drop it.
+    const tsxPath = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      "..",
+      "tug-button.tsx",
+    );
+    const src = readFileSync(tsxPath, "utf8");
+    // The pattern: set then delete the same attribute in adjacent
+    // statements within the controlled-mode revert branch.
+    expect(src).toMatch(/dataset\.tugFlush\s*=\s*"1"/);
+    expect(src).toMatch(/delete\s+\w+\.dataset\.tugFlush/);
+  });
+
+  test("TugButton source no longer sets aria-disabled in either confirming path", () => {
+    // Companion to the "no aria-disabled in confirming" runtime test
+    // above. Reading the source ensures NEITHER the controlled NOR
+    // the uncontrolled timer path resurrects the attribute via some
+    // other mechanism (a setter, a className compound, etc.) — both
+    // paths must rely solely on `data-tug-confirming` for state.
+    const tsxPath = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      "..",
+      "tug-button.tsx",
+    );
+    const src = readFileSync(tsxPath, "utf8");
+    // The only `aria-disabled` reference allowed is the chain-disabled
+    // path via the React `ariaDisabled` variable. Confirming-related
+    // imperative `setAttribute("aria-disabled", ...)` must not exist.
+    expect(src).not.toMatch(/setAttribute\(\s*"aria-disabled"/);
   });
 });
 

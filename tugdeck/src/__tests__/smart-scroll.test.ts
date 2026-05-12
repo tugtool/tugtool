@@ -626,6 +626,142 @@ describe("SmartScroll", () => {
   });
 
   // -------------------------------------------------------------------------
+  // trailingInertOffset — bottom-of-content excludes inert trailing region
+  // -------------------------------------------------------------------------
+  //
+  // The `trailingInertOffset` option lets callers (e.g. `TugListView` with
+  // its `tailSpacer` prop) tell SmartScroll about trailing inert content
+  // that should NOT count toward "the bottom." Without this, follow-bottom
+  // and isAtBottom would target the bottom of the inert region (empty
+  // space) instead of the bottom of actual content. The wiring is
+  // critical and must not silently regress — Phase E.3 fold-cue jump
+  // suppression depends on it for tide's tail spacer.
+
+  describe("trailingInertOffset", () => {
+    it("defaults to 0 — backward-compatible when option is omitted", () => {
+      // Existing call sites that don't pass `trailingInertOffset` must
+      // behave exactly as before: pin/scroll target the full scroll
+      // range. Tested by passing no option and asserting the same
+      // value the existing pinToBottom test expects.
+      const { ss, container } = makeSmartScroll({
+        scrollHeight: 500,
+        clientHeight: 300,
+      });
+      ss.pinToBottom();
+      expect(container.scrollTop).toBe(200); // 500 - 300 - 0
+      ss.dispose();
+    });
+
+    it("pinToBottom subtracts the inert offset from the bottom target", () => {
+      // 100px of trailing inert means the bottom of REAL content is
+      // 100px above the bottom of the scroll range. pinToBottom must
+      // target 500 - 300 - 100 = 100, not 200.
+      const { ss, container } = makeSmartScroll(
+        { scrollHeight: 500, clientHeight: 300 },
+        { trailingInertOffset: () => 100 },
+      );
+      ss.pinToBottom();
+      expect(container.scrollTop).toBe(100);
+      ss.dispose();
+    });
+
+    it("scrollToBottom subtracts the inert offset from the target", () => {
+      // Same contract as pinToBottom for the user-initiated scroll.
+      // 500 - 300 - 100 = 100.
+      const { ss, container } = makeSmartScroll(
+        { scrollHeight: 500, clientHeight: 300 },
+        { trailingInertOffset: () => 100 },
+      );
+      ss.scrollToBottom(false);
+      expect(container.scrollTop).toBe(100);
+      ss.dispose();
+    });
+
+    it("scrollToBottom uses the 2^30 sentinel fast path when inert === 0", () => {
+      // The 2^30 sentinel exists to skip a layout read in the common
+      // case where there's no inert region. Passing an offset of 0
+      // (from the function) should keep the fast path. We can't
+      // directly observe the sentinel write (the container clamps),
+      // but we can observe that the scrollTop lands at the full
+      // scroll-range max — proving the math didn't subtract a real
+      // value mid-flight.
+      const { ss, container } = makeSmartScroll(
+        { scrollHeight: 500, clientHeight: 300 },
+        { trailingInertOffset: () => 0 },
+      );
+      ss.scrollToBottom(false);
+      expect(container.scrollTop).toBe(200); // 500 - 300
+      ss.dispose();
+    });
+
+    it("isAtBottom subtracts the inert offset from the bottom-distance check", () => {
+      // With inert=100, "at bottom" = scrollHeight - clientHeight -
+      // inert - scrollTop <= 60 (AT_BOTTOM_PX). That's 500 - 300 -
+      // 100 - scrollTop <= 60 → scrollTop >= 40. At scrollTop=100
+      // (the bottom of real content), isAtBottom must be true even
+      // though we're 100px below scrollHeight - clientHeight.
+      const { ss, container } = makeSmartScroll(
+        { scrollHeight: 500, clientHeight: 300 },
+        { trailingInertOffset: () => 100 },
+      );
+      setScrollTop(container, 100);
+      expect(ss.isAtBottom).toBe(true);
+      // At scrollTop=30 (below the threshold by 10px), we're still
+      // 70px above bottom-of-content, which exceeds AT_BOTTOM_PX. Not
+      // at bottom.
+      setScrollTop(container, 30);
+      expect(ss.isAtBottom).toBe(false);
+      ss.dispose();
+    });
+
+    it("pinToBottom is a no-op when scrollTop already at or past bottom-of-content", () => {
+      // Idempotency: the existing pinToBottom guards against
+      // re-writes when scrollTop is already at the max. The same
+      // guard must apply when "the max" is reduced by inert: if the
+      // user is already at the bottom-of-content position, pinToBottom
+      // should not re-write. Detect by capturing _scrollTop directly
+      // (the public scrollTop getter goes through the clamping
+      // setter, but bypass it for this check by reading our own raw
+      // private field).
+      const { ss, container } = makeSmartScroll(
+        { scrollTop: 100, scrollHeight: 500, clientHeight: 300 },
+        { trailingInertOffset: () => 100 },
+      );
+      // Start at bottom-of-content (100 = 500 - 300 - 100).
+      const before = container.scrollTop;
+      ss.pinToBottom();
+      // Same position — no write, no change.
+      expect(container.scrollTop).toBe(before);
+      expect(container.scrollTop).toBe(100);
+      ss.dispose();
+    });
+
+    it("trailingInertOffset is called fresh each invocation — supports dynamic spacer heights", () => {
+      // The callback shape is critical: a CSS-length spacer (e.g.
+      // `80cqh`) has a pixel value that changes when the scrollport's
+      // clientHeight changes. SmartScroll must call the function each
+      // time, not cache the first return value at construction. We
+      // detect this by switching the function's return value between
+      // calls and observing that each subsequent pinToBottom uses the
+      // current value.
+      let inert = 50;
+      const { ss, container } = makeSmartScroll(
+        { scrollHeight: 500, clientHeight: 300 },
+        { trailingInertOffset: () => inert },
+      );
+      ss.pinToBottom();
+      expect(container.scrollTop).toBe(150); // 500 - 300 - 50
+
+      inert = 100;
+      // Reset to a low scrollTop so pinToBottom has work to do.
+      setScrollTop(container, 0);
+      ss.pinToBottom();
+      expect(container.scrollTop).toBe(100); // 500 - 300 - 100
+      ss.dispose();
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // engageFollowBottom / disengageFollowBottom
   // -------------------------------------------------------------------------
 

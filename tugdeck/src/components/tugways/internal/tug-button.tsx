@@ -234,6 +234,27 @@ export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButt
    */
   isConfirming?: boolean;
 
+  /**
+   * Width-stabilization configuration. When a button's label swings
+   * between two values (e.g. a view-toggle reading "Inline" vs
+   * "Side by side", or a Copy → "Copied" flash), the bare-width
+   * difference would re-flow every sibling on every toggle. Pass the
+   * *opposite* label here so the button renders both in a single
+   * grid cell — the active label paints and the alternate stays
+   * `visibility: hidden` but contributes to layout sizing. The button's
+   * intrinsic width becomes the max-content of both labels and is
+   * stable across toggles.
+   *
+   * Implementation: CSS Grid with both labels in the same cell
+   * (`grid-template-areas: "label"`). The inactive child carries
+   * `aria-hidden="true"` so screen readers don't announce a ghost
+   * label. Per [L06] the visibility swap is appearance — driven by
+   * CSS, never React state.
+   *
+   * @selector .tug-button-stable-label
+   */
+  widthStabilize?: { alternateLabel: React.ReactNode };
+
   /** Border radius token. Default is size-proportional (sm→"sm", md→"md", lg→"lg"). */
   rounded?: TugButtonRounded;
 
@@ -314,6 +335,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   trailingIcon,
   confirmation,
   isConfirming,
+  widthStabilize,
   rounded,
   "aria-label": ariaLabel,
   className,
@@ -474,9 +496,16 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   const enterConfirmation = React.useCallback(() => {
     const node = internalButtonRef.current;
     if (node === null) return;
+    // Confirming is a transient *feedback* state, NOT a disabled state.
+    // Phase E.3 drops `aria-disabled="true"` from this path so the
+    // existing `:not([aria-disabled="true"])` exclusions in rest-state
+    // CSS rules don't silently mask the confirming-state styling, and
+    // — more importantly — so `:hover` continues to match while the
+    // user holds the cursor over the button. Click suppression is
+    // handled by the JS `confirmingRef` guard inside the click
+    // handler; we don't need a DOM-level gate.
     confirmingRef.current = true;
     node.dataset.tugConfirming = "true";
-    node.setAttribute("aria-disabled", "true");
     if (timerRef.current !== null) {
       window.clearTimeout(timerRef.current);
     }
@@ -487,14 +516,18 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
       timerRef.current = null;
       if (el !== null) {
         delete el.dataset.tugConfirming;
-        // Only strip aria-disabled if the chain isn't holding it for its own
-        // disabled gate — otherwise we'd clobber the chain's a11y signal.
-        if (!isChainDisabled) {
-          el.removeAttribute("aria-disabled");
-        }
+        // Force WebKit to re-evaluate selector matching after the
+        // attribute swap so the resting `:hover` rule paints
+        // immediately instead of lagging until the user moves their
+        // mouse. The flush attribute is a no-op for styling but the
+        // mutation invalidates the style cache. See
+        // [tuglaws/component-authoring.md] "Controlled feedback
+        // states" for the rationale.
+        el.dataset.tugFlush = "1";
+        delete el.dataset.tugFlush;
       }
     }, duration);
-  }, [confirmation?.duration, isChainDisabled]);
+  }, [confirmation?.duration]);
 
   // Controlled-confirmation driver — when `isConfirming` is provided,
   // the prop drives `data-tug-confirming` directly. No internal timer
@@ -520,15 +553,25 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
       }
       confirmingRef.current = true;
       node.dataset.tugConfirming = "true";
-      node.setAttribute("aria-disabled", "true");
+      // Phase E.3: NO `aria-disabled` here. Confirming is a transient
+      // feedback state, not a disabled state. Setting `aria-disabled`
+      // would trip every `:not([aria-disabled="true"])` exclusion on
+      // rest-state CSS rules and suppress `:hover` painting while the
+      // user holds the cursor over the button — the exact symptom we
+      // are fixing. Click re-fire suppression lives in the JS
+      // `confirmingRef` guard inside the click handler.
     } else {
       confirmingRef.current = false;
       delete node.dataset.tugConfirming;
-      if (!isChainDisabled) {
-        node.removeAttribute("aria-disabled");
-      }
+      // Flush selector matching so the resting `:hover` rule paints
+      // without waiting for a pointer event. WebKit caches selector
+      // matching against pointer events, not against arbitrary DOM
+      // mutations — without this nudge, the resting hover background
+      // reappears only when the user jostles the mouse.
+      node.dataset.tugFlush = "1";
+      delete node.dataset.tugFlush;
     }
-  }, [isControlledConfirmation, isConfirming, isChainDisabled]);
+  }, [isControlledConfirmation, isConfirming]);
 
   // Clear any pending timer on unmount so we never touch a detached node.
   React.useEffect(() => {
@@ -616,10 +659,31 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
     return renderSubtypeContent(icon, children);
   }
 
+  function wrapLabel(labelNode: React.ReactNode): React.ReactNode {
+    if (widthStabilize === undefined) return labelNode;
+    // CSS Grid with both labels in the same cell. The active label
+    // paints; the alternate keeps `visibility: hidden` but participates
+    // in layout so the cell sizes to max-content of both. Width is
+    // therefore stable across toggles between the two labels — see
+    // `.tug-button-stable-label` in tug-button.css.
+    return (
+      <span
+        className="tug-button-stable-label"
+        data-slot="tug-button-stable-label"
+      >
+        <span data-tug-stable-label="active">{labelNode}</span>
+        <span data-tug-stable-label="alternate" aria-hidden="true">
+          {widthStabilize.alternateLabel}
+        </span>
+      </span>
+    );
+  }
+
   function renderSubtypeContent(
     iconNode: React.ReactNode,
     labelNode: React.ReactNode,
   ) {
+    const wrappedLabel = wrapLabel(labelNode);
     switch (subtype) {
       case "icon":
         return iconNode ?? null;
@@ -628,7 +692,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
         return (
           <span className="tug-button-icon-text">
             {iconNode}
-            {labelNode}
+            {wrappedLabel}
             {trailingIcon && (
               <span className="tug-button-trailing-icon" aria-hidden="true">
                 {trailingIcon}
@@ -641,7 +705,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
       default:
         return (
           <>
-            {labelNode}
+            {wrappedLabel}
             {trailingIcon && (
               <span className="tug-button-trailing-icon" aria-hidden="true">
                 {trailingIcon}

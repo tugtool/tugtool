@@ -73,6 +73,26 @@ export interface SmartScrollOptions {
   callbacks?: SmartScrollCallbacks;
   /** Default: true */
   followBottom?: boolean;
+  /**
+   * Pixel height of trailing inert content (typically a tail spacer)
+   * inside the scroll container that should NOT count toward "the
+   * bottom" for `pinToBottom` / `scrollToBottom` / `isAtBottom`
+   * calculations. The scrollport's `scrollHeight` includes the
+   * inert region (because it's a real DOM child), so naive
+   * `scrollHeight - clientHeight` would scroll past the actual
+   * content into empty space — `isAtBottom` would never return true
+   * while content is visible and follow-bottom would peg the view
+   * to the end of the spacer. Subtracting this offset corrects
+   * both.
+   *
+   * Provided as a function so the value can be read fresh each
+   * time. The spacer's height may be a CSS length (e.g. `80cqh`)
+   * whose pixel value changes with the scrollport's clientHeight,
+   * so a cached number would go stale.
+   *
+   * Default: a function that returns 0 (no inert trailing content).
+   */
+  trailingInertOffset?: () => number;
 }
 
 // ---------------------------------------------------------------------------
@@ -133,6 +153,7 @@ const SCROLLEND_FALLBACK_MS = 150;
 export class SmartScroll {
   private readonly _container: HTMLElement;
   private readonly _callbacks: SmartScrollCallbacks;
+  private readonly _trailingInertOffset: () => number;
   private readonly _supportsScrollEnd: boolean;
 
   private _phase: ScrollPhase = 'idle';
@@ -165,10 +186,12 @@ export class SmartScroll {
       scrollContainer,
       callbacks = {},
       followBottom = true,
+      trailingInertOffset,
     } = options;
 
     this._container = scrollContainer;
     this._callbacks = callbacks;
+    this._trailingInertOffset = trailingInertOffset ?? (() => 0);
     this._isFollowingBottom = followBottom;
     this._lastScrollTop = scrollContainer.scrollTop;
 
@@ -209,7 +232,13 @@ export class SmartScroll {
 
   get isAtBottom(): boolean {
     const { scrollTop, scrollHeight, clientHeight } = this._container;
-    return scrollHeight - clientHeight - Math.max(0, scrollTop) <= AT_BOTTOM_PX;
+    const inert = this._trailingInertOffset();
+    // Subtract the trailing inert region (a tail spacer, etc.) so
+    // "at bottom" means "scrolled to the end of actual content,"
+    // not "scrolled to the end of the scroll range." Without this,
+    // a scrollport that has any trailing empty space would never
+    // report at-bottom while content is visible.
+    return scrollHeight - clientHeight - inert - Math.max(0, scrollTop) <= AT_BOTTOM_PX;
   }
 
   get isAtTop(): boolean {
@@ -252,11 +281,26 @@ export class SmartScroll {
   scrollToBottom(animated = false): void {
     if (this._disposed) return;
     this._setFollowingBottom(true);
-    // 2^30: large enough to exceed any real document height, small enough
-    // to avoid WebKit's 32-bit int overflow in C++ scroll code paths.
-    // Not scrollHeight — that's a layout read that may be stale if DOM
-    // mutations haven't reflowed yet.
-    this.scrollTo({ top: 0x40000000, animated });
+    // When there's no trailing inert content, use the 2^30 sentinel
+    // (large enough to exceed any real document height, small enough
+    // to avoid WebKit's 32-bit int overflow). When there IS inert
+    // trailing content (e.g. a tail spacer), the bottom of *real*
+    // content is `scrollHeight - clientHeight - inert`. Compute that
+    // explicitly so we don't scroll past the actual content into
+    // empty space. The layout read here is safe — callers reach
+    // for `scrollToBottom` either from user intent (button click,
+    // already idle) or from a post-commit effect (just rendered, so
+    // layout is fresh).
+    const inert = this._trailingInertOffset();
+    if (inert <= 0) {
+      this.scrollTo({ top: 0x40000000, animated });
+      return;
+    }
+    const max = Math.max(
+      0,
+      this._container.scrollHeight - this._container.clientHeight - inert,
+    );
+    this.scrollTo({ top: max, animated });
   }
 
   /** Slam scrollTop to bottom without entering programmatic phase.
@@ -272,9 +316,18 @@ export class SmartScroll {
    *  cheap. */
   pinToBottom(): void {
     if (this._disposed) return;
-    const max = this._container.scrollHeight - this._container.clientHeight;
+    // Bottom of real content = scrollHeight - clientHeight - inert.
+    // With no inert region, this equals the scroll range max. With a
+    // tail spacer, the spacer's height is subtracted so we pin to
+    // the bottom of actual content rather than to the bottom of the
+    // empty spacer.
+    const inert = this._trailingInertOffset();
+    const max = this._container.scrollHeight - this._container.clientHeight - inert;
     if (this._container.scrollTop >= max) return;
-    this._container.scrollTop = 0x40000000;
+    // Write the exact target (not the 2^30 sentinel) so the browser
+    // doesn't clamp to scrollHeight - clientHeight and land past the
+    // inert region.
+    this._container.scrollTop = Math.max(0, max);
   }
 
   scrollToElement(

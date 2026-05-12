@@ -133,6 +133,8 @@ import {
   type TugCodeViewDelegate,
 } from "@/components/tugways/tug-code-view";
 import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
+import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
+import { usePositionStableClick } from "@/components/tugways/internal/use-position-stable-click";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -584,6 +586,28 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // circuit via `?.`.
   const chainManager = useResponderChain();
 
+  // Position-stable click infrastructure. The fold cue benefits from
+  // BOTH the scrollport-level tail spacer (`tailSpacer` prop on
+  // `TugListView`, wired by tide-card-transcript) AND
+  // `usePositionStableClick`: the spacer raises `maxScrollTop` so a
+  // collapse doesn't hit a hard clamp, and the hook then writes the
+  // exact `scrollTop` that puts the click target back at its pre-click
+  // viewport Y. See DiffBlock for the full rationale of the two
+  // mechanisms working together.
+  const outerScrollport = useOuterScrollport();
+  const outerScrollportRef = React.useRef<HTMLElement | null>(null);
+  outerScrollportRef.current = outerScrollport;
+  const foldCueButtonRef = React.useRef<HTMLButtonElement | null>(null);
+  const findButtonRef = React.useRef<HTMLButtonElement | null>(null);
+  const { stableClick: stableFoldClick } = usePositionStableClick({
+    targetRef: foldCueButtonRef,
+    scrollportRef: outerScrollportRef,
+  });
+  const { stableClick: stableFindClick } = usePositionStableClick({
+    targetRef: findButtonRef,
+    scrollportRef: outerScrollportRef,
+  });
+
   const toggleCollapsed = React.useCallback(() => {
     // Dispatch BEFORE the state update so the listener (TugListView's
     // SmartScroll, when present) flips `isFollowingBottom` to false
@@ -922,24 +946,22 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // The legacy `tugx-file-*` class names are forwarded onto the Tug
   // components as `className`/`data-slot` so CSS scoping and test
   // hooks stay stable across the refactor.
+  // Phase E.3 ordering: features (Find) → fold cue (rightmost). The
+  // fold cue is the "least-mobile" affordance — its meaning doesn't
+  // change with block contents and the user's eye finds it as a fixed
+  // landmark at the trailing edge. Feature buttons sit closer to the
+  // title (the leading edge of the cluster).
+  //
+  // Both buttons route their click through `usePositionStableClick`
+  // so the cursor stays directly over the button across the layout
+  // change the click triggers (body collapse/expand, find row
+  // appear). The wrapper invokes the mutator inside a snapshot →
+  // measure → compensate sequence — see the hook docstring for the
+  // [L03] / [L04] / [L05] story.
   const affordances = (
     <>
-      {showCue ? (
-        <TugPushButton
-          className="tugx-file-fold-cue"
-          data-slot="file-fold-cue"
-          icon={cueIcon}
-          subtype="icon-text"
-          emphasis="ghost"
-          size="2xs"
-          aria-expanded={!collapsed}
-          aria-label={collapsed ? "Expand file" : "Collapse file"}
-          onClick={toggleCollapsed}
-        >
-          {cueLabel}
-        </TugPushButton>
-      ) : null}
       <TugPushButton
+        ref={findButtonRef}
         className="tugx-file-search"
         data-slot="file-search"
         icon={<Search />}
@@ -948,10 +970,26 @@ export const FileBlock: React.FC<FileBlockProps> = ({
         size="2xs"
         disabled={collapsed}
         aria-label="Search in file"
-        onClick={openFind}
+        onClick={() => stableFindClick(openFind)}
       >
         Find
       </TugPushButton>
+      {showCue ? (
+        <TugPushButton
+          ref={foldCueButtonRef}
+          className="tugx-file-fold-cue"
+          data-slot="file-fold-cue"
+          icon={cueIcon}
+          subtype="icon-text"
+          emphasis="ghost"
+          size="2xs"
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? "Expand file" : "Collapse file"}
+          onClick={() => stableFoldClick(toggleCollapsed)}
+        >
+          {cueLabel}
+        </TugPushButton>
+      ) : null}
     </>
   );
 
