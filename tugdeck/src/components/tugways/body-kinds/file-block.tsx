@@ -126,6 +126,8 @@ import {
   type TugCodeViewDelegate,
 } from "@/components/tugways/tug-code-view";
 import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
+import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
+import { attachOuterScrollOnModifierWheel } from "@/components/tugways/internal/use-outer-scroll-on-modifier-wheel";
 import {
   BlockCopyButton,
   BlockFindButton,
@@ -614,6 +616,39 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // substrate's search state imperatively (set-query / next /
   // previous / select-all).
   const codeViewRef = React.useRef<TugCodeViewDelegate | null>(null);
+
+  // ---- Cmd/Ctrl-wheel routing to the outer scrollport (Phase E.5) -----
+  //
+  // CM6's `.cm-scroller` captures wheel events when the cursor is
+  // over the file viewer. For a user skimming a long transcript, the
+  // inner capture stutters the outer scroll. Holding Cmd/Ctrl while
+  // wheeling forwards the delta straight to the outer card
+  // scrollport. The hook attaches its non-passive capture-phase
+  // listener; `useLayoutEffect` keys on `collapsed` so the listener
+  // re-attaches whenever the CM6 view mounts/unmounts (the view
+  // disappears entirely when collapsed).
+  //
+  // We attach imperatively (not via the `useOuterScrollOnModifierWheel`
+  // hook) because the inner scroller — CM6's `.cm-scroller` — is the
+  // CM6 EditorView's internal `scrollDOM`, not a React-tracked
+  // element. We resolve it through the delegate at mount time and
+  // bundle the detach into the effect's cleanup.
+  const outerScrollport = useOuterScrollport();
+  const outerScrollportRef = React.useRef<HTMLElement | null>(outerScrollport);
+  React.useLayoutEffect(() => {
+    outerScrollportRef.current = outerScrollport;
+  }, [outerScrollport]);
+  React.useLayoutEffect(() => {
+    if (collapsed) return;
+    const delegate = codeViewRef.current;
+    if (delegate === null) return;
+    const view = delegate.view();
+    if (view === null) return;
+    return attachOuterScrollOnModifierWheel(
+      view.scrollDOM,
+      () => outerScrollportRef.current,
+    );
+  }, [collapsed]);
 
   // ---- Copy text source -----------------------------------------------
   //

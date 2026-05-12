@@ -110,6 +110,8 @@ import type { ActionHandler } from "@/components/tugways/responder-chain";
 import { ansiToHtml } from "@/lib/ansi/ansi-to-html";
 import { BlockHeightIndex } from "@/lib/block-height-index";
 import { RenderedBlockWindow } from "@/lib/rendered-block-window";
+import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
+import { attachOuterScrollOnModifierWheel } from "@/components/tugways/internal/use-outer-scroll-on-modifier-wheel";
 import { BlockCopyButton, BlockFoldCue } from "./affordances";
 
 // ---------------------------------------------------------------------------
@@ -481,6 +483,20 @@ function appendFlatBody(container: HTMLElement, lines: ParsedLine[]): void {
 }
 
 /**
+ * Result of mounting a virtualized body. `cleanup` detaches the
+ * scroll listener (and any other side effects) when the renderer
+ * is about to rebuild the scroller. `refit` re-runs `applyUpdate`
+ * against the scroller's current `scrollTop` — Phase E.5 calls
+ * this whenever the outer scrollport reports the terminal entering
+ * view, to recover the intermittent blank-frame-after-scroll-into-
+ * view symptom described in the phase plan.
+ */
+interface VirtualizedBodyHandle {
+  cleanup: () => void;
+  refit: () => void;
+}
+
+/**
  * Append a virtualized body — a self-scrolling viewport driven by a
  * `BlockHeightIndex` + `RenderedBlockWindow`. Each line is one
  * "block" with constant `LINE_HEIGHT_PX` height. The window is
@@ -497,14 +513,23 @@ function appendFlatBody(container: HTMLElement, lines: ParsedLine[]): void {
  *    *streaming* output: the user wants to see the latest lines as
  *    they arrive (the historical default for live terminals).
  *
- * Returns a cleanup callback the caller should run when the body is
- * about to be replaced (ensures the scroll listener is detached).
+ * `getOuter` is called on each Cmd/Ctrl-wheel hit to resolve the
+ * outer scrollport that should receive the routed delta. When the
+ * function returns `null` the wheel handler degrades to a no-op —
+ * standalone composition or gallery, where there is no outer
+ * scrollport to forward to.
+ *
+ * Returns a {@link VirtualizedBodyHandle} carrying both `cleanup`
+ * (detach the scroll listener / wheel router on body replacement)
+ * and `refit` (re-run `applyUpdate` to recover from a missed first
+ * paint when the outer scrollport scrolls this terminal into view).
  */
 function appendVirtualizedBody(
   container: HTMLElement,
   lines: ParsedLine[],
   anchor: "top" | "bottom",
-): () => void {
+  getOuter: () => HTMLElement | null,
+): VirtualizedBodyHandle {
   const heightIndex = new BlockHeightIndex(Math.max(1024, lines.length));
   for (let i = 0; i < lines.length; i += 1) {
     heightIndex.appendBlock(LINE_HEIGHT_PX);
@@ -638,12 +663,30 @@ function appendVirtualizedBody(
   };
   scroller.addEventListener("scroll", onScroll, { passive: true });
 
-  return () => {
-    if (pendingRaf !== null) {
-      cancelAnimationFrame(pendingRaf);
-      pendingRaf = null;
-    }
-    scroller.removeEventListener("scroll", onScroll);
+  // Cmd/Ctrl-wheel routes to the outer card scrollport regardless of
+  // whether the cursor is over the terminal's own scroller. Without
+  // this, a long bash output would capture wheel events as soon as
+  // the cursor entered it, stuttering the outer-card skim. See
+  // `use-outer-scroll-on-modifier-wheel.ts` for the contract.
+  const detachWheelRouter = attachOuterScrollOnModifierWheel(scroller, getOuter);
+
+  return {
+    cleanup: () => {
+      if (pendingRaf !== null) {
+        cancelAnimationFrame(pendingRaf);
+        pendingRaf = null;
+      }
+      scroller.removeEventListener("scroll", onScroll);
+      detachWheelRouter();
+    },
+    // Re-run applyUpdate against the current scrollTop. Idempotent
+    // when no enter/exit ranges change. Used by the outer-scroll-
+    // into-view recovery (Phase E.5) to repaint a terminal whose
+    // first paint missed under a WebKit layer-invalidation hiccup
+    // or a similar intermittent.
+    refit: () => {
+      applyUpdate(scroller.scrollTop);
+    },
   };
 }
 
@@ -666,13 +709,33 @@ function findNextMountedAfter(
 }
 
 /**
+ * Result of a top-level `renderTerminal` call. `cleanup` reverts any
+ * side effects the current body installed (scroll listener, wheel
+ * router) so a subsequent render can replace the body safely.
+ * `refit` re-runs the virtualizer's `applyUpdate` against the
+ * scroller's current `scrollTop` when present — flat-path renders
+ * have nothing to refit and surface a no-op here, so the React
+ * shell can call `refit` unconditionally.
+ */
+interface TerminalRenderHandle {
+  cleanup: () => void;
+  refit: () => void;
+}
+
+const NO_OP_TERMINAL_HANDLE: TerminalRenderHandle = {
+  cleanup: () => undefined,
+  refit: () => undefined,
+};
+
+/**
  * Top-level imperative render. Rebuilds `body` from scratch each
  * call and stamps `data-empty` on the `outer` root. The header is
  * NOT touched here — React owns the header markup (label + Copy
  * `<TugIconButton>`); this function rebuilds only what lives below
  * the header (truncation banner, flat / virtualized line container,
- * post-mortem footer). Returns the cleanup callback (no-op for flat
- * path, scroll-listener detach for virtualized).
+ * post-mortem footer). Returns a {@link TerminalRenderHandle} whose
+ * `cleanup` detaches the body's listeners and whose `refit` re-runs
+ * `applyUpdate` for the virtualized path (no-op for flat).
  *
  * **Collapsed preview path** (Phase E.4). When `collapsed` is true,
  * the renderer skips the virtualizer entirely and renders just the
@@ -689,14 +752,18 @@ function findNextMountedAfter(
  * `anchor` is forwarded to `appendVirtualizedBody` when virtualizing
  * — `"top"` for static-mode renders (expand-from-preview reads top-
  * down), `"bottom"` for streaming-mode renders (latest lines visible).
+ *
+ * `getOuter` is forwarded to the virtualizer for the Cmd/Ctrl-wheel
+ * routing contract — see `use-outer-scroll-on-modifier-wheel.ts`.
  */
 function renderTerminal(
   outer: HTMLElement,
   body: HTMLElement,
   data: TerminalData,
+  getOuter: () => HTMLElement | null,
   collapsed: boolean = false,
   anchor: "top" | "bottom" = "top",
-): () => void {
+): TerminalRenderHandle {
   body.replaceChildren();
   // Empty terminal: render the footer if any post-mortem fields are
   // set, but leave the body empty. (A bash command that emitted no
@@ -724,26 +791,26 @@ function renderTerminal(
   if (collapsed && lines.length > 0) {
     const preview = lines.slice(0, COLLAPSED_PREVIEW_LINES);
     appendFlatBody(body, preview);
-    return () => undefined;
+    return NO_OP_TERMINAL_HANDLE;
   }
 
   if (truncated > 0) {
     body.appendChild(buildTruncationIndicator(truncated));
   }
 
-  let cleanup: (() => void) | null = null;
+  let handle: VirtualizedBodyHandle | null = null;
   if (lines.length > 0) {
     if (lines.length <= VISIBLE_THRESHOLD) {
       appendFlatBody(body, lines);
     } else {
-      cleanup = appendVirtualizedBody(body, lines, anchor);
+      handle = appendVirtualizedBody(body, lines, anchor, getOuter);
     }
   }
 
   const footer = buildFooter(data);
   if (footer !== null) body.appendChild(footer);
 
-  return cleanup ?? (() => undefined);
+  return handle ?? NO_OP_TERMINAL_HANDLE;
 }
 
 /**
@@ -783,6 +850,29 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // effects so streaming sees the freshest stdout/stderr without
   // forcing a React re-render of the shell.
   const latestDataRef = React.useRef<TerminalData>(EMPTY_TERMINAL);
+
+  // Outer scrollport (context published by the host list view).
+  // Read each call into a ref so the imperative virtualizer can
+  // resolve the live node at wheel-event time without re-running
+  // the body-render effect when the outer node changes.
+  const outerScrollport = useOuterScrollport();
+  const outerScrollportRef = React.useRef<HTMLElement | null>(outerScrollport);
+  React.useLayoutEffect(() => {
+    outerScrollportRef.current = outerScrollport;
+  }, [outerScrollport]);
+  const getOuterScrollport = React.useCallback(
+    (): HTMLElement | null => outerScrollportRef.current,
+    [],
+  );
+
+  // Refit callback handed up from the most recent renderTerminal()
+  // call. Mounted via `useLayoutEffect` so the imperative renderer
+  // and React state stay in lockstep across the same paint. The
+  // outer-scrollport / IntersectionObserver effect below calls
+  // `refitRef.current?.()` on entering-view to recover from the
+  // intermittent blank-frame-after-scroll-into-view symptom
+  // described in Phase E.5.
+  const refitRef = React.useRef<(() => void) | null>(null);
   // The data prop captured at FIRST mount. Static mode renders this
   // value once and never again, even across collapse-driven
   // re-renders. Without this ref the collapse-aware re-render would
@@ -874,9 +964,13 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
     if (outer === null || body === null) return;
     const d = initialDataRef.current ?? EMPTY_TERMINAL;
     latestDataRef.current = d;
-    const cleanup = renderTerminal(outer, body, d, collapsed);
-    return cleanup;
-  }, [collapsed, streamingStore]);
+    const handle = renderTerminal(outer, body, d, getOuterScrollport, collapsed);
+    refitRef.current = handle.refit;
+    return () => {
+      refitRef.current = null;
+      handle.cleanup();
+    };
+  }, [collapsed, streamingStore, getOuterScrollport]);
 
   // Streaming mode — Spec S05 binding. Reads sync on mount,
   // subscribes for updates, rAF-coalesces.
@@ -908,6 +1002,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
       const bodyEl = bodyRef.current;
       if (outerEl === null || bodyEl === null) {
         cleanup = () => undefined;
+        refitRef.current = null;
         return;
       }
       const next = coerceTerminalData(store.get(streamingPath));
@@ -918,13 +1013,16 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
       // pinned to the new tail (subsequent rerenders will re-anchor
       // there). Static mode (the renderer's default) anchors at
       // top, which is right for expand-from-preview reading.
-      cleanup = renderTerminal(
+      const handle = renderTerminal(
         outerEl,
         bodyEl,
         next,
+        getOuterScrollport,
         collapsedStreamingRef.current,
         "bottom",
       );
+      cleanup = handle.cleanup;
+      refitRef.current = handle.refit;
     }
 
     rerender();
@@ -944,9 +1042,10 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
         pendingRaf = null;
       }
       unsubscribe();
+      refitRef.current = null;
       cleanup();
     };
-  }, [streamingStore, streamingPath]);
+  }, [streamingStore, streamingPath, getOuterScrollport]);
 
   // Streaming-mode re-render on collapse toggle. The store-subscription
   // effect above is the source of truth for streaming output, but a
@@ -969,9 +1068,91 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
     latestDataRef.current = next;
     // Streaming collapse-toggle re-render — keep the tail anchor
     // to match the streaming subscription path above.
-    const cleanup = renderTerminal(outer, body, next, collapsed, "bottom");
-    return cleanup;
-  }, [collapsed, streamingStore, streamingPath]);
+    const handle = renderTerminal(
+      outer,
+      body,
+      next,
+      getOuterScrollport,
+      collapsed,
+      "bottom",
+    );
+    refitRef.current = handle.refit;
+    return () => {
+      refitRef.current = null;
+      handle.cleanup();
+    };
+  }, [collapsed, streamingStore, streamingPath, getOuterScrollport]);
+
+  // ---- Blank-frame recovery on scroll-into-view (Phase E.5) ----------
+  //
+  // Symptom: scrolling the outer card so a Bash output region enters
+  // view sometimes leaves the inner virtualized scroller painted as
+  // empty — the scroller exists with the right height, but its line
+  // elements don't appear until the user wheels inside it (which
+  // triggers `applyUpdate` and re-mounts lines). Likely causes
+  // identified during the diagnosis pass include WebKit layer-
+  // invalidation hiccups under the outer's scroll-driven clip
+  // changes, and `IntersectionObserver`-style virtualizers that
+  // miss the first paint when their parent's clip rect is still
+  // settling.
+  //
+  // The fix is the symptom-targeted refit: when the outer scrollport
+  // reports this terminal entering view (IntersectionObserver), call
+  // the virtualizer's `refit` (which re-runs `applyUpdate(scrollTop)`
+  // and re-mounts the visible window). Refit is idempotent when no
+  // enter/exit ranges change, so spurious fires are free.
+  //
+  // Also listen on the outer's `scroll` event while in view as a
+  // belt-and-suspenders: some intermittents only surface when the
+  // outer is mid-scroll, and the IO threshold buckets may not fire
+  // for sub-threshold delta. The scroll handler gates on `inView`
+  // so we don't burn cycles when the terminal is off-screen.
+  //
+  // Laws:
+  //  - [L03] `useLayoutEffect` so the IO + scroll listeners are live
+  //    from first paint; otherwise the very first scroll-into-view
+  //    could miss its refit by a frame.
+  //  - [L05] No `requestAnimationFrame`. Refit runs synchronously in
+  //    the IO / scroll callback.
+  //  - [L06] Scroll-into-view detection drives a DOM-level refit;
+  //    no React state changes from this effect.
+  //  - [L22] IO is an external store; the effect subscribes to it
+  //    directly and writes to the DOM in the callback, never
+  //    routing intersection state through React.
+  React.useLayoutEffect(() => {
+    if (outerScrollport === null) return;
+    const root = outerRef.current;
+    if (root === null) return;
+
+    let inView = false;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const enteringView = entry.isIntersecting && !inView;
+          inView = entry.isIntersecting;
+          if (enteringView) {
+            refitRef.current?.();
+          }
+        }
+      },
+      { root: outerScrollport, threshold: 0 },
+    );
+    observer.observe(root);
+
+    const onOuterScroll = (): void => {
+      if (!inView) return;
+      refitRef.current?.();
+    };
+    outerScrollport.addEventListener("scroll", onOuterScroll, {
+      passive: true,
+    });
+
+    return () => {
+      observer.disconnect();
+      outerScrollport.removeEventListener("scroll", onOuterScroll);
+    };
+  }, [outerScrollport]);
 
   // `getText` closure for the `BlockCopyButton` affordance —
   // reads the latest streamed-or-static data at click time. The

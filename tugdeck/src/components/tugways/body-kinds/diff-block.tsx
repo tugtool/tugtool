@@ -82,6 +82,7 @@ import { TugChoiceGroup, type TugChoiceItem } from "@/components/tugways/tug-cho
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
+import { useOuterScrollOnModifierWheel } from "@/components/tugways/internal/use-outer-scroll-on-modifier-wheel";
 import { usePositionStableClick } from "@/components/tugways/internal/use-position-stable-click";
 import { BlockCopyButton, BlockFoldCue } from "./affordances";
 import { detectLanguage } from "./file-block";
@@ -644,6 +645,21 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   const outerScrollport = useOuterScrollport();
   const outerScrollportRef = React.useRef<HTMLElement | null>(null);
   outerScrollportRef.current = outerScrollport;
+
+  // Cmd/Ctrl-wheel routes to the outer card scrollport. DiffBlock
+  // does not currently install an inner scrollport (the diff body
+  // flows in the document), but the contract is surface-wide: any
+  // inner scrolling that future variants introduce (e.g. a max-height
+  // mode for very tall multi-hunk diffs) is bypassed identically by
+  // virtue of attaching to the root. Without this, a future inner
+  // scroll would stutter the outer card skim until the bypass was
+  // also wired in — wiring it preemptively keeps the contract
+  // consistent across all body kinds. See
+  // `use-outer-scroll-on-modifier-wheel.ts` for the contract.
+  useOuterScrollOnModifierWheel({
+    innerRef: rootRef,
+    outerScrollportRef,
+  });
   // The view-toggle is a `TugChoiceGroup` (a `div[role=radiogroup]`),
   // not a single button — `viewToggleRef` points at the choice
   // group's root so the position-stable hook anchors against the

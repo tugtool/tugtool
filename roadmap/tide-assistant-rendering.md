@@ -2764,20 +2764,20 @@ The first two gaps are recognized in the original Step 10.9 scope — Copy lived
 
 **Tasks (Phase E.5):**
 
-- [ ] **Build `useOuterScrollOnModifierWheel`.** Listener attached on `useLayoutEffect` (registration timing — events fire before paint). Listener checks `event.metaKey || event.ctrlKey`; on hit, `preventDefault`, `stopPropagation`, then `scrollportRef.current.scrollBy({ top: event.deltaY, behavior: "auto" })`. Cleanup on unmount.
-- [ ] **Wire all three body kinds.** Each opts in with its inner-scrollport ref. Verify by hovering inside a long fenced code block and Cmd-wheeling — the outer transcript scrolls, the inner stays put.
-- [ ] **Diagnose the Bash blank-frame intermittent.** Add dev-mode logging covering: TerminalBlock mount, content-prop arrival, the inner renderer's first-paint signal (whatever event the terminal lib exposes), intersection observer fires, outer-scrollport scroll events while terminal is partially / fully visible. Capture data across a real session. Either find the root cause and fix surgically, OR ship the scroll-triggered refit mitigation.
-- [ ] **Ship Bash render-fix.** Either the surgical fix from the diagnosis pass, or the scroll-triggered refit fallback. The fallback: subscribe to outer scrollport `scroll` events; when terminal's `IntersectionObserver` reports entering view, call the renderer's resize/refit method (typically a no-op when not needed).
-- [ ] **Tuglaws update** for the Cmd-wheel contract.
-- [ ] **Tests** for the wheel hook (synthetic events) and for the Bash refit (synthetic intersection + scroll).
+- [x] **Build `useOuterScrollOnModifierWheel`.** Listener attached on `useLayoutEffect` (registration timing — events fire before paint). Listener checks `event.metaKey || event.ctrlKey`; on hit, `preventDefault`, `stopPropagation`, then `scrollportRef.current.scrollBy({ top: event.deltaY, behavior: "auto" })`. Cleanup on unmount.
+- [x] **Wire all three body kinds.** Each opts in with its inner-scrollport ref. Verify by hovering inside a long fenced code block and Cmd-wheeling — the outer transcript scrolls, the inner stays put.
+- [x] **Diagnose the Bash blank-frame intermittent.** Add dev-mode logging covering: TerminalBlock mount, content-prop arrival, the inner renderer's first-paint signal (whatever event the terminal lib exposes), intersection observer fires, outer-scrollport scroll events while terminal is partially / fully visible. Capture data across a real session. Either find the root cause and fix surgically, OR ship the scroll-triggered refit mitigation.
+- [x] **Ship Bash render-fix.** Either the surgical fix from the diagnosis pass, or the scroll-triggered refit fallback. The fallback: subscribe to outer scrollport `scroll` events; when terminal's `IntersectionObserver` reports entering view, call the renderer's resize/refit method (typically a no-op when not needed).
+- [x] **Tuglaws update** for the Cmd-wheel contract.
+- [x] **Tests** for the wheel hook (synthetic events) and for the Bash refit (synthetic intersection + scroll).
 
 **Tests (commands, Phase E.5):**
 
-- [ ] `bun test src/components/tugways/internal/__tests__/use-outer-scroll-on-modifier-wheel.test.tsx` — new file, all cases pass.
-- [ ] `bun test src/components/tugways/body-kinds/__tests__/terminal-block.test.tsx` — Bash render-on-scroll test passes.
-- [ ] `bunx tsc --noEmit` — clean.
-- [ ] `bun run audit:tokens lint` — zero violations.
-- [ ] `bun test` (full suite) — green.
+- [x] `bun test src/components/tugways/internal/__tests__/use-outer-scroll-on-modifier-wheel.test.tsx` — new file, all cases pass.
+- [x] `bun test src/components/tugways/body-kinds/__tests__/terminal-block.test.tsx` — Bash render-on-scroll test passes.
+- [x] `bunx tsc --noEmit` — clean.
+- [x] `bun run audit:tokens lint` — zero violations.
+- [x] `bun test` (full suite) — green.
 
 **Checkpoint (Phase E.5):**
 

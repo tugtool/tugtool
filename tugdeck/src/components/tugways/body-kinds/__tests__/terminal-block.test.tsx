@@ -57,6 +57,7 @@ import {
 } from "../terminal-block";
 import { ToolWrapperChrome } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
+import { OuterScrollportProvider } from "@/components/tugways/internal/outer-scrollport-context";
 
 afterEach(() => {
   cleanup();
@@ -1083,5 +1084,288 @@ describe("TerminalBlock — Phase E.4 responder", () => {
     ) as HTMLElement;
     expect(root.querySelector('[data-slot="terminal-header"]')).not.toBeNull();
     expect(root.querySelector('[data-slot="terminal-content"]')).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase E.5 — render-on-scroll-into-view recovery
+// ---------------------------------------------------------------------------
+//
+// Symptom: scrolling the outer card scrollport so a virtualized
+// terminal enters view sometimes leaves the inner scroller painted
+// as empty. The fix subscribes to the outer scrollport via
+// `IntersectionObserver`, calling the virtualizer's `refit` on every
+// entering-view transition, and additionally on `scroll` events
+// while in view as a belt-and-suspenders.
+//
+// These tests pin the contract:
+//  1. Mounting under an `OuterScrollportProvider` registers the
+//     terminal root with an `IntersectionObserver` whose root is the
+//     outer scrollport.
+//  2. Firing the IO callback with `isIntersecting: true` re-runs the
+//     virtualizer's `applyUpdate` (asserted via spacer-height
+//     restoration after an external clear).
+//  3. Mounting without a provider (`useOuterScrollport()` returns
+//     null) installs no IO — standalone composition is inert.
+//  4. The IO observer disconnects cleanly on unmount.
+//
+// Strategy: stub `globalThis.IntersectionObserver` with a captured
+// mock that records each instance's callback. Tests fire entries
+// directly through the mock to control the timing of "entering view"
+// transitions without depending on real layout.
+
+interface MockIOEntry {
+  isIntersecting: boolean;
+}
+
+interface MockIO {
+  callback: IntersectionObserverCallback;
+  observed: Element[];
+  disconnected: boolean;
+  trigger(entries: MockIOEntry[]): void;
+}
+
+function installIntersectionObserverStub(): {
+  instances: MockIO[];
+  restore: () => void;
+} {
+  const instances: MockIO[] = [];
+  const prior = (globalThis as { IntersectionObserver?: unknown })
+    .IntersectionObserver;
+  class FakeIntersectionObserver {
+    private readonly cb: IntersectionObserverCallback;
+    private readonly observed: Element[] = [];
+    private disconnected = false;
+    constructor(cb: IntersectionObserverCallback) {
+      this.cb = cb;
+      const handle: MockIO = {
+        callback: cb,
+        observed: this.observed,
+        disconnected: false,
+        trigger: (entries) => {
+          if (handle.disconnected) return;
+          const ioEntries = entries.map(
+            (e) => ({ isIntersecting: e.isIntersecting }) as IntersectionObserverEntry,
+          );
+          cb(ioEntries, this as unknown as IntersectionObserver);
+        },
+      };
+      instances.push(handle);
+      // Keep the handle in sync with disconnect state.
+      const self = this;
+      Object.defineProperty(self, "_handle", { value: handle });
+    }
+    observe(el: Element): void {
+      this.observed.push(el);
+    }
+    unobserve(): void {}
+    disconnect(): void {
+      this.disconnected = true;
+      const handle = (this as unknown as { _handle: MockIO })._handle;
+      handle.disconnected = true;
+    }
+    takeRecords(): IntersectionObserverEntry[] {
+      return [];
+    }
+  }
+  (globalThis as { IntersectionObserver?: unknown }).IntersectionObserver =
+    FakeIntersectionObserver as unknown as typeof IntersectionObserver;
+  return {
+    instances,
+    restore: () => {
+      if (prior === undefined) {
+        delete (globalThis as { IntersectionObserver?: unknown })
+          .IntersectionObserver;
+      } else {
+        (globalThis as { IntersectionObserver?: unknown }).IntersectionObserver =
+          prior;
+      }
+    },
+  };
+}
+
+describe("TerminalBlock — Phase E.5 render-on-scroll recovery", () => {
+  test("mounts an IntersectionObserver against the outer scrollport when provided", () => {
+    const io = installIntersectionObserverStub();
+    try {
+      // > VISIBLE_THRESHOLD → virtualized path.
+      const lineCount = VISIBLE_THRESHOLD + 20;
+      const lines = Array.from({ length: lineCount }, (_, i) => `line ${i}`);
+      const data: TerminalData = { stdout: lines.join("\n"), stderr: "" };
+      const outer = document.createElement("div");
+
+      const { container } = render(
+        <OuterScrollportProvider scrollport={outer}>
+          <TerminalBlock data={data} collapsed={false} />
+        </OuterScrollportProvider>,
+      );
+
+      // One IO instance was created (the Phase E.5 effect). It is
+      // observing the terminal's root element.
+      expect(io.instances.length).toBe(1);
+      const handle = io.instances[0];
+      const root = container.querySelector(
+        '[data-slot="terminal-body"]',
+      ) as HTMLElement;
+      expect(handle.observed).toContain(root);
+    } finally {
+      io.restore();
+    }
+  });
+
+  test("entering-view IO fire calls refit — restores virtualizer state after external clear", () => {
+    const io = installIntersectionObserverStub();
+    try {
+      const lineCount = VISIBLE_THRESHOLD + 20;
+      const lines = Array.from({ length: lineCount }, (_, i) => `line ${i}`);
+      const data: TerminalData = { stdout: lines.join("\n"), stderr: "" };
+      const outer = document.createElement("div");
+
+      const { container } = render(
+        <OuterScrollportProvider scrollport={outer}>
+          <TerminalBlock data={data} collapsed={false} />
+        </OuterScrollportProvider>,
+      );
+
+      const scroller = container.querySelector(
+        '[data-slot="terminal-scroller"]',
+      ) as HTMLElement;
+      expect(scroller).not.toBeNull();
+      const topSpacer = scroller.querySelector(
+        ".tugx-term-spacer--top",
+      ) as HTMLElement;
+      expect(topSpacer).not.toBeNull();
+
+      // Capture the post-mount spacer height. applyUpdate writes
+      // `${update.topSpacerHeight + VIRTUALIZED_PADDING_PX}px`, so
+      // the value is non-empty (at minimum "6px" when the window is
+      // anchored at the top — VIRTUALIZED_PADDING_PX = 6).
+      const initialHeight = topSpacer.style.height;
+      expect(initialHeight.length).toBeGreaterThan(0);
+
+      // Externally clobber the spacer height — simulating the
+      // intermittent in which the rendered DOM doesn't reflect the
+      // virtualizer's intended state.
+      topSpacer.style.height = "";
+      expect(topSpacer.style.height).toBe("");
+
+      // Fire IO entering-view. refit should re-run applyUpdate and
+      // restore the spacer height to its post-mount value.
+      const handle = io.instances[0];
+      act(() => {
+        handle.trigger([{ isIntersecting: true }]);
+      });
+      expect(topSpacer.style.height).toBe(initialHeight);
+    } finally {
+      io.restore();
+    }
+  });
+
+  test("outer-scrollport scroll fires refit while in view — restores spacer after external clear", () => {
+    const io = installIntersectionObserverStub();
+    try {
+      const lineCount = VISIBLE_THRESHOLD + 20;
+      const lines = Array.from({ length: lineCount }, (_, i) => `line ${i}`);
+      const data: TerminalData = { stdout: lines.join("\n"), stderr: "" };
+      const outer = document.createElement("div");
+
+      const { container } = render(
+        <OuterScrollportProvider scrollport={outer}>
+          <TerminalBlock data={data} collapsed={false} />
+        </OuterScrollportProvider>,
+      );
+      const scroller = container.querySelector(
+        '[data-slot="terminal-scroller"]',
+      ) as HTMLElement;
+      const topSpacer = scroller.querySelector(
+        ".tugx-term-spacer--top",
+      ) as HTMLElement;
+      const initialHeight = topSpacer.style.height;
+
+      // Land in "in view" first. Without this, the scroll handler
+      // gates on `inView=false` and refit is skipped.
+      const handle = io.instances[0];
+      act(() => {
+        handle.trigger([{ isIntersecting: true }]);
+      });
+      // Restore the spacer state so we can see whether the scroll
+      // handler fires refit independently.
+      topSpacer.style.height = "";
+
+      // Outer scroll fires. The terminal is in view → refit runs.
+      act(() => {
+        outer.dispatchEvent(new Event("scroll"));
+      });
+      expect(topSpacer.style.height).toBe(initialHeight);
+    } finally {
+      io.restore();
+    }
+  });
+
+  test("outer-scrollport scroll while NOT in view is a no-op", () => {
+    const io = installIntersectionObserverStub();
+    try {
+      const lineCount = VISIBLE_THRESHOLD + 20;
+      const lines = Array.from({ length: lineCount }, (_, i) => `line ${i}`);
+      const data: TerminalData = { stdout: lines.join("\n"), stderr: "" };
+      const outer = document.createElement("div");
+
+      const { container } = render(
+        <OuterScrollportProvider scrollport={outer}>
+          <TerminalBlock data={data} collapsed={false} />
+        </OuterScrollportProvider>,
+      );
+      const scroller = container.querySelector(
+        '[data-slot="terminal-scroller"]',
+      ) as HTMLElement;
+      const topSpacer = scroller.querySelector(
+        ".tugx-term-spacer--top",
+      ) as HTMLElement;
+      topSpacer.style.height = "";
+
+      // No IO entering-view fire → `inView` stays false → scroll is
+      // gated out.
+      act(() => {
+        outer.dispatchEvent(new Event("scroll"));
+      });
+      expect(topSpacer.style.height).toBe("");
+    } finally {
+      io.restore();
+    }
+  });
+
+  test("no outer scrollport → no IntersectionObserver installed (standalone inert)", () => {
+    const io = installIntersectionObserverStub();
+    try {
+      const lineCount = VISIBLE_THRESHOLD + 20;
+      const lines = Array.from({ length: lineCount }, (_, i) => `line ${i}`);
+      const data: TerminalData = { stdout: lines.join("\n"), stderr: "" };
+      render(<TerminalBlock data={data} collapsed={false} />);
+      expect(io.instances.length).toBe(0);
+    } finally {
+      io.restore();
+    }
+  });
+
+  test("IntersectionObserver disconnects on unmount — no leak", () => {
+    const io = installIntersectionObserverStub();
+    try {
+      const lineCount = VISIBLE_THRESHOLD + 20;
+      const lines = Array.from({ length: lineCount }, (_, i) => `line ${i}`);
+      const data: TerminalData = { stdout: lines.join("\n"), stderr: "" };
+      const outer = document.createElement("div");
+
+      const { unmount } = render(
+        <OuterScrollportProvider scrollport={outer}>
+          <TerminalBlock data={data} collapsed={false} />
+        </OuterScrollportProvider>,
+      );
+      const handle = io.instances[0];
+      expect(handle.disconnected).toBe(false);
+      unmount();
+      expect(handle.disconnected).toBe(true);
+    } finally {
+      io.restore();
+    }
   });
 });
