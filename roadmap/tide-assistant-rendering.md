@@ -2434,6 +2434,129 @@ A separate concern compounds it: the FileBlock / DiffBlock Find UI lives in the 
 
 ---
 
+##### Phase E.1 — Find-UI and state-zone hardening
+
+**Depends on:** Phase D, plus the post-Phase-D audit fixups landed in `8ebf8c92` (rAF → useLayoutEffect; L20 position-coordination carve-out).
+
+**Why this phase exists.** The post-Phase-D audit surfaced four softer concerns that all sit in the same neighborhood — they're about *how* the find session and the body-kind state are wired, not *what* the surface looks like. None burn the barn down, but each one is a small drift from the tuglaws or from a clean reading of the responder-chain conventions, and the kind of thing that piles up if left alone:
+
+- The Cmd-G / Shift-Cmd-G keystrokes that drive find-next / find-previous attach a document-level `keydown` listener inside `FileBlock` rather than going through the responder chain. There's no `FIND_NEXT` / `FIND_PREVIOUS` in `TUG_ACTIONS` today. Cmd-F → FIND already round-trips through the chain (TugCodeView registers FIND, the host's `onFindRequested` opens the find UI); Cmd-G should follow the same path.
+- Both `FileBlock` and `DiffBlock` carry their `collapsed` state as a hybrid controlled / uncontrolled pattern: `useState(initialCollapsed)` plus a `useEffect` that syncs `collapsedProp` into local state on prop changes. Functionally fine — but a known React antipattern that creates a "controlled prop says false, local state says true" divergence after a click in uncontrolled mode, and reads awkwardly. The canonical alternative is the lift pattern: `const collapsed = collapsedProp !== undefined ? collapsedProp : localCollapsed;` — no `useEffect`-sync, no divergence.
+- `TerminalBlock`'s Copy button uses `TugPushButton`'s `confirmation` prop for the "Copied" feedback flash. The flash fires on every click regardless of whether `navigator.clipboard.writeText` actually succeeded. Pre-Phase-D the imperative `is-copied` class was only added inside the `.then()` callback, so the feedback was honest. Re-adopting honest feedback requires `TugButton` to expose a *controlled* confirmation API (an `isConfirming` / `setConfirmed(true)` shape) so the host can fire the flash conditionally.
+- The `useEffect` that pushes the find query + options to CM6 runs after paint, so each keystroke produces a one-frame visual lag between the input update and the match-highlight repaint. `useLayoutEffect` runs before paint and eliminates the lag.
+
+**Decisions.**
+
+- **`FIND_NEXT` and `FIND_PREVIOUS` join the action vocabulary.** Both surface in `TUG_ACTIONS` alongside the existing `FIND`. `TugCodeView` registers handlers for both (they delegate to `cmFindNext` / `cmFindPrevious` on the live view, with the empty-query guard the host currently applies). The host's existing `findQuery.length === 0` guard moves into the handlers so the action vocabulary is the single chokepoint and the document-level listener retires.
+- **Cmd-G / Shift-Cmd-G dispatch through the responder chain, not via `document.addEventListener`.** The mechanism is the keyboard pipeline that already routes Cmd-F → FIND. Add the bindings to whatever keymap layer the FIND action uses (likely a chain-level keymap or TugCodeView's substrate keymap; the implementation choice is deferred to the task). The empty-query guard becomes "the handler is a no-op when the query is empty," dispatched through the chain just like every other action.
+- **`collapsed` state lifts via the "computed value, single source" pattern.** Both `FileBlock` and `DiffBlock` drop the `useEffect`-sync from `collapsedProp`. Internal state holds the uncontrolled default; `collapsed = collapsedProp ?? localCollapsed` is computed on every render. Toggling in uncontrolled mode writes local state; in controlled mode the parent owns `collapsed` and toggling fires `onToggleCollapsed?.(next)` but DOES NOT write local state (the parent's prop drives the next render). Same shape as the existing `viewMode` resolution in `DiffBlock`, which already uses this pattern correctly.
+- **`TugButton` grows a controlled-confirmation API.** Add an optional `isConfirming?: boolean` prop. When provided, the parent controls the confirmation state; the button enters the confirmed state when the prop is `true` and exits when it returns to `false`, ignoring the internal timer. `confirmation.duration` remains in use for the uncontrolled path (no `isConfirming` prop). `TerminalBlock` adopts the controlled mode: a local `[copied, setCopied]` state, set to `true` inside `.then()` after a successful clipboard write, cleared by a host-owned timer. The flash is honest again.
+- **Find state-sync runs in `useLayoutEffect`.** The effect that pushes `findQuery` / `findCaseSensitive` / `findRegexp` / `findWholeWord` to the CM6 delegate, plus the `setFindMatchCount` after, moves from `useEffect` to `useLayoutEffect`. The substrate's match-highlight repaint and the input's character commit land in the same paint, eliminating the keystroke-lag.
+
+**Artifacts (Phase E.1):**
+
+- Updated: `tugdeck/src/components/tugways/action-vocabulary.ts` — add `FIND_NEXT` and `FIND_PREVIOUS` to `TUG_ACTIONS`; document the no-op-when-no-query semantics.
+- Updated: `tugdeck/src/components/tugways/tug-code-view.tsx` — register `FIND_NEXT` / `FIND_PREVIOUS` handlers alongside the existing `FIND` / `SELECT_ALL` / `COPY`. Handlers guard on `query.valid` (the same flag `getMatchCount` already uses) so an empty / invalid query is a no-op without resurrecting CM6's `openSearchPanel`-from-selection fallback.
+- Updated: `tugdeck/src/components/tugways/body-kinds/file-block.tsx` — retire the document-level `keydown` listener for Cmd-G; the chain keyboard pipeline now drives the dispatch. Lift `collapsed` to the computed-value pattern (drop the `useEffect`-sync). Move the find-state-sync `useEffect` to `useLayoutEffect`.
+- Updated: `tugdeck/src/components/tugways/body-kinds/diff-block.tsx` — lift `collapsed` to the computed-value pattern (drop the `useEffect`-sync). Mirrors `viewMode`'s existing resolution.
+- Updated: `tugdeck/src/components/tugways/internal/tug-button.tsx` + `.css` — new optional `isConfirming?: boolean` prop. When provided, the prop drives the `data-tug-confirming` attribute and overrides the internal timer. Mutually-exclusive contract with `confirmation.duration` is documented and dev-warned.
+- Updated: `tugdeck/src/components/tugways/body-kinds/terminal-block.tsx` — replace the unconditional `confirmation.duration` with a controlled `isConfirming` flag set inside the clipboard `.then()`. Local `setTimeout` clears the flag after `COPIED_FLASH_MS`. Failure path: flag never sets, no flash.
+- Updated: `tugdeck/src/components/tugways/__tests__/tug-code-view.test.tsx` — new tests for `FIND_NEXT` / `FIND_PREVIOUS` action handlers (mount, dispatch, no-op when query empty).
+- Updated: `tugdeck/src/components/tugways/body-kinds/__tests__/file-block.test.tsx` — drop the document-level listener test scaffolding (if any); add a controlled-collapse test (parent sets `collapsed={true}`, child renders collapsed; parent's `onToggleCollapsed` fires on click but local state stays untouched).
+- Updated: `tugdeck/src/components/tugways/body-kinds/__tests__/diff-block.test.tsx` — mirror controlled-collapse test.
+- Updated: `tugdeck/src/components/tugways/body-kinds/__tests__/terminal-block.test.tsx` — Copy click on a missing-clipboard environment: button never enters confirmed state.
+- Updated: `tugdeck/src/components/tugways/cards/gallery-push-button.tsx` — add an `isConfirming` row to the gallery matrix so the controlled mode is exercisable visually.
+- Updated: `tuglaws/component-authoring.md` — add the controlled-confirmation pattern under `TugButton` patterns (or a new "Controlled feedback states" subsection).
+
+**Tasks (Phase E.1):**
+
+- [ ] **Extend `TUG_ACTIONS`** with `FIND_NEXT` and `FIND_PREVIOUS`. Wire the action handlers in `TugCodeView` (delegate to `cmFindNext` / `cmFindPrevious` with a `query.valid` guard).
+- [ ] **Route Cmd-G / Shift-Cmd-G through the chain.** The exact mechanism (chain-level keymap entry, substrate keymap extension, or a host-level `onKeyDown` that calls `controlDispatch`) is decided during implementation — the constraint is: no `document.addEventListener` in the body kind. Whatever mechanism currently dispatches Cmd-F → FIND is the canonical reference.
+- [ ] **Retire the document-level `keydown` listener** in `FileBlock`. The chain now owns the Cmd-G route.
+- [ ] **Lift `collapsed` to the computed-value pattern in `FileBlock`.** Drop the `useEffect`-sync; compute `collapsed = collapsedProp ?? localCollapsed`. `toggleCollapsed` writes local state only in uncontrolled mode (when `collapsedProp === undefined`). Same code shape as `DiffBlock`'s `viewMode` resolution.
+- [ ] **Lift `collapsed` to the computed-value pattern in `DiffBlock`.** Same treatment as FileBlock.
+- [ ] **Move the find-state-sync effect to `useLayoutEffect`.** Substrate match-highlights repaint in the same paint as the input update; no keystroke lag.
+- [ ] **Add `isConfirming?: boolean` to `TugButton` / `TugPushButton`.** When provided, the prop drives `data-tug-confirming`; the internal timer is bypassed. Mutually-exclusive with `confirmation.duration` (one path or the other; dev-warn on mixed use).
+- [ ] **Refactor `TerminalBlock` to controlled confirmation.** Local `[copied, setCopied]` state; `setCopied(true)` inside the clipboard `.then()`; `setTimeout` clears after `COPIED_FLASH_MS`. Cleanup on unmount. Failure path leaves `copied` false → no flash.
+- [ ] **Tests.** New tests for `FIND_NEXT` / `FIND_PREVIOUS` action handlers in `tug-code-view.test.tsx`. Controlled-collapse tests in `file-block.test.tsx` and `diff-block.test.tsx`. Honest-confirmation test in `terminal-block.test.tsx` (mock `navigator.clipboard.writeText` to reject; assert button never enters confirmed state).
+- [ ] **Update `tuglaws/component-authoring.md`** — document the controlled-confirmation pattern; cross-reference [L05] for the find-state-sync move and [L11] for the action-vocabulary extension.
+
+**Tests (commands, Phase E.1):**
+
+- [ ] `bun test src/components/tugways/__tests__/tug-code-view.test.tsx` — FIND_NEXT / FIND_PREVIOUS handlers fire on dispatch; empty-query guards hold.
+- [ ] `bun test src/components/tugways/body-kinds/__tests__/file-block.test.tsx` — controlled `collapsed` prop wins over local state; Cmd-G route covered by the substrate test, not by a document-listener test.
+- [ ] `bun test src/components/tugways/body-kinds/__tests__/diff-block.test.tsx` — controlled `collapsed` mirrors FileBlock's behavior.
+- [ ] `bun test src/components/tugways/body-kinds/__tests__/terminal-block.test.tsx` — Copy click without a working clipboard never sets the confirmed state.
+- [ ] `bun test src/components/tugways/internal/__tests__/tug-button.test.tsx` (new or extended) — `isConfirming={true}` enters confirmed state; `isConfirming={false}` exits. `isConfirming` provided + `confirmation.duration` set fires a dev-warn.
+- [ ] `bunx tsc --noEmit` — clean.
+- [ ] `bun run audit:tokens lint` — zero violations.
+- [ ] `bun test` (full suite) — no regressions vs the post-Phase-D baseline (3577 pass).
+
+**Checkpoint (Phase E.1):**
+
+- [ ] Manual: open a Read tool on a long file. Press Cmd-F (find opens), Cmd-G (next), Shift-Cmd-G (previous), Escape (clears query), Escape again (closes). Confirm each route works without a console error.
+- [ ] Manual: type into the find input. Confirm the match highlights paint in the same frame as the input update (no perceptible lag).
+- [ ] Manual: run a Bash command that emits output. Click Copy. Confirm the flash fires. Then in a separate session, deny clipboard permission and click Copy. Confirm the button stays in rest (no false-positive flash).
+- [ ] Manual: pass `collapsed={true}` to a FileBlock from a parent. Click the fold cue. Confirm the parent's `onToggleCollapsed` fires but the visible state stays collapsed (parent controls it).
+
+---
+
+##### Phase E.2 — Developer-ergonomics + latent-constraint pass
+
+**Depends on:** Phase E.1.
+
+**Why this phase exists.** Three remaining audit concerns sit on the developer-affordance side of the codebase, not the user-visible side. They don't change pixels; they make the surface harder to misuse and remove latent walls that would block future sticky-coordination work:
+
+- The fenced-code Copy button's size tokens (`--tugx-md-fenced-code-copy-height`, `-font-size`, `-icon-size`) duplicate `TugButton`'s 2xs sizing constants as raw rem values, coupled by a code comment. If `TugButton`'s 2xs metrics change, the fenced-code Copy silently drifts. `enhanceFencedCode` is imperative DOM and can't directly use the `TugPushButton` component, but the sizing values can flow through a thin export instead of a comment.
+- The body-kind `embedded` prop has a load-bearing precondition (must compose under a `ToolWrapperChrome` so affordances have a portal target). When that precondition is violated — `<FileBlock embedded />` rendered outside a chrome — the affordances vanish silently. The docstrings call this out as "unsupported," but a dev-mode `console.warn` would catch the mistake at the source rather than wait for someone to notice a missing Find button.
+- `.tug-pane-body` and `.tug-pane-chrome` use `overflow: hidden`. They sit ABOVE the transcript scrollport (`.tug-list-view`) and don't currently trap any sticky element, but they form scroll containers — a constraint Phase B.1 flagged for future work. Any feature that wants a sticky element to escape `.tug-list-view`'s scrollport (e.g., a global "find across all transcript entries" bar, a session-wide notification ribbon) will be trapped by these walls. Phase B.1's note: "Worth a flag for Phase C; not in scope for B.1/B.2." Phase C didn't address it because the entry-header pin worked correctly against `.tug-list-view`. The walls remain. Switching to `overflow: clip` keeps the existing clipping behavior (rounded-corner clip, accessory-banner clip) but removes the scroll-container trap.
+
+**Decisions.**
+
+- **TugButton publishes its size metrics as CSS variables on `:root`.** Each size (`2xs` / `xs` / `sm` / `md` / `lg`) gets four exported metrics: `--tug-button-{size}-height`, `--tug-button-{size}-padding-inline`, `--tug-button-{size}-font-size`, `--tug-button-{size}-icon-size`. The internal size-class rules consume these so the source-of-truth is the variable, not the rem literal in the rule. Fenced-code Copy and any other consumer that needs to match a button size reads them directly. If 2xs changes, every consumer tracks automatically. (The `--tug7-*` token system stays untouched — these are *component-metrics* tokens, a third category alongside appearance and position-coordination.)
+- **Body kinds dev-warn on embedded-without-chrome.** A `useEffect` (only when `process.env.NODE_ENV !== "production"`) that fires when `embedded === true` AND `useChromeActionsTarget() === null` logs a single console.warn naming the body kind and the misconfiguration. Production builds drop the check entirely (the early return on the unsupported branch keeps working, just silently). Same pattern as the existing dev-warns in `TugButton` for mutually-exclusive prop combinations.
+- **`.tug-pane-body` and `.tug-pane-chrome` migrate `overflow: hidden` → `overflow: clip`.** WebKit supports `overflow: clip` (Safari 16+); the WKWebView shell targets a newer baseline. The existing pane-banner (`position: absolute` inside `.tug-pane-chrome`) clips identically under both modes since `overflow: clip` still clips painting. Manual verification covers the pane-banner, pane resize, drag, and inactive-content overlay because those paths could in principle interact with the scroll-container formation.
+
+**Artifacts (Phase E.2):**
+
+- Updated: `tugdeck/src/components/tugways/internal/tug-button.css` — publish `--tug-button-{2xs,xs,sm,md,lg}-{height,padding-inline,font-size,icon-size}` metrics on `:root` (or on `body` if that's where the existing tug-button slots live). The existing `.tug-button-size-{N}` rules reference the variables instead of rem literals.
+- Updated: `tugdeck/src/components/tugways/tug-markdown-view.css` — fenced-code Copy reads `var(--tug-button-2xs-height)`, `var(--tug-button-2xs-font-size)`, `var(--tug-button-2xs-icon-size)` directly. The `--tugx-md-fenced-code-copy-*` token family becomes thin aliases (one-hop forwards to the `--tug-button-2xs-*` variables) or retires entirely if the consuming rule references the button metrics directly.
+- Updated: `tugdeck/src/components/tugways/body-kinds/file-block.tsx`, `diff-block.tsx`, `terminal-block.tsx` — each adds a dev-mode `useEffect` that fires `console.warn` when `embedded === true && chromeActionsTarget === null`. Single warn per mount, mentions the body-kind name and the fix ("compose under a `<ToolWrapperChrome>` or set `embedded={false}`").
+- Updated: `tugdeck/src/components/tugways/tug-pane.css` — `.tug-pane-body { overflow: clip }` and `.tug-pane-chrome { overflow: clip }`. The pane-banner and pane-overlay rules are reviewed to confirm `overflow: clip` doesn't break their `position: absolute` interactions (it shouldn't, since `clip` clips painting the same way `hidden` does).
+- Updated: `tuglaws/component-authoring.md` — under "Pin-stack composition", note that all transcript-side ancestors of `.tug-list-view` now use `overflow: clip` so future sticky-coordination work isn't trapped by accident. Cross-reference Phase B.1's original flag.
+- Updated: `tugdeck/src/components/tugways/internal/__tests__/tug-button.test.tsx` (or a new file if absent) — assert the published metric tokens are set on the host root and that the size-class rules consume them.
+- Updated: `tugdeck/src/components/tugways/body-kinds/__tests__/file-block.test.tsx`, `diff-block.test.tsx`, `terminal-block.test.tsx` — assert the dev-warn fires on embedded-without-chrome and does NOT fire when composed under a chrome.
+
+**Tasks (Phase E.2):**
+
+- [ ] **Publish `--tug-button-{size}-*` metrics on `tug-button.css`.** Five sizes × four metrics = 20 vars. The existing `.tug-button-size-{N}` rules read the vars. The `.tug-button-icon-{N}` rules read `--tug-button-{N}-height` for both width and height.
+- [ ] **Refactor fenced-code Copy CSS** to consume `--tug-button-2xs-*` directly. Either retire `--tugx-md-fenced-code-copy-{height,font-size,icon-size}` or alias them in one hop to the new globals.
+- [ ] **Add dev-warns for embedded-without-chrome** in `FileBlock`, `DiffBlock`, `TerminalBlock`. Single warn per mount, gated on `process.env.NODE_ENV !== "production"`. Production builds tree-shake to a no-op.
+- [ ] **Switch `.tug-pane-body` and `.tug-pane-chrome` to `overflow: clip`.** Confirm pane-banner, pane-resize, pane-drag, inactive-content overlay still work.
+- [ ] **Tests** for the metric-tokens published-on-:root contract; for the dev-warn firing on embedded-without-chrome; for the pane CSS source declaring `overflow: clip`.
+- [ ] **Tuglaws update** documenting the metric-tokens category (third token category alongside appearance and position-coordination) and the pane-walls migration.
+
+**Tests (commands, Phase E.2):**
+
+- [ ] `bun test src/components/tugways/internal/__tests__/tug-button.test.tsx` — `--tug-button-2xs-height` etc. are set on the root; the size-class rules consume them (CSS source assertion).
+- [ ] `bun test src/components/tugways/body-kinds/__tests__/file-block.test.tsx` — dev-warn fires on embedded-without-chrome; no warn when composed under chrome.
+- [ ] `bun test src/components/tugways/body-kinds/__tests__/diff-block.test.tsx` — same.
+- [ ] `bun test src/components/tugways/body-kinds/__tests__/terminal-block.test.tsx` — same.
+- [ ] `bun test src/components/tugways/__tests__/tug-pane.test.tsx` (if exists, else new) — CSS source assertion that `.tug-pane-body` / `.tug-pane-chrome` use `overflow: clip`.
+- [ ] `bunx tsc --noEmit` — clean.
+- [ ] `bun run audit:tokens lint` — zero violations; the new `--tug-button-*` metric tokens pass the multi-hop check (they're authoritative, not aliases).
+- [ ] `bun test` (full suite) — no regressions vs the post-Phase-E.1 baseline.
+
+**Checkpoint (Phase E.2):**
+
+- [ ] Manual: open a fenced-code block in a markdown response. Visually compare the Copy button to a TerminalBlock Copy in the same transcript. They should match in height, font, padding, icon size.
+- [ ] Manual: in a dev build, render `<FileBlock embedded />` directly in the gallery (no chrome above) — confirm a single `console.warn` fires with the misconfiguration message.
+- [ ] Manual: drag a pane, resize a pane, drop into a tab, activate / deactivate. Confirm pane chrome behaves identically to pre-Phase-E.2.
+- [ ] Manual: open a long transcript with multiple tool calls. Confirm the entry-header pin, the chrome-header pin, and the diff hunk-header pin all behave identically to pre-Phase-E.2 — the `overflow: clip` change should be invisible to existing pinning.
+- [ ] After both E.1 and E.2 land: re-run the Phase D manual checkpoint to confirm no regressions.
+
+---
+
 #### Step 11: EditToolBlock wrapper {#step-11}
 
 **Depends on:** #step-1, #step-10
