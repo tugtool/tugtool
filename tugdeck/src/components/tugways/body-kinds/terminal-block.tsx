@@ -273,6 +273,28 @@ export const RETAINED_LINE_CAP = 10_000;
 export const LINE_HEIGHT_PX = 20;
 
 /**
+ * Vertical padding the FLAT (`.tugx-term-pre`) rendering applies above
+ * and below its lines, via `padding: var(--tugx-term-padding)` which
+ * resolves to `var(--tug-space-sm) var(--tug-space-md)`. The virtualized
+ * pre strips its vertical padding (line-height math expects exact
+ * `LINE_HEIGHT_PX`-tall lines starting at the pre's edge), so we bake
+ * the same vertical breathing room into the virtualizer's top/bottom
+ * spacers as a constant offset.
+ *
+ * Without this match, the first line in the collapsed-preview (flat)
+ * path sits at body-Y=6px, then jumps to body-Y=0 on expand — visibly
+ * shifting under the user's eye when they toggle the fold cue. This
+ * constant pins the offset so expand/fold preserves vertical position.
+ *
+ * Hardcoded to match `--tug-space-sm` (6px across the brio + harmony
+ * themes). If the token changes, the visual padding parity needs to be
+ * re-derived here — the constant is duplicated for the same reason
+ * `LINE_HEIGHT_PX` is: `scrollHeight` is unreliable in happy-dom and
+ * imperative math needs a number, not a CSS variable.
+ */
+export const VIRTUALIZED_PADDING_PX = 6;
+
+/**
  * Viewport height (in lines) the virtualized scroll container caps
  * itself at. Beyond this the user scrolls. 24 lines × 20 px ≈ 480 px,
  * a comfortable inline height inside a Tide row.
@@ -469,12 +491,22 @@ function appendFlatBody(container: HTMLElement, lines: ParsedLine[]): void {
  * applies the resulting enter/exit ranges + spacer heights to the
  * DOM imperatively.
  *
+ * `anchor` selects the initial scrollTop:
+ *  - `"top"` — scroller opens at the start of content. Right for
+ *    *static* output: the user just expanded a folded preview that
+ *    showed the first ~8 lines, and they want to continue reading
+ *    from where the preview cut off.
+ *  - `"bottom"` — scroller opens at the tail of content. Right for
+ *    *streaming* output: the user wants to see the latest lines as
+ *    they arrive (the historical default for live terminals).
+ *
  * Returns a cleanup callback the caller should run when the body is
  * about to be replaced (ensures the scroll listener is detached).
  */
 function appendVirtualizedBody(
   container: HTMLElement,
   lines: ParsedLine[],
+  anchor: "top" | "bottom",
 ): () => void {
   const heightIndex = new BlockHeightIndex(Math.max(1024, lines.length));
   for (let i = 0; i < lines.length; i += 1) {
@@ -537,19 +569,66 @@ function appendVirtualizedBody(
       }
     }
 
-    topSpacer.style.height = `${update.topSpacerHeight}px`;
-    bottomSpacer.style.height = `${update.bottomSpacerHeight}px`;
+    // Add VIRTUALIZED_PADDING_PX to both spacers so the first/last
+    // mounted line sits at the same body-Y as the flat-path
+    // rendering would (which uses CSS `padding: var(--tugx-term-
+    // padding)` on the pre). This is the constant-offset trick: the
+    // window-update math operates in the unpadded coordinate system
+    // (heightIndex), so scrollTop and content-Y differ by exactly
+    // `VIRTUALIZED_PADDING_PX` whenever firstMounted=0. The
+    // 2-viewport overscan absorbs this discrepancy for the mount
+    // range; the visual outcome is that the first/last line sit
+    // 6px below/above the scroller's edges — matching the flat pre.
+    topSpacer.style.height = `${update.topSpacerHeight + VIRTUALIZED_PADDING_PX}px`;
+    bottomSpacer.style.height = `${update.bottomSpacerHeight + VIRTUALIZED_PADDING_PX}px`;
   }
 
-  // First paint — anchor at the bottom (terminals naturally show the
-  // tail). RenderedBlockWindow.update(scrollTop) handles the math;
-  // setting scrollTop afterwards triggers our listener once.
+  // Attach the scroller to the document tree BEFORE the initial
+  // scrollTop assignment below. Per spec, setting `scrollTop` on a
+  // detached element is a no-op — a detached element has no
+  // scrolling box. If we keep the older "applyUpdate → set scrollTop
+  // → appendChild" order, the scrollTop write silently fails, the
+  // scroller's scrollTop defaults to 0 when it attaches, and the
+  // user sees the top-spacer's empty space instead of the tail of
+  // the rendered content. The scroller stays empty until a wheel
+  // event fires `onScroll`, which then calls `applyUpdate(0)` and
+  // re-mounts lines from the top — the "jostled by scrolling fixes
+  // it" symptom.
+  //
+  // Pre-Phase E.4 this was a latent bug masked by the mount-once
+  // contract: the static-mode effect ran exactly once at first
+  // paint and the user typically scrolled to consume the output,
+  // so the empty initial frame went unnoticed. Phase E.4's
+  // collapse-driven re-render exposed it: fold→expand recreates
+  // the scroller every toggle, and now every expansion shows empty
+  // until scrolled.
+  //
+  // Attaching first means the scroller is empty (top/bottom spacers
+  // at zero height, no line elements in `pre`) for one
+  // useLayoutEffect tick — but useLayoutEffect runs before paint,
+  // so the user never sees that intermediate state. `applyUpdate`
+  // below populates the spacers + mounts lines synchronously; the
+  // browser composites the final state on its next paint.
+  container.appendChild(scroller);
+
+  // First paint — anchor at top or bottom per the caller's choice
+  // (static caller anchors at the top so an expanded preview reads
+  // top-down; streaming caller anchors at the tail so live output
+  // shows the latest lines). RenderedBlockWindow.update(scrollTop)
+  // handles the math; the scrollTop assignment after it sticks
+  // because the scroller is now part of a layout tree.
+  //
+  // Bottom-anchor math includes `2 * VIRTUALIZED_PADDING_PX` because
+  // the spacers each carry that constant offset (see `applyUpdate`),
+  // so the true scrollable height is `totalContentPx + 12`. Without
+  // the +12, the streaming caller would land 12px short of the
+  // actual bottom on first paint — the user would see the last line
+  // 12px above the scroller's bottom edge instead of pinned to it.
   const totalContentPx = heightIndex.getTotalHeight();
-  const initialScrollTop = Math.max(0, totalContentPx - viewportPx);
+  const totalScrollableHeight = totalContentPx + 2 * VIRTUALIZED_PADDING_PX;
+  const initialScrollTop =
+    anchor === "top" ? 0 : Math.max(0, totalScrollableHeight - viewportPx);
   applyUpdate(initialScrollTop);
-  // After the DOM is built, set the scroll position so it reflects
-  // the rendered window. happy-dom won't actually scroll but the
-  // assignment is a no-op there.
   scroller.scrollTop = initialScrollTop;
 
   let pendingRaf: number | null = null;
@@ -561,8 +640,6 @@ function appendVirtualizedBody(
     });
   };
   scroller.addEventListener("scroll", onScroll, { passive: true });
-
-  container.appendChild(scroller);
 
   return () => {
     if (pendingRaf !== null) {
@@ -611,12 +688,17 @@ function findNextMountedAfter(
  * completed within the preview). Expanding the block restores the
  * full render (truncation banner, virtualizer, footer) on the next
  * call.
+ *
+ * `anchor` is forwarded to `appendVirtualizedBody` when virtualizing
+ * — `"top"` for static-mode renders (expand-from-preview reads top-
+ * down), `"bottom"` for streaming-mode renders (latest lines visible).
  */
 function renderTerminal(
   outer: HTMLElement,
   body: HTMLElement,
   data: TerminalData,
   collapsed: boolean = false,
+  anchor: "top" | "bottom" = "top",
 ): () => void {
   body.replaceChildren();
   // Empty terminal: render the footer if any post-mortem fields are
@@ -657,7 +739,7 @@ function renderTerminal(
     if (lines.length <= VISIBLE_THRESHOLD) {
       appendFlatBody(body, lines);
     } else {
-      cleanup = appendVirtualizedBody(body, lines);
+      cleanup = appendVirtualizedBody(body, lines, anchor);
     }
   }
 
@@ -853,11 +935,18 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
       }
       const next = coerceTerminalData(store.get(streamingPath));
       latestDataRef.current = next;
+      // Streaming mode anchors the virtualized viewport at the
+      // tail — live output is read latest-first, and any new line
+      // arriving while the user is at the bottom should keep them
+      // pinned to the new tail (subsequent rerenders will re-anchor
+      // there). Static mode (the renderer's default) anchors at
+      // top, which is right for expand-from-preview reading.
       cleanup = renderTerminal(
         outerEl,
         bodyEl,
         next,
         collapsedStreamingRef.current,
+        "bottom",
       );
     }
 
@@ -901,7 +990,9 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
     if (outer === null || body === null) return;
     const next = coerceTerminalData(streamingStore.get(streamingPath));
     latestDataRef.current = next;
-    const cleanup = renderTerminal(outer, body, next, collapsed);
+    // Streaming collapse-toggle re-render — keep the tail anchor
+    // to match the streaming subscription path above.
+    const cleanup = renderTerminal(outer, body, next, collapsed, "bottom");
     return cleanup;
   }, [collapsed, streamingStore, streamingPath]);
 

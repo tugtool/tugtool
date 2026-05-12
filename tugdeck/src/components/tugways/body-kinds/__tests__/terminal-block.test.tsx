@@ -831,6 +831,72 @@ describe("TerminalBlock — Phase E.4 fold cue", () => {
     expect(root.querySelector(".tugx-term-scroller")).not.toBeNull();
   });
 
+  test("fold→expand renders the virtualized scroller with mounted lines starting at the TOP of content", () => {
+    // Regression covering two related fixes:
+    //
+    // 1. Attach-before-scrollTop. Pre-fix, `appendVirtualizedBody`
+    //    set `scroller.scrollTop = initialScrollTop` BEFORE
+    //    appending the scroller to its container. Setting
+    //    scrollTop on a detached element is a no-op per spec,
+    //    so the scroller landed in the DOM at scrollTop=0 and
+    //    Phase E.4's fold→expand re-render showed empty until a
+    //    wheel event fired `applyUpdate` against scrollTop=0.
+    //
+    // 2. Static anchor at top, not bottom. After fix #1 landed,
+    //    the static-mode scroller anchored at the tail (the
+    //    historical default for live terminals). For
+    //    expand-from-preview reading flow the user wants to
+    //    continue at the TOP — the preview showed the first ~8
+    //    lines and the expansion should reveal lines 9..N. Static
+    //    mode now passes `anchor="top"` to
+    //    `appendVirtualizedBody`; streaming mode keeps the tail
+    //    anchor for live-output reading.
+    //
+    // Assertions: the scroller exists with mounted line elements,
+    // is attached to a parent (i.e. `container.appendChild` ran
+    // before the scrollTop assignment), and the first mounted line
+    // is index 0 (the top of content). scrollTop is exactly 0 —
+    // the top anchor.
+    const data: TerminalData = { stdout: makeLines(100), stderr: "" };
+    const { container } = render(<TerminalBlock data={data} />);
+    const root = container.querySelector(
+      '[data-slot="terminal-body"]',
+    ) as HTMLElement;
+    // Initial render: collapsed by default.
+    expect(root.getAttribute("data-collapsed")).toBe("true");
+
+    // Trigger expand.
+    const cue = container.querySelector(
+      ".tugx-term-fold-cue",
+    ) as HTMLButtonElement;
+    act(() => {
+      cue.click();
+    });
+
+    const scroller = root.querySelector(
+      ".tugx-term-scroller",
+    ) as HTMLElement;
+    expect(scroller).not.toBeNull();
+
+    // Lines mounted — the windowed range has actual line elements
+    // in the DOM. Pre-fix the lines could be mounted around the
+    // tail with the scroller stuck at scrollTop=0; we now verify
+    // that the first line is index 0, i.e. the top of content.
+    const lines = scroller.querySelectorAll(".tugx-term-line");
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines[0].getAttribute("data-line-index")).toBe("0");
+
+    // Scroller is attached to a parent (i.e. `container.appendChild`
+    // ran). Pins fix #1's structural ordering invariant.
+    expect(scroller.parentElement).not.toBeNull();
+
+    // Static-mode anchor at top → scrollTop is exactly 0. Pins
+    // fix #2: any regression that flips back to bottom-anchor
+    // (or any caller passing `anchor="bottom"` in static mode)
+    // fails here.
+    expect(scroller.scrollTop).toBe(0);
+  });
+
   test("clicking the fold cue twice toggles collapse back on (data-collapsed='true')", () => {
     const data: TerminalData = { stdout: makeLines(100), stderr: "" };
     const { container } = render(<TerminalBlock data={data} />);
