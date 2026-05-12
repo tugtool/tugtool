@@ -2788,6 +2788,90 @@ The first two gaps are recognized in the original Step 10.9 scope — Copy lived
 
 ---
 
+##### Phase E.6 — Tide-card scroll preservation (region-scroll anchor metadata + nested scroller wiring)
+
+**Depends on:** Phase E.5 (the inner scrollers exist as addressable DOM elements and the cell ResizeObserver pipeline is wired); the existing [A9] state-preservation protocol (`tuglaws/state-preservation.md`).
+
+**Why this phase exists.** Two issues with scroll-position preservation in the tide-card surfaced after E.5:
+
+1. **App resign-active scrolls the tide-card transcript to the bottom.** Observed every cmd-tab away. Diagnosed in E.5's session: the window-`focus` reactivation path called `target.el.focus()` without `preventScroll`, and the focused editor lives below the transcript, so the browser's default scroll-into-view dragged the transcript down on every return.
+2. **Developer > Reload does not restore the tide-card transcript scroll position.** Sometimes lands at the top, sometimes mid-document — the saved `bag.regionScroll["tide-card-transcript"]` write is silently clamped on mount (transcript `scrollHeight` is small before cells settle), and even after `scrollHeight` grows enough to allow the write, cell-height drift across reload (markdown blocks arriving, tool wrappers settling, FileBlocks measuring their CM6 substrates) means the saved pixel `scrollTop` no longer maps to the saved *content*. The user sees their anchor content shift away.
+
+(1) is a focus-side regression — narrow fix.
+
+(2) is a framework limitation. The current `RegionScrollSnapshot` axis on `CardStateBag` carries only `{ x, y }` per region — raw pixels. That shape is sufficient for content trees with deterministic post-reload layout (markdown view, CM6 substrate, terminal virtualized scroller with fixed-height lines). It is **not** sufficient for a variable-height virtualized list whose cells contain rich sub-content that settles asynchronously across many post-mount commits: between save and restore, cells above the user's anchor can grow or shrink, and the saved `scrollTop` deterministically lands at the wrong content. The MutationObserver-driven retry loop in `CardHost` keeps the apply alive until `scrollHeight ≥ savedY`, but it has no way to track *content*; it only tracks pixels.
+
+The framework's design grain for "preserve uncontrolled state across teardown-and-replay" is the [A9] protocol's region-scroll axis ([state-preservation.md](../tuglaws/state-preservation.md)). The right move is to **extend that axis**, not to invent a parallel mechanism. The extension is small: each region snapshot can carry opaque per-region metadata alongside `{x, y}`. Regions that need richer semantics (a virtualized list's `(anchorIndex, anchorOffset)`) write the metadata; regions that don't (markdown view, terminal scroller, CM6 view) keep using `{x, y}`.
+
+**Decisions.**
+
+- **Extend `RegionScrollSnapshot` with `meta?: unknown` per region.** Capture reads JSON from a new `data-tug-scroll-state` DOM attribute on the region element if present; restore dispatches the metadata in the existing `tug-region-scroll-set` `CustomEvent.detail`. The shape of `meta` is region-defined opaque JSON; the framework treats it as a string-equivalent blob, exactly like `bag.content`. This keeps the bag schema additive and the framework agnostic to region semantics.
+- **Multiple `data-tug-scroll-key` regions per card are the existing contract.** No framework change is needed for that; CardHost's capture/restore loop already walks `querySelectorAll('[data-tug-scroll-key]')`. Nested scrollers (outer transcript + per-block inner scrollers) all get their own keys; document-order dispatch (outer first) plus the MutationObserver-driven retry handles late-mounting inner scrollers (e.g., a CM6 view that mounts only when the user expands a collapsed FileBlock later).
+- **TugListView owns its anchor metadata.** The list view maintains a current `(anchorIndex, anchorOffset)` derived from its live `scrollTop` and `heightIndex` via an imperative write to `data-tug-scroll-state` on the scroll container, updated on every `scrollTick`. The metadata IS the live anchor at every moment; capture just reads it. The listener for `tug-region-scroll-set` honors `meta.anchor` over the raw `{x, y}` and re-derives the target `scrollTop` from the heightIndex on every commit, so cells settling above the anchor drag the user's anchor cell back to its saved viewport position rather than leaving them with their saved pixel offset.
+- **Inner scrollers stick with raw `{x, y}`.** TerminalBlock's virtualized scroller uses fixed-height lines (`LINE_HEIGHT_PX = 20`) so raw `scrollTop` maps deterministically to line index across reload. FileBlock's CM6 `scrollDOM` has CM6-internal layout: same content → same layout → raw `scrollTop` is the right unit. Both get `data-tug-scroll-key` attributes (with stable per-block keys derived from the block's identity) and let the existing CardHost MutationObserver retry handle late-mounting (collapsed FileBlock that mounts CM6 only on expand) and clamp-then-grow timing.
+- **Fold state stays on the `bag.components` axis via `useComponentStatePreservation`.** Fold is not DOM-authority scroll; it is a component's `useState` value. The [A9] component-preservation axis is correct for it. The opt-in `componentStatePreservationKey` prop the body kinds already accept is the channel.
+- **Revert the misadventures.** The `componentStatePreservationKey` prop I added to `TugListView` is the wrong axis for scroll and gets removed; the existing `scrollKey` channel is the right one. The half-broken `tug-region-scroll-set` listener I added to TugListView gets rewritten alongside the anchor-metadata pickup.
+- **Focus-reactivation `preventScroll`.** Already shipped in the working session (`focus-transfer.ts:reactivateCurrentFocusDestination` + `default-focus.ts:traceApplyDefaultFocus`'s new `opts.preventScroll` parameter). User confirmed the resign-active scroll-to-bottom is fixed by this change. Phase E.6 keeps it; no further work on this item.
+
+**Tuglaws compliance (Phase E.6).**
+
+- **[L03] `useLayoutEffect` for events-dependent setup.** ✓ The new `data-tug-scroll-state` write on TugListView happens inside the existing `scrollTick` `useLayoutEffect` (already running on every commit). The new `tug-region-scroll-set` listener registration moves to the existing `useLayoutEffect` SmartScroll install slot. The anchor-driven apply effect is a no-deps `useLayoutEffect` that runs every commit — same pattern as the existing post-commit pin effect.
+- **[L04] Never measure child DOM inline after triggering child setState from a parent effect.** ✓ All work happens inside TugListView itself; no parent setState is observed. `heightIndex.offsetForIndex(anchorIndex)` reads imperative state (the index) populated by the cell ResizeObserver, not React state.
+- **[L05] Never use `requestAnimationFrame` for operations that depend on React state commits.** ✓ No new rAF introduced. The anchor-driven apply effect runs on commits, not on rAF. The existing rAF coalescing in the cell ResizeObserver pipeline is unchanged.
+- **[L06] Ephemeral appearance state goes through CSS and DOM, never React state.** ✓ Scroll position is appearance; lives in the DOM (`scrollTop`). The anchor metadata is a DOM attribute (`data-tug-scroll-state`), not React state. The `restoreAnchorRef` is a `useRef`, not `useState`. The `bag.regionScroll[key].meta` extension lands serialized in tugbank — durable storage, not React state.
+- **[L07] Action handlers access current state through refs, never stale closures.** ✓ The `tug-region-scroll-set` listener reads `restoreAnchorRef.current` and `smartScrollRef.current` live. The anchor-driven apply effect reads the same refs. The `captureState` callback in `useComponentStatePreservation` reads `scrollContainerRef.current.scrollTop` live. No closures over render snapshots.
+- **[L19] Component authoring guide.** ✓ The framework extension is additive: `RegionScrollSnapshot` gains an optional field, `captureRegionScrolls` reads an optional attribute, `applyRegionScrolls` forwards an optional event-detail field. No identifier renames. The new `data-tug-scroll-state` attribute fits the existing attribute family. Updated `state-preservation.md` documents it in the DOM-attributes table.
+- **[L20] Component-token sovereignty.** ✓ No new tokens. The work is purely structural / behavioral.
+- **[L22] When external state drives direct DOM updates, observe the store directly.** ✓ The state being preserved is DOM-authority scroll position; the framework's region-scroll axis is exactly the [L22]-prescribed pattern for this case (capture from the DOM, restore to the DOM via `MutationObserver`-driven retry, no React state intermediary).
+- **[L23] Internal implementation operations must never lose user-visible state.** ✓ This is the law Phase E.6 implements. The anchor-metadata extension exists specifically because raw `{x, y}` preservation loses user-visible content position across cell-height drift; anchor metadata recovers it. Manual checkpoints below pin the round-trip end-to-end.
+- **[L24] Three state zones.** ✓ The anchor metadata is *appearance state* (where the user is looking); it lives in the DOM at runtime and in tugbank at rest. The `restoreAnchorRef` is plumbing state (a one-shot apply-target tracker), not structure state. No state-zone boundary is crossed.
+
+**Artifacts (Phase E.6):**
+
+- Updated: `tugdeck/src/layout-tree.ts` — extend `RegionScrollSnapshot` to allow `meta?: unknown` per region.
+- Updated: `tugdeck/src/components/chrome/card-host.tsx` — `captureRegionScrolls` reads `data-tug-scroll-state` (JSON) if present and stores as `meta`; `applyRegionScrolls` forwards `meta` in the `tug-region-scroll-set` event detail.
+- Updated: `tugdeck/src/components/tugways/tug-list-view.tsx` — (a) drops the `componentStatePreservationKey` prop I mistakenly added; (b) writes `data-tug-scroll-state="{anchor:{index,offset}}"` on the scroll container, updated imperatively on every scrollTick; (c) rewrites the `tug-region-scroll-set` listener to stash `meta.anchor` (when present) and disengage follow-bottom; (d) adds a no-deps `useLayoutEffect` that re-derives the target `scrollTop` from the live heightIndex and writes via SmartScroll until the anchor cell and all cells above it have been measured.
+- Updated: `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` — restores `scrollKey="tide-card-transcript"`; drops the `componentStatePreservationKey` opt-in I mistakenly added.
+- Updated: `tugdeck/src/components/tugways/body-kinds/file-block.tsx` — writes `data-tug-scroll-key={blockKey + "/file-scroll"}` onto CM6's `view.scrollDOM` (via `view.scrollDOM.setAttribute` inside the existing `useLayoutEffect` that wires the wheel router). Drops the inner-scroll preservation I wired through `useComponentStatePreservation` (wrong axis); keeps the fold-state preservation (right axis).
+- Updated: `tugdeck/src/components/tugways/body-kinds/terminal-block.tsx` — writes `data-tug-scroll-key={blockKey + "/term-scroll"}` on the virtualized scroller (the `tugx-term-scroller` div created in `appendVirtualizedBody`). Drops the inner-scroll preservation I wired through `useComponentStatePreservation` (wrong axis); keeps the fold-state preservation (right axis).
+- Updated: `tugdeck/src/components/tugways/cards/tool-wrappers/bash-tool-block.tsx`, `read-tool-block.tsx` — already pass `componentStatePreservationKey={toolUseId + "-body"}` to their body kinds; that key now ALSO becomes the suffix root for the inner scroll-key (no API change at the wrapper level).
+- Updated: `tuglaws/state-preservation.md` — document the new `meta` field on `RegionScrollSnapshot`; document the new `data-tug-scroll-state` DOM attribute; note that variable-height virtualized lists provide anchor metadata via this channel.
+- Updated: `tugdeck/src/components/tugways/__tests__/tug-list-view.test.tsx` — anchor capture/restore round-trip; assert `data-tug-scroll-state` reflects the live anchor on scroll changes; assert restore re-derives target `scrollTop` after a synthetic cell-height grow.
+- Updated: `tugdeck/src/__tests__/card-host-form-controls-selection.test.ts` or sibling region-scroll test — add coverage for the `meta` round-trip through `captureRegionScrolls` and `applyRegionScrolls`.
+
+**Tasks (Phase E.6):**
+
+- [ ] **Extend `RegionScrollSnapshot`.** Add `meta?: unknown` to the per-key shape in `layout-tree.ts`. Update the type to be tugbank-serializable (it already is via JSON).
+- [ ] **Update `captureRegionScrolls` and `applyRegionScrolls`.** Capture reads `el.getAttribute("data-tug-scroll-state")`, parses as JSON, includes as `meta`. Apply includes `meta` in the dispatched event detail.
+- [ ] **Revert TugListView misadventures.** Remove the `componentStatePreservationKey` prop, the `useComponentStatePreservation` call, the `restoreAnchorRef`, and the half-rewritten `tug-region-scroll-set` listener changes. The listener path goes back to roughly its pre-Phase-E.6 shape — but with the anchor-metadata pickup wired in (next task).
+- [ ] **Wire anchor metadata into TugListView.** (a) An imperative writer that updates `data-tug-scroll-state` on the scroll container whenever scroll position changes (inside the existing scrollTick path). (b) A rewritten `tug-region-scroll-set` listener that stashes `meta.anchor` (when present), disengages follow-bottom, and triggers the apply effect. (c) A no-deps `useLayoutEffect` that re-derives target `scrollTop` from the live heightIndex on every commit and writes via SmartScroll until settled (all cells from 0..anchorIndex have measured heights).
+- [ ] **Add `data-tug-scroll-key` to FileBlock's CM6 scrollDOM and TerminalBlock's virtualized scroller.** Stable per-block keys derived from the block's identity prop (`componentStatePreservationKey + "/file-scroll"` or `"/term-scroll"`).
+- [ ] **Restore `scrollKey="tide-card-transcript"` on tide-card-transcript** and remove the wrong-axis `componentStatePreservationKey` I added.
+- [ ] **Drop the inner-scroll-via-component-preservation** from FileBlock and TerminalBlock; keep the fold-state-via-component-preservation.
+- [ ] **Update `state-preservation.md`.** New `meta` field on `RegionScrollSnapshot`; new `data-tug-scroll-state` attribute in the DOM-attributes table; advisory note about anchor metadata for variable-height virtualized lists.
+- [ ] **Tests** for `meta` round-trip in `captureRegionScrolls` / `applyRegionScrolls` and for TugListView anchor restore after synthetic cell-height grow.
+
+**Tests (commands, Phase E.6):**
+
+- [ ] `bun test src/components/tugways/__tests__/tug-list-view.test.tsx` — anchor capture/restore tests pass.
+- [ ] `bun test src/__tests__/card-host-form-controls-selection.test.ts` (or sibling region-scroll test file) — `meta` round-trip passes.
+- [ ] `bun test src/components/tugways/body-kinds/__tests__/file-block.test.tsx` — fold-state preservation still passes after dropping the inner-scroll axis; CM6 scrollDOM carries the new `data-tug-scroll-key`.
+- [ ] `bun test src/components/tugways/body-kinds/__tests__/terminal-block.test.tsx` — fold-state preservation still passes after dropping the inner-scroll axis; the virtualized scroller carries the new `data-tug-scroll-key`.
+- [ ] `bunx tsc --noEmit` — clean.
+- [ ] `bun run audit:tokens lint` — zero violations.
+- [ ] `bun test` (full suite) — green.
+
+**Checkpoint (Phase E.6):**
+
+- [ ] Manual: open a tide-card with a long transcript. Scroll up to mid-document so multiple entries are above and below the viewport. Developer > Reload. Confirm the same content lands at the same viewport position (within a few pixels) — not at the top, not at the bottom, not mid-loading-jitter.
+- [ ] Manual: same as above but scroll to the very top before reload. Confirm the transcript opens at the top on restore.
+- [ ] Manual: same as above but scroll to the very bottom (with follow-bottom engaged). Confirm restore lands at the bottom and follow-bottom remains engaged so subsequent streaming sticks.
+- [ ] Manual: in the tide-card transcript, expand a FileBlock (Read tool), scroll inside the CM6 viewer, then collapse the file. Developer > Reload. Confirm the fold state is restored (still collapsed). Re-expand. Confirm the CM6 inner scroll position is also restored (the user lands at the same line they were viewing before reload).
+- [ ] Manual: same as above but with a Bash tool whose output triggers the virtualized terminal scroller (>40 lines). Scroll inside the terminal, then reload. Confirm the terminal lands at the same line on restore.
+- [ ] Manual: cmd-tab away and back from the tide-card. Confirm the transcript scroll position does NOT change as a side effect of the focus return (regression guard for the E.6 focus-reactivation `preventScroll` fix).
+
+---
+
 #### Step 11: EditToolBlock wrapper {#step-11}
 
 **Depends on:** #step-1, #step-10
