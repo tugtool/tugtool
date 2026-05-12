@@ -120,6 +120,7 @@ import {
   pairRemoveAddIndices,
   prepareHunksSync,
 } from "../diff-block";
+import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { ToolWrapperChrome } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
 import {
   injectTugdiffWasmForTests,
@@ -373,26 +374,35 @@ describe("DiffBlock — unified source render", () => {
     expect(stats?.textContent).toContain("1");
   });
 
-  test("renders an enabled view-mode toggle (label depends on mode)", () => {
+  test("renders an enabled view-mode choice group (both segments visible)", () => {
+    // Phase E.4 — the view-toggle migrated from a label-flipping
+    // `TugPushButton` to a `TugChoiceGroup`: both options are
+    // visible at all times as segments, and the sliding indicator
+    // pill identifies the active selection. Tests assert the new
+    // shape: `data-slot="diff-view-toggle"` matches a div with
+    // `role="radiogroup"`, both segment labels are present, and the
+    // segment matching `viewMode` is `data-state="active"`.
     const { container } = render(
       <DiffBlock data={{ source: "unified", text: FIXTURE_UNIFIED }} />,
     );
     const toggle = container.querySelector(
       '[data-slot="diff-view-toggle"]',
-    ) as HTMLButtonElement | null;
+    ) as HTMLElement | null;
     expect(toggle).not.toBeNull();
-    expect(toggle?.disabled).toBe(false);
-    // Phase E.3: the button renders BOTH the active and alternate
-    // labels inside a CSS-grid stable-label wrapper so the button's
-    // width is invariant across toggles. The active label is the one
-    // marked `data-tug-stable-label="active"`; the alternate is
-    // hidden via `visibility: hidden` but stays in flow for sizing.
-    // textContent on the button itself concatenates both — read the
-    // active span instead. Inline mode: button offers to switch *to*
-    // side-by-side.
-    const active = toggle?.querySelector('[data-tug-stable-label="active"]');
-    expect(active?.textContent).toBe("Side by side");
-    expect(toggle?.getAttribute("aria-pressed")).toBe("false");
+    expect(toggle?.getAttribute("role")).toBe("radiogroup");
+    expect(toggle?.getAttribute("aria-disabled")).toBeNull();
+
+    const segments = toggle?.querySelectorAll('[role="radio"]') ?? [];
+    expect(segments.length).toBe(2);
+    const segmentTexts = Array.from(segments).map((s) => s.textContent ?? "");
+    // Both options visible; user can read the alternative at a
+    // glance without toggling.
+    expect(segmentTexts.some((t) => t.includes("Side by side"))).toBe(true);
+    expect(segmentTexts.some((t) => t.includes("Inline"))).toBe(true);
+
+    // Default viewMode is "inline" → the inline segment is active.
+    const activeSegment = toggle?.querySelector('[data-state="active"]');
+    expect(activeSegment?.textContent ?? "").toContain("Inline");
   });
 
   test("renders one band per hunk with the @@ header", () => {
@@ -597,9 +607,11 @@ describe("DiffBlock — collapse", () => {
   });
 
   test("Phase E.3 — view-toggle sits LEFT of the fold cue (fold cue is the trailing-edge anchor)", () => {
-    // Phase E.3 ordering: features (view-toggle here) → fold cue
-    // (rightmost). The fold cue is a fixed-position landmark; feature
-    // buttons sit closer to the title-edge of the cluster.
+    // Phase E.3 ordering preserved across the Phase E.4 view-toggle
+    // migration: features (view-toggle) → fold cue (rightmost). The
+    // view-toggle is now a `div[role=radiogroup]` (TugChoiceGroup);
+    // the fold cue is still a button. Walk the cluster's direct
+    // children and pin first = view-toggle, last = fold cue.
     const { container } = render(
       <DiffBlock data={{ source: "unified", text: FIXTURE_UNIFIED }} />,
     );
@@ -607,41 +619,32 @@ describe("DiffBlock — collapse", () => {
       '[data-slot="diff-actions"]',
     ) as HTMLElement | null;
     expect(cluster).not.toBeNull();
-    const buttons = cluster?.querySelectorAll("button") ?? [];
-    expect(buttons.length).toBe(2);
-    const first = buttons[0] as HTMLButtonElement;
-    const last = buttons[buttons.length - 1] as HTMLButtonElement;
-    expect(first.getAttribute("data-slot")).toBe("diff-view-toggle");
-    expect(last.classList.contains("tugx-diff-fold-cue")).toBe(true);
+    const children = Array.from(
+      cluster?.children ?? [],
+    ) as HTMLElement[];
+    // Cluster has exactly two children: the choice group + the fold cue.
+    expect(children.length).toBe(2);
+    expect(children[0].getAttribute("data-slot")).toBe("diff-view-toggle");
+    expect(children[0].getAttribute("role")).toBe("radiogroup");
+    expect(children[1].classList.contains("tugx-diff-fold-cue")).toBe(true);
+    expect(children[1].tagName).toBe("BUTTON");
   });
 
-  test("Phase E.3 — view-toggle uses widthStabilize so width is invariant across toggles", () => {
-    // The view-toggle's label swings between "Inline" and "Side by
-    // side" — a ~4-character width difference. Without
-    // widthStabilize, every toggle re-flows every sibling and the
-    // next click can land on a different button than the user aimed
-    // at. The CSS-grid stable-label wrapper renders both labels in
-    // a single grid cell so the button's intrinsic width is the max
-    // of the two and is stable across toggles.
+  test("Phase E.4 — view-toggle no longer uses widthStabilize (TugChoiceGroup makes both segments visible)", () => {
+    // Phase E.4 migrated the view-toggle from a label-flipping
+    // `TugPushButton` (which used `widthStabilize` to keep the
+    // button's width invariant across toggles) to a `TugChoiceGroup`
+    // (which makes both options visible as segments at all times —
+    // width is naturally stable). The stabilize wrapper should be
+    // gone from this control.
     const { container } = render(
       <DiffBlock data={{ source: "unified", text: FIXTURE_UNIFIED }} />,
     );
     const viewToggle = container.querySelector(
       '[data-slot="diff-view-toggle"]',
-    ) as HTMLButtonElement;
-    const stable = viewToggle.querySelector(".tug-button-stable-label");
-    expect(stable).not.toBeNull();
-    const active = stable?.querySelector('[data-tug-stable-label="active"]');
-    const alternate = stable?.querySelector(
-      '[data-tug-stable-label="alternate"]',
-    );
-    expect(active?.textContent).toBeDefined();
-    expect(alternate?.textContent).toBeDefined();
-    // The active + alternate together cover the full label set —
-    // pinning prevents a future regression that supplies only one.
-    const labels = new Set([active?.textContent, alternate?.textContent]);
-    expect(labels.has("Inline")).toBe(true);
-    expect(labels.has("Side by side")).toBe(true);
+    ) as HTMLElement;
+    expect(viewToggle).not.toBeNull();
+    expect(viewToggle.querySelector(".tug-button-stable-label")).toBeNull();
   });
 
   test("Phase E.3 — every diff-action button carries data-tug-focus='refuse'", () => {
@@ -886,29 +889,47 @@ describe("DiffBlock — viewMode toggle and persistence", () => {
     ).toBe(0);
   });
 
-  test("clicking the toggle flips the mode and updates the layout", () => {
+  test("clicking the non-active segment flips the mode and updates the layout", () => {
+    // Phase E.4 — the view-toggle is a TugChoiceGroup. Clicking the
+    // currently-active segment is a no-op; clicking the OTHER segment
+    // dispatches `selectValue` with that segment's value, which
+    // DiffBlock's `viewToggleForm` handler routes into `applyViewMode`.
+    //
+    // `ResponderChainProvider` wraps the render so the choice group's
+    // `useControlDispatch` reaches a live chain (outside a provider
+    // it returns a no-op dispatcher — by design, see
+    // use-control-dispatch.ts).
     const { container } = render(
-      <DiffBlock data={{ source: "unified", text: FIXTURE_UNIFIED }} />,
+      <ResponderChainProvider>
+        <DiffBlock data={{ source: "unified", text: FIXTURE_UNIFIED }} />
+      </ResponderChainProvider>,
     );
     const toggle = container.querySelector(
       '[data-slot="diff-view-toggle"]',
-    ) as HTMLButtonElement;
-    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    ) as HTMLElement;
+    // Default is inline; click the side-by-side segment.
+    const sideBySideSegment = Array.from(
+      toggle.querySelectorAll('[role="radio"]'),
+    ).find((s) => (s.textContent ?? "").includes("Side by side")) as
+      | HTMLButtonElement
+      | undefined;
+    expect(sideBySideSegment).not.toBeUndefined();
+    expect(sideBySideSegment?.getAttribute("data-state")).toBe("inactive");
     act(() => {
-      fireEvent.click(toggle);
+      fireEvent.click(sideBySideSegment!);
     });
     const root = container.querySelector(
       '[data-slot="diff-body"]',
     ) as HTMLElement;
     expect(root.getAttribute("data-view-mode")).toBe("side-by-side");
-    expect(toggle.getAttribute("aria-pressed")).toBe("true");
-    // Phase E.3 — read the active label out of the stable-label
-    // wrapper; the button's textContent now includes both active and
-    // hidden alternate.
-    const activeAfter = toggle.querySelector(
-      '[data-tug-stable-label="active"]',
-    );
-    expect(activeAfter?.textContent).toBe("Inline");
+    // The segment is now active; the inline segment is inactive.
+    expect(sideBySideSegment?.getAttribute("data-state")).toBe("active");
+    const inlineSegment = Array.from(
+      toggle.querySelectorAll('[role="radio"]'),
+    ).find((s) => (s.textContent ?? "").includes("Inline")) as
+      | HTMLButtonElement
+      | undefined;
+    expect(inlineSegment?.getAttribute("data-state")).toBe("inactive");
   });
 
   test("controlled viewMode prop wins on rerender", () => {
@@ -948,7 +969,7 @@ describe("DiffBlock — viewMode toggle and persistence", () => {
     expect(root.getAttribute("data-view-mode")).toBe("side-by-side");
   });
 
-  test("clicking the toggle PUTs to /api/defaults/dev.tugtool.tide.diff-view/<cardId>", () => {
+  test("clicking the non-active segment PUTs to /api/defaults/dev.tugtool.tide.diff-view/<cardId>", () => {
     const fetchMock = mock(() =>
       Promise.resolve(new Response(null, { status: 200 })),
     );
@@ -956,16 +977,22 @@ describe("DiffBlock — viewMode toggle and persistence", () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch;
     try {
       const { container } = render(
-        <DiffBlock
-          data={{ source: "unified", text: FIXTURE_UNIFIED }}
-          cardId="card-99"
-        />,
+        <ResponderChainProvider>
+          <DiffBlock
+            data={{ source: "unified", text: FIXTURE_UNIFIED }}
+            cardId="card-99"
+          />
+        </ResponderChainProvider>,
       );
-      const toggle = container.querySelector(
-        '[data-slot="diff-view-toggle"]',
-      ) as HTMLButtonElement;
+      const sideBySideSegment = Array.from(
+        container.querySelectorAll(
+          '[data-slot="diff-view-toggle"] [role="radio"]',
+        ),
+      ).find((s) => (s.textContent ?? "").includes("Side by side")) as
+        | HTMLButtonElement
+        | undefined;
       act(() => {
-        fireEvent.click(toggle);
+        fireEvent.click(sideBySideSegment!);
       });
       expect(fetchMock).toHaveBeenCalledTimes(1);
       const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
@@ -980,19 +1007,25 @@ describe("DiffBlock — viewMode toggle and persistence", () => {
     }
   });
 
-  test("onViewModeChange callback fires on toggle", () => {
+  test("onViewModeChange callback fires when segment selection changes", () => {
     const onChange = mock(() => {});
     const { container } = render(
-      <DiffBlock
-        data={{ source: "unified", text: FIXTURE_UNIFIED }}
-        onViewModeChange={onChange}
-      />,
+      <ResponderChainProvider>
+        <DiffBlock
+          data={{ source: "unified", text: FIXTURE_UNIFIED }}
+          onViewModeChange={onChange}
+        />
+      </ResponderChainProvider>,
     );
-    const toggle = container.querySelector(
-      '[data-slot="diff-view-toggle"]',
-    ) as HTMLButtonElement;
+    const sideBySideSegment = Array.from(
+      container.querySelectorAll(
+        '[data-slot="diff-view-toggle"] [role="radio"]',
+      ),
+    ).find((s) => (s.textContent ?? "").includes("Side by side")) as
+      | HTMLButtonElement
+      | undefined;
     act(() => {
-      fireEvent.click(toggle);
+      fireEvent.click(sideBySideSegment!);
     });
     expect(onChange).toHaveBeenCalledWith("side-by-side");
   });

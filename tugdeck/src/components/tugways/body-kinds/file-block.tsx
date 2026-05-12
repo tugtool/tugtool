@@ -111,10 +111,12 @@ import "./file-block.css";
 import React from "react";
 import { createPortal } from "react-dom";
 import {
+  Check,
   ChevronDown,
   ChevronUp,
   ChevronsDown,
   ChevronsUp,
+  Copy,
   Search,
   X,
 } from "lucide-react";
@@ -256,6 +258,15 @@ export interface FileBlockProps {
  * average file.
  */
 export const DEFAULT_COLLAPSE_THRESHOLD = 80;
+
+/**
+ * Duration the Copy button's "Copied" confirmation flash is visible
+ * (ms). Long enough to register as a positive signal, short enough
+ * that the button is back at rest before the user moves on. Matches
+ * `COPIED_FLASH_MS` in `terminal-block.tsx` so the two body kinds
+ * agree on the timing constant.
+ */
+const COPIED_FLASH_MS = 1200;
 
 const DATA_SLOT_ROOT = "file-body";
 const DATA_SLOT_HEADER = "file-header";
@@ -599,12 +610,23 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   outerScrollportRef.current = outerScrollport;
   const foldCueButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const findButtonRef = React.useRef<HTMLButtonElement | null>(null);
+  const copyButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const { stableClick: stableFoldClick } = usePositionStableClick({
     targetRef: foldCueButtonRef,
     scrollportRef: outerScrollportRef,
   });
   const { stableClick: stableFindClick } = usePositionStableClick({
     targetRef: findButtonRef,
+    scrollportRef: outerScrollportRef,
+  });
+  // Copy doesn't change document height — the file body stays at its
+  // current expanded/collapsed shape. The position-stable wrapper is
+  // still cheap (single getBoundingClientRect snapshot) and matches
+  // the action-row contract that EVERY click goes through
+  // `stableClick`, so a future refactor that adds a height-changing
+  // side effect to Copy doesn't accidentally bypass the contract.
+  const { stableClick: stableCopyClick } = usePositionStableClick({
+    targetRef: copyButtonRef,
     scrollportRef: outerScrollportRef,
   });
 
@@ -641,6 +663,58 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // substrate's search state imperatively (set-query / next /
   // previous / select-all).
   const codeViewRef = React.useRef<TugCodeViewDelegate | null>(null);
+
+  // ---- Copy state ([L07]: handlers read state through refs, never
+  //                   stale closures) -----------------------------------
+  //
+  // Mirrors TerminalBlock's controlled-confirmation pattern from Phase
+  // E.1: `[copied, setCopied]` is set ONLY inside the clipboard
+  // `.then()` callback. A denied permission or missing clipboard API
+  // leaves the flag at `false`, so the button never lies about
+  // success — same honest-feedback contract.
+  //
+  // `fileTextRef` carries the live file content so the click handler
+  // reads the right string at fire time. It tracks `data.content`
+  // (the prop), updated in a `useLayoutEffect` so a Copy click in the
+  // same frame as a prop change sees the new content. Same shape as
+  // the find-session refs above.
+  const [copied, setCopied] = React.useState<boolean>(false);
+  const copiedTimerRef = React.useRef<number | null>(null);
+  const fileTextRef = React.useRef<string>(data?.content ?? "");
+  React.useLayoutEffect(() => {
+    fileTextRef.current = data?.content ?? "";
+  }, [data?.content]);
+
+  const handleCopy = React.useCallback((): void => {
+    const writeText = navigator.clipboard?.writeText.bind(navigator.clipboard);
+    if (writeText === undefined) return;
+    writeText(fileTextRef.current)
+      .then(() => {
+        setCopied(true);
+        if (copiedTimerRef.current !== null) {
+          window.clearTimeout(copiedTimerRef.current);
+        }
+        copiedTimerRef.current = window.setTimeout(() => {
+          copiedTimerRef.current = null;
+          setCopied(false);
+        }, COPIED_FLASH_MS);
+      })
+      .catch(() => {
+        // Silent failure — no false-positive flash. The user can
+        // re-click to retry.
+      });
+  }, []);
+
+  // Clean up the pending timer on unmount so we never call setState on
+  // a detached component.
+  React.useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current !== null) {
+        window.clearTimeout(copiedTimerRef.current);
+        copiedTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // ---- Find UI state ------------------------------------------------------
   //
@@ -946,18 +1020,29 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // The legacy `tugx-file-*` class names are forwarded onto the Tug
   // components as `className`/`data-slot` so CSS scoping and test
   // hooks stay stable across the refactor.
-  // Phase E.3 ordering: features (Find) → fold cue (rightmost). The
-  // fold cue is the "least-mobile" affordance — its meaning doesn't
-  // change with block contents and the user's eye finds it as a fixed
-  // landmark at the trailing edge. Feature buttons sit closer to the
-  // title (the leading edge of the cluster).
+  // Phase E.3 / E.4 ordering: features (Find → Copy) → fold cue
+  // (rightmost). The fold cue is the "least-mobile" affordance — its
+  // meaning doesn't change with block contents and the user's eye
+  // finds it as a fixed landmark at the trailing edge. Feature
+  // buttons sit closer to the title (the leading edge of the
+  // cluster); Copy lands between Find (the search affordance) and
+  // the fold cue.
   //
-  // Both buttons route their click through `usePositionStableClick`
-  // so the cursor stays directly over the button across the layout
+  // All buttons route their click through `usePositionStableClick`
+  // so the cursor stays directly over the button across any layout
   // change the click triggers (body collapse/expand, find row
   // appear). The wrapper invokes the mutator inside a snapshot →
   // measure → compensate sequence — see the hook docstring for the
   // [L03] / [L04] / [L05] story.
+  //
+  // **Copy button** (Phase E.4): controlled-confirmation pattern
+  // mirroring TerminalBlock's Copy. `confirmation` provides the
+  // post-success appearance (Check icon + "Copied" label);
+  // `isConfirming={copied}` flips to `true` ONLY inside the
+  // clipboard `.then()` callback after a successful write. A denied
+  // permission or missing clipboard API leaves the flag at `false` —
+  // no false-positive "Copied" flash. Phase E.1's honest-feedback
+  // contract carried forward.
   const affordances = (
     <>
       <TugPushButton
@@ -973,6 +1058,25 @@ export const FileBlock: React.FC<FileBlockProps> = ({
         onClick={() => stableFindClick(openFind)}
       >
         Find
+      </TugPushButton>
+      <TugPushButton
+        ref={copyButtonRef}
+        className="tugx-file-copy"
+        data-slot="file-copy"
+        icon={<Copy />}
+        subtype="icon-text"
+        emphasis="ghost"
+        size="2xs"
+        disabled={collapsed}
+        aria-label="Copy file contents"
+        onClick={() => stableCopyClick(handleCopy)}
+        confirmation={{
+          icon: <Check />,
+          label: "Copied",
+        }}
+        isConfirming={copied}
+      >
+        Copy
       </TugPushButton>
       {showCue ? (
         <TugPushButton

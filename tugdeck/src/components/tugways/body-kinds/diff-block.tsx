@@ -70,10 +70,19 @@ import "./diff-block.css";
 
 import React from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, ChevronRight, ChevronsDown, ChevronsUp } from "lucide-react";
+import {
+  AlignLeft,
+  ChevronDown,
+  ChevronRight,
+  ChevronsDown,
+  ChevronsUp,
+  Columns2,
+} from "lucide-react";
 
 import { TugCue } from "@/components/tugways/tug-cue";
+import { TugChoiceGroup, type TugChoiceItem } from "@/components/tugways/tug-choice-group";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
 import { usePositionStableClick } from "@/components/tugways/internal/use-position-stable-click";
@@ -486,15 +495,23 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
     localViewMode ??
     "inline";
 
-  const toggleViewMode = React.useCallback(() => {
-    const next: DiffViewMode = viewMode === "inline" ? "side-by-side" : "inline";
-    if (cardId !== undefined) {
-      writeDiffViewMode(cardId, next);
-    } else {
-      setLocalViewMode(next);
-    }
-    onViewModeChange?.(next);
-  }, [viewMode, cardId, onViewModeChange]);
+  // Apply a specific next view mode. Persistence and local-state
+  // resolution mirror what `toggleViewMode` used to do; pulling the
+  // explicit value out of the callback lets the responder-chain
+  // `selectValue` handler thread the segment's value straight
+  // through. Live-state via a ref ([L07]) keeps the choice-group
+  // handler stable across renders.
+  const applyViewMode = React.useCallback(
+    (next: DiffViewMode) => {
+      if (cardId !== undefined) {
+        writeDiffViewMode(cardId, next);
+      } else {
+        setLocalViewMode(next);
+      }
+      onViewModeChange?.(next);
+    },
+    [cardId, onViewModeChange],
+  );
 
   // -- Hunk resolution -------------------------------------------------------
 
@@ -572,13 +589,22 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   const outerScrollportRef = React.useRef<HTMLElement | null>(null);
   outerScrollportRef.current = outerScrollport;
   const foldCueButtonRef = React.useRef<HTMLButtonElement | null>(null);
-  const viewToggleButtonRef = React.useRef<HTMLButtonElement | null>(null);
+  // The view-toggle is a `TugChoiceGroup` (a `div[role=radiogroup]`),
+  // not a single button — `viewToggleRef` points at the choice
+  // group's root so the position-stable hook anchors against the
+  // cluster as a whole. Activating any segment dispatches
+  // `selectValue` through the responder chain (see
+  // `viewToggleForm.selectValue` below), and the chain handler
+  // routes the side effect through `stableViewToggleClick` to
+  // preserve the cluster's viewport position across the layout
+  // change the new view mode triggers.
+  const viewToggleRef = React.useRef<HTMLDivElement | null>(null);
   const { stableClick: stableFoldClick } = usePositionStableClick({
     targetRef: foldCueButtonRef,
     scrollportRef: outerScrollportRef,
   });
   const { stableClick: stableViewToggleClick } = usePositionStableClick({
-    targetRef: viewToggleButtonRef,
+    targetRef: viewToggleRef,
     scrollportRef: outerScrollportRef,
   });
 
@@ -601,6 +627,87 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
     }
     onToggleCollapsed?.(next);
   }, [collapsed, collapsedProp, onToggleCollapsed]);
+
+  // ---- View-toggle responder form (Phase E.4) -------------------------
+  //
+  // The view-toggle migrated from a `TugPushButton` (label-flipping
+  // `widthStabilize` shim) to a `TugChoiceGroup` (two visible
+  // segments — Side by side, Inline). TugChoiceGroup is a control
+  // per [L11]: clicking a segment dispatches `selectValue` with the
+  // segment's value and the configured `senderId`. DiffBlock is the
+  // responder for `viewMode`, so it registers a `selectValue`
+  // handler that maps the segment value back to `applyViewMode`.
+  //
+  // The handler runs `applyViewMode` inside `stableViewToggleClick`
+  // so the cluster's viewport position stays put across the layout
+  // change a view-mode flip can trigger (inline ↔ side-by-side
+  // re-arranges row count for hunks with unpaired removes/adds; the
+  // document height can shift by ~10–20% on a large diff).
+  //
+  // `tug-disengage-follow-bottom` fires BEFORE the state update so
+  // any host TugListView releases its auto-pin lock — same contract
+  // FileBlock / DiffBlock fold cues use.
+  //
+  // The `senderId` is `useId`-derived (gensym hygiene per
+  // useResponderForm's docstring). A latest-ref carries
+  // `applyViewMode` so the handler is stable across renders while
+  // still calling the most-recent closure.
+  const viewToggleSenderId = React.useId();
+  const applyViewModeRef = React.useRef(applyViewMode);
+  React.useLayoutEffect(() => {
+    applyViewModeRef.current = applyViewMode;
+  }, [applyViewMode]);
+  const stableViewToggleClickRef = React.useRef(stableViewToggleClick);
+  React.useLayoutEffect(() => {
+    stableViewToggleClickRef.current = stableViewToggleClick;
+  }, [stableViewToggleClick]);
+  const viewToggleForm = useResponderForm({
+    selectValue: {
+      [viewToggleSenderId]: (next: string) => {
+        // Disengage follow-bottom BEFORE the mutator runs — same
+        // contract as the fold cue toggle.
+        rootRef.current?.dispatchEvent(
+          new CustomEvent("tug-disengage-follow-bottom", { bubbles: true }),
+        );
+        // Type-narrow the segment value into DiffViewMode at the
+        // chain boundary. Unknown values are no-ops — the choice
+        // group is configured with exactly two items so this is
+        // defensive; an unrecognized value would indicate a
+        // misconfiguration upstream.
+        const value = next === "side-by-side" ? "side-by-side" : "inline";
+        stableViewToggleClickRef.current?.(() => {
+          applyViewModeRef.current?.(value);
+        });
+      },
+    },
+  });
+
+  // Choice items are module-level constants (immutable) so the
+  // observer-driven sliding indicator inside TugChoiceGroup doesn't
+  // re-attach on every render. The labels match the user-facing
+  // language; aria-label echoes the label (icon-only segments would
+  // require aria-label, but ours carry visible text — the aria-label
+  // here is for symmetry across the items array).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const viewToggleItems = React.useMemo<TugChoiceItem[]>(
+    () => [
+      {
+        value: "side-by-side",
+        label: "Side by side",
+        icon: <Columns2 aria-hidden="true" />,
+        iconPosition: "left",
+        "aria-label": "Side by side",
+      },
+      {
+        value: "inline",
+        label: "Inline",
+        icon: <AlignLeft aria-hidden="true" />,
+        iconPosition: "left",
+        "aria-label": "Inline",
+      },
+    ],
+    [],
+  );
 
   // -- Per-hunk collapsed state ---------------------------------------------
 
@@ -735,16 +842,32 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
 
   // -- Render ----------------------------------------------------------------
 
+  // Composed root ref — same shape as FileBlock's `composedRootRef`.
+  // Forwards to the local `rootRef` (used to dispatch the disengage-
+  // follow-bottom event and as a measurement anchor) AND to the
+  // responder-form's ref-callback (writes `data-responder-id` so the
+  // chain can walk through this responder). Defined as a stable
+  // callback per [L24]'s structure-zone treatment of ref callbacks.
+  const composedRootRef = React.useCallback(
+    (el: HTMLDivElement | null) => {
+      rootRef.current = el;
+      viewToggleForm.responderRef(el);
+    },
+    [viewToggleForm.responderRef],
+  );
+
   if (data === undefined) {
     return (
-      <div
-        ref={rootRef}
-        data-slot={DATA_SLOT_ROOT}
-        data-empty="true"
-        className={
-          className === undefined ? "tugx-diff" : `tugx-diff ${className}`
-        }
-      />
+      <viewToggleForm.ResponderScope>
+        <div
+          ref={composedRootRef}
+          data-slot={DATA_SLOT_ROOT}
+          data-empty="true"
+          className={
+            className === undefined ? "tugx-diff" : `tugx-diff ${className}`
+          }
+        />
+      </viewToggleForm.ResponderScope>
     );
   }
 
@@ -756,36 +879,38 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
 
   if (hunks === null) {
     return (
-      <div
-        ref={rootRef}
-        data-slot={DATA_SLOT_ROOT}
-        data-loading="true"
-        data-embedded={embedded ? "true" : undefined}
-        data-view-mode={viewMode}
-        className={rootClass}
-      >
-        {embedded ? null : (
-          <div
-            ref={headerRef}
-            className="tugx-diff-header"
-            data-slot={DATA_SLOT_HEADER}
-          >
-            {headerBasename === "" ? null : (
-              <span
-                className="tugx-diff-path"
-                data-slot={DATA_SLOT_PATH}
-                title={filePath}
-              >
-                {headerBasename}
-              </span>
-            )}
-            <span className="tugx-diff-spacer" />
+      <viewToggleForm.ResponderScope>
+        <div
+          ref={composedRootRef}
+          data-slot={DATA_SLOT_ROOT}
+          data-loading="true"
+          data-embedded={embedded ? "true" : undefined}
+          data-view-mode={viewMode}
+          className={rootClass}
+        >
+          {embedded ? null : (
+            <div
+              ref={headerRef}
+              className="tugx-diff-header"
+              data-slot={DATA_SLOT_HEADER}
+            >
+              {headerBasename === "" ? null : (
+                <span
+                  className="tugx-diff-path"
+                  data-slot={DATA_SLOT_PATH}
+                  title={filePath}
+                >
+                  {headerBasename}
+                </span>
+              )}
+              <span className="tugx-diff-spacer" />
+            </div>
+          )}
+          <div className="tugx-diff-loading" data-slot={DATA_SLOT_LOADING}>
+            Computing diff…
           </div>
-        )}
-        <div className="tugx-diff-loading" data-slot={DATA_SLOT_LOADING}>
-          Computing diff…
         </div>
-      </div>
+      </viewToggleForm.ResponderScope>
     );
   }
 
@@ -813,40 +938,38 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   // the Tug components so CSS scoping and test hooks stay stable.
   const hunkCountWord = hunks.length === 1 ? "hunk" : "hunks";
   const cueLabel = `${hunks.length} ${hunkCountWord}`;
-  // Phase E.3 ordering: features (view-toggle) → fold cue (rightmost).
-  // The fold cue is the fixed-landmark affordance; the view-toggle
-  // sits to its left in the features group. Each click routes through
-  // `usePositionStableClick` so the cursor stays on top of the button
-  // across the layout change the click triggers.
+  // Phase E.3 / E.4 ordering: features (view-toggle) → fold cue
+  // (rightmost). The fold cue is the fixed-landmark affordance; the
+  // view-toggle sits to its left in the features group.
   //
-  // The view-toggle's label swings between "Side by side" and "Inline"
-  // — a ~4-character width swing that would otherwise re-flow every
-  // sibling on every toggle. `widthStabilize` renders both labels in
-  // a single grid cell so the button's intrinsic width is the max of
-  // the two; the active label paints and the alternate is hidden via
-  // `visibility: hidden` while still contributing to layout sizing.
-  const viewToggleActive = viewMode === "side-by-side" ? "Inline" : "Side by side";
-  const viewToggleAlternate = viewMode === "side-by-side" ? "Side by side" : "Inline";
+  // **View-toggle** (Phase E.4) — migrated from a `TugPushButton`
+  // (label-flipping, stabilized via `widthStabilize`) to a
+  // `TugChoiceGroup` (two visible segments — Side by side, Inline,
+  // each with a lucide icon). Both options stay visible at all
+  // times; the sliding indicator pill identifies the current
+  // selection. Activation routes through the responder chain via
+  // `selectValue` (registered on `viewToggleForm` above), and the
+  // chain handler runs `applyViewMode` inside `stableViewToggleClick`
+  // so the cluster's viewport position stays put across the layout
+  // change the new view mode triggers.
+  //
+  // **Fold cue** — same shape as Phase E.3: `TugPushButton`, chevron
+  // flips with state, label is `"N hunks"` regardless of fold state,
+  // aria-label carries the verb for screen readers. Click routes
+  // through `stableFoldClick`.
   const affordances = empty ? null : (
     <>
-      <TugPushButton
-        ref={viewToggleButtonRef}
+      <TugChoiceGroup
+        ref={viewToggleRef}
         className="tugx-diff-view-toggle"
         data-slot={DATA_SLOT_VIEW_TOGGLE}
-        emphasis="ghost"
-        size="2xs"
+        items={viewToggleItems}
+        value={viewMode}
+        senderId={viewToggleSenderId}
+        size="xs"
         disabled={collapsed}
-        aria-pressed={viewMode === "side-by-side"}
-        aria-label={
-          viewMode === "side-by-side"
-            ? "Switch to inline diff"
-            : "Switch to side-by-side diff"
-        }
-        onClick={() => stableViewToggleClick(toggleViewMode)}
-        widthStabilize={{ alternateLabel: viewToggleAlternate }}
-      >
-        {viewToggleActive}
-      </TugPushButton>
+        aria-label="Diff view mode"
+      />
       <TugPushButton
         ref={foldCueButtonRef}
         className="tugx-diff-fold-cue"
@@ -878,8 +1001,9 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
       : null;
 
   return (
+    <viewToggleForm.ResponderScope>
     <div
-      ref={rootRef}
+      ref={composedRootRef}
       data-slot={DATA_SLOT_ROOT}
       data-empty={empty ? "true" : "false"}
       data-collapsed={collapsed ? "true" : "false"}
@@ -967,6 +1091,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
         </div>
       ) : null}
     </div>
+    </viewToggleForm.ResponderScope>
   );
 };
 

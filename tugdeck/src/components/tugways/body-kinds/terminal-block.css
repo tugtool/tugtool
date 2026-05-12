@@ -96,6 +96,27 @@ body {
 
   /* Focus ring */
   --tugx-term-focus-ring: var(--tug7-element-global-text-normal-link-rest);
+
+  /* Collapsed-preview fade gradient (Phase E.4). The mask-image
+   * gradient is applied to `.tugx-term-content` when the root carries
+   * `[data-collapsed="true"]`. The black-to-transparent gradient
+   * reads as "more content below" without an explicit cutoff line.
+   * The gradient is a token so theme overrides can tune the fade
+   * shape (steeper for high-contrast themes, gentler for low-
+   * contrast) without touching the structural CSS.
+   *
+   * `linear-gradient(to bottom, black 65%, transparent 100%)`: the
+   * top 65% of the preview pane paints at full opacity (the user
+   * reads ~5 lines cleanly), and the bottom 35% fades to nothing
+   * over the last ~3 lines. Anchors the gradient on a percentage of
+   * the preview height rather than absolute pixels so the fade
+   * stays proportional if `COLLAPSED_PREVIEW_LINES` ever changes.
+   */
+  --tugx-term-collapsed-fade: linear-gradient(
+    to bottom,
+    black 65%,
+    transparent 100%
+  );
 }
 
 .tugx-term {
@@ -215,6 +236,24 @@ body {
  * between React-rendered chrome and DOM-imperative content. */
 .tugx-term-content {
   display: block;
+}
+
+/* ---- Collapsed preview (Phase E.4) ----
+ *
+ * When the root carries `[data-collapsed="true"]`, the imperative
+ * renderer has already replaced the body with a flat-path slice of
+ * the first ~COLLAPSED_PREVIEW_LINES lines (no virtualizer, no
+ * truncation banner, no footer — see `renderTerminal`). This CSS
+ * adds the visual fade so the bottom of the preview reads as "more
+ * content below" rather than a hard cutoff.
+ *
+ * The `mask-image` linear-gradient is a CSS-only effect ([L06] — no
+ * React state). `-webkit-mask-image` carries the WebKit prefix; the
+ * unprefixed form is widely supported but Safari historically
+ * required the prefix. Both fall back to the gradient token. */
+.tugx-term[data-collapsed="true"] .tugx-term-content {
+  -webkit-mask-image: var(--tugx-term-collapsed-fade);
+  mask-image: var(--tugx-term-collapsed-fade);
 }
 
 /* ---- Truncation indicator ---- */

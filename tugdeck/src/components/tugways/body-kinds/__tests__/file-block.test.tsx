@@ -34,7 +34,7 @@
 
 import "../../../../__tests__/setup-rtl";
 
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import React from "react";
 
@@ -804,6 +804,163 @@ describe("FileBlock — Phase E.3 action-row ordering", () => {
     for (const btn of Array.from(buttons)) {
       expect(btn.getAttribute("data-tug-focus")).toBe("refuse");
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase E.4 — Copy button
+// ---------------------------------------------------------------------------
+
+describe("FileBlock — Phase E.4 Copy button", () => {
+  let originalClipboard: PropertyDescriptor | undefined;
+
+  beforeEach(() => {
+    originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+  });
+
+  afterEach(() => {
+    if (originalClipboard !== undefined) {
+      Object.defineProperty(navigator, "clipboard", originalClipboard);
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      delete (navigator as any).clipboard;
+    }
+  });
+
+  test("Copy button is rendered in the action cluster, sitting between Find and the fold cue", () => {
+    // Phase E.4 ordering: Find → Copy → fold cue (rightmost). The
+    // fold cue stays the trailing-edge anchor (Phase E.3); Copy
+    // joins the features group to its left.
+    const data: FileData = {
+      filePath: "x.ts",
+      content: makeContent(DEFAULT_COLLAPSE_THRESHOLD + 20),
+    };
+    const { container } = render(<FileBlock data={data} collapsed={false} />);
+    const cluster = container.querySelector(
+      '[data-slot="file-actions"]',
+    ) as HTMLElement | null;
+    expect(cluster).not.toBeNull();
+    const buttons = cluster?.querySelectorAll("button") ?? [];
+    expect(buttons.length).toBe(3); // Find, Copy, fold cue
+    expect(buttons[0].classList.contains("tugx-file-search")).toBe(true);
+    expect(buttons[1].classList.contains("tugx-file-copy")).toBe(true);
+    expect(buttons[2].classList.contains("tugx-file-fold-cue")).toBe(true);
+  });
+
+  test("clicking Copy writes the file content to the clipboard", () => {
+    const writeText = mock(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+
+    const data: FileData = {
+      filePath: "greet.ts",
+      content: "export function greet() {\n  return 'hi';\n}",
+    };
+    const { container } = render(<FileBlock data={data} collapsed={false} />);
+    const btn = container.querySelector(
+      'button[aria-label="Copy file contents"]',
+    ) as HTMLButtonElement;
+    expect(btn).not.toBeNull();
+    btn.click();
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(writeText).toHaveBeenCalledWith(
+      "export function greet() {\n  return 'hi';\n}",
+    );
+  });
+
+  test("missing navigator.clipboard does not throw on Copy click", () => {
+    Object.defineProperty(navigator, "clipboard", {
+      value: undefined,
+      configurable: true,
+    });
+    const data: FileData = { filePath: "a.ts", content: "x" };
+    const { container } = render(<FileBlock data={data} />);
+    const btn = container.querySelector(
+      'button[aria-label="Copy file contents"]',
+    ) as HTMLButtonElement;
+    expect(() => btn.click()).not.toThrow();
+  });
+
+  test("failed clipboard write does NOT enter the confirmed state (honest feedback)", async () => {
+    // Mirrors TerminalBlock's Phase E.1 honest-feedback test: a
+    // rejected writeText must leave the controlled `isConfirming`
+    // flag at false — no false-positive "Copied" flash.
+    const writeText = mock(() => Promise.reject(new Error("denied")));
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+
+    const data: FileData = { filePath: "a.ts", content: "x" };
+    const { container } = render(<FileBlock data={data} />);
+    const btn = container.querySelector(
+      'button[aria-label="Copy file contents"]',
+    ) as HTMLButtonElement;
+    expect(btn.dataset.tugConfirming).toBeUndefined();
+
+    btn.click();
+    expect(writeText).toHaveBeenCalledTimes(1);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(btn.dataset.tugConfirming).toBeUndefined();
+  });
+
+  test("Copy is disabled when the file is collapsed (the body isn't mounted)", () => {
+    // Mirrors the Find button's disabled-when-collapsed contract.
+    // The Copy click handler reads `fileTextRef.current` (which IS
+    // populated even when collapsed), but the user gesture of "copy
+    // what I see" is incoherent when the view is folded. Disabling
+    // matches the visual contract of "actions on the visible body."
+    const data: FileData = {
+      filePath: "x.ts",
+      content: makeContent(DEFAULT_COLLAPSE_THRESHOLD + 20),
+    };
+    const { container } = render(<FileBlock data={data} collapsed={true} />);
+    const btn = container.querySelector(
+      'button[aria-label="Copy file contents"]',
+    ) as HTMLButtonElement;
+    expect(btn).not.toBeNull();
+    expect(btn.disabled).toBe(true);
+  });
+
+  test("Copy is reachable from the chrome's actions slot in embedded mode", () => {
+    // Phase D: embedded composition portals affordances into the
+    // chrome's actions slot. Copy joins Find and the fold cue there.
+    const data: FileData = {
+      filePath: "x.ts",
+      content: makeContent(DEFAULT_COLLAPSE_THRESHOLD + 20),
+    };
+    const { container } = render(
+      <ToolWrapperChrome toolName="Read">
+        <FileBlock data={data} embedded collapsed={false} />
+      </ToolWrapperChrome>,
+    );
+    const chromeActionsSlot = container.querySelector(
+      "[data-slot='tool-wrapper-actions']",
+    );
+    expect(chromeActionsSlot).not.toBeNull();
+    expect(
+      chromeActionsSlot?.querySelector(
+        'button[aria-label="Copy file contents"]',
+      ),
+    ).not.toBeNull();
+  });
+
+  test("Copy button carries data-tug-focus='refuse' like every other action-row button", () => {
+    // Audit pin — Phase E.3's focus-refuse audit, extended to the
+    // new Copy button. Going through `TugPushButton` guarantees it;
+    // pin the attribute so a raw `<button>` regression would fail.
+    const data: FileData = {
+      filePath: "x.ts",
+      content: makeContent(DEFAULT_COLLAPSE_THRESHOLD + 20),
+    };
+    const { container } = render(<FileBlock data={data} collapsed={false} />);
+    const btn = container.querySelector(
+      'button[aria-label="Copy file contents"]',
+    ) as HTMLButtonElement;
+    expect(btn.getAttribute("data-tug-focus")).toBe("refuse");
   });
 });
 

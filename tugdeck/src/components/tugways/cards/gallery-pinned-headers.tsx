@@ -2,20 +2,25 @@
  * gallery-pinned-headers.tsx — production-mirror fixture for the
  * Step 10.9 pin-stack consolidation.
  *
- * Six sections, each in its own fixed-height scroll wrapper (with
+ * Seven sections, each in its own fixed-height scroll wrapper (with
  * `padding: 0` so sticky descendants pin flush against the wrapper's
  * content-box top edge — see Phase B.1's findings for why
  * `padding-block` on a sticky-hosting scroll container offsets the
  * pin reference inward):
  *
- *   1–3. Standalone `FileBlock` / `DiffBlock` / `TerminalBlock`.
- *        Each block's identity header is the only pinned row;
- *        affordances (fold cue, view-toggle, Find trigger, Copy)
- *        live at the trailing edge of the same header — no
- *        separate sticky strip beneath it. This is the Phase D
- *        consolidation, visible in standalone composition.
+ *   1–4. Standalone `FileBlock` / `DiffBlock` / `TerminalBlock` (folded
+ *        + expanded). Each block's identity header is the only pinned
+ *        row; the Phase E.4 affordances live at the trailing edge of
+ *        the same header:
+ *        - FileBlock — Find + Copy + fold cue.
+ *        - DiffBlock — Side-by-side/Inline `TugChoiceGroup` + fold cue.
+ *        - TerminalBlock — Copy + fold cue. Section #3 is folded by
+ *          default (the 200-line output exceeds `FOLD_THRESHOLD_LINES`)
+ *          so the preview-with-fade is exercisable at first paint;
+ *          section #4 forces `collapsed={false}` so the expanded path
+ *          with virtualizer + footer is visible side-by-side.
  *
- *   4–6. The same body kinds composed inside `ToolWrapperChrome`
+ *   5–7. The same body kinds composed inside `ToolWrapperChrome`
  *        (simulating `ReadToolBlock` / `EditToolBlock` /
  *        `BashToolBlock`). The body kind's own identity header is
  *        suppressed; affordances portal into the chrome's actions
@@ -29,7 +34,7 @@
  * opened on a file or diff) produces a second sticky row underneath.
  *
  * **Authoritative reference:** `roadmap/tide-assistant-rendering.md`
- * Step 10.9 (Phase B.1, B.2, C, D).
+ * Step 10.9 (Phase B.1, B.2, C, D, E.3, E.4).
  *
  * @module components/tugways/cards/gallery-pinned-headers
  */
@@ -181,25 +186,35 @@ function PinSection({ title, children }: PinSectionProps) {
 export function GalleryPinnedHeaders() {
   return (
     <div className="cg-content" data-testid="gallery-pinned-headers">
-      <PinSection title="FileBlock — long file (header carries Find + fold cue at trailing edge)">
+      <PinSection title="FileBlock — long file (header: Find, Copy, fold cue at trailing edge)">
         <FileBlock data={LONG_FILE} collapsed={false} />
       </PinSection>
 
       <TugSeparator />
 
-      <PinSection title="DiffBlock — 20 hunks (header carries fold cue + view-toggle at trailing edge)">
+      <PinSection title="DiffBlock — 20 hunks (header: Side-by-side/Inline choice group + fold cue at trailing edge)">
         <DiffBlock data={LONG_DIFF} />
       </PinSection>
 
       <TugSeparator />
 
-      <PinSection title="TerminalBlock — 200 lines (header carries Copy at trailing edge)">
+      <PinSection title="TerminalBlock — 200 lines, folded by default (header: Copy + fold cue at trailing edge)">
         <TerminalBlock data={LONG_TERMINAL} headerLabel={<code>find . -type f | head -200</code>} />
       </PinSection>
 
       <TugSeparator />
 
-      <PinSection title="FileBlock inside ToolWrapperChrome — affordances portal into chrome header">
+      <PinSection title="TerminalBlock — 200 lines, expanded (no fade; full output + virtualized scroller)">
+        <TerminalBlock
+          data={LONG_TERMINAL}
+          headerLabel={<code>find . -type f | head -200</code>}
+          collapsed={false}
+        />
+      </PinSection>
+
+      <TugSeparator />
+
+      <PinSection title="FileBlock inside ToolWrapperChrome — Find/Copy/fold cue portal into chrome header">
         <ToolWrapperChrome
           toolName="Read"
           toolIcon={<FileText size={14} aria-hidden="true" />}
@@ -225,7 +240,7 @@ export function GalleryPinnedHeaders() {
 
       <TugSeparator />
 
-      <PinSection title="TerminalBlock inside ToolWrapperChrome — Copy portals into chrome header">
+      <PinSection title="TerminalBlock inside ToolWrapperChrome — Copy + fold cue portal into chrome header">
         <ToolWrapperChrome
           toolName="Bash"
           toolIcon={<Terminal size={14} aria-hidden="true" />}

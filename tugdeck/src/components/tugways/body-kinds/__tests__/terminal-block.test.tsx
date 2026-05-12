@@ -56,6 +56,7 @@ import {
   type TerminalData,
 } from "../terminal-block";
 import { ToolWrapperChrome } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
+import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 
 afterEach(() => {
   cleanup();
@@ -226,9 +227,13 @@ describe("TerminalBlock — virtualization", () => {
     // 200 lines is well above the threshold (40) and the overscan
     // (2 viewport heights ≈ 48 lines × 2 sides) so the windowed
     // range strictly excludes some lines from the DOM.
+    //
+    // `collapsed={false}` opts out of Phase E.4's default-fold
+    // behavior (lineCount > FOLD_THRESHOLD_LINES folds by default);
+    // this test exercises the virtualizer, not the fold cue.
     const total = 200;
     const data: TerminalData = { stdout: makeLines(total), stderr: "" };
-    const { container } = render(<TerminalBlock data={data} />);
+    const { container } = render(<TerminalBlock data={data} collapsed={false} />);
     const root = container.querySelector('[data-slot="terminal-body"]') as HTMLElement;
     const scroller = root.querySelector(
       '[data-slot="terminal-scroller"]',
@@ -249,9 +254,13 @@ describe("TerminalBlock — virtualization", () => {
   test("retention cap drops the earliest lines + shows the truncation indicator", () => {
     // Exceed the cap by 5; the first 5 should be dropped and the
     // banner should announce the count.
+    //
+    // `collapsed={false}` keeps the renderer on the full-content
+    // path so the truncation banner is visible (the preview path
+    // intentionally suppresses the banner — see `renderTerminal`).
     const total = RETAINED_LINE_CAP + 5;
     const data: TerminalData = { stdout: makeLines(total), stderr: "" };
-    const { container } = render(<TerminalBlock data={data} />);
+    const { container } = render(<TerminalBlock data={data} collapsed={false} />);
     const root = container.querySelector('[data-slot="terminal-body"]') as HTMLElement;
     const banner = root.querySelector(
       '[data-slot="terminal-truncation"]',
@@ -261,11 +270,15 @@ describe("TerminalBlock — virtualization", () => {
   });
 
   test("at the cap exactly, no truncation banner", () => {
+    // `collapsed={false}`: opt out of default-fold so the full
+    // render runs through `renderTerminal` (the preview path's
+    // banner suppression would also yield "no banner" but for the
+    // wrong reason — pin the *not-truncated* case directly).
     const data: TerminalData = {
       stdout: makeLines(RETAINED_LINE_CAP),
       stderr: "",
     };
-    const { container } = render(<TerminalBlock data={data} />);
+    const { container } = render(<TerminalBlock data={data} collapsed={false} />);
     const root = container.querySelector('[data-slot="terminal-body"]') as HTMLElement;
     expect(root.querySelector('[data-slot="terminal-truncation"]')).toBeNull();
   });
@@ -734,5 +747,225 @@ describe("TerminalBlock — embedded-without-chrome dev-warn (Phase E.2)", () =>
     } finally {
       warnSpy.mockRestore();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase E.4 — fold cue + collapsed-preview rendering
+// ---------------------------------------------------------------------------
+
+describe("TerminalBlock — Phase E.4 fold cue", () => {
+  function makeLines(n: number): string {
+    const out: string[] = [];
+    for (let i = 0; i < n; i += 1) out.push(`line-${i}`);
+    return out.join("\n");
+  }
+
+  test("at or below threshold (40 lines) does NOT render a fold cue", () => {
+    // Sub-threshold output reads at a glance; a fold cue would be
+    // visual noise.
+    const data: TerminalData = { stdout: makeLines(40), stderr: "" };
+    const { container } = render(<TerminalBlock data={data} />);
+    const cluster = container.querySelector(
+      '[data-slot="terminal-actions"]',
+    ) as HTMLElement | null;
+    expect(cluster).not.toBeNull();
+    expect(
+      cluster?.querySelector(".tugx-term-fold-cue"),
+    ).toBeNull();
+    // Copy is still there.
+    expect(
+      cluster?.querySelector('button[aria-label="Copy terminal output"]'),
+    ).not.toBeNull();
+  });
+
+  test("above threshold renders a fold cue with line-count label", () => {
+    const data: TerminalData = { stdout: makeLines(100), stderr: "" };
+    const { container } = render(<TerminalBlock data={data} />);
+    const cue = container.querySelector(
+      ".tugx-term-fold-cue",
+    ) as HTMLButtonElement | null;
+    expect(cue).not.toBeNull();
+    // Label echoes the visible line count.
+    expect(cue?.textContent).toContain("100");
+    expect(cue?.textContent).toContain("lines");
+  });
+
+  test("above threshold is collapsed by default (data-collapsed='true', preview body)", () => {
+    const total = 100;
+    const data: TerminalData = { stdout: makeLines(total), stderr: "" };
+    const { container } = render(<TerminalBlock data={data} />);
+    const root = container.querySelector(
+      '[data-slot="terminal-body"]',
+    ) as HTMLElement;
+    expect(root.getAttribute("data-collapsed")).toBe("true");
+    // The preview renders only the first ~8 lines via the flat
+    // path — no virtualizer, no truncation banner, no footer.
+    expect(root.querySelector(".tugx-term-scroller")).toBeNull();
+    expect(root.querySelector(".tugx-term-pre--flat")).not.toBeNull();
+    const renderedLines = root.querySelectorAll(".tugx-term-line");
+    expect(renderedLines.length).toBeGreaterThan(0);
+    expect(renderedLines.length).toBeLessThanOrEqual(8);
+    // The earliest lines are what the user sees — pin one.
+    expect(renderedLines[0]?.textContent).toContain("line-0");
+  });
+
+  test("clicking the fold cue expands the block (data-collapsed='false', full render)", () => {
+    const data: TerminalData = { stdout: makeLines(100), stderr: "" };
+    const { container } = render(<TerminalBlock data={data} />);
+    const root = container.querySelector(
+      '[data-slot="terminal-body"]',
+    ) as HTMLElement;
+    expect(root.getAttribute("data-collapsed")).toBe("true");
+
+    const cue = container.querySelector(
+      ".tugx-term-fold-cue",
+    ) as HTMLButtonElement;
+    act(() => {
+      cue.click();
+    });
+
+    expect(root.getAttribute("data-collapsed")).toBe("false");
+    // Above the virtualization threshold (40) → virtualized scroller
+    // re-takes the body. The preview's flat-pre is gone.
+    expect(root.querySelector(".tugx-term-scroller")).not.toBeNull();
+  });
+
+  test("clicking the fold cue twice toggles collapse back on (data-collapsed='true')", () => {
+    const data: TerminalData = { stdout: makeLines(100), stderr: "" };
+    const { container } = render(<TerminalBlock data={data} />);
+    const root = container.querySelector(
+      '[data-slot="terminal-body"]',
+    ) as HTMLElement;
+    const cue = container.querySelector(
+      ".tugx-term-fold-cue",
+    ) as HTMLButtonElement;
+    act(() => {
+      cue.click();
+    });
+    expect(root.getAttribute("data-collapsed")).toBe("false");
+    act(() => {
+      cue.click();
+    });
+    expect(root.getAttribute("data-collapsed")).toBe("true");
+  });
+
+  test("controlled `collapsed` prop wins over local state", () => {
+    const data: TerminalData = { stdout: makeLines(100), stderr: "" };
+    const onToggleCollapsed = mock((_next: boolean) => {});
+    const { container, rerender } = render(
+      <TerminalBlock
+        data={data}
+        collapsed={false}
+        onToggleCollapsed={onToggleCollapsed}
+      />,
+    );
+    const root = container.querySelector(
+      '[data-slot="terminal-body"]',
+    ) as HTMLElement;
+    // Parent-controlled: even though `overThreshold` is true, the
+    // prop forces expanded.
+    expect(root.getAttribute("data-collapsed")).toBe("false");
+
+    // Clicking the cue notifies via callback but does not flip the
+    // local state when controlled.
+    const cue = container.querySelector(
+      ".tugx-term-fold-cue",
+    ) as HTMLButtonElement;
+    act(() => {
+      cue.click();
+    });
+    expect(onToggleCollapsed).toHaveBeenCalledWith(true);
+    // Visible state still matches the prop.
+    expect(root.getAttribute("data-collapsed")).toBe("false");
+
+    rerender(
+      <TerminalBlock
+        data={data}
+        collapsed={true}
+        onToggleCollapsed={onToggleCollapsed}
+      />,
+    );
+    expect(root.getAttribute("data-collapsed")).toBe("true");
+  });
+
+  test("collapseThreshold override raises or lowers the cue's appearance", () => {
+    // Lift the threshold to 200; the 100-line fixture no longer
+    // qualifies for fold-by-default and the cue vanishes.
+    const data: TerminalData = { stdout: makeLines(100), stderr: "" };
+    const { container } = render(
+      <TerminalBlock data={data} collapseThreshold={200} />,
+    );
+    expect(container.querySelector(".tugx-term-fold-cue")).toBeNull();
+    // The root carries no data-collapsed attribute when overThreshold
+    // is false (the attribute is `undefined`-stripped).
+    const root = container.querySelector(
+      '[data-slot="terminal-body"]',
+    ) as HTMLElement;
+    expect(root.getAttribute("data-collapsed")).toBeNull();
+  });
+
+  test("fold cue is the LAST child of the actions cluster (rightmost, Phase E.3 anchor)", () => {
+    // Phase E.3 / E.4 ordering: Copy (feature) → fold cue (anchor).
+    // Pin the structural invariant so a reorder regression fails
+    // visibly.
+    const data: TerminalData = { stdout: makeLines(100), stderr: "" };
+    const { container } = render(<TerminalBlock data={data} />);
+    const cluster = container.querySelector(
+      '[data-slot="terminal-actions"]',
+    ) as HTMLElement | null;
+    const buttons = cluster?.querySelectorAll("button") ?? [];
+    expect(buttons.length).toBe(2);
+    expect(buttons[0].getAttribute("aria-label")).toBe("Copy terminal output");
+    expect(buttons[1].classList.contains("tugx-term-fold-cue")).toBe(true);
+  });
+
+  test("fold cue carries data-tug-focus='refuse' (audit pin)", () => {
+    const data: TerminalData = { stdout: makeLines(100), stderr: "" };
+    const { container } = render(<TerminalBlock data={data} />);
+    const cue = container.querySelector(
+      ".tugx-term-fold-cue",
+    ) as HTMLButtonElement;
+    expect(cue.getAttribute("data-tug-focus")).toBe("refuse");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase E.4 — responder-parent registration
+// ---------------------------------------------------------------------------
+
+describe("TerminalBlock — Phase E.4 responder", () => {
+  test("the root element carries a data-responder-id attribute (inside a chain provider)", () => {
+    // TerminalBlock graduates to "responder + responder parent" in
+    // Phase E.4. `useOptionalResponder` writes `data-responder-id`
+    // on the root element so the chain can resolve it — but only
+    // when there's a `ResponderChainProvider` ancestor. Without
+    // one, the registration silently no-ops (the same posture as
+    // every other tugways primitive — see use-responder.ts), and
+    // the body kind degrades to a plain DOM tree with native events.
+    const data: TerminalData = { stdout: "hi", stderr: "" };
+    const { container } = render(
+      <ResponderChainProvider>
+        <TerminalBlock data={data} />
+      </ResponderChainProvider>,
+    );
+    const root = container.querySelector(
+      '[data-slot="terminal-body"]',
+    ) as HTMLElement;
+    expect(root.getAttribute("data-responder-id")).not.toBeNull();
+    expect(root.getAttribute("data-responder-id")?.length).toBeGreaterThan(0);
+  });
+
+  test("responder root wraps the entire block (header + body sit inside the scope)", () => {
+    // The ResponderScope wrapper is what publishes the parent context
+    // to descendants. The Copy button and any future Find input must
+    // be inside that scope to register as children.
+    const data: TerminalData = { stdout: "hi", stderr: "" };
+    const { container } = render(<TerminalBlock data={data} />);
+    const root = container.querySelector(
+      '[data-slot="terminal-body"]',
+    ) as HTMLElement;
+    expect(root.querySelector('[data-slot="terminal-header"]')).not.toBeNull();
+    expect(root.querySelector('[data-slot="terminal-content"]')).not.toBeNull();
   });
 });

@@ -100,11 +100,17 @@ import "./terminal-block.css";
 
 import React from "react";
 import { createPortal } from "react-dom";
-import { Check, Copy } from "lucide-react";
+import { Check, ChevronsDown, ChevronsUp, Copy } from "lucide-react";
 
 import type { PropertyStore } from "@/components/tugways/property-store";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
+import { useOptionalResponder } from "@/components/tugways/use-responder";
+import { useResponderChain } from "@/components/tugways/responder-chain-provider";
+import { TUG_ACTIONS, type TugAction } from "@/components/tugways/action-vocabulary";
+import type { ActionHandler } from "@/components/tugways/responder-chain";
+import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
+import { usePositionStableClick } from "@/components/tugways/internal/use-position-stable-click";
 import { ansiToHtml } from "@/lib/ansi/ansi-to-html";
 import { BlockHeightIndex } from "@/lib/block-height-index";
 import { RenderedBlockWindow } from "@/lib/rendered-block-window";
@@ -187,6 +193,42 @@ export interface TerminalBlockProps {
    * a `<code>` element preserving the literal command).
    */
   headerLabel?: React.ReactNode;
+
+  /**
+   * Initial collapse state. When undefined, the component picks the
+   * default from `collapseThreshold`: collapsed if the line count
+   * exceeds the threshold, expanded otherwise. Mirrors FileBlock's
+   * `collapsed` prop semantics.
+   *
+   * Streaming-mode TerminalBlocks (`streamingStore` set) compute the
+   * threshold check against `0` at mount because the imperative
+   * renderer owns the line growth — no fold cue surfaces in that
+   * mode until a follow-up wires a streaming line-count subscription.
+   * Static-mode TerminalBlocks (`data` set) compute against the
+   * static line count and fold by default for long output.
+   */
+  collapsed?: boolean;
+
+  /**
+   * Notification callback fired when the user toggles the collapsed
+   * state via the fold cue. Same controlled/uncontrolled semantics as
+   * FileBlock: when `collapsed` is provided, the parent owns the
+   * value and this callback is the change notification; when
+   * `collapsed` is undefined, the body kind owns its own state and
+   * this callback is purely informational.
+   */
+  onToggleCollapsed?: (next: boolean) => void;
+
+  /**
+   * Threshold for default-folded behavior. Defaults to
+   * `FOLD_THRESHOLD_LINES` (40 — matches `VISIBLE_THRESHOLD`'s
+   * virtualization cutoff because output that's long enough to need
+   * a self-scrolling viewport is exactly the output that benefits
+   * from a fold cue).
+   *
+   * @default FOLD_THRESHOLD_LINES
+   */
+  collapseThreshold?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -195,6 +237,25 @@ export interface TerminalBlockProps {
 
 /** Lines above this count switch from flat to virtualized rendering. */
 export const VISIBLE_THRESHOLD = 40;
+
+/**
+ * Default-collapse threshold in lines. 40 matches `VISIBLE_THRESHOLD`
+ * so the same cutoff that flips rendering to the self-scrolling
+ * virtualized path also flips the body kind into collapsed-by-default.
+ * Below the threshold the output reads at a glance; above it a fold
+ * cue earns its keep by getting long output out of the reader's way
+ * until they ask for it.
+ */
+export const FOLD_THRESHOLD_LINES = 40;
+
+/**
+ * Number of lines the collapsed-preview pane shows above the fade
+ * gradient. ~8 lines reads as "this is a sample, not the whole
+ * output" — long enough to recognize the command's character, short
+ * enough that the cue's "N LINES" label is the user's primary signal
+ * that more exists below.
+ */
+export const COLLAPSED_PREVIEW_LINES = 8;
 
 /**
  * Maximum retained-line count before the earliest lines are dropped
@@ -231,6 +292,29 @@ const DATA_SLOT_HEADER = "terminal-header";
 function hasContent(data: TerminalData | undefined): boolean {
   if (data === undefined) return false;
   return (data.stdout?.length ?? 0) > 0 || (data.stderr?.length ?? 0) > 0;
+}
+
+/**
+ * Count visible lines in a `TerminalData` without parsing ANSI. Used
+ * by the fold cue's threshold check — `parseTerminalLines` runs
+ * `ansiToHtml` per line which is wasted work just to get a count.
+ * Mirrors `parseTerminalLines`'s trailing-newline rule so the count
+ * agrees with what the renderer eventually produces.
+ */
+export function quickLineCount(data: TerminalData | undefined): number {
+  if (data === undefined) return 0;
+  let total = 0;
+  if (data.stdout.length > 0) {
+    const parts = data.stdout.split("\n");
+    if (parts.length > 0 && parts[parts.length - 1] === "") parts.pop();
+    total += parts.length;
+  }
+  if (data.stderr.length > 0) {
+    const parts = data.stderr.split("\n");
+    if (parts.length > 0 && parts[parts.length - 1] === "") parts.pop();
+    total += parts.length;
+  }
+  return total;
 }
 
 /**
@@ -515,11 +599,24 @@ function findNextMountedAfter(
  * the header (truncation banner, flat / virtualized line container,
  * post-mortem footer). Returns the cleanup callback (no-op for flat
  * path, scroll-listener detach for virtualized).
+ *
+ * **Collapsed preview path** (Phase E.4). When `collapsed` is true,
+ * the renderer skips the virtualizer entirely and renders just the
+ * first `COLLAPSED_PREVIEW_LINES` lines via the flat path — same
+ * lines the user would see at the top of the expanded output.
+ * Truncation banner is suppressed (the fold cue carries the "more
+ * exists below" signal). Footer is suppressed (post-mortem badges
+ * sit at the END of the output; revealing them during a TOP-of-file
+ * preview would mislead the reader into thinking the command had
+ * completed within the preview). Expanding the block restores the
+ * full render (truncation banner, virtualizer, footer) on the next
+ * call.
  */
 function renderTerminal(
   outer: HTMLElement,
   body: HTMLElement,
   data: TerminalData,
+  collapsed: boolean = false,
 ): () => void {
   body.replaceChildren();
   // Empty terminal: render the footer if any post-mortem fields are
@@ -539,6 +636,16 @@ function renderTerminal(
     } else {
       lines = allLines;
     }
+  }
+
+  // Collapsed preview path — slice to the first ~8 lines, skip the
+  // truncation banner + virtualizer + footer. The fold cue (in the
+  // React-owned header) and the CSS mask-image fade together signal
+  // "more below; click to expand."
+  if (collapsed && lines.length > 0) {
+    const preview = lines.slice(0, COLLAPSED_PREVIEW_LINES);
+    appendFlatBody(body, preview);
+    return () => undefined;
   }
 
   if (truncated > 0) {
@@ -588,6 +695,9 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   className,
   embedded = false,
   headerLabel,
+  collapsed: collapsedProp,
+  onToggleCollapsed,
+  collapseThreshold = FOLD_THRESHOLD_LINES,
 }) => {
   // Outer card — React owns the markup (header + body container);
   // imperative `renderTerminal` writes lines/footer into `bodyRef`.
@@ -597,6 +707,13 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // effects so streaming sees the freshest stdout/stderr without
   // forcing a React re-render of the shell.
   const latestDataRef = React.useRef<TerminalData>(EMPTY_TERMINAL);
+  // The data prop captured at FIRST mount. Static mode renders this
+  // value once and never again, even across collapse-driven
+  // re-renders. Without this ref the collapse-aware re-render would
+  // pick up subsequent prop changes — that's a contract violation of
+  // the mount-once shape and would also force re-parses the
+  // streaming path is supposed to own.
+  const initialDataRef = React.useRef<TerminalData | undefined>(data);
   // Ref into the underlying button — kept for potential focus
   // management and as a stable test handle. The "Copied" feedback
   // is driven by `TugPushButton`'s `isConfirming` prop (controlled
@@ -614,6 +731,34 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // boundary).
   const [copied, setCopied] = React.useState<boolean>(false);
   const copiedTimerRef = React.useRef<number | null>(null);
+
+  // ---- Fold state ([L06] data, not appearance: it controls *what*
+  //                  is rendered, not *how* a rendered element
+  //                  looks) ---------------------------------------------
+  //
+  // Mirrors FileBlock's computed-collapse pattern:
+  //  - `overThreshold` is derived from the static line count (cheap
+  //    quickLineCount; no ANSI parse).
+  //  - Local state seeds from `overThreshold`.
+  //  - When the parent provides `collapsed`, the prop wins; otherwise
+  //    local state covers the uncontrolled case. No `useEffect` syncs
+  //    a prop into state — reading the prop directly on every render
+  //    keeps controlled and uncontrolled cleanly separable.
+  //
+  // Streaming mode (`streamingStore` set) reads `lineCount = 0` from
+  // `data` because the imperative renderer owns the growing line
+  // pool, not React state. The fold cue therefore stays hidden in
+  // streaming mode until a follow-up phase wires a streaming line-
+  // count subscription. This is a deliberate scope cut for E.4.
+  const lineCount = React.useMemo(
+    () => quickLineCount(initialDataRef.current),
+    [],
+  );
+  const overThreshold = lineCount > collapseThreshold;
+  const [localCollapsed, setLocalCollapsed] =
+    React.useState<boolean>(overThreshold);
+  const collapsed =
+    collapsedProp !== undefined ? collapsedProp : localCollapsed;
 
   // Chrome actions target — non-null when this TerminalBlock is
   // composed inside a `ToolWrapperChrome` that has rendered its actions
@@ -656,23 +801,39 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // and Copy portals into the chrome's actions slot instead.
   const showHeader = !embedded;
 
-  // Static mode — runs once at mount, never again. Skipped when
-  // streamingStore is set so the streaming effect below owns the
-  // render.
+  // Static mode — re-runs whenever `collapsed` flips, so the imperative
+  // body switches between the full render and the preview render
+  // without a React re-mount. `data` is read from `initialDataRef`
+  // (captured once at first mount) so the mount-once contract for the
+  // `data` prop is preserved: subsequent `data` prop changes are
+  // ignored even during a collapse-triggered re-render. Streaming
+  // mode owns the body render through the effect below.
   React.useLayoutEffect(() => {
     if (streamingStore !== undefined) return;
     const outer = outerRef.current;
     const body = bodyRef.current;
     if (outer === null || body === null) return;
-    const d = data ?? EMPTY_TERMINAL;
+    const d = initialDataRef.current ?? EMPTY_TERMINAL;
     latestDataRef.current = d;
-    const cleanup = renderTerminal(outer, body, d);
+    const cleanup = renderTerminal(outer, body, d, collapsed);
     return cleanup;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [collapsed, streamingStore]);
 
   // Streaming mode — Spec S05 binding. Reads sync on mount,
   // subscribes for updates, rAF-coalesces.
+  //
+  // `collapsed` is read through a latest-ref ([L07]) inside `rerender`
+  // so a fold-toggle in streaming mode flips the preview without
+  // re-subscribing to the store. Default for streaming today is
+  // `collapsed = false` (the threshold check sees `lineCount = 0`
+  // because quickLineCount runs against the static-data prop); the
+  // ref is in place so a future phase that hooks a streaming line
+  // count into local state can flip the preview cleanly.
+  const collapsedStreamingRef = React.useRef(collapsed);
+  React.useLayoutEffect(() => {
+    collapsedStreamingRef.current = collapsed;
+  }, [collapsed]);
+
   React.useLayoutEffect(() => {
     if (streamingStore === undefined) return;
     const outer = outerRef.current;
@@ -692,7 +853,12 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
       }
       const next = coerceTerminalData(store.get(streamingPath));
       latestDataRef.current = next;
-      cleanup = renderTerminal(outerEl, bodyEl, next);
+      cleanup = renderTerminal(
+        outerEl,
+        bodyEl,
+        next,
+        collapsedStreamingRef.current,
+      );
     }
 
     rerender();
@@ -715,6 +881,29 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
       cleanup();
     };
   }, [streamingStore, streamingPath]);
+
+  // Streaming-mode re-render on collapse toggle. The store-subscription
+  // effect above is the source of truth for streaming output, but a
+  // bare collapse toggle doesn't fire the store callback — we have to
+  // re-render explicitly. This effect runs ONLY when both `collapsed`
+  // changes AND `streamingStore` is set; the static-mode effect above
+  // owns the non-streaming case. Skips the first run because the
+  // store-subscription effect's `rerender()` already covered it.
+  const streamingCollapsedRenderedOnceRef = React.useRef(false);
+  React.useLayoutEffect(() => {
+    if (streamingStore === undefined) return;
+    if (!streamingCollapsedRenderedOnceRef.current) {
+      streamingCollapsedRenderedOnceRef.current = true;
+      return;
+    }
+    const outer = outerRef.current;
+    const body = bodyRef.current;
+    if (outer === null || body === null) return;
+    const next = coerceTerminalData(streamingStore.get(streamingPath));
+    latestDataRef.current = next;
+    const cleanup = renderTerminal(outer, body, next, collapsed);
+    return cleanup;
+  }, [collapsed, streamingStore, streamingPath]);
 
   const handleCopy = React.useCallback((): void => {
     const writeText = navigator.clipboard?.writeText.bind(navigator.clipboard);
@@ -751,90 +940,225 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
     };
   }, []);
 
-  // Copy `<TugPushButton>` — rendered once, placed by the host
-  // composition: inside `.tugx-term-header` (standalone) or portaled
-  // into the chrome's actions slot (embedded). Icon-text shape with
-  // an invariant structure across rest / confirmed states (per the
-  // "buttons must not change subtype between states" rule): rest
-  // shows `Copy` icon + "Copy" label; the brief confirmed flash
-  // swaps in the `Check` icon + "Copied" label.
+  // ---- Responder registration ([L11]) ---------------------------------
   //
-  // **Controlled** confirmation (Phase E.1): `isConfirming` is owned
-  // by this component (`copied` state) and set ONLY inside the
-  // clipboard `.then()` callback after a successful write. A denied
-  // permission or missing clipboard API leaves the flag at `false`,
-  // so the button never lies about success.
-  const copyButton = (
-    <TugPushButton
-      ref={copyButtonRef}
-      className="tugx-term-copy-button"
-      icon={<Copy />}
-      subtype="icon-text"
-      emphasis="ghost"
-      size="2xs"
-      aria-label="Copy terminal output"
-      onClick={handleCopy}
-      confirmation={{
-        icon: <Check />,
-        label: "Copied",
-      }}
-      isConfirming={copied}
-    >
-      Copy
-    </TugPushButton>
+  // TerminalBlock graduates to "responder + responder parent" in Phase
+  // E.4. It owns the `text` data the COPY action operates on, and it
+  // hosts a scope that descendants (a future find-input, the existing
+  // Copy button as a chain control) can attach into. The structure
+  // matches FileBlock's `fileBlockResponder` shape: a stable `useId`,
+  // a `Partial<Record<TugAction, ActionHandler>>` registered via
+  // `useOptionalResponder`, a `ResponderScope` wrapping the root.
+  //
+  // Today only COPY is registered; the structured-to-grow shape lets
+  // a future find-on-terminal feature add `FIND` / `FIND_NEXT` /
+  // `FIND_PREVIOUS` without changing the registration site. The
+  // actions map is read through a ref so the registered handler stays
+  // stable across renders while reading the current implementation
+  // ([L07]).
+  const terminalBlockResponderId = React.useId();
+  const handleCopyRef = React.useRef(handleCopy);
+  React.useLayoutEffect(() => {
+    handleCopyRef.current = handleCopy;
+  }, [handleCopy]);
+  const terminalBlockActions = React.useMemo<
+    Partial<Record<TugAction, ActionHandler>>
+  >(
+    () => ({
+      [TUG_ACTIONS.COPY]: () => {
+        handleCopyRef.current?.();
+      },
+    }),
+    [],
+  );
+  const terminalBlockResponder = useOptionalResponder({
+    id: terminalBlockResponderId,
+    actions: terminalBlockActions,
+  });
+
+  // Chain manager — promotes TerminalBlock to first-responder after a
+  // focus-refusing affordance click (the fold cue / Copy carry
+  // `data-tug-focus="refuse"`, so the chain provider's pointerdown
+  // listener skips chain promotion on their clicks). Same pattern as
+  // FileBlock; null outside a `ResponderChainProvider` (gallery /
+  // unit tests).
+  const chainManager = useResponderChain();
+
+  // ---- Position-stable click infrastructure ---------------------------
+  //
+  // The fold cue benefits from the same combination FileBlock /
+  // DiffBlock use: a scrollport-level tail spacer raises
+  // `maxScrollTop` so a collapse doesn't hit a hard clamp, and the
+  // hook then writes the exact `scrollTop` that puts the click target
+  // back at its pre-click viewport Y. See `usePositionStableClick`
+  // for the full rationale. Copy doesn't change height so its
+  // wrapper is a near-no-op — kept for action-row contract symmetry.
+  const outerScrollport = useOuterScrollport();
+  const outerScrollportRef = React.useRef<HTMLElement | null>(null);
+  outerScrollportRef.current = outerScrollport;
+  const foldCueButtonRef = React.useRef<HTMLButtonElement | null>(null);
+  const { stableClick: stableFoldClick } = usePositionStableClick({
+    targetRef: foldCueButtonRef,
+    scrollportRef: outerScrollportRef,
+  });
+  const { stableClick: stableCopyClick } = usePositionStableClick({
+    targetRef: copyButtonRef,
+    scrollportRef: outerScrollportRef,
+  });
+
+  const toggleCollapsed = React.useCallback(() => {
+    // Mirrors FileBlock's pattern: dispatch the disengage-follow-bottom
+    // event BEFORE the state update so any host (TugListView with
+    // SmartScroll, when present) flips `isFollowingBottom` to false
+    // before the cell-height change. The subsequent ResizeObserver
+    // flush then bails out of `pinToBottom`. Bubbles through the DOM
+    // tree; non-list hosts ignore it.
+    outerRef.current?.dispatchEvent(
+      new CustomEvent("tug-disengage-follow-bottom", { bubbles: true }),
+    );
+    chainManager?.makeFirstResponder(terminalBlockResponderId);
+    const next = !collapsed;
+    if (collapsedProp === undefined) {
+      setLocalCollapsed(next);
+    }
+    onToggleCollapsed?.(next);
+  }, [
+    chainManager,
+    collapsed,
+    collapsedProp,
+    onToggleCollapsed,
+    terminalBlockResponderId,
+  ]);
+
+  // Compose the affordances cluster ONCE. Phase E.4 ordering: Copy
+  // (the feature affordance) → fold cue (the fixed-position landmark
+  // at the trailing edge). Mirrors FileBlock / DiffBlock so the
+  // user's eye finds the fold cue in the same place across every
+  // body kind.
+  //
+  // **Copy** — controlled-confirmation pattern (Phase E.1): rest
+  // shows `Copy` icon + "Copy" label; the brief confirmed flash
+  // swaps in `Check` icon + "Copied" label. `isConfirming={copied}`
+  // is set ONLY inside the clipboard `.then()` callback after a
+  // successful write. Failure leaves the button at rest. The click
+  // routes through `stableCopyClick` — Copy doesn't change height
+  // today, but the wrapper keeps the action-row contract that
+  // EVERY click routes through `usePositionStableClick` (so a future
+  // change that adds a height-affecting side effect won't bypass
+  // the contract).
+  //
+  // **Fold cue** (Phase E.4) — `TugPushButton` with the same shape
+  // as FileBlock / DiffBlock. Only rendered when `overThreshold`
+  // (otherwise short output has no fold cue: the user can already
+  // see the whole thing). Chevron flips with state; label is `"N
+  // lines"` regardless of fold state; aria-label carries the verb
+  // for screen readers. Click routes through `stableFoldClick` so
+  // the cluster stays under the user's cursor across the layout
+  // change.
+  const cueCountWord = lineCount === 1 ? "line" : "lines";
+  const cueLabel = `${lineCount.toLocaleString()} ${cueCountWord}`;
+  const affordances = (
+    <>
+      <TugPushButton
+        ref={copyButtonRef}
+        className="tugx-term-copy-button"
+        icon={<Copy />}
+        subtype="icon-text"
+        emphasis="ghost"
+        size="2xs"
+        aria-label="Copy terminal output"
+        onClick={() => stableCopyClick(handleCopy)}
+        confirmation={{
+          icon: <Check />,
+          label: "Copied",
+        }}
+        isConfirming={copied}
+      >
+        Copy
+      </TugPushButton>
+      {overThreshold ? (
+        <TugPushButton
+          ref={foldCueButtonRef}
+          className="tugx-term-fold-cue"
+          data-slot="terminal-fold-cue"
+          icon={collapsed ? <ChevronsDown /> : <ChevronsUp />}
+          subtype="icon-text"
+          emphasis="ghost"
+          size="2xs"
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? "Expand terminal output" : "Collapse terminal output"}
+          onClick={() => stableFoldClick(toggleCollapsed)}
+        >
+          {cueLabel}
+        </TugPushButton>
+      ) : null}
+    </>
   );
 
-  const portaledCopy =
+  const portaledAffordances =
     embedded && chromeActionsTarget !== null
       ? createPortal(
           <span
             className="tugx-term-actions-cluster"
             data-slot="terminal-actions"
           >
-            {copyButton}
+            {affordances}
           </span>,
           chromeActionsTarget,
         )
       : null;
 
+  // Composed root ref — forwards to both the local `outerRef` (used
+  // to dispatch the disengage-follow-bottom event and read the
+  // current element in the imperative renderer) AND the responder
+  // chain's ref-callback (writes `data-responder-id` on the same
+  // element). Same pattern as FileBlock's `composedRootRef`.
+  const composedRootRef = (el: HTMLDivElement | null): void => {
+    outerRef.current = el;
+    terminalBlockResponder.responderRef(el);
+  };
+
   return (
-    <div
-      ref={outerRef}
-      data-slot={DATA_SLOT_ROOT}
-      data-empty="true"
-      data-embedded={embedded ? "true" : undefined}
-      className={
-        className === undefined ? "tugx-term" : `tugx-term ${className}`
-      }
-    >
-      {showHeader ? (
-        <div
-          className="tugx-term-header"
-          data-slot={DATA_SLOT_HEADER}
-        >
-          {headerLabel !== undefined ? (
-            <span
-              className="tugx-term-header-label"
-              data-slot="terminal-header-label"
-            >
-              {headerLabel}
-            </span>
-          ) : null}
-          <span className="tugx-term-header-spacer" />
-          <span
-            className="tugx-term-actions-cluster"
-            data-slot="terminal-actions"
-          >
-            {copyButton}
-          </span>
-        </div>
-      ) : null}
-      {portaledCopy}
+    <terminalBlockResponder.ResponderScope>
       <div
-        ref={bodyRef}
-        className="tugx-term-content"
-        data-slot="terminal-content"
-      />
-    </div>
+        ref={composedRootRef}
+        data-slot={DATA_SLOT_ROOT}
+        data-empty="true"
+        data-embedded={embedded ? "true" : undefined}
+        data-collapsed={overThreshold ? (collapsed ? "true" : "false") : undefined}
+        className={
+          className === undefined ? "tugx-term" : `tugx-term ${className}`
+        }
+      >
+        {showHeader ? (
+          <div
+            className="tugx-term-header"
+            data-slot={DATA_SLOT_HEADER}
+          >
+            {headerLabel !== undefined ? (
+              <span
+                className="tugx-term-header-label"
+                data-slot="terminal-header-label"
+              >
+                {headerLabel}
+              </span>
+            ) : null}
+            <span className="tugx-term-header-spacer" />
+            <span
+              className="tugx-term-actions-cluster"
+              data-slot="terminal-actions"
+            >
+              {affordances}
+            </span>
+          </div>
+        ) : null}
+        {portaledAffordances}
+        <div
+          ref={bodyRef}
+          className="tugx-term-content"
+          data-slot="terminal-content"
+        />
+      </div>
+    </terminalBlockResponder.ResponderScope>
   );
 };
