@@ -515,11 +515,12 @@ describe("TerminalBlock — copy button (in pinned header)", () => {
     // The header strip and its trailing actions cluster are part of
     // the React shell, not the imperative body render; present from
     // mount, regardless of whether `data` carries stdout/stderr.
-    // Users can copy an empty terminal (no-op text) without the
-    // button hiding on them. Copy lives inside the
-    // `[data-slot="terminal-actions"]` cluster at the trailing edge
-    // of `.tugx-term-header` (Phase D consolidated affordances into
-    // the header itself).
+    // Copy stays rendered (not hidden) even with no content so the
+    // affordance geometry is stable across content states; it just
+    // disables itself when there's nothing to copy (see the disabled
+    // test below). Copy lives inside the `[data-slot="terminal-actions"]`
+    // cluster at the trailing edge of `.tugx-term-header` (Phase D
+    // consolidated affordances into the header itself).
     const { container } = render(<TerminalBlock />);
     const actions = container.querySelector(
       '[data-slot="terminal-actions"]',
@@ -528,6 +529,55 @@ describe("TerminalBlock — copy button (in pinned header)", () => {
     expect(
       actions.querySelector('button[aria-label="Copy terminal output"]'),
     ).not.toBeNull();
+  });
+
+  test("Copy button is DISABLED in static mode when there is no content", () => {
+    // Empty stdout AND empty stderr → nothing to copy → disabled.
+    // The button stays rendered (geometry-stable affordance row) but
+    // gets `disabled`. `writeText("")` would be a no-op even if the
+    // user clicked, but disabling is the honest UX — don't invite a
+    // click that does nothing.
+    const data: TerminalData = { stdout: "", stderr: "" };
+    const { container } = render(<TerminalBlock data={data} />);
+    const btn = container.querySelector(
+      'button[aria-label="Copy terminal output"]',
+    ) as HTMLButtonElement;
+    expect(btn).not.toBeNull();
+    expect(btn.disabled).toBe(true);
+  });
+
+  test("Copy button is ENABLED in static mode when stdout has content", () => {
+    const data: TerminalData = { stdout: "hi", stderr: "" };
+    const { container } = render(<TerminalBlock data={data} />);
+    const btn = container.querySelector(
+      'button[aria-label="Copy terminal output"]',
+    ) as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+  });
+
+  test("Copy button is ENABLED in static mode when only stderr has content", () => {
+    // Stderr-only output still has copyable text (the error message).
+    const data: TerminalData = { stdout: "", stderr: "boom" };
+    const { container } = render(<TerminalBlock data={data} />);
+    const btn = container.querySelector(
+      'button[aria-label="Copy terminal output"]',
+    ) as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+  });
+
+  test("Copy button is ENABLED when footer-only (exit code present, no stdout/stderr)", () => {
+    // Borderline case: a successful command that emitted no output
+    // (exitCode=0, empty streams). hasContent() returns false →
+    // Copy disabled. This is correct: there's nothing to copy. The
+    // exit-code badge is a visual signal, not copyable text.
+    const data: TerminalData = { stdout: "", stderr: "", exitCode: 0 };
+    const { container } = render(<TerminalBlock data={data} />);
+    const btn = container.querySelector(
+      'button[aria-label="Copy terminal output"]',
+    ) as HTMLButtonElement;
+    // hasContent ignores footer fields — only stdout/stderr count.
+    // Empty streams → disabled.
+    expect(btn.disabled).toBe(true);
   });
 });
 

@@ -72,11 +72,13 @@ import React from "react";
 import { createPortal } from "react-dom";
 import {
   AlignLeft,
+  Check,
   ChevronDown,
   ChevronRight,
   ChevronsDown,
   ChevronsUp,
   Columns2,
+  Copy,
 } from "lucide-react";
 
 import { TugCue } from "@/components/tugways/tug-cue";
@@ -192,6 +194,13 @@ export interface DiffBlockProps {
 
 const DATA_SLOT_ROOT = "diff-body";
 const DATA_SLOT_HEADER = "diff-header";
+
+/** Duration the Copy button's "Copied" confirmation flash is visible
+ *  (ms). Matches `COPIED_FLASH_MS` in `file-block.tsx` and
+ *  `terminal-block.tsx` so the three body kinds agree on the
+ *  timing constant.
+ */
+const COPIED_FLASH_MS = 1200;
 const DATA_SLOT_HUNKS = "diff-hunks";
 const DATA_SLOT_HUNK = "diff-hunk";
 const DATA_SLOT_HUNK_ROWS = "diff-hunk-rows";
@@ -366,6 +375,64 @@ export function prepareHunksSync(data: DiffData): DiffHunk[] | null {
     case "two-text":
       return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Copy-text composition
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the clipboard text for a DiffBlock's Copy affordance.
+ *
+ *  - `unified` source: return `data.text` verbatim. The user pasted-in
+ *    or generated diff text round-trips losslessly (file path
+ *    headers, `\ No newline at end of file` markers, hunk text
+ *    preserved).
+ *  - `hunks` / `two-text` sources: reconstruct a unified-diff text
+ *    from the parsed hunks. Loses anything the parser dropped
+ *    (commit-message preamble, custom indices) but produces output
+ *    that `git apply` / patch can consume — the standard expectation
+ *    when a user clicks "copy this diff".
+ *
+ * Returns the empty string when `hunks` is null (async two-text load
+ * still pending) so the disabled-when-no-text contract holds without
+ * the caller needing a separate null check. The Copy button keys off
+ * the same emptiness, so an empty return value disables the click
+ * without ever reaching the clipboard API.
+ *
+ * Exported for tests so the line-prefix + path-header rules are
+ * pin-able without the renderer in the loop.
+ */
+export function composeDiffCopyText(
+  data: DiffData,
+  hunks: DiffHunk[] | null,
+): string {
+  if (data.source === "unified") {
+    return data.text;
+  }
+  if (hunks === null || hunks.length === 0) {
+    return "";
+  }
+  const parts: string[] = [];
+  const filePath = data.filePath ?? "";
+  if (filePath.length > 0) {
+    // Standard unified-diff path headers. Useful when the consumer
+    // pastes the result into `git apply` or a code-review tool —
+    // without them, only the `@@` hunk markers and lines survive.
+    parts.push(`--- a/${filePath}`);
+    parts.push(`+++ b/${filePath}`);
+  }
+  for (const hunk of hunks) {
+    parts.push(composeHunkHeader(hunk));
+    for (const line of hunk.lines) {
+      const prefix =
+        line.kind === "add" ? "+" : line.kind === "remove" ? "-" : " ";
+      parts.push(prefix + line.content);
+    }
+  }
+  // Trailing newline so `git apply` doesn't complain about an
+  // unterminated final line in the patch.
+  return parts.join("\n") + "\n";
 }
 
 // ---------------------------------------------------------------------------
@@ -589,6 +656,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   const outerScrollportRef = React.useRef<HTMLElement | null>(null);
   outerScrollportRef.current = outerScrollport;
   const foldCueButtonRef = React.useRef<HTMLButtonElement | null>(null);
+  const copyButtonRef = React.useRef<HTMLButtonElement | null>(null);
   // The view-toggle is a `TugChoiceGroup` (a `div[role=radiogroup]`),
   // not a single button — `viewToggleRef` points at the choice
   // group's root so the position-stable hook anchors against the
@@ -605,6 +673,15 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   });
   const { stableClick: stableViewToggleClick } = usePositionStableClick({
     targetRef: viewToggleRef,
+    scrollportRef: outerScrollportRef,
+  });
+  // Copy doesn't change document height — the diff body's shape is
+  // unaffected by the clipboard write. The position-stable wrapper
+  // is kept for action-row contract symmetry (every action-row
+  // click routes through `usePositionStableClick`, so a future
+  // height-affecting side effect won't accidentally bypass it).
+  const { stableClick: stableCopyClick } = usePositionStableClick({
+    targetRef: copyButtonRef,
     scrollportRef: outerScrollportRef,
   });
 
@@ -627,6 +704,68 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
     }
     onToggleCollapsed?.(next);
   }, [collapsed, collapsedProp, onToggleCollapsed]);
+
+  // ---- Copy state (Phase E.4 extension) -------------------------------
+  //
+  // Controlled-confirmation pattern mirroring FileBlock and
+  // TerminalBlock: `copied` flips to `true` ONLY inside the
+  // clipboard `.then()` callback after a successful write. A
+  // denied permission or missing clipboard API leaves the flag at
+  // `false` — the button never lies about success ([L23]).
+  //
+  // The composed clipboard text drives two things:
+  //
+  //  - `copyText` (memo): the value the disabled-check reads at
+  //    render time. Computed via `useMemo` keyed on `(data, hunks)`
+  //    so the button's `disabled` flips correctly on every render.
+  //    A naive ref-only design fails here because refs don't
+  //    trigger re-renders; the button would render disabled on
+  //    first paint (ref initial value is "") and never update.
+  //
+  //  - `copyTextRef` (live ref): the value the click handler reads
+  //    at fire time. Mirrors `copyText` via `useLayoutEffect` so
+  //    the handler stays stable across renders ([L07]) while always
+  //    seeing the most-recent text.
+  const [copied, setCopied] = React.useState<boolean>(false);
+  const copiedTimerRef = React.useRef<number | null>(null);
+  const copyText = React.useMemo(
+    () => (data === undefined ? "" : composeDiffCopyText(data, hunks)),
+    [data, hunks],
+  );
+  const copyTextRef = React.useRef<string>(copyText);
+  React.useLayoutEffect(() => {
+    copyTextRef.current = copyText;
+  }, [copyText]);
+
+  const handleCopy = React.useCallback((): void => {
+    const writeText = navigator.clipboard?.writeText.bind(navigator.clipboard);
+    if (writeText === undefined) return;
+    const text = copyTextRef.current;
+    if (text.length === 0) return;
+    writeText(text)
+      .then(() => {
+        setCopied(true);
+        if (copiedTimerRef.current !== null) {
+          window.clearTimeout(copiedTimerRef.current);
+        }
+        copiedTimerRef.current = window.setTimeout(() => {
+          copiedTimerRef.current = null;
+          setCopied(false);
+        }, COPIED_FLASH_MS);
+      })
+      .catch(() => {
+        // Silent failure — no false-positive flash.
+      });
+  }, []);
+
+  React.useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current !== null) {
+        window.clearTimeout(copiedTimerRef.current);
+        copiedTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // ---- View-toggle responder form (Phase E.4) -------------------------
   //
@@ -957,6 +1096,14 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   // flips with state, label is `"N hunks"` regardless of fold state,
   // aria-label carries the verb for screen readers. Click routes
   // through `stableFoldClick`.
+  // Copy disabled when there's no composable text — the empty-text
+  // path returns "" from `composeDiffCopyText` (async two-text load
+  // still pending, or hunks parsed to empty). Honest UX: don't
+  // invite a click that does nothing. Same shape as FileBlock and
+  // TerminalBlock's Copy disable contract. Read from `copyText`
+  // (the memo) rather than `copyTextRef.current` so the disabled
+  // attribute re-derives on every render.
+  const copyDisabled = copyText.length === 0;
   const affordances = empty ? null : (
     <>
       <TugChoiceGroup
@@ -971,6 +1118,25 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
         disabled={collapsed}
         aria-label="Diff view mode"
       />
+      <TugPushButton
+        ref={copyButtonRef}
+        className="tugx-diff-copy"
+        data-slot="diff-copy"
+        icon={<Copy />}
+        subtype="icon-text"
+        emphasis="ghost"
+        size="2xs"
+        disabled={copyDisabled}
+        aria-label="Copy diff"
+        onClick={() => stableCopyClick(handleCopy)}
+        confirmation={{
+          icon: <Check />,
+          label: "Copied",
+        }}
+        isConfirming={copied}
+      >
+        Copy
+      </TugPushButton>
       <TugPushButton
         ref={foldCueButtonRef}
         className="tugx-diff-fold-cue"

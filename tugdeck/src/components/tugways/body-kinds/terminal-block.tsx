@@ -1148,6 +1148,16 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // change.
   const cueCountWord = lineCount === 1 ? "line" : "lines";
   const cueLabel = `${lineCount.toLocaleString()} ${cueCountWord}`;
+  // Copy is disabled when there's nothing to copy. Static-mode check
+  // uses the `data` prop directly. Streaming-mode keeps Copy enabled
+  // because content arrives over time via `streamingStore` and the
+  // React shell doesn't re-render on those updates — disabling
+  // optimistically would lock Copy out as soon as a stream starts
+  // empty. The clipboard handler's own empty-text path is a no-op
+  // either way (`writeText("")` is harmless), but disabling the
+  // button is the honest UX: don't invite a click that does nothing.
+  const isStreaming = streamingStore !== undefined;
+  const copyDisabled = !isStreaming && !hasContent(data);
   const affordances = (
     <>
       <TugPushButton
@@ -1157,6 +1167,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
         subtype="icon-text"
         emphasis="ghost"
         size="2xs"
+        disabled={copyDisabled}
         aria-label="Copy terminal output"
         onClick={() => stableCopyClick(handleCopy)}
         confirmation={{

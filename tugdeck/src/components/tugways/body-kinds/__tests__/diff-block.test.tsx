@@ -29,7 +29,7 @@
 
 import "../../../../__tests__/setup-rtl";
 
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import dmp from "diff-match-patch";
 import React from "react";
@@ -115,6 +115,7 @@ mock.module("@/_archive/cards/conversation/code-block-utils", () => ({
 import {
   DiffBlock,
   basename,
+  composeDiffCopyText,
   composeHunkHeader,
   groupSideBySideRows,
   pairRemoveAddIndices,
@@ -622,12 +623,15 @@ describe("DiffBlock — collapse", () => {
     const children = Array.from(
       cluster?.children ?? [],
     ) as HTMLElement[];
-    // Cluster has exactly two children: the choice group + the fold cue.
-    expect(children.length).toBe(2);
+    // Cluster has three children, in Phase E.4 order:
+    // view-toggle (choice group) → Copy → fold cue.
+    expect(children.length).toBe(3);
     expect(children[0].getAttribute("data-slot")).toBe("diff-view-toggle");
     expect(children[0].getAttribute("role")).toBe("radiogroup");
-    expect(children[1].classList.contains("tugx-diff-fold-cue")).toBe(true);
+    expect(children[1].getAttribute("data-slot")).toBe("diff-copy");
     expect(children[1].tagName).toBe("BUTTON");
+    expect(children[2].classList.contains("tugx-diff-fold-cue")).toBe(true);
+    expect(children[2].tagName).toBe("BUTTON");
   });
 
   test("Phase E.4 — view-toggle no longer uses widthStabilize (TugChoiceGroup makes both segments visible)", () => {
@@ -1381,5 +1385,161 @@ describe("DiffBlock — Shiki integration", () => {
     expect(removeContent.textContent).toBe("old");
     // No styled span (Shiki didn't run).
     expect(removeContent.querySelector("span[style]")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase E.4 extension — Copy button
+// ---------------------------------------------------------------------------
+
+describe("composeDiffCopyText", () => {
+  test("unified source returns data.text verbatim", () => {
+    const text =
+      "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1,1 +1,1 @@\n-old\n+new\n";
+    expect(composeDiffCopyText({ source: "unified", text }, null)).toBe(text);
+  });
+
+  test("hunks source reconstructs unified-diff text with path headers", () => {
+    const hunks = [
+      {
+        header: "",
+        before_start: 1,
+        before_count: 1,
+        after_start: 1,
+        after_count: 1,
+        lines: [
+          { kind: "remove" as const, content: "old", before_lineno: 1, after_lineno: null },
+          { kind: "add" as const, content: "new", before_lineno: null, after_lineno: 1 },
+        ],
+      },
+    ];
+    const result = composeDiffCopyText(
+      { source: "hunks", filePath: "src/x.ts", hunks },
+      hunks,
+    );
+    expect(result).toBe(
+      "--- a/src/x.ts\n+++ b/src/x.ts\n@@ -1 +1 @@\n-old\n+new\n",
+    );
+  });
+
+  test("hunks source omits path headers when filePath is missing", () => {
+    const hunks = [
+      {
+        header: "",
+        before_start: 1,
+        before_count: 1,
+        after_start: 1,
+        after_count: 1,
+        lines: [
+          { kind: "context" as const, content: "ctx", before_lineno: 1, after_lineno: 1 },
+        ],
+      },
+    ];
+    const result = composeDiffCopyText({ source: "hunks", hunks }, hunks);
+    // No `--- a/...` / `+++ b/...` lines when filePath is absent.
+    expect(result).toBe("@@ -1 +1 @@\n ctx\n");
+  });
+
+  test("null hunks (async loading) returns empty string", () => {
+    expect(
+      composeDiffCopyText({ source: "two-text", before: "a", after: "b" }, null),
+    ).toBe("");
+  });
+
+  test("empty hunks array returns empty string", () => {
+    expect(
+      composeDiffCopyText({ source: "hunks", hunks: [] }, []),
+    ).toBe("");
+  });
+});
+
+describe("DiffBlock — Phase E.4 Copy button", () => {
+  let originalClipboard: PropertyDescriptor | undefined;
+
+  beforeEach(() => {
+    originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+  });
+
+  afterEach(() => {
+    if (originalClipboard !== undefined) {
+      Object.defineProperty(navigator, "clipboard", originalClipboard);
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      delete (navigator as any).clipboard;
+    }
+  });
+
+  test("Copy button is rendered in the action cluster between view-toggle and fold cue", () => {
+    const { container } = render(
+      <DiffBlock data={{ source: "unified", text: FIXTURE_UNIFIED }} />,
+    );
+    const cluster = container.querySelector(
+      '[data-slot="diff-actions"]',
+    ) as HTMLElement;
+    expect(cluster).not.toBeNull();
+    const copyBtn = cluster.querySelector(
+      'button[data-slot="diff-copy"]',
+    ) as HTMLButtonElement | null;
+    expect(copyBtn).not.toBeNull();
+    expect(copyBtn?.getAttribute("aria-label")).toBe("Copy diff");
+  });
+
+  test("clicking Copy writes the unified-diff text to the clipboard", () => {
+    const writeText = mock(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    const { container } = render(
+      <DiffBlock data={{ source: "unified", text: FIXTURE_UNIFIED }} />,
+    );
+    const btn = container.querySelector(
+      'button[aria-label="Copy diff"]',
+    ) as HTMLButtonElement;
+    btn.click();
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(writeText).toHaveBeenCalledWith(FIXTURE_UNIFIED);
+  });
+
+  test("missing navigator.clipboard does not throw on Copy click", () => {
+    Object.defineProperty(navigator, "clipboard", {
+      value: undefined,
+      configurable: true,
+    });
+    const { container } = render(
+      <DiffBlock data={{ source: "unified", text: FIXTURE_UNIFIED }} />,
+    );
+    const btn = container.querySelector(
+      'button[aria-label="Copy diff"]',
+    ) as HTMLButtonElement;
+    expect(() => btn.click()).not.toThrow();
+  });
+
+  test("Copy is disabled when there's no copyable text (e.g., async two-text loading)", () => {
+    // two-text source pre-WASM-resolution: hunks === null → empty copy text.
+    const { container } = render(
+      <DiffBlock data={{ source: "two-text", before: "a", after: "b" }} />,
+    );
+    // While loading, the loading state suppresses affordances (no
+    // `diff-copy` is rendered in the loading branch). Only the
+    // "Computing diff…" placeholder is visible. This documents the
+    // current behavior — when hunks become available, the Copy
+    // button appears and is enabled.
+    expect(
+      container.querySelector('button[aria-label="Copy diff"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-slot="diff-loading"]'),
+    ).not.toBeNull();
+  });
+
+  test("Copy button carries data-tug-focus='refuse' (audit pin)", () => {
+    const { container } = render(
+      <DiffBlock data={{ source: "unified", text: FIXTURE_UNIFIED }} />,
+    );
+    const btn = container.querySelector(
+      'button[aria-label="Copy diff"]',
+    ) as HTMLButtonElement;
+    expect(btn.getAttribute("data-tug-focus")).toBe("refuse");
   });
 });
