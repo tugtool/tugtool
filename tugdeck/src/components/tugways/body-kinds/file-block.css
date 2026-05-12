@@ -56,16 +56,6 @@ body {
   --tugx-file-lang-radius:  var(--tug-radius-xs);
   --tugx-file-lang-size:    var(--tug-font-size-3xs);
 
-  /* Fold cue (compact form, inside the actions row) — chevron icon +
-   * optional count label, sized to fit alongside `TugIconButton`s in
-   * the same row. */
-  --tugx-file-fold-cue-padding:    var(--tug-space-2xs) var(--tug-space-xs);
-  --tugx-file-fold-cue-gap:        var(--tug-space-2xs);
-  --tugx-file-fold-cue-icon-size:  16px;
-  --tugx-file-fold-cue-label-size: var(--tug-font-size-2xs);
-  --tugx-file-fold-cue-radius:     var(--tug-radius-xs);
-  --tugx-file-fold-cue-hover-bg:   var(--tug7-surface-highlight-primary-normal-hover-rest);
-
   /* Find UI input field — must read as visibly elevated over the
    * strip-bg around it (rest) and elevated further when focused.
    * The strip is `--tug7-surface-global-primary-normal-raised-rest`
@@ -162,109 +152,61 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.tugx-file-spacer {
+.tugx-file-spacer,
+.tugx-file-header-spacer {
   flex: 1 1 auto;
 }
 
-/* ---------- Actions row ---------- */
+/* ---------- Trailing affordances cluster ---------- */
 
-/* The body-kind actions row hosts the fold cue and the Search button.
- * It sits BELOW the identity header (in DOM order and stacked when
- * both are pinned). Sticky `top` telescopes under an outer entry
- * header (`--tugx-pin-stack-top`, Phase C), a wrapper-chrome header
- * (`--tugx-toolblock-header-height`, present in embedded mode), and
- * the FileBlock's own identity header (`--tugx-file-header-height`,
- * set by `file-block.tsx`'s `useLayoutEffect` ResizeObserver when the
- * header renders; absent in embedded mode where the JSX-level
- * suppression applies, falling back to 0 via the `calc()` default).
+/* Phase D — the dedicated `.tugx-file-actions` sticky strip retired.
+ * The fold cue and Search trigger now live in a `flex: 0 0 auto`
+ * cluster at the trailing edge of `.tugx-file-header` in standalone
+ * mode, or portal into `ToolWrapperChrome`'s actions slot in
+ * embedded mode. Same DOM markup in both cases; only the host
+ * differs. The cluster owns its own internal gap so the buttons read
+ * as a related group; outer spacing is provided by the host
+ * (`.tugx-file-header` flex `gap`, or the chrome's actions-slot
+ * `gap`).
  *
- * Background matches the identity header's strip background so the
- * two strips read as one visual stack. The action row is the ONLY
- * body-kind chrome that's always present (identity header is hidden
- * in embedded mode), so the affordances stay reachable regardless of
- * composition mode. */
-.tugx-file-actions {
-  position: sticky;
-  top: calc(
-    var(--tugx-pin-stack-top, 0px)
-    + var(--tugx-toolblock-header-height, 0px)
-    + var(--tugx-file-header-height, 0px)
-  );
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: var(--tugx-block-strip-gap);
-  padding: var(--tugx-block-strip-padding);
-  background: var(--tugx-block-strip-bg);
-  border-bottom: 1px solid var(--tugx-block-strip-border);
-  color: var(--tugx-block-strip-color);
-  font-family: var(--tugx-block-strip-font);
-  font-size: var(--tugx-block-strip-size);
-}
-
-.tugx-file-actions-spacer {
-  flex: 1 1 auto;
-}
-
-/* Compact fold cue — a small button hosting the chevron + optional
- * count label. Visually distinct from `TugIconButton` so consumers can
- * tell the fold control from the search control even when both are in
- * the row at the same time. */
-.tugx-file-fold-cue {
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--tugx-file-fold-cue-gap);
-  padding: var(--tugx-file-fold-cue-padding);
-  border: 0;
-  border-radius: var(--tugx-file-fold-cue-radius);
-  background: transparent;
-  color: var(--tugx-block-text-color);
-  font: inherit;
-  cursor: pointer;
-}
-
-.tugx-file-fold-cue:hover {
-  background: var(--tugx-file-fold-cue-hover-bg);
-}
-
-.tugx-file-fold-cue:focus-visible {
-  outline: 2px solid var(--tugx-file-focus-ring);
-  outline-offset: 2px;
-}
-
-.tugx-file-fold-cue-icon {
+ * No `position: sticky`, no `--tugx-file-actions-height` writer —
+ * the cluster rides whichever header it's inside, so any sticky
+ * contract is the host's responsibility, not the cluster's. */
+.tugx-file-actions-cluster {
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
+  gap: var(--tug-space-2xs);
 }
 
-.tugx-file-fold-cue-icon > svg {
-  width: var(--tugx-file-fold-cue-icon-size);
-  height: var(--tugx-file-fold-cue-icon-size);
-}
-
-.tugx-file-fold-cue-label {
-  font-size: var(--tugx-file-fold-cue-label-size);
-  color: var(--tugx-block-text-color-muted);
-  font-variant-numeric: tabular-nums;
-}
+/* Fold cue is now a `TugPushButton` (icon-text when collapsed, icon
+ * when expanded) per Phase D's Tug-component contract. Appearance
+ * tokens live in the TugButton/TugPushButton stylesheets; only the
+ * `.tugx-file-fold-cue` class is forwarded onto the button as a
+ * scoping hook for future file-specific overrides (none today) and a
+ * stable test selector. The legacy bespoke rules and slot family
+ * (`--tugx-file-fold-cue-*`) were retired with the migration. */
 
 /* ---------- Find UI row ---------- */
 
-/* Find UI lives below the actions row. Sticky stack consumes the
- * full chain of upstream pin heights so it pins flush against the
- * bottom of the actions row regardless of composition mode:
+/* Find UI is progressive disclosure — mounted only while `findOpen`
+ * is true. Phase D consolidated the resting affordances into the
+ * chrome / identity header (no more dedicated `.tugx-file-actions`
+ * sticky strip), so the find row pins directly under the header,
+ * not under a "+ actions-height" intermediate band.
+ *
+ * Sticky stack consumes the upstream pin chain:
  *  - `--tugx-pin-stack-top`: outer entry-header height (Phase C).
  *  - `--tugx-toolblock-header-height`: wrapper-chrome header height
- *    in embedded composition.
+ *    in embedded composition (zero in standalone).
  *  - `--tugx-file-header-height`: this body kind's identity header
- *    in standalone composition.
- *  - `--tugx-file-actions-height`: the actions row's measured height
- *    (always present when the Find row is open).
+ *    in standalone composition (zero when `embedded={true}` — the
+ *    header is suppressed and the chrome header is the only one
+ *    above this row).
  *
- * Background: `--tugx-block-strip-bg` matches the identity / actions
- * strips so the three stack reads as one visual stripe.
+ * Background: `--tugx-block-strip-bg` matches the chrome / identity
+ * strip so the two-row stack (header + find) reads as one visual
+ * stripe when find is active.
  */
 .tugx-file-find {
   position: sticky;
@@ -272,7 +214,6 @@ body {
     var(--tugx-pin-stack-top, 0px)
     + var(--tugx-toolblock-header-height, 0px)
     + var(--tugx-file-header-height, 0px)
-    + var(--tugx-file-actions-height, 0px)
   );
   z-index: 1;
   display: flex;

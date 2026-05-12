@@ -84,10 +84,18 @@ body {
 
   /* Fenced code header — Copy button geometry. The lang label inherits
    * the shared strip vocabulary; only Copy-button-specific lengths are
-   * here. */
-  --tugx-md-fenced-code-lang-weight:  600;
-  --tugx-md-fenced-code-copy-padding: var(--tug-space-2xs) var(--tug-space-xs);
-  --tugx-md-fenced-code-copy-radius:  var(--tug-radius-xs);
+   * here. Sized to match `TugPushButton size="2xs"` so the imperative
+   * Copy button reads consistently with the React body-kind affordances
+   * (FileBlock fold cue, DiffBlock view-toggle, TerminalBlock Copy).
+   * Per tuglaw rule 6: imperative-DOM rendering paths may use raw
+   * `<button>` markup but must match the Tug primitive equivalent
+   * visually. */
+  --tugx-md-fenced-code-lang-weight:    600;
+  --tugx-md-fenced-code-copy-padding:   0 0.5rem;
+  --tugx-md-fenced-code-copy-radius:    var(--tug-radius-lg);
+  --tugx-md-fenced-code-copy-height:    1.25rem;  /* 20px — matches button-size-2xs */
+  --tugx-md-fenced-code-copy-font-size: 0.625rem; /* 10px — matches button-size-2xs */
+  --tugx-md-fenced-code-copy-icon-size: 0.625rem; /* 10px — matches icon-text 2xs svg */
 
   /* Approximate height of `.tugx-md-fenced-code-header` — used by
    * the actions row to compute its sticky `top` so the two bars stack
@@ -347,11 +355,11 @@ body {
   overflow: clip;
 }
 
-/* Header — language label only. The Copy button has moved into the
- * actions row below; the header is now identity-only (matches the
- * FileBlock / DiffBlock / TerminalBlock pattern from Step 10.9
- * Phase B.2). Pinned (`position: sticky`) so it stays visible while
- * scrolling deep into a long fenced-code block. */
+/* Header — language label at the left, trailing affordances cluster
+ * (Copy) at the right. Phase D consolidated affordances into this
+ * single sticky row (the dedicated `.tugx-md-fenced-code-actions`
+ * sticky strip retired). Pinned (`position: sticky`) so it stays
+ * visible while scrolling deep into a long fenced-code block. */
 /* @tug-renders-on: --tugx-block-bg */
 .tugx-md-block .tugx-md-fenced-code-header {
   position: sticky;
@@ -359,6 +367,7 @@ body {
   z-index: 1;
   display: flex;
   align-items: center;
+  gap: var(--tugx-block-strip-gap);
   min-height: var(--tugx-md-fenced-code-header-height);
   padding: var(--tugx-block-strip-padding);
   background: var(--tugx-block-strip-bg);
@@ -375,52 +384,53 @@ body {
   text-transform: lowercase;
 }
 
-/* Actions row — Copy `<button>`. Pinned below the identity header
- * (sticky stack) so the affordance stays reachable across the full
- * scroll range of the fenced-code block. The `top` calc uses the
- * static `--tugx-md-fenced-code-header-height` approximation because
- * `enhanceFencedCode` is an imperative DOM helper and doesn't run a
- * ResizeObserver; the header's `min-height` is set to the same value
- * so the two stay in lockstep. */
-.tugx-md-block .tugx-md-fenced-code-actions {
-  position: sticky;
-  top: calc(
-    var(--tugx-pin-stack-top, 0px)
-    + var(--tugx-md-fenced-code-header-height)
-  );
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  padding: var(--tugx-block-strip-padding);
-  background: var(--tugx-block-strip-bg);
-  border-bottom: 1px solid var(--tugx-block-strip-border);
-  font-family: var(--tugx-block-code-font);
-  font-size: var(--tugx-block-strip-size);
-}
-
-.tugx-md-block .tugx-md-fenced-code-actions-spacer {
+.tugx-md-block .tugx-md-fenced-code-header-spacer {
   flex: 1 1 auto;
 }
 
-/* Copy button — icon-first, with text label that fades in only on
-   the "copied" state. The default rest state shows the icon alone;
-   hover gets a subtle background. */
+/* Trailing affordances cluster — hosts the Copy `<button>` at the
+ * right edge of the identity header. Matches the React body kinds'
+ * `.tugx-{kind}-actions-cluster` shape: `flex: 0 0 auto`, no sticky
+ * (the cluster rides the header that hosts it). */
+.tugx-md-block .tugx-md-fenced-code-actions-cluster {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--tug-space-2xs);
+}
+
+/* Copy button — sized to match `TugPushButton size="2xs"
+ * emphasis="ghost"` so the imperative-DOM render reads consistently
+ * with the React body-kind affordances. Icon + "Copy" text at rest;
+ * swaps to Check icon + "Copied!" briefly after a successful
+ * clipboard write (CSS-driven display toggle on the `is-copied`
+ * class). */
 /* @tug-renders-on: --tugx-block-bg */
 .tugx-md-block .tugx-md-fenced-code-copy {
   display: inline-flex;
   align-items: center;
   gap: var(--tug-space-2xs);
+  height: var(--tugx-md-fenced-code-copy-height);
   padding: var(--tugx-md-fenced-code-copy-padding);
   border: none;
   background: transparent;
   color: var(--tugx-block-text-color-muted);
   border-radius: var(--tugx-md-fenced-code-copy-radius);
   cursor: pointer;
-  font: inherit;
+  font-family: inherit;
+  font-size: var(--tugx-md-fenced-code-copy-font-size);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   line-height: 1;
   transition:
     background var(--tug-motion-duration-fast) var(--tug-motion-easing-standard),
     color var(--tug-motion-duration-fast) var(--tug-motion-easing-standard);
+}
+
+.tugx-md-block .tugx-md-fenced-code-copy svg {
+  width: var(--tugx-md-fenced-code-copy-icon-size);
+  height: var(--tugx-md-fenced-code-copy-icon-size);
 }
 
 /* @tug-renders-on: --tugx-block-row-hover-bg */
@@ -452,12 +462,14 @@ body {
   color: var(--tugx-block-tone-add-color);
 }
 
-/* Copy-button labels are only shown in the copied state; the default
-   state is icon-only so the header reads compactly. The "Copy" label
-   stays in the DOM for screen readers via `aria-label="Copy code"` on
-   the button itself. */
+/* Both labels render alongside the icon ("Copy" at rest, "Copied!"
+ * during the post-click flash) so the button's shape is invariant
+ * across states — matching the icon-text contract of the Tug body-
+ * kind affordances (FileBlock fold cue, DiffBlock view-toggle,
+ * TerminalBlock Copy). The default label uses tabular-like spacing
+ * so the swap to "Copied!" doesn't shift the row width visibly. */
 .tugx-md-block .tugx-md-fenced-code-copy-label--default {
-  display: none;
+  display: inline;
 }
 
 /* Code body — sits flush below the header. The wrapper owns the

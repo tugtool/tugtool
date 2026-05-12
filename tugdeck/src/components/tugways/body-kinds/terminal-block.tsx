@@ -24,20 +24,26 @@
  *
  * Composition:
  *
- *  - Header (React-rendered `.tugx-term-header`): optional label
+ *  - Header (React-rendered `.tugx-term-header`): an optional label
  *    slot at left (`headerLabel` prop — typically the command for
- *    Bash tool standalone use; embedded hosts pass `undefined`
- *    because their own chrome carries identity), a flex spacer, and
- *    a `Copy` `<TugIconButton>` at right. The header is
- *    `position: sticky` so it stays visible while the user scrolls
- *    deep into the body. The Copy overlay (`.tugx-term-copy` absolute
- *    div) it replaces was retired: it sat on top of the scrollbar
- *    gutter for any output tall enough to trigger scrolling.
+ *    Bash tool standalone use), a flex spacer, and a `Copy`
+ *    `<TugIconButton>` at right. The header is `position: sticky` so
+ *    it stays visible while the user scrolls deep into the body. The
+ *    Copy overlay (`.tugx-term-copy` absolute div) it replaced was
+ *    retired: it sat on top of the scrollbar gutter for any output
+ *    tall enough to trigger scrolling.
  *  - Body (imperatively rendered into `.tugx-term-content`): the
  *    truncation banner, the flat / virtualized line container, and
  *    the post-mortem footer. The line rendering, ANSI palette, and
  *    virtualization machinery are unchanged — the header is the
  *    only structural addition.
+ *
+ * Embedded mode portals the Copy `<TugIconButton>` into the host
+ * `ToolWrapperChrome`'s actions slot (via `ChromeActionsTargetContext`)
+ * so the affordance surfaces in the chrome header rather than as a
+ * separate strip — Phase D consolidation. The body kind's own
+ * `.tugx-term-header` is suppressed when embedded (the chrome owns
+ * identity).
  *
  * Render strategy:
  *
@@ -93,10 +99,12 @@
 import "./terminal-block.css";
 
 import React from "react";
-import { Copy } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Check, Copy } from "lucide-react";
 
 import type { PropertyStore } from "@/components/tugways/property-store";
-import { TugIconButton } from "@/components/tugways/tug-icon-button";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
 import { ansiToHtml } from "@/lib/ansi/ansi-to-html";
 import { BlockHeightIndex } from "@/lib/block-height-index";
 import { RenderedBlockWindow } from "@/lib/rendered-block-window";
@@ -152,26 +160,31 @@ export interface TerminalBlockProps {
   className?: string;
 
   /**
-   * "Embedded" mode — drop the terminal's own frame
-   * (background / border / radius / outer margin) so it integrates
-   * flush inside a host that already paints a container, e.g. a
-   * `ToolWrapperChrome` body region. The lines, header strip,
-   * footer badges and ANSI palette are unchanged. Default `false` —
-   * standalone usage (gallery, RenderInput-routed) keeps its frame.
+   * "Embedded" mode — composed inside a host that already paints a
+   * container and a header (e.g. `ToolWrapperChrome` in
+   * `BashToolBlock`). When `true`:
+   *
+   *   - The standalone frame (background / border / radius / outer
+   *     margin) is dropped so the lines integrate flush with the host.
+   *   - The terminal's own `.tugx-term-header` is suppressed — the
+   *     wrapper owns identity.
+   *   - The Copy `<TugIconButton>` portals into the host's chrome
+   *     actions slot via `ChromeActionsTargetContext`. This is the
+   *     load-bearing contract: `embedded={true}` MUST be used under
+   *     a `ToolWrapperChrome` so Copy has somewhere to surface.
    *
    * @default false
    */
   embedded?: boolean;
 
   /**
-   * Optional label rendered at the left of the pinned header. The
+   * Optional label rendered at the left of the standalone header. The
    * Bash tool wrapper (`BashToolBlock`) passes the command here for
-   * standalone gallery use; embedded callers typically pass
-   * `undefined` because their own chrome already carries identity.
-   * Strings are wrapped in a `<span>` so the consumer doesn't have
-   * to pre-wrap; arbitrary `ReactNode` is also accepted for
-   * caller-controlled markup (e.g. a `<code>` element preserving
-   * the literal command).
+   * standalone gallery use; embedded callers don't need to set this
+   * — the chrome owns identity in that mode. Strings are wrapped in
+   * a `<span>` so the consumer doesn't have to pre-wrap; arbitrary
+   * `ReactNode` is also accepted for caller-controlled markup (e.g.
+   * a `<code>` element preserving the literal command).
    */
   headerLabel?: React.ReactNode;
 }
@@ -565,7 +578,7 @@ function composeCopyText(data: TerminalData): string {
 
 const EMPTY_TERMINAL: TerminalData = { stdout: "", stderr: "" };
 
-/** Duration the Copy button shows its "just-copied" cue (ms). */
+/** Duration the Copy button shows its "Copied" confirmation flash (ms). */
 const COPIED_FLASH_MS = 1200;
 
 export const TerminalBlock: React.FC<TerminalBlockProps> = ({
@@ -580,59 +593,34 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // imperative `renderTerminal` writes lines/footer into `bodyRef`.
   const outerRef = React.useRef<HTMLDivElement | null>(null);
   const bodyRef = React.useRef<HTMLDivElement | null>(null);
-  // Ref to the (optional) identity header — used by the telescoping-pin
-  // ResizeObserver below. Null when embedded OR when no `headerLabel`
-  // is provided.
-  const headerRef = React.useRef<HTMLDivElement | null>(null);
   // Latest data for the Copy callback to read. Updated inside both
   // effects so streaming sees the freshest stdout/stderr without
   // forcing a React re-render of the shell.
   const latestDataRef = React.useRef<TerminalData>(EMPTY_TERMINAL);
-  // Ref into the underlying button so the "just-copied" feedback can
-  // toggle a class via DOM [L06] rather than React state.
+  // Ref into the underlying button — kept for potential focus
+  // management and as a stable test handle. The just-copied feedback
+  // is driven by `TugPushButton`'s `confirmation` prop (a Tug-native
+  // CSS swap on `data-tug-confirming`) so we no longer manage an
+  // imperative class swap from React.
   const copyButtonRef = React.useRef<HTMLButtonElement | null>(null);
-  const copiedTimerRef = React.useRef<number | null>(null);
 
-  // Telescoping pin — write the live measured identity-header height
-  // into `--tugx-term-header-height` on the root so `.tugx-term-actions`
-  // can pin BELOW the identity header in standalone mode. See
-  // `file-block.tsx` for the full architectural rationale; same pattern
-  // applies here. In embedded mode the header isn't rendered, the ref
-  // stays null, and the variable falls back to 0 via the `calc()`
-  // default.
-  //
-  // [L03] useLayoutEffect — variable set before paint.
-  // [L06] DOM write, never React state.
-  // [L20] TerminalBlock owns `--tugx-term-*` (this variable is in that
-  //   family).
-  const showHeader = !embedded && headerLabel !== undefined;
-  React.useLayoutEffect(() => {
-    const root = outerRef.current;
-    const header = headerRef.current;
-    if (root === null) return;
-    if (header === null) {
-      root.style.removeProperty("--tugx-term-header-height");
-      return;
-    }
-    const write = (px: number): void => {
-      root.style.setProperty("--tugx-term-header-height", `${px}px`);
-    };
-    write(header.offsetHeight);
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (entry === undefined) return;
-      const boxes = entry.borderBoxSize;
-      const next =
-        boxes !== undefined && boxes.length > 0
-          ? boxes[0].blockSize
-          : entry.contentRect.height;
-      write(next);
-    });
-    observer.observe(header);
-    return () => {
-      observer.disconnect();
-    };
-  }, [showHeader]);
+  // Chrome actions target — non-null when this TerminalBlock is
+  // composed inside a `ToolWrapperChrome` that has rendered its actions
+  // slot. Phase D portals the Copy `<TugIconButton>` into the chrome
+  // header rather than hosting it in a separate body-kind strip.
+  // Standalone composition keeps the header strip and renders Copy at
+  // its trailing edge.
+  const chromeActionsTarget = useChromeActionsTarget();
+
+  // Standalone always renders an identity header — even without a
+  // `headerLabel`, the header strip hosts Copy at the trailing edge.
+  // An empty strip is a fair price for the Copy affordance staying
+  // reachable across the scroll range; the alternative (a body-kind
+  // overlay) was retired with the `.tugx-term-copy` slot family
+  // because the overlay sat on top of the scrollbar gutter.
+  // Embedded mode suppresses the header — the chrome owns identity
+  // and Copy portals into the chrome's actions slot instead.
+  const showHeader = !embedded;
 
   // Static mode — runs once at mount, never again. Skipped when
   // streamingStore is set so the streaming effect below owns the
@@ -694,41 +682,57 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
     };
   }, [streamingStore, streamingPath]);
 
-  // Clear any pending "just-copied" timer on unmount.
-  React.useEffect(() => {
-    return () => {
-      if (copiedTimerRef.current !== null) {
-        window.clearTimeout(copiedTimerRef.current);
-        copiedTimerRef.current = null;
-      }
-    };
-  }, []);
-
   const handleCopy = React.useCallback((): void => {
     const writeText = navigator.clipboard?.writeText.bind(navigator.clipboard);
     if (writeText === undefined) return;
     const text = composeCopyText(latestDataRef.current);
-    writeText(text)
-      .then(() => {
-        const btn = copyButtonRef.current;
-        if (btn === null) return;
-        btn.classList.add("is-copied");
-        if (copiedTimerRef.current !== null) {
-          window.clearTimeout(copiedTimerRef.current);
-        }
-        copiedTimerRef.current = window.setTimeout(() => {
-          copiedTimerRef.current = null;
-          // Re-read the ref — the component may have unmounted
-          // between the timer's schedule and its fire.
-          const live = copyButtonRef.current;
-          if (live !== null) live.classList.remove("is-copied");
-        }, COPIED_FLASH_MS);
-      })
-      .catch(() => {
-        // Swallow — the user gets no positive confirmation, which is
-        // the right behavior when the write actually fails.
-      });
+    // Fire-and-forget; `TugPushButton`'s `confirmation` handles the
+    // "Copied" feedback flash on click (a CSS-driven swap with no
+    // React state cost, per [L06]). Errors are swallowed — failure
+    // is rare and silent is fine since the user can just re-click.
+    writeText(text).catch(() => undefined);
   }, []);
+
+  // Copy `<TugPushButton>` — rendered once, placed by the host
+  // composition: inside `.tugx-term-header` (standalone) or portaled
+  // into the chrome's actions slot (embedded). Icon-text shape with
+  // an invariant structure across rest / confirmed states (per the
+  // "buttons must not change subtype between states" rule): rest
+  // shows `Copy` icon + "Copy" label; the brief confirmed flash
+  // swaps in the `Check` icon + "Copied" label via TugButton's
+  // built-in `confirmation` machinery.
+  const copyButton = (
+    <TugPushButton
+      ref={copyButtonRef}
+      className="tugx-term-copy-button"
+      icon={<Copy />}
+      subtype="icon-text"
+      emphasis="ghost"
+      size="2xs"
+      aria-label="Copy terminal output"
+      onClick={handleCopy}
+      confirmation={{
+        icon: <Check />,
+        label: "Copied",
+        duration: COPIED_FLASH_MS,
+      }}
+    >
+      Copy
+    </TugPushButton>
+  );
+
+  const portaledCopy =
+    embedded && chromeActionsTarget !== null
+      ? createPortal(
+          <span
+            className="tugx-term-actions-cluster"
+            data-slot="terminal-actions"
+          >
+            {copyButton}
+          </span>,
+          chromeActionsTarget,
+        )
+      : null;
 
   return (
     <div
@@ -742,28 +746,27 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
     >
       {showHeader ? (
         <div
-          ref={headerRef}
           className="tugx-term-header"
           data-slot={DATA_SLOT_HEADER}
         >
+          {headerLabel !== undefined ? (
+            <span
+              className="tugx-term-header-label"
+              data-slot="terminal-header-label"
+            >
+              {headerLabel}
+            </span>
+          ) : null}
+          <span className="tugx-term-header-spacer" />
           <span
-            className="tugx-term-header-label"
-            data-slot="terminal-header-label"
+            className="tugx-term-actions-cluster"
+            data-slot="terminal-actions"
           >
-            {headerLabel}
+            {copyButton}
           </span>
         </div>
       ) : null}
-      <div className="tugx-term-actions" data-slot="terminal-actions">
-        <span className="tugx-term-actions-spacer" />
-        <TugIconButton
-          ref={copyButtonRef}
-          icon={<Copy />}
-          aria-label="Copy terminal output"
-          onClick={handleCopy}
-          className="tugx-term-copy-button"
-        />
-      </div>
+      {portaledCopy}
       <div
         ref={bodyRef}
         className="tugx-term-content"

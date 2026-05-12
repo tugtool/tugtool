@@ -73,11 +73,13 @@ export function GalleryPopupButton() {
   // status line. ALL_SIZES is a known-length array (sm, md, lg) so we
   // call useId() three times at the top level to satisfy the Rules of
   // Hooks — no useId-in-loop.
+  const sample2xsPopupId = useId();
   const sampleXsPopupId = useId();
   const sampleSmPopupId = useId();
   const sampleMdPopupId = useId();
   const sampleLgPopupId = useId();
   const sampleSizePopupIds: Record<TugButtonSize, string> = {
+    "2xs": sample2xsPopupId,
     xs: sampleXsPopupId,
     sm: sampleSmPopupId,
     md: sampleMdPopupId,

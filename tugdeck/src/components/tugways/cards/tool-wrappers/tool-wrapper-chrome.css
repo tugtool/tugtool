@@ -74,6 +74,12 @@ body {
   --tugx-toolblock-streaming-padding:  var(--tug-space-sm) var(--tug-space-md);
   --tugx-toolblock-streaming-gap:      4px;
   --tugx-toolblock-streaming-dot-size: 6px;
+
+  /* Actions slot — hosts body-kind affordance buttons portaled into
+   * the chrome header (Find trigger, Copy, view-mode toggle, fold
+   * cue). The slot is structural: layout-only here, with appearance
+   * driven by the affordance components themselves per [L20]. */
+  --tugx-toolblock-actions-gap: var(--tug-space-2xs);
 }
 
 .tool-wrapper-chrome {
@@ -172,6 +178,25 @@ body {
   background: transparent;
   padding: 0;
   color: inherit;
+}
+
+/* ---- Actions slot (trailing edge of the header) ---- */
+
+/* Body-kind affordances portal into this slot when composed under
+ * `embedded={true}`. See `tool-wrapper-chrome.tsx`'s module docstring
+ * for the portal contract. The slot is structural only — it hosts
+ * `TugIconButton`s, `TugPushButton`s, and similar component children
+ * whose own appearance tokens drive their rendering. We control the
+ * cluster layout (gap, sizing-out-of-the-flow) here; we never style
+ * the children directly. The slot is always rendered (empty when the
+ * body kind has nothing to surface) so the context-published DOM node
+ * is present from first paint — descendants can portal on their first
+ * render-after-mount without waiting for a chrome re-render. */
+.tool-wrapper-chrome-actions {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--tugx-toolblock-actions-gap);
 }
 
 /* ---- Caution badge (inline in header) ---- */

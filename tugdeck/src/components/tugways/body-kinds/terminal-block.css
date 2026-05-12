@@ -35,11 +35,14 @@
  *    An outer pin context that wants this header telescoped below
  *    it writes its own measured height into `--tugx-pin-stack-top`;
  *    when the variable isn't set, the header sticks to `top: 0`.
+ *  - Phase D consolidated affordances into the header itself. Copy
+ *    lives at the trailing edge of `.tugx-term-header` (standalone),
+ *    or portals into `ToolWrapperChrome`'s actions slot (embedded).
+ *    The dedicated `.tugx-term-actions` sticky strip retired.
  *  - The Copy overlay (`.tugx-term-copy` absolute div, `--tugx-term-copy-*`
- *    slot family) was retired with this change. It sat on top of the
- *    scrollbar gutter for any output tall enough to trigger scrolling
- *    and on the corner where both scrollbars met for both-dimension
- *    overflow. Header-resident Copy cannot conflict with scrollbars.
+ *    slot family) was retired earlier — it sat on top of the scrollbar
+ *    gutter for any output tall enough to trigger scrolling. The
+ *    in-header Copy of Phase D cannot conflict with scrollbars.
  *
  * The 16 ANSI color classes (`ansi-{black,red,…}-fg|bg`) are mapped
  * to `--tugx-term-ansi-*` tokens so brio and harmony can paint the
@@ -129,13 +132,14 @@ body {
  * `exitCode` are set, so it isn't purely decorative — keep it
  * visible. Only hide when the empty state has zero footer fields.
  *
- * The pinned header is always rendered (Copy is always reachable).
- * It paints the strip background and a 1px bottom border — that's
- * a one-line indicator on its own. We don't want a "phantom"
- * terminal block (header strip with no body and no footer) for
- * an empty-stdin / empty-stdout / empty-stderr / no-exit-code
- * payload. The `:not(:has(...))` keeps the post-mortem `exit 0`
- * case visible (it has a footer) but hides truly-empty terminals.
+ * The standalone header is always rendered (Copy is always reachable
+ * at its trailing edge per Phase D). It paints the strip background
+ * and a 1px bottom border — that's a one-line indicator on its own.
+ * We don't want a "phantom" terminal block (header strip with no
+ * body and no footer) for an empty-stdin / empty-stdout /
+ * empty-stderr / no-exit-code payload. The `:not(:has(...))` keeps
+ * the post-mortem `exit 0` case visible (it has a footer) but hides
+ * truly-empty terminals.
  */
 .tugx-term[data-empty="true"]:not(:has(.tugx-term-footer)) {
   display: none;
@@ -168,9 +172,8 @@ body {
 .tugx-term-header-label {
   /* Optional caller-supplied label (typically the command, when the
    * Bash wrapper passes it through). Single-line; ellipsizes so a
-   * very long command doesn't push siblings out of view (in the
-   * current design the label is the only header content; ellipsis
-   * still useful in case future additions land alongside it). */
+   * very long command doesn't push the trailing actions cluster
+   * out of view. */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -179,40 +182,28 @@ body {
   font-family: var(--tugx-block-code-font);
 }
 
-/* ---- Actions row (Copy + future affordances) ---- */
-
-/* Hosts the Copy `<TugIconButton>` (and any future terminal-specific
- * affordance, e.g. follow-tail). Pins under the identity header in
- * standalone mode (consumed via `--tugx-term-header-height`, written
- * by `terminal-block.tsx`'s ResizeObserver) and under the wrapper
- * chrome's header in embedded mode (consumed via
- * `--tugx-toolblock-header-height`, written by `tool-wrapper-chrome.tsx`).
- *
- * In embedded mode the identity header is suppressed and the actions
- * row is the ONLY body-kind chrome — Copy stays reachable across the
- * full scroll range without being overlaid on the body's scrollbar
- * gutter (the original reason `.tugx-term-copy` overlay was retired). */
-.tugx-term-actions {
-  position: sticky;
-  top: calc(
-    var(--tugx-pin-stack-top, 0px)
-    + var(--tugx-toolblock-header-height, 0px)
-    + var(--tugx-term-header-height, 0px)
-  );
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: var(--tugx-block-strip-gap);
-  padding: var(--tugx-block-strip-padding);
-  background: var(--tugx-block-strip-bg);
-  border-bottom: 1px solid var(--tugx-block-strip-border);
-  color: var(--tugx-block-strip-color);
-  font-family: var(--tugx-block-strip-font);
-  font-size: var(--tugx-block-strip-size);
+.tugx-term-header-spacer {
+  flex: 1 1 auto;
 }
 
-.tugx-term-actions-spacer {
-  flex: 1 1 auto;
+/* ---- Trailing affordances cluster ---- */
+
+/* Phase D — the dedicated `.tugx-term-actions` sticky strip retired.
+ * Copy now sits as a `flex: 0 0 auto` cluster at the trailing edge of
+ * `.tugx-term-header` (standalone) or portals into
+ * `ToolWrapperChrome`'s actions slot (embedded). Mirrors FileBlock /
+ * DiffBlock's `.tugx-{kind}-actions-cluster` pattern; same markup,
+ * same `data-slot="terminal-actions"` hook so consumers and tests
+ * can still locate "TerminalBlock's affordances" unambiguously
+ * regardless of composition mode.
+ *
+ * No `position: sticky`, no `--tugx-term-header-height` writer — the
+ * cluster rides whichever header it's inside. */
+.tugx-term-actions-cluster {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--tug-space-2xs);
 }
 
 /* ---- Content wrapper ---- */

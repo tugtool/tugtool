@@ -750,7 +750,7 @@ When the substrate needs something it doesn't yet provide (e.g. a particular lan
 
 ## Pin-stack composition — `--tugx-pin-stack-top`
 
-When the Tide transcript scrolls, a tower of sticky chrome can pin simultaneously: the entry header (Claude / model / timestamp), the wrapper-chrome header (Read / Edit / Bash identity), a body kind's identity header (file path / diff stats / terminal label), and the body kind's actions row (Find / Copy / fold cue / view-toggle). These bars must **stack**, not overlap — each one pins flush below the bar above it.
+When the Tide transcript scrolls, a tower of sticky chrome can pin simultaneously: the entry header (Claude / model / timestamp), the wrapper-chrome header (Read / Edit / Bash identity), a body kind's identity header (file path / diff stats / terminal label), and inside a diff the per-hunk header bands. These bars must **stack**, not overlap — each one pins flush below the bar above it.
 
 The composition rule is a single CSS variable propagated through the cascade.
 
@@ -772,11 +772,11 @@ When no transcript entry is present (gallery cards, ad-hoc consumers, the `Rende
 
 Deeper-tier bars compose the same way through additional component-owned variables:
 
-- **`--tugx-toolblock-header-height`** — written by `ToolWrapperChrome` on its root from a ResizeObserver on `.tool-wrapper-chrome-header`. Body-kind actions rows inside read it so they pin BELOW the chrome header.
-- **`--tugx-file-header-height`** / **`--tugx-diff-header-height`** / **`--tugx-term-header-height`** — written by the respective body kinds on their root from a ResizeObserver on the standalone-mode identity header (unset when embedded mode suppresses the header). The body kind's actions row reads all three plus `--tugx-pin-stack-top` plus `--tugx-toolblock-header-height` in a single calc:
+- **`--tugx-toolblock-header-height`** — written by `ToolWrapperChrome` on its root from a ResizeObserver on `.tool-wrapper-chrome-header`. Sticky descendants inside the chrome (a body kind's Find row, a diff's hunk header) read it so they pin BELOW the chrome header.
+- **`--tugx-file-header-height`** / **`--tugx-diff-header-height`** — written by the respective body kinds on their root from a ResizeObserver on the standalone-mode identity header (unset when embedded mode suppresses the header). Sticky descendants inside the body kind (the Find row in `FileBlock`, the hunk headers in `DiffBlock`) read all three pin-stack variables in a single calc:
 
 ```css
-.tugx-file-actions {
+.tugx-file-find {
   position: sticky;
   top: calc(
     var(--tugx-pin-stack-top, 0px)
@@ -789,13 +789,24 @@ Deeper-tier bars compose the same way through additional component-owned variabl
 
 The `0px` fallback in each `var()` is load-bearing — without it the entire calc resolves to nothing when ONE variable is unset, and the bar mispins. Always use `var(--name, 0px)`, never `var(--name, 0)`.
 
+### Body-kind affordance hosting
+
+Resting affordances (Find trigger, Copy, fold cue, view-mode toggle) do **not** get their own sticky strip. They live as a `flex: 0 0 auto` cluster (`.tugx-{kind}-actions-cluster` carrying `data-slot="{kind}-actions"`) at the trailing edge of the identity header (`.tugx-{kind}-header`) in standalone composition, or portal into `ToolWrapperChrome`'s actions slot (`.tool-wrapper-chrome-actions[data-slot="tool-wrapper-actions"]`) in embedded composition.
+
+The portal mechanism is React-side, not DOM-side: `ToolWrapperChrome` renders a `<div ref={setActionsTarget}>` inside its header, publishes the DOM node via `ChromeActionsTargetContext`, and a body kind composed under it reads the context via `useChromeActionsTarget()`. When `embedded={true}` and the context returns a non-null target, the body kind `createPortal`s its affordance cluster into the chrome's slot. This keeps affordance state (find session, fold collapsed-set, view-mode toggle) entirely inside the body kind while placing the rendered affordance node in the chrome subtree where it belongs for layout and sticky-pin coverage.
+
+The Find UI inside `FileBlock` is **progressive disclosure**: a sticky `.tugx-file-find` row mounts only while `findOpen` is true, pinning under the chrome / identity header. When closed, the row unmounts entirely — no reserved geometry at rest, just an icon-sized trigger in the trailing cluster.
+
 **Authoring rules:**
 
-1. **Writers** — components that produce pin offsets — own a token in their slot family (`--tugx-{component}-header-height` or `--tugx-{component}-actions-height`) and write to it from `useLayoutEffect` + `ResizeObserver`. Per [L03] the registration runs before paint; per [L06] the write is to DOM via `element.style.setProperty`, never to React state.
+1. **Writers** — components that produce pin offsets — own a token in their slot family (`--tugx-{component}-header-height`) and write to it from `useLayoutEffect` + `ResizeObserver`. Per [L03] the registration runs before paint; per [L06] the write is to DOM via `element.style.setProperty`, never to React state. Do **not** write `--tugx-{component}-actions-height` tokens — the dedicated actions row pattern was retired in Step 10.9 Phase D in favor of a one-row trailing-cluster shape.
 2. **Readers** — sticky descendants — consume the chain via `calc(var(...) + var(...) + ...)`. Each reader knows which writers it composes underneath. Adding a new level means adding a writer + a token, and extending the calc on every descendant that pins under it.
 3. **Background** — every sticky element needs an opaque background or body content bleeds through. Bind to a theme-aware token (typically `--tugx-block-strip-bg` for block-level chrome or a component-local `--tugx-{component}-header-bg` for primitives) rather than transparent or near-transparent values.
 4. **Container** — sticky binds to the nearest scroll-container ancestor. `overflow: hidden` on an ancestor traps sticky inside that ancestor (which doesn't scroll); use `overflow: clip` when you only need rounded-corner clipping without forming a scroll container.
 5. **Scroll container padding** — `padding-block` on the scroll container shifts the sticky pin reference inward by that amount (CSS Position 3 §6.5.1 — sticky `top: 0` pins to the content-box edge). Restore breathing room with `::before` / `::after` pseudo-element children or with margin on the first/last cell, never with container `padding-block`.
+6. **Affordance components are Tug primitives.** Resting affordances inside an actions cluster MUST be `TugIconButton`, `TugPushButton`, `TugCheckbox`, etc. — never raw `<button>` elements with bespoke CSS. The `tugx-{kind}-{name}` legacy class names may be forwarded onto the Tug components as `className` for scoping and stable test selectors, but appearance flows through the Tug components' own `--tug-button-*` (etc.) slots, not through component-local rules that re-implement button chrome. Imperative-DOM rendering paths (e.g. `enhanceFencedCode`, which can't easily mount React) may use raw `<button>` markup, but the visual treatment must match the Tug primitive equivalent (ghost emphasis at xs/sm size, icon-text shape) so the cluster reads consistently across mount strategies.
+7. **Button shapes are invariant across states.** A button that toggles between `subtype="icon"` and `subtype="icon-text"` between states moves the click target out from under the user's pointer. Always pick one shape and keep it. When state needs to flow into the rendered chrome (chevron direction, label verb), the icon and the label STRING swap but the subtype does not. Use `TugButton`'s `confirmation` prop for post-click flashes (e.g. Copy → Copied) rather than a class-swap that hides one structure and reveals another.
+8. **Affordances stay visible across body-state changes.** When a body kind has a fold state (collapsed / expanded), don't add or remove affordance buttons between states. Render them all in both states; `disabled` the ones whose target isn't present (e.g. Search on a collapsed file — the substrate isn't mounted, so finding is disabled, but the button stays in place so the trailing-cluster geometry doesn't grow or shrink). The cluster width and the header height stay invariant; only individual buttons enable/disable.
 
 ---
 

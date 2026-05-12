@@ -69,9 +69,12 @@
 import "./diff-block.css";
 
 import React from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, ChevronRight, ChevronsDown, ChevronsUp } from "lucide-react";
 
 import { TugCue } from "@/components/tugways/tug-cue";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
 import { detectLanguage } from "./file-block";
 import {
   parseUnifiedDiffText,
@@ -128,8 +131,21 @@ export interface DiffBlockProps {
   /**
    * "Embedded" mode — composed inside a host that already paints a
    * container and a header (e.g. `ToolWrapperChrome` in
-   * `EditToolBlock`). When `true`, the standalone frame is dropped so
-   * the body sits flush with the host.
+   * `EditToolBlock`). When `true`:
+   *
+   *   - The standalone frame is dropped so the body sits flush with
+   *     the host.
+   *   - DiffBlock's own header (path + stats) is hidden — the wrapper
+   *     owns identity.
+   *   - The resting affordances (fold cue, view-toggle) portal into
+   *     the host's chrome actions slot via
+   *     `ChromeActionsTargetContext`. This is the load-bearing
+   *     contract: `embedded={true}` MUST be used under a
+   *     `ToolWrapperChrome` so the affordances have somewhere to
+   *     surface. Using `embedded={true}` outside a chrome is
+   *     unsupported.
+   *
+   * @default false
    */
   embedded?: boolean;
 
@@ -360,18 +376,23 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
 }) => {
   // -- Telescoping pin: write the identity-header height -------------------
   //
-  // The actions row below pins under the identity header. In standalone
-  // mode it needs to clear the header's height; in embedded mode the
+  // The hunk headers below pin under the identity header. In standalone
+  // mode they need to clear the header's height; in embedded mode the
   // header isn't rendered and the variable stays unset (calc() falls
   // back to 0). Same architecture as FileBlock — see file-block.tsx
   // for the full rationale and Step 10.9 Phase B.2 for the design.
+  //
+  // Phase D consolidated the body-kind actions row INTO the chrome /
+  // identity header (no more separate sticky strip), so the only
+  // telescoping height this body kind writes is the header's. The
+  // hunk-header `top:` calc loses the formerly-needed
+  // `--tugx-diff-actions-height` term.
   //
   // [L03] useLayoutEffect — variable set before paint.
   // [L06] DOM write, never React state.
   // [L20] DiffBlock owns `--tugx-diff-*` (the variable is in that family).
   const rootRef = React.useRef<HTMLDivElement | null>(null);
   const headerRef = React.useRef<HTMLDivElement | null>(null);
-  const actionsRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useLayoutEffect(() => {
     const root = rootRef.current;
@@ -401,38 +422,13 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
     };
   }, [embedded, data === undefined]);
 
-  // Mirror of the header observer for the actions row. The hunk
-  // headers (`.tugx-diff-hunk-header`) pin BELOW the actions row, so
-  // they need to know its measured height in their sticky `top`
-  // calc — `--tugx-diff-actions-height` is the variable that
-  // carries it.
-  React.useLayoutEffect(() => {
-    const root = rootRef.current;
-    if (root === null) return;
-    const actions = actionsRef.current;
-    if (actions === null) {
-      root.style.removeProperty("--tugx-diff-actions-height");
-      return;
-    }
-    const write = (px: number): void => {
-      root.style.setProperty("--tugx-diff-actions-height", `${px}px`);
-    };
-    write(actions.offsetHeight);
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (entry === undefined) return;
-      const boxes = entry.borderBoxSize;
-      const next =
-        boxes !== undefined && boxes.length > 0
-          ? boxes[0].blockSize
-          : entry.contentRect.height;
-      write(next);
-    });
-    observer.observe(actions);
-    return () => {
-      observer.disconnect();
-    };
-  }, [data === undefined]);
+  // Chrome actions target — non-null when this DiffBlock is composed
+  // inside a `ToolWrapperChrome`. The resting affordances (fold cue,
+  // view-toggle) portal into the chrome's actions slot when embedded,
+  // or render in `.tugx-diff-header` trailing area when standalone.
+  // See `file-block.tsx` for the corresponding pattern; the same
+  // portal contract applies here.
+  const chromeActionsTarget = useChromeActionsTarget();
 
   // -- View mode (inline | side-by-side) ------------------------------------
   //
@@ -718,6 +714,75 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
 
   const empty = hunks.length === 0;
 
+  // Compose the resting affordances cluster (fold cue + view-toggle)
+  // once; render inline (standalone, trailing area of `.tugx-diff-header`)
+  // or via portal into the chrome's actions slot (embedded). Phase D
+  // consolidated these into the chrome / identity header so the
+  // dedicated `.tugx-diff-actions` sticky strip retires entirely.
+  //
+  // Affordance components are Tug primitives by contract:
+  //  - Fold cue: `TugPushButton` with `subtype="icon-text"`,
+  //    `emphasis="ghost"`, `size="2xs"`. The shape is INVARIANT
+  //    across collapsed / expanded states — only the chevron icon
+  //    flips. The label is "N hunks" regardless of fold state; the
+  //    aria-label carries the verb ("Expand diff" / "Collapse diff")
+  //    for screen readers.
+  //  - View-toggle: text-only `TugPushButton`, `emphasis="ghost"`,
+  //    `size="2xs"`. Disabled when the diff is collapsed (no hunks
+  //    visible, so view-mode is meaningless). Disabling instead of
+  //    hiding keeps the cluster geometry stable across fold states.
+  //
+  // Legacy `tugx-diff-*` class names + data-slots are forwarded onto
+  // the Tug components so CSS scoping and test hooks stay stable.
+  const hunkCountWord = hunks.length === 1 ? "hunk" : "hunks";
+  const cueLabel = `${hunks.length} ${hunkCountWord}`;
+  const affordances = empty ? null : (
+    <>
+      <TugPushButton
+        className="tugx-diff-fold-cue"
+        data-slot="diff-fold-cue"
+        icon={collapsed ? <ChevronsDown /> : <ChevronsUp />}
+        subtype="icon-text"
+        emphasis="ghost"
+        size="2xs"
+        aria-expanded={!collapsed}
+        aria-label={collapsed ? "Expand diff" : "Collapse diff"}
+        onClick={toggleCollapsed}
+      >
+        {cueLabel}
+      </TugPushButton>
+      <TugPushButton
+        className="tugx-diff-view-toggle"
+        data-slot={DATA_SLOT_VIEW_TOGGLE}
+        emphasis="ghost"
+        size="2xs"
+        disabled={collapsed}
+        aria-pressed={viewMode === "side-by-side"}
+        aria-label={
+          viewMode === "side-by-side"
+            ? "Switch to inline diff"
+            : "Switch to side-by-side diff"
+        }
+        onClick={toggleViewMode}
+      >
+        {viewMode === "side-by-side" ? "Inline" : "Side by side"}
+      </TugPushButton>
+    </>
+  );
+
+  const portaledAffordances =
+    embedded && chromeActionsTarget !== null && affordances !== null
+      ? createPortal(
+          <span
+            className="tugx-diff-actions-cluster"
+            data-slot="diff-actions"
+          >
+            {affordances}
+          </span>,
+          chromeActionsTarget,
+        )
+      : null;
+
   return (
     <div
       ref={rootRef}
@@ -751,49 +816,18 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
             <span className="tugx-diff-stats-add">+{stats.added}</span>
             <span className="tugx-diff-stats-remove">−{stats.removed}</span>
           </span>
-        </div>
-      )}
-
-      {empty ? null : (
-        <div
-          ref={actionsRef}
-          className="tugx-diff-actions"
-          data-slot="diff-actions"
-        >
-          <button
-            type="button"
-            className="tugx-diff-fold-cue"
-            data-slot="diff-fold-cue"
-            aria-expanded={!collapsed}
-            aria-label={collapsed ? "Expand diff" : "Collapse diff"}
-            onClick={toggleCollapsed}
-          >
-            <span className="tugx-diff-fold-cue-icon" aria-hidden="true">
-              {collapsed ? <ChevronsDown /> : <ChevronsUp />}
+          <span className="tugx-diff-header-spacer" />
+          {affordances !== null ? (
+            <span
+              className="tugx-diff-actions-cluster"
+              data-slot="diff-actions"
+            >
+              {affordances}
             </span>
-            {collapsed ? (
-              <span className="tugx-diff-fold-cue-label">
-                {`${hunks.length} ${hunks.length === 1 ? "hunk" : "hunks"} folded`}
-              </span>
-            ) : null}
-          </button>
-          <span className="tugx-diff-actions-spacer" />
-          <button
-            type="button"
-            className="tugx-diff-view-toggle"
-            data-slot={DATA_SLOT_VIEW_TOGGLE}
-            aria-pressed={viewMode === "side-by-side"}
-            aria-label={
-              viewMode === "side-by-side"
-                ? "Switch to inline diff"
-                : "Switch to side-by-side diff"
-            }
-            onClick={toggleViewMode}
-          >
-            {viewMode === "side-by-side" ? "Inline" : "Side by side"}
-          </button>
+          ) : null}
         </div>
       )}
+      {portaledAffordances}
 
       {!collapsed && renderData !== null ? (
         <div className="tugx-diff-hunks" data-slot={DATA_SLOT_HUNKS}>

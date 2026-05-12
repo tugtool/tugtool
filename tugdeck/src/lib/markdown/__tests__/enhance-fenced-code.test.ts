@@ -88,34 +88,42 @@ describe("enhanceFencedCode — wrapping", () => {
     expect(pre.querySelector("code")?.textContent).toBe("fn main() {}");
   });
 
-  test("Copy lives in the actions row, not in the identity header", () => {
-    // Step 10.9 Phase B.2 — fenced-code Copy moved out of
-    // `.tugx-md-fenced-code-header` into `.tugx-md-fenced-code-actions`
-    // so the two strips can stack when both pin. The identity header
-    // now carries only the language label.
+  test("Copy lives inside the header's trailing actions cluster", () => {
+    // Phase D — fenced-code Copy lives in a `flex: 0 0 auto` cluster
+    // at the trailing edge of `.tugx-md-fenced-code-header` (carrying
+    // `data-slot="md-fenced-code-actions"`). The dedicated
+    // `.tugx-md-fenced-code-actions` sticky strip retired with this
+    // change; one row carries identity + Copy.
     setHtml(`<pre><code class="language-ts">x</code></pre>`);
     enhanceFencedCode(root);
 
     const header = root.querySelector(
       ".tugx-md-fenced-code-header",
     ) as HTMLElement;
-    const actions = root.querySelector(
-      ".tugx-md-fenced-code-actions",
-    ) as HTMLElement;
     expect(header).not.toBeNull();
-    expect(actions).not.toBeNull();
 
-    // Copy is NOT in the header.
-    expect(header.querySelector(".tugx-md-fenced-code-copy")).toBeNull();
-    // Copy IS in the actions row.
-    expect(actions.querySelector(".tugx-md-fenced-code-copy")).not.toBeNull();
+    const cluster = header.querySelector(
+      '[data-slot="md-fenced-code-actions"]',
+    ) as HTMLElement;
+    expect(cluster).not.toBeNull();
+    expect(cluster.classList.contains("tugx-md-fenced-code-actions-cluster"))
+      .toBe(true);
 
-    // DOM order: header, then actions, then pre.
+    // Copy is inside the cluster.
+    expect(cluster.querySelector(".tugx-md-fenced-code-copy")).not.toBeNull();
+
+    // The retired `.tugx-md-fenced-code-actions` sticky strip should
+    // no longer exist anywhere in the DOM.
+    expect(
+      root.querySelector(".tugx-md-fenced-code-actions"),
+    ).toBeNull();
+
+    // DOM order: header, then pre. (The actions cluster lives INSIDE
+    // the header — it's no longer a sibling.)
     const wrapper = root.querySelector(".tugx-md-fenced-code") as HTMLElement;
     const children = Array.from(wrapper.children);
     expect(children[0]).toBe(header);
-    expect(children[1]).toBe(actions);
-    expect(children[2]?.tagName).toBe("PRE");
+    expect(children[1]?.tagName).toBe("PRE");
   });
 
   test("falls back to 'code' label for fences with no language tag", () => {

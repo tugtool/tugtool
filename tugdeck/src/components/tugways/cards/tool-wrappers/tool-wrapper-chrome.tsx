@@ -33,6 +33,28 @@
  * [D04] / [Q03]. Three reasons surface here: `unknown_tool`,
  * `unknown_shape`, `version_drift`.
  *
+ * ## Actions slot — body-kind affordance host
+ *
+ * The chrome's header carries an actions target at its trailing edge:
+ * `<div data-slot="tool-wrapper-actions">`. It is exposed to descendants
+ * via the `ChromeActionsTargetContext` so a body kind composed inside
+ * (under `embedded={true}`) can `createPortal` its resting affordances
+ * (Find trigger, Copy, view-mode toggle, fold cue) into the chrome header
+ * itself. Per [L20] the chrome owns only the SLOT (a placeholder div with
+ * layout-only styling); the affordances inside the slot are React-rendered
+ * by the body kind and carry the body kind's tokens. Standalone callers
+ * (gallery, RenderInput-routed) get a null context value and render
+ * affordances in their own identity header.
+ *
+ * Why a portal and not a `headerActions` prop: the affordance state
+ * (find session, view-mode toggle, fold collapsed-set) is owned by the
+ * body kind. Hoisting that state to the wrapper level so the wrapper
+ * could pass `headerActions` would invert the data flow and require
+ * every wrapper to re-implement the affordance UI. The portal lets the
+ * body kind keep all state local while still placing the rendered
+ * affordance node inside the chrome's header in the DOM tree — exactly
+ * where it needs to sit for layout, sticky-pin coverage, and accessibility.
+ *
  * Laws:
  *  - [L06] all visible state lives on data attributes / class
  *    swaps; the chrome never renders prose into React state.
@@ -54,6 +76,29 @@ import React from "react";
 import { cn } from "@/lib/utils";
 
 import type { CautionFlag, ToolWrapperStatus } from "./types";
+
+/**
+ * Context exposing the chrome's actions-slot DOM node to descendants.
+ * Body kinds nested under a `ToolWrapperChrome` (typically with
+ * `embedded={true}`) read this and portal their resting affordances
+ * into the slot, so the chrome header carries the icon row at its
+ * trailing edge without the chrome needing to know what affordances
+ * exist. The value is `null` when no chrome is above — standalone
+ * callers detect that and render affordances in their own header.
+ */
+const ChromeActionsTargetContext = React.createContext<HTMLDivElement | null>(
+  null,
+);
+
+/**
+ * Read the chrome actions target from context. Returns `null` when the
+ * caller renders outside a `ToolWrapperChrome` (standalone composition).
+ * Body kinds key their "portal or render inline" branch on the truthiness
+ * of this value combined with their own `embedded` prop.
+ */
+export function useChromeActionsTarget(): HTMLDivElement | null {
+  return React.useContext(ChromeActionsTargetContext);
+}
 
 export interface ToolWrapperChromeProps {
   /**
@@ -143,6 +188,14 @@ export const ToolWrapperChrome: React.FC<ToolWrapperChromeProps> = ({
 }) => {
   const rootRef = React.useRef<HTMLDivElement | null>(null);
   const headerRef = React.useRef<HTMLDivElement | null>(null);
+  // The actions-slot target is a real DOM node that descendants portal
+  // into. Tracking it in React state (rather than a ref alone) so the
+  // context value re-publishes once the node mounts — the body kind's
+  // `createPortal` call on its first render-after-mount will then find
+  // a non-null target. Stale-null reads can't happen because the body
+  // kind re-renders whenever the chrome's render does.
+  const [actionsTarget, setActionsTarget] =
+    React.useState<HTMLDivElement | null>(null);
 
   // Telescoping pin support — write the live measured chrome-header
   // height into `--tugx-toolblock-header-height` on the chrome root so
@@ -214,9 +267,24 @@ export const ToolWrapperChrome: React.FC<ToolWrapperChromeProps> = ({
         {caution !== undefined ? (
           <CautionBadge caution={caution} />
         ) : null}
+        {/* Actions slot — see module docstring. A composed body kind
+         * portals its resting affordances here when `embedded={true}`.
+         * The slot is always rendered (even when empty) so the slot
+         * node is in the DOM from the chrome's first paint, the
+         * context value is non-null on first descendant render, and
+         * the body kind's portal call can target it without a
+         * re-render dance. Layout: `flex: 0 0 auto`; args ellipsizes
+         * to make room as affordances accumulate. */}
+        <div
+          ref={setActionsTarget}
+          className="tool-wrapper-chrome-actions"
+          data-slot="tool-wrapper-actions"
+        />
       </div>
       <div className="tool-wrapper-chrome-body" data-slot="tool-wrapper-body">
-        {children}
+        <ChromeActionsTargetContext.Provider value={actionsTarget}>
+          {children}
+        </ChromeActionsTargetContext.Provider>
       </div>
       {status === "error" && errorMessage !== undefined ? (
         <div

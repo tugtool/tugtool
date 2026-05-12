@@ -15,11 +15,12 @@
  *    the cue, not the substrate.
  *  - Controlled collapse: `collapsed={true}` honored; collapse
  *    `<TugIconButton>` toggles via `onToggleCollapsed`.
- *  - Search affordance: the actions row surfaces a `Search`
- *    `<TugIconButton>` when expanded; the underlying find-panel
- *    behavior (panel mount / keystroke wiring) is covered in
- *    `tug-code-view.test.tsx`.
- *  - Embedded mode: header is suppressed; the body still renders.
+ *  - Search affordance: the identity header's trailing affordances
+ *    cluster surfaces a `Search` `<TugIconButton>` when expanded;
+ *    the underlying find-panel behavior (panel mount / keystroke
+ *    wiring) is covered in `tug-code-view.test.tsx`.
+ *  - Embedded mode: header is suppressed; affordances portal into
+ *    the host `ToolWrapperChrome`'s actions slot (Phase D).
  *
  * What this test file intentionally does NOT cover (post-recast):
  *  - The per-line click-to-copy gesture (retired with the bespoke
@@ -46,6 +47,7 @@ import {
   splitContentLines,
   type FileData,
 } from "../file-block";
+import { ToolWrapperChrome } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
 
 afterEach(() => {
   cleanup();
@@ -229,11 +231,10 @@ describe("FileBlock — body branches", () => {
     const cue = container.querySelector(".tugx-file-fold-cue") as HTMLElement;
     expect(cue).not.toBeNull();
     expect(cue.getAttribute("aria-expanded")).toBe("false");
-    // Collapsed cue carries the count label so the user sees how
-    // much is folded away.
-    expect(cue.textContent).toContain("200 lines folded");
-    // ARIA label is the accessible name (chevron + label is the
-    // visual; aria-label is the screen-reader label).
+    // Cue label is the line count — same in both fold states (only
+    // the chevron icon flips). aria-label carries the verb for
+    // screen readers.
+    expect(cue.textContent).toContain("200 lines");
     expect(cue.getAttribute("aria-label")).toBe("Expand file");
     expect(container.querySelector('[data-slot="tug-code-view"]')).toBeNull();
   });
@@ -251,13 +252,13 @@ describe("FileBlock — body branches", () => {
     const cue = container.querySelector(".tugx-file-fold-cue") as HTMLElement;
     expect(cue).not.toBeNull();
     expect(cue.getAttribute("aria-expanded")).toBe("true");
-    // Expanded form is icon-only (compact action-bar form); the
-    // accessible name lives on the `aria-label` attribute so screen
-    // readers still announce the control.
+    // Expanded form is icon-only (compact form); the accessible name
+    // lives on the `aria-label` attribute so screen readers still
+    // announce the control. The cue is a `TugPushButton` (Phase D)
+    // with subtype="icon" in this state, so the rendered DOM carries
+    // an inner SVG icon.
     expect(cue.getAttribute("aria-label")).toBe("Collapse file");
-    expect(
-      cue.querySelector(".tugx-file-fold-cue-icon"),
-    ).not.toBeNull();
+    expect(cue.querySelector("svg")).not.toBeNull();
     // Substrate is mounted alongside the cue.
     expect(container.querySelector('[data-slot="tug-code-view"]')).not.toBeNull();
   });
@@ -309,8 +310,9 @@ describe("FileBlock — collapse", () => {
     ).toBe("true");
     const cue = container.querySelector(".tugx-file-fold-cue") as HTMLElement;
     expect(cue).not.toBeNull();
+    // Cue label is the line count; aria-label carries the verb.
     expect(cue.textContent).toContain(
-      `${DEFAULT_COLLAPSE_THRESHOLD + 1} lines folded`,
+      `${DEFAULT_COLLAPSE_THRESHOLD + 1} lines`,
     );
   });
 
@@ -403,28 +405,45 @@ describe("FileBlock — collapse", () => {
 // ---------------------------------------------------------------------------
 
 describe("FileBlock — search affordance", () => {
-  test("expanded file shows a Search button in the actions row", () => {
+  test("expanded file shows an enabled Search button in the header's trailing affordances", () => {
+    // Phase D — the dedicated `.tugx-file-actions` sticky strip was
+    // retired. Resting affordances (Search trigger, fold cue) live in
+    // a `flex: 0 0 auto` cluster at the trailing edge of the identity
+    // header (or, when `embedded`, portal into the host chrome).
     const data: FileData = {
       filePath: "x.ts",
       content: "alpha\nbeta",
     };
     const { container } = render(<FileBlock data={data} />);
-    const actions = container.querySelector('[data-slot="file-actions"]');
-    expect(actions).not.toBeNull();
-    expect(
-      actions?.querySelector('button[aria-label="Search in file"]'),
-    ).not.toBeNull();
+    const header = container.querySelector('[data-slot="file-header"]');
+    expect(header).not.toBeNull();
+    const cluster = header?.querySelector('[data-slot="file-actions"]');
+    expect(cluster).not.toBeNull();
+    const search = cluster?.querySelector(
+      'button[aria-label="Search in file"]',
+    ) as HTMLButtonElement | null;
+    expect(search).not.toBeNull();
+    // Expanded file: Search is enabled (substrate is mounted, finding
+    // is meaningful).
+    expect(search?.disabled).toBe(false);
   });
 
-  test("collapsed file does NOT show a Search button", () => {
+  test("collapsed file STILL renders the Search button — disabled, not hidden", () => {
+    // Phase D — affordance buttons stay visible across body-state
+    // changes; collapsed state disables Search (the substrate isn't
+    // mounted, so finding is meaningless) but keeps it in the
+    // cluster so the header geometry doesn't shift when toggling
+    // fold state. This is the "no growing/shrinking headers" rule.
     const data: FileData = {
       filePath: "x.ts",
       content: makeContent(DEFAULT_COLLAPSE_THRESHOLD + 5),
     };
     const { container } = render(<FileBlock data={data} />);
-    expect(
-      container.querySelector('button[aria-label="Search in file"]'),
-    ).toBeNull();
+    const search = container.querySelector(
+      'button[aria-label="Search in file"]',
+    ) as HTMLButtonElement | null;
+    expect(search).not.toBeNull();
+    expect(search?.disabled).toBe(true);
   });
 });
 
@@ -535,33 +554,55 @@ describe("FileBlock — embedded mode", () => {
     ).not.toBeNull();
   });
 
-  test("embedded mode STILL renders the actions row (Search affordance survives)", () => {
-    // The actions row is the only body-kind chrome that survives
-    // `embedded={true}`. The wrapper chrome owns identity, but Search
-    // and the fold cue live on the body kind and have to remain
-    // reachable inside the embedded composition.
+  test("embedded mode portals affordances into the chrome's actions slot", () => {
+    // Phase D — embedded composition surfaces resting affordances by
+    // portaling them into `ToolWrapperChrome`'s actions slot via
+    // `ChromeActionsTargetContext`. Search and the fold cue stay
+    // reachable inside the embedded composition without a dedicated
+    // body-kind actions row.
     const data: FileData = {
       filePath: "x.ts",
       content: "alpha\nbeta",
     };
-    const { container } = render(<FileBlock data={data} embedded />);
-    const actions = container.querySelector('[data-slot="file-actions"]');
-    expect(actions).not.toBeNull();
+    const { container } = render(
+      <ToolWrapperChrome toolName="Read">
+        <FileBlock data={data} embedded />
+      </ToolWrapperChrome>,
+    );
+    const chromeActionsSlot = container.querySelector(
+      "[data-slot='tool-wrapper-actions']",
+    );
+    expect(chromeActionsSlot).not.toBeNull();
+    // The portaled cluster carries `data-slot="file-actions"` so
+    // tests and consumers can still locate "FileBlock's affordances"
+    // unambiguously even though they live inside the chrome subtree.
+    const cluster = chromeActionsSlot?.querySelector(
+      '[data-slot="file-actions"]',
+    );
+    expect(cluster).not.toBeNull();
     expect(
-      actions?.querySelector('button[aria-label="Search in file"]'),
+      cluster?.querySelector('button[aria-label="Search in file"]'),
     ).not.toBeNull();
   });
 
-  test("embedded mode keeps the fold cue when over-threshold", () => {
-    // The user can still expand/collapse from inside an embedded host —
-    // there's no other handle in embedded mode (the body kind's header
-    // is suppressed), so the cue is the toggle.
+  test("embedded mode portals the fold cue too when over-threshold", () => {
+    // The user can still expand/collapse from inside an embedded host;
+    // the cue rides the same portal path as Search.
     const data: FileData = {
       filePath: "x.ts",
       content: makeContent(DEFAULT_COLLAPSE_THRESHOLD + 5),
     };
-    const { container } = render(<FileBlock data={data} embedded />);
-    expect(container.querySelector(".tugx-file-fold-cue")).not.toBeNull();
+    const { container } = render(
+      <ToolWrapperChrome toolName="Read">
+        <FileBlock data={data} embedded />
+      </ToolWrapperChrome>,
+    );
+    const chromeActionsSlot = container.querySelector(
+      "[data-slot='tool-wrapper-actions']",
+    );
+    expect(
+      chromeActionsSlot?.querySelector(".tugx-file-fold-cue"),
+    ).not.toBeNull();
   });
 });
 

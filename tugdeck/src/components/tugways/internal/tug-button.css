@@ -245,6 +245,16 @@
    Size Variants
    ========================================================================= */
 
+/* `2xs` — the most compact size, intended for in-header affordance
+ * clusters (fold cues, Find triggers, Copy buttons sitting alongside
+ * a path label in a sticky strip). Targets a button that reads as a
+ * chip rather than a primary control. */
+.tug-button-size-2xs {
+  height: 1.25rem; /* 20px */
+  padding: 0 0.5rem;
+  font-size: 0.625rem; /* 10px */
+}
+
 .tug-button-size-xs {
   height: 1.5rem; /* 24px */
   padding: 0 0.75rem;
@@ -780,6 +790,12 @@
  * Icon subtype buttons use square aspect ratio.
  * With border-radius: 999px they become circles.
  */
+.tug-button-icon-2xs {
+  width: 1.25rem; /* 20px */
+  height: 1.25rem;
+  padding: 0;
+}
+
 .tug-button-icon-xs {
   width: 1.5rem; /* 24px */
   height: 1.5rem;
@@ -812,10 +828,25 @@
  * global rule. These per-size selectors give the size prop on the
  * button real meaning for the icon subtype.
  */
-.tug-button-icon-xs svg { width: 0.75rem;  height: 0.75rem;  } /* 12px */
-.tug-button-icon-sm svg { width: 0.875rem; height: 0.875rem; } /* 14px */
-.tug-button-icon-md svg { width: 1rem;     height: 1rem;     } /* 16px */
-.tug-button-icon-lg svg { width: 1.125rem; height: 1.125rem; } /* 18px */
+.tug-button-icon-2xs svg { width: 0.625rem; height: 0.625rem; } /* 10px */
+.tug-button-icon-xs  svg { width: 0.75rem;  height: 0.75rem;  } /* 12px */
+.tug-button-icon-sm  svg { width: 0.875rem; height: 0.875rem; } /* 14px */
+.tug-button-icon-md  svg { width: 1rem;     height: 1rem;     } /* 16px */
+.tug-button-icon-lg  svg { width: 1.125rem; height: 1.125rem; } /* 18px */
+
+/* Icon glyph size inside `subtype="icon-text"` buttons. The
+ * `.tug-button-icon-text` wrapper lives on an inner span (see
+ * `renderSubtypeContent` in tug-button.tsx), so the selector is a
+ * descendant of the button-root size class rather than a compound
+ * with it. Without these rules, the global `.tug-button svg` (16px)
+ * wins and an icon-text button renders an over-sized glyph next to
+ * compact text — most visible at 2xs / xs where the mismatch is a
+ * factor of ~2x. */
+.tug-button-size-2xs .tug-button-icon-text svg { width: 0.625rem; height: 0.625rem; }
+.tug-button-size-xs  .tug-button-icon-text svg { width: 0.75rem;  height: 0.75rem;  }
+.tug-button-size-sm  .tug-button-icon-text svg { width: 0.875rem; height: 0.875rem; }
+.tug-button-size-md  .tug-button-icon-text svg { width: 1rem;     height: 1rem;     }
+.tug-button-size-lg  .tug-button-icon-text svg { width: 1.125rem; height: 1.125rem; }
 
 /* ============================================================================
    Loading State

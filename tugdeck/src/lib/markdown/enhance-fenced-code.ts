@@ -156,10 +156,12 @@ export function enhanceFencedCode(container: HTMLElement): void {
     wrapper.className = "tugx-md-fenced-code";
     if (lang !== null) wrapper.dataset.lang = lang;
 
-    // Identity header — language label only. The Copy affordance has
-    // moved into the actions row below so the two strips can stack
-    // when both pin (matches the FileBlock / DiffBlock / TerminalBlock
-    // pattern, Step 10.9 Phase B.2).
+    // Header — language label at the left, Copy `<button>` at the
+    // trailing edge. Phase D consolidated affordances into the header
+    // itself (the dedicated `.tugx-md-fenced-code-actions` sticky
+    // strip retired) so the resting chrome is a single row carrying
+    // both identity and Copy, matching FileBlock / DiffBlock /
+    // TerminalBlock's Phase D shape.
     const header = document.createElement("div");
     header.className = "tugx-md-fenced-code-header";
 
@@ -168,16 +170,17 @@ export function enhanceFencedCode(container: HTMLElement): void {
     langEl.textContent = lang ?? "code";
     header.appendChild(langEl);
 
-    // Actions row — Copy `<button>`. Sticky below the identity header
-    // (CSS uses a static-token approximation of the header height for
-    // the calc offset since `enhanceFencedCode` is an imperative DOM
-    // helper rather than a React component with a ResizeObserver).
-    const actions = document.createElement("div");
-    actions.className = "tugx-md-fenced-code-actions";
-
     const spacer = document.createElement("span");
-    spacer.className = "tugx-md-fenced-code-actions-spacer";
-    actions.appendChild(spacer);
+    spacer.className = "tugx-md-fenced-code-header-spacer";
+    header.appendChild(spacer);
+
+    // Trailing actions cluster — hosts Copy. Mirrors the React body
+    // kinds' `.tugx-{kind}-actions-cluster` shape; the
+    // `data-slot="md-fenced-code-actions"` hook lets tests and
+    // consumers locate "this block's affordances" by data-slot.
+    const actions = document.createElement("span");
+    actions.className = "tugx-md-fenced-code-actions-cluster";
+    actions.dataset.slot = "md-fenced-code-actions";
 
     const button = document.createElement("button");
     button.type = "button";
@@ -202,6 +205,7 @@ export function enhanceFencedCode(container: HTMLElement): void {
     if (codeEl !== null) attachCopyHandler(button, codeEl);
 
     actions.appendChild(button);
+    header.appendChild(actions);
 
     // Replace the `<pre>` with the wrapper. The order of operations
     // matters: insert the wrapper at the `<pre>`'s slot first, then
@@ -209,7 +213,6 @@ export function enhanceFencedCode(container: HTMLElement): void {
     // briefly loses the block.
     pre.replaceWith(wrapper);
     wrapper.appendChild(header);
-    wrapper.appendChild(actions);
     wrapper.appendChild(pre);
   }
 }

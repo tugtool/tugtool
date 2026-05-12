@@ -60,8 +60,10 @@ const SEMANTIC_ROLES: ReadonlySet<string> = new Set<TugButtonRole>([
   "option",
 ]);
 
-/** TugButton size names */
-export type TugButtonSize = "xs" | "sm" | "md" | "lg";
+/** TugButton size names. `2xs` is the most compact, intended for in-header
+ * affordance clusters where a button needs to sit alongside a label and
+ * a few sibling controls without dominating the strip. */
+export type TugButtonSize = "2xs" | "xs" | "sm" | "md" | "lg";
 
 /**
  * TugButton subtype names.
@@ -130,7 +132,7 @@ export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButt
   role?: TugButtonRole;
   /**
    * Size variant.
-   * @selector .tug-button-size-xs | .tug-button-size-sm | .tug-button-size-md | .tug-button-size-lg
+   * @selector .tug-button-size-2xs | .tug-button-size-xs | .tug-button-size-sm | .tug-button-size-md | .tug-button-size-lg
    * @default "md"
    */
   size?: TugButtonSize;
@@ -222,6 +224,7 @@ const ROUNDED_MAP: Record<TugButtonRounded, string> = {
 
 /** Size-proportional default: all sizes default to pill shape */
 const SIZE_ROUNDED_DEFAULT: Record<TugButtonSize, TugButtonRounded> = {
+  "2xs": "lg",
   xs: "lg",
   sm: "lg",
   md: "lg",
@@ -490,6 +493,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
     // Emphasis x role compound class for hover/active/transition styles
     emphasisRoleClass,
     // Icon subtype size classes (square aspect ratio)
+    subtype === "icon" && size === "2xs" && "tug-button-icon-2xs",
     subtype === "icon" && size === "xs" && "tug-button-icon-xs",
     subtype === "icon" && size === "sm" && "tug-button-icon-sm",
     subtype === "icon" && size === "md" && "tug-button-icon-md",

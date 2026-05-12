@@ -14,16 +14,23 @@
  *
  * Composition:
  *  - Header (chrome strip) — `path basename` + optional language pill
- *    + "N lines" / "Showing N of M lines" counts + `Search`
- *    `<TugIconButton>` (opens CM6's find panel via the viewer ref).
- *    Hidden when `embedded=true` because the host wrapper (e.g.
- *    `ToolWrapperChrome`) owns identity in those cases.
- *  - Fold cue — a `<TugCue role="active">` rendered whenever the file
- *    is `overThreshold`, in both states. Icon + label swap by state
- *    (chevron-down + "N lines folded — click to expand" vs chevron-up
- *    + "click to collapse"). This is the persistent toggle handle:
- *    embedded-mode hosts hide the header, so without a cue that
- *    spans both states the user could expand but not collapse back.
+ *    + "N lines" / "Showing N of M lines" counts + a trailing
+ *    affordances area (fold cue + `Search` `<TugIconButton>`). Hidden
+ *    when `embedded=true` because the host wrapper (e.g.
+ *    `ToolWrapperChrome`) owns identity in those cases; the affordances
+ *    portal into the host's actions slot instead so they survive into
+ *    the embedded composition.
+ *  - Fold cue — a chevron `<button>` rendered whenever the file is
+ *    `overThreshold`, in both states. Icon + label swap by state
+ *    (chevron-down + "N lines folded" vs chevron-up icon-only). This
+ *    is the persistent toggle handle: embedded-mode hosts hide the
+ *    header, so the cue must also portal into the host's actions slot
+ *    or the user could expand but not collapse back.
+ *  - Find row — `.tugx-file-find`, mounted only while `findOpen` is
+ *    true. Sticky beneath the chrome / identity header. Carries the
+ *    full Find UI (TugInput + nav buttons + checkboxes + match count
+ *    + Done) so the resting chrome is just an icon-sized trigger and
+ *    the multi-control UI is progressive disclosure.
  *  - Body — `<TugCodeView>` (expanded) or nothing (collapsed). CM6
  *    isn't mounted while collapsed so a huge file doesn't pay the
  *    mount cost until the user reveals it.
@@ -93,6 +100,7 @@
 import "./file-block.css";
 
 import React from "react";
+import { createPortal } from "react-dom";
 import {
   ChevronDown,
   ChevronUp,
@@ -102,15 +110,16 @@ import {
   X,
 } from "lucide-react";
 
-import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import {
   TugCodeView,
   type TugCodeViewDelegate,
 } from "@/components/tugways/tug-code-view";
+import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -200,9 +209,17 @@ export interface FileBlockProps {
    *
    *   - The standalone frame (background / border / radius / outer
    *     margin) is dropped so the body sits flush with the host.
-   *   - FileBlock's own header (basename + lang badge + line counts +
-   *     icon buttons) is hidden — the wrapper owns the file's
-   *     identity in its own header.
+   *   - FileBlock's own header (basename + lang badge + line counts)
+   *     is hidden — the wrapper owns the file's identity in its own
+   *     header.
+   *   - The resting affordances (fold cue, Search trigger) portal
+   *     into the host's chrome actions slot via
+   *     `ChromeActionsTargetContext`. This is the load-bearing
+   *     contract: `embedded={true}` MUST be used under a
+   *     `ToolWrapperChrome` so the affordances have somewhere to
+   *     surface. Using `embedded={true}` outside a chrome is
+   *     unsupported — the affordances have no host and the user
+   *     loses access to Search and the fold toggle.
    *
    * Default `false` — standalone usage (gallery, RenderInput-routed)
    * keeps its frame and header.
@@ -416,24 +433,20 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   const rootRef = React.useRef<HTMLDivElement | null>(null);
   // Header ref — used by the telescoping-pin ResizeObserver below to
   // write the visible header's measured height into
-  // `--tugx-file-header-height` on the root so the `.tugx-file-actions`
-  // row can pin BELOW the identity header in standalone mode. Null
-  // when `embedded={true}` (no header rendered).
+  // `--tugx-file-header-height` on the root so the find row can pin
+  // BELOW the identity header in standalone mode. Null when
+  // `embedded={true}` (no header rendered — affordances portal into
+  // the host's chrome instead).
   const headerRef = React.useRef<HTMLDivElement | null>(null);
-  // Actions-row ref — measured for `--tugx-file-actions-height` so the
-  // Find UI row pins BELOW the actions row. Null when no actions row
-  // renders (empty/collapsed-and-not-overThreshold edge case).
-  const actionsRef = React.useRef<HTMLDivElement | null>(null);
 
   // Telescoping pin — write the live measured identity-header height
-  // into `--tugx-file-header-height` on the root so the actions row
-  // composed below can pin at
-  // `top: calc(var(--tugx-pin-stack-top, 0)
-  //          + var(--tugx-toolblock-header-height, 0)
-  //          + var(--tugx-file-header-height, 0))`.
+  // into `--tugx-file-header-height` on the root so the find row can
+  // pin at `top: calc(var(--tugx-pin-stack-top, 0px)
+  //          + var(--tugx-toolblock-header-height, 0px)
+  //          + var(--tugx-file-header-height, 0px))`.
   // In embedded mode the header isn't rendered, so the ref is null
-  // and the variable stays unset (`0` via the `calc()` fallback) —
-  // the actions row then telescopes under the chrome's
+  // and the variable stays unset (`0px` via the `calc()` fallback) —
+  // the find row then telescopes under the chrome's
   // `--tugx-toolblock-header-height` only.
   //
   // [L03] `useLayoutEffect` so the variable is set before paint —
@@ -473,40 +486,16 @@ export const FileBlock: React.FC<FileBlockProps> = ({
     };
   }, [embedded, data === undefined]);
 
-  // Mirror of the header observer for the actions row. The Find row
-  // pins below the actions row, so it consumes
-  // `--tugx-file-actions-height` in its sticky `top` calc.
-  React.useLayoutEffect(() => {
-    const root = rootRef.current;
-    if (root === null) return;
-    const actions = actionsRef.current;
-    if (actions === null) {
-      root.style.removeProperty("--tugx-file-actions-height");
-      return;
-    }
-    const write = (px: number): void => {
-      root.style.setProperty("--tugx-file-actions-height", `${px}px`);
-    };
-    write(actions.offsetHeight);
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (entry === undefined) return;
-      const boxes = entry.borderBoxSize;
-      const next =
-        boxes !== undefined && boxes.length > 0
-          ? boxes[0].blockSize
-          : entry.contentRect.height;
-      write(next);
-    });
-    observer.observe(actions);
-    return () => {
-      observer.disconnect();
-    };
-    // Re-attach when the actions row mounts/unmounts. The dependency
-    // array uses `data === undefined` as a proxy for the empty-state
-    // edge case (no actions row); `embedded` is irrelevant here
-    // because the actions row renders in BOTH modes.
-  }, [data === undefined]);
+  // Chrome actions target — non-null when this FileBlock is composed
+  // inside a `ToolWrapperChrome` that has rendered its actions slot.
+  // Phase D consolidates the resting affordance row INTO the chrome /
+  // identity header rather than rendering it as a separate sticky
+  // strip beneath. When the target is present (embedded composition),
+  // the affordance node portals into it; when absent (standalone),
+  // affordances render inside `.tugx-file-header` directly. The body
+  // kind never depends on this being non-null — `embedded={false}` and
+  // a missing chrome both fall through to the inline-in-header path.
+  const chromeActionsTarget = useChromeActionsTarget();
 
   // Sync to controlled prop when it changes upstream so parents can
   // drive collapse from chrome elsewhere in the row.
@@ -731,19 +720,93 @@ export const FileBlock: React.FC<FileBlockProps> = ({
     `tugx-file${langClass}` +
     (className === undefined ? "" : ` ${className}`);
 
-  // Fold cue: a compact click target inside the actions row that swaps
-  // icon + (optional) label by state. Always rendered when
-  // `overThreshold` so the user has a stable handle for the collapse <->
-  // expand cycle in both modes (embedded and standalone). The icon-only
-  // form when expanded keeps the actions row tight — the row also hosts
-  // Search, and the cue's count label is only informationally
-  // interesting while the body is folded.
-  const cueIcon = collapsed ? <ChevronsDown /> : <ChevronsUp />;
+  // Fold cue: a compact click target with stable shape. Always
+  // rendered when `overThreshold` so the user has a steady handle
+  // across the collapse <-> expand cycle. The button shape (icon +
+  // count label) is invariant across states — only the chevron
+  // direction flips. The label stays the same regardless of fold
+  // state ("N lines"); the aria-label carries the action verb
+  // ("Expand file" / "Collapse file") for screen readers.
   const showCue = overThreshold;
-  // Actions row visibility: any affordance triggers it. Search appears
-  // when expanded; fold cue appears when overThreshold. Empty data was
-  // already short-circuited above, so we never render an empty row.
-  const showActions = showCue || !collapsed;
+  const cueIcon = collapsed ? <ChevronsDown /> : <ChevronsUp />;
+  const cueCountWord = lines.length === 1 ? "line" : "lines";
+  const cueLabel = `${lines.length.toLocaleString()} ${cueCountWord}`;
+
+  // Compose the affordances node ONCE. It renders either inline at
+  // the trailing edge of `.tugx-file-header` (standalone, has its own
+  // header) or via a portal into the host's chrome actions slot
+  // (embedded composition, header suppressed but affordances still
+  // need to surface in the chrome). Per Phase D the dedicated
+  // `.tugx-file-actions` sticky row retires entirely — one less pinned
+  // strip, fewer near-empty bars stacking.
+  //
+  // Affordance components are Tug primitives by contract, with stable
+  // shapes across all states (a button that swaps subtype between
+  // states moves the click target out from under the user's pointer
+  // and is therefore not allowed):
+  //  - Fold cue: `TugPushButton`, `subtype="icon-text"`,
+  //    `emphasis="ghost"`, `size="2xs"`. Chevron icon flips with
+  //    state; label stays "N lines" regardless of fold state
+  //    (aria-label carries the verb for screen readers).
+  //  - Search (Find trigger): `TugPushButton`, `subtype="icon-text"`,
+  //    `emphasis="ghost"`, `size="2xs"`. ALWAYS rendered so the
+  //    cluster geometry is invariant across fold state — disabled
+  //    when collapsed (substrate isn't mounted) rather than removed
+  //    from the DOM. Magnifier icon + "Find" text.
+  //
+  // The legacy `tugx-file-*` class names are forwarded onto the Tug
+  // components as `className`/`data-slot` so CSS scoping and test
+  // hooks stay stable across the refactor.
+  const affordances = (
+    <>
+      {showCue ? (
+        <TugPushButton
+          className="tugx-file-fold-cue"
+          data-slot="file-fold-cue"
+          icon={cueIcon}
+          subtype="icon-text"
+          emphasis="ghost"
+          size="2xs"
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? "Expand file" : "Collapse file"}
+          onClick={toggleCollapsed}
+        >
+          {cueLabel}
+        </TugPushButton>
+      ) : null}
+      <TugPushButton
+        className="tugx-file-search"
+        data-slot="file-search"
+        icon={<Search />}
+        subtype="icon-text"
+        emphasis="ghost"
+        size="2xs"
+        disabled={collapsed}
+        aria-label="Search in file"
+        onClick={openFind}
+      >
+        Find
+      </TugPushButton>
+    </>
+  );
+
+  // Embedded composition with a published chrome target: portal the
+  // affordances into the chrome's actions slot. The chrome's slot has
+  // its own layout (flex cluster); we wrap in a `data-slot` fragment
+  // owner so tests can still locate "the file block's affordances"
+  // unambiguously even when they live elsewhere in the DOM tree.
+  const portaledAffordances =
+    embedded && chromeActionsTarget !== null && affordances !== null
+      ? createPortal(
+          <span
+            className="tugx-file-actions-cluster"
+            data-slot="file-actions"
+          >
+            {affordances}
+          </span>,
+          chromeActionsTarget,
+        )
+      : null;
 
   return (
     <div
@@ -777,44 +840,18 @@ export const FileBlock: React.FC<FileBlockProps> = ({
           <span className="tugx-file-counts" data-slot="file-counts">
             {headerLabel}
           </span>
+          <span className="tugx-file-header-spacer" />
+          {affordances !== null ? (
+            <span
+              className="tugx-file-actions-cluster"
+              data-slot="file-actions"
+            >
+              {affordances}
+            </span>
+          ) : null}
         </div>
       )}
-
-      {showActions ? (
-        <div
-          ref={actionsRef}
-          className="tugx-file-actions"
-          data-slot="file-actions"
-        >
-          {showCue ? (
-            <button
-              type="button"
-              className="tugx-file-fold-cue"
-              data-slot="file-fold-cue"
-              aria-expanded={!collapsed}
-              aria-label={collapsed ? "Expand file" : "Collapse file"}
-              onClick={toggleCollapsed}
-            >
-              <span className="tugx-file-fold-cue-icon" aria-hidden="true">
-                {cueIcon}
-              </span>
-              {collapsed ? (
-                <span className="tugx-file-fold-cue-label">
-                  {`${lines.length.toLocaleString()} lines folded`}
-                </span>
-              ) : null}
-            </button>
-          ) : null}
-          <span className="tugx-file-actions-spacer" />
-          {!collapsed ? (
-            <TugIconButton
-              icon={<Search />}
-              aria-label="Search in file"
-              onClick={openFind}
-            />
-          ) : null}
-        </div>
-      ) : null}
+      {portaledAffordances}
 
       {findOpen && !collapsed ? (
         <findForm.ResponderScope>

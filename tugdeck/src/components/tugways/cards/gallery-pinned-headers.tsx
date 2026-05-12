@@ -1,28 +1,41 @@
 /**
- * gallery-pinned-headers.tsx — standalone-pinning fixture for body-kind headers.
+ * gallery-pinned-headers.tsx — production-mirror fixture for the
+ * Step 10.9 pin-stack consolidation.
  *
- * Mounts three body kinds (`FileBlock`, `DiffBlock`, `TerminalBlock`)
- * inside their own fixed-height scroll wrappers so each block's
- * sticky header pins against a scrollport with no `padding-block` —
- * the production-mirror that proves pinning works flush in isolation,
- * separated from the transcript chain (no `ToolWrapperChrome`, no
- * `TugTranscriptEntry`, no `TugListView`).
+ * Six sections, each in its own fixed-height scroll wrapper (with
+ * `padding: 0` so sticky descendants pin flush against the wrapper's
+ * content-box top edge — see Phase B.1's findings for why
+ * `padding-block` on a sticky-hosting scroll container offsets the
+ * pin reference inward):
  *
- * This card was authored as a Phase B.1 diagnostic spike. The on-screen
- * probe panel and the dashed-border outlines that surrounded each
- * section during the spike have been removed; what remains is the
- * production-mirror fixture itself. Phase B.2 extends this card with
- * a wrapped-in-chrome section that exercises the chrome + actions-row
- * telescope.
+ *   1–3. Standalone `FileBlock` / `DiffBlock` / `TerminalBlock`.
+ *        Each block's identity header is the only pinned row;
+ *        affordances (fold cue, view-toggle, Find trigger, Copy)
+ *        live at the trailing edge of the same header — no
+ *        separate sticky strip beneath it. This is the Phase D
+ *        consolidation, visible in standalone composition.
+ *
+ *   4–6. The same body kinds composed inside `ToolWrapperChrome`
+ *        (simulating `ReadToolBlock` / `EditToolBlock` /
+ *        `BashToolBlock`). The body kind's own identity header is
+ *        suppressed; affordances portal into the chrome's actions
+ *        slot via `ChromeActionsTargetContext`. The chrome header
+ *        is again the only pinned row at rest.
+ *
+ * The card was originally authored as a Phase B.1 diagnostic spike
+ * (probe panel + dashed-border outlines). Those have long since been
+ * removed; what remains is the visual smoke test for the Phase D
+ * shape — at rest, ONE pinned row per block; only the Find UI (when
+ * opened on a file or diff) produces a second sticky row underneath.
  *
  * **Authoritative reference:** `roadmap/tide-assistant-rendering.md`
- * Step 10.9 (Phase B.1 + Phase B.2).
+ * Step 10.9 (Phase B.1, B.2, C, D).
  *
  * @module components/tugways/cards/gallery-pinned-headers
  */
 
 import React from "react";
-import { FileText } from "lucide-react";
+import { Edit, FileText, Terminal } from "lucide-react";
 
 import { FileBlock, type FileData } from "@/components/tugways/body-kinds/file-block";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
@@ -168,25 +181,25 @@ function PinSection({ title, children }: PinSectionProps) {
 export function GalleryPinnedHeaders() {
   return (
     <div className="cg-content" data-testid="gallery-pinned-headers">
-      <PinSection title="FileBlock — long file, identity + actions row">
+      <PinSection title="FileBlock — long file (header carries Find + fold cue at trailing edge)">
         <FileBlock data={LONG_FILE} collapsed={false} />
       </PinSection>
 
       <TugSeparator />
 
-      <PinSection title="DiffBlock — 20 hunks, identity + actions row">
+      <PinSection title="DiffBlock — 20 hunks (header carries fold cue + view-toggle at trailing edge)">
         <DiffBlock data={LONG_DIFF} />
       </PinSection>
 
       <TugSeparator />
 
-      <PinSection title="TerminalBlock — 200 lines, identity + actions row">
+      <PinSection title="TerminalBlock — 200 lines (header carries Copy at trailing edge)">
         <TerminalBlock data={LONG_TERMINAL} headerLabel={<code>find . -type f | head -200</code>} />
       </PinSection>
 
       <TugSeparator />
 
-      <PinSection title="FileBlock inside ToolWrapperChrome — two-bar telescope (chrome header + actions row)">
+      <PinSection title="FileBlock inside ToolWrapperChrome — affordances portal into chrome header">
         <ToolWrapperChrome
           toolName="Read"
           toolIcon={<FileText size={14} aria-hidden="true" />}
@@ -194,6 +207,32 @@ export function GalleryPinnedHeaders() {
           status="ready"
         >
           <FileBlock data={LONG_FILE} embedded collapsed={false} />
+        </ToolWrapperChrome>
+      </PinSection>
+
+      <TugSeparator />
+
+      <PinSection title="DiffBlock inside ToolWrapperChrome — affordances portal into chrome header">
+        <ToolWrapperChrome
+          toolName="Edit"
+          toolIcon={<Edit size={14} aria-hidden="true" />}
+          argsSummary={<code>{LONG_DIFF.filePath}</code>}
+          status="ready"
+        >
+          <DiffBlock data={LONG_DIFF} embedded />
+        </ToolWrapperChrome>
+      </PinSection>
+
+      <TugSeparator />
+
+      <PinSection title="TerminalBlock inside ToolWrapperChrome — Copy portals into chrome header">
+        <ToolWrapperChrome
+          toolName="Bash"
+          toolIcon={<Terminal size={14} aria-hidden="true" />}
+          argsSummary={<code>find . -type f | head -200</code>}
+          status="ready"
+        >
+          <TerminalBlock data={LONG_TERMINAL} embedded />
         </ToolWrapperChrome>
       </PinSection>
     </div>

@@ -16,8 +16,8 @@
  *  - Per-hunk collapse: clicking the hunk header toggles the
  *    `data-collapsed` attribute and hides the rows.
  *  - Whole-diff collapse: the toggle button collapses all hunks
- *    behind a "N hunks folded" hint and notifies via
- *    `onToggleCollapsed`.
+ *    behind a "N hunks" cue (label is invariant across states; only
+ *    the chevron flips) and notifies via `onToggleCollapsed`.
  *  - Word-level highlight: when a paired remove/add lands and the
  *    diff-match-patch engine resolves, the `<span class="tugx-diff-word-*">`
  *    spans appear inside the line content.
@@ -120,6 +120,7 @@ import {
   pairRemoveAddIndices,
   prepareHunksSync,
 } from "../diff-block";
+import { ToolWrapperChrome } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
 import {
   injectTugdiffWasmForTests,
   resetTugdiffWasmForTests,
@@ -470,11 +471,11 @@ describe("DiffBlock — collapse", () => {
       '[data-slot="diff-body"]',
     ) as HTMLElement;
     expect(root.getAttribute("data-collapsed")).toBe("false");
-    // The fold control now lives in the actions row as a custom
-    // `<button class="tugx-diff-fold-cue">` (Step 10.9 Phase B.2 —
-    // header keeps identity, actions row hosts affordances). Find it
-    // by aria-label so the test stays decoupled from the markup
-    // choice (button vs TugIconButton vs TugCue).
+    // The fold control lives inside `[data-slot="diff-actions"]` —
+    // a `flex: 0 0 auto` cluster at the trailing edge of the identity
+    // header (Phase D — the dedicated sticky actions row retired).
+    // Find it by aria-label so the test stays decoupled from the
+    // markup choice (button vs TugIconButton vs TugCue).
     const actions = container.querySelector('[data-slot="diff-actions"]');
     expect(actions).not.toBeNull();
     const toggle = actions?.querySelector(
@@ -490,14 +491,15 @@ describe("DiffBlock — collapse", () => {
     expect(container.querySelectorAll('[data-slot="diff-hunk"]')).toHaveLength(
       0,
     );
-    // Fold cue stays present (now labeled "Expand diff") with the
-    // count label so the user can expand back.
+    // Fold cue stays present (now labeled "Expand diff" via the
+    // aria-label) with the count label "N hunks" so the user can
+    // expand back. The cue label is the same in both fold states;
+    // only the chevron icon flips and the aria-label verb swaps.
     const cue = actions?.querySelector(
       "button.tugx-diff-fold-cue",
     ) as HTMLElement;
     expect(cue?.getAttribute("aria-label")).toBe("Expand diff");
     expect(cue?.textContent).toContain("hunk");
-    expect(cue?.textContent).toContain("folded");
   });
 
   test("controlled `collapsed` prop wins over internal state on rerender", () => {
@@ -518,6 +520,34 @@ describe("DiffBlock — collapse", () => {
       />,
     );
     expect(root.getAttribute("data-collapsed")).toBe("true");
+  });
+
+  test("embedded mode portals fold cue + view-toggle into the chrome's actions slot", () => {
+    // Phase D — embedded composition portals resting affordances into
+    // `ToolWrapperChrome`'s actions slot via `ChromeActionsTargetContext`.
+    // The `data-slot="diff-actions"` cluster carries the affordances
+    // regardless of where it lands in the DOM tree.
+    const { container } = render(
+      <ToolWrapperChrome toolName="Edit">
+        <DiffBlock
+          data={{ source: "unified", text: FIXTURE_UNIFIED }}
+          embedded
+        />
+      </ToolWrapperChrome>,
+    );
+    const chromeActionsSlot = container.querySelector(
+      "[data-slot='tool-wrapper-actions']",
+    );
+    expect(chromeActionsSlot).not.toBeNull();
+    const cluster = chromeActionsSlot?.querySelector(
+      '[data-slot="diff-actions"]',
+    );
+    expect(cluster).not.toBeNull();
+    // Both affordances surface.
+    expect(cluster?.querySelector("button.tugx-diff-fold-cue")).not.toBeNull();
+    expect(
+      cluster?.querySelector('[data-slot="diff-view-toggle"]'),
+    ).not.toBeNull();
   });
 });
 

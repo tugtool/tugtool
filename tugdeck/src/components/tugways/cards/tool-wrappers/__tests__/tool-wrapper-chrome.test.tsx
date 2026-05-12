@@ -23,8 +23,12 @@ import "../../../../../__tests__/setup-rtl";
 import { afterEach, describe, expect, test } from "bun:test";
 import { cleanup, render } from "@testing-library/react";
 import React from "react";
+import { createPortal } from "react-dom";
 
-import { ToolWrapperChrome } from "../tool-wrapper-chrome";
+import {
+  ToolWrapperChrome,
+  useChromeActionsTarget,
+} from "../tool-wrapper-chrome";
 
 afterEach(() => {
   cleanup();
@@ -69,5 +73,63 @@ describe("ToolWrapperChrome — telescoping-pin contract", () => {
     // is just checking that no errors are thrown during the cleanup
     // path that disconnects the ResizeObserver.
     expect(container.querySelector("[data-slot='tool-wrapper-chrome']")).toBeNull();
+  });
+});
+
+describe("ToolWrapperChrome — actions slot", () => {
+  test("renders the actions slot inside the header even when empty", () => {
+    const { container } = render(
+      <ToolWrapperChrome toolName="Read">
+        <div>body</div>
+      </ToolWrapperChrome>,
+    );
+    const header = container.querySelector(
+      "[data-slot='tool-wrapper-header']",
+    ) as HTMLElement | null;
+    expect(header).not.toBeNull();
+    const slot = header?.querySelector(
+      "[data-slot='tool-wrapper-actions']",
+    ) as HTMLElement | null;
+    expect(slot).not.toBeNull();
+    expect(slot?.children.length).toBe(0);
+  });
+
+  test("descendants can read the slot via useChromeActionsTarget and portal into it", () => {
+    // The body-kind portal pattern: a descendant reads the chrome's
+    // actions DOM node via context and `createPortal`s a node into it.
+    // Verifies that the context exposes a real DOM element on first
+    // descendant render-after-mount (no one-frame-late gotcha — the
+    // chrome publishes the target via a state setter on its ref
+    // callback, so the descendant's next render sees the non-null value).
+    function PortalAffordance(): React.ReactElement | null {
+      const target = useChromeActionsTarget();
+      if (target === null) return null;
+      return createPortal(
+        <button type="button" aria-label="portaled">
+          ★
+        </button>,
+        target,
+      );
+    }
+    const { container } = render(
+      <ToolWrapperChrome toolName="Read">
+        <PortalAffordance />
+      </ToolWrapperChrome>,
+    );
+    const slot = container.querySelector(
+      "[data-slot='tool-wrapper-actions']",
+    ) as HTMLElement;
+    expect(slot).not.toBeNull();
+    expect(slot.querySelector('button[aria-label="portaled"]')).not.toBeNull();
+  });
+
+  test("useChromeActionsTarget returns null outside a ToolWrapperChrome", () => {
+    let captured: HTMLDivElement | null | undefined = undefined;
+    function Probe(): null {
+      captured = useChromeActionsTarget();
+      return null;
+    }
+    render(<Probe />);
+    expect(captured).toBeNull();
   });
 });
