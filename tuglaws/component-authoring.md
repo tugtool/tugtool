@@ -914,9 +914,8 @@ When the target sits inside a sticky ancestor and the ancestor's pin regime flip
 **Reference implementations:**
 - `use-position-stable-click.ts` — the hook.
 - `outer-scrollport-context.tsx` — the context that publishes the scrollport node to descendants. `TugListView` publishes its scroll container automatically.
-- `file-block.tsx` — Find trigger and Copy button routed through `usePositionStableClick`. The fold cue routes through the hook AND benefits from the scrollport tail-spacer (see "Document-shrink-clamp" below).
-- `diff-block.tsx` — view-toggle is a `TugChoiceGroup` (Phase E.4); the chain-routed `selectValue` handler runs inside `usePositionStableClick`. The fold cue routes through the hook plus the tail-spacer combo.
-- `terminal-block.tsx` — Copy and fold cue both route through `usePositionStableClick` (Phase E.4). Fold cue benefits from the tail-spacer combo when the long output collapses.
+- `body-kinds/affordances/` — **the block affordance library**. `BlockCopyButton`, `BlockFoldCue`, and `BlockFindButton` encapsulate the action-row contract (position-stable click via the outer scrollport context, ghost typography, 2xs scale, focus-refuse, width-stabilize for Copy→Copied, disengage-follow-bottom event for fold) so block kinds compose them rather than re-implementing. Block-specific concerns (which clipboard text to compose, when the button is disabled, what aria-label to use) pass as props.
+- `file-block.tsx`, `diff-block.tsx`, `terminal-block.tsx` — composed from the affordance library. Find / Copy / Fold-cue come from `body-kinds/affordances/`; the view-toggle on DiffBlock is a `TugChoiceGroup` (Phase E.4 — both segments visible via the ghost emphasis bracket frame). Adding a new body kind that needs Copy / Find / a fold cue: import from `./affordances`, supply the block-specific bits, done.
 
 ### Document-shrink-clamp — scrollport tail spacer (Phase E.3)
 

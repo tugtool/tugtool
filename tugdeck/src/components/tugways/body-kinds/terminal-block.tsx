@@ -100,20 +100,17 @@ import "./terminal-block.css";
 
 import React from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronsDown, ChevronsUp, Copy } from "lucide-react";
 
 import type { PropertyStore } from "@/components/tugways/property-store";
-import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
 import { useOptionalResponder } from "@/components/tugways/use-responder";
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
 import { TUG_ACTIONS, type TugAction } from "@/components/tugways/action-vocabulary";
 import type { ActionHandler } from "@/components/tugways/responder-chain";
-import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
-import { usePositionStableClick } from "@/components/tugways/internal/use-position-stable-click";
 import { ansiToHtml } from "@/lib/ansi/ansi-to-html";
 import { BlockHeightIndex } from "@/lib/block-height-index";
 import { RenderedBlockWindow } from "@/lib/rendered-block-window";
+import { BlockCopyButton, BlockFoldCue } from "./affordances";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -767,9 +764,6 @@ function composeCopyText(data: TerminalData): string {
 
 const EMPTY_TERMINAL: TerminalData = { stdout: "", stderr: "" };
 
-/** Duration the Copy button shows its "Copied" confirmation flash (ms). */
-const COPIED_FLASH_MS = 1200;
-
 export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   data,
   streamingStore,
@@ -796,23 +790,6 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // the mount-once shape and would also force re-parses the
   // streaming path is supposed to own.
   const initialDataRef = React.useRef<TerminalData | undefined>(data);
-  // Ref into the underlying button — kept for potential focus
-  // management and as a stable test handle. The "Copied" feedback
-  // is driven by `TugPushButton`'s `isConfirming` prop (controlled
-  // mode) so we explicitly enter the confirmed state ONLY on a
-  // successful clipboard write — failed writes leave the button at
-  // rest. No imperative class swap from React.
-  const copyButtonRef = React.useRef<HTMLButtonElement | null>(null);
-  // Controlled-confirmation state — `true` while the "Copied" flash
-  // is active. Set inside the clipboard `.then()` callback (so a
-  // failed write never lies); cleared by a `setTimeout` after
-  // `COPIED_FLASH_MS`. Lives in React state because the flash
-  // duration is a host-owned schedule, not an appearance-zone class
-  // swap; the actual DOM mutation happens inside `TugButton`'s
-  // controlled-mode layout effect ([L06] satisfied at the primitive
-  // boundary).
-  const [copied, setCopied] = React.useState<boolean>(false);
-  const copiedTimerRef = React.useRef<number | null>(null);
 
   // ---- Fold state ([L06] data, not appearance: it controls *what*
   //                  is rendered, not *how* a rendered element
@@ -996,40 +973,14 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
     return cleanup;
   }, [collapsed, streamingStore, streamingPath]);
 
-  const handleCopy = React.useCallback((): void => {
-    const writeText = navigator.clipboard?.writeText.bind(navigator.clipboard);
-    if (writeText === undefined) return;
-    const text = composeCopyText(latestDataRef.current);
-    // Honest "Copied" feedback — set the controlled-confirmation flag
-    // only after the clipboard write resolves. A failed write (denied
-    // permission, no clipboard API) leaves `copied` at `false`, so
-    // the button never flashes a confirmation that didn't happen.
-    writeText(text)
-      .then(() => {
-        setCopied(true);
-        if (copiedTimerRef.current !== null) {
-          window.clearTimeout(copiedTimerRef.current);
-        }
-        copiedTimerRef.current = window.setTimeout(() => {
-          copiedTimerRef.current = null;
-          setCopied(false);
-        }, COPIED_FLASH_MS);
-      })
-      .catch(() => {
-        // Silent failure — the user can re-click. No flash.
-      });
-  }, []);
-
-  // Clean up the pending timer on unmount so we don't try to update
-  // state on a detached component.
-  React.useEffect(() => {
-    return () => {
-      if (copiedTimerRef.current !== null) {
-        window.clearTimeout(copiedTimerRef.current);
-        copiedTimerRef.current = null;
-      }
-    };
-  }, []);
+  // `getText` closure for the `BlockCopyButton` affordance —
+  // reads the latest streamed-or-static data at click time. The
+  // affordance owns the confirmation flash + timer cleanup +
+  // clipboard call; this function is the only block-specific bit.
+  const getCopyText = React.useCallback(
+    () => composeCopyText(latestDataRef.current),
+    [],
+  );
 
   // ---- Responder registration ([L11]) ---------------------------------
   //
@@ -1041,23 +992,28 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // a `Partial<Record<TugAction, ActionHandler>>` registered via
   // `useOptionalResponder`, a `ResponderScope` wrapping the root.
   //
-  // Today only COPY is registered; the structured-to-grow shape lets
-  // a future find-on-terminal feature add `FIND` / `FIND_NEXT` /
-  // `FIND_PREVIOUS` without changing the registration site. The
-  // actions map is read through a ref so the registered handler stays
-  // stable across renders while reading the current implementation
-  // ([L07]).
+  // The COPY action handler writes the same composed text the Copy
+  // button writes, but without the confirmation flash — the flash is
+  // a click-affordance concern that lives inside `BlockCopyButton`.
+  // Keyboard COPY (Cmd-C while the block is first-responder) is a
+  // silent operation: the action happens, the clipboard has the
+  // bytes, and the user moves on. Today only COPY is registered;
+  // the structured-to-grow shape lets a future find-on-terminal
+  // feature add `FIND` / `FIND_NEXT` / `FIND_PREVIOUS` without
+  // changing the registration site.
   const terminalBlockResponderId = React.useId();
-  const handleCopyRef = React.useRef(handleCopy);
-  React.useLayoutEffect(() => {
-    handleCopyRef.current = handleCopy;
-  }, [handleCopy]);
   const terminalBlockActions = React.useMemo<
     Partial<Record<TugAction, ActionHandler>>
   >(
     () => ({
       [TUG_ACTIONS.COPY]: () => {
-        handleCopyRef.current?.();
+        const writeText = navigator.clipboard?.writeText.bind(
+          navigator.clipboard,
+        );
+        if (writeText === undefined) return;
+        const text = composeCopyText(latestDataRef.current);
+        if (text.length === 0) return;
+        void writeText(text).catch(() => undefined);
       },
     }),
     [],
@@ -1077,45 +1033,30 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
 
   // ---- Position-stable click infrastructure ---------------------------
   //
-  // The fold cue benefits from the same combination FileBlock /
-  // DiffBlock use: a scrollport-level tail spacer raises
-  // `maxScrollTop` so a collapse doesn't hit a hard clamp, and the
-  // hook then writes the exact `scrollTop` that puts the click target
-  // back at its pre-click viewport Y. See `usePositionStableClick`
-  // for the full rationale. Copy doesn't change height so its
-  // wrapper is a near-no-op — kept for action-row contract symmetry.
-  const outerScrollport = useOuterScrollport();
-  const outerScrollportRef = React.useRef<HTMLElement | null>(null);
-  outerScrollportRef.current = outerScrollport;
-  const foldCueButtonRef = React.useRef<HTMLButtonElement | null>(null);
-  const { stableClick: stableFoldClick } = usePositionStableClick({
-    targetRef: foldCueButtonRef,
-    scrollportRef: outerScrollportRef,
-  });
-  const { stableClick: stableCopyClick } = usePositionStableClick({
-    targetRef: copyButtonRef,
-    scrollportRef: outerScrollportRef,
-  });
+  // Position-stable click is now encapsulated inside the affordance
+  // components (BlockCopyButton, BlockFoldCue) — each calls
+  // `useOuterScrollport` + `usePositionStableClick` internally. The
+  // scrollport-level tail spacer combo (wired by tide-card-transcript)
+  // still applies: the spacer raises `maxScrollTop` so a collapse
+  // doesn't hit a hard clamp, and the position-stable hook inside
+  // `BlockFoldCue` writes the exact `scrollTop` that holds the
+  // cluster under the user's cursor across the height change.
 
-  const toggleCollapsed = React.useCallback(() => {
-    // Mirrors FileBlock's pattern: dispatch the disengage-follow-bottom
-    // event BEFORE the state update so any host (TugListView with
-    // SmartScroll, when present) flips `isFollowingBottom` to false
-    // before the cell-height change. The subsequent ResizeObserver
-    // flush then bails out of `pinToBottom`. Bubbles through the DOM
-    // tree; non-list hosts ignore it.
-    outerRef.current?.dispatchEvent(
-      new CustomEvent("tug-disengage-follow-bottom", { bubbles: true }),
-    );
+  // Fold-cue toggle callback. The `BlockFoldCue` affordance has
+  // already dispatched `tug-disengage-follow-bottom` and routed the
+  // call through the position-stable wrapper; this callback owns
+  // the block-specific concerns: first-responder promotion (so
+  // Cmd-C after the click reaches TerminalBlock's COPY handler),
+  // controlled vs uncontrolled state mutation, and host
+  // notification.
+  const handleFoldToggle = React.useCallback((next: boolean) => {
     chainManager?.makeFirstResponder(terminalBlockResponderId);
-    const next = !collapsed;
     if (collapsedProp === undefined) {
       setLocalCollapsed(next);
     }
     onToggleCollapsed?.(next);
   }, [
     chainManager,
-    collapsed,
     collapsedProp,
     onToggleCollapsed,
     terminalBlockResponderId,
@@ -1125,27 +1066,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // (the feature affordance) → fold cue (the fixed-position landmark
   // at the trailing edge). Mirrors FileBlock / DiffBlock so the
   // user's eye finds the fold cue in the same place across every
-  // body kind.
-  //
-  // **Copy** — controlled-confirmation pattern (Phase E.1): rest
-  // shows `Copy` icon + "Copy" label; the brief confirmed flash
-  // swaps in `Check` icon + "Copied" label. `isConfirming={copied}`
-  // is set ONLY inside the clipboard `.then()` callback after a
-  // successful write. Failure leaves the button at rest. The click
-  // routes through `stableCopyClick` — Copy doesn't change height
-  // today, but the wrapper keeps the action-row contract that
-  // EVERY click routes through `usePositionStableClick` (so a future
-  // change that adds a height-affecting side effect won't bypass
-  // the contract).
-  //
-  // **Fold cue** (Phase E.4) — `TugPushButton` with the same shape
-  // as FileBlock / DiffBlock. Only rendered when `overThreshold`
-  // (otherwise short output has no fold cue: the user can already
-  // see the whole thing). Chevron flips with state; label is `"N
-  // lines"` regardless of fold state; aria-label carries the verb
-  // for screen readers. Click routes through `stableFoldClick` so
-  // the cluster stays under the user's cursor across the layout
-  // change.
+  // body kind. All three use the `body-kinds/affordances/` library.
   const cueCountWord = lineCount === 1 ? "line" : "lines";
   const cueLabel = `${lineCount.toLocaleString()} ${cueCountWord}`;
   // Copy is disabled when there's nothing to copy. Static-mode check
@@ -1153,46 +1074,27 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // because content arrives over time via `streamingStore` and the
   // React shell doesn't re-render on those updates — disabling
   // optimistically would lock Copy out as soon as a stream starts
-  // empty. The clipboard handler's own empty-text path is a no-op
-  // either way (`writeText("")` is harmless), but disabling the
-  // button is the honest UX: don't invite a click that does nothing.
+  // empty.
   const isStreaming = streamingStore !== undefined;
   const copyDisabled = !isStreaming && !hasContent(data);
   const affordances = (
     <>
-      <TugPushButton
-        ref={copyButtonRef}
+      <BlockCopyButton
         className="tugx-term-copy-button"
-        icon={<Copy />}
-        subtype="icon-text"
-        emphasis="ghost"
-        size="2xs"
         disabled={copyDisabled}
         aria-label="Copy terminal output"
-        onClick={() => stableCopyClick(handleCopy)}
-        confirmation={{
-          icon: <Check />,
-          label: "Copied",
-        }}
-        isConfirming={copied}
-      >
-        Copy
-      </TugPushButton>
+        getText={getCopyText}
+      />
       {overThreshold ? (
-        <TugPushButton
-          ref={foldCueButtonRef}
+        <BlockFoldCue
           className="tugx-term-fold-cue"
           data-slot="terminal-fold-cue"
-          icon={collapsed ? <ChevronsDown /> : <ChevronsUp />}
-          subtype="icon-text"
-          emphasis="ghost"
-          size="2xs"
-          aria-expanded={!collapsed}
-          aria-label={collapsed ? "Expand terminal output" : "Collapse terminal output"}
-          onClick={() => stableFoldClick(toggleCollapsed)}
-        >
-          {cueLabel}
-        </TugPushButton>
+          collapsed={collapsed}
+          onToggle={handleFoldToggle}
+          label={cueLabel}
+          ariaLabelCollapse="Collapse terminal output"
+          ariaLabelExpand="Expand terminal output"
+        />
       ) : null}
     </>
   );

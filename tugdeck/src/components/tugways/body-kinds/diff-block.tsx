@@ -72,22 +72,18 @@ import React from "react";
 import { createPortal } from "react-dom";
 import {
   AlignLeft,
-  Check,
   ChevronDown,
   ChevronRight,
-  ChevronsDown,
-  ChevronsUp,
   Columns2,
-  Copy,
 } from "lucide-react";
 
 import { TugCue } from "@/components/tugways/tug-cue";
 import { TugChoiceGroup, type TugChoiceItem } from "@/components/tugways/tug-choice-group";
-import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
 import { usePositionStableClick } from "@/components/tugways/internal/use-position-stable-click";
+import { BlockCopyButton, BlockFoldCue } from "./affordances";
 import { detectLanguage } from "./file-block";
 import {
   parseUnifiedDiffText,
@@ -194,13 +190,6 @@ export interface DiffBlockProps {
 
 const DATA_SLOT_ROOT = "diff-body";
 const DATA_SLOT_HEADER = "diff-header";
-
-/** Duration the Copy button's "Copied" confirmation flash is visible
- *  (ms). Matches `COPIED_FLASH_MS` in `file-block.tsx` and
- *  `terminal-block.tsx` so the three body kinds agree on the
- *  timing constant.
- */
-const COPIED_FLASH_MS = 1200;
 const DATA_SLOT_HUNKS = "diff-hunks";
 const DATA_SLOT_HUNK = "diff-hunk";
 const DATA_SLOT_HUNK_ROWS = "diff-hunk-rows";
@@ -655,8 +644,6 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   const outerScrollport = useOuterScrollport();
   const outerScrollportRef = React.useRef<HTMLElement | null>(null);
   outerScrollportRef.current = outerScrollport;
-  const foldCueButtonRef = React.useRef<HTMLButtonElement | null>(null);
-  const copyButtonRef = React.useRef<HTMLButtonElement | null>(null);
   // The view-toggle is a `TugChoiceGroup` (a `div[role=radiogroup]`),
   // not a single button — `viewToggleRef` points at the choice
   // group's root so the position-stable hook anchors against the
@@ -665,69 +652,34 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   // `viewToggleForm.selectValue` below), and the chain handler
   // routes the side effect through `stableViewToggleClick` to
   // preserve the cluster's viewport position across the layout
-  // change the new view mode triggers.
+  // change the new view mode triggers. (The Copy + fold-cue
+  // affordances are library components that own their own
+  // position-stable click wiring internally — no refs threaded
+  // through here.)
   const viewToggleRef = React.useRef<HTMLDivElement | null>(null);
-  const { stableClick: stableFoldClick } = usePositionStableClick({
-    targetRef: foldCueButtonRef,
-    scrollportRef: outerScrollportRef,
-  });
   const { stableClick: stableViewToggleClick } = usePositionStableClick({
     targetRef: viewToggleRef,
     scrollportRef: outerScrollportRef,
   });
-  // Copy doesn't change document height — the diff body's shape is
-  // unaffected by the clipboard write. The position-stable wrapper
-  // is kept for action-row contract symmetry (every action-row
-  // click routes through `usePositionStableClick`, so a future
-  // height-affecting side effect won't accidentally bypass it).
-  const { stableClick: stableCopyClick } = usePositionStableClick({
-    targetRef: copyButtonRef,
-    scrollportRef: outerScrollportRef,
-  });
 
-  const toggleCollapsed = React.useCallback(() => {
-    // Dispatch BEFORE the state update so the host (TugListView's
-    // SmartScroll, when present) flips `isFollowingBottom` to false
-    // before React commits the new cell height; the subsequent
-    // ResizeObserver flush then bails out of `pinToBottom`. Mirrors
-    // FileBlock's exact pattern.
-    rootRef.current?.dispatchEvent(
-      new CustomEvent("tug-disengage-follow-bottom", { bubbles: true }),
-    );
-    // Controlled mode: parent owns the prop, only notify; local state
-    // stays out of it. Uncontrolled mode: local state flips. Both
-    // paths converge on `onToggleCollapsed` so the host can observe
-    // regardless of who owns the value.
-    const next = !collapsed;
+  // Fold-cue toggle callback. The `BlockFoldCue` affordance has
+  // already dispatched `tug-disengage-follow-bottom` and routed the
+  // click through its position-stable wrapper; this callback owns
+  // DiffBlock's state mutation (controlled vs uncontrolled) and
+  // host notification.
+  const handleFoldToggle = React.useCallback((next: boolean) => {
     if (collapsedProp === undefined) {
       setLocalCollapsed(next);
     }
     onToggleCollapsed?.(next);
-  }, [collapsed, collapsedProp, onToggleCollapsed]);
+  }, [collapsedProp, onToggleCollapsed]);
 
-  // ---- Copy state (Phase E.4 extension) -------------------------------
+  // ---- Copy text source (Phase E.4) -----------------------------------
   //
-  // Controlled-confirmation pattern mirroring FileBlock and
-  // TerminalBlock: `copied` flips to `true` ONLY inside the
-  // clipboard `.then()` callback after a successful write. A
-  // denied permission or missing clipboard API leaves the flag at
-  // `false` — the button never lies about success ([L23]).
-  //
-  // The composed clipboard text drives two things:
-  //
-  //  - `copyText` (memo): the value the disabled-check reads at
-  //    render time. Computed via `useMemo` keyed on `(data, hunks)`
-  //    so the button's `disabled` flips correctly on every render.
-  //    A naive ref-only design fails here because refs don't
-  //    trigger re-renders; the button would render disabled on
-  //    first paint (ref initial value is "") and never update.
-  //
-  //  - `copyTextRef` (live ref): the value the click handler reads
-  //    at fire time. Mirrors `copyText` via `useLayoutEffect` so
-  //    the handler stays stable across renders ([L07]) while always
-  //    seeing the most-recent text.
-  const [copied, setCopied] = React.useState<boolean>(false);
-  const copiedTimerRef = React.useRef<number | null>(null);
+  // `copyText` memo drives the render-time disabled check on
+  // `BlockCopyButton`; `getCopyText` is the closure the affordance
+  // reads at click time. The affordance owns the confirmation
+  // flash, timer cleanup, and clipboard call.
   const copyText = React.useMemo(
     () => (data === undefined ? "" : composeDiffCopyText(data, hunks)),
     [data, hunks],
@@ -736,36 +688,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   React.useLayoutEffect(() => {
     copyTextRef.current = copyText;
   }, [copyText]);
-
-  const handleCopy = React.useCallback((): void => {
-    const writeText = navigator.clipboard?.writeText.bind(navigator.clipboard);
-    if (writeText === undefined) return;
-    const text = copyTextRef.current;
-    if (text.length === 0) return;
-    writeText(text)
-      .then(() => {
-        setCopied(true);
-        if (copiedTimerRef.current !== null) {
-          window.clearTimeout(copiedTimerRef.current);
-        }
-        copiedTimerRef.current = window.setTimeout(() => {
-          copiedTimerRef.current = null;
-          setCopied(false);
-        }, COPIED_FLASH_MS);
-      })
-      .catch(() => {
-        // Silent failure — no false-positive flash.
-      });
-  }, []);
-
-  React.useEffect(() => {
-    return () => {
-      if (copiedTimerRef.current !== null) {
-        window.clearTimeout(copiedTimerRef.current);
-        copiedTimerRef.current = null;
-      }
-    };
-  }, []);
+  const getCopyText = React.useCallback(() => copyTextRef.current, []);
 
   // ---- View-toggle responder form (Phase E.4) -------------------------
   //
@@ -1055,54 +978,24 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
 
   const empty = hunks.length === 0;
 
-  // Compose the resting affordances cluster (fold cue + view-toggle)
-  // once; render inline (standalone, trailing area of `.tugx-diff-header`)
-  // or via portal into the chrome's actions slot (embedded). Phase D
-  // consolidated these into the chrome / identity header so the
-  // dedicated `.tugx-diff-actions` sticky strip retires entirely.
+  // Compose the resting affordances cluster (view-toggle + Copy +
+  // fold cue) once; render inline (standalone) or via portal into
+  // the chrome's actions slot (embedded). Phase E.3 / E.4 ordering:
+  // features (view-toggle → Copy) → fold cue (rightmost). The
+  // fold cue is the fixed-landmark affordance; features sit to its
+  // left.
   //
-  // Affordance components are Tug primitives by contract:
-  //  - Fold cue: `TugPushButton` with `subtype="icon-text"`,
-  //    `emphasis="ghost"`, `size="2xs"`. The shape is INVARIANT
-  //    across collapsed / expanded states — only the chevron icon
-  //    flips. The label is "N hunks" regardless of fold state; the
-  //    aria-label carries the verb ("Expand diff" / "Collapse diff")
-  //    for screen readers.
-  //  - View-toggle: text-only `TugPushButton`, `emphasis="ghost"`,
-  //    `size="2xs"`. Disabled when the diff is collapsed (no hunks
-  //    visible, so view-mode is meaningless). Disabling instead of
-  //    hiding keeps the cluster geometry stable across fold states.
-  //
-  // Legacy `tugx-diff-*` class names + data-slots are forwarded onto
-  // the Tug components so CSS scoping and test hooks stay stable.
+  // Copy and fold-cue come from the `body-kinds/affordances/`
+  // library — the contract (position-stable click, ghost
+  // typography, 2xs scale, focus-refuse, confirmation flash,
+  // width-stabilize for Copy, disengage-follow-bottom event for
+  // fold) is encapsulated there. View-toggle is a `TugChoiceGroup`
+  // (Phase E.4 — both segments visible at all times via the ghost
+  // emphasis bracket frame).
   const hunkCountWord = hunks.length === 1 ? "hunk" : "hunks";
   const cueLabel = `${hunks.length} ${hunkCountWord}`;
-  // Phase E.3 / E.4 ordering: features (view-toggle) → fold cue
-  // (rightmost). The fold cue is the fixed-landmark affordance; the
-  // view-toggle sits to its left in the features group.
-  //
-  // **View-toggle** (Phase E.4) — migrated from a `TugPushButton`
-  // (label-flipping, stabilized via `widthStabilize`) to a
-  // `TugChoiceGroup` (two visible segments — Side by side, Inline,
-  // each with a lucide icon). Both options stay visible at all
-  // times; the sliding indicator pill identifies the current
-  // selection. Activation routes through the responder chain via
-  // `selectValue` (registered on `viewToggleForm` above), and the
-  // chain handler runs `applyViewMode` inside `stableViewToggleClick`
-  // so the cluster's viewport position stays put across the layout
-  // change the new view mode triggers.
-  //
-  // **Fold cue** — same shape as Phase E.3: `TugPushButton`, chevron
-  // flips with state, label is `"N hunks"` regardless of fold state,
-  // aria-label carries the verb for screen readers. Click routes
-  // through `stableFoldClick`.
-  // Copy disabled when there's no composable text — the empty-text
-  // path returns "" from `composeDiffCopyText` (async two-text load
-  // still pending, or hunks parsed to empty). Honest UX: don't
-  // invite a click that does nothing. Same shape as FileBlock and
-  // TerminalBlock's Copy disable contract. Read from `copyText`
-  // (the memo) rather than `copyTextRef.current` so the disabled
-  // attribute re-derives on every render.
+  // Copy disabled when there's no composable text — empty memo
+  // means async hunks still loading, or hunks parsed to nothing.
   const copyDisabled = copyText.length === 0;
   const affordances = empty ? null : (
     <>
@@ -1118,39 +1011,22 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
         disabled={collapsed}
         aria-label="Diff view mode"
       />
-      <TugPushButton
-        ref={copyButtonRef}
+      <BlockCopyButton
         className="tugx-diff-copy"
         data-slot="diff-copy"
-        icon={<Copy />}
-        subtype="icon-text"
-        emphasis="ghost"
-        size="2xs"
         disabled={copyDisabled}
         aria-label="Copy diff"
-        onClick={() => stableCopyClick(handleCopy)}
-        confirmation={{
-          icon: <Check />,
-          label: "Copied",
-        }}
-        isConfirming={copied}
-      >
-        Copy
-      </TugPushButton>
-      <TugPushButton
-        ref={foldCueButtonRef}
+        getText={getCopyText}
+      />
+      <BlockFoldCue
         className="tugx-diff-fold-cue"
         data-slot="diff-fold-cue"
-        icon={collapsed ? <ChevronsDown /> : <ChevronsUp />}
-        subtype="icon-text"
-        emphasis="ghost"
-        size="2xs"
-        aria-expanded={!collapsed}
-        aria-label={collapsed ? "Expand diff" : "Collapse diff"}
-        onClick={() => stableFoldClick(toggleCollapsed)}
-      >
-        {cueLabel}
-      </TugPushButton>
+        collapsed={collapsed}
+        onToggle={handleFoldToggle}
+        label={cueLabel}
+        ariaLabelCollapse="Collapse diff"
+        ariaLabelExpand="Expand diff"
+      />
     </>
   );
 

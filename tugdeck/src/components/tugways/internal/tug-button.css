@@ -1004,15 +1004,19 @@ body {
  *
  * Two rules paint the confirming state on `ghost-action`:
  *  1. `.tug-button-ghost-action[data-tug-confirming="true"]` — resting
- *     confirmed background (green check feedback). Specificity 0,2,0.
+ *     confirmed bg + border + text (used when the cursor is NOT on
+ *     the button during the confirming window). Specificity 0,2,0.
  *  2. `.tug-button-ghost-action[data-tug-confirming="true"]:hover:not(:disabled)`
  *     — the companion hover rule. Specificity 0,4,0, matching the
  *     rest-state hover rule (0,4,0) so source order wins. Placed
  *     AFTER the rest-hover rule in this file so it paints when
- *     hovered-while-confirming. Uses `color-mix` to combine the
- *     confirmed surface with the hover overlay — no new appearance
- *     tokens needed (the integration is purely component-internal,
- *     per [L20]).
+ *     hovered-while-confirming. Keeps bg + border at HOVER values
+ *     (so the geometric hover affordance doesn't disappear under
+ *     the cursor) and uses the CONFIRMED text/icon color (so the
+ *     confirmation signal still reads — Check icon + "Copied" in
+ *     the success color). The text/icon swap carries the signal;
+ *     the chrome geometry stays put. No new tokens needed — pure
+ *     mix-and-match of the existing ghost-action token family.
  *
  * The revert edge (confirming → resting): the JS layout effect that
  * removes `data-tug-confirming` also toggles a no-op `data-tug-flush`
@@ -1035,29 +1039,37 @@ body {
   color: var(--tug7-element-control-icon-ghost-action-confirmed);
 }
 
-/* --- ghost-action confirmed + hover: companion rule keeps the
- * hover background visible while the cursor sits on the button
- * through the confirming window. Specificity (0,4,0) equals the
- * rest-hover rule's (0,4,0); this rule appears AFTER the rest-hover
- * rule in source order so it wins on tie-break.
+/* --- ghost-action confirmed + hover: companion rule keeps the FULL
+ * hover background AND border visible while the cursor sits on the
+ * button through the confirming window. Specificity (0,4,0) equals
+ * the rest-hover rule's (0,4,0); this rule appears AFTER the
+ * rest-hover rule in source order so it wins on tie-break.
  *
- * The composite background mixes the confirmed surface with a small
- * amount of the hover surface — the user reads "still confirming,
- * still hovering." No new tokens introduced: `color-mix` derives the
- * blend at paint time and tracks the underlying tokens automatically.
+ * Earlier drafts mixed the bg with `color-mix` (88% confirmed + 12%
+ * hover) and kept the border at `-confirmed`. That read as "the
+ * hover state is lost while I'm still hovering" — the geometric
+ * hover affordance (visibly different bg + border under the cursor)
+ * disappeared on click and didn't come back until the confirming
+ * timer expired. Users specifically complained that the border
+ * "flashed" on the rest→confirming transition.
  *
- * @tug-renders-on: --tug7-surface-control-primary-ghost-action-confirmed */
+ * The fix: keep bg + border at the HOVER values while confirming-
+ * AND-hovered; let the TEXT and ICON colors carry the confirmation
+ * signal (green check + "Copied" in `--text-ghost-action-confirmed`).
+ * Rest→confirm transition then changes only text/icon, not the
+ * geometric chrome, so the border doesn't move at all. When the
+ * cursor leaves mid-confirming, the button transitions to the
+ * fully-confirmed (no-hover) state above — bg + border + text all
+ * confirmed. Cursor returning re-engages the hover overlay here.
+ *
+ * @tug-renders-on: --tug7-surface-control-primary-ghost-action-hover */
 .tug-button-ghost-action[data-tug-confirming="true"]:hover:not(:disabled) {
-  background-color: color-mix(
-    in srgb,
-    var(--tug7-surface-control-primary-ghost-action-confirmed) 88%,
-    var(--tug7-surface-control-primary-ghost-action-hover) 12%
-  );
-  border-color: var(--tug7-element-control-border-ghost-action-confirmed);
+  background-color: var(--tug7-surface-control-primary-ghost-action-hover);
+  border-color: var(--tug7-element-control-border-ghost-action-hover);
   color: var(--tug7-element-control-text-ghost-action-confirmed);
 }
 
-/* @tug-renders-on: --tug7-surface-control-primary-ghost-action-confirmed */
+/* @tug-renders-on: --tug7-surface-control-primary-ghost-action-hover */
 .tug-button-ghost-action[data-tug-confirming="true"]:hover:not(:disabled) svg {
   color: var(--tug7-element-control-icon-ghost-action-confirmed);
 }

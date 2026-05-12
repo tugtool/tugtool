@@ -110,16 +110,7 @@ import "./file-block.css";
 
 import React from "react";
 import { createPortal } from "react-dom";
-import {
-  Check,
-  ChevronDown,
-  ChevronUp,
-  ChevronsDown,
-  ChevronsUp,
-  Copy,
-  Search,
-  X,
-} from "lucide-react";
+import { ChevronDown, ChevronUp, X } from "lucide-react";
 
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
@@ -135,8 +126,11 @@ import {
   type TugCodeViewDelegate,
 } from "@/components/tugways/tug-code-view";
 import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
-import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
-import { usePositionStableClick } from "@/components/tugways/internal/use-position-stable-click";
+import {
+  BlockCopyButton,
+  BlockFindButton,
+  BlockFoldCue,
+} from "./affordances";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -258,15 +252,6 @@ export interface FileBlockProps {
  * average file.
  */
 export const DEFAULT_COLLAPSE_THRESHOLD = 80;
-
-/**
- * Duration the Copy button's "Copied" confirmation flash is visible
- * (ms). Long enough to register as a positive signal, short enough
- * that the button is back at rest before the user moves on. Matches
- * `COPIED_FLASH_MS` in `terminal-block.tsx` so the two body kinds
- * agree on the timing constant.
- */
-const COPIED_FLASH_MS = 1200;
 
 const DATA_SLOT_ROOT = "file-body";
 const DATA_SLOT_HEADER = "file-header";
@@ -597,124 +582,53 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // circuit via `?.`.
   const chainManager = useResponderChain();
 
-  // Position-stable click infrastructure. The fold cue benefits from
-  // BOTH the scrollport-level tail spacer (`tailSpacer` prop on
-  // `TugListView`, wired by tide-card-transcript) AND
-  // `usePositionStableClick`: the spacer raises `maxScrollTop` so a
-  // collapse doesn't hit a hard clamp, and the hook then writes the
-  // exact `scrollTop` that puts the click target back at its pre-click
-  // viewport Y. See DiffBlock for the full rationale of the two
-  // mechanisms working together.
-  const outerScrollport = useOuterScrollport();
-  const outerScrollportRef = React.useRef<HTMLElement | null>(null);
-  outerScrollportRef.current = outerScrollport;
-  const foldCueButtonRef = React.useRef<HTMLButtonElement | null>(null);
-  const findButtonRef = React.useRef<HTMLButtonElement | null>(null);
-  const copyButtonRef = React.useRef<HTMLButtonElement | null>(null);
-  const { stableClick: stableFoldClick } = usePositionStableClick({
-    targetRef: foldCueButtonRef,
-    scrollportRef: outerScrollportRef,
-  });
-  const { stableClick: stableFindClick } = usePositionStableClick({
-    targetRef: findButtonRef,
-    scrollportRef: outerScrollportRef,
-  });
-  // Copy doesn't change document height — the file body stays at its
-  // current expanded/collapsed shape. The position-stable wrapper is
-  // still cheap (single getBoundingClientRect snapshot) and matches
-  // the action-row contract that EVERY click goes through
-  // `stableClick`, so a future refactor that adds a height-changing
-  // side effect to Copy doesn't accidentally bypass the contract.
-  const { stableClick: stableCopyClick } = usePositionStableClick({
-    targetRef: copyButtonRef,
-    scrollportRef: outerScrollportRef,
-  });
+  // Position-stable click is now encapsulated inside each affordance
+  // (BlockCopyButton, BlockFindButton, BlockFoldCue) — they each
+  // call `useOuterScrollport` + `usePositionStableClick` internally
+  // against their own button refs. The fold cue's combination with
+  // the scrollport-level `tailSpacer` (wired by tide-card-transcript)
+  // still applies: the spacer raises `maxScrollTop` so a collapse
+  // doesn't hit a hard clamp, and the position-stable hook inside
+  // BlockFoldCue writes the exact `scrollTop` that holds the
+  // cluster under the user's cursor across the height change.
 
-  const toggleCollapsed = React.useCallback(() => {
-    // Dispatch BEFORE the state update so the listener (TugListView's
-    // SmartScroll, when present) flips `isFollowingBottom` to false
-    // before React commits the new cell size; the subsequent
-    // ResizeObserver flush then bails out of `pinToBottom` (see
-    // `tug-list-view.tsx`:`isFollowingBottom` gate). Bubbles up
-    // through the DOM tree; non-list hosts simply ignore it.
-    rootRef.current?.dispatchEvent(
-      new CustomEvent("tug-disengage-follow-bottom", { bubbles: true }),
-    );
-    // Promote FileBlock to first-responder. The fold cue is a
-    // `TugPushButton` with `data-tug-focus="refuse"`, so the chain
-    // provider's pointerdown listener skipped chain promotion on its
-    // own. The user is clearly interacting with THIS block, so
-    // keystrokes after this click should land here — Cmd-F walking
-    // from FileBlock then reaches our FIND handler. Idempotent: if
-    // we already own first-responder, makeFirstResponder is a no-op.
+  // Fold-cue toggle callback. The `BlockFoldCue` affordance already
+  // dispatched the `tug-disengage-follow-bottom` event before
+  // invoking this; this callback owns the block-specific concerns:
+  //  - First-responder promotion (the cue carries
+  //    `data-tug-focus="refuse"`, so the chain provider's
+  //    pointerdown skipped chain promotion on its own — promote
+  //    explicitly so Cmd-F afterward walks from FileBlock and
+  //    reaches its FIND handler).
+  //  - State mutation (controlled vs uncontrolled).
+  //  - Host notification (`onToggleCollapsed`).
+  const handleFoldToggle = React.useCallback((next: boolean) => {
     chainManager?.makeFirstResponder(fileBlockResponderId);
-    // Controlled mode: parent owns the prop, so we only notify; local
-    // state stays out of it. Uncontrolled mode: local state flips and
-    // notifies. Both paths converge on `onToggleCollapsed` so the
-    // host can observe regardless of who owns the value.
-    const next = !collapsed;
     if (collapsedProp === undefined) {
       setLocalCollapsed(next);
     }
     onToggleCollapsed?.(next);
-  }, [chainManager, collapsed, collapsedProp, fileBlockResponderId, onToggleCollapsed]);
+  }, [chainManager, collapsedProp, fileBlockResponderId, onToggleCollapsed]);
 
   // Ref to the embedded TugCodeView so the Find UI can drive the
   // substrate's search state imperatively (set-query / next /
   // previous / select-all).
   const codeViewRef = React.useRef<TugCodeViewDelegate | null>(null);
 
-  // ---- Copy state ([L07]: handlers read state through refs, never
-  //                   stale closures) -----------------------------------
+  // ---- Copy text source -----------------------------------------------
   //
-  // Mirrors TerminalBlock's controlled-confirmation pattern from Phase
-  // E.1: `[copied, setCopied]` is set ONLY inside the clipboard
-  // `.then()` callback. A denied permission or missing clipboard API
-  // leaves the flag at `false`, so the button never lies about
-  // success — same honest-feedback contract.
-  //
-  // `fileTextRef` carries the live file content so the click handler
-  // reads the right string at fire time. It tracks `data.content`
-  // (the prop), updated in a `useLayoutEffect` so a Copy click in the
-  // same frame as a prop change sees the new content. Same shape as
-  // the find-session refs above.
-  const [copied, setCopied] = React.useState<boolean>(false);
-  const copiedTimerRef = React.useRef<number | null>(null);
+  // `fileTextRef` carries the live file content so the
+  // `BlockCopyButton`'s `getText` closure reads the freshest string
+  // at fire time. The ref is written in a `useLayoutEffect` so a
+  // click in the same frame as a `data.content` prop change sees
+  // the new content ([L07]). The affordance owns the rest of the
+  // Copy contract (confirmation flash, timer cleanup, clipboard
+  // call, width-stabilize) — see `affordances/block-copy-button.tsx`.
   const fileTextRef = React.useRef<string>(data?.content ?? "");
   React.useLayoutEffect(() => {
     fileTextRef.current = data?.content ?? "";
   }, [data?.content]);
-
-  const handleCopy = React.useCallback((): void => {
-    const writeText = navigator.clipboard?.writeText.bind(navigator.clipboard);
-    if (writeText === undefined) return;
-    writeText(fileTextRef.current)
-      .then(() => {
-        setCopied(true);
-        if (copiedTimerRef.current !== null) {
-          window.clearTimeout(copiedTimerRef.current);
-        }
-        copiedTimerRef.current = window.setTimeout(() => {
-          copiedTimerRef.current = null;
-          setCopied(false);
-        }, COPIED_FLASH_MS);
-      })
-      .catch(() => {
-        // Silent failure — no false-positive flash. The user can
-        // re-click to retry.
-      });
-  }, []);
-
-  // Clean up the pending timer on unmount so we never call setState on
-  // a detached component.
-  React.useEffect(() => {
-    return () => {
-      if (copiedTimerRef.current !== null) {
-        window.clearTimeout(copiedTimerRef.current);
-        copiedTimerRef.current = null;
-      }
-    };
-  }, []);
+  const getFileText = React.useCallback(() => fileTextRef.current, []);
 
   // ---- Find UI state ------------------------------------------------------
   //
@@ -983,116 +897,47 @@ export const FileBlock: React.FC<FileBlockProps> = ({
     `tugx-file${langClass}` +
     (className === undefined ? "" : ` ${className}`);
 
-  // Fold cue: a compact click target with stable shape. Always
-  // rendered when `overThreshold` so the user has a steady handle
-  // across the collapse <-> expand cycle. The button shape (icon +
-  // count label) is invariant across states — only the chevron
-  // direction flips. The label stays the same regardless of fold
-  // state ("N lines"); the aria-label carries the action verb
-  // ("Expand file" / "Collapse file") for screen readers.
+  // Fold cue label. Library-side affordance (`BlockFoldCue`) owns
+  // the chevron, position-stable click, and disengage-follow-bottom
+  // event; FileBlock just formats the count.
   const showCue = overThreshold;
-  const cueIcon = collapsed ? <ChevronsDown /> : <ChevronsUp />;
   const cueCountWord = lines.length === 1 ? "line" : "lines";
   const cueLabel = `${lines.length.toLocaleString()} ${cueCountWord}`;
 
   // Compose the affordances node ONCE. It renders either inline at
-  // the trailing edge of `.tugx-file-header` (standalone, has its own
-  // header) or via a portal into the host's chrome actions slot
-  // (embedded composition, header suppressed but affordances still
-  // need to surface in the chrome). Per Phase D the dedicated
-  // `.tugx-file-actions` sticky row retires entirely — one less pinned
-  // strip, fewer near-empty bars stacking.
-  //
-  // Affordance components are Tug primitives by contract, with stable
-  // shapes across all states (a button that swaps subtype between
-  // states moves the click target out from under the user's pointer
-  // and is therefore not allowed):
-  //  - Fold cue: `TugPushButton`, `subtype="icon-text"`,
-  //    `emphasis="ghost"`, `size="2xs"`. Chevron icon flips with
-  //    state; label stays "N lines" regardless of fold state
-  //    (aria-label carries the verb for screen readers).
-  //  - Search (Find trigger): `TugPushButton`, `subtype="icon-text"`,
-  //    `emphasis="ghost"`, `size="2xs"`. ALWAYS rendered so the
-  //    cluster geometry is invariant across fold state — disabled
-  //    when collapsed (substrate isn't mounted) rather than removed
-  //    from the DOM. Magnifier icon + "Find" text.
-  //
-  // The legacy `tugx-file-*` class names are forwarded onto the Tug
-  // components as `className`/`data-slot` so CSS scoping and test
-  // hooks stay stable across the refactor.
-  // Phase E.3 / E.4 ordering: features (Find → Copy) → fold cue
-  // (rightmost). The fold cue is the "least-mobile" affordance — its
-  // meaning doesn't change with block contents and the user's eye
-  // finds it as a fixed landmark at the trailing edge. Feature
-  // buttons sit closer to the title (the leading edge of the
-  // cluster); Copy lands between Find (the search affordance) and
-  // the fold cue.
-  //
-  // All buttons route their click through `usePositionStableClick`
-  // so the cursor stays directly over the button across any layout
-  // change the click triggers (body collapse/expand, find row
-  // appear). The wrapper invokes the mutator inside a snapshot →
-  // measure → compensate sequence — see the hook docstring for the
-  // [L03] / [L04] / [L05] story.
-  //
-  // **Copy button** (Phase E.4): controlled-confirmation pattern
-  // mirroring TerminalBlock's Copy. `confirmation` provides the
-  // post-success appearance (Check icon + "Copied" label);
-  // `isConfirming={copied}` flips to `true` ONLY inside the
-  // clipboard `.then()` callback after a successful write. A denied
-  // permission or missing clipboard API leaves the flag at `false` —
-  // no false-positive "Copied" flash. Phase E.1's honest-feedback
-  // contract carried forward.
+  // the trailing edge of `.tugx-file-header` (standalone) or via a
+  // portal into the host's chrome actions slot (embedded). Phase
+  // E.3 / E.4 ordering: features (Find → Copy) → fold cue
+  // (rightmost). All three affordances come from the block
+  // affordance library (`body-kinds/affordances/`), so the contract
+  // (position-stable click, ghost typography, 2xs scale, focus-
+  // refuse) is uniform across body kinds.
   const affordances = (
     <>
-      <TugPushButton
-        ref={findButtonRef}
+      <BlockFindButton
         className="tugx-file-search"
         data-slot="file-search"
-        icon={<Search />}
-        subtype="icon-text"
-        emphasis="ghost"
-        size="2xs"
         disabled={collapsed}
         aria-label="Search in file"
-        onClick={() => stableFindClick(openFind)}
-      >
-        Find
-      </TugPushButton>
-      <TugPushButton
-        ref={copyButtonRef}
+        onClick={openFind}
+      />
+      <BlockCopyButton
         className="tugx-file-copy"
         data-slot="file-copy"
-        icon={<Copy />}
-        subtype="icon-text"
-        emphasis="ghost"
-        size="2xs"
         disabled={collapsed}
         aria-label="Copy file contents"
-        onClick={() => stableCopyClick(handleCopy)}
-        confirmation={{
-          icon: <Check />,
-          label: "Copied",
-        }}
-        isConfirming={copied}
-      >
-        Copy
-      </TugPushButton>
+        getText={getFileText}
+      />
       {showCue ? (
-        <TugPushButton
-          ref={foldCueButtonRef}
+        <BlockFoldCue
           className="tugx-file-fold-cue"
           data-slot="file-fold-cue"
-          icon={cueIcon}
-          subtype="icon-text"
-          emphasis="ghost"
-          size="2xs"
-          aria-expanded={!collapsed}
-          aria-label={collapsed ? "Expand file" : "Collapse file"}
-          onClick={() => stableFoldClick(toggleCollapsed)}
-        >
-          {cueLabel}
-        </TugPushButton>
+          collapsed={collapsed}
+          onToggle={handleFoldToggle}
+          label={cueLabel}
+          ariaLabelCollapse="Collapse file"
+          ariaLabelExpand="Expand file"
+        />
       ) : null}
     </>
   );
