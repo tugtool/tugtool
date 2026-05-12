@@ -32,9 +32,23 @@ import {
   test,
 } from "bun:test";
 import { cleanup, render, fireEvent } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import { Check, Copy } from "lucide-react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+
+// Path to the source `tug-button.css` — used by the metric-tokens
+// test below. happy-dom doesn't run the actual CSS pipeline, so a
+// runtime `getComputedStyle` read returns empty; reading the source
+// is the right granularity for "tokens are declared and the rules
+// consume them."
+const TUG_BUTTON_CSS_PATH = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "tug-button.css",
+);
 
 afterEach(() => {
   cleanup();
@@ -183,6 +197,55 @@ describe("TugButton — controlled confirmation (Phase E.1)", () => {
       expect(own[0]).toContain("confirmation.duration");
     } finally {
       warnSpy.mockRestore();
+    }
+  });
+});
+
+describe("TugButton — published size metrics (Phase E.2)", () => {
+  test("each size publishes height / padding-inline / font-size / icon-size on `body`", () => {
+    // The metric tokens are TugButton's contract with sibling
+    // components that need to match its geometry without composing
+    // a TugButton (e.g., `enhanceFencedCode`'s imperative Copy
+    // button). Pin the per-size four-tuple here so a future refactor
+    // can't accidentally drop one and let a consumer silently drift.
+    const css = readFileSync(TUG_BUTTON_CSS_PATH, "utf8");
+    const sizes = ["2xs", "xs", "sm", "md", "lg"] as const;
+    const metrics = ["height", "padding-inline", "font-size", "icon-size"] as const;
+    for (const size of sizes) {
+      for (const metric of metrics) {
+        const token = `--tug-button-${size}-${metric}`;
+        // The token must be declared at least once (in the `body{}`
+        // block) and consumed at least once (in a size-class rule).
+        const declarations = css.match(
+          new RegExp(`${token}\\s*:`, "g"),
+        );
+        expect(declarations).not.toBeNull();
+        expect(declarations!.length).toBeGreaterThanOrEqual(1);
+        const consumptions = css.match(
+          new RegExp(`var\\(\\s*${token}\\s*[\\),]`, "g"),
+        );
+        expect(consumptions).not.toBeNull();
+        expect(consumptions!.length).toBeGreaterThanOrEqual(1);
+      }
+    }
+  });
+
+  test("the size-class CSS rules consume the metric tokens (no rem literals)", () => {
+    const css = readFileSync(TUG_BUTTON_CSS_PATH, "utf8");
+    // Extract each `.tug-button-size-{N}` rule body. Each must
+    // reference `var(--tug-button-{N}-*)` and must NOT contain a
+    // bare `\d+rem` literal in its height/padding/font-size — those
+    // would mean the rule shipped a constant the metric tokens are
+    // supposed to own.
+    for (const size of ["2xs", "xs", "sm", "md", "lg"] as const) {
+      const re = new RegExp(`\\.tug-button-size-${size}\\s*\\{([^}]+)\\}`);
+      const body = css.match(re)?.[1] ?? "";
+      expect(body.length).toBeGreaterThan(0);
+      expect(body).toContain(`var(--tug-button-${size}-height)`);
+      expect(body).toContain(`var(--tug-button-${size}-padding-inline)`);
+      // No bare-rem literals — the rule consumes tokens only.
+      const remLiterals = body.match(/\b\d*\.?\d+rem\b/g) ?? [];
+      expect(remLiterals).toEqual([]);
     }
   });
 });

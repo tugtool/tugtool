@@ -623,6 +623,29 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // its trailing edge.
   const chromeActionsTarget = useChromeActionsTarget();
 
+  // Dev-mode misconfiguration check — `embedded={true}` requires a
+  // parent `ToolWrapperChrome` so Copy has a portal target. The
+  // setTimeout defers past the chrome's first-render
+  // ref-callback → state-update → re-render cycle so the warn
+  // doesn't fire spuriously when the chrome IS present. See
+  // `file-block.tsx`'s version for the full rationale.
+  React.useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    if (!embedded) return;
+    if (chromeActionsTarget !== null) return;
+    const handle = window.setTimeout(() => {
+      console.warn(
+        "TerminalBlock: `embedded={true}` requires a parent `ToolWrapperChrome`. " +
+          "Without one, the body kind's identity header is suppressed AND its " +
+          "Copy button has nowhere to portal — the user loses access to it " +
+          "silently. Either compose under a chrome or set `embedded={false}`.",
+      );
+    }, 0);
+    return () => {
+      window.clearTimeout(handle);
+    };
+  }, [embedded, chromeActionsTarget]);
+
   // Standalone always renders an identity header — even without a
   // `headerLabel`, the header strip hosts Copy at the trailing edge.
   // An empty strip is a fair price for the Copy affordance staying

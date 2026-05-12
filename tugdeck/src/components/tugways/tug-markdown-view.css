@@ -82,20 +82,20 @@ body {
   --tugx-md-fenced-code-line-height: 1.5;
   --tugx-md-fenced-code-margin:      var(--tug-space-md);
 
-  /* Fenced code header — Copy button geometry. The lang label inherits
-   * the shared strip vocabulary; only Copy-button-specific lengths are
-   * here. Sized to match `TugPushButton size="2xs"` so the imperative
-   * Copy button reads consistently with the React body-kind affordances
-   * (FileBlock fold cue, DiffBlock view-toggle, TerminalBlock Copy).
-   * Per tuglaw rule 6: imperative-DOM rendering paths may use raw
-   * `<button>` markup but must match the Tug primitive equivalent
-   * visually. */
-  --tugx-md-fenced-code-lang-weight:    600;
-  --tugx-md-fenced-code-copy-padding:   0 0.5rem;
-  --tugx-md-fenced-code-copy-radius:    var(--tug-radius-lg);
-  --tugx-md-fenced-code-copy-height:    1.25rem;  /* 20px — matches button-size-2xs */
-  --tugx-md-fenced-code-copy-font-size: 0.625rem; /* 10px — matches button-size-2xs */
-  --tugx-md-fenced-code-copy-icon-size: 0.625rem; /* 10px — matches icon-text 2xs svg */
+  /* Fenced code header — Copy button geometry. Sized to match
+   * `TugPushButton size="2xs"` so the imperative Copy button reads
+   * consistently with the React body-kind affordances (FileBlock fold
+   * cue, DiffBlock view-toggle, TerminalBlock Copy). Per tuglaw rule
+   * 6: imperative-DOM rendering paths may use raw `<button>` markup
+   * but must match the Tug primitive equivalent visually.
+   *
+   * Phase E.2: the height / padding-inline / font-size / icon-size
+   * pull directly from `--tug-button-2xs-*` global metric tokens
+   * published by `tug-button.css`. The previous local rem-literal
+   * mirrors retired so a future TugButton size change propagates
+   * automatically instead of drifting behind a comment. */
+  --tugx-md-fenced-code-lang-weight: 600;
+  --tugx-md-fenced-code-copy-radius: var(--tug-radius-lg);
 
   /* Approximate height of `.tugx-md-fenced-code-header` — used by
    * the actions row to compute its sticky `top` so the two bars stack
@@ -404,21 +404,23 @@ body {
  * with the React body-kind affordances. Icon + "Copy" text at rest;
  * swaps to Check icon + "Copied!" briefly after a successful
  * clipboard write (CSS-driven display toggle on the `is-copied`
- * class). */
+ * class). Geometry reads from the published `--tug-button-2xs-*`
+ * metric tokens (`tug-button.css`) so a future button-size change
+ * propagates here automatically. */
 /* @tug-renders-on: --tugx-block-bg */
 .tugx-md-block .tugx-md-fenced-code-copy {
   display: inline-flex;
   align-items: center;
   gap: var(--tug-space-2xs);
-  height: var(--tugx-md-fenced-code-copy-height);
-  padding: var(--tugx-md-fenced-code-copy-padding);
+  height: var(--tug-button-2xs-height);
+  padding: 0 var(--tug-button-2xs-padding-inline);
   border: none;
   background: transparent;
   color: var(--tugx-block-text-color-muted);
   border-radius: var(--tugx-md-fenced-code-copy-radius);
   cursor: pointer;
   font-family: inherit;
-  font-size: var(--tugx-md-fenced-code-copy-font-size);
+  font-size: var(--tug-button-2xs-font-size);
   font-weight: 500;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -429,8 +431,8 @@ body {
 }
 
 .tugx-md-block .tugx-md-fenced-code-copy svg {
-  width: var(--tugx-md-fenced-code-copy-icon-size);
-  height: var(--tugx-md-fenced-code-copy-icon-size);
+  width: var(--tug-button-2xs-icon-size);
+  height: var(--tug-button-2xs-icon-size);
 }
 
 /* @tug-renders-on: --tugx-block-row-hover-bg */

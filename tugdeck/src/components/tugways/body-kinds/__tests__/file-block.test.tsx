@@ -34,7 +34,7 @@
 
 import "../../../../__tests__/setup-rtl";
 
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import React from "react";
 
@@ -656,6 +656,98 @@ describe("FileBlock — embedded mode", () => {
     expect(
       chromeActionsSlot?.querySelector(".tugx-file-fold-cue"),
     ).not.toBeNull();
+  });
+
+  test("embedded={true} without a parent chrome fires a dev-mode console.warn", async () => {
+    // Phase E.2 — `embedded` is a contract that the body kind sits
+    // inside a `ToolWrapperChrome`. When that contract is violated
+    // (chrome absent), affordances vanish silently. The dev-warn
+    // surfaces the misconfiguration at mount. The warn is deferred
+    // one tick (setTimeout 0) so the chrome's first-render
+    // ref-callback → re-render cycle has a chance to publish the
+    // actions target before we declare misconfiguration.
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const data: FileData = {
+        filePath: "x.ts",
+        content: "alpha\nbeta",
+      };
+      render(<FileBlock data={data} embedded />);
+      // Wait for the deferred warn to fire (and for any in-flight
+      // chrome reconciliation to settle if it were present).
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const calls = warnSpy.mock.calls as ReadonlyArray<
+        ReadonlyArray<unknown>
+      >;
+      const messages = calls
+        .map((call) => call[0])
+        .filter((arg): arg is string => typeof arg === "string");
+      const own = messages.filter((m) => m.includes("FileBlock"));
+      expect(own.length).toBeGreaterThanOrEqual(1);
+      expect(own[0]).toContain("embedded");
+      expect(own[0]).toContain("ToolWrapperChrome");
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  test("embedded={true} INSIDE a chrome does NOT fire the dev-warn", async () => {
+    // The companion to the warn test — the legal composition stays
+    // quiet. Without this companion, a future regression could leave
+    // the warn firing all the time and tests would still pass.
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const data: FileData = {
+        filePath: "x.ts",
+        content: "alpha\nbeta",
+      };
+      render(
+        <ToolWrapperChrome toolName="Read">
+          <FileBlock data={data} embedded />
+        </ToolWrapperChrome>,
+      );
+      // Wait the same tick as the warn test so we're comparing
+      // apples to apples — the chrome publishes its target on a
+      // re-render that runs INSIDE this same tick window.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const calls = warnSpy.mock.calls as ReadonlyArray<
+        ReadonlyArray<unknown>
+      >;
+      const messages = calls
+        .map((call) => call[0])
+        .filter((arg): arg is string => typeof arg === "string");
+      const own = messages.filter(
+        (m) => m.includes("FileBlock") && m.includes("embedded"),
+      );
+      expect(own.length).toBe(0);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  test("embedded={false} (default) does NOT fire the dev-warn even without a chrome", async () => {
+    // Standalone composition is fully supported; no warn.
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const data: FileData = {
+        filePath: "x.ts",
+        content: "alpha\nbeta",
+      };
+      render(<FileBlock data={data} />);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const calls = warnSpy.mock.calls as ReadonlyArray<
+        ReadonlyArray<unknown>
+      >;
+      const messages = calls
+        .map((call) => call[0])
+        .filter((arg): arg is string => typeof arg === "string");
+      const own = messages.filter(
+        (m) => m.includes("FileBlock") && m.includes("embedded"),
+      );
+      expect(own.length).toBe(0);
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
 

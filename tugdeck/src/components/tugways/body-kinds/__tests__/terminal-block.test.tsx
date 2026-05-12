@@ -27,6 +27,7 @@ import {
   describe,
   expect,
   mock,
+  spyOn,
   test,
 } from "bun:test";
 import { act, cleanup, render } from "@testing-library/react";
@@ -685,5 +686,53 @@ describe("TerminalBlock — pinned chrome + Copy button", () => {
     // the dedicated strip retired with Phase D.
     const actionsRule = css.match(/\.tugx-term-actions\s*\{[^}]*\}/)?.[0];
     expect(actionsRule).toBeUndefined();
+  });
+});
+
+describe("TerminalBlock — embedded-without-chrome dev-warn (Phase E.2)", () => {
+  test("embedded={true} without a parent chrome fires a dev-mode console.warn", async () => {
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const data: TerminalData = { stdout: "ok", stderr: "" };
+      render(<TerminalBlock data={data} embedded />);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const calls = warnSpy.mock.calls as ReadonlyArray<
+        ReadonlyArray<unknown>
+      >;
+      const messages = calls
+        .map((call) => call[0])
+        .filter((arg): arg is string => typeof arg === "string");
+      const own = messages.filter((m) => m.includes("TerminalBlock"));
+      expect(own.length).toBeGreaterThanOrEqual(1);
+      expect(own[0]).toContain("embedded");
+      expect(own[0]).toContain("ToolWrapperChrome");
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  test("embedded={true} INSIDE a chrome does NOT fire the dev-warn", async () => {
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const data: TerminalData = { stdout: "ok", stderr: "" };
+      render(
+        <ToolWrapperChrome toolName="Bash">
+          <TerminalBlock data={data} embedded />
+        </ToolWrapperChrome>,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const calls = warnSpy.mock.calls as ReadonlyArray<
+        ReadonlyArray<unknown>
+      >;
+      const messages = calls
+        .map((call) => call[0])
+        .filter((arg): arg is string => typeof arg === "string");
+      const own = messages.filter(
+        (m) => m.includes("TerminalBlock") && m.includes("embedded"),
+      );
+      expect(own.length).toBe(0);
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });

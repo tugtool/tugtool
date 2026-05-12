@@ -29,7 +29,7 @@
 
 import "../../../../__tests__/setup-rtl";
 
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import dmp from "diff-match-patch";
 import React from "react";
@@ -586,6 +586,62 @@ describe("DiffBlock — collapse", () => {
     expect(
       cluster?.querySelector('[data-slot="diff-view-toggle"]'),
     ).not.toBeNull();
+  });
+
+  test("embedded={true} without a parent chrome fires a dev-mode console.warn", async () => {
+    // Phase E.2 — see file-block.test.tsx for the contract. The
+    // warn is deferred one tick so the chrome's first-render
+    // ref-callback → re-render cycle has a chance to publish the
+    // actions target.
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      render(
+        <DiffBlock
+          data={{ source: "unified", text: FIXTURE_UNIFIED }}
+          embedded
+        />,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const calls = warnSpy.mock.calls as ReadonlyArray<
+        ReadonlyArray<unknown>
+      >;
+      const messages = calls
+        .map((call) => call[0])
+        .filter((arg): arg is string => typeof arg === "string");
+      const own = messages.filter((m) => m.includes("DiffBlock"));
+      expect(own.length).toBeGreaterThanOrEqual(1);
+      expect(own[0]).toContain("embedded");
+      expect(own[0]).toContain("ToolWrapperChrome");
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  test("embedded={true} INSIDE a chrome does NOT fire the dev-warn", async () => {
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      render(
+        <ToolWrapperChrome toolName="Edit">
+          <DiffBlock
+            data={{ source: "unified", text: FIXTURE_UNIFIED }}
+            embedded
+          />
+        </ToolWrapperChrome>,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const calls = warnSpy.mock.calls as ReadonlyArray<
+        ReadonlyArray<unknown>
+      >;
+      const messages = calls
+        .map((call) => call[0])
+        .filter((arg): arg is string => typeof arg === "string");
+      const own = messages.filter(
+        (m) => m.includes("DiffBlock") && m.includes("embedded"),
+      );
+      expect(own.length).toBe(0);
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
 

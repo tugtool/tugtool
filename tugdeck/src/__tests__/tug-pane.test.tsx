@@ -394,3 +394,53 @@ describe("TugPane – pane scrim pointer-events contract", () => {
     expect(body).toMatch(/opacity:\s*1/);
   });
 });
+
+describe("TugPane – pane walls use `overflow: clip` (Phase E.2 — sticky-pin trap removal)", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { readFileSync } = require("node:fs") as typeof import("node:fs");
+  const cssSource = readFileSync(
+    new URL("../components/tugways/tug-pane.css", import.meta.url),
+    "utf-8",
+  );
+
+  /** Extract the body of a top-level rule by exact selector match. */
+  function topLevelRuleBody(source: string, selector: string): string {
+    // Match the selector at the start of a line so we don't pick up
+    // compound selectors like `.tug-pane-chrome--collapsed`.
+    const re = new RegExp(`^${selector.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}\\s*\\{`, "m");
+    const match = re.exec(source);
+    if (match === null) throw new Error(`selector not found: ${selector}`);
+    const open = match.index + match[0].length - 1;
+    let depth = 1;
+    let i = open + 1;
+    while (i < source.length && depth > 0) {
+      const c = source[i];
+      if (c === "{") depth += 1;
+      else if (c === "}") depth -= 1;
+      i += 1;
+    }
+    return source.slice(open + 1, i - 1);
+  }
+
+  /** Strip CSS comments so assertions don't match prose inside them. */
+  function stripComments(s: string): string {
+    return s.replace(/\/\*[\s\S]*?\*\//g, "");
+  }
+
+  it("`.tug-pane-chrome` uses `overflow: clip` (not `hidden`)", () => {
+    // `overflow: hidden` would form a scrolling block-container,
+    // trapping any sticky descendant inside this never-scrolling
+    // box. `overflow: clip` clips painting without forming a
+    // scroll container — same visual behavior, no sticky trap.
+    // Phase B.1 flagged this; Phase E.2 acts on the flag.
+    const body = stripComments(topLevelRuleBody(cssSource, ".tug-pane-chrome"));
+    expect(body).toMatch(/overflow:\s*clip\s*;/);
+    expect(body).not.toMatch(/overflow:\s*hidden\s*;/);
+  });
+
+  it("`.tug-pane-body` uses `overflow: clip` (not `hidden`)", () => {
+    const body = stripComments(topLevelRuleBody(cssSource, ".tug-pane-body"));
+    expect(body).toMatch(/overflow:\s*clip\s*;/);
+    expect(body).not.toMatch(/overflow:\s*hidden\s*;/);
+  });
+});

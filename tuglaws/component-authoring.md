@@ -789,18 +789,23 @@ Deeper-tier bars compose the same way through additional component-owned variabl
 
 The `0px` fallback in each `var()` is load-bearing — without it the entire calc resolves to nothing when ONE variable is unset, and the bar mispins. Always use `var(--name, 0px)`, never `var(--name, 0)`.
 
-### Position-coordination tokens vs. appearance tokens — L20 carve-out
+### Token categories — three kinds, three different sovereignty rules
 
-[L20] says "A's CSS references only A-scoped tokens" — A never reaches into B's slot family. That rule is about **appearance tokens**: the seven-slot vocabulary (`surface`, `element`, etc.) that drives theming and contrast pairings. Appearance tokens are owned by exactly one component and tuned per theme; reaching into another component's appearance tokens would let A re-paint B's chrome and undermine B's per-theme tunability.
+The seven-slot system (`surface`, `element`, etc.) covers **appearance tokens**: the values that drive theming and contrast pairings. [L20] guards them — A's CSS doesn't reach into B's slot family. But two other token categories exist alongside, and they intentionally cross slot boundaries:
 
-**Position-coordination tokens are a separate category** and the pin-stack is the canonical example. `--tugx-pin-stack-top`, `--tugx-toolblock-header-height`, `--tugx-file-header-height`, etc. are not appearance tokens — they don't drive color, typography, or contrast pairings. They describe **the geometry of a parent that descendants need to know** so they can compute their own sticky `top` offset. By design, they cross slot boundaries: the chrome writes its measured header height and the body kind reads it.
+1. **Appearance tokens** (`--tug7-*`, `--tugx-{component}-*`, `--tug-color-*`, etc.). Owned by one component or theme tier. Tuned per theme. Subject to [L20]: only the owner declares + consumes. Cross-slot reads forbidden.
 
-The distinguishing test:
+2. **Position-coordination tokens** (`--tugx-pin-stack-top`, `--tugx-toolblock-header-height`, `--tugx-file-header-height`, etc.). The pin-stack is the canonical example. Not appearance — they don't drive color, typography, or contrast pairings. They describe **the geometry of a parent that descendants need to know** so they can compute their own sticky `top` offset. The chrome writes its measured header height; the body kind reads it. Single writer, many readers, no overrides.
+
+3. **Component-metric tokens** (`--tug-button-{2xs,xs,sm,md,lg}-{height,padding-inline,font-size,icon-size}`, etc.). A component publishes its own per-variant geometry constants so sibling components that need to match — without composing the component themselves — can. The canonical example is `enhanceFencedCode`'s imperative Copy button, which can't mount a React `TugPushButton` but must read as one visually. The metric tokens keep its sizing in lockstep with `TugButton size="2xs"` so a future button-geometry change propagates automatically instead of drifting behind a comment.
+
+The distinguishing tests:
 
 - *Does a theme tune this value to change how the component looks?* If yes, it is an appearance token and [L20] applies — keep it inside the owning component's slot family.
-- *Is the value the live measured geometry of a parent that descendants need to know to place themselves?* If yes, it is a position-coordination token and [L20] does not forbid descendants from reading it.
+- *Is the value the live measured geometry of a parent that descendants need to know to place themselves?* If yes, it is a position-coordination token. Single writer (the parent's React effect), many readers, no overrides.
+- *Is the value a static per-variant geometry constant another component might need to match?* If yes, it is a component-metric token. Single writer (the component's own CSS), many readers, no overrides — the same single-writer invariant as position-coordination tokens, but published statically in CSS rather than written dynamically from a `ResizeObserver`.
 
-Position-coordination tokens still follow the writer/reader chain documented above (rules 1 + 2). The chrome owns `--tugx-toolblock-header-height` in the sense that the chrome is the only writer; descendants are readers and never override the value. A body kind never declares `--tugx-toolblock-header-height: 32px` in its own CSS — it consumes the value the chrome publishes. That is the actual [L20] invariant for this token category: **single writer, many readers, no overrides**.
+Categories 2 and 3 are NOT subject to [L20]'s "A's CSS references only A-scoped tokens" rule. They are explicit publish/subscribe contracts that cross component boundaries by design. A body kind never declares `--tugx-toolblock-header-height: 32px` in its own CSS, and a fenced-code renderer never declares `--tug-button-2xs-height: 1rem` — they only consume the values the owners publish. That is the actual [L20] invariant for these categories: **single writer, many readers, no overrides**.
 
 ### Body-kind affordance hosting
 
@@ -1078,7 +1083,7 @@ The cursor tells the user what will happen if they click. The baseline is `curso
 
 ## Portaling and Overlays
 
-Components that paint above the pane stack — typeahead popups, popovers, dropdown menus, tooltips — must escape every pane's `overflow: hidden` clip rect. Two portal targets exist; pick the one that matches the overlay's lifetime.
+Components that paint above the pane stack — typeahead popups, popovers, dropdown menus, tooltips — must escape every pane's clip rect. Two portal targets exist; pick the one that matches the overlay's lifetime. (Note: `.tug-pane-chrome` and `.tug-pane-body` use `overflow: clip` rather than `hidden` — same painting clip, no scroll-container formation, no sticky-pin trap for descendants. Either form still requires a portal for overlays that need to paint above the pane.)
 
 ### Canvas overlay tier (popup-class)
 

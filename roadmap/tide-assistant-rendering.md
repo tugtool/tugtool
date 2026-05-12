@@ -2529,31 +2529,31 @@ A separate concern compounds it: the FileBlock / DiffBlock Find UI lives in the 
 
 **Tasks (Phase E.2):**
 
-- [ ] **Publish `--tug-button-{size}-*` metrics on `tug-button.css`.** Five sizes × four metrics = 20 vars. The existing `.tug-button-size-{N}` rules read the vars. The `.tug-button-icon-{N}` rules read `--tug-button-{N}-height` for both width and height.
-- [ ] **Refactor fenced-code Copy CSS** to consume `--tug-button-2xs-*` directly. Either retire `--tugx-md-fenced-code-copy-{height,font-size,icon-size}` or alias them in one hop to the new globals.
-- [ ] **Add dev-warns for embedded-without-chrome** in `FileBlock`, `DiffBlock`, `TerminalBlock`. Single warn per mount, gated on `process.env.NODE_ENV !== "production"`. Production builds tree-shake to a no-op.
-- [ ] **Switch `.tug-pane-body` and `.tug-pane-chrome` to `overflow: clip`.** Confirm pane-banner, pane-resize, pane-drag, inactive-content overlay still work.
-- [ ] **Tests** for the metric-tokens published-on-:root contract; for the dev-warn firing on embedded-without-chrome; for the pane CSS source declaring `overflow: clip`.
-- [ ] **Tuglaws update** documenting the metric-tokens category (third token category alongside appearance and position-coordination) and the pane-walls migration.
+- [x] **Publish `--tug-button-{size}-*` metrics on `tug-button.css`.** Done — five sizes × four metrics (height, padding-inline, font-size, icon-size) = 20 vars declared on `body{}`. All `.tug-button-size-{N}` and `.tug-button-icon-{N}` rules — including the SVG-sizing descendants — consume the tokens. No bare-rem literals remain inside the size-class rule bodies.
+- [x] **Refactor fenced-code Copy CSS** to consume `--tug-button-2xs-*` directly. Done — `--tugx-md-fenced-code-copy-{padding,height,font-size,icon-size}` retired; the Copy rule reads `var(--tug-button-2xs-height/padding-inline/font-size/icon-size)` directly. The radius stays markdown-local (the imperative Copy uses a slightly different border-radius than TugPushButton's pill default; preserving the existing visual).
+- [x] **Add dev-warns for embedded-without-chrome** in `FileBlock`, `DiffBlock`, `TerminalBlock`. Done — each body kind has a `useEffect` gated on `process.env.NODE_ENV !== "production"`, `embedded === true`, AND `chromeActionsTarget === null`. The warn is deferred via `setTimeout(0)` with a cleanup that cancels if the chrome publishes its target on the next render — otherwise the warn would fire spuriously on the legal first-render-under-chrome path (the chrome's `useState`-tracked actions target is `null` on its first render until the ref callback fires).
+- [x] **Switch `.tug-pane-body` and `.tug-pane-chrome` to `overflow: clip`.** Done — both rules updated with an inline comment explaining the Phase B.1 latent-trap motivation. The `.tug-pane-chrome--collapsed` overlay rule kept `overflow: hidden` (collapsed panes don't host sticky descendants; minimum blast-radius change). The pane-banner, pane-overlay, and pane-resize tests still pass.
+- [x] **Tests** for the metric-tokens published-on-:root contract; for the dev-warn firing on embedded-without-chrome (plus negative-check companions confirming the warn stays quiet under a chrome); for the pane CSS source declaring `overflow: clip`. Done — 11 new tests across `tug-button.test.tsx`, `file-block.test.tsx`, `diff-block.test.tsx`, `terminal-block.test.tsx`, `tug-pane.test.tsx`.
+- [x] **Tuglaws update** documenting the metric-tokens category (third token category alongside appearance and position-coordination) and the pane-walls migration. Done — the "Position-coordination tokens vs. appearance tokens" section in `tuglaws/component-authoring.md` was expanded into a three-category model ("Token categories — three kinds, three different sovereignty rules"); the portaling-and-overlays section now notes that `overflow: clip` retains the painting clip while removing the scroll-container trap.
 
 **Tests (commands, Phase E.2):**
 
-- [ ] `bun test src/components/tugways/internal/__tests__/tug-button.test.tsx` — `--tug-button-2xs-height` etc. are set on the root; the size-class rules consume them (CSS source assertion).
-- [ ] `bun test src/components/tugways/body-kinds/__tests__/file-block.test.tsx` — dev-warn fires on embedded-without-chrome; no warn when composed under chrome.
-- [ ] `bun test src/components/tugways/body-kinds/__tests__/diff-block.test.tsx` — same.
-- [ ] `bun test src/components/tugways/body-kinds/__tests__/terminal-block.test.tsx` — same.
-- [ ] `bun test src/components/tugways/__tests__/tug-pane.test.tsx` (if exists, else new) — CSS source assertion that `.tug-pane-body` / `.tug-pane-chrome` use `overflow: clip`.
-- [ ] `bunx tsc --noEmit` — clean.
-- [ ] `bun run audit:tokens lint` — zero violations; the new `--tug-button-*` metric tokens pass the multi-hop check (they're authoritative, not aliases).
-- [ ] `bun test` (full suite) — no regressions vs the post-Phase-E.1 baseline.
+- [x] `bun test src/components/tugways/internal/__tests__/tug-button.test.tsx` — 7 pass. Each per-size four-tuple is declared AND consumed; size-class rule bodies have no bare-rem literals.
+- [x] `bun test src/components/tugways/body-kinds/__tests__/file-block.test.tsx` — 48 pass. Warn fires on `embedded` without chrome; no warn when composed under a chrome; no warn for standalone (embedded false).
+- [x] `bun test src/components/tugways/body-kinds/__tests__/diff-block.test.tsx` — 58 pass. Same contract.
+- [x] `bun test src/components/tugways/body-kinds/__tests__/terminal-block.test.tsx` — 38 pass. Same contract.
+- [x] `bun test src/__tests__/tug-pane.test.tsx` — 17 pass (new file is `src/__tests__/tug-pane.test.tsx`, not in `tugways/__tests__/`). CSS source assertion: `.tug-pane-chrome` and `.tug-pane-body` both use `overflow: clip` and not `overflow: hidden`.
+- [x] `bunx tsc --noEmit` — clean.
+- [x] `bun run audit:tokens lint` — zero violations.
+- [x] `bun test` (full suite) — **3597 pass, 0 fail** (post-Phase-E.1 baseline was 3586; +11 from this phase).
 
 **Checkpoint (Phase E.2):**
 
-- [ ] Manual: open a fenced-code block in a markdown response. Visually compare the Copy button to a TerminalBlock Copy in the same transcript. They should match in height, font, padding, icon size.
-- [ ] Manual: in a dev build, render `<FileBlock embedded />` directly in the gallery (no chrome above) — confirm a single `console.warn` fires with the misconfiguration message.
-- [ ] Manual: drag a pane, resize a pane, drop into a tab, activate / deactivate. Confirm pane chrome behaves identically to pre-Phase-E.2.
-- [ ] Manual: open a long transcript with multiple tool calls. Confirm the entry-header pin, the chrome-header pin, and the diff hunk-header pin all behave identically to pre-Phase-E.2 — the `overflow: clip` change should be invisible to existing pinning.
-- [ ] After both E.1 and E.2 land: re-run the Phase D manual checkpoint to confirm no regressions.
+- [x] Manual: open a fenced-code block in a markdown response. Visually compare the Copy button to a TerminalBlock Copy in the same transcript. They should match in height, font, padding, icon size.
+- [x] Manual: in a dev build, render `<FileBlock embedded />` directly in the gallery (no chrome above) — confirm a single `console.warn` fires with the misconfiguration message.
+- [x] Manual: drag a pane, resize a pane, drop into a tab, activate / deactivate. Confirm pane chrome behaves identically to pre-Phase-E.2.
+- [x] Manual: open a long transcript with multiple tool calls. Confirm the entry-header pin, the chrome-header pin, and the diff hunk-header pin all behave identically to pre-Phase-E.2 — the `overflow: clip` change should be invisible to existing pinning.
+- [x] After both E.1 and E.2 land: re-run the Phase D manual checkpoint to confirm no regressions.
 
 ---
 

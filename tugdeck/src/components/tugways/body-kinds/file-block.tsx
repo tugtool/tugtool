@@ -518,6 +518,43 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // a missing chrome both fall through to the inline-in-header path.
   const chromeActionsTarget = useChromeActionsTarget();
 
+  // Dev-mode misconfiguration check — `embedded={true}` is a contract
+  // that the body kind sits inside a `ToolWrapperChrome` so resting
+  // affordances have a portal target. If `embedded` is set but no
+  // chrome is above us, the affordances vanish silently: the
+  // identity header is suppressed AND the portal target is `null`,
+  // so the fold cue / Find trigger never appear. The user notices
+  // a missing button; the author doesn't notice the misconfiguration.
+  // Surface it at mount so it fails loud in dev and stays free in
+  // production (the early-return tree-shakes when `NODE_ENV` is
+  // statically `"production"`).
+  //
+  // The check is deferred one tick because `ToolWrapperChrome`
+  // publishes its `actionsTarget` via a `useState`-tracked ref
+  // callback. On the body kind's FIRST render under a chrome, the
+  // chrome's ref hasn't fired yet, so the context value is still
+  // `null`. A naive synchronous warn would fire even in the legal
+  // composition. The setTimeout defers past React's reconciliation;
+  // if the target becomes non-null on the next render, the effect's
+  // cleanup cancels the pending warn before it fires.
+  React.useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    if (!embedded) return;
+    if (chromeActionsTarget !== null) return;
+    const handle = window.setTimeout(() => {
+      console.warn(
+        "FileBlock: `embedded={true}` requires a parent `ToolWrapperChrome`. " +
+          "Without one, the body kind's identity header is suppressed AND its " +
+          "affordances (fold cue, Find trigger) have nowhere to portal — the " +
+          "user loses access to them silently. Either compose under a chrome " +
+          "or set `embedded={false}`.",
+      );
+    }, 0);
+    return () => {
+      window.clearTimeout(handle);
+    };
+  }, [embedded, chromeActionsTarget]);
+
   // Stable id for FileBlock's own responder — declared up here so the
   // find form below can register as its child (see `parentId` below)
   // and so the `toggleCollapsed` callback can promote FileBlock to

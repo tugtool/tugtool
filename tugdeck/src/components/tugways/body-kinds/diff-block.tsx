@@ -430,6 +430,32 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   // portal contract applies here.
   const chromeActionsTarget = useChromeActionsTarget();
 
+  // Dev-mode misconfiguration check — `embedded={true}` requires a
+  // parent `ToolWrapperChrome` so affordances have a portal target.
+  // Without one, the identity header is suppressed AND the portal
+  // target is `null`, so fold cue / view-toggle vanish silently. The
+  // setTimeout defers past the chrome's first-render
+  // ref-callback → state-update → re-render cycle so the warn doesn't
+  // fire spuriously when the chrome IS present. See `file-block.tsx`'s
+  // version for the full rationale; the pattern is identical.
+  React.useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    if (!embedded) return;
+    if (chromeActionsTarget !== null) return;
+    const handle = window.setTimeout(() => {
+      console.warn(
+        "DiffBlock: `embedded={true}` requires a parent `ToolWrapperChrome`. " +
+          "Without one, the body kind's identity header is suppressed AND its " +
+          "affordances (fold cue, view-toggle) have nowhere to portal — the " +
+          "user loses access to them silently. Either compose under a chrome " +
+          "or set `embedded={false}`.",
+      );
+    }, 0);
+    return () => {
+      window.clearTimeout(handle);
+    };
+  }, [embedded, chromeActionsTarget]);
+
   // -- View mode (inline | side-by-side) ------------------------------------
   //
   // Two distinct shapes coexist:

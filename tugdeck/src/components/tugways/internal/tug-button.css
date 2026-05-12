@@ -242,6 +242,65 @@
 }
 
 /* ============================================================================
+   Size Metrics — published tokens
+   ========================================================================= */
+
+/*
+ * Per-size geometry constants, published on `body` so any consumer that
+ * needs to match a TugButton size — without itself being a TugButton —
+ * can reference them directly. The primary external consumer today is
+ * `enhanceFencedCode`'s Copy button (imperative DOM, can't mount a
+ * React `TugPushButton`); the metric tokens keep its sizing in lockstep
+ * with `TugButton size="2xs"` so a future change to button geometry
+ * propagates automatically instead of drifting against a comment.
+ *
+ * These are a THIRD category of tokens alongside appearance and
+ * position-coordination tokens. They describe a component's own
+ * geometry and are intentionally readable by sibling components that
+ * need to coordinate with that geometry. They are NOT subject to
+ * [L20]'s "A's CSS references only A-scoped tokens" rule — that rule
+ * guards appearance, not geometry. The single-writer / many-reader
+ * invariant still holds: only `TugButton`'s CSS declares these tokens;
+ * everyone else only reads.
+ *
+ * Heights are explicit; padding-inline mirrors the size-class rules
+ * below; font-size matches the base `.tug-button` value for sm/md/lg
+ * and overrides for the compact 2xs/xs sizes; icon-size follows the
+ * existing `.tug-button-icon-{N} svg` widths.
+ */
+body {
+  /* 2xs — most compact, in-header affordance chips. */
+  --tug-button-2xs-height:         1.25rem; /* 20px */
+  --tug-button-2xs-padding-inline: 0.5rem;
+  --tug-button-2xs-font-size:      0.625rem; /* 10px */
+  --tug-button-2xs-icon-size:      0.625rem; /* 10px */
+
+  /* xs — denser primary affordances. */
+  --tug-button-xs-height:         1.5rem; /* 24px */
+  --tug-button-xs-padding-inline: 0.75rem;
+  --tug-button-xs-font-size:      0.6875rem; /* 11px */
+  --tug-button-xs-icon-size:      0.75rem; /* 12px */
+
+  /* sm/md/lg — body controls. font-size inherits from the base
+   * `.tug-button` rule (0.75rem); we publish the same value here so
+   * outside consumers don't need to know that. */
+  --tug-button-sm-height:         1.75rem; /* 28px */
+  --tug-button-sm-padding-inline: 1rem;
+  --tug-button-sm-font-size:      0.75rem; /* 12px */
+  --tug-button-sm-icon-size:      0.875rem; /* 14px */
+
+  --tug-button-md-height:         2rem; /* 32px */
+  --tug-button-md-padding-inline: 1.25rem;
+  --tug-button-md-font-size:      0.75rem; /* 12px */
+  --tug-button-md-icon-size:      1rem; /* 16px */
+
+  --tug-button-lg-height:         2.25rem; /* 36px */
+  --tug-button-lg-padding-inline: 1.75rem;
+  --tug-button-lg-font-size:      0.75rem; /* 12px */
+  --tug-button-lg-icon-size:      1.125rem; /* 18px */
+}
+
+/* ============================================================================
    Size Variants
    ========================================================================= */
 
@@ -250,30 +309,33 @@
  * a path label in a sticky strip). Targets a button that reads as a
  * chip rather than a primary control. */
 .tug-button-size-2xs {
-  height: 1.25rem; /* 20px */
-  padding: 0 0.5rem;
-  font-size: 0.625rem; /* 10px */
+  height: var(--tug-button-2xs-height);
+  padding: 0 var(--tug-button-2xs-padding-inline);
+  font-size: var(--tug-button-2xs-font-size);
 }
 
 .tug-button-size-xs {
-  height: 1.5rem; /* 24px */
-  padding: 0 0.75rem;
-  font-size: 0.6875rem; /* 11px */
+  height: var(--tug-button-xs-height);
+  padding: 0 var(--tug-button-xs-padding-inline);
+  font-size: var(--tug-button-xs-font-size);
 }
 
 .tug-button-size-sm {
-  height: 1.75rem; /* 28px */
-  padding: 0 1rem;
+  height: var(--tug-button-sm-height);
+  padding: 0 var(--tug-button-sm-padding-inline);
+  font-size: var(--tug-button-sm-font-size);
 }
 
 .tug-button-size-md {
-  height: 2rem; /* 32px */
-  padding: 0 1.25rem;
+  height: var(--tug-button-md-height);
+  padding: 0 var(--tug-button-md-padding-inline);
+  font-size: var(--tug-button-md-font-size);
 }
 
 .tug-button-size-lg {
-  height: 2.25rem; /* 36px */
-  padding: 0 1.75rem;
+  height: var(--tug-button-lg-height);
+  padding: 0 var(--tug-button-lg-padding-inline);
+  font-size: var(--tug-button-lg-font-size);
 }
 
 /* ============================================================================
@@ -790,33 +852,36 @@
  * Icon subtype buttons use square aspect ratio.
  * With border-radius: 999px they become circles.
  */
+/* Square icon-only sizes. Width = height = the published per-size
+ * `height` metric so an icon-only `2xs` is a 20×20 circle, an `xs`
+ * is 24×24, etc. */
 .tug-button-icon-2xs {
-  width: 1.25rem; /* 20px */
-  height: 1.25rem;
+  width: var(--tug-button-2xs-height);
+  height: var(--tug-button-2xs-height);
   padding: 0;
 }
 
 .tug-button-icon-xs {
-  width: 1.5rem; /* 24px */
-  height: 1.5rem;
+  width: var(--tug-button-xs-height);
+  height: var(--tug-button-xs-height);
   padding: 0;
 }
 
 .tug-button-icon-sm {
-  width: 1.75rem; /* 28px */
-  height: 1.75rem;
+  width: var(--tug-button-sm-height);
+  height: var(--tug-button-sm-height);
   padding: 0;
 }
 
 .tug-button-icon-md {
-  width: 2rem; /* 32px */
-  height: 2rem;
+  width: var(--tug-button-md-height);
+  height: var(--tug-button-md-height);
   padding: 0;
 }
 
 .tug-button-icon-lg {
-  width: 2.25rem; /* 36px */
-  height: 2.25rem;
+  width: var(--tug-button-lg-height);
+  height: var(--tug-button-lg-height);
   padding: 0;
 }
 
@@ -828,11 +893,11 @@
  * global rule. These per-size selectors give the size prop on the
  * button real meaning for the icon subtype.
  */
-.tug-button-icon-2xs svg { width: 0.625rem; height: 0.625rem; } /* 10px */
-.tug-button-icon-xs  svg { width: 0.75rem;  height: 0.75rem;  } /* 12px */
-.tug-button-icon-sm  svg { width: 0.875rem; height: 0.875rem; } /* 14px */
-.tug-button-icon-md  svg { width: 1rem;     height: 1rem;     } /* 16px */
-.tug-button-icon-lg  svg { width: 1.125rem; height: 1.125rem; } /* 18px */
+.tug-button-icon-2xs svg { width: var(--tug-button-2xs-icon-size); height: var(--tug-button-2xs-icon-size); }
+.tug-button-icon-xs  svg { width: var(--tug-button-xs-icon-size);  height: var(--tug-button-xs-icon-size);  }
+.tug-button-icon-sm  svg { width: var(--tug-button-sm-icon-size);  height: var(--tug-button-sm-icon-size);  }
+.tug-button-icon-md  svg { width: var(--tug-button-md-icon-size);  height: var(--tug-button-md-icon-size);  }
+.tug-button-icon-lg  svg { width: var(--tug-button-lg-icon-size);  height: var(--tug-button-lg-icon-size);  }
 
 /* Icon glyph size inside `subtype="icon-text"` buttons. The
  * `.tug-button-icon-text` wrapper lives on an inner span (see
@@ -842,11 +907,11 @@
  * wins and an icon-text button renders an over-sized glyph next to
  * compact text — most visible at 2xs / xs where the mismatch is a
  * factor of ~2x. */
-.tug-button-size-2xs .tug-button-icon-text svg { width: 0.625rem; height: 0.625rem; }
-.tug-button-size-xs  .tug-button-icon-text svg { width: 0.75rem;  height: 0.75rem;  }
-.tug-button-size-sm  .tug-button-icon-text svg { width: 0.875rem; height: 0.875rem; }
-.tug-button-size-md  .tug-button-icon-text svg { width: 1rem;     height: 1rem;     }
-.tug-button-size-lg  .tug-button-icon-text svg { width: 1.125rem; height: 1.125rem; }
+.tug-button-size-2xs .tug-button-icon-text svg { width: var(--tug-button-2xs-icon-size); height: var(--tug-button-2xs-icon-size); }
+.tug-button-size-xs  .tug-button-icon-text svg { width: var(--tug-button-xs-icon-size);  height: var(--tug-button-xs-icon-size);  }
+.tug-button-size-sm  .tug-button-icon-text svg { width: var(--tug-button-sm-icon-size);  height: var(--tug-button-sm-icon-size);  }
+.tug-button-size-md  .tug-button-icon-text svg { width: var(--tug-button-md-icon-size);  height: var(--tug-button-md-icon-size);  }
+.tug-button-size-lg  .tug-button-icon-text svg { width: var(--tug-button-lg-icon-size);  height: var(--tug-button-lg-icon-size);  }
 
 /* ============================================================================
    Loading State
