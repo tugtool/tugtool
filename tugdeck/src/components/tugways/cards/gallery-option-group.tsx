@@ -76,6 +76,15 @@ export function GalleryOptionGroup() {
   // Section 6: TugBox cascade
   const [cascadeValue, setCascadeValue] = useState<string[]>(["bold", "italic"]);
 
+  // Section 7: Ghost emphasis — Phase E.4 follow-on. Mirrors the variant
+  // on TugChoiceGroup; designed for action-row composition next to
+  // ghost-style push buttons.
+  const [ghostFormatValue, setGhostFormatValue] = useState<string[]>(["bold"]);
+  const [ghostAlignValue, setGhostAlignValue] = useState<string[]>(["left"]);
+  const [ghostSizeXsValue, setGhostSizeXsValue] = useState<string[]>(["bold"]);
+  const [ghostSizeSmValue, setGhostSizeSmValue] = useState<string[]>(["bold"]);
+  const [ghostSizeMdValue, setGhostSizeMdValue] = useState<string[]>(["bold"]);
+
   // L11 migration via useResponderForm — see gallery-checkbox.tsx for the
   // annotated reference. TugOptionGroup dispatches `setValue` with a
   // `string[]` payload, so the bindings go in the `setValueStringArray`
@@ -92,6 +101,11 @@ export function GalleryOptionGroup() {
   const lgId = useId();
   const partialId = useId();
   const cascadeId = useId();
+  const ghostFormatId = useId();
+  const ghostAlignId = useId();
+  const ghostSizeXsId = useId();
+  const ghostSizeSmId = useId();
+  const ghostSizeMdId = useId();
   const roleBaseId = useId();
   const roleIds: Record<string, string> = Object.fromEntries(
     ROLE_ENTRIES.map(({ label }) => [label, `${roleBaseId}-${label}`]),
@@ -106,6 +120,11 @@ export function GalleryOptionGroup() {
     [lgId]: setLgValue,
     [partialId]: setPartialValue,
     [cascadeId]: setCascadeValue,
+    [ghostFormatId]: setGhostFormatValue,
+    [ghostAlignId]: setGhostAlignValue,
+    [ghostSizeXsId]: setGhostSizeXsValue,
+    [ghostSizeSmId]: setGhostSizeSmValue,
+    [ghostSizeMdId]: setGhostSizeMdValue,
   };
   for (const { label } of ROLE_ENTRIES) {
     setValueStringArrayBindings[roleIds[label]] = (v: string[]) =>
@@ -333,6 +352,188 @@ export function GalleryOptionGroup() {
               ]}
             />
           </TugBox>
+        </div>
+      </div>
+
+      <TugSeparator />
+
+      {/* ---- Ghost emphasis ---- */}
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">Emphasis: ghost</TugLabel>
+        <p
+          style={{
+            margin: "0 0 16px",
+            fontSize: "0.75rem",
+            color: "var(--tug7-element-field-text-normal-label-rest)",
+            lineHeight: 1.5,
+            maxWidth: "44rem",
+          }}
+        >
+          Quiet variant mirroring{" "}
+          <code>TugChoiceGroup emphasis="ghost"</code>. Drops the framing
+          pill, paints the on-state with{" "}
+          <code>--tug7-surface-control-primary-ghost-action-hover</code>, and
+          applies uppercase + 0.06em letter-spacing matching{" "}
+          <code>tug-push-button.css</code>. Role-driven coloring is
+          suppressed; pipes between items retire.
+        </p>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+          {/* Default vs ghost side-by-side at 2xs */}
+          <div>
+            <div
+              style={{
+                fontSize: "0.75rem",
+                color: "var(--tug7-element-field-text-normal-label-rest)",
+                marginBottom: "6px",
+              }}
+            >
+              default vs ghost @ <code>size="2xs"</code> (icon + label, B/I/U)
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "row",
+                gap: "32px",
+                alignItems: "center",
+              }}
+            >
+              <TugOptionGroup
+                size="2xs"
+                value={ghostFormatValue}
+                senderId={ghostFormatId}
+                aria-label="Text formatting (default)"
+                items={[
+                  { value: "bold", label: "Bold", icon: <Bold /> },
+                  { value: "italic", label: "Italic", icon: <Italic /> },
+                  { value: "underline", label: "Underline", icon: <Underline /> },
+                ]}
+              />
+              <TugOptionGroup
+                size="2xs"
+                emphasis="ghost"
+                value={ghostFormatValue}
+                senderId={ghostFormatId}
+                aria-label="Text formatting (ghost)"
+                items={[
+                  { value: "bold", label: "Bold", icon: <Bold /> },
+                  { value: "italic", label: "Italic", icon: <Italic /> },
+                  { value: "underline", label: "Underline", icon: <Underline /> },
+                ]}
+              />
+            </div>
+          </div>
+
+          {/* Ghost icon-only at 2xs — verify the framing-less treatment
+              reads cleanly even without labels. */}
+          <div>
+            <div
+              style={{
+                fontSize: "0.75rem",
+                color: "var(--tug7-element-field-text-normal-label-rest)",
+                marginBottom: "6px",
+              }}
+            >
+              icon-only — alignment toolbar at <code>size="2xs"</code>
+            </div>
+            <TugOptionGroup
+              size="2xs"
+              emphasis="ghost"
+              value={ghostAlignValue}
+              senderId={ghostAlignId}
+              aria-label="Text alignment (ghost)"
+              items={[
+                { value: "left", icon: <AlignLeft />, "aria-label": "Left" },
+                { value: "center", icon: <AlignCenter />, "aria-label": "Center" },
+                { value: "right", icon: <AlignRight />, "aria-label": "Right" },
+                { value: "justify", icon: <AlignJustify />, "aria-label": "Justify" },
+              ]}
+            />
+          </div>
+
+          {/* Ghost across sizes — same as choice-group: the variant works
+              at every scale, not just 2xs. */}
+          <div>
+            <div
+              style={{
+                fontSize: "0.75rem",
+                color: "var(--tug7-element-field-text-normal-label-rest)",
+                marginBottom: "6px",
+              }}
+            >
+              ghost across sizes (xs / sm / md)
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "row",
+                gap: "32px",
+                alignItems: "center",
+              }}
+            >
+              <TugOptionGroup
+                size="xs"
+                emphasis="ghost"
+                value={ghostSizeXsValue}
+                senderId={ghostSizeXsId}
+                aria-label="Ghost xs"
+                items={[
+                  { value: "bold", label: "Bold", icon: <Bold /> },
+                  { value: "italic", label: "Italic", icon: <Italic /> },
+                  { value: "underline", label: "Underline", icon: <Underline /> },
+                ]}
+              />
+              <TugOptionGroup
+                size="sm"
+                emphasis="ghost"
+                value={ghostSizeSmValue}
+                senderId={ghostSizeSmId}
+                aria-label="Ghost sm"
+                items={[
+                  { value: "bold", label: "Bold", icon: <Bold /> },
+                  { value: "italic", label: "Italic", icon: <Italic /> },
+                  { value: "underline", label: "Underline", icon: <Underline /> },
+                ]}
+              />
+              <TugOptionGroup
+                size="md"
+                emphasis="ghost"
+                value={ghostSizeMdValue}
+                senderId={ghostSizeMdId}
+                aria-label="Ghost md"
+                items={[
+                  { value: "bold", label: "Bold", icon: <Bold /> },
+                  { value: "italic", label: "Italic", icon: <Italic /> },
+                  { value: "underline", label: "Underline", icon: <Underline /> },
+                ]}
+              />
+            </div>
+          </div>
+
+          {/* Disabled — ghost variant honors disabled. */}
+          <div>
+            <div
+              style={{
+                fontSize: "0.75rem",
+                color: "var(--tug7-element-field-text-normal-label-rest)",
+                marginBottom: "6px",
+              }}
+            >
+              disabled — items dim; on-state items keep their rest fill
+            </div>
+            <TugOptionGroup
+              size="2xs"
+              emphasis="ghost"
+              disabled
+              value={["bold"]}
+              aria-label="Disabled ghost formatting"
+              items={[
+                { value: "bold", label: "Bold", icon: <Bold /> },
+                { value: "italic", label: "Italic", icon: <Italic /> },
+                { value: "underline", label: "Underline", icon: <Underline /> },
+              ]}
+            />
+          </div>
         </div>
       </div>
 

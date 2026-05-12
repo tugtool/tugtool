@@ -43,6 +43,15 @@
 
 /* Size variants — border-radius, min-height */
 
+/* 2xs matches `tug-button-2xs-height` (20px) and `tug-button-2xs-font-size`
+ * (10px) so a 2xs ghost-emphasis option group composes alongside
+ * `TugPushButton size="2xs"` affordances in the same action row at the
+ * same scale. Mirrors `tug-choice-group-2xs`. */
+.tug-option-group-2xs {
+  border-radius: var(--tug-radius-sm);  /* 4px */
+  min-height: 20px;
+}
+
 .tug-option-group-xs {
   border-radius: var(--tug-radius-sm);  /* 4px */
   min-height: 22px;
@@ -98,6 +107,12 @@
 }
 
 /* Item size padding + font */
+
+.tug-option-group-2xs .tug-option-group-item {
+  padding: 0 var(--tug-space-md);  /* 0 8px */
+  font-size: 0.625rem;  /* 10px — matches tug-button-2xs-font-size */
+  border-radius: calc(var(--tug-radius-sm) - 2px);
+}
 
 .tug-option-group-xs .tug-option-group-item {
   padding: 0 var(--tug-space-md);  /* 0 8px */
@@ -172,6 +187,11 @@
    Icon Sizing — per size variant (base layout is in tug-group-utils.css)
    ========================================================================= */
 
+.tug-option-group-2xs .tug-group-item-icon svg {
+  width: 10px;
+  height: 10px;
+}
+
 .tug-option-group-xs .tug-group-item-icon svg {
   width: 12px;
   height: 12px;
@@ -199,6 +219,10 @@
 
 /* Icon-only items get symmetric horizontal padding matching their vertical
    space, keeping the item compact rather than bloated-square. */
+.tug-option-group-2xs .tug-option-group-item-icon-only {
+  padding: 0 var(--tug-space-xs);  /* 4px */
+}
+
 .tug-option-group-xs .tug-option-group-item-icon-only {
   padding: 0 var(--tug-space-xs);  /* 4px */
 }
@@ -238,4 +262,128 @@
 .tug-option-group-item[data-state="on"] + .tug-option-group-item::before,
 .tug-option-group-item + .tug-option-group-item[data-state="on"]::before {
   background-color: transparent;
+}
+
+
+/* ============================================================================
+   Emphasis: ghost
+   ============================================================================
+   Mirror of `tug-choice-group.css`'s ghost emphasis. Drops the framing pill,
+   replaces the saturated on-state fill with a neutral matching
+   `--tug7-surface-control-primary-ghost-action-hover`, and applies the
+   uppercase + 0.06em letter-spacing typography that `tug-push-button.css`
+   uses. Pipe dividers retire. Role-driven coloring is intentionally
+   suppressed in this mode (semantic saturation defeats "quiet").
+
+   Composition: `emphasis="ghost"` is orthogonal to `size`. Use
+   `size="2xs" emphasis="ghost"` for action-row scale. See the
+   tug-choice-group ghost section for the rationale; the contract is
+   identical (the only structural difference is that option-group items
+   paint their own on-state bg directly rather than driving a sliding
+   indicator, so the ghost rules apply that paint to the items themselves).
+
+   @tug-pairings (ghost-emphasis only):
+   - --tug7-element-control-text-ghost-action-rest      | --tug7-surface-control-primary-ghost-action-rest  | control
+   - --tug7-element-control-text-ghost-action-hover     | --tug7-surface-control-primary-ghost-action-hover | control
+   ========================================================================= */
+
+/* Root — drop the framing pill so items read as inline labels. Switch
+ * from inline-grid to inline-flex for the same reason as the choice
+ * group's ghost variant: bracket pseudo-elements need natural character
+ * width, and ghost-mode items read as inline text. `gap: 0` clears the
+ * 2px default gap so the pipes (drawn between items via the existing
+ * `::before` pseudo, re-purposed below) sit cleanly on each item
+ * boundary. */
+.tug-option-group[data-emphasis="ghost"] {
+  display: inline-flex;
+  align-items: stretch;
+  background-color: transparent;
+  border: 0;
+  padding: 0;
+  gap: 0;
+}
+
+/* Opening bracket `[` — paints at the leading edge so the group reads
+ * as a distinct unit when adjacent to other ghost-style controls in an
+ * action row. Same shape and rationale as `tug-choice-group.css`'s
+ * ghost-emphasis brackets; see that file for the full implementation
+ * notes (line-height, no letter-spacing, opacity, tight margin). */
+.tug-option-group[data-emphasis="ghost"]::before {
+  content: "[";
+  position: relative;
+  z-index: 2;
+  align-self: center;
+  line-height: 1;
+  margin-right: 0.15em;
+  font-weight: 500;
+  color: var(--tug7-element-control-text-ghost-action-rest);
+  opacity: 0.55;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Closing bracket `]` */
+.tug-option-group[data-emphasis="ghost"]::after {
+  content: "]";
+  position: relative;
+  z-index: 2;
+  align-self: center;
+  line-height: 1;
+  margin-left: 0.15em;
+  font-weight: 500;
+  color: var(--tug7-element-control-text-ghost-action-rest);
+  opacity: 0.55;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Items — uppercase + letter-spacing first, then color. Identical
+ * typography to `tug-push-button.css` so adjacent buttons in an action
+ * row look like part of the same family. */
+.tug-option-group[data-emphasis="ghost"] .tug-option-group-item {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tug7-element-control-text-ghost-action-rest);
+}
+
+/* On state — quiet neutral fill matching ghost-button's hover surface.
+ * Text bumps to the ghost-action-hover color (the same shade a ghost
+ * button paints when engaged). */
+.tug-option-group[data-emphasis="ghost"] .tug-option-group-item[data-state="on"] {
+  background-color: var(--tug7-surface-control-primary-ghost-action-hover);
+  color: var(--tug7-element-control-text-ghost-action-hover);
+}
+
+/* Hover on an off-state item — preview the on treatment without flipping
+ * the state. Same surface/text pair as on, so the user reads "this is what
+ * toggling on feels like." */
+.tug-option-group[data-emphasis="ghost"] .tug-option-group-item:hover:not(:disabled):not([aria-disabled="true"]):not([data-state="on"]) {
+  background-color: var(--tug7-surface-control-primary-ghost-action-hover);
+  color: var(--tug7-element-control-text-ghost-action-hover);
+}
+
+/* Pipe between adjacent items — a 1px vertical line, ~60% of the item
+ * height, painted above the on-state bg so it stays visible whether
+ * the neighbor is on or off. Mirrors the choice-group ghost-pipe; see
+ * that file for the rationale (font-independent rendering vs `|`
+ * glyph variability across fonts). */
+.tug-option-group[data-emphasis="ghost"] .tug-option-group-item + .tug-option-group-item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 20%;
+  bottom: 20%;
+  width: 1px;
+  background-color: var(--tug7-element-control-text-ghost-action-rest);
+  opacity: 0.55;
+  pointer-events: none;
+  user-select: none;
+  z-index: 2;
+}
+
+/* Disabled — segments dim via the inherited `opacity: 0.45`. Keep the
+ * on-state items at their rest fill so the disabled state reads as
+ * "everything dimmed" rather than "active items cleared." */
+.tug-option-group[data-emphasis="ghost"][data-disabled] .tug-option-group-item[data-state="on"] {
+  background-color: var(--tug7-surface-control-primary-ghost-action-hover);
 }

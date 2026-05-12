@@ -966,7 +966,8 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
         items={viewToggleItems}
         value={viewMode}
         senderId={viewToggleSenderId}
-        size="xs"
+        size="2xs"
+        emphasis="ghost"
         disabled={collapsed}
         aria-label="Diff view mode"
       />

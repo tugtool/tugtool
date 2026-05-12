@@ -343,11 +343,70 @@
 
 /* Root — drop the framing pill so the segments read as inline labels rather
  * than a fielded control. The segments still own their own bg on hover /
- * active so the click-affordance and selected-state remain unambiguous. */
+ * active so the click-affordance and selected-state remain unambiguous.
+ *
+ * Switch from inline-grid to inline-flex so the bracket pseudo-elements
+ * (see `::before` / `::after` below) occupy their natural character width
+ * rather than being forced into 1fr columns. Segments are natural-width
+ * too — the equal-track behavior of grid existed for the framed default
+ * look; ghost-mode segments read as inline text and should be just wide
+ * enough for their labels. The indicator pill positions via offsetLeft /
+ * offsetWidth which works identically under flex. */
 .tug-choice-group[data-emphasis="ghost"] {
+  display: inline-flex;
+  align-items: stretch;
   background-color: transparent;
   border: 0;
   padding: 0;
+}
+
+/* Opening bracket `[` — paints at the leading edge of the group so the
+ * choice group reads as a distinct unit when adjacent to ghost-style push
+ * buttons in an action row. Without it, "SIDE BY SIDE | INLINE" runs
+ * into a neighboring "8 HUNKS" with no visible boundary.
+ *
+ * Implementation notes (per visual review):
+ *  - `line-height: 1` keeps the bracket glyph's line box equal to its
+ *    font size, which makes `align-self: center` correctly center the
+ *    character on the segment's vertical midline. Without it, the
+ *    bracket's line-height inherits the default ~1.2 and the glyph
+ *    visually sinks below the segment text.
+ *  - No `text-transform: uppercase` or `letter-spacing`: brackets aren't
+ *    case-sensitive (uppercase is a no-op) and letter-spacing applies a
+ *    trailing gap after a single character that visually disconnects it
+ *    from the segment label.
+ *  - `opacity: 0.55` recedes the frame so the segment labels remain
+ *    the primary read; brackets are a quiet boundary marker.
+ *  - Tight margin (0.15em) keeps the bracket close to its segment;
+ *    bigger gaps make the frame feel "drawn around" the labels rather
+ *    than "attached to" them. */
+.tug-choice-group[data-emphasis="ghost"]::before {
+  content: "[";
+  position: relative;
+  z-index: 2;
+  align-self: center;
+  line-height: 1;
+  margin-right: 0.15em;
+  font-weight: 500;
+  color: var(--tug7-element-control-text-ghost-action-rest);
+  opacity: 0.55;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Closing bracket `]` — mirror of `::before` at the trailing edge. */
+.tug-choice-group[data-emphasis="ghost"]::after {
+  content: "]";
+  position: relative;
+  z-index: 2;
+  align-self: center;
+  line-height: 1;
+  margin-left: 0.15em;
+  font-weight: 500;
+  color: var(--tug7-element-control-text-ghost-action-rest);
+  opacity: 0.55;
+  pointer-events: none;
+  user-select: none;
 }
 
 /* Sliding indicator — quiet neutral. Same shape (a pill that slides between
@@ -386,10 +445,25 @@
   color: var(--tug7-element-control-text-ghost-action-hover);
 }
 
-/* Pipe dividers retire in ghost mode — without the framing pill they read
- * as visual noise. The indicator pill alone signals the selection. */
+/* Pipe between adjacent segments — a 1px vertical line drawn between
+ * segments, sized to ~60% of the segment height. Renders consistently
+ * across fonts (a `|` glyph varies wildly in weight, height, and
+ * baseline alignment depending on the font). The pipe inherits the
+ * inactive-text color and uses opacity to recede alongside the
+ * brackets. Paints above the sliding indicator (z-index: 2) so it
+ * stays visible regardless of which segment is active. */
 .tug-choice-group[data-emphasis="ghost"] .tug-choice-group-segment + .tug-choice-group-segment::before {
-  background-color: transparent;
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 20%;
+  bottom: 20%;
+  width: 1px;
+  background-color: var(--tug7-element-control-text-ghost-action-rest);
+  opacity: 0.55;
+  pointer-events: none;
+  user-select: none;
+  z-index: 2;
 }
 
 /* Disabled — keep the indicator visible (the user can still see what was
