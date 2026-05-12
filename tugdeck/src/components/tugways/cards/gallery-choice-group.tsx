@@ -21,12 +21,16 @@ import {
   AlignLeft,
   AlignCenter,
   AlignRight,
+  ChevronsUp,
+  Columns2,
+  Search,
   Sun,
   Moon,
   Monitor,
 } from "lucide-react";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceGroupRole } from "@/components/tugways/tug-choice-group";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
@@ -77,6 +81,18 @@ export function GalleryChoiceGroup() {
   const [iconRightValue, setIconRightValue] = useState("left");
   const [iconOnlyValue, setIconOnlyValue] = useState("light");
 
+  // Ghost emphasis section — Phase E.4 follow-on. The variant drops the
+  // framing pill + saturated indicator + pipe dividers and uses uppercase
+  // letter-spaced labels matching `tug-push-button.css`. Designed for
+  // action-row composition next to ghost-style push buttons.
+  const [ghostViewValue, setGhostViewValue] = useState("side-by-side");
+  const [ghostSizeXsValue, setGhostSizeXsValue] = useState("beta");
+  const [ghostSizeSmValue, setGhostSizeSmValue] = useState("beta");
+  const [ghostSizeMdValue, setGhostSizeMdValue] = useState("beta");
+  const [ghostIconOnlyValue, setGhostIconOnlyValue] = useState("light");
+  const [ghostActionRowValue, setGhostActionRowValue] =
+    useState("side-by-side");
+
   // L11 migration via useResponderForm — see gallery-checkbox.tsx for the
   // annotated reference. Gensym'd sender ids for every choice group.
   //
@@ -95,6 +111,12 @@ export function GalleryChoiceGroup() {
   const iconLeftId = useId();
   const iconRightId = useId();
   const iconOnlyId = useId();
+  const ghostViewId = useId();
+  const ghostSizeXsId = useId();
+  const ghostSizeSmId = useId();
+  const ghostSizeMdId = useId();
+  const ghostIconOnlyId = useId();
+  const ghostActionRowId = useId();
   const roleBaseId = useId();
   const roleIds: Record<string, string> = Object.fromEntries(
     ALL_ROLES.map((role) => [role, `${roleBaseId}-${role}`]),
@@ -112,6 +134,12 @@ export function GalleryChoiceGroup() {
     [iconLeftId]: setIconLeftValue,
     [iconRightId]: setIconRightValue,
     [iconOnlyId]: setIconOnlyValue,
+    [ghostViewId]: setGhostViewValue,
+    [ghostSizeXsId]: setGhostSizeXsValue,
+    [ghostSizeSmId]: setGhostSizeSmValue,
+    [ghostSizeMdId]: setGhostSizeMdValue,
+    [ghostIconOnlyId]: setGhostIconOnlyValue,
+    [ghostActionRowId]: setGhostActionRowValue,
   };
   for (const role of ALL_ROLES) {
     selectValueBindings[roleIds[role]] = (v: string) =>
@@ -377,6 +405,290 @@ export function GalleryChoiceGroup() {
             />
           </div>
 
+        </div>
+      </div>
+
+      <TugSeparator />
+
+      {/* ---- Ghost emphasis ---- */}
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">Emphasis: ghost</TugLabel>
+        <p
+          style={{
+            margin: "0 0 16px",
+            fontSize: "0.75rem",
+            color: "var(--tug7-element-field-text-normal-label-rest)",
+            lineHeight: 1.5,
+            maxWidth: "44rem",
+          }}
+        >
+          Quiet variant for action-row composition. Drops the framing pill,
+          replaces the saturated indicator with a neutral matching{" "}
+          <code>--tug7-surface-control-primary-ghost-action-hover</code>, and
+          applies uppercase + 0.06em letter-spacing matching{" "}
+          <code>tug-push-button.css</code>. Role-driven coloring is
+          intentionally suppressed in this mode. Pipes between segments drop.
+        </p>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+          {/* Side-by-side comparison at 2xs — the action-row target scale */}
+          <div>
+            <div
+              style={{
+                fontSize: "0.75rem",
+                color: "var(--tug7-element-field-text-normal-label-rest)",
+                marginBottom: "6px",
+              }}
+            >
+              default vs ghost @ <code>size="2xs"</code> (action-row scale,
+              icon + label)
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "row",
+                gap: "32px",
+                alignItems: "center",
+              }}
+            >
+              <TugChoiceGroup
+                size="2xs"
+                value={ghostViewValue}
+                senderId={ghostViewId}
+                aria-label="View mode (default)"
+                items={[
+                  {
+                    value: "side-by-side",
+                    label: "Side by side",
+                    icon: <Columns2 aria-hidden="true" />,
+                    iconPosition: "left",
+                    "aria-label": "Side by side",
+                  },
+                  {
+                    value: "inline",
+                    label: "Inline",
+                    icon: <AlignLeft aria-hidden="true" />,
+                    iconPosition: "left",
+                    "aria-label": "Inline",
+                  },
+                ]}
+              />
+              <TugChoiceGroup
+                size="2xs"
+                emphasis="ghost"
+                value={ghostViewValue}
+                senderId={ghostViewId}
+                aria-label="View mode (ghost)"
+                items={[
+                  {
+                    value: "side-by-side",
+                    label: "Side by side",
+                    icon: <Columns2 aria-hidden="true" />,
+                    iconPosition: "left",
+                    "aria-label": "Side by side",
+                  },
+                  {
+                    value: "inline",
+                    label: "Inline",
+                    icon: <AlignLeft aria-hidden="true" />,
+                    iconPosition: "left",
+                    "aria-label": "Inline",
+                  },
+                ]}
+              />
+            </div>
+          </div>
+
+          {/* Action-row preview — the production target. Mirror the diff
+              block's chrome: choice group, then a separator gap, then a
+              ghost push button as the trailing fold cue. */}
+          <div>
+            <div
+              style={{
+                fontSize: "0.75rem",
+                color: "var(--tug7-element-field-text-normal-label-rest)",
+                marginBottom: "6px",
+              }}
+            >
+              action-row preview — ghost choice group + ghost push button (the
+              composition the diff block wants)
+            </div>
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+                padding: "6px 12px",
+                background:
+                  "var(--tug7-surface-global-primary-normal-raised-rest, transparent)",
+                borderRadius: "6px",
+              }}
+            >
+              <TugChoiceGroup
+                size="2xs"
+                emphasis="ghost"
+                value={ghostActionRowValue}
+                senderId={ghostActionRowId}
+                aria-label="View mode"
+                items={[
+                  {
+                    value: "side-by-side",
+                    label: "Side by side",
+                    icon: <Columns2 aria-hidden="true" />,
+                    iconPosition: "left",
+                    "aria-label": "Side by side",
+                  },
+                  {
+                    value: "inline",
+                    label: "Inline",
+                    icon: <AlignLeft aria-hidden="true" />,
+                    iconPosition: "left",
+                    "aria-label": "Inline",
+                  },
+                ]}
+              />
+              <TugPushButton
+                icon={<ChevronsUp />}
+                subtype="icon-text"
+                emphasis="ghost"
+                size="2xs"
+                aria-label="Collapse"
+              >
+                8 hunks
+              </TugPushButton>
+              <TugPushButton
+                icon={<Search />}
+                subtype="icon-text"
+                emphasis="ghost"
+                size="2xs"
+                aria-label="Find"
+              >
+                Find
+              </TugPushButton>
+            </div>
+          </div>
+
+          {/* Sizes — ghost across the size spectrum so we can see how it
+              scales. The action-row target is 2xs, but the variant works at
+              every size for callers who want a quiet picker at a larger
+              scale. */}
+          <div>
+            <div
+              style={{
+                fontSize: "0.75rem",
+                color: "var(--tug7-element-field-text-normal-label-rest)",
+                marginBottom: "6px",
+              }}
+            >
+              ghost across sizes (xs / sm / md)
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "row",
+                gap: "32px",
+                alignItems: "center",
+              }}
+            >
+              <TugChoiceGroup
+                size="xs"
+                emphasis="ghost"
+                value={ghostSizeXsValue}
+                senderId={ghostSizeXsId}
+                aria-label="Ghost xs"
+                items={[
+                  { value: "alpha", label: "Alpha" },
+                  { value: "beta", label: "Beta" },
+                  { value: "gamma", label: "Gamma" },
+                ]}
+              />
+              <TugChoiceGroup
+                size="sm"
+                emphasis="ghost"
+                value={ghostSizeSmValue}
+                senderId={ghostSizeSmId}
+                aria-label="Ghost sm"
+                items={[
+                  { value: "alpha", label: "Alpha" },
+                  { value: "beta", label: "Beta" },
+                  { value: "gamma", label: "Gamma" },
+                ]}
+              />
+              <TugChoiceGroup
+                size="md"
+                emphasis="ghost"
+                value={ghostSizeMdValue}
+                senderId={ghostSizeMdId}
+                aria-label="Ghost md"
+                items={[
+                  { value: "alpha", label: "Alpha" },
+                  { value: "beta", label: "Beta" },
+                  { value: "gamma", label: "Gamma" },
+                ]}
+              />
+            </div>
+          </div>
+
+          {/* Icon-only — uppercase typography doesn't apply (no labels), but
+              the rest of the ghost contract (no framing pill, neutral
+              indicator, no pipes) still applies. */}
+          <div>
+            <div
+              style={{
+                fontSize: "0.75rem",
+                color: "var(--tug7-element-field-text-normal-label-rest)",
+                marginBottom: "6px",
+              }}
+            >
+              icon-only — ghost still drops the frame; the indicator pill
+              alone carries the selection signal
+            </div>
+            <TugChoiceGroup
+              size="sm"
+              emphasis="ghost"
+              value={ghostIconOnlyValue}
+              senderId={ghostIconOnlyId}
+              aria-label="Color theme (ghost)"
+              items={[
+                { value: "light", icon: <Sun />, "aria-label": "Light" },
+                { value: "dark", icon: <Moon />, "aria-label": "Dark" },
+                { value: "system", icon: <Monitor />, "aria-label": "System" },
+              ]}
+            />
+          </div>
+
+          {/* Disabled — ghost variant honors the disabled state. The
+              indicator stays visible; segments dim. */}
+          <div>
+            <div
+              style={{
+                fontSize: "0.75rem",
+                color: "var(--tug7-element-field-text-normal-label-rest)",
+                marginBottom: "6px",
+              }}
+            >
+              disabled — indicator stays put; segments dim
+            </div>
+            <TugChoiceGroup
+              size="2xs"
+              emphasis="ghost"
+              disabled
+              value="side-by-side"
+              aria-label="Disabled ghost view mode"
+              items={[
+                {
+                  value: "side-by-side",
+                  label: "Side by side",
+                  icon: <Columns2 aria-hidden="true" />,
+                },
+                {
+                  value: "inline",
+                  label: "Inline",
+                  icon: <AlignLeft aria-hidden="true" />,
+                },
+              ]}
+            />
+          </div>
         </div>
       </div>
 

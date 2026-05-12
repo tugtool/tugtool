@@ -47,6 +47,16 @@
 
 /* Size variants — border-radius, height, font-size */
 
+/* 2xs matches `tug-button-2xs-height` (20px) and `tug-button-2xs-font-size`
+ * (10px) so a 2xs ghost-emphasis choice group sits in an action row at the
+ * same scale as adjacent `TugPushButton size="2xs"` affordances. The
+ * fielded default-emphasis variant is also available at 2xs — same metrics,
+ * different paint. */
+.tug-choice-group-2xs {
+  border-radius: var(--tug-radius-sm);  /* 4px */
+  min-height: 20px;
+}
+
 .tug-choice-group-xs {
   border-radius: var(--tug-radius-sm);  /* 4px */
   min-height: 22px;
@@ -89,6 +99,10 @@
 .tug-choice-group-animated .tug-choice-group-indicator {
   transition: transform 160ms var(--tug-motion-easing-standard, ease),
               width 160ms var(--tug-motion-easing-standard, ease);
+}
+
+.tug-choice-group-2xs .tug-choice-group-indicator {
+  border-radius: calc(var(--tug-radius-sm) - 2px);  /* 2px */
 }
 
 .tug-choice-group-xs .tug-choice-group-indicator {
@@ -147,6 +161,12 @@
 }
 
 /* Segment size padding + font */
+
+.tug-choice-group-2xs .tug-choice-group-segment {
+  padding: 0 var(--tug-space-md);  /* 0 8px */
+  font-size: 0.625rem;  /* 10px — matches tug-button-2xs-font-size */
+  border-radius: calc(var(--tug-radius-sm) - 2px);
+}
 
 .tug-choice-group-xs .tug-choice-group-segment {
   padding: 0 var(--tug-space-md);  /* 0 8px */
@@ -217,6 +237,11 @@
    ========================================================================= */
 
 
+.tug-choice-group-2xs .tug-group-item-icon svg {
+  width: 10px;
+  height: 10px;
+}
+
 .tug-choice-group-xs .tug-group-item-icon svg {
   width: 12px;
   height: 12px;
@@ -271,6 +296,10 @@
 
 /* Icon-only segments get symmetric horizontal padding matching their vertical
    space, keeping the segment compact rather than bloated-square. */
+.tug-choice-group-2xs .tug-choice-group-segment-icon-only {
+  padding: 0 var(--tug-space-xs);  /* 4px */
+}
+
 .tug-choice-group-xs .tug-choice-group-segment-icon-only {
   padding: 0 var(--tug-space-xs);  /* 4px */
 }
@@ -285,4 +314,91 @@
 
 .tug-choice-group-lg .tug-choice-group-segment-icon-only {
   padding: 0 var(--tug-space-lg);  /* 8px */
+}
+
+
+/* ============================================================================
+   Emphasis: ghost
+   ============================================================================
+   A quieter variant of the choice group designed to sit alongside ghost-style
+   push buttons (`TugPushButton emphasis="ghost"`) in dense action rows. The
+   framing pill, saturated indicator, and pipe dividers all drop; what remains
+   is a sliding pill at ghost-button hover weight and uppercase / letter-spaced
+   labels matching `tug-push-button.css`'s CTA typography.
+
+   Composition: `emphasis="ghost"` is orthogonal to `size`. Use
+   `size="2xs" emphasis="ghost"` for action-row scale; the same rules apply at
+   xs/sm/md/lg if a host wants a quiet picker at a larger scale.
+
+   Role-driven coloring (`--tugx-segment-on-color` injection) is intentionally
+   suppressed — ghost emphasis is for "this control is quiet", and saturated
+   semantic coloring would defeat that. The `[data-role]` attribute is still
+   set on the root for downstream CSS hooks; the indicator just doesn't react
+   to it.
+
+   @tug-pairings (ghost-emphasis only):
+   - --tug7-element-control-text-ghost-action-rest      | --tug7-surface-control-primary-ghost-action-rest  | control
+   - --tug7-element-control-text-ghost-action-hover     | --tug7-surface-control-primary-ghost-action-hover | control
+   ========================================================================= */
+
+/* Root — drop the framing pill so the segments read as inline labels rather
+ * than a fielded control. The segments still own their own bg on hover /
+ * active so the click-affordance and selected-state remain unambiguous. */
+.tug-choice-group[data-emphasis="ghost"] {
+  background-color: transparent;
+  border: 0;
+  padding: 0;
+}
+
+/* Sliding indicator — quiet neutral. Same shape (a pill that slides between
+ * segments), same animation behavior; only the fill color and the inset
+ * change. Inset becomes zero because the root dropped its 2px padding. */
+.tug-choice-group[data-emphasis="ghost"] .tug-choice-group-indicator {
+  background-color: var(--tug7-surface-control-primary-ghost-action-hover);
+  top: 0;
+  height: 100%;
+}
+
+/* Segments — typography first, then color. Uppercase + letter-spacing match
+ * `tug-push-button.css` exactly so a ghost choice group adjacent to a
+ * `TugPushButton` reads as part of the same family. */
+.tug-choice-group[data-emphasis="ghost"] .tug-choice-group-segment {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tug7-element-control-text-ghost-action-rest);
+}
+
+/* Active segment — text bumps to the ghost-action-hover color (the same
+ * color a ghost button paints when the user is engaged with it). The
+ * indicator pill is doing most of the work; the text color shift is a
+ * second-order signal. */
+.tug-choice-group[data-emphasis="ghost"] .tug-choice-group-segment[data-state="active"] {
+  color: var(--tug7-element-control-text-ghost-action-hover);
+}
+
+/* Hover on an inactive segment — preview the active treatment without
+ * actually flipping the indicator. Same surface/text pair as the active
+ * state, so the user gets a clear "this is what selecting feels like."
+ * Match the default-emphasis hover exclusion list (don't fire on
+ * disabled / active segments). */
+.tug-choice-group[data-emphasis="ghost"] .tug-choice-group-segment:hover:not(:disabled):not([aria-disabled="true"]):not([data-state="active"]) {
+  background-color: var(--tug7-surface-control-primary-ghost-action-hover);
+  color: var(--tug7-element-control-text-ghost-action-hover);
+}
+
+/* Pipe dividers retire in ghost mode — without the framing pill they read
+ * as visual noise. The indicator pill alone signals the selection. */
+.tug-choice-group[data-emphasis="ghost"] .tug-choice-group-segment + .tug-choice-group-segment::before {
+  background-color: transparent;
+}
+
+/* Disabled — keep the indicator visible (the user can still see what was
+ * selected) but pull it back toward neutral. The default-emphasis disabled
+ * rule above already swaps the indicator color via `--tugx-segment-disabled-color`;
+ * for ghost we want the indicator to stay at its rest position color so the
+ * disabled state reads as "everything dimmed" rather than "selection changed
+ * because the control disabled itself". The `opacity: 0.45` on individual
+ * segments (inherited from the base disabled rule) carries the dimming. */
+.tug-choice-group[data-emphasis="ghost"][data-disabled] .tug-choice-group-indicator {
+  background-color: var(--tug7-surface-control-primary-ghost-action-hover);
 }

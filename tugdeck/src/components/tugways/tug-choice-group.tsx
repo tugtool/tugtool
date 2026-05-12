@@ -43,7 +43,26 @@ import { useComponentStatePreservation } from "./use-component-state-preservatio
 // ---- Types ----
 
 /** Choice group size names. */
-export type TugChoiceGroupSize = "xs" | "sm" | "md" | "lg";
+export type TugChoiceGroupSize = "2xs" | "xs" | "sm" | "md" | "lg";
+
+/**
+ * Visual emphasis. Selects the *paint* of the group; the *scale* is
+ * controlled separately by `size`. The two compose.
+ *
+ *  - `"default"` — fielded look: framing pill with a saturated indicator
+ *    matching the (role-aware) `--tugx-segment-on-color`. Use when the
+ *    choice group is the prominent control in its region.
+ *  - `"ghost"` — quiet look: no framing pill, neutral sliding indicator,
+ *    uppercase/letter-spaced labels matching `TugPushButton`'s CTA
+ *    typography. Pipe dividers and role-driven indicator coloring are
+ *    suppressed. Use when the choice group sits next to ghost-style
+ *    push buttons (e.g. action-row affordances inside a sticky header)
+ *    and should read at the same visual weight as its neighbors.
+ *
+ * @selector [data-emphasis="<emphasis>"]
+ * @default "default"
+ */
+export type TugChoiceGroupEmphasis = "default" | "ghost";
 
 /**
  * Semantic role for the selected indicator color.
@@ -52,6 +71,13 @@ export type TugChoiceGroupSize = "xs" | "sm" | "md" | "lg";
  * Explicit roles override with a semantic signal color.
  *
  * Re-exported from TugGroupRole for API consistency.
+ *
+ * **Interaction with `emphasis="ghost"`:** the ghost variant uses a
+ * single neutral indicator color regardless of `role` — ghost emphasis
+ * is for "this control is quiet" and saturated semantic coloring would
+ * defeat that. The `role` prop is still accepted (the data attribute
+ * is set for downstream CSS hooks) but has no visible effect on the
+ * indicator pill in ghost mode.
  *
  * @selector [data-role="<role>"]
  */
@@ -95,10 +121,16 @@ export interface TugChoiceGroupProps
   senderId?: string;
   /**
    * Visual size.
-   * @selector .tug-choice-group-xs | .tug-choice-group-sm | .tug-choice-group-md | .tug-choice-group-lg
+   * @selector .tug-choice-group-2xs | .tug-choice-group-xs | .tug-choice-group-sm | .tug-choice-group-md | .tug-choice-group-lg
    * @default "md"
    */
   size?: TugChoiceGroupSize;
+  /**
+   * Visual emphasis. See {@link TugChoiceGroupEmphasis}.
+   * @selector [data-emphasis="<emphasis>"]
+   * @default "default"
+   */
+  emphasis?: TugChoiceGroupEmphasis;
   /**
    * Semantic role color for the selected indicator.
    * @selector [data-role="<role>"]
@@ -147,6 +179,7 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
       value,
       senderId,
       size = "md",
+      emphasis = "default",
       role,
       disabled = false,
       animated = false,
@@ -279,6 +312,7 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
         aria-label={ariaLabel}
         aria-disabled={effectiveDisabled || undefined}
         data-role={role}
+        data-emphasis={emphasis}
         data-disabled={effectiveDisabled || undefined}
         className={cn(
           "tug-choice-group",
