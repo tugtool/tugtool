@@ -598,11 +598,22 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // forcing a React re-render of the shell.
   const latestDataRef = React.useRef<TerminalData>(EMPTY_TERMINAL);
   // Ref into the underlying button — kept for potential focus
-  // management and as a stable test handle. The just-copied feedback
-  // is driven by `TugPushButton`'s `confirmation` prop (a Tug-native
-  // CSS swap on `data-tug-confirming`) so we no longer manage an
-  // imperative class swap from React.
+  // management and as a stable test handle. The "Copied" feedback
+  // is driven by `TugPushButton`'s `isConfirming` prop (controlled
+  // mode) so we explicitly enter the confirmed state ONLY on a
+  // successful clipboard write — failed writes leave the button at
+  // rest. No imperative class swap from React.
   const copyButtonRef = React.useRef<HTMLButtonElement | null>(null);
+  // Controlled-confirmation state — `true` while the "Copied" flash
+  // is active. Set inside the clipboard `.then()` callback (so a
+  // failed write never lies); cleared by a `setTimeout` after
+  // `COPIED_FLASH_MS`. Lives in React state because the flash
+  // duration is a host-owned schedule, not an appearance-zone class
+  // swap; the actual DOM mutation happens inside `TugButton`'s
+  // controlled-mode layout effect ([L06] satisfied at the primitive
+  // boundary).
+  const [copied, setCopied] = React.useState<boolean>(false);
+  const copiedTimerRef = React.useRef<number | null>(null);
 
   // Chrome actions target — non-null when this TerminalBlock is
   // composed inside a `ToolWrapperChrome` that has rendered its actions
@@ -686,11 +697,35 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
     const writeText = navigator.clipboard?.writeText.bind(navigator.clipboard);
     if (writeText === undefined) return;
     const text = composeCopyText(latestDataRef.current);
-    // Fire-and-forget; `TugPushButton`'s `confirmation` handles the
-    // "Copied" feedback flash on click (a CSS-driven swap with no
-    // React state cost, per [L06]). Errors are swallowed — failure
-    // is rare and silent is fine since the user can just re-click.
-    writeText(text).catch(() => undefined);
+    // Honest "Copied" feedback — set the controlled-confirmation flag
+    // only after the clipboard write resolves. A failed write (denied
+    // permission, no clipboard API) leaves `copied` at `false`, so
+    // the button never flashes a confirmation that didn't happen.
+    writeText(text)
+      .then(() => {
+        setCopied(true);
+        if (copiedTimerRef.current !== null) {
+          window.clearTimeout(copiedTimerRef.current);
+        }
+        copiedTimerRef.current = window.setTimeout(() => {
+          copiedTimerRef.current = null;
+          setCopied(false);
+        }, COPIED_FLASH_MS);
+      })
+      .catch(() => {
+        // Silent failure — the user can re-click. No flash.
+      });
+  }, []);
+
+  // Clean up the pending timer on unmount so we don't try to update
+  // state on a detached component.
+  React.useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current !== null) {
+        window.clearTimeout(copiedTimerRef.current);
+        copiedTimerRef.current = null;
+      }
+    };
   }, []);
 
   // Copy `<TugPushButton>` — rendered once, placed by the host
@@ -699,8 +734,13 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // an invariant structure across rest / confirmed states (per the
   // "buttons must not change subtype between states" rule): rest
   // shows `Copy` icon + "Copy" label; the brief confirmed flash
-  // swaps in the `Check` icon + "Copied" label via TugButton's
-  // built-in `confirmation` machinery.
+  // swaps in the `Check` icon + "Copied" label.
+  //
+  // **Controlled** confirmation (Phase E.1): `isConfirming` is owned
+  // by this component (`copied` state) and set ONLY inside the
+  // clipboard `.then()` callback after a successful write. A denied
+  // permission or missing clipboard API leaves the flag at `false`,
+  // so the button never lies about success.
   const copyButton = (
     <TugPushButton
       ref={copyButtonRef}
@@ -714,8 +754,8 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
       confirmation={{
         icon: <Check />,
         label: "Copied",
-        duration: COPIED_FLASH_MS,
       }}
+      isConfirming={copied}
     >
       Copy
     </TugPushButton>

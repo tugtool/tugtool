@@ -170,6 +170,13 @@ export const KEYBINDINGS: KeyBinding[] = [
   // still see it.
   { key: "Escape", action: TUG_ACTIONS.CANCEL_DIALOG },
   { key: "KeyF", meta: true, action: TUG_ACTIONS.FIND },
+  // ⌘G / ⇧⌘G — find next / find previous within the active find session.
+  // Routes through the chain; the responder that owns the find session
+  // (currently `FileBlock`) handles. Empty / invalid query is a silent
+  // no-op on the handler side. `preventDefaultOnMatch` is not set:
+  // browsers have no default meaning for ⌘G inside a WKWebView.
+  { key: "KeyG", meta: true, action: TUG_ACTIONS.FIND_NEXT },
+  { key: "KeyG", meta: true, shift: true, action: TUG_ACTIONS.FIND_PREVIOUS },
   // Tab navigation: macOS convention (Safari, Terminal) uses
   // ⇧⌘[ / ⇧⌘] for previous / next tab with wrap-around. Routes to
   // TugPane's existing previous-tab / next-tab handlers, which already

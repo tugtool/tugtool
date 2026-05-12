@@ -82,11 +82,20 @@
  *    state because it controls *what* is rendered (one of two
  *    branches), not *how* a rendered element looks. The substrate's
  *    own appearance state lives in CM6 per its module docstring.
+ *  - [L11] FileBlock owns the find session — `findOpen`, `findQuery`,
+ *    the codeViewRef delegate, the open/close lifecycle — and is
+ *    therefore the responder for `FIND`, `FIND_NEXT`, and
+ *    `FIND_PREVIOUS`. Each Cmd-F / Cmd-G / Shift-Cmd-G keystroke
+ *    arrives via the static keybinding map → responder-chain
+ *    dispatch; no document-level listeners.
  *  - [L19] file pair (`.tsx` + `.css`), exported props interface,
  *    `data-slot="file-body"` on the root, this docstring.
  *  - [L20] component-token sovereignty — owns the `--tugx-file-*`
  *    slot family; consumes `--tugx-block-*` directly for the shared
- *    block-surface scaffold.
+ *    block-surface scaffold. Position-coordination tokens
+ *    (`--tugx-pin-stack-top`, `--tugx-toolblock-header-height`) are
+ *    read but never overridden, per the L20 carve-out documented in
+ *    `tuglaws/component-authoring.md`.
  *
  * Decisions:
  *  - [D05] two-layer split: body kind (this file) vs. tool wrapper
@@ -115,6 +124,10 @@ import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { useOptionalResponder } from "@/components/tugways/use-responder";
+import { useResponderChain } from "@/components/tugways/responder-chain-provider";
+import { TUG_ACTIONS, type TugAction } from "@/components/tugways/action-vocabulary";
+import type { ActionHandler } from "@/components/tugways/responder-chain";
 import {
   TugCodeView,
   type TugCodeViewDelegate,
@@ -420,9 +433,17 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   const headerLabel = composeLineCountLabel(numLines, data?.totalLines);
 
   const overThreshold = lines.length > collapseThreshold;
-  const initialCollapsed =
-    collapsedProp !== undefined ? collapsedProp : overThreshold;
-  const [collapsed, setCollapsed] = React.useState<boolean>(initialCollapsed);
+
+  // Computed-value collapse pattern. Mirrors the existing `viewMode`
+  // resolution in DiffBlock: the parent's prop wins when provided,
+  // local state covers the uncontrolled case. No `useEffect` syncs a
+  // prop into state — that pattern would create a "controlled prop
+  // says X, local state says Y" divergence after a click in
+  // uncontrolled mode. Reading the prop directly on every render keeps
+  // controlled and uncontrolled cleanly separable.
+  const [localCollapsed, setLocalCollapsed] =
+    React.useState<boolean>(overThreshold);
+  const collapsed = collapsedProp !== undefined ? collapsedProp : localCollapsed;
 
   // Root ref — used to dispatch the disengage-follow-bottom event so
   // the host (e.g. `TugListView`) releases its auto-pin lock before
@@ -497,14 +518,37 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // a missing chrome both fall through to the inline-in-header path.
   const chromeActionsTarget = useChromeActionsTarget();
 
-  // Sync to controlled prop when it changes upstream so parents can
-  // drive collapse from chrome elsewhere in the row.
-  React.useEffect(() => {
-    if (collapsedProp !== undefined) setCollapsed(collapsedProp);
-  }, [collapsedProp]);
+  // Stable id for FileBlock's own responder — declared up here so the
+  // find form below can register as its child (see `parentId` below)
+  // and so the `toggleCollapsed` callback can promote FileBlock to
+  // first-responder after the user clicks a focus-refusing
+  // affordance. Sibling hook calls in the same component all read the
+  // same outer `ResponderParentContext` value at hook-call time, so
+  // without the explicit parentId the find form would register as a
+  // SIBLING of fileBlockResponder, not a child. Chain walks from the
+  // find input would then skip past fileBlockResponder entirely and
+  // Cmd-G / Shift-Cmd-G would not reach the FIND_NEXT / FIND_PREVIOUS
+  // handlers.
+  const fileBlockResponderId = React.useId();
+
+  // Chain manager — used to programmatically promote
+  // `fileBlockResponder` to first-responder after the user clicks one
+  // of the in-block focus-refusing affordances (fold cue, Find
+  // button). Those buttons carry `data-tug-focus="refuse"`, so the
+  // chain provider's pointerdown listener skips chain promotion
+  // entirely on their clicks — correct for buttons in outer chrome
+  // (no focus theft from active editors), but leaves first-responder
+  // pointing at wherever it was BEFORE the user touched the block.
+  // Cmd-F afterward then walks from a stale responder and misses
+  // our FIND handler. Promoting `fileBlockResponder` after the toggle
+  // lands keystrokes on the block the user is clearly interacting
+  // with. The manager is `null` outside a `ResponderChainProvider`
+  // (gallery cards, unit tests); the promote calls below short-
+  // circuit via `?.`.
+  const chainManager = useResponderChain();
 
   const toggleCollapsed = React.useCallback(() => {
-    // Dispatch BEFORE `setCollapsed` so the listener (TugListView's
+    // Dispatch BEFORE the state update so the listener (TugListView's
     // SmartScroll, when present) flips `isFollowingBottom` to false
     // before React commits the new cell size; the subsequent
     // ResizeObserver flush then bails out of `pinToBottom` (see
@@ -513,12 +557,24 @@ export const FileBlock: React.FC<FileBlockProps> = ({
     rootRef.current?.dispatchEvent(
       new CustomEvent("tug-disengage-follow-bottom", { bubbles: true }),
     );
-    setCollapsed((prev) => {
-      const next = !prev;
-      onToggleCollapsed?.(next);
-      return next;
-    });
-  }, [onToggleCollapsed]);
+    // Promote FileBlock to first-responder. The fold cue is a
+    // `TugPushButton` with `data-tug-focus="refuse"`, so the chain
+    // provider's pointerdown listener skipped chain promotion on its
+    // own. The user is clearly interacting with THIS block, so
+    // keystrokes after this click should land here — Cmd-F walking
+    // from FileBlock then reaches our FIND handler. Idempotent: if
+    // we already own first-responder, makeFirstResponder is a no-op.
+    chainManager?.makeFirstResponder(fileBlockResponderId);
+    // Controlled mode: parent owns the prop, so we only notify; local
+    // state stays out of it. Uncontrolled mode: local state flips and
+    // notifies. Both paths converge on `onToggleCollapsed` so the
+    // host can observe regardless of who owns the value.
+    const next = !collapsed;
+    if (collapsedProp === undefined) {
+      setLocalCollapsed(next);
+    }
+    onToggleCollapsed?.(next);
+  }, [chainManager, collapsed, collapsedProp, fileBlockResponderId, onToggleCollapsed]);
 
   // Ref to the embedded TugCodeView so the Find UI can drive the
   // substrate's search state imperatively (set-query / next /
@@ -543,11 +599,15 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // so toggles land in React state without each control needing its
   // own `onChange`. TugInput uses native `onChange` (it routes typing
   // through the standard React change event, not the responder chain),
-  // so the query string isn't a form slot here.
+  // so the query string isn't a form slot here. `parentId` opts into
+  // a child relationship with fileBlockResponder so chain walks from
+  // inside the form reach FileBlock's FIND_NEXT / FIND_PREVIOUS
+  // handlers.
   const findCaseId = React.useId();
   const findRegexpId = React.useId();
   const findWordId = React.useId();
   const findForm = useResponderForm({
+    parentId: fileBlockResponderId,
     toggle: {
       [findCaseId]: setFindCaseSensitive,
       [findRegexpId]: setFindRegexp,
@@ -561,7 +621,13 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // query is a valid state — CM6 clears highlights when it sees an
   // empty search string, and `getMatchCount` returns 0 for invalid
   // queries.
-  React.useEffect(() => {
+  //
+  // `useLayoutEffect` so the match-highlight repaint lands in the
+  // same paint as the input update. With `useEffect` the effect runs
+  // AFTER the browser paints, producing a one-frame lag between the
+  // input character commit and the highlights repainting against the
+  // new query.
+  React.useLayoutEffect(() => {
     if (!findOpen) return;
     const delegate = codeViewRef.current;
     if (delegate === null) return;
@@ -582,16 +648,34 @@ export const FileBlock: React.FC<FileBlockProps> = ({
       rootRef.current?.dispatchEvent(
         new CustomEvent("tug-disengage-follow-bottom", { bubbles: true }),
       );
-      setCollapsed(false);
+      if (collapsedProp === undefined) {
+        setLocalCollapsed(false);
+      }
       onToggleCollapsed?.(false);
     }
+    // Promote FileBlock to first-responder. Same reasoning as
+    // toggleCollapsed: the Find button (when invoked by click) is
+    // a `TugPushButton` with `data-tug-focus="refuse"`, so the
+    // chain provider skipped chain promotion on its pointerdown.
+    // The focus useLayoutEffect below will eventually move
+    // first-responder to the find form via the input's focus event,
+    // but doing this here also guarantees that Cmd-F dispatches
+    // arriving while the chain is still settling find their way
+    // home. Idempotent if we already own first-responder.
+    chainManager?.makeFirstResponder(fileBlockResponderId);
     setFindOpen(true);
     // Focus + select land in the useLayoutEffect below — keyed on
     // `findOpen` so it fires after React commits the find-row mount
     // and the input ref is set. [L05] forbids `requestAnimationFrame`
     // for operations that depend on a React state commit; the
     // useLayoutEffect-on-mount pattern is the canonical alternative.
-  }, [collapsed, onToggleCollapsed]);
+  }, [
+    chainManager,
+    collapsed,
+    collapsedProp,
+    fileBlockResponderId,
+    onToggleCollapsed,
+  ]);
 
   // Focus + select the find input when the find row mounts.
   // `useLayoutEffect` runs after React commits the new tree but
@@ -674,40 +758,72 @@ export const FileBlock: React.FC<FileBlockProps> = ({
     codeViewRef.current?.findPrevious();
   }, [findQuery.length]);
 
-  // Cmd-G / Shift-Cmd-G (Ctrl on non-Mac) — Find-next / Find-previous
-  // while the find row is open, regardless of which element has focus
-  // (input, editor, or one of the row's buttons). The listener
-  // attaches only while `findOpen` is true so it doesn't shadow any
-  // app-level binding outside a find session. `findQueryRef` lets
-  // the static listener read the latest query without re-attaching
-  // on every keystroke.
+  // ---- Responder registration ------------------------------------------------
+  //
+  // FileBlock owns the find session — `findOpen`, `findQuery`, the
+  // codeViewRef delegate, and the open / close lifecycle. Per [L11]
+  // ("Controls emit actions; responders own state that actions operate
+  // on") it must be the responder for the find-related actions.
+  //
+  // Registered actions:
+  //  - `FIND` — opens the find row. Reachable from anywhere inside
+  //    FileBlock's subtree (CM6 focus, find input focus, button focus,
+  //    cell focus). Dispatched by ⌘F via the static keybinding map.
+  //  - `FIND_NEXT` / `FIND_PREVIOUS` — advance / retreat through
+  //    matches against the active query. Empty / invalid query is a
+  //    silent no-op so the keystroke doesn't accidentally seed a
+  //    query from the current selection (CM6's `searchCommand`
+  //    fallback would otherwise resurrect a prior query).
+  //    Dispatched by ⌘G / ⇧⌘G via the static keybinding map.
+  //
+  // Latest-refs for the handlers — the responder is registered ONCE
+  // at mount with stable handlers ([L07]: handlers must read current
+  // state through refs, never stale closures). The handlers below
+  // read `findQueryRef.current` / `codeViewRef.current` at fire time.
   const findQueryRef = React.useRef(findQuery);
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     findQueryRef.current = findQuery;
   }, [findQuery]);
-  React.useEffect(() => {
-    if (!findOpen) return;
-    const onKeyDown = (e: KeyboardEvent): void => {
-      const mod = e.metaKey || e.ctrlKey;
-      if (!mod) return;
-      if (e.key !== "g" && e.key !== "G") return;
-      e.preventDefault();
-      // Same guard as the buttons — empty query → no-op (avoids CM6's
-      // openSearchPanel-from-selection fallback).
-      if (findQueryRef.current.length === 0) return;
-      const delegate = codeViewRef.current;
-      if (delegate === null) return;
-      if (e.shiftKey) {
-        delegate.findPrevious();
-      } else {
-        delegate.findNext();
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [findOpen]);
+  const openFindRef = React.useRef(openFind);
+  React.useLayoutEffect(() => {
+    openFindRef.current = openFind;
+  }, [openFind]);
+
+  const fileBlockActions = React.useMemo<
+    Partial<Record<TugAction, ActionHandler>>
+  >(
+    () => ({
+      [TUG_ACTIONS.FIND]: () => {
+        openFindRef.current?.();
+      },
+      [TUG_ACTIONS.FIND_NEXT]: () => {
+        if (findQueryRef.current.length === 0) return;
+        codeViewRef.current?.findNext();
+      },
+      [TUG_ACTIONS.FIND_PREVIOUS]: () => {
+        if (findQueryRef.current.length === 0) return;
+        codeViewRef.current?.findPrevious();
+      },
+    }),
+    [],
+  );
+  const fileBlockResponder = useOptionalResponder({
+    id: fileBlockResponderId,
+    actions: fileBlockActions,
+  });
+
+  // Composed root ref — forwards to both the local `rootRef` (used to
+  // dispatch the disengage-follow-bottom event) and the responder
+  // chain's ref-callback (writes `data-responder-id` on the same
+  // element). Stable across renders so neither side tears down and
+  // re-attaches on every render.
+  const composedRootRef = React.useCallback(
+    (el: HTMLDivElement | null) => {
+      rootRef.current = el;
+      fileBlockResponder.responderRef(el);
+    },
+    [fileBlockResponder.responderRef],
+  );
 
   // Empty data: render an empty marker for layout consistency. Same
   // contract as before — consumers may depend on the data-empty
@@ -715,7 +831,7 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   if (data === undefined || lines.length === 0) {
     return (
       <div
-        ref={rootRef}
+        ref={composedRootRef}
         data-slot={DATA_SLOT_ROOT}
         data-empty="true"
         data-embedded={embedded ? "true" : undefined}
@@ -821,8 +937,9 @@ export const FileBlock: React.FC<FileBlockProps> = ({
       : null;
 
   return (
+    <fileBlockResponder.ResponderScope>
     <div
-      ref={rootRef}
+      ref={composedRootRef}
       data-slot={DATA_SLOT_ROOT}
       data-empty="false"
       data-language={language ?? "plain"}
@@ -989,5 +1106,6 @@ export const FileBlock: React.FC<FileBlockProps> = ({
         />
       )}
     </div>
+    </fileBlockResponder.ResponderScope>
   );
 };

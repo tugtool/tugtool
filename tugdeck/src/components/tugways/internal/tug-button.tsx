@@ -196,8 +196,43 @@ export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButt
    * Confirmation feedback configuration. When set, clicking the button briefly
    * swaps to the confirmation icon/label and disables interaction, then restores.
    * @selector [data-tug-confirming="true"]
+   *
+   * Two modes:
+   *  - **Uncontrolled** (default): `confirmation` set, `isConfirming` omitted.
+   *    Click enters the confirmed state and the button's internal timer
+   *    restores after `confirmation.duration` ms. Use this when the
+   *    feedback should fire on every successful click without needing
+   *    to filter on async success.
+   *  - **Controlled**: `confirmation` set, `isConfirming` provided.
+   *    The parent drives the confirmed state via the prop; the internal
+   *    timer is bypassed. Use this when the feedback should reflect an
+   *    asynchronous outcome (e.g. clipboard write success) — the parent
+   *    flips `isConfirming` to `true` after the operation resolves and
+   *    clears it on its own schedule.
    */
   confirmation?: TugButtonConfirmation;
+
+  /**
+   * Controlled-confirmation flag. When provided alongside
+   * {@link confirmation}, the parent owns the confirmed-state lifecycle
+   * and the button's internal timer is bypassed. `true` enters the
+   * confirmed state; `false` exits it. When omitted (uncontrolled
+   * mode), the button runs the internal timer keyed on
+   * `confirmation.duration` as before.
+   *
+   * Honest feedback for async outcomes: a Copy button can call
+   * `navigator.clipboard.writeText(text)` in `onClick`, then flip
+   * `isConfirming` to `true` inside the `.then()` callback only when
+   * the write actually succeeded. A failed write leaves
+   * `isConfirming` at `false` — no false-positive "Copied" flash.
+   *
+   * Mutually-exclusive expectation with `confirmation.duration`: when
+   * `isConfirming` is provided, the duration is ignored. Setting both
+   * is a programming error and fires a dev-mode console.warn.
+   *
+   * @selector [data-tug-confirming="true"]
+   */
+  isConfirming?: boolean;
 
   /** Border radius token. Default is size-proportional (sm→"sm", md→"md", lg→"lg"). */
   rounded?: TugButtonRounded;
@@ -278,6 +313,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   icon,
   trailingIcon,
   confirmation,
+  isConfirming,
   rounded,
   "aria-label": ariaLabel,
   className,
@@ -410,6 +446,31 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
     [ref],
   );
 
+  // Controlled-mode discriminator. When `isConfirming` is provided
+  // (boolean — `true` or `false`), the parent owns the lifecycle and
+  // the internal timer below is bypassed. When omitted (`undefined`),
+  // the button runs the uncontrolled timer-based path.
+  const isControlledConfirmation = isConfirming !== undefined;
+
+  // Dev-warn on the conflicting-prop case. Setting `isConfirming`
+  // alongside `confirmation.duration` is a programming error — the
+  // duration is silently ignored in controlled mode, and mixing the
+  // two means the author probably misunderstands which side owns the
+  // lifecycle. Surface the bug at mount instead of in the wild.
+  React.useEffect(() => {
+    if (
+      isControlledConfirmation &&
+      confirmation?.duration !== undefined &&
+      process.env.NODE_ENV !== "production"
+    ) {
+      console.warn(
+        "TugButton: `isConfirming` and `confirmation.duration` are mutually exclusive. " +
+          "When `isConfirming` is provided, the parent owns the confirmed-state lifecycle " +
+          "and `confirmation.duration` is ignored. Remove one or the other.",
+      );
+    }
+  }, [isControlledConfirmation, confirmation?.duration]);
+
   const enterConfirmation = React.useCallback(() => {
     const node = internalButtonRef.current;
     if (node === null) return;
@@ -434,6 +495,40 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
       }
     }, duration);
   }, [confirmation?.duration, isChainDisabled]);
+
+  // Controlled-confirmation driver — when `isConfirming` is provided,
+  // the prop drives `data-tug-confirming` directly. No internal timer
+  // runs; clearing the flag is the parent's job. Mirrors the existing
+  // imperative DOM mutation pattern in `enterConfirmation` so the
+  // attribute write paths are uniform.
+  //
+  // [L03] useLayoutEffect — the attribute change paints in the same
+  // frame as the state transition the parent triggered.
+  // [L06] DOM mutation, not React state — `data-tug-confirming` is
+  // appearance, driven directly into the DOM.
+  React.useLayoutEffect(() => {
+    if (!isControlledConfirmation) return;
+    const node = internalButtonRef.current;
+    if (node === null) return;
+    if (isConfirming) {
+      // Cancel any uncontrolled timer that may have been mid-flight —
+      // not expected when a caller uses controlled mode, but defensive
+      // against switches between modes during a transition.
+      if (timerRef.current !== null) {
+        window.clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      confirmingRef.current = true;
+      node.dataset.tugConfirming = "true";
+      node.setAttribute("aria-disabled", "true");
+    } else {
+      confirmingRef.current = false;
+      delete node.dataset.tugConfirming;
+      if (!isChainDisabled) {
+        node.removeAttribute("aria-disabled");
+      }
+    }
+  }, [isControlledConfirmation, isConfirming, isChainDisabled]);
 
   // Clear any pending timer on unmount so we never touch a detached node.
   React.useEffect(() => {
@@ -473,7 +568,10 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
 
     // Enter the confirmed state after the click logic runs so a downstream
     // `preventDefault`-style abort still gets the chance to run first.
-    if (confirmation !== undefined) {
+    // Controlled mode (`isConfirming` provided) bypasses the internal
+    // timer — the parent's prop drives the lifecycle via the layout
+    // effect above.
+    if (confirmation !== undefined && !isControlledConfirmation) {
       enterConfirmation();
     }
   };

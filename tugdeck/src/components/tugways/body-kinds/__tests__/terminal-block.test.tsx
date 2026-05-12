@@ -438,6 +438,65 @@ describe("TerminalBlock — copy button (in pinned header)", () => {
     expect(() => btn.click()).not.toThrow();
   });
 
+  test("failed clipboard write does NOT enter the confirmed state (honest feedback)", async () => {
+    // Phase E.1 — TerminalBlock's Copy uses TugButton's controlled
+    // `isConfirming` API. The flag is set ONLY after a successful
+    // clipboard write resolves. If `writeText` rejects, the button
+    // stays at rest — no false-positive "Copied" flash.
+    const writeText = mock(() => Promise.reject(new Error("denied")));
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+
+    const data: TerminalData = { stdout: "ok", stderr: "" };
+    const { container } = render(<TerminalBlock data={data} />);
+    const btn = container.querySelector(
+      'button[aria-label="Copy terminal output"]',
+    ) as HTMLButtonElement;
+    expect(btn.dataset.tugConfirming).toBeUndefined();
+
+    btn.click();
+    expect(writeText).toHaveBeenCalledTimes(1);
+    // Wait for the rejected promise to settle so any state update
+    // would have run by now.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // The button did not enter the confirmed state. Compare against
+    // the success path covered separately — same surface, different
+    // outcome.
+    expect(btn.dataset.tugConfirming).toBeUndefined();
+  });
+
+  test("successful clipboard write enters the confirmed state", async () => {
+    // Companion to the failed-write test above. Phase E.1's controlled-
+    // confirmation contract: `isConfirming` only flips to true after
+    // the `.then()` callback runs.
+    const writeText = mock(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+
+    const data: TerminalData = { stdout: "ok", stderr: "" };
+    const { container } = render(<TerminalBlock data={data} />);
+    const btn = container.querySelector(
+      'button[aria-label="Copy terminal output"]',
+    ) as HTMLButtonElement;
+    expect(btn.dataset.tugConfirming).toBeUndefined();
+
+    await act(async () => {
+      btn.click();
+      // Two awaits: one to flush `writeText` resolution, one to let
+      // React commit the state update + layout effect.
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(btn.dataset.tugConfirming).toBe("true");
+  });
+
   test("Copy button is always rendered (even when the terminal is empty)", () => {
     // The header strip and its trailing actions cluster are part of
     // the React shell, not the imperative body render; present from

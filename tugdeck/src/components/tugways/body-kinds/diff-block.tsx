@@ -508,22 +508,27 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
     syncHunks !== null ? syncHunks : asyncHunks;
 
   // -- Whole-diff collapsed state -------------------------------------------
-
-  const [collapsed, setCollapsed] = React.useState<boolean>(
-    collapsedProp ?? false,
-  );
-
-  React.useEffect(() => {
-    if (collapsedProp !== undefined) setCollapsed(collapsedProp);
-  }, [collapsedProp]);
+  //
+  // Computed-value pattern. Mirrors the `viewMode` resolution above:
+  // the parent's prop wins when provided, local state covers the
+  // uncontrolled case. No `useEffect` syncs a prop into state — that
+  // pattern would create a "controlled prop says X, local state
+  // says Y" divergence after a click in uncontrolled mode.
+  const [localCollapsed, setLocalCollapsed] = React.useState<boolean>(false);
+  const collapsed =
+    collapsedProp !== undefined ? collapsedProp : localCollapsed;
 
   const toggleCollapsed = React.useCallback(() => {
-    setCollapsed((prev) => {
-      const next = !prev;
-      onToggleCollapsed?.(next);
-      return next;
-    });
-  }, [onToggleCollapsed]);
+    // Controlled mode: parent owns the prop, only notify; local state
+    // stays out of it. Uncontrolled mode: local state flips. Both
+    // paths converge on `onToggleCollapsed` so the host can observe
+    // regardless of who owns the value.
+    const next = !collapsed;
+    if (collapsedProp === undefined) {
+      setLocalCollapsed(next);
+    }
+    onToggleCollapsed?.(next);
+  }, [collapsed, collapsedProp, onToggleCollapsed]);
 
   // -- Per-hunk collapsed state ---------------------------------------------
 

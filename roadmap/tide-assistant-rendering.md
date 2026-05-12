@@ -2470,27 +2470,27 @@ A separate concern compounds it: the FileBlock / DiffBlock Find UI lives in the 
 
 **Tasks (Phase E.1):**
 
-- [ ] **Extend `TUG_ACTIONS`** with `FIND_NEXT` and `FIND_PREVIOUS`. Wire the action handlers in `TugCodeView` (delegate to `cmFindNext` / `cmFindPrevious` with a `query.valid` guard).
-- [ ] **Route Cmd-G / Shift-Cmd-G through the chain.** The exact mechanism (chain-level keymap entry, substrate keymap extension, or a host-level `onKeyDown` that calls `controlDispatch`) is decided during implementation — the constraint is: no `document.addEventListener` in the body kind. Whatever mechanism currently dispatches Cmd-F → FIND is the canonical reference.
-- [ ] **Retire the document-level `keydown` listener** in `FileBlock`. The chain now owns the Cmd-G route.
-- [ ] **Lift `collapsed` to the computed-value pattern in `FileBlock`.** Drop the `useEffect`-sync; compute `collapsed = collapsedProp ?? localCollapsed`. `toggleCollapsed` writes local state only in uncontrolled mode (when `collapsedProp === undefined`). Same code shape as `DiffBlock`'s `viewMode` resolution.
-- [ ] **Lift `collapsed` to the computed-value pattern in `DiffBlock`.** Same treatment as FileBlock.
-- [ ] **Move the find-state-sync effect to `useLayoutEffect`.** Substrate match-highlights repaint in the same paint as the input update; no keystroke lag.
-- [ ] **Add `isConfirming?: boolean` to `TugButton` / `TugPushButton`.** When provided, the prop drives `data-tug-confirming`; the internal timer is bypassed. Mutually-exclusive with `confirmation.duration` (one path or the other; dev-warn on mixed use).
-- [ ] **Refactor `TerminalBlock` to controlled confirmation.** Local `[copied, setCopied]` state; `setCopied(true)` inside the clipboard `.then()`; `setTimeout` clears after `COPIED_FLASH_MS`. Cleanup on unmount. Failure path leaves `copied` false → no flash.
-- [ ] **Tests.** New tests for `FIND_NEXT` / `FIND_PREVIOUS` action handlers in `tug-code-view.test.tsx`. Controlled-collapse tests in `file-block.test.tsx` and `diff-block.test.tsx`. Honest-confirmation test in `terminal-block.test.tsx` (mock `navigator.clipboard.writeText` to reject; assert button never enters confirmed state).
-- [ ] **Update `tuglaws/component-authoring.md`** — document the controlled-confirmation pattern; cross-reference [L05] for the find-state-sync move and [L11] for the action-vocabulary extension.
+- [x] **Extend `TUG_ACTIONS`** with `FIND_NEXT` and `FIND_PREVIOUS`. Done — action constants + docstring entries added to `action-vocabulary.ts`. Implementation decision: register the handlers in `FileBlock` (the responder that owns the find session) rather than `TugCodeView`. Reason: the responder chain walks UP from focus through React's responder parent context, and the find input is a sibling of `TugCodeView` (both inside `FileBlock`), so a walk from the input never reaches `TugCodeView`. Putting the handlers in `FileBlock` covers BOTH focus paths (input + CM6) in one place and matches [L11] — `FileBlock` owns `findOpen` / `findQuery` / the `codeViewRef` delegate, so it owns the actions that operate on that state.
+- [x] **Route Cmd-G / Shift-Cmd-G through the chain.** Done — added two entries to `keybinding-map.ts` (`KeyG, meta → FIND_NEXT`; `KeyG, meta, shift → FIND_PREVIOUS`). The existing static keybinding pipeline dispatches via `sendToFirstResponderForContinuation`, same mechanism that already drives Cmd-F → FIND.
+- [x] **Retire the document-level `keydown` listener** in `FileBlock`. Done — the listener and its companion `useEffect` + `findQueryRef` mirror retired. The chain pipeline now owns the Cmd-G route end-to-end.
+- [x] **Lift `collapsed` to the computed-value pattern in `FileBlock`.** Done — replaced `useState(initialCollapsed)` + `useEffect`-sync with `useState(overThreshold)` for the uncontrolled fallback and `const collapsed = collapsedProp ?? localCollapsed` on every render. `toggleCollapsed` and `openFind` both branch on `collapsedProp === undefined` to decide whether to write local state.
+- [x] **Lift `collapsed` to the computed-value pattern in `DiffBlock`.** Done — same treatment. Mirrors the existing `viewMode` resolution.
+- [x] **Move the find-state-sync effect to `useLayoutEffect`.** Done — the effect that pushes `findQuery` / `findCaseSensitive` / `findRegexp` / `findWholeWord` to CM6's delegate runs before paint so match highlights repaint in the same frame as the input update. No keystroke lag.
+- [x] **Add `isConfirming?: boolean` to `TugButton` / `TugPushButton`.** Done — new optional prop, documented as the controlled-mode opt-in. When provided, a dedicated `useLayoutEffect` writes `data-tug-confirming` directly into the DOM and the click handler's `enterConfirmation()` call is skipped. Mutually-exclusive with `confirmation.duration`; a mount-time `useEffect` fires a dev-mode `console.warn` when both are set.
+- [x] **Refactor `TerminalBlock` to controlled confirmation.** Done — local `[copied, setCopied]` state replaces the old imperative `is-copied` class swap. `setCopied(true)` inside the clipboard `.then()` callback (success path only); `setTimeout` clears after `COPIED_FLASH_MS`. Cleanup on unmount. Failure path (`.catch`) leaves `copied` at `false` — the button never lies about success. Removed `duration` from the `confirmation` prop on the Copy button (controlled mode supplies the timing externally).
+- [x] **`FileBlock` becomes a responder.** Done — uses `useOptionalResponder` to register an id + handlers for `FIND` / `FIND_NEXT` / `FIND_PREVIOUS`. `FIND` calls `openFind()`; the navigation handlers read `findQueryRef.current` (the latest-ref pattern per [L07]) and bail when the query is empty. The block's root wraps in `<fileBlockResponder.ResponderScope>` and attaches `responderRef` via a composed-ref callback. `useOptionalResponder` (tolerant) means standalone gallery + happy-dom tests still render correctly when no `ResponderChainProvider` is above.
+- [x] **Tests.** Done — 5 new TugButton tests (uncontrolled vs controlled vs flipping vs dev-warn), 2 controlled-collapse tests (FileBlock + DiffBlock), 2 honest-confirmation tests (TerminalBlock success + failure paths).
+- [x] **Update `tuglaws/component-authoring.md`** — Done. New "Controlled feedback states" subsection under Component Patterns documents the two-mode (uncontrolled timer / controlled prop) contract, the [L06] / [L03] mapping for the DOM mutation, and the false-positive-feedback failure mode that motivates the controlled mode.
 
 **Tests (commands, Phase E.1):**
 
-- [ ] `bun test src/components/tugways/__tests__/tug-code-view.test.tsx` — FIND_NEXT / FIND_PREVIOUS handlers fire on dispatch; empty-query guards hold.
-- [ ] `bun test src/components/tugways/body-kinds/__tests__/file-block.test.tsx` — controlled `collapsed` prop wins over local state; Cmd-G route covered by the substrate test, not by a document-listener test.
-- [ ] `bun test src/components/tugways/body-kinds/__tests__/diff-block.test.tsx` — controlled `collapsed` mirrors FileBlock's behavior.
-- [ ] `bun test src/components/tugways/body-kinds/__tests__/terminal-block.test.tsx` — Copy click without a working clipboard never sets the confirmed state.
-- [ ] `bun test src/components/tugways/internal/__tests__/tug-button.test.tsx` (new or extended) — `isConfirming={true}` enters confirmed state; `isConfirming={false}` exits. `isConfirming` provided + `confirmation.duration` set fires a dev-warn.
-- [ ] `bunx tsc --noEmit` — clean.
-- [ ] `bun run audit:tokens lint` — zero violations.
-- [ ] `bun test` (full suite) — no regressions vs the post-Phase-D baseline (3577 pass).
+- [x] `bun test src/components/tugways/internal/__tests__/tug-button.test.tsx` (new file) — 5 pass. Uncontrolled timer fires on click; controlled `isConfirming={false}` stays at rest on click; `isConfirming={true}` enters confirmed; toggling false → true → false drives the attribute exactly; the dev-warn fires when `isConfirming` + `confirmation.duration` are both set.
+- [x] `bun test src/components/tugways/body-kinds/__tests__/file-block.test.tsx` — 45 pass. New controlled-collapse test: parent provides `collapsed={true}`, click on the cue fires the callback but the visible state stays as the parent's prop says; a subsequent rerender with `collapsed={false}` updates the DOM.
+- [x] `bun test src/components/tugways/body-kinds/__tests__/diff-block.test.tsx` — 56 pass. Same controlled-collapse contract.
+- [x] `bun test src/components/tugways/body-kinds/__tests__/terminal-block.test.tsx` — 36 pass. Success path: clipboard `.then()` sets `copied`, button enters confirmed (`data-tug-confirming="true"`). Failure path: rejected promise leaves the button at rest — no `data-tug-confirming` attribute.
+- [x] `bunx tsc --noEmit` — clean.
+- [x] `bun run audit:tokens lint` — zero violations.
+- [x] `bun test` (full suite) — **3586 pass, 0 fail** (post-Phase-D baseline was 3577; +9 new tests).
 
 **Checkpoint (Phase E.1):**
 

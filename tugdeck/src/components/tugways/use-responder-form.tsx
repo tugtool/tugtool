@@ -206,6 +206,26 @@ export interface TugResponderFormBindings {
   toggleSectionSingle?: Record<string, (value: string) => void>;
   /** toggleSection action with multi-value payload — multi-expand accordion. */
   toggleSectionMulti?: Record<string, (value: string[]) => void>;
+
+  /**
+   * Optional explicit parent responder id. Forwarded to
+   * `useOptionalResponder` so this form registers as a child of
+   * the named responder instead of the responder above FileBlock /
+   * the component in the React tree.
+   *
+   * Use this when the form is a sibling-hook of another responder
+   * registered in the same component (e.g., FileBlock registers its
+   * own `fileBlockResponder` for FIND / FIND_NEXT / FIND_PREVIOUS,
+   * and the find row's checkbox form needs to register as a child
+   * of that responder so a chain walk from the find input reaches
+   * fileBlockResponder). Without this, both hooks read
+   * `ResponderParentContext` at hook-call time and end up as
+   * siblings under the same outer parent — the chain walk from
+   * inside the form never reaches the other responder.
+   *
+   * Passing `null` pins the responder as a chain root.
+   */
+  parentId?: string | null;
 }
 
 /** Return shape of useResponderForm — same as useResponder. */
@@ -429,5 +449,11 @@ export function useResponderForm(bindings: TugResponderFormBindings): UseRespond
   // in the chain like any other responder; outside one the responder
   // registration silently no-ops and the controls degrade to native
   // DOM events (useful for happy-dom unit tests).
-  return useOptionalResponder({ id, actions });
+  //
+  // `parentId` is forwarded so a form that sits alongside another
+  // responder in the same component can opt into being its child
+  // instead of inheriting the outer context (which would make both
+  // hooks register as siblings under the same grandparent — and
+  // chain walks from inside the form would never reach the sibling).
+  return useOptionalResponder({ id, actions, parentId: bindings.parentId });
 }

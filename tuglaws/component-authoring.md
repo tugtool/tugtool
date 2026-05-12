@@ -825,6 +825,25 @@ The Find UI inside `FileBlock` is **progressive disclosure**: a sticky `.tugx-fi
 
 ## Component Patterns
 
+### Controlled feedback states (e.g. async confirmation)
+
+For UI feedback whose validity depends on an asynchronous outcome — Copy showing "Copied" only after the clipboard actually accepted the write, Save flashing "Saved" only after the server returned 2xx, Delete confirming only after the row is gone. The component exposes a controlled prop that the parent flips after the operation resolves. False-positive feedback is the bug this pattern exists to prevent: a button that flashes "Copied" on every click — even when permission was denied — silently lies about state, and the user trusts the lie.
+
+**When to use:** Buttons or surfaces with a confirmation/feedback state whose truthfulness depends on async success. Synchronous feedback (hover, focus, press) is appearance-zone CSS and doesn't need this pattern.
+
+**Implementation:**
+- The component supports BOTH an uncontrolled timer-based mode (default — for cases where every click is treated as success) and a controlled mode (opt-in via a boolean prop like `isConfirming`).
+- Uncontrolled: a `confirmation` prop carries the icon/label/duration; clicking enters the confirmed state for `duration` ms via an internal timer; the DOM mutation lives in the primitive ([L06] appearance-zone, driven via `data-tug-confirming` and CSS visibility rules, not React state).
+- Controlled: the parent provides `isConfirming` as a boolean prop. `true` enters the confirmed state, `false` exits it. The internal timer is bypassed; the parent owns the entire lifecycle. Use this when the parent has async information the component can't see — clipboard `.then()`, fetch resolution, store-write confirmation.
+- A `useLayoutEffect` keyed on the controlled prop writes `data-tug-confirming` directly into the DOM ([L03] before paint; [L06] CSS-driven swap rather than React state churn).
+- The two modes are mutually exclusive: providing both `confirmation.duration` and `isConfirming` is a programming error. Dev-mode `console.warn` flags the conflict so the author catches it at mount.
+
+**Reference implementations:**
+- `tug-button.tsx` — primitive that supports both modes. The internal timer path is the default; `isConfirming` opts into controlled mode.
+- `terminal-block.tsx` — `Copy` button consumer. Sets `isConfirming` to `true` inside the clipboard `.then()` callback only after a successful write resolves; a denied write leaves the flag at `false` and the button stays at rest. Local `setTimeout` clears the flag after a fixed flash window. The "Copied" feedback is now honest.
+
+**Why not just rely on the uncontrolled timer:** in the uncontrolled path the flash fires on every click regardless of whether the underlying operation succeeded. For Copy this means: clipboard denied → user sees "Copied" → believes the clipboard has the new content → pastes the OLD content → confused. The controlled mode pushes the success signal into a chokepoint (the `.then()` callback) that runs only on success.
+
 ### Emphasis × Role
 
 For components with multiple visual emphases (filled, outlined, ghost) crossed with semantic roles (accent, action, danger, etc.). Each combination maps to a compound CSS class that selects the right tokens.

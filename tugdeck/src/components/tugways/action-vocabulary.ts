@@ -316,6 +316,14 @@ export const TUG_ACTIONS = {
   //                         via the global menu / ⌘T (canvas targets the first responder).
   // FIND:                   payload — none. Open the find UI for the first
   //                         searchable responder.
+  // FIND_NEXT:              payload — none. Advance to the next match against
+  //                         the active find query. The first responder up the
+  //                         chain that owns a find session handles it.
+  //                         Empty / invalid query → no-op so the keystroke
+  //                         doesn't accidentally seed a query from the
+  //                         current selection. Dispatched by ⌘G.
+  // FIND_PREVIOUS:          payload — none. Symmetric with FIND_NEXT.
+  //                         Dispatched by ⇧⌘G.
   // TOGGLE_MENU:            payload — none. Open the action menu for the
   //                         first card.
   // TOGGLE_MAXIMIZE:        payload — none. Flip the first responder's
@@ -333,6 +341,8 @@ export const TUG_ACTIONS = {
   RESET_LAYOUT:           "reset-layout",
   ADD_CARD_TO_ACTIVE_PANE: "add-card-to-active-pane",
   FIND:                   "find",
+  FIND_NEXT:              "find-next",
+  FIND_PREVIOUS:          "find-previous",
   TOGGLE_MENU:            "toggle-menu",
   TOGGLE_MAXIMIZE:        "toggle-maximize",
 

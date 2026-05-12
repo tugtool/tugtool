@@ -522,6 +522,44 @@ describe("DiffBlock — collapse", () => {
     expect(root.getAttribute("data-collapsed")).toBe("true");
   });
 
+  test("controlled `collapsed` prop overrides local state; click fires callback but doesn't write local state", () => {
+    // Phase E.1 — `collapsed` is computed from `collapsedProp ??
+    // localCollapsed` on every render. When the parent provides
+    // `collapsed`, the prop wins; toggling the cue only notifies
+    // via `onToggleCollapsed`. The parent is responsible for
+    // re-rendering with a new value.
+    const onToggle = mock((_next: boolean) => {});
+    const { container, rerender } = render(
+      <DiffBlock
+        data={{ source: "unified", text: FIXTURE_UNIFIED }}
+        collapsed={true}
+        onToggleCollapsed={onToggle}
+      />,
+    );
+    const root = container.querySelector(
+      '[data-slot="diff-body"]',
+    ) as HTMLElement;
+    expect(root.getAttribute("data-collapsed")).toBe("true");
+    const cue = container.querySelector(
+      "button.tugx-diff-fold-cue",
+    ) as HTMLElement;
+    fireEvent.click(cue);
+    // Callback fires with the requested next value...
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    expect(onToggle.mock.calls[0]?.[0]).toBe(false);
+    // ...but the visible state stays as the parent's prop says.
+    expect(root.getAttribute("data-collapsed")).toBe("true");
+
+    rerender(
+      <DiffBlock
+        data={{ source: "unified", text: FIXTURE_UNIFIED }}
+        collapsed={false}
+        onToggleCollapsed={onToggle}
+      />,
+    );
+    expect(root.getAttribute("data-collapsed")).toBe("false");
+  });
+
   test("embedded mode portals fold cue + view-toggle into the chrome's actions slot", () => {
     // Phase D — embedded composition portals resting affordances into
     // `ToolWrapperChrome`'s actions slot via `ChromeActionsTargetContext`.
