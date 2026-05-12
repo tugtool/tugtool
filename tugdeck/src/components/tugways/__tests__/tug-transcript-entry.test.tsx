@@ -178,3 +178,82 @@ describe("TugTranscriptEntry", () => {
     expect(root?.classList.contains("custom-class")).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Pin-stack contract — `--tugx-pin-stack-top`
+// ---------------------------------------------------------------------------
+//
+// The entry writes its rendered `__header` height onto the root as
+// `--tugx-pin-stack-top` so descendant sticky chrome (FileBlock /
+// DiffBlock / TerminalBlock / fenced-code headers + actions rows;
+// ToolWrapperChrome header) can telescope underneath the entry header
+// rather than overlap it. happy-dom has no layout engine — `offsetHeight`
+// returns 0 — so the assertion is just that the variable is *written*,
+// not its numeric value. Real-browser pin behavior is verified manually
+// against the gallery card per the happy-dom scoping rule.
+describe("TugTranscriptEntry — pin-stack contract", () => {
+  test("writes --tugx-pin-stack-top on the entry root after mount", () => {
+    const { container } = render(
+      <TugTranscriptEntry
+        participant="code"
+        identifier="Claude"
+        timestamp="3:14 PM"
+        body="hello"
+      />,
+    );
+    const root = container.querySelector(
+      '[data-slot="tug-transcript-entry"]',
+    ) as HTMLElement | null;
+    expect(root).not.toBeNull();
+    if (root === null) return;
+    const written = root.style.getPropertyValue("--tugx-pin-stack-top");
+    expect(written).toMatch(/^\d+px$/);
+  });
+
+  test("variable persists across re-renders with new header content", () => {
+    // ResizeObserver in happy-dom doesn't fire layout callbacks, so we
+    // can't assert that a header content change updates the value to a
+    // NEW number. What we CAN verify is that the variable is still set
+    // (the effect's seed write runs on every dep-aware update path, and
+    // the observer is re-attached when the component re-mounts; neither
+    // path nulls out the property).
+    const { container, rerender } = render(
+      <TugTranscriptEntry
+        participant="code"
+        identifier="Claude"
+        timestamp="3:14 PM"
+        body="hello"
+      />,
+    );
+    const root = container.querySelector(
+      '[data-slot="tug-transcript-entry"]',
+    ) as HTMLElement;
+    expect(root.style.getPropertyValue("--tugx-pin-stack-top")).toMatch(/^\d+px$/);
+    rerender(
+      <TugTranscriptEntry
+        participant="code"
+        identifier={<span>Claude with a longer identifier</span>}
+        timestamp="3:14 PM"
+        body="hello"
+      />,
+    );
+    expect(root.style.getPropertyValue("--tugx-pin-stack-top")).toMatch(/^\d+px$/);
+  });
+
+  test("ResizeObserver disconnects cleanly on unmount", () => {
+    // Mount + unmount must not throw. The effect's cleanup function
+    // calls `observer.disconnect()`; happy-dom's ResizeObserver stub
+    // accepts the call without error.
+    const { container, unmount } = render(
+      <TugTranscriptEntry
+        participant="code"
+        identifier="Claude"
+        body="hello"
+      />,
+    );
+    expect(
+      container.querySelector('[data-slot="tug-transcript-entry"]'),
+    ).not.toBeNull();
+    expect(() => unmount()).not.toThrow();
+  });
+});

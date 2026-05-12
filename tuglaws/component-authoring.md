@@ -748,6 +748,57 @@ When the substrate needs something it doesn't yet provide (e.g. a particular lan
 
 ---
 
+## Pin-stack composition — `--tugx-pin-stack-top`
+
+When the Tide transcript scrolls, a tower of sticky chrome can pin simultaneously: the entry header (Claude / model / timestamp), the wrapper-chrome header (Read / Edit / Bash identity), a body kind's identity header (file path / diff stats / terminal label), and the body kind's actions row (Find / Copy / fold cue / view-toggle). These bars must **stack**, not overlap — each one pins flush below the bar above it.
+
+The composition rule is a single CSS variable propagated through the cascade.
+
+**`--tugx-pin-stack-top`** — written by `TugTranscriptEntry` onto the entry root via a `useLayoutEffect` + `ResizeObserver` on its `__header` element. The value is the live measured height of that header. Descendant sticky chrome consumes it as the top offset:
+
+```css
+.tugx-file-header,
+.tugx-diff-header,
+.tugx-term-header,
+.tugx-md-fenced-code-header,
+.tool-wrapper-chrome-header {
+  position: sticky;
+  top: var(--tugx-pin-stack-top, 0);
+  z-index: 1;
+}
+```
+
+When no transcript entry is present (gallery cards, ad-hoc consumers, the `RenderInput`-routed Markdown surface), the variable is unset and the `calc()` fallback to `0` takes effect — the bar simply pins to the top of its own scrollport.
+
+Deeper-tier bars compose the same way through additional component-owned variables:
+
+- **`--tugx-toolblock-header-height`** — written by `ToolWrapperChrome` on its root from a ResizeObserver on `.tool-wrapper-chrome-header`. Body-kind actions rows inside read it so they pin BELOW the chrome header.
+- **`--tugx-file-header-height`** / **`--tugx-diff-header-height`** / **`--tugx-term-header-height`** — written by the respective body kinds on their root from a ResizeObserver on the standalone-mode identity header (unset when embedded mode suppresses the header). The body kind's actions row reads all three plus `--tugx-pin-stack-top` plus `--tugx-toolblock-header-height` in a single calc:
+
+```css
+.tugx-file-actions {
+  position: sticky;
+  top: calc(
+    var(--tugx-pin-stack-top, 0px)
+    + var(--tugx-toolblock-header-height, 0px)
+    + var(--tugx-file-header-height, 0px)
+  );
+  z-index: 1;
+}
+```
+
+The `0px` fallback in each `var()` is load-bearing — without it the entire calc resolves to nothing when ONE variable is unset, and the bar mispins. Always use `var(--name, 0px)`, never `var(--name, 0)`.
+
+**Authoring rules:**
+
+1. **Writers** — components that produce pin offsets — own a token in their slot family (`--tugx-{component}-header-height` or `--tugx-{component}-actions-height`) and write to it from `useLayoutEffect` + `ResizeObserver`. Per [L03] the registration runs before paint; per [L06] the write is to DOM via `element.style.setProperty`, never to React state.
+2. **Readers** — sticky descendants — consume the chain via `calc(var(...) + var(...) + ...)`. Each reader knows which writers it composes underneath. Adding a new level means adding a writer + a token, and extending the calc on every descendant that pins under it.
+3. **Background** — every sticky element needs an opaque background or body content bleeds through. Bind to a theme-aware token (typically `--tugx-block-strip-bg` for block-level chrome or a component-local `--tugx-{component}-header-bg` for primitives) rather than transparent or near-transparent values.
+4. **Container** — sticky binds to the nearest scroll-container ancestor. `overflow: hidden` on an ancestor traps sticky inside that ancestor (which doesn't scroll); use `overflow: clip` when you only need rounded-corner clipping without forming a scroll container.
+5. **Scroll container padding** — `padding-block` on the scroll container shifts the sticky pin reference inward by that amount (CSS Position 3 §6.5.1 — sticky `top: 0` pins to the content-box edge). Restore breathing room with `::before` / `::after` pseudo-element children or with margin on the first/last cell, never with container `padding-block`.
+
+---
+
 ## Component Patterns
 
 ### Emphasis × Role

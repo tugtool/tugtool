@@ -2329,15 +2329,15 @@ The gallery card embeds an on-screen probe (`PinProbePanel`) that walks the live
 
 **Tasks (Phase C — entry-header pin):**
 
-- [ ] Add `position: sticky; top: 0; z-index: 2` to `.tug-transcript-entry__header`.
-- [ ] Add `useLayoutEffect` + `ResizeObserver` to `tug-transcript-entry.tsx`; write `--tugx-pin-stack-top` onto the entry root.
-- [ ] Update `tug-transcript-entry.test.tsx`: variable is set after mount; updates on header-content prop change.
-- [ ] Update the module docstring with the pin-telescoping contract.
+- [x] Add `position: sticky; top: 0; z-index: 2` to `.tug-transcript-entry__header`. Done — also added opaque background via the new `--tugx-transcript-header-bg` token (bound to `--tug7-surface-global-primary-normal-overlay-rest`, matching the pane chrome) so body content doesn't bleed through.
+- [x] Add `useLayoutEffect` + `ResizeObserver` to `tug-transcript-entry.tsx`; write `--tugx-pin-stack-top` onto the entry root. Done — seed via `offsetHeight` on mount; observer keeps the variable accurate across header content / magnification changes; disconnect on cleanup.
+- [x] Update `tug-transcript-entry.test.tsx`: variable is set after mount; updates on header-content prop change. Done — 3 new tests in a "Pin-stack contract" describe block; happy-dom can't fire layout callbacks, so the assertions cover the seed write, re-render survival, and clean unmount per the happy-dom scoping rule.
+- [x] Update the module docstring with the pin-telescoping contract. Done — new "Pin-stack contract — `--tugx-pin-stack-top`" section in the .tsx docstring covering reads/writes, [L03]/[L06]/[L19]/[L20] mappings.
 
 **Tasks (gallery + docs):**
 
-- [ ] Author `gallery-pinned-headers.tsx` showing both levels pinning across a synthesized long file + multi-hunk diff + tall terminal in one transcript turn.
-- [ ] Update `tuglaws/component-authoring.md`: add a "Text content" section that names CM6 (via `TugCodeView` or `tug-text-editor`) as the canonical engine for any file-based text surface, and document the `--tugx-pin-stack-top` variable as a shared contract.
+- [x] Author `gallery-pinned-headers.tsx` showing both levels pinning across a synthesized long file + multi-hunk diff + tall terminal in one transcript turn. *(Shipped in Phase B.1 / B.2 — gallery card carries four sections including the chrome-wrapped FileBlock; with Phase C's transcript-entry pin landed, the gallery card now exercises the full three-level telescope when composed inside a transcript turn.)*
+- [x] Update `tuglaws/component-authoring.md`: add a "Text content" section that names CM6 (via `TugCodeView` or `tug-text-editor`) as the canonical engine for any file-based text surface, and document the `--tugx-pin-stack-top` variable as a shared contract. Done — "Text content" section already in place from Phase A; new "Pin-stack composition — `--tugx-pin-stack-top`" section adjacent documents the full writer/reader contract (entry → toolblock-header-height → file/diff/term-header-height → actions row), the 5 authoring rules (writer ownership, reader composition, opaque background, container clipping, scroll-container padding pitfall), and the `0px` fallback gotcha.
 
 **Tests (commands):**
 
@@ -2345,16 +2345,16 @@ The gallery card embeds an on-screen probe (`PinProbePanel`) that walks the live
 - [x] `bun test src/components/tugways/body-kinds/__tests__/file-block.test.tsx`
 - [x] `bun test src/components/tugways/body-kinds/__tests__/diff-block.test.tsx`
 - [x] `bun test src/components/tugways/body-kinds/__tests__/terminal-block.test.tsx`
-- [ ] `bun test src/components/tugways/__tests__/tug-transcript-entry.test.tsx` (Phase C)
+- [x] `bun test src/components/tugways/__tests__/tug-transcript-entry.test.tsx` (Phase C) — 12 pass.
 - [x] `bunx tsc --noEmit`
 - [x] `bun run audit:tokens lint`
 - [x] `bun test` (full suite — no regressions)
 
 **Checkpoint:**
 
-- [ ] All commands above clean.
+- [x] All commands above clean. `bunx tsc --noEmit`, `bun run audit:tokens lint`, `bun test` — 3573 pass, 0 fail.
 - [x] Manual: open Read tool on a 500-line file in both brio and harmony. Confirm: no per-line scrollbars; lines wrap; file header stays visible while scrolling deep into the body; entry header (Claude / `HH:MM AM`) stays at the top of the viewport above the file header.
-- [ ] Manual: run a `bash` command with long stdout. Confirm: Copy button sits in the pinned header, never on top of any scrollbar; scrollbar gutter reserved (no horizontal layout shift when output grows past the viewport).
+- [ ] Manual: run a `bash` command with long stdout. Confirm: Copy button sits in the pinned actions row, never on top of any scrollbar; scrollbar gutter reserved (no horizontal layout shift when output grows past the viewport).
 - [ ] Manual: long DiffBlock + tall TerminalBlock in one transcript turn. Confirm telescoping: entry header at top, then block header under it; scrolling between the two blocks transitions cleanly.
 
 ---

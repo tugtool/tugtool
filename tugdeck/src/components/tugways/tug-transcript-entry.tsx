@@ -20,12 +20,39 @@
  * (CodeSessionStore, streaming, atom rendering for user submissions) is
  * the consumer's concern.
  *
- * Laws: [L02] no React state — primitive is presentational; consumers pass
- *       slot contents directly. [L06] appearance via CSS / data-participant
- *       cascade. [L19] component authoring guide — file pair, module
- *       docstring, exported props interface, data-slot. [L20] component-
- *       token sovereignty — only `--tugx-transcript-*` drives variant
- *       differences; base `--tug-*` tokens are read but never redefined.
+ * ## Pin-stack contract — `--tugx-pin-stack-top`
+ *
+ * The `__header` is `position: sticky; top: 0; z-index: 2` (see the .css
+ * pair) so the speaker identifier + timestamp remain visible while a
+ * long entry body scrolls past — multi-hunk DiffBlocks, tall
+ * TerminalBlocks, deep FileBlocks. Block-level pinned chrome inside
+ * the entry body (FileBlock / DiffBlock / TerminalBlock / fenced-code
+ * headers + their actions rows; ToolWrapperChrome's header) consumes
+ * the variable `--tugx-pin-stack-top` to telescope BELOW the entry
+ * header rather than overlap it.
+ *
+ * To make that work, this primitive's `useLayoutEffect` registers a
+ * `ResizeObserver` on the rendered `__header` element and writes the
+ * live measured height to `--tugx-pin-stack-top` on the entry root
+ * via `style.setProperty`. The variable cascades to descendants so any
+ * sticky header in the body can stack underneath without each consumer
+ * needing to query the entry's geometry. The observer disconnect lives
+ * in the effect cleanup; height changes (timestamp re-render,
+ * identifier swap, font-size change from `--tugx-tide-magnification`)
+ * re-fire the observer and the variable stays accurate.
+ *
+ * Laws:
+ *  - [L03] the ResizeObserver registration runs in `useLayoutEffect`
+ *    (before paint) so the first sticky pass in the children sees a
+ *    correct offset rather than a one-frame-late value.
+ *  - [L06] the variable is written to DOM via `style.setProperty`,
+ *    never to React state. Appearance flows through CSS, not renders.
+ *  - [L19] file pair, module docstring, exported props interface,
+ *    `data-slot="tug-transcript-entry"` on the root.
+ *  - [L20] component-token sovereignty — only `--tugx-transcript-*`
+ *    drives variant differences; `--tugx-pin-stack-top` is the
+ *    contract this primitive WRITES (entry-header height), not a
+ *    redefinition of any neighbor's slot.
  */
 
 import "./tug-transcript-entry.css";
@@ -106,8 +133,49 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
   // serve as the name verbatim.
   const labelledById = React.useId();
 
+  // Refs for the pin-stack-top measurement. Root holds the CSS variable
+  // (so descendants inherit it via cascade); header is the observed
+  // element whose height is the value.
+  const rootRef = React.useRef<HTMLDivElement | null>(null);
+  const headerRef = React.useRef<HTMLDivElement | null>(null);
+
+  // Write `--tugx-pin-stack-top` = live header height onto the entry
+  // root. See the module docstring for the full pin-stack contract.
+  // [L03] useLayoutEffect runs before paint so the first sticky pass
+  // in the children sees the right offset. [L06] DOM write, not React
+  // state — appearance flows through CSS variables.
+  React.useLayoutEffect(() => {
+    const root = rootRef.current;
+    const header = headerRef.current;
+    if (root === null || header === null) return;
+    const write = (px: number): void => {
+      root.style.setProperty("--tugx-pin-stack-top", `${px}px`);
+    };
+    // Seed from offsetHeight so the first paint already has the value;
+    // the observer fires for subsequent changes only.
+    write(header.offsetHeight);
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry === undefined) return;
+      // `borderBoxSize` is the box-model height the browser laid out
+      // (matches `offsetHeight`); fall back to `contentRect.height` for
+      // older WebKit if the property isn't available.
+      const boxes = entry.borderBoxSize;
+      const next =
+        boxes !== undefined && boxes.length > 0
+          ? boxes[0].blockSize
+          : entry.contentRect.height;
+      write(next);
+    });
+    observer.observe(header);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
   return (
     <div
+      ref={rootRef}
       data-slot="tug-transcript-entry"
       data-participant={participant}
       role="article"
@@ -118,7 +186,7 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
         {PARTICIPANT_ICONS[participant]}
       </div>
       <div className="tug-transcript-entry__body-column">
-        <div className="tug-transcript-entry__header">
+        <div ref={headerRef} className="tug-transcript-entry__header">
           <strong
             id={labelledById}
             className="tug-transcript-entry__identifier"

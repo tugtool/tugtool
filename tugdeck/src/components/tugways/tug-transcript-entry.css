@@ -6,6 +6,16 @@
  * [data-participant] cascade onto `--tugx-transcript-icon-color`; adding a
  * participant is a per-participant flavor slot below + a matching rule.
  *
+ * The `__header` is sticky against the nearest scroll ancestor so the
+ * speaker identifier + timestamp stay visible while a long entry body
+ * (multi-hunk diff, tall terminal, deep file viewer) scrolls past.
+ * `tug-transcript-entry.tsx` measures the rendered header height and
+ * writes it onto the entry root as `--tugx-pin-stack-top`; descendant
+ * block-level pinned chrome (FileBlock / DiffBlock / TerminalBlock /
+ * ToolWrapperChrome headers) consume that variable to telescope under
+ * the entry header instead of overlapping it. See the .tsx module
+ * docstring for the full pin-stack contract.
+ *
  * Per [L17] the `--tugx-transcript-*` slots are component-local and
  * resolve to base-tier `--tug7-*` tokens in one hop.
  */
@@ -30,6 +40,13 @@ body {
   --tugx-transcript-timestamp-font-size:  var(--tug-font-size-xs);
   --tugx-transcript-body-color:           var(--tug7-element-global-text-normal-default-rest);
 
+  /* Sticky header chrome — must be opaque to hide body content
+   * scrolling underneath. Bound to the same surface family the pane
+   * chrome uses so the header reads as part of the pane surface, not
+   * as a foreign overlay. */
+  --tugx-transcript-header-bg:    var(--tug7-surface-global-primary-normal-overlay-rest);
+  --tugx-transcript-header-padding-block: var(--tug-space-sm);
+
   /* Per-participant icon flavors */
   --tugx-transcript-icon-color-user:    var(--tug7-element-tone-icon-normal-accent-rest);
   --tugx-transcript-icon-color-code:    var(--tug7-element-tone-icon-normal-agent-rest);
@@ -44,13 +61,44 @@ body {
   color: var(--tugx-transcript-body-color);
 }
 
+/* Gutter icon — sticky alongside the entry header so the speaker
+ * identity icon stays visible while a long entry body scrolls.
+ *
+ * `align-self: start` overrides the grid's default `stretch` so the
+ * icon cell is auto-height (just the SVG + matched padding), not
+ * full-entry-height. Without that override, sticky + a background
+ * would paint a column-tall colored stripe down the gutter for the
+ * entire entry length. With it, the sticky element is icon-sized and
+ * the background covers only the small region behind the SVG.
+ *
+ * `padding-block-start` mirrors the header's so the SVG and the
+ * header text share the same vertical origin. The bottom pad doesn't
+ * matter for visual alignment (no body content sits in this column),
+ * so it stays small. */
 .tug-transcript-entry__icon {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  align-self: start;
   display: flex;
   align-items: flex-start;
   justify-content: center;
   width: var(--tugx-transcript-icon-column-width);
+  padding-block: var(--tugx-transcript-header-padding-block);
+  background: var(--tugx-transcript-header-bg);
   color: var(--tugx-transcript-icon-color);
   user-select: none;
+}
+
+/* SVG-baseline correction — text inside the header has line-height
+ * leading (extra space above the visible glyphs), which the icon SVG
+ * doesn't. Without an offset, the SVG visually renders 1–2 px ABOVE
+ * the header text's top. Pushing the SVG down by ~0.125em (one
+ * eighth of the icon's em-sized box) brings their visual tops into
+ * line at the nominal `1em` icon size used inside `tide-card-
+ * transcript`, and scales correctly under `--tugx-tide-magnification`. */
+.tug-transcript-entry__icon > svg {
+  margin-block-start: 0.125em;
 }
 
 /* Per-participant icon-flavor cascade. The active row's `data-participant`
@@ -79,11 +127,29 @@ body {
   min-width: 0;
 }
 
+/* Sticky header — pins at the top of the nearest scroll ancestor
+ * (`.tug-list-view` in the transcript card) so the speaker identifier
+ * + timestamp stay visible while the entry body scrolls. `top: 0`
+ * relative to the scroll container; `z-index: 2` is higher than the
+ * block-level pinned chrome inside the body (which uses z-index 1),
+ * so the entry header always wins during transient scroll transitions
+ * when both might compete for the same row. Background is opaque
+ * (`--tugx-transcript-header-bg`) so body content scrolling under
+ * the header doesn't bleed through.
+ *
+ * `tug-transcript-entry.tsx` measures this header's height and writes
+ * it to `--tugx-pin-stack-top` on the entry root, so descendant
+ * sticky chrome consumes the offset and telescopes cleanly underneath. */
 .tug-transcript-entry__header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   flex-direction: row;
   align-items: baseline;
   gap: var(--tugx-transcript-header-gap);
+  padding-block: var(--tugx-transcript-header-padding-block);
+  background: var(--tugx-transcript-header-bg);
 }
 
 .tug-transcript-entry__identifier {
