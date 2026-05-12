@@ -283,13 +283,46 @@ body {
   border-bottom: 0;
 }
 
-/* The hunk header itself is now a `<TugCue role="muted" align="start" mono>`
- * — see diff-block.tsx. The `.tugx-diff-hunk-header` class is forwarded
- * onto that cue for callers that want to scope styles to the hunk header
- * specifically; no rules required here. The legacy `--tugx-diff-hunk-
- * header-*` and `--tugx-diff-hunk-toggle-*` token slots were retired
- * because TugCue's own `--tugx-cue-*` slots own the appearance now.
- */
+/* The hunk header is a `<TugCue role="muted" align="start" mono>` —
+ * see diff-block.tsx. The `.tugx-diff-hunk-header` class is forwarded
+ * onto that cue. The rule below makes it sticky so the `@@ -N,M +N,M @@`
+ * context stays visible while the user scrolls through the hunk's
+ * lines. The cue's appearance still flows through its own
+ * `--tugx-cue-*` slots; we only add positioning here.
+ *
+ * Sticky `top` calc consumes the full chain of upstream pin heights
+ * so the hunk header lands directly below the diff actions row:
+ *  - `--tugx-pin-stack-top`: entry-header (Phase C).
+ *  - `--tugx-toolblock-header-height`: wrapper-chrome header.
+ *  - `--tugx-diff-header-height`: diff identity header (0 when
+ *    embedded — the chrome owns identity then).
+ *  - `--tugx-diff-actions-height`: diff actions row height, written
+ *    by `diff-block.tsx`'s ResizeObserver on the actions row.
+ *
+ * The hunk header's containing block is `.tugx-diff-hunk` (its
+ * parent), so as the user scrolls past one hunk into the next, the
+ * previous header rides off-screen with its hunk's bottom edge and
+ * the next hunk's header pins in turn — the table-of-contents
+ * sticky pattern. */
+.tugx-diff-hunk-header.tugx-diff-hunk-header {
+  position: sticky;
+  top: calc(
+    var(--tugx-pin-stack-top, 0px)
+    + var(--tugx-toolblock-header-height, 0px)
+    + var(--tugx-diff-header-height, 0px)
+    + var(--tugx-diff-actions-height, 0px)
+  );
+  /* `z-index: 0` (NOT 1, NOT auto with no value): the hunk header
+   * must paint BELOW the level-1 sticky chrome (entry header,
+   * wrapper-chrome header, diff actions row), so when one hunk's
+   * header rides off-screen as the next hunk's header pins in its
+   * place, the leaving header passes UNDER the upper pin stack
+   * rather than over it. Without this, sibling DOM order would
+   * paint the hunk header on top of the chrome at z=1 — the
+   * leaving header would briefly cover the actions row, which
+   * reads as a glitch. */
+  z-index: 0;
+}
 
 .tugx-diff-hunk[data-collapsed="true"] .tugx-diff-hunk-rows {
   display: none;

@@ -47,6 +47,16 @@ body {
   --tugx-transcript-header-bg:    var(--tug7-surface-global-primary-normal-overlay-rest);
   --tugx-transcript-header-padding-block: var(--tug-space-sm);
 
+  /* Pin-stack tier gap — the chrome / actions / find rows pin a few
+   * pixels below the entry header's measured bottom (see
+   * `tug-transcript-entry.tsx`'s `TIER_GAP_PX`) so sub-pixel rounding
+   * of `offsetHeight` can never let the chrome slip under the header.
+   * That leaves a small transparent strip where body content would
+   * otherwise peek through; the header's `::after` pseudo (below)
+   * paints over that strip with the header's own background. Keep
+   * this value in sync with `TIER_GAP_PX` in the .tsx pair. */
+  --tugx-transcript-header-pin-gap: 4px;
+
   /* Per-participant icon flavors */
   --tugx-transcript-icon-color-user:    var(--tug7-element-tone-icon-normal-accent-rest);
   --tugx-transcript-icon-color-code:    var(--tug7-element-tone-icon-normal-agent-rest);
@@ -149,6 +159,23 @@ body {
   align-items: baseline;
   gap: var(--tugx-transcript-header-gap);
   padding-block: var(--tugx-transcript-header-padding-block);
+  background: var(--tugx-transcript-header-bg);
+}
+
+/* Obscuring strip — paints the small pin-stack tier gap (4 px below
+ * the header's visible bottom) in the header's own background color
+ * so the body content scrolling under it can't peek through. The
+ * pseudo is absolutely positioned so it doesn't change the header's
+ * `offsetHeight` — the `ResizeObserver` in `tug-transcript-entry.tsx`
+ * keeps measuring the un-extended header height, and the chrome /
+ * actions / find rows pin exactly at `height + TIER_GAP_PX`, flush
+ * with the bottom of this strip. */
+.tug-transcript-entry__header::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 100%;
+  height: var(--tugx-transcript-header-pin-gap);
   background: var(--tugx-transcript-header-bg);
 }
 

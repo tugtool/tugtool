@@ -120,6 +120,12 @@ body {
   gap: var(--tugx-block-strip-gap);
   padding: var(--tugx-block-strip-padding);
   background: var(--tugx-block-strip-bg);
+  /* No border-radius on the header itself. At rest, the wrapper's
+   * `border-radius` + `overflow: clip` paints the rounded top corners
+   * around the header. Once the header pins, the wrapper scrolls past
+   * and its rounded top moves up behind the entry-header's z-index: 2
+   * layer — the pinned header is left as a flat strip, which is the
+   * intended treatment for the stuck state. */
   border-bottom: 1px solid var(--tugx-block-strip-border);
   font-size: var(--tugx-toolblock-header-size);
   font-family: var(--tugx-block-strip-font);

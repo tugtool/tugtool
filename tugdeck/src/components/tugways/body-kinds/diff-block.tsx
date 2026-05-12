@@ -371,6 +371,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   // [L20] DiffBlock owns `--tugx-diff-*` (the variable is in that family).
   const rootRef = React.useRef<HTMLDivElement | null>(null);
   const headerRef = React.useRef<HTMLDivElement | null>(null);
+  const actionsRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useLayoutEffect(() => {
     const root = rootRef.current;
@@ -399,6 +400,39 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
       observer.disconnect();
     };
   }, [embedded, data === undefined]);
+
+  // Mirror of the header observer for the actions row. The hunk
+  // headers (`.tugx-diff-hunk-header`) pin BELOW the actions row, so
+  // they need to know its measured height in their sticky `top`
+  // calc — `--tugx-diff-actions-height` is the variable that
+  // carries it.
+  React.useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (root === null) return;
+    const actions = actionsRef.current;
+    if (actions === null) {
+      root.style.removeProperty("--tugx-diff-actions-height");
+      return;
+    }
+    const write = (px: number): void => {
+      root.style.setProperty("--tugx-diff-actions-height", `${px}px`);
+    };
+    write(actions.offsetHeight);
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry === undefined) return;
+      const boxes = entry.borderBoxSize;
+      const next =
+        boxes !== undefined && boxes.length > 0
+          ? boxes[0].blockSize
+          : entry.contentRect.height;
+      write(next);
+    });
+    observer.observe(actions);
+    return () => {
+      observer.disconnect();
+    };
+  }, [data === undefined]);
 
   // -- View mode (inline | side-by-side) ------------------------------------
   //
@@ -721,7 +755,11 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
       )}
 
       {empty ? null : (
-        <div className="tugx-diff-actions" data-slot="diff-actions">
+        <div
+          ref={actionsRef}
+          className="tugx-diff-actions"
+          data-slot="diff-actions"
+        >
           <button
             type="button"
             className="tugx-diff-fold-cue"
@@ -968,7 +1006,13 @@ function renderInlineHunkBody(
           {line.before_lineno ?? ""}
         </span>
         <span className="tugx-diff-gutter-after" aria-hidden="true">
-          {line.after_lineno ?? ""}
+          {/* Context lines have `before_lineno === after_lineno` — showing
+              the same number in both gutters reads as visual noise. Render
+              the number only in the `before` gutter for context lines; the
+              `after` gutter stays as an empty placeholder so the 4-column
+              grid stays aligned. Add / remove lines still fill the
+              appropriate side. */}
+          {line.kind === "context" ? "" : (line.after_lineno ?? "")}
         </span>
         <span className="tugx-diff-marker" aria-hidden="true">
           {markerFor(line.kind)}

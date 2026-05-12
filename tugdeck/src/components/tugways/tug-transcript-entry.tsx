@@ -148,12 +148,28 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
     const root = rootRef.current;
     const header = headerRef.current;
     if (root === null || header === null) return;
+    // Tier-gap: descendant sticky chrome (wrapper-chrome header,
+    // body-kind identity / actions / find rows) pins at
+    // `top: var(--tugx-pin-stack-top, 0)` — i.e. the chrome's TOP
+    // edge lands at the entry header's BOTTOM edge. With sub-pixel
+    // header heights (font line-height + padding rarely lands on an
+    // integer pixel boundary, especially under `--tugx-tide-
+    // magnification`), `offsetHeight` rounds down, so a strict
+    // `top = offsetHeight` leaves the chrome overlapping the entry
+    // by < 1px. Adding a small tier-gap (and using `Math.ceil` on
+    // the float-precise measurement) guarantees the chrome sits a
+    // few px below the entry header rather than slipping under it.
+    const TIER_GAP_PX = 4;
     const write = (px: number): void => {
-      root.style.setProperty("--tugx-pin-stack-top", `${px}px`);
+      root.style.setProperty(
+        "--tugx-pin-stack-top",
+        `${Math.ceil(px) + TIER_GAP_PX}px`,
+      );
     };
-    // Seed from offsetHeight so the first paint already has the value;
-    // the observer fires for subsequent changes only.
-    write(header.offsetHeight);
+    // Seed from getBoundingClientRect (float-precise) so the first
+    // paint already has the right value; the observer fires for
+    // subsequent changes only.
+    write(header.getBoundingClientRect().height);
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (entry === undefined) return;
