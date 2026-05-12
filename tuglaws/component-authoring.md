@@ -789,6 +789,19 @@ Deeper-tier bars compose the same way through additional component-owned variabl
 
 The `0px` fallback in each `var()` is load-bearing — without it the entire calc resolves to nothing when ONE variable is unset, and the bar mispins. Always use `var(--name, 0px)`, never `var(--name, 0)`.
 
+### Position-coordination tokens vs. appearance tokens — L20 carve-out
+
+[L20] says "A's CSS references only A-scoped tokens" — A never reaches into B's slot family. That rule is about **appearance tokens**: the seven-slot vocabulary (`surface`, `element`, etc.) that drives theming and contrast pairings. Appearance tokens are owned by exactly one component and tuned per theme; reaching into another component's appearance tokens would let A re-paint B's chrome and undermine B's per-theme tunability.
+
+**Position-coordination tokens are a separate category** and the pin-stack is the canonical example. `--tugx-pin-stack-top`, `--tugx-toolblock-header-height`, `--tugx-file-header-height`, etc. are not appearance tokens — they don't drive color, typography, or contrast pairings. They describe **the geometry of a parent that descendants need to know** so they can compute their own sticky `top` offset. By design, they cross slot boundaries: the chrome writes its measured header height and the body kind reads it.
+
+The distinguishing test:
+
+- *Does a theme tune this value to change how the component looks?* If yes, it is an appearance token and [L20] applies — keep it inside the owning component's slot family.
+- *Is the value the live measured geometry of a parent that descendants need to know to place themselves?* If yes, it is a position-coordination token and [L20] does not forbid descendants from reading it.
+
+Position-coordination tokens still follow the writer/reader chain documented above (rules 1 + 2). The chrome owns `--tugx-toolblock-header-height` in the sense that the chrome is the only writer; descendants are readers and never override the value. A body kind never declares `--tugx-toolblock-header-height: 32px` in its own CSS — it consumes the value the chrome publishes. That is the actual [L20] invariant for this token category: **single writer, many readers, no overrides**.
+
 ### Body-kind affordance hosting
 
 Resting affordances (Find trigger, Copy, fold cue, view-mode toggle) do **not** get their own sticky strip. They live as a `flex: 0 0 auto` cluster (`.tugx-{kind}-actions-cluster` carrying `data-slot="{kind}-actions"`) at the trailing edge of the identity header (`.tugx-{kind}-header`) in standalone composition, or portal into `ToolWrapperChrome`'s actions slot (`.tool-wrapper-chrome-actions[data-slot="tool-wrapper-actions"]`) in embedded composition.

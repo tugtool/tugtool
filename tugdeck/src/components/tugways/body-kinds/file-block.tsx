@@ -586,12 +586,24 @@ export const FileBlock: React.FC<FileBlockProps> = ({
       onToggleCollapsed?.(false);
     }
     setFindOpen(true);
-    // Defer focus to the next tick so the input has mounted.
-    requestAnimationFrame(() => {
-      findInputRef.current?.focus();
-      findInputRef.current?.select();
-    });
+    // Focus + select land in the useLayoutEffect below — keyed on
+    // `findOpen` so it fires after React commits the find-row mount
+    // and the input ref is set. [L05] forbids `requestAnimationFrame`
+    // for operations that depend on a React state commit; the
+    // useLayoutEffect-on-mount pattern is the canonical alternative.
   }, [collapsed, onToggleCollapsed]);
+
+  // Focus + select the find input when the find row mounts.
+  // `useLayoutEffect` runs after React commits the new tree but
+  // before the browser paints, so the input ref has been assigned
+  // and the focus call lands on a real element. The early-return
+  // guards the "find row unmounted" pass so we don't try to focus
+  // a stale ref. [L05] alternative to rAF.
+  React.useLayoutEffect(() => {
+    if (!findOpen) return;
+    findInputRef.current?.focus();
+    findInputRef.current?.select();
+  }, [findOpen]);
 
   const closeFind = React.useCallback(() => {
     setFindOpen(false);
