@@ -17,6 +17,7 @@ import { cleanup, render } from "@testing-library/react";
 
 import {
   TugTranscriptEntry,
+  formatSequenceNumber,
   type Participant,
 } from "../tug-transcript-entry";
 
@@ -238,6 +239,79 @@ describe("TugTranscriptEntry — pin-stack contract", () => {
       />,
     );
     expect(root.style.getPropertyValue("--tugx-pin-stack-top")).toMatch(/^\d+px$/);
+  });
+
+  test("formatSequenceNumber zero-pads to four digits up to 9999, then grows naturally", () => {
+    expect(formatSequenceNumber(1)).toBe("#0001");
+    expect(formatSequenceNumber(7)).toBe("#0007");
+    expect(formatSequenceNumber(42)).toBe("#0042");
+    expect(formatSequenceNumber(100)).toBe("#0100");
+    expect(formatSequenceNumber(999)).toBe("#0999");
+    expect(formatSequenceNumber(1000)).toBe("#1000");
+    expect(formatSequenceNumber(9999)).toBe("#9999");
+    expect(formatSequenceNumber(10000)).toBe("#10000");
+    expect(formatSequenceNumber(12345)).toBe("#12345");
+    // Defensive: non-finite / negative returns empty (caller mistake,
+    // not a crash).
+    expect(formatSequenceNumber(NaN)).toBe("");
+    expect(formatSequenceNumber(-1)).toBe("");
+  });
+
+  test("sequenceNumber renders next to the timestamp as #NNNN", () => {
+    const { container } = render(
+      <TugTranscriptEntry
+        participant="code"
+        identifier="Claude"
+        timestamp="12:39 PM"
+        sequenceNumber={42}
+        body="hi"
+      />,
+    );
+    const badge = container.querySelector(
+      '[data-slot="tug-transcript-entry-sequence"]',
+    ) as HTMLElement;
+    expect(badge).not.toBeNull();
+    expect(badge.textContent).toBe("#0042");
+    // Accessible name carries the spoken count so the badge isn't
+    // read as a raw "#0042" token.
+    expect(badge.getAttribute("aria-label")).toBe("Entry 42");
+  });
+
+  test("sequenceNumber renders in the entry header (next to timestamp)", () => {
+    const { container } = render(
+      <TugTranscriptEntry
+        participant="code"
+        identifier="Claude"
+        timestamp="12:39 PM"
+        sequenceNumber={3}
+        body="hi"
+      />,
+    );
+    const header = container.querySelector(
+      ".tug-transcript-entry__header",
+    ) as HTMLElement;
+    expect(header).not.toBeNull();
+    // Both the timestamp and the sequence badge live inside the header.
+    expect(
+      header.querySelector(".tug-transcript-entry__timestamp"),
+    ).not.toBeNull();
+    expect(
+      header.querySelector('[data-slot="tug-transcript-entry-sequence"]'),
+    ).not.toBeNull();
+  });
+
+  test("omitted sequenceNumber renders no badge", () => {
+    const { container } = render(
+      <TugTranscriptEntry
+        participant="code"
+        identifier="Claude"
+        timestamp="12:39 PM"
+        body="hi"
+      />,
+    );
+    expect(
+      container.querySelector('[data-slot="tug-transcript-entry-sequence"]'),
+    ).toBeNull();
   });
 
   test("ResizeObserver disconnects cleanly on unmount", () => {

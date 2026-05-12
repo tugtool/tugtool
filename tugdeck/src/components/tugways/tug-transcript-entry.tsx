@@ -88,7 +88,18 @@ export type Participant = "user" | "code" | "shell" | "command";
  * and `command` — not in the gutter. New participants extend this
  * registry with whatever icon a future design pass calls for.
  */
-const ICON_PIXEL_SIZE = 16;
+// Icon pixel size — tracks the identifier font-size in lockstep so
+// the header reads as a single proportional unit. Identifier is
+// `--tug-font-size-lg` (16px); the icon at 20px sits ~25% above
+// that, matching the icon-to-text proportion the rest of the Tug
+// component vocabulary uses (see `tug-icon-button.css`'s 2xs scale,
+// `tug-cue.css`'s icon-to-text ratios). Previously 16px (matched
+// the `sm` identifier and tracked below body text), then 18px (with
+// `md`). At 20px the icon is the dominant visual anchor of the
+// header strip, which is the contract for "the entry's identity
+// lives here." Adjust this constant if `--tugx-transcript-identifier-
+// font-size` changes — keeping the two in lockstep is load-bearing.
+const ICON_PIXEL_SIZE = 20;
 const PARTICIPANT_ICONS: Record<Participant, React.ReactNode> = {
   user: <User size={ICON_PIXEL_SIZE} />,
   code: <Bot size={ICON_PIXEL_SIZE} />,
@@ -107,12 +118,42 @@ export interface TugTranscriptEntryProps {
   identifier: React.ReactNode;
   /** Optional small timestamp rendered next to the identifier. */
   timestamp?: React.ReactNode;
+  /**
+   * Optional 1-based sequence number for this entry within its
+   * transcript. Rendered as `#NNNN` (zero-padded to four digits for
+   * the typical case; counts above 9999 grow naturally — `#10000`,
+   * `#10001`, …) alongside the timestamp. Helps the reader anchor
+   * on a specific entry when scanning a dense card.
+   *
+   * Four digits is the design budget: a single session can plausibly
+   * accumulate four-digit entry counts (long debugging back-and-
+   * forths, long-running agent loops), and a fixed-width counter
+   * pinned to the right edge of the header reads cleanly through
+   * that range without re-aligning siblings as the count grows. A
+   * five-digit session is the worst case the format degrades into,
+   * with our apologies.
+   */
+  sequenceNumber?: number;
   /** Row body content. The primitive imposes no opinion on text rendering. */
   body: React.ReactNode;
   /** Optional trailing affordance row beneath the body (badges, copy button, etc.). */
   controls?: React.ReactNode;
   /** Forwarded class name for consumer overrides. */
   className?: string;
+}
+
+/**
+ * Format a 1-based entry sequence number as `#NNNN` — zero-padded
+ * to four digits up to 9999, then growing naturally. Pure function
+ * exported for tests so the formatting rule is pin-able without
+ * rendering.
+ */
+export function formatSequenceNumber(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return "";
+  const asInt = Math.floor(n);
+  // toString().padStart only pads when needed; numbers >= 10000 stay
+  // their natural width.
+  return `#${asInt.toString().padStart(4, "0")}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,6 +164,7 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
   participant,
   identifier,
   timestamp,
+  sequenceNumber,
   body,
   controls,
   className,
@@ -211,6 +253,15 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
           </strong>
           {timestamp !== undefined && (
             <span className="tug-transcript-entry__timestamp">{timestamp}</span>
+          )}
+          {sequenceNumber !== undefined && (
+            <span
+              className="tug-transcript-entry__sequence"
+              data-slot="tug-transcript-entry-sequence"
+              aria-label={`Entry ${sequenceNumber}`}
+            >
+              {formatSequenceNumber(sequenceNumber)}
+            </span>
           )}
         </div>
         <div className="tug-transcript-entry__body">{body}</div>

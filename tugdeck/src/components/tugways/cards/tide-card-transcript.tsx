@@ -96,6 +96,17 @@ export function useSessionModelName(
  * Format an absolute millisecond timestamp as a short clock-style
  * string for display next to a transcript row's identifier.
  *
+ * The hour-minute separator uses U+2236 RATIO (`∶`) rather than the
+ * standard ASCII colon (U+003A `:`). The RATIO glyph is vertically
+ * centered between the digits the way clock-display fonts render
+ * the time separator — most text fonts paint the ASCII colon
+ * anchored to the baseline, which reads as "too low" between
+ * numerals. The substitution is portable across fonts (it's a
+ * different character, not a font-feature-settings toggle that
+ * many fonts don't ship), and pairs cleanly with the timestamp's
+ * `font-variant-numeric: tabular-nums` so each digit cell + the
+ * centered separator stays put as the time advances.
+ *
  * Returns the empty string for the special sentinel `0` so a callsite
  * can pass `entry.endedAt` unconditionally without fabricating a
  * "Jan 1 1970" timestamp on rows whose end-time was never recorded.
@@ -103,10 +114,15 @@ export function useSessionModelName(
 export function formatTranscriptTimestamp(ms: number): string {
   if (ms === 0 || !Number.isFinite(ms)) return "";
   const d = new Date(ms);
-  return d.toLocaleTimeString(undefined, {
+  const raw = d.toLocaleTimeString(undefined, {
     hour: "numeric",
     minute: "2-digit",
   });
+  // Replace the locale-emitted ASCII colon with U+2236 RATIO.
+  // Locales that use a non-colon separator (some European locales
+  // use `.`) pass through unchanged — only the ASCII `:` is
+  // substituted.
+  return raw.replace(/:/g, "∶");
 }
 
 /**
@@ -337,6 +353,7 @@ const UserRowCell: React.FC<UserRowCellProps> = ({ index, dataSource }) => {
           participant="user"
           identifier={USER_IDENTIFIER}
           timestamp={timestamp === "" ? undefined : timestamp}
+          sequenceNumber={index + 1}
           body={
             <span
               ref={(el) => { bodyRef.current = el; }}
@@ -408,6 +425,7 @@ const CodeCommittedRowCell: React.FC<CodeCommittedRowCellProps> = ({
           participant="code"
           identifier={modelName ?? CODE_DEFAULT_IDENTIFIER}
           timestamp={timestamp === "" ? undefined : timestamp}
+          sequenceNumber={index + 1}
           body={
             // The committed body is the assistant markdown followed (when
             // the turn was interrupted) by a trailing "Interrupted" badge.
@@ -497,6 +515,7 @@ interface CodeStreamingRowCellProps extends TugListViewCellProps<TideTranscriptD
 }
 
 const CodeStreamingRowCell: React.FC<CodeStreamingRowCellProps> = ({
+  index,
   modelName,
   streamingStore,
   streamingPath,
@@ -512,6 +531,7 @@ const CodeStreamingRowCell: React.FC<CodeStreamingRowCellProps> = ({
         <TugTranscriptEntry
           participant="code"
           identifier={modelName ?? CODE_DEFAULT_IDENTIFIER}
+          sequenceNumber={index + 1}
           body={
             // Thinking strip subscribes to `streamingPaths.thinking`
             // and self-hides until non-empty content arrives — a turn

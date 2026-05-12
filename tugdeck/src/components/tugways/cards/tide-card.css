@@ -95,30 +95,68 @@
   --tugx-transcript-controls-margin-top: var(--tug-space-2xs);
 }
 
-/* Identifier + timestamp scale via `em` so the magnification root
-   font-size pulls them with it. The em values (0.875 / 0.75)
-   match `--tug-font-size-sm` / `--tug-font-size-xs` against the
-   nominal 14px root used by `.tide-card-transcript`. */
+/* Identifier + timestamp + sequence-badge scale via `em` so the
+   magnification root font-size pulls them with it. Anchored to the
+   `.tide-card-transcript` nominal 14px root:
+     - identifier 0.95em ≈ 13.3px — a small bump above the
+       original 0.875em ≈ 12.25px (which sat *below* body) and a
+       touch below body text (14px). The 600 font-weight + larger
+       icon do the visual landmark work; the identifier itself
+       stays a hair compact.
+     - timestamp + sequence both 0.85em ≈ 11.9px. Above the earlier
+       0.75em (≈ 10.5px) so the metadata reads without the user
+       needing to squint, but still a clear step below the
+       identifier. Both carry tabular-nums so the digit cells
+       match — important now that the sequence is right-aligned
+       (see below) and grows from `#001` to `#999`+ over a session.
+*/
 .tide-card-transcript .tug-transcript-entry__identifier {
-  font-size: 0.875em;
+  font-size: 0.95em;
 }
 
 .tide-card-transcript .tug-transcript-entry__timestamp {
-  font-size: 0.75em;
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Sequence — right-aligned within the header row so the badge
+   becomes a fixed marker at the trailing edge regardless of how
+   long the identifier or timestamp is. `margin-left: auto` absorbs
+   the residual flex space between the timestamp and the sequence.
+   Tabular figures keep `#003` and `#012` aligned in the same
+   character cells, which is the standard "right-aligned counter
+   stays put as digits grow" treatment. */
+.tide-card-transcript .tug-transcript-entry__sequence {
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
 }
 
 /* Gutter icons (User / Bot / Shell / Command). Lucide renders SVGs
    with width / height pixel attributes — override via CSS so the
-   icon column scales with magnification. The transcript primitive's
-   `--tugx-transcript-icon-column-width` token is also redeclared in
-   `em` so the column itself widens / narrows alongside. */
+   icon column scales with magnification AND sits slightly above
+   the identifier. 1.2em ≈ 16.8px at the 14px root.
+   `margin-block-start: 0` overrides the primitive's 0.125em
+   baseline-correction nudge — that nudge was sized for the
+   original 1em icon paired with smaller body text. With the icon
+   now bigger and the identifier slightly smaller, the nudge
+   pushes the glyph visibly below the text baseline; setting it to
+   0 puts the icon and text top edges back into alignment. */
 .tide-card-transcript .tug-transcript-entry {
   --tugx-transcript-icon-column-width: 2.5em;
 }
 
 .tide-card-transcript .tug-transcript-entry__icon svg {
-  width: 1em;
-  height: 1em;
+  width: 1.2em;
+  height: 1.2em;
+  /* 1px nudge down — visually aligns the icon's optical center
+   * with the identifier text after the 0.95em / 1.2em proportion
+   * shift. Was 0 (which left the icon a hair too high), originally
+   * 0.125em (left it a hair too low). 1px is a fixed pixel rather
+   * than em because the nudge is a baseline-correction artifact of
+   * the font/icon rendering, not a content-scaled offset; it's the
+   * same 1px regardless of magnification. */
+  margin-block-start: 1px;
 }
 
 /* Per-entry control row icons (the trailing copy button). The
