@@ -222,6 +222,32 @@ body {
  * previous header rides off-screen with its hunk's bottom edge and
  * the next hunk's header pins in turn — the table-of-contents
  * sticky pattern. */
+/* ---------- Find UI row — host-side sticky-stack binding ---------- */
+
+/* The find UI is composed from `<TugBlockFindRow>`, which carries
+ * `data-slot="tug-block-find-row"` and `.tugx-block-find` as its root
+ * class. DiffBlock passes `.tugx-diff-find` to bind the row's
+ * `--tugx-block-find-top` to the diff's local telescoping-pin stack:
+ *  - `--tugx-pin-stack-top`: outer entry-header height (transcript /
+ *    pane header chain).
+ *  - `--tugx-toolblock-header-height`: wrapper-chrome header height in
+ *    embedded composition (zero in standalone).
+ *  - `--tugx-diff-header-height`: DiffBlock's identity-header height
+ *    in standalone composition (zero when `embedded={true}` — the
+ *    header is suppressed).
+ *
+ * All other find-row appearance (background, gaps, input wrap, clear
+ * button, count, options) lives in `tug-block-find-row.css` under the
+ * `--tugx-block-find-*` token family. DiffBlock contributes only the
+ * binding to its host-specific stack. */
+.tugx-diff-find {
+  --tugx-block-find-top: calc(
+    var(--tugx-pin-stack-top, 0px)
+    + var(--tugx-toolblock-header-height, 0px)
+    + var(--tugx-diff-header-height, 0px)
+  );
+}
+
 .tugx-diff-hunk-header.tugx-diff-hunk-header {
   position: sticky;
   top: calc(

@@ -3299,7 +3299,7 @@ The first-consumer migration ships **two primitives, not one** — a state hook 
 - [x] **Extract `useBlockFindSession`** (state). New hook in `tugdeck/src/components/tugways/internal/`. Owns find-row reactor + component-state-preservation slot + focus discipline + focus-key composition. Module docstring per [L19] names the hook as a consumer of the framework primitive, not a primitive itself. ✓
 - [x] **Extract `<TugBlockFindRow>`** (UI). New component + CSS pair in `tugdeck/src/components/tugways/internal/`. Renders the full find-row markup composed from Tug primitives (TugInput, TugCheckbox, TugIconButton, TugPushButton). Props: `findSession`, optional `ariaLabel`, optional `className`. Owns the `--tugx-block-find-*` token slot family per [L20]. ✓
 - [x] **Migrate FileBlock to the hook + component pair.** Replace the hand-rolled find-state machine AND the hand-rolled find-row JSX with composition: `useBlockFindSession(...)` plus `<TugBlockFindRow ...>`. Retire `.tugx-file-find-*` CSS rules in `file-block.css`; replace with a small block of rules that bind the row's sticky-top to FileBlock's local stack. Verify Cmd-F behavior unchanged for the single-block flow (commit `5f840431`'s repeated-Cmd-F focus discipline lives in the hook now). ✓
-- [ ] **Wire DiffBlock + TerminalBlock find rows.** Three lines of composition per block: import, hook call with the block's `scope`, conditional `<TugBlockFindRow>` render. Substrate-side match-highlighting is out of scope (lands per-substrate later). — Deferred to commit 3.
+- [x] **Wire DiffBlock + TerminalBlock find rows.** Three lines of composition per block: import, hook call with the block's `scope`, conditional `<TugBlockFindRow>` render. Substrate-side match-highlighting is out of scope (lands per-substrate later). ✓ Shipped at commit 3; DiffBlock and TerminalBlock now own `diffBlockResponder` / `terminalBlockResponder` with `findSession.actions` merged into their action maps; TerminalBlock gains a `--tugx-term-header-height` writer (ResizeObserver) for the find row's sticky-stack composition.
 
 **Tests.**
 
@@ -3333,19 +3333,19 @@ The commits land in order — commit 2 depends on commit 1 (the framework axis m
   - **AT0071** (app-switch) ✓, **AT0072** (card-switch) ✓, **AT0073** (reload) ✓ — all pass end-to-end against the new fixture; the find input is the focusable target, commit 1's framework axis is what makes the focus survive.
   - Inventory entries updated in `tuglaws/app-test-inventory.md` (AT0071/72/73 promoted from 🔮 deferred to ✅ shipped).
   - Revert behavior: FileBlock back to hand-rolled; find focus stops surviving (because FileBlock no longer opts in via `data-tug-focus-key`). Everything else, including the framework axis from commit 1, still works.
-- [ ] **Commit 3: `feat(tide-rendering): Phase E.10/3 — DiffBlock + TerminalBlock find rows`.** Mechanical opt-in for two more blocks; ~30 lines net across both:
-  - DiffBlock: import, `useBlockFindSession({ scope: "diff-block-find", ... })`, conditional `<TugBlockFindRow ... ariaLabel="Find in diff" />`.
-  - TerminalBlock: same shape, `scope: "terminal-block-find"`, `ariaLabel: "Find in terminal output"`.
-  - Manual checkpoints for the two new blocks (the consumer checkpoints listed below).
+- [x] **Commit 3: `feat(tide-rendering): Phase E.10/3 — DiffBlock + TerminalBlock find rows`.** Mechanical opt-in for two more blocks:
+  - DiffBlock: import, `useBlockFindSession({ scope: "diff-block-find", ... })`, conditional `<TugBlockFindRow ... ariaLabel="Find in diff" className="tugx-diff-find" />`; new `diffBlockResponder` owns `findSession.actions`; existing `viewToggleForm` re-parents to `diffBlockResponderId` so chain walks from the choice group reach `FIND_NEXT` / `FIND_PREVIOUS`; `.tugx-diff-find` binds `--tugx-block-find-top` to `pin-stack-top + toolblock-header-height + diff-header-height`. ✓
+  - TerminalBlock: same shape, `scope: "terminal-block-find"`, `ariaLabel: "Find in terminal output"`, `className: "tugx-term-find"`; existing `terminalBlockResponder` action map merges `findSession.actions` alongside `COPY`; new `--tugx-term-header-height` writer (ResizeObserver) feeds the row's sticky-top calc `pin-stack-top + toolblock-header-height + term-header-height`. ✓
+  - Manual checkpoints for the two new blocks listed below (consumer checkpoints).
   - Revert behavior: DiffBlock + TerminalBlock find rows disappear (back to the Phase E.4 stubs they were before). FileBlock and framework axis unaffected.
 
 **Tests (commands, Phase E.10):**
 
-- [x] `bunx tsc --noEmit` — clean at Commit 1 and Commit 2.
-- [x] `bun run audit:tokens lint` — zero violations at Commit 1 and Commit 2.
+- [x] `bunx tsc --noEmit` — clean at Commit 1, Commit 2, and Commit 3.
+- [x] `bun run audit:tokens lint` — zero violations at Commit 1, Commit 2, and Commit 3.
 - [ ] ~~`bun test src/components/chrome/__tests__/card-host.test.tsx src/__tests__/focus-transfer.test.ts src/components/tugways/internal/__tests__/use-block-find-session.test.ts src/components/tugways/internal/__tests__/tug-block-find-row.test.tsx` — green.~~ Withdrawn across both commits per the unit-test note above (no fake-DOM environment); hook + row coverage rides AT0071/72/73 real-app tests.
-- [x] `bun test` (full suite) — 1580/1580 pass at Commit 1 and Commit 2. (Note: full-suite count is lower than the Phase E.9 plan baseline because happy-dom and all fake-DOM tests were deleted between phases, per the policy memory; the remaining suite is fully green.)
-- [x] `just app-test at0071-content-owning-focus-survives-app-switch.test.ts at0072-content-owning-focus-survives-card-switch.test.ts at0073-content-owning-focus-survives-reload.test.ts at0074-engine-focus-fallback.test.ts` — **all four pass green at commit 2** (4/4 files, 4/4 tests). The harness regression noted at commit 1 was independently repaired by `f33d26a4` + `32d4999f`. Adjacent regression check at commit 2: `at0020 / at0024 / at0025 / at0031 / at0037 / at0067` — 6/6 files, 21/21 tests green.
+- [x] `bun test` (full suite) — 1580/1580 pass at Commit 1, Commit 2, and Commit 3. (Note: full-suite count is lower than the Phase E.9 plan baseline because happy-dom and all fake-DOM tests were deleted between phases, per the policy memory; the remaining suite is fully green.)
+- [x] `just app-test at0071-content-owning-focus-survives-app-switch.test.ts at0072-content-owning-focus-survives-card-switch.test.ts at0073-content-owning-focus-survives-reload.test.ts at0074-engine-focus-fallback.test.ts` — **all four pass green at commit 2 and commit 3** (4/4 files, 4/4 tests). The harness regression noted at commit 1 was independently repaired by `f33d26a4` + `32d4999f`. Adjacent regression check at commit 2: `at0020 / at0024 / at0025 / at0031 / at0037 / at0067` — 6/6 files, 21/21 tests green. Adjacent regression check at commit 3: same set + `at0045 / at0046 / at0068` — all green individually; the full-sweep mode's accelerated event cadence produces unrelated harness flakes (smoke-native, smoke-em, smoke-capture-phase-save, at0006-em, at0007-em, at0020, at0024, at0035-em, at0035-tide), all of which pass cleanly when re-run individually — none are caused by the find-row wiring.
 
 **Checkpoint (Phase E.10):**
 

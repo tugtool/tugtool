@@ -34,6 +34,22 @@
  *     `FileBlock`'s convention) — the same `EXT_TO_LANG` map and the
  *     same DOM-imperative swap; failures leave the plain-text fallback.
  *
+ * Find row:
+ *  - `<TugBlockFindRow>` mounted with `.tugx-diff-find` between the
+ *    identity header and the hunk stack, gated on
+ *    `findSession.state.open && !collapsed`. State, focus discipline,
+ *    reload-survival slot, and the `data-tug-focus-key` axis live in
+ *    `useBlockFindSession` ([D95] framework focus boundary). DiffBlock
+ *    owns the responder (`diffBlockResponder`) that the session's
+ *    action map (`FIND` / `FIND_NEXT` / `FIND_PREVIOUS`) attaches to;
+ *    Cmd-F dispatched through the chain reaches `findSession.open`
+ *    which fires `onBeforeOpen` (uncollapse + first-responder promote)
+ *    before flipping the row open.
+ *  - Substrate-side match-highlighting against the diff cells is out
+ *    of scope here — the row's state, focus, and reload survival
+ *    work standalone; navigation stubs to no-op until a diff-editor
+ *    search bridge lands. Match-count reads 0 in the meantime.
+ *
  * Laws:
  *  - [L02] External state enters React via `useSyncExternalStore`. The
  *    persisted view-mode preference is owned by tugbank and accessed
@@ -47,6 +63,11 @@
  *    collapse visibility flow through `data-*` attributes and CSS;
  *    React state holds only logical UI state (the collapsed-hunk Set,
  *    the local-fallback view mode, the loaded-engine handles).
+ *  - [L11] DiffBlock owns the find session via `useBlockFindSession`
+ *    and registers `diffBlockResponder` carrying that session's
+ *    action map. `viewToggleForm` registers as a child responder so
+ *    chain walks from inside its choice group reach the diff block's
+ *    `FIND_NEXT` / `FIND_PREVIOUS` handlers via the parent.
  *  - [L19] file pair (`.tsx` + `.css`), exported props interface,
  *    `data-slot="diff-body"` on the root, this docstring.
  *  - [L20] component-token sovereignty — owns the `--tugx-diff-*`
@@ -80,10 +101,14 @@ import {
 import { TugCue } from "@/components/tugways/tug-cue";
 import { TugChoiceGroup, type TugChoiceItem } from "@/components/tugways/tug-choice-group";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { useOptionalResponder } from "@/components/tugways/use-responder";
+import { useResponderChain } from "@/components/tugways/responder-chain-provider";
 import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
 import { useOuterScrollOnModifierWheel } from "@/components/tugways/internal/use-outer-scroll-on-modifier-wheel";
 import { usePositionStableClick } from "@/components/tugways/internal/use-position-stable-click";
+import { useBlockFindSession } from "@/components/tugways/internal/use-block-find-session";
+import { TugBlockFindRow } from "@/components/tugways/internal/tug-block-find-row";
 import {
   useComponentStatePreservation,
   useSavedComponentState,
@@ -659,6 +684,29 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
     captureState: () => ({ collapsed }),
   });
 
+  // ---- Responder identity for find + view-toggle chain ----------------
+  //
+  // DiffBlock graduates to "responder + responder parent" once the find
+  // row lands. The block's stable id is held in `diffBlockResponderId`
+  // (`React.useId`) so the find session's form responder
+  // (`parentResponderId`) and the view-toggle form responder
+  // (`parentId`) can both register as children. Without an explicit
+  // parentId on the view-toggle form, sibling hook calls in the same
+  // component would all read the same outer `ResponderParentContext`
+  // and register as SIBLINGS of `diffBlockResponder` — chain walks
+  // from inside the choice group would skip past the block entirely
+  // and Cmd-G / Shift-Cmd-G would not reach `FIND_NEXT` /
+  // `FIND_PREVIOUS`.
+  const diffBlockResponderId = React.useId();
+
+  // Chain manager — promotes the block to first-responder after a
+  // focus-refusing click (fold cue, Find button affordances carry
+  // `data-tug-focus="refuse"`, so the provider's pointerdown skips
+  // chain promotion on their clicks). The manager is `null` outside
+  // a `ResponderChainProvider` (gallery cards, unit tests); promote
+  // calls short-circuit via `?.`.
+  const chainManager = useResponderChain();
+
   // Position-stable click infrastructure. Two complementary mechanisms
   // keep the click target stable across layout changes:
   //
@@ -779,6 +827,12 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
     stableViewToggleClickRef.current = stableViewToggleClick;
   }, [stableViewToggleClick]);
   const viewToggleForm = useResponderForm({
+    // Explicit parentId — without it the form registers as a sibling
+    // of `diffBlockResponder` (both hook calls read the same outer
+    // ResponderParentContext) and chain walks from inside the choice
+    // group skip past the block entirely. See comment at
+    // `diffBlockResponderId` above for the full rationale.
+    parentId: diffBlockResponderId,
     selectValue: {
       [viewToggleSenderId]: (next: string) => {
         // Disengage follow-bottom BEFORE the mutator runs — same
@@ -797,6 +851,60 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
         });
       },
     },
+  });
+
+  // ---- Find UI session ----------------------------------------------------
+  //
+  // Single source for the find-row state machine, focus discipline,
+  // reload-survival slot, and `data-tug-focus-key` composition. The
+  // hook (consumer of the framework focus axis per [D95]) owns the
+  // row's internal lifecycle; DiffBlock contributes the pre-open work
+  // (uncollapse on collapsed → expand, first-responder promotion) and
+  // — once a diff-editor search bridge ships — the substrate-side
+  // navigation hooks. Until then `findNext` / `findPrevious` stub to
+  // no-op; the row still opens, accepts input, preserves focus across
+  // activation paths, and survives reload via the [A9] slot.
+  const findSession = useBlockFindSession({
+    scope: "diff-block-find",
+    componentStatePreservationKey,
+    parentResponderId: diffBlockResponderId,
+    navigation: {
+      findNext: () => undefined,
+      findPrevious: () => undefined,
+    },
+    onBeforeOpen: () => {
+      if (collapsed) {
+        // Reveal the body so the row pins below the identity header
+        // with the diff content visible. Disengage the host list's
+        // bottom-pin in the same beat (mirrors the fold-cue toggle).
+        rootRef.current?.dispatchEvent(
+          new CustomEvent("tug-disengage-follow-bottom", { bubbles: true }),
+        );
+        if (collapsedProp === undefined) {
+          setLocalCollapsed(false);
+        }
+        onToggleCollapsed?.(false);
+      }
+      // Promote DiffBlock to first-responder so Cmd-F dispatches
+      // arriving while the chain is still settling find their way
+      // home. Idempotent if we already own first-responder.
+      chainManager?.makeFirstResponder(diffBlockResponderId);
+    },
+  });
+
+  // ---- Responder registration -----------------------------------------
+  //
+  // DiffBlock owns the find session via `findSession` and is the
+  // responder for the find-related actions per [L11]. The action map
+  // comes from the session — Cmd-F / Cmd-G / Shift-Cmd-G dispatched
+  // through the chain reach the session's handlers, which in turn
+  // call `findSession.open` / the substrate-specific navigation.
+  // Registered ONCE at mount with stable handlers ([L07]: the session's
+  // action map is memoized and the handlers read live state through
+  // refs).
+  const diffBlockResponder = useOptionalResponder({
+    id: diffBlockResponderId,
+    actions: findSession.actions,
   });
 
   // Choice items are module-level constants (immutable) so the
@@ -962,29 +1070,33 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   // Composed root ref — same shape as FileBlock's `composedRootRef`.
   // Forwards to the local `rootRef` (used to dispatch the disengage-
   // follow-bottom event and as a measurement anchor) AND to the
-  // responder-form's ref-callback (writes `data-responder-id` so the
-  // chain can walk through this responder). Defined as a stable
+  // diff-block responder's ref-callback (writes `data-responder-id`
+  // so the chain can walk through this responder). The view-toggle
+  // form is a child responder reached via `parentId` and chain-walk;
+  // it does not need its own DOM element. Defined as a stable
   // callback per [L24]'s structure-zone treatment of ref callbacks.
   const composedRootRef = React.useCallback(
     (el: HTMLDivElement | null) => {
       rootRef.current = el;
-      viewToggleForm.responderRef(el);
+      diffBlockResponder.responderRef(el);
     },
-    [viewToggleForm.responderRef],
+    [diffBlockResponder.responderRef],
   );
 
   if (data === undefined) {
     return (
-      <viewToggleForm.ResponderScope>
-        <div
-          ref={composedRootRef}
-          data-slot={DATA_SLOT_ROOT}
-          data-empty="true"
-          className={
-            className === undefined ? "tugx-diff" : `tugx-diff ${className}`
-          }
-        />
-      </viewToggleForm.ResponderScope>
+      <diffBlockResponder.ResponderScope>
+        <viewToggleForm.ResponderScope>
+          <div
+            ref={composedRootRef}
+            data-slot={DATA_SLOT_ROOT}
+            data-empty="true"
+            className={
+              className === undefined ? "tugx-diff" : `tugx-diff ${className}`
+            }
+          />
+        </viewToggleForm.ResponderScope>
+      </diffBlockResponder.ResponderScope>
     );
   }
 
@@ -996,38 +1108,40 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
 
   if (hunks === null) {
     return (
-      <viewToggleForm.ResponderScope>
-        <div
-          ref={composedRootRef}
-          data-slot={DATA_SLOT_ROOT}
-          data-loading="true"
-          data-embedded={embedded ? "true" : undefined}
-          data-view-mode={viewMode}
-          className={rootClass}
-        >
-          {embedded ? null : (
-            <div
-              ref={headerRef}
-              className="tugx-diff-header"
-              data-slot={DATA_SLOT_HEADER}
-            >
-              {headerBasename === "" ? null : (
-                <span
-                  className="tugx-diff-path"
-                  data-slot={DATA_SLOT_PATH}
-                  title={filePath}
-                >
-                  {headerBasename}
-                </span>
-              )}
-              <span className="tugx-diff-spacer" />
+      <diffBlockResponder.ResponderScope>
+        <viewToggleForm.ResponderScope>
+          <div
+            ref={composedRootRef}
+            data-slot={DATA_SLOT_ROOT}
+            data-loading="true"
+            data-embedded={embedded ? "true" : undefined}
+            data-view-mode={viewMode}
+            className={rootClass}
+          >
+            {embedded ? null : (
+              <div
+                ref={headerRef}
+                className="tugx-diff-header"
+                data-slot={DATA_SLOT_HEADER}
+              >
+                {headerBasename === "" ? null : (
+                  <span
+                    className="tugx-diff-path"
+                    data-slot={DATA_SLOT_PATH}
+                    title={filePath}
+                  >
+                    {headerBasename}
+                  </span>
+                )}
+                <span className="tugx-diff-spacer" />
+              </div>
+            )}
+            <div className="tugx-diff-loading" data-slot={DATA_SLOT_LOADING}>
+              Computing diff…
             </div>
-          )}
-          <div className="tugx-diff-loading" data-slot={DATA_SLOT_LOADING}>
-            Computing diff…
           </div>
-        </div>
-      </viewToggleForm.ResponderScope>
+        </viewToggleForm.ResponderScope>
+      </diffBlockResponder.ResponderScope>
     );
   }
 
@@ -1098,6 +1212,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
       : null;
 
   return (
+    <diffBlockResponder.ResponderScope>
     <viewToggleForm.ResponderScope>
     <div
       ref={composedRootRef}
@@ -1144,6 +1259,14 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
       )}
       {portaledAffordances}
 
+      {findSession.state.open && !empty && !collapsed ? (
+        <TugBlockFindRow
+          findSession={findSession}
+          ariaLabel="Find in diff"
+          className="tugx-diff-find"
+        />
+      ) : null}
+
       {!collapsed && renderData !== null ? (
         <div className="tugx-diff-hunks" data-slot={DATA_SLOT_HUNKS}>
           {renderData.map((hunkData, index) => {
@@ -1189,6 +1312,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
       ) : null}
     </div>
     </viewToggleForm.ResponderScope>
+    </diffBlockResponder.ResponderScope>
   );
 };
 
