@@ -29,7 +29,10 @@ import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
-import { useComponentStatePreservation } from "./use-component-state-preservation";
+import {
+  useComponentStatePreservation,
+  useSavedComponentState,
+} from "./use-component-state-preservation";
 
 // ---- Types ----
 
@@ -203,8 +206,14 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
     // `checked`. The user still clicks the same element;
     // `handleCheckedChange` keeps the mirror in sync.
     const isExternallyControlled = checked !== undefined;
+    const savedCheckboxState = useSavedComponentState<TugCheckboxState>(
+      componentStatePreservationKey,
+    );
     const [internalChecked, setInternalChecked] = useState<TugCheckedState>(
-      defaultChecked ?? false,
+      () =>
+        typeof savedCheckboxState?.checked === "boolean"
+          ? savedCheckboxState.checked
+          : (defaultChecked ?? false),
     );
     const effectiveChecked = isExternallyControlled
       ? checked
@@ -233,30 +242,14 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
     // Opt-in Component State Preservation Protocol. The hook no-ops
     // when `componentStatePreservationKey` is undefined, so standalone
     // / gallery uses remain unaffected. Capture reads the
-    // `effectiveChecked` source of truth; restore updates internal
-    // state in the uncontrolled path and dispatches a `toggle` for the
-    // controlled path (a best-effort re-dispatch; the parent is still
-    // in charge). [D13] / [A9].
+    // `effectiveChecked` source of truth. The mount-in-saved-state
+    // half lives above in `useState`'s initializer; the controlled
+    // (`isExternallyControlled`) path doesn't need to re-dispatch on
+    // restore because the parent responder owns the value and has its
+    // own saved state via [A9]. [D13] / [A9].
     useComponentStatePreservation<TugCheckboxState>({
       componentStatePreservationKey,
       captureState: () => ({ checked: effectiveChecked === true }),
-      restoreState: (saved) => {
-        const nextBool =
-          typeof (saved as TugCheckboxState | undefined)?.checked ===
-          "boolean"
-            ? (saved as TugCheckboxState).checked
-            : false;
-        if (isExternallyControlled) {
-          controlDispatch({
-            action: TUG_ACTIONS.TOGGLE,
-            value: nextBool,
-            sender: effectiveSenderId,
-            phase: "discrete",
-          });
-        } else {
-          setInternalChecked(nextBool);
-        }
-      },
     });
 
     // Role injection — every path injects surface-toggle-primary tokens. [L06]

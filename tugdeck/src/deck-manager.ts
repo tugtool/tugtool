@@ -232,11 +232,13 @@ export class DeckManager implements IDeckManagerStore {
     new Map();
 
   /**
-   * Framework orchestrator for capture/restore ([A9c]). Every save
-   * trigger (debounced callback, close-before-destroy flush,
-   * `saveState` RPC) routes through `captureCardState`; every restore
-   * trigger routes through `restoreCardState`. `CardHost` registers its
-   * per-card assembler with this orchestrator on mount.
+   * Framework orchestrator for capture ([A9c]). Every save trigger
+   * (debounced callback, close-before-destroy flush, `saveState` RPC)
+   * routes through `captureCardState`. `CardHost` registers its
+   * per-card assembler with this orchestrator on mount. Restore is not
+   * the orchestrator's responsibility; consumers mount in their saved
+   * state via `useSavedComponentState` / `useSavedRegionScroll` (see
+   * `tuglaws/state-preservation.md` → "Restoring saved state at mount").
    */
   private readonly cardStateOrchestrator: CardStateOrchestrator =
     new CardStateOrchestrator((cardId) =>
@@ -1249,7 +1251,7 @@ export class DeckManager implements IDeckManagerStore {
    * ([D13], [A9]) for `cardId`, creating it lazily on first call. Used
    * by `useComponentStatePreservation` to register / unregister
    * capture/restore closures; used by the framework orchestration layer
-   * (`captureCardState` / `restoreCardState`) at save and restore time.
+   * (`captureCardState`) at save time.
    *
    * The registry is discarded in
    * `discardComponentStatePreservationRegistry(cardId)` once the card
@@ -1282,19 +1284,12 @@ export class DeckManager implements IDeckManagerStore {
    * `cardId`. Called from `_removeCard` and `_closePane` alongside
    * `flushSaveCallbackBeforeDestruction` so a card's registered
    * closures don't outlive the card itself.
-   *
-   * Also drops the orchestrator's per-card late-mount cache
-   * (`lastBagComponents` / `appliedKeys`) so any saved-state retained
-   * across the registry discard is released. The registry's own
-   * `clear()` removes the `observeRegister` subscription closure (which
-   * holds the cache pointer); this just frees the cache eagerly.
    */
   private discardComponentStatePreservationRegistry(cardId: string): void {
     const registry = this.componentStatePreservationRegistries.get(cardId);
     if (!registry) return;
     registry.clear();
     this.componentStatePreservationRegistries.delete(cardId);
-    this.cardStateOrchestrator.discardCardState(cardId);
   }
 
   /**
@@ -1317,16 +1312,6 @@ export class DeckManager implements IDeckManagerStore {
    */
   captureCardState(cardId: string): CardStateBag {
     return this.cardStateOrchestrator.captureCardState(cardId);
-  }
-
-  /**
-   * Apply `bag.components` to the card's registered components via
-   * the orchestrator. Framework-axis restore (content, scroll, DOM
-   * selection, focus, form controls, region scroll) remains driven
-   * by CardHost's existing lifecycle hooks.
-   */
-  restoreCardState(cardId: string, bag: CardStateBag): void {
-    this.cardStateOrchestrator.restoreCardState(cardId, bag);
   }
 
   /**
@@ -1513,7 +1498,6 @@ export class DeckManager implements IDeckManagerStore {
           registry.clear();
           this.componentStatePreservationRegistries.delete(prevId);
         }
-        this.cardStateOrchestrator.discardCardState(prevId);
       }
     }
 

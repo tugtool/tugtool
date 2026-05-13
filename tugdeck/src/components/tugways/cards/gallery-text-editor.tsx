@@ -80,7 +80,10 @@ import type { TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import { TugValueInput } from "@/components/tugways/tug-value-input";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
-import { useComponentStatePreservation } from "@/components/tugways/use-component-state-preservation";
+import {
+  useComponentStatePreservation,
+  useSavedComponentState,
+} from "@/components/tugways/use-component-state-preservation";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { captureEditState } from "@/components/tugways/tug-text-editor/keymap";
 import { useCardWorkspaceKey } from "@/components/tugways/hooks/use-card-workspace-key";
@@ -313,9 +316,23 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
   const editRef = useRef<TugTextEditorDelegate>(null);
 
   // ---- Layout / state props ----
+  // Mount-in-saved-state for every persisted prop. The saved value (if
+  // any) seeds the corresponding `useState` initializer so the gallery
+  // card mounts in the user's last-saved configuration on cold boot —
+  // no post-mount apply pass.
+  const savedMaximized = useSavedComponentState<boolean>("maximized");
+  const savedFontFamily = useSavedComponentState<string | null>("fontFamily");
+  const savedFontSize = useSavedComponentState<number | null>("fontSize");
+  const savedLineHeight = useSavedComponentState<number | null>("lineHeight");
+  const savedLetterSpacing = useSavedComponentState<string | null>(
+    "letterSpacing",
+  );
+
   const [maxRows, setMaxRows] = useState<number>(15);
   const [growDirection, setGrowDirection] = useState<"up" | "down">("down");
-  const [maximized, setMaximized] = useState<boolean>(false);
+  const [maximized, setMaximized] = useState<boolean>(() =>
+    typeof savedMaximized === "boolean" ? savedMaximized : false,
+  );
   const [disabled, setDisabled] = useState<boolean>(false);
 
   // ---- Focus / border (existing) ----
@@ -330,10 +347,34 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
   // ---- Typography props ----
   // `undefined` means "let the prop fall through to the token default";
   // explicit values override.
-  const [fontFamily, setFontFamily] = useState<string | undefined>(undefined);
-  const [fontSize, setFontSize] = useState<number | undefined>(undefined);
-  const [lineHeight, setLineHeight] = useState<number | undefined>(undefined);
-  const [letterSpacing, setLetterSpacing] = useState<string | undefined>(undefined);
+  const [fontFamily, setFontFamily] = useState<string | undefined>(() =>
+    savedFontFamily === null
+      ? undefined
+      : typeof savedFontFamily === "string"
+        ? savedFontFamily
+        : undefined,
+  );
+  const [fontSize, setFontSize] = useState<number | undefined>(() =>
+    savedFontSize === null
+      ? undefined
+      : typeof savedFontSize === "number"
+        ? savedFontSize
+        : undefined,
+  );
+  const [lineHeight, setLineHeight] = useState<number | undefined>(() =>
+    savedLineHeight === null
+      ? undefined
+      : typeof savedLineHeight === "number"
+        ? savedLineHeight
+        : undefined,
+  );
+  const [letterSpacing, setLetterSpacing] = useState<string | undefined>(() =>
+    savedLetterSpacing === null
+      ? undefined
+      : typeof savedLetterSpacing === "string"
+        ? savedLetterSpacing
+        : undefined,
+  );
 
   // ---- View controls ----
   const [lineWrap, setLineWrap] = useState<boolean>(true);
@@ -372,41 +413,22 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
   useComponentStatePreservation<boolean>({
     componentStatePreservationKey: "maximized",
     captureState: () => maximized,
-    restoreState: (v) => {
-      if (typeof v === "boolean") setMaximized(v);
-    },
   });
   useComponentStatePreservation<string | null>({
     componentStatePreservationKey: "fontFamily",
     captureState: () => fontFamily ?? null,
-    restoreState: (v) => {
-      if (v === null) setFontFamily(undefined);
-      else if (typeof v === "string") setFontFamily(v);
-    },
   });
   useComponentStatePreservation<number | null>({
     componentStatePreservationKey: "fontSize",
     captureState: () => fontSize ?? null,
-    restoreState: (v) => {
-      if (v === null) setFontSize(undefined);
-      else if (typeof v === "number") setFontSize(v);
-    },
   });
   useComponentStatePreservation<number | null>({
     componentStatePreservationKey: "lineHeight",
     captureState: () => lineHeight ?? null,
-    restoreState: (v) => {
-      if (v === null) setLineHeight(undefined);
-      else if (typeof v === "number") setLineHeight(v);
-    },
   });
   useComponentStatePreservation<string | null>({
     componentStatePreservationKey: "letterSpacing",
     captureState: () => letterSpacing ?? null,
-    restoreState: (v) => {
-      if (v === null) setLetterSpacing(undefined);
-      else if (typeof v === "string") setLetterSpacing(v);
-    },
   });
 
   // Per-card runtime history. The ref-held array is the single source

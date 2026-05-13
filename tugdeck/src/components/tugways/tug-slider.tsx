@@ -312,17 +312,12 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
 
     // Opt-in Component State Preservation Protocol. Hook no-ops when
     // `componentStatePreservationKey` is undefined. Controlled-only —
-    // restore re-dispatches `setValue` (discrete phase) so the parent
-    // updates. [D13] / [A9].
+    // the parent responder owns `value` and carries its own saved state
+    // via [A9]; it mounts in the saved value on cold boot, which flows
+    // back down here through the `value` prop. [D13] / [A9].
     useComponentStatePreservation<TugSliderState>({
       componentStatePreservationKey,
       captureState: () => ({ value }),
-      restoreState: (saved) => {
-        if (saved === null || typeof saved !== "object") return;
-        const next = (saved as Partial<TugSliderState>).value;
-        if (typeof next !== "number" || !Number.isFinite(next)) return;
-        dispatchSetValue(next, "discrete");
-      },
     });
 
     // Live ref to the latest `dispatchSetValue` so the window-level

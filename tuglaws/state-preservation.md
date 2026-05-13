@@ -24,19 +24,19 @@ The protocol has two layers because the question "what is the unit of preserved 
 
 ### Component-level — `useComponentStatePreservation`
 
-An individual stateful control opts in by passing a `componentStatePreservationKey` to its hook call. The framework treats the control as a leaf: at capture time it reads the control's current state via the registered `captureState` closure; at restore time it pushes a previously captured payload back through `restoreState`. The component owns the meaning of the payload (a boolean for a checkbox, a number for a slider, the open accordion section index for an accordion) and the framework treats it as opaque JSON.
+An individual stateful control opts in by passing a `componentStatePreservationKey` to its hook call. The framework treats the control as a leaf: at capture time it reads the control's current state via the registered `captureState` closure. The restore half is mount-time: the consumer reads its saved value through `useSavedComponentState<T>` (or `useSavedRegionScroll` for inner-scroll state) and seeds its `useState` initializer with it, so the first paint after restore already reflects the user's last-saved value. The component owns the meaning of the payload (a boolean for a checkbox, a number for a slider, the open accordion section index for an accordion) and the framework treats it as opaque JSON.
 
-The hook is implemented in [`use-component-state-preservation.tsx`](../tugdeck/src/components/tugways/use-component-state-preservation.tsx). Usage:
+The hooks are implemented in [`use-component-state-preservation.tsx`](../tugdeck/src/components/tugways/use-component-state-preservation.tsx). Usage:
 
 ```tsx
 function TugCheckbox({ componentStatePreservationKey, ...props }: Props) {
-  const [checked, setChecked] = useState(false);
+  const saved = useSavedComponentState<{ checked: boolean }>(
+    componentStatePreservationKey,
+  );
+  const [checked, setChecked] = useState(() => saved?.checked ?? false);
   useComponentStatePreservation({
     componentStatePreservationKey,
-    captureState: () => checked,
-    restoreState: (saved) => {
-      if (typeof saved === "boolean") setChecked(saved);
-    },
+    captureState: () => ({ checked }),
   });
   // ...
 }
@@ -80,7 +80,9 @@ Everything below is grep-stable. Searching this document for a name listed here 
 
 Defined in [`use-component-state-preservation.tsx`](../tugdeck/src/components/tugways/use-component-state-preservation.tsx) and [`use-card-state-preservation.tsx`](../tugdeck/src/components/tugways/use-card-state-preservation.tsx).
 
-- **`useComponentStatePreservation`** — Component-level opt-in. Takes `{ componentStatePreservationKey, captureState, restoreState }`; registers the closures (held in refs synced every render) with the nearest `ComponentStatePreservationRegistry` inside `useLayoutEffect` ([L03]). No-op when `componentStatePreservationKey` is `undefined` or when rendered outside any card. ([D13], [A9])
+- **`useComponentStatePreservation`** — Component-level opt-in (capture side). Takes `{ componentStatePreservationKey, captureState }`; registers the closure (held in a ref synced every render) with the nearest `ComponentStatePreservationRegistry` inside `useLayoutEffect` ([L03]). No-op when `componentStatePreservationKey` is `undefined` or when rendered outside any card. ([D13], [A9])
+- **`useSavedComponentState<T>(componentStatePreservationKey)`** — Component-level opt-in (restore side). Reads `bag.components[scopedKey]` synchronously in render via `useSyncExternalStore` against the deck manager's notify channel. Returns `undefined` outside a card or when no value is saved. Consumed inside a `useState` initializer so the first paint reflects the saved value.
+- **`useSavedRegionScroll(scrollKey)`** — Region-scroll-axis read companion. Returns `bag.regionScroll[scrollKey]` (`{ x: number; y: number; meta?: unknown } | undefined`) synchronously in render. Consumed by imperative renderers that accept an `initialScrollTop` parameter; the scroller is created at the saved position so its first observable `scrollTop` already matches the bag.
 - **`useCardStatePreservation`** — Card-level opt-in. Takes `{ onSave, onRestore, onCardActivated?, onCardWillDeactivate? }`; registers a `CardStatePreservationCallbacks` record with the enclosing `CardHost` via `CardStatePreservationContext`. Stable wrappers that read from refs at call time — option changes do not re-register ([D02]).
 
 ### Registry
@@ -138,34 +140,70 @@ The capture-phase invariant ([A9], gated by [`smoke-capture-phase-save.test.ts`]
 
 ### Restore moments
 
-`CardHost` calls `onRestore` (and the framework iterates the registry to push payloads into `restoreState`) at exactly these moments:
+The framework has two restore mechanisms; each handles a different transition class.
+
+**Content-axis restore** runs through `CardHost`'s registered `onRestore` callback. It fires at exactly these moments:
 
 1. **Cold-boot mount.** First mount of `CardHost` after a process boot, when a previously-saved bag exists for this `cardId`.
 2. **Cross-pane move replay.** A card moved between panes is unmounted at the source and re-mounted at the destination; the bag captured at close-before-destroy is replayed on the new `CardHost`.
 3. **Tab-close-then-reopen.** Same shape as cross-pane move — a fresh `CardHost` mount with a previously-saved bag.
-4. **HMR content-factory remount (dev-only).** When Vite hot-replaces a module that React Fast Refresh handles by remounting just the content factory (CardHost itself stays up), `useCardStatePreservation`'s cleanup-then-mount cycle drives a second `register` call on the same CardHost. CardHost's `registerStatePreservationCallbacks` counts real registrations; the second-or-later real call (carrying `restorePendingRef`) is treated as a remount. The one-shot guards `hasAppliedContentRestoreRef` and `hasRestoredComponentsRef` reset, the `callbacksVersion` bump re-fires the existing restore effects, and both `bag.content` and `bag.components` replay onto the new tree. The framework-axes restore effect (`bag.scroll`, `bag.formControls`, `bag.regionScroll`, `bag.domSelection`, `bag.focus`) also re-fires on the same version bump. See [The HMR bridge](#the-hmr-bridge) and the corresponding `card-host-hmr-remount.test.tsx` test for end-to-end coverage of this transition.
+4. **HMR content-factory remount (dev-only).** When Vite hot-replaces a module that React Fast Refresh handles by remounting just the content factory (CardHost itself stays up), `useCardStatePreservation`'s cleanup-then-mount cycle drives a second `register` call on the same CardHost. CardHost's `registerStatePreservationCallbacks` counts real registrations; the second-or-later real call (carrying `restorePendingRef`) is treated as a remount. The one-shot guard `hasAppliedContentRestoreRef` resets, the `callbacksVersion` bump re-fires the existing restore effects, and `bag.content` replays onto the new tree. The framework-axes restore effect (`bag.scroll`, `bag.formControls`, `bag.regionScroll`, `bag.domSelection`, `bag.focus`) also re-fires on the same version bump. See [The HMR bridge](#the-hmr-bridge) and the corresponding `card-host-hmr-remount.test.tsx` test for end-to-end coverage of this transition.
+
+**Component-axis restore** does not run as an effect. Components read their saved value at render time via the dedicated accessor hooks — see [Restoring saved state at mount](#restoring-saved-state-at-mount) below.
 
 Restore does **not** fire on intra-pane tab switch. Tab switches are pure visibility transitions: the inactive card's DOM stays mounted, the user's state stays alive in the live tree, and there is nothing to restore because nothing was destroyed. This is L23 in its strongest form.
 
-### Late-mounting components
+### Restoring saved state at mount
 
-`CardHost`'s one-shot restore effect (`hasRestoredComponentsRef`) fires once per CardHost mount, after every descendant's `useLayoutEffect` has run. That order is right for components that mount **synchronously** along with CardHost — every `useComponentStatePreservation` registration has landed in the per-card `ComponentStatePreservationRegistry` by the time the parent effect iterates it.
+The component-axis (`bag.components`) and the inner-scroll axis (`bag.regionScroll`) do not need a post-mount restore effect. Components read their saved value at render time and seed their initial state with it — first paint after restore is already in the saved state.
 
-It is not right for components that mount **asynchronously** behind a data-source gate. Tide-card is the canonical case: the transcript feed arrives from session resume after CardHost has mounted, the cells render, the tool wrappers mount inside the cells, and only then do those body kinds (`FileBlock`, `TerminalBlock`, `DiffBlock`) register with the registry. By that point CardHost's one-shot has already iterated an empty registry and `bag.components` would sit unused.
+The contract is one sentence: **user-visible state at first paint after restore equals user-visible state at last save before destruction.** No intermediate frame painted with the `useState` default. No jump from a 0 scrollTop to the saved scrollTop.
 
-The framework closes the gap at the orchestrator. `CardStateOrchestrator.restoreCardState`:
+Two accessor hooks deliver saved state into the React tree at render time:
 
-1. Caches `bag.components` on a per-card map (`lastBagComponents`) — every call replaces the cache so the most recent saved bag wins.
-2. Iterates the registry parent-first and applies the cached value to every currently-registered key (the synchronous-mount path; unchanged in shape from before).
-3. Subscribes once per card to the registry's `observeRegister` channel — a synchronous observer that fires the instant a component calls `register()`. The subscriber pulls from `lastBagComponents.get(cardId)` and applies via `entry.restoreRef.current?.(saved)` whenever the cache holds the registering key.
+- `useSavedComponentState<T>(componentStatePreservationKey)` — returns `bag.components[scopedKey]` or `undefined`. Consumed inside a `useState` initializer.
+- `useSavedRegionScroll(scrollKey)` — returns `bag.regionScroll[scrollKey]` or `undefined`. Consumed by imperative renderers (TerminalBlock's virtualized scrollport, FileBlock's CM6 mount) that accept an `initialScrollTop` parameter and write it into the scroller at creation time.
 
-**Re-apply on every register.** The contract is "apply on every mount that registers a key the cache holds," not "apply once per card lifecycle." If a body kind unmounts and remounts within the same card lifecycle — e.g., tide-card's `TideRestoring` overlay swaps in and out around the transcript, unmounting and remounting every body kind in the process — the orchestrator re-applies the cached bag on the second mount. React's `useState` initializer fires fresh on remount (defaults); without the re-apply the user would see the default state, which is the regression that motivated the late-mount path in the first place.
+Both hooks subscribe to the deck manager's notify channel via `useSyncExternalStore` per `[L02]`. Today the typical consumption pattern (read inside a `useState` initializer) only consults the value once, so reactivity is a free correctness property — the wiring stays `[L02]`-correct if a future consumer reads outside an initializer.
 
-The "user might edit between save and unmount, then we'd clobber on remount" concern is bogus: an edit between save and unmount is already lost when React resets the component's state on unmount. Re-applying the last-saved value on remount is strictly better than falling back to defaults — same edit is lost either way, but the remount lands at a state the user actually saw at some point rather than the initial default. `[L23]` is satisfied: the user-visible state tracks the framework's last save.
+The canonical pattern for fold-style state (the body-kind fold flag, a popover open state, a toggle):
 
-The subscription closure is held by the registry instance itself; when the registry is `clear()`-ed at card destruction (`discardComponentStatePreservationRegistry`), the closure becomes unreachable and `CardStateOrchestrator.discardCardState(cardId)` clears the per-card cache. New mounts of the same `cardId` get a fresh registry and a fresh cache.
+```tsx
+const saved = useSavedComponentState<{ collapsed: boolean }>(
+  componentStatePreservationKey,
+);
+const [collapsed, setCollapsed] = useState(
+  () => saved?.collapsed ?? overThreshold,
+);
 
-**Authoring note.** Consumers of `useComponentStatePreservation` do not need to think about whether they mount synchronously, asynchronously, or remount within the same card lifecycle — the framework handles all three. Register and unregister in the usual `useLayoutEffect` pattern; the orchestrator delivers the saved value whenever the registration lands. The only invariant that still bears on authors is `[L23]`: capture closures must read from the live source of truth (React state / refs / DOM) at the moment they're called, not from a stale closure captured at hook-defining time.
+useComponentStatePreservation({
+  componentStatePreservationKey,
+  captureState: () => ({ collapsed }),
+});
+```
+
+The canonical pattern for scroll-style state (an inner scrollport whose scrollTop is preserved on the region-scroll axis) is built on the same primitive plus an imperative-renderer parameter:
+
+```tsx
+const savedScroll = useSavedRegionScroll(scrollKey);
+const initialScrollTopRef = useRef<number | undefined>(savedScroll?.y);
+const firstRenderConsumedRef = useRef(false);
+const consumeInitialScrollTop = useCallback((): number | undefined => {
+  if (firstRenderConsumedRef.current) return undefined;
+  firstRenderConsumedRef.current = true;
+  return initialScrollTopRef.current;
+}, []);
+
+// ...later, at the imperative-renderer call site:
+renderTerminal(outer, body, data, getOuter, collapsed, "top", scrollKey,
+  consumeInitialScrollTop());
+```
+
+The `consumeInitialScrollTop` one-shot keeps the saved value tied to the FIRST creation of the inner scroller. Subsequent rebuilds (collapse-toggle, streaming re-render) pass `undefined` and rely on the anchor-based default. The element-identity-gated `MutationObserver` pass in `card-host.tsx` re-applies the saved bag value to a rebuilt scroller when its element identity changes mid-card-lifetime, so the inner scroll restore stays robust without putting React's render cycle in the loop.
+
+**Why no fallback to a post-mount apply.** The Phase E.7 path attempted to apply saved component state via a registry-observer callback that fired after mount. The fix worked at the data layer but cost the user three-to-five intermediate paints per body kind on cold boot — the default-collapsed state painted, then the saved-expanded state painted, then the inner scroller was recreated at scrollTop=0, then the MutationObserver-driven apply wrote the saved scrollTop. Developer > Reload looked like wild scrolling. The post-mount mechanism cannot coexist with the contract, so it was removed entirely (not retained as a fallback). Every consumer migrates to the synchronous-initializer pattern, or it doesn't use this axis at all.
+
+**Authoring note.** Capture closures (`captureState` / `onSave`) must read from the live source of truth (React state / refs / DOM) at the moment they're called, not from a stale closure captured at hook-defining time — `[L07]`. The hook stores the closure in a ref and re-syncs it on every render so the framework always sees the latest render's state.
 
 ### What's in `bag` at save time vs. restore time
 
@@ -190,7 +228,7 @@ The bridge also calls `import.meta.hot.accept(() => import.meta.hot.invalidate()
 
 ### Framework remount detection — `card-host.tsx`
 
-When React Fast Refresh remounts a content factory whose tree lives inside a CardHost that itself stays mounted, `useCardStatePreservation`'s cleanup-then-mount cycle drives a second `register` call. CardHost's `registerStatePreservationCallbacks` counts real registrations (those carrying `restorePendingRef`) per CardHost instance. The second-or-later real call resets `hasAppliedContentRestoreRef` and `hasRestoredComponentsRef`; the `callbacksVersion` bump re-fires the existing restore effects, replaying both `bag.content` and `bag.components` onto the new tree. The framework-axes restore effect (scroll, formControls, regionScroll, domSelection, focus) also re-fires on the same version bump for non-content cards.
+When React Fast Refresh remounts a content factory whose tree lives inside a CardHost that itself stays mounted, `useCardStatePreservation`'s cleanup-then-mount cycle drives a second `register` call. CardHost's `registerStatePreservationCallbacks` counts real registrations (those carrying `restorePendingRef`) per CardHost instance. The second-or-later real call resets `hasAppliedContentRestoreRef`; the `callbacksVersion` bump re-fires the existing restore effects, replaying `bag.content` and the framework-axis restore (scroll, formControls, regionScroll, domSelection, focus) onto the new tree for non-content cards. `bag.components` doesn't need a re-fire pass — the remounted descendants read their saved values synchronously through `useSavedComponentState` on first render and seed their `useState` initializers with the saved value.
 
 ### Substrate-local snapshot — `tugdeck/src/components/tugways/tug-edit.tsx`
 
@@ -316,7 +354,7 @@ Axes compose: a card with a `useCardStatePreservation` engine, three opt-in `use
 
 **Capture must be synchronous and serializable.** `captureState` and `onSave` are called inside `useLayoutEffect` cleanup or inside a synchronous teardown path; they must return a JSON-serializable value and must not return a Promise. The framework reads `captureRef.current()` at harvest time. If a component's true state is async (e.g. an in-flight network response), capture only what's already settled.
 
-**Restore must tolerate unknown payload shapes.** Card-content code evolves; an old bag pulled out of tugbank may carry a payload shape the current code doesn't recognize. `restoreState` and `onRestore` should narrow defensively (`typeof saved === "boolean"`, `Array.isArray(saved)`) and quietly drop a payload they cannot interpret. Orphan keys in `bag.components` whose components no longer exist in the card are dropped by the framework ([D13] / Q5).
+**Restore must tolerate unknown payload shapes.** Card-content code evolves; an old bag pulled out of tugbank may carry a payload shape the current code doesn't recognize. The mount-time consumer of `useSavedComponentState` should narrow defensively (`typeof saved === "boolean"`, `Array.isArray(saved)`) inside its `useState` initializer and fall back to the default. The card-level `onRestore` callback should narrow the same way. Orphan keys in `bag.components` whose components no longer exist in the card are dropped by the framework ([D13] / Q5).
 
 ---
 

@@ -90,7 +90,10 @@ import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { suppressButtonFocusShift } from "./internal/safari-focus-shift";
-import { useComponentStatePreservation } from "./use-component-state-preservation";
+import {
+  useComponentStatePreservation,
+  useSavedComponentState,
+} from "./use-component-state-preservation";
 import { TugSheetStackingContext } from "./tug-sheet-stacking-context";
 
 /* ---------------------------------------------------------------------------
@@ -195,7 +198,14 @@ interface TugSheetState {
  */
 export const TugSheet = React.forwardRef<TugSheetHandle, TugSheetProps>(
   function TugSheet({ defaultOpen = false, responderId: responderIdProp, children, componentStatePreservationKey }, ref) {
-    const [open, setOpen] = useState(defaultOpen);
+    const savedSheetState = useSavedComponentState<TugSheetState>(
+      componentStatePreservationKey,
+    );
+    const [open, setOpen] = useState<boolean>(() =>
+      typeof savedSheetState?.open === "boolean"
+        ? savedSheetState.open
+        : defaultOpen,
+    );
     const contentId = useId();
     const fallbackResponderId = useId();
     const responderId = responderIdProp ?? fallbackResponderId;
@@ -206,15 +216,11 @@ export const TugSheet = React.forwardRef<TugSheetHandle, TugSheetProps>(
 
     // Opt-in Component State Preservation Protocol. Hook no-ops when
     // `componentStatePreservationKey` is undefined or rendered outside
-    // a card. [AT0026] state-preserving classification.
+    // a card. The mount-in-saved-state half lives above in `useState`'s
+    // initializer. [AT0026] state-preserving classification.
     useComponentStatePreservation<TugSheetState>({
       componentStatePreservationKey,
       captureState: () => ({ open }),
-      restoreState: (saved) => {
-        if (saved === null || typeof saved !== "object") return;
-        const next = (saved as Partial<TugSheetState>).open;
-        if (typeof next === "boolean") setOpen(next);
-      },
     });
 
     useImperativeHandle(ref, () => ({

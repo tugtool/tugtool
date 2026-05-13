@@ -2,8 +2,11 @@
  * useComponentStatePreservation + <ComponentStatePreservationScope>
  * behavior tests.
  *
- * Pins the opt-in Component State Preservation Protocol ([D13], [A9])
- * surface visible to component authors:
+ * After Phase E.8 the hook is capture-only: `restoreState` is gone.
+ * The mount-in-saved-state half lives in the separate
+ * `useSavedComponentState` / `useSavedRegionScroll` accessor hooks
+ * exercised by the dedicated `use-saved-component-state.test.tsx`
+ * suite. These tests pin the opt-in surface that survives:
  *
  *   1. Mount-time register / unmount-time unregister via the hook's
  *      `useLayoutEffect` — per [L03] registration lands before any
@@ -35,7 +38,21 @@ import {
   ComponentStatePreservationScope,
   useComponentStatePreservation,
   useComponentStatePreservationScopePrefix,
+  type CardComponentStatePreservationContextValue,
 } from "@/components/tugways/use-component-state-preservation";
+
+function makeContextValue(
+  registry: ComponentStatePreservationRegistry,
+): CardComponentStatePreservationContextValue {
+  return {
+    registry,
+    prefix: "",
+    treePath: [],
+    getSavedComponentState: () => undefined,
+    getSavedRegionScroll: () => undefined,
+    subscribe: () => () => {},
+  };
+}
 
 function renderUnderCard(
   registry: ComponentStatePreservationRegistry,
@@ -43,7 +60,7 @@ function renderUnderCard(
 ) {
   return render(
     <CardComponentStatePreservationContext.Provider
-      value={{ registry, prefix: "", treePath: [] }}
+      value={makeContextValue(registry)}
     >
       {ui}
     </CardComponentStatePreservationContext.Provider>,
@@ -53,16 +70,13 @@ function renderUnderCard(
 function Consumer({
   componentStatePreservationKey,
   value,
-  onRestore,
 }: {
   componentStatePreservationKey: string;
   value: unknown;
-  onRestore?: (saved: unknown) => void;
 }): null {
   useComponentStatePreservation({
     componentStatePreservationKey,
     captureState: () => value,
-    restoreState: (saved) => onRestore?.(saved),
   });
   return null;
 }
@@ -102,7 +116,7 @@ describe("useComponentStatePreservation — registration lifecycle", () => {
     // same (no re-register), but ref.current returns the new closure.
     rerender(
       <CardComponentStatePreservationContext.Provider
-        value={{ registry, prefix: "", treePath: [] }}
+        value={makeContextValue(registry)}
       >
         <Wrapper value={42} />
       </CardComponentStatePreservationContext.Provider>,
@@ -204,7 +218,7 @@ describe("useComponentStatePreservation — uniqueness", () => {
     expect(() => {
       render(
         <CardComponentStatePreservationContext.Provider
-          value={{ registry, prefix: "", treePath: [] }}
+          value={makeContextValue(registry)}
         >
           <Consumer componentStatePreservationKey="dup" value={2} />
         </CardComponentStatePreservationContext.Provider>,
@@ -235,7 +249,6 @@ describe("useComponentStatePreservation — opt-in via optional componentStatePr
         useComponentStatePreservation({
           componentStatePreservationKey: undefined,
           captureState: () => "captured",
-          restoreState: () => undefined,
         });
         return null;
       }
@@ -265,7 +278,6 @@ describe("useComponentStatePreservation — opt-in via optional componentStatePr
       useComponentStatePreservation({
         componentStatePreservationKey,
         captureState: () => "X",
-        restoreState: () => undefined,
       });
       return null;
     }
@@ -275,7 +287,7 @@ describe("useComponentStatePreservation — opt-in via optional componentStatePr
 
     rerender(
       <CardComponentStatePreservationContext.Provider
-        value={{ registry, prefix: "", treePath: [] }}
+        value={makeContextValue(registry)}
       >
         <Toggle componentStatePreservationKey="late" />
       </CardComponentStatePreservationContext.Provider>,

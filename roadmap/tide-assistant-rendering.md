@@ -3026,30 +3026,30 @@ The post-mount restore was a mistake. It is removed, not retained as fallback. K
 
 **Tasks (Phase E.8):**
 
-- [ ] **Extend CardHost's per-card context with synchronous saved-state accessors.** `getSavedComponentState(scopedKey)` reads `store.getCardState(cardId)?.components?.[scopedKey]`. `getSavedRegionScroll(scrollKey)` reads `store.getCardState(cardId)?.regionScroll?.[scrollKey]`. Both wired via `useSyncExternalStore` so future bag updates reactively refresh.
-- [ ] **Export `useSavedComponentState<T>` and `useSavedRegionScroll`** from `use-component-state-preservation.tsx`. Pure synchronous reads of context values + scope-prefix application for the component-state key.
-- [ ] **Remove `restoreState` from `UseComponentStatePreservationOptions`.** Hook becomes capture-only.
-- [ ] **Strip the observer channel from the registry.** Remove `observeRegister`, `registerObservers`, `RegistryRegisterObserver`, `clear()`-drops-observers behavior, `restoreRef` from `RegistryEntry`.
-- [ ] **Strip the restore path from the orchestrator.** Remove `restoreCardState`, `lastBagComponents`, `registryObserverInstalled`, `discardCardState`, the trace-log scaffolding, and the `applyRestoreToEntry` helper.
-- [ ] **Remove `restoreCardState` from `DeckManager`'s public API.** Update the public type. Remove the `discardCardState` call from `discardComponentStatePreservationRegistry`.
-- [ ] **Remove the component-state restore effect from CardHost.** Delete `hasRestoredComponentsRef`. The remount-detection signal (`callbacksVersion` flip on the no-op-pair → real-pair transition) keeps working for `bag.content` restore, which is unchanged by Phase E.8.
-- [ ] **Update body kinds.** TerminalBlock, FileBlock, DiffBlock, TugCheckbox: `useState` initializer reads via `useSavedComponentState`. `restoreState` closure deleted.
-- [ ] **`renderTerminal` accepts `initialScrollTop`.** Plumb through TerminalBlock and `appendVirtualizedBody`. CM6's analog in FileBlock writes `scrollDOM.scrollTop` at mount.
-- [ ] **Drop the late-mount and tide-card-like gallery fixtures.** Drop the corresponding `registerCard` entries.
-- [ ] **Delete superseded app-tests** (AT0062–AT0065) and the orchestrator/registry observer-channel unit tests.
-- [ ] **Add new tests.** AT0067 (mount-in-saved-state, no intermediate-frame regression), AT0068 (scroller-created-at-saved-position). Unit tests for `useSavedComponentState`.
-- [ ] **Docs.** `state-preservation.md` "Restoring saved state at mount" section; `component-authoring.md` new authoring section.
-- [ ] **Diag surface.** Remove `forceSaveAndDump` from `window.tugdeck.diag`.
+- [x] **Extend CardHost's per-card context with synchronous saved-state accessors.** `getSavedComponentState(scopedKey)` reads `store.getCardState(cardId)?.components?.[scopedKey]`. `getSavedRegionScroll(scrollKey)` reads `store.getCardState(cardId)?.regionScroll?.[scrollKey]`. Both wired via `useSyncExternalStore` so future bag updates reactively refresh.
+- [x] **Export `useSavedComponentState<T>` and `useSavedRegionScroll`** from `use-component-state-preservation.tsx`. Pure synchronous reads of context values + scope-prefix application for the component-state key.
+- [x] **Remove `restoreState` from `UseComponentStatePreservationOptions`.** Hook becomes capture-only.
+- [x] **Strip the observer channel from the registry.** Remove `observeRegister`, `registerObservers`, `RegistryRegisterObserver`, `clear()`-drops-observers behavior, `restoreRef` from `RegistryEntry`.
+- [x] **Strip the restore path from the orchestrator.** Remove `restoreCardState`, `lastBagComponents`, `registryObserverInstalled`, `discardCardState`, the trace-log scaffolding, and the `applyRestoreToEntry` helper.
+- [x] **Remove `restoreCardState` from `DeckManager`'s public API.** Update the public type. Remove the `discardCardState` call from `discardComponentStatePreservationRegistry`.
+- [x] **Remove the component-state restore effect from CardHost.** Delete `hasRestoredComponentsRef`. The remount-detection signal (`callbacksVersion` flip on the no-op-pair → real-pair transition) keeps working for `bag.content` restore, which is unchanged by Phase E.8.
+- [x] **Update body kinds.** TerminalBlock, FileBlock, DiffBlock, TugCheckbox: `useState` initializer reads via `useSavedComponentState`. `restoreState` closure deleted. Also migrated: TugSwitch, TugRadioGroup, TugAccordion, TugOptionGroup, TugSheet, TugChoiceGroup, TugValueInput, TugSlider, TugPromptEntry, gallery-text-editor.
+- [x] **`renderTerminal` accepts `initialScrollTop`.** Plumb through TerminalBlock and `appendVirtualizedBody`. CM6's analog in FileBlock writes `scrollDOM.scrollTop` at mount. A `consumeInitialScrollTop` one-shot ref keeps the saved value tied to the FIRST scroller creation; collapse-toggle / streaming re-renders fall back to anchor-based default and rely on the element-identity-gated `MutationObserver` re-apply.
+- [x] **Drop the late-mount and tide-card-like gallery fixtures.** Drop the corresponding `registerCard` entries.
+- [x] **Delete superseded app-tests** (AT0062–AT0065) and the orchestrator/registry observer-channel unit tests.
+- [x] **Add new tests.** AT0067 (mount-in-saved-state, no intermediate-frame regression), AT0068 (scroller-created-at-saved-position). Unit tests for `useSavedComponentState` / `useSavedRegionScroll` in `tugdeck/src/__tests__/use-saved-component-state.test.tsx`.
+- [x] **Docs.** `state-preservation.md` "Restoring saved state at mount" section; `component-authoring.md` new authoring section; `app-test-inventory.md` entries for AT0067/AT0068 + supersedes for AT0062–AT0065.
+- [x] **Diag surface.** Remove `forceSaveAndDump` from `window.tugdeck.diag`.
 
 **Tests (commands, Phase E.8):**
 
-- [ ] `bun test src/__tests__/use-saved-component-state.test.tsx` — accessor semantics pinned.
-- [ ] `bun test src/__tests__/card-state-orchestrator.test.ts` — capture-only surface intact; restore-side tests removed.
-- [ ] `bun test src/components/tugways/__tests__/component-state-preservation-registry.test.ts` — observer tests removed; data-structure tests intact.
-- [ ] `bunx tsc --noEmit` — clean.
-- [ ] `bun run audit:tokens lint` — zero violations.
-- [ ] `bun test` (full suite) — green.
-- [ ] `just app-test at0067-bash-block-mount-in-saved-state.test.ts at0068-bash-block-inner-scroll-from-creation.test.ts at0061-region-scroll-anchor-apply.test.ts` — green. AT0061 regression-checks the OUTER transcript anchor restore path that Phase E.8 deliberately leaves alone.
+- [x] `bun test src/__tests__/use-saved-component-state.test.tsx` — accessor semantics pinned (15 assertions across 9 tests).
+- [x] `bun test src/__tests__/card-state-orchestrator.test.ts` — capture-only surface intact; restore-side tests removed.
+- [x] `bun test src/components/tugways/__tests__/component-state-preservation-registry.test.ts` — observer tests removed; data-structure tests intact.
+- [x] `bunx tsc --noEmit` — clean.
+- [x] `bun run audit:tokens lint` — zero violations.
+- [x] `bun test` (full suite) — green (3708 pass).
+- [x] `just app-test at0067-bash-block-mount-in-saved-state.test.ts at0068-bash-block-inner-scroll-from-creation.test.ts at0061-region-scroll-anchor-apply.test.ts` — green (3/3). AT0061 regression-checks the OUTER transcript anchor restore path that Phase E.8 deliberately leaves alone.
 
 **Checkpoint (Phase E.8):**
 

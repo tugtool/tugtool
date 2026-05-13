@@ -15,10 +15,16 @@
  *   4. clear() empties the registry in one shot (called from the deck
  *      manager's card-destruction path).
  *
- * The refs carried through the registry hold the component's latest
- * captureState / restoreState closures; these tests use simple `.current`
- * slots that never change, because registry semantics are independent of
- * ref sync.
+ * After Phase E.8 the registry is capture-only: `restoreState` and the
+ * `observeRegister` channel were removed. The hook layer feeds saved
+ * state into consumers via `useSavedComponentState` /
+ * `useSavedRegionScroll` at render time, not via a post-mount
+ * registry-observer apply pass.
+ *
+ * The capture closure carried through the registry holds the
+ * component's latest `captureState`; these tests use simple `.current`
+ * slots that never change, because registry semantics are independent
+ * of ref sync.
  */
 
 import { describe, test, expect } from "bun:test";
@@ -29,12 +35,6 @@ function makeCaptureRef<T>(fn: () => T): RefObject<() => unknown> {
   return { current: fn as () => unknown };
 }
 
-function makeRestoreRef<T>(
-  fn: (saved: T) => void,
-): RefObject<(saved: unknown) => void> {
-  return { current: fn as (saved: unknown) => void };
-}
-
 describe("ComponentStatePreservationRegistry — tree-order iteration", () => {
   test("entriesInTreeOrder returns parents before descendants", () => {
     const registry = new ComponentStatePreservationRegistry();
@@ -43,31 +43,26 @@ describe("ComponentStatePreservationRegistry — tree-order iteration", () => {
     registry.register(
       "child-deep",
       makeCaptureRef(() => "deep"),
-      makeRestoreRef(() => undefined),
       [0, 1, 0],
     );
     registry.register(
       "root",
       makeCaptureRef(() => "root"),
-      makeRestoreRef(() => undefined),
       [],
     );
     registry.register(
       "child-a",
       makeCaptureRef(() => "a"),
-      makeRestoreRef(() => undefined),
       [0],
     );
     registry.register(
       "child-b",
       makeCaptureRef(() => "b"),
-      makeRestoreRef(() => undefined),
       [1],
     );
     registry.register(
       "grandchild",
       makeCaptureRef(() => "gc"),
-      makeRestoreRef(() => undefined),
       [0, 1],
     );
 
@@ -86,19 +81,16 @@ describe("ComponentStatePreservationRegistry — tree-order iteration", () => {
     registry.register(
       "s2",
       makeCaptureRef(() => 0),
-      makeRestoreRef(() => undefined),
       [2],
     );
     registry.register(
       "s0",
       makeCaptureRef(() => 0),
-      makeRestoreRef(() => undefined),
       [0],
     );
     registry.register(
       "s1",
       makeCaptureRef(() => 0),
-      makeRestoreRef(() => undefined),
       [1],
     );
 
@@ -114,19 +106,16 @@ describe("ComponentStatePreservationRegistry — tree-order iteration", () => {
     registry.register(
       "first",
       makeCaptureRef(() => 0),
-      makeRestoreRef(() => undefined),
       [0],
     );
     registry.register(
       "second",
       makeCaptureRef(() => 0),
-      makeRestoreRef(() => undefined),
       [0],
     );
     registry.register(
       "third",
       makeCaptureRef(() => 0),
-      makeRestoreRef(() => undefined),
       [0],
     );
 
@@ -144,14 +133,12 @@ describe("ComponentStatePreservationRegistry — uniqueness", () => {
     registry.register(
       "dup",
       makeCaptureRef(() => 0),
-      makeRestoreRef(() => undefined),
       [0],
     );
     expect(() => {
       registry.register(
         "dup",
         makeCaptureRef(() => 0),
-        makeRestoreRef(() => undefined),
         [1],
       );
     }).toThrow(/duplicate componentStatePreservationKey within card scope: "dup"/);
@@ -164,7 +151,6 @@ describe("ComponentStatePreservationRegistry — unregister", () => {
     registry.register(
       "one",
       makeCaptureRef(() => "A"),
-      makeRestoreRef(() => undefined),
       [0],
     );
     expect(registry.keys()).toEqual(new Set(["one"]));
@@ -177,7 +163,6 @@ describe("ComponentStatePreservationRegistry — unregister", () => {
     registry.register(
       "one",
       makeCaptureRef(() => "B"),
-      makeRestoreRef(() => undefined),
       [0],
     );
     const [[, entry]] = registry.entriesInTreeOrder();
@@ -189,101 +174,10 @@ describe("ComponentStatePreservationRegistry — unregister", () => {
     registry.register(
       "present",
       makeCaptureRef(() => 0),
-      makeRestoreRef(() => undefined),
       [],
     );
     expect(() => registry.unregister("ghost")).not.toThrow();
     expect(registry.keys()).toEqual(new Set(["present"]));
-  });
-});
-
-describe("ComponentStatePreservationRegistry — observeRegister", () => {
-  test("fires synchronously on register with scopedKey + entry", () => {
-    const registry = new ComponentStatePreservationRegistry();
-    const calls: Array<[string, () => unknown]> = [];
-    registry.observeRegister((scopedKey, entry) => {
-      // Capture both the key and the entry's capture closure so we can
-      // assert the observer received the freshly-installed entry, not
-      // a stale read.
-      calls.push([scopedKey, entry.captureRef.current!]);
-    });
-
-    const cap = () => "hello";
-    registry.register("k", makeCaptureRef(cap), makeRestoreRef(() => undefined), [0]);
-
-    expect(calls.length).toBe(1);
-    expect(calls[0][0]).toBe("k");
-    expect(calls[0][1]()).toBe("hello");
-  });
-
-  test("multiple subscribers all fire in subscription order", () => {
-    const registry = new ComponentStatePreservationRegistry();
-    const order: string[] = [];
-    registry.observeRegister(() => order.push("a"));
-    registry.observeRegister(() => order.push("b"));
-    registry.observeRegister(() => order.push("c"));
-
-    registry.register("k", makeCaptureRef(() => 0), makeRestoreRef(() => undefined), []);
-    expect(order).toEqual(["a", "b", "c"]);
-  });
-
-  test("unsubscribe stops further notifications", () => {
-    const registry = new ComponentStatePreservationRegistry();
-    let fired = 0;
-    const unsubscribe = registry.observeRegister(() => {
-      fired++;
-    });
-
-    registry.register("first", makeCaptureRef(() => 0), makeRestoreRef(() => undefined), [0]);
-    expect(fired).toBe(1);
-    unsubscribe();
-    registry.register("second", makeCaptureRef(() => 0), makeRestoreRef(() => undefined), [1]);
-    expect(fired).toBe(1);
-  });
-
-  test("throwing observer does not prevent registration nor stop later observers", () => {
-    const registry = new ComponentStatePreservationRegistry();
-    let laterFired = false;
-
-    const originalWarn = console.warn;
-    console.warn = () => undefined;
-    try {
-      registry.observeRegister(() => {
-        throw new Error("boom");
-      });
-      registry.observeRegister(() => {
-        laterFired = true;
-      });
-
-      expect(() => {
-        registry.register(
-          "k",
-          makeCaptureRef(() => 1),
-          makeRestoreRef(() => undefined),
-          [],
-        );
-      }).not.toThrow();
-      // Both that the registration landed and that the later observer
-      // still got called.
-      expect(registry.keys().has("k")).toBe(true);
-      expect(laterFired).toBe(true);
-    } finally {
-      console.warn = originalWarn;
-    }
-  });
-
-  test("clear() drops observers — no notifications after clear", () => {
-    const registry = new ComponentStatePreservationRegistry();
-    let fired = 0;
-    registry.observeRegister(() => {
-      fired++;
-    });
-    registry.register("a", makeCaptureRef(() => 0), makeRestoreRef(() => undefined), [0]);
-    expect(fired).toBe(1);
-
-    registry.clear();
-    registry.register("b", makeCaptureRef(() => 0), makeRestoreRef(() => undefined), [0]);
-    expect(fired).toBe(1);
   });
 });
 
@@ -293,13 +187,11 @@ describe("ComponentStatePreservationRegistry — clear", () => {
     registry.register(
       "a",
       makeCaptureRef(() => 0),
-      makeRestoreRef(() => undefined),
       [0],
     );
     registry.register(
       "b",
       makeCaptureRef(() => 0),
-      makeRestoreRef(() => undefined),
       [1],
     );
     registry.clear();
@@ -310,7 +202,6 @@ describe("ComponentStatePreservationRegistry — clear", () => {
     registry.register(
       "a",
       makeCaptureRef(() => 0),
-      makeRestoreRef(() => undefined),
       [0],
     );
     expect(registry.keys()).toEqual(new Set(["a"]));

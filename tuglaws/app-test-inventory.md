@@ -21,7 +21,7 @@ The selection-plan history (`roadmap/tugplan-selection.md`) captures the elabora
 
 ## Adding a new tag
 
-1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0065**.
+1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0068**.
 2. Add an entry below in the appropriate section (or create a section).
 3. State, in one line each: card types, state axes, trigger, status.
 4. Cross-link the elaborated entry in `roadmap/tugplan-selection.md` if applicable.
@@ -307,24 +307,30 @@ Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension t
 - **Summary:** Full save-then-reload-then-apply round-trip on `gallery-list-view-scroll-keyed`. Mount → wait for content settled (AT0060 signals) → scroll to a known position → assert `data-tug-scroll-state` reflects the new anchor → `saveState()` → record scrollTop + anchor → `appReload()` (same code path as Developer > Reload menu — `prepareForReload` flushes + `location.reload`) → on the new page, wait for content settled again → assert the inner scrollport's scrollTop has been restored to within tolerance of the saved scrollTop AND the live anchor on `data-tug-scroll-state` matches the saved anchor (proving the anchor cell is at the same content-relative viewport position). Closes Phase E.6's "prove we can then apply all the scroll states" sub-task.
 
 #### [AT0062] Late-mounting component-state restore (registry observer channel)
-- **Status:** ✅ closed at Phase E.7 (`just app-test` PASS).
-- **Tests:** `at0062-late-mount-component-restore.test.ts`.
-- **Summary:** End-to-end gate for the framework-level fix to the [A9c] component-state restore path on late-mounting components. Drives `gallery-late-mount-preservation` — a fixture that gates its inner `<TugCheckbox componentStatePreservationKey="late-mount-done">` behind a microtask, so the checkbox lands strictly after `CardHost`'s one-shot `restoreCardState` has iterated an empty registry. Phase 1: mount card → wait for late-mount slot to populate → click the checkbox → assert `data-state="checked"` → `appReload()`. Phase 2: re-seed the deck shape with the on-disk bag → wait for card to register → wait for the late-mount slot to populate again → assert the checkbox is `data-state="checked"` from the very first observation (no flicker, no user re-interaction). Failure mode without Phase E.7's `observeRegister` channel: the seeded bag's `bag.components["late-mount-done"]` would silently drop on the empty-registry iteration and the checkbox would come back unchecked. Closes Phase E.7's "framework-level late-mount restore" sub-task.
+- **Status:** 🗑️ superseded at Phase E.8. Replaced by [AT0067] / [AT0068]. The Phase E.7 observer-channel restore path the test pinned was removed — components now mount in their saved state via `useSavedComponentState` inside `useState` initializers, so there is no post-mount apply path to gate.
+- **Tests:** *(removed)*.
 
 #### [AT0063] BashToolBlock fold state survives Developer > Reload
-- **Status:** ✅ closed at Phase E.7 (`just app-test` PASS).
-- **Tests:** `at0063-bash-block-fold-restore.test.ts`.
-- **Summary:** Regression gate for the user-reported failure that AT0062's simplified `TugCheckbox` fixture missed. Drives `gallery-late-mount-bash-tool-block`, which mounts a real production `BashToolBlock` (TerminalBlock inside it) behind a microtask gate; `componentStatePreservationKey` is plumbed as `${toolUseId}-body` — the same shape tide-card uses. Phase 1: expand block, assert `data-collapsed="false"`. Phase 2: `appReload`, read on-disk bag, assert `bag.components["${toolUseId}-body"] === {collapsed: false}` (save-side gate). Phase 3: re-seed with on-disk bag, wait for late-mount, assert TerminalBlock comes back `data-collapsed="false"` from first observation (restore-side gate). Closes Phase E.7's "real production-pipeline late-mount regression" gate.
+- **Status:** 🗑️ superseded at Phase E.8. Replaced by [AT0067]. Same goal — fold state survives reload — but the failure mode AT0063 pinned (post-mount observer-channel apply) no longer exists; AT0067 pins the stronger contract that the saved fold reflects on the FIRST DOM observation, no intermediate frame.
+- **Tests:** *(removed)*.
 
 #### [AT0064] BashToolBlock inner scroll survives Developer > Reload
-- **Status:** ✅ closed at Phase E.7 inner-scroll fix (`just app-test` PASS).
-- **Tests:** `at0064-bash-block-inner-scroll-restore.test.ts`.
-- **Summary:** Companion to AT0063 covering the [A9] region-scroll axis on the BashToolBlock's inner TerminalBlock scroller. Drives the same `gallery-late-mount-bash-tool-block` fixture. Phase 1: expand block, set inner `scrollTop` to a known non-zero value, dispatch scroll event. Phase 2: `appReload`, read on-disk bag, assert `bag.regionScroll["${toolUseId}-body/term-scroll"].y` matches the user's scroll (save-side gate). Phase 3: re-seed, wait for late-mount + MutationObserver-driven apply, assert `scrollTop` lands within tolerance of the saved value (restore-side gate). Phase 4: save again without further interaction, assert the bag still holds the inner scroll value (catches a save-side clobber where the scroller is recreated between MutationObserver apply and capture).
+- **Status:** 🗑️ superseded at Phase E.8. Replaced by [AT0068]. Same goal — inner scroll survives reload — but AT0068 pins the stronger contract that the scroller is CREATED at the saved `scrollTop` (no jump from 0 to saved).
+- **Tests:** *(removed)*.
 
 #### [AT0065] Tide-card-like inner scroll survives Developer > Reload + scroller-rebuild
-- **Status:** ✅ closed at Phase E.7 region-scroll element-identity fix (`just app-test` PASS).
-- **Tests:** `at0065-tide-card-like-inner-scroll-restore.test.ts`.
-- **Summary:** Higher-fidelity tide-card regression gate. AT0064 covers a bare BashToolBlock; this fixture wraps it in a `TugListView` (inline mode + `tailSpacer="80cqh"`) mirroring the live tide-card transcript. Phase 1–3 mirror AT0064. Phase 4 simulates the live failure mode the user reported: after restore, click the fold cue to collapse the block (tears down the virtualized scroller), click again to expand (rebuilds the scroller as a NEW DOM element with `scrollTop=0`). Wait for the MutationObserver-driven re-apply to land the saved y on the new element; saveState; assert the bag still holds the user's scroll. Pre-fix the `regionSettled: Set<string>` skipped re-applying to new elements with the same key, and saveState clobbered the bag with y=0 — exactly the user's on-disk bag. Closes Phase E.7's "inner scroll after scroller-rebuild" gate.
+- **Status:** 🗑️ superseded at Phase E.8. The element-identity-gated `MutationObserver` re-apply for inner-scroller rebuilds stays in `card-host.tsx` (it's the fallback for scrollers recreated mid-card-lifetime), but the production failure AT0065 pinned was scoped to the now-removed late-mount path; the manual checkpoints in `tide-assistant-rendering.md` Phase E.8 cover the rebuild-after-restore case end-to-end.
+- **Tests:** *(removed)*.
+
+#### [AT0067] BashToolBlock fold state mounts in its saved value on first paint
+- **Status:** 🚧 added at Phase E.8 — gates the mount-in-saved-state contract for the component-axis.
+- **Tests:** `at0067-bash-block-mount-in-saved-state.test.ts`.
+- **Summary:** Drives `gallery-bash-mount-in-saved-state` — a BashToolBlock with 100 lines of stdout, so the TerminalBlock's uncontrolled fold default is "collapsed". Phase 1: mount card, click the fold cue to expand, assert `data-collapsed="false"`. Phase 2: `appReload()`. Phase 3: install a `MutationObserver` against the document subtree BEFORE re-seeding the deck so the very first `data-collapsed` value on the terminal-block outer is captured into a window-level recorder; re-seed with the on-disk bag; wait for the card to register and the block to render. Assert: the recorded sequence is non-empty AND the FIRST value is `"false"` (the saved value) AND no recorded value disagrees with the saved value (no intermediate frame painted the `useState` default). Closes Phase E.8's "first paint reflects the saved fold" sub-task.
+
+#### [AT0068] BashToolBlock inner scroller is created at its saved scrollTop
+- **Status:** 🚧 added at Phase E.8 — gates the mount-in-saved-state contract for the inner-scroll axis.
+- **Tests:** `at0068-bash-block-inner-scroll-from-creation.test.ts`.
+- **Summary:** Companion to AT0067 for the [A9] region-scroll axis on the inner virtualized scroller. Drives the same `gallery-bash-mount-in-saved-state` fixture. Phase 1: mount, expand, scroll the inner scroller to a known position, record `scrollTop`. Phase 2: `appReload()` and assert the on-disk bag's `bag.regionScroll["${toolUseId}-body/term-scroll"].y` matches. Phase 3: install a `MutationObserver` against the document subtree BEFORE re-seeding the deck so the FIRST observable `scrollTop` of the new scroller (and any subsequent `scroll` events) is captured; re-seed; wait. Assert: the first observed `scrollTop` matches the saved value within tolerance AND no recorded scroll event lands more than tolerance away from the saved value (no jump from 0 to saved). Closes Phase E.8's "scroller created at saved position" sub-task.
 
 ## Maintenance
 

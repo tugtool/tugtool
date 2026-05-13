@@ -112,7 +112,11 @@ import { BlockHeightIndex } from "@/lib/block-height-index";
 import { RenderedBlockWindow } from "@/lib/rendered-block-window";
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
 import { attachOuterScrollOnModifierWheel } from "@/components/tugways/internal/use-outer-scroll-on-modifier-wheel";
-import { useComponentStatePreservation } from "@/components/tugways/use-component-state-preservation";
+import {
+  useComponentStatePreservation,
+  useSavedComponentState,
+  useSavedRegionScroll,
+} from "@/components/tugways/use-component-state-preservation";
 import { BlockCopyButton, BlockFoldCue } from "./affordances";
 
 // ---------------------------------------------------------------------------
@@ -550,6 +554,7 @@ function appendVirtualizedBody(
   anchor: "top" | "bottom",
   getOuter: () => HTMLElement | null,
   scrollKey: string | undefined,
+  initialScrollTop: number | undefined,
 ): VirtualizedBodyHandle {
   const heightIndex = new BlockHeightIndex(Math.max(1024, lines.length));
   for (let i = 0; i < lines.length; i += 1) {
@@ -668,6 +673,14 @@ function appendVirtualizedBody(
   // handles the math; the scrollTop assignment after it sticks
   // because the scroller is now part of a layout tree.
   //
+  // When the caller supplies `initialScrollTop` (the cold-boot
+  // mount-in-saved-state path threads `useSavedRegionScroll(scrollKey)?.y`
+  // through here), the saved position wins — the scroller is CREATED
+  // at the user's last-saved position, no jump-from-0. The anchor-
+  // based default below covers the case the caller hasn't supplied a
+  // saved value (subsequent fold-toggle rebuilds, gallery uses without
+  // a card-scoped bag).
+  //
   // Bottom-anchor math includes `2 * VIRTUALIZED_PADDING_PX` because
   // the spacers each carry that constant offset (see `applyUpdate`),
   // so the true scrollable height is `totalContentPx + 12`. Without
@@ -676,10 +689,14 @@ function appendVirtualizedBody(
   // 12px above the scroller's bottom edge instead of pinned to it.
   const totalContentPx = heightIndex.getTotalHeight();
   const totalScrollableHeight = totalContentPx + 2 * VIRTUALIZED_PADDING_PX;
-  const initialScrollTop =
-    anchor === "top" ? 0 : Math.max(0, totalScrollableHeight - viewportPx);
-  applyUpdate(initialScrollTop);
-  scroller.scrollTop = initialScrollTop;
+  const maxScrollTop = Math.max(0, totalScrollableHeight - viewportPx);
+  const anchorScrollTop = anchor === "top" ? 0 : maxScrollTop;
+  const resolvedScrollTop =
+    initialScrollTop !== undefined
+      ? Math.max(0, Math.min(initialScrollTop, maxScrollTop))
+      : anchorScrollTop;
+  applyUpdate(resolvedScrollTop);
+  scroller.scrollTop = resolvedScrollTop;
 
   let pendingRaf: number | null = null;
   const onScroll = () => {
@@ -792,6 +809,7 @@ function renderTerminal(
   collapsed: boolean = false,
   anchor: "top" | "bottom" = "top",
   scrollKey: string | undefined = undefined,
+  initialScrollTop: number | undefined = undefined,
 ): TerminalRenderHandle {
   body.replaceChildren();
   // Empty terminal: render the footer if any post-mortem fields are
@@ -832,7 +850,14 @@ function renderTerminal(
     if (lines.length <= VISIBLE_THRESHOLD) {
       appendFlatBody(body, lines);
     } else {
-      handle = appendVirtualizedBody(body, lines, anchor, getOuter, scrollKey);
+      handle = appendVirtualizedBody(
+        body,
+        lines,
+        anchor,
+        getOuter,
+        scrollKey,
+        initialScrollTop,
+      );
     }
   }
 
@@ -934,10 +959,6 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
     [],
   );
   const overThreshold = lineCount > collapseThreshold;
-  const [localCollapsed, setLocalCollapsed] =
-    React.useState<boolean>(overThreshold);
-  const collapsed =
-    collapsedProp !== undefined ? collapsedProp : localCollapsed;
 
   // ---- Component-state preservation (fold state only) -----------------
   //
@@ -945,23 +966,32 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // component-state-preservation axis. The virtualized scroller's
   // `scrollTop` is preserved separately, via the [A9] region-scroll
   // axis — a `data-tug-scroll-key` attribute on the scroller div
-  // lands the position in `bag.regionScroll`, restored by CardHost's
-  // MutationObserver loop on mount. The two axes are split
+  // lands the position in `bag.regionScroll`. The two axes are split
   // deliberately: fold is React-state (component-owned, not DOM-
   // authority); inner scroll is DOM-authority (scrollTop lives on
   // the scroll element).
   //
-  // Restore is one-shot and seeds local state only when uncontrolled.
+  // Mount-in-saved-state: `useSavedComponentState` reads the saved
+  // fold synchronously in render so `useState`'s initializer seeds
+  // local state with the user's last-saved value. There is no
+  // post-mount apply path — the first paint reflects the user's
+  // state. See `tuglaws/state-preservation.md` → "Restoring saved
+  // state at mount".
+  const savedComponentState = useSavedComponentState<{ collapsed?: boolean }>(
+    componentStatePreservationKey,
+  );
+  const [localCollapsed, setLocalCollapsed] = React.useState<boolean>(
+    () =>
+      typeof savedComponentState?.collapsed === "boolean"
+        ? savedComponentState.collapsed
+        : overThreshold,
+  );
+  const collapsed =
+    collapsedProp !== undefined ? collapsedProp : localCollapsed;
+
   useComponentStatePreservation<{ collapsed?: boolean }>({
     componentStatePreservationKey,
     captureState: () => ({ collapsed }),
-    restoreState: (saved) => {
-      if (saved === null || typeof saved !== "object") return;
-      if (typeof saved.collapsed !== "boolean") return;
-      if (collapsedProp === undefined) {
-        setLocalCollapsed(saved.collapsed);
-      }
-    },
   });
 
   // Chrome actions target — non-null when this TerminalBlock is
@@ -1009,14 +1039,35 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // suffixed `/term-scroll` off the block's preservation key.
   // Threaded through each `renderTerminal` call so the scroller div
   // gets stamped on creation; CardHost's `captureRegionScrolls`
-  // walks the attribute on save and restores via the [A9] region-
-  // scroll axis. `undefined` when the consumer didn't opt in
-  // (gallery / standalone), which the imperative renderer treats
-  // as "don't stamp" — no attribute, no preservation.
+  // walks the attribute on save. `undefined` when the consumer
+  // didn't opt in (gallery / standalone), which the imperative
+  // renderer treats as "don't stamp" — no attribute, no
+  // preservation.
   const scrollKey =
     componentStatePreservationKey === undefined
       ? undefined
       : `${componentStatePreservationKey}/term-scroll`;
+
+  // Mount-in-saved-state for the inner scroller. The saved scroll
+  // for this card's region-scroll axis is read synchronously in
+  // render and consumed by the FIRST `renderTerminal` call below;
+  // `appendVirtualizedBody` writes it into the scroller's
+  // `scrollTop` at creation, so the very first paint lands at the
+  // user's saved position. Subsequent `renderTerminal` calls
+  // (collapse-toggle rebuild, streaming re-render) pass `undefined`
+  // and rely on the anchor-based default; the element-identity-
+  // gated MutationObserver pass in `card-host.tsx` re-applies the
+  // bag value to the rebuilt scroller. See `state-preservation.md`.
+  const savedRegionScroll = useSavedRegionScroll(scrollKey);
+  const initialScrollTopRef = React.useRef<number | undefined>(
+    savedRegionScroll?.y,
+  );
+  const firstRenderConsumedRef = React.useRef(false);
+  const consumeInitialScrollTop = React.useCallback((): number | undefined => {
+    if (firstRenderConsumedRef.current) return undefined;
+    firstRenderConsumedRef.current = true;
+    return initialScrollTopRef.current;
+  }, []);
 
   // Static mode — re-runs whenever `collapsed` flips, so the imperative
   // body switches between the full render and the preview render
@@ -1040,13 +1091,14 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
       collapsed,
       "top",
       scrollKey,
+      consumeInitialScrollTop(),
     );
     refitRef.current = handle.refit;
     return () => {
       refitRef.current = null;
       handle.cleanup();
     };
-  }, [collapsed, streamingStore, getOuterScrollport, scrollKey]);
+  }, [collapsed, streamingStore, getOuterScrollport, scrollKey, consumeInitialScrollTop]);
 
   // Streaming mode — Spec S05 binding. Reads sync on mount,
   // subscribes for updates, rAF-coalesces.
@@ -1097,6 +1149,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
         collapsedStreamingRef.current,
         "bottom",
         scrollKey,
+        consumeInitialScrollTop(),
       );
       cleanup = handle.cleanup;
       refitRef.current = handle.refit;
@@ -1122,7 +1175,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
       refitRef.current = null;
       cleanup();
     };
-  }, [streamingStore, streamingPath, getOuterScrollport, scrollKey]);
+  }, [streamingStore, streamingPath, getOuterScrollport, scrollKey, consumeInitialScrollTop]);
 
   // Streaming-mode re-render on collapse toggle. The store-subscription
   // effect above is the source of truth for streaming output, but a
@@ -1145,6 +1198,11 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
     latestDataRef.current = next;
     // Streaming collapse-toggle re-render — keep the tail anchor
     // to match the streaming subscription path above.
+    // Streaming-mode collapse-toggle re-renders ALWAYS run after the
+    // streaming subscription's first `rerender()` consumed the saved
+    // scroll, so this path never carries `initialScrollTop` — the
+    // element-identity-gated MutationObserver pass in `card-host.tsx`
+    // re-applies the bag value to the rebuilt scroller when needed.
     const handle = renderTerminal(
       outer,
       body,
@@ -1153,6 +1211,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
       collapsed,
       "bottom",
       scrollKey,
+      undefined,
     );
     refitRef.current = handle.refit;
     return () => {

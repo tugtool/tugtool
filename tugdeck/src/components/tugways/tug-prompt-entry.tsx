@@ -79,7 +79,10 @@ import { useResponder } from "./use-responder";
 import type { ActionEvent } from "./responder-chain";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { useCardStatePreservation, useCardId } from "./use-card-state-preservation";
-import { useComponentStatePreservation } from "./use-component-state-preservation";
+import {
+  useComponentStatePreservation,
+  useSavedComponentState,
+} from "./use-component-state-preservation";
 import { selectionGuard } from "./selection-guard";
 import { deckTrace } from "@/deck-trace";
 import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
@@ -1016,7 +1019,18 @@ export const TugPromptEntry = React.forwardRef<
   // Tools popover open state. The entry is the single source of
   // truth — TugPopover runs in controlled mode via the `open` /
   // `onOpenChange` pair.
-  const [toolsOpen, setToolsOpen] = React.useState(false);
+  //
+  // Mount-in-saved-state: `useSavedComponentState` reads the saved
+  // `toolsOpen` synchronously in render so `useState`'s initializer
+  // seeds the popover state with the user's last-saved value.
+  const savedChromeState = useSavedComponentState<TugPromptEntryChromeState>(
+    componentStatePreservationKey,
+  );
+  const [toolsOpen, setToolsOpen] = React.useState<boolean>(() =>
+    typeof savedChromeState?.toolsOpen === "boolean"
+      ? savedChromeState.toolsOpen
+      : false,
+  );
 
   // Component State Preservation Protocol opt-in for the popover's
   // open state. Hook no-ops when `componentStatePreservationKey` is
@@ -1026,13 +1040,6 @@ export const TugPromptEntry = React.forwardRef<
   useComponentStatePreservation<TugPromptEntryChromeState>({
     componentStatePreservationKey,
     captureState: () => ({ toolsOpen }),
-    restoreState: (saved) => {
-      if (saved === null || typeof saved !== "object") return;
-      const next = saved as Partial<TugPromptEntryChromeState>;
-      if (typeof next.toolsOpen === "boolean") {
-        setToolsOpen(next.toolsOpen);
-      }
-    },
   });
 
   return (

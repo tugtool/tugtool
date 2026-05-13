@@ -84,7 +84,10 @@ import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
 import { useOuterScrollOnModifierWheel } from "@/components/tugways/internal/use-outer-scroll-on-modifier-wheel";
 import { usePositionStableClick } from "@/components/tugways/internal/use-position-stable-click";
-import { useComponentStatePreservation } from "@/components/tugways/use-component-state-preservation";
+import {
+  useComponentStatePreservation,
+  useSavedComponentState,
+} from "@/components/tugways/use-component-state-preservation";
 import { BlockCopyButton, BlockFoldCue } from "./affordances";
 import { detectLanguage } from "./file-block";
 import {
@@ -628,7 +631,19 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   // uncontrolled case. No `useEffect` syncs a prop into state — that
   // pattern would create a "controlled prop says X, local state
   // says Y" divergence after a click in uncontrolled mode.
-  const [localCollapsed, setLocalCollapsed] = React.useState<boolean>(false);
+  // Mount-in-saved-state: seed `useState`'s initializer with the saved
+  // fold (when any) so the first paint reflects the user's last-saved
+  // state. See `tuglaws/state-preservation.md` → "Restoring saved state
+  // at mount".
+  const savedComponentState = useSavedComponentState<{ collapsed?: boolean }>(
+    componentStatePreservationKey,
+  );
+  const [localCollapsed, setLocalCollapsed] = React.useState<boolean>(
+    () =>
+      typeof savedComponentState?.collapsed === "boolean"
+        ? savedComponentState.collapsed
+        : false,
+  );
   const collapsed =
     collapsedProp !== undefined ? collapsedProp : localCollapsed;
 
@@ -642,14 +657,6 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   useComponentStatePreservation<{ collapsed?: boolean }>({
     componentStatePreservationKey,
     captureState: () => ({ collapsed }),
-    restoreState: (saved) => {
-      if (saved === null || typeof saved !== "object") return;
-      if (typeof saved.collapsed === "boolean") {
-        if (collapsedProp === undefined) {
-          setLocalCollapsed(saved.collapsed);
-        }
-      }
-    },
   });
 
   // Position-stable click infrastructure. Two complementary mechanisms

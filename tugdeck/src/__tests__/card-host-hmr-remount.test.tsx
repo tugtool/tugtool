@@ -80,7 +80,10 @@ import type { IDeckManagerStore } from "@/deck-manager-store";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { TugTooltipProvider } from "@/components/tugways/tug-tooltip";
 import { useCardStatePreservation } from "@/components/tugways/use-card-state-preservation";
-import { useComponentStatePreservation } from "@/components/tugways/use-component-state-preservation";
+import {
+  useComponentStatePreservation,
+  useSavedComponentState,
+} from "@/components/tugways/use-component-state-preservation";
 import { ComponentStatePreservationRegistry } from "@/components/tugways/component-state-preservation-registry";
 import { CardStateOrchestrator } from "@/card-state-orchestrator";
 
@@ -121,7 +124,22 @@ let handles: ProbeHandles;
 
 function Probe({ cardId: _cardId }: { cardId: string }) {
   const [content, setContent] = useState<string>("initial-content");
-  const [component, setComponent] = useState<number>(7);
+
+  // Components axis: mount-in-saved-state via `useSavedComponentState`
+  // inside `useState`'s initializer. On a remount (Fast Refresh
+  // hot-replace), the saved value is read synchronously in render and
+  // becomes the initial state of the new instance — no post-mount
+  // apply pass, no flicker. Each mount that reads a saved value
+  // appends to `componentRestoreCalls` so the test can assert the
+  // remount picked the saved value up.
+  const savedComponent = useSavedComponentState<number>("probeComponent");
+  const [component, setComponent] = useState<number>(() => {
+    if (typeof savedComponent === "number") {
+      handles.componentRestoreCalls.push(savedComponent);
+      return savedComponent;
+    }
+    return 7;
+  });
 
   // Content axis: registered via useCardStatePreservation. The hook
   // stores onSave / onRestore in refs internally, so the closures
@@ -137,16 +155,11 @@ function Probe({ cardId: _cardId }: { cardId: string }) {
     },
   });
 
-  // Components axis: registered via useComponentStatePreservation.
-  // Distinct registry, distinct bag axis; both should round-trip
-  // through the same remount cycle.
+  // Components axis: register for capture. The mount-in-saved-state
+  // half lives above in `useState`'s initializer.
   useComponentStatePreservation<number>({
     componentStatePreservationKey: "probeComponent",
     captureState: () => component,
-    restoreState: (saved) => {
-      handles.componentRestoreCalls.push(saved);
-      if (typeof saved === "number") setComponent(saved);
-    },
   });
 
   // Expose state setters / getters for the test harness without
@@ -296,8 +309,6 @@ class Store implements IDeckManagerStore {
   ) => this.orchestrator.registerAssembler(cardId, assembler);
   captureCardState: IDeckManagerStore["captureCardState"] = (cardId) =>
     this.orchestrator.captureCardState(cardId);
-  restoreCardState: IDeckManagerStore["restoreCardState"] = (cardId, bag) =>
-    this.orchestrator.restoreCardState(cardId, bag);
 
   private activationCallbacks = new Map<string, () => void>();
   private deactivationCallbacks = new Map<string, () => void>();
@@ -493,12 +504,11 @@ describe("CardHost — HMR-remount detection replays bag.content + bag.component
       wrapperHandles.toggleProbe!();
     });
 
-    // The remount-detection should have reset
-    // `hasRestoredComponentsRef.current` and the `callbacksVersion`
-    // bump should re-fire the components-axis restore effect, which
-    // calls `store.restoreCardState(cardId, bag)`. The orchestrator
-    // walks the registry parent-first and pushes the saved value
-    // back through `restoreState`.
+    // Phase E.8: the remounted Probe's `useState` initializer reads
+    // the saved value via `useSavedComponentState` synchronously in
+    // render, so the new instance's component state is the saved
+    // value on the very first paint. `componentRestoreCalls` is
+    // appended inside the initializer when a saved value is found.
     expect(handles.componentRestoreCalls.length).toBeGreaterThanOrEqual(1);
     expect(handles.componentRestoreCalls[0]).toBe(42);
     expect(handles.getComponent!()).toBe(42);

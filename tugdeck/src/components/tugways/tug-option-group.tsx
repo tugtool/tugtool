@@ -222,19 +222,13 @@ export const TugOptionGroup = React.forwardRef<HTMLDivElement, TugOptionGroupPro
 
     // Opt-in Component State Preservation Protocol. Hook no-ops when
     // `componentStatePreservationKey` is undefined. Controlled-only —
-    // restore re-dispatches `setValue` so the parent updates.
-    // [D13] / [A9].
+    // capture lands the current `value` in `bag.components`; the
+    // parent responder that owns `value` carries its own saved state
+    // via [A9] and mounts in the saved selection on cold boot, which
+    // flows back down here as a fresh `value` prop. [D13] / [A9].
     useComponentStatePreservation<TugOptionGroupState>({
       componentStatePreservationKey,
       captureState: () => ({ value: [...value] }),
-      restoreState: (saved) => {
-        if (saved === null || typeof saved !== "object") return;
-        const next = (saved as Partial<TugOptionGroupState>).value;
-        if (!Array.isArray(next) || next.some((v) => typeof v !== "string")) {
-          return;
-        }
-        dispatchSetValue(next as string[]);
-      },
     });
 
     const dispatchFocusDirection = useCallback(

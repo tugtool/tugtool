@@ -145,8 +145,6 @@ class Store implements IDeckManagerStore {
   ) => this.orchestrator.registerAssembler(cardId, assembler);
   captureCardState: IDeckManagerStore["captureCardState"] = (cardId) =>
     this.orchestrator.captureCardState(cardId);
-  restoreCardState: IDeckManagerStore["restoreCardState"] = (cardId, bag) =>
-    this.orchestrator.restoreCardState(cardId, bag);
 
   setHasFocus = (value: boolean): void => {
     if (this.state.hasFocus === value) return;

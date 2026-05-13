@@ -91,8 +91,6 @@ export function makeMockStore(
     registerCardAssembler: (cardId, assembler) =>
       orchestrator.registerAssembler(cardId, assembler),
     captureCardState: (cardId) => orchestrator.captureCardState(cardId),
-    restoreCardState: (cardId, bag) =>
-      orchestrator.restoreCardState(cardId, bag),
     setHasFocus: () => {},
     registerActivationCallback: (cardId: string, callback: () => void) => {
       activationCallbacks.set(cardId, callback);

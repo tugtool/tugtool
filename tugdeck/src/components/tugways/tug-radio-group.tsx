@@ -36,7 +36,10 @@ import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { TugGroupRole, buildRoleStyle } from "./internal/tug-group-utils";
 import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
-import { useComponentStatePreservation } from "./use-component-state-preservation";
+import {
+  useComponentStatePreservation,
+  useSavedComponentState,
+} from "./use-component-state-preservation";
 
 // ---- Types ----
 
@@ -176,8 +179,14 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
     // so `useComponentStatePreservation` can read/write it. Same shape
     // as the tug-checkbox / tug-accordion opt-ins.
     const isExternallyControlled = value !== undefined;
+    const savedRadioGroupState = useSavedComponentState<TugRadioGroupState>(
+      componentStatePreservationKey,
+    );
     const [internalValue, setInternalValue] = useState<string>(
-      defaultValue ?? "",
+      () =>
+        typeof savedRadioGroupState?.value === "string"
+          ? savedRadioGroupState.value
+          : (defaultValue ?? ""),
     );
     const effectiveValue = isExternallyControlled ? value : internalValue;
 
@@ -197,25 +206,11 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
     );
 
     // Opt-in Component State Preservation Protocol. Hook no-ops when
-    // `componentStatePreservationKey` is undefined. [D13] / [A9].
+    // `componentStatePreservationKey` is undefined. The mount-in-saved-
+    // state half lives above in `useState`'s initializer. [D13] / [A9].
     useComponentStatePreservation<TugRadioGroupState>({
       componentStatePreservationKey,
       captureState: () => ({ value: effectiveValue ?? "" }),
-      restoreState: (saved) => {
-        if (saved === null || typeof saved !== "object") return;
-        const next = (saved as Partial<TugRadioGroupState>).value;
-        if (typeof next !== "string") return;
-        if (isExternallyControlled) {
-          controlDispatch({
-            action: TUG_ACTIONS.SELECT_VALUE,
-            value: next,
-            sender: effectiveSenderId,
-            phase: "discrete",
-          });
-        } else {
-          setInternalValue(next);
-        }
-      },
     });
 
     return (

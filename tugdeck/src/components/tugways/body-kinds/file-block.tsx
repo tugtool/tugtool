@@ -128,7 +128,11 @@ import {
 import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
 import { attachOuterScrollOnModifierWheel } from "@/components/tugways/internal/use-outer-scroll-on-modifier-wheel";
-import { useComponentStatePreservation } from "@/components/tugways/use-component-state-preservation";
+import {
+  useComponentStatePreservation,
+  useSavedComponentState,
+  useSavedRegionScroll,
+} from "@/components/tugways/use-component-state-preservation";
 import {
   BlockCopyButton,
   BlockFindButton,
@@ -460,8 +464,20 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // says X, local state says Y" divergence after a click in
   // uncontrolled mode. Reading the prop directly on every render keeps
   // controlled and uncontrolled cleanly separable.
-  const [localCollapsed, setLocalCollapsed] =
-    React.useState<boolean>(overThreshold);
+  //
+  // Mount-in-saved-state: the saved fold (if any) seeds `useState`'s
+  // initializer so the first paint reflects the user's last-saved
+  // state. See `tuglaws/state-preservation.md` → "Restoring saved
+  // state at mount".
+  const savedComponentState = useSavedComponentState<{ collapsed?: boolean }>(
+    componentStatePreservationKey,
+  );
+  const [localCollapsed, setLocalCollapsed] = React.useState<boolean>(
+    () =>
+      typeof savedComponentState?.collapsed === "boolean"
+        ? savedComponentState.collapsed
+        : overThreshold,
+  );
   const collapsed = collapsedProp !== undefined ? collapsedProp : localCollapsed;
 
   // Root ref — used to dispatch the disengage-follow-bottom event so
@@ -648,18 +664,9 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // (component-owned, not DOM-authority), inner scroll is DOM-authority
   // (the scrollTop lives on the scroll element).
   //
-  // Restore is one-shot and seeds local state only when uncontrolled —
-  // the controlled `collapsedProp` path is the parent's responsibility.
   useComponentStatePreservation<{ collapsed?: boolean }>({
     componentStatePreservationKey,
     captureState: () => ({ collapsed }),
-    restoreState: (saved) => {
-      if (saved === null || typeof saved !== "object") return;
-      if (typeof saved.collapsed !== "boolean") return;
-      if (collapsedProp === undefined) {
-        setLocalCollapsed(saved.collapsed);
-      }
-    },
   });
 
   // ---- Cmd/Ctrl-wheel routing to the outer scrollport (Phase E.5) -----
@@ -700,32 +707,52 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // Stamp `data-tug-scroll-key={key}/file-scroll` onto CM6's
   // `view.scrollDOM` whenever the view is mounted. CardHost's
   // `captureRegionScrolls` walks all `[data-tug-scroll-key]` elements
-  // in the card subtree on every capture moment ([A9] save) and
-  // restores via the `tug-region-scroll-set` event on mount.
+  // in the card subtree on every capture moment ([A9] save).
+  //
+  // Mount-in-saved-state: on the FIRST mount of CM6's view (cold
+  // boot, or a collapse→expand-then-mount), write the saved
+  // `scrollTop` directly into `view.scrollDOM` from inside this
+  // `useLayoutEffect` so the very first paint after the layout
+  // commit lands at the user's saved position — no jump from 0.
+  // The element-identity-gated MutationObserver pass in
+  // `card-host.tsx` covers any later scroller-rebuild path; the
+  // first-time consumed flag below keeps the imperative write
+  // one-shot per `componentStatePreservationKey` so a subsequent
+  // collapse→expand doesn't snap the user back to the cold-boot
+  // saved value after they've scrolled elsewhere.
   //
   // Raw `{x, y}` is sufficient here: CM6's internal layout is
   // deterministic for the same source text, so `scrollTop` maps
-  // reliably to the same line across reload. No anchor metadata
-  // needed — markdown-view follows the same pattern.
-  //
-  // Re-attached whenever `collapsed` flips: a collapsed FileBlock
-  // does NOT mount CM6, so the scrollDOM is unavailable until the
-  // user expands. CardHost's `MutationObserver` retry loop picks up
-  // the late-mounted scrollDOM and applies the saved `{x, y}` then.
+  // reliably to the same line across reload.
+  const fileScrollKey =
+    componentStatePreservationKey === undefined
+      ? undefined
+      : `${componentStatePreservationKey}/file-scroll`;
+  const savedFileScroll = useSavedRegionScroll(fileScrollKey);
+  const savedFileScrollYRef = React.useRef<number | undefined>(
+    savedFileScroll?.y,
+  );
+  const initialFileScrollConsumedRef = React.useRef(false);
   React.useLayoutEffect(() => {
     if (collapsed) return;
-    if (componentStatePreservationKey === undefined) return;
+    if (fileScrollKey === undefined) return;
     const delegate = codeViewRef.current;
     if (delegate === null) return;
     const view = delegate.view();
     if (view === null) return;
     const scrollDOM = view.scrollDOM;
-    const scrollKey = `${componentStatePreservationKey}/file-scroll`;
-    scrollDOM.setAttribute("data-tug-scroll-key", scrollKey);
+    scrollDOM.setAttribute("data-tug-scroll-key", fileScrollKey);
+    if (!initialFileScrollConsumedRef.current) {
+      initialFileScrollConsumedRef.current = true;
+      const y = savedFileScrollYRef.current;
+      if (typeof y === "number" && y > 0) {
+        scrollDOM.scrollTop = y;
+      }
+    }
     return () => {
       scrollDOM.removeAttribute("data-tug-scroll-key");
     };
-  }, [collapsed, componentStatePreservationKey]);
+  }, [collapsed, fileScrollKey]);
 
   // ---- Copy text source -----------------------------------------------
   //

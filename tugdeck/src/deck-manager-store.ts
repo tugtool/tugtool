@@ -287,15 +287,6 @@ export interface IDeckManagerStore {
   captureCardState: (cardId: string) => CardStateBag;
 
   /**
-   * Apply `bag.components` to the card's registered components via
-   * the orchestrator. Framework-axis restore (content, scroll, DOM
-   * selection, focus, form controls, region scroll) is driven by the
-   * existing CardHost lifecycle hooks; this entry adds the component
-   * pass.
-   */
-  restoreCardState: (cardId: string, bag: CardStateBag) => void;
-
-  /**
    * Flip the session-only `DeckState.hasFocus` slice ([A1]). Wired up
    * from the module-scope window `focus` / `blur` listeners installed
    * by `DeckManager`; tests may call this directly to simulate

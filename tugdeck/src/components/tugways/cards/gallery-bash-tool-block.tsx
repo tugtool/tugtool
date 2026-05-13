@@ -1,7 +1,7 @@
 /**
  * gallery-bash-tool-block.tsx — visual fixture for `BashToolBlock`.
  *
- * Mounts the wrapper in three canonical states so the smart-pick routing
+ * Mounts the wrapper in four canonical states so the smart-pick routing
  * (introduced in #step-10-7) can be vetted visually without standing up a
  * live tugcode bridge:
  *
@@ -22,17 +22,72 @@
  * @module components/tugways/cards/gallery-bash-tool-block
  */
 
-import React, { useEffect, useMemo, useState } from "react";
+import React from "react";
+
 import { BashToolBlock } from "./tool-wrappers/bash-tool-block";
 import type { ToolWrapperProps } from "./tool-wrappers/types";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
-import {
-  TugListView,
-  type TugListViewCellProps,
-  type TugListViewCellRenderer,
-  type TugListViewDataSource,
-} from "@/components/tugways/tug-list-view";
+
+// ---------------------------------------------------------------------------
+// Long-stdout fixture for the Phase E.8 mount-in-saved-state app-tests
+// ---------------------------------------------------------------------------
+
+/**
+ * 100-line stdout — exceeds `FOLD_THRESHOLD_LINES` (40) so the
+ * uncontrolled TerminalBlock defaults to collapsed, and exceeds
+ * `VISIBLE_THRESHOLD` (40) so the virtualizer's inner scroller is
+ * built. Both surfaces are what AT0067 and AT0068 drive against:
+ *
+ *   - AT0067 expands the block, saves, reloads, and asserts the
+ *     TerminalBlock's `data-collapsed` attribute reflects the saved
+ *     "expanded" state from the very first DOM observation — no
+ *     intermediate frame where the default-collapsed state painted
+ *     before the saved value applied.
+ *   - AT0068 scrolls the inner virtualized scroller to a non-zero
+ *     position, saves, reloads, and asserts the scroller's first
+ *     observable `scrollTop` matches the saved value — no jump from
+ *     0 to saved.
+ */
+const MOUNT_IN_SAVED_STATE_STDOUT = Array.from(
+  { length: 100 },
+  (_, i) =>
+    `line ${String(i + 1).padStart(3, "0")}: contents of a synthetic Bash run that exceeds the fold threshold`,
+).join("\n");
+
+const MOUNT_IN_SAVED_STATE_PROPS: ToolWrapperProps = {
+  // Stable across reload so `componentStatePreservationKey` matches
+  // (the BashToolBlock derives its preservation key from `toolUseId`).
+  toolUseId: "toolu_mount_in_saved_state_e8",
+  toolName: "Bash",
+  msgId: "gallery-mount-in-saved-state-msg",
+  seq: 0,
+  input: { command: "echo many lines" },
+  structuredResult: {
+    stdout: MOUNT_IN_SAVED_STATE_STDOUT,
+    stderr: "",
+    interrupted: false,
+  },
+  isError: false,
+  status: "ready",
+  durationMs: 12,
+};
+
+/**
+ * `gallery-bash-mount-in-saved-state` — fixture for AT0067/AT0068.
+ * Renders a single BashToolBlock whose stdout is long enough to engage
+ * both the fold state (TerminalBlock collapsed/expanded) and the
+ * virtualizer (inner scrollport with `data-tug-scroll-key`). Each
+ * surface is a separate axis of `bag.components` / `bag.regionScroll`
+ * and each axis must mount in its saved state on cold boot.
+ */
+export function GalleryBashMountInSavedState(): React.ReactElement {
+  return (
+    <div className="cg-content" data-testid="gallery-bash-mount-in-saved-state">
+      <BashToolBlock {...MOUNT_IN_SAVED_STATE_PROPS} />
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -127,161 +182,6 @@ const GIT_STATUS: ToolWrapperProps = {
 // ---------------------------------------------------------------------------
 // GalleryBashToolBlock
 // ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Late-mount fixture — mirrors tide-card transcript timing (Phase E.7)
-// ---------------------------------------------------------------------------
-
-/**
- * Stdout big enough to push TerminalBlock past `collapseThreshold` so
- * the default state is "collapsed". The user-visible regression Phase
- * E.7 must close: a Bash block that's been MANUALLY EXPANDED comes
- * back collapsed after Developer > Reload because the body kind
- * mounts AFTER `CardHost`'s one-shot `restoreCardState`.
- */
-const LATE_MOUNT_STDOUT = Array.from(
-  { length: 60 },
-  (_, i) => `line ${i + 1}: contents of a synthetic Bash run that exceeds the fold threshold`,
-).join("\n");
-
-const LATE_MOUNT_PROPS: ToolWrapperProps = {
-  // Stable across reload so `componentStatePreservationKey` matches
-  // on save and restore.
-  toolUseId: "toolu_late_mount_e7",
-  toolName: "Bash",
-  msgId: "gallery-late-mount-msg",
-  seq: 0,
-  input: { command: "echo many lines" },
-  structuredResult: {
-    stdout: LATE_MOUNT_STDOUT,
-    stderr: "",
-    interrupted: false,
-  },
-  isError: false,
-  status: "ready",
-  durationMs: 12,
-};
-
-/**
- * Renders the BashToolBlock behind a microtask-then-state-flip gate
- * so the body kind (TerminalBlock under the wrapper) lands STRICTLY
- * after CardHost's one-shot `restoreCardState` has iterated an empty
- * registry. Same shape that tide-card's transcript exhibits in
- * production: feedsReady gates content-factory mount, the data source
- * then arrives async, body kinds register only after that.
- *
- * Drives `tests/app-test/at0063-bash-block-fold-restore.test.ts` —
- * the Phase E.7 regression gate against the failure the user reports
- * for the live tide-card.
- */
-function LateMountBashToolBlock(): React.ReactElement {
-  const [mounted, setMounted] = useState<boolean>(false);
-  useEffect(() => {
-    let cancelled = false;
-    Promise.resolve().then(() => {
-      if (cancelled) return;
-      setMounted(true);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return (
-    <div className="cg-section" data-testid="late-mount-bash-section">
-      <TugLabel className="cg-section-title">Late-mount Bash block (Phase E.7)</TugLabel>
-      <div data-testid="late-mount-bash-slot">
-        {mounted ? <BashToolBlock {...LATE_MOUNT_PROPS} /> : null}
-      </div>
-    </div>
-  );
-}
-
-/**
- * `gallery-late-mount-bash-tool-block` — scoped variant of the
- * BashToolBlock gallery card that renders ONLY the late-mount fixture.
- * Used by `at0063-bash-block-fold-restore.test.ts`.
- */
-export function GalleryLateMountBashToolBlock(): React.ReactElement {
-  return (
-    <div className="cg-content" data-testid="gallery-late-mount-bash-tool-block">
-      <LateMountBashToolBlock />
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Tide-card-fidelity fixture — BashToolBlock inside a TugListView wrap
-// ---------------------------------------------------------------------------
-
-/**
- * Higher-fidelity fixture for the inner-scroll regression on live
- * tide-card. The production transcript renders BashToolBlock cells
- * inside a `TugListView` (inline mode + tailSpacer="80cqh"), not bare
- * div containers. AT0064's bare-fixture path passes; the live tide-
- * card path fails. This fixture closes the structural gap so the test
- * suite can pin the live path's failure mode.
- */
-interface BashCellItem {
-  id: string;
-  kind: "bash";
-}
-
-class BashLateMountDataSource implements TugListViewDataSource {
-  private readonly items: BashCellItem[];
-  constructor() {
-    this.items = [{ id: "bash-cell-0", kind: "bash" }];
-  }
-  numberOfItems(): number {
-    return this.items.length;
-  }
-  idForIndex(index: number): string {
-    return this.items[index].id;
-  }
-  kindForIndex(index: number): string {
-    return this.items[index].kind;
-  }
-  subscribe(_listener: () => void): () => void {
-    return () => undefined;
-  }
-  getVersion(): unknown {
-    return 0;
-  }
-}
-
-interface BashCellProps extends TugListViewCellProps<BashLateMountDataSource> {}
-
-const BashCellRenderer: React.FC<BashCellProps> = () => (
-  <LateMountBashToolBlock />
-);
-
-export function GalleryTideCardLikeBashToolBlock(): React.ReactElement {
-  const dataSource = useMemo(() => new BashLateMountDataSource(), []);
-  const cellRenderers = useMemo<
-    Record<string, TugListViewCellRenderer<BashLateMountDataSource>>
-  >(
-    () => ({
-      bash: BashCellRenderer,
-    }),
-    [],
-  );
-
-  return (
-    <div
-      className="cg-content"
-      data-testid="gallery-tide-card-like-bash-tool-block"
-      style={{ height: "100%", display: "flex", flexDirection: "column" }}
-    >
-      <TugListView
-        dataSource={dataSource}
-        cellRenderers={cellRenderers}
-        scrollKey="tide-card-like-transcript"
-        inline
-        tailSpacer="80cqh"
-      />
-    </div>
-  );
-}
 
 export function GalleryBashToolBlock() {
   return (

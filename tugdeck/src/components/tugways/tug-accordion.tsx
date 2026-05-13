@@ -39,7 +39,10 @@ import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
-import { useComponentStatePreservation } from "./use-component-state-preservation";
+import {
+  useComponentStatePreservation,
+  useSavedComponentState,
+} from "./use-component-state-preservation";
 
 // ---- TugAccordion Props (discriminated union) ----
 
@@ -182,10 +185,22 @@ export const TugAccordion = React.forwardRef<HTMLDivElement, TugAccordionProps>(
     // `string | string[]` and narrow at each access site by
     // `props.type`. [L11]
     const isExternallyControlled = props.value !== undefined;
+    const savedAccordionState = useSavedComponentState<TugAccordionState>(
+      componentStatePreservationKey,
+    );
     const [internalValue, setInternalValue] = useState<string | string[]>(
       () => {
         if (props.type === "single") {
+          if (typeof savedAccordionState?.value === "string") {
+            return savedAccordionState.value;
+          }
           return props.defaultValue ?? "";
+        }
+        if (
+          Array.isArray(savedAccordionState?.value) &&
+          savedAccordionState.value.every((v) => typeof v === "string")
+        ) {
+          return savedAccordionState.value as string[];
         }
         return props.defaultValue ?? [];
       },
@@ -226,45 +241,11 @@ export const TugAccordion = React.forwardRef<HTMLDivElement, TugAccordionProps>(
     // Opt-in Component State Preservation Protocol. The hook no-ops
     // when `componentStatePreservationKey` is undefined, so standalone
     // / gallery uses remain unaffected. Capture reads the
-    // `effectiveValue` source of truth; restore updates internal state
-    // in the uncontrolled path and dispatches a `toggleSection` for the
-    // controlled path (a best-effort re-dispatch; the parent is still
-    // in charge). [D13] / [A9].
+    // `effectiveValue` source of truth; the mount-in-saved-state half
+    // lives above in `useState`'s initializer. [D13] / [A9].
     useComponentStatePreservation<TugAccordionState>({
       componentStatePreservationKey,
       captureState: () => ({ value: effectiveValue }),
-      restoreState: (saved) => {
-        if (saved === null || typeof saved !== "object") return;
-        const next = (saved as Partial<TugAccordionState>).value;
-        if (props.type === "single") {
-          if (typeof next !== "string") return;
-          if (isExternallyControlled) {
-            controlDispatch({
-              action: TUG_ACTIONS.TOGGLE_SECTION,
-              value: next,
-              sender: effectiveSenderId,
-              phase: "discrete",
-            });
-          } else {
-            setInternalValue(next);
-          }
-        } else {
-          if (!Array.isArray(next) || next.some((v) => typeof v !== "string")) {
-            return;
-          }
-          const arr = next as string[];
-          if (isExternallyControlled) {
-            controlDispatch({
-              action: TUG_ACTIONS.TOGGLE_SECTION,
-              value: arr,
-              sender: effectiveSenderId,
-              phase: "discrete",
-            });
-          } else {
-            setInternalValue(arr);
-          }
-        }
-      },
     });
 
     // Build Radix-compatible props with effectiveDisabled, our internal

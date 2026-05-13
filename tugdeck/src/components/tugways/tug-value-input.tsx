@@ -409,17 +409,12 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
 
     // Opt-in Component State Preservation Protocol. Hook no-ops when
     // `componentStatePreservationKey` is undefined. Controlled-only —
-    // restore re-dispatches `setValue` so the parent updates.
-    // [D13] / [A9].
+    // the parent responder owns `value` and carries its own saved state
+    // via [A9]; it mounts in the saved value on cold boot, which flows
+    // back down here through the `value` prop. [D13] / [A9].
     useComponentStatePreservation<TugValueInputState>({
       componentStatePreservationKey,
       captureState: () => ({ value }),
-      restoreState: (saved) => {
-        if (saved === null || typeof saved !== "object") return;
-        const next = (saved as Partial<TugValueInputState>).value;
-        if (typeof next !== "number" || !Number.isFinite(next)) return;
-        dispatchCommit(next);
-      },
     });
 
     const editing = useValueInputEditing({

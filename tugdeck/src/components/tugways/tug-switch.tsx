@@ -27,7 +27,10 @@ import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
-import { useComponentStatePreservation } from "./use-component-state-preservation";
+import {
+  useComponentStatePreservation,
+  useSavedComponentState,
+} from "./use-component-state-preservation";
 
 // ---- Types ----
 
@@ -186,8 +189,14 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
     // the parent supplies `checked`, that's classic controlled mode and
     // the parent owns truth. Same shape as `tug-checkbox`'s opt-in.
     const isExternallyControlled = checked !== undefined;
+    const savedSwitchState = useSavedComponentState<TugSwitchState>(
+      componentStatePreservationKey,
+    );
     const [internalChecked, setInternalChecked] = useState<boolean>(
-      defaultChecked ?? false,
+      () =>
+        typeof savedSwitchState?.checked === "boolean"
+          ? savedSwitchState.checked
+          : (defaultChecked ?? false),
     );
     const effectiveChecked = isExternallyControlled
       ? checked
@@ -210,28 +219,13 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
 
     // Opt-in Component State Preservation Protocol. Hook no-ops when
     // `componentStatePreservationKey` is undefined. Capture reads
-    // `effectiveChecked`; restore updates internal state in the
-    // uncontrolled path and dispatches a `toggle` for the controlled
-    // path (best-effort re-dispatch; the parent is still in charge).
-    // [D13] / [A9].
+    // `effectiveChecked`; the mount-in-saved-state half lives above in
+    // `useState`'s initializer. The controlled path doesn't re-dispatch
+    // on restore because the parent responder owns the value and has
+    // its own saved state via [A9]. [D13] / [A9].
     useComponentStatePreservation<TugSwitchState>({
       componentStatePreservationKey,
       captureState: () => ({ checked: effectiveChecked === true }),
-      restoreState: (saved) => {
-        if (saved === null || typeof saved !== "object") return;
-        const next = (saved as Partial<TugSwitchState>).checked;
-        if (typeof next !== "boolean") return;
-        if (isExternallyControlled) {
-          controlDispatch({
-            action: TUG_ACTIONS.TOGGLE,
-            value: next,
-            sender: effectiveSenderId,
-            phase: "discrete",
-          });
-        } else {
-          setInternalChecked(next);
-        }
-      },
     });
 
     // Role injection — every path injects surface-toggle-track tokens. [L06]

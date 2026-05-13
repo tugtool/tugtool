@@ -1096,6 +1096,78 @@ See [tugplan-tide-picker-redesign §D16](../roadmap/tugplan-tide-picker-redesign
 
 ---
 
+## Restoring saved state at mount
+
+A stateful component that opts into the [A9] Component State Preservation Protocol has two halves to wire up: **capture** and **restore-at-mount**. Capture lands the current value into `bag.components` at save time. Restore-at-mount reads the saved value at render time and uses it as the initial state, so the component's very first paint after a restore (cold boot, cross-pane move, tab reopen, HMR remount) already reflects what the user last saved.
+
+The contract is one sentence: **user-visible state at first paint after restore equals user-visible state at last save before destruction.** No intermediate frame painted with the `useState` default. No jump from a 0 scrollTop to the saved scrollTop. If your component ever needs a post-mount `setState` to "apply" a saved value, you are violating the contract — that mechanism produced the wild-scrolling regression Phase E.8 eliminates.
+
+### The canonical pattern — `useSavedComponentState` in a `useState` initializer
+
+For a component whose state lives in React (fold flags, popover open state, toggle values), pair `useSavedComponentState<T>(componentStatePreservationKey)` with a `useState` initializer:
+
+```tsx
+function TerminalBlock({ componentStatePreservationKey, ... }: Props) {
+  const overThreshold = lineCount > collapseThreshold;
+  const savedComponentState = useSavedComponentState<{ collapsed: boolean }>(
+    componentStatePreservationKey,
+  );
+  const [collapsed, setCollapsed] = useState<boolean>(() =>
+    typeof savedComponentState?.collapsed === "boolean"
+      ? savedComponentState.collapsed
+      : overThreshold,
+  );
+
+  useComponentStatePreservation<{ collapsed: boolean }>({
+    componentStatePreservationKey,
+    captureState: () => ({ collapsed }),
+  });
+  // ...
+}
+```
+
+Three things this pattern guarantees:
+
+- The read happens in render, before `useState` runs its initializer. The saved value flows straight into the initial state — no effect, no re-render.
+- The initializer narrows defensively (`typeof saved?.collapsed === "boolean"`) so a code change that evolves the payload shape can never crash a card on cold boot. An unrecognized payload falls back to the default.
+- The `captureState` closure is stored in a ref synced on every render, so it always sees the latest local state at harvest time [L07].
+
+### The scroll-axis variant — `useSavedRegionScroll` plus imperative `initialScrollTop`
+
+For imperative renderers that own an inner scrollport (TerminalBlock's virtualized scroller, FileBlock's CM6 mount), the same primitive carries through to scroll position:
+
+```tsx
+const scrollKey = `${componentStatePreservationKey}/term-scroll`;
+const savedRegionScroll = useSavedRegionScroll(scrollKey);
+const initialScrollTopRef = useRef<number | undefined>(savedRegionScroll?.y);
+const firstRenderConsumedRef = useRef(false);
+const consumeInitialScrollTop = useCallback((): number | undefined => {
+  if (firstRenderConsumedRef.current) return undefined;
+  firstRenderConsumedRef.current = true;
+  return initialScrollTopRef.current;
+}, []);
+
+useLayoutEffect(() => {
+  const handle = renderTerminal(
+    outer, body, data, getOuter, collapsed, "top", scrollKey,
+    consumeInitialScrollTop(),
+  );
+  return () => handle.cleanup();
+}, [collapsed, /* ... */, consumeInitialScrollTop]);
+```
+
+The renderer assigns `scroller.scrollTop = initialScrollTop` immediately after `body.appendChild(scroller)`, inside the same `useLayoutEffect` call — before paint. The scroller's first observable `scrollTop` already matches the bag. The `consumeInitialScrollTop` one-shot ensures only the FIRST creation of the inner scroller consumes the saved value; subsequent rebuilds (collapse-toggle, streaming re-render) pass `undefined` and rely on the anchor-based default. The element-identity-gated `MutationObserver` pass in `card-host.tsx` covers any later scroller-rebuild path by re-applying the bag value to the new element.
+
+### Anti-patterns
+
+- **Do not** add a `restoreState` callback to `useComponentStatePreservation`. The capability is gone for a reason — a post-mount apply re-renders the component with the saved value, which the user sees as a flicker.
+- **Do not** read `useSavedComponentState` outside a `useState` initializer and then `setState` from a `useEffect`. That is the same post-mount apply path in a different shape.
+- **Do not** read `useSavedRegionScroll` and write `el.scrollTop = saved.y` from a `useEffect` after the scroller mounts. That produces the visible 0 → saved jump. Pass the value into the imperative renderer at creation time instead.
+
+See [state-preservation.md](state-preservation.md) for the full protocol, capture/restore moments, and the relationship to `[L23]`.
+
+---
+
 ## Selection and Focus
 
 Every component participates in the selection model. See [card-state-model.md](card-state-model.md) for the full design.

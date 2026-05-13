@@ -83,6 +83,7 @@ import {
 import {
   CardComponentStatePreservationContext,
   type CardComponentStatePreservationContextValue,
+  type SavedRegionScroll,
 } from "../tugways/use-component-state-preservation";
 import { CardDirtyContext, TugPaneFrameContext, TugPanePortalContext } from "./tug-pane";
 import { useResponder } from "../tugways/use-responder";
@@ -792,7 +793,6 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       cardStatePreservationCallbacksRef.current = callbacks;
       if (isRemount) {
         hasAppliedContentRestoreRef.current = false;
-        hasRestoredComponentsRef.current = false;
       }
       setCallbacksVersion((v) => v + 1);
     },
@@ -1293,28 +1293,14 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardId, store]);
 
-  // Component-level restore ([A9c]). Fires once per mount, after child
-  // `useComponentStatePreservation` hooks have run (React commits
-  // effects child-first, so by the time this parent effect runs every
-  // descendant component has already registered with the card's
-  // registry). Keyed on `[cardId, store]` for identity stability, but
-  // the `hasRestoredComponentsRef` guard keeps it one-shot so
-  // cross-pane moves and re-mounts don't re-apply stale state to
-  // components the user may have already edited.
-  const hasRestoredComponentsRef = useRef(false);
-  useLayoutEffect(() => {
-    if (hasRestoredComponentsRef.current) return;
-    hasRestoredComponentsRef.current = true;
-    const bag = store.getCardState(cardId);
-    if (!bag) return;
-    store.restoreCardState(cardId, bag);
-    // `callbacksVersion` joins the dep set so this effect re-fires on
-    // a content-factory remount. The matching one-shot reset for
-    // `hasRestoredComponentsRef` lives in
-    // `registerStatePreservationCallbacks` and only flips when the
-    // no-op-pair → real-callbacks transition is observed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cardId, store, callbacksVersion]);
+  // Component-level restore is render-time, not effect-driven. Each
+  // participating component reads its saved value via
+  // `useSavedComponentState` (or `useSavedRegionScroll`) inside a
+  // `useState` initializer / imperative-renderer creation site, so the
+  // component mounts in its saved state on first paint. There is no
+  // post-mount apply pass; the wild-scrolling that motivated Phase E.8
+  // was the cost of having one. See `tuglaws/state-preservation.md` →
+  // "Restoring saved state at mount" for the full contract.
 
   const markDirty = useCardDirtyState({
     hostContentEl,
@@ -1346,13 +1332,26 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     [cardId, registerStatePreservationCallbacks],
   );
 
-  // Per-card Component State Preservation Protocol registry ([D13],
-  // [A9]). Lazily materialized by the deck manager on first child call
-  // to `useComponentStatePreservation`; we fetch a reference here so
-  // the context provider below carries it to every descendant of this
-  // card. The root context starts with an empty prefix and empty
-  // treePath; `<ComponentStatePreservationScope>` providers nested
-  // beneath extend both.
+  // Per-card Component State Preservation Protocol context ([D13],
+  // [A9]). Provides four things to every descendant:
+  //
+  //   1. The lazily-materialized registry, into which participating
+  //      components register their `captureState` closure via
+  //      `useComponentStatePreservation`.
+  //   2. The accumulated scope prefix and `treePath` (empty here at the
+  //      card root; nested `<ComponentStatePreservationScope>` providers
+  //      extend both).
+  //   3. Synchronous saved-state accessors that read from this card's
+  //      `CardStateBag` in the manager's cache. Components consume them
+  //      via `useSavedComponentState` / `useSavedRegionScroll` inside a
+  //      `useState` initializer (or imperative renderer) so they mount
+  //      in their saved state on the very first paint.
+  //   4. The deck manager's notify channel for [L02] compliance. The
+  //      accessor hooks pass it to `useSyncExternalStore`; a future bag
+  //      mutation that fires `notify()` re-reads the saved value. The
+  //      cold-boot path doesn't need this — the cache is hydrated
+  //      synchronously before any CardHost mounts — but the wiring stays
+  //      [L02]-correct.
   const componentStatePreservationContextValue = useMemo<
     CardComponentStatePreservationContextValue
   >(
@@ -1360,6 +1359,17 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       registry: store.getComponentStatePreservationRegistry(cardId),
       prefix: "",
       treePath: [],
+      getSavedComponentState: (scopedKey: string): unknown => {
+        const bag = store.getCardState(cardId);
+        return bag?.components?.[scopedKey];
+      },
+      getSavedRegionScroll: (scrollKey: string): SavedRegionScroll | undefined => {
+        const bag = store.getCardState(cardId);
+        const entry = bag?.regionScroll?.[scrollKey];
+        if (!entry) return undefined;
+        return entry;
+      },
+      subscribe: store.subscribe,
     }),
     [store, cardId],
   );
