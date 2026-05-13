@@ -3697,28 +3697,25 @@ Microtasks (`queueMicrotask`) are NOT a substitute: they drain *between* events 
 - **Unchanged at this step:** `useCardStatePreservation.onCardActivated` still calls `paintMirrorAsActive` (autonomous claim). `useCardStatePreservation.onRestore` still calls `paintMirrorAsActive` in the `isActive` branch. `useCardDelegate.cardDidActivate` in `tide-card.tsx` still calls `entryDelegateRef.focus()`. **This step is purely additive — the new channel exists but is not yet invoked from the framework.**
 
 **Tasks:**
-- [ ] Replace `component-owned` with `engine` in the `FocusSnapshot` union; update all type sites.
-- [ ] Update `captureFocus` to return `{ kind: "engine" }` when the active element sits inside `[data-slot="tug-text-editor"]` (or any other `COMPONENT_OWNED_SELECTORS` entry; the selector list stays).
-- [ ] Add backward-compat coercion: when reading a persisted bag, `bag.focus.kind === "component-owned"` is coerced to `engine` at the deserialization boundary (or at the read consumer, whichever yields a smaller surface).
-- [ ] Add the three new methods to `deck-manager-store` interface and `deck-manager` implementation.
-- [ ] **Decide and implement the engine-hook registration → `callbacksVersion` integration.** Two paths to choose between:
-  - **Path A (preferred):** Engine-hook registration shares the existing `callbacksVersion` axis CardHost already tracks for `useCardStatePreservation` callbacks (`card-host.tsx:1216`). When `TugTextEditor`'s `registerEngineHooks` runs, the deck-manager bumps the same `callbacksVersion` counter, and CardHost's RESTORE effect (which deps on `callbacksVersion`) re-fires automatically. No new wiring on the consumer side; Step 4's `deferred-engine` retry is free.
-  - **Path B (fallback):** Engine-hook registration uses a parallel `engineHooksVersion` axis. CardHost subscribes separately. More code; cleaner separation; only choose if Path A produces unwanted re-fires for `useCardStatePreservation`-only callbacks consumers.
-  Decide here so Step 4's retry mechanism doesn't have to retrofit. Default: Path A. Path B chosen only if Path A's spurious-re-fire cost is shown to matter (measure with the new deck-trace events from Step 1).
-- [ ] `TugTextEditor` registers `paintMirrorAsActive` / `paintMirrorAsInactive` hooks via `useLayoutEffect` keyed on `[store, cardId]`. Registration bumps `callbacksVersion` (Path A) or `engineHooksVersion` (Path B).
-- [ ] Update `resolveActivationTarget` to handle `engine` kind defensively (treat as `dispatch-activated` for now — the framework dispatch wiring lands in Step 3).
+- [x] Replace `component-owned` with `engine` in the `FocusSnapshot` union; update all type sites.
+- [x] Update `captureFocus` to return `{ kind: "engine" }` when the active element sits inside `[data-slot="tug-text-editor"]` (or any other `COMPONENT_OWNED_SELECTORS` entry; the selector list stays).
+- [x] Add backward-compat coercion: when reading a persisted bag, `bag.focus.kind === "component-owned"` is coerced to `engine` at the deserialization boundary (or at the read consumer, whichever yields a smaller surface). _(Implemented in `settings-api.ts#coerceFocusSnapshotOnRead`, called from `readCardStates`.)_
+- [x] Add the three new methods to `deck-manager-store` interface and `deck-manager` implementation. _(Plus a fourth method `subscribeEngineHooksChange` for Step 4's late-mount retry — Path B was chosen, see decision below.)_
+- [x] **Decide and implement the engine-hook registration → `callbacksVersion` integration.** **Path B chosen.** Path A would require `registerEngineHooks` to reach into CardHost's local `callbacksVersion` state, which would either (a) leak through the existing `CardStatePreservationContext.register` callback (couples two independent concerns) or (b) require a side-channel call from `deck-manager` back into React tree state (architectural smell). Path B adds a dedicated `subscribeEngineHooksChange(cardId, listener)` channel on the store that CardHost subscribes to in `useLayoutEffect`; the listener bumps a local `engineHooksVersion` counter that joins the cold-boot RESTORE effect's dep set. Cleaner separation; the spurious-re-fire concern of Path A doesn't apply because the channel fires only on real engine registrations. Step 4 wires CardHost's subscription.
+- [x] `TugTextEditor` registers `paintMirrorAsActive` / `paintMirrorAsInactive` hooks via `useLayoutEffect` keyed on `[cardId]`. Registration fires the engine-hooks-change channel.
+- [x] Update `resolveActivationTarget` to handle `engine` kind defensively (treat as `dispatch-activated` for now — the framework dispatch wiring lands in Step 3). _(Engine-managed and content-owning cards already short-circuit to `dispatch-activated` above the kind-specific branch; the DOM-authority fallback path keeps its defensive engine-selector query with a clarifying comment.)_
 
 **Tests:**
-- [ ] `bunx tsc --noEmit` — clean.
-- [ ] `bun run audit:tokens lint` — zero violations.
-- [ ] `bun test` — green.
-- [ ] `just app-test at0071-...test.ts at0072-...test.ts at0073-...test.ts at0074-...test.ts` — green (additive, no behavior change).
-- [ ] Adjacent regression: `just app-test at0020 at0024 at0025 at0031 at0033 at0034 at0035-tide at0046 at0067` — green.
+- [x] `bunx tsc --noEmit` — clean.
+- [x] `bun run audit:tokens lint` — zero violations.
+- [x] `bun test` — green.
+- [x] `just app-test at0071-...test.ts at0072-...test.ts at0073-...test.ts at0074-...test.ts` — green (additive, no behavior change).
+- [x] Adjacent regression: `just app-test at0020 at0024 at0025 at0031 at0033 at0034 at0035-tide at0046 at0067` — green.
 
 **Checkpoint:**
-- [ ] No `FocusSnapshot.kind === "component-owned"` references remain in the codebase (TypeScript exhaustiveness checker enforces).
-- [ ] Engine hooks are registered for tide cards (verify via deck-trace event added in Step 1).
-- [ ] AT0071–74 + adjacent regression set: 100% pass.
+- [x] No `FocusSnapshot.kind === "component-owned"` references remain in the codebase (TypeScript exhaustiveness checker enforces).
+- [x] Engine hooks are registered for tide cards (verify via deck-trace event added in Step 1). _(Verified at the wiring site: `tug-text-editor.tsx` `useLayoutEffect` calls `store.registerEngineHooks(cardId, {...})`. Hook closures emit `engine-paint-mirror-active` / `engine-paint-mirror-inactive` with `caller: "via-engine-hook"` when invoked by Step 3's dispatcher.)_
+- [x] AT0071–74 + adjacent regression set: 100% pass.
 
 ---
 

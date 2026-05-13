@@ -140,6 +140,7 @@ import {
 } from "./tug-text-editor/state-preservation";
 import type { PendingEditRestore } from "./tug-text-editor/state-preservation";
 import { deckTrace } from "@/deck-trace";
+import { getDeckStore } from "@/lib/deck-store-registry";
 import { selectionGuard } from "./selection-guard";
 import { useTextSurfaceContextMenu } from "./use-text-surface-context-menu";
 import { useCardId } from "./use-card-state-preservation";
@@ -874,6 +875,58 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     const cardIdRef = useRef(cardId);
     useLayoutEffect(() => {
       cardIdRef.current = cardId;
+    }, [cardId]);
+
+    // Phase E.11 Step 2 — engine-hook registration channel (additive).
+    //
+    // Register `paintMirrorAsActive` / `paintMirrorAsInactive` hooks
+    // with the deck-manager-store so Step 3's `applyBagFocus`
+    // dispatcher can invoke them when `bag.focus.kind === "engine"`.
+    // The hooks read `viewRef.current` live at fire time per [L07] —
+    // identity-stable across re-renders and across CodeMirror's
+    // StrictMode mount/cleanup/mount cycle.
+    //
+    // Registration runs in `useLayoutEffect` keyed on `[cardId]` so
+    // it's complete before any framework event that could invoke
+    // the hook fires ([L03]). When no `cardId` is present
+    // (standalone use outside a `CardStatePreservationContext`), we
+    // skip — the imperative-API surface above still allows ad-hoc
+    // callers to drive `paintMirrorAsActive` directly.
+    //
+    // The store registration notifies Phase E.11 Step 4's late-mount
+    // subscriber chain (`subscribeEngineHooksChange`) so CardHost's
+    // cold-boot RESTORE effect re-fires when a late-mounting engine
+    // (tide's editor after `feedsReady`) registers. This wiring
+    // exists today but is dead at Step 2 (no consumer); Step 3 wires
+    // the dispatcher to invoke through this channel.
+    useLayoutEffect(() => {
+      if (cardId === null) return;
+      const store = getDeckStore();
+      if (store === null) return;
+      const unregister = store.registerEngineHooks(cardId, {
+        paintMirrorAsActive: () => {
+          const view = viewRef.current;
+          if (view === null) return;
+          deckTrace.record({
+            kind: "engine-paint-mirror-active",
+            cardId,
+            caller: "via-engine-hook",
+          });
+          paintMirrorAsActiveImpl(view);
+        },
+        paintMirrorAsInactive: () => {
+          const view = viewRef.current;
+          if (view === null) return;
+          deckTrace.record({
+            kind: "engine-paint-mirror-inactive",
+            cardId,
+          });
+          paintMirrorAsInactiveImpl(view, (range) => {
+            selectionGuard.updateCardDomSelection(cardId, range);
+          });
+        },
+      });
+      return unregister;
     }, [cardId]);
 
     // Live providers ref. The typeahead extension reads this via a

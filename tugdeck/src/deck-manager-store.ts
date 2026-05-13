@@ -376,4 +376,115 @@ export interface IDeckManagerStore {
    * one subtree that belongs to `cardId`.
    */
   peekCardHostRoot: (cardId: string) => HTMLElement | null;
+
+  // ---- Engine hooks (Phase E.11 single-channel dispatcher seam) ----
+
+  /**
+   * Register an engine's `paintMirrorAsActive` / `paintMirrorAsInactive`
+   * hooks for `cardId`. Returns an unregister function.
+   * Last-registration-wins per cardId.
+   *
+   * The engine becomes a **callable** the framework's
+   * `applyBagFocus` dispatcher invokes when `bag.focus.kind === "engine"`,
+   * NOT an autonomous focus claimant. Step 2 adds the channel
+   * (additive, no consumer yet); Step 3 wires `applyBagFocus` to
+   * call `invokeEnginePaintMirrorAsActive` / `invokeEnginePaintMirrorAsInactive`
+   * and retires the engine's autonomous claim in
+   * `useCardStatePreservation.onCardActivated` / the `isActive` branch
+   * of `onRestore`. See `tuglaws/state-preservation.md`
+   * [Focus dispatch model].
+   *
+   * Registration bumps the deck-manager's `callbacksVersion` axis
+   * so `CardHost`'s `useLayoutEffect` that depends on it re-fires —
+   * this lets Step 4's `deferred-engine` retry settle when the
+   * engine mounts late (tide's transcript loads messages async after
+   * cold-boot; the editor that owns engine focus mounts at that
+   * later point). Same axis the state-preservation callbacks use,
+   * so the existing re-fire wiring covers this without a new
+   * subscription.
+   *
+   * `TugTextEditor` registers via `useLayoutEffect` keyed on
+   * `[store, cardId]`; the closure reads `viewRef.current` live at
+   * fire time per [L07], so the closure's identity is stable across
+   * re-renders.
+   */
+  registerEngineHooks: (
+    cardId: string,
+    hooks: EngineHooks,
+  ) => () => void;
+
+  /**
+   * Invoke the registered engine's `paintMirrorAsActive` for
+   * `cardId`. Silently no-ops when no hooks are registered (engine
+   * not mounted yet, card is DOM-authority, hooks unregistered).
+   * Phase E.11 Step 3 wires `applyBagFocus` to this method for the
+   * `engine` resolution kind; until then this method exists but is
+   * never called from the framework dispatcher.
+   */
+  invokeEnginePaintMirrorAsActive: (cardId: string) => void;
+
+  /**
+   * Mirror invocation for `paintMirrorAsInactive`. Silently no-ops
+   * when no hooks are registered. The `publish` callback the engine
+   * needs to route inactive-selection through `selectionGuard` is
+   * captured by the engine's own hook closure at registration time
+   * (it has the cardId baked in), so this method takes only the
+   * cardId; the hook is parameterless from the dispatcher's side.
+   */
+  invokeEnginePaintMirrorAsInactive: (cardId: string) => void;
+
+  /**
+   * Subscribe to engine-hook registration events for `cardId`.
+   * Listener fires after every `registerEngineHooks` registration
+   * (including last-write-wins re-registrations) and after the
+   * unregister cleanup. Returns an unsubscribe function.
+   *
+   * `CardHost` uses this in a `useLayoutEffect` to drive the
+   * `deferred-engine` retry path: when an engine mounts late
+   * (tide's editor renders after `feedsReady`), its
+   * `registerEngineHooks` call fires the listener, which bumps
+   * CardHost's `callbacksVersion`-equivalent dep and re-fires the
+   * cold-boot RESTORE effect through `applyBagFocus`.
+   */
+  subscribeEngineHooksChange: (
+    cardId: string,
+    listener: () => void,
+  ) => () => void;
+}
+
+/**
+ * Hooks an engine registers with the framework so the single-channel
+ * dispatcher (`applyBagFocus`) can drive activation-time
+ * `paintMirrorAsActive` / `paintMirrorAsInactive` calls. The engine
+ * still owns the implementation — these hooks are thin closures over
+ * the engine's view that call into the engine's existing primitives
+ * (e.g. `paintMirrorAsActiveImpl(view, state)` for the editor).
+ *
+ * Closures must read engine state (e.g. `viewRef.current`) live at
+ * fire time, not at registration time, per [L07] — otherwise the
+ * hook would fight CodeMirror's StrictMode-driven mount/cleanup/
+ * mount cycle.
+ */
+export interface EngineHooks {
+  /**
+   * Claim focus and global Selection on behalf of this card's
+   * engine. The framework's `applyBagFocus` invokes this when
+   * `bag.focus.kind === "engine"`. The engine reads its own latest
+   * state (selection, scroll) and applies. Returns `void` — the
+   * dispatcher treats the call as best-effort; if the engine's
+   * `view` is unmounted, the hook should no-op silently and the
+   * dispatcher's late-mount retry (Phase E.11 Step 4) will re-fire
+   * once the engine registers fresh hooks.
+   */
+  paintMirrorAsActive: () => void;
+
+  /**
+   * Symmetry pair: route the engine's selection into the
+   * inactive-paint channel before another card claims focus +
+   * global Selection. The engine knows where to send its selection
+   * Range — typically `selectionGuard.updateCardDomSelection(cardId,
+   * range)`. The dispatcher never reads the returned Range; it only
+   * triggers the hook.
+   */
+  paintMirrorAsInactive: () => void;
 }

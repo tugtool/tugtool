@@ -63,6 +63,15 @@ export function readDeckState(client: TugbankClient): string | null {
  * Read per-card state bags from the TugbankClient cache for the given card ids.
  * Returns a Map of cardId → CardStateBag for cards that have stored state under
  * `dev.tugtool.deck.cardstate`.
+ *
+ * Backward-compat coercion: persisted bags from before Phase E.11 stored
+ * `{ kind: "component-owned" }` in `bag.focus` for engine-owned focus
+ * targets. The current `FocusSnapshot` union names this variant
+ * `engine`; the structure (no payload fields beyond `kind`) is
+ * identical, so the rename is a pure relabel. We coerce on read so
+ * downstream consumers see the post-E.11 shape exclusively. Bags
+ * written by this client after Phase E.11 already carry
+ * `kind: "engine"`; the coercion is a no-op for them.
  */
 export function readCardStates(client: TugbankClient, cardIds: string[]): Map<string, CardStateBag> {
   const map = new Map<string, CardStateBag>();
@@ -72,10 +81,30 @@ export function readCardStates(client: TugbankClient, cardIds: string[]): Map<st
   for (const cardId of cardIds) {
     const entry = domain[cardId] as TaggedValue | undefined;
     if (entry && entry.kind === "json" && entry.value !== undefined) {
-      map.set(cardId, entry.value as CardStateBag);
+      map.set(cardId, coerceFocusSnapshotOnRead(entry.value as CardStateBag));
     }
   }
   return map;
+}
+
+/**
+ * Coerce legacy `{ kind: "component-owned" }` in `bag.focus` to
+ * `{ kind: "engine" }` on read. Information-preserving — the variants
+ * are structurally identical and represent the same focus state — so
+ * the rewrite is safe to apply unconditionally at the deserialization
+ * boundary. Returns the input bag (possibly with a new `focus` field)
+ * when a coercion fires, the same reference otherwise.
+ */
+function coerceFocusSnapshotOnRead(bag: CardStateBag): CardStateBag {
+  const focus = bag.focus;
+  if (focus === undefined || focus === null) return bag;
+  // The persisted value may carry a kind string the current
+  // `FocusSnapshot` union no longer names; cast through `unknown` to
+  // read the legacy tag without losing type safety on the rewrite.
+  if ((focus as unknown as { kind: string }).kind === "component-owned") {
+    return { ...bag, focus: { kind: "engine" } };
+  }
+  return bag;
 }
 
 // ── Write functions (HTTP PUT, unchanged) ────────────────────────────────────

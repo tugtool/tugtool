@@ -53,7 +53,7 @@ import { TugBulletinProvider } from "./components/tugways/tug-bulletin";
 import { putLayout, putCardState, putFocusedCardId } from "./settings-api";
 import { TugThemeProvider, type ThemeName } from "./contexts/theme-provider";
 import { composeProviders } from "./lib/compose-providers";
-import type { IDeckManagerStore } from "./deck-manager-store";
+import type { EngineHooks, IDeckManagerStore } from "./deck-manager-store";
 import { DeckManagerContext } from "./deck-manager-context";
 import { BASE_THEME_NAME } from "./theme-constants";
 import {
@@ -1244,6 +1244,127 @@ export class DeckManager implements IDeckManagerStore {
 
   peekCardHostRoot(cardId: string): HTMLElement | null {
     return this.cardHostRoots.get(cardId) ?? null;
+  }
+
+  // ---- Engine hooks (Phase E.11 single-channel dispatcher seam) ----
+
+  /**
+   * Per-card engine hooks (`paintMirrorAsActive` / `paintMirrorAsInactive`).
+   * Last-registration-wins per cardId. Phase E.11 Step 2 adds the
+   * channel (additive, no consumer yet); Step 3 wires
+   * `applyBagFocus` to invoke through these hooks for the `engine`
+   * resolution kind.
+   */
+  private engineHooks: Map<string, EngineHooks> = new Map();
+
+  /**
+   * Per-card engine-hook-change listeners. `CardHost` subscribes
+   * here in a `useLayoutEffect` so its cold-boot RESTORE effect
+   * re-fires when an engine registers late (tide's editor mounts
+   * after `feedsReady`). Last-registration-wins per (cardId,
+   * listener) — the listener identity is what we key on internally,
+   * via a Set per cardId.
+   */
+  private engineHooksListeners: Map<string, Set<() => void>> = new Map();
+
+  registerEngineHooks(cardId: string, hooks: EngineHooks): () => void {
+    this.engineHooks.set(cardId, hooks);
+    // Notify CardHost (and any other subscriber) that the engine
+    // hooks for this card just changed — drives Phase E.11 Step 4's
+    // `deferred-engine` retry. Listeners fire even on
+    // last-write-wins re-registration so a TugTextEditor remount
+    // (HMR, cross-pane move) lights up the dispatcher's re-fire
+    // path.
+    const listeners = this.engineHooksListeners.get(cardId);
+    if (listeners !== undefined) {
+      for (const listener of listeners) {
+        try {
+          listener();
+        } catch (err) {
+          console.error("[deck-manager] engine-hooks listener threw:", err);
+        }
+      }
+    }
+    return () => {
+      // Only clear when we still own the slot.
+      if (this.engineHooks.get(cardId) === hooks) {
+        this.engineHooks.delete(cardId);
+        // Notify on unregister too so subscribers can clear
+        // engine-derived state cleanly. A successor registration
+        // (e.g. cross-pane move) fires a second notify when its
+        // own `registerEngineHooks` runs.
+        const cleanupListeners = this.engineHooksListeners.get(cardId);
+        if (cleanupListeners !== undefined) {
+          for (const listener of cleanupListeners) {
+            try {
+              listener();
+            } catch (err) {
+              console.error(
+                "[deck-manager] engine-hooks listener threw on unregister:",
+                err,
+              );
+            }
+          }
+        }
+      }
+    };
+  }
+
+  invokeEnginePaintMirrorAsActive(cardId: string): void {
+    const hooks = this.engineHooks.get(cardId);
+    if (hooks === undefined) return;
+    try {
+      hooks.paintMirrorAsActive();
+    } catch (err) {
+      console.error(
+        "[deck-manager] engine paintMirrorAsActive threw:",
+        err,
+      );
+    }
+  }
+
+  invokeEnginePaintMirrorAsInactive(cardId: string): void {
+    const hooks = this.engineHooks.get(cardId);
+    if (hooks === undefined) return;
+    try {
+      hooks.paintMirrorAsInactive();
+    } catch (err) {
+      console.error(
+        "[deck-manager] engine paintMirrorAsInactive threw:",
+        err,
+      );
+    }
+  }
+
+  /**
+   * Subscribe to engine-hook registration events for `cardId`. The
+   * listener fires after `registerEngineHooks` (or its cleanup)
+   * runs, including last-write-wins re-registrations from the same
+   * `cardId`. Returns an unsubscribe function.
+   *
+   * Used by `CardHost` to re-fire its cold-boot RESTORE effect when
+   * a late-mounting engine registers; bridges the dispatcher's
+   * `deferred-engine` retry path to the engine's mount lifecycle.
+   * The channel is Phase E.11 Step 2 infrastructure; Step 4 wires
+   * the retry in `CardHost`.
+   */
+  subscribeEngineHooksChange(
+    cardId: string,
+    listener: () => void,
+  ): () => void {
+    let listeners = this.engineHooksListeners.get(cardId);
+    if (listeners === undefined) {
+      listeners = new Set();
+      this.engineHooksListeners.set(cardId, listeners);
+    }
+    listeners.add(listener);
+    return () => {
+      const set = this.engineHooksListeners.get(cardId);
+      if (set !== undefined) {
+        set.delete(listener);
+        if (set.size === 0) this.engineHooksListeners.delete(cardId);
+      }
+    };
   }
 
   /**

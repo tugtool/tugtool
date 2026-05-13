@@ -11,16 +11,18 @@
  * test here is the NEGATIVE case for that precondition:
  *
  *   When `bag.focus` is absent — i.e., the user's focus is on the
- *   engine's contenteditable (`kind: "component-owned"` is filtered
- *   out for content-owning cards by the save-side engine carve-out)
- *   — the precondition falls through and the resolver returns
+ *   engine's contenteditable (`kind: "engine"` is filtered out for
+ *   content-owning cards by the save-side carve-out at this step;
+ *   legacy bags carrying `"component-owned"` are coerced to
+ *   `"engine"` on read in `settings-api.ts`) — the precondition
+ *   falls through and the resolver returns
  *   `{ kind: "dispatch-activated" }`. The engine's
  *   `onCardActivated` → `paintMirrorAsActive` is then the
  *   authoritative restore path.
  *
  * The regression we are gating against: if the precondition were to
- * naively honour `component-owned` (or fail to filter it on save),
- * the framework would `.focus()` the engine's contenteditable from
+ * naively honour `engine` (or fail to filter it on save), the
+ * framework would `.focus()` the engine's contenteditable from
  * its own path, bypassing the engine's inactive-paint →
  * global-Selection transfer. The user would see focus on a view
  * with no caret. The engine-focus case must continue to route
@@ -118,9 +120,9 @@ describe.skipIf(!SHOULD_RUN)("at0074: engine fallback when bag.focus is absent",
       );
 
       // Read the saved bag. The engine carve-out on the save side
-      // means `bag.focus` is absent (`component-owned` was filtered
-      // out for this content-owning card). `kind: "none"` is also
-      // filtered out by the assembler so the axis is omitted
+      // means `bag.focus` is absent (`engine` is filtered out for
+      // this content-owning card at this step). `kind: "none"` is
+      // also filtered out by the assembler so the axis is omitted
       // entirely from the bag.
       const bag = await app.evalJS<{ focus?: { kind: string } } | null>(
         `window.__tug.getCardStateBag("A")`,

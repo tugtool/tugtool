@@ -200,11 +200,17 @@ export interface DomSelectionSnapshot {
  *   - `dom` — a non-form-control focusable element carrying an opt-in
  *     `data-tug-focus-key="<key>"` marker (e.g. a button, a card-local
  *     menu trigger). Keyed lookup on restore.
- *   - `component-owned` — focus belongs to a component that manages
- *     its own focus plus selection together (tide card's prompt-input
- *     contentEditable, for example). The owning component's
- *     `bag.content` carries whatever state it needs; `CardHost` merely
- *     notes that the component was focused.
+ *   - `engine` — focus belongs to a content-owning engine that exposes
+ *     a `paintMirrorAsActive` hook (CodeMirror-backed TugTextEditor,
+ *     tide prompt-input contentEditable, etc.). The framework's
+ *     single-channel dispatcher invokes `store.invokeEnginePaintMirrorAsActive(cardId)`
+ *     to drive the claim; the engine no longer self-claims via
+ *     `onCardActivated`. See `tuglaws/state-preservation.md`'s
+ *     [Focus dispatch model] section. _Migration:_ persisted bags from
+ *     before Phase E.11 stored `{ kind: "component-owned" }` for this
+ *     case; the deserialization boundary coerces those reads to
+ *     `engine` so old bags continue to drive the correct dispatch
+ *     path (see `coerceFocusSnapshotOnRead` in `card-host.tsx`).
  *   - `none` — no interesting focus inside the card (or focus is on
  *     `document.body`, or outside the card root entirely).
  *
@@ -216,7 +222,7 @@ export type FocusSnapshot =
   | { kind: "none" }
   | { kind: "form-control"; componentStatePreservationKey: string }
   | { kind: "dom"; focusKey: string }
-  | { kind: "component-owned" };
+  | { kind: "engine" };
 
 /**
  * A card — the content identity that survives cross-pane moves.

@@ -250,13 +250,13 @@ export function captureDomSelection(
 }
 
 /**
- * Selectors that identify a focus-bearing element belonging to a
- * component that owns its own focus + selection state together. Focus
- * on any such element serializes as `{ kind: "component-owned" }` — the
- * component's `bag.content` carries the detail; `CardHost`'s
- * responsibility is only to remember which component had focus.
+ * Selectors that identify a focus-bearing element belonging to an
+ * engine that owns its own focus + selection state together. Focus
+ * on any such element serializes as `{ kind: "engine" }` — the
+ * engine's `bag.content` carries the detail; `CardHost`'s
+ * responsibility is only to remember which engine had focus.
  *
- * New owning components add their marker attribute here. Keep selectors
+ * New owning engines add their marker attribute here. Keep selectors
  * tag-agnostic (attribute-based) so authors cannot accidentally match
  * bystander DOM.
  */
@@ -271,10 +271,10 @@ const COMPONENT_OWNED_SELECTORS: readonly string[] = [
 ];
 
 /**
- * For each component-owned root, the inner focusable element that
- * `applyFocusSnapshot` focuses when restoring `{ kind: "component-owned" }`.
+ * For each engine-owned root, the inner focusable element that
+ * `applyFocusSnapshot` focuses when restoring `{ kind: "engine" }`.
  * Kept parallel with {@link COMPONENT_OWNED_SELECTORS}: both arrays
- * describe the same components but from opposite sides — `closest(...)`
+ * describe the same engines but from opposite sides — `closest(...)`
  * on save, `querySelector(...)` on restore. Order must match.
  */
 const COMPONENT_OWNED_FOCUS_TARGETS: readonly string[] = [
@@ -291,7 +291,7 @@ const COMPONENT_OWNED_FOCUS_TARGETS: readonly string[] = [
  *     a keyed form-control's focus is implicit in its componentStatePreservationKey (see
  *     [D10]) — no separate focus key needed.
  *   - `[data-tug-focus-key]` → `dom`; keyed via the attribute value.
- *   - Matches a component-owned selector → `component-owned`.
+ *   - Matches an engine-owned selector → `engine`.
  *   - Anything else → `none`.
  *
  * Pure read; does not mutate focus, selection, or any DOM state.
@@ -318,7 +318,7 @@ export function captureFocus(cardRoot: HTMLElement): FocusSnapshot {
   }
 
   for (const selector of COMPONENT_OWNED_SELECTORS) {
-    if (active.closest(selector)) return { kind: "component-owned" };
+    if (active.closest(selector)) return { kind: "engine" };
   }
 
   return { kind: "none" };
@@ -403,7 +403,7 @@ export function applyFocusSnapshot(
     target = cardRoot.querySelector<HTMLElement>(
       `[data-tug-focus-key="${CSS.escape(snapshot.focusKey)}"]`,
     );
-  } else if (snapshot.kind === "component-owned") {
+  } else if (snapshot.kind === "engine") {
     for (const selector of COMPONENT_OWNED_FOCUS_TARGETS) {
       const el = cardRoot.querySelector<HTMLElement>(selector);
       if (el) {
@@ -511,8 +511,8 @@ function traceApplyFocusSnapshot(
     target = cardRoot.querySelector<HTMLElement>(
       `[data-tug-focus-key="${CSS.escape(snapshot.focusKey)}"]`,
     );
-  } else if (snapshot.kind === "component-owned") {
-    targetSelector = "component-owned";
+  } else if (snapshot.kind === "engine") {
+    targetSelector = "engine";
   }
 
   // Phase E.11 Step 1 — three-phase `focus-measurement` ring around
@@ -1094,21 +1094,24 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     }
 
     // Focus restore, [D10] Option B gated. The gate accepts only
-    // `dom` and `form-control` kinds — these are framework-axis
-    // targets that the resolver can re-focus directly. For
-    // content-owning cards this is the path that brings transient
+    // `dom` and `form-control` kinds at this site — these are
+    // framework-axis targets that the resolver can re-focus directly.
+    // For content-owning cards this is the path that brings transient
     // in-card focus (find inputs, future inline editors) back on
     // cold boot; the engine's own caret rides separately through
     // `onCardActivated` → `paintMirrorAsActive`, which is reached
     // after `bag.focus` is consumed (or skipped) here. `kind: "none"`
-    // and `kind: "component-owned"` are intentionally not restored
-    // by this site:
+    // and `kind: "engine"` are intentionally not restored by this
+    // site:
     //   - `none` is a no-op by definition.
-    //   - `component-owned` points at the engine's contenteditable.
-    //     Calling `.focus()` on it from the framework would bypass
-    //     the engine's inactive-paint → global-Selection transfer
-    //     and leave focus on a view with no caret. The engine's
-    //     activation hook is authoritative for that case.
+    //   - `engine` points at the engine's contenteditable. Calling
+    //     `.focus()` on it from the framework would bypass the engine's
+    //     inactive-paint → global-Selection transfer and leave focus
+    //     on a view with no caret. The engine's activation hook is
+    //     authoritative for that case at this step; Phase E.11 Step 3
+    //     replaces this with a single-channel dispatcher that invokes
+    //     the engine via `store.invokeEnginePaintMirrorAsActive(cardId)`
+    //     and retires the autonomous claim.
     // The active-card-of-active-pane gate prevents focus theft
     // across panes ([R07]); `applyFocusSnapshot`'s pre-check keeps
     // focus from being yanked away from a user who has clicked
@@ -1381,20 +1384,17 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     // simpler — no listener, no ref, no extra capture pass — and
     // covers the same cases.
     //
-    // Engine carve-out (content-owning cards). A content-owning
-    // card whose focus rides in the engine's contenteditable is
-    // restored by the engine's `paintMirrorAsActive` inside
-    // `onCardActivated`, not by a framework `.focus()`. Capturing
-    // `{ kind: "component-owned" }` for such cards would either be
-    // ignored downstream (the resolver hands engine cards to
-    // `dispatch-activated`) or, if naively applied, would call
-    // `.focus()` on the contenteditable and bypass the engine's
-    // inactive-paint → global-Selection transfer (focus on a view
-    // with no caret). The capture rule: content-owning cards
-    // accept `bag.focus` only when the kind is `dom` or
-    // `form-control` — i.e., a target NOT owned by the engine —
-    // and otherwise leave `bag.focus` absent so the engine's
-    // activation hook runs as the default. See
+    // Engine kind capture (content-owning cards). A content-owning
+    // card whose focus rides in the engine's contenteditable
+    // captures as `{ kind: "engine" }`. At this step the engine
+    // still claims focus autonomously via `onCardActivated`, so the
+    // capture rule remains: content-owning cards accept `bag.focus`
+    // only when the kind is `dom` or `form-control` — i.e., a target
+    // NOT owned by the engine — and otherwise leave `bag.focus`
+    // absent so the engine's activation hook runs as the default.
+    // Phase E.11 Step 3 expands this to also capture `engine` for
+    // content-owning cards and route both kinds through the single
+    // `applyBagFocus` dispatcher. See
     // `tuglaws/design-decisions.md` (engine-vs-framework focus
     // boundary) and `tuglaws/state-preservation.md`
     // (`FocusSnapshot in depth`).
@@ -1426,7 +1426,8 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
             // Honour the same kind restriction on the forwarded
             // value so stale bags (saved before this commit, or
             // saved while the engine had focus) do not reintroduce
-            // a `component-owned` value the resolver now ignores.
+            // an `engine` value this step's autonomous claim path
+            // would otherwise treat as authoritative.
             if (
               prev.focus.kind === "dom" ||
               prev.focus.kind === "form-control"

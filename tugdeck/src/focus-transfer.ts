@@ -422,7 +422,15 @@ export function resolveActivationTarget(
       el = hostRoot.querySelector<HTMLElement>(
         `[data-tug-focus-key="${CSS.escape(focus.focusKey)}"]`,
       );
-    } else if (focus.kind === "component-owned") {
+    } else if (focus.kind === "engine") {
+      // Defensive handling for the rare (effectively impossible)
+      // case of a DOM-authority card carrying an `engine` snapshot.
+      // Real engine-bearing cards return `dispatch-activated` above
+      // via the `isEngineManaged` / `isContentOwning` branches.
+      // Phase E.11 Step 3 routes engine kind through the single
+      // `applyBagFocus` dispatcher; until then this branch resolves
+      // to the canonical engine selector so the path stays
+      // well-formed for any pre-E.11 bag that surfaces here.
       el = hostRoot.querySelector<HTMLElement>(
         "[data-tug-prompt-input-root] [contenteditable]",
       );
@@ -853,8 +861,8 @@ function describeTargetSelector(
     if (focus.kind === "dom") {
       return `[data-tug-focus-key="${focus.focusKey}"]`;
     }
-    if (focus.kind === "component-owned") {
-      return "component-owned";
+    if (focus.kind === "engine") {
+      return "engine";
     }
   }
   // Fallback — should not occur for a `focus-element` resolution
