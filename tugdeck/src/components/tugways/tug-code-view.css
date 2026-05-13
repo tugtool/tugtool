@@ -76,6 +76,18 @@ body {
   --tugx-codeview-match-active-bg:      var(--tug7-surface-card-primary-normal-findmatch-active);
   --tugx-codeview-match-active-outline: var(--tug7-element-global-border-normal-accent-rest);
 
+  /* Find-navigation "ping". The animation runs once each time CM6
+   * promotes a new match to active (Cmd-G / Shift-Cmd-G / Enter in
+   * the find input). The ring colour is the same accent token the
+   * steady-state outline uses, so both themes inherit a coherent
+   * accent without bespoke per-theme overrides. Duration / easing
+   * pull from the shared motion vocabulary so the global motion
+   * scaler (`--tug-timing`) and accessibility prefs flow through. */
+  --tugx-codeview-match-flash-name:     tugx-codeview-find-flash;
+  --tugx-codeview-match-flash-ring:     var(--tug7-element-global-border-normal-accent-rest);
+  --tugx-codeview-match-flash-duration: var(--tug-motion-duration-slow);
+  --tugx-codeview-match-flash-easing:   var(--tug-motion-easing-exit);
+
   /* Find-UI chrome lives outside TugCodeView — the composing
    * component (`FileBlock`) renders the input, navigation buttons,
    * and option checkboxes from the Tug component vocabulary and
@@ -104,4 +116,33 @@ body {
  * is signaled by the caret + selection layer the theme provides). */
 .tug-code-view .cm-editor {
   outline: none;
+}
+
+/* Find-navigation "ping". `@keyframes` cannot live inside CM6's
+ * `EditorView.theme` (CM6's CSS pipeline emits property declarations
+ * only, not @-rules), so the keyframes are declared here and the
+ * theme references them by name via the `--tugx-codeview-match-flash-*`
+ * token family.
+ *
+ * The animation pulses a transient `box-shadow` ring around the active
+ * match: full-thickness, accent-coloured at frame 0; fully transparent
+ * at frame 100. The steady-state 1px outline (declared in the CM6
+ * theme) is unchanged — the ring sits OUTSIDE the outline because
+ * `box-shadow` is painted beyond the element's border. End state
+ * leaves no residual paint, so the active match settles back to its
+ * declared appearance after the ping completes.
+ *
+ * [L13] honours `--tug-timing` via `--tug-motion-duration-slow`.
+ * [L14] respects `prefers-reduced-motion`: the override below sets
+ * `animation: none` so motion-sensitive users see the static
+ * highlight without the ping. */
+@keyframes tugx-codeview-find-flash {
+  0%   { box-shadow: 0 0 0 3px var(--tugx-codeview-match-flash-ring); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tug-code-view .cm-searchMatch-selected {
+    animation: none;
+  }
 }

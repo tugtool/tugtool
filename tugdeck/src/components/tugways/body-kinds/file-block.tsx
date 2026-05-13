@@ -111,6 +111,8 @@ import "./file-block.css";
 import React from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
+import type { SelectionRange } from "@codemirror/state";
+import type { EditorView } from "@codemirror/view";
 
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
@@ -669,7 +671,7 @@ export const FileBlock: React.FC<FileBlockProps> = ({
     captureState: () => ({ collapsed }),
   });
 
-  // ---- Cmd/Ctrl-wheel routing to the outer scrollport (Phase E.5) -----
+  // ---- Cmd/Ctrl-wheel routing to the outer scrollport ----------------
   //
   // CM6's `.cm-scroller` captures wheel events when the cursor is
   // over the file viewer. For a user skimming a long transcript, the
@@ -702,6 +704,91 @@ export const FileBlock: React.FC<FileBlockProps> = ({
     );
   }, [collapsed]);
 
+  // ---- Outer scroll-into-view for find matches -----------------------
+  //
+  // `TugCodeView` consumes every CM6 `scrollIntoView` request (the
+  // viewer is sized to its content, so the inner `.cm-scroller` has
+  // nothing to scroll). This callback runs in the consume path and
+  // scrolls the OUTER transcript scrollport so the match lands in the
+  // unobstructed viewport BELOW the stacked sticky chrome (transcript
+  // entry header → toolblock chrome → file header → find row).
+  //
+  // Sticky chrome height is read from:
+  //   - `--tugx-pin-stack-top` (transcript entry header)
+  //   - `--tugx-toolblock-header-height` (embedded chrome wrapper)
+  //   - `.tugx-file-header` (rendered height; suppressed in embedded
+  //     mode where the variable above accounts for it)
+  //   - `.tugx-file-find` (rendered height; present only while the
+  //     find row is open)
+  //
+  // The scrollport is mutated directly per [L06] — scroll position is
+  // DOM authority, not React state. The SmartScroll state machine
+  // listens for the resulting `scroll` event and ticks through its
+  // normal phases.
+  const handleScrollMatchIntoView = React.useCallback(
+    (view: EditorView, range: SelectionRange) => {
+      const scrollport = outerScrollportRef.current;
+      const root = rootRef.current;
+      if (scrollport === null || root === null) return;
+
+      // Use `lineBlockAt` + `contentDOM.getBoundingClientRect()` rather
+      // than `view.coordsAtPos`. The latter walks the rendered DOM and
+      // returns `null` for positions outside CM6's current viewport —
+      // exactly the case we care about (the target is OFFSCREEN, that's
+      // why we need to scroll). The height map underneath `lineBlockAt`
+      // always covers the full document, so we get the line's
+      // cm-content-relative offset whether or not the line is currently
+      // rendered. Combined with the live `contentDOM` rect, that gives
+      // a viewport-relative band for the target line.
+      const block = view.lineBlockAt(range.head);
+      const contentRect = view.contentDOM.getBoundingClientRect();
+      const matchTop = contentRect.top + block.top;
+      const matchBottom = contentRect.top + block.bottom;
+
+      const outerRect = scrollport.getBoundingClientRect();
+
+      // Stacked sticky chrome above the file body. Variables are
+      // read from the file root because that's where the telescoping-
+      // pin writer (further down this file) and the outer pin context
+      // both stamp their measured heights.
+      const rootStyle = getComputedStyle(root);
+      const parsePx = (name: string): number => {
+        const raw = rootStyle.getPropertyValue(name).trim();
+        if (raw === "") return 0;
+        const n = parseFloat(raw);
+        return Number.isFinite(n) ? n : 0;
+      };
+      let stickyTop = parsePx("--tugx-pin-stack-top");
+      stickyTop += parsePx("--tugx-toolblock-header-height");
+
+      const headerEl = root.querySelector<HTMLElement>(".tugx-file-header");
+      if (headerEl !== null && headerEl.offsetParent !== null) {
+        stickyTop += headerEl.getBoundingClientRect().height;
+      }
+      const findEl = root.querySelector<HTMLElement>(".tugx-file-find");
+      if (findEl !== null) {
+        stickyTop += findEl.getBoundingClientRect().height;
+      }
+
+      const yMargin = 8;
+      const visibleTop = outerRect.top + stickyTop;
+      const visibleBottom = outerRect.bottom;
+
+      let delta = 0;
+      if (matchTop < visibleTop + yMargin) {
+        delta = matchTop - (visibleTop + yMargin);
+      } else if (matchBottom > visibleBottom - yMargin) {
+        delta = matchBottom - (visibleBottom - yMargin);
+      }
+      if (delta === 0) return;
+
+      const max = scrollport.scrollHeight - scrollport.clientHeight;
+      const next = Math.max(0, Math.min(max, scrollport.scrollTop + delta));
+      scrollport.scrollTop = next;
+    },
+    [],
+  );
+
   // ---- [A9] region-scroll axis: CM6 inner scrollport ------------------
   //
   // Stamp `data-tug-scroll-key={key}/file-scroll` onto CM6's
@@ -709,22 +796,21 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // `captureRegionScrolls` walks all `[data-tug-scroll-key]` elements
   // in the card subtree on every capture moment ([A9] save).
   //
-  // Mount-in-saved-state (Phase E.8 + E.9). Two write paths:
+  // Mount-in-saved-state. Two write paths:
   //
-  //  - **Line-relative restore (Phase E.9 — preferred).** When the
-  //    saved bag carries `meta.line = { number, offsetPx }` (the
-  //    writer effect below serializes this on every commit), the
-  //    first mount of CM6's view computes
+  //  - **Line-relative restore (preferred).** When the saved bag
+  //    carries `meta.line = { number, offsetPx }` (the writer
+  //    effect below serializes this on every commit), the first
+  //    mount of CM6's view computes
   //    `lineBlockAtPos(state.doc.line(number).from).top + offsetPx`
   //    and writes that as `scrollDOM.scrollTop`. Content-anchored,
   //    so a brief font-load reflow leaves the *same line* at the
   //    viewport top — sub-pixel font-metric drift is the worst
   //    case.
   //
-  //  - **Pixel fallback (Phase E.8).** When the bag has no
-  //    `meta.line` (pre-E.9 sessions, or future tools whose scroll
-  //    state is too granular for a line anchor), the raw saved
-  //    `y` is written directly.
+  //  - **Pixel fallback.** When the bag has no `meta.line` (legacy
+  //    sessions, or future tools whose scroll state is too granular
+  //    for a line anchor), the raw saved `y` is written directly.
   //
   // The `initialFileScrollConsumedRef` one-shot keeps the write
   // tied to the FIRST mount per CM6 view instance. A later
@@ -794,7 +880,7 @@ export const FileBlock: React.FC<FileBlockProps> = ({
         const block = view.lineBlockAt(linePos);
         scrollDOM.scrollTop = Math.max(0, block.top + savedLine.offsetPx);
       } else {
-        // Pixel fallback (pre-E.9 bags, or no line meta).
+        // Pixel fallback (legacy bags, or no line meta).
         const y = savedFileScrollYRef.current;
         if (typeof y === "number" && y > 0) {
           scrollDOM.scrollTop = y;
@@ -802,7 +888,7 @@ export const FileBlock: React.FC<FileBlockProps> = ({
       }
     }
 
-    // Phase E.9 line-relative writer. On every scroll, serialize the
+    // Line-relative writer. On every scroll, serialize the
     // current viewport-top line + intra-line pixel offset onto
     // `data-tug-scroll-state`. `captureRegionScrolls` reads the
     // attribute at every save trigger; the next cold-boot uses
@@ -1349,6 +1435,7 @@ export const FileBlock: React.FC<FileBlockProps> = ({
           value={data.content}
           language={language}
           onFindRequested={openFind}
+          onScrollIntoView={handleScrollMatchIntoView}
           // File viewer defaults: wrap on, line numbers on. The CM6
           // substrate handles the per-line scrollbar bug by
           // construction — `lineWrapping` puts wide lines on their

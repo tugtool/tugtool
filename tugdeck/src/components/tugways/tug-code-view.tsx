@@ -49,14 +49,13 @@
  *  - `value`: the source text. Required. Updates dispatch a doc
  *    replacement; selection collapses to position 0 on update.
  *  - `wrap`: soft-wrap toggle. Defaults to `true` for file viewing
- *    (long lines wrap rather than horizontally scrolling — the bug
- *    that motivated Step 10.9's recast).
+ *    (long lines wrap rather than horizontally scrolling).
  *  - `lineNumbers`: gutter toggle. Defaults to `true` — file viewers
  *    show line numbers by convention.
- *  - `language`: informational only in v1. Reserved for the syntax-
- *    highlighting bridge that lands in a follow-up step (Shiki via
- *    CM6 decorations, or a `@codemirror/language`-based grammar
- *    integration). The prop exists today so consumers can pre-wire it.
+ *  - `language`: informational only. Reserved for a syntax-highlighting
+ *    bridge (Shiki via CM6 decorations, or a `@codemirror/language`-
+ *    based grammar integration). The prop exists today so consumers
+ *    can pre-wire it.
  *  - `className`: composed onto the host `<div class="tug-code-view">`.
  *
  *  Imperative handle (via `ref`):
@@ -99,7 +98,7 @@ import React, {
   useRef,
 } from "react";
 import { Compartment, EditorState } from "@codemirror/state";
-import type { Extension } from "@codemirror/state";
+import type { Extension, SelectionRange } from "@codemirror/state";
 import {
   EditorView,
   lineNumbers as cmLineNumbers,
@@ -206,6 +205,14 @@ const tugCodeViewTheme: Extension = EditorView.theme({
   ".cm-searchMatch-selected": {
     backgroundColor: "var(--tugx-codeview-match-active-bg)",
     outline: "1px solid var(--tugx-codeview-match-active-outline)",
+    // Brief "ping" each time a new match becomes the active one.
+    // Keyframes live in `tug-code-view.css` so the host CSS file
+    // owns `@keyframes` / theme-token resolution (CM6's `EditorView
+    // .theme` only emits property declarations, not @-rules).
+    // CM6's search highlighter swaps this class onto the new match's
+    // span each navigation step, which (re)triggers the animation.
+    animation:
+      "var(--tugx-codeview-match-flash-name) var(--tugx-codeview-match-flash-duration) var(--tugx-codeview-match-flash-easing) 1",
   },
 });
 
@@ -317,6 +324,22 @@ export interface TugCodeViewProps {
    * own Find-UI toggle. When unset, FIND inside the editor is a no-op.
    */
   onFindRequested?: () => void;
+  /**
+   * Called whenever CM6 would scroll a range into view (search next /
+   * previous, selection updates, etc.). The viewer ALWAYS consumes
+   * CM6's internal scroll request — `TugCodeView` is read-only and
+   * sized to fit its content, so the inner `.cm-scroller` should never
+   * scroll. The composing host typically lives inside an outer
+   * scrollport (e.g. the transcript scrollport, a card body, …) and
+   * is the right surface to scroll. Implementations should compute
+   * the target position via `view.coordsAtPos(range.head)` and adjust
+   * their outer scrollport's `scrollTop`. When unset, the request is
+   * silently dropped.
+   *
+   * Scroll handlers must not initiate editor updates (per CM6's
+   * `scrollHandler` facet contract).
+   */
+  onScrollIntoView?: (view: EditorView, range: SelectionRange) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -338,6 +361,7 @@ export const TugCodeView = React.forwardRef<
     lineNumbers = true,
     className,
     onFindRequested,
+    onScrollIntoView,
   },
   ref,
 ) {
@@ -358,6 +382,12 @@ export const TugCodeView = React.forwardRef<
   // handler reads this so it picks up prop changes without recomposing
   // the actions object on every render.
   const onFindRequestedRef = useRef<(() => void) | undefined>(onFindRequested);
+  // Latest `onScrollIntoView` callback. The scroll-handler extension
+  // is wired ONCE at mount and reads the freshest callback through
+  // this ref so the host can swap closures without re-mounting CM6.
+  const onScrollIntoViewRef = useRef<
+    ((view: EditorView, range: SelectionRange) => void) | undefined
+  >(onScrollIntoView);
   useLayoutEffect(() => {
     wrapRef.current = wrap;
   }, [wrap]);
@@ -367,6 +397,9 @@ export const TugCodeView = React.forwardRef<
   useLayoutEffect(() => {
     onFindRequestedRef.current = onFindRequested;
   }, [onFindRequested]);
+  useLayoutEffect(() => {
+    onScrollIntoViewRef.current = onScrollIntoView;
+  }, [onScrollIntoView]);
 
   // ---- Imperative handle (delegate) ----
 
@@ -553,6 +586,20 @@ export const TugCodeView = React.forwardRef<
         // methods. The responder chain exposes FIND so Cmd-F surfaces
         // to the host via `onFindRequested`.
         search({ top: true }),
+        // Universal scroll intercept. `TugCodeView` is sized to fit
+        // its content (no inner scroller), so CM6's default
+        // `scrollIntoView` would only adjust the `.cm-scroller`
+        // scrollTop — which scrolls nothing visually because the
+        // viewport equals the content. The composing host owns the
+        // surrounding scrollport and is the right surface to scroll.
+        // Returning `true` consumes the request; CM6 skips its
+        // internal `scrollRectIntoView` walk. The host callback is
+        // read through a ref so a host swap doesn't require a CM6
+        // remount.
+        EditorView.scrollHandler.of((view, range) => {
+          onScrollIntoViewRef.current?.(view, range);
+          return true;
+        }),
         tugCodeViewTheme,
       ],
     });
