@@ -16,8 +16,6 @@
  *    data, success) at compact density with leading icon.
  *  - Disabled showcase — confirms clicks are blocked when `disabled`.
  *
- * **Authoritative reference:** `roadmap/tide-assistant-rendering.md` #step-10-6.
- *
  * @module components/tugways/cards/gallery-tug-cue
  */
 

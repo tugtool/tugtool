@@ -50,10 +50,8 @@ body {
   --tugx-diff-stats-size:  var(--tug-font-size-2xs);
   --tugx-diff-stats-font:  var(--tug-font-family-mono);
 
-  /* View toggle + fold cue migrated to TugPushButton in Phase D —
-   * appearance flows through `--tug-button-*` slots on those
-   * primitives. Legacy `--tugx-diff-view-*` and `--tugx-diff-fold-cue-*`
-   * slot families retired. */
+  /* View toggle + fold cue use TugPushButton — appearance flows
+   * through `--tug-button-*` slots on those primitives. */
 
   /* Body rows — diff-specific column geometry */
   --tugx-diff-rows-padding:      var(--tug-space-2xs) 0;
@@ -160,14 +158,13 @@ body {
 
 /* ---------- Trailing affordances cluster ---------- */
 
-/* Phase D — the dedicated `.tugx-diff-actions` sticky strip retired.
- * Fold cue + view-toggle now sit as a `flex: 0 0 auto` cluster at
- * the trailing edge of `.tugx-diff-header` (standalone) or portal
- * into `ToolWrapperChrome`'s actions slot (embedded). Mirrors
- * FileBlock's `.tugx-file-actions-cluster` pattern; same markup,
- * same `data-slot="diff-actions"` hook so consumers and tests can
- * still locate "DiffBlock's affordances" unambiguously regardless
- * of composition mode.
+/* Fold cue + view-toggle sit as a `flex: 0 0 auto` cluster at the
+ * trailing edge of `.tugx-diff-header` (standalone) or portal into
+ * `ToolWrapperChrome`'s actions slot (embedded). Mirrors FileBlock's
+ * `.tugx-file-actions-cluster` pattern; same markup, same
+ * `data-slot="diff-actions"` hook so consumers and tests can still
+ * locate "DiffBlock's affordances" unambiguously regardless of
+ * composition mode.
  *
  * No `position: sticky`, no `--tugx-diff-actions-height` writer —
  * the cluster rides whichever header it's inside, so any sticky
@@ -179,9 +176,9 @@ body {
   gap: var(--tug-space-2xs);
 }
 
-/* Fold cue + view-toggle are now `TugPushButton`s per Phase D's
- * Tug-component contract. Appearance flows through the
- * `--tug-button-*` slots on those primitives; the legacy bespoke
+/* Fold cue + view-toggle are `TugPushButton`s per the Tug-component
+ * contract. Appearance flows through the `--tug-button-*` slots on
+ * those primitives; the legacy bespoke
  * rules and `--tugx-diff-view-*` / `--tugx-diff-fold-cue-*` slot
  * families retired. The `.tugx-diff-fold-cue` / `.tugx-diff-view-toggle`
  * class names are forwarded onto the buttons as scoping hooks for
@@ -210,14 +207,13 @@ body {
  *
  * Sticky `top` calc consumes the upstream pin chain so the hunk
  * header lands directly below the identity / chrome header:
- *  - `--tugx-pin-stack-top`: entry-header (Phase C).
+ *  - `--tugx-pin-stack-top`: entry-header.
  *  - `--tugx-toolblock-header-height`: wrapper-chrome header.
  *  - `--tugx-diff-header-height`: diff identity header (0 when
  *    embedded — the chrome owns identity then).
  *
- * Phase D — the formerly-needed `--tugx-diff-actions-height` term
- * retired with the `.tugx-diff-actions` sticky strip. Fold cue +
- * view-toggle now live inside the identity / chrome header itself,
+ * There is no `--tugx-diff-actions-height` term: fold cue +
+ * view-toggle live inside the identity / chrome header itself,
  * not as a separate row beneath, so there's no additional band the
  * hunk header has to clear.
  *

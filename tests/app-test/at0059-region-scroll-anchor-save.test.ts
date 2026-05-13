@@ -1,8 +1,9 @@
 /**
- * at0059-region-scroll-anchor-save.test.ts — Phase E.6 save-side proof.
+ * at0059-region-scroll-anchor-save.test.ts — region-scroll anchor
+ * save-side proof.
  *
- * The Phase E.6 framework extension on `RegionScrollSnapshot` adds an
- * optional `meta` field that travels alongside `{x, y}` through the
+ * `RegionScrollSnapshot` carries an optional `meta` field that travels
+ * alongside `{x, y}` through the
  * [A9] region-scroll axis. Variable-height virtualized lists (notably
  * `TugListView` driving the tide-card transcript) write their live
  * `{anchor: {index, offset}}` payload to a `data-tug-scroll-state`

@@ -1,5 +1,6 @@
 /**
- * at0061-region-scroll-anchor-apply.test.ts — Phase E.6 step 3 proof.
+ * at0061-region-scroll-anchor-apply.test.ts — region-scroll anchor
+ * apply-side proof.
  *
  * Full save → reload → apply round-trip on the
  * `gallery-list-view-scroll-keyed` fixture (which mounts
@@ -33,8 +34,8 @@
  * ## Why both assertions
  *
  * `scrollTop` alone proves the bag's raw `{x, y}` was applied.
- * Anchor match proves the [Phase E.6] meta channel survived the
- * round-trip and the apply effect honored it. If cell-height drift
+ * Anchor match proves the meta channel survived the round-trip and
+ * the apply effect honored it. If cell-height drift
  * had moved the anchor between save and restore, scrollTop would
  * be restored to the wrong pixel value (the apply effect would
  * have computed `desired = cellTop + offset` against the new
@@ -45,7 +46,7 @@
  *
  * Tuglaws referenced:
  *  - [L23] state preservation across teardown-and-replay — the
- *    end-to-end gate for Phase E.6.
+ *    end-to-end gate.
  *  - [L03] `useLayoutEffect` — writer + apply effects both fire
  *    before paint so the very first paint after reload sees the
  *    restored position.

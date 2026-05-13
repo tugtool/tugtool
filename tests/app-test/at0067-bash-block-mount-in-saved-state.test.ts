@@ -1,22 +1,21 @@
 /**
- * at0067-bash-block-mount-in-saved-state.test.ts — Phase E.8 regression
- * gate for the fold-axis mount-in-saved-state contract.
+ * at0067-bash-block-mount-in-saved-state.test.ts — regression gate for
+ * the fold-axis mount-in-saved-state contract.
  *
  * # What this proves
  *
- * The replaced AT0063 ("bash-block-fold-restore") drove the Phase E.7
- * observer-channel path: the body kind mounted in its `useState`
- * default (collapsed when over threshold), the orchestrator's
- * `restoreCardState` then fired a post-mount `setLocalCollapsed` from
- * the observer callback, and React re-rendered to the saved value.
- * The user saw two paints: the default-collapsed frame, then the
- * saved-expanded frame. With the inner scroller getting recreated on
- * fold-toggle, the cascade became three-to-five visible frames per
- * body kind — Developer > Reload looked like wild scrolling.
+ * A previous observer-channel design had the body kind mount in its
+ * `useState` default (collapsed when over threshold), then fire a
+ * post-mount `setLocalCollapsed` from an observer callback, then
+ * re-render to the saved value. The user saw two paints: the
+ * default-collapsed frame, then the saved-expanded frame. With the
+ * inner scroller getting recreated on fold-toggle, the cascade became
+ * three-to-five visible frames per body kind — Developer > Reload
+ * looked like wild scrolling.
  *
- * AT0067 pins the Phase E.8 contract: the very first paint after
- * reload reflects the saved fold state. No intermediate frame where
- * the user observes the `useState` default.
+ * AT0067 pins the contract: the very first paint after reload reflects
+ * the saved fold state. No intermediate frame where the user observes
+ * the `useState` default.
  *
  * # How
  *
@@ -42,13 +41,12 @@
  *
  * # Tuglaws referenced
  *
- *  - [L23] state preservation across teardown-and-replay. This is the
- *    primary contract Phase E.8 strengthens: first paint after
- *    restore equals last save.
+ *  - [L23] state preservation across teardown-and-replay. The primary
+ *    contract: first paint after restore equals last save.
  *  - [L02] saved state enters React through `useSyncExternalStore`-
  *    backed accessors at render time; no post-mount setState.
- *  - [L19] component authoring guide — Phase E.8 adds the
- *    "Restoring saved state at mount" pattern.
+ *  - [L19] component authoring guide — the "Restoring saved state at
+ *    mount" pattern.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -304,12 +302,12 @@ describe.skipIf(!SHOULD_RUN)(
           );
 
           // Settle: small grace so any post-mount re-renders have
-          // time to push their values into the observer. If the
-          // (now-removed) Phase E.7 observer-channel path were
-          // back, we'd see the default frame land first, then the
-          // saved value. Bun-side sleep avoids round-tripping a
-          // Promise through `evaluateJavaScript`, which doesn't
-          // await it (would surface as "unsupported type").
+          // time to push their values into the observer. If a
+          // post-mount observer-channel apply path were back, we'd
+          // see the default frame land first, then the saved value.
+          // Bun-side sleep avoids round-tripping a Promise through
+          // `evaluateJavaScript`, which doesn't await it (would
+          // surface as "unsupported type").
           await new Promise<void>((resolve) => setTimeout(resolve, 100));
 
           // -------- Assertion: the very first observed

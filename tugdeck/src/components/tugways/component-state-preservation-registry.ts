@@ -10,8 +10,8 @@
  * parent-first iteration order so the framework can harvest the full
  * component tree into a single `bag.components` axis at capture time.
  *
- * Restore is NOT the registry's responsibility. After Phase E.8,
- * consumers mount in their saved state via `useSavedComponentState`
+ * Restore is NOT the registry's responsibility. Consumers mount in
+ * their saved state via `useSavedComponentState`
  * inside a `useState` initializer (see `state-preservation.md` →
  * "Restoring saved state at mount"). The registry is capture-only.
  *

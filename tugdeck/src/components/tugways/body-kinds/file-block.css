@@ -159,15 +159,13 @@ body {
 
 /* ---------- Trailing affordances cluster ---------- */
 
-/* Phase D — the dedicated `.tugx-file-actions` sticky strip retired.
- * The fold cue and Search trigger now live in a `flex: 0 0 auto`
- * cluster at the trailing edge of `.tugx-file-header` in standalone
- * mode, or portal into `ToolWrapperChrome`'s actions slot in
- * embedded mode. Same DOM markup in both cases; only the host
- * differs. The cluster owns its own internal gap so the buttons read
- * as a related group; outer spacing is provided by the host
- * (`.tugx-file-header` flex `gap`, or the chrome's actions-slot
- * `gap`).
+/* The fold cue and Search trigger live in a `flex: 0 0 auto` cluster
+ * at the trailing edge of `.tugx-file-header` in standalone mode, or
+ * portal into `ToolWrapperChrome`'s actions slot in embedded mode.
+ * Same DOM markup in both cases; only the host differs. The cluster
+ * owns its own internal gap so the buttons read as a related group;
+ * outer spacing is provided by the host (`.tugx-file-header` flex
+ * `gap`, or the chrome's actions-slot `gap`).
  *
  * No `position: sticky`, no `--tugx-file-actions-height` writer —
  * the cluster rides whichever header it's inside, so any sticky
@@ -179,24 +177,23 @@ body {
   gap: var(--tug-space-2xs);
 }
 
-/* Fold cue is now a `TugPushButton` (icon-text when collapsed, icon
- * when expanded) per Phase D's Tug-component contract. Appearance
- * tokens live in the TugButton/TugPushButton stylesheets; only the
+/* Fold cue is a `TugPushButton` (icon-text when collapsed, icon when
+ * expanded) per the Tug-component contract. Appearance tokens live in
+ * the TugButton/TugPushButton stylesheets; only the
  * `.tugx-file-fold-cue` class is forwarded onto the button as a
  * scoping hook for future file-specific overrides (none today) and a
- * stable test selector. The legacy bespoke rules and slot family
- * (`--tugx-file-fold-cue-*`) were retired with the migration. */
+ * stable test selector. */
 
 /* ---------- Find UI row ---------- */
 
 /* Find UI is progressive disclosure — mounted only while `findOpen`
- * is true. Phase D consolidated the resting affordances into the
- * chrome / identity header (no more dedicated `.tugx-file-actions`
- * sticky strip), so the find row pins directly under the header,
- * not under a "+ actions-height" intermediate band.
+ * is true. The resting affordances live in the chrome / identity
+ * header (no dedicated `.tugx-file-actions` sticky strip), so the
+ * find row pins directly under the header, not under a
+ * "+ actions-height" intermediate band.
  *
  * Sticky stack consumes the upstream pin chain:
- *  - `--tugx-pin-stack-top`: outer entry-header height (Phase C).
+ *  - `--tugx-pin-stack-top`: outer entry-header height.
  *  - `--tugx-toolblock-header-height`: wrapper-chrome header height
  *    in embedded composition (zero in standalone).
  *  - `--tugx-file-header-height`: this body kind's identity header

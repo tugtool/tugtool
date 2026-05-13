@@ -15,8 +15,8 @@
  *   4. clear() empties the registry in one shot (called from the deck
  *      manager's card-destruction path).
  *
- * After Phase E.8 the registry is capture-only: `restoreState` and the
- * `observeRegister` channel were removed. The hook layer feeds saved
+ * The registry is capture-only: there is no `restoreState` and no
+ * `observeRegister` channel. The hook layer feeds saved
  * state into consumers via `useSavedComponentState` /
  * `useSavedRegionScroll` at render time, not via a post-mount
  * registry-observer apply pass.

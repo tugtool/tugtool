@@ -614,9 +614,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // from data, not React's render cycle).
     const heightIndexRef = React.useRef<HeightIndex>(new HeightIndex());
 
-    // Phase E.9 mount-in-saved-state: per-cell `min-height` lock
-    // sourced from the saved `meta.cellHeights` (set by the
-    // hydration effect below). Cells with a known saved height
+    // Mount-in-saved-state: per-cell `min-height` lock sourced from
+    // the saved `meta.cellHeights` (set by the hydration effect
+    // below). Cells with a known saved height
     // render with `style.minHeight = ${savedHeight}px`, so async
     // sub-content (markdown, image embeds, code highlighting) fills
     // its destined slot without shifting siblings — the anchor cell
@@ -696,7 +696,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       { anchorIndex: number; anchorOffset: number } | null
     >(null);
 
-    // Phase E.9 mount-in-saved-state for the outer scroller.
+    // Mount-in-saved-state for the outer scroller.
     //
     // Read the bag synchronously at render time via
     // `useSavedRegionScroll`. The hydration effect below runs on the
@@ -1314,14 +1314,14 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         estimatedHeightForKindOnly,
       );
       const anchorOffset = Math.max(0, scrollTop - anchorTop);
-      // Phase E.9: also serialize the live `heightIndex` snapshot
-      // into `meta.cellHeights`. At restore the framework hydrates
-      // this back into the live index BEFORE first paint, so the
+      // Also serialize the live `heightIndex` snapshot into
+      // `meta.cellHeights`. At restore the framework hydrates this
+      // back into the live index BEFORE first paint, so the
       // anchor-resolve math reads exact heights instead of
       // estimates. Empty array (no measurements yet) is omitted to
       // keep the on-disk bag clean — the restore path treats
-      // absent `cellHeights` as "fall back to estimates," same as
-      // pre-E.9 behavior. Capture is O(n) over measured cells —
+      // absent `cellHeights` as "fall back to estimates." Capture
+      // is O(n) over measured cells —
       // free at human-scale list sizes. See `state-preservation.md`
       // → "Saving geometry for first-paint accuracy."
       const cellHeights = heightIndexRef.current.snapshot();
@@ -1710,8 +1710,8 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         ref={setScrollContainerRef}
         data-slot="tug-list-view"
         data-tug-scroll-key={scrollKey ?? "tug-list-view"}
-        // Phase E.3 — when `tailSpacer` is set, mark the scroll
-        // container so the CSS `container-type: size` rule (which
+        // When `tailSpacer` is set, mark the scroll container so
+        // the CSS `container-type: size` rule (which
         // makes `cqh` units resolve against this scrollport's height)
         // applies only to instances that opted in. Non-tide consumers
         // (gallery feeds, session lists, recents) don't get a
@@ -1741,7 +1741,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             //    selectors that don't yet know about roles.
             const wrapperTabIndex = role === "cell" ? 0 : -1;
             const wrapperRoleAttr = role === "cell" ? undefined : role;
-            // Phase E.9 `min-height` lock: when the bag carried
+            // `min-height` lock: when the bag carried
             // `meta.cellHeights[index]`, render the cell wrapper
             // at the saved height so async sub-content fills its
             // destined slot without shifting the anchor cell.

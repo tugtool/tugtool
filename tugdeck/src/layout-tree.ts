@@ -127,8 +127,8 @@ export interface FormControlSnapshot {
  * derives the target `scrollTop` from its live layout state on
  * every commit.
  *
- * **Geometry schemas (Phase E.9 conventions).** Three families of
- * `meta` payload ship today. The TypeScript shape stays `meta?:
+ * **Geometry schemas.** Three families of `meta` payload ship today.
+ * The TypeScript shape stays `meta?:
  * unknown` because per-region writers own their schema; the prose
  * below documents the conventions so substrates that extend them
  * stay coherent. A meta payload may carry any combination of the
@@ -136,7 +136,7 @@ export interface FormControlSnapshot {
  *
  *  - `meta.anchor: { index: number; offset: number }` —
  *    cell-relative scroll anchor for variable-height virtualized
- *    lists. Phase E.6.
+ *    lists.
  *
  *  - `meta.cellHeights: number[]` — per-cell measured heights at
  *    save time (`heightIndex.snapshot()`), array index = cell index.
@@ -144,7 +144,7 @@ export interface FormControlSnapshot {
  *    `HeightIndex` at restore so the first paint's anchor-resolve
  *    math is exact, not estimated. Cells render with inline
  *    `min-height` from this array until their own ResizeObserver
- *    reports a fresh measurement. Phase E.9.
+ *    reports a fresh measurement.
  *
  *  - `meta.line: { number: number; offsetPx: number }` —
  *    content-anchored scroll position for code editors (CM6 in
@@ -153,13 +153,11 @@ export interface FormControlSnapshot {
  *    line's top. On restore the substrate dispatches its own
  *    scrollIntoView so the saved line lands at the viewport top
  *    regardless of how the font metric resolves on the new page.
- *    Phase E.9.
  *
  *  - `meta.scrollHeight: number` — validation field; captures the
  *    scroller's total content height at save time. Not consumed at
  *    restore today (deterministic scrollers don't need it); kept
  *    for symmetry and forward-compat cross-version layout checks.
- *    Phase E.9.
  *
  * Fixed-height inner scrollers (`TerminalBlock` virtualized line
  * pool, markdown view) restore correctly from raw `{x, y}` alone

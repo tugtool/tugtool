@@ -1,5 +1,5 @@
 /**
- * CardStateOrchestrator behavior tests (capture-only after Phase E.8).
+ * CardStateOrchestrator behavior tests (capture-only).
  *
  * Pins the contract that every save trigger routes through a single
  * entry point ([D13], [A9c]):
@@ -21,8 +21,8 @@
  *      `saveState` RPC (which calls `saveAndFlushSync` → the
  *      orchestrator) picks up `bag.components` by construction.
  *
- * The restore side is intentionally absent: after Phase E.8 components
- * mount in their saved state via `useSavedComponentState` /
+ * The restore side is intentionally absent: components mount in their
+ * saved state via `useSavedComponentState` /
  * `useSavedRegionScroll` inside `useState` initializers. There is no
  * `restoreCardState` entry point and no observer channel; the
  * orchestrator is capture-only.

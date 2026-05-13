@@ -17,8 +17,6 @@
  *     but is NOT a diff. Stays on TerminalBlock; the heuristic must not
  *     false-positive.
  *
- * **Authoritative reference:** `roadmap/tide-assistant-rendering.md` #step-10-7.
- *
  * @module components/tugways/cards/gallery-bash-tool-block
  */
 
@@ -30,7 +28,7 @@ import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
-// Long-stdout fixture for the Phase E.8 mount-in-saved-state app-tests
+// Long-stdout fixture for the mount-in-saved-state app-tests
 // ---------------------------------------------------------------------------
 
 /**

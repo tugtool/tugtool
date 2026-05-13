@@ -41,9 +41,8 @@
  * Embedded mode portals the Copy `<TugIconButton>` into the host
  * `ToolWrapperChrome`'s actions slot (via `ChromeActionsTargetContext`)
  * so the affordance surfaces in the chrome header rather than as a
- * separate strip — Phase D consolidation. The body kind's own
- * `.tugx-term-header` is suppressed when embedded (the chrome owns
- * identity).
+ * separate strip. The body kind's own `.tugx-term-header` is
+ * suppressed when embedded (the chrome owns identity).
  *
  * Render strategy:
  *
@@ -509,10 +508,9 @@ function appendFlatBody(container: HTMLElement, lines: ParsedLine[]): void {
  * Result of mounting a virtualized body. `cleanup` detaches the
  * scroll listener (and any other side effects) when the renderer
  * is about to rebuild the scroller. `refit` re-runs `applyUpdate`
- * against the scroller's current `scrollTop` — Phase E.5 calls
- * this whenever the outer scrollport reports the terminal entering
- * view, to recover the intermittent blank-frame-after-scroll-into-
- * view symptom described in the phase plan.
+ * against the scroller's current `scrollTop` — called whenever the
+ * outer scrollport reports the terminal entering view, to recover
+ * the intermittent blank-frame-after-scroll-into-view symptom.
  */
 interface VirtualizedBodyHandle {
   cleanup: () => void;
@@ -649,13 +647,13 @@ function appendVirtualizedBody(
   // re-mounts lines from the top — the "jostled by scrolling fixes
   // it" symptom.
   //
-  // Pre-Phase E.4 this was a latent bug masked by the mount-once
-  // contract: the static-mode effect ran exactly once at first
-  // paint and the user typically scrolled to consume the output,
-  // so the empty initial frame went unnoticed. Phase E.4's
-  // collapse-driven re-render exposed it: fold→expand recreates
-  // the scroller every toggle, and now every expansion shows empty
-  // until scrolled.
+  // Before the collapse-driven re-render path landed, this was a
+  // latent bug masked by the mount-once contract: the static-mode
+  // effect ran exactly once at first paint and the user typically
+  // scrolled to consume the output, so the empty initial frame went
+  // unnoticed. The collapse-driven re-render exposed it: fold→expand
+  // recreates the scroller every toggle, and now every expansion
+  // shows empty until scrolled.
   //
   // Attaching first means the scroller is empty (top/bottom spacers
   // at zero height, no line elements in `pre`) for one
@@ -697,7 +695,7 @@ function appendVirtualizedBody(
   applyUpdate(resolvedScrollTop);
   scroller.scrollTop = resolvedScrollTop;
 
-  // Phase E.9 scroll-state writer (validation field only). The
+  // Scroll-state writer (validation field only). The
   // TerminalBlock virtualizer is deterministic per `LINE_HEIGHT_PX`,
   // so raw saved `{x, y}` already restores the same content
   // position on cold boot — `meta.scrollHeight` is captured for
@@ -746,9 +744,9 @@ function appendVirtualizedBody(
     },
     // Re-run applyUpdate against the current scrollTop. Idempotent
     // when no enter/exit ranges change. Used by the outer-scroll-
-    // into-view recovery (Phase E.5) to repaint a terminal whose
-    // first paint missed under a WebKit layer-invalidation hiccup
-    // or a similar intermittent.
+    // into-view recovery to repaint a terminal whose first paint
+    // missed under a WebKit layer-invalidation hiccup or a similar
+    // intermittent.
     refit: () => {
       applyUpdate(scroller.scrollTop);
     },
@@ -802,7 +800,7 @@ const NO_OP_TERMINAL_HANDLE: TerminalRenderHandle = {
  * `cleanup` detaches the body's listeners and whose `refit` re-runs
  * `applyUpdate` for the virtualized path (no-op for flat).
  *
- * **Collapsed preview path** (Phase E.4). When `collapsed` is true,
+ * **Collapsed preview path.** When `collapsed` is true,
  * the renderer skips the virtualizer entirely and renders just the
  * first `COLLAPSED_PREVIEW_LINES` lines via the flat path — same
  * lines the user would see at the top of the expanded output.
@@ -945,8 +943,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // and React state stay in lockstep across the same paint. The
   // outer-scrollport / IntersectionObserver effect below calls
   // `refitRef.current?.()` on entering-view to recover from the
-  // intermittent blank-frame-after-scroll-into-view symptom
-  // described in Phase E.5.
+  // intermittent blank-frame-after-scroll-into-view symptom.
   const refitRef = React.useRef<(() => void) | null>(null);
   // The data prop captured at FIRST mount. Static mode renders this
   // value once and never again, even across collapse-driven
@@ -1016,10 +1013,10 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
 
   // Chrome actions target — non-null when this TerminalBlock is
   // composed inside a `ToolWrapperChrome` that has rendered its actions
-  // slot. Phase D portals the Copy `<TugIconButton>` into the chrome
-  // header rather than hosting it in a separate body-kind strip.
-  // Standalone composition keeps the header strip and renders Copy at
-  // its trailing edge.
+  // slot. The Copy `<TugIconButton>` portals into the chrome header
+  // rather than hosting it in a separate body-kind strip. Standalone
+  // composition keeps the header strip and renders Copy at its
+  // trailing edge.
   const chromeActionsTarget = useChromeActionsTarget();
 
   // Dev-mode misconfiguration check — `embedded={true}` requires a
@@ -1240,7 +1237,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
     };
   }, [collapsed, streamingStore, streamingPath, getOuterScrollport, scrollKey]);
 
-  // ---- Blank-frame recovery on scroll-into-view (Phase E.5) ----------
+  // ---- Blank-frame recovery on scroll-into-view ----------------------
   //
   // Symptom: scrolling the outer card so a Bash output region enters
   // view sometimes leaves the inner virtualized scroller painted as
@@ -1400,7 +1397,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
     terminalBlockResponderId,
   ]);
 
-  // Compose the affordances cluster ONCE. Phase E.4 ordering: Copy
+  // Compose the affordances cluster ONCE. Ordering: Copy
   // (the feature affordance) → fold cue (the fixed-position landmark
   // at the trailing edge). Mirrors FileBlock / DiffBlock so the
   // user's eye finds the fold cue in the same place across every

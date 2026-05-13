@@ -325,10 +325,9 @@ export function registerGalleryCards(): void {
     category: CATEGORIES.buttons,
   });
 
-  // Phase 1 design exploration for `TugCue` — the upcoming public component
-  // for "soft inline banner that's also a click target." Six prototype
-  // variants; user vets before Phase 2 ships the production component.
-  // See roadmap/tide-assistant-rendering.md #step-10-6.
+  // Design exploration for `TugCue` — the upcoming public component for
+  // "soft inline banner that's also a click target." Six prototype
+  // variants; user vets before the production component ships.
   registerCard({
     componentId: "gallery-tug-cue",
     contentFactory: (_cardId) => <GalleryTugCue />,
@@ -457,8 +456,7 @@ export function registerGalleryCards(): void {
 
   // Visual fixture for the smart-pick routing inside BashToolBlock:
   // echo (TerminalBlock) vs git show / git diff (DiffBlock) vs git status
-  // (TerminalBlock again, must not false-positive). See roadmap
-  // tide-assistant-rendering.md #step-10-7.
+  // (TerminalBlock again, must not false-positive).
   registerCard({
     componentId: "gallery-bash-tool-block",
     contentFactory: (_cardId) => <GalleryBashToolBlock />,
@@ -469,10 +467,10 @@ export function registerGalleryCards(): void {
     category: CATEGORIES.textInput,
   });
 
-  // Phase E.8 mount-in-saved-state fixture: a long-stdout BashToolBlock
-  // that engages both the fold axis (TerminalBlock collapsed/expanded
-  // via `bag.components`) and the inner-scroll axis (virtualized
-  // scroller via `bag.regionScroll`). Drives
+  // Mount-in-saved-state fixture: a long-stdout BashToolBlock that
+  // engages both the fold axis (TerminalBlock collapsed/expanded via
+  // `bag.components`) and the inner-scroll axis (virtualized scroller
+  // via `bag.regionScroll`). Drives
   // `tests/app-test/at0067-bash-block-mount-in-saved-state.test.ts`
   // and `tests/app-test/at0068-bash-block-inner-scroll-from-creation.test.ts`.
   // See `tuglaws/state-preservation.md` → "Restoring saved state at
@@ -496,8 +494,7 @@ export function registerGalleryCards(): void {
   // three standalone body kinds (FileBlock / DiffBlock / TerminalBlock)
   // inside their own fixed-height scroll wrappers, deliberately
   // detached from the transcript chain so the binding scrollport is
-  // unambiguous. See roadmap/tide-assistant-rendering.md
-  // Step 10.9 Phase B.1.
+  // unambiguous.
   registerCard({
     componentId: "gallery-pinned-headers",
     contentFactory: (_cardId) => <GalleryPinnedHeaders />,
@@ -523,7 +520,7 @@ export function registerGalleryCards(): void {
   // the [A9] region-scroll axis captures the list's position into
   // `bag.regionScroll`, AND mounts in `inline` mode (every cell in
   // the DOM, no windowing) to mirror the tide-card transcript
-  // configuration. The Phase E.6 app-tests
+  // configuration. The region-scroll-anchor app-tests
   // (`at0059-region-scroll-anchor-save.test.ts`,
   // `at0060-tide-card-content-settled.test.ts`,
   // `at0061-region-scroll-anchor-apply.test.ts`) drive this card.

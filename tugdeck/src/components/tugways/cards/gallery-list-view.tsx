@@ -374,17 +374,17 @@ export interface GalleryListViewProps {
    * Optional region-scroll key. When set, the inner `TugListView`
    * stamps `data-tug-scroll-key="<scrollKey>"` on its scroll
    * container, opting the list view into the [A9] region-scroll
-   * axis. Used by the Phase E.6 app-test to prove anchor-metadata
-   * capture / apply round-trips through the framework.
+   * axis. Used by the region-scroll-anchor app-tests to prove
+   * anchor-metadata capture / apply round-trips through the framework.
    */
   scrollKey?: string;
 
   /**
    * Forwarded to the inner `TugListView`. Set `true` to render
    * every cell (no windowing) — same shape the tide-card
-   * transcript uses. The Phase E.6 app-tests pass this so the
-   * inline-rendering path is exercised under fixtures whose cell
-   * count and heights are stable.
+   * transcript uses. The region-scroll-anchor app-tests pass this
+   * so the inline-rendering path is exercised under fixtures whose
+   * cell count and heights are stable.
    */
   inline?: boolean;
 

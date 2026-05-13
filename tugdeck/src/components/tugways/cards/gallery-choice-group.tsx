@@ -81,8 +81,8 @@ export function GalleryChoiceGroup() {
   const [iconRightValue, setIconRightValue] = useState("left");
   const [iconOnlyValue, setIconOnlyValue] = useState("light");
 
-  // Ghost emphasis section — Phase E.4 follow-on. The variant drops the
-  // framing pill + saturated indicator + pipe dividers and uses uppercase
+  // Ghost emphasis section. The variant drops the framing pill +
+  // saturated indicator + pipe dividers and uses uppercase
   // letter-spaced labels matching `tug-push-button.css`. Designed for
   // action-row composition next to ghost-style push buttons.
   const [ghostViewValue, setGhostViewValue] = useState("side-by-side");

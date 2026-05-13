@@ -1,10 +1,11 @@
 /**
- * at0060-list-view-content-settled.test.ts — Phase E.6 step 2 proof.
+ * at0060-list-view-content-settled.test.ts — list-view content-settled
+ * detection proof.
  *
  * Prove that we can correctly identify when a virtualized list's
  * content has loaded, rendered, and settled. "Settled" is the
- * pre-condition the anchor-based scroll restore (Phase E.6 step 3)
- * needs: until heights stop drifting, the `heightIndex.offsetForIndex`
+ * pre-condition the anchor-based scroll restore needs: until heights
+ * stop drifting, the `heightIndex.offsetForIndex`
  * sum is unreliable, and writing a restored scrollTop would land
  * the user at the wrong content.
  *

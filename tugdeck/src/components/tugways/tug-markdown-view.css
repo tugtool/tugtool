@@ -89,11 +89,10 @@ body {
    * 6: imperative-DOM rendering paths may use raw `<button>` markup
    * but must match the Tug primitive equivalent visually.
    *
-   * Phase E.2: the height / padding-inline / font-size / icon-size
-   * pull directly from `--tug-button-2xs-*` global metric tokens
-   * published by `tug-button.css`. The previous local rem-literal
-   * mirrors retired so a future TugButton size change propagates
-   * automatically instead of drifting behind a comment. */
+   * The height / padding-inline / font-size / icon-size pull
+   * directly from `--tug-button-2xs-*` global metric tokens
+   * published by `tug-button.css`, so a future TugButton size
+   * change propagates automatically. */
   --tugx-md-fenced-code-lang-weight: 600;
   --tugx-md-fenced-code-copy-radius: var(--tug-radius-lg);
 
@@ -356,10 +355,10 @@ body {
 }
 
 /* Header — language label at the left, trailing affordances cluster
- * (Copy) at the right. Phase D consolidated affordances into this
- * single sticky row (the dedicated `.tugx-md-fenced-code-actions`
- * sticky strip retired). Pinned (`position: sticky`) so it stays
- * visible while scrolling deep into a long fenced-code block. */
+ * (Copy) at the right. Affordances live in this single sticky row;
+ * there is no separate `.tugx-md-fenced-code-actions` strip. Pinned
+ * (`position: sticky`) so it stays visible while scrolling deep into
+ * a long fenced-code block. */
 /* @tug-renders-on: --tugx-block-bg */
 .tugx-md-block .tugx-md-fenced-code-header {
   position: sticky;

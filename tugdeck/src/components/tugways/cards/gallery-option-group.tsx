@@ -76,9 +76,9 @@ export function GalleryOptionGroup() {
   // Section 6: TugBox cascade
   const [cascadeValue, setCascadeValue] = useState<string[]>(["bold", "italic"]);
 
-  // Section 7: Ghost emphasis — Phase E.4 follow-on. Mirrors the variant
-  // on TugChoiceGroup; designed for action-row composition next to
-  // ghost-style push buttons.
+  // Section 7: Ghost emphasis. Mirrors the variant on TugChoiceGroup;
+  // designed for action-row composition next to ghost-style push
+  // buttons.
   const [ghostFormatValue, setGhostFormatValue] = useState<string[]>(["bold"]);
   const [ghostAlignValue, setGhostAlignValue] = useState<string[]>(["left"]);
   const [ghostSizeXsValue, setGhostSizeXsValue] = useState<string[]>(["bold"]);

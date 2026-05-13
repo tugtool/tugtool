@@ -363,7 +363,7 @@ describe("HeightIndex — prepared (Fenwick) fast path", () => {
   });
 });
 
-describe("HeightIndex — snapshot / hydrate (Phase E.9 geometry)", () => {
+describe("HeightIndex — snapshot / hydrate", () => {
   test("empty index → empty snapshot", () => {
     const idx = new HeightIndex();
     expect(idx.snapshot()).toEqual([]);

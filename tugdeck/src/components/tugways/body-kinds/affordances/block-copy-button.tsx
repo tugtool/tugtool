@@ -6,7 +6,7 @@
  * surface a "copy this block's content" gesture. Encapsulates:
  *
  *  - Controlled-confirmation state (`copied` + `setTimeout` flash).
- *    Mirrors the Phase E.1 honest-feedback contract: `isConfirming`
+ *    Mirrors the honest-feedback contract: `isConfirming`
  *    flips to `true` ONLY inside the clipboard `.then()` callback
  *    after a successful write. A denied permission or missing
  *    clipboard API leaves the flag at `false` — the button never
@@ -22,8 +22,8 @@
  *    sibling-jostling on click.
  *  - Lucide `Copy` / `Check` icon swap via `TugPushButton`'s
  *    `confirmation` prop. Subtype `"icon-text"`, emphasis
- *    `"ghost"`, size `"2xs"` — the action-row affordance scale
- *    established by Phase E.3 / E.4.
+ *    `"ghost"`, size `"2xs"` — the established action-row
+ *    affordance scale.
  *
  * The variable parts the consumer provides are minimal:
  *

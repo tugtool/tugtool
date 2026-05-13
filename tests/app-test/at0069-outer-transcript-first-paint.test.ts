@@ -1,22 +1,22 @@
 /**
- * at0069-outer-transcript-first-paint.test.ts — Phase E.9 regression
- * gate for outer-transcript first-paint accuracy.
+ * at0069-outer-transcript-first-paint.test.ts — regression gate for
+ * outer-transcript first-paint accuracy.
  *
  * # What this proves
  *
- * AT0061 (Phase E.6) gates the END-state of region-scroll anchor
- * restore: after a settle window, the scrollTop and anchor land
- * within tolerance of the saved value. It does NOT gate first-paint
- * accuracy — the MutationObserver-driven retry loop refines across
- * multiple commits while the heightIndex populates from cell
- * measurements, so the user sees a `scrollTop=0` initial frame
- * followed by estimated-then-refined hops.
+ * AT0061 gates the END-state of region-scroll anchor restore: after a
+ * settle window, the scrollTop and anchor land within tolerance of the
+ * saved value. It does NOT gate first-paint accuracy — the
+ * MutationObserver-driven retry loop refines across multiple commits
+ * while the heightIndex populates from cell measurements, so the user
+ * sees a `scrollTop=0` initial frame followed by estimated-then-refined
+ * hops.
  *
- * Phase E.9 closes this by saving the live `heightIndex` snapshot
- * into `meta.cellHeights`. At restore the TugListView hydrates its
- * `HeightIndex` from this array BEFORE first paint, so the
- * synchronous anchor stash + companion apply effect compute the
- * exact saved scrollTop and write it before the first paint.
+ * Saving the live `heightIndex` snapshot into `meta.cellHeights`
+ * closes this. At restore the TugListView hydrates its `HeightIndex`
+ * from this array BEFORE first paint, so the synchronous anchor stash
+ * + companion apply effect compute the exact saved scrollTop and write
+ * it before the first paint.
  *
  * AT0069 pins this stronger contract: the FIRST observed scrollTop
  * after the page reloads is within sub-cell tolerance of the saved
@@ -38,9 +38,9 @@
  * # Tuglaws referenced
  *
  *  - [L23] Preserve user-visible state across teardown-and-replay.
- *    Phase E.9 strengthens this from "eventually settles" to
- *    "first paint reproduces the saved state, including the layout
- *    that made it user-visible."
+ *    Strengthens this from "eventually settles" to "first paint
+ *    reproduces the saved state, including the layout that made it
+ *    user-visible."
  *  - [L02] Saved geometry flows through `useSyncExternalStore` via
  *    `useSavedRegionScroll`.
  *  - [L03] Hydration runs in `useLayoutEffect` so first paint sees

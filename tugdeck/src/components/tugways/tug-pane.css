@@ -130,9 +130,9 @@ body {
    * without forming a scrolling block-container. `overflow: hidden`
    * would form one and would trap `position: sticky` descendants
    * inside the pane (the pane doesn't actually scroll, so sticky in
-   * such a descendant would never activate). Phase B.1 flagged this
-   * as a latent constraint: while no current feature pins against a
-   * scroll-port above `.tug-list-view`, anything in the future that
+   * such a descendant would never activate). This is a latent
+   * constraint: while no current feature pins against a scroll-port
+   * above `.tug-list-view`, anything in the future that
    * wanted to (a session-wide notification ribbon, a cross-entry
    * find bar, etc.) would be silently trapped. `clip` keeps the
    * visual behavior identical — the rounded-corner clip, the
@@ -158,7 +158,7 @@ body {
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  /* `overflow: clip` (not `hidden`) — same Phase E.2 reasoning as
+  /* `overflow: clip` (not `hidden`) — same reasoning as
    * `.tug-pane-chrome` above. The body wraps the accessory + content
    * region; the content's own scrollport (e.g. `.tug-list-view`)
    * still scrolls inside this box. We just don't want this wrapper

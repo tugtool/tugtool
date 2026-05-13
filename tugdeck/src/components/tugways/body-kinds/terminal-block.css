@@ -35,14 +35,13 @@
  *    An outer pin context that wants this header telescoped below
  *    it writes its own measured height into `--tugx-pin-stack-top`;
  *    when the variable isn't set, the header sticks to `top: 0`.
- *  - Phase D consolidated affordances into the header itself. Copy
- *    lives at the trailing edge of `.tugx-term-header` (standalone),
- *    or portals into `ToolWrapperChrome`'s actions slot (embedded).
- *    The dedicated `.tugx-term-actions` sticky strip retired.
+ *  - Affordances live in the header itself. Copy lives at the
+ *    trailing edge of `.tugx-term-header` (standalone), or portals
+ *    into `ToolWrapperChrome`'s actions slot (embedded).
  *  - The Copy overlay (`.tugx-term-copy` absolute div, `--tugx-term-copy-*`
  *    slot family) was retired earlier — it sat on top of the scrollbar
  *    gutter for any output tall enough to trigger scrolling. The
- *    in-header Copy of Phase D cannot conflict with scrollbars.
+ *    in-header Copy cannot conflict with scrollbars.
  *
  * The 16 ANSI color classes (`ansi-{black,red,…}-fg|bg`) are mapped
  * to `--tugx-term-ansi-*` tokens so brio and harmony can paint the
@@ -97,8 +96,8 @@ body {
   /* Focus ring */
   --tugx-term-focus-ring: var(--tug7-element-global-text-normal-link-rest);
 
-  /* Collapsed-preview fade gradient (Phase E.4). The mask-image
-   * gradient is applied to `.tugx-term-content` when the root carries
+  /* Collapsed-preview fade gradient. The mask-image gradient is
+   * applied to `.tugx-term-content` when the root carries
    * `[data-collapsed="true"]`. The black-to-transparent gradient
    * reads as "more content below" without an explicit cutoff line.
    * The gradient is a token so theme overrides can tune the fade
@@ -154,7 +153,7 @@ body {
  * visible. Only hide when the empty state has zero footer fields.
  *
  * The standalone header is always rendered (Copy is always reachable
- * at its trailing edge per Phase D). It paints the strip background
+ * at its trailing edge). It paints the strip background
  * and a 1px bottom border — that's a one-line indicator on its own.
  * We don't want a "phantom" terminal block (header strip with no
  * body and no footer) for an empty-stdin / empty-stdout /
@@ -209,8 +208,7 @@ body {
 
 /* ---- Trailing affordances cluster ---- */
 
-/* Phase D — the dedicated `.tugx-term-actions` sticky strip retired.
- * Copy now sits as a `flex: 0 0 auto` cluster at the trailing edge of
+/* Copy sits as a `flex: 0 0 auto` cluster at the trailing edge of
  * `.tugx-term-header` (standalone) or portals into
  * `ToolWrapperChrome`'s actions slot (embedded). Mirrors FileBlock /
  * DiffBlock's `.tugx-{kind}-actions-cluster` pattern; same markup,
@@ -238,7 +236,7 @@ body {
   display: block;
 }
 
-/* ---- Collapsed preview (Phase E.4) ----
+/* ---- Collapsed preview ----
  *
  * When the root carries `[data-collapsed="true"]`, the imperative
  * renderer has already replaced the body with a flat-path slice of

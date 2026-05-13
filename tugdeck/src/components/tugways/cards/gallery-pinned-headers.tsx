@@ -1,17 +1,16 @@
 /**
  * gallery-pinned-headers.tsx — production-mirror fixture for the
- * Step 10.9 pin-stack consolidation.
+ * pin-stack consolidation.
  *
  * Seven sections, each in its own fixed-height scroll wrapper (with
  * `padding: 0` so sticky descendants pin flush against the wrapper's
- * content-box top edge — see Phase B.1's findings for why
- * `padding-block` on a sticky-hosting scroll container offsets the
- * pin reference inward):
+ * content-box top edge — `padding-block` on a sticky-hosting scroll
+ * container offsets the pin reference inward):
  *
  *   1–4. Standalone `FileBlock` / `DiffBlock` / `TerminalBlock` (folded
  *        + expanded). Each block's identity header is the only pinned
- *        row; the Phase E.4 affordances live at the trailing edge of
- *        the same header:
+ *        row; the action affordances live at the trailing edge of the
+ *        same header:
  *        - FileBlock — Find + Copy + fold cue.
  *        - DiffBlock — Side-by-side/Inline `TugChoiceGroup` + fold cue.
  *        - TerminalBlock — Copy + fold cue. Section #3 is folded by
@@ -27,14 +26,9 @@
  *        slot via `ChromeActionsTargetContext`. The chrome header
  *        is again the only pinned row at rest.
  *
- * The card was originally authored as a Phase B.1 diagnostic spike
- * (probe panel + dashed-border outlines). Those have long since been
- * removed; what remains is the visual smoke test for the Phase D
- * shape — at rest, ONE pinned row per block; only the Find UI (when
- * opened on a file or diff) produces a second sticky row underneath.
- *
- * **Authoritative reference:** `roadmap/tide-assistant-rendering.md`
- * Step 10.9 (Phase B.1, B.2, C, D, E.3, E.4).
+ * What remains here is the visual smoke test: at rest, ONE pinned row
+ * per block; only the Find UI (when opened on a file or diff) produces
+ * a second sticky row underneath.
  *
  * @module components/tugways/cards/gallery-pinned-headers
  */
@@ -155,8 +149,7 @@ const LONG_TERMINAL: TerminalData = {
  * against the scroll container's content-box, which equals the
  * padding-box top when padding is zero). Any `padding-block` on a
  * sticky-hosting scroll container would offset the pin by that
- * amount — that was the Phase B.1 root-cause finding for the
- * transcript-side pin offset.
+ * amount — the root cause of the transcript-side pin offset.
  */
 const SCROLLER_STYLE: React.CSSProperties = {
   height: 380,

@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 /**
  * audit-claude-sessions.ts — Empirical analysis of the local Claude Code session
- * corpus. Drives the threshold calibrations and tool-coverage decisions for the
- * tide-assistant-rendering plan ([Step 0](../../roadmap/tide-assistant-rendering.md#step-0)).
+ * corpus. Drives the threshold calibrations and tool-coverage decisions for
+ * tide-assistant rendering.
  *
  * The script streams every `*.jsonl` file under
  * `~/.claude/projects/-Users-kocienda-Mounts-u-src-tugtool/` (~1k+ files,

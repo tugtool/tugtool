@@ -2,8 +2,7 @@
  * Block-transformer pass — types and registry barrel for the
  * post-sanitize transformation hook in `parseMarkdownToSanitizedBlocks`.
  *
- * The dispatch is described in [#step-3] of `tide-assistant-rendering.md`
- * and specified in Spec S04. The pipeline runs in this order:
+ * The pipeline runs in this order:
  *
  *   1. `lex_blocks` — pulldown-cmark WASM block lexer
  *   2. `parse_to_html` — pulldown-cmark WASM HTML emitter

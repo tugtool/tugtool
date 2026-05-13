@@ -1055,9 +1055,9 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     // Settled state is keyed on the ELEMENT, not the scroll-key
     // string, because a body kind may unmount-and-remount within the
     // same card lifecycle (e.g., `TerminalBlock`'s collapse-then-
-    // expand cycle imperatively rebuilds its inner scroller; my
-    // Phase E.7 fix's setLocalCollapsed re-render triggers the same
-    // rebuild on first mount). The new element gets the same
+    // expand cycle imperatively rebuilds its inner scroller; the
+    // setLocalCollapsed re-render triggers the same rebuild on first
+    // mount). The new element gets the same
     // `data-tug-scroll-key` value but starts at scrollTop=0; if we
     // tracked settled-by-key only, the new element would be skipped
     // and the user's saved scroll would be lost the moment they
@@ -1297,8 +1297,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // `useSavedComponentState` (or `useSavedRegionScroll`) inside a
   // `useState` initializer / imperative-renderer creation site, so the
   // component mounts in its saved state on first paint. There is no
-  // post-mount apply pass; the wild-scrolling that motivated Phase E.8
-  // was the cost of having one. See `tuglaws/state-preservation.md` →
+  // post-mount apply pass. See `tuglaws/state-preservation.md` →
   // "Restoring saved state at mount" for the full contract.
 
   const markDirty = useCardDirtyState({

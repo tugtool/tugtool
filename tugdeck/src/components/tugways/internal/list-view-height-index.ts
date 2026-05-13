@@ -155,10 +155,10 @@ export class HeightIndex {
    * any prepared cache so the next `prepare` call sees the hydrated
    * values.
    *
-   * Used by `TugListView`'s Phase E.9 mount-time hydration: when the
-   * saved bag carries `meta.cellHeights`, `hydrate` populates the
-   * live index BEFORE the apply effect runs, so first-paint anchor-
-   * resolve math reads exact heights rather than estimates.
+   * Used by `TugListView`'s mount-time hydration: when the saved bag
+   * carries `meta.cellHeights`, `hydrate` populates the live index
+   * BEFORE the apply effect runs, so first-paint anchor-resolve math
+   * reads exact heights rather than estimates.
    *
    * Does not erase existing measurements not covered by `arr`. The
    * typical mount-time use is hydrating a fresh index, but mixing

@@ -546,9 +546,9 @@ export const FileBlock: React.FC<FileBlockProps> = ({
 
   // Chrome actions target — non-null when this FileBlock is composed
   // inside a `ToolWrapperChrome` that has rendered its actions slot.
-  // Phase D consolidates the resting affordance row INTO the chrome /
-  // identity header rather than rendering it as a separate sticky
-  // strip beneath. When the target is present (embedded composition),
+  // The resting affordance row lives INSIDE the chrome / identity
+  // header rather than rendering as a separate sticky strip beneath.
+  // When the target is present (embedded composition),
   // the affordance node portals into it; when absent (standalone),
   // affordances render inside `.tugx-file-header` directly. The body
   // kind never depends on this being non-null — `embedded={false}` and
@@ -1027,11 +1027,20 @@ export const FileBlock: React.FC<FileBlockProps> = ({
     // home. Idempotent if we already own first-responder.
     chainManager?.makeFirstResponder(fileBlockResponderId);
     setFindOpen(true);
-    // Focus + select land in the useLayoutEffect below — keyed on
-    // `findOpen` so it fires after React commits the find-row mount
-    // and the input ref is set. [L05] forbids `requestAnimationFrame`
-    // for operations that depend on a React state commit; the
-    // useLayoutEffect-on-mount pattern is the canonical alternative.
+    // Two focus paths cover both "first open" and "already open":
+    //  - First open: the input doesn't exist yet (find row hasn't
+    //    rendered). The useLayoutEffect below picks it up after the
+    //    `setFindOpen(true)` commit and lands focus + select on the
+    //    fresh input.
+    //  - Already open: `setFindOpen(true)` is a no-op (already true),
+    //    React doesn't re-commit, the effect doesn't re-run. Focus
+    //    + select directly so a repeated Cmd-F snaps the caret back
+    //    into the field and pre-selects the query — same behavior
+    //    Safari / VS Code / Xcode ship.
+    // [L05] both paths are synchronous to the keystroke (no rAF, no
+    // setTimeout); they read live refs at fire time.
+    findInputRef.current?.focus();
+    findInputRef.current?.select();
   }, [
     chainManager,
     collapsed,

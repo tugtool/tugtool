@@ -991,16 +991,15 @@ body {
 }
 
 /*
- * Phase E.3 hover-preservation contract.
+ * Hover-preservation contract.
  *
  * Confirming is a transient *feedback* state, not a disabled state.
  * The JS click handler's `confirmingRef` guard prevents click re-fire;
  * we do NOT set `aria-disabled="true"` here (that would trip the
  * `:not([aria-disabled="true"])` exclusion on rest-state hover/active
  * rules and suppress the geometric hover state from painting while
- * the user holds the cursor over the button — the exact symptom
- * Phase E.3 fixes). Pointer events stay enabled so `:hover` continues
- * to match.
+ * the user holds the cursor over the button). Pointer events stay
+ * enabled so `:hover` continues to match.
  *
  * Two rules paint the confirming state on `ghost-action`:
  *  1. `.tug-button-ghost-action[data-tug-confirming="true"]` — resting

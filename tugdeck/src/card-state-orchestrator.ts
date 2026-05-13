@@ -13,8 +13,8 @@
  *     `ComponentStatePreservationRegistry` parent-first, merging
  *     harvested component state into `bag.components`.
  *
- * Restore is NOT the orchestrator's responsibility. After Phase E.8,
- * components mount in their saved state via `useSavedComponentState`
+ * Restore is NOT the orchestrator's responsibility. Components mount
+ * in their saved state via `useSavedComponentState`
  * inside a `useState` initializer; imperative renderers (TerminalBlock's
  * virtualized scroller, FileBlock's CM6 mount) read saved scroll via
  * `useSavedRegionScroll` and write it at creation. The orchestrator is

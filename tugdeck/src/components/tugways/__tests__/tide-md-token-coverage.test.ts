@@ -137,9 +137,9 @@ describe("markdown token coverage", () => {
       // Fenced code geometry (chrome comes from --tugx-block-*; the
       // Copy button's height / padding-inline / font-size / icon-size
       // come from the published `--tug-button-2xs-*` metric tokens
-      // in `tug-button.css` — Phase E.2. Only the radius stays
-      // markdown-local because the Copy button uses a slightly
-      // different border-radius than TugPushButton's pill default.)
+      // in `tug-button.css`. Only the radius stays markdown-local
+      // because the Copy button uses a slightly different
+      // border-radius than TugPushButton's pill default.)
       "--tugx-md-fenced-code-padding",
       "--tugx-md-fenced-code-size",
       "--tugx-md-fenced-code-line-height",

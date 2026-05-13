@@ -497,13 +497,13 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
     const node = internalButtonRef.current;
     if (node === null) return;
     // Confirming is a transient *feedback* state, NOT a disabled state.
-    // Phase E.3 drops `aria-disabled="true"` from this path so the
-    // existing `:not([aria-disabled="true"])` exclusions in rest-state
-    // CSS rules don't silently mask the confirming-state styling, and
-    // — more importantly — so `:hover` continues to match while the
-    // user holds the cursor over the button. Click suppression is
-    // handled by the JS `confirmingRef` guard inside the click
-    // handler; we don't need a DOM-level gate.
+    // We deliberately do not set `aria-disabled="true"` so the existing
+    // `:not([aria-disabled="true"])` exclusions in rest-state CSS rules
+    // don't silently mask the confirming-state styling, and — more
+    // importantly — so `:hover` continues to match while the user holds
+    // the cursor over the button. Click suppression is handled by the
+    // JS `confirmingRef` guard inside the click handler; we don't need
+    // a DOM-level gate.
     confirmingRef.current = true;
     node.dataset.tugConfirming = "true";
     if (timerRef.current !== null) {
@@ -553,13 +553,13 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
       }
       confirmingRef.current = true;
       node.dataset.tugConfirming = "true";
-      // Phase E.3: NO `aria-disabled` here. Confirming is a transient
-      // feedback state, not a disabled state. Setting `aria-disabled`
-      // would trip every `:not([aria-disabled="true"])` exclusion on
-      // rest-state CSS rules and suppress `:hover` painting while the
-      // user holds the cursor over the button — the exact symptom we
-      // are fixing. Click re-fire suppression lives in the JS
-      // `confirmingRef` guard inside the click handler.
+      // NO `aria-disabled` here. Confirming is a transient feedback
+      // state, not a disabled state. Setting `aria-disabled` would
+      // trip every `:not([aria-disabled="true"])` exclusion on
+      // rest-state CSS rules and suppress `:hover` painting while
+      // the user holds the cursor over the button. Click re-fire
+      // suppression lives in the JS `confirmingRef` guard inside
+      // the click handler.
     } else {
       confirmingRef.current = false;
       delete node.dataset.tugConfirming;

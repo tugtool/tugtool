@@ -2,7 +2,7 @@
  * useComponentStatePreservation — opt-in Component State Preservation
  * Protocol ([D13], [A9]) hook for stateful `tugways` components.
  *
- * After Phase E.8 the API has two halves, each with a single job:
+ * The API has two halves, each with a single job:
  *
  *   - `useComponentStatePreservation({ componentStatePreservationKey,
  *     captureState })` — registers the component for **capture**. Per
@@ -82,9 +82,9 @@ import { isDevEnv } from "../../lib/dev-env";
 
 /**
  * A region's saved scroll position, as stored in `bag.regionScroll[key]`.
- * `meta` carries optional anchor metadata (Phase E.6) used by the
- * outer-transcript anchor restore path; consumers that only need the raw
- * scroll position can ignore it.
+ * `meta` carries optional anchor metadata used by the outer-transcript
+ * anchor restore path; consumers that only need the raw scroll position
+ * can ignore it.
  */
 export interface SavedRegionScroll {
   x: number;
@@ -348,8 +348,8 @@ export function useComponentStatePreservation<T>({
  *
  * Reading outside an initializer is supported (the hook subscribes to
  * the deck manager's notify channel via `useSyncExternalStore`, so
- * future bag updates re-fire the read) but rarely needed: the
- * post-mount apply path is exactly the wild-scrolling failure Phase E.8
+ * future bag updates re-fire the read) but rarely needed: a post-mount
+ * apply path causes the wild-scrolling failure that mount-in-saved-state
  * eliminates. If you find yourself reading the saved value at a moment
  * other than mount, you are almost certainly doing the wrong thing —
  * the value React holds is the source of truth after mount.

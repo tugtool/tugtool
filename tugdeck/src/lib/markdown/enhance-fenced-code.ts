@@ -157,11 +157,10 @@ export function enhanceFencedCode(container: HTMLElement): void {
     if (lang !== null) wrapper.dataset.lang = lang;
 
     // Header — language label at the left, Copy `<button>` at the
-    // trailing edge. Phase D consolidated affordances into the header
-    // itself (the dedicated `.tugx-md-fenced-code-actions` sticky
-    // strip retired) so the resting chrome is a single row carrying
-    // both identity and Copy, matching FileBlock / DiffBlock /
-    // TerminalBlock's Phase D shape.
+    // trailing edge. Affordances live in the header itself (no
+    // dedicated `.tugx-md-fenced-code-actions` sticky strip), so the
+    // resting chrome is a single row carrying both identity and Copy,
+    // matching FileBlock / DiffBlock / TerminalBlock's shape.
     const header = document.createElement("div");
     header.className = "tugx-md-fenced-code-header";
 

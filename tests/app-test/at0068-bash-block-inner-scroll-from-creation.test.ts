@@ -1,21 +1,20 @@
 /**
- * at0068-bash-block-inner-scroll-from-creation.test.ts — Phase E.8
- * regression gate for the inner-scroll mount-in-saved-state contract.
+ * at0068-bash-block-inner-scroll-from-creation.test.ts — regression
+ * gate for the inner-scroll mount-in-saved-state contract.
  *
  * # What this proves
  *
- * The replaced AT0064 ("bash-block-inner-scroll-restore") drove the
- * Phase E.7 observer-channel path: the virtualized inner scroller was
- * created at `scrollTop=0` on first paint, then the MutationObserver-
- * driven region-scroll apply found the new `[data-tug-scroll-key]`
- * element and wrote the saved `scrollTop`. A second paint landed the
- * scroll at the saved position. The user saw the scroller jump from 0
- * to the saved value — wild scrolling.
+ * A previous observer-channel design had the virtualized inner
+ * scroller created at `scrollTop=0` on first paint, then a
+ * MutationObserver-driven region-scroll apply found the new
+ * `[data-tug-scroll-key]` element and wrote the saved `scrollTop`. A
+ * second paint landed the scroll at the saved position. The user saw
+ * the scroller jump from 0 to the saved value — wild scrolling.
  *
- * AT0068 pins the Phase E.8 contract: the scroller is CREATED at the
- * saved `scrollTop`. `appendVirtualizedBody` reads
+ * AT0068 pins the contract: the scroller is CREATED at the saved
+ * `scrollTop`. `appendVirtualizedBody` reads
  * `useSavedRegionScroll(scrollKey)?.y` (threaded down from
- * TerminalBlock's React shell via `renderTerminal`'s new
+ * TerminalBlock's React shell via `renderTerminal`'s
  * `initialScrollTop` parameter) and writes it into the scroller
  * synchronously in the same `useLayoutEffect` call that appends the
  * element to the DOM. No post-mount apply needed.
@@ -49,8 +48,8 @@
  *    `useSavedRegionScroll` value is consumed at imperative-renderer
  *    creation, before paint.
  *  - [L06] scroll position is appearance — DOM `scrollTop`, not React
- *    state. Phase E.8 collapses the apply into the creation site so
- *    no post-mount DOM write is needed for inner scrollers.
+ *    state. The apply collapses into the creation site so no
+ *    post-mount DOM write is needed for inner scrollers.
  *  - [L19] component authoring guide — "Restoring saved state at
  *    mount" pattern.
  */
@@ -328,15 +327,15 @@ describe.skipIf(!SHOULD_RUN)(
 
           // -------- Assertion: no jump from 0 to saved.
           //
-          // If the (now-removed) Phase E.7 MutationObserver-driven
-          // apply path were back, we'd observe a scroll event with
-          // a large delta away from the saved value within the
-          // first few hundred ms after mount. With Phase E.8's
-          // creation-time write the scroller is born at the saved
-          // position; any user-driven scrolls happen later and stay
-          // near the saved value. We allow scroll events that stay
-          // within tolerance of the saved value (TugListView's
-          // mount-time settle might emit one), but reject any event
+          // If a post-mount MutationObserver-driven apply path were
+          // back, we'd observe a scroll event with a large delta
+          // away from the saved value within the first few hundred
+          // ms after mount. With the creation-time write the
+          // scroller is born at the saved position; any user-driven
+          // scrolls happen later and stay near the saved value. We
+          // allow scroll events that stay within tolerance of the
+          // saved value (TugListView's mount-time settle might emit
+          // one), but reject any event
           // that lands more than tolerance px from the saved value.
           const jumpAwayFromSaved = observed.scrollEvents.filter(
             (e) =>

@@ -463,10 +463,10 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   // mode they need to clear the header's height; in embedded mode the
   // header isn't rendered and the variable stays unset (calc() falls
   // back to 0). Same architecture as FileBlock — see file-block.tsx
-  // for the full rationale and Step 10.9 Phase B.2 for the design.
+  // for the full rationale.
   //
-  // Phase D consolidated the body-kind actions row INTO the chrome /
-  // identity header (no more separate sticky strip), so the only
+  // The body-kind actions row lives INSIDE the chrome / identity
+  // header (no separate sticky strip), so the only
   // telescoping height this body kind writes is the header's. The
   // hunk-header `top:` calc loses the formerly-needed
   // `--tugx-diff-actions-height` term.
@@ -729,7 +729,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
     onToggleCollapsed?.(next);
   }, [collapsedProp, onToggleCollapsed]);
 
-  // ---- Copy text source (Phase E.4) -----------------------------------
+  // ---- Copy text source ------------------------------------------------
   //
   // `copyText` memo drives the render-time disabled check on
   // `BlockCopyButton`; `getCopyText` is the closure the affordance
@@ -745,7 +745,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   }, [copyText]);
   const getCopyText = React.useCallback(() => copyTextRef.current, []);
 
-  // ---- View-toggle responder form (Phase E.4) -------------------------
+  // ---- View-toggle responder form -------------------------------------
   //
   // The view-toggle migrated from a `TugPushButton` (label-flipping
   // `widthStabilize` shim) to a `TugChoiceGroup` (two visible
@@ -1035,18 +1035,17 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
 
   // Compose the resting affordances cluster (view-toggle + Copy +
   // fold cue) once; render inline (standalone) or via portal into
-  // the chrome's actions slot (embedded). Phase E.3 / E.4 ordering:
-  // features (view-toggle → Copy) → fold cue (rightmost). The
-  // fold cue is the fixed-landmark affordance; features sit to its
-  // left.
+  // the chrome's actions slot (embedded). Ordering: features
+  // (view-toggle → Copy) → fold cue (rightmost). The fold cue is
+  // the fixed-landmark affordance; features sit to its left.
   //
   // Copy and fold-cue come from the `body-kinds/affordances/`
   // library — the contract (position-stable click, ghost
   // typography, 2xs scale, focus-refuse, confirmation flash,
   // width-stabilize for Copy, disengage-follow-bottom event for
   // fold) is encapsulated there. View-toggle is a `TugChoiceGroup`
-  // (Phase E.4 — both segments visible at all times via the ghost
-  // emphasis bracket frame).
+  // — both segments visible at all times via the ghost emphasis
+  // bracket frame.
   const hunkCountWord = hunks.length === 1 ? "hunk" : "hunks";
   const cueLabel = `${hunks.length} ${hunkCountWord}`;
   // Copy disabled when there's no composable text — empty memo
