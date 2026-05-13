@@ -4,11 +4,9 @@
  *
  * These tests intentionally avoid DOM-level coverage: integration
  * tests that wire the trace into real focus / observer behavior are
- * separate, and per Design Decision [D10] we do not pretend happy-dom
- * can verify focus / DOM-observer behavior. The event-union shape,
- * the bounded ring's eviction policy, the `since(seq)` slice, the
- * enable-gate, and the `mark()` monotonic counter are all
- * exercisable without touching the DOM.
+ * separate. The event-union shape, the bounded ring's eviction
+ * policy, the `since(seq)` slice, the enable-gate, and the `mark()`
+ * monotonic counter are all exercisable without touching the DOM.
  *
  * The trace module is a module-level singleton, so every test starts
  * by calling `deckTrace.clear()` and `deckTrace.enable(true)` (or

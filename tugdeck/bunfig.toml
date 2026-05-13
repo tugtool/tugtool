@@ -4,4 +4,4 @@
 # are still discovered via recursive walk.
 [test]
 root = "src"
-preload = ["happy-dom", "./src/__tests__/setup-silence.ts"]
+preload = ["./src/__tests__/setup-silence.ts"]

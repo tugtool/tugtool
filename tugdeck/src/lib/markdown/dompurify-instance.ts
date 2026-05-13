@@ -6,9 +6,8 @@
  * decisions governs every rendered markdown block in the app. Mirrors
  * the strategy used by `lib/markdown.ts` (the conversation-prose path)
  * — same allowlist / blocklist, same jsdom fallback in Bun/Node test
- * environments where happy-dom's tree-mutation behavior diverges from
- * the spec in ways that DOMPurify's `ALLOWED_TAGS + FORBID_TAGS`
- * interaction is sensitive to.
+ * environments so DOMPurify's `ALLOWED_TAGS + FORBID_TAGS` interaction
+ * runs against a standards-compliant DOM.
  *
  * The instance is cached at module scope and lazily initialized on
  * first `getDOMPurify()` call.
@@ -50,11 +49,8 @@ let _dompurify: ReturnType<typeof DOMPurifyModule> | null = null;
  *
  * In a real browser the native `window` is used. In Bun/Node test
  * environments a `jsdom` Window is created so DOMPurify's tree-mutation
- * logic matches the WHATWG spec — happy-dom (the default in tugdeck's
- * RTL setup) has known divergences that can let nested forbidden
- * elements pass `ALLOWED_TAGS + FORBID_TAGS` filtering. jsdom is
- * already a `devDependency` of tugdeck, so this fallback adds no new
- * supply-chain surface.
+ * logic matches the WHATWG spec. jsdom is already a `devDependency` of
+ * tugdeck, so this fallback adds no new supply-chain surface.
  */
 export function getDOMPurify(): ReturnType<typeof DOMPurifyModule> {
   if (_dompurify && _dompurify.isSupported) return _dompurify;

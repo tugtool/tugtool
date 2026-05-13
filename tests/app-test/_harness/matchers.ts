@@ -24,8 +24,8 @@
  *     module load inside any test file that wants the fluent form.
  *
  * The pure-predicate shape exists precisely so the unit tests stay
- * happy-dom-free and tsc-checkable without dragging `expect.extend`'s
- * type gymnastics into every test file.
+ * tsc-checkable without dragging `expect.extend`'s type gymnastics
+ * into every test file.
  */
 
 import { expect } from "bun:test";

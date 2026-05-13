@@ -1949,9 +1949,8 @@ function CompletionOverlay({
     // zero. Re-anchoring would dereference a null `coordsAtPos` against
     // an unrendered editor; cancel instead so the popup vanishes
     // alongside the editor. `cancelCompletion` is a no-op when the
-    // typeahead session is inactive, so the cancel is safe to fire on
-    // the initial observer notification (which happy-dom emits with
-    // zeroed sizes for un-laid-out hosts).
+    // typeahead session is inactive, so the cancel is safe to fire
+    // on the initial observer notification.
     let resizeObserver: ResizeObserver | null = null;
     const host = hostRef.current;
     if (host !== null && typeof ResizeObserver !== "undefined") {

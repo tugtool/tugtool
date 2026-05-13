@@ -191,8 +191,7 @@ import { matchEditingKeybinding } from "./text-editing-keybindings";
 // with `"end"` cursor placement, and the same input-event dispatch.
 // Extracting it (a) eliminates the duplication, and (b) turns the
 // bug-prone half of paste (state: mountedRef, inputRef, selection
-// range, event dispatch) into a pure function that can be unit
-// tested in happy-dom without any clipboard polyfill at all.
+// range, event dispatch) into a pure function.
 //
 // The function is exported so tests can exercise it directly. It is
 // not intended for use outside the paste-handler cascade — consumers

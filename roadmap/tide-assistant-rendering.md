@@ -121,7 +121,7 @@ The assistant-side rendering bar for Tug is *not* "comparable to a terminal." Th
 - Lazy-loaded stretch content (KaTeX, Mermaid, tugdiff-wasm) must not appear in the main bundle.
 - No new IndexedDB dependencies (D-T3-10).
 - Vitest test names must encode the spec they cover. Rust nextest tests with `-D warnings`.
-- `happy-dom` is forbidden for tests that exercise focus, selection, or event ordering across React renders (per `feedback_no_happy_dom_tests`). Use the `app-test` harness for those.
+- Focus, selection, and event-ordering behavior is verified through the `app-test` harness against the real Tug.app WKWebView, not through in-process fake-DOM shims.
 - All work is on the `tugplan-tide-assistant-rendering` branch; no commits to `main` directly.
 - Both `brio` and `harmony` themes verified for every component.
 
@@ -1421,7 +1421,7 @@ ThinkingBlock, PermissionDialog, QuestionDialog, CostChrome (with CostBadge sub-
 - [x] `TranscriptToolCalls` static mode — multiple tool calls render in insertion order (`toolUseId` keys preserved)
 - [x] `TranscriptToolCalls` static mode — empty `toolCalls`: renders nothing at all (no container in the DOM)
 - [x] `TranscriptToolCalls` streaming mode — initial subscribe path: the snapshot is read synchronously on mount (G1 contract); the wrapper for the seed `inflight.tools` value paints before the first observer emission
-- [x] `TranscriptToolCalls` streaming mode — emission path: emit a new `inflight.tools` value where the same `toolUseId` transitions `pending → done` with a `structuredResult`; assert the wrapper instance's container `data-slot` keeps the same DOM node (in-place reconciliation, not remount). Verified additionally that the BashToolBlock body flips from `<StreamingPlaceholder>` to `<TerminalBlock>` with the structured stdout rendered, and that adding a *new* tool call to the list keeps the existing wrapper's DOM node identical while appending the new one. This is happy-dom-safe because we're observing post-render DOM identity, not focus / event ordering.
+- [x] `TranscriptToolCalls` streaming mode — emission path: emit a new `inflight.tools` value where the same `toolUseId` transitions `pending → done` with a `structuredResult`; assert the wrapper instance's container `data-slot` keeps the same DOM node (in-place reconciliation, not remount). Verified additionally that the BashToolBlock body flips from `<StreamingPlaceholder>` to `<TerminalBlock>` with the structured stdout rendered, and that adding a *new* tool call to the list keeps the existing wrapper's DOM node identical while appending the new one.
 - [x] Streaming mode — empty seed (`"[]"`): no DOM container.
 - [x] Streaming mode — unsubscribe on unmount: setting a new value after unmount does not throw (no leaked listener).
 
@@ -1459,7 +1459,7 @@ ThinkingBlock, PermissionDialog, QuestionDialog, CostChrome (with CostBadge sub-
 - [x] Renders content with line numbers starting at `startLine`
 - [x] Long file collapses
 - [x] Language detection produces correct highlight class
-- [x] Cmd+F inside an expanded FileBlock highlights matches and supports next/previous navigation — search markup verified in unit tests; full interactive flow (Cmd+F focus, typing, next/prev, Escape) belongs in a real-browser surface per the project's happy-dom test scoping rule, deferred to gallery/e2e
+- [x] Cmd+F inside an expanded FileBlock highlights matches and supports next/previous navigation — search markup verified in unit tests; full interactive flow (Cmd+F focus, typing, next/prev, Escape) belongs in a real-browser surface, deferred to gallery/e2e
 
 **Checkpoint:**
 - [x] `cd tugdeck && bun x tsc --noEmit && bun test`
@@ -2292,7 +2292,7 @@ The gallery card embeds an on-screen probe (`PinProbePanel`) that walks the live
 - `tug-transcript-entry.tsx` adds a `useLayoutEffect` that creates a `ResizeObserver` on the `__header` element and writes `--tugx-pin-stack-top: ${height}px` onto the entry root. `[L03]` (observer registered before paint) and `[L06]` (DOM write, not React state) both satisfied. Observer disconnect in the effect's cleanup.
 - `tug-transcript-entry.tsx` module docstring documents the contract: "child block headers may consume `--tugx-pin-stack-top` to telescope under the entry header when both pin simultaneously. The variable always reflects the live measured height of `__header`."
 - Tests: entry mounts; `--tugx-pin-stack-top` is set on the root after layout; updates when `__header` content changes height (simulated via prop change).
-- Real-browser sticky behavior is not asserted in happy-dom — defer to the gallery card + manual visual check, per the happy-dom scoping rule.
+- Real-browser sticky behavior is verified via the gallery card + manual visual check.
 
 **Artifacts:**
 
@@ -2331,7 +2331,7 @@ The gallery card embeds an on-screen probe (`PinProbePanel`) that walks the live
 
 - [x] Add `position: sticky; top: 0; z-index: 2` to `.tug-transcript-entry__header`. Done — also added opaque background via the new `--tugx-transcript-header-bg` token (bound to `--tug7-surface-global-primary-normal-overlay-rest`, matching the pane chrome) so body content doesn't bleed through.
 - [x] Add `useLayoutEffect` + `ResizeObserver` to `tug-transcript-entry.tsx`; write `--tugx-pin-stack-top` onto the entry root. Done — seed via `offsetHeight` on mount; observer keeps the variable accurate across header content / magnification changes; disconnect on cleanup.
-- [x] Update `tug-transcript-entry.test.tsx`: variable is set after mount; updates on header-content prop change. Done — 3 new tests in a "Pin-stack contract" describe block; happy-dom can't fire layout callbacks, so the assertions cover the seed write, re-render survival, and clean unmount per the happy-dom scoping rule.
+- [x] Update `tug-transcript-entry.test.tsx`: variable is set after mount; updates on header-content prop change. Done — 3 new tests in a "Pin-stack contract" describe block covering the seed write, re-render survival, and clean unmount.
 - [x] Update the module docstring with the pin-telescoping contract. Done — new "Pin-stack contract — `--tugx-pin-stack-top`" section in the .tsx docstring covering reads/writes, [L03]/[L06]/[L19]/[L20] mappings.
 
 **Tasks (gallery + docs):**
@@ -2478,7 +2478,7 @@ A separate concern compounds it: the FileBlock / DiffBlock Find UI lives in the 
 - [x] **Move the find-state-sync effect to `useLayoutEffect`.** Done — the effect that pushes `findQuery` / `findCaseSensitive` / `findRegexp` / `findWholeWord` to CM6's delegate runs before paint so match highlights repaint in the same frame as the input update. No keystroke lag.
 - [x] **Add `isConfirming?: boolean` to `TugButton` / `TugPushButton`.** Done — new optional prop, documented as the controlled-mode opt-in. When provided, a dedicated `useLayoutEffect` writes `data-tug-confirming` directly into the DOM and the click handler's `enterConfirmation()` call is skipped. Mutually-exclusive with `confirmation.duration`; a mount-time `useEffect` fires a dev-mode `console.warn` when both are set.
 - [x] **Refactor `TerminalBlock` to controlled confirmation.** Done — local `[copied, setCopied]` state replaces the old imperative `is-copied` class swap. `setCopied(true)` inside the clipboard `.then()` callback (success path only); `setTimeout` clears after `COPIED_FLASH_MS`. Cleanup on unmount. Failure path (`.catch`) leaves `copied` at `false` — the button never lies about success. Removed `duration` from the `confirmation` prop on the Copy button (controlled mode supplies the timing externally).
-- [x] **`FileBlock` becomes a responder.** Done — uses `useOptionalResponder` to register an id + handlers for `FIND` / `FIND_NEXT` / `FIND_PREVIOUS`. `FIND` calls `openFind()`; the navigation handlers read `findQueryRef.current` (the latest-ref pattern per [L07]) and bail when the query is empty. The block's root wraps in `<fileBlockResponder.ResponderScope>` and attaches `responderRef` via a composed-ref callback. `useOptionalResponder` (tolerant) means standalone gallery + happy-dom tests still render correctly when no `ResponderChainProvider` is above.
+- [x] **`FileBlock` becomes a responder.** Done — uses `useOptionalResponder` to register an id + handlers for `FIND` / `FIND_NEXT` / `FIND_PREVIOUS`. `FIND` calls `openFind()`; the navigation handlers read `findQueryRef.current` (the latest-ref pattern per [L07]) and bail when the query is empty. The block's root wraps in `<fileBlockResponder.ResponderScope>` and attaches `responderRef` via a composed-ref callback. `useOptionalResponder` (tolerant) means standalone gallery hosts still render correctly when no `ResponderChainProvider` is above.
 - [x] **Tests.** Done — 5 new TugButton tests (uncontrolled vs controlled vs flipping vs dev-warn), 2 controlled-collapse tests (FileBlock + DiffBlock), 2 honest-confirmation tests (TerminalBlock success + failure paths).
 - [x] **Update `tuglaws/component-authoring.md`** — Done. New "Controlled feedback states" subsection under Component Patterns documents the two-mode (uncontrolled timer / controlled prop) contract, the [L06] / [L03] mapping for the DOM mutation, and the false-positive-feedback failure mode that motivates the controlled mode.
 
@@ -3131,7 +3131,7 @@ Phase E.9 captures the geometry that drives layout at save time and hydrates it 
 - [x] **TugListView writer.** In the existing anchor-state writer (`useLayoutEffect` in `tug-list-view.tsx`), captures `heightIndex.snapshot()` and serializes into `meta.cellHeights` alongside `meta.anchor` + `meta.scrollHeight`. Dense encoding (0 for unmeasured) — chosen over sparse `null` to avoid JSON's sparse-array hazards.
 - [x] **TugListView reader (mount hydration).** New mount `useLayoutEffect` reads `useSavedRegionScroll(scrollKey)`. If `meta.cellHeights` is present, hydrates `heightIndexRef.current` via new `HeightIndex.hydrate` method. If `meta.anchor` is present, writes directly into `restoreAnchorRef.current`. Effect-declaration order ensures this runs BEFORE the apply effect at `tug-list-view.tsx:1252` in the same commit.
 - [x] **TugListView cell `min-height` lock.** Per-cell render reads `hydratedCellHeightsRef.current?.[index]` and applies inline `min-height` when > 0. Lock is permanent within the mount (acceptable trade-off — ghost space in the rare shrink case vs. siblings shifting every time content arrives). Unit-tested in `tug-list-view.geometry-restore.test.tsx`.
-- [x] **FileBlock CM6 writer.** Stamps `data-tug-scroll-state` with `meta.line = { number, offsetPx }` + `meta.scrollHeight` on every scroll. Defensive try/catch around `lineBlockAtHeight` for test-env safety (happy-dom CM6 layout isn't fully measured).
+- [x] **FileBlock CM6 writer.** Stamps `data-tug-scroll-state` with `meta.line = { number, offsetPx }` + `meta.scrollHeight` on every scroll. Defensive try/catch around `lineBlockAtHeight` for pre-measure safety.
 - [x] **FileBlock CM6 reader.** At mount, prefers `meta.line` over raw `y` if present: computes `lineBlockAt(line).top + offsetPx` and writes `scrollDOM.scrollTop`. Pixel fallback preserved for pre-E.9 bags.
 - [x] **TerminalBlock writer.** Added `data-tug-scroll-state` with `meta.scrollHeight: totalContentPx`. Reader unchanged (LINE_HEIGHT_PX deterministic; pixel scrollTop is exact).
 - [x] **Document the geometry schema** in `state-preservation.md` ("Saving geometry for first-paint accuracy") and `component-authoring.md` ("Custom geometry meta — when raw `{x, y}` isn't enough").

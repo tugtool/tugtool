@@ -552,10 +552,9 @@ export class ResponderChainManager {
 
     // Step 4: DOM-walk fallback. Look up the responder's host element
     // by its `data-responder-id` attribute (written by `useResponder`'s
-    // ref callback). DOM-free environments (server-side rendering,
-    // unit tests without happy-dom) are detected via `typeof document`
-    // and skipped — the chain record is already updated, only the DOM
-    // focus side-effect is unavailable.
+    // ref callback). DOM-free environments (server-side rendering) are
+    // detected via `typeof document` and skipped — the chain record is
+    // already updated, only the DOM focus side-effect is unavailable.
     if (typeof document === "undefined") return;
     const escapedId =
       typeof CSS !== "undefined" && typeof CSS.escape === "function"

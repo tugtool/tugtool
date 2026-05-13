@@ -254,7 +254,7 @@ Each step is its own commit. `bun run check`, `bun test`, `bun run audit:tokens 
 **Verification:**
 - `bun x tsc --noEmit` + `bun test` green.
 - Manual: open a tide card — caret blinks in the editor without a click. Click a sibling card, then click back — caret returns to the editor. Ctrl+` cycles through cards; when the tide card rotates to the front, caret is in the editor immediately.
-- **No automated focus assertion.** happy-dom's `document.activeElement` diverges from browser behavior enough that asserting it in these tests produces megabyte-scale failure dumps without catching real regressions; focus is verified manually and by the lower-level tests that target the delegate directly.
+- **No in-process focus assertion.** Focus is verified manually and by the lower-level tests that target the delegate directly; trusted-event focus behavior belongs in app-test against the real Tug.app.
 
 #### Step 4 — Re-focus the prompt input after submit {#step-4}
 

@@ -2,8 +2,7 @@
  * list-view-window — pure-function tests.
  *
  * Pins the windowing math against documented edge cases. No React,
- * no DOM — just the function. happy-dom isn't even required for
- * these tests; bun's runner alone is sufficient.
+ * no DOM — just the function.
  */
 
 import { describe, expect, test } from "bun:test";

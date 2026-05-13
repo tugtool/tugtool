@@ -10,9 +10,9 @@
 
 The app-test harness is a Bun-side test driver that launches `Tug.app` as a subprocess and talks to it over a Unix-domain socket exposed by a DEBUG-only `TestHarness` listener inside the app. From a test author's perspective, it looks like a normal `bun:test` file: import `launchTugApp` from `@/_harness`, call it inside an `async test(...)`, drive gestures and DOM reads through the returned `App` object, close the app in a `finally` block.
 
-What makes the harness interesting is what is on the other end of that socket. It is not happy-dom, not jsdom, not a headless rendering shim. It is the real `Tug.app` bundle running the real WKWebView, hosting the real tugdeck bundle, executing the real production JavaScript. The harness is the only test surface in the repo that exercises the actual WebKit code paths that ship to users — selection rendering, gesture focus-lock, drag-to-select, double-click word boundaries, modifier-key accelerators, scroll containers, paint timing.
+What makes the harness interesting is what is on the other end of that socket. It is not a fake DOM, not a headless rendering shim. It is the real `Tug.app` bundle running the real WKWebView, hosting the real tugdeck bundle, executing the real production JavaScript. The harness is the only test surface in the repo that exercises the actual WebKit code paths that ship to users — selection rendering, gesture focus-lock, drag-to-select, double-click word boundaries, modifier-key accelerators, scroll containers, paint timing.
 
-The colocated tests under `tugdeck/src/__tests__/` live in happy-dom, run thousands of times faster, and are appropriate for component contracts, hook semantics, and pure DOM helpers. They cannot assert anything that depends on WebKit's `isTrusted: true` paths, on focus surviving a real gesture, or on the timing of WebKit's gesture focus-lock. App-test is where those assertions belong.
+The colocated unit tests under `tugdeck/src/__tests__/` are pure-logic tests (stores, protocol, math, validators) — no DOM. Anything that depends on WebKit's `isTrusted: true` paths, on focus surviving a real gesture, or on the timing of WebKit's gesture focus-lock belongs in app-test.
 
 ---
 
@@ -27,7 +27,7 @@ Most JavaScript test environments synthesize events: `new MouseEvent("click", { 
 
 A test that synthesizes events lives in a different universe from the user. It can drive `onClick`, but it cannot drive default-focus-on-click. It can dispatch `keydown`, but it cannot drive Cmd+A selection. The harness exists because trusted-event paths are first-class user behavior in tugdeck, and a test surface that cannot drive them cannot prove the app works.
 
-The harness solves this by posting events at the **OS level**, via Swift's `CGEvent.post` ([D02] in `tugplan-in-app-bridge.md`). A `CGEvent` posted from Swift is indistinguishable from a hardware event as far as WebKit is concerned: `isTrusted` is `true`, default-focus runs, drag selection initiates, Cmd+A reaches the selection model. This is the entire reason the harness exists as a subprocess driver instead of a happy-dom shim.
+The harness solves this by posting events at the **OS level**, via Swift's `CGEvent.post` ([D02] in `tugplan-in-app-bridge.md`). A `CGEvent` posted from Swift is indistinguishable from a hardware event as far as WebKit is concerned: `isTrusted` is `true`, default-focus runs, drag selection initiates, Cmd+A reaches the selection model. This is the entire reason the harness exists as a subprocess driver instead of an in-process fake-DOM shim.
 
 ---
 

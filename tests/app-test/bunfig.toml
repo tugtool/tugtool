@@ -1,6 +1,6 @@
-# In-app harness runs under Bun's native environment. NO happy-dom
-# preload — the harness spawns a real Tug.app subprocess and drives
-# its WKWebView through a Unix socket. Per [D12]: happy-dom is not a
-# correct test surface for UI / focus / selection behavior.
+# In-app harness runs under Bun's native environment. The harness
+# spawns a real Tug.app subprocess and drives its WKWebView through
+# a Unix socket — that is the only correct test surface for UI /
+# focus / selection behavior.
 [test]
 root = "."

@@ -390,7 +390,6 @@ export function GalleryMutationTx() {
             className="cg-hue-swatch"
             data-testid="hue-swatch"
             onPointerDown={(e) => {
-              // setPointerCapture is not available in all environments (e.g., happy-dom).
               if (typeof e.currentTarget.setPointerCapture === "function") {
                 e.currentTarget.setPointerCapture(e.pointerId);
               }

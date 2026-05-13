@@ -74,9 +74,7 @@ export class StyleCascadeReader {
    *   preview transactions. Defaults to the module-level singleton but can be
    *   overridden in tests.
    * @param getComputedStyleFn - The `getComputedStyle` implementation to use.
-   *   Defaults to the global `getComputedStyle`. Injectable for testing in
-   *   environments (e.g., bun/happy-dom) where global spy patching is
-   *   unreliable.
+   *   Defaults to the global `getComputedStyle`. Injectable for testing.
    */
   constructor(
     manager: MutationTransactionManager,

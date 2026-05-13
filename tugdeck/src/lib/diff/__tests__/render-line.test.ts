@@ -11,8 +11,6 @@
  *    (word-range | no-word-range), plus the interesting case where a
  *    word range crosses syntax-token boundaries (double-decorated
  *    spans).
- *
- * No happy-dom needed — this is straight TypeScript.
  */
 
 import dmp from "diff-match-patch";

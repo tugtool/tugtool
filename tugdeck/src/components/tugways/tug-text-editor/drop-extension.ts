@@ -149,12 +149,11 @@ export function dropOffsetAtCoords(
 ): number | null {
   const lh = view.defaultLineHeight;
   const adjustedY = clientY + lh * DROP_Y_OFFSET_RATIO;
-  // `posAtCoords` reads measured layout state; in happy-dom and in
-  // some pre-measure mounts on real WebKit it can throw "Reading
-  // the editor layout isn't allowed during an update" or a
-  // related InvalidStateError. Treat any throw as "couldn't
-  // resolve the point" so the caller falls back to end-of-doc
-  // rather than the whole drop pipeline failing.
+  // `posAtCoords` reads measured layout state; on pre-measure mounts
+  // it can throw "Reading the editor layout isn't allowed during an
+  // update" or a related InvalidStateError. Treat any throw as
+  // "couldn't resolve the point" so the caller falls back to
+  // end-of-doc rather than the whole drop pipeline failing.
   try {
     return view.posAtCoords({ x: clientX, y: adjustedY });
   } catch {
@@ -452,13 +451,10 @@ export function tugDropExtension(
       dragover(event, view) {
         if (!event.dataTransfer?.types.includes("Files")) return false;
         event.preventDefault();
-        // Show the OS copy-cursor variant. `dropEffect` is read-
-        // only in some test environments (happy-dom); ignore the
-        // throw so the test path doesn't have to mock the setter.
         try {
           event.dataTransfer.dropEffect = "copy";
         } catch {
-          // intentional: see comment above
+          // `dropEffect` is read-only in some environments.
         }
         setDropActive(host, true);
         // Update the drop-caret StateField. The ViewPlugin will

@@ -242,7 +242,7 @@ tests/app-test/
     version-handshake.test.ts # EXPECTED_SURFACE_VERSION mismatch error.
     wait-for-condition.test.ts # evalJS error translation, timeout, immediate-truthy.
   at{NNNN}-<slug>.test.ts     # AT-numbered scenario tests; prefix must match inventory.
-  bunfig.toml                 # [test] root = "." — no happy-dom preload.
+  bunfig.toml                 # [test] root = "." — no test preload.
   tsconfig.json               # Path alias @/_harness. tsc --noEmit must be clean.
   lint-no-timers.ts           # bun run lint:no-timers scanner.
   logs/                       # Per-spawn stdout/stderr dumps. Gitignored.

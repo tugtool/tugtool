@@ -10,11 +10,10 @@
  *
  * DOMPurify initialization strategy:
  * - Browser (Vite build): use the native window.
- * - Bun/Node test environment: use a jsdom Window.  happy-dom's DOM
- *   tree-mutation behaviour diverges from the spec in ways that cause
- *   DOMPurify's ALLOWED_TAGS + FORBID_TAGS interaction to silently pass
- *   nested forbidden elements (e.g. <script> nested inside a non-allowed
- *   <div>).  jsdom is already a devDependency, so this adds no new deps.
+ * - Bun/Node test environment: use a jsdom Window so DOMPurify's
+ *   ALLOWED_TAGS + FORBID_TAGS interaction runs against a
+ *   standards-compliant DOM. jsdom is already a devDependency, so
+ *   this adds no new deps.
  */
 
 import { marked } from "marked";
@@ -51,7 +50,7 @@ let _dompurify: ReturnType<typeof DOMPurifyModule> | null = null;
  *
  * In a real browser the native window is used.
  * In Bun/Node test environments a jsdom Window is created so DOMPurify's
- * tree-mutation logic works correctly (happy-dom has known spec divergences).
+ * tree-mutation logic works correctly.
  */
 function getDOMPurify(): ReturnType<typeof DOMPurifyModule> {
   if (_dompurify && _dompurify.isSupported) return _dompurify;

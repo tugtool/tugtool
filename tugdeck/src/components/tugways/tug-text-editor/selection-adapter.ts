@@ -67,9 +67,8 @@ interface Rect {
  * Each rect is derived from `view.coordsAtPos` at the line's left and
  * right ends within the range. `view.coordsAtPos` returns `null` when
  * the position has no rendered geometry — e.g. when called before the
- * editor has measured its layout, in happy-dom-style harnesses, or
- * when the position falls in a folded region. The line is skipped
- * silently in that case.
+ * editor has measured its layout, or when the position falls in a
+ * folded region. The line is skipped silently in that case.
  *
  * Returns an empty array when `from >= to`.
  */
@@ -87,8 +86,8 @@ function rectsForRange(view: EditorView, from: number, to: number): Rect[] {
       startCoords = view.coordsAtPos(pos, 1);
       endCoords = view.coordsAtPos(lineEnd, -1);
     } catch {
-      // happy-dom and other layout-less harnesses throw from
-      // coordsAtPos; treat as "no geometry available" and skip.
+      // Layout-less environments throw from coordsAtPos; treat as
+      // "no geometry available" and skip.
     }
     if (startCoords !== null && endCoords !== null) {
       rects.push({
@@ -249,7 +248,7 @@ export function createCMSelectionAdapter(view: EditorView): TextSelectionAdapter
     try {
       pos = view.posAtCoords({ x: clientX, y: clientY });
     } catch {
-      // happy-dom / pre-measure: no layout to resolve from.
+      // Pre-measure: no layout to resolve from.
     }
     if (pos === null) return;
     const word = view.state.wordAt(pos);

@@ -4,9 +4,7 @@
  * true for an in-order subset, false for out-of-order or missing
  * entries."
  *
- * These tests run under bun:test with NO happy-dom (see
- * `tests/app-test/bunfig.toml` — root-scoped, no preload). The matcher
- * is pure logic, so no DOM is needed.
+ * The matcher is pure logic, so no DOM is needed.
  */
 
 import { describe, expect, test } from "bun:test";

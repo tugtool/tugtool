@@ -131,9 +131,8 @@ export interface CardHostProps {
  * Input types that accept a text selection via
  * `selectionStart` / `selectionEnd` / `setSelectionRange`. Reading or
  * writing those properties on other types (e.g. `checkbox`, `radio`,
- * `number`, `email`, `range`) throws `InvalidStateError` in real
- * browsers; happy-dom returns `null`. This set matches the HTML spec's
- * "input type with selection APIs" list.
+ * `number`, `email`, `range`) throws `InvalidStateError`. This set
+ * matches the HTML spec's "input type with selection APIs" list.
  */
 const SELECTION_CAPABLE_INPUT_TYPES: ReadonlySet<string> = new Set([
   "text",

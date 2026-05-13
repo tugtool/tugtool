@@ -813,13 +813,10 @@ export const FileBlock: React.FC<FileBlockProps> = ({
     // `scrollHeight` ride-along is a validation field; documented
     // in `layout-tree.ts`'s schema prose. Not consumed at restore.
     //
-    // `lineBlockAtHeight` reads CM6's measured layout. Under test
-    // environments where the DOM has no real geometry (happy-dom),
-    // CM6's measurement plugin may not have run yet and the call
-    // throws. We swallow defensively so the attribute write is
-    // optional rather than a render-blocking dependency. In real
-    // browsers the call succeeds and the attribute reflects the
-    // live line.
+    // `lineBlockAtHeight` reads CM6's measured layout. If the
+    // measurement plugin has not run yet the call throws; we swallow
+    // defensively so the attribute write is optional rather than a
+    // render-blocking dependency.
     const writeScrollState = (): void => {
       try {
         const top = scrollDOM.scrollTop;

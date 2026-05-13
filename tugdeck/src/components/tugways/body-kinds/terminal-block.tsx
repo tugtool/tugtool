@@ -291,7 +291,7 @@ export const RETAINED_LINE_CAP = 10_000;
  * Per-line height in pixels — matches `block-height-index.ts`'s
  * `CODE_LINE_HEIGHT`. The CSS uses `--tugx-term-line-height` for the
  * actual rule; this constant is the value the virtualizer uses for
- * its arithmetic (`.scrollHeight` in happy-dom is unreliable).
+ * its arithmetic.
  */
 export const LINE_HEIGHT_PX = 20;
 
@@ -311,9 +311,8 @@ export const LINE_HEIGHT_PX = 20;
  *
  * Hardcoded to match `--tug-space-sm` (6px across the brio + harmony
  * themes). If the token changes, the visual padding parity needs to be
- * re-derived here — the constant is duplicated for the same reason
- * `LINE_HEIGHT_PX` is: `scrollHeight` is unreliable in happy-dom and
- * imperative math needs a number, not a CSS variable.
+ * re-derived here — the constant is duplicated because imperative math
+ * needs a number, not a CSS variable.
  */
 export const VIRTUALIZED_PADDING_PX = 6;
 

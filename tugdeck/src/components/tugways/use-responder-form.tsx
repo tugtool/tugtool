@@ -448,7 +448,7 @@ export function useResponderForm(bindings: TugResponderFormBindings): UseRespond
   // `useOptionalResponder`. Inside a provider the form participates
   // in the chain like any other responder; outside one the responder
   // registration silently no-ops and the controls degrade to native
-  // DOM events (useful for happy-dom unit tests).
+  // DOM events.
   //
   // `parentId` is forwarded so a form that sits alongside another
   // responder in the same component can opt into being its child
