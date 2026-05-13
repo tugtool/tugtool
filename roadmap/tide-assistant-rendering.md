@@ -2944,6 +2944,123 @@ The bug is structural — every component-preservation consumer that mounts behi
 
 ---
 
+##### Phase E.8 — Mount-in-saved-state; eliminate the post-mount restore cascade
+
+**Depends on:** Phase E.6 (the [A9] region-scroll axis with `meta`/anchor); Phase E.7 (saved component-state IS reachable via `cardStateCache.getCardState(cardId)` — that part of E.7 keeps working). E.8 supersedes E.7's post-mount `setLocalCollapsed`-via-observer mechanism and removes the supporting infrastructure.
+
+**Why this phase exists.** Phase E.7 plugged the structural hole "saved fold state is lost on cold boot" by post-mount `setLocalCollapsed` from a registry-observer callback. The fix worked at the data layer but the cost is visible at the paint layer: every body kind on Developer > Reload now mounts in its `useState` default (overThreshold collapsed = true), paints, then flips to the saved value, paints, then the inner virtualized scroller is recreated at `scrollTop=0`, paints, and only THEN does the MutationObserver-driven region-scroll apply land the saved scroll position. Three-to-five visible intermediate frames per body kind, plus secondary scroll cascades from cell-height changes propagating to the outer transcript's anchor logic. User-visible result: wild scrolling — the page jerks through several wrong states before settling.
+
+The right primitive is not "mount wrong, then correct." It's mount-in-the-saved-state on the FIRST render. No post-mount `setState`. No re-render. No imperative-renderer recreate. The cardStateCache is already populated synchronously on cold boot from tugbank, before any CardHost mounts — the saved state is REACHABLE in render. Phase E.8 makes it READABLE in render, threads it into `useState` initializers and imperative-renderer creation sites, and deletes the post-mount restore path that the wild scrolling proves is wrong.
+
+The post-mount restore was a mistake. It is removed, not retained as fallback. Keeping it as a fallback would invite future code to opt back into the broken UX. Every consumer migrates to the synchronous-initializer pattern, or it doesn't use this axis at all.
+
+**Decisions.**
+
+- **Saved state enters the React tree at render time, never via an effect.** Two new context-driven accessor hooks pull synchronously from `cardStateCache`:
+  - `useSavedComponentState<T>(componentStatePreservationKey?: string): T | undefined` — returns `bag.components[scopedKey]` or `undefined`. Consumed inside `useState` initializer functions.
+  - `useSavedRegionScroll(scrollKey?: string): { x: number; y: number; meta?: unknown } | undefined` — returns `bag.regionScroll[scrollKey]` or `undefined`. Consumed by body kinds whose imperative renderer accepts an `initialScrollTop` parameter.
+- **Body kinds mount in their saved state.** TerminalBlock, FileBlock, DiffBlock, TugCheckbox, and every other `useComponentStatePreservation` consumer read their saved value in `useState` initializers. No `restoreState` closure path. No post-mount flip.
+- **Imperative renderers accept saved scroll at creation.** `renderTerminal` (and FileBlock's CM6 mount path; DiffBlock has no inner scrollport) takes an `initialScrollTop` parameter sourced from `useSavedRegionScroll`. The scroller is CREATED at the saved position; `MutationObserver`-driven apply becomes a no-op for these inner scrollers (their first observable `scrollTop` already matches the bag).
+- **The orchestrator's restore path is REMOVED entirely.** Specifically: `CardStateOrchestrator.restoreCardState`, `lastBagComponents`, `registryObserverInstalled`, `discardCardState`. The class becomes capture-only. `DeckManager.restoreCardState` public method is removed. `CardHost`'s component-state restore effect (`hasRestoredComponentsRef` + `store.restoreCardState(cardId, bag)`) is removed.
+- **The registry's `observeRegister` channel is REMOVED entirely.** Specifically: `observeRegister`, `registerObservers`, `RegistryRegisterObserver`, `clear()`-drops-observers behavior. The registry shrinks back to data structure + capture-only iteration: register / unregister / `entriesInTreeOrder` / `keys` / `clear`.
+- **`UseComponentStatePreservationOptions.restoreState` is removed.** The hook becomes pure opt-into-capture. Consumers that need to react to saved state read it via `useSavedComponentState` in the `useState` initializer, full stop. There is no API surface for "apply this saved value to me at a later moment" because that mechanism IS the wild-scrolling bug.
+- **The MutationObserver-driven region-scroll apply stays.** The OUTER `tide-card-transcript` scroller is created by `TugListView` at first paint, but its scroll destination depends on cell heights that aren't known synchronously (variable-height virtualized list). The Phase E.6 anchor-based restore deferred-application path is the right answer for that scroller. For INNER scrollers (TerminalBlock/FileBlock virtualized scrollport), `initialScrollTop` collapses the apply into the creation site and the MutationObserver pass finds the scroller already at the saved position (idempotent).
+- **The element-identity gate in `card-host.tsx`'s apply stays.** Even with `initialScrollTop`, an inner scroller can be rebuilt mid-card-lifecycle by an imperative renderer (TerminalBlock's collapse-then-expand cycle calls `body.replaceChildren()` and re-appends). The rebuilt scroller's `initialScrollTop` would be 0 (or the user's CURRENT scroll if the fixture reads `latestScrollTopRef` at rebuild time — TBD). The MutationObserver's apply, with the Phase E.7 element-identity gate, re-applies the saved bag value to the new element. This is the only post-mount apply path that remains, and it's strictly DOM-level (no React state flip).
+
+**Tuglaws compliance (Phase E.8).**
+
+- **[L01] One `root.render()`, at mount, ever.** ✓ No new render-root behavior.
+- **[L02] External state enters React through `useSyncExternalStore` only.** ✓ `useSavedComponentState` and `useSavedRegionScroll` read from `cardStateCache` (DeckManager-owned). The accessors are wired through `useSyncExternalStore` so a future bag update reactively re-reads. (Cold-boot is the only path that matters today, but the subscribe wiring is free and correct.)
+- **[L03] `useLayoutEffect` for registrations.** ✓ Hook registration stays in `useLayoutEffect`. The new accessors are READS, not registrations; they happen in render. Nothing keyboard/pointer-handling depends on them.
+- **[L04] Never measure child DOM inline after triggering child setState from a parent effect.** ✓ The whole class of "parent triggers child setState via observer" goes away.
+- **[L05] No `requestAnimationFrame`.** ✓ Not used.
+- **[L06] Ephemeral appearance state goes through CSS and DOM, never React state.** ✓ Scroll position is appearance; the framework writes `scrollTop` directly at creation. Fold state IS data (non-rendering consumers — capture, persistence, the action layer that toggles it — read it); it lives in React state.
+- **[L07] Live ref reads.** ✓ Capture closures continue to read live state via refs. No new closure-staleness risk.
+- **[L19] Component authoring guide.** ✓ Updates `component-authoring.md` with a new "Restoring saved state at mount" section pinning the `useState`-initializer + `useSavedComponentState` pattern. Updates `state-preservation.md` to replace the "Late-mounting components" subsection (E.7's observer mechanism) with the synchronous-read mechanism.
+- **[L22] When external state drives direct DOM updates, observe the store directly.** ✓ The MutationObserver-driven region-scroll apply for the OUTER transcript is unchanged. It observes DOM directly and writes `scrollTop` directly.
+- **[L23] Preserve user-visible state.** ✓ This phase IS the L23 win. Pre-E.8 there is an L23 violation: between cold-boot first paint and final-settled paint the user observes the WRONG state. Post-E.8 the first paint IS the saved state. The contract becomes "user-visible state at first paint after restore = user-visible state at last save before destruction." Pixel-tight.
+- **[L24] Three state zones.** ✓ Saved-state reads land in the right zones: fold state → React data zone (`useState`); inner scroll → DOM appearance zone (`scrollTop` written by imperative renderer); outer transcript scroll → DOM appearance zone (MutationObserver-driven). No state crosses zones.
+
+**Artifacts (Phase E.8):**
+
+- Updated: `tugdeck/src/components/tugways/use-component-state-preservation.tsx`
+  - Add `useSavedComponentState<T>(componentStatePreservationKey: string | undefined): T | undefined`.
+  - Add `useSavedRegionScroll(scrollKey: string | undefined): { x: number; y: number; meta?: unknown } | undefined`.
+  - Remove `restoreState` from `UseComponentStatePreservationOptions`. The hook's only options become `componentStatePreservationKey` + `captureState`.
+- Updated: `tugdeck/src/components/tugways/component-state-preservation-registry.ts`
+  - Remove `observeRegister`, `registerObservers`, `RegistryRegisterObserver` type, the `register` notify-loop, and `clear()`-drops-observers behavior.
+  - Remove `restoreRef` from `RegistryEntry` (captures are still held; restores no longer exist). Update `register` signature accordingly.
+- Updated: `tugdeck/src/card-state-orchestrator.ts`
+  - Remove `restoreCardState`, `lastBagComponents`, `registryObserverInstalled`, `discardCardState`. The orchestrator becomes capture-only: `registerAssembler`, `captureCardState`, `harvestComponents`.
+  - Remove the trace-log scaffolding (`__tugTraceComponentStateRestore`).
+- Updated: `tugdeck/src/deck-manager.ts`
+  - Remove `restoreCardState` public method.
+  - Remove `discardCardState` call from `discardComponentStatePreservationRegistry` (the orchestrator no longer holds per-card state to discard).
+- Updated: `tugdeck/src/components/chrome/card-host.tsx`
+  - Remove the component-state restore effect (`hasRestoredComponentsRef` + `store.restoreCardState`).
+  - Extend the per-card context value to provide `getSavedComponentState(scopedKey)` and `getSavedRegionScroll(scrollKey)` accessors that read from `store.getCardState(cardId)`. Wire via `useSyncExternalStore` so the accessors are reactive to bag changes.
+  - The region-scroll restore effect stays (it's the L23 mechanism for outer-scroller anchor restore + the element-identity fallback for rebuilt inner scrollers).
+- Updated: `tugdeck/src/components/tugways/body-kinds/terminal-block.tsx`
+  - `useState<boolean>(overThreshold)` becomes `useState<boolean>(() => initialFoldFromSavedState() ?? overThreshold)` where the helper reads via `useSavedComponentState`.
+  - `renderTerminal` takes an `initialScrollTop?: number` parameter; `appendVirtualizedBody` uses it as the scroller's `scrollTop` at creation. The TerminalBlock render passes the value from `useSavedRegionScroll(scrollKey)?.y`.
+  - The `restoreState` callback that fed `setLocalCollapsed` is deleted.
+- Updated: `tugdeck/src/components/tugways/body-kinds/file-block.tsx` — same shape (useState initializer reads saved; CM6 mount writes `scrollDOM.scrollTop` at creation).
+- Updated: `tugdeck/src/components/tugways/body-kinds/diff-block.tsx` — useState initializer reads saved fold. No inner scrollport, so no scroll wiring.
+- Updated: `tugdeck/src/components/tugways/tug-checkbox.tsx` — useState initializer reads saved `{checked: boolean}`. Remove `restoreState` closure.
+- Updated: `tugdeck/src/main.tsx` — `window.tugdeck.diag` shrinks: remove `forceSaveAndDump` (the diag-write contract was confusing and this phase removes the orchestrator's restore-side surface that motivated it). Read-only diag methods stay.
+- Removed: `tugdeck/src/components/tugways/cards/gallery-state-preservation.tsx` `LateMountPreservedCheckbox` + `GalleryLateMountPreservation` — premised on E.7's observer path.
+- Removed: `tugdeck/src/components/tugways/cards/gallery-bash-tool-block.tsx` `LateMountBashToolBlock` + `GalleryLateMountBashToolBlock` + `GalleryTideCardLikeBashToolBlock` and their data-source plumbing — same reason.
+- Removed: `tests/app-test/at0062-late-mount-component-restore.test.ts`.
+- Removed: `tests/app-test/at0063-bash-block-fold-restore.test.ts`.
+- Removed: `tests/app-test/at0064-bash-block-inner-scroll-restore.test.ts`.
+- Removed: `tests/app-test/at0065-tide-card-like-inner-scroll-restore.test.ts`.
+- Removed: orchestrator/registry unit tests for the observer channel + late-mount apply.
+- New: `tugdeck/src/__tests__/use-saved-component-state.test.tsx` — unit-level test of the new accessor hooks.
+- New: `tests/app-test/at0067-bash-block-mount-in-saved-state.test.ts` — pin that on Developer > Reload, the TerminalBlock's `data-collapsed` attribute matches the saved bag from the FIRST DOM observation (no intermediate frame where it disagreed).
+- New: `tests/app-test/at0068-bash-block-inner-scroll-from-creation.test.ts` — pin that the inner virtualized scroller's first observable `scrollTop` matches the saved bag's region-scroll value (no `MutationObserver`-driven jump from 0 to saved).
+- Updated: `tuglaws/state-preservation.md`
+  - Replace the "Late-mounting components" subsection (E.7 observer-driven) with "Restoring saved state at mount" (E.8 synchronous-read).
+  - State the contract: "user-visible state at first paint after restore = user-visible state at last save before destruction."
+- Updated: `tuglaws/component-authoring.md` — new section: "Restoring saved state at mount." Show the canonical pattern for fold-style state (`useSavedComponentState` in `useState` initializer) and scroll-style state (`useSavedRegionScroll` → `initialScrollTop` into imperative renderer).
+- Updated: `tuglaws/app-test-inventory.md` — register AT0067/AT0068; mark AT0062–AT0065 as superseded (with a one-line "replaced by AT0067/AT0068 under Phase E.8").
+
+**Tasks (Phase E.8):**
+
+- [ ] **Extend CardHost's per-card context with synchronous saved-state accessors.** `getSavedComponentState(scopedKey)` reads `store.getCardState(cardId)?.components?.[scopedKey]`. `getSavedRegionScroll(scrollKey)` reads `store.getCardState(cardId)?.regionScroll?.[scrollKey]`. Both wired via `useSyncExternalStore` so future bag updates reactively refresh.
+- [ ] **Export `useSavedComponentState<T>` and `useSavedRegionScroll`** from `use-component-state-preservation.tsx`. Pure synchronous reads of context values + scope-prefix application for the component-state key.
+- [ ] **Remove `restoreState` from `UseComponentStatePreservationOptions`.** Hook becomes capture-only.
+- [ ] **Strip the observer channel from the registry.** Remove `observeRegister`, `registerObservers`, `RegistryRegisterObserver`, `clear()`-drops-observers behavior, `restoreRef` from `RegistryEntry`.
+- [ ] **Strip the restore path from the orchestrator.** Remove `restoreCardState`, `lastBagComponents`, `registryObserverInstalled`, `discardCardState`, the trace-log scaffolding, and the `applyRestoreToEntry` helper.
+- [ ] **Remove `restoreCardState` from `DeckManager`'s public API.** Update the public type. Remove the `discardCardState` call from `discardComponentStatePreservationRegistry`.
+- [ ] **Remove the component-state restore effect from CardHost.** Delete `hasRestoredComponentsRef`. The remount-detection signal (`callbacksVersion` flip on the no-op-pair → real-pair transition) keeps working for `bag.content` restore, which is unchanged by Phase E.8.
+- [ ] **Update body kinds.** TerminalBlock, FileBlock, DiffBlock, TugCheckbox: `useState` initializer reads via `useSavedComponentState`. `restoreState` closure deleted.
+- [ ] **`renderTerminal` accepts `initialScrollTop`.** Plumb through TerminalBlock and `appendVirtualizedBody`. CM6's analog in FileBlock writes `scrollDOM.scrollTop` at mount.
+- [ ] **Drop the late-mount and tide-card-like gallery fixtures.** Drop the corresponding `registerCard` entries.
+- [ ] **Delete superseded app-tests** (AT0062–AT0065) and the orchestrator/registry observer-channel unit tests.
+- [ ] **Add new tests.** AT0067 (mount-in-saved-state, no intermediate-frame regression), AT0068 (scroller-created-at-saved-position). Unit tests for `useSavedComponentState`.
+- [ ] **Docs.** `state-preservation.md` "Restoring saved state at mount" section; `component-authoring.md` new authoring section.
+- [ ] **Diag surface.** Remove `forceSaveAndDump` from `window.tugdeck.diag`.
+
+**Tests (commands, Phase E.8):**
+
+- [ ] `bun test src/__tests__/use-saved-component-state.test.tsx` — accessor semantics pinned.
+- [ ] `bun test src/__tests__/card-state-orchestrator.test.ts` — capture-only surface intact; restore-side tests removed.
+- [ ] `bun test src/components/tugways/__tests__/component-state-preservation-registry.test.ts` — observer tests removed; data-structure tests intact.
+- [ ] `bunx tsc --noEmit` — clean.
+- [ ] `bun run audit:tokens lint` — zero violations.
+- [ ] `bun test` (full suite) — green.
+- [ ] `just app-test at0067-bash-block-mount-in-saved-state.test.ts at0068-bash-block-inner-scroll-from-creation.test.ts at0061-region-scroll-anchor-apply.test.ts` — green. AT0061 regression-checks the OUTER transcript anchor restore path that Phase E.8 deliberately leaves alone.
+
+**Checkpoint (Phase E.8):**
+
+- [ ] Manual: open a tide-card with a Bash tool call expanded and scrolled to a non-trivial inner position. Developer > Reload. Watch the cold-boot paint carefully. The block must appear in its expanded state at the user's scroll position on the VERY FIRST paint. No fold flip. No scroll jump from 0 to saved. No outer-transcript re-anchoring cascade.
+- [ ] Manual: same with a Read tool call (FileBlock) — collapsed/expanded, with CM6 scroll mid-document.
+- [ ] Manual: same with a Diff (DiffBlock) — collapsed.
+- [ ] Manual: cmd-tab away from Tug.app and back. No visible reshuffling, no scroll jumps.
+- [ ] Manual: open the gallery state-preservation card. Toggle the TugCheckbox. Developer > Reload. The checkbox state survives without a render flicker (no "unchecked-then-checked" frame).
+
+---
+
 #### Step 11: EditToolBlock wrapper {#step-11}
 
 **Depends on:** #step-1, #step-10
