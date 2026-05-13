@@ -33,9 +33,9 @@
  *
  * ## Coverage
  *
- * `gallery-prompt-input` (TugPromptInput direct) and
  * `gallery-prompt-entry` (TugPromptEntry, what tide-card uses
- * internally). Tide itself can't run in the in-app sweep because
+ * internally). The legacy `gallery-prompt-input` was retired.
+ * Tide itself can't run in the in-app sweep because
  * its content factory gates on `feedsReady`, which depends on a
  * live tugcast/Claude Code stream — manual user verification
  * gates the tide path.
@@ -55,7 +55,7 @@ import { launchTugApp, type App } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
-const PROMPT_INPUT_SELECTOR = '[data-tug-prompt-input-root] [contenteditable]';
+const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 
 async function runAppSwitchSelection(app: App, componentId: string): Promise<void> {
   await app.enableDeckTrace(true);
@@ -105,10 +105,19 @@ async function runAppSwitchSelection(app: App, componentId: string): Promise<voi
   // landing in the live DOM.
   await app.evalJS<void>(
     `(function(){
-      var ed = document.querySelector('[data-card-id="A"] [data-tug-prompt-input-root] [contenteditable]');
+      var ed = document.querySelector('[data-card-id="A"] [data-slot="tug-text-editor"] .cm-content');
+      // CM6 wraps each line in a .cm-line div; the actual text node
+      // is the first child of the first line, not the first child of
+      // .cm-content. Walk to the deepest text node so range.setStart
+      // operates on a Node that accepts character offsets.
+      var line = ed.querySelector('.cm-line') || ed;
+      var textNode = line.firstChild;
+      while (textNode && textNode.nodeType !== Node.TEXT_NODE) {
+        textNode = textNode.firstChild;
+      }
+      if (!textNode) throw new Error("[at0035-em] no text node under .cm-content");
       var sel = window.getSelection();
       var range = document.createRange();
-      var textNode = ed.firstChild;
       range.setStart(textNode, 2);
       range.setEnd(textNode, 5);
       sel.removeAllRanges();
@@ -169,15 +178,6 @@ async function runAppSwitchSelection(app: App, componentId: string): Promise<voi
 }
 
 describe.skipIf(!SHOULD_RUN)("at0035-em: selection survives app resign + become-active (cmd-tab analog)", () => {
-  test("gallery-prompt-input: selection survives cmd-tab away + back", async () => {
-    const app = await launchTugApp({ testName: "at0035-em-app-switch-input" });
-    try {
-      await runAppSwitchSelection(app, "gallery-prompt-input");
-    } finally {
-      await app.close();
-    }
-  });
-
   test("gallery-prompt-entry: selection survives cmd-tab away + back", async () => {
     const app = await launchTugApp({ testName: "at0035-em-app-switch-entry" });
     try {

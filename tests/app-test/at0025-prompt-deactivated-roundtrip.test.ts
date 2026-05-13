@@ -34,7 +34,7 @@
  *
  * ## Test matrix
  *
- *   3 cards × 2 reload triggers = 6 tests. Each card pairs with a
+ *   2 cards × 2 reload triggers = 4 tests. Each card pairs with a
  *   sibling `gallery-input` card in the same pane so a tab-switch
  *   simulates the user's "click another card" gesture (as opposed to
  *   `at0024-prompt-state-roundtrip`, which keeps a single card active
@@ -78,12 +78,19 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 90_000;
 
 type PromptComponentId =
-  | "gallery-prompt-input"
   | "gallery-prompt-entry"
   | "tide";
 
 const PROMPT_INPUT_SELECTOR =
-  '[data-tug-prompt-input-root] [contenteditable]';
+  '[data-slot="tug-text-editor"] .cm-content';
+
+/**
+ * CM6's scrollable element. Editor scrollTop / scrollLeft are owned
+ * by `view.scrollDOM` (`.cm-scroller`), NOT by the contenteditable
+ * (`.cm-content`).
+ */
+const SCROLLER_SELECTOR =
+  '[data-slot="tug-text-editor"] .cm-scroller';
 
 const TUG_ATOM_CHAR = "￼";
 
@@ -152,10 +159,7 @@ const ACTIVE_ENGINE_STATE: EngineState = {
   selection: SEED_SELECTION,
 };
 
-function makeContentBag(componentId: PromptComponentId): Record<string, unknown> {
-  if (componentId === "gallery-prompt-input") {
-    return ACTIVE_ENGINE_STATE as unknown as Record<string, unknown>;
-  }
+function makeContentBag(_componentId: PromptComponentId): Record<string, unknown> {
   return {
     currentRoute: TUG_PROMPT_ENTRY_DEFAULT_ROUTE,
     perRoute: {
@@ -228,18 +232,19 @@ async function setupPhaseA(
     { timeoutMs: 4000 },
   );
 
-  // Drive editor's scrollTop.
+  // Drive editor's scrollTop. CM6 owns scroll on `.cm-scroller`,
+  // not on the contenteditable.
   await app.evalJS<void>(
     `(function(){
-      var el = document.querySelector('[data-card-id="A"] ${PROMPT_INPUT_SELECTOR}');
-      if (!el) throw new Error("[m25] phaseA: editor not found for cardId=A");
+      var el = document.querySelector('[data-card-id="A"] ${SCROLLER_SELECTOR}');
+      if (!el) throw new Error("[m25] phaseA: editor scroller not found for cardId=A");
       el.scrollTop = ${SEED_SCROLL_TOP};
     })()`,
   );
 
   await app.waitForCondition<boolean>(
     `(function(){
-      var el = document.querySelector('[data-card-id="A"] ${PROMPT_INPUT_SELECTOR}');
+      var el = document.querySelector('[data-card-id="A"] ${SCROLLER_SELECTOR}');
       return el !== null && Math.abs(el.scrollTop - ${SEED_SCROLL_TOP}) < 2;
     })()`,
     { timeoutMs: 2000 },
@@ -274,13 +279,10 @@ interface RawBag {
 
 function readActiveEngineState(
   bag: RawBag,
-  componentId: PromptComponentId,
+  _componentId: PromptComponentId,
 ): Record<string, unknown> | null {
   const content = bag.content;
   if (typeof content !== "object" || content === null) return null;
-  if (componentId === "gallery-prompt-input") {
-    return content as Record<string, unknown>;
-  }
   const wrapper = content as Record<string, unknown>;
   const currentRoute = wrapper.currentRoute;
   const perRoute = wrapper.perRoute;
@@ -420,7 +422,7 @@ async function assertLiveState(app: App): Promise<void> {
 
   const liveScroll = await app.evalJS<number>(
     `(function(){
-      var ed = document.querySelector('[data-card-id="A"] ${PROMPT_INPUT_SELECTOR}');
+      var ed = document.querySelector('[data-card-id="A"] ${SCROLLER_SELECTOR}');
       return ed ? ed.scrollTop : -1;
     })()`,
   );
@@ -503,24 +505,12 @@ async function runRelaunchScenario(
 }
 
 // ---------------------------------------------------------------------------
-// Test cases — 3 cards × 2 triggers
+// Test cases — 2 cards × 2 triggers
 // ---------------------------------------------------------------------------
 
 describe.skipIf(!SHOULD_RUN)(
   "m25: prompt-state survives deactivation → reload + reactivation",
   () => {
-    test(
-      "gallery-prompt-input × appReload",
-      () => runAppReloadScenario("gallery-prompt-input"),
-      TEST_TIMEOUT_MS,
-    );
-
-    test(
-      "gallery-prompt-input × relaunch",
-      () => runRelaunchScenario("gallery-prompt-input"),
-      TEST_TIMEOUT_MS,
-    );
-
     test(
       "gallery-prompt-entry × appReload",
       () => runAppReloadScenario("gallery-prompt-entry"),

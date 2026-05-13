@@ -867,10 +867,19 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     if (content !== undefined) {
       let engineState: Record<string, unknown> | undefined;
       if (
+        typeof content.route === "string" &&
+        "draft" in content
+      ) {
+        // Current TugPromptEntry shape: `{ route, draft }`.
+        if (typeof content.draft === "object" && content.draft !== null) {
+          engineState = content.draft as Record<string, unknown>;
+        }
+      } else if (
         typeof content.currentRoute === "string" &&
         typeof content.perRoute === "object" &&
         content.perRoute !== null
       ) {
+        // Legacy TugPromptEntry shape: `{ currentRoute, perRoute }`.
         const perRoute = content.perRoute as Record<string, unknown>;
         const inner = perRoute[content.currentRoute as string];
         if (typeof inner === "object" && inner !== null) {

@@ -9,8 +9,8 @@
  * the drag-start save) and dispatches via
  * `invokeActivationCallback(cardId, "transfer-after-move")`.
  *
- * Coverage: two factories — `gallery-prompt-input` and
- * `gallery-prompt-entry` (TugPromptEntry, what tide-card uses).
+ * Coverage: `gallery-prompt-entry` (TugPromptEntry, what tide-card
+ * uses internally). The legacy `gallery-prompt-input` was retired.
  *
  * ## Focus-actually-landing assertion
  *
@@ -28,7 +28,7 @@ import { launchTugApp, type App } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
-const PROMPT_INPUT_SELECTOR = '[data-tug-prompt-input-root] [contenteditable]';
+const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 
 function tabSelectorFor(cardId: string): string {
   return `[data-testid="tug-tab-${cardId}"]`;
@@ -122,15 +122,6 @@ async function runDetach(app: App, componentId: string): Promise<void> {
 }
 
 describe.skipIf(!SHOULD_RUN)("at0007-em: EM card detach to new standalone pane preserves engine state + dispatches onCardActivated", () => {
-  test("gallery-prompt-input (TugPromptInput): drag A out of P1 to canvas void", async () => {
-    const app = await launchTugApp({ testName: "at0007-em-detach-input" });
-    try {
-      await runDetach(app, "gallery-prompt-input");
-    } finally {
-      await app.close();
-    }
-  });
-
   test("gallery-prompt-entry (TugPromptEntry, tide-card's editor): drag A out of P1 to canvas void", async () => {
     const app = await launchTugApp({ testName: "at0007-em-detach-entry" });
     try {

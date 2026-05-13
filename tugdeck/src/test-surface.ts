@@ -1209,30 +1209,46 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       const card = snapshot.cards.find((c) => c.id === cardId);
       if (card === undefined) return null;
 
-      // EM persistence comes in two shapes:
+      // EM persistence comes in two production shapes plus a
+      // historical migration target:
       //
       //   - Raw `TugTextEditingState`: `{ text, atoms, selection }`.
-      //     This is what TugPromptInput's standalone
-      //     useCardStatePreservation (`gallery-prompt-input`) returns.
+      //     A standalone editor with its own
+      //     `useCardStatePreservation` returns this directly.
       //
-      //   - TugPromptEntry wrapper:
+      //   - TugPromptEntry wrapper (current):
+      //     `{ route, draft: TugTextEditingState | null, maximized }`.
+      //     This is what `TugPromptEntry` (and every card hosting it
+      //     — `gallery-prompt-entry`, tide-card) returns. Reach into
+      //     `draft` to get the engine state.
+      //
+      //   - TugPromptEntry legacy wrapper:
       //     `{ currentRoute, perRoute: { [route]: TugTextEditingState }, maximized }`.
-      //     This is what TugPromptEntry returns
-      //     (`gallery-prompt-entry`, tide-card). Reach into
-      //     `perRoute[currentRoute]` to get the engine state for
-      //     the active route.
+      //     The pre-Step-15 shape, still readable for back-compat so
+      //     a snapshot saved on an older build round-trips through a
+      //     newer test-surface read. The production path migrates
+      //     these forward via `coerceRestorePayload`.
       //
-      // Detection is shape-based rather than componentId-based so
-      // a future EM factory that adopts either shape works
-      // automatically. `perRoute` + `currentRoute` together are
-      // the discriminator for the wrapper shape.
+      // Detection is shape-based rather than componentId-based so a
+      // future EM factory that adopts any shape works automatically.
       const content = bag.content as Record<string, unknown>;
       let engineState: Record<string, unknown> = content;
       if (
+        typeof content.route === "string" &&
+        "draft" in content
+      ) {
+        // New simplified wrapper — `{ route, draft, maximized }`.
+        if (typeof content.draft === "object" && content.draft !== null) {
+          engineState = content.draft as Record<string, unknown>;
+        } else {
+          engineState = {};
+        }
+      } else if (
         typeof content.currentRoute === "string" &&
         typeof content.perRoute === "object" &&
         content.perRoute !== null
       ) {
+        // Legacy wrapper — `{ currentRoute, perRoute }`.
         const perRoute = content.perRoute as Record<string, unknown>;
         const route = content.currentRoute as string;
         const inner = perRoute[route];

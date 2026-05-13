@@ -38,10 +38,10 @@
  *
  *   | Layout | Pane geometry | Active (deck FR) | Inactive |
  *   |--------|---------------|------------------|----------|
- *   | L1 | 1 pane, 2 cards (tabs) | gallery-prompt-input #A | gallery-prompt-input #B |
- *   | L2 | 1 pane, 2 cards (tabs) | gallery-prompt-input | tide |
- *   | L3 | 1 pane, 2 cards (tabs) | tide | gallery-prompt-input |
- *   | L4 | 2 panes, 1 card each | gallery-prompt-input (in active pane) | tide (pane-active in non-active pane) |
+ *   | L1 | 1 pane, 2 cards (tabs) | gallery-prompt-entry #A | gallery-prompt-entry #B |
+ *   | L2 | 1 pane, 2 cards (tabs) | gallery-prompt-entry | tide |
+ *   | L3 | 1 pane, 2 cards (tabs) | tide | gallery-prompt-entry |
+ *   | L4 | 2 panes, 1 card each | gallery-prompt-entry (in active pane) | tide (pane-active in non-active pane) |
  *
  * L4 is the load-bearing case for the "active = deck-level first
  * responder, NOT pane-active" precision ("Defining
@@ -70,7 +70,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 90_000;
 
 const PROMPT_INPUT_SELECTOR =
-  '[data-tug-prompt-input-root] [contenteditable]';
+  '[data-slot="tug-text-editor"] .cm-content';
 
 const TUG_PROMPT_ENTRY_DEFAULT_ROUTE = "❯";
 
@@ -121,18 +121,14 @@ function makeEngineState(suffix: string): EngineState {
 }
 
 type PromptComponentId =
-  | "gallery-prompt-input"
   | "gallery-prompt-entry"
   | "tide";
 
 function makeContentBag(
-  componentId: PromptComponentId,
+  _componentId: PromptComponentId,
   suffix: string,
 ): Record<string, unknown> {
   const engineState = makeEngineState(suffix);
-  if (componentId === "gallery-prompt-input") {
-    return engineState as unknown as Record<string, unknown>;
-  }
   return {
     currentRoute: TUG_PROMPT_ENTRY_DEFAULT_ROUTE,
     perRoute: { [TUG_PROMPT_ENTRY_DEFAULT_ROUTE]: engineState },
@@ -195,8 +191,8 @@ function makeLayout(id: LayoutId): Layout {
       return {
         id,
         cards: [
-          { cardId: "A", componentId: "gallery-prompt-input", suffix: "A" },
-          { cardId: "B", componentId: "gallery-prompt-input", suffix: "B" },
+          { cardId: "A", componentId: "gallery-prompt-entry", suffix: "A" },
+          { cardId: "B", componentId: "gallery-prompt-entry", suffix: "B" },
         ],
         panes: [{ id: "p1", cardIds: ["A", "B"], activeCardId: "A" }],
         activePaneId: "p1",
@@ -206,7 +202,7 @@ function makeLayout(id: LayoutId): Layout {
       return {
         id,
         cards: [
-          { cardId: "A", componentId: "gallery-prompt-input", suffix: "A" },
+          { cardId: "A", componentId: "gallery-prompt-entry", suffix: "A" },
           { cardId: "B", componentId: "tide", suffix: "B" },
         ],
         panes: [{ id: "p1", cardIds: ["A", "B"], activeCardId: "A" }],
@@ -218,7 +214,7 @@ function makeLayout(id: LayoutId): Layout {
         id,
         cards: [
           { cardId: "A", componentId: "tide", suffix: "A" },
-          { cardId: "B", componentId: "gallery-prompt-input", suffix: "B" },
+          { cardId: "B", componentId: "gallery-prompt-entry", suffix: "B" },
         ],
         panes: [{ id: "p1", cardIds: ["A", "B"], activeCardId: "A" }],
         activePaneId: "p1",
@@ -228,7 +224,7 @@ function makeLayout(id: LayoutId): Layout {
       return {
         id,
         cards: [
-          { cardId: "A", componentId: "gallery-prompt-input", suffix: "A" },
+          { cardId: "A", componentId: "gallery-prompt-entry", suffix: "A" },
           { cardId: "B", componentId: "tide", suffix: "B" },
         ],
         panes: [
@@ -305,13 +301,10 @@ interface RawBag {
 
 function readActiveEngineState(
   bag: RawBag,
-  componentId: PromptComponentId,
+  _componentId: PromptComponentId,
 ): Record<string, unknown> | null {
   const content = bag.content;
   if (typeof content !== "object" || content === null) return null;
-  if (componentId === "gallery-prompt-input") {
-    return content as Record<string, unknown>;
-  }
   const wrapper = content as Record<string, unknown>;
   const currentRoute = wrapper.currentRoute;
   const perRoute = wrapper.perRoute;
@@ -644,42 +637,42 @@ describe.skipIf(!SHOULD_RUN)(
   "m37: deck-wide restore consistency (active/inactive paint split)",
   () => {
     test(
-      "L1 (1 pane, 2 cards: gallery-prompt-input × 2) × appReload",
+      "L1 (1 pane, 2 cards: gallery-prompt-entry × 2) × appReload",
       () => runAppReloadScenario(makeLayout("L1")),
       TEST_TIMEOUT_MS,
     );
     test(
-      "L1 (1 pane, 2 cards: gallery-prompt-input × 2) × relaunch",
+      "L1 (1 pane, 2 cards: gallery-prompt-entry × 2) × relaunch",
       () => runRelaunchScenario(makeLayout("L1")),
       TEST_TIMEOUT_MS,
     );
     test(
-      "L2 (1 pane: gallery-prompt-input active + tide inactive) × appReload",
+      "L2 (1 pane: gallery-prompt-entry active + tide inactive) × appReload",
       () => runAppReloadScenario(makeLayout("L2")),
       TEST_TIMEOUT_MS,
     );
     test(
-      "L2 (1 pane: gallery-prompt-input active + tide inactive) × relaunch",
+      "L2 (1 pane: gallery-prompt-entry active + tide inactive) × relaunch",
       () => runRelaunchScenario(makeLayout("L2")),
       TEST_TIMEOUT_MS,
     );
     test(
-      "L3 (1 pane: tide active + gallery-prompt-input inactive) × appReload",
+      "L3 (1 pane: tide active + gallery-prompt-entry inactive) × appReload",
       () => runAppReloadScenario(makeLayout("L3")),
       TEST_TIMEOUT_MS,
     );
     test(
-      "L3 (1 pane: tide active + gallery-prompt-input inactive) × relaunch",
+      "L3 (1 pane: tide active + gallery-prompt-entry inactive) × relaunch",
       () => runRelaunchScenario(makeLayout("L3")),
       TEST_TIMEOUT_MS,
     );
     test(
-      "L4 (2 panes: gallery-prompt-input in active pane, tide pane-active in non-active pane) × appReload",
+      "L4 (2 panes: gallery-prompt-entry in active pane, tide pane-active in non-active pane) × appReload",
       () => runAppReloadScenario(makeLayout("L4")),
       TEST_TIMEOUT_MS,
     );
     test(
-      "L4 (2 panes: gallery-prompt-input in active pane, tide pane-active in non-active pane) × relaunch",
+      "L4 (2 panes: gallery-prompt-entry in active pane, tide pane-active in non-active pane) × relaunch",
       () => runRelaunchScenario(makeLayout("L4")),
       TEST_TIMEOUT_MS,
     );

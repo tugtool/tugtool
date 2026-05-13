@@ -53,7 +53,7 @@ import { launchTugApp } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
-const PROMPT_INPUT_SELECTOR = '[data-tug-prompt-input-root] [contenteditable]';
+const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 
 describe.skipIf(!SHOULD_RUN)("at0074: engine fallback when bag.focus is absent", () => {
   test("tide card with engine focus: bag.focus absent on save; focus returns to contenteditable on become-active", async () => {

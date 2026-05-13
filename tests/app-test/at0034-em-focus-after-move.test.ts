@@ -24,9 +24,9 @@
  *   2. Detach to canvas void (m07 shape): drag A's tab to empty
  *      space; assert activeElement is the contenteditable.
  *
- * Each runs against both `gallery-prompt-input` (TugPromptInput
- * direct) and `gallery-prompt-entry` (TugPromptEntry, what
- * tide-card uses internally).
+ * Runs against `gallery-prompt-entry` (TugPromptEntry, what
+ * tide-card uses internally — the only remaining gallery fixture
+ * since the legacy `TugPromptInput`-direct surface was retired).
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  */
@@ -36,7 +36,7 @@ import { launchTugApp, type App } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
-const PROMPT_INPUT_SELECTOR = '[data-tug-prompt-input-root] [contenteditable]';
+const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 
 function tabSelectorFor(cardId: string): string {
   return `[data-testid="tug-tab-${cardId}"]`;
@@ -178,28 +178,10 @@ async function runDetachFocus(app: App, componentId: string): Promise<void> {
 }
 
 describe.skipIf(!SHOULD_RUN)("at0034-em: focus actually lands on engine's contenteditable after cross-pane move + detach", () => {
-  test("cross-pane (gallery-prompt-input): focus lands in P2's contenteditable", async () => {
-    const app = await launchTugApp({ testName: "at0034-em-cross-input" });
-    try {
-      await runCrossPaneFocus(app, "gallery-prompt-input");
-    } finally {
-      await app.close();
-    }
-  });
-
   test("cross-pane (gallery-prompt-entry): focus lands in P2's contenteditable", async () => {
     const app = await launchTugApp({ testName: "at0034-em-cross-entry" });
     try {
       await runCrossPaneFocus(app, "gallery-prompt-entry");
-    } finally {
-      await app.close();
-    }
-  });
-
-  test("detach (gallery-prompt-input): focus lands in new standalone pane's contenteditable", async () => {
-    const app = await launchTugApp({ testName: "at0034-em-detach-input" });
-    try {
-      await runDetachFocus(app, "gallery-prompt-input");
     } finally {
       await app.close();
     }

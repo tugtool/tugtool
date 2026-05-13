@@ -14,8 +14,8 @@
  * factory could lose state to a `saveState` RPC fired during the
  * gap.
  *
- * On-roster content factories (`gallery-prompt-input`,
- * `gallery-prompt-entry`, tide-card editor) restore synchronously
+ * On-roster content factories (`gallery-prompt-entry`,
+ * tide-card editor) restore synchronously
  * inside Phase-1's layout effect, so the race window is sub-frame
  * and not reproducible from the harness without explicit
  * instrumentation. The behavioral assertion this test makes —
@@ -108,6 +108,11 @@ describe.skipIf(!SHOULD_RUN)("m18: async-content-race audit", () => {
           var bag = window.__tug.getCardStateBag("A");
           if (bag === null || bag.content === undefined) return null;
           var content = bag.content;
+          // Current TugPromptEntry wrapper: { route, draft }.
+          if (typeof content.route === "string" && content.draft && typeof content.draft.text === "string") {
+            return content.draft.text;
+          }
+          // Legacy TugPromptEntry wrapper: { currentRoute, perRoute }.
           if (typeof content.currentRoute === "string" && typeof content.perRoute === "object" && content.perRoute !== null) {
             var inner = content.perRoute[content.currentRoute];
             if (inner && typeof inner.text === "string") return inner.text;
@@ -121,7 +126,7 @@ describe.skipIf(!SHOULD_RUN)("m18: async-content-race audit", () => {
       // Second pass: the window-blur save path goes through
       // identical machinery; verify it also preserves content.
       // Anchor focus first so the resign produces a real blur.
-      await app.nativeClickAtElement(`[data-card-id="A"] [data-tug-prompt-input-root] [contenteditable]`);
+      await app.nativeClickAtElement(`[data-card-id="A"] [data-slot="tug-text-editor"] .cm-content`);
       await app.waitForCondition<boolean>(
         `window.__tug.getHasFocus() === true`,
         { timeoutMs: 2000 },
@@ -134,6 +139,9 @@ describe.skipIf(!SHOULD_RUN)("m18: async-content-race audit", () => {
           var bag = window.__tug.getCardStateBag("A");
           if (bag === null || bag.content === undefined) return null;
           var content = bag.content;
+          if (typeof content.route === "string" && content.draft && typeof content.draft.text === "string") {
+            return content.draft.text;
+          }
           if (typeof content.currentRoute === "string" && typeof content.perRoute === "object" && content.perRoute !== null) {
             var inner = content.perRoute[content.currentRoute];
             if (inner && typeof inner.text === "string") return inner.text;

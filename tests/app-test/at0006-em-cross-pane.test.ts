@@ -11,9 +11,10 @@
  * The framework records `engine-activation-dispatched`; the
  * registered `onCardActivated` focuses the engine root.
  *
- * Coverage: two factories — `gallery-prompt-input` (TugPromptInput
- * direct) and `gallery-prompt-entry` (TugPromptEntry, what
- * tide-card uses). Each runs the full P1→P2 drag round-trip.
+ * Coverage: `gallery-prompt-entry` (TugPromptEntry, what
+ * tide-card uses internally). Runs the full P1→P2 drag round-trip.
+ * The legacy `gallery-prompt-input` TugPromptInput-direct surface
+ * was retired.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  */
@@ -23,7 +24,7 @@ import { launchTugApp, type App } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
-const PROMPT_INPUT_SELECTOR = '[data-tug-prompt-input-root] [contenteditable]';
+const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 
 function tabSelectorFor(cardId: string): string {
   return `[data-testid="tug-tab-${cardId}"]`;
@@ -144,15 +145,6 @@ async function runCrossPaneDrag(app: App, componentId: string): Promise<void> {
 }
 
 describe.skipIf(!SHOULD_RUN)("at0006-em: EM cross-pane drag preserves engine state + restores focus", () => {
-  test("gallery-prompt-input (TugPromptInput): drag A from P1 to P2's tab bar", async () => {
-    const app = await launchTugApp({ testName: "at0006-em-cross-pane-input" });
-    try {
-      await runCrossPaneDrag(app, "gallery-prompt-input");
-    } finally {
-      await app.close();
-    }
-  });
-
   test("gallery-prompt-entry (TugPromptEntry, tide-card's editor): drag A from P1 to P2's tab bar", async () => {
     const app = await launchTugApp({ testName: "at0006-em-cross-pane-entry" });
     try {

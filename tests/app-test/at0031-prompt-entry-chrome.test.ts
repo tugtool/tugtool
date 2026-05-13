@@ -89,7 +89,7 @@ const PERSIST_KEY = "entry-chrome";
 const TUG_PROMPT_ENTRY_DEFAULT_ROUTE = "❯";
 const SECONDARY_ROUTE = "$";
 
-const PROMPT_INPUT_SELECTOR = '[data-tug-prompt-input-root] [contenteditable]';
+const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 const TOOLS_TOGGLE_SELECTOR =
   '[data-card-id="A"] .tug-prompt-entry-tools-toggle';
 const TUG_ATOM_CHAR = "￼";

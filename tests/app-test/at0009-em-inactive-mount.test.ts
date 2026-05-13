@@ -24,9 +24,8 @@
  *
  * ## Coverage
  *
- * Two factories — `gallery-prompt-input` (TugPromptInput direct,
- * raw TugTextEditingState bag) and `gallery-prompt-entry`
- * (TugPromptEntry wrapper, what tide-card uses internally).
+ * `gallery-prompt-entry` (TugPromptEntry wrapper, what tide-card
+ * uses internally). The legacy `gallery-prompt-input` was retired.
  *
  * ## Out of scope: fresh inactive-at-mount
  *
@@ -36,10 +35,10 @@
  * discriminator is `bag.content !== undefined`). The default-
  * focus chain's contenteditable selector lands focus on the
  * engine root — UNLESS an earlier selector in the chain
- * (`button:not([disabled])` for `gallery-prompt-input`'s
- * toolbar buttons) wins first. That asymmetry is the same root
- * cause as the user-reported tide-card cold-boot selection gap;
- * see [AT0010] and related in-app tests.
+ * (`button:not([disabled])` for toolbar buttons) wins first.
+ * That asymmetry is the same root cause as the user-reported
+ * tide-card cold-boot selection gap; see [AT0010] and related
+ * in-app tests.
  *
  * ## Gating
  *
@@ -52,7 +51,7 @@ import { launchTugApp, type App } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
-const PROMPT_INPUT_SELECTOR = '[data-tug-prompt-input-root] [contenteditable]';
+const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 const TUG_PROMPT_ENTRY_DEFAULT_ROUTE = "❯";
 
 function tabSelectorFor(cardId: string): string {
@@ -60,10 +59,11 @@ function tabSelectorFor(cardId: string): string {
 }
 
 /**
- * Build a pre-cooked `bag.content` for the given EM factory's
- * persistence shape. `gallery-prompt-input` carries raw
- * TugTextEditingState; `gallery-prompt-entry` wraps it under
- * `{ currentRoute, perRoute, maximized }`.
+ * Build a pre-cooked `bag.content` for the `gallery-prompt-entry`
+ * persistence shape: `{ currentRoute, perRoute, maximized }`
+ * wrapping the inner `TugTextEditingState`. Kept parameterized over
+ * `componentId` for forward compatibility with future EM gallery
+ * fixtures that may carry a different bag shape.
  */
 function preSeededContent(
   componentId: string,
@@ -158,15 +158,6 @@ async function runSavedStateInactiveMount(app: App, componentId: string): Promis
 }
 
 describe.skipIf(!SHOULD_RUN)("m09: saved-state EM card inactive-at-mount activates via dispatch-activated", () => {
-  test("gallery-prompt-input (TugPromptInput): dispatch-activated path fires + restores text", async () => {
-    const app = await launchTugApp({ testName: "at0009-em-inactive-input-saved" });
-    try {
-      await runSavedStateInactiveMount(app, "gallery-prompt-input");
-    } finally {
-      await app.close();
-    }
-  });
-
   test("gallery-prompt-entry (TugPromptEntry, tide-card's editor): dispatch-activated path fires + restores text", async () => {
     const app = await launchTugApp({ testName: "at0009-em-inactive-entry-saved" });
     try {

@@ -37,7 +37,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
 const TEST_TIMEOUT_MS = 60_000;
 
-const PROMPT_INPUT_SELECTOR = '[data-tug-prompt-input-root] [contenteditable]';
+const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 
 function editorSelectorFor(cardId: string): string {
   return `[data-card-id="${cardId}"] ${PROMPT_INPUT_SELECTOR}`;
@@ -76,8 +76,8 @@ describe.skipIf(!SHOULD_RUN)("m22: caret visible after every refocus path", () =
       await app.seedDeckState({
         state: {
           cards: [
-            { id: "A", componentId: "gallery-prompt-input", title: "EM A", closable: true },
-            { id: "B", componentId: "gallery-prompt-input", title: "EM B", closable: true },
+            { id: "A", componentId: "gallery-prompt-entry", title: "EM A", closable: true },
+            { id: "B", componentId: "gallery-prompt-entry", title: "EM B", closable: true },
           ],
           panes: [
             {

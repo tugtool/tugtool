@@ -11,7 +11,7 @@
  * ## What this gates
  *
  * Manual repro: user types enough content into tide /
- * gallery-prompt-input / gallery-prompt-entry to make it scroll,
+ * gallery-prompt-entry to make it scroll,
  * makes a selection, clicks any other card to deactivate. The
  * inactive-paint highlight ends up at the wrong text content — at
  * the absolute position in the component equal to the
@@ -53,12 +53,19 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 90_000;
 
 const PROMPT_INPUT_SELECTOR =
-  '[data-tug-prompt-input-root] [contenteditable]';
+  '[data-slot="tug-text-editor"] .cm-content';
+
+/**
+ * CM6's scrollable element. Editor scrollTop / scrollLeft are owned
+ * by `view.scrollDOM` (`.cm-scroller`), NOT by the contenteditable
+ * (`.cm-content`).
+ */
+const SCROLLER_SELECTOR =
+  '[data-slot="tug-text-editor"] .cm-scroller';
 
 const TUG_PROMPT_ENTRY_DEFAULT_ROUTE = "❯";
 
 type PromptComponentId =
-  | "gallery-prompt-input"
   | "gallery-prompt-entry"
   | "tide";
 
@@ -109,16 +116,13 @@ interface EngineState {
   scrollTop?: number | null;
 }
 
-function makeContentBag(componentId: PromptComponentId): Record<string, unknown> {
+function makeContentBag(_componentId: PromptComponentId): Record<string, unknown> {
   const engineState: EngineState = {
     text: SEED_TEXT,
     atoms: [],
     selection: SEED_SELECTION,
     scrollTop: SEED_SCROLL_TOP,
   };
-  if (componentId === "gallery-prompt-input") {
-    return engineState as unknown as Record<string, unknown>;
-  }
   return {
     currentRoute: TUG_PROMPT_ENTRY_DEFAULT_ROUTE,
     perRoute: { [TUG_PROMPT_ENTRY_DEFAULT_ROUTE]: engineState },
@@ -292,14 +296,11 @@ async function runLiveSelectionScenario(
     selection: null,
     scrollTop: SEED_SCROLL_TOP,
   };
-  const bagContent: Record<string, unknown> =
-    componentId === "gallery-prompt-input"
-      ? (engineStateNoSel as unknown as Record<string, unknown>)
-      : {
-          currentRoute: TUG_PROMPT_ENTRY_DEFAULT_ROUTE,
-          perRoute: { [TUG_PROMPT_ENTRY_DEFAULT_ROUTE]: engineStateNoSel },
-          maximized: false,
-        };
+  const bagContent: Record<string, unknown> = {
+    currentRoute: TUG_PROMPT_ENTRY_DEFAULT_ROUTE,
+    perRoute: { [TUG_PROMPT_ENTRY_DEFAULT_ROUTE]: engineStateNoSel },
+    maximized: false,
+  };
 
   await app.seedDeckState({
     state: deckShape(componentId),
@@ -372,7 +373,7 @@ async function runLiveSelectionScenario(
   const liveBefore = await snapshotLiveRange(app, "A");
   expect(liveBefore, "pre-deactivation: live Range exists in window.getSelection").not.toBeNull();
   const scrollBefore = await app.evalJS<number>(
-    `document.querySelector('[data-card-id="A"] ${PROMPT_INPUT_SELECTOR}').scrollTop`,
+    `document.querySelector('[data-card-id="A"] ${SCROLLER_SELECTOR}').scrollTop`,
   );
 
   // Click into B's editor to activate B's pane and deactivate A.
@@ -414,7 +415,7 @@ async function runLiveSelectionScenario(
 
   // Capture post-deactivation scrollTop.
   const scrollAfter = await app.evalJS<number>(
-    `document.querySelector('[data-card-id="A"] ${PROMPT_INPUT_SELECTOR}').scrollTop`,
+    `document.querySelector('[data-card-id="A"] ${SCROLLER_SELECTOR}').scrollTop`,
   );
 
   // Diagnostic — log everything if invariants fail.
@@ -493,7 +494,7 @@ async function runDeactivationScenario(
     "pre-deactivation: the active card's live Range is in window.getSelection",
   ).not.toBeNull();
   const scrollBefore = await app.evalJS<number>(
-    `document.querySelector('[data-card-id="A"] ${PROMPT_INPUT_SELECTOR}').scrollTop`,
+    `document.querySelector('[data-card-id="A"] ${SCROLLER_SELECTOR}').scrollTop`,
   );
 
   // Click into B's editor to activate B's pane and deactivate A.
@@ -537,7 +538,7 @@ async function runDeactivationScenario(
 
   // Capture post-deactivation scrollTop.
   const scrollAfter = await app.evalJS<number>(
-    `document.querySelector('[data-card-id="A"] ${PROMPT_INPUT_SELECTOR}').scrollTop`,
+    `document.querySelector('[data-card-id="A"] ${SCROLLER_SELECTOR}').scrollTop`,
   );
 
   // Diagnostic on failure.
@@ -566,25 +567,12 @@ async function runDeactivationScenario(
 }
 
 // ---------------------------------------------------------------------------
-// Tests — 3 cards
+// Tests — 2 cards
 // ---------------------------------------------------------------------------
 
 describe.skipIf(!SHOULD_RUN)(
   "m38: deactivation publishes inactive paint at the user's exact DOM position",
   () => {
-    test(
-      "gallery-prompt-input — seeded selection survives deactivation at correct DOM position",
-      async () => {
-        const app = await launchTugApp({ testName: "at0027-gallery-prompt-input" });
-        try {
-          await runDeactivationScenario(app, "gallery-prompt-input");
-        } finally {
-          await app.close();
-        }
-      },
-      TEST_TIMEOUT_MS,
-    );
-
     test(
       "gallery-prompt-entry — seeded selection survives deactivation at correct DOM position",
       async () => {
@@ -604,21 +592,6 @@ describe.skipIf(!SHOULD_RUN)(
         const app = await launchTugApp({ testName: "at0027-tide" });
         try {
           await runDeactivationScenario(app, "tide");
-        } finally {
-          await app.close();
-        }
-      },
-      TEST_TIMEOUT_MS,
-    );
-
-    test(
-      "gallery-prompt-input — LIVE selection (set via DOM) survives deactivation",
-      async () => {
-        const app = await launchTugApp({
-          testName: "at0027-live-gallery-prompt-input",
-        });
-        try {
-          await runLiveSelectionScenario(app, "gallery-prompt-input");
         } finally {
           await app.close();
         }
@@ -655,14 +628,14 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "gallery-prompt-input — TYPE-and-SCROLL then deactivate preserves scroll + selection",
+      "gallery-prompt-entry — TYPE-and-SCROLL then deactivate preserves scroll + selection",
       async () => {
-        const app = await launchTugApp({ testName: "at0027-type-gallery-prompt-input" });
+        const app = await launchTugApp({ testName: "at0027-type-gallery-prompt-entry" });
         try {
           await app.enableDeckTrace(true);
           // Empty seed — user types from scratch.
           await app.seedDeckState({
-            state: deckShape("gallery-prompt-input"),
+            state: deckShape("gallery-prompt-entry"),
             cardStates: {},
             focusCardId: "A",
           });
@@ -717,16 +690,17 @@ describe.skipIf(!SHOULD_RUN)(
           await pause(200);
 
           // Native-scroll the editor — mimics mouse-wheel scrolling.
+          // CM6 owns scroll on `.cm-scroller`, not on the contenteditable.
           await app.evalJS<void>(
             `(function(){
-              var ed = document.querySelector('[data-card-id="A"] ${PROMPT_INPUT_SELECTOR}');
+              var ed = document.querySelector('[data-card-id="A"] ${SCROLLER_SELECTOR}');
               ed.scrollTop = ${SEED_SCROLL_TOP};
             })()`,
           );
           // Wait for the scroll listener to update mirror (settle).
           await app.waitForCondition<boolean>(
             `(function(){
-              var ed = document.querySelector('[data-card-id="A"] ${PROMPT_INPUT_SELECTOR}');
+              var ed = document.querySelector('[data-card-id="A"] ${SCROLLER_SELECTOR}');
               return Math.abs(ed.scrollTop - ${SEED_SCROLL_TOP}) < 4;
             })()`,
             { timeoutMs: 2000 },
@@ -770,7 +744,7 @@ describe.skipIf(!SHOULD_RUN)(
           const liveBefore = await snapshotLiveRange(app, "A");
           expect(liveBefore).not.toBeNull();
           const scrollBefore = await app.evalJS<number>(
-            `document.querySelector('[data-card-id="A"] ${PROMPT_INPUT_SELECTOR}').scrollTop`,
+            `document.querySelector('[data-card-id="A"] ${SCROLLER_SELECTOR}').scrollTop`,
           );
 
           // Click into B's editor to deactivate A — the user-action
@@ -806,7 +780,7 @@ describe.skipIf(!SHOULD_RUN)(
           );
           const inactiveAfter = await snapshotCardRange(app, "A");
           const scrollAfter = await app.evalJS<number>(
-            `document.querySelector('[data-card-id="A"] ${PROMPT_INPUT_SELECTOR}').scrollTop`,
+            `document.querySelector('[data-card-id="A"] ${SCROLLER_SELECTOR}').scrollTop`,
           );
 
           if (

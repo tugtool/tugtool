@@ -7,9 +7,8 @@
  * The user-reported regression: a Tide card with multi-line text,
  * a non-collapsed selection, and an editor scroll position loses
  * those axes on `Developer > Reload` AND on quit + relaunch. The
- * gallery cards `gallery-prompt-input` and `gallery-prompt-entry`
- * exhibit the same shape because they ride the same persistence
- * pipeline as Tide.
+ * gallery card `gallery-prompt-entry` exhibits the same shape
+ * because it rides the same persistence pipeline as Tide.
  *
  * Two fault classes exist today:
  *
@@ -34,11 +33,10 @@
  *
  * ## Test matrix
  *
- *   3 cards × 2 reload triggers = 6 test cases. Each case asserts
+ *   2 cards × 2 reload triggers = 4 test cases. Each case asserts
  *   four axes: text, atoms, selection, scrollTop. Cards are
- *   `gallery-prompt-input` (raw `TugTextEditingState` bag),
  *   `gallery-prompt-entry` (`{ currentRoute, perRoute, maximized }`
- *   wrapper), and `tide` (production card; same wrapper as the
+ *   wrapper) and `tide` (production card; same wrapper as the
  *   entry, mounted after a fake-session bind via
  *   {@link App.bindTideSession}).
  *
@@ -127,6 +125,16 @@ type PromptComponentId =
 const PROMPT_INPUT_SELECTOR =
   '[data-slot="tug-text-editor"] .cm-content';
 
+/**
+ * CM6's scrollable element. The editor's scrollTop / scrollLeft are
+ * owned by `view.scrollDOM` (`.cm-scroller`), NOT by the contenteditable
+ * (`.cm-content`). Assignments to `.cm-content.scrollTop` are silent
+ * no-ops — `.cm-content` is inside the scroller, not the scroller
+ * itself.
+ */
+const SCROLLER_SELECTOR =
+  '[data-slot="tug-text-editor"] .cm-scroller';
+
 /** TUG_ATOM_CHAR — the U+FFFC placeholder atom character (engine internal). */
 const TUG_ATOM_CHAR = "￼";
 
@@ -147,13 +155,11 @@ const TUG_PROMPT_ENTRY_DEFAULT_ROUTE = "❯";
 
 /**
  * 50 short lines of text — enough to overflow the editor's content
- * box on every target card. `gallery-prompt-input`'s standalone
- * editor caps at `maxRows=8` (~206px); the wrapper cards
- * (`gallery-prompt-entry`, `tide`) ride content-driven panel growth
- * to a 90% pane max (~486px on a 540px card) but cap there. 50 lines
- * × 24px = 1200px, which overflows both ceilings comfortably, so
- * `editor.scrollTop = 80` always sticks regardless of which sizing
- * regime is in effect.
+ * box on every target card. The wrapper cards (`gallery-prompt-entry`,
+ * `tide`) ride content-driven panel growth to a 90% pane max
+ * (~486px on a 540px card) but cap there. 50 lines × 24px = 1200px,
+ * which overflows the ceiling comfortably, so `editor.scrollTop = 80`
+ * always sticks.
  *
  * The single atom (one TUG_ATOM_CHAR char) sits inside line 1 at
  * offset 10. Selection spans offsets 50..100 — a non-collapsed range
@@ -315,15 +321,15 @@ async function setupPhaseA(
   // DOM and is destroyed by every reload.
   await app.evalJS<void>(
     `(function(){
-      var el = document.querySelector('[data-card-id="A"] ${PROMPT_INPUT_SELECTOR}');
-      if (!el) throw new Error("[m24] phaseA: editor not found for cardId=A");
+      var el = document.querySelector('[data-card-id="A"] ${SCROLLER_SELECTOR}');
+      if (!el) throw new Error("[m24] phaseA: editor scroller not found for cardId=A");
       el.scrollTop = ${SEED_SCROLL_TOP};
     })()`,
   );
 
   await app.waitForCondition<boolean>(
     `(function(){
-      var el = document.querySelector('[data-card-id="A"] ${PROMPT_INPUT_SELECTOR}');
+      var el = document.querySelector('[data-card-id="A"] ${SCROLLER_SELECTOR}');
       return el !== null && Math.abs(el.scrollTop - ${SEED_SCROLL_TOP}) < 2;
     })()`,
     { timeoutMs: 2000 },
@@ -529,7 +535,7 @@ async function assertLiveState(app: App): Promise<void> {
   // (typically 0). These layers close this.
   const liveScroll = await app.evalJS<number>(
     `(function(){
-      var ed = document.querySelector('[data-card-id="A"] ${PROMPT_INPUT_SELECTOR}');
+      var ed = document.querySelector('[data-card-id="A"] ${SCROLLER_SELECTOR}');
       return ed ? ed.scrollTop : -1;
     })()`,
   );

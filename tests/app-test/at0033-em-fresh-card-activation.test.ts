@@ -13,22 +13,21 @@
  * to the `default-focus` branch, which walks
  * `DEFAULT_FOCUS_SELECTORS` where `button:not([disabled])`
  * matches before `[contenteditable="true"]` — landing focus on
- * the prompt-input toolbar's first button (e.g. "Insert Atom"
- * for `gallery-prompt-input`) instead of the engine root.
+ * the prompt-input toolbar's first button instead of the engine
+ * root.
  *
  * Step 23F adds `engineKind: "em"` to the card registry shape;
- * `gallery-prompt-input`, `gallery-prompt-entry`, and `tide`
- * declare it. The resolver now returns `dispatch-activated` for
- * registry-tagged EM cards regardless of `bag.content` presence,
- * so `onCardActivated` fires for both saved and fresh EM cards
- * uniformly.
+ * `gallery-prompt-entry` and `tide` declare it. The resolver now
+ * returns `dispatch-activated` for registry-tagged EM cards
+ * regardless of `bag.content` presence, so `onCardActivated`
+ * fires for both saved and fresh EM cards uniformly.
  *
  * ## Coverage
  *
- * Two factories — `gallery-prompt-input` (TugPromptInput direct)
- * and `gallery-prompt-entry` (TugPromptEntry wrapper, what
- * tide-card uses internally). Each runs the fresh-card
- * inactive-at-mount → tab-activate path with no bag seeding.
+ * `gallery-prompt-entry` (TugPromptEntry wrapper, what tide-card
+ * uses internally). Runs the fresh-card inactive-at-mount →
+ * tab-activate path with no bag seeding. The legacy
+ * `gallery-prompt-input` was retired.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  */
@@ -38,7 +37,7 @@ import { launchTugApp, type App } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
-const PROMPT_INPUT_SELECTOR = '[data-tug-prompt-input-root] [contenteditable]';
+const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 
 function tabSelectorFor(cardId: string): string {
   return `[data-testid="tug-tab-${cardId}"]`;
@@ -115,8 +114,7 @@ async function runFreshCardActivation(app: App, componentId: string): Promise<vo
 
   // Belt-and-suspenders: confirm activeElement is NOT a button
   // anywhere inside B's card subtree. The pre-fix failure mode
-  // landed focus on `gallery-prompt-input`'s "Insert Atom"
-  // toolbar button.
+  // landed focus on a toolbar button instead of the engine root.
   const isButton = await app.evalJS<boolean>(
     `document.activeElement !== null && document.activeElement.tagName === "BUTTON"`,
   );
@@ -124,15 +122,6 @@ async function runFreshCardActivation(app: App, componentId: string): Promise<vo
 }
 
 describe.skipIf(!SHOULD_RUN)("at0033-em: fresh EM card inactive-at-mount activates via dispatch-activated (registry-tag path)", () => {
-  test("gallery-prompt-input (TugPromptInput): focus lands on contenteditable, not toolbar button", async () => {
-    const app = await launchTugApp({ testName: "at0033-em-fresh-input" });
-    try {
-      await runFreshCardActivation(app, "gallery-prompt-input");
-    } finally {
-      await app.close();
-    }
-  });
-
   test("gallery-prompt-entry (TugPromptEntry, tide-card's editor): focus lands on contenteditable, not toolbar button", async () => {
     const app = await launchTugApp({ testName: "at0033-em-fresh-entry" });
     try {

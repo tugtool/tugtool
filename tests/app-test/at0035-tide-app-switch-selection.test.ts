@@ -46,7 +46,7 @@ import { launchTugApp } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
-const PROMPT_INPUT_SELECTOR = '[data-tug-prompt-input-root] [contenteditable]';
+const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 
 const STRESS_ITERATIONS = 3;
 
@@ -111,11 +111,18 @@ describe.skipIf(!SHOULD_RUN)("at0035-tide: tide-card selection survives app resi
         // shift+arrow selection would land in the engine.
         await app.evalJS<void>(
           `(function(){
-            var ed = document.querySelector('[data-card-id="A"] [data-tug-prompt-input-root] [contenteditable]');
+            var ed = document.querySelector('[data-card-id="A"] [data-slot="tug-text-editor"] .cm-content');
             ed.focus();
+            // CM6 wraps each line in a .cm-line div; the text node
+            // lives inside the line, not directly under .cm-content.
+            var line = ed.querySelector('.cm-line') || ed;
+            var textNode = line.firstChild;
+            while (textNode && textNode.nodeType !== Node.TEXT_NODE) {
+              textNode = textNode.firstChild;
+            }
+            if (!textNode) throw new Error("[at0035-tide] no text node under .cm-content");
             var sel = window.getSelection();
             var range = document.createRange();
-            var textNode = ed.firstChild;
             range.setStart(textNode, 2);
             range.setEnd(textNode, 5);
             sel.removeAllRanges();

@@ -8,17 +8,16 @@
  *
  * ## Coverage
  *
- * Two parameterized tests, one per realistic EM factory:
+ * One realistic EM factory:
  *
- *   1. `gallery-prompt-input` — TugPromptInput direct. Bag.content
- *      shape is the raw `TugTextEditingState` (`{ text, atoms,
- *      selection }`).
- *
- *   2. `gallery-prompt-entry` — TugPromptEntry wrapper. This is
+ *   - `gallery-prompt-entry` — TugPromptEntry wrapper. This is
  *      what tide-card uses internally. Bag.content shape is
  *      `{ currentRoute, perRoute, maximized }`. Real-world
  *      relevance: every Tide AI session card and every full-on
  *      tide-card mounts a TugPromptEntry as its primary editor.
+ *      (The legacy `gallery-prompt-input` TugPromptInput-direct
+ *      surface was retired; only the wrapper remains as a gallery
+ *      fixture.)
  *
  * tide-card itself is registered (`componentId: "tide"`) but
  * requires session-machinery setup (project-picker bind, code
@@ -49,7 +48,7 @@ import { launchTugApp, type App } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
-const PROMPT_INPUT_SELECTOR = '[data-tug-prompt-input-root] [contenteditable]';
+const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 
 function tabSelectorFor(cardId: string): string {
   return `[data-testid="tug-tab-${cardId}"]`;
@@ -58,8 +57,8 @@ function tabSelectorFor(cardId: string): string {
 /**
  * Run the round-trip: seed P1=[A=EM, B=FC], type into A, tab to
  * B, tab back, assert text + focus + the trace event for A on
- * the return. Parameterized over `componentId` so the same body
- * runs against `gallery-prompt-input` and `gallery-prompt-entry`.
+ * the return. Parameterized over `componentId` for forward
+ * compatibility with future EM gallery fixtures.
  */
 async function runRoundTrip(app: App, componentId: string): Promise<void> {
   await app.enableDeckTrace(true);
@@ -151,15 +150,6 @@ async function runRoundTrip(app: App, componentId: string): Promise<void> {
 }
 
 describe.skipIf(!SHOULD_RUN)("m02: EM intra-pane tab switch preserves text + restores engine focus", () => {
-  test("gallery-prompt-input (TugPromptInput direct): tab-away + tab-back round-trip", async () => {
-    const app = await launchTugApp({ testName: "at0002-tab-switch-em-input" });
-    try {
-      await runRoundTrip(app, "gallery-prompt-input");
-    } finally {
-      await app.close();
-    }
-  });
-
   test("gallery-prompt-entry (TugPromptEntry, tide-card's editor): tab-away + tab-back round-trip", async () => {
     const app = await launchTugApp({ testName: "at0002-tab-switch-em-entry" });
     try {

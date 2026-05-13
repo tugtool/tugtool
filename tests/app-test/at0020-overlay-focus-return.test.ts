@@ -4,7 +4,7 @@
  *
  * ## Scenario
  *
- * Mount a `gallery-prompt-input` (EM card with editor + context
+ * Mount a `gallery-prompt-entry` (EM card with editor + context
  * menu via `useTextInputResponder`). Focus the editor, type
  * something so the menu has selection state to render against.
  * `nativeRightClick` to open the editor context menu (portaled to
@@ -39,7 +39,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
 const TEST_TIMEOUT_MS = 60_000;
 
-const PROMPT_INPUT_SELECTOR = '[data-tug-prompt-input-root] [contenteditable]';
+const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 
 function editorSelectorFor(cardId: string): string {
   return `[data-card-id="${cardId}"] ${PROMPT_INPUT_SELECTOR}`;
@@ -54,7 +54,7 @@ describe.skipIf(!SHOULD_RUN)("m20: overlay dismiss returns focus to previously-f
       await app.seedDeckState({
         state: {
           cards: [
-            { id: "A", componentId: "gallery-prompt-input", title: "EM A", closable: true },
+            { id: "A", componentId: "gallery-prompt-entry", title: "EM A", closable: true },
           ],
           panes: [
             {

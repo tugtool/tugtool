@@ -40,9 +40,8 @@
  *
  * ## Coverage
  *
- * Two factories — `gallery-prompt-input` (raw TugTextEditingState
- * bag) and `gallery-prompt-entry` (TugPromptEntry wrapper, what
- * tide-card uses internally).
+ * `gallery-prompt-entry` (TugPromptEntry wrapper, what tide-card
+ * uses internally). The legacy `gallery-prompt-input` was retired.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  */
@@ -166,15 +165,6 @@ async function runColdBootSelection(
 }
 
 describe.skipIf(!SHOULD_RUN)("at0032-em: saved selection round-trips through cold-boot mount-restore", () => {
-  test("gallery-prompt-input (TugPromptInput): seeded selection lands in live DOM after restore", async () => {
-    const app = await launchTugApp({ testName: "at0032-em-cold-boot-input" });
-    try {
-      await runColdBootSelection(app, "gallery-prompt-input");
-    } finally {
-      await app.close();
-    }
-  });
-
   test("gallery-prompt-entry (TugPromptEntry, tide-card's editor): seeded selection lands in live DOM after restore", async () => {
     const app = await launchTugApp({ testName: "at0032-em-cold-boot-entry" });
     try {
