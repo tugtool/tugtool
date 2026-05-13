@@ -114,6 +114,7 @@ The protocol's surface area in HTML. Authors add these attributes to opt their e
 - **`data-tug-state-key`** — On a native `<input>` or `<textarea>` (or the `tug-input` / `tug-textarea` / `tug-value-input` widgets that wrap them). Captures `.value`, selection range, and scroll position into `bag.formControls[key]`. The same key doubles as the focus key — `FocusSnapshot` kind `form-control` reads it so authors do not add a second `data-tug-focus-key` attribute. Key must be unique within the card subtree. (See [card-state-model.md](card-state-model.md) → Form-control Value Preservation.)
 - **`data-tug-focus-key`** — On any non-form-control focusable element (button, tab, custom focusable `tabindex=0` widget) that wants its focus restored. Captured into `FocusSnapshot` kind `dom`. Key must be unique within the card subtree.
 - **`data-tug-scroll-key`** — On an inner scrollable region (most notably `tug-markdown-view`'s virtual-list container). Captures `{ x, y }` into `bag.regionScroll[key]`. Applied on mount and re-applied for late-mounting regions via the same `MutationObserver` that restores form controls.
+- **`data-tug-scroll-state`** — Optional companion to `data-tug-scroll-key`. JSON-serialized opaque metadata captured into `bag.regionScroll[key].meta` alongside `{ x, y }` and forwarded on restore through the `tug-region-scroll-set` event's `detail.meta`. The framework treats the payload as opaque storage; the region's listener owns its semantics. Used by variable-height virtualized lists (`TugListView` driving the tide-card transcript) to carry an `{ anchor: { index, offset } }` payload that survives cell-height drift between save and restore — see [`RegionScrollSnapshot` in depth](#cardstatebag-in-depth) below.
 - **`data-tug-prompt-input-root`** — Marker attribute on the outer container of a component that owns its own focus + selection state together (e.g. `TugPromptInput`). Causes `captureFocus` to serialize the focus as `FocusSnapshot` kind `component-owned`. The owning component's `bag.content` carries the actual detail.
 
 ---
@@ -247,6 +248,7 @@ For the per-axis contract these attributes participate in, see [card-state-model
 | `data-tug-state-key="<key>"` | `bag.formControls[key]` | `value`, `selectionStart`, `selectionEnd`, `selectionDirection`, `scrollTop`, `scrollLeft` | Native `<input>` / `<textarea>` value preservation. Doubles as the focus key — `FocusSnapshot` kind `form-control` references it. |
 | `data-tug-focus-key="<key>"` | (not stored in bag axis) | — | Drives `FocusSnapshot` kind `dom`. Resolved on restore by keyed lookup inside the card root. |
 | `data-tug-scroll-key="<key>"` | `bag.regionScroll[key]` | `x`, `y` | Inner scrollable region. Re-applied for late mounts via the same `MutationObserver` as form controls. |
+| `data-tug-scroll-state` | `bag.regionScroll[key].meta` | opaque JSON | Optional companion to `data-tug-scroll-key`. Region-defined payload (e.g. `{anchor: {index, offset}}` for `TugListView`) forwarded through the `tug-region-scroll-set` event's `detail.meta`. Framework treats as opaque storage. |
 | `data-tug-prompt-input-root` | (component-owned) | — | Marker attribute. `captureFocus` serializes focus on any descendant as `FocusSnapshot` kind `component-owned`; the owning component's `bag.content` carries the real detail. |
 
 Authors add these attributes; the framework owns capture and replay. There is no second mechanism for any of these axes; if a control wants its state preserved across cold boot, it opts in via one of these attributes (or via `useComponentStatePreservation` for non-DOM-authority state).
@@ -275,7 +277,7 @@ Restore applies `bag.focus` only on cold-boot for the active card of the active 
 | Outer scroll | `scroll` | `hostContentEl.scrollLeft` / `scrollTop` |
 | Card content | `content` | `useCardStatePreservation` callbacks' `onSave()` |
 | Form controls | `formControls` | Walk `data-tug-state-key` inside the card root |
-| Region scroll | `regionScroll` | Walk `data-tug-scroll-key` inside the card root |
+| Region scroll | `regionScroll` | Walk `data-tug-scroll-key` inside the card root. Each entry is `{ x, y, meta? }` — `meta` carries an optional opaque JSON payload from a `data-tug-scroll-state` attribute, used by variable-height virtualized lists to anchor on a cell index + offset rather than raw pixels. |
 | DOM selection | `domSelection` | `selectionGuard.getCardRange(cardId)` |
 | Focus | `focus` | `captureFocus(cardRoot)` |
 | Components | `components` | Iterate `ComponentStatePreservationRegistry` parent-first |

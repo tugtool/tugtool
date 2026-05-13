@@ -112,6 +112,7 @@ import { BlockHeightIndex } from "@/lib/block-height-index";
 import { RenderedBlockWindow } from "@/lib/rendered-block-window";
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
 import { attachOuterScrollOnModifierWheel } from "@/components/tugways/internal/use-outer-scroll-on-modifier-wheel";
+import { useComponentStatePreservation } from "@/components/tugways/use-component-state-preservation";
 import { BlockCopyButton, BlockFoldCue } from "./affordances";
 
 // ---------------------------------------------------------------------------
@@ -228,6 +229,25 @@ export interface TerminalBlockProps {
    * @default FOLD_THRESHOLD_LINES
    */
   collapseThreshold?: number;
+
+  /**
+   * Opt-in key for the [A9] Component State Preservation Protocol.
+   * When set, TerminalBlock persists its uncontrolled `collapsed`
+   * flag into `bag.components` so a Developer > Reload restores the
+   * fold.
+   *
+   * The virtualized scroller's `scrollTop` is persisted independently
+   * via the [A9] region-scroll axis — TerminalBlock writes
+   * `data-tug-scroll-key={componentStatePreservationKey}/term-scroll`
+   * onto the scroller `<div>` so CardHost's region-scroll
+   * capture/restore loop picks it up. The two axes are split
+   * deliberately: fold is React-state (component-owned, not DOM-
+   * authority); inner scroll is DOM-authority (scrollTop lives on
+   * the scroll element).
+   *
+   * Undefined opts out of both axes (gallery, standalone).
+   */
+  componentStatePreservationKey?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -529,6 +549,7 @@ function appendVirtualizedBody(
   lines: ParsedLine[],
   anchor: "top" | "bottom",
   getOuter: () => HTMLElement | null,
+  scrollKey: string | undefined,
 ): VirtualizedBodyHandle {
   const heightIndex = new BlockHeightIndex(Math.max(1024, lines.length));
   for (let i = 0; i < lines.length; i += 1) {
@@ -544,6 +565,13 @@ function appendVirtualizedBody(
   const scroller = document.createElement("div");
   scroller.className = "tugx-term-scroller";
   scroller.dataset.slot = "terminal-scroller";
+  // [A9] region-scroll axis — when a key is supplied, stamp the
+  // scroller for CardHost's `captureRegionScrolls` walk. Raw {x, y}
+  // is sufficient: terminal lines are fixed-height (LINE_HEIGHT_PX),
+  // so scrollTop maps deterministically to line index across reload.
+  if (scrollKey !== undefined) {
+    scroller.setAttribute("data-tug-scroll-key", scrollKey);
+  }
   scroller.style.height = `${viewportPx}px`;
 
   const topSpacer = document.createElement("div");
@@ -763,6 +791,7 @@ function renderTerminal(
   getOuter: () => HTMLElement | null,
   collapsed: boolean = false,
   anchor: "top" | "bottom" = "top",
+  scrollKey: string | undefined = undefined,
 ): TerminalRenderHandle {
   body.replaceChildren();
   // Empty terminal: render the footer if any post-mortem fields are
@@ -803,7 +832,7 @@ function renderTerminal(
     if (lines.length <= VISIBLE_THRESHOLD) {
       appendFlatBody(body, lines);
     } else {
-      handle = appendVirtualizedBody(body, lines, anchor, getOuter);
+      handle = appendVirtualizedBody(body, lines, anchor, getOuter, scrollKey);
     }
   }
 
@@ -841,6 +870,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   collapsed: collapsedProp,
   onToggleCollapsed,
   collapseThreshold = FOLD_THRESHOLD_LINES,
+  componentStatePreservationKey,
 }) => {
   // Outer card — React owns the markup (header + body container);
   // imperative `renderTerminal` writes lines/footer into `bodyRef`.
@@ -909,6 +939,31 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   const collapsed =
     collapsedProp !== undefined ? collapsedProp : localCollapsed;
 
+  // ---- Component-state preservation (fold state only) -----------------
+  //
+  // Persist the uncontrolled `collapsed` flag through the [A9]
+  // component-state-preservation axis. The virtualized scroller's
+  // `scrollTop` is preserved separately, via the [A9] region-scroll
+  // axis — a `data-tug-scroll-key` attribute on the scroller div
+  // lands the position in `bag.regionScroll`, restored by CardHost's
+  // MutationObserver loop on mount. The two axes are split
+  // deliberately: fold is React-state (component-owned, not DOM-
+  // authority); inner scroll is DOM-authority (scrollTop lives on
+  // the scroll element).
+  //
+  // Restore is one-shot and seeds local state only when uncontrolled.
+  useComponentStatePreservation<{ collapsed?: boolean }>({
+    componentStatePreservationKey,
+    captureState: () => ({ collapsed }),
+    restoreState: (saved) => {
+      if (saved === null || typeof saved !== "object") return;
+      if (typeof saved.collapsed !== "boolean") return;
+      if (collapsedProp === undefined) {
+        setLocalCollapsed(saved.collapsed);
+      }
+    },
+  });
+
   // Chrome actions target — non-null when this TerminalBlock is
   // composed inside a `ToolWrapperChrome` that has rendered its actions
   // slot. Phase D portals the Copy `<TugIconButton>` into the chrome
@@ -950,6 +1005,19 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // and Copy portals into the chrome's actions slot instead.
   const showHeader = !embedded;
 
+  // [A9] region-scroll key for the virtualized inner scroller —
+  // suffixed `/term-scroll` off the block's preservation key.
+  // Threaded through each `renderTerminal` call so the scroller div
+  // gets stamped on creation; CardHost's `captureRegionScrolls`
+  // walks the attribute on save and restores via the [A9] region-
+  // scroll axis. `undefined` when the consumer didn't opt in
+  // (gallery / standalone), which the imperative renderer treats
+  // as "don't stamp" — no attribute, no preservation.
+  const scrollKey =
+    componentStatePreservationKey === undefined
+      ? undefined
+      : `${componentStatePreservationKey}/term-scroll`;
+
   // Static mode — re-runs whenever `collapsed` flips, so the imperative
   // body switches between the full render and the preview render
   // without a React re-mount. `data` is read from `initialDataRef`
@@ -964,13 +1032,21 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
     if (outer === null || body === null) return;
     const d = initialDataRef.current ?? EMPTY_TERMINAL;
     latestDataRef.current = d;
-    const handle = renderTerminal(outer, body, d, getOuterScrollport, collapsed);
+    const handle = renderTerminal(
+      outer,
+      body,
+      d,
+      getOuterScrollport,
+      collapsed,
+      "top",
+      scrollKey,
+    );
     refitRef.current = handle.refit;
     return () => {
       refitRef.current = null;
       handle.cleanup();
     };
-  }, [collapsed, streamingStore, getOuterScrollport]);
+  }, [collapsed, streamingStore, getOuterScrollport, scrollKey]);
 
   // Streaming mode — Spec S05 binding. Reads sync on mount,
   // subscribes for updates, rAF-coalesces.
@@ -1020,6 +1096,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
         getOuterScrollport,
         collapsedStreamingRef.current,
         "bottom",
+        scrollKey,
       );
       cleanup = handle.cleanup;
       refitRef.current = handle.refit;
@@ -1045,7 +1122,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
       refitRef.current = null;
       cleanup();
     };
-  }, [streamingStore, streamingPath, getOuterScrollport]);
+  }, [streamingStore, streamingPath, getOuterScrollport, scrollKey]);
 
   // Streaming-mode re-render on collapse toggle. The store-subscription
   // effect above is the source of truth for streaming output, but a
@@ -1075,13 +1152,14 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
       getOuterScrollport,
       collapsed,
       "bottom",
+      scrollKey,
     );
     refitRef.current = handle.refit;
     return () => {
       refitRef.current = null;
       handle.cleanup();
     };
-  }, [collapsed, streamingStore, streamingPath, getOuterScrollport]);
+  }, [collapsed, streamingStore, streamingPath, getOuterScrollport, scrollKey]);
 
   // ---- Blank-frame recovery on scroll-into-view (Phase E.5) ----------
   //

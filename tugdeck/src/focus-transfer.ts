@@ -901,7 +901,19 @@ export function reactivateCurrentFocusDestination(
   if (target.kind === "focus-element") {
     const doc = target.el.ownerDocument;
     const activeBefore = formatElement(doc.activeElement);
-    target.el.focus();
+    // `preventScroll: true` — window-focus reactivation is "I just
+    // came back to where I was." The user-visible scroll state of
+    // any scrollport above us must not change just because the
+    // focused element regained the caret. The default `focus()`
+    // semantics scroll the focused element into view, which in a
+    // tide-card (transcript above + editor below) drags the
+    // transcript downward whenever the editor re-claims focus on
+    // cmd-tab return. The browser's own window-state focus
+    // restoration on cmd-tab is already pixel-stable; this
+    // synchronous re-claim is just our deterministic guarantee
+    // that the chain agrees on who owns the caret. No scroll-
+    // into-view is needed. [L23] — preserve user-visible scroll.
+    target.el.focus({ preventScroll: true });
     const activeAfter = formatElement(doc.activeElement);
     deckTrace.record({
       kind: "focus-call",
@@ -933,10 +945,14 @@ export function reactivateCurrentFocusDestination(
   }
 
   if (target.kind === "default-focus") {
+    // `preventScroll: true` — see the focus-element branch above
+    // for the rationale. Window-focus reactivation must preserve
+    // the user-visible scroll state of every ancestor scrollport.
     traceApplyDefaultFocus(
       "focus-transfer-reactivate-default",
       cardId,
       target.cardRoot,
+      { preventScroll: true },
     );
     const bag = store.getCardState(cardId);
     if (bag?.domSelection !== undefined && bag.domSelection !== null) {

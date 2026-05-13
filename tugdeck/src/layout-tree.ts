@@ -109,8 +109,33 @@ export interface FormControlSnapshot {
  * Uniqueness of keys within a card subtree is an author contract
  * (same rule as `data-tug-state-key`): `CardHost` walks the card
  * root and writes the last-encountered value per key.
+ *
+ * **Per-region metadata (`meta`).** Optional, opaque per-region
+ * JSON-serializable payload alongside `{x, y}`. The framework treats
+ * it as transparent storage; regions encode their own semantics.
+ *
+ * Motivating use case: variable-height virtualized lists (e.g.
+ * `TugListView` driving the tide-card transcript) cannot rely on raw
+ * `{x, y}` alone because cell heights drift between save and restore
+ * — markdown content arrives, tool wrappers settle, file viewers
+ * measure their substrates — and the saved pixel `y` no longer maps
+ * to the saved *content* by the time the bag is replayed. Such
+ * regions write a `(anchorIndex, anchorOffset)` payload into `meta`
+ * and read it back on `tug-region-scroll-set`; the framework's
+ * `MutationObserver`-driven retry loop continues to operate against
+ * `{x, y}` for the settle check, while the region's listener re-
+ * derives the target `scrollTop` from its live layout state on
+ * every commit.
+ *
+ * Fixed-height inner scrollers (markdown view, terminal virtualized
+ * scroller, CM6 substrate) don't need `meta` — raw `{x, y}` is
+ * deterministic for them — and continue working without writing
+ * the attribute.
  */
-export type RegionScrollSnapshot = Record<string, { x: number; y: number }>;
+export type RegionScrollSnapshot = Record<
+  string,
+  { x: number; y: number; meta?: unknown }
+>;
 
 /**
  * Serialized form of a DOM selection anchored inside a card's boundary.

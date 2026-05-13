@@ -648,6 +648,31 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // closed-over snapshot.
     const smartScrollRef = React.useRef<SmartScroll | null>(null);
 
+    // Pending anchor-based scroll restore. Set by the listener
+    // when CardHost dispatches `tug-region-scroll-set` carrying a
+    // `meta.anchor` payload; cleared when the user themselves
+    // scrolls (SmartScroll's phase tracking surfaces this as
+    // `isUserScrolling = true`).
+    //
+    // The companion apply effect below runs every commit while the
+    // ref is set, re-deriving the target `scrollTop` from the live
+    // `heightIndex` and writing it via SmartScroll. As cells settle
+    // their heights across subsequent commits, the target moves and
+    // the write tracks it — the anchor cell stays at the user's
+    // saved viewport position [L23] regardless of how long
+    // sub-content takes to render. When the target stops moving
+    // (heights stable), the write is a no-op (`scrollTop` already
+    // matches desired); apply is idempotent.
+    //
+    // The clear-on-user-scroll handoff is the only stop signal.
+    // No magic-number commit count, no scrollHeight-stability
+    // heuristic — the user's gesture is the unambiguous "I own
+    // this scroll position now" signal SmartScroll already tracks
+    // via its phase machine.
+    const restoreAnchorRef = React.useRef<
+      { anchorIndex: number; anchorOffset: number } | null
+    >(null);
+
     // Previous-commit `numberOfItems()` snapshot used to detect
     // data-source growth. Any `itemCount > prev` qualifies as a
     // "grow" and triggers the auto-follow-bottom pin (gated by
@@ -926,8 +951,109 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       };
       el.addEventListener("tug-disengage-follow-bottom", onDisengage);
 
+      // Listen for `tug-region-scroll-set` — dispatched by CardHost's
+      // `applyRegionScrolls` during cold-boot region-scroll restore
+      // (Developer > Reload, cross-pane mount, HMR reload), AND
+      // re-dispatched by CardHost's `MutationObserver`-driven retry
+      // loop on every cardRoot subtree mutation until `el.scrollTop`
+      // is within tolerance of `pos.y`.
+      //
+      // The compute-and-apply happens inline on each dispatch. No
+      // stash, no separate apply effect — CardHost owns the settle
+      // mechanism. The shape works for both raw and anchor cases:
+      //
+      //  - **Anchor case** (`meta.anchor` present): derive
+      //    `desired = heightIndex.offsetForIndex(anchorIndex) +
+      //    anchorOffset` from the live heightIndex. As cells settle
+      //    across subsequent commits, the heightIndex grows; the
+      //    next MutationObserver-driven dispatch re-derives a
+      //    refined `desired`. The settle gate is CardHost's
+      //    `Math.abs(el.scrollTop - pos.y) <= tolerance` check —
+      //    when our computed `desired` converges to `pos.y` (and it
+      //    will, because the same content renders to the same
+      //    cumulative offset), the loop terminates. Identical to
+      //    what the raw-pixel path uses.
+      //
+      //  - **Raw case** (no `meta`): write `pos.y` directly.
+      //    Mirrors `tug-markdown-view`'s listener.
+      //
+      // `preventDefault()` signals the dispatcher that we owned the
+      // apply — `applyRegionScrolls` skips its fallback direct
+      // `scrollTop` assignment.
+      //
+      // `disengageFollowBottom` on every dispatch defends against
+      // an intervening post-commit pin re-engaging the bottom-pin
+      // between dispatches. SmartScroll's `scrollTo` sets a one-
+      // shot suppress flag that keeps the deferred scroll event's
+      // idle-phase re-engagement from undoing the disengage.
+      //
+      // [L07] reads heightIndex live each dispatch — no stale closure.
+      // [L23] the framework's settle gate is the canonical mechanism;
+      //       this listener participates rather than inventing its own.
+      // Listen for `tug-region-scroll-set` — CardHost's dispatch on
+      // cold-boot restore (and on every MutationObserver-driven
+      // retry). Two cases:
+      //
+      //  - **Anchor case** (`meta.anchor` present): stash the
+      //    anchor in `restoreAnchorRef`. The companion apply
+      //    effect runs every commit until cleared (by user
+      //    scroll), re-deriving the target `scrollTop` from the
+      //    live `heightIndex` and writing it via SmartScroll.
+      //    Robust to cell-height drift — heights settle over many
+      //    commits as sub-content arrives; the apply tracks the
+      //    target through every commit.
+      //
+      //  - **Raw case** (no `meta`): write `pos.y` directly.
+      //    Mirrors `tug-markdown-view`'s listener.
+      //
+      // `preventDefault()` signals the dispatcher we owned the
+      // apply — CardHost skips its fallback direct `scrollTop`
+      // write. `disengageFollowBottom` defends against an
+      // intervening post-commit pin between dispatches.
+      const onRegionScrollSet = (event: Event): void => {
+        const ce = event as CustomEvent<{
+          top?: number;
+          left?: number;
+          meta?: unknown;
+        }>;
+        event.preventDefault();
+        smartScroll.disengageFollowBottom();
+
+        if (typeof ce.detail.left === "number") {
+          el.scrollLeft = ce.detail.left;
+        }
+
+        // Resolve anchor metadata if present and well-shaped.
+        const meta = ce.detail.meta;
+        if (meta !== null && typeof meta === "object" && "anchor" in meta) {
+          const a = (meta as { anchor: unknown }).anchor;
+          if (
+            a !== null &&
+            typeof a === "object" &&
+            "index" in a &&
+            "offset" in a
+          ) {
+            const ax = a as { index: unknown; offset: unknown };
+            if (typeof ax.index === "number" && typeof ax.offset === "number") {
+              restoreAnchorRef.current = {
+                anchorIndex: ax.index,
+                anchorOffset: ax.offset,
+              };
+              return;
+            }
+          }
+        }
+
+        // Raw-pixel fallback.
+        if (typeof ce.detail.top === "number") {
+          smartScroll.scrollTo({ top: ce.detail.top, animated: false });
+        }
+      };
+      el.addEventListener("tug-region-scroll-set", onRegionScrollSet);
+
       return () => {
         el.removeEventListener("tug-disengage-follow-bottom", onDisengage);
+        el.removeEventListener("tug-region-scroll-set", onRegionScrollSet);
         smartScroll.dispose();
         smartScrollRef.current = null;
       };
@@ -1042,6 +1168,112 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       }
       pinRequestedRef.current = false;
       ss.pinToBottom();
+    });
+
+    // Anchor-state writer. Runs every commit; reads the live
+    // `scrollTop`, derives the topmost visible cell via
+    // `heightIndex.indexForOffset`, and serializes the resulting
+    // `{anchor: {index, offset}}` payload onto `data-tug-scroll-state`.
+    // CardHost's `captureRegionScrolls` reads the attribute at every
+    // capture moment ([A9] save) so the bag's `regionScroll[key].meta`
+    // carries a live anchor that survives reload.
+    //
+    // Anchor invariant: the attribute reflects the position the user
+    // is looking at *right now*. Scroll events trigger a React commit
+    // via the scroll-tick state setter, which fires this effect, which
+    // refreshes the attribute. Cell measurement growth that shifts the
+    // heightIndex also triggers a commit (the index-prepare and post-
+    // commit effects re-render the rendered range) — the attribute
+    // refresh keeps pace.
+    //
+    // No write when the list is empty: `indexForOffset(0, 0, ...)`
+    // returns 0 trivially, and the meta would be `{anchor:{0,0}}`
+    // which is semantically "top of an empty list" — harmless, but
+    // we skip the attribute write to keep empty-card DOM clean.
+    //
+    // [L06] DOM-attribute write, never React state. [L07] reads
+    // from the live `scrollContainerRef.current` and `heightIndexRef`.
+    React.useLayoutEffect(() => {
+      const el = scrollContainerRef.current;
+      if (el === null) return;
+      const total = dataSource.numberOfItems();
+      if (total <= 0) {
+        el.removeAttribute("data-tug-scroll-state");
+        return;
+      }
+      const scrollTop = el.scrollTop;
+      const anchorIndex = heightIndexRef.current.indexForOffset(
+        scrollTop,
+        total,
+        estimatedHeightForKindOnly,
+      );
+      const anchorTop = heightIndexRef.current.offsetForIndex(
+        anchorIndex,
+        estimatedHeightForKindOnly,
+      );
+      const anchorOffset = Math.max(0, scrollTop - anchorTop);
+      el.setAttribute(
+        "data-tug-scroll-state",
+        JSON.stringify({ anchor: { index: anchorIndex, offset: anchorOffset } }),
+      );
+    });
+
+    // Anchor-apply effect. Runs every commit while
+    // `restoreAnchorRef` is set; recomputes the target `scrollTop`
+    // from the live `heightIndex` and writes it via SmartScroll.
+    // As cells settle their heights across many commits (markdown
+    // loads, file viewer substrates measure, terminal lines re-
+    // render), `heightIndex.offsetForIndex(anchorIndex)` converges
+    // and the write becomes a no-op (`scrollTop` already equals
+    // `desired`).
+    //
+    // Stop signal: the user themselves scrolling. SmartScroll's
+    // phase machine surfaces this as `isUserScrolling = true`
+    // (tracking / dragging / settling / decelerating). When that
+    // flips true, the user owns the position; we clear pending
+    // and stop fighting them.
+    //
+    // No magic-number commit count, no scrollHeight-stability
+    // heuristic — the apply is idempotent at rest (writes only
+    // when target moves) and the user's gesture is the
+    // unambiguous handoff signal SmartScroll already tracks.
+    //
+    // [L03] `useLayoutEffect` — write before paint, so the first
+    // paint after a heightIndex update reflects the corrected
+    // `scrollTop`.
+    // [L06] direct DOM write through SmartScroll.scrollTo; no
+    // React state crossed.
+    // [L07] reads `restoreAnchorRef.current`, `dataSource`,
+    // `heightIndexRef.current`, and `smartScroll` live each
+    // commit.
+    // [L23] preserves user-visible state (anchor cell at saved
+    // viewport position) across the indefinite content-settle
+    // window; user gesture is the only mechanism that supersedes.
+    React.useLayoutEffect(() => {
+      const restore = restoreAnchorRef.current;
+      if (restore === null) return;
+      const el = scrollContainerRef.current;
+      const ss = smartScrollRef.current;
+      if (el === null || ss === null) return;
+      // User-scroll handoff: their gesture wins.
+      if (ss.isUserScrolling) {
+        restoreAnchorRef.current = null;
+        return;
+      }
+      const total = dataSource.numberOfItems();
+      if (restore.anchorIndex < 0 || restore.anchorIndex >= total) {
+        // Anchor cell not yet in the data source — wait for items.
+        return;
+      }
+      const cellTop = heightIndexRef.current.offsetForIndex(
+        restore.anchorIndex,
+        estimatedHeightForKindOnly,
+      );
+      const desired = Math.max(0, cellTop + restore.anchorOffset);
+      if (Math.abs(el.scrollTop - desired) > 0.5) {
+        ss.scrollTo({ top: desired, animated: false });
+      }
+      ss.disengageFollowBottom();
     });
 
     // Two-pass `scrollToIndex` correction per [D03]. Pass 1 lives in

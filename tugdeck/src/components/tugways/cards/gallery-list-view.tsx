@@ -369,7 +369,39 @@ const DIAGNOSTIC_STYLE: React.CSSProperties = {
   color: "var(--tug7-element-global-text-normal-muted-rest)",
 };
 
-export function GalleryListView(): React.ReactElement {
+export interface GalleryListViewProps {
+  /**
+   * Optional region-scroll key. When set, the inner `TugListView`
+   * stamps `data-tug-scroll-key="<scrollKey>"` on its scroll
+   * container, opting the list view into the [A9] region-scroll
+   * axis. Used by the Phase E.6 app-test to prove anchor-metadata
+   * capture / apply round-trips through the framework.
+   */
+  scrollKey?: string;
+
+  /**
+   * Forwarded to the inner `TugListView`. Set `true` to render
+   * every cell (no windowing) — same shape the tide-card
+   * transcript uses. The Phase E.6 app-tests pass this so the
+   * inline-rendering path is exercised under fixtures whose cell
+   * count and heights are stable.
+   */
+  inline?: boolean;
+
+  /**
+   * Disable the demo streaming-text setInterval that continuously
+   * appends to the streaming-cell text. Default `false` (streaming
+   * active) preserves the gallery's live-mutation demo. The Phase
+   * E.6 app-tests pass `true` so scrollHeight settles after the
+   * initial layout pass — required for the settle-detection signal
+   * used by anchor-based scroll restore.
+   */
+  disableStreaming?: boolean;
+}
+
+export function GalleryListView(
+  { scrollKey, inline, disableStreaming }: GalleryListViewProps = {},
+): React.ReactElement {
   // Synthetic data source — instantiated once per mount, mutated via
   // the header buttons. Held in a ref so the same instance survives
   // every render.
@@ -394,7 +426,11 @@ export function GalleryListView(): React.ReactElement {
 
   // Streaming tick — appends a chunk every 200ms, resets after ~10s.
   // Cleared on unmount so a closed gallery card stops emitting.
+  // Disabled when `disableStreaming` is set so app-tests that need
+  // scrollHeight to settle don't compete with the demo's continuous
+  // mutation.
   React.useEffect(() => {
+    if (disableStreaming === true) return;
     let accumulated = "";
     let tickIndex = 0;
     const id = setInterval(() => {
@@ -409,7 +445,7 @@ export function GalleryListView(): React.ReactElement {
     return () => {
       clearInterval(id);
     };
-  }, [streamingStore]);
+  }, [streamingStore, disableStreaming]);
 
   // Cell renderer dispatch map. Built once per `streamingStore`
   // identity (which is stable for the gallery's lifetime).
@@ -521,6 +557,8 @@ export function GalleryListView(): React.ReactElement {
           delegate={delegate}
           cellRenderers={cellRenderers}
           followBottom
+          scrollKey={scrollKey}
+          inline={inline}
         />
       </div>
     </div>

@@ -161,6 +161,24 @@ export class SmartScroll {
   private _lastScrollTop: number;
   private _disposed = false;
 
+  // One-shot guard: the next scroll event won't fire idle-phase
+  // auto-re-engagement of follow-bottom. Set by `scrollTo` so that
+  // the deferred scroll event emitted by a programmatic write
+  // doesn't flip follow-bottom back on. Without this, a state-
+  // restore path that explicitly disengages follow-bottom and writes
+  // a saved scrollTop has its disengage immediately undone by the
+  // deferred event's auto-re-engagement check — which fires whenever
+  // `isAtBottom` is satisfied. Under a trailing-inert-offset region
+  // (a tail spacer), `isAtBottom` is satisfied at virtually any
+  // scrollTop while content is still settling, so the race is
+  // deterministic.
+  //
+  // Consumed on the FIRST `_handleScroll` invocation after the
+  // programmatic write — regardless of phase — and immediately
+  // cleared so a subsequent genuine user scroll re-engages
+  // normally.
+  private _suppressIdleReengagementOnNextScroll = false;
+
   // Timer handles
   private _decelerationTimer: ReturnType<typeof setTimeout> | null = null;
   private _scrollEndTimer: ReturnType<typeof setTimeout> | null = null;
@@ -263,6 +281,16 @@ export class SmartScroll {
     if (top === undefined) return;
 
     this._enterProgrammatic();
+    // Suppress the idle-phase auto-re-engagement check on the
+    // deferred scroll event this write emits. Without this, a
+    // state-restore path that disengages follow-bottom before
+    // writing would have its disengage undone by the deferred
+    // event's `isAtBottom`-driven re-engagement — a race that
+    // becomes deterministic under a trailing-inert-offset region
+    // (TugListView's tail spacer makes `isAtBottom` true at almost
+    // any scrollTop while content is settling). The flag is one-
+    // shot and consumed by the FIRST `_handleScroll` invocation.
+    this._suppressIdleReengagementOnNextScroll = true;
 
     if (animated) {
       this._container.scrollTo({ top, behavior: 'smooth' });
@@ -390,6 +418,16 @@ export class SmartScroll {
     // Fire onScroll for every scroll event regardless of phase.
     this._callbacks.onScroll?.(this);
 
+    // Consume the one-shot post-`scrollTo` suppression flag. We clear
+    // unconditionally on the FIRST scroll event after a programmatic
+    // write — regardless of phase — so a subsequent genuine user
+    // gesture re-engages normally. Without unconditional clear, a
+    // browser that fires the scroll synchronously inside the write
+    // (still in 'programmatic' phase) would never enter the idle
+    // case, and the flag would carry over to a real user scroll.
+    const suppressIdleReengage = this._suppressIdleReengagementOnNextScroll;
+    this._suppressIdleReengagementOnNextScroll = false;
+
     switch (this._phase) {
       case 'idle':
         // Conservative auto-re-engagement: only if scrolled down to within
@@ -397,7 +435,18 @@ export class SmartScroll {
         // case (user manually scrolls to bottom). During streaming, the bottom
         // moves too fast for this to reliably trigger — the user should use
         // End/Cmd+Down for explicit re-engagement.
-        if (!this._isFollowingBottom && scrollTop >= this._lastScrollTop && this.isAtBottom) {
+        //
+        // The suppression flag rides on top: a deferred scroll event
+        // from a programmatic `scrollTo` skips re-engagement so a
+        // state-restore path's disengage isn't undone by the very
+        // write it set up. See `_suppressIdleReengagementOnNextScroll`
+        // for the full rationale.
+        if (
+          !suppressIdleReengage &&
+          !this._isFollowingBottom &&
+          scrollTop >= this._lastScrollTop &&
+          this.isAtBottom
+        ) {
           this._setFollowingBottom(true);
         }
         break;

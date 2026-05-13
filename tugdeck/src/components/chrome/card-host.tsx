@@ -556,7 +556,27 @@ export function captureRegionScrolls(
   for (const el of els) {
     const key = el.getAttribute("data-tug-scroll-key");
     if (!key) continue;
-    result[key] = { x: el.scrollLeft, y: el.scrollTop };
+    const entry: { x: number; y: number; meta?: unknown } = {
+      x: el.scrollLeft,
+      y: el.scrollTop,
+    };
+    // Optional per-region metadata. Regions that need richer
+    // semantics than raw `{x, y}` (variable-height virtualized lists
+    // anchoring on cell index + pixel-within-cell, etc.) write a
+    // JSON-encoded payload to `data-tug-scroll-state`. The framework
+    // captures it verbatim and forwards on restore via the
+    // `tug-region-scroll-set` event detail; the region's listener
+    // decodes its own semantics. Malformed JSON is logged in dev and
+    // silently dropped — capture must not throw during teardown.
+    const stateAttr = el.getAttribute("data-tug-scroll-state");
+    if (stateAttr !== null && stateAttr.length > 0) {
+      try {
+        entry.meta = JSON.parse(stateAttr);
+      } catch {
+        // Drop malformed metadata. The `{x, y}` axis still rides.
+      }
+    }
+    result[key] = entry;
   }
   return Object.keys(result).length > 0 ? result : undefined;
 }
@@ -592,10 +612,22 @@ export function applyRegionScrolls(
     // Generic scroll regions don't install a listener, so the
     // event is not preventDefaulted and we fall back to the direct
     // assignment.
-    const event = new CustomEvent<{ top: number; left: number }>(
-      "tug-region-scroll-set",
-      { detail: { top: pos.y, left: pos.x }, cancelable: true, bubbles: false },
-    );
+    //
+    // `meta` carries any opaque per-region payload captured from a
+    // `data-tug-scroll-state` attribute at save time. Listeners that
+    // understand richer semantics (variable-height virtualized
+    // lists, etc.) decode it; legacy listeners that consume only
+    // `{top, left}` ignore the field. See
+    // `RegionScrollSnapshot` for the contract.
+    const event = new CustomEvent<{
+      top: number;
+      left: number;
+      meta?: unknown;
+    }>("tug-region-scroll-set", {
+      detail: { top: pos.y, left: pos.x, meta: pos.meta },
+      cancelable: true,
+      bubbles: false,
+    });
     const wasHandled = !el.dispatchEvent(event);
     if (!wasHandled) {
       el.scrollLeft = pos.x;

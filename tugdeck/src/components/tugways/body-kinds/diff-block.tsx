@@ -84,6 +84,7 @@ import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
 import { useOuterScrollOnModifierWheel } from "@/components/tugways/internal/use-outer-scroll-on-modifier-wheel";
 import { usePositionStableClick } from "@/components/tugways/internal/use-position-stable-click";
+import { useComponentStatePreservation } from "@/components/tugways/use-component-state-preservation";
 import { BlockCopyButton, BlockFoldCue } from "./affordances";
 import { detectLanguage } from "./file-block";
 import {
@@ -183,6 +184,16 @@ export interface DiffBlockProps {
    * the choice elsewhere.
    */
   onViewModeChange?: (next: DiffViewMode) => void;
+
+  /**
+   * Opt-in key for the Component State Preservation Protocol. When
+   * set, DiffBlock persists its uncontrolled `collapsed` flag into
+   * `bag.components` so a Developer > Reload restores the fold state.
+   * Undefined opts out (gallery, standalone). View-mode persistence
+   * runs through `cardId` + tugbank independently — that channel
+   * predates the protocol. [A9]
+   */
+  componentStatePreservationKey?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -441,6 +452,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   cardId,
   viewMode: viewModeProp,
   onViewModeChange,
+  componentStatePreservationKey,
 }) => {
   // -- Telescoping pin: write the identity-header height -------------------
   //
@@ -619,6 +631,26 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   const [localCollapsed, setLocalCollapsed] = React.useState<boolean>(false);
   const collapsed =
     collapsedProp !== undefined ? collapsedProp : localCollapsed;
+
+  // ---- Component-state preservation (uncontrolled state) ---------------
+  //
+  // Persist `collapsed` into `bag.components` so a Developer > Reload
+  // restores the fold state. View-mode persistence runs through
+  // tugbank (`cardId` route) independently; we don't double-persist
+  // it here. DiffBlock has no inner scrollport (the hunks flow in
+  // document order), so no scroll-position field. [A9]
+  useComponentStatePreservation<{ collapsed?: boolean }>({
+    componentStatePreservationKey,
+    captureState: () => ({ collapsed }),
+    restoreState: (saved) => {
+      if (saved === null || typeof saved !== "object") return;
+      if (typeof saved.collapsed === "boolean") {
+        if (collapsedProp === undefined) {
+          setLocalCollapsed(saved.collapsed);
+        }
+      }
+    },
+  });
 
   // Position-stable click infrastructure. Two complementary mechanisms
   // keep the click target stable across layout changes:

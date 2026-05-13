@@ -128,6 +128,7 @@ import {
 import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
 import { attachOuterScrollOnModifierWheel } from "@/components/tugways/internal/use-outer-scroll-on-modifier-wheel";
+import { useComponentStatePreservation } from "@/components/tugways/use-component-state-preservation";
 import {
   BlockCopyButton,
   BlockFindButton,
@@ -214,6 +215,23 @@ export interface FileBlockProps {
    * fold by default.
    */
   collapseThreshold?: number;
+
+  /**
+   * Opt-in key for the [A9] Component State Preservation Protocol.
+   * When set, FileBlock persists its uncontrolled `collapsed` flag
+   * into `bag.components` so a Developer > Reload restores the fold.
+   *
+   * The CM6 inner scroller's `scrollTop` is persisted independently
+   * via the [A9] region-scroll axis — FileBlock writes
+   * `data-tug-scroll-key={componentStatePreservationKey}/file-scroll`
+   * onto `view.scrollDOM` so CardHost's region-scroll capture/restore
+   * loop picks it up. The two axes are split deliberately: fold is
+   * React-state (component-owned, not DOM-authority); inner scroll is
+   * DOM-authority (the scrollTop lives on the scroll element).
+   *
+   * Undefined opts out of both axes (gallery, standalone).
+   */
+  componentStatePreservationKey?: string;
 
   /**
    * "Embedded" mode — composed inside a host that already paints a
@@ -418,6 +436,7 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   className,
   collapseThreshold = DEFAULT_COLLAPSE_THRESHOLD,
   embedded = false,
+  componentStatePreservationKey,
 }) => {
   // Derived display state — line count + language detection drive
   // the header label and the collapse default.
@@ -617,6 +636,32 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // previous / select-all).
   const codeViewRef = React.useRef<TugCodeViewDelegate | null>(null);
 
+  // ---- Component-state preservation (fold state only) -----------------
+  //
+  // Persist the uncontrolled `collapsed` flag through the [A9] component-
+  // state-preservation axis so Developer > Reload (and cross-pane mount
+  // paths that route through CardHost) restore the fold. CM6 inner scroll
+  // position is preserved separately, via the [A9] region-scroll axis —
+  // a `data-tug-scroll-key` attribute on `view.scrollDOM` lands in
+  // `bag.regionScroll`, restored by CardHost's MutationObserver loop on
+  // mount. The two axes are deliberately split: fold is React-state
+  // (component-owned, not DOM-authority), inner scroll is DOM-authority
+  // (the scrollTop lives on the scroll element).
+  //
+  // Restore is one-shot and seeds local state only when uncontrolled —
+  // the controlled `collapsedProp` path is the parent's responsibility.
+  useComponentStatePreservation<{ collapsed?: boolean }>({
+    componentStatePreservationKey,
+    captureState: () => ({ collapsed }),
+    restoreState: (saved) => {
+      if (saved === null || typeof saved !== "object") return;
+      if (typeof saved.collapsed !== "boolean") return;
+      if (collapsedProp === undefined) {
+        setLocalCollapsed(saved.collapsed);
+      }
+    },
+  });
+
   // ---- Cmd/Ctrl-wheel routing to the outer scrollport (Phase E.5) -----
   //
   // CM6's `.cm-scroller` captures wheel events when the cursor is
@@ -649,6 +694,38 @@ export const FileBlock: React.FC<FileBlockProps> = ({
       () => outerScrollportRef.current,
     );
   }, [collapsed]);
+
+  // ---- [A9] region-scroll axis: CM6 inner scrollport ------------------
+  //
+  // Stamp `data-tug-scroll-key={key}/file-scroll` onto CM6's
+  // `view.scrollDOM` whenever the view is mounted. CardHost's
+  // `captureRegionScrolls` walks all `[data-tug-scroll-key]` elements
+  // in the card subtree on every capture moment ([A9] save) and
+  // restores via the `tug-region-scroll-set` event on mount.
+  //
+  // Raw `{x, y}` is sufficient here: CM6's internal layout is
+  // deterministic for the same source text, so `scrollTop` maps
+  // reliably to the same line across reload. No anchor metadata
+  // needed — markdown-view follows the same pattern.
+  //
+  // Re-attached whenever `collapsed` flips: a collapsed FileBlock
+  // does NOT mount CM6, so the scrollDOM is unavailable until the
+  // user expands. CardHost's `MutationObserver` retry loop picks up
+  // the late-mounted scrollDOM and applies the saved `{x, y}` then.
+  React.useLayoutEffect(() => {
+    if (collapsed) return;
+    if (componentStatePreservationKey === undefined) return;
+    const delegate = codeViewRef.current;
+    if (delegate === null) return;
+    const view = delegate.view();
+    if (view === null) return;
+    const scrollDOM = view.scrollDOM;
+    const scrollKey = `${componentStatePreservationKey}/file-scroll`;
+    scrollDOM.setAttribute("data-tug-scroll-key", scrollKey);
+    return () => {
+      scrollDOM.removeAttribute("data-tug-scroll-key");
+    };
+  }, [collapsed, componentStatePreservationKey]);
 
   // ---- Copy text source -----------------------------------------------
   //

@@ -2841,25 +2841,25 @@ The framework's design grain for "preserve uncontrolled state across teardown-an
 
 **Tasks (Phase E.6):**
 
-- [ ] **Extend `RegionScrollSnapshot`.** Add `meta?: unknown` to the per-key shape in `layout-tree.ts`. Update the type to be tugbank-serializable (it already is via JSON).
-- [ ] **Update `captureRegionScrolls` and `applyRegionScrolls`.** Capture reads `el.getAttribute("data-tug-scroll-state")`, parses as JSON, includes as `meta`. Apply includes `meta` in the dispatched event detail.
-- [ ] **Revert TugListView misadventures.** Remove the `componentStatePreservationKey` prop, the `useComponentStatePreservation` call, the `restoreAnchorRef`, and the half-rewritten `tug-region-scroll-set` listener changes. The listener path goes back to roughly its pre-Phase-E.6 shape — but with the anchor-metadata pickup wired in (next task).
-- [ ] **Wire anchor metadata into TugListView.** (a) An imperative writer that updates `data-tug-scroll-state` on the scroll container whenever scroll position changes (inside the existing scrollTick path). (b) A rewritten `tug-region-scroll-set` listener that stashes `meta.anchor` (when present), disengages follow-bottom, and triggers the apply effect. (c) A no-deps `useLayoutEffect` that re-derives target `scrollTop` from the live heightIndex on every commit and writes via SmartScroll until settled (all cells from 0..anchorIndex have measured heights).
-- [ ] **Add `data-tug-scroll-key` to FileBlock's CM6 scrollDOM and TerminalBlock's virtualized scroller.** Stable per-block keys derived from the block's identity prop (`componentStatePreservationKey + "/file-scroll"` or `"/term-scroll"`).
-- [ ] **Restore `scrollKey="tide-card-transcript"` on tide-card-transcript** and remove the wrong-axis `componentStatePreservationKey` I added.
-- [ ] **Drop the inner-scroll-via-component-preservation** from FileBlock and TerminalBlock; keep the fold-state-via-component-preservation.
-- [ ] **Update `state-preservation.md`.** New `meta` field on `RegionScrollSnapshot`; new `data-tug-scroll-state` attribute in the DOM-attributes table; advisory note about anchor metadata for variable-height virtualized lists.
-- [ ] **Tests** for `meta` round-trip in `captureRegionScrolls` / `applyRegionScrolls` and for TugListView anchor restore after synthetic cell-height grow.
+- [x] **Extend `RegionScrollSnapshot`.** Add `meta?: unknown` to the per-key shape in `layout-tree.ts`. Update the type to be tugbank-serializable (it already is via JSON).
+- [x] **Update `captureRegionScrolls` and `applyRegionScrolls`.** Capture reads `el.getAttribute("data-tug-scroll-state")`, parses as JSON, includes as `meta`. Apply includes `meta` in the dispatched event detail.
+- [x] **Revert TugListView misadventures.** Remove the `componentStatePreservationKey` prop, the `useComponentStatePreservation` call, the `restoreAnchorRef`, and the half-rewritten `tug-region-scroll-set` listener changes. The listener path goes back to roughly its pre-Phase-E.6 shape — but with the anchor-metadata pickup wired in (next task).
+- [x] **Wire anchor metadata into TugListView.** (a) An imperative writer that updates `data-tug-scroll-state` on the scroll container whenever scroll position changes (inside the existing scrollTick path). (b) A rewritten `tug-region-scroll-set` listener that stashes `meta.anchor` (when present), disengages follow-bottom, and triggers the apply effect. (c) A no-deps `useLayoutEffect` that re-derives target `scrollTop` from the live heightIndex on every commit and writes via SmartScroll until settled (all cells from 0..anchorIndex have measured heights).
+- [x] **Add `data-tug-scroll-key` to FileBlock's CM6 scrollDOM and TerminalBlock's virtualized scroller.** Stable per-block keys derived from the block's identity prop (`componentStatePreservationKey + "/file-scroll"` or `"/term-scroll"`).
+- [x] **Restore `scrollKey="tide-card-transcript"` on tide-card-transcript** and remove the wrong-axis `componentStatePreservationKey` I added.
+- [x] **Drop the inner-scroll-via-component-preservation** from FileBlock and TerminalBlock; keep the fold-state-via-component-preservation.
+- [x] **Update `state-preservation.md`.** New `meta` field on `RegionScrollSnapshot`; new `data-tug-scroll-state` attribute in the DOM-attributes table; advisory note about anchor metadata for variable-height virtualized lists.
+- [x] **Tests** for `meta` round-trip in `captureRegionScrolls` / `applyRegionScrolls` and for TugListView anchor restore. End-to-end app-tests AT0059 (save) / AT0060 (settled-detection) / AT0061 (full save→reload→apply round-trip) all PASS in the live Tug.app via `just app-test`.
 
 **Tests (commands, Phase E.6):**
 
-- [ ] `bun test src/components/tugways/__tests__/tug-list-view.test.tsx` — anchor capture/restore tests pass.
-- [ ] `bun test src/__tests__/card-host-form-controls-selection.test.ts` (or sibling region-scroll test file) — `meta` round-trip passes.
-- [ ] `bun test src/components/tugways/body-kinds/__tests__/file-block.test.tsx` — fold-state preservation still passes after dropping the inner-scroll axis; CM6 scrollDOM carries the new `data-tug-scroll-key`.
-- [ ] `bun test src/components/tugways/body-kinds/__tests__/terminal-block.test.tsx` — fold-state preservation still passes after dropping the inner-scroll axis; the virtualized scroller carries the new `data-tug-scroll-key`.
-- [ ] `bunx tsc --noEmit` — clean.
-- [ ] `bun run audit:tokens lint` — zero violations.
-- [ ] `bun test` (full suite) — green.
+- [x] `bun test src/__tests__/card-host-region-scroll.test.ts` — capture/apply for the legacy `{x, y}` channel still passes unchanged after the `meta` extension.
+- [x] `bun test src/components/tugways/body-kinds/__tests__/file-block.test.tsx` — fold-state preservation still passes after dropping the inner-scroll axis; CM6 scrollDOM carries the new `data-tug-scroll-key`.
+- [x] `bun test src/components/tugways/body-kinds/__tests__/terminal-block.test.tsx` — fold-state preservation still passes after dropping the inner-scroll axis; the virtualized scroller carries the new `data-tug-scroll-key`.
+- [x] `bunx tsc --noEmit` — clean.
+- [x] `bun run audit:tokens lint` — zero violations.
+- [x] `bun test` (full suite) — green (3702 / 0 fail).
+- [x] `just app-test at0059-region-scroll-anchor-save.test.ts at0060-list-view-content-settled.test.ts at0061-region-scroll-anchor-apply.test.ts` — all three end-to-end gates PASS.
 
 **Checkpoint (Phase E.6):**
 

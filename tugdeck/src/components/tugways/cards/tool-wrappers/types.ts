@@ -75,6 +75,17 @@ export interface BodyKindProps<TData = unknown> {
   onToggleCollapsed?: (next: boolean) => void;
   /** Forwarded class name; cascade-scoped customization happens here. */
   className?: string;
+  /**
+   * Opt-in key for the Component State Preservation Protocol. When set,
+   * the body kind persists its uncontrolled state (`collapsed`, inner
+   * scroll position, view-toggle selection — whatever the body kind
+   * carries) into `bag.components` and restores from there on mount.
+   * Undefined opts out; gallery / standalone usage typically leaves
+   * this unset. Body kinds that ignore the prop quietly drop it
+   * (preservation is a feature, not a contract). See
+   * `use-component-state-preservation.tsx`. [A9]
+   */
+  componentStatePreservationKey?: string;
 }
 
 // ---------------------------------------------------------------------------

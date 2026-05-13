@@ -236,6 +236,7 @@ export function composeReadFooterHint(
 // ---------------------------------------------------------------------------
 
 export const ReadToolBlock: React.FC<ToolWrapperProps> = ({
+  toolUseId,
   toolName,
   input,
   structuredResult,
@@ -311,6 +312,7 @@ export const ReadToolBlock: React.FC<ToolWrapperProps> = ({
         data={fileData}
         embedded
         className="read-tool-block-file"
+        componentStatePreservationKey={`${toolUseId}-body`}
       />
     );
   } else {

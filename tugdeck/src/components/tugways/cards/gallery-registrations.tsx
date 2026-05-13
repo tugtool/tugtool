@@ -492,6 +492,35 @@ export function registerGalleryCards(): void {
     category: CATEGORIES.textInput,
   });
 
+  // Companion to `gallery-list-view`: same dataset, but the inner
+  // `TugListView` carries `scrollKey="gallery-list-view-scroll"` so
+  // the [A9] region-scroll axis captures the list's position into
+  // `bag.regionScroll`, AND mounts in `inline` mode (every cell in
+  // the DOM, no windowing) to mirror the tide-card transcript
+  // configuration. The Phase E.6 app-tests
+  // (`at0059-region-scroll-anchor-save.test.ts`,
+  // `at0060-tide-card-content-settled.test.ts`,
+  // `at0061-region-scroll-anchor-apply.test.ts`) drive this card.
+  registerCard({
+    componentId: "gallery-list-view-scroll-keyed",
+    contentFactory: (_cardId) => (
+      <GalleryListView
+        scrollKey="gallery-list-view-scroll"
+        inline
+        disableStreaming
+      />
+    ),
+    defaultMeta: {
+      title: "TugListView (scroll-keyed)",
+      icon: "List",
+      closable: true,
+    },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.textInput,
+  });
+
   // Visual smoke for `TugListView`'s row-role feature
   // (`roleForIndex` → `data-list-cell-role` + `tabIndex={-1}` +
   // `onSelect` gating). Companion to `gallery-list-view` above:

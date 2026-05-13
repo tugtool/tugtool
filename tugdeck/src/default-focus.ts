@@ -127,11 +127,21 @@ export function resolveDefaultFocusTarget(cardRoot: HTMLElement): {
  * Respects existing focus inside the card — if the user's caret
  * is already somewhere in `cardRoot`, that wins over the default
  * (same semantics as `applyFocusSnapshot`).
+ *
+ * `opts.preventScroll` forwards to the underlying `focus()` call.
+ * Pass `true` from sites where the user-visible scroll position
+ * must not change as a side effect of the focus claim — notably
+ * the window-focus reactivation path, where the focus call is a
+ * synchronous re-claim against an element the browser has already
+ * focused, and any scroll-into-view would visibly move the
+ * surrounding card content (e.g. dragging a tide-card transcript
+ * down to keep the editor in view).
  */
 export function traceApplyDefaultFocus(
   site: string,
   cardId: string,
   cardRoot: HTMLElement,
+  opts?: { preventScroll?: boolean },
 ): void {
   const doc = cardRoot.ownerDocument;
   const activeBefore = formatElement(doc.activeElement);
@@ -155,7 +165,13 @@ export function traceApplyDefaultFocus(
 
   const { el: target, selector: targetSelector } =
     resolveDefaultFocusTarget(cardRoot);
-  if (target !== null) target.focus();
+  if (target !== null) {
+    if (opts?.preventScroll === true) {
+      target.focus({ preventScroll: true });
+    } else {
+      target.focus();
+    }
+  }
 
   const activeAfter = formatElement(doc.activeElement);
   deckTrace.record({

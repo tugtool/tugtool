@@ -21,7 +21,7 @@ The selection-plan history (`roadmap/tugplan-selection.md`) captures the elabora
 
 ## Adding a new tag
 
-1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0058**.
+1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0061**.
 2. Add an entry below in the appropriate section (or create a section).
 3. State, in one line each: card types, state axes, trigger, status.
 4. Cross-link the elaborated entry in `roadmap/tugplan-selection.md` if applicable.
@@ -286,6 +286,25 @@ Surfaced during the popup-bindings plan (`roadmap/tugplan-tide-popup-bindings.md
 - **Status:** ✅ closed at popup-bindings Step 5 (runtime-verified `just app-test` PASS).
 - **Tests:** `at0058-popup-in-sheet-close-focus.test.ts`.
 - **Summary:** Same fixture as AT0057. Open the sheet; open the popup-button menu inside; pick a menu item; assert `document.activeElement` is a descendant of the sheet's content element (`[data-slot="tug-sheet"]`) after the menu closes. The menu-item click is INSIDE the canvas overlay root (popup content); the trigger click before that is also inside the overlay root (sheet content); so the service binding's external-click predicate does NOT flag external; either restore-via-binding or Radix's default close-focus-to-trigger keeps focus in the sheet. The test guards against a regression where the binding tried to restore prior responder onto an element BEHIND the sheet (the gallery card).
+
+### Region-scroll anchor-metadata save tag (AT0059)
+
+Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension that lets variable-height virtualized lists (notably the tide-card transcript) preserve their scroll position across reload by anchoring on `(cellIndex, offsetWithinCell)` rather than raw pixels. This tag pins the SAVE side: the `data-tug-scroll-state` DOM attribute reflects live scroll, and `captureRegionScrolls` reads it into `bag.regionScroll[key].meta`.
+
+#### [AT0059] Region-scroll anchor metadata — save side
+- **Status:** ✅ closed at Phase E.6 step 1 (`just app-test` PASS).
+- **Tests:** `at0059-region-scroll-anchor-save.test.ts`.
+- **Summary:** Mount the `gallery-list-view-scroll-keyed` card (which mounts `GalleryListView` with `scrollKey="gallery-list-view-scroll"`); native-scroll the inner `[data-tug-scroll-key="gallery-list-view-scroll"]` container to a known offset. Assert that the same element carries `data-tug-scroll-state` whose JSON parses to `{anchor: {index, offset}}` with `index === heightIndex.indexForOffset(scrollTop)` for the scrolled position. Then call `window.tugdeck.saveState()` to flush; read `window.__tug.getCardStateBag(cardId)` and assert `bag.regionScroll["gallery-list-view-scroll"].meta.anchor` matches the value the DOM attribute carried. Closes Phase E.6's "first, prove we are saving the scroll state when it changes" sub-task.
+
+#### [AT0060] Variable-height list view — content settled detection
+- **Status:** ✅ closed at Phase E.6 step 2 (`just app-test` PASS).
+- **Tests:** `at0060-list-view-content-settled.test.ts`.
+- **Summary:** Mount the `gallery-list-view-scroll-keyed` card (which runs in `inline=true` mode — every cell mounted, mirroring the tide-card transcript). Prove three signals that together identify "content has loaded, rendered, and settled": (1) **loaded** — `dataSource.numberOfItems()` reflects the seeded item count; (2) **rendered** — `document.querySelectorAll('[data-tug-list-cell-index]').length === itemCount` (every cell in DOM); (3) **settled** — `scrollHeight` of the scroll container is stable across two observations 250ms apart, AND scrollHeight exceeds clientHeight (real layout has happened, not a zero-height intermediate state). Once all three are true, the apply path's preconditions for anchor-based restore are satisfied. Closes Phase E.6's "prove we can identify when content has settled" sub-task.
+
+#### [AT0061] Region-scroll anchor metadata — apply side (full round-trip)
+- **Status:** ✅ closed at Phase E.6 step 3 (`just app-test` PASS).
+- **Tests:** `at0061-region-scroll-anchor-apply.test.ts`.
+- **Summary:** Full save-then-reload-then-apply round-trip on `gallery-list-view-scroll-keyed`. Mount → wait for content settled (AT0060 signals) → scroll to a known position → assert `data-tug-scroll-state` reflects the new anchor → `saveState()` → record scrollTop + anchor → `appReload()` (same code path as Developer > Reload menu — `prepareForReload` flushes + `location.reload`) → on the new page, wait for content settled again → assert the inner scrollport's scrollTop has been restored to within tolerance of the saved scrollTop AND the live anchor on `data-tug-scroll-state` matches the saved anchor (proving the anchor cell is at the same content-relative viewport position). Closes Phase E.6's "prove we can then apply all the scroll states" sub-task.
 
 ## Maintenance
 

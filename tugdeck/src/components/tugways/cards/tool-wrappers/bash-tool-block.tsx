@@ -253,6 +253,7 @@ export function tryParseBashDiff(
 // ---------------------------------------------------------------------------
 
 export const BashToolBlock: React.FC<ToolWrapperProps> = ({
+  toolUseId,
   toolName,
   input,
   structuredResult,
@@ -353,6 +354,7 @@ export const BashToolBlock: React.FC<ToolWrapperProps> = ({
         data={{ source: "hunks", hunks: diffHunks }}
         embedded
         className="bash-tool-block-diff"
+        componentStatePreservationKey={`${toolUseId}-body`}
       />
     );
   } else {
@@ -361,6 +363,7 @@ export const BashToolBlock: React.FC<ToolWrapperProps> = ({
         data={bodyData}
         embedded
         className="bash-tool-block-terminal"
+        componentStatePreservationKey={`${toolUseId}-body`}
       />
     );
   }
