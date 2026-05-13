@@ -829,8 +829,8 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     //
     // DOM-selection and focus restore are NOT called here. This
     // branch runs only when `bag.content !== undefined` — i.e.
-    // content-owning cards — and per [D07] those cards' content
-    // factory owns selection and focus end-to-end. The engine's
+    // content-owning cards — and per [D95] those cards' content
+    // factory owns selection and engine focus end-to-end. The engine's
     // `setSelectedRange` inside its own `restoreState` both
     // focuses the root and sets the selection; any second
     // `.focus()` or `setBaseAndExtent` call from CardHost would
@@ -948,10 +948,16 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     if (!hostContentEl) return;
     const bag = store.getCardState(cardId);
     if (!bag) return;
-    // Content-owning cards manage selection and focus through their
-    // own restore path ([D07]); CardHost does not touch those axes
-    // for such cards. See `saveCurrentCardStateRef.current` for the
-    // matching save-side gate.
+    // Content-owning cards manage DOM-selection through their own
+    // restore path ([D95]) — the engine publishes via
+    // `engine.onSelectionChanged` during its own `restoreState`.
+    // Engine focus is similarly owned by `onCardActivated` /
+    // `paintMirrorAsActive`. Non-engine focus targets inside the
+    // same card (find-row input, future inline editors) still ride
+    // the framework focus axis; the `bag.focus` restore below is
+    // kind-gated rather than wholesale-skipped so those targets
+    // survive cold-boot. See `saveCurrentCardStateRef.current` for
+    // the matching save-side gate.
     const ownsSelectionAndFocus = bag.content !== undefined;
     if (bag.scroll !== undefined) {
       hostContentEl.scrollLeft = bag.scroll.x;
@@ -981,18 +987,28 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       });
     }
 
-    // Focus restore, [D10] Option B gated. Skipped for
-    // content-owning cards — the engine focuses its own root inside
-    // `setSelectedRange`, and a second `.focus()` here would race
-    // the engine and (WebKit's focus-with-selection quirk) collapse
-    // the just-restored selection. For non-content cards the active-
-    // card-of-active-pane gate prevents focus theft across panes
-    // ([R07]) and the helper's own pre-check keeps focus from being
-    // yanked away from a user who has clicked mid-restore.
+    // Focus restore, [D10] Option B gated. The gate accepts only
+    // `dom` and `form-control` kinds — these are framework-axis
+    // targets that the resolver can re-focus directly. For
+    // content-owning cards this is the path that brings transient
+    // in-card focus (find inputs, future inline editors) back on
+    // cold boot; the engine's own caret rides separately through
+    // `onCardActivated` → `paintMirrorAsActive`, which is reached
+    // after `bag.focus` is consumed (or skipped) here. `kind: "none"`
+    // and `kind: "component-owned"` are intentionally not restored
+    // by this site:
+    //   - `none` is a no-op by definition.
+    //   - `component-owned` points at the engine's contenteditable.
+    //     Calling `.focus()` on it from the framework would bypass
+    //     the engine's inactive-paint → global-Selection transfer
+    //     and leave focus on a view with no caret. The engine's
+    //     activation hook is authoritative for that case.
+    // The active-card-of-active-pane gate prevents focus theft
+    // across panes ([R07]); `applyFocusSnapshot`'s pre-check keeps
+    // focus from being yanked away from a user who has clicked
+    // mid-restore.
     if (
-      bag.focus &&
-      bag.focus.kind !== "none" &&
-      !ownsSelectionAndFocus &&
+      (bag.focus?.kind === "dom" || bag.focus?.kind === "form-control") &&
       cardRootForDomAxes &&
       isActiveCardOfActivePane(store, cardId)
     ) {
@@ -1191,13 +1207,18 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     const cardRoot = contentEl ? findCardRoot(contentEl, cardId) : null;
     const formControls = cardRoot ? captureFormControls(cardRoot) : undefined;
     const regionScroll = cardRoot ? captureRegionScrolls(cardRoot) : undefined;
-    // [D07] — content-owning cards (any card whose factory writes
-    // `bag.content` via `useCardStatePreservation`) own their own selection
-    // and focus. The content payload carries whatever the owner needs
-    // (for tide-card: `bag.content.selection` flat offsets, and
-    // engine-driven focus via `setSelectedRange`). CardHost must step
-    // out: a second source of truth for selection / focus would race
-    // the owner's restore on mount and clobber it. For cards without
+    // [D95] — content-owning cards (any card whose factory writes
+    // `bag.content` via `useCardStatePreservation`) own their own DOM
+    // selection AND their engine's caret. The content payload carries
+    // whatever the owner needs (for tide-card: `bag.content.selection`
+    // flat offsets, and engine-driven focus via `setSelectedRange`).
+    // CardHost must step out of selection: a second source of truth
+    // would race the owner's restore on mount and clobber it. CardHost
+    // still owns the framework focus axis for non-engine targets in
+    // the same card (find-row input, future inline editors); the
+    // focus capture below honours the engine carve-out by accepting
+    // only `dom` / `form-control` kinds for content-owning cards.
+    // For cards without
     // a content payload (form-control cards, markdown-view cards)
     // CardHost is the sole authority on these axes.
     const ownsSelectionAndFocus = content !== undefined;
@@ -1237,13 +1258,40 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     // assembler-local "preserve previous bag.focus" rule is
     // simpler — no listener, no ref, no extra capture pass — and
     // covers the same cases.
+    //
+    // Engine carve-out (content-owning cards). A content-owning
+    // card whose focus rides in the engine's contenteditable is
+    // restored by the engine's `paintMirrorAsActive` inside
+    // `onCardActivated`, not by a framework `.focus()`. Capturing
+    // `{ kind: "component-owned" }` for such cards would either be
+    // ignored downstream (the resolver hands engine cards to
+    // `dispatch-activated`) or, if naively applied, would call
+    // `.focus()` on the contenteditable and bypass the engine's
+    // inactive-paint → global-Selection transfer (focus on a view
+    // with no caret). The capture rule: content-owning cards
+    // accept `bag.focus` only when the kind is `dom` or
+    // `form-control` — i.e., a target NOT owned by the engine —
+    // and otherwise leave `bag.focus` absent so the engine's
+    // activation hook runs as the default. See
+    // `tuglaws/design-decisions.md` (engine-vs-framework focus
+    // boundary) and `tuglaws/state-preservation.md`
+    // (`FocusSnapshot in depth`).
     let focus: FocusSnapshot = { kind: "none" };
-    if (cardRoot && !ownsSelectionAndFocus) {
+    if (cardRoot) {
       const active = cardRoot.ownerDocument.activeElement;
       const focusInsideCard =
         active instanceof HTMLElement && cardRoot.contains(active);
       if (focusInsideCard) {
-        focus = captureFocus(cardRoot);
+        const captured = captureFocus(cardRoot);
+        if (ownsSelectionAndFocus) {
+          if (captured.kind === "dom" || captured.kind === "form-control") {
+            focus = captured;
+          }
+          // else: engine-focused or none → leave the axis absent so
+          // the engine's `onCardActivated` is authoritative.
+        } else {
+          focus = captured;
+        }
       } else {
         // Forward the previous bag's focus when present. `bag.focus`
         // is `FocusSnapshot | null` — both the `undefined`
@@ -1251,7 +1299,22 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
         // the local default `{ kind: "none" }`, which is filtered
         // out of the assembled bag below.
         const prev = store.getCardState(cardId);
-        if (prev?.focus) focus = prev.focus;
+        if (prev?.focus) {
+          if (ownsSelectionAndFocus) {
+            // Honour the same kind restriction on the forwarded
+            // value so stale bags (saved before this commit, or
+            // saved while the engine had focus) do not reintroduce
+            // a `component-owned` value the resolver now ignores.
+            if (
+              prev.focus.kind === "dom" ||
+              prev.focus.kind === "form-control"
+            ) {
+              focus = prev.focus;
+            }
+          } else {
+            focus = prev.focus;
+          }
+        }
       }
     }
     const bag: CardStateBag = {

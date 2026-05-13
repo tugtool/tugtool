@@ -269,6 +269,45 @@ export function resolveActivationTarget(
 ): ActivationTarget {
   const bag = store.getCardState(cardId);
 
+  const card = store
+    .getSnapshot()
+    .cards.find((c) => c.id === cardId);
+  const isEngineManaged =
+    card !== undefined && isEngineManagedCard(card.componentId);
+  const isContentOwning = bag !== undefined && bag.content !== undefined;
+
+  // Engine carve-out precondition. For engine-managed or content-
+  // owning cards, attempt to honour a framework-axis `bag.focus`
+  // BEFORE falling through to the dispatch-activated path. The
+  // SAVE site only writes `bag.focus` for these cards when the
+  // kind is `dom` or `form-control` (engine focus stays absent),
+  // so this branch never resolves to the engine's contenteditable
+  // — it covers transient in-card targets like a find input or a
+  // future inline editor that should survive activation across
+  // app-switch, card-switch, and reload paths. If the kind is not
+  // a framework-axis kind, or the element no longer resolves,
+  // fall through unchanged so the engine's `onCardActivated`
+  // (or the bag.content factory's callback) handles its default.
+  // See `tuglaws/state-preservation.md` and
+  // `tuglaws/design-decisions.md` (engine-vs-framework focus
+  // boundary).
+  if ((isEngineManaged || isContentOwning) && bag?.focus !== undefined && bag.focus !== null) {
+    const focus = bag.focus;
+    if (focus.kind === "dom" || focus.kind === "form-control") {
+      const hostRoot = store.peekCardHostRoot(cardId);
+      if (hostRoot !== null && hostRoot.isConnected) {
+        const selector =
+          focus.kind === "dom"
+            ? `[data-tug-focus-key="${CSS.escape(focus.focusKey)}"]`
+            : `[data-tug-state-key="${CSS.escape(focus.componentStatePreservationKey)}"]`;
+        const el = hostRoot.querySelector<HTMLElement>(selector);
+        if (el !== null && el.isConnected) {
+          return { kind: "focus-element", el };
+        }
+      }
+    }
+  }
+
   // Engine-managed cards dispatch through the factory's registered
   // `onCardActivated` callback regardless of whether `bag.content` is
   // populated yet. The registry's `engineKind: "em"` tag is the
@@ -284,17 +323,14 @@ export function resolveActivationTarget(
   // identifies them as content-owning — defensive coverage during the
   // migration window and for any future content-owning factories that
   // don't use the engine pattern.
-  const card = store
-    .getSnapshot()
-    .cards.find((c) => c.id === cardId);
-  if (card !== undefined && isEngineManagedCard(card.componentId)) {
+  if (isEngineManaged) {
     return { kind: "dispatch-activated" };
   }
 
   // Content-owning cards dispatch through the factory's registered
   // callback. We don't try to resolve a DOM element for them — the
   // factory knows where focus should land in its own subtree.
-  if (bag !== undefined && bag.content !== undefined) {
+  if (isContentOwning) {
     return { kind: "dispatch-activated" };
   }
 

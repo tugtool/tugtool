@@ -21,7 +21,7 @@ The selection-plan history (`roadmap/tugplan-selection.md`) captures the elabora
 
 ## Adding a new tag
 
-1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0070** (AT0069 ships at Phase E.9; AT0070 was claimed and immediately released as a deferred-implementation tag — see entry below).
+1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0074** (AT0069 ships at Phase E.9; AT0070 was claimed and immediately released as a deferred-implementation tag; AT0071–AT0074 ship at Phase E.10 — see entries below).
 2. Add an entry below in the appropriate section (or create a section).
 3. State, in one line each: card types, state axes, trigger, status.
 4. Cross-link the elaborated entry in `roadmap/tugplan-selection.md` if applicable.
@@ -343,6 +343,21 @@ Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension t
 #### [AT0070] FileBlock CM6 line-relative restore — deferred
 - **Status:** ⏸ claimed at Phase E.9, immediately deferred. No production usage of FileBlock today places CM6 in a height-constrained container, so CM6's `scrollDOM` never accumulates non-zero `scrollTop` in current shipping flows. The line-relative restore (`meta.line = { number, offsetPx }`) ships in the FileBlock writer + reader and is unit-test-covered, but an end-to-end app-test would require fabricating a CM6-in-constrained-container scenario the production app doesn't expose. The tag is reserved for the day a real CM6-with-inner-scroll context lands (split-pane file viewer, sidebar preview, etc.); the app-test naturally fits at that point.
 - **Coverage today:** the line-relative writer + reader semantics are pinned in unit tests; the writer's attribute-update path is exercised by AT0061 (same channel; different meta family). No production regression goes unguarded.
+
+#### [AT0071] Content-owning focus survives app-switch — deferred to Phase E.10 commit 2
+- **Status:** 🔮 claimed at Phase E.10, lights up when the first consumer (find-row primitives + FileBlock migration) ships in commit 2. The framework primitive — `bag.focus` axis for content-owning cards — lands in commit 1 (AT0074 below); a real-app test of "focus inside a tide card survives cmd-tab away + back" requires a focusable target with `data-tug-focus-key` inside a tide card, which is the FileBlock find-row fixture commit 2 creates. The test file `at0071-content-owning-focus-survives-app-switch.test.ts` ships with that commit.
+- **Coverage today:** the framework axis is gated by AT0074 (engine fallback regression) plus the existing focus app-tests (at0034, at0035-tide, at0036) which exercise the engine path through the same precondition.
+
+#### [AT0072] Content-owning focus survives card-switch — deferred to Phase E.10 commit 2
+- **Status:** 🔮 claimed at Phase E.10, lights up alongside AT0071 in commit 2. Same fixture, different gesture: click another card and back; assert focus returns to the FileBlock find input. Test file `at0072-content-owning-focus-survives-card-switch.test.ts` ships with the commit.
+
+#### [AT0073] Content-owning focus survives reload — deferred to Phase E.10 commit 2
+- **Status:** 🔮 claimed at Phase E.10, lights up alongside AT0071 in commit 2. Combines the framework axis (commit 1) with the `useComponentStatePreservation` slot the find-row hook installs (commit 2): the gating boolean re-mounts the input synchronously-before-paint, and the cold-boot focus restore lands the caret. Test file `at0073-content-owning-focus-survives-reload.test.ts` ships with the commit.
+
+#### [AT0074] Engine focus fallback when `bag.focus` is absent
+- **Status:** ✅ added at Phase E.10 commit 1 — gates the negative case of the new `bag.focus` precondition in `resolveActivationTarget` (focus-transfer.ts).
+- **Tests:** `at0074-engine-focus-fallback.test.ts`.
+- **Summary:** A content-owning tide card with focus on the engine's contenteditable saves an empty `bag.focus` (the engine carve-out filters `component-owned` out for content-owning cards). On cmd-tab away + back, the precondition falls through (no `dom` / `form-control` to resolve) and the resolver returns `{ kind: "dispatch-activated" }`; the engine's `onCardActivated` → `paintMirrorAsActive` lands focus back on the contenteditable. The regression we are gating against: a misclassification (e.g. naively honouring `component-owned` in the precondition, or failing to filter it on save) would route the framework path through the engine's contenteditable and bypass the inactive-paint → global-Selection transfer, leaving focus on a view with no caret. The test reads `getCardStateBag("A").focus` post-blur and asserts it is absent, then asserts `document.activeElement` post-become-active is the contenteditable. Sibling coverage at0035-tide / at0036 exercise the engine's selection-restore through the same window-blur / window-focus pair; AT0074's contribution is the explicit gate on `bag.focus` absence.
 
 ## Maintenance
 

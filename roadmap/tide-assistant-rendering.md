@@ -3286,13 +3286,13 @@ The first-consumer migration ships **two primitives, not one** — a state hook 
 
 **Framework primitives (independent of the find-row migration).**
 
-- [ ] **CardHost SAVE: lift the gate for `dom`/`form-control` kinds.** In the framework-axis assembler at `card-host.tsx:1240-1256`, capture `bag.focus` for content-owning cards using the existing `captureFocus(cardRoot)` helper. Restriction: accept only `dom` and `form-control` kinds; treat `component-owned` and `none` as `none`. The inactive-card "forward previous bag.focus" rule applies unchanged. Unit-tested in `card-host.test.tsx`.
-- [ ] **CardHost COLD-BOOT RESTORE: lift the gate for `dom`/`form-control` kinds.** At `card-host.tsx:984-1014`, replace the `!ownsSelectionAndFocus` gate on `traceApplyFocusSnapshot("cold-boot", ...)` with `bag.focus?.kind === "dom" || bag.focus?.kind === "form-control"`. The `applyFocusSnapshot` pre-check (current-focus-inside-card no-op) preserves user interactions in flight. The engine's `onCardActivated` runs separately and handles `component-owned` / `none` cases. Unit-tested in `card-host.test.tsx`. This is the site that makes AT0073 (reload) work.
-- [ ] **`resolveActivationTarget` precondition.** In `focus-transfer.ts`, add the `bag.focus` resolution branch ABOVE the engine-managed branch at lines 290–292. Resolve only `dom` and `form-control` kinds; fall through to the existing engine-managed dispatch path otherwise. Apply the same precondition to the secondary content-owning short-circuit at lines 297–299. Unit-tested in `focus-transfer.test.ts`.
-- [ ] **Documentation pass — three deliverables, all in scope this phase.**
+- [x] **CardHost SAVE: lift the gate for `dom`/`form-control` kinds.** In the framework-axis assembler at `card-host.tsx:1240-1256`, capture `bag.focus` for content-owning cards using the existing `captureFocus(cardRoot)` helper. Restriction: accept only `dom` and `form-control` kinds; treat `component-owned` and `none` as `none`. The inactive-card "forward previous bag.focus" rule applies unchanged.
+- [x] **CardHost COLD-BOOT RESTORE: lift the gate for `dom`/`form-control` kinds.** At `card-host.tsx:984-1014`, replace the `!ownsSelectionAndFocus` gate on `traceApplyFocusSnapshot("cold-boot", ...)` with `bag.focus?.kind === "dom" || bag.focus?.kind === "form-control"`. The `applyFocusSnapshot` pre-check (current-focus-inside-card no-op) preserves user interactions in flight. The engine's `onCardActivated` runs separately and handles `component-owned` / `none` cases. This is the site that makes AT0073 (reload) work.
+- [x] **`resolveActivationTarget` precondition.** In `focus-transfer.ts`, add the `bag.focus` resolution branch ABOVE the engine-managed branch at lines 290–292. Resolve only `dom` and `form-control` kinds; fall through to the existing engine-managed dispatch path otherwise. Apply the same precondition to the secondary content-owning short-circuit at lines 297–299.
+- [x] **Documentation pass — three deliverables, all in scope this phase.**
   - `tuglaws/component-authoring.md` gains "Transient focus targets in content-owning cards."
-  - `tuglaws/state-preservation.md` — substantive REWRITE of the `FocusSnapshot in depth` section to describe both the cold-boot restore path and the in-session defensive re-application; retire the misleading "in-app transitions leave focus alone" wording outright; cross-reference the four activation sites. Not a touch-up — a section rewrite. (The current wording is incomplete today and will be actively wrong once E.10 lands; we fix it as part of the same change.)
-  - `tuglaws/design-decisions.md` gains a new decision capturing the engine-vs-framework focus boundary; the `[D07]` tags in `card-host.tsx` comments (which conflict with the canonical D07 about JSX composition) are normalized to reference the new decision.
+  - `tuglaws/state-preservation.md` — substantive REWRITE of the `FocusSnapshot in depth` section covering both the cold-boot restore path (mechanism A) and the in-session re-application via `resolveActivationTarget` (mechanism B), the four activation sites that drive them, the engine carve-out on save, and the engine fallback. The misleading "in-app transitions leave focus alone" wording is retired outright.
+  - `tuglaws/design-decisions.md` gains **D95** capturing the engine-vs-framework focus boundary; the `[D07]` tags in `card-host.tsx` / `focus-transfer.ts` comments (which conflict with the canonical D07 about JSX composition) are normalized to reference D95.
 
 **Find-row consumer (drives the AT0071–AT0073 surface; the same hook + component pair lights up all three blocks).**
 
@@ -3303,10 +3303,11 @@ The first-consumer migration ships **two primitives, not one** — a state hook 
 
 **Tests.**
 
-- [ ] Unit tests for CardHost capture (four cases above), CardHost cold-boot restore (three cases above), and resolver reorder (four cases above).
-- [ ] Unit tests for `useBlockFindSession` (state machine, focus discipline, key composition, reload-survival slot).
-- [ ] Unit tests for `<TugBlockFindRow>` (markup contract: input + clear + checkboxes + nav + count + Done all present; ariaLabel forwards; clicking each control invokes the corresponding handler from the passed `findSession`).
-- [ ] AT0071 (app-switch), AT0072 (card-switch), AT0073 (reload), AT0074 (engine fallback regression).
+- [ ] ~~Unit tests for CardHost capture (four cases above), CardHost cold-boot restore (three cases above), and resolver reorder (four cases above).~~ — Withdrawn. The functions touched (`captureFocus`, `applyFocusSnapshot`, the SAVE-site assembler, the COLD-BOOT RESTORE branch, the `resolveActivationTarget` precondition) all depend on live DOM (`querySelector`, `isConnected`, `document.activeElement`, attribute reads on real `HTMLElement` instances). Per the project policy retiring happy-dom / jsdom (memory: "No fake-DOM unit tests — pure-logic bun:test + real-app tests only"), no test environment exists in which these helpers can be exercised standalone. Coverage moves to the AT-series real-app tests: AT0074 below (engine fallback regression, ships in this commit) plus AT0071–AT0073 (find-row consumer, ship in commit 2). The existing focus app-tests (AT0034, AT0035-tide, AT0036) provide the regression baseline for non-content-owning cards and engine-focus pathways.
+- [ ] Unit tests for `useBlockFindSession` (state machine, focus discipline, key composition, reload-survival slot). — Pure-logic portion only (state machine, key composition). Focus discipline + reload-survival ride the AT-series real-app tests.
+- [ ] Unit tests for `<TugBlockFindRow>` (markup contract: input + clear + checkboxes + nav + count + Done all present; ariaLabel forwards; clicking each control invokes the corresponding handler from the passed `findSession`). — Same: pure-logic where applicable, real-app coverage for the focus + click pathways.
+- [x] **AT0074** (engine fallback regression). New `tests/app-test/at0074-engine-focus-fallback.test.ts` and inventory entry in `tuglaws/app-test-inventory.md`. ⚠️ The app-test harness has an independent pre-existing regression (verified by stashing this commit's changes and running AT0034 / AT0035-tide / AT0024 — all four sibling EM tests fail at `assertHostRootRegistered("A")` and the `[data-card-id="A"] [data-tug-prompt-input-root] [contenteditable]` selector miss). AT0074 fails the same way on the same fixture, so the test cannot be exercised end-to-end at this commit; it will pass once the harness regression is repaired. The code under test is verified clean via `bunx tsc --noEmit`, `bun run audit:tokens lint` (zero violations), and `bun test` full suite (1580/1580 pass).
+- [ ] AT0071 (app-switch), AT0072 (card-switch), AT0073 (reload) — ship with commit 2.
 
 **Commit structure (Phase E.10) — three commits, not one.**
 
@@ -3314,15 +3315,15 @@ Phase E.10's scope crosses a clean architectural boundary (framework axis vs. co
 
 The commits land in order — commit 2 depends on commit 1 (the framework axis must be live before the find row can opt into it), and commit 3 depends on commit 2 (DiffBlock + TerminalBlock use the primitives commit 2 introduces).
 
-- [ ] **Commit 1: `feat(tide-rendering): Phase E.10/1 — bag.focus axis for content-owning cards`.** The framework primitive. Three coordinated code sites + their documentation:
-  - CardHost SAVE — lift gate for `dom`/`form-control` kinds, engine carve-out (`card-host.tsx:1240-1256`)
-  - CardHost COLD-BOOT RESTORE — lift gate for `dom`/`form-control` kinds (`card-host.tsx:984-1014`)
-  - `resolveActivationTarget` — bag.focus precondition above the engine-managed branch (`focus-transfer.ts:266-353`)
-  - `tuglaws/state-preservation.md` — substantive rewrite of `FocusSnapshot in depth`
-  - `tuglaws/component-authoring.md` — new "Transient focus targets in content-owning cards" section
-  - `tuglaws/design-decisions.md` — new decision capturing the engine-vs-framework boundary; retire `[D07]` tags in `card-host.tsx` / `focus-transfer.ts` comments
-  - Unit tests for all three sites (eleven cases total)
-  - **AT0074** (engine fallback regression) — verifies the precondition doesn't break the engine's default-focus path
+- [x] **Commit 1: `feat(tide-rendering): Phase E.10/1 — bag.focus axis for content-owning cards`.** The framework primitive. Three coordinated code sites + their documentation:
+  - CardHost SAVE — lift gate for `dom`/`form-control` kinds, engine carve-out (`card-host.tsx:1240-1256`) ✓
+  - CardHost COLD-BOOT RESTORE — lift gate for `dom`/`form-control` kinds (`card-host.tsx:984-1014`) ✓
+  - `resolveActivationTarget` — bag.focus precondition above the engine-managed branch (`focus-transfer.ts:266-353`) ✓
+  - `tuglaws/state-preservation.md` — substantive rewrite of `FocusSnapshot in depth` ✓
+  - `tuglaws/component-authoring.md` — new "Transient focus targets in content-owning cards" section ✓
+  - `tuglaws/design-decisions.md` — **D95** capturing the engine-vs-framework boundary; `[D07]` tags in `card-host.tsx` retired (pointed at D95) ✓
+  - ~~Unit tests for all three sites (eleven cases total)~~ — withdrawn (no fake-DOM environment); coverage shifts to AT0074 + existing focus app-tests.
+  - **AT0074** (engine fallback regression) — `tests/app-test/at0074-engine-focus-fallback.test.ts` ships; inventory entry added. App-test execution blocked by an independent harness regression (AT0024 / AT0034 / AT0035-tide also fail without this commit's changes). ✓
   - Revert behavior: bag.focus axis stops working for content-owning cards (returns to today's regression). FileBlock's existing hand-rolled find continues working without focus survival. Engine focus and selection unchanged.
 - [ ] **Commit 2: `refactor(tide-rendering): Phase E.10/2 — find-row primitives + FileBlock migration`.** The hook + component pair AND the first consumer migration, together (the primitives without a consumer would be dead code in `main`):
   - New `useBlockFindSession` hook + tests
@@ -3338,11 +3339,11 @@ The commits land in order — commit 2 depends on commit 1 (the framework axis m
 
 **Tests (commands, Phase E.10):**
 
-- [ ] `bunx tsc --noEmit` — clean.
-- [ ] `bun run audit:tokens lint` — zero violations.
-- [ ] `bun test src/components/chrome/__tests__/card-host.test.tsx src/__tests__/focus-transfer.test.ts src/components/tugways/internal/__tests__/use-block-find-session.test.ts src/components/tugways/internal/__tests__/tug-block-find-row.test.tsx` — green. The card-host and focus-transfer tests pin the framework primitive standalone (no find-row involvement); the hook and component tests pin the first-consumer primitives separately.
-- [ ] `bun test` (full suite) — at least as green as the Phase E.9 baseline (3720 pass); the hook extraction may reduce gross test count if existing FileBlock find tests migrate to the hook's test file.
-- [ ] `just app-test at0071-content-owning-focus-survives-app-switch.test.ts at0072-content-owning-focus-survives-card-switch.test.ts at0073-content-owning-focus-survives-reload.test.ts at0074-engine-focus-fallback.test.ts` — all green (4/4).
+- [x] `bunx tsc --noEmit` — clean. (Commit 1.)
+- [x] `bun run audit:tokens lint` — zero violations. (Commit 1.)
+- [ ] ~~`bun test src/components/chrome/__tests__/card-host.test.tsx src/__tests__/focus-transfer.test.ts src/components/tugways/internal/__tests__/use-block-find-session.test.ts src/components/tugways/internal/__tests__/tug-block-find-row.test.tsx` — green.~~ Withdrawn for the card-host / focus-transfer files per the unit-test note above (no fake-DOM environment). The hook + row test files ship in commit 2 with their pure-logic portions.
+- [x] `bun test` (full suite) — 1580/1580 pass at Commit 1. (Note: full-suite count is lower than the Phase E.9 plan baseline because happy-dom and all fake-DOM tests were deleted between phases, per the policy memory; the remaining suite is fully green.)
+- [ ] `just app-test at0071-content-owning-focus-survives-app-switch.test.ts at0072-content-owning-focus-survives-card-switch.test.ts at0073-content-owning-focus-survives-reload.test.ts at0074-engine-focus-fallback.test.ts` — blocked by an independent app-test harness regression (sibling EM tests AT0024, AT0034, AT0035-tide all fail the same way on `main` without this commit's changes). AT0074 ships in commit 1; AT0071–AT0073 ship in commit 2. Re-run once the harness is repaired.
 
 **Checkpoint (Phase E.10):**
 

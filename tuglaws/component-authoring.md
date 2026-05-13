@@ -1258,6 +1258,25 @@ Controls that accept focus (text inputs, textareas, contentEditable) do NOT add 
 
 The attribute is button-class-only. Structural markers like `data-slot="tug-canvas-overlay-root"` (which pane-focus-controller reads to skip pane activation on overlay-tier clicks) are deliberately separate — see "Canvas overlay tier" above.
 
+### Transient focus targets in content-owning cards
+
+Content-owning cards (tide cards, anything whose factory writes `bag.content`) host an engine substrate whose caret position is engine state, not framework state. The engine's `onCardActivated` is authoritative for engine focus — `paintMirrorAsActive(view)` transfers the engine's inactive-paint selection back to the global Selection on every activation. The framework's focus axis (`bag.focus`) stays out of the engine's way for that case.
+
+But content-owning cards can host *other* focusable UI that is NOT engine state: a find-row `<input>` over a `TugCodeView`, a future inline parameter editor on a tool-call block, a future question widget. These targets ARE framework focus, and they survive activation transitions (app-switch, card-switch, reload) through the same `bag.focus` axis any DOM-authority card uses. The framework code does not need a per-widget hook for any of this — two markup contracts are the entire interface.
+
+**The contract.**
+
+1. **Stamp the focusable element with `data-tug-focus-key="<scope>/<id>"` (or `data-tug-state-key="<key>"` for native form controls).** `<scope>` discriminates *what kind of UI* this is (`file-block-find`, `diff-block-find`, `tool-param-editor`, …) and `<id>` discriminates *which instance* (typically the host block's `componentStatePreservationKey`). Both attributes drive `FocusSnapshot` capture and restore — `data-tug-state-key` participates in `bag.formControls` as well, and is preferred for `<input>` / `<textarea>` where the form-control axis also carries value, selection range, and scroll. Use `data-tug-focus-key` for non-form-control focusable elements (`<button>`, `<a>`, `tabindex` containers, programmatically focusable host divs).
+
+2. **Ensure the element is in the DOM when the cold-boot restore runs.** Always-rendered elements (stationary controls in the card body) need nothing more than the attribute. Conditionally-mounted elements (find row, dropdown, modal) require their gating state to be a `useComponentStatePreservation` slot so the element re-mounts before first paint after reload. Phase E.8 made `useComponentStatePreservation` a synchronous-before-paint restore primitive; opt the gating boolean into that and reload survival composes automatically.
+
+That's all. The framework's existing capture (`captureFocus` in `card-host.tsx`), cold-boot restore (the mount-time `useLayoutEffect`), and in-session re-application (`resolveActivationTarget` in `focus-transfer.ts`) handle the four activation paths uniformly — the resolver's bag.focus precondition runs ABOVE the engine-managed short-circuit for content-owning cards. See [state-preservation.md § `FocusSnapshot` in depth](state-preservation.md#focussnapshot-in-depth) for the full mechanism description.
+
+**What NOT to stamp.**
+
+- The engine's contenteditable (`.cm-content` inside `[data-slot="tug-text-editor"]`). The engine already owns its caret via `paintMirrorAsActive`; layering a framework `.focus()` would bypass the inactive-paint → global-Selection transfer and leave focus on a view with no caret. The engine carve-out in `card-host.tsx`'s save-side assembler enforces this on the capture side.
+- An overlay-tier popup's input. Overlays close on activation by design (see [Canvas overlay tier (popup-class)](#canvas-overlay-tier-popup-class)); their focus state is owned by the popup-binding's `captureOnOpen` / `onCloseAutoFocus`, not by `bag.focus`.
+
 ### Context menus
 
 The browser's native context menu is suppressed app-wide. Every right-click produces one of:

@@ -367,7 +367,43 @@ Authors add these attributes; the framework owns capture and replay. There is no
 - **`{ kind: "dom", focusKey }`** — Focus is on a non-form-control focusable element with `data-tug-focus-key`. Restore looks up the element by attribute value and calls `.focus()`.
 - **`{ kind: "component-owned" }`** — Focus is on a descendant of an element marked with `data-tug-prompt-input-root` (or another component-owned marker). The owning component manages focus and selection together; the bag's `content` axis carries the real state, and the framework merely notes that focus belonged to this component on save.
 
-Restore applies `bag.focus` only on cold-boot for the active card of the active pane. In-app transitions (tab switch, pane activation, app hide/unhide while the process stays alive) leave focus alone — the DOM never unmounts, so focus was never lost.
+### Capture — what each save site writes
+
+`captureFocus(cardRoot)` runs from the CardHost framework-axis assembler (`card-host.tsx`, the `assembleFrameworkBagRef.current` closure) on every save trigger ([A9c]). The classifier reads `document.activeElement`, walks the marker-attribute precedence (`data-tug-state-key` → `data-tug-focus-key` → component-owned selectors → `none`), and returns one of the four variants above.
+
+Whether the assembler accepts that snapshot depends on the card's content-ownership:
+
+- **Non-content-owning cards** (`bag.content === undefined` — form-control cards, markdown-view cards, etc.) accept every variant. `captureFocus` is the sole focus authority for these cards.
+- **Content-owning cards** (`bag.content !== undefined` — every tide card is one, since the engine registers `engineKind: "em"`) accept only `dom` and `form-control` kinds. The `component-owned` and `none` cases leave `bag.focus` absent so the engine's `onCardActivated` runs as the default. This is the **engine carve-out**: the engine's caret is engine state and is restored by `paintMirrorAsActive` inside its activation hook — a framework `.focus()` would bypass the inactive-paint → global-Selection transfer and leave focus on a view with no caret. See [design-decisions.md](design-decisions.md) for the boundary rule.
+
+When the save fires for an INACTIVE card (focus has moved to a sibling card or off-document — common during `visibilitychange`, `beforeunload`, or a debounced save while the user edits elsewhere), `captureFocus` would return `{ kind: "none" }`. The assembler forwards the previously-saved focus instead, subject to the same kind restriction for content-owning cards. The rule is "an internal save must not destroy a user-visible axis just because focus is momentarily elsewhere" ([L23]).
+
+### Restore — two mechanisms, four activation sites
+
+Focus restore happens through **two distinct mechanisms** that fire at **four activation sites**. The 2024-era "in-app transitions leave focus alone" framing was never quite accurate (the defensive listener has been in place since the install in `deck-manager.ts:115-148`) and is no longer correct at all now that content-owning cards opt into `bag.focus`. Both mechanisms are documented below.
+
+**Mechanism A — cold-boot restore** (CardHost mount-time `useLayoutEffect`). Runs once on the active card of the active pane after first mount. Reads `bag.focus`; if the kind is `dom` or `form-control`, calls `traceApplyFocusSnapshot("cold-boot", …)` which resolves the keyed element inside the card root and `.focus()`-es it. `applyFocusSnapshot`'s own pre-check (skip when focus is already inside the card) protects in-flight user interactions. `kind: "component-owned"` and `kind: "none"` are intentionally not restored here:
+
+- `component-owned` would point at the engine's contenteditable, and the engine's `onCardActivated` (invoked separately by the activation pipeline) handles it via its own selection-restore machinery.
+- `none` is a no-op by definition.
+
+**Mechanism B — in-session re-application** through `focus-transfer.ts#resolveActivationTarget`. Runs whenever the framework needs to land focus on an activated card after the user has been somewhere else. The resolver consults `bag.focus` BEFORE its engine-managed / content-owning short-circuits: if `kind` is `dom` or `form-control` AND the keyed element resolves and is `isConnected`, it returns `{ kind: "focus-element", el }` — the caller then `.focus()`-es directly. Otherwise it falls through to `{ kind: "dispatch-activated" }` for engine / content-owning cards, or `{ kind: "default-focus", cardRoot }` for DOM-authority cards with no usable snapshot. The same kind restriction (only `dom` / `form-control` ever resolves to a `focus-element` for content-owning cards) keeps the engine carve-out symmetric across save and restore.
+
+The **four activation sites** that drive mechanism B (or, in case (a), feed the cold-boot path):
+
+(a) **CardHost cold-boot restore** — its own code path in `card-host.tsx`, NOT a call through the resolver. Drives mechanism A above. Fires once per card mount; this is what reload survival rides on.
+
+(b) **`reactivateCurrentFocusDestination`** — installed as a `window.focus` listener in `deck-manager.ts:115-148`. Fires on cmd-tab back / app become-active. Re-runs the resolver against the currently first-responding card so any browser-level focus loss across the OS resign / become-active cycle is repaired without the user clicking. WebKit in particular does not always preserve focus reliably when the JS context is suspended; this listener is the contract that "focus position when you come back = focus position when you left."
+
+(c) **`transferFocusForActivation`** — driven from intra-pane tab switches (`tug-pane#performSelectCard`), cross-pane activations (`pane-focus-controller`), and tab-close handoffs (`deck-manager#_removeCard` / `_closePane`). Saves the outgoing bag, commits the activation mutation via `flushSync`, then resolves the incoming target.
+
+(d) **`transferFocusAfterMove`** — driven from cross-pane drag drops (`deck-manager#_detachCard` / `_moveCardToPane`) after the React-visible re-parent has committed.
+
+Sites (b) (c) (d) all converge on `resolveActivationTarget` and so share one decision path; the resolver's bag.focus precondition serves all three uniformly. Site (a) lives separately because cold-boot is a mount-time pass and not a transition between activations.
+
+### Engine fallback
+
+For engine-managed or content-owning cards that reach a `dispatch-activated` outcome (no `bag.focus` precondition resolved, or kind was `component-owned`), the caller invokes `store.invokeActivationCallback(cardId)`. For tide cards this lands in `tug-text-editor`'s `onCardActivated`, which calls `paintMirrorAsActive(view)` to transfer the inactive-paint selection back to the global Selection — the engine's authoritative path. This is the default whenever the framework axis has nothing to say.
 
 ---
 
