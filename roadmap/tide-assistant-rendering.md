@@ -2918,22 +2918,22 @@ The bug is structural — every component-preservation consumer that mounts behi
 
 **Tasks (Phase E.7):**
 
-- [ ] **Add `observeRegister` channel to the registry.** New `private readonly registerObservers: Set<(scopedKey: string, entry: RegistryEntry) => void>`; new `observeRegister(cb): () => void` method returning unsubscribe. `register` notifies after the entry lands. Add dev-only try/catch around each observer callback so a throwing observer doesn't break the registration.
-- [ ] **Orchestrator subscribes per-card.** `CardStateOrchestrator` gains two per-card maps: `lastBagComponents: Map<string, Record<string, unknown>>` and `appliedKeys: Map<string, Set<string>>`. First call to `restoreCardState(cardId, bag)` for a card: cache `bag.components` (when present); iterate `registry.entriesInTreeOrder()` and apply (existing behavior, but now also marking `appliedKeys`); install `registry.observeRegister(handleLateRegister)` with a closure that pulls from `lastBagComponents.get(cardId)`, gates on `appliedKeys.get(cardId)`, calls `entry.restoreRef.current?.(saved)`, and marks applied. Subsequent `restoreCardState` calls update the cached components without re-subscribing.
-- [ ] **Per-card cleanup.** `discardComponentStatePreservationRegistry(cardId)` (called when a card is destroyed) drops `lastBagComponents` and `appliedKeys` for that card. The registry's existing `clear()` is sufficient for unsubscription because the subscription is captured by the registry instance itself (when the registry is discarded, the observer closure becomes unreachable). Verify no leaks via the existing card-destruction tests.
-- [ ] **Verify body kinds still get their saved state on the initial mount path.** The new `observeRegister` path is a SUPERSET of the existing iteration. Components that mount synchronously before `restoreCardState` are applied via the iteration. Components that mount after are applied via the observer. Both paths share `appliedKeys`. Existing tests for synchronous-mount restore must still pass.
-- [ ] **Doc updates.** `state-preservation.md` — add a "Late-mounting components" subsection under the lifecycle section. `useComponentStatePreservation` docstring — update to note that the restore-after-mount timing is now handled by the framework.
-- [ ] **Tests.** Unit-level: registry's `observeRegister` semantics, orchestrator's late-mount apply, applied-keys dedup. App-test: AT0062 — late-mount restore round-trip in the live Tug.app.
+- [x] **Add `observeRegister` channel to the registry.** New `private readonly registerObservers: Set<(scopedKey: string, entry: RegistryEntry) => void>`; new `observeRegister(cb): () => void` method returning unsubscribe. `register` notifies after the entry lands. Add dev-only try/catch around each observer callback so a throwing observer doesn't break the registration.
+- [x] **Orchestrator subscribes per-card.** `CardStateOrchestrator` gains two per-card maps: `lastBagComponents: Map<string, Record<string, unknown>>` and `appliedKeys: Map<string, Set<string>>`. First call to `restoreCardState(cardId, bag)` for a card: cache `bag.components` (when present); iterate `registry.entriesInTreeOrder()` and apply (existing behavior, but now also marking `appliedKeys`); install `registry.observeRegister(handleLateRegister)` with a closure that pulls from `lastBagComponents.get(cardId)`, gates on `appliedKeys.get(cardId)`, calls `entry.restoreRef.current?.(saved)`, and marks applied. Subsequent `restoreCardState` calls update the cached components without re-subscribing.
+- [x] **Per-card cleanup.** `discardComponentStatePreservationRegistry(cardId)` (called when a card is destroyed) drops `lastBagComponents` and `appliedKeys` for that card. The registry's existing `clear()` is sufficient for unsubscription because the subscription is captured by the registry instance itself (when the registry is discarded, the observer closure becomes unreachable). Verify no leaks via the existing card-destruction tests.
+- [x] **Verify body kinds still get their saved state on the initial mount path.** The new `observeRegister` path is a SUPERSET of the existing iteration. Components that mount synchronously before `restoreCardState` are applied via the iteration. Components that mount after are applied via the observer. Both paths share `appliedKeys`. Existing tests for synchronous-mount restore must still pass.
+- [x] **Doc updates.** `state-preservation.md` — add a "Late-mounting components" subsection under the lifecycle section. `useComponentStatePreservation` docstring — update to note that the restore-after-mount timing is now handled by the framework.
+- [x] **Tests.** Unit-level: registry's `observeRegister` semantics, orchestrator's late-mount apply, applied-keys dedup. App-test: AT0062 — late-mount restore round-trip in the live Tug.app.
 
 **Tests (commands, Phase E.7):**
 
-- [ ] `bun test src/__tests__/component-state-preservation-registry.test.ts` (or wherever the registry tests live) — new `observeRegister` cases pass.
-- [ ] `bun test src/__tests__/card-state-orchestrator.test.ts` — late-mount apply + applied-keys dedup cases pass.
-- [ ] `bun test src/__tests__/use-component-state-preservation.test.tsx` — existing tests still pass (no API change).
-- [ ] `bunx tsc --noEmit` — clean.
-- [ ] `bun run audit:tokens lint` — zero violations.
-- [ ] `bun test` (full suite) — green.
-- [ ] `just app-test at0062-late-mount-component-restore.test.ts` — gates the end-to-end late-mount path on the live Tug.app.
+- [x] `bun test src/__tests__/component-state-preservation-registry.test.ts` (or wherever the registry tests live) — new `observeRegister` cases pass.
+- [x] `bun test src/__tests__/card-state-orchestrator.test.ts` — late-mount apply + applied-keys dedup cases pass.
+- [x] `bun test src/__tests__/use-component-state-preservation.test.tsx` — existing tests still pass (no API change).
+- [x] `bunx tsc --noEmit` — clean.
+- [x] `bun run audit:tokens lint` — zero violations.
+- [x] `bun test` (full suite) — green.
+- [x] `just app-test at0062-late-mount-component-restore.test.ts` — gates the end-to-end late-mount path on the live Tug.app.
 
 **Checkpoint (Phase E.7):**
 

@@ -49,6 +49,21 @@ declare global {
     tugdeck?: {
       saveState(): void;
       reconnect(): void;
+      /**
+       * Diagnostic surface — always available, no test-mode gate. Lets
+       * a developer paste one-liners into DevTools without knowing the
+       * DeckManager internals. Pair with
+       * `window.__tugTraceComponentStateRestore = true` to see
+       * save/restore/observer events in the console.
+       */
+      diag: {
+        listCardIds(): string[];
+        getDeckState(): unknown;
+        getCardState(cardId: string): unknown;
+        captureCardState(cardId: string): unknown;
+        registeredComponentKeys(cardId: string): string[];
+        saveAndDump(cardId: string): unknown;
+      };
     };
     /**
      * DEBUG-only harness boot flag. When `true`, tugdeck constructs
@@ -311,6 +326,57 @@ if (!container) {
   window.tugdeck = {
     saveState: () => deck.saveAndFlushSync(),
     reconnect: () => connection.forceReconnect(),
+
+    /**
+     * Diagnostic surface — always available, no test-mode gate. Lets
+     * a developer paste one-liners into DevTools without knowing the
+     * DeckManager internals. Keep methods small and obvious; the
+     * tradeoff for exposing them in production is that they ARE the
+     * support surface — they should never mutate state.
+     *
+     * Pair with `window.__tugTraceComponentStateRestore = true` to
+     * see save/restore/observer events in the console.
+     */
+    diag: {
+      /** Card ids currently in the deck, in z-order (last = top). */
+      listCardIds: () => deck.getSnapshot().cards.map((c) => c.id),
+      /** Full active state — for ad-hoc inspection only. */
+      getDeckState: () => deck.getSnapshot(),
+      /** The bag currently in the cardStateCache for `cardId`. */
+      getCardState: (cardId: string) => deck.getCardState(cardId),
+      /**
+       * Capture the bag for `cardId` right now via the orchestrator —
+       * same code path every save trigger runs. Use to verify what
+       * the framework would write if a save fired at this moment.
+       */
+      captureCardState: (cardId: string) => deck.captureCardState(cardId),
+      /**
+       * Scoped keys currently registered in `cardId`'s component-state
+       * preservation registry. Empty array when no registry exists or
+       * no consumers have registered.
+       */
+      registeredComponentKeys: (cardId: string) => {
+        const reg = deck.peekComponentStatePreservationRegistry(cardId);
+        return reg ? Array.from(reg.keys()) : [];
+      },
+      /**
+       * Force a synchronous save+flush, then dump the freshly-captured
+       * bag for `cardId`. The one-liner the diagnostic recipe asks for:
+       * call this, observe the console, then Developer > Reload, then
+       * read the console again.
+       */
+      saveAndDump: (cardId: string) => {
+        deck.saveAndFlushSync();
+        const bag = deck.captureCardState(cardId);
+        const componentsKeys = bag.components ? Object.keys(bag.components) : null;
+        console.log("[tugdeck.diag] saved bag for", cardId, {
+          bagKeys: Object.keys(bag),
+          components: componentsKeys,
+          full: bag,
+        });
+        return bag;
+      },
+    },
   };
 
   // Signal frontend readiness to native app.

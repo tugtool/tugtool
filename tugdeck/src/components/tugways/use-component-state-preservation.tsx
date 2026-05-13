@@ -43,6 +43,21 @@
  * Capture is synchronous and must not return a Promise; the framework
  * reads `captureRef.current()` during save and expects a serializable
  * value.
+ *
+ * Mount timing is framework-handled. Consumers do not need to think
+ * about whether they mount synchronously with `CardHost`,
+ * asynchronously behind a data-source gate (tide-card's transcript
+ * body kinds being the canonical async case), or unmount-and-remount
+ * within the same card lifecycle (tide-card's `TideRestoring` overlay
+ * swapping the transcript out and back in). The framework's
+ * `CardStateOrchestrator` caches `bag.components` on `restoreCardState`
+ * and subscribes to the registry's `observeRegister` channel; whenever
+ * a component registers — first mount, late mount, or remount after an
+ * intermediate unmount — the cached value is delivered to its
+ * `restoreState` synchronously inside the same `useLayoutEffect` commit
+ * that triggered the registration, so first paint reflects the restore
+ * ([L03]). See `tuglaws/state-preservation.md` → "Late-mounting
+ * components".
  */
 
 import React, {

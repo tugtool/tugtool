@@ -147,6 +147,26 @@ The capture-phase invariant ([A9], gated by [`smoke-capture-phase-save.test.ts`]
 
 Restore does **not** fire on intra-pane tab switch. Tab switches are pure visibility transitions: the inactive card's DOM stays mounted, the user's state stays alive in the live tree, and there is nothing to restore because nothing was destroyed. This is L23 in its strongest form.
 
+### Late-mounting components
+
+`CardHost`'s one-shot restore effect (`hasRestoredComponentsRef`) fires once per CardHost mount, after every descendant's `useLayoutEffect` has run. That order is right for components that mount **synchronously** along with CardHost — every `useComponentStatePreservation` registration has landed in the per-card `ComponentStatePreservationRegistry` by the time the parent effect iterates it.
+
+It is not right for components that mount **asynchronously** behind a data-source gate. Tide-card is the canonical case: the transcript feed arrives from session resume after CardHost has mounted, the cells render, the tool wrappers mount inside the cells, and only then do those body kinds (`FileBlock`, `TerminalBlock`, `DiffBlock`) register with the registry. By that point CardHost's one-shot has already iterated an empty registry and `bag.components` would sit unused.
+
+The framework closes the gap at the orchestrator. `CardStateOrchestrator.restoreCardState`:
+
+1. Caches `bag.components` on a per-card map (`lastBagComponents`) — every call replaces the cache so the most recent saved bag wins.
+2. Iterates the registry parent-first and applies the cached value to every currently-registered key (the synchronous-mount path; unchanged in shape from before).
+3. Subscribes once per card to the registry's `observeRegister` channel — a synchronous observer that fires the instant a component calls `register()`. The subscriber pulls from `lastBagComponents.get(cardId)` and applies via `entry.restoreRef.current?.(saved)` whenever the cache holds the registering key.
+
+**Re-apply on every register.** The contract is "apply on every mount that registers a key the cache holds," not "apply once per card lifecycle." If a body kind unmounts and remounts within the same card lifecycle — e.g., tide-card's `TideRestoring` overlay swaps in and out around the transcript, unmounting and remounting every body kind in the process — the orchestrator re-applies the cached bag on the second mount. React's `useState` initializer fires fresh on remount (defaults); without the re-apply the user would see the default state, which is the regression that motivated the late-mount path in the first place.
+
+The "user might edit between save and unmount, then we'd clobber on remount" concern is bogus: an edit between save and unmount is already lost when React resets the component's state on unmount. Re-applying the last-saved value on remount is strictly better than falling back to defaults — same edit is lost either way, but the remount lands at a state the user actually saw at some point rather than the initial default. `[L23]` is satisfied: the user-visible state tracks the framework's last save.
+
+The subscription closure is held by the registry instance itself; when the registry is `clear()`-ed at card destruction (`discardComponentStatePreservationRegistry`), the closure becomes unreachable and `CardStateOrchestrator.discardCardState(cardId)` clears the per-card cache. New mounts of the same `cardId` get a fresh registry and a fresh cache.
+
+**Authoring note.** Consumers of `useComponentStatePreservation` do not need to think about whether they mount synchronously, asynchronously, or remount within the same card lifecycle — the framework handles all three. Register and unregister in the usual `useLayoutEffect` pattern; the orchestrator delivers the saved value whenever the registration lands. The only invariant that still bears on authors is `[L23]`: capture closures must read from the live source of truth (React state / refs / DOM) at the moment they're called, not from a stale closure captured at hook-defining time.
+
 ### What's in `bag` at save time vs. restore time
 
 Both ends see the same shape: a `CardStateBag`. At save time, every axis is populated from the live DOM and the live React tree (`captureFocus(cardRoot)`, walking `data-tug-state-key` for `bag.formControls`, walking `data-tug-scroll-key` for `bag.regionScroll`, calling each registered `captureState()` for `bag.components`, calling the card's `onSave()` for `bag.content`). At restore time, the same bag is replayed onto a freshly-mounted DOM: form controls re-set their `.value` (with a `MutationObserver` re-applying for late mounts), regions re-scroll, the focus snapshot is dispatched through `applyFocusSnapshot` on the active card of the active pane, and the components-axis is replayed in parent-first order via the registry.

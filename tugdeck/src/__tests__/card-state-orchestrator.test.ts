@@ -419,6 +419,219 @@ describe("CardStateOrchestrator — error tolerance", () => {
   });
 });
 
+describe("CardStateOrchestrator — late-mount restore", () => {
+  test("a component that registers AFTER restoreCardState still receives its saved value", () => {
+    const registries = new Map<string, ComponentStatePreservationRegistry>();
+    const registry = new ComponentStatePreservationRegistry();
+    registries.set("card-a", registry);
+
+    const orchestrator = makeOrchestrator(registries);
+    // Restore before any registrations — typical for tide-card body
+    // kinds that mount after session-resume populates the transcript.
+    orchestrator.restoreCardState("card-a", {
+      components: { "bash/fold": true },
+    });
+
+    const calls: Array<[string, unknown]> = [];
+    registry.register(
+      "bash/fold",
+      makeCaptureRef(() => false),
+      makeRestoreRef((v) => calls.push(["bash/fold", v])),
+      [0],
+    );
+    expect(calls).toEqual([["bash/fold", true]]);
+  });
+
+  test("unmount-then-remount within the same card lifecycle re-applies the cached bag value", () => {
+    // Pin the production-critical path: a body kind whose React state
+    // gets reset by an unmount (e.g., tide-card's TideRestoring overlay
+    // swaps in and out around the transcript) must receive its saved
+    // value again on remount. The earlier orchestrator design that
+    // tracked per-key applied state and refused to re-apply broke this
+    // path — the user saw fold state lost on Developer > Reload
+    // whenever the restore window included a transient overlay
+    // unmount-remount.
+    const registries = new Map<string, ComponentStatePreservationRegistry>();
+    const registry = new ComponentStatePreservationRegistry();
+    registries.set("card-a", registry);
+
+    const orchestrator = makeOrchestrator(registries);
+    orchestrator.restoreCardState("card-a", { components: { k: "saved" } });
+
+    const calls: unknown[] = [];
+    registry.register(
+      "k",
+      makeCaptureRef(() => undefined),
+      makeRestoreRef((v) => calls.push(v)),
+      [0],
+    );
+    expect(calls).toEqual(["saved"]);
+
+    // Unmount → remount the same key. The remount's React state has
+    // been reset to the consumer's `useState` initializer (defaults).
+    // The framework re-applies so the remount lands on the saved value
+    // rather than the default. An edit between save and unmount was
+    // already lost when React reset the state on unmount — re-applying
+    // the saved value is strictly better than falling back to defaults.
+    registry.unregister("k");
+    registry.register(
+      "k",
+      makeCaptureRef(() => undefined),
+      makeRestoreRef((v) => calls.push(v)),
+      [0],
+    );
+    expect(calls).toEqual(["saved", "saved"]);
+  });
+
+  test("synchronous-mount path: same key registered, restored, unregistered, and re-registered re-applies", () => {
+    const registries = new Map<string, ComponentStatePreservationRegistry>();
+    const registry = new ComponentStatePreservationRegistry();
+    registries.set("card-a", registry);
+
+    const calls: unknown[] = [];
+    registry.register(
+      "k",
+      makeCaptureRef(() => undefined),
+      makeRestoreRef((v) => calls.push(v)),
+      [0],
+    );
+
+    const orchestrator = makeOrchestrator(registries);
+    orchestrator.restoreCardState("card-a", { components: { k: "v1" } });
+    expect(calls).toEqual(["v1"]);
+
+    // Component unmounts and remounts; the cache still holds "v1" and
+    // the observer re-applies it on the fresh registration.
+    registry.unregister("k");
+    registry.register(
+      "k",
+      makeCaptureRef(() => undefined),
+      makeRestoreRef((v) => calls.push(v)),
+      [0],
+    );
+    expect(calls).toEqual(["v1", "v1"]);
+  });
+
+  test("subsequent restoreCardState updates the cached bag without re-subscribing", () => {
+    const registries = new Map<string, ComponentStatePreservationRegistry>();
+    const registry = new ComponentStatePreservationRegistry();
+    registries.set("card-a", registry);
+
+    const orchestrator = makeOrchestrator(registries);
+    orchestrator.restoreCardState("card-a", { components: { k: "v1" } });
+    orchestrator.restoreCardState("card-a", { components: { k: "v2" } });
+
+    const calls: unknown[] = [];
+    registry.register(
+      "k",
+      makeCaptureRef(() => undefined),
+      makeRestoreRef((v) => calls.push(v)),
+      [0],
+    );
+    // The most recent bag wins; only one apply (the cache replaced).
+    expect(calls).toEqual(["v2"]);
+  });
+
+  test("restoreCardState with a different set of late keys: each delivered when it registers", () => {
+    const registries = new Map<string, ComponentStatePreservationRegistry>();
+    const registry = new ComponentStatePreservationRegistry();
+    registries.set("card-a", registry);
+
+    const orchestrator = makeOrchestrator(registries);
+    orchestrator.restoreCardState("card-a", {
+      components: { a: 1, b: 2, c: 3 },
+    });
+
+    const calls: Array<[string, unknown]> = [];
+    registry.register(
+      "b",
+      makeCaptureRef(() => undefined),
+      makeRestoreRef((v) => calls.push(["b", v])),
+      [1],
+    );
+    registry.register(
+      "a",
+      makeCaptureRef(() => undefined),
+      makeRestoreRef((v) => calls.push(["a", v])),
+      [0],
+    );
+    registry.register(
+      "c",
+      makeCaptureRef(() => undefined),
+      makeRestoreRef((v) => calls.push(["c", v])),
+      [2],
+    );
+
+    // Each key delivered in REGISTRATION order — late-mount delivery
+    // honors when the component actually registers, not parent-first
+    // tree-order (which is the iteration order for synchronous-mounts).
+    // That's the correct shape: by the time a late mount registers,
+    // the React commit that owns the registration is also the commit
+    // where restoreState should land.
+    expect(calls).toEqual([
+      ["b", 2],
+      ["a", 1],
+      ["c", 3],
+    ]);
+  });
+
+  test("orphan keys remain in the cache and apply if their components mount later", () => {
+    const registries = new Map<string, ComponentStatePreservationRegistry>();
+    const registry = new ComponentStatePreservationRegistry();
+    registries.set("card-a", registry);
+
+    const orchestrator = makeOrchestrator(registries);
+    // No registrations yet — every key in the bag is "pending".
+    orchestrator.restoreCardState("card-a", {
+      components: { "tool/file/1": "fold-state", "tool/file/2": "fold-state-2" },
+    });
+
+    const calls: Array<[string, unknown]> = [];
+    registry.register(
+      "tool/file/2",
+      makeCaptureRef(() => undefined),
+      makeRestoreRef((v) => calls.push(["tool/file/2", v])),
+      [1],
+    );
+    expect(calls).toEqual([["tool/file/2", "fold-state-2"]]);
+
+    // The other key still in the cache; when its component mounts,
+    // it should land too.
+    registry.register(
+      "tool/file/1",
+      makeCaptureRef(() => undefined),
+      makeRestoreRef((v) => calls.push(["tool/file/1", v])),
+      [0],
+    );
+    expect(calls).toEqual([
+      ["tool/file/2", "fold-state-2"],
+      ["tool/file/1", "fold-state"],
+    ]);
+  });
+
+  test("discardCardState drops the per-card cache so a late register after discard does not apply", () => {
+    const registries = new Map<string, ComponentStatePreservationRegistry>();
+    const registry = new ComponentStatePreservationRegistry();
+    registries.set("card-a", registry);
+
+    const orchestrator = makeOrchestrator(registries);
+    orchestrator.restoreCardState("card-a", { components: { k: "v" } });
+    orchestrator.discardCardState("card-a");
+
+    const calls: unknown[] = [];
+    registry.register(
+      "k",
+      makeCaptureRef(() => undefined),
+      makeRestoreRef((v) => calls.push(v)),
+      [],
+    );
+    // Note: the registry instance still has the observer (only the
+    // orchestrator's cache was discarded); but with the cache gone,
+    // the observer no-ops.
+    expect(calls).toEqual([]);
+  });
+});
+
 describe("CardStateOrchestrator — saveState RPC parity", () => {
   test("bag includes every framework axis the assembler emits plus bag.components", () => {
     // Simulate what CardHost's assembler would emit after Step 18:

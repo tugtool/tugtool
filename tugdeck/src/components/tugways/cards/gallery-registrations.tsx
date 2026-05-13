@@ -73,9 +73,16 @@ import { GalleryAtom } from "./gallery-atom";
 import { GalleryPromptEntry } from "./gallery-prompt-entry";
 import { GalleryTextEditor } from "./gallery-text-editor";
 import { GallerySplitPane } from "./gallery-split-pane";
-import { GalleryStatePreservation } from "./gallery-state-preservation";
+import {
+  GalleryStatePreservation,
+  GalleryLateMountPreservation,
+} from "./gallery-state-preservation";
 import { GalleryTugCue } from "./gallery-tug-cue";
-import { GalleryBashToolBlock } from "./gallery-bash-tool-block";
+import {
+  GalleryBashToolBlock,
+  GalleryLateMountBashToolBlock,
+  GalleryTideCardLikeBashToolBlock,
+} from "./gallery-bash-tool-block";
 import { GalleryPinnedHeaders } from "./gallery-pinned-headers";
 import "./gallery.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
@@ -460,6 +467,45 @@ export function registerGalleryCards(): void {
     componentId: "gallery-bash-tool-block",
     contentFactory: (_cardId) => <GalleryBashToolBlock />,
     defaultMeta: { title: "BashToolBlock", icon: "Terminal", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.textInput,
+  });
+
+  // Phase E.7 regression gate fixture: BashToolBlock behind a
+  // microtask-then-state-flip gate so TerminalBlock (the body kind
+  // that owns the fold state) registers AFTER `CardHost`'s one-shot
+  // `restoreCardState`. Mirrors the tide-card transcript timing in
+  // production. Drives
+  // `tests/app-test/at0063-bash-block-fold-restore.test.ts`.
+  registerCard({
+    componentId: "gallery-late-mount-bash-tool-block",
+    contentFactory: (_cardId) => <GalleryLateMountBashToolBlock />,
+    defaultMeta: {
+      title: "Late-mount BashToolBlock",
+      icon: "Terminal",
+      closable: true,
+    },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.textInput,
+  });
+
+  // Higher-fidelity tide-card-like fixture: late-mount BashToolBlock
+  // inside a TugListView (inline mode + tailSpacer="80cqh"), mirroring
+  // the production tide-card transcript structure. AT0064 covers the
+  // bare-fixture path; this fixture pins the same flow under the
+  // TugListView wrap that the live tide-card uses.
+  registerCard({
+    componentId: "gallery-tide-card-like-bash-tool-block",
+    contentFactory: (_cardId) => <GalleryTideCardLikeBashToolBlock />,
+    defaultMeta: {
+      title: "Tide-card-like BashToolBlock",
+      icon: "Terminal",
+      closable: true,
+    },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
@@ -926,6 +972,25 @@ export function registerGalleryCards(): void {
     componentId: "gallery-state-preservation",
     contentFactory: (_cardId) => <GalleryStatePreservation />,
     defaultMeta: { title: "State Preservation", icon: "Save", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.architecture,
+  });
+
+  // Phase E.7 fixture: a TugCheckbox that mounts AFTER an async
+  // micro-task gate, so the component lands strictly after CardHost's
+  // one-shot `restoreCardState` has iterated an empty registry. Drives
+  // `tests/app-test/at0062-late-mount-component-restore.test.ts` —
+  // see `tuglaws/state-preservation.md` → "Late-mounting components".
+  registerCard({
+    componentId: "gallery-late-mount-preservation",
+    contentFactory: (_cardId) => <GalleryLateMountPreservation />,
+    defaultMeta: {
+      title: "Late-Mount State Preservation",
+      icon: "Save",
+      closable: true,
+    },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,

@@ -197,6 +197,96 @@ describe("ComponentStatePreservationRegistry — unregister", () => {
   });
 });
 
+describe("ComponentStatePreservationRegistry — observeRegister", () => {
+  test("fires synchronously on register with scopedKey + entry", () => {
+    const registry = new ComponentStatePreservationRegistry();
+    const calls: Array<[string, () => unknown]> = [];
+    registry.observeRegister((scopedKey, entry) => {
+      // Capture both the key and the entry's capture closure so we can
+      // assert the observer received the freshly-installed entry, not
+      // a stale read.
+      calls.push([scopedKey, entry.captureRef.current!]);
+    });
+
+    const cap = () => "hello";
+    registry.register("k", makeCaptureRef(cap), makeRestoreRef(() => undefined), [0]);
+
+    expect(calls.length).toBe(1);
+    expect(calls[0][0]).toBe("k");
+    expect(calls[0][1]()).toBe("hello");
+  });
+
+  test("multiple subscribers all fire in subscription order", () => {
+    const registry = new ComponentStatePreservationRegistry();
+    const order: string[] = [];
+    registry.observeRegister(() => order.push("a"));
+    registry.observeRegister(() => order.push("b"));
+    registry.observeRegister(() => order.push("c"));
+
+    registry.register("k", makeCaptureRef(() => 0), makeRestoreRef(() => undefined), []);
+    expect(order).toEqual(["a", "b", "c"]);
+  });
+
+  test("unsubscribe stops further notifications", () => {
+    const registry = new ComponentStatePreservationRegistry();
+    let fired = 0;
+    const unsubscribe = registry.observeRegister(() => {
+      fired++;
+    });
+
+    registry.register("first", makeCaptureRef(() => 0), makeRestoreRef(() => undefined), [0]);
+    expect(fired).toBe(1);
+    unsubscribe();
+    registry.register("second", makeCaptureRef(() => 0), makeRestoreRef(() => undefined), [1]);
+    expect(fired).toBe(1);
+  });
+
+  test("throwing observer does not prevent registration nor stop later observers", () => {
+    const registry = new ComponentStatePreservationRegistry();
+    let laterFired = false;
+
+    const originalWarn = console.warn;
+    console.warn = () => undefined;
+    try {
+      registry.observeRegister(() => {
+        throw new Error("boom");
+      });
+      registry.observeRegister(() => {
+        laterFired = true;
+      });
+
+      expect(() => {
+        registry.register(
+          "k",
+          makeCaptureRef(() => 1),
+          makeRestoreRef(() => undefined),
+          [],
+        );
+      }).not.toThrow();
+      // Both that the registration landed and that the later observer
+      // still got called.
+      expect(registry.keys().has("k")).toBe(true);
+      expect(laterFired).toBe(true);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
+  test("clear() drops observers — no notifications after clear", () => {
+    const registry = new ComponentStatePreservationRegistry();
+    let fired = 0;
+    registry.observeRegister(() => {
+      fired++;
+    });
+    registry.register("a", makeCaptureRef(() => 0), makeRestoreRef(() => undefined), [0]);
+    expect(fired).toBe(1);
+
+    registry.clear();
+    registry.register("b", makeCaptureRef(() => 0), makeRestoreRef(() => undefined), [0]);
+    expect(fired).toBe(1);
+  });
+});
+
 describe("ComponentStatePreservationRegistry — clear", () => {
   test("clear empties the registry", () => {
     const registry = new ComponentStatePreservationRegistry();

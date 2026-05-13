@@ -1053,12 +1053,24 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     // `el.scrollTop` lands within tolerance of the saved value,
     // then mark settled and stop fighting any subsequent scroll.
     //
+    // Settled state is keyed on the ELEMENT, not the scroll-key
+    // string, because a body kind may unmount-and-remount within the
+    // same card lifecycle (e.g., `TerminalBlock`'s collapse-then-
+    // expand cycle imperatively rebuilds its inner scroller; my
+    // Phase E.7 fix's setLocalCollapsed re-render triggers the same
+    // rebuild on first mount). The new element gets the same
+    // `data-tug-scroll-key` value but starts at scrollTop=0; if we
+    // tracked settled-by-key only, the new element would be skipped
+    // and the user's saved scroll would be lost the moment they
+    // saved post-rebuild (see at0065-tide-card-like-inner-scroll-
+    // restore.test.ts Phase 4 for the regression).
+    //
     // The matching MutationObserver below adds `attributes: true,
     // attributeFilter: ["style"]` so the spacer-height mutations
     // fire `apply()`; without that, only `childList` mutations
     // would trigger re-application and the bake-in race would
     // never resolve. See [AT0014] region-scroll persistence notes.
-    const regionSettled = new Set<string>();
+    const settledElByKey = new Map<string, HTMLElement>();
     const REGION_SCROLL_TOLERANCE_PX = 8;
 
     const apply = () => {
@@ -1071,23 +1083,32 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
         const pending: RegionScrollSnapshot = {};
         let hasPending = false;
         for (const [key, pos] of Object.entries(regionSnapshot)) {
-          if (regionSettled.has(key)) continue;
           const el = cardRoot.querySelector<HTMLElement>(
             `[data-tug-scroll-key="${CSS.escape(key)}"]`,
           );
-          if (!el) continue;
+          if (!el) {
+            // Element absent — body kind unmounted (e.g., user
+            // collapsed the block). Drop the settled-element binding
+            // so a future remount goes through the apply path again.
+            settledElByKey.delete(key);
+            continue;
+          }
+          // Element-identity gate. A new element with the same key
+          // (post-rebuild) bypasses the settled check because
+          // settledElByKey.get(key) !== el.
+          if (settledElByKey.get(key) === el) continue;
           // If the element already sits within tolerance of the
-          // saved position, mark it settled and stop fighting any
-          // subsequent user scroll. Covers two cases: (a) the
-          // saved-position-is-zero no-op, and (b) the post-bake-in
-          // pass where ResizeObserver has finished growing the
-          // spacer and our previous `applyRegionScrolls` has
-          // already landed the scrollTop on target.
+          // saved position, mark THIS element settled and stop
+          // fighting any subsequent user scroll on it. Covers
+          // (a) the saved-position-is-zero no-op, and (b) the
+          // post-bake-in pass where ResizeObserver has finished
+          // growing the spacer and our previous `applyRegionScrolls`
+          // has already landed the scrollTop on target.
           if (
             Math.abs(el.scrollTop - pos.y) <= REGION_SCROLL_TOLERANCE_PX &&
             Math.abs(el.scrollLeft - pos.x) <= REGION_SCROLL_TOLERANCE_PX
           ) {
-            regionSettled.add(key);
+            settledElByKey.set(key, el);
             continue;
           }
           pending[key] = pos;

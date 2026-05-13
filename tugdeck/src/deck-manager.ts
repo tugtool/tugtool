@@ -1282,12 +1282,19 @@ export class DeckManager implements IDeckManagerStore {
    * `cardId`. Called from `_removeCard` and `_closePane` alongside
    * `flushSaveCallbackBeforeDestruction` so a card's registered
    * closures don't outlive the card itself.
+   *
+   * Also drops the orchestrator's per-card late-mount cache
+   * (`lastBagComponents` / `appliedKeys`) so any saved-state retained
+   * across the registry discard is released. The registry's own
+   * `clear()` removes the `observeRegister` subscription closure (which
+   * holds the cache pointer); this just frees the cache eagerly.
    */
   private discardComponentStatePreservationRegistry(cardId: string): void {
     const registry = this.componentStatePreservationRegistries.get(cardId);
     if (!registry) return;
     registry.clear();
     this.componentStatePreservationRegistries.delete(cardId);
+    this.cardStateOrchestrator.discardCardState(cardId);
   }
 
   /**
@@ -1506,6 +1513,7 @@ export class DeckManager implements IDeckManagerStore {
           registry.clear();
           this.componentStatePreservationRegistries.delete(prevId);
         }
+        this.cardStateOrchestrator.discardCardState(prevId);
       }
     }
 

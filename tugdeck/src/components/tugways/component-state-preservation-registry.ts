@@ -59,6 +59,17 @@ function compareTreePaths(a: readonly number[], b: readonly number[]): number {
 }
 
 /**
+ * Observer signature for the registry's `observeRegister` channel.
+ * Receives the scoped key plus the freshly-installed entry; fires
+ * synchronously inside `register`, immediately after the entry lands
+ * in the internal map.
+ */
+export type RegistryRegisterObserver = (
+  scopedKey: string,
+  entry: RegistryEntry,
+) => void;
+
+/**
  * Per-card registry of opt-in component state preservation entries.
  *
  * Each scoped key maps to one `RegistryEntry`. Keys are the product of
@@ -70,6 +81,7 @@ function compareTreePaths(a: readonly number[], b: readonly number[]): number {
  */
 export class ComponentStatePreservationRegistry {
   private readonly entries: Map<string, RegistryEntry> = new Map();
+  private readonly registerObservers: Set<RegistryRegisterObserver> = new Set();
 
   /**
    * Register a component for state preservation.
@@ -83,6 +95,12 @@ export class ComponentStatePreservationRegistry {
    * the new entry replaces the old silently — the alternative (throwing
    * in prod) would kill the card on a late-mount collision that a dev
    * build would have caught.
+   *
+   * Fires every `observeRegister` subscriber synchronously after the
+   * entry lands. A throwing observer is logged in dev and swallowed in
+   * prod so a misbehaving subscriber never breaks the registration
+   * itself ([A9c] — the orchestrator's late-mount apply path subscribes
+   * here, and a registration must always complete).
    */
   register(
     scopedKey: string,
@@ -97,11 +115,49 @@ export class ComponentStatePreservationRegistry {
         );
       }
     }
-    this.entries.set(scopedKey, {
+    const entry: RegistryEntry = {
       captureRef,
       restoreRef,
       treePath,
-    });
+    };
+    this.entries.set(scopedKey, entry);
+    for (const observer of this.registerObservers) {
+      try {
+        observer(scopedKey, entry);
+      } catch (e) {
+        if (isDevEnv()) {
+          console.warn(
+            `[A9] observeRegister callback threw for "${scopedKey}":`,
+            e,
+          );
+        }
+      }
+    }
+  }
+
+  /**
+   * Subscribe to registration events. The callback fires synchronously
+   * inside `register` after the entry has been installed in the
+   * internal map — the same call stack as the `useLayoutEffect` that
+   * triggered the registration, so any work the observer schedules
+   * (e.g., `entry.restoreRef.current?.(savedValue)`) lands in the same
+   * React commit as the registration ([L03]).
+   *
+   * Returns an unsubscribe function that removes the observer; safe to
+   * call more than once. Multiple observers are supported; each is
+   * notified in insertion order.
+   *
+   * Modeled on the framework's existing `card-lifecycle.ts` observer
+   * channels (`observeCardWillActivate` and siblings) so the
+   * architecture stays coherent — see `tuglaws/state-preservation.md`
+   * for how the orchestrator uses this to apply saved state to
+   * late-mounting components.
+   */
+  observeRegister(callback: RegistryRegisterObserver): () => void {
+    this.registerObservers.add(callback);
+    return () => {
+      this.registerObservers.delete(callback);
+    };
   }
 
   /**
@@ -129,8 +185,14 @@ export class ComponentStatePreservationRegistry {
     return new Set(this.entries.keys());
   }
 
-  /** Remove every entry. Called when the owning card is destroyed. */
+  /**
+   * Remove every entry. Called when the owning card is destroyed.
+   * Also drops every `observeRegister` subscriber — the orchestrator's
+   * late-mount subscription closure captures the per-card cache and
+   * must not outlive the card itself ([A9c] / [L23]).
+   */
   clear(): void {
     this.entries.clear();
+    this.registerObservers.clear();
   }
 }
