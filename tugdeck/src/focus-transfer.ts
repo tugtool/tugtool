@@ -593,8 +593,53 @@ export function transferFocusForActivation(
   }
 
   // `dispatch-activated` — the content factory's registered
-  // callback handles its own targeting.
+  // callback handles its own targeting. For content-owning cards that
+  // register no callback (gallery shells, ad-hoc fixtures), nothing
+  // focuses; the prior `document.activeElement` retains focus. When
+  // that prior focus is inside the OUTGOING card root, the visible
+  // symptom is a blinking caret in the now-inactive card (the user
+  // can keep typing into a card they just deactivated). Blur in that
+  // case so the activation gesture deterministically removes focus
+  // from the outgoing card even when no incoming target was named.
   store.invokeActivationCallback(incomingCardId, "transfer-for-activation");
+  blurFocusInOutgoingCard(store, outgoingCardId, incomingCardId);
+}
+
+/**
+ * If `document.activeElement` is still inside the OUTGOING card root
+ * after an activation transition, blur it. Used as a safety net at the
+ * end of `transferFocusForActivation`'s `dispatch-activated` branch
+ * where the content factory's `onCardActivated` may not focus anything
+ * (gallery cards, content shells with no engine) — without the blur,
+ * the prior focus persists in the now-inactive card and the user can
+ * keep typing into a card they just deactivated.
+ *
+ * Idempotent and tightly scoped:
+ *   - No-op when there is no outgoing card.
+ *   - No-op when outgoing === incoming (same-card activation).
+ *   - No-op when current focus is already outside the outgoing card
+ *     (the transition's focus side-effects already moved it).
+ *   - Reads `document.activeElement` directly — post-commit DOM is
+ *     consistent with the store snapshot at this point.
+ *
+ * Does not call `.focus()` on anything — that would risk picking the
+ * wrong target. Blurring to body is the conservative move; the next
+ * gesture (click, keystroke) drives the next focus.
+ */
+function blurFocusInOutgoingCard(
+  store: FocusTransferStore,
+  outgoingCardId: string | null,
+  incomingCardId: string,
+): void {
+  if (outgoingCardId === null) return;
+  if (outgoingCardId === incomingCardId) return;
+  const outgoingRoot = store.peekCardHostRoot(outgoingCardId);
+  if (outgoingRoot === null) return;
+  const doc = outgoingRoot.ownerDocument;
+  const active = doc.activeElement;
+  if (!(active instanceof HTMLElement)) return;
+  if (!outgoingRoot.contains(active)) return;
+  active.blur();
 }
 
 /**

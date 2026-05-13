@@ -1660,7 +1660,35 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   const cardLifecycle = useCardLifecycle();
 
   useCardDelegate(cardId, {
-    cardDidActivate: () => entryDelegateRef.current?.focus(),
+    cardDidActivate: () => {
+      // Framework-axis yield ([D95] engine-vs-framework focus
+      // boundary). When the framework just placed focus on a
+      // transient in-card target (find input, future inline editors
+      // — anything carrying `data-tug-focus-key` or
+      // `data-tug-state-key`) via `transferFocusForActivation`'s
+      // synchronous focus-element call or the cold-boot RESTORE
+      // `applyFocusSnapshot` path, the engine's default focus claim
+      // here must yield. The delegate macrotask drains AFTER both,
+      // so a naive `entryDelegate.focus()` clobbers the framework
+      // axis every time tide regains active state with a find row
+      // open. Yield by inspecting `document.activeElement`: if it
+      // sits inside this card on a framework-axis marker, the
+      // framework already owns this activation's focus.
+      const active = document.activeElement;
+      if (active instanceof HTMLElement) {
+        const cardRoot = active.closest<HTMLElement>(
+          `[data-card-id="${CSS.escape(cardId)}"]`,
+        );
+        if (cardRoot !== null) {
+          const hasFocusKey =
+            active.getAttribute("data-tug-focus-key") !== null;
+          const hasStateKey =
+            active.getAttribute("data-tug-state-key") !== null;
+          if (hasFocusKey || hasStateKey) return;
+        }
+      }
+      entryDelegateRef.current?.focus();
+    },
     // `cardWillDeactivate` deliberately does NOT call
     // `entryDelegateRef.current?.blur()`. Calling .blur() on the
     // contenteditable here clears any non-collapsed selection the

@@ -333,14 +333,29 @@ export function captureFocus(cardRoot: HTMLElement): FocusSnapshot {
  *   - Pre-check: if focus is already somewhere inside the card, do
  *     nothing. Re-applying would fight a user interaction in progress
  *     (race between mount restore and a click inside the freshly-
- *     mounted subtree).
+ *     mounted subtree). Exception: when the snapshot is a framework-
+ *     axis kind (`dom` / `form-control`) AND the current focus sits
+ *     inside a `COMPONENT_OWNED_SELECTORS` root, the engine's mount-
+ *     time `paintMirrorAsActive` (called from `onRestore` when the
+ *     card is active) has auto-focused its own contenteditable; the
+ *     framework's `bag.focus` axis is the authoritative override for
+ *     transient in-card targets (find input, future inline editors),
+ *     so we punch through and apply the snapshot anyway. Without
+ *     this carve-out, Developer > Reload silently drops the saved
+ *     find-input focus every time on engine-managed cards — the
+ *     engine's paint-active runs in CardHost's content-restore
+ *     effect (effect A around line 814), the framework's apply
+ *     runs in the next effect (effect B around line 956), and the
+ *     pre-check bails because effect A already focused the
+ *     contenteditable.
  *   - If the keyed element is not in the DOM yet (late-mounting
  *     content), no-op — the caller is responsible for re-trying at a
  *     later readiness point (e.g. `onContentReady`).
  *   - `kind === "none"` never mutates focus.
  *
  * Pure-ish: mutates `document.activeElement` only when the target is
- * resolvable and focus is not already inside the card.
+ * resolvable and focus is not already inside the card (or only inside
+ * the engine's contenteditable when overriding for the framework axis).
  */
 export function applyFocusSnapshot(
   cardRoot: HTMLElement,
@@ -350,12 +365,33 @@ export function applyFocusSnapshot(
 
   // Respect any focus already inside the card — a click that landed
   // during the restore window must win over the saved snapshot.
+  // Exception (engine carve-out): when restoring a framework-axis
+  // snapshot (`dom` / `form-control`) and the current focus is on the
+  // engine's contenteditable (e.g. tide-card's TugTextEditor mount-
+  // time `paintMirrorAsActive` claimed focus), the framework's
+  // bag.focus axis wins — see the function docstring for the full
+  // rationale.
   const currentActive = cardRoot.ownerDocument.activeElement;
   if (
     currentActive instanceof HTMLElement &&
     cardRoot.contains(currentActive)
   ) {
-    return;
+    const isFrameworkAxisSnapshot =
+      snapshot.kind === "dom" || snapshot.kind === "form-control";
+    let currentIsEngineClaimed = false;
+    if (isFrameworkAxisSnapshot) {
+      for (const selector of COMPONENT_OWNED_SELECTORS) {
+        if (currentActive.closest(selector)) {
+          currentIsEngineClaimed = true;
+          break;
+        }
+      }
+    }
+    if (!(isFrameworkAxisSnapshot && currentIsEngineClaimed)) {
+      return;
+    }
+    // Fall through: framework-axis snapshot overrides engine-claimed
+    // focus.
   }
 
   let target: HTMLElement | null = null;

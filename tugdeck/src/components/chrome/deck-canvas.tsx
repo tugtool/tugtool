@@ -22,6 +22,7 @@ import { animate } from "@/components/tugways/tug-animator";
 import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+import { transferFocusForActivation } from "@/focus-transfer";
 import { TugPane } from "./tug-pane";
 import { CardHost } from "./card-host";
 import { CanvasOverlayRoot } from "./canvas-overlay-root";
@@ -174,7 +175,23 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         if (s.length < 2) return;
         // Bottom stack rotates to top — activate its active card.
         const nextId = s[0].activeCardId;
-        store.activateCard(nextId);
+        // Route through `transferFocusForActivation` so the keystroke
+        // path matches the click-driven row-1/2/3 activation taxonomy
+        // (SAVE outgoing → commit → resolve incoming → focus transfer).
+        // A raw `store.activateCard(nextId)` flips the composite first-
+        // responder bit but skips the focus-transfer step entirely, so
+        // `document.activeElement` stays inside whichever card it was
+        // in before — visible to the user as the blinking caret
+        // remaining in the now-inactive card (typing still routes there
+        // until the next click). The helper's internal save/commit/
+        // resolve trio handles both engine-managed and content-owning
+        // incoming cards correctly.
+        transferFocusForActivation({
+          outgoingCardId: store.getFirstResponderCardId(),
+          incomingCardId: nextId,
+          store,
+          commitMutation: () => store.activateCard(nextId),
+        });
       },
       [TUG_ACTIONS.RESET_LAYOUT]: (_event: ActionEvent) => {
         // Phase 5 will reset card positions.
