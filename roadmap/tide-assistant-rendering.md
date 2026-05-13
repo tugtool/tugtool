@@ -3365,6 +3365,597 @@ Find-row consumer checkpoints — pin that the first consumer behaves the way th
 
 ---
 
+##### Phase E.11 — Single-channel focus authority
+
+**Depends on:** Phase E.10 (introduced `bag.focus` for content-owning cards). Phase E.11 rebuilds the activation-focus channel on top of that axis.
+
+**Status:** plan only — three fixup rounds applied (F1–F9 architectural; F10–F19 refinement + completeness; per-step Tuglaws cross-references). Awaiting final approval before Commit 1 starts.
+
+**Why this phase exists.** E.10 introduced `bag.focus` as a focus axis for content-owning cards and proved it against the `gallery-file-block-find-fixture` (AT0071–AT0074, all green). When wired against a real `tide` card with `TugTextEditor`, the framework axis loses to a co-existing path: open a Find row, click another card's title bar then click back, and focus lands on the engine's contenteditable instead of on the find input. Same outcome on Developer > Reload. The fixture didn't catch this because the fixture has no engine and no macrotask-deferred focus claim. The framework axis ships correct in isolation and broken in composition with the engine layer it has to coexist with.
+
+**Lessons from E.10 — name them so they shape E.11.**
+
+1. **Fixture-vs-system mismatch.** `gallery-file-block-find-fixture` is one `FileBlock` in a gallery shell. Real tide is a transcript with async-loaded messages, virtualization, an engine-managed prompt, and pane chrome with multiple cards. The fixture exercises `bag.focus` capture / restore / cross-card transfer; it exercises nothing about how those paths *compose* with an engine and a macrotask delegate. Tests that gate the axis in isolation do not gate the integrated behavior — they gate the part of the system the fixture happens to model. AT0071–74 passing was the wrong signal of doneness.
+
+2. **Multi-claimant focus model with no precedence.** A single tide-card activation transition today can fire `.focus()` from FOUR independent paths:
+   - `transferFocusForActivation` focus-element branch (`focus-transfer.ts:518`) — synchronous in the pointerdown handler.
+   - `useCardStatePreservation.onCardActivated` via `invokeActivationCallback` (`tug-text-editor/state-preservation.ts:447`) — synchronous, but only from the `dispatch-activated` branch of focus-transfer.
+   - `useCardDelegate.cardDidActivate` (`tide-card.tsx:1662`) — macrotask-deferred via `MessageChannel`.
+   - `CardHost` cold-boot `applyFocusSnapshot` (`card-host.tsx:1048`) — in `useLayoutEffect`, mount-time only.
+   Each claimant can call `.focus()`; none has documented precedence over the others. Whichever fires *last* wins, and "last" depends on WebKit's gesture focus-lock and React commit timing — both browser implementation details, per [L05] not contractual.
+
+3. **L05 violation in the delegate substrate.** `useCardDelegate` schedules its callbacks through a `MessageChannel` macrotask explicitly to drain "past WebKit's gesture focus-lock" (`card-lifecycle.ts:744–749`). That comment is the diagnostic: the macrotask exists to escape a browser timing behavior. [L05] forbids exactly this: "timing relative to React's commit cycle is a browser implementation detail, not a contract." E.10 stacked a synchronous framework axis on top of a non-deterministic substrate; nothing in E.10 fixed the substrate, and adding a "yield via DOM check" inside the macrotask just made the workaround conditional on whether the framework's prior sync `.focus()` happened to have landed — which itself depends on the same gesture lock.
+
+4. **L23 violation cascades from #2.** Each unconditional `.focus()` call from a competing claimant destroys whatever the previous path wrote. The "find input gets focused, then engine clobbers it" pattern is the surfacing symptom; the same destruction can flow in either direction. The contract — focus position at first paint after activation = focus position at last save — is meant to hold across every activation source. It doesn't, because the model is unsourced.
+
+**Phase E.11 goals.**
+
+1. **One synchronous focus authority for activation transitions.** The framework dispatches focus once per activation, deterministically, based on `bag.focus`. No racing.
+2. **`bag.focus` is the canonical state.** Every focus-claim path reads from it; the channel writes through it. The engine's autonomous focus-claim observer is retired.
+3. **[L05] compliance.** No focus claim depends on macrotask drain ordering relative to React commit. If a non-React ordering boundary is needed (e.g., end-of-current-JS-task), it's contractually defined and explicitly named — not "we hope this drains after the gesture."
+4. **[L23] compliance across every activation source.** Cold boot, app-switch, card-switch, cross-pane drag drop, reload, drag-end. One model, one verification matrix.
+5. **Real-engine test coverage.** AT-series tests exercise actual `tide-card` with `TugTextEditor`, not the engineless fixture. The fixture stays as the pure-axis regression layer; tide-card tests gate the integrated behavior.
+
+**Tuglaws cross-check (Phase E.11).** {#e11-tuglaws}
+
+> Phase-level summary. Per-step compliance is asserted in each step's `**Tuglaws:**` block under [Execution Steps](#e11-execution-steps); the column "Proven at" names which step demonstrates the invariant.
+
+| Law | Status | Proven at |
+|-----|--------|-----------|
+| **[L01]** No `root.render()` outside mount | ✓ unchanged | — (no render-root changes anywhere) |
+| **[L02]** External state via `useSyncExternalStore` only | ✓ unchanged | #e11-step-2, #e11-step-3 (engine hook registration goes through deck-manager store; framework reads `bag.focus` via existing channels) |
+| **[L03]** `useLayoutEffect` for event-dependent registrations | ✓ unchanged | #e11-step-2 (engine hook registers in `useLayoutEffect`) |
+| **[L04]** Never measure child DOM inline after parent triggers child setState | ✓ unchanged | #e11-step-4 (MutationObserver is the ready-callback equivalent for late-mount; no parent-triggered-then-measure pattern) |
+| **[L05]** No timing-derived ordering for state-commit operations | ★ **strengthened** | #e11-step-1 (investigation matrix), #e11-step-3 (macrotask focus claim retired; gesture-end event ordering used where needed) |
+| **[L06]** Appearance via CSS/DOM, never React state | ✓ unchanged | #e11-step-3 (`.focus()` is direct DOM mutation; `bag.focus` is data, not appearance) |
+| **[L07]** Action handlers read live refs / store snapshots | ✓ unchanged | #e11-step-2 (engine hook closures), #e11-step-3 (`applyBagFocus` reads `bag.focus` live at fire time) |
+| **[L11]** Controls emit actions; responders own state | ✓ unchanged | #e11-step-3 (responder chain untouched; focus-claim and chain promotion stay separate axes) |
+| **[L19]** Component authoring guide compliance | ✓ updated | #e11-step-2 (new public API on deck-manager store), #e11-step-5 (state-preservation.md + component-authoring.md rewrites) |
+| **[L22]** External state driving DOM updates observes directly | ✓ unchanged | #e11-step-1 (deck-trace observers), #e11-step-4 (MutationObserver drives retry directly; no React round-trip) |
+| **[L23]** Preserve user-visible state | ★ **enforced** | #e11-step-3 (single-channel single-source-of-truth dispatch), #e11-step-4 (late-mount targets settle), #e11-step-6 (verified per source × per kind) |
+| **[L24]** Three state zones preserved | ✓ unchanged | #e11-step-3 (`bag.focus` is data; engine-hook registration is structure; DOM focus is appearance) |
+
+**Explanation of the two starred laws.**
+
+**[L05] strengthening — gesture focus-lock by event ordering, not task scheduling.** The macrotask-based focus claim in `useCardDelegate.cardDidActivate` exists to drain "past WebKit's gesture focus-lock." That's a timing-derived workaround — exactly what [L05] forbids. E.11 retires the macrotask focus claim and replaces it with two contractual primitives:
+
+1. **Synchronous dispatch from a single channel** (`applyBagFocus`) for sources where the lock doesn't drop the call. Most pane-chrome clicks fall here because `pane-focus-controller`'s existing `mousedown.preventDefault` suppresses the lock's effect for the next event in the gesture (see #q01-mousedown-preventdefault-impact).
+2. **Event-ordered dispatch on `pointerup` or `click`** for sources where the lock does drop the call. The HTML spec's "DOM event dispatch" guarantees event order — these handlers fire after pointerdown/mousedown completes, past the lock's window. This is contractual, not timing-derived.
+
+Microtasks (`queueMicrotask`) are NOT a substitute: they drain *between* events inside a gesture, so a focus call queued in pointerdown still runs before mousedown's default action. The wrong-fix-rejected note in D6 spells this out.
+
+**[L23] enforcement — focus position at first paint after any activation = focus position at last save.** The phase delivers this invariant across every activation source (cold-boot, app-switch, card-switch, cross-pane drag drop, reload, drag-end) and every kind in the `FocusSnapshot` union (`form-control`, `dom`, `engine`, `none`). The verification matrix is AT0071–74 (fixture) + AT0075–79 (real-tide) + the manual checkpoint list.
+
+**Decisions (Phase E.11).** {#decisions-phase-e-11}
+
+- **D1. The framework owns activation focus; the engine becomes a callable, not an autonomous claimant.** Today the engine's `onCardActivated` (via `useCardStatePreservation`) autonomously calls `paintMirrorAsActive(view)` whenever `invokeActivationCallback(cardId)` fires. After E.11 the engine instead registers `paintMirrorAsActive` and `paintMirrorAsInactive` as **named hooks** on a new channel (`store.registerEngineHooks(cardId, { paintMirrorAsActive, paintMirrorAsInactive })`). The framework's activation dispatcher calls `paintMirrorAsActive` when (and only when) `bag.focus.kind === "engine"`. The engine no longer decides on its own to claim focus on activation.
+
+- **D2. Extend `FocusSnapshot` with explicit `engine` kind.** Replace the current `component-owned` variant with `engine`. Capture rules in `captureFocus`:
+  - `[data-tug-state-key]` element → `form-control`.
+  - `[data-tug-focus-key]` element → `dom`.
+  - inside `[data-slot="tug-text-editor"]` → `engine`.
+  - else → `none`.
+
+  The E.10 carve-out — "content-owning cards only capture `dom`/`form-control`; drop engine kind" — is **retired**. Content-owning cards now capture all four kinds. The dispatch routes `engine` to the engine hook (not to a `.focus()` call), so the previous reason for filtering (calling `.focus()` on the contenteditable bypasses the inactive-paint → global-Selection transfer) no longer applies.
+
+  **Backward-compat.** Persisted tugbank bags from pre-E.10 builds may carry `bag.focus.kind === "component-owned"`. Post-E.10 carve-out filters this out at save for content-owning cards, so any field-persisted `component-owned` value is necessarily *pre-E.10*. The deserialization path coerces `component-owned` → `engine` on read (same semantic — "the engine's contenteditable was focused"). Implemented in the `CardStateBag` deserializer or, equivalently, in the consumer of `bag.focus` (single switch). No tugbank schema bump needed; the union shape is wire-compatible because `kind` is a discriminant string and the new code accepts both spellings at the read boundary. Documented in `tuglaws/state-preservation.md` as part of D10.
+
+- **D3. Two-layer dispatcher: pure `resolveBagFocus` + impure `applyBagFocus`.** {#focus-dispatch-model} Splitting these matters — the pure resolver is testable in isolation and the orchestrator owns side effects.
+  - **`resolveBagFocus(cardId, store): BagFocusResolution`** — pure, in `focus-transfer.ts`. Reads `bag.focus` and the card host root. Returns a discriminated union:
+    - `{ kind: "framework", el: HTMLElement }` — element is in DOM, connected, ready to focus.
+    - `{ kind: "engine", cardId: string }` — `bag.focus.kind === "engine"` AND the engine hook is registered for this card.
+    - `{ kind: "default-focus", cardRoot: HTMLElement }` — `bag.focus.kind === "none"` or absent; caller decides whether to walk the default-focus chain.
+    - `{ kind: "deferred-dom", focusKey | componentStatePreservationKey }` — `bag.focus` names a framework target that isn't in the DOM yet.
+    - `{ kind: "deferred-engine", cardId: string }` — `bag.focus.kind === "engine"` but the engine hook isn't registered yet (cold-boot before `TugTextEditor` mounts).
+    - `{ kind: "none" }` — nothing to do; no host root, no card, etc.
+  - **`applyBagFocus(cardId, store, options?): "applied" | "deferred"`** — impure. Calls `resolveBagFocus`. For `framework`: calls `el.focus()`. For `engine`: invokes the registered engine hook. For `default-focus`: walks the default-focus chain (if the caller opted in). Returns `"applied"` on success or `"deferred"` if the resolution was a deferred kind. Side effects are scoped to the focus call itself — `applyBagFocus` does NOT install observers.
+  - **Orchestration belongs to the call site.** CardHost owns the MutationObserver loop that retries `applyBagFocus` on subtree mutations (for `deferred-dom`) AND on engine-hook registration via the `callbacksVersion` axis (for `deferred-engine` — see D5). `transferFocusForActivation` and `reactivateCurrentFocusDestination` are one-shot callers; they call `applyBagFocus` once and accept the result. Activation transitions don't retry because the activation is a single event — if the target isn't ready at that moment, the cold-boot orchestrator (which IS running for the freshly-active card) handles the retry.
+
+  Every existing focus-claim site is rewritten to call `applyBagFocus` instead of its current bespoke logic: `transferFocusForActivation` (focus-element + dispatch-activated → both become `applyBagFocus`), `transferFocusAfterMove`, `reactivateCurrentFocusDestination`, CardHost cold-boot RESTORE.
+
+- **D4. Retire the macrotask focus claim in `tide-card` AND the engine's autonomous focus claim in `onRestore` / `onCardActivated`.**
+  - `useCardDelegate.cardDidActivate` no longer calls `entryDelegateRef.current?.focus()`. Activation focus is the framework's job. `cardDidMove` and `cardDidResize` keep their focus calls — those handle non-activation transitions (drag, resize) which are independent of the activation channel. The `useCardDelegate` macrotask substrate stays for the `Did*` events that don't claim focus; the L05 concern is the focus-claim use case specifically.
+  - **`useCardStatePreservation.onCardActivated` no longer calls `paintMirrorAsActive`.** It either disappears or becomes empty. The engine's `paintMirrorAsActive` is now invoked exclusively via the engine hook D1 introduces, from `applyBagFocus` when `bag.focus.kind === "engine"`.
+  - **`useCardStatePreservation.onRestore` no longer calls `paintMirrorAsActive` in the `isActive` branch.** Today `onRestore` does two things conditionally: (a) restore engine state (selection, text, scroll), (b) call `paintMirrorAsActive` if `isActive`. After E.11, `onRestore` keeps (a) and drops (b). The framework's cold-boot RESTORE pass in CardHost runs `applyBagFocus` immediately after `onRestore`; if `bag.focus.kind === "engine"`, the engine hook fires and `paintMirrorAsActive` runs there. This means *the engine's selection-restore (the `view.dispatch(EditorSelection.range(...))` inside `paintMirrorAsActive`) only fires when the framework decides the engine should be focused* — same semantic as today, different driver.
+  - `paintMirrorAsInactive` stays in `onCardWillDeactivate`. Deactivation paint (selection routed to inactive-highlight, scroll snapshot) is not a focus claim and is not in the focus-channel collapse scope. The engine hook D1 exposes `paintMirrorAsInactive` for symmetry, but `onCardWillDeactivate` continues to fire it via the existing `useCardStatePreservation` channel; the framework's call site for inactive-paint is unchanged. This keeps the deactivation contract (paint inactive BEFORE the new card claims global Selection) intact.
+
+- **D5. Late-mount settle: framework-axis targets AND engine readiness.** `applyBagFocus`'s deferred results need orchestration. Two flavors:
+  - **`deferred-dom`** (framework-axis target hasn't rendered yet). CardHost's MutationObserver loop retries `applyBagFocus` on subtree mutations to `cardRoot`. Element-identity settle: once `applyBagFocus` returns `"applied"`, mark applied and stop. Max-retry budget: a hard count (default 200 mutations) AND a hard time budget (default 5s). If neither bounds is reached, the observer disconnects with a one-line dev-mode warn so the bug surfaces. Production behavior: silent disconnect — the framework yields rather than thrash forever.
+  - **`deferred-engine`** (engine hook not registered yet at cold-boot — `TugTextEditor` mounts deeper than CardHost, so its `useLayoutEffect` registration fires *after* CardHost's RESTORE useLayoutEffect on the *initial* commit, even though children fire before parents on subsequent commits; the order specifically inverts for the very first hosted child). The engine-hook registration channel publishes a `callbacksVersion` axis (same pattern CardHost already uses for `useCardStatePreservation` callbacks at line 1216). CardHost's RESTORE effect re-runs when `callbacksVersion` increments; on re-run, `applyBagFocus` finds the engine hook registered and fires it. No separate retry observer needed for `deferred-engine` — the existing `callbacksVersion`-keyed effect IS the retry.
+  - Both deferred kinds settle by the time the framework has tried both readers (DOM subtree settle + callbacks-version settle). If both still fail, the framework has done its job per [L23] — the user-visible state was *captured* correctly; the *application* failed because the target the user named no longer exists. That's a legitimate stale-state outcome, not a bug.
+
+- **D6. WebKit gesture focus-lock — characterize first, then dispatch on the gesture-end event for sources that need it.**
+
+  **The wrong fix (rejected).** Defer focus via `queueMicrotask`. Microtasks drain *between* events inside a click gesture (pointerdown → microtask → mousedown → microtask → mouseup → microtask → click); a focus call queued in pointerdown still runs before mousedown's default-action and gets clobbered the same way the synchronous call does. The existing `MessageChannel` macrotask "works" because it drains *after* the whole gesture, but that ordering is empirical, not contractual ([L05]).
+
+  **The right fix.** Event ordering is contractual (HTML spec, "DOM event dispatch"). When sync `.focus()` in a pointerdown handler doesn't survive, the focus call moves to a `pointerup` or `click` handler on the same gesture — both fire *after* the gesture's focus-locking window ends. This is the same channel for every source that needs it; no scheduler timing involved.
+
+  **Methodology (this is the gate for Commit 1).** For each activation source, run an instrumented gesture and record:
+  1. Before sync `.focus(target)`: `document.activeElement`.
+  2. Immediately after sync `.focus(target)` (same task): `document.activeElement`.
+  3. After the gesture ends — concretely, in a `requestAnimationFrame` callback scheduled from the pointerdown handler (post-gesture sentinel, used here only for the diagnostic, not for production dispatch): `document.activeElement`.
+
+  Outcomes:
+  - (2) === target AND (3) === target → sync is sufficient for this source.
+  - (2) === target AND (3) !== target → gesture-lock dropped focus mid-gesture. Move dispatch to `pointerup`.
+  - (2) !== target → the sync call was rejected outright (rare; usually means the target was detached or in an inert subtree). Treat as `deferred-dom` and rely on the MutationObserver settle.
+
+  **Sources to test:** (a) pane-chrome click (pane-focus-controller), (b) intra-pane tab click (tug-pane#performSelectCard), (c) cross-pane drag drop (deck-manager move path), (d) keyboard activation (Cmd-`, Tab into pane), (e) programmatic activation (action-dispatch, show-gallery, init/restore). The matrix per source × per `bag.focus.kind` becomes a small table in the Commit 1 investigation log.
+
+  **Design after investigation.** Each activation source has a documented dispatch event. If all land at sync `.focus()` in pointerdown, fine — that's the simplest design and `applyBagFocus` stays sync. If some need post-gesture dispatch, those sources schedule `applyBagFocus` to fire from their `pointerup` or `click` handler instead. No timer, no macrotask, no microtask — only event-ordered dispatch. The dispatcher itself doesn't change shape; only the source that calls it does.
+
+  The investigation deliverable for Commit 1 is a one-page note (`docs/notes/focus-gesture-lock-investigation.md`) that records the matrix and names the per-source dispatch event. Commit 2 lands the dispatcher; Commit 3 wires the per-source dispatch events per the note.
+
+- **D7. The engineless fixture (`gallery-file-block-find-fixture`) stays.** It's the pure-framework-axis regression: a content-owning card with no engine, used to gate the `dom`/`form-control` kinds in isolation. AT0071–AT0074 against it continue to be the framework-axis baseline. They will be supplemented (not replaced) by real-tide AT-series tests (D8) so the fixture's narrowness no longer hides integration bugs.
+
+- **D8. Real-tide AT-series (AT0075–AT0079).** Five new app-tests using real `tide` componentId with the harness's `bindTideSession` + `awaitEngineReady`:
+  - **AT0075** — tide-card find row survives app-switch (cmd-tab cycle).
+  - **AT0076** — tide-card find row survives card-switch (two tide cards in one pane).
+  - **AT0077** — tide-card find row survives Developer > Reload (the exact scenario the user reported).
+  - **AT0078** — tide-card engine focus (no find row open) survives app-switch and card-switch. Regression gate: removing the macrotask delegate must not break engine focus when the user genuinely had engine focus at save time.
+  - **AT0079** — tide-card engine focus while find row is *open* but contenteditable holds focus at save time. Reload restores engine focus, not find input. Regression gate: `bag.focus.kind === "engine"` correctly wins over a stale find-row mount.
+
+  These tests are first-class regression coverage. They are slower than fixture tests (require backend binding), and they will catch the bug E.10's tests missed.
+
+- **D9. Cross-pane drag (`transferFocusAfterMove`) uses the same dispatcher.** The existing helper has its own dispatch logic; E.11 collapses it into `applyBagFocus`. Drag-drop activation behaves identically to click activation for focus purposes — the dispatcher is the single source.
+
+- **D9b. All `activateCard` call sites route through `transferFocusForActivation` — runtime sites claim focus; boot sites defer to CardHost RESTORE.** Today five sites call `store.activateCard(...)` directly. The wrap is the same shape my E.10/3 fixup for CYCLE_CARD already shipped (`deck-canvas.tsx:172-194` after `a86f07e0`), but the focus-claim semantics differ by site:
+
+  **Runtime sites — the wrap genuinely claims focus.**
+  - `action-dispatch.ts:338` — chain action activating a pane's active card. React tree is mounted; `peekCardHostRoot` returns a live root; `applyBagFocus` dispatches.
+  - `deck-canvas.tsx:226` — show-component-gallery activating an existing gallery card. Same as above.
+  - `deck-canvas.tsx:231` — show-component-gallery activating a *new* gallery card. The new card mounts via `flushSync(commitMutation)`; by the time the resolver runs, the host root is registered.
+
+  **Boot/init sites — the wrap is for symmetry, not focus claim.**
+  - `deck-manager.ts:1514` — boot/init activating the persisted focus card. This fires BEFORE React renders any card. `peekCardHostRoot` returns `null`; `resolveBagFocus` returns `{ kind: "none" }`; `applyBagFocus` is a no-op for focus. The actual focus claim comes from **CardHost cold-boot RESTORE** when the card mounts a few ticks later. The wrap is kept for trace coherence (deck-trace records the activation event identically across boot and runtime) and to short-circuit a future regression where someone adds a focus-claim path that DOES need to fire at boot.
+  - `deck-canvas.tsx:291` — initial-focused-card restore. Same dynamic as `deck-manager.ts:1514`. The wrap is benign symmetry; CardHost RESTORE is the real path.
+
+  Each runtime wrap needs `outgoingCardId` (current first-responder) and `incomingCardId` (the target). Boot wraps pass `outgoingCardId: null`; `transferFocusForActivation` skips the SAVE step correctly for null outgoing. Verify import-cycle safety in `deck-manager.ts:1514` — `transferFocusForActivation` is already imported via `deck-manager.ts:96`, so the wrap is a call-site change, not a new dependency.
+
+  **Tested by:** AT0075/76/77 against tide-card (which exercises the boot path through CardHost RESTORE) and by existing AT-series for the gallery runtime paths.
+
+- **D10. Documentation as deliverable.** [L19] update — substantive, not touch-up. Acknowledged: this is the *second* rewrite of `state-preservation.md`'s focus section in three phases (E.10 rewrote it once; the current text is wrong post-E.11). The deliverable:
+
+  **`tuglaws/state-preservation.md`** — three section changes:
+  1. **Rewrite `FocusSnapshot in depth` (~30 lines).** Today the section describes `form-control` / `dom` / `component-owned` / `none`. After E.11: `form-control` / `dom` / `engine` / `none`, with the engine-kind invariant ("captured for ALL cards, including content-owning; dispatch routes it to the engine hook, NOT to a `.focus()` call"). Add the backward-compat coercion (`component-owned` → `engine` on read, D2).
+  2. **New section `Focus dispatch model` (~60 lines).** Names `resolveBagFocus` / `applyBagFocus` (D3), the engine hook contract (D1), the late-mount settle path (D5), the per-source dispatch-event mapping (D6 outcome), and the "all `activateCard` go through `transferFocusForActivation`" rule (D9b). Cross-references the four formerly-competing claim sites and the single dispatcher that replaces them.
+  3. **Retire the E.10 wording that's now wrong.** E.10's section asserts "content-owning cards capture `bag.focus` only when kind is dom/form-control" — this is the carve-out E.11 retires. Replace with the new rule.
+
+  **`tuglaws/component-authoring.md`** — one section change:
+  1. **Add late-mount contract to "Transient focus targets in content-owning cards" (~15 lines).** Today the section says "ensure the element is in the DOM at restore time." E.11 adds: "the framework retries until your target appears, but no longer than [max-retry-budget]; if your target genuinely doesn't render after that, the framework yields and the user sees default focus." Names the responsibility clearly: widget authors own the eventual-mount; the framework owns the retry.
+
+  Total: ~105 lines of substantive doc changes. Sized as Commit 5; does NOT block Commits 1–4 from landing (they're tested by AT-series independently of doc state), but the phase doesn't exit until docs match code.
+
+**Why these decisions, specifically, fix what E.10 left broken.**
+
+- **D1 + D2 retire the engine's autonomous focus claim.** The reason Glitch 2 surfaces is the engine's `paintMirrorAsActive` racing the framework's sync `.focus()`. With the engine hook called by the framework (only when `bag.focus.kind === "engine"`), the engine never races — it only fires when the framework asks it to.
+- **D3 collapses the four focus-claim sites into one — with a clean pure/impure split.** The four-claimant model is the *cause* of the precedence ambiguity. Removing three of them (and changing the fourth to dispatch from `bag.focus`) eliminates the race by construction. Splitting the dispatcher into a pure resolver and an impure orchestrator means the resolver can be unit-tested in isolation (it has no DOM side effects to mock) and the orchestrator's retry policy lives at the call site that owns it (CardHost owns the MutationObserver; `transferFocusForActivation` is one-shot).
+- **D4 retires the L05-violating substrate for the focus use case AND retires the engine's own bypass paths.** The macrotask substrate stays for non-focus events (cardDidMove/cardDidResize); the focus-claim — the use case that depends on timing relative to React commits — moves to a deterministic channel. Crucially D4 also retires `useCardStatePreservation.onRestore`'s focus claim and `onCardActivated`'s focus claim, so the engine has *no* autonomous path that calls `paintMirrorAsActive` outside the framework dispatcher.
+- **D5 fixes Glitch 3 AND handles engine-readiness.** Reload-time the find input isn't in the DOM yet because tide's transcript loads messages async. A one-shot synchronous `applyBagFocus` at mount can't reach a target that doesn't exist yet. The MutationObserver loop is the explicit settle mechanism for the DOM-target case. The engine-hook-registration case (cold-boot, `bag.focus.kind === "engine"` before `TugTextEditor` has mounted) settles via the existing `callbacksVersion` axis CardHost already runs — no new observer needed for that path. Both deferral kinds have explicit retry budgets and explicit failure modes; the framework yields cleanly on stale state instead of looping.
+- **D6 dispatches focus on the gesture-end event, not via macrotask deferral.** The investigation method is named (instrumented matrix, per-source × per-kind), the verification criterion is named (`document.activeElement` at three measurement points), the design after investigation is named (dispatch on `pointerup` / `click` for sources where pointerdown sync doesn't survive — event ordering is contractual). The `queueMicrotask` claim from the earlier draft was wrong: microtasks drain *between* events inside a gesture, so the race window isn't closed.
+- **D7 + D8 close the test-fixture gap.** AT0075–79 against real tide-card would have caught the bug E.10/2 shipped. They become the integration gate that the fixture-only AT0071–74 set is not.
+- **D9b closes the direct-`activateCard` hole.** Without it, retiring the engine's autonomous claim AND the macrotask claim would leave five activation paths with no focus dispatcher — boot/init, show-gallery (two), and at least one chain action. The audit lists each site; the wrap is mechanical.
+
+**Risks and Mitigations (Phase E.11).** {#e11-risks}
+
+| Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
+|------|--------|------------|------------|--------------------|
+| R01: `callbacksVersion` re-fire thrashes CardHost RESTORE | Med (perf, log noise) | Med | Step 2's Path A vs Path B decision; if Path A shows spurious re-fires in deck-trace, fall back to Path B parallel channel | Step 2 deck-trace shows >2 RESTORE re-fires per mount; or AT0001–74 timing regresses noticeably |
+| R02: Cross-pane drag with stale `bag.focus` (target unmounted mid-drag) | Low (rare; degrades to `default-focus` walk) | Low | `resolveBagFocus` returns `none` when `peekCardHostRoot` is null OR target is `!isConnected`; dispatcher handles cleanly | Drag-drop manual checkpoint fails; deck-trace shows `applyBagFocus` returning `deferred-dom` for a transient drop that should have been `applied` |
+| R03: Real-tide AT0075–79 flakiness from `bindTideSession` + `awaitEngineReady` heavier than fixture | Med (CI noise) | Med-High | Deck-trace assertion as backstop (verify `focus-call` events) so flake-on-timing has a non-timing recourse; per-test re-run policy matches AT0035-tide pattern | >5% flake rate in three consecutive runs |
+| R04: Backward-compat coercion (`component-owned` → `engine`) hits a bag shape we didn't anticipate | Low | Low | Coerce only on read; never write `component-owned`; emit dev-mode warn when coercion fires so the migration window is observable | Coercion warn fires more than once per session in dev |
+
+**Risk R01: `callbacksVersion` re-fire thrash** {#r01-callbacks-version-thrash}
+
+- **Risk:** Engine-hook registration bumps the same `callbacksVersion` axis CardHost uses for `useCardStatePreservation` callbacks. Other consumers of `callbacksVersion` (notably the cold-boot RESTORE effect) re-fire on registration — which is the intended D5 behavior for `deferred-engine`, but may also cause unnecessary work for non-engine callback updates.
+- **Mitigation:** Step 2's "Path A vs Path B" decision is the explicit gate. Default to Path A (shared axis); if instrumentation shows spurious re-fires for non-engine callback paths, switch to Path B (parallel `engineHooksVersion`). Decide before building, not after.
+- **Residual risk:** Even Path B has an axis to track; we just trade shared-thrash for two-axis bookkeeping.
+
+**Risk R02: Cross-pane drag with stale `bag.focus`** {#r02-stale-bag-focus-on-drag}
+
+- **Risk:** A card mid-drag may have `bag.focus` pointing at an element that gets unmounted during the drag (e.g., the user drags a tide card while the find row was open AND tide's virtualization scrolls the FileBlock entry out of the window). At drop time, `resolveBagFocus` returns `deferred-dom` for a target that won't ever appear.
+- **Mitigation:** `resolveBagFocus` checks `el.isConnected` before returning `framework` — already in the design. For `deferred-dom`, the MutationObserver retry budget (200 mutations / 5s) bounds the cost. After budget, the framework yields to default-focus; the user sees the card focused on first focusable descendant, which is acceptable degradation.
+- **Residual risk:** None worth budgeting for.
+
+**Risk R03: Real-tide AT0075–79 flakiness** {#r03-real-tide-flakiness}
+
+- **Risk:** AT0075–79 use `bindTideSession` + `awaitEngineReady`, which are heavier than the fixture path. Heavier tests have more failure surfaces (backend not ready, message-loading races). CI flake rate may rise.
+- **Mitigation:** Each AT-test gets a deck-trace assertion (verify `focus-call` event count + target) as the primary criterion. Timing-based waits are secondary. If the AT-test fails on `awaitEngineReady`, the deck-trace assertion would have caught the actual focus-axis bug. AT0035-tide already runs in CI with a similar shape — adopt its retry/timeout policy.
+- **Residual risk:** Some flakes remain; they're a CI cost, not a correctness signal.
+
+**Risk R04: Backward-compat coercion edge case** {#r04-component-owned-coercion}
+
+- **Risk:** A pre-E.10 persisted bag with `component-owned` kind hits the coercion path. If the bag also has stale data that doesn't match an existing card, the coerced `engine` kind produces a `deferred-engine` that never settles.
+- **Mitigation:** The MutationObserver retry budget (200 mutations / 5s) bounds the cost. Dev-mode warn when coercion fires makes the migration window observable; if it fires frequently in production, we'd add a schema bump.
+- **Residual risk:** None for correctness; minor cost for the retry budget.
+
+**Open Questions (Phase E.11).** {#e11-open-questions}
+
+> Resolve before Commit 1 ships, or explicitly defer with a rationale.
+
+**Q01: Does `pane-focus-controller`'s existing `mousedown.preventDefault` for pane chrome eliminate the gesture-lock concern for most sources?** {#q01-mousedown-preventdefault-impact}
+
+- **Question:** The pane-focus-controller already calls `preventDefault` on the matching mousedown for pane chrome clicks (`pane-focus-controller.ts:287` area). If WebKit's gesture focus-lock is specifically about mousedown's default action moving focus to the click target, and we already suppress that default, then sync `.focus()` in pointerdown should survive for pane chrome clicks. If this is true, Step 1's investigation matrix likely shows almost all sources pass at sync, and only programmatic activation paths (which don't have a gesture) need anything special. That narrows the design surface significantly.
+- **Why it matters:** If the answer is "yes, mostly," D6's per-source dispatch-event mapping is much simpler — most sources stay at pointerdown sync, and only edge cases (cross-pane drag drop, keyboard) need post-gesture dispatch.
+- **Plan to resolve:** Step 1's investigation matrix answers it directly. The deliverable's per-source rows will show pre-sync, post-sync, post-gesture activeElement; if (2) === target AND (3) === target for pane chrome / tab click, Q01 resolves to "yes."
+- **Resolution:** OPEN. Will be DECIDED at Step 1 completion.
+
+**Q02: Should the retry budgets (200 mutations / 5s) be constants, config knobs, or test-tunable?** {#q02-retry-budgets}
+
+- **Question:** Hardcoded constants are simpler; config knobs allow tuning per-environment (slow CI vs fast prod); test-tunable lets AT-tests force budget exhaustion to verify the dev-mode warn path.
+- **Why it matters:** Hardcoded means a future "tide-card transcript takes >5s to load on a slow disk" bug forces a code change to fix. Test-tunable means we can verify the budget-exhaustion path in an AT-test rather than only in manual exploration.
+- **Options:**
+  - Hardcoded constants (default). Simplest.
+  - `process.env`-controlled (or window-level config). Adds knobs without API surface.
+  - Test-mode override (`window.__tugTestMode` already exists). Lets AT-tests force budget exhaustion for one test, otherwise hardcoded.
+- **Plan to resolve:** Default to hardcoded; reconsider if Step 4's tests want to exercise budget exhaustion. If they do, add a test-mode override.
+- **Resolution:** OPEN. Will be DECIDED at Step 4 implementation.
+
+**Out of scope (Phase E.11).**
+
+- Substrate-side match-highlighting for DiffBlock + TerminalBlock (lands when each substrate's search extension ships; independent of focus routing).
+- Find row UI changes — the row is fine; only its focus routing needs work.
+- Migrating non-tide engine surfaces — there aren't any yet; `tide-card` is the sole content-owning + engine-managed card today.
+- Replacing the `useCardDelegate` macrotask substrate wholesale — only the focus-claim consumer changes channel. Other consumers (geometry events) stay where they are.
+
+**Artifacts (Phase E.11).**
+
+- New: `docs/notes/focus-gesture-lock-investigation.md` — per-source × per-kind matrix from Commit 1; names the dispatch event per source.
+- Updated: `tugdeck/src/layout-tree.ts` — `FocusSnapshot` union gains `engine` kind, retires `component-owned` from the type but keeps backward-compat coercion on read.
+- Updated: `tugdeck/src/components/chrome/card-host.tsx` — `captureFocus` classifies engine kind. `applyFocusSnapshot` is **retired**: signatures are incompatible with `applyBagFocus` (the former takes `(cardRoot, snapshot)`; the latter takes `(cardId, store)` and reads `bag.focus` itself). All existing callers — `traceApplyFocusSnapshot` and the CardHost cold-boot RESTORE site — migrate to `applyBagFocus`. The `applyFocusSnapshot` symbol is deleted from the module's exports.
+- Updated: `tugdeck/src/focus-transfer.ts` — adds `resolveBagFocus(cardId, store): BagFocusResolution` (pure) and `applyBagFocus(cardId, store, options?): "applied" | "deferred"` (impure). `transferFocusForActivation`, `transferFocusAfterMove`, and `reactivateCurrentFocusDestination` are rewritten to call `applyBagFocus`.
+- Updated: `tugdeck/src/deck-manager.ts` — adds `registerEngineHooks(cardId, hooks)` / `invokeEnginePaintMirrorAsActive(cardId)` / `invokeEnginePaintMirrorAsInactive(cardId, publish)` channel.
+- Updated: `tugdeck/src/components/tugways/tug-text-editor.tsx` and `state-preservation.ts` — registers engine hooks via `useLayoutEffect`; `useCardStatePreservation.onCardActivated`'s focus claim is retired; `useCardStatePreservation.onRestore`'s `paintMirrorAsActive` call in the `isActive` branch is retired (engine state restore via `restoreEditState` stays).
+- Updated: `tugdeck/src/components/tugways/cards/tide-card.tsx` — `useCardDelegate.cardDidActivate` no longer calls `entryDelegateRef.focus()`.
+- Updated: `tugdeck/src/components/chrome/card-host.tsx` — MutationObserver loop integrates `deferred-dom` retry (element-identity settle, 200-mutation / 5s budget). `callbacksVersion`-keyed effect handles `deferred-engine` retry.
+- Updated: `tugdeck/src/components/chrome/pane-focus-controller.ts` — for sources where Commit 1's matrix shows pointerdown sync doesn't survive: move dispatcher invocation to pointerup/click handler at that source.
+- Updated: `tugdeck/src/action-dispatch.ts`, `tugdeck/src/deck-manager.ts`, `tugdeck/src/components/chrome/deck-canvas.tsx` — five `activateCard` call sites wrapped through `transferFocusForActivation` per D9b.
+- Updated: `tuglaws/state-preservation.md` — `FocusSnapshot in depth` rewritten (~30 lines); new `Focus dispatch model` section (~60 lines); E.10 carve-out wording retired.
+- Updated: `tuglaws/component-authoring.md` — late-mount contract added to "Transient focus targets" section (~15 lines).
+- New: `tests/app-test/at0075-tide-find-app-switch.test.ts`
+- New: `tests/app-test/at0076-tide-find-card-switch.test.ts`
+- New: `tests/app-test/at0077-tide-find-reload.test.ts`
+- New: `tests/app-test/at0078-tide-engine-focus-survives.test.ts`
+- New: `tests/app-test/at0079-tide-engine-focus-wins-over-stale-find.test.ts`
+- Updated: `tuglaws/app-test-inventory.md` — register AT0075–AT0079.
+
+**Execution Steps (Phase E.11).** {#e11-execution-steps}
+
+> Each step is its own commit with explicit Depends-on, References, Artifacts, Tasks, Tests, and Checkpoint per [tugplan-skeleton](../tuglaws/tugplan-skeleton.md). Decisions are referenced by `Dn` ID. Anchors inside the phase prose are `#e11-...`. Commit after all Checkpoint items pass — every step.
+>
+> Sequencing rule: each step must leave the tree green against the AT-series it claims to gate. The split between Step 2 and Step 3 is load-bearing — Step 2 is **additive only** (new types, new channel, no behavior change); Step 3 is **substitutive** (call-site rewrites, autonomous claim retired). If Step 3 regresses anything, reverting just Step 3 leaves Step 2's additions in place — safe.
+
+###### Step 1: Gesture focus-lock investigation + per-source matrix {#e11-step-1}
+
+<!-- No dependencies; this is the root of the phase. -->
+
+**Commit:** `chore(focus-transfer): gesture focus-lock investigation + per-source matrix`
+
+**References:** D6, R03 (#e11-d-list, #r03-real-tide-flakiness), (#focus-dispatch-model)
+
+**Tuglaws:**
+- **[L05]** ★ — the investigation is the [L05] gate for the phase. It surfaces evidence that the existing macrotask substrate is timing-derived (browser implementation detail, not contract) and produces the contractual replacement: per-source dispatch-event mapping where each source names the contractual event boundary on which Step 3 will dispatch. The investigation deliverable IS the [L05] proof.
+- **[L22]** — deck-trace observers added in this step read external state (DOM, store, gesture events) directly. They do not introduce a React-state mirror; the events flow through the existing deck-trace observation channel.
+- **[L02]** — diagnostic instrumentation is observation-only. No `useState`, no React-state copy of bag data. The events fire from direct DOM/store reads.
+- **[L23]** — instrumentation must be a pure observer of user-visible state; it never modifies focus, selection, or any bag axis. The trace records, never mutates.
+
+**Artifacts:**
+- New: `docs/notes/focus-gesture-lock-investigation.md` — per-source × per-kind matrix; names the dispatch event per source; records which of the four claimants fires for each source.
+- Updated: `tugdeck/src/deck-trace.ts` — new event variants:
+  - `focus-measurement` with `phase: "pre-sync" | "post-sync" | "post-gesture"`, `site: string`, `activeElement: string`. The three measurement points at each FRAMEWORK focus-claim site.
+  - `engine-paint-mirror-active` with `cardId: string`, `caller: string` — fires every time the engine's `paintMirrorAsActive` runs, with the caller tag (`onCardActivated` / `onRestore` / `via-engine-hook` / `imperative-api`).
+  - `engine-paint-mirror-inactive` with `cardId: string` — fires every time `paintMirrorAsInactive` runs (symmetry; lets the trace verify deactivation pairs are intact across the refactor).
+  - `macrotask-focus-claim` with `cardId: string`, `delegate: "cardDidActivate" | "cardDidMove" | "cardDidResize"` — fires every time `useCardDelegate`'s macrotask handlers call `entryDelegateRef.focus()`. Lets the trace see the macrotask-delegate claim distinctly from the framework path.
+- Updated: `tugdeck/src/focus-transfer.ts` — wires `focus-measurement` events at framework focus-claim sites; no behavior change to the claims themselves.
+- Updated: `tugdeck/src/components/tugways/tug-text-editor/state-preservation.ts` — wires `engine-paint-mirror-active` / `-inactive` events at each `paintMirrorAsActive` / `paintMirrorAsInactive` call site (`onCardActivated`, `onRestore`-isActive-branch, `onCardWillDeactivate`).
+- Updated: `tugdeck/src/components/tugways/cards/tide-card.tsx` — wires `macrotask-focus-claim` event around the `entryDelegateRef.current?.focus()` calls in `cardDidActivate`, `cardDidMove`, `cardDidResize`.
+
+**Tasks:**
+- [ ] Add deck-trace event variants: `focus-measurement`, `engine-paint-mirror-active`, `engine-paint-mirror-inactive`, `macrotask-focus-claim`.
+- [ ] Wire `focus-measurement` (three phases) into the four FRAMEWORK focus-claim sites: `transferFocusForActivation` (focus-element + dispatch-activated), `transferFocusAfterMove`, `reactivateCurrentFocusDestination`, CardHost cold-boot RESTORE.
+- [ ] Wire `engine-paint-mirror-active` at every `paintMirrorAsActive` call site so the investigation matrix can record which of the four claimants fired for each gesture: (a) `useCardStatePreservation.onCardActivated`, (b) `useCardStatePreservation.onRestore` (isActive branch), (c) `tug-text-editor.tsx:1604` mount-effect pending-restore replay, (d) any imperative `entryDelegate.paintMirrorAsActive(...)` call.
+- [ ] Wire `engine-paint-mirror-inactive` at every `paintMirrorAsInactive` call site (`onCardWillDeactivate`; mount-effect inactive-branch replay) — symmetry for the deactivation contract.
+- [ ] Wire `macrotask-focus-claim` around each `entryDelegateRef.focus()` call in `tide-card.tsx`'s `useCardDelegate` handlers — captures the macrotask delegate's claim distinctly so the matrix can see which of the four claimants is firing for each gesture.
+- [ ] Run the gesture matrix manually for each source: pane-chrome click, intra-pane tab click, cross-pane drag drop, keyboard activation (Cmd-\`, Tab into pane), programmatic activation (action-dispatch, show-gallery, init/restore).
+- [ ] For each source × each `bag.focus.kind`, record (a) the three `focus-measurement` points, (b) which claimants fired and in what order (`engine-paint-mirror-active`, `macrotask-focus-claim`), (c) the dispatcher event boundary on which Step 3 should fire.
+- [ ] Write up the matrix in `docs/notes/focus-gesture-lock-investigation.md`. For each source: name the dispatch event (`pointerdown` / `pointerup` / `click` / `none` — for sources where sync survives), list the four-claimant ordering observed, and note any source where the matrix differs from naive expectation.
+
+**Tests:**
+- [ ] `bunx tsc --noEmit` — clean.
+- [ ] `bun run audit:tokens lint` — zero violations.
+- [ ] `bun test` — green.
+- [ ] `just app-test at0071-...test.ts at0072-...test.ts at0073-...test.ts at0074-...test.ts` — unchanged from baseline.
+
+**Checkpoint:**
+- [ ] `docs/notes/focus-gesture-lock-investigation.md` exists; matrix complete for all sources × all kinds.
+- [ ] Per-source dispatch-event mapping is named (i.e., for each activation source there is a documented event boundary on which Step 3 will dispatch).
+- [ ] No production behavior changed (deck-trace dumps before vs. after Commit 1 are identical except for the new instrumentation events).
+
+---
+
+###### Step 2: FocusSnapshot engine kind + engine-hook channel (additive) {#e11-step-2}
+
+**Depends on:** #e11-step-1
+
+**Commit:** `feat(focus): engine kind in FocusSnapshot + engine-hook registration channel`
+
+**References:** D1, D2, R01 (#e11-d-list, #r01-callbacks-version-thrash), (#focus-dispatch-model)
+
+**Tuglaws:**
+- **[L19]** ✓ — extending `FocusSnapshot` (an exported public type) and adding three new methods on the deck-manager store interface (`registerEngineHooks`, `invokeEnginePaintMirrorAsActive`, `invokeEnginePaintMirrorAsInactive`). Both surfaces are public API additions and follow the component-authoring guide: module docstring updated, types exported, no behavior change at consumer call sites.
+- **[L03]** ✓ — `TugTextEditor` registers engine hooks via `useLayoutEffect` keyed on `[store, cardId]`. Registration is complete before any framework event that could call the hook fires. Same mount-phase contract as the existing `useCardStatePreservation` callback registration.
+- **[L07]** ✓ — engine hook closures registered in Step 2 read `viewRef.current` live at fire time (not at registration time). The hook is stable across re-renders; the live reads keep the closure honest.
+- **[L02]** ✓ — engine-hook registration goes through the deck-manager store (an existing `useSyncExternalStore`-backed singleton). No new React-state mirror of hook state.
+- **[L23]** ✓ — the backward-compat coercion (`component-owned` → `engine` on read) is information-preserving: pre-E.10 bags continue to drive the correct dispatch path (engine focus), no user-visible state is lost on the migration window.
+
+**Artifacts:**
+- Updated: `tugdeck/src/layout-tree.ts` — `FocusSnapshot` union: `engine` kind added; `component-owned` removed from the type.
+- Updated: `tugdeck/src/components/chrome/card-host.tsx` — `captureFocus` classifies `[data-slot="tug-text-editor"]` matches as `engine`.
+- Updated: deserialization path for `bag.focus` — backward-compat coercion `component-owned` → `engine` on read (D2).
+- Updated: `tugdeck/src/deck-manager-store.ts` and `tugdeck/src/deck-manager.ts` — adds `registerEngineHooks(cardId, hooks)`, `invokeEnginePaintMirrorAsActive(cardId)`, `invokeEnginePaintMirrorAsInactive(cardId, publish)` channel.
+- Updated: `tugdeck/src/components/tugways/tug-text-editor.tsx` — registers engine hooks via `useLayoutEffect`.
+- **Unchanged at this step:** `useCardStatePreservation.onCardActivated` still calls `paintMirrorAsActive` (autonomous claim). `useCardStatePreservation.onRestore` still calls `paintMirrorAsActive` in the `isActive` branch. `useCardDelegate.cardDidActivate` in `tide-card.tsx` still calls `entryDelegateRef.focus()`. **This step is purely additive — the new channel exists but is not yet invoked from the framework.**
+
+**Tasks:**
+- [ ] Replace `component-owned` with `engine` in the `FocusSnapshot` union; update all type sites.
+- [ ] Update `captureFocus` to return `{ kind: "engine" }` when the active element sits inside `[data-slot="tug-text-editor"]` (or any other `COMPONENT_OWNED_SELECTORS` entry; the selector list stays).
+- [ ] Add backward-compat coercion: when reading a persisted bag, `bag.focus.kind === "component-owned"` is coerced to `engine` at the deserialization boundary (or at the read consumer, whichever yields a smaller surface).
+- [ ] Add the three new methods to `deck-manager-store` interface and `deck-manager` implementation.
+- [ ] **Decide and implement the engine-hook registration → `callbacksVersion` integration.** Two paths to choose between:
+  - **Path A (preferred):** Engine-hook registration shares the existing `callbacksVersion` axis CardHost already tracks for `useCardStatePreservation` callbacks (`card-host.tsx:1216`). When `TugTextEditor`'s `registerEngineHooks` runs, the deck-manager bumps the same `callbacksVersion` counter, and CardHost's RESTORE effect (which deps on `callbacksVersion`) re-fires automatically. No new wiring on the consumer side; Step 4's `deferred-engine` retry is free.
+  - **Path B (fallback):** Engine-hook registration uses a parallel `engineHooksVersion` axis. CardHost subscribes separately. More code; cleaner separation; only choose if Path A produces unwanted re-fires for `useCardStatePreservation`-only callbacks consumers.
+  Decide here so Step 4's retry mechanism doesn't have to retrofit. Default: Path A. Path B chosen only if Path A's spurious-re-fire cost is shown to matter (measure with the new deck-trace events from Step 1).
+- [ ] `TugTextEditor` registers `paintMirrorAsActive` / `paintMirrorAsInactive` hooks via `useLayoutEffect` keyed on `[store, cardId]`. Registration bumps `callbacksVersion` (Path A) or `engineHooksVersion` (Path B).
+- [ ] Update `resolveActivationTarget` to handle `engine` kind defensively (treat as `dispatch-activated` for now — the framework dispatch wiring lands in Step 3).
+
+**Tests:**
+- [ ] `bunx tsc --noEmit` — clean.
+- [ ] `bun run audit:tokens lint` — zero violations.
+- [ ] `bun test` — green.
+- [ ] `just app-test at0071-...test.ts at0072-...test.ts at0073-...test.ts at0074-...test.ts` — green (additive, no behavior change).
+- [ ] Adjacent regression: `just app-test at0020 at0024 at0025 at0031 at0033 at0034 at0035-tide at0046 at0067` — green.
+
+**Checkpoint:**
+- [ ] No `FocusSnapshot.kind === "component-owned"` references remain in the codebase (TypeScript exhaustiveness checker enforces).
+- [ ] Engine hooks are registered for tide cards (verify via deck-trace event added in Step 1).
+- [ ] AT0071–74 + adjacent regression set: 100% pass.
+
+---
+
+###### Step 3: Single dispatcher + retire autonomous claims + direct-activateCard sweep {#e11-step-3}
+
+**Depends on:** #e11-step-2
+
+**Commit:** `feat(focus): single applyBagFocus dispatcher; retire engine + macrotask autonomous claims`
+
+**References:** D3, D4, D6 outcome, D9, D9b (#e11-d-list), (#focus-dispatch-model)
+
+**Tuglaws:**
+- **[L05]** ★ — the [L05] strengthening lands here. The macrotask-based focus claim in `useCardDelegate.cardDidActivate` is retired (it depended on browser-implementation macrotask drain order, per [L05] not contractual). For sources where pointerdown-time sync `.focus()` lands (per Step 1's matrix), the dispatcher fires synchronously. For sources where it doesn't, dispatch moves to the `pointerup` or `click` handler — event ordering is contractual (HTML spec, "DOM event dispatch"). No macrotask, no microtask, no timer. **Verified by:** Step 3 Checkpoint grep gate ("no `MessageChannel`-deferred `.focus()` calls for activation"); deck-trace verification ("exactly one `focus-call` event per activation").
+- **[L23]** ★ — the single-channel dispatcher IS the [L23] contract for the focus axis. Every focus-claim path reads `bag.focus` and dispatches via `applyBagFocus`; the engine becomes a callable invoked from the same channel. No competing claimants means no path can destroy another's win. **Verified by:** AT0078 (engine focus regression), the manual Glitch 2 scenario, deck-trace showing one `focus-call` event per activation.
+- **[L06]** ✓ — `applyBagFocus` calls `.focus()` directly on the resolved element (or invokes the engine hook which calls `view.focus()`). Focus mutation is appearance-zone DOM, not React state. `bag.focus` is data (where the caret should land); the dispatcher's act is the appearance-zone write.
+- **[L07]** ✓ — `applyBagFocus(cardId, store)` reads `bag.focus` live from the store at dispatch time. No stale-closure capture; if the user's focus changed between save and activation, the dispatcher sees the latest.
+- **[L11]** ✓ — the responder chain is unchanged. Focus-claim and chain promotion remain separate axes (a click can promote a responder without changing browser focus via `data-tug-focus="refuse"`; the dispatcher operates independently of chain promotion).
+- **[L24]** ✓ — three zones preserved across the rewrite:
+  - **Data:** `bag.focus` (`{ kind, focusKey? | componentStatePreservationKey? }`) — read by the dispatcher.
+  - **Structure:** engine-hook registration via deck-manager store; D9b's `activateCard → transferFocusForActivation` wraps for runtime sites.
+  - **Appearance:** `.focus()` on the resolved element or engine hook's `view.focus()` — direct DOM mutation.
+- **[L19]** ✓ — `applyBagFocus` / `resolveBagFocus` are exported from `focus-transfer.ts` with full module docstrings naming the contract. The deprecated `applyFocusSnapshot` and `resolveActivationTarget` are deleted from exports (grep gates in Checkpoint enforce).
+
+**Artifacts:**
+- Updated: `tugdeck/src/focus-transfer.ts` — new `resolveBagFocus(cardId, store): BagFocusResolution` (pure). New `applyBagFocus(cardId, store, options?): "applied" | "deferred"` (impure). `transferFocusForActivation` (focus-element AND dispatch-activated branches), `transferFocusAfterMove`, `reactivateCurrentFocusDestination` are rewritten to call `applyBagFocus`. CardHost cold-boot RESTORE uses `applyBagFocus` via `applyFocusSnapshot` wrapper.
+- Updated: `tugdeck/src/components/tugways/tug-text-editor/state-preservation.ts` — `useCardStatePreservation.onCardActivated` no longer calls `paintMirrorAsActive`. `useCardStatePreservation.onRestore` no longer calls `paintMirrorAsActive` in the `isActive` branch (keeps `restoreEditState`).
+- Updated: `tugdeck/src/components/tugways/cards/tide-card.tsx` — `useCardDelegate.cardDidActivate` no longer calls `entryDelegateRef.focus()`.
+- Updated: `tugdeck/src/action-dispatch.ts` (line ~338), `tugdeck/src/deck-manager.ts` (line ~1514), `tugdeck/src/components/chrome/deck-canvas.tsx` (three sites: show-gallery existing, show-gallery new, initial-focused-card-restore) — five direct `activateCard` call sites wrapped through `transferFocusForActivation` per D9b.
+- Updated: `tugdeck/src/components/chrome/pane-focus-controller.ts` (and other gesture sources as indicated by Step 1's matrix) — for sources where pointerdown sync doesn't survive, move dispatcher invocation to `pointerup` or `click` per the per-source mapping.
+- New: `tests/app-test/at0078-tide-engine-focus-survives.test.ts` — engine-focus regression gate; introduced and green at this step.
+
+**Tasks:**
+- [ ] Implement `resolveBagFocus` with the six-variant union: `framework`, `engine`, `default-focus`, `deferred-dom`, `deferred-engine`, `none`.
+- [ ] Implement `applyBagFocus` calling the resolver and dispatching: `framework` → `el.focus()`; `engine` → `store.invokeEnginePaintMirrorAsActive(cardId)`; `default-focus` → `traceApplyDefaultFocus`; `deferred-*` → return `"deferred"`. Side effects scoped to focus call; no observer installation.
+- [ ] **Delete `resolveActivationTarget`** in `focus-transfer.ts`. The four-variant `ActivationTarget` union and its callers are replaced by `resolveBagFocus`'s six-variant union threaded through `applyBagFocus`. The `ActivationTarget` type, the `resolveActivationTarget` function, and any helper functions exclusively used by them are removed. Verify no remaining imports.
+- [ ] Rewrite `transferFocusForActivation` to call `applyBagFocus` (both branches collapse into one). **Preserve** the call to `installFormControlReapplyOnNextMousedown(bag, cardRoot, incomingCardId)` that the current focus-element branch makes (focus-transfer.ts:555). This is a separate axis from the focus claim — it installs a one-shot capture-phase mousedown listener that re-applies form-control snapshots on the next click. The collapse of focus-element + dispatch-activated into a single `applyBagFocus` call doesn't change the post-dispatch responsibility to install this listener for `dom`/`form-control` resolutions. Wire the install call after a successful `applyBagFocus` returns `"applied"` with a framework-axis target.
+- [ ] Rewrite `transferFocusAfterMove` and `reactivateCurrentFocusDestination` to call `applyBagFocus`. Audit each for similar follow-up side effects (DOM-selection restore, etc.) and preserve them post-dispatch — `applyBagFocus` owns the focus claim only; selection/form-control follow-ups stay where they are.
+- [ ] Retire `applyFocusSnapshot` in `card-host.tsx` (delete the export). Migrate `traceApplyFocusSnapshot` and the cold-boot RESTORE call site to `applyBagFocus`. The trace event written by `traceApplyFocusSnapshot` becomes a thin wrapper around `applyBagFocus` that records `focus-call` with the `applyFocusSnapshot` site tag for log continuity.
+- [ ] Retire `useCardStatePreservation.onCardActivated`'s `paintMirrorAsActive` call (callback either empty or removed).
+- [ ] Retire `useCardStatePreservation.onRestore`'s `paintMirrorAsActive` call in the `isActive` branch (keep `restoreEditState`).
+- [ ] Remove `entryDelegateRef.focus()` from `useCardDelegate.cardDidActivate` in `tide-card.tsx`. `cardDidMove` / `cardDidResize` focus calls remain.
+- [ ] Wrap the five direct `activateCard` call sites through `transferFocusForActivation`. Same shape as CYCLE_CARD (commit `a86f07e0`).
+- [ ] Move dispatcher invocation to `pointerup` / `click` for sources where Step 1's matrix shows pointerdown sync doesn't survive.
+- [ ] Write AT0078: tide-card with engine focus (no find row), cmd-tab cycle, focus returns to contenteditable.
+
+**Tests:**
+- [ ] `bunx tsc --noEmit` — clean.
+- [ ] `bun run audit:tokens lint` — zero violations.
+- [ ] `bun test` — green.
+- [ ] `just app-test at0071-...test.ts at0072-...test.ts at0073-...test.ts at0074-...test.ts` — green (fixture regression must hold).
+- [ ] `just app-test at0078-tide-engine-focus-survives.test.ts` — green.
+- [ ] Adjacent regression set: green.
+- [ ] Manual: tide-card with find row open, click another card's title bar, click tide back. Focus is on find input (not prompt-entry). Verified via deck-trace showing exactly one `focus-call` event.
+
+**Checkpoint:**
+- [ ] `applyBagFocus` is the only function in the codebase that calls `.focus()` on a focus target derived from `bag.focus`. (Grep gate: no other `.focus()` calls take a `bag.focus`-derived element.)
+- [ ] `applyFocusSnapshot` is no longer exported from `card-host.tsx`. (Grep gate: no remaining `import.*applyFocusSnapshot` outside the module's own internals.)
+- [ ] `resolveActivationTarget` is deleted. (Grep gate: no remaining references to `resolveActivationTarget` or to the `ActivationTarget` type union anywhere in the codebase.)
+- [ ] `useCardStatePreservation.onCardActivated` does not appear to call `paintMirrorAsActive`. (Grep gate.)
+- [ ] `useCardStatePreservation.onRestore`'s `paintMirrorAsActive` call in `isActive` branch is gone. (Grep gate.)
+- [ ] `entryDelegateRef.focus()` does not appear in `useCardDelegate.cardDidActivate`. (Grep gate.)
+- [ ] All five direct `activateCard` call sites are wrapped via `transferFocusForActivation`. (Grep gate: no direct `store.activateCard(` calls outside `transferFocusForActivation`'s `commitMutation` closures.)
+- [ ] Deck-trace for a tide-card title-bar re-activation shows: 1 SAVE outgoing, 1 commit, 1 `focus-call` event (target = find input). No engine `paintMirrorAsActive` event for this transition.
+
+---
+
+###### Step 4: Late-mount settle for deferred dispatcher results {#e11-step-4}
+
+**Depends on:** #e11-step-3
+
+**Commit:** `feat(focus): late-mount settle for deferred-dom and deferred-engine dispatcher results`
+
+**References:** D5, R01, R04 (#e11-d-list, #r01-callbacks-version-thrash, #r04-component-owned-coercion), (#focus-dispatch-model)
+
+**Tuglaws:**
+- **[L04]** ✓ — the late-mount retry mechanism is the [L04] ready-callback pattern, not an inline-measure-after-setState pattern. The MutationObserver fires when the child's DOM commits; CardHost reacts to that observed event. We do NOT trigger a child setState and then measure synchronously — we wait for the child to commit on its own schedule, then react.
+- **[L05]** ✓ — the retry fires on observable events (DOM mutation; `callbacksVersion` bump from engine-hook registration), not on a timer or RAF. Settle conditions are contractual: "element identity matches and is `isConnected`" / "version axis incremented." The budgets (200 mutations / 5s wall-clock) are guardrails against runaway observers, not the primary dispatch mechanism.
+- **[L22]** ✓ — external state (DOM mutations observed by MutationObserver; the deck-manager's `callbacksVersion` axis) drives the dispatcher directly. No React-state round-trip; the observer callback calls `applyBagFocus` and writes DOM in the same beat.
+- **[L23]** ★ — completes the [L23] contract for late-mounting targets. The activation moment may precede the target's mount (tide's transcript loads messages async after cold-boot; the FileBlock entry hosting the find input mounts later). Without the retry, [L23] would hold for synchronous-mount targets only — a partial contract is not [L23]. With the retry, the contract holds: focus position at first paint *after the target is available* matches focus position at last save, with explicit dev-mode warn when the budget is exhausted (the saved target genuinely no longer exists).
+- **[L02]** ✓ — the MutationObserver callback reads the store directly via `applyBagFocus`; the retry mechanism does not mirror bag state into React.
+
+**Artifacts:**
+- Updated: `tugdeck/src/components/chrome/card-host.tsx` — MutationObserver loop integrates `applyBagFocus`'s `deferred-dom` retry (settle by element identity + 200-mutation / 5s budget). The existing `callbacksVersion`-keyed effect re-runs `applyBagFocus` on `deferred-engine` (no new observer for this path — `TugTextEditor`'s engine-hook registration bumps `callbacksVersion`, which re-fires the RESTORE effect).
+- New: `tests/app-test/at0075-tide-find-app-switch.test.ts` — find row focus survives app-switch on real tide.
+- New: `tests/app-test/at0076-tide-find-card-switch.test.ts` — find row focus survives card-switch on real tide.
+- New: `tests/app-test/at0077-tide-find-reload.test.ts` — find row focus survives Developer > Reload on real tide; this is the exact Glitch 3 scenario.
+- New: `tests/app-test/at0079-tide-engine-focus-wins-over-stale-find.test.ts` — when bag.focus.kind === engine but a find row is also open (open-state preserved), engine wins on reload.
+
+**Tasks:**
+- [ ] In CardHost's cold-boot RESTORE effect, integrate `applyBagFocus` and capture its return value. If `"deferred"`, ensure the existing MutationObserver `apply()` loop calls `applyBagFocus` on each fire.
+- [ ] Settle: track whether `applyBagFocus` has returned `"applied"`. Once it has, stop re-applying.
+- [ ] Element-identity settle for `deferred-dom`: keyed on the `data-tug-focus-key` / `data-tug-state-key` value AND the resolved element identity, so a remount with the same key but a fresh element re-applies.
+- [ ] Budgets: 200 mutations OR 5 seconds wall-clock — whichever fires first disconnects with a dev-mode warn (production silent).
+- [ ] Verify the engine-hook registration → version-bump path chosen in Step 2 actually triggers the CardHost RESTORE re-fire on `deferred-engine`. If Path A: confirm the existing `callbacksVersion` increment on `registerEngineHooks`. If Path B: confirm the new `engineHooksVersion` is in CardHost's dep array. Manual deck-trace verification.
+- [ ] Write AT0075, AT0076, AT0077, AT0079.
+
+**Tests:**
+- [ ] `bunx tsc --noEmit` — clean.
+- [ ] `bun run audit:tokens lint` — zero violations.
+- [ ] `bun test` — green.
+- [ ] AT0071–74 (fixture): green.
+- [ ] AT0078: green.
+- [ ] AT0075, AT0076, AT0077, AT0079: green.
+- [ ] Adjacent regression set: green.
+- [ ] Manual: tide-card with find row open, Developer > Reload. Focus is on find input. Query preserved. Verified for the late-mount case where messages load async.
+
+**Checkpoint:**
+- [ ] AT0075/76/77 pass with real tide-session binding (not the engineless fixture).
+- [ ] AT0079 confirms `bag.focus.kind === "engine"` wins over a stale find-row mount.
+- [ ] No infinite-retry loops in production: a forced-stale `bag.focus` whose target never mounts disconnects after the budget with a dev-mode warn.
+- [ ] Deck-trace for a Developer > Reload of a tide card with find-row focus shows: cold-boot mount, initial `applyBagFocus` returns `"deferred"`, MutationObserver fires N times (≤ budget), final `applyBagFocus` returns `"applied"` with target = find input.
+
+---
+
+###### Step 5: Documentation {#e11-step-5}
+
+**Depends on:** #e11-step-4
+
+**Commit:** `docs(tuglaws): single-channel focus model; component-authoring late-mount contract`
+
+**References:** D10 (#e11-d-list)
+
+**Tuglaws:**
+- **[L19]** ★ — the [L19] documentation deliverable. `tuglaws/state-preservation.md` and `tuglaws/component-authoring.md` are the canonical references the next widget author reads; they must describe what the code does post-E.11, not what it did pre-E.11. This step retires the E.10 carve-out wording (which is now wrong) and names the post-E.11 dispatch model, the engine-hook contract, the late-mount retry budget, and the widget-author contract for transient focus targets. The docs and the code must match exactly — Step 6's Integration Checkpoint verifies this by cross-referencing.
+
+**Artifacts:**
+- Updated: `tuglaws/state-preservation.md` — rewrite `FocusSnapshot in depth` (~30 lines) and add new `Focus dispatch model` section (~60 lines). Retire the E.10 carve-out wording.
+- Updated: `tuglaws/component-authoring.md` — add late-mount contract (~15 lines) to the "Transient focus targets in content-owning cards" section.
+
+**Tasks:**
+- [ ] Rewrite `FocusSnapshot in depth` to describe the post-E.11 union (`form-control` / `dom` / `engine` / `none`), the backward-compat coercion of legacy `component-owned`, and the invariant that `engine` is captured for ALL cards (no carve-out).
+- [ ] Add `Focus dispatch model` section naming `resolveBagFocus` / `applyBagFocus`, the engine hook contract, the late-mount settle path, the per-source dispatch-event mapping (from Step 1's investigation), and the `activateCard` → `transferFocusForActivation` invariant.
+- [ ] Retire any wording in `state-preservation.md` that claims `bag.focus` is not captured for content-owning cards (E.10 carve-out — now wrong).
+- [ ] Add late-mount paragraph to `component-authoring.md`: widget authors stamp `data-tug-focus-key`; the framework retries until the target mounts or the budget expires; if the target genuinely never appears, the framework yields cleanly.
+- [ ] Update inline anchor references throughout to point at the new sections.
+
+**Tests:**
+- [ ] `bunx tsc --noEmit` — clean (no code changes; docs only).
+- [ ] Cross-reference check: every D1–D10 in the plan's prose has a corresponding paragraph in `state-preservation.md` (manual review).
+- [ ] Manual read-through: the docs describe what the code does. (Spot-check Step 3 + Step 4 implementations against the new sections.)
+
+**Checkpoint:**
+- [ ] `tuglaws/state-preservation.md` no longer contains the E.10 wording "content-owning cards capture `bag.focus` only when kind is dom/form-control."
+- [ ] `tuglaws/component-authoring.md`'s "Transient focus targets" section names the framework retry + budget contract.
+- [ ] All Phase E.11 manual checkpoints listed below pass.
+
+---
+
+###### Step 6: Integration Checkpoint {#e11-step-6}
+
+**Depends on:** #e11-step-1, #e11-step-2, #e11-step-3, #e11-step-4, #e11-step-5
+
+**Commit:** `N/A (verification only)`
+
+**References:** D1, D2, D3, D4, D5, D6, D7, D8, D9, D9b, D10 (#e11-d-list), (#e11-exit-criteria, #e11-tuglaws)
+
+**Tuglaws:**
+
+> This step verifies all twelve laws cited in the phase-level cross-check (#e11-tuglaws) hold after the full E.11 sequence has landed. The starred laws ([L05], [L23]) are the load-bearing ones; the rest are unchanged or trivially preserved.
+
+- **[L05]** ★ verified by: (a) deck-trace dump for any activation transition shows zero `MessageChannel`-deferred `.focus()` calls in the focus-claim path; (b) per-source dispatch-event mapping in `docs/notes/focus-gesture-lock-investigation.md` matches code (each source's actual dispatch event is the one the matrix names); (c) the macrotask delegate in `useCardDelegate.cardDidActivate` no longer claims focus (grep gate from #e11-step-3 still holds).
+- **[L23]** ★ verified by: (a) AT0075–79 pass against real tide-card; (b) AT0071–74 (fixture regression) still pass; (c) all six manual checkpoints (#e11-checkpoint) pass against the running app; (d) deck-trace shows exactly **one** `focus-call` event per activation transition with the target matching `bag.focus` resolution.
+- **[L01]–[L04], [L06]–[L07], [L11], [L19], [L22], [L24]** ✓ verified by the absence of regression in AT0001–74 and the adjacent regression set (at0020 / at0024 / at0025 / at0031 / at0033 / at0034 / at0035-tide / at0046 / at0067).
+- **Cross-document consistency** verified by Step 5's checkpoint: every D-decision in the plan's prose has a corresponding paragraph in `tuglaws/state-preservation.md` (manual review).
+
+**Tasks:**
+- [ ] Verify the full E.11 manual checkpoint list (below) passes against the running app.
+- [ ] Verify the deck-trace verification: any activation transition produces exactly **one** `focus-call` event.
+- [ ] Verify the full app-test sweep is green (modulo the cadence-induced flakes that re-pass individually, per the documented harness behavior).
+- [ ] Verify the user-reported scenarios (Glitch 2: title-bar re-activation; Glitch 3: Developer > Reload) pass in the running app.
+- [ ] Update `tuglaws/app-test-inventory.md` to register AT0075–AT0079 as shipped.
+
+**Tests:**
+- [ ] `bunx tsc --noEmit` — clean.
+- [ ] `bun run audit:tokens lint` — zero violations.
+- [ ] `bun test` — green.
+- [ ] Full `just app-test` sweep (individual re-runs for cadence flakes per documented harness behavior): green.
+
+**Checkpoint:**
+- [ ] All six E.11 manual checkpoints (below) pass.
+- [ ] All six exit criteria (below) satisfied.
+
+---
+
+**Decision ID list (cross-reference).** {#e11-d-list}
+
+| ID | Title | Anchor |
+|----|-------|--------|
+| D1 | Framework owns activation focus; engine is callable | (#decisions-phase-e-11) |
+| D2 | `engine` kind in `FocusSnapshot`; backward-compat coercion | (#decisions-phase-e-11) |
+| D3 | Two-layer dispatcher: pure `resolveBagFocus` + impure `applyBagFocus` | (#decisions-phase-e-11) |
+| D4 | Retire macrotask focus claim AND engine autonomous claim | (#decisions-phase-e-11) |
+| D5 | Late-mount settle: `deferred-dom` (MutationObserver) + `deferred-engine` (`callbacksVersion`) | (#decisions-phase-e-11) |
+| D6 | Gesture focus-lock: characterize first, dispatch on gesture-end event | (#decisions-phase-e-11) |
+| D7 | Engineless fixture stays as pure-axis regression | (#decisions-phase-e-11) |
+| D8 | Real-tide AT-series AT0075–AT0079 | (#decisions-phase-e-11) |
+| D9 | Cross-pane drag uses the same dispatcher | (#decisions-phase-e-11) |
+| D9b | All `activateCard` call sites route through `transferFocusForActivation` | (#decisions-phase-e-11) |
+| D10 | Documentation deliverable: `state-preservation.md` + `component-authoring.md` | (#decisions-phase-e-11) |
+
+**Tests (aggregate matrix, Phase E.11).** {#e11-tests}
+
+> Per-step test gates live in each step's `Tests:` block above. This aggregate matrix is the phase-level invariant: which AT-series ships at which step.
+
+| Test | Introduced at | Required green from |
+|------|---------------|---------------------|
+| `bunx tsc --noEmit` | — | Every step |
+| `bun run audit:tokens lint` | — | Every step |
+| `bun test` | — | Every step |
+| AT0071–AT0074 (fixture regression) | E.10 | Every step (must not regress) |
+| AT0078 (engine focus regression) | #e11-step-3 | Step 3 onward |
+| AT0075, AT0076, AT0077, AT0079 (real-tide integration) | #e11-step-4 | Step 4 onward |
+| Adjacent regression (at0020 / at0024 / at0025 / at0031 / at0033 / at0034 / at0035-tide / at0046 / at0067) | — | Every step |
+| Deck-trace verification: one `focus-call` event per activation | — | Step 3 onward (multiple expected through Step 2; reduced to 1 from Step 3) |
+
+**Manual checkpoints (Phase E.11).** {#e11-checkpoint}
+
+> Verified at #e11-step-6 (Integration Checkpoint). Each line names one user-visible behavior the phase must produce.
+
+- [ ] Open a tide card with a Read tool. Open the FileBlock find row. Type a query. cmd-tab away, cmd-tab back. Focus is in the find input. Query preserved.
+- [ ] Same setup. Click the title bar of another card. Click the title bar of the tide card. Focus returns to the find input.
+- [ ] Same setup. Developer > Reload. Focus returns to the find input. Query preserved. (Includes the late-mount case where tide's transcript loads messages async after restart.)
+- [ ] Same setup with focus in the prompt-entry contenteditable (not in find row). cmd-tab cycle. Focus returns to contenteditable. (Engine-path regression: removing the macrotask delegate must not break engine focus.)
+- [ ] Same setup with find row open but contenteditable focused at save time. Developer > Reload. Focus returns to contenteditable, not to the find input. (Last-save semantics: `bag.focus.kind === "engine"` wins.)
+- [ ] Cross-pane drag a tide card from one pane to another. Focus continues to land per `bag.focus` on the drop card.
+
+**Exit criteria (Phase E.11).** {#e11-exit-criteria}
+
+- [ ] All five real-tide AT-series tests pass (AT0075/76/77/78/79).
+- [ ] All four E.10 fixture AT-series tests continue passing (AT0071/72/73/74).
+- [ ] Adjacent regression set (at0020 / at0024 / at0025 / at0031 / at0033 / at0034 / at0035-tide / at0046 / at0067) passes.
+- [ ] `tuglaws/state-preservation.md` describes the single-channel model (D10 deliverable shipped).
+- [ ] The user-reported scenarios (Glitch 2 + Glitch 3 from the E.10/3 thread) verifiably pass in the running app — confirmed manually.
+- [ ] A deck-trace dump for an activation transition shows exactly **one** `focus-call` event with the resolved target — not a sequence of competing claims.
+
+---
+
 #### Step 11: EditToolBlock wrapper {#step-11}
 
 **Depends on:** #step-1, #step-10
