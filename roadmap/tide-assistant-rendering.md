@@ -2872,6 +2872,78 @@ The framework's design grain for "preserve uncontrolled state across teardown-an
 
 ---
 
+##### Phase E.7 — Late-mounting component-state restore (framework: registry observer channel)
+
+**Depends on:** Phase E.6 (component-state-preservation key plumbing on FileBlock / TerminalBlock / DiffBlock + tool wrappers).
+
+**Why this phase exists.** Phase E.6 wired the body-kind fold state into the [A9] `bag.components` axis via `useComponentStatePreservation`. The save side works: `captureCardState` walks the per-card `ComponentStatePreservationRegistry` and serializes every registered component's state into the bag. The restore side has a structural hole, exposed by the user's first manual checkpoint (4th bullet under Phase E.6): a Bash block collapsed before Developer > Reload comes back EXPANDED on reload, even though the *inner* scroll position inside the block (region-scroll axis) IS restored correctly.
+
+The root cause is in the framework, not in tide-card. `CardHost`'s component-restore effect is a one-shot, fired once per CardHost mount on the assumption that every descendant component has registered by the time the parent's effect runs (React's child-before-parent effect order). That assumption breaks when content mounts ASYNCHRONOUSLY after the data source populates — which is the dominant shape for `tide-card`'s transcript: items arrive from session resume, cells render, tool wrappers mount inside cells, body kinds mount inside tool wrappers, and only THEN do those body kinds register with the per-card registry. By that time, CardHost's one-shot restore has already iterated an empty registry and the `bag.components` payload sits unused.
+
+The bug is structural — every component-preservation consumer that mounts behind any async gate (feeds-readiness, session resume, lazy-loaded sub-content) suffers the same hole. Tide-card surfaced it acutely because the data source IS the async gate; other consumers may have masked it by mounting synchronously.
+
+**Decisions.**
+
+- **The fix is an event-channel extension to `ComponentStatePreservationRegistry`, modeled on the framework's existing `useCardDelegate` / observer pattern in `card-lifecycle.ts`.** The registry already owns the "a component opted into preservation" structural event — it's the canonical event source. Adding an observer channel makes that event addressable.
+- **Registry exposes `observeRegister(callback): unsubscribe`.** Synchronous observer pattern, same shape as `observeCardWillActivate` and its siblings on `CardLifecycle`. Fires on every `register` call with the scoped key and the freshly-installed `RegistryEntry`. No `MessageChannel` deferral — the orchestrator's apply work needs to land in the same React commit as the registration so the first paint after the late mount reflects the restored state ([L03]).
+- **`CardStateOrchestrator` subscribes per card.** First time `restoreCardState(cardId, bag)` is called for a card, the orchestrator: (a) stores `bag.components` in a per-card cache (`lastBagComponents`); (b) applies to currently-registered entries (existing behavior); (c) subscribes to the registry's `observeRegister` channel for that card so future registrations get applied too. The subscription installs idempotently on first restore; subsequent `restoreCardState` calls update the cached bag without re-subscribing.
+- **Per-key applied-tracking prevents double-apply.** A `Set<string>` per card records which scoped keys have already had their `restoreState` invoked. Both the initial iteration and the late-register path consult and update it. Prevents a key from being restored twice if the same component registers, somehow gets iterated by both paths, or if a future caller invokes `restoreCardState` multiple times with overlapping bags.
+- **User-state-preservation invariant ([L23]).** `appliedKeys` is NOT cleared on `unregister`. If a component unmounts (e.g., a future virtualized list scrolls its cell out of view) and later remounts, the saved state is NOT re-applied — because in the interim the user may have changed the state, and the in-memory bag may not yet reflect the user's change (no save has fired between the unmount and the remount in that scenario). Re-applying old state would silently destroy the user's change. The framework's existing contract for the component-preservation axis is "applied once per card lifecycle"; this phase preserves that contract precisely while plugging the late-mount hole.
+- **Symmetric to existing card-lifecycle pattern.** `useCardDelegate` / `observeCardWillActivate` are the framework-blessed way to surface lifecycle events with a clean subscription model. Adding the same shape at the component-preservation layer keeps the architecture coherent — future component-lifecycle events (`componentDidApplyRestore`, `componentWillUnregister`) plug into the same channel without further refactoring.
+
+**Tuglaws compliance (Phase E.7).**
+
+- **[L02] External state enters React through `useSyncExternalStore` only.** ✓ The registry is a non-React object. The orchestrator's subscription happens in plain JS (no `useState` / `useEffect`). The hook that triggers `register` is in `useLayoutEffect` ([L03]). No external state pulled into React state.
+- **[L03] `useLayoutEffect` for registrations events depend on.** ✓ Hook registration stays in `useLayoutEffect` so the registry's `observeRegister` notification lands before any paint. The orchestrator's `restoreState` invocation on the registering entry fires synchronously inside the notification, so the late-mount component's React state is updated in the same commit phase as its registration — first paint reflects the restore.
+- **[L04] Never measure child DOM inline after triggering child setState from a parent effect.** ✓ The orchestrator calls `entry.restoreRef.current?.(savedValue)` — a child-defined closure that mutates the child's OWN React state (via the consumer's `setLocalCollapsed` or equivalent). No parent reads child DOM after triggering child setState; the orchestrator's only contract is "deliver the saved value." Same shape as the existing `restoreComponents` iteration.
+- **[L05] No `requestAnimationFrame`.** ✓ Synchronous notify path. No timer-based deferral.
+- **[L06] Ephemeral appearance state goes through CSS and DOM, never React state.** ✓ The applied-keys Set is plumbing state (an orchestrator internal map). Not React state; not appearance.
+- **[L07] Live ref reads.** ✓ The orchestrator reads `entry.restoreRef.current` at notification time — the freshest closure the hook has registered.
+- **[L19] Component authoring guide.** ✓ Updates `state-preservation.md` (the canonical doc) with the late-mount behavior; updates the docstring on `useComponentStatePreservation` to note that late-mounting is supported; adds a docstring to `ComponentStatePreservationRegistry`'s new `observeRegister` channel.
+- **[L20] Component token sovereignty.** N/A — no tokens.
+- **[L22] When external state drives direct DOM updates, observe the store directly.** ✓ The orchestrator subscribes to the registry directly (synchronous observer callback) rather than round-tripping through React commits. Same principle the card-lifecycle observers follow.
+- **[L23] Preserve user-visible state.** ✓ This phase IS the L23 fix for late-mounting components. Without it, `bag.components` payloads silently drop on the reload path for any component behind an async mount gate.
+- **[L24] Three state zones.** ✓ `appliedKeys` is structure-ish plumbing (orchestrator-internal). Not appearance. Not data flowing through render.
+
+**Artifacts (Phase E.7):**
+
+- Updated: `tugdeck/src/components/tugways/component-state-preservation-registry.ts` — new `observeRegister(cb)` channel; `register` notifies observers synchronously after the entry lands in the internal map; `clear` notifies observers via a separate `observeClear` channel (or omits — TBD by implementation, see Tasks).
+- Updated: `tugdeck/src/card-state-orchestrator.ts` — `restoreCardState` caches `bag.components` per card, subscribes to the registry's `observeRegister` channel on first call per card, applies the saved value for late-registering keys. Per-card `appliedKeys: Set<string>` prevents double-apply.
+- Updated: `tugdeck/src/components/tugways/use-component-state-preservation.tsx` — docstring updates noting that late-mounting components now receive their saved state automatically; no API changes required.
+- Updated: `tuglaws/state-preservation.md` — document the late-mounting behavior in the lifecycle section and the orchestrator's `observeRegister`-based pull. Add an authoring note: components no longer need to worry about whether they mount before or after CardHost's restore — the framework handles both.
+- Updated: `tugdeck/src/__tests__/component-state-preservation-registry.test.ts` (new or existing) — pin `observeRegister` semantics: fires on register, multiple subscribers all called, unsubscribe stops notifications.
+- Updated: `tugdeck/src/__tests__/card-state-orchestrator.test.ts` — pin the late-mount apply path: pre-mount restoreCardState, then mount a component, assert `restoreState` fires with the saved value; applied-keys prevents double-apply when the same key is registered twice (re-register edge).
+- New: `tests/app-test/at0062-late-mount-component-restore.test.ts` — end-to-end gate. Mount a tide-card-like fixture where a body kind is collapsed pre-save, `appReload`, and assert the body kind comes back collapsed even though it mounted AFTER the data source's async populate.
+- Updated: `tuglaws/app-test-inventory.md` — register AT0062.
+
+**Tasks (Phase E.7):**
+
+- [ ] **Add `observeRegister` channel to the registry.** New `private readonly registerObservers: Set<(scopedKey: string, entry: RegistryEntry) => void>`; new `observeRegister(cb): () => void` method returning unsubscribe. `register` notifies after the entry lands. Add dev-only try/catch around each observer callback so a throwing observer doesn't break the registration.
+- [ ] **Orchestrator subscribes per-card.** `CardStateOrchestrator` gains two per-card maps: `lastBagComponents: Map<string, Record<string, unknown>>` and `appliedKeys: Map<string, Set<string>>`. First call to `restoreCardState(cardId, bag)` for a card: cache `bag.components` (when present); iterate `registry.entriesInTreeOrder()` and apply (existing behavior, but now also marking `appliedKeys`); install `registry.observeRegister(handleLateRegister)` with a closure that pulls from `lastBagComponents.get(cardId)`, gates on `appliedKeys.get(cardId)`, calls `entry.restoreRef.current?.(saved)`, and marks applied. Subsequent `restoreCardState` calls update the cached components without re-subscribing.
+- [ ] **Per-card cleanup.** `discardComponentStatePreservationRegistry(cardId)` (called when a card is destroyed) drops `lastBagComponents` and `appliedKeys` for that card. The registry's existing `clear()` is sufficient for unsubscription because the subscription is captured by the registry instance itself (when the registry is discarded, the observer closure becomes unreachable). Verify no leaks via the existing card-destruction tests.
+- [ ] **Verify body kinds still get their saved state on the initial mount path.** The new `observeRegister` path is a SUPERSET of the existing iteration. Components that mount synchronously before `restoreCardState` are applied via the iteration. Components that mount after are applied via the observer. Both paths share `appliedKeys`. Existing tests for synchronous-mount restore must still pass.
+- [ ] **Doc updates.** `state-preservation.md` — add a "Late-mounting components" subsection under the lifecycle section. `useComponentStatePreservation` docstring — update to note that the restore-after-mount timing is now handled by the framework.
+- [ ] **Tests.** Unit-level: registry's `observeRegister` semantics, orchestrator's late-mount apply, applied-keys dedup. App-test: AT0062 — late-mount restore round-trip in the live Tug.app.
+
+**Tests (commands, Phase E.7):**
+
+- [ ] `bun test src/__tests__/component-state-preservation-registry.test.ts` (or wherever the registry tests live) — new `observeRegister` cases pass.
+- [ ] `bun test src/__tests__/card-state-orchestrator.test.ts` — late-mount apply + applied-keys dedup cases pass.
+- [ ] `bun test src/__tests__/use-component-state-preservation.test.tsx` — existing tests still pass (no API change).
+- [ ] `bunx tsc --noEmit` — clean.
+- [ ] `bun run audit:tokens lint` — zero violations.
+- [ ] `bun test` (full suite) — green.
+- [ ] `just app-test at0062-late-mount-component-restore.test.ts` — gates the end-to-end late-mount path on the live Tug.app.
+
+**Checkpoint (Phase E.7):**
+
+- [ ] Manual: open a tide-card with a Bash tool call in the transcript. Collapse the Bash block (click the fold cue). Developer > Reload. Confirm the Bash block comes back COLLAPSED on reload — the fold state survived.
+- [ ] Manual: same as above with a Read tool call (FileBlock) and a Diff (DiffBlock). Each body kind's fold state survives.
+- [ ] Manual: combined regression — scroll inside an expanded FileBlock, collapse it, reload. On re-expand after restore: fold state is collapsed (E.7); on re-expand, CM6 inner scroll lands at the saved position (E.6's region-scroll axis still works). Both axes restore independently and correctly.
+- [ ] Manual: open the gallery's `TugAccordion` card (or any other `useComponentStatePreservation` consumer that mounts synchronously). Change a value. Developer > Reload. Confirm the value is restored — the existing synchronous-mount path is not regressed.
+
+---
+
 #### Step 11: EditToolBlock wrapper {#step-11}
 
 **Depends on:** #step-1, #step-10
