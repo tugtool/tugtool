@@ -62,7 +62,7 @@ declare global {
         getCardState(cardId: string): unknown;
         captureCardState(cardId: string): unknown;
         registeredComponentKeys(cardId: string): string[];
-        saveAndDump(cardId: string): unknown;
+        forceSaveAndDump(cardId: string): unknown;
       };
     };
     /**
@@ -330,9 +330,21 @@ if (!container) {
     /**
      * Diagnostic surface — always available, no test-mode gate. Lets
      * a developer paste one-liners into DevTools without knowing the
-     * DeckManager internals. Keep methods small and obvious; the
-     * tradeoff for exposing them in production is that they ARE the
-     * support surface — they should never mutate state.
+     * DeckManager internals.
+     *
+     * Read-only methods (`listCardIds`, `getDeckState`, `getCardState`,
+     * `captureCardState`, `registeredComponentKeys`) never mutate
+     * application state — they observe DOM and read the deck snapshot.
+     * `forceSaveAndDump` is the one explicit write: it triggers a
+     * synchronous save+flush, then returns the captured bag. The name
+     * carries the "force" prefix so the mutation isn't accidental.
+     *
+     * Security note. This surface assumes the document context is
+     * trusted (Tug.app loads its own bundle into a same-origin
+     * WKWebView; the dev server is loopback-bound). The methods
+     * return full deck state and any card's bag. Do not expose
+     * `tugdeck` to untrusted iframes or cross-origin contexts —
+     * `getDeckState` would become an exfiltration channel.
      *
      * Pair with `window.__tugTraceComponentStateRestore = true` to
      * see save/restore/observer events in the console.
@@ -348,6 +360,7 @@ if (!container) {
        * Capture the bag for `cardId` right now via the orchestrator —
        * same code path every save trigger runs. Use to verify what
        * the framework would write if a save fired at this moment.
+       * Does NOT write to the store or to tugbank.
        */
       captureCardState: (cardId: string) => deck.captureCardState(cardId),
       /**
@@ -360,12 +373,14 @@ if (!container) {
         return reg ? Array.from(reg.keys()) : [];
       },
       /**
-       * Force a synchronous save+flush, then dump the freshly-captured
-       * bag for `cardId`. The one-liner the diagnostic recipe asks for:
-       * call this, observe the console, then Developer > Reload, then
-       * read the console again.
+       * **Mutating.** Force a synchronous save+flush (writes every
+       * dirty card bag to tugbank), then dump the freshly-captured
+       * bag for `cardId`. Use to verify what's about to land on disk
+       * before a `Developer > Reload`. The `force` prefix on the
+       * name flags the write so it can't be confused with the
+       * read-only methods above.
        */
-      saveAndDump: (cardId: string) => {
+      forceSaveAndDump: (cardId: string) => {
         deck.saveAndFlushSync();
         const bag = deck.captureCardState(cardId);
         const componentsKeys = bag.components ? Object.keys(bag.components) : null;

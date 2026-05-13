@@ -145,38 +145,24 @@ function applyRestoreToEntry(
  * map of card-level assemblers; defers component-level state to the
  * caller-injected registry lookup.
  *
- * Late-mount restore. `restoreCardState` is called from `CardHost`'s
- * mount effect, by which time React has already run every descendant's
- * `useLayoutEffect` (child-before-parent). For components that mount
- * synchronously, every registration is in place before the orchestrator
- * iterates. But for async-mounted content — most importantly tide-card's
- * transcript body kinds, which mount after the session-resume feed
- * populates — registrations land AFTER the one-shot restore has already
- * run. To plug that hole, the orchestrator caches `bag.components` on
- * the first restore per card and subscribes to the registry's
- * `observeRegister` channel: every late registration receives its saved
- * value synchronously inside the `useLayoutEffect` that triggered the
- * registration, so first paint reflects the restore ([L03]).
+ * Contract.
+ *   - `restoreCardState` caches `bag.components` per card and applies
+ *     the cached value to every registered key, on every call.
+ *   - The orchestrator subscribes once per card to the registry's
+ *     `observeRegister` channel so a registration arriving AFTER
+ *     `restoreCardState` (late mount, or a remount after an
+ *     intermediate unmount within the same card lifecycle) receives
+ *     the cached value synchronously inside the registering
+ *     `useLayoutEffect` ([L03]). First paint reflects the restore.
+ *   - There is no "applied once per card lifecycle" gate. Every
+ *     `register` call gets a fresh apply if the cache holds the key.
+ *     This is the L23-correct contract: user edits between save and
+ *     unmount are already lost by React's unmount-clears-state
+ *     semantic, so re-applying the last-saved value on remount is
+ *     strictly better than falling back to `useState` defaults.
  *
- * Re-apply on remount. The contract is "apply on every mount that
- * registers a key the cache holds," not "apply once per card lifecycle."
- * The earlier draft of this orchestrator tracked per-key applied state
- * and skipped re-application on remount; that broke tide-card's
- * `TideRestoring` overlay path, where the transcript's body kinds
- * unmount-and-remount across a transient transport-restoring window
- * within the same card lifecycle. On the remount, React's `useState`
- * initializer fires fresh (defaults), the body kind registers, and the
- * framework MUST re-apply the cached bag value or the user sees the
- * default state (the regression that motivated this fix).
- *
- * The "user might have edited between save and unmount, then we'd
- * clobber" concern was bogus: an edit between save and unmount is
- * already lost when React resets the component's state on unmount.
- * Re-applying the last-saved value on remount is strictly better than
- * falling back to defaults — same edit is lost either way, but the
- * remount lands at a state the user actually saw at some point rather
- * than the initial default. [L23] is satisfied: the user-visible state
- * tracks the framework's last save.
+ * See `tuglaws/state-preservation.md` → "Late-mounting components"
+ * for the lifecycle picture; `at0062`–`at0065` for the gates.
  */
 export class CardStateOrchestrator {
   private readonly assemblers: Map<string, CardAssembler> = new Map();
