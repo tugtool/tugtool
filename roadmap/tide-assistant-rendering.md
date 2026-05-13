@@ -3771,30 +3771,30 @@ Step 3 introduces the dispatcher API surface and the new store methods needed to
 - **Unchanged at this step:** all production call sites continue to drive focus via the OLD path (`resolveActivationTarget` / `applyFocusSnapshot` / engine autonomous claims / macrotask delegate). Step 4 substitutes.
 
 **Tasks:**
-- [ ] Define `BagFocusResolution` as the six-variant union per D3.
-- [ ] Implement `resolveBagFocus(cardId, store): BagFocusResolution` (pure). Reads `bag.focus`, `peekCardHostRoot(cardId)`, `hasEngineHooks(cardId)`, `getSnapshot().cards`. Returns the appropriate variant. No side effects.
-- [ ] Implement `applyBagFocus(cardId, store, options?): "applied" | "deferred"` (impure). Calls `resolveBagFocus`; dispatches per variant: `framework` → `el.focus()`; `engine` → `store.invokeEnginePaintMirrorAsActive(cardId)`; `default-focus` → `traceApplyDefaultFocus`; `deferred-*` → return `"deferred"`; `none` → return `"applied"`. Emits `focus-call` deck-trace event for `framework` / `engine` dispatches. Implements the D11 yield rule for the `framework` branch: when the resolved element is already `document.activeElement`, return `"applied"` without calling `.focus()`.
-- [ ] Add `hasEngineHooks(cardId): boolean` to `IDeckManagerStore` and implement in `DeckManager`.
-- [ ] Widen `FocusTransferStore` Pick<> to include `hasEngineHooks` and `invokeEnginePaintMirrorAsActive`.
-- [ ] Module docstring updates in `focus-transfer.ts` naming the new exports, the six-variant union, the D11 yield rule, and the migration plan (existing callers still use the OLD path until Step 4).
-- [ ] **Do NOT delete `resolveActivationTarget` or `ActivationTarget` yet.** They stay; Step 4 deletes them as part of the substitution.
-- [ ] **Do NOT rewrite `transferFocusForActivation` / `transferFocusAfterMove` / `reactivateCurrentFocusDestination` yet.** They stay; Step 4 substitutes.
-- [ ] **Do NOT migrate CardHost cold-boot RESTORE yet.** It stays; Step 4 substitutes.
-- [ ] **Do NOT retire autonomous claims yet.** `onCardActivated` / `onRestore isActive` / `cardDidActivate` keep their existing focus calls; Step 4 retires them.
-- [ ] **Do NOT wrap direct `activateCard` sites yet.** Step 4 wraps the runtime sites; the boot sites stay raw per D9b updated guidance.
+- [x] Define `BagFocusResolution` as the six-variant union per D3.
+- [x] Implement `resolveBagFocus(cardId, store): BagFocusResolution` (pure). Reads `bag.focus`, `peekCardHostRoot(cardId)`, `hasEngineHooks(cardId)`, `getSnapshot().cards`. Returns the appropriate variant. No side effects.
+- [x] Implement `applyBagFocus(cardId, store, options?): "applied" | "deferred"` (impure). Calls `resolveBagFocus`; dispatches per variant: `framework` → `el.focus()`; `engine` → `store.invokeEnginePaintMirrorAsActive(cardId)`; `default-focus` → `traceApplyDefaultFocus`; `deferred-*` → return `"deferred"`; `none` → return `"applied"`. Emits `focus-call` deck-trace event for `framework` / `engine` dispatches. Implements the D11 yield rule for the `framework` branch: when the resolved element is already `document.activeElement`, return `"applied"` without calling `.focus()`.
+- [x] Add `hasEngineHooks(cardId): boolean` to `IDeckManagerStore` and implement in `DeckManager`.
+- [x] Widen `FocusTransferStore` Pick<> to include `hasEngineHooks` and `invokeEnginePaintMirrorAsActive`.
+- [x] Module docstring updates in `focus-transfer.ts` naming the new exports, the six-variant union, the D11 yield rule, and the migration plan (existing callers still use the OLD path until Step 4).
+- [x] **Do NOT delete `resolveActivationTarget` or `ActivationTarget` yet.** They stay; Step 4 deletes them as part of the substitution.
+- [x] **Do NOT rewrite `transferFocusForActivation` / `transferFocusAfterMove` / `reactivateCurrentFocusDestination` yet.** They stay; Step 4 substitutes.
+- [x] **Do NOT migrate CardHost cold-boot RESTORE yet.** It stays; Step 4 substitutes.
+- [x] **Do NOT retire autonomous claims yet.** `onCardActivated` / `onRestore isActive` / `cardDidActivate` keep their existing focus calls; Step 4 retires them.
+- [x] **Do NOT wrap direct `activateCard` sites yet.** Step 4 wraps the runtime sites; the boot sites stay raw per D9b updated guidance.
 
 **Tests:**
-- [ ] `bunx tsc --noEmit` — clean.
-- [ ] `bun run audit:tokens lint` — zero violations.
-- [ ] `bun test` — green.
-- [ ] `just app-test at0071-...test.ts at0072-...test.ts at0073-...test.ts at0074-...test.ts` — green (fixture regression must hold).
-- [ ] Adjacent regression: `just app-test at0020 at0024 at0025 at0031 at0033 at0034 at0035-tide at0046 at0067` — green.
+- [x] `bunx tsc --noEmit` — clean.
+- [x] `bun run audit:tokens lint` — zero violations.
+- [x] `bun test` — green.
+- [x] `just app-test at0071-...test.ts at0072-...test.ts at0073-...test.ts at0074-...test.ts` — green (fixture regression must hold).
+- [x] Adjacent regression: `just app-test at0020 at0024 at0025 at0031 at0033 at0034 at0035-tide at0046 at0067` — green.
 
 **Checkpoint:**
-- [ ] `resolveBagFocus` and `applyBagFocus` are exported from `focus-transfer.ts` and callable from test code.
-- [ ] `hasEngineHooks(cardId)` is implemented on `DeckManager` and visible on `IDeckManagerStore`.
-- [ ] No production call site invokes `applyBagFocus` at this step (grep gate: only the additive type/function definitions exist; no `applyBagFocus(` call expressions in production code outside `focus-transfer.ts`'s own self-reference).
-- [ ] AT0071–74 + adjacent regression set: 100% pass (additive only — no behavior change).
+- [x] `resolveBagFocus` and `applyBagFocus` are exported from `focus-transfer.ts` and callable from test code.
+- [x] `hasEngineHooks(cardId)` is implemented on `DeckManager` and visible on `IDeckManagerStore`.
+- [x] No production call site invokes `applyBagFocus` at this step (grep gate: only the additive type/function definitions exist; no `applyBagFocus(` call expressions in production code outside `focus-transfer.ts`'s own self-reference). _(Verified: all `applyBagFocus` references in tugdeck/src are docstrings, comments, or the function's own self-reference in its definition.)_
+- [x] AT0071–74 + adjacent regression set: 100% pass (additive only — no behavior change).
 
 ---
 

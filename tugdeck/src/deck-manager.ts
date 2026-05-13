@@ -1336,6 +1336,10 @@ export class DeckManager implements IDeckManagerStore {
     }
   }
 
+  hasEngineHooks(cardId: string): boolean {
+    return this.engineHooks.has(cardId);
+  }
+
   /**
    * Subscribe to engine-hook registration events for `cardId`. The
    * listener fires after `registerEngineHooks` (or its cleanup)

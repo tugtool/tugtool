@@ -434,6 +434,16 @@ export interface IDeckManagerStore {
   invokeEnginePaintMirrorAsInactive: (cardId: string) => void;
 
   /**
+   * `true` when an engine has currently-registered hooks for
+   * `cardId`. Used by `resolveBagFocus` (focus-transfer.ts) to
+   * discriminate `engine` (engine ready — invoke now) from
+   * `deferred-engine` (engine mounts late — return `"deferred"`
+   * so Step 4's `subscribeEngineHooksChange` retry fires when the
+   * engine registers). Pure read; no side effects.
+   */
+  hasEngineHooks: (cardId: string) => boolean;
+
+  /**
    * Subscribe to engine-hook registration events for `cardId`.
    * Listener fires after every `registerEngineHooks` registration
    * (including last-write-wins re-registrations) and after the

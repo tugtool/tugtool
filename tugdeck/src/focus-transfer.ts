@@ -309,8 +309,294 @@ export type ActivationTarget =
  */
 export type FocusTransferStore = Pick<
   IDeckManagerStore,
-  "getCardState" | "peekCardHostRoot" | "getSnapshot"
+  | "getCardState"
+  | "peekCardHostRoot"
+  | "getSnapshot"
+  // Phase E.11 Step 3 additions — `applyBagFocus` reads these to
+  // resolve `engine` vs `deferred-engine` and to invoke the
+  // registered engine hook. No production caller invokes
+  // `applyBagFocus` yet (Step 4); the type widening is forward-
+  // compatible only.
+  | "hasEngineHooks"
+  | "invokeEnginePaintMirrorAsActive"
 >;
+
+// ---------------------------------------------------------------------------
+// Phase E.11 Step 3 — dispatcher infrastructure (additive only)
+//
+// `resolveBagFocus` (pure) + `applyBagFocus` (impure) are the
+// single-channel focus dispatcher. They are EXPORTED at this step
+// for downstream consumption at Step 4 — no production call site
+// invokes them here. The four-claimant model from the end of Step 2
+// (transferFocusForActivation focus-element, engine onCardActivated,
+// macrotask cardDidActivate delegate, CardHost cold-boot
+// applyFocusSnapshot) continues to drive activation focus until
+// Step 4's substitution.
+//
+// See `roadmap/tide-assistant-rendering.md` → Phase E.11 → D3
+// (#focus-dispatch-model) and D11 (#d11-yield-rule) for the
+// contract these APIs implement.
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolved destination of a `bag.focus` lookup — Phase E.11
+ * single-channel dispatcher's return type.
+ *
+ * `resolveBagFocus` is pure (reads bag + DOM, no side effects);
+ * `applyBagFocus` is the impure dispatcher that calls into this and
+ * performs the corresponding side effect. The six-variant union
+ * names every outcome the dispatcher can encounter:
+ *
+ *   - `framework` — concrete focusable element resolved from
+ *     `bag.focus.kind === "dom" | "form-control"`. The dispatcher
+ *     calls `el.focus()` (subject to the D11 yield rule: when the
+ *     resolved element is already `document.activeElement`, yield).
+ *   - `engine` — the card's bag names engine-owned focus and the
+ *     engine has registered hooks. The dispatcher invokes
+ *     `store.invokeEnginePaintMirrorAsActive(cardId)`.
+ *   - `default-focus` — DOM-authority card with no usable saved
+ *     focus snapshot; the dispatcher walks
+ *     {@link DEFAULT_FOCUS_SELECTORS} via
+ *     {@link traceApplyDefaultFocus}.
+ *   - `deferred-dom` — bag names a framework-axis target whose
+ *     element has not yet mounted (key resolves to no element).
+ *     The dispatcher returns `"deferred"`; CardHost's late-mount
+ *     retry (Step 4) re-fires `applyBagFocus` on each subtree
+ *     mutation until the element appears or the budget exhausts.
+ *   - `deferred-engine` — bag names engine focus but no engine
+ *     hooks are registered yet (engine mounts late, e.g. tide's
+ *     editor after `feedsReady`). The dispatcher returns
+ *     `"deferred"`; CardHost's `subscribeEngineHooksChange`
+ *     listener re-fires `applyBagFocus` when the engine registers.
+ *   - `none` — nothing to focus. Bag is absent, host root is
+ *     unregistered, or `bag.focus.kind === "none"`. The dispatcher
+ *     returns `"applied"` (idempotent no-op) so callers can stop
+ *     retrying.
+ */
+export type BagFocusResolution =
+  | { kind: "framework"; el: HTMLElement; sourceKind: "dom" | "form-control" }
+  | { kind: "engine"; cardId: string }
+  | { kind: "default-focus"; cardRoot: HTMLElement }
+  | { kind: "deferred-dom"; cardId: string; focusKind: "dom" | "form-control"; key: string }
+  | { kind: "deferred-engine"; cardId: string }
+  | { kind: "none" };
+
+/**
+ * Pure resolver — Phase E.11 single-channel dispatcher's read half.
+ *
+ * Consults `bag.focus` and resolves it to a {@link BagFocusResolution}
+ * suitable for {@link applyBagFocus}. Side-effect free: reads the
+ * bag, the host root, the engine-hook registration via
+ * `store.hasEngineHooks`, and the live DOM via `querySelector`.
+ * Does not mutate focus, selection, or any DOM state.
+ *
+ * Single source of truth for "where does focus go on this
+ * activation?" — Phase E.11's [L23] single-channel contract.
+ *
+ * **Not called from production at Step 3.** Step 4 wires
+ * `transferFocusForActivation` / `transferFocusAfterMove` /
+ * `reactivateCurrentFocusDestination` / CardHost cold-boot RESTORE
+ * to invoke this via `applyBagFocus`.
+ */
+export function resolveBagFocus(
+  cardId: string,
+  store: FocusTransferStore,
+): BagFocusResolution {
+  const bag = store.getCardState(cardId);
+  const hostRoot = store.peekCardHostRoot(cardId);
+
+  const focus = bag?.focus;
+  if (focus === undefined || focus === null || focus.kind === "none") {
+    // No saved focus. Default-focus walk inside the card root for
+    // DOM-authority cards; engine resolution for engine-bearing
+    // cards (the engine's own onCardActivated registration is what
+    // names the in-card focus target).
+    const card = store.getSnapshot().cards.find((c) => c.id === cardId);
+    const isEngineManaged =
+      card !== undefined && isEngineManagedCard(card.componentId);
+    const isContentOwning = bag !== undefined && bag.content !== undefined;
+    if (isEngineManaged || isContentOwning) {
+      if (store.hasEngineHooks(cardId)) {
+        return { kind: "engine", cardId };
+      }
+      return { kind: "deferred-engine", cardId };
+    }
+    if (hostRoot === null || !hostRoot.isConnected) {
+      return { kind: "none" };
+    }
+    return { kind: "default-focus", cardRoot: hostRoot };
+  }
+
+  if (focus.kind === "engine") {
+    if (store.hasEngineHooks(cardId)) {
+      return { kind: "engine", cardId };
+    }
+    return { kind: "deferred-engine", cardId };
+  }
+
+  // Framework-axis kinds: `dom` / `form-control`. Resolve the
+  // concrete element via the host-root-scoped selector.
+  if (hostRoot === null || !hostRoot.isConnected) {
+    // No host root yet — late-mount window. Resolution deferred;
+    // CardHost's MutationObserver retry (Step 4) re-fires
+    // `applyBagFocus` once the root commits.
+    const key =
+      focus.kind === "dom" ? focus.focusKey : focus.componentStatePreservationKey;
+    return { kind: "deferred-dom", cardId, focusKind: focus.kind, key };
+  }
+  const selector =
+    focus.kind === "dom"
+      ? `[data-tug-focus-key="${CSS.escape(focus.focusKey)}"]`
+      : `[data-tug-state-key="${CSS.escape(focus.componentStatePreservationKey)}"]`;
+  const el = hostRoot.querySelector<HTMLElement>(selector);
+  if (el === null || !el.isConnected) {
+    const key =
+      focus.kind === "dom" ? focus.focusKey : focus.componentStatePreservationKey;
+    return { kind: "deferred-dom", cardId, focusKind: focus.kind, key };
+  }
+  return { kind: "framework", el, sourceKind: focus.kind };
+}
+
+/**
+ * Options for {@link applyBagFocus}.
+ */
+export interface ApplyBagFocusOptions {
+  /**
+   * Site tag for `focus-call` / `focus-measurement` trace events.
+   * Defaults to `"apply-bag-focus"`. Callers that want to preserve
+   * legacy site tags (e.g. `"focus-transfer"`) pass their own.
+   */
+  site?: string;
+  /**
+   * When true, framework `el.focus()` is called with
+   * `{ preventScroll: true }`. Used by
+   * `reactivateCurrentFocusDestination` so window-focus
+   * reactivation does not scroll the focused element back into
+   * view ([L23] — preserve user-visible scroll).
+   */
+  preventScroll?: boolean;
+}
+
+/**
+ * Single-channel focus dispatcher — Phase E.11 [L05] / [L23] gate.
+ *
+ * Reads `bag.focus` via {@link resolveBagFocus}, then performs the
+ * resolved side effect:
+ *
+ *   - `framework` → `el.focus()` IF the D11 yield rule allows it
+ *     (yields when the element is already `document.activeElement`,
+ *     so substrate hooks that focused the same target on their own
+ *     mount aren't clobbered). Emit a `focus-call` trace event.
+ *   - `engine` → `store.invokeEnginePaintMirrorAsActive(cardId)`.
+ *     The engine hook is internally idempotent — no yield rule
+ *     needed.
+ *   - `default-focus` → `traceApplyDefaultFocus`.
+ *   - `deferred-dom` / `deferred-engine` → return `"deferred"`.
+ *     CardHost's late-mount retry (Step 4) re-fires this function.
+ *   - `none` → return `"applied"` (idempotent no-op).
+ *
+ * Returns `"applied"` for any resolution that committed (or that
+ * was a definitive no-op) and `"deferred"` only when the caller
+ * should retry. The retry mechanism is Phase E.11 Step 4 territory
+ * — this function does not install observers.
+ *
+ * **Not called from production at Step 3.** Step 4 wires
+ * `transferFocusForActivation` etc. to invoke this.
+ */
+export function applyBagFocus(
+  cardId: string,
+  store: FocusTransferStore,
+  options?: ApplyBagFocusOptions,
+): "applied" | "deferred" {
+  const site = options?.site ?? "apply-bag-focus";
+  const resolution = resolveBagFocus(cardId, store);
+
+  if (resolution.kind === "none") return "applied";
+  if (
+    resolution.kind === "deferred-dom" ||
+    resolution.kind === "deferred-engine"
+  ) {
+    return "deferred";
+  }
+
+  if (resolution.kind === "framework") {
+    const el = resolution.el;
+    const doc = el.ownerDocument;
+    const activeBefore = formatElement(doc.activeElement);
+    const targetSelector =
+      resolution.sourceKind === "dom"
+        ? `[data-tug-focus-key=...]`
+        : `[data-tug-state-key=...]`;
+
+    // D11 yield rule. When a substrate hook (find session,
+    // future inline editor) has already focused the same target
+    // on its own mount, calling `el.focus()` again interferes
+    // with React reconciliation's focus-restoration heuristics
+    // and the substrate's own selection follow-up. The OLD
+    // `applyFocusSnapshot` encoded this as a "bail if focus is
+    // already inside the card" pre-check; the explicit rule is
+    // "yield when the resolved target is the active element."
+    // Substrate hooks beat the framework on the same target;
+    // the dispatcher records the trace event for coherence and
+    // returns `"applied"` without re-calling `.focus()`.
+    if (doc.activeElement === el) {
+      deckTrace.record({
+        kind: "focus-call",
+        site: `${site}:yielded`,
+        cardId,
+        targetSelector,
+        activeBefore,
+        activeAfter: activeBefore,
+        hidden: isElementHidden(el),
+      });
+      return "applied";
+    }
+
+    measureFocusClaim(`${site}:framework`, cardId, doc, () => {
+      el.focus(
+        options?.preventScroll === true ? { preventScroll: true } : undefined,
+      );
+    });
+    const activeAfter = formatElement(doc.activeElement);
+    deckTrace.record({
+      kind: "focus-call",
+      site,
+      cardId,
+      targetSelector,
+      activeBefore,
+      activeAfter,
+      hidden: isElementHidden(el),
+    });
+    return "applied";
+  }
+
+  if (resolution.kind === "engine") {
+    // Engine claim runs through the registered hook. The hook
+    // records its own `engine-paint-mirror-active` event tagged
+    // `caller: "via-engine-hook"` (wired at Step 2 in
+    // `tug-text-editor.tsx`).
+    const doc =
+      store.peekCardHostRoot(cardId)?.ownerDocument ??
+      (typeof document !== "undefined" ? document : null);
+    if (doc !== null) {
+      measureFocusClaim(`${site}:engine`, cardId, doc, () => {
+        store.invokeEnginePaintMirrorAsActive(cardId);
+      });
+    } else {
+      store.invokeEnginePaintMirrorAsActive(cardId);
+    }
+    return "applied";
+  }
+
+  // default-focus
+  traceApplyDefaultFocus(
+    `${site}-default`,
+    cardId,
+    resolution.cardRoot,
+    options?.preventScroll === true ? { preventScroll: true } : undefined,
+  );
+  return "applied";
+}
 
 /**
  * Resolve the activation target for `cardId`.
