@@ -3156,6 +3156,112 @@ Phase E.9 captures the geometry that drives layout at save time and hydrates it 
 
 ---
 
+##### Phase E.10 — Transient focus preservation for in-card UI
+
+**Depends on:** Phase E.4 (find row owned by FileBlock; the same surface DiffBlock + TerminalBlock will adopt); Phase E.7 (`useComponentStatePreservation` channel for non-content-owning state that must survive reload); the existing `FocusSnapshot` infrastructure (`layout-tree.ts:215`, `card-host.tsx#captureFocus`, `focus-transfer.ts#resolveActivationTarget`).
+
+**Why this phase exists.** Tide cards are content-owning, so CardHost's framework-axis assembler refuses to capture `bag.focus` at save time (`card-host.tsx:1241`, the `ownsSelectionAndFocus = (bag.content !== undefined)` gate). On every activation path that consults `resolveActivationTarget` (`focus-transfer.ts:266`) — intra-pane tab switch, cross-pane drag/move, window-`focus` regain, cold-boot first activation — the resolver short-circuits content-owning cards to `dispatch-activated` (line 297) and the engine's `onCardActivated` (`tug-text-editor/state-preservation.ts:345`) unconditionally re-claims focus to the prompt-entry's contenteditable.
+
+The decision that produced this gate (D07: content factory owns selection + focus end-to-end) was correct for the engine itself — the prompt-entry's caret position is engine state, not framework state, and a second `.focus()` from the framework would race the engine. But D07 is over-broad as written: it lumps the engine's caret with *any* focusable target inside a content-owning card. Transient in-card UI — the FileBlock find row today, DiffBlock + TerminalBlock find rows on the roadmap, future inline question widgets — has no engine integration; its focus state belongs to the framework axis, not to `bag.content`. Today every keystroke that lands on these targets is wiped the moment the user cmd-tabs away, drags a card, switches tabs, or reloads.
+
+Phase E.10 narrows D07 to its actual scope (engine-managed contenteditable), lifts framework focus capture for everything else inside content-owning cards, and adds the component-state-preservation slot needed to make a find row re-render on reload **before** the focus restore tries to resolve its selector. With those three primitives a block author opts in by stamping `data-tug-focus-key` on the transient input and persisting the find-session reactor through `useComponentStatePreservation` — the framework handles the rest, symmetric across FileBlock, DiffBlock, TerminalBlock, and any future block.
+
+**Decisions.**
+
+- **`bag.focus` is the framework axis for ALL focusable targets that aren't the engine's contenteditable.** The `ownsSelectionAndFocus` gate at `card-host.tsx:1241` is replaced with a finer-grained check. For content-owning cards: capture `bag.focus` when `document.activeElement` is inside the card root AND matches a `[data-tug-focus-key]` or `[data-tug-state-key]` selector. Skip capture (leave `bag.focus` as `none`) when active matches the engine's `[data-tug-prompt-input-root] [contenteditable]` selector — that path stays bag.content-owned, as D07 intended. Anything else inside the card (a stray button, a non-key-tagged element) is `none` — same as today; non-keyed elements have no stable selector to restore against.
+- **Resolver checks `bag.focus` BEFORE falling through to `dispatch-activated`.** `resolveActivationTarget` for content-owning cards (`focus-transfer.ts:297`) gains a precondition: if `bag.focus` is present, well-formed, and resolves to a live element inside the card host root, return `{ kind: "focus-element", el }`. Otherwise — including the stale-snapshot case where the keyed element is no longer in the DOM — fall through to the existing `dispatch-activated` branch. The engine's prompt-entry remains the default fallback for "no bag.focus or stale snapshot."
+- **Find-session state moves into `useComponentStatePreservation`.** Each block that owns a find session (today: FileBlock; on the roadmap: DiffBlock, TerminalBlock) registers a `findSession` component-state slot carrying `{ open: boolean; query: string; caseSensitive: boolean; regexp: boolean; wholeWord: boolean }`. On cold boot the slot restores synchronously before paint (Phase E.8 primitive), so the find row is in the DOM before CardHost's focus-restore queries `[data-tug-focus-key="<block-find>/<stateKey>"]`. The `findOpen` state's existing `useState` is the source of authority at runtime; the preservation layer reads/writes it through `useSavedComponentState` + a save-callback closure — same shape FileBlock's collapse flag uses today.
+- **A shared `useBlockFindSession` primitive ships in `tugways/internal/`.** All find-row state, focus discipline (find input registers with `data-tug-focus-key`, see below), open/close lifecycle, query/option state, and component-state-preservation wiring live in one hook. FileBlock currently hand-rolls all of this in ~250 lines; DiffBlock's planned find row would duplicate it. Phase E.10 extracts the shared shape so every block adopts the same behavior with a single hook call. The hook takes a `keyPrefix` (e.g. `"file-block-find"`, `"diff-block-find"`) and the block's `componentStatePreservationKey`, composes them into the focus-key + state-key namespace, and returns the full reactor (find row props, input ref, navigation handlers, FIND/FIND_NEXT/FIND_PREVIOUS action map).
+- **`data-tug-focus-key` shape.** `"<block-prefix>-find/<componentStatePreservationKey>"`. The block-prefix discriminates blocks that share a parent card (a FileBlock and a DiffBlock in the same tide card both with open find rows would otherwise collide on the same key); the state-key suffix discriminates multiple instances of the same block kind. The `useBlockFindSession` hook owns the composition so block authors don't construct the key by hand.
+- **No new `FocusSnapshot` variant.** The existing `kind: "dom"; focusKey: string` (`layout-tree.ts:218`) is exactly the shape we need. The resolver already queries `[data-tug-focus-key="${CSS.escape(focus.focusKey)}"]` (`focus-transfer.ts:325`).
+- **No engine-side changes.** `tug-text-editor.tsx` and `state-preservation.ts` are not touched. The engine's `onCardActivated` (which claims focus to the prompt-entry) is reached **only** when `bag.focus` is absent or stale — i.e., the explicit fallback the user described.
+- **All five activation paths covered.** `reactivateCurrentFocusDestination` (window-focus / cmd-tab back), `transferFocusForActivation` (intra-pane tab switch, cross-pane drag drop, close handoff), `transferFocusAfterMove` (cross-pane move post-commit), CardHost's cold-boot first activation, and `transferFocusForActivation`'s post-mount restore — they all read `resolveActivationTarget`, so the reorder lands once and propagates everywhere. The plan does NOT add separate code in each call site.
+- **Reload survival is in scope; no follow-on phase.** The component-state-preservation slot covers reload's "find row must re-mount before focus restore tries to land." This phase ships find-session preservation end-to-end.
+- **No timer. No rAF. No DOM mutation observer for focus.** The focus-restore is a single direct `.focus()` call after the resolver returns the element; the element exists because component-state restore is synchronous-before-paint (Phase E.8 contract). If the element somehow doesn't exist (the find row is closed at save time — perfectly legitimate user state), `bag.focus` was never written for it and the fallback runs.
+
+**Tuglaws compliance (Phase E.10).**
+
+- **[L01] One `root.render()`.** ✓ No render-root changes.
+- **[L02] External state through `useSyncExternalStore`.** ✓ The find-session reactor reads its persisted slot through `useSavedComponentState` (already `useSyncExternalStore`-wired in Phase E.7/E.8). `bag.focus` is captured at save time, not subscribed to mid-render.
+- **[L03] `useLayoutEffect` for registrations.** ✓ The find-session's component-state preservation registers in `useLayoutEffect`. The find-input focus claim on first open already uses `useLayoutEffect` (`file-block.tsx:1049`); the hook extraction preserves that.
+- **[L04] No parent effect triggering child setState then measuring.** ✓ Focus restore reads the resolved element's bounding rect only when needed (today: not at all — `.focus({ preventScroll: true })` is a pure mutation). No parent measurement after child setState.
+- **[L05] No `requestAnimationFrame` for state-dependent operations.** ✓ All three activation paths run synchronously after their respective triggers (window event, pointer event, mount commit).
+- **[L06] Appearance via CSS/DOM, never React state.** ✓ Focus mutation is direct DOM. The find row's *appearance* — open/closed — is React-state-driven because it's a render branch ([L06]'s "controls what is rendered" carve-out, same shape as FileBlock's `collapsed`).
+- **[L07] Live ref reads in handlers.** ✓ The find-session hook reads its persisted slot live each commit; the focus-restore reads `store.peekCardHostRoot(cardId)` live at fire time.
+- **[L11] Controls emit actions; responders own state.** ✓ The find row's controls (input, nav buttons, option checkboxes, Done) dispatch through the responder chain; the hosting block remains the responder for FIND / FIND_NEXT / FIND_PREVIOUS. The hook extraction doesn't reshape the chain.
+- **[L19] Component authoring guide.** ✓ Update `component-authoring.md` with a new "Transient focus targets" subsection: when to stamp `data-tug-focus-key`, the key-naming convention, the `useBlockFindSession` hook signature. Update `state-preservation.md` to describe the `findSession` slot shape.
+- **[L20] Component-token sovereignty.** ✓ No new tokens.
+- **[L22] External state driving DOM updates observes the store directly.** ✓ The focus-restore reads `store.getCardState(cardId)` directly; no React state copy.
+- **[L23] Preserve user-visible state.** ★ This phase is the L23 strengthening for the focus axis. The contract becomes: focus position at first paint after any activation = focus position at last save, INCLUDING transient in-card UI that today is forced back to the engine.
+- **[L24] Three state zones.** ✓ `bag.focus` is data (where the caret should land). Find-session preservation is data (what the row's controls show). Neither is rendering state; they drive appearance writes (`.focus()`, render branch on `findOpen`). No state crosses zones.
+
+**Artifacts (Phase E.10):**
+
+- New: `tugdeck/src/components/tugways/internal/use-block-find-session.tsx`
+  - The shared find-session reactor. Wraps `useState` for `{ open, query, caseSensitive, regexp, wholeWord, matchCount }`, plus `useComponentStatePreservation<FindSessionState>` for reload survival, plus the focus-discipline `useLayoutEffect` (focus + select on open; re-focus + re-select on repeated Cmd-F per the small commit `5f840431` already in main).
+  - Composes `data-tug-focus-key="<prefix>-find/<key>"` and `data-tug-state-key` for the input. Exposes them as ref-callback + attribute spread so the block's `TugInput` receives them without the block author writing the key by hand.
+  - Returns the contract `{ open, openFind, closeFind, clearFindQuery, findRowProps, inputProps, navProps, actions, matchCount, getMatchCount }` so the block author assembles the find row from primitives.
+  - Module docstring + props interface + tests per [L19].
+- Updated: `tugdeck/src/components/tugways/body-kinds/file-block.tsx`
+  - Replace the hand-rolled find-state machine (lines ~953–1066, ~1076–1153) with a single `useBlockFindSession({ keyPrefix: "file-block-find", componentStatePreservationKey })` call.
+  - Wire the returned `inputProps` into the existing `<TugInput>` — the spread carries `data-tug-focus-key`, `data-tug-state-key`, and the ref forwarding.
+  - The FileBlock-specific bits (CM6 delegate wiring, CM6 search-query push effect, CM6 findNext/findPrevious calls) stay in FileBlock; they receive the live query state from the hook's return value.
+- Updated: `tugdeck/src/components/chrome/card-host.tsx`
+  - Replace the `ownsSelectionAndFocus`-gated `focus` capture (lines ~1240–1256) with the finer-grained classification described under Decisions. New helper `captureContentOwningCardFocus(cardRoot)` returns `FocusSnapshot` after checking the active element against `[data-tug-focus-key]` / `[data-tug-state-key]` (yes → capture) vs. engine-owned (skip — bag.content is authoritative).
+- Updated: `tugdeck/src/focus-transfer.ts`
+  - In `resolveActivationTarget`, move the `bag.focus` resolution branch (lines ~317–346) **above** the `dispatch-activated` short-circuit at lines 297–299. The reordering preserves: engine-managed cards still dispatch (line 290–292); content-owning cards check `bag.focus` first; absence / staleness falls through to the existing `dispatch-activated` path.
+  - Add a defensive `el.isConnected` check before returning `focus-element` (already present at line 340; preserve for the new path).
+- Updated: `tugdeck/src/components/tugways/body-kinds/diff-block.tsx`
+  - Wire a `useBlockFindSession({ keyPrefix: "diff-block-find", componentStatePreservationKey })` call AND render the find row (sticky beneath the chrome, same shape as FileBlock). The DiffBlock body kind currently has the `FIND` responder action stub from Phase E.4 but no UI; Phase E.10 lights it up using the shared hook. The diff substrate's search bridging is a follow-up — Phase E.10 ships the find row + state preservation; the actual match-highlighting against the diff cells lands when the diff editor gains a search extension. (The find row's query state, focus, and reload survival all work standalone; match counts read 0 until the substrate-side bridge ships.)
+- Updated: `tugdeck/src/components/tugways/body-kinds/terminal-block.tsx`
+  - Same hook call; same find-row UI (terminal's existing scroller is a virtualized character grid — Phase E.10 ships the find row + state preservation; the substrate-side bridge to actually search the virtualized grid lands later, same pattern as DiffBlock).
+- Updated: `tuglaws/state-preservation.md`
+  - New section: "Find-session preservation." Document the `findSession` slot shape, the key-namespacing convention, and the timing dependency (component-state restore is synchronous-before-paint per Phase E.8, so the find row is in the DOM when focus-restore queries the selector).
+- Updated: `tuglaws/component-authoring.md`
+  - New "Transient focus targets" subsection: when to stamp `data-tug-focus-key`, the `<prefix>-<scope>/<key>` naming convention, the `useBlockFindSession` API surface, the explicit non-goal that the engine's contenteditable stays component-owned.
+- Updated: `tuglaws/app-test-inventory.md` — register AT0071–AT0074 (see Tests).
+- Updated: `tugdeck/src/components/chrome/__tests__/card-host.test.tsx` (or the focus-axis test file)
+  - New unit test: with `bag.content` set AND `document.activeElement` on a `[data-tug-focus-key="..."]` element, `captureCardState` writes `bag.focus = { kind: "dom", focusKey }`. With active on the engine's contenteditable, `bag.focus` stays absent.
+- Updated: `tugdeck/src/__tests__/focus-transfer.test.ts`
+  - New unit test: `resolveActivationTarget` on a content-owning card with `bag.focus = { kind: "dom", focusKey }` returns `{ kind: "focus-element", el }` (when the keyed element is in the DOM). With `bag.focus = null` (or `kind: "none"` or stale focusKey not in DOM), returns `{ kind: "dispatch-activated" }`.
+- New: `tests/app-test/at0071-find-focus-survives-cmd-tab.test.ts`
+  - Open a tide card, open the FileBlock find row, type a query so focus is in the input. Simulate window-blur → window-focus (the harness's app-switch primitive). Assert `document.activeElement` is the find input on the post-focus tick, and the typed query is preserved.
+- New: `tests/app-test/at0072-find-focus-survives-card-switch.test.ts`
+  - Two tide cards in the same pane. Card A has its FileBlock find row open with focus in the input. Click Card B's tab → click Card A's tab. Assert focus returns to Card A's find input, query preserved.
+- New: `tests/app-test/at0073-find-focus-survives-reload.test.ts`
+  - Open tide card, open find, type query, Developer > Reload. Assert: the find row re-renders on first paint (component-state-preservation restored `findOpen=true` + query), `document.activeElement` is the find input on the post-reload tick.
+- New: `tests/app-test/at0074-engine-focus-still-default.test.ts`
+  - Regression check for the negative case: a tide card with NO find session active and focus on the prompt-entry contenteditable. cmd-tab away and back; assert focus returns to the contenteditable (the dispatch-activated fallback still works). Pin that the engine path isn't broken by the new bag.focus precondition.
+
+**Tasks (Phase E.10):**
+
+- [ ] **Extract `useBlockFindSession`.** New hook in `tugdeck/src/components/tugways/internal/`. Owns find-row reactor + component-state-preservation slot + focus discipline + key composition. Module docstring per [L19].
+- [ ] **Migrate FileBlock to `useBlockFindSession`.** Replace the hand-rolled find-state machine; spread the hook's `inputProps` onto the TugInput. Verify behavior unchanged for the existing single-block flow (the small commit `5f840431`'s repeated-Cmd-F focus discipline lives in the hook now).
+- [ ] **CardHost: lift the `ownsSelectionAndFocus` gate for keyed/state-tagged focus targets.** New helper `captureContentOwningCardFocus`. The non-content-owning branch is unchanged. Unit test in `card-host.test.tsx`.
+- [ ] **`resolveActivationTarget`: try `bag.focus` before `dispatch-activated` for content-owning cards.** Reorder; preserve `isConnected` check; preserve the engine-managed branch. Unit test in `focus-transfer.test.ts`.
+- [ ] **DiffBlock + TerminalBlock find rows.** Wire `useBlockFindSession`; render the find row markup (mirror FileBlock's). Substrate-side match-highlighting is out of scope for Phase E.10 — the focus-preservation primitive is the goal of this phase. (Match-count returns 0 until the substrate bridges land.)
+- [ ] **Documentation.** `tuglaws/state-preservation.md` ("Find-session preservation"), `tuglaws/component-authoring.md` ("Transient focus targets"), `app-test-inventory.md` (AT0071–AT0074).
+- [ ] **Unit tests** as listed in Artifacts.
+- [ ] **App-tests** AT0071 (cmd-tab), AT0072 (card-switch), AT0073 (reload), AT0074 (engine regression).
+
+**Tests (commands, Phase E.10):**
+
+- [ ] `bunx tsc --noEmit` — clean.
+- [ ] `bun run audit:tokens lint` — zero violations.
+- [ ] `bun test src/components/tugways/internal/__tests__/use-block-find-session.test.ts src/components/chrome/__tests__/card-host.test.tsx src/__tests__/focus-transfer.test.ts` — green.
+- [ ] `bun test` (full suite) — at least as green as the Phase E.9 baseline (3720 pass); the hook extraction may reduce gross test count if existing FileBlock find tests migrate to the hook's test file.
+- [ ] `just app-test at0071-find-focus-survives-cmd-tab.test.ts at0072-find-focus-survives-card-switch.test.ts at0073-find-focus-survives-reload.test.ts at0074-engine-focus-still-default.test.ts` — all green (4/4).
+
+**Checkpoint (Phase E.10):**
+
+- [ ] Manual: open a tide card with a Read tool. Open the FileBlock find row, type a query so focus is in the input. cmd-tab to another app, cmd-tab back. Focus is in the find input. The query is preserved.
+- [ ] Manual: in the same setup, switch to a sibling tide card (click its tab), then switch back. Focus is in the find input. Query preserved.
+- [ ] Manual: in the same setup, Developer > Reload. The find row re-renders on first paint with the query restored; focus lands in the input.
+- [ ] Manual (negative case): in a tide card with NO find session open and focus in the prompt-entry, cmd-tab away and back. Focus returns to the prompt-entry. (Regression check — engine fallback path still works.)
+- [ ] Manual: open find rows in two different blocks (FileBlock A and FileBlock B) in the same tide card. Set focus into A's find input, cmd-tab away and back. Focus returns to A's find input (not B's, not the prompt-entry). Repeat with B; focus returns to B's. The `<prefix>-find/<key>` composition discriminates correctly.
+
+---
+
 #### Step 11: EditToolBlock wrapper {#step-11}
 
 **Depends on:** #step-1, #step-10
