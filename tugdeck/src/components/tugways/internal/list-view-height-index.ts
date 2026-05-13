@@ -124,6 +124,59 @@ export class HeightIndex {
   }
 
   /**
+   * Serialize the currently-measured heights into a dense array
+   * indexed by cell index. Unmeasured indices below the max contain
+   * `0`. The returned array length is `(max measured index) + 1`, or
+   * `0` when nothing has been measured.
+   *
+   * Used by `TugListView` to write `meta.cellHeights` onto
+   * `data-tug-scroll-state` at save time. JSON-serializable; the
+   * dense `0`-for-unmeasured shape (rather than sparse `null`)
+   * keeps the on-disk bag round-trip clean and avoids JSON's
+   * sparse-array hazards.
+   */
+  snapshot(): number[] {
+    if (this.heights.size === 0) return [];
+    let max = -1;
+    for (const i of this.heights.keys()) {
+      if (i > max) max = i;
+    }
+    const out = new Array<number>(max + 1).fill(0);
+    for (const [i, h] of this.heights) {
+      if (i >= 0 && i <= max) out[i] = h;
+    }
+    return out;
+  }
+
+  /**
+   * Bulk-load measurements from a dense array indexed by cell index.
+   * Entries with non-positive / non-finite values are skipped (they
+   * represent unmeasured cells in `snapshot()`'s output). Invalidates
+   * any prepared cache so the next `prepare` call sees the hydrated
+   * values.
+   *
+   * Used by `TugListView`'s Phase E.9 mount-time hydration: when the
+   * saved bag carries `meta.cellHeights`, `hydrate` populates the
+   * live index BEFORE the apply effect runs, so first-paint anchor-
+   * resolve math reads exact heights rather than estimates.
+   *
+   * Does not erase existing measurements not covered by `arr`. The
+   * typical mount-time use is hydrating a fresh index, but mixing
+   * with prior measurements is harmless — the most recent `set` wins
+   * per index.
+   */
+  hydrate(arr: readonly number[]): void {
+    for (let i = 0; i < arr.length; i += 1) {
+      const h = arr[i];
+      if (typeof h !== "number" || !Number.isFinite(h) || h <= 0) continue;
+      this.heights.set(i, h);
+    }
+    // Force prepare() to rebuild — bulk hydration is too broad to
+    // patch the Fenwick tree incrementally.
+    this.cache = null;
+  }
+
+  /**
    * Build (or refresh) the internal Fenwick cache for the supplied
    * `(itemCount, estimateFn)` pair. After calling this, `totalHeight`,
    * `offsetForIndex`, and `indexForOffset` all run in O(log n) (or

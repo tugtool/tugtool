@@ -362,3 +362,72 @@ describe("HeightIndex — prepared (Fenwick) fast path", () => {
     expect(idx.totalHeight(3, est)).toBe(40 + 100 + 40);
   });
 });
+
+describe("HeightIndex — snapshot / hydrate (Phase E.9 geometry)", () => {
+  test("empty index → empty snapshot", () => {
+    const idx = new HeightIndex();
+    expect(idx.snapshot()).toEqual([]);
+  });
+
+  test("snapshot returns dense array indexed by cell index", () => {
+    const idx = new HeightIndex();
+    idx.set(0, 10);
+    idx.set(2, 30);
+    idx.set(5, 60);
+    // Length = max index + 1; unmeasured slots are 0.
+    expect(idx.snapshot()).toEqual([10, 0, 30, 0, 0, 60]);
+  });
+
+  test("hydrate populates measurements; sparse zero entries are skipped", () => {
+    const idx = new HeightIndex();
+    idx.hydrate([10, 0, 30, 0, 0, 60]);
+    expect(idx.get(0)).toBe(10);
+    expect(idx.get(2)).toBe(30);
+    expect(idx.get(5)).toBe(60);
+    expect(idx.has(1)).toBe(false);
+    expect(idx.has(4)).toBe(false);
+  });
+
+  test("hydrate is the inverse of snapshot", () => {
+    const idx = new HeightIndex();
+    idx.set(0, 10);
+    idx.set(2, 30);
+    idx.set(5, 60);
+    const snap = idx.snapshot();
+
+    const idx2 = new HeightIndex();
+    idx2.hydrate(snap);
+    expect(idx2.snapshot()).toEqual(snap);
+  });
+
+  test("hydrate ignores non-positive / non-finite values", () => {
+    const idx = new HeightIndex();
+    idx.hydrate([20, -5, NaN, Infinity, 50]);
+    expect(idx.get(0)).toBe(20);
+    expect(idx.has(1)).toBe(false);
+    expect(idx.has(2)).toBe(false);
+    expect(idx.has(3)).toBe(false);
+    expect(idx.get(4)).toBe(50);
+  });
+
+  test("hydrate invalidates the prepared cache so subsequent prepare sees hydrated values", () => {
+    const idx = new HeightIndex();
+    const est = fixed(40);
+    // Stale cache: prepare against an empty index, then hydrate.
+    idx.prepare(3, est);
+    expect(idx.totalHeight(3, est)).toBe(120);
+
+    idx.hydrate([50, 60, 70]);
+    // After hydrate, the cache should rebuild on next prepare.
+    expect(idx.totalHeight(3, est)).toBe(50 + 60 + 70);
+  });
+
+  test("hydrate doesn't erase prior measurements outside the array", () => {
+    const idx = new HeightIndex();
+    idx.set(10, 999);
+    idx.hydrate([1, 2, 3]);
+    // Indices 0..2 from hydrate, index 10 from prior set.
+    expect(idx.get(0)).toBe(1);
+    expect(idx.get(10)).toBe(999);
+  });
+});

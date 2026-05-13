@@ -698,12 +698,33 @@ function appendVirtualizedBody(
   applyUpdate(resolvedScrollTop);
   scroller.scrollTop = resolvedScrollTop;
 
+  // Phase E.9 scroll-state writer (validation field only). The
+  // TerminalBlock virtualizer is deterministic per `LINE_HEIGHT_PX`,
+  // so raw saved `{x, y}` already restores the same content
+  // position on cold boot — `meta.scrollHeight` is captured for
+  // symmetry with the variable-height virtualizer's geometry
+  // capture pattern and for cross-version layout-stability checks.
+  // Reader paths do not consume it today; if it disagreed with the
+  // live scrollHeight it would just be ignored.
+  //
+  // [L06] DOM-attribute write. Updated on every scroll event,
+  // alongside `applyUpdate`, so the framework's capture-time read
+  // sees the current value.
+  const writeScrollState = (): void => {
+    scroller.setAttribute(
+      "data-tug-scroll-state",
+      JSON.stringify({ scrollHeight: scroller.scrollHeight }),
+    );
+  };
+  writeScrollState();
+
   let pendingRaf: number | null = null;
   const onScroll = () => {
     if (pendingRaf !== null) return;
     pendingRaf = requestAnimationFrame(() => {
       pendingRaf = null;
       applyUpdate(scroller.scrollTop);
+      writeScrollState();
     });
   };
   scroller.addEventListener("scroll", onScroll, { passive: true });

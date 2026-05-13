@@ -709,21 +709,31 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // `captureRegionScrolls` walks all `[data-tug-scroll-key]` elements
   // in the card subtree on every capture moment ([A9] save).
   //
-  // Mount-in-saved-state: on the FIRST mount of CM6's view (cold
-  // boot, or a collapse→expand-then-mount), write the saved
-  // `scrollTop` directly into `view.scrollDOM` from inside this
-  // `useLayoutEffect` so the very first paint after the layout
-  // commit lands at the user's saved position — no jump from 0.
+  // Mount-in-saved-state (Phase E.8 + E.9). Two write paths:
+  //
+  //  - **Line-relative restore (Phase E.9 — preferred).** When the
+  //    saved bag carries `meta.line = { number, offsetPx }` (the
+  //    writer effect below serializes this on every commit), the
+  //    first mount of CM6's view computes
+  //    `lineBlockAtPos(state.doc.line(number).from).top + offsetPx`
+  //    and writes that as `scrollDOM.scrollTop`. Content-anchored,
+  //    so a brief font-load reflow leaves the *same line* at the
+  //    viewport top — sub-pixel font-metric drift is the worst
+  //    case.
+  //
+  //  - **Pixel fallback (Phase E.8).** When the bag has no
+  //    `meta.line` (pre-E.9 sessions, or future tools whose scroll
+  //    state is too granular for a line anchor), the raw saved
+  //    `y` is written directly.
+  //
+  // The `initialFileScrollConsumedRef` one-shot keeps the write
+  // tied to the FIRST mount per CM6 view instance. A later
+  // collapse→expand cycle remounts the view; the new instance's
+  // ref is fresh and the saved value applies again (correct: the
+  // user wants to land back at the same place after expanding).
   // The element-identity-gated MutationObserver pass in
   // `card-host.tsx` covers any later scroller-rebuild path; the
-  // first-time consumed flag below keeps the imperative write
-  // one-shot per `componentStatePreservationKey` so a subsequent
-  // collapse→expand doesn't snap the user back to the cold-boot
-  // saved value after they've scrolled elsewhere.
-  //
-  // Raw `{x, y}` is sufficient here: CM6's internal layout is
-  // deterministic for the same source text, so `scrollTop` maps
-  // reliably to the same line across reload.
+  // saved value flows from `bag.regionScroll[key].y` either way.
   const fileScrollKey =
     componentStatePreservationKey === undefined
       ? undefined
@@ -732,6 +742,33 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   const savedFileScrollYRef = React.useRef<number | undefined>(
     savedFileScroll?.y,
   );
+  // Snapshot the saved line at component mount so the write below
+  // sees a stable value even if a later save updates the bag while
+  // the component is still mid-mount.
+  const savedFileLineRef = React.useRef<
+    { number: number; offsetPx: number } | undefined
+  >(undefined);
+  if (savedFileLineRef.current === undefined) {
+    const meta = savedFileScroll?.meta;
+    if (meta !== null && typeof meta === "object") {
+      const line = (meta as { line?: unknown }).line;
+      if (line !== null && typeof line === "object" && "number" in line && "offsetPx" in line) {
+        const ln = (line as { number: unknown }).number;
+        const off = (line as { offsetPx: unknown }).offsetPx;
+        if (
+          typeof ln === "number" &&
+          typeof off === "number" &&
+          Number.isFinite(ln) &&
+          Number.isFinite(off)
+        ) {
+          savedFileLineRef.current = {
+            number: Math.max(1, Math.floor(ln)),
+            offsetPx: off,
+          };
+        }
+      }
+    }
+  }
   const initialFileScrollConsumedRef = React.useRef(false);
   React.useLayoutEffect(() => {
     if (collapsed) return;
@@ -744,13 +781,68 @@ export const FileBlock: React.FC<FileBlockProps> = ({
     scrollDOM.setAttribute("data-tug-scroll-key", fileScrollKey);
     if (!initialFileScrollConsumedRef.current) {
       initialFileScrollConsumedRef.current = true;
-      const y = savedFileScrollYRef.current;
-      if (typeof y === "number" && y > 0) {
-        scrollDOM.scrollTop = y;
+      // Prefer the line-relative payload when present — it survives
+      // font-load reflow because the right LINE shows up at the
+      // viewport top regardless of how the font metric resolves.
+      const savedLine = savedFileLineRef.current;
+      if (
+        savedLine !== undefined &&
+        savedLine.number >= 1 &&
+        savedLine.number <= view.state.doc.lines
+      ) {
+        const linePos = view.state.doc.line(savedLine.number).from;
+        const block = view.lineBlockAt(linePos);
+        scrollDOM.scrollTop = Math.max(0, block.top + savedLine.offsetPx);
+      } else {
+        // Pixel fallback (pre-E.9 bags, or no line meta).
+        const y = savedFileScrollYRef.current;
+        if (typeof y === "number" && y > 0) {
+          scrollDOM.scrollTop = y;
+        }
       }
     }
+
+    // Phase E.9 line-relative writer. On every scroll, serialize the
+    // current viewport-top line + intra-line pixel offset onto
+    // `data-tug-scroll-state`. `captureRegionScrolls` reads the
+    // attribute at every save trigger; the next cold-boot uses
+    // `meta.line` for line-anchored restore — robust to font-load
+    // reflow because the saved LINE is what we restore to, not a
+    // pixel position that depends on font metrics.
+    //
+    // `scrollHeight` ride-along is a validation field; documented
+    // in `layout-tree.ts`'s schema prose. Not consumed at restore.
+    //
+    // `lineBlockAtHeight` reads CM6's measured layout. Under test
+    // environments where the DOM has no real geometry (happy-dom),
+    // CM6's measurement plugin may not have run yet and the call
+    // throws. We swallow defensively so the attribute write is
+    // optional rather than a render-blocking dependency. In real
+    // browsers the call succeeds and the attribute reflects the
+    // live line.
+    const writeScrollState = (): void => {
+      try {
+        const top = scrollDOM.scrollTop;
+        const block = view.lineBlockAtHeight(top);
+        const lineInfo = view.state.doc.lineAt(block.from);
+        const offsetPx = Math.max(0, top - block.top);
+        const meta = {
+          line: { number: lineInfo.number, offsetPx },
+          scrollHeight: scrollDOM.scrollHeight,
+        };
+        scrollDOM.setAttribute("data-tug-scroll-state", JSON.stringify(meta));
+      } catch {
+        // CM6 layout not measured yet (typically test-env). The
+        // next real scroll event re-fires this; production paths
+        // settle quickly.
+      }
+    };
+    writeScrollState();
+    scrollDOM.addEventListener("scroll", writeScrollState, { passive: true });
     return () => {
+      scrollDOM.removeEventListener("scroll", writeScrollState);
       scrollDOM.removeAttribute("data-tug-scroll-key");
+      scrollDOM.removeAttribute("data-tug-scroll-state");
     };
   }, [collapsed, fileScrollKey]);
 

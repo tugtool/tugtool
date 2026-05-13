@@ -205,6 +205,51 @@ The `consumeInitialScrollTop` one-shot keeps the saved value tied to the FIRST c
 
 **Authoring note.** Capture closures (`captureState` / `onSave`) must read from the live source of truth (React state / refs / DOM) at the moment they're called, not from a stale closure captured at hook-defining time — `[L07]`. The hook stores the closure in a ref and re-syncs it on every render so the framework always sees the latest render's state.
 
+### Saving geometry for first-paint accuracy
+
+Phase E.6's anchor-metadata channel gave variable-height virtualized scrollers a content-relative restore target (`meta.anchor = { index, offset }`). Phase E.8 made restore happen at mount time via `useSavedComponentState` / `useSavedRegionScroll`. Phase E.9 closes the gap that remained: the OUTER transcript scrollport still hopped because `TugListView` mounted with an empty `heightIndex`, so the anchor-resolve math on commit 1 returned an estimate, then refined as cells were measured.
+
+The fix: **save the geometry that drives layout, hydrate it before first paint.** The "settle window" Phase E.7's MutationObserver-driven retry loop patched over is fiction — we measured the geometry at save time; we just threw it away. With saved geometry, the first commit's anchor-resolve math is exact, not estimated. No refinement loop in the happy path; the loop stays only as the fallback when saved geometry is absent (pre-E.9 bags, brand-new content).
+
+**Meta schema families.** The `data-tug-scroll-state` JSON channel is opaque on the framework side — `captureRegionScrolls` reads the attribute verbatim into `entry.meta`; `applyRegionScrolls` forwards via `tug-region-scroll-set`. Per-region writers extend the JSON payload; per-region listeners decode. Three families ship today:
+
+```ts
+interface RegionScrollMeta {
+  // Phase E.6 — cell-relative anchor for variable-height virtualized lists.
+  anchor?: { index: number; offset: number };
+
+  // Phase E.9 — per-cell measured heights from heightIndex.snapshot().
+  // Hydrated into the live HeightIndex at restore so the anchor-resolve
+  // math reads exact heights instead of estimates. Cells render with
+  // inline `min-height` from this array; async sub-content fills its
+  // destined slot without shifting siblings.
+  cellHeights?: number[];
+
+  // Phase E.9 — content-anchored scroll position for code editors (CM6).
+  // `number` is the 1-based line number; `offsetPx` is the intra-line
+  // pixel offset of the viewport top from the line's top. The substrate
+  // dispatches its own scrollIntoView so the saved LINE lands at the
+  // viewport top regardless of how the font metric resolves on the
+  // new page.
+  line?: { number: number; offsetPx: number };
+
+  // Phase E.9 — validation field. Total content height at save time;
+  // not consumed at restore today, kept for symmetry and forward-compat
+  // cross-version layout checks.
+  scrollHeight?: number;
+}
+```
+
+A writer may carry any combination of the families; listeners ignore keys they don't recognize. Future substrates that need richer meta extend the same way.
+
+**Authoring a new geometry-saving substrate.**
+
+1. On every commit, write `data-tug-scroll-state` with the substrate's geometry payload (in a `useLayoutEffect` or scroll-event listener, depending on the substrate's update granularity).
+2. Read `useSavedRegionScroll(scrollKey)` at render time. In a mount `useLayoutEffect`, decode `meta` and hydrate the substrate's internal layout primitives BEFORE the substrate's first-paint-driving effects run.
+3. If the substrate has hot fallbacks (anchor-based, line-relative, pixel raw), prefer the richer geometry when present; fall back to pixel `y` for older bags / unrecognized meta.
+
+**Contract.** The first paint after restore reproduces the user-visible state at last save, INCLUDING the layout that made it user-visible. No timer. No opacity mask. No estimated-then-refined hops. `[L23]`.
+
 ### What's in `bag` at save time vs. restore time
 
 Both ends see the same shape: a `CardStateBag`. At save time, every axis is populated from the live DOM and the live React tree (`captureFocus(cardRoot)`, walking `data-tug-state-key` for `bag.formControls`, walking `data-tug-scroll-key` for `bag.regionScroll`, calling each registered `captureState()` for `bag.components`, calling the card's `onSave()` for `bag.content`). At restore time, the same bag is replayed onto a freshly-mounted DOM: form controls re-set their `.value` (with a `MutationObserver` re-applying for late mounts), regions re-scroll, the focus snapshot is dispatched through `applyFocusSnapshot` on the active card of the active pane, and the components-axis is replayed in parent-first order via the registry.

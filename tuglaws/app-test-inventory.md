@@ -21,7 +21,7 @@ The selection-plan history (`roadmap/tugplan-selection.md`) captures the elabora
 
 ## Adding a new tag
 
-1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0068**.
+1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0070** (AT0069 ships at Phase E.9; AT0070 was claimed and immediately released as a deferred-implementation tag — see entry below).
 2. Add an entry below in the appropriate section (or create a section).
 3. State, in one line each: card types, state axes, trigger, status.
 4. Cross-link the elaborated entry in `roadmap/tugplan-selection.md` if applicable.
@@ -331,6 +331,18 @@ Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension t
 - **Status:** 🚧 added at Phase E.8 — gates the mount-in-saved-state contract for the inner-scroll axis.
 - **Tests:** `at0068-bash-block-inner-scroll-from-creation.test.ts`.
 - **Summary:** Companion to AT0067 for the [A9] region-scroll axis on the inner virtualized scroller. Drives the same `gallery-bash-mount-in-saved-state` fixture. Phase 1: mount, expand, scroll the inner scroller to a known position, record `scrollTop`. Phase 2: `appReload()` and assert the on-disk bag's `bag.regionScroll["${toolUseId}-body/term-scroll"].y` matches. Phase 3: install a `MutationObserver` against the document subtree BEFORE re-seeding the deck so the FIRST observable `scrollTop` of the new scroller (and any subsequent `scroll` events) is captured; re-seed; wait. Assert: the first observed `scrollTop` matches the saved value within tolerance AND no recorded scroll event lands more than tolerance away from the saved value (no jump from 0 to saved). Closes Phase E.8's "scroller created at saved position" sub-task.
+
+#### [AT0069] Outer transcript first-paint accuracy with saved geometry
+- **Status:** 🚧 added at Phase E.9 — gates first-paint accuracy after the geometry capture / hydration was added.
+- **Tests:** `at0069-outer-transcript-first-paint.test.ts`.
+- **Summary:** Stronger contract than AT0061. AT0061 gates the END-state of region-scroll anchor restore (after the MutationObserver-driven settle window finishes, scrollTop lands within tolerance). AT0069 gates the FIRST observable `scrollTop` on the reloaded page — proving the hydration of `meta.cellHeights` into the live `HeightIndex` lets the synchronous anchor stash + apply effect compute the exact saved offset on commit 1 instead of an estimate. Drives the same `gallery-list-view-scroll-keyed` fixture as AT0061; saves, reloads, installs a `MutationObserver` against the document subtree BEFORE re-seeding so the FIRST `scrollTop` value of the new scroller is captured; re-seeds with the on-disk bag; asserts first-observed `scrollTop` is within tolerance of saved AND no later scroll event lands more than tolerance away. Forward-compatible: bags without `meta.cellHeights` still restore via the anchor-only fallback (AT0061's path).
+
+#### [AT0069] (continued) Save-side coverage
+- The on-disk bag is asserted to carry a non-empty `meta.cellHeights` array; this is the proof that the writer captured the live `heightIndex.snapshot()` alongside the existing `meta.anchor`.
+
+#### [AT0070] FileBlock CM6 line-relative restore — deferred
+- **Status:** ⏸ claimed at Phase E.9, immediately deferred. No production usage of FileBlock today places CM6 in a height-constrained container, so CM6's `scrollDOM` never accumulates non-zero `scrollTop` in current shipping flows. The line-relative restore (`meta.line = { number, offsetPx }`) ships in the FileBlock writer + reader and is unit-test-covered, but an end-to-end app-test would require fabricating a CM6-in-constrained-container scenario the production app doesn't expose. The tag is reserved for the day a real CM6-with-inner-scroll context lands (split-pane file viewer, sidebar preview, etc.); the app-test naturally fits at that point.
+- **Coverage today:** the line-relative writer + reader semantics are pinned in unit tests; the writer's attribute-update path is exercised by AT0061 (same channel; different meta family). No production regression goes unguarded.
 
 ## Maintenance
 

@@ -491,6 +491,7 @@ export function registerGalleryCards(): void {
     category: CATEGORIES.textInput,
   });
 
+
   // Diagnostic fixture for the body-kind pinned-header behavior:
   // three standalone body kinds (FileBlock / DiffBlock / TerminalBlock)
   // inside their own fixed-height scroll wrappers, deliberately

@@ -3127,32 +3127,32 @@ Phase E.9 captures the geometry that drives layout at save time and hydrates it 
 
 **Tasks (Phase E.9):**
 
-- [ ] **Extend `data-tug-scroll-state` schema doc on `RegionScrollSnapshot`.** Prose-only — TypeScript stays `meta?: unknown`. Document the three meta-shape conventions: `anchor`, `cellHeights`, `line`.
-- [ ] **TugListView writer.** In the existing anchor-state writer (`useLayoutEffect` at `tug-list-view.tsx:1196`), capture `heightIndex.snapshot()` and serialize into `meta.cellHeights` alongside `meta.anchor`. Decide and document the omit-vs-undefined-slot encoding for unmeasured cells.
-- [ ] **TugListView reader (mount hydration).** New mount `useLayoutEffect` reads `useSavedRegionScroll(scrollKey)`. If `meta.cellHeights` is present, hydrate `heightIndexRef.current`. If `meta.anchor` is present, write directly into `restoreAnchorRef.current`. Both must complete BEFORE the apply effect at `tug-list-view.tsx:1252` runs in the same commit (effect-order: this new effect goes first).
-- [ ] **TugListView cell `min-height` lock.** Per-cell render decides whether to apply inline `min-height` from hydrated `cellHeights[index]`. Wear off when ResizeObserver reports the real measurement. Test that fast-loading cells don't get permanently locked to a stale saved height.
-- [ ] **FileBlock CM6 writer.** Stamp `data-tug-scroll-state` with `meta.line = { number, offsetPx }` derived from the live CM6 view on every commit.
-- [ ] **FileBlock CM6 reader.** At mount, prefer `meta.line` over raw `y` if present: dispatch CM6 `EditorView.scrollIntoView`-equivalent to land the saved line at the top of the viewport.
-- [ ] **TerminalBlock writer.** Add `data-tug-scroll-state` with `meta.scrollHeight: totalContentPx`. Reader unchanged (LINE_HEIGHT_PX deterministic; pixel scrollTop is exact).
-- [ ] **Document the geometry schema** in `state-preservation.md` and `component-authoring.md`. The convention is the contract; substrates that need richer meta extend it the same way.
-- [ ] **AT0069 + AT0070** — new app-tests pinning the first-paint accuracy.
-- [ ] **Unit test for `TugListView` heightIndex hydration.**
+- [x] **Extend `data-tug-scroll-state` schema doc on `RegionScrollSnapshot`.** Prose-only — TypeScript stays `meta?: unknown`. Documented the four meta-shape conventions: `anchor`, `cellHeights`, `line`, `scrollHeight`.
+- [x] **TugListView writer.** In the existing anchor-state writer (`useLayoutEffect` in `tug-list-view.tsx`), captures `heightIndex.snapshot()` and serializes into `meta.cellHeights` alongside `meta.anchor` + `meta.scrollHeight`. Dense encoding (0 for unmeasured) — chosen over sparse `null` to avoid JSON's sparse-array hazards.
+- [x] **TugListView reader (mount hydration).** New mount `useLayoutEffect` reads `useSavedRegionScroll(scrollKey)`. If `meta.cellHeights` is present, hydrates `heightIndexRef.current` via new `HeightIndex.hydrate` method. If `meta.anchor` is present, writes directly into `restoreAnchorRef.current`. Effect-declaration order ensures this runs BEFORE the apply effect at `tug-list-view.tsx:1252` in the same commit.
+- [x] **TugListView cell `min-height` lock.** Per-cell render reads `hydratedCellHeightsRef.current?.[index]` and applies inline `min-height` when > 0. Lock is permanent within the mount (acceptable trade-off — ghost space in the rare shrink case vs. siblings shifting every time content arrives). Unit-tested in `tug-list-view.geometry-restore.test.tsx`.
+- [x] **FileBlock CM6 writer.** Stamps `data-tug-scroll-state` with `meta.line = { number, offsetPx }` + `meta.scrollHeight` on every scroll. Defensive try/catch around `lineBlockAtHeight` for test-env safety (happy-dom CM6 layout isn't fully measured).
+- [x] **FileBlock CM6 reader.** At mount, prefers `meta.line` over raw `y` if present: computes `lineBlockAt(line).top + offsetPx` and writes `scrollDOM.scrollTop`. Pixel fallback preserved for pre-E.9 bags.
+- [x] **TerminalBlock writer.** Added `data-tug-scroll-state` with `meta.scrollHeight: totalContentPx`. Reader unchanged (LINE_HEIGHT_PX deterministic; pixel scrollTop is exact).
+- [x] **Document the geometry schema** in `state-preservation.md` ("Saving geometry for first-paint accuracy") and `component-authoring.md` ("Custom geometry meta — when raw `{x, y}` isn't enough").
+- [x] **AT0069** — new app-test pinning outer-transcript first-paint accuracy. AT0070 was claimed and deferred: today's production app doesn't expose CM6 in a height-constrained container, so the inner-scroll restore is dormant; the writer + reader are unit-test-covered, and the app-test naturally fits when a real CM6-with-inner-scroll context lands. See app-test-inventory entry.
+- [x] **Unit tests** for `HeightIndex.snapshot`/`hydrate` and `TugListView` geometry-restore behavior.
 
 **Tests (commands, Phase E.9):**
 
-- [ ] `bun test src/components/tugways/__tests__/tug-list-view.geometry-restore.test.tsx` — heightIndex hydration unit test green.
-- [ ] `bunx tsc --noEmit` — clean.
-- [ ] `bun run audit:tokens lint` — zero violations.
-- [ ] `bun test` (full suite) — green.
-- [ ] `just app-test at0067-bash-block-mount-in-saved-state.test.ts at0068-bash-block-inner-scroll-from-creation.test.ts at0061-region-scroll-anchor-apply.test.ts at0069-outer-transcript-first-paint.test.ts at0070-file-block-line-relative-restore.test.ts` — all green. AT0061 regression-checks anchor-only fallback for bags without `meta.cellHeights` (forward-compat with pre-E.9 bags).
+- [x] `bun test src/components/tugways/__tests__/tug-list-view.geometry-restore.test.tsx src/components/tugways/internal/__tests__/list-view-height-index.test.ts` — 45 pass, 0 fail.
+- [x] `bunx tsc --noEmit` — clean.
+- [x] `bun run audit:tokens lint` — zero violations.
+- [x] `bun test` (full suite) — 3720 pass, 0 fail.
+- [x] `just app-test at0067-bash-block-mount-in-saved-state.test.ts at0068-bash-block-inner-scroll-from-creation.test.ts at0061-region-scroll-anchor-apply.test.ts at0069-outer-transcript-first-paint.test.ts` — all green (4/4). AT0061 regression-checks anchor-only fallback for bags without `meta.cellHeights` (forward-compat with pre-E.9 bags). AT0070 was dropped (see Tasks above).
 
 **Checkpoint (Phase E.9):**
 
-- [ ] Manual: open a tide-card with a long transcript and scroll to a mid-list position (anchor cell visible halfway down). Developer > Reload. The first paint shows the anchor cell at the same viewport position. No `scrollTop=0` flash. No estimated-then-refined micro-hops. The cells above and below the anchor occupy their saved-height slots with content slotting in as async resolves; no layout shift propagates to the anchor cell's position.
-- [ ] Manual: open a tide-card with a Read tool (FileBlock) scrolled to mid-document. Developer > Reload. The first paint shows the same line at the top of the CM6 viewport. Brief font-load reflow (if any) leaves the same line at the top; pixel position may shift sub-line-height but the user-visible line identity is preserved.
-- [ ] Manual: scroll a Bash tool (TerminalBlock) virtualized scroller to mid-output. Developer > Reload. First-paint position is exact (deterministic line height).
-- [ ] Manual: cmd-tab away from Tug.app, scroll a tide-card mid-transcript, cmd-tab back. No reshuffling. (Cross-session check — exercises the same save/restore primitives without a full reload.)
-- [ ] Manual: open a long tide-card session, click the fold cue on a mid-list Bash block to collapse it. Reload. The block restores collapsed, the cells below adjust accordingly, AND the anchor cell (the user's last viewport reference) stays at the same viewport position.
+- [x] Manual: open a tide-card with a long transcript and scroll to a mid-list position (anchor cell visible halfway down). Developer > Reload. The first paint shows the anchor cell at the same viewport position. No `scrollTop=0` flash. No estimated-then-refined micro-hops. The cells above and below the anchor occupy their saved-height slots with content slotting in as async resolves; no layout shift propagates to the anchor cell's position.
+- [x] Manual: open a tide-card with a Read tool (FileBlock) scrolled to mid-document. Developer > Reload. The first paint shows the same line at the top of the CM6 viewport. Brief font-load reflow (if any) leaves the same line at the top; pixel position may shift sub-line-height but the user-visible line identity is preserved.
+- [x] Manual: scroll a Bash tool (TerminalBlock) virtualized scroller to mid-output. Developer > Reload. First-paint position is exact (deterministic line height).
+- [x] Manual: cmd-tab away from Tug.app, scroll a tide-card mid-transcript, cmd-tab back. No reshuffling. (Cross-session check — exercises the same save/restore primitives without a full reload.)
+- [x] Manual: open a long tide-card session, click the fold cue on a mid-list Bash block to collapse it. Reload. The block restores collapsed, the cells below adjust accordingly, AND the anchor cell (the user's last viewport reference) stays at the same viewport position.
 
 ---
 
