@@ -92,8 +92,39 @@ describe.skipIf(!SHOULD_RUN)("m20: overlay dismiss returns focus to previously-f
         { timeoutMs: 2000 },
       );
 
-      // Open the context menu via right-click on the editor.
-      await app.nativeRightClickAtElement(editorSelectorFor("A"));
+      // Wait for the editor's layout to settle. After `nativeType`
+      // the engine and the gallery-prompt-entry's content-driven
+      // panel-size hook (`useContentDrivenPanelSize`) reflow the
+      // editor's container in response to ResizeObserver fires.
+      // Issuing a click at the line's center BEFORE that reflow
+      // completes hits the line's pre-reflow viewport coordinates,
+      // which point at chrome below the settled editor. Wait until
+      // two consecutive frames report the same line top.
+      await app.waitForCondition<boolean>(
+        `(function(){
+          var line = document.querySelector('[data-card-id="A"] [data-slot="tug-text-editor"] .cm-line');
+          if (!line) return false;
+          var r = line.getBoundingClientRect();
+          var stamp = r.top.toFixed(2) + 'x' + r.height.toFixed(2);
+          var w = window;
+          if (w.__at0020LayoutStamp === stamp) return true;
+          w.__at0020LayoutStamp = stamp;
+          return false;
+        })()`,
+        { timeoutMs: 2000 },
+      );
+
+      // Open the context menu via right-click on a rendered line of
+      // the editor. We target `.cm-line` (the rendered line element
+      // CM6 creates inside `.cm-content`) rather than `.cm-content`
+      // itself, because the contenteditable host can be visually
+      // small — the geometric center of its bounding rect may then
+      // fall inside a sibling element (e.g. the prompt-entry's
+      // status row). The rendered `.cm-line` is the actual visible
+      // text and always inside the editor's hit-test region.
+      await app.nativeRightClickAtElement(
+        `[data-card-id="A"] [data-slot="tug-text-editor"] .cm-line`,
+      );
       await app.waitForCondition<boolean>(
         `document.querySelector('[data-slot="tug-editor-context-menu"]') !== null`,
         { timeoutMs: 2000 },

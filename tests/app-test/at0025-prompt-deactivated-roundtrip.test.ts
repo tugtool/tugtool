@@ -284,6 +284,15 @@ function readActiveEngineState(
   const content = bag.content;
   if (typeof content !== "object" || content === null) return null;
   const wrapper = content as Record<string, unknown>;
+  // Current TugPromptEntry wrapper: { route, draft, maximized }.
+  if (
+    typeof wrapper.route === "string" &&
+    typeof wrapper.draft === "object" &&
+    wrapper.draft !== null
+  ) {
+    return wrapper.draft as Record<string, unknown>;
+  }
+  // Legacy wrapper: { currentRoute, perRoute }.
   const currentRoute = wrapper.currentRoute;
   const perRoute = wrapper.perRoute;
   if (

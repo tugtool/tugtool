@@ -896,6 +896,28 @@ export const TugPromptEntry = React.forwardRef<
     root.setAttribute("data-empty", String(isEffectivelyEmpty(view)));
   }, []);
 
+  // Snapshot the substrate's scroll position the moment the card
+  // deactivates. The framework hides inactive cards via `display:
+  // none`, which collapses `.cm-scroller`'s scrollable extent and
+  // (on Safari/WebKit) wipes its `scrollTop`. Subsequent `onSave`
+  // calls fired while the card is inactive (deactivation-time
+  // flush, debounced auto-save, `saveState` RPC) would otherwise
+  // capture `scrollTop: 0` and overwrite the user's saved scroll
+  // position. The snapshot is cleared on re-activation so the live
+  // `view.scrollDOM.scrollTop` resumes as the source of truth while
+  // the card is interactive. [L23] enforcement — an internal
+  // teardown (display:none) must not destroy user-visible state.
+  const inactiveDraftSnapshotRef = useRef<TugTextEditingState | null>(null);
+  // Pending draft to re-apply when the card next activates. Set by
+  // `onRestore` when the card mounts inactive (`isActive === false`):
+  // the substrate's `restoreState` runs against the hidden card,
+  // and its `view.scrollDOM.scrollTop` write is wiped by
+  // `display: none`. The user's saved scroll therefore needs to be
+  // RE-applied when the card transitions to active (the activation
+  // moment is when `.cm-scroller` regains real `clientHeight` and
+  // can honour the scroll write). Cleared on activation.
+  const pendingActivationDraftRef = useRef<TugTextEditingState | null>(null);
+
   // TugPane state preservation [L23]. TugPromptEntry is the sole
   // preserver for this compound — the embedded `TugTextEditor` is
   // explicitly opted out via `preserveState={false}` below so there's
@@ -908,18 +930,60 @@ export const TugPromptEntry = React.forwardRef<
       // deactivation hook for the previously-active card has
       // already routed its selection into the inactive-paint channel
       // before this fires. [L23].
-      textEditorRef.current?.paintMirrorAsActive();
+      //
+      // Discard the deactivation-time draft snapshot: the substrate's
+      // live `view.scrollDOM.scrollTop` is the authoritative value
+      // again now that the card is interactive.
+      inactiveDraftSnapshotRef.current = null;
+      // Pending activation draft — set by `onRestore` for the
+      // inactive-mount case. The substrate's scrollAxes write
+      // during restore landed on a `display: none` scroller and
+      // was discarded; replay it now that `.cm-scroller` has a real
+      // viewport. Pass the saved draft through `paintMirrorAsActive`
+      // so its `applyScrollAxes` call uses the persisted
+      // `scrollAnchor` against the live (post-activation) layout.
+      const pending = pendingActivationDraftRef.current;
+      pendingActivationDraftRef.current = null;
+      textEditorRef.current?.paintMirrorAsActive(pending ?? undefined);
     },
     onCardWillDeactivate: () => {
       // [L23] enforcement: hand the substrate's selection over to
       // selectionGuard via `paintMirrorAsInactive(publish)` before
       // the new active card claims focus + global Selection. NO
       // focus claim.
-      textEditorRef.current?.paintMirrorAsInactive(publishToSelectionGuard);
+      //
+      // Snapshot the substrate's full editing state — the live scroll
+      // axes are still authoritative here (the React commit that
+      // applies `display: none` has not run yet — `transferFocusFor
+      // Activation` saves and deactivates outgoing BEFORE the commit
+      // mutation flush). Any subsequent `onSave` while the card is
+      // inactive returns this snapshot's scroll values verbatim
+      // instead of reading the wiped live scroller.
+      const editor = textEditorRef.current;
+      if (editor !== null) {
+        inactiveDraftSnapshotRef.current = editor.captureState();
+      }
+      editor?.paintMirrorAsInactive(publishToSelectionGuard);
     },
     onSave: () => {
       const editor = textEditorRef.current;
-      const draft = editor !== null ? editor.captureState() : null;
+      const liveDraft = editor !== null ? editor.captureState() : null;
+      const snap = inactiveDraftSnapshotRef.current;
+      // Card is inactive: prefer the snapshot's scroll axes (the
+      // live scroller has been zeroed by display:none). Selection,
+      // text, atoms come from the live capture — selection-guard's
+      // paintMirrorAsInactive has already routed the user's range
+      // into selectionGuard.cardRanges, so the engine's live state
+      // is still the right source for those axes.
+      let draft = liveDraft;
+      if (draft !== null && snap !== null) {
+        draft = {
+          ...draft,
+          scrollTop: snap.scrollTop,
+          scrollLeft: snap.scrollLeft,
+          scrollAnchor: snap.scrollAnchor ?? null,
+        };
+      }
       return {
         route: routeRef.current,
         draft,
@@ -940,6 +1004,13 @@ export const TugPromptEntry = React.forwardRef<
           if (isActive) {
             editor.paintMirrorAsActive(restored.draft);
           } else {
+            // Inactive mount: the substrate's scrollAxes write
+            // during `restoreState` landed against a
+            // `display: none` scroller (the hidden host) and was
+            // wiped. Hold the draft so the next activation re-applies
+            // the user's saved scroll position against the live
+            // (post-activation) viewport.
+            pendingActivationDraftRef.current = restored.draft;
             editor.paintMirrorAsInactive(
               publishToSelectionGuard,
               restored.draft,

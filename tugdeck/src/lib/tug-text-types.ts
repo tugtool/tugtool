@@ -119,4 +119,37 @@ export interface TugTextEditingState {
    * {@link scrollTop}.
    */
   scrollLeft?: number | null;
+  /**
+   * Layout-invariant anchor for vertical scroll restoration.
+   *
+   * `topPos` is the document offset of the line that sat at the top
+   * of the viewport at capture time; `topOffsetPx` is the pixel
+   * offset of the viewport top within that line (typically 0 for
+   * line-aligned scrolling, non-zero for sub-line precision).
+   *
+   * Why this is needed: the bare {@link scrollTop} pixel value is
+   * NOT layout-invariant. The editor's container can grow / shrink
+   * between save and restore (font load, panel-size hooks, parent
+   * flex changes, viewport resize). When it does, CM6's built-in
+   * scroll-anchoring (`@codemirror/view#measure` — the diff branch
+   * that maintains the apparent content position across layout
+   * changes) shifts `scrollDOM.scrollTop` to keep the same content
+   * visible at the same screen position. Restoring the bag's pixel
+   * `scrollTop` directly lands at the wrong content position.
+   *
+   * Restoration: when this field is present, the restore site
+   * computes the target scroll as `view.lineBlockAt(topPos).top +
+   * topOffsetPx` against the live CM6 height map (which reflects
+   * the current post-mount layout). That target is fed through
+   * `EditorView.scrollIntoView(topPos, { y: "start", yMargin })`
+   * — CM6's native scroll effect — so the eventual measure pass
+   * lands the editor at the saved content position regardless of
+   * intermediate layout changes.
+   *
+   * Optional: legacy bags (saved before this field shipped) carry
+   * only `scrollTop`, and the restore path falls back to the pixel
+   * value. New bags carry both; readers prefer the anchor when
+   * present.
+   */
+  scrollAnchor?: { topPos: number; topOffsetPx: number } | null;
 }

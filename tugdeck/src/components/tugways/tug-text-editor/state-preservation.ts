@@ -91,20 +91,89 @@ import { buildEditStateTransaction, captureEditState } from "./keymap";
  * Comparison-then-write avoids a no-op DOM mutation that would
  * otherwise fire a `scroll` event and re-trigger any listener
  * watching `view.scrollDOM`.
+ *
+ * Re-applied on every CM6 measure pass via `view.requestMeasure({
+ * write })` so layout-driven scroll shifts (the editor's host panel
+ * growing via `useContentDrivenPanelSize` after first paint,
+ * `ResizeObserver`-driven viewport resizes, CM6's own measure cycle
+ * recomputing the viewport, the browser's focus-driven
+ * "scroll-to-caret" on first activation) do not overwrite the
+ * persisted scroll position. The bag's `scrollTop` axis is
+ * authoritative: any displacement after the initial restore-time
+ * write is a side effect of layout settling, and the user-visible
+ * contract is "first paint after activation = last saved scroll
+ * offset" ([L23]).
+ *
+ * The CM6 measure cycle runs after every layout-affecting commit
+ * (doc swap, ResizeObserver fire, scroll, focus). Queueing through
+ * `requestMeasure` runs the write inside that cycle, AFTER any
+ * other extension's measure work, so the bag value wins
+ * deterministically.
  */
 function applyScrollAxes(view: EditorView, state: TugTextEditingState): void {
-  if (
-    typeof state.scrollTop === "number"
-    && view.scrollDOM.scrollTop !== state.scrollTop
-  ) {
-    view.scrollDOM.scrollTop = state.scrollTop;
+  const targetLeft =
+    typeof state.scrollLeft === "number" ? state.scrollLeft : null;
+  // Vertical axis: prefer the layout-invariant anchor when the bag
+  // carries one. The pixel `scrollTop` value is layout-dependent and
+  // gets drifted by CM6's scroll-anchoring on any subsequent layout
+  // change (panel growth, font load, viewport resize). Computing
+  // the target from the anchor against the live height map is the
+  // only way to land at the user's saved content position.
+  const anchor = state.scrollAnchor ?? null;
+  let targetTop: number | null = null;
+  if (anchor !== null) {
+    const block = view.lineBlockAt(
+      Math.max(0, Math.min(view.state.doc.length, anchor.topPos)),
+    );
+    targetTop = block.top + anchor.topOffsetPx;
+  } else if (typeof state.scrollTop === "number") {
+    targetTop = state.scrollTop;
   }
-  if (
-    typeof state.scrollLeft === "number"
-    && view.scrollDOM.scrollLeft !== state.scrollLeft
-  ) {
-    view.scrollDOM.scrollLeft = state.scrollLeft;
+  if (targetTop === null && targetLeft === null) return;
+  if (targetTop !== null && view.scrollDOM.scrollTop !== targetTop) {
+    view.scrollDOM.scrollTop = targetTop;
   }
+  if (targetLeft !== null && view.scrollDOM.scrollLeft !== targetLeft) {
+    view.scrollDOM.scrollLeft = targetLeft;
+  }
+  // Re-apply across measure cycles to defeat layout-driven drift.
+  // CM6's scroll-anchoring (and ResizeObserver-driven measures
+  // triggered by panel growth, font load, etc.) can move scrollTop
+  // after the synchronous write completes; the bag's anchor is the
+  // user's authoritative position. Each re-apply recomputes from
+  // the anchor so the target accounts for the current layout.
+  view.requestMeasure({
+    read() {
+      let recomputedTop: number | null = null;
+      if (anchor !== null) {
+        const block = view.lineBlockAt(
+          Math.max(0, Math.min(view.state.doc.length, anchor.topPos)),
+        );
+        recomputedTop = block.top + anchor.topOffsetPx;
+      } else if (typeof state.scrollTop === "number") {
+        recomputedTop = state.scrollTop;
+      }
+      return {
+        liveTop: view.scrollDOM.scrollTop,
+        liveLeft: view.scrollDOM.scrollLeft,
+        target: recomputedTop,
+      };
+    },
+    write(measured) {
+      if (
+        measured.target !== null &&
+        Math.abs(measured.liveTop - measured.target) > 1
+      ) {
+        view.scrollDOM.scrollTop = measured.target;
+      }
+      if (
+        targetLeft !== null &&
+        measured.liveLeft !== targetLeft
+      ) {
+        view.scrollDOM.scrollLeft = targetLeft;
+      }
+    },
+  });
 }
 
 /**
@@ -170,6 +239,21 @@ export function paintMirrorAsActive(
   state?: TugTextEditingState,
 ): void {
   if (!view.contentDOM.isConnected) return;
+  // Order: focus FIRST, then re-assert selection.
+  //
+  // `view.focus()` on a contenteditable can collapse the live
+  // `window.getSelection()` at the caret position the browser
+  // chose for the focus point (which is often offset 0 if the
+  // editor just transitioned from `display: none` to visible).
+  // Dispatching the saved selection AFTER focus overwrites that
+  // browser-chosen collapse so CM6's view.state.selection and the
+  // DOM Selection both land at the user's saved range.
+  //
+  // When `state` is omitted (cmd-tab return — the engine has been
+  // maintaining `view.state.selection` itself), `view.focus()`
+  // alone is sufficient; CM6's own focus-sync writes the global
+  // Selection from `view.state.selection`.
+  view.focus();
   if (state?.selection) {
     view.dispatch({
       selection: EditorSelection.range(
@@ -178,7 +262,6 @@ export function paintMirrorAsActive(
       ),
     });
   }
-  view.focus();
   if (state !== undefined) applyScrollAxes(view, state);
 }
 
@@ -332,6 +415,25 @@ export function useTextEditorStatePreservation(
   // `setRestoreCount`.
   const [, setRestoreCount] = useState(0);
 
+  // Snapshot the editor's scroll position the moment the card
+  // deactivates. The framework hides inactive cards via `display:
+  // none`, and a hidden flex/overflow container's `scrollTop` is
+  // not reliably retained by the browser (Safari resets, Chromium
+  // sometimes preserves) — subsequent reads return zero. Without
+  // this snapshot, the next `onSave` while the card is inactive
+  // (deactivation-time flush, debounced auto-save, `saveState`
+  // RPC) captures `scrollTop: 0` and overwrites the user's saved
+  // scroll position. The snapshot is cleared on re-activation so
+  // the live `view.scrollDOM.scrollTop` resumes being the source
+  // of truth while the card is interactive. [L23] enforcement —
+  // an internal teardown (display:none) must not destroy
+  // user-visible state.
+  const inactiveScrollSnapshotRef = useRef<{
+    scrollTop: number;
+    scrollLeft: number;
+    scrollAnchor: { topPos: number; topOffsetPx: number } | null;
+  } | null>(null);
+
   // Publish helper: route the editor's selection Range through
   // selectionGuard for the inactive-paint channel. Reads
   // `cardIdRef.current` at fire time per [L07].
@@ -350,6 +452,10 @@ export function useTextEditorStatePreservation(
       // global Selection to destroy. [L23]
       const view = viewRef.current;
       if (view === null) return;
+      // Discard the deactivation-time scroll snapshot: the card is
+      // now interactive and `view.scrollDOM.scrollTop` is the
+      // authoritative live value again.
+      inactiveScrollSnapshotRef.current = null;
       paintMirrorAsActive(view);
     },
     onCardWillDeactivate: () => {
@@ -362,8 +468,32 @@ export function useTextEditorStatePreservation(
       // `selectionGuard.cardRanges[cardId]`. selectionGuard adds
       // the range to the `inactive-selection` CSS Custom Highlight;
       // the editor stays unfocused. NO global Selection mutation.
+      //
+      // Also snapshot the live scroll position before display:none
+      // wipes it — `onSave` calls that fire while the card is
+      // inactive read from this snapshot instead of the (zeroed)
+      // live `view.scrollDOM.scrollTop`. The snapshot uses the same
+      // anchor computation as `captureEditState` so the
+      // layout-invariant restore path round-trips identically
+      // whether the save fired pre- or post-deactivation.
       const view = viewRef.current;
       if (view === null) return;
+      const scrollTop = view.scrollDOM.scrollTop;
+      let scrollAnchor: { topPos: number; topOffsetPx: number } | null = null;
+      if (view.contentDOM.isConnected && scrollTop > 0) {
+        const block = view.lineBlockAtHeight(scrollTop);
+        scrollAnchor = {
+          topPos: block.from,
+          topOffsetPx: scrollTop - block.top,
+        };
+      } else if (scrollTop === 0) {
+        scrollAnchor = { topPos: 0, topOffsetPx: 0 };
+      }
+      inactiveScrollSnapshotRef.current = {
+        scrollTop,
+        scrollLeft: view.scrollDOM.scrollLeft,
+        scrollAnchor,
+      };
       paintMirrorAsInactive(view, publishToSelectionGuard);
     },
     onSave: () => {
@@ -374,7 +504,19 @@ export function useTextEditorStatePreservation(
       };
       const view = viewRef.current;
       if (view === null) return empty;
-      return captureEditState(view);
+      const live = captureEditState(view);
+      const snap = inactiveScrollSnapshotRef.current;
+      if (snap === null) return live;
+      // Card is currently inactive (between deactivate and the next
+      // activate). The live view's `scrollDOM.scrollTop` has been
+      // wiped by `display: none`; restore from the snapshot taken
+      // at deactivation time.
+      return {
+        ...live,
+        scrollTop: snap.scrollTop,
+        scrollLeft: snap.scrollLeft,
+        scrollAnchor: snap.scrollAnchor,
+      };
     },
     onRestore: (state, { isActive }) => {
       // [L23] restore-ordering invariant: CardHost fires onRestore

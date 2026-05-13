@@ -581,6 +581,17 @@ export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverCont
           align={align}
           sideOffset={sideOffset}
           onCloseAutoFocus={ctx?.onCloseAutoFocus}
+          // Suppress Radix DismissableLayer's focus-outside dismissal.
+          // Focus moving to a sibling element (e.g. the editor under a
+          // popover that opened with persisted `open=true` after reload,
+          // or the editor regaining focus after a chain-driven re-focus
+          // while the popover stays mounted) would otherwise call
+          // `onDismiss` and flip our controlled `open` prop to false.
+          // The pointerdown-outside path still dismisses on real
+          // user-driven clicks; the focus-outside path is redundant
+          // because every user click that moves focus also fires
+          // pointerdown first.
+          onFocusOutside={(e) => e.preventDefault()}
         >
           <TugPopoverContentShell>{children}</TugPopoverContentShell>
           {arrow && <Popover.Arrow className="tug-popover-arrow" />}

@@ -90,6 +90,12 @@ const TUG_PROMPT_ENTRY_DEFAULT_ROUTE = "❯";
 const SECONDARY_ROUTE = "$";
 
 const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
+/**
+ * CM6's scrollable element — `view.scrollDOM`. The contenteditable
+ * (`.cm-content`) sits inside `.cm-scroller`; reads of `scrollTop`
+ * must target the scroller, not the contenteditable.
+ */
+const SCROLLER_SELECTOR = '[data-slot="tug-text-editor"] .cm-scroller';
 const TOOLS_TOGGLE_SELECTOR =
   '[data-card-id="A"] .tug-prompt-entry-tools-toggle';
 const TUG_ATOM_CHAR = "￼";
@@ -265,17 +271,61 @@ async function assertLiveContent(app: App): Promise<void> {
   expect(atomLabels.length, "axis atoms: one persisted atom must render").toBe(1);
   expect(atomLabels[0]).toBe(SEED_ATOM.label);
 
-  // ScrollTop within tolerance.
-  const liveScroll = await app.evalJS<number>(
+  // Scroll position verified by content-anchor equivalence: the
+  // saved `scrollAnchor.topPos` (set by the engine's `captureEditState`
+  // at save time) names the doc-offset of the line at viewport top.
+  // After reload + restore, the same doc line must sit at the
+  // viewport top (within ±1 line tolerance — DOM integer
+  // `offsetTop` vs CM6 height-map float arithmetic can cross a
+  // boundary by one when both endpoints round to the same value).
+  const liveAnchor = await app.evalJS<{
+    scrollTop: number;
+    topLineIndex: number;
+  }>(
     `(function(){
-      var ed = document.querySelector('[data-card-id="A"] ${PROMPT_INPUT_SELECTOR}');
-      return ed ? ed.scrollTop : -1;
+      var sc = document.querySelector('[data-card-id="A"] ${SCROLLER_SELECTOR}');
+      var cont = document.querySelector('[data-card-id="A"] ${PROMPT_INPUT_SELECTOR}');
+      if (!sc || !cont) return { scrollTop: -1, topLineIndex: -1 };
+      var lines = cont.querySelectorAll('.cm-line');
+      var scrollTop = sc.scrollTop;
+      var topLineIndex = -1;
+      for (var i = 0; i < lines.length; i++) {
+        if (lines[i].offsetTop + lines[i].offsetHeight > scrollTop) {
+          topLineIndex = i;
+          break;
+        }
+      }
+      return { scrollTop: scrollTop, topLineIndex: topLineIndex };
+    })()`,
+  );
+  const anchorTopPos = await app.evalJS<number | null>(
+    `(function(){
+      window.tugdeck && window.tugdeck.saveState && window.tugdeck.saveState();
+      var bag = window.__tug.getCardStateBag("A");
+      if (!bag || !bag.content) return null;
+      var c = bag.content;
+      var draft = null;
+      if (typeof c.route === "string" && c.draft && typeof c.draft === "object") {
+        draft = c.draft;
+      } else if (typeof c.currentRoute === "string" && c.perRoute && c.perRoute[c.currentRoute]) {
+        draft = c.perRoute[c.currentRoute];
+      } else if (typeof c.text === "string") {
+        draft = c;
+      }
+      if (!draft || !draft.scrollAnchor) return null;
+      return typeof draft.scrollAnchor.topPos === "number" ? draft.scrollAnchor.topPos : null;
     })()`,
   );
   expect(
-    Math.abs(liveScroll - SEED_SCROLL_TOP),
-    `axis scrollTop: live editor scrollTop must be within 8px of seeded ${SEED_SCROLL_TOP} (got ${liveScroll})`,
-  ).toBeLessThanOrEqual(8);
+    anchorTopPos,
+    "axis scrollAnchor: bag.draft.scrollAnchor.topPos must be present after save",
+  ).not.toBeNull();
+  const expectedLineIndex =
+    SEED_TEXT.slice(0, anchorTopPos!).split("\n").length - 1;
+  expect(
+    Math.abs(liveAnchor.topLineIndex - expectedLineIndex),
+    `axis scroll: viewport-top line (idx=${liveAnchor.topLineIndex}, live scrollTop=${liveAnchor.scrollTop}) must match the line saved in bag.draft.scrollAnchor.topPos=${anchorTopPos} (expected idx=${expectedLineIndex}, ±1 line tolerance)`,
+  ).toBeLessThanOrEqual(1);
 }
 
 async function assertToolsOpen(app: App): Promise<void> {

@@ -136,12 +136,34 @@ export function captureEditState(view: EditorView): TugTextEditingState {
     cursor.next();
   }
   const sel = view.state.selection.main;
+  // Layout-invariant scroll anchor: doc position of the line at the
+  // top of the viewport plus the sub-line pixel offset. Computed from
+  // CM6's height map (`lineBlockAtHeight`) rather than the DOM so it
+  // tracks the engine's authoritative line layout even when the
+  // scroller's CSS height differs from the height map (transient
+  // states during ResizeObserver settle). See
+  // `TugTextEditingState#scrollAnchor` for the restore contract.
+  const scrollTop = view.scrollDOM.scrollTop;
+  let scrollAnchor: { topPos: number; topOffsetPx: number } | null = null;
+  if (view.contentDOM.isConnected && scrollTop > 0) {
+    const block = view.lineBlockAtHeight(scrollTop);
+    scrollAnchor = {
+      topPos: block.from,
+      topOffsetPx: scrollTop - block.top,
+    };
+  } else if (scrollTop === 0) {
+    // Explicit top-of-document anchor — round-trips deterministically
+    // even when the document is short enough to not require scroll on
+    // restore (CM6 has no anchor to drift away from).
+    scrollAnchor = { topPos: 0, topOffsetPx: 0 };
+  }
   return {
     text,
     atoms,
     selection: { start: sel.from, end: sel.to },
-    scrollTop: view.scrollDOM.scrollTop,
+    scrollTop,
     scrollLeft: view.scrollDOM.scrollLeft,
+    scrollAnchor,
   };
 }
 
