@@ -1179,6 +1179,14 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       paintMirrorAsActive(state?: TugTextEditingState) {
         const view = viewRef.current;
         if (view === null) return;
+        const id = cardIdRef.current;
+        if (id !== null) {
+          deckTrace.record({
+            kind: "engine-paint-mirror-active",
+            cardId: id,
+            caller: "imperative-api",
+          });
+        }
         paintMirrorAsActiveImpl(view, state);
       },
       paintMirrorAsInactive(
@@ -1187,6 +1195,13 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       ) {
         const view = viewRef.current;
         if (view === null) return;
+        const id = cardIdRef.current;
+        if (id !== null) {
+          deckTrace.record({
+            kind: "engine-paint-mirror-inactive",
+            cardId: id,
+          });
+        }
         paintMirrorAsInactiveImpl(view, publish, state);
       },
     }), []);
@@ -1604,9 +1619,23 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       if (pending !== null) {
         const { state: bufferedState, isActive } = pending;
         restoreEditState(view, bufferedState);
+        const replayId = cardIdRef.current;
         if (isActive) {
+          if (replayId !== null) {
+            deckTrace.record({
+              kind: "engine-paint-mirror-active",
+              cardId: replayId,
+              caller: "mount-effect-replay",
+            });
+          }
           paintMirrorAsActiveImpl(view, bufferedState);
         } else {
+          if (replayId !== null) {
+            deckTrace.record({
+              kind: "engine-paint-mirror-inactive",
+              cardId: replayId,
+            });
+          }
           paintMirrorAsInactiveImpl(view, (range) => {
             const id = cardIdRef.current;
             if (id !== null) {

@@ -110,6 +110,78 @@ export type SelectionRestoreVia =
   | "applyFocusSnapshot";
 
 /**
+ * Phase tag on `focus-measurement` events.
+ *
+ * Recorded at the three observation points around a framework focus-
+ * claim site:
+ *
+ *   - `pre-sync` — immediately before the synchronous `.focus()` /
+ *     `paintMirrorAsActive` call. Captures the user-driven gesture's
+ *     starting `document.activeElement`.
+ *   - `post-sync` — immediately after the synchronous claim. If the
+ *     claim survived the same-tick gesture default action (no WebKit
+ *     gesture focus-lock), `activeElement` already names the resolved
+ *     target. If the claim was swallowed, `activeElement` is unchanged
+ *     from `pre-sync`.
+ *   - `post-gesture` — recorded one event-loop boundary later (on the
+ *     same gesture's `pointerup` or `click` for click-driven sources,
+ *     or on the next macrotask for keyboard / programmatic sources).
+ *     `activeElement` here names the final landing of the activation;
+ *     comparing it against `post-sync` is the [L05] gate that decides
+ *     whether the sync-only path is contractual for the source.
+ */
+export type FocusMeasurementPhase = "pre-sync" | "post-sync" | "post-gesture";
+
+/**
+ * Caller tag on `engine-paint-mirror-active` events.
+ *
+ * Names the path that invoked `paintMirrorAsActive` so the per-source
+ * × per-claimant investigation matrix can see which of the four
+ * claimants fired for any given activation:
+ *
+ *   - `onCardActivated` — `useCardStatePreservation.onCardActivated`
+ *     (autonomous claim wired in `tug-text-editor/state-preservation.ts`).
+ *   - `onRestore` — `useCardStatePreservation.onRestore` `isActive`
+ *     branch (cold-boot / cross-pane move autonomous claim).
+ *   - `mount-effect-replay` — the editor's mount effect drained a
+ *     pending `onRestore` payload whose `onRestore` fired before the
+ *     view was constructed.
+ *   - `imperative-api` — `entryDelegate.paintMirrorAsActive(...)` /
+ *     `tug-text-editor-handle.paintMirrorAsActive(...)` call site
+ *     (rare; reserved for explicit imperative consumers).
+ *   - `via-engine-hook` — Phase E.11 single-channel dispatcher invoked
+ *     the engine hook (`applyBagFocus` → `invokeEnginePaintMirrorAsActive`).
+ *     This tag is dead at Step 1 and lights up at Step 3 — recording
+ *     the slot now keeps the event union stable across the phase.
+ */
+export type EnginePaintMirrorActiveCaller =
+  | "onCardActivated"
+  | "onRestore"
+  | "mount-effect-replay"
+  | "imperative-api"
+  | "via-engine-hook";
+
+/**
+ * Delegate-method tag on `macrotask-focus-claim` events.
+ *
+ * Distinguishes the three `useCardDelegate` handlers in `tide-card.tsx`
+ * that defer through the `MessageChannel` drain queue and currently
+ * call `entryDelegateRef.current?.focus()`:
+ *
+ *   - `cardDidActivate` — fires after the card becomes the deck-level
+ *     first responder. This is the macrotask focus claim that
+ *     Phase E.11 retires at #e11-step-3.
+ *   - `cardDidMove` — fires after a cross-pane move commits. Re-asserts
+ *     focus only when this card is still first responder.
+ *   - `cardDidResize` — fires after a resize commits. Same first-
+ *     responder gate as `cardDidMove`.
+ */
+export type MacrotaskFocusClaimDelegate =
+  | "cardDidActivate"
+  | "cardDidMove"
+  | "cardDidResize";
+
+/**
  * Snapshot of the DeckManager store at the moment a trace event is
  * recorded. Surfaces the pieces of state that drive activation /
  * first-responder decisions so an ordering diagnosis ("did
@@ -267,6 +339,57 @@ export type DeckTraceEvent = {
       selectionApplied: { start: number; end: number } | null;
       domSelectionAfter: { start: number; end: number } | null;
     }
+  | {
+      // Wraps each framework focus-claim site (`transferFocusForActivation`
+      // focus-element + dispatch-activated branches, `transferFocusAfterMove`,
+      // `reactivateCurrentFocusDestination`, CardHost cold-boot RESTORE)
+      // with three observations: `pre-sync` (before the claim),
+      // `post-sync` (immediately after, same tick), `post-gesture` (one
+      // event-loop boundary later — `pointerup` / `click` for click-
+      // driven sources, next macrotask otherwise). The triple is the
+      // [L05] gate for Phase E.11 Step 1: per-source × per-kind, it
+      // surfaces whether the sync `.focus()` survives the gesture
+      // default action or is swallowed by WebKit's gesture focus-lock.
+      // The `activeElement` strings are formatted by `formatElement`
+      // so the trace ring never retains a live DOM reference.
+      kind: "focus-measurement";
+      phase: FocusMeasurementPhase;
+      site: string;
+      cardId: string | null;
+      activeElement: string;
+    }
+  | {
+      // Fires every time `paintMirrorAsActive` runs in
+      // `tug-text-editor/state-preservation.ts`, with `caller` tagging
+      // the originating path. Used by Step 1's investigation matrix
+      // to see which of the four claimants (engine `onCardActivated`,
+      // engine `onRestore`, framework focus-element, macrotask
+      // delegate) actually wrote focus for each gesture source.
+      kind: "engine-paint-mirror-active";
+      cardId: string;
+      caller: EnginePaintMirrorActiveCaller;
+    }
+  | {
+      // Symmetry pair for `engine-paint-mirror-active`. Fires every
+      // time `paintMirrorAsInactive` runs. Lets the investigation
+      // verify deactivation pairs are intact across the Phase E.11
+      // refactor — every active claim has a corresponding inactive
+      // claim from the previously-active card.
+      kind: "engine-paint-mirror-inactive";
+      cardId: string;
+    }
+  | {
+      // Fires when `useCardDelegate`'s `MessageChannel`-deferred
+      // macrotask handler calls `entryDelegateRef.current?.focus()`
+      // in `tide-card.tsx`. Distinguishes the macrotask claim from
+      // the synchronous framework path on the trace timeline; the
+      // Phase E.11 Step 3 grep gate verifies this event is absent
+      // for the `cardDidActivate` delegate after the autonomous
+      // macrotask claim is retired.
+      kind: "macrotask-focus-claim";
+      cardId: string;
+      delegate: MacrotaskFocusClaimDelegate;
+    }
 );
 
 /**
@@ -289,7 +412,11 @@ export type DeckTraceEventInput =
   | Omit<Extract<DeckTraceEvent, { kind: "engine-ready" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "engine-activation-dispatched" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "cold-boot-restore-snapshot" }>, StampedFields>
-  | Omit<Extract<DeckTraceEvent, { kind: "engine-restore-applied" }>, StampedFields>;
+  | Omit<Extract<DeckTraceEvent, { kind: "engine-restore-applied" }>, StampedFields>
+  | Omit<Extract<DeckTraceEvent, { kind: "focus-measurement" }>, StampedFields>
+  | Omit<Extract<DeckTraceEvent, { kind: "engine-paint-mirror-active" }>, StampedFields>
+  | Omit<Extract<DeckTraceEvent, { kind: "engine-paint-mirror-inactive" }>, StampedFields>
+  | Omit<Extract<DeckTraceEvent, { kind: "macrotask-focus-claim" }>, StampedFields>;
 
 // ---------------------------------------------------------------------------
 // Utilities

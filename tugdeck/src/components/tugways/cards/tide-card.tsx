@@ -62,6 +62,7 @@ import { useResponderForm } from "../use-responder-form";
 import { useResponder } from "../use-responder";
 import type { ActionEvent } from "../responder-chain";
 import { useCardDelegate, useCardLifecycle } from "@/lib/card-lifecycle";
+import { deckTrace } from "@/deck-trace";
 import { useSheetDelegate } from "@/lib/sheet-lifecycle";
 import { useBannerDelegate } from "@/lib/banner-lifecycle";
 import { TUG_ACTIONS } from "../action-vocabulary";
@@ -1687,6 +1688,11 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
           if (hasFocusKey || hasStateKey) return;
         }
       }
+      deckTrace.record({
+        kind: "macrotask-focus-claim",
+        cardId,
+        delegate: "cardDidActivate",
+      });
       entryDelegateRef.current?.focus();
     },
     // `cardWillDeactivate` deliberately does NOT call
@@ -1702,10 +1708,20 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
     // instead of restoring the user's selected span.
     cardDidMove: () => {
       if (cardLifecycle?.getFirstResponderCardId() !== cardId) return;
+      deckTrace.record({
+        kind: "macrotask-focus-claim",
+        cardId,
+        delegate: "cardDidMove",
+      });
       entryDelegateRef.current?.focus();
     },
     cardDidResize: () => {
       if (cardLifecycle?.getFirstResponderCardId() !== cardId) return;
+      deckTrace.record({
+        kind: "macrotask-focus-claim",
+        cardId,
+        delegate: "cardDidResize",
+      });
       entryDelegateRef.current?.focus();
     },
   });

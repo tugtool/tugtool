@@ -156,6 +156,27 @@ export type DeckTraceEventShape = {
       selectionApplied: { start: number; end: number } | null;
       domSelectionAfter: { start: number; end: number } | null;
     }
+  | {
+      kind: "focus-measurement";
+      phase: string;
+      site: string;
+      cardId: string | null;
+      activeElement: string;
+    }
+  | {
+      kind: "engine-paint-mirror-active";
+      cardId: string;
+      caller: string;
+    }
+  | {
+      kind: "engine-paint-mirror-inactive";
+      cardId: string;
+    }
+  | {
+      kind: "macrotask-focus-claim";
+      cardId: string;
+      delegate: string;
+    }
 );
 
 /**
@@ -180,6 +201,10 @@ export const HARNESS_KNOWN_TRACE_KINDS = [
   "engine-activation-dispatched",
   "cold-boot-restore-snapshot",
   "engine-restore-applied",
+  "focus-measurement",
+  "engine-paint-mirror-active",
+  "engine-paint-mirror-inactive",
+  "macrotask-focus-claim",
 ] as const;
 export type HarnessKnownTraceKind = (typeof HARNESS_KNOWN_TRACE_KINDS)[number];
 
@@ -404,6 +429,14 @@ export function summarizeEvent(e: DeckTraceEventShape): string {
           : "null";
       return `engine-restore-applied ${fmt(e.cardId)} engine=${fmt(e.engine)} applied=${applied} dom=${dom}`;
     }
+    case "focus-measurement":
+      return `focus-measurement ${fmt(e.cardId)} phase=${fmt(e.phase)} site=${fmt(e.site)} active=${e.activeElement || "∅"}`;
+    case "engine-paint-mirror-active":
+      return `engine-paint-mirror-active ${fmt(e.cardId)} caller=${fmt(e.caller)}`;
+    case "engine-paint-mirror-inactive":
+      return `engine-paint-mirror-inactive ${fmt(e.cardId)}`;
+    case "macrotask-focus-claim":
+      return `macrotask-focus-claim ${fmt(e.cardId)} delegate=${fmt(e.delegate)}`;
     default: {
       // Exhaustiveness pin: if a new kind is added to DeckTraceEventShape,
       // the assignment below fails because `e` is no longer `never`.

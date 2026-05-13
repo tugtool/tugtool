@@ -70,8 +70,33 @@ import {
   useCardId,
   useCardStatePreservation,
 } from "@/components/tugways/use-card-state-preservation";
+import type { EnginePaintMirrorActiveCaller } from "@/deck-trace";
+import { deckTrace } from "@/deck-trace";
 import type { TugTextEditingState } from "@/lib/tug-text-types";
 import { buildEditStateTransaction, captureEditState } from "./keymap";
+
+/**
+ * Record an `engine-paint-mirror-active` deck-trace event for the
+ * given cardId / caller. Phase E.11 Step 1 instrumentation —
+ * surfaces which of the four claimants (`onCardActivated`,
+ * `onRestore`, `mount-effect-replay`, `imperative-api`,
+ * `via-engine-hook`) drove a `paintMirrorAsActive` call. No-op when
+ * `cardId` is null (pre-context registration window) or when
+ * recording is disabled.
+ */
+function recordPaintMirrorActive(
+  cardId: string | null,
+  caller: EnginePaintMirrorActiveCaller,
+): void {
+  if (cardId === null) return;
+  deckTrace.record({ kind: "engine-paint-mirror-active", cardId, caller });
+}
+
+/** Symmetry pair for {@link recordPaintMirrorActive}. */
+function recordPaintMirrorInactive(cardId: string | null): void {
+  if (cardId === null) return;
+  deckTrace.record({ kind: "engine-paint-mirror-inactive", cardId });
+}
 
 // ---------------------------------------------------------------------------
 // Pure view helpers — no React, no card-context coupling
@@ -456,6 +481,7 @@ export function useTextEditorStatePreservation(
       // now interactive and `view.scrollDOM.scrollTop` is the
       // authoritative live value again.
       inactiveScrollSnapshotRef.current = null;
+      recordPaintMirrorActive(cardIdRef.current, "onCardActivated");
       paintMirrorAsActive(view);
     },
     onCardWillDeactivate: () => {
@@ -494,6 +520,7 @@ export function useTextEditorStatePreservation(
         scrollLeft: view.scrollDOM.scrollLeft,
         scrollAnchor,
       };
+      recordPaintMirrorInactive(cardIdRef.current);
       paintMirrorAsInactive(view, publishToSelectionGuard);
     },
     onSave: () => {
@@ -539,8 +566,10 @@ export function useTextEditorStatePreservation(
       if (view !== null) {
         restoreEditState(view, state);
         if (isActive) {
+          recordPaintMirrorActive(cardIdRef.current, "onRestore");
           paintMirrorAsActive(view, state);
         } else {
+          recordPaintMirrorInactive(cardIdRef.current);
           paintMirrorAsInactive(view, publishToSelectionGuard, state);
         }
       } else {

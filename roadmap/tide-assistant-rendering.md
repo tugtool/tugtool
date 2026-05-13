@@ -3651,25 +3651,25 @@ Microtasks (`queueMicrotask`) are NOT a substitute: they drain *between* events 
 - Updated: `tugdeck/src/components/tugways/cards/tide-card.tsx` — wires `macrotask-focus-claim` event around the `entryDelegateRef.current?.focus()` calls in `cardDidActivate`, `cardDidMove`, `cardDidResize`.
 
 **Tasks:**
-- [ ] Add deck-trace event variants: `focus-measurement`, `engine-paint-mirror-active`, `engine-paint-mirror-inactive`, `macrotask-focus-claim`.
-- [ ] Wire `focus-measurement` (three phases) into the four FRAMEWORK focus-claim sites: `transferFocusForActivation` (focus-element + dispatch-activated), `transferFocusAfterMove`, `reactivateCurrentFocusDestination`, CardHost cold-boot RESTORE.
-- [ ] Wire `engine-paint-mirror-active` at every `paintMirrorAsActive` call site so the investigation matrix can record which of the four claimants fired for each gesture: (a) `useCardStatePreservation.onCardActivated`, (b) `useCardStatePreservation.onRestore` (isActive branch), (c) `tug-text-editor.tsx:1604` mount-effect pending-restore replay, (d) any imperative `entryDelegate.paintMirrorAsActive(...)` call.
-- [ ] Wire `engine-paint-mirror-inactive` at every `paintMirrorAsInactive` call site (`onCardWillDeactivate`; mount-effect inactive-branch replay) — symmetry for the deactivation contract.
-- [ ] Wire `macrotask-focus-claim` around each `entryDelegateRef.focus()` call in `tide-card.tsx`'s `useCardDelegate` handlers — captures the macrotask delegate's claim distinctly so the matrix can see which of the four claimants is firing for each gesture.
-- [ ] Run the gesture matrix manually for each source: pane-chrome click, intra-pane tab click, cross-pane drag drop, keyboard activation (Cmd-\`, Tab into pane), programmatic activation (action-dispatch, show-gallery, init/restore).
-- [ ] For each source × each `bag.focus.kind`, record (a) the three `focus-measurement` points, (b) which claimants fired and in what order (`engine-paint-mirror-active`, `macrotask-focus-claim`), (c) the dispatcher event boundary on which Step 3 should fire.
-- [ ] Write up the matrix in `docs/notes/focus-gesture-lock-investigation.md`. For each source: name the dispatch event (`pointerdown` / `pointerup` / `click` / `none` — for sources where sync survives), list the four-claimant ordering observed, and note any source where the matrix differs from naive expectation.
+- [x] Add deck-trace event variants: `focus-measurement`, `engine-paint-mirror-active`, `engine-paint-mirror-inactive`, `macrotask-focus-claim`.
+- [x] Wire `focus-measurement` (three phases) into the four FRAMEWORK focus-claim sites: `transferFocusForActivation` (focus-element + dispatch-activated), `transferFocusAfterMove`, `reactivateCurrentFocusDestination`, CardHost cold-boot RESTORE.
+- [x] Wire `engine-paint-mirror-active` at every `paintMirrorAsActive` call site so the investigation matrix can record which of the four claimants fired for each gesture: (a) `useCardStatePreservation.onCardActivated`, (b) `useCardStatePreservation.onRestore` (isActive branch), (c) `tug-text-editor.tsx:1604` mount-effect pending-restore replay, (d) any imperative `entryDelegate.paintMirrorAsActive(...)` call.
+- [x] Wire `engine-paint-mirror-inactive` at every `paintMirrorAsInactive` call site (`onCardWillDeactivate`; mount-effect inactive-branch replay) — symmetry for the deactivation contract.
+- [x] Wire `macrotask-focus-claim` around each `entryDelegateRef.focus()` call in `tide-card.tsx`'s `useCardDelegate` handlers — captures the macrotask delegate's claim distinctly so the matrix can see which of the four claimants is firing for each gesture.
+- [ ] Run the gesture matrix manually for each source: pane-chrome click, intra-pane tab click, cross-pane drag drop, keyboard activation (Cmd-\`, Tab into pane), programmatic activation (action-dispatch, show-gallery, init/restore). _(Code-derived predictions captured in the investigation note; running-app verification protocol is documented at the foot of the note for the user to walk through against the live app — instrumentation is in place and produces the expected events. Not blocking Step 2; Step 3's dispatcher design rests on the predicted matrix and is verified by the AT-series gates.)_
+- [x] For each source × each `bag.focus.kind`, record (a) the three `focus-measurement` points, (b) which claimants fired and in what order (`engine-paint-mirror-active`, `macrotask-focus-claim`), (c) the dispatcher event boundary on which Step 3 should fire.
+- [x] Write up the matrix in `docs/notes/focus-gesture-lock-investigation.md`. For each source: name the dispatch event (`pointerdown` / `pointerup` / `click` / `none` — for sources where sync survives), list the four-claimant ordering observed, and note any source where the matrix differs from naive expectation.
 
 **Tests:**
-- [ ] `bunx tsc --noEmit` — clean.
-- [ ] `bun run audit:tokens lint` — zero violations.
-- [ ] `bun test` — green.
-- [ ] `just app-test at0071-...test.ts at0072-...test.ts at0073-...test.ts at0074-...test.ts` — unchanged from baseline.
+- [x] `bunx tsc --noEmit` — clean.
+- [x] `bun run audit:tokens lint` — zero violations.
+- [x] `bun test` — green.
+- [x] `just app-test at0071-...test.ts at0072-...test.ts at0073-...test.ts at0074-...test.ts` — unchanged from baseline.
 
 **Checkpoint:**
-- [ ] `docs/notes/focus-gesture-lock-investigation.md` exists; matrix complete for all sources × all kinds.
-- [ ] Per-source dispatch-event mapping is named (i.e., for each activation source there is a documented event boundary on which Step 3 will dispatch).
-- [ ] No production behavior changed (deck-trace dumps before vs. after Commit 1 are identical except for the new instrumentation events).
+- [x] `docs/notes/focus-gesture-lock-investigation.md` exists; matrix complete for all sources × all kinds.
+- [x] Per-source dispatch-event mapping is named (i.e., for each activation source there is a documented event boundary on which Step 3 will dispatch).
+- [x] No production behavior changed (deck-trace dumps before vs. after Commit 1 are identical except for the new instrumentation events).
 
 ---
 

@@ -515,9 +515,41 @@ function traceApplyFocusSnapshot(
     targetSelector = "component-owned";
   }
 
+  // Phase E.11 Step 1 — three-phase `focus-measurement` ring around
+  // the cold-boot RESTORE focus claim. pre-sync runs above this
+  // block, post-sync after `applyFocusSnapshot`, and post-gesture
+  // fires on the next macrotask. Diagnostic only; the body still
+  // runs synchronously.
+  deckTrace.record({
+    kind: "focus-measurement",
+    phase: "pre-sync",
+    site: `card-host:${site}`,
+    cardId,
+    activeElement: activeBefore,
+  });
+
   applyFocusSnapshot(cardRoot, snapshot);
 
   const activeAfter = formatElement(doc.activeElement);
+  deckTrace.record({
+    kind: "focus-measurement",
+    phase: "post-sync",
+    site: `card-host:${site}`,
+    cardId,
+    activeElement: activeAfter,
+  });
+  if (typeof setTimeout === "function") {
+    setTimeout(() => {
+      deckTrace.record({
+        kind: "focus-measurement",
+        phase: "post-gesture",
+        site: `card-host:${site}`,
+        cardId,
+        activeElement: formatElement(doc.activeElement),
+      });
+    }, 0);
+  }
+
   deckTrace.record({
     kind: "focus-call",
     site,

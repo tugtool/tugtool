@@ -185,6 +185,67 @@ function isElementHidden(el: HTMLElement | null): boolean {
 }
 
 /**
+ * Phase E.11 Step 1 investigation helper — emits the `pre-sync` and
+ * `post-sync` halves of a `focus-measurement` triple around a
+ * framework focus-claim site, then schedules the `post-gesture`
+ * tail on a macrotask so it lands after the same-tick gesture
+ * default actions (e.g. WebKit's mousedown focus default) have
+ * settled. The triple lets the per-source × per-kind matrix decide,
+ * for each activation source, whether sync `.focus()` survives the
+ * gesture or is swallowed by gesture focus-lock — the [L05] gate
+ * the Phase E.11 dispatcher will lean on at Step 3.
+ *
+ * The `claim` closure runs between `pre-sync` and `post-sync`. The
+ * caller is responsible for the real focus call inside `claim`;
+ * this helper only observes.
+ *
+ * Diagnostic instrumentation per Phase E.11 #e11-step-1. No
+ * production behavior change — call sites that wrap their existing
+ * `.focus()` in `measureFocusClaim` execute the same focus call in
+ * the same tick. The three observations record into the deck-trace
+ * ring only when `deckTrace.enable(true)` is in effect.
+ */
+function measureFocusClaim(
+  site: string,
+  cardId: string | null,
+  doc: Document,
+  claim: () => void,
+): void {
+  deckTrace.record({
+    kind: "focus-measurement",
+    phase: "pre-sync",
+    site,
+    cardId,
+    activeElement: formatElement(doc.activeElement),
+  });
+  claim();
+  deckTrace.record({
+    kind: "focus-measurement",
+    phase: "post-sync",
+    site,
+    cardId,
+    activeElement: formatElement(doc.activeElement),
+  });
+  // Defer the post-gesture observation onto a macrotask so any
+  // same-tick browser default action (mousedown focus, click focus)
+  // has settled before we read `activeElement`. setTimeout(0) is
+  // the simplest macrotask boundary; the investigation does not
+  // need the MessageChannel-precise scheduling that the lifecycle
+  // delegate uses.
+  if (typeof setTimeout === "function") {
+    setTimeout(() => {
+      deckTrace.record({
+        kind: "focus-measurement",
+        phase: "post-gesture",
+        site,
+        cardId,
+        activeElement: formatElement(doc.activeElement),
+      });
+    }, 0);
+  }
+}
+
+/**
  * The resolved destination of an activation-driven focus transfer.
  *
  * Every call to {@link resolveActivationTarget} returns one of these
@@ -518,7 +579,12 @@ export function transferFocusForActivation(
   if (target.kind === "focus-element") {
     const doc = target.el.ownerDocument;
     const activeBefore = formatElement(doc.activeElement);
-    target.el.focus();
+    measureFocusClaim(
+      "focus-transfer:focus-element",
+      incomingCardId,
+      doc,
+      () => target.el.focus(),
+    );
     const activeAfter = formatElement(doc.activeElement);
     deckTrace.record({
       kind: "focus-call",
@@ -601,7 +667,22 @@ export function transferFocusForActivation(
   // can keep typing into a card they just deactivated). Blur in that
   // case so the activation gesture deterministically removes focus
   // from the outgoing card even when no incoming target was named.
-  store.invokeActivationCallback(incomingCardId, "transfer-for-activation");
+  const dispatchDoc =
+    typeof document !== "undefined"
+      ? document
+      : (store.peekCardHostRoot(incomingCardId)?.ownerDocument ?? null);
+  if (dispatchDoc !== null) {
+    measureFocusClaim(
+      "focus-transfer:dispatch-activated",
+      incomingCardId,
+      dispatchDoc,
+      () => {
+        store.invokeActivationCallback(incomingCardId, "transfer-for-activation");
+      },
+    );
+  } else {
+    store.invokeActivationCallback(incomingCardId, "transfer-for-activation");
+  }
   blurFocusInOutgoingCard(store, outgoingCardId, incomingCardId);
 }
 
@@ -874,7 +955,12 @@ export function transferFocusAfterMove(
   if (target.kind === "focus-element") {
     const doc = target.el.ownerDocument;
     const activeBefore = formatElement(doc.activeElement);
-    target.el.focus();
+    measureFocusClaim(
+      "focus-transfer-after-move:focus-element",
+      sourceCardId,
+      doc,
+      () => target.el.focus(),
+    );
     const activeAfter = formatElement(doc.activeElement);
     deckTrace.record({
       kind: "focus-call",
@@ -930,7 +1016,22 @@ export function transferFocusAfterMove(
 
   // `dispatch-activated` — content factory's onCardActivated handles
   // its own targeting.
-  store.invokeActivationCallback(sourceCardId, "transfer-after-move");
+  const dispatchDoc =
+    typeof document !== "undefined"
+      ? document
+      : (store.peekCardHostRoot(sourceCardId)?.ownerDocument ?? null);
+  if (dispatchDoc !== null) {
+    measureFocusClaim(
+      "focus-transfer-after-move:dispatch-activated",
+      sourceCardId,
+      dispatchDoc,
+      () => {
+        store.invokeActivationCallback(sourceCardId, "transfer-after-move");
+      },
+    );
+  } else {
+    store.invokeActivationCallback(sourceCardId, "transfer-after-move");
+  }
 }
 
 /**
@@ -994,7 +1095,12 @@ export function reactivateCurrentFocusDestination(
     // synchronous re-claim is just our deterministic guarantee
     // that the chain agrees on who owns the caret. No scroll-
     // into-view is needed. [L23] — preserve user-visible scroll.
-    target.el.focus({ preventScroll: true });
+    measureFocusClaim(
+      "focus-transfer-reactivate:focus-element",
+      cardId,
+      doc,
+      () => target.el.focus({ preventScroll: true }),
+    );
     const activeAfter = formatElement(doc.activeElement);
     deckTrace.record({
       kind: "focus-call",
@@ -1053,5 +1159,20 @@ export function reactivateCurrentFocusDestination(
 
   // `dispatch-activated` — content factory's onCardActivated handles
   // its own targeting.
-  store.invokeActivationCallback(cardId, "reactivate-current");
+  const dispatchDoc =
+    typeof document !== "undefined"
+      ? document
+      : (store.peekCardHostRoot(cardId)?.ownerDocument ?? null);
+  if (dispatchDoc !== null) {
+    measureFocusClaim(
+      "focus-transfer-reactivate:dispatch-activated",
+      cardId,
+      dispatchDoc,
+      () => {
+        store.invokeActivationCallback(cardId, "reactivate-current");
+      },
+    );
+  } else {
+    store.invokeActivationCallback(cardId, "reactivate-current");
+  }
 }
