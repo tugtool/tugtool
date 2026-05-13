@@ -982,18 +982,47 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     // from freshly-saved content-owning bags per the save-side gate;
     // this branch's extra `!ownsSelectionAndFocus` check covers
     // pre-fix bags still in tugbank.
+    //
+    // Path resolution depends on the saved anchor/focus nodes being
+    // present in the DOM. For a virtualized renderer (tug-markdown-
+    // view) the target text nodes may not exist at this moment —
+    // blocks parse + render asynchronously after mount. A first
+    // best-effort apply runs here; the MutationObserver-driven
+    // `apply()` loop below re-tries on every subtree mutation until
+    // the paths resolve and the Range is published into
+    // `selectionGuard.cardRanges`. Once published we mark applied so
+    // the observer stops fighting subsequent user selections.
     const cardRootForDomAxes = findCardRoot(hostContentEl, cardId);
+    let domSelectionApplied = false;
+    const tryRestoreDomSelection = (): boolean => {
+      if (domSelectionApplied) return true;
+      if (!bag.domSelection || ownsSelectionAndFocus) return true;
+      if (!cardRootForDomAxes) return false;
+      selectionGuard.restoreCardDomSelection(
+        cardId,
+        bag.domSelection,
+        cardRootForDomAxes,
+      );
+      // Path resolution failure inside the guard is silent. Probe
+      // the public per-card range accessor to detect a successful
+      // publish.
+      const published = selectionGuard.getCardRange(cardId);
+      if (published !== undefined) {
+        domSelectionApplied = true;
+        deckTrace.record({
+          kind: "selection-restore",
+          cardId,
+          via: "restoreCardDomSelection",
+        });
+      }
+      return domSelectionApplied;
+    };
     if (
       bag.domSelection &&
       !ownsSelectionAndFocus &&
       cardRootForDomAxes
     ) {
-      selectionGuard.restoreCardDomSelection(cardId, bag.domSelection, cardRootForDomAxes);
-      deckTrace.record({
-        kind: "selection-restore",
-        cardId,
-        via: "restoreCardDomSelection",
-      });
+      tryRestoreDomSelection();
     }
 
     // Focus restore, [D10] Option B gated. The gate accepts only
@@ -1064,7 +1093,19 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     }
 
     const regionSnapshot = bag.regionScroll ?? undefined;
-    if (!regionSnapshot) return;
+    // The observer below is installed when EITHER a regionSnapshot
+    // OR an unapplied saved domSelection exists. Skipping the
+    // observer when only the domSelection is pending would leave
+    // virtualized renderers (tug-markdown-view) without a retry
+    // hook — blocks render after this effect fires, and the
+    // restoreCardDomSelection one-shot above silently fails when
+    // anchor / focus paths don't yet resolve.
+    const needsDomSelectionRetry =
+      bag.domSelection !== null &&
+      bag.domSelection !== undefined &&
+      !ownsSelectionAndFocus &&
+      !domSelectionApplied;
+    if (!regionSnapshot && !needsDomSelectionRetry) return;
 
     // For region scrolls we can't mark "applied after one shot" — a
     // virtualized scroller (most notably `tug-markdown-view`) renders
@@ -1100,9 +1141,13 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     const apply = () => {
       const cardRoot = findCardRoot(hostContentEl, cardId);
       if (!cardRoot) return;
-      // Form-controls were applied one-shot above; the observer-driven path here handles only
-      // region-scrolls, which need re-assertion until the
-      // virtualized layout's `scrollHeight` catches up.
+      // Form-controls were applied one-shot above; the observer-
+      // driven path here handles region-scrolls (until the virtual-
+      // ized layout's `scrollHeight` catches up) AND the saved
+      // DOM-selection restore for non-content-owning cards whose
+      // target nodes mount later (the markdown view's blocks parse
+      // and render asynchronously after the host mounts).
+      if (!domSelectionApplied) tryRestoreDomSelection();
       if (regionSnapshot) {
         const pending: RegionScrollSnapshot = {};
         let hasPending = false;

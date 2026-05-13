@@ -14,6 +14,7 @@ import React, { useId, useState } from "react";
 import { TugRadioGroup, TugRadioItem } from "@/components/tugways/tug-radio-group";
 import type { TugRadioRole } from "@/components/tugways/tug-radio-group";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { useSavedComponentState } from "@/components/tugways/use-component-state-preservation";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 
@@ -36,9 +37,18 @@ const ALL_ROLES: TugRadioRole[] = [
 // ---------------------------------------------------------------------------
 
 export function GalleryRadioGroup() {
+  // The `md` instance opts into [A9] state preservation under key
+  // `radio-md`; its parent React state must also seed from the saved
+  // value at mount, otherwise the controlled `value={sizeMdValue}`
+  // prop overwrites the child's saved internalValue when
+  // captureState fires on the next save. See AT0030 fixture contract.
+  const savedRadioMd = useSavedComponentState<{ value?: string }>("radio-md");
+
   // Controlled state for interactive sections
   const [sizeSmValue, setSizeSmValue] = useState("b");
-  const [sizeMdValue, setSizeMdValue] = useState("b");
+  const [sizeMdValue, setSizeMdValue] = useState<string>(
+    () => (typeof savedRadioMd?.value === "string" ? savedRadioMd.value : "b"),
+  );
   const [sizeLgValue, setSizeLgValue] = useState("b");
   const [horzValue, setHorzValue] = useState("option-2");
   const [vertValue, setVertValue] = useState("option-2");

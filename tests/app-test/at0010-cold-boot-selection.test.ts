@@ -127,12 +127,29 @@ describe.skipIf(!SHOULD_RUN)("m10: selection cold-boot across full process resta
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered(${JSON.stringify(CARD_ID)})`,
           );
 
-          // Wait for at least one block to render (1KB renders fully
-          // in one viewport — no virtualization indeterminism).
+          // Wait for the bake-in to settle: block 0 (the H1) must be
+          // in the rendered window AND the block count must be
+          // stable across two consecutive observations. The
+          // `gallery-markdown-1kb` fixture passes
+          // `followBottom: false` to TugMarkdownView for the
+          // static-content path, so the bake-in renders with
+          // `scrollTop = 0` and the virtualization window covers
+          // the head of the document. That keeps the `nodeToPath`
+          // capture stable across the relaunch + restore (Phase B
+          // mounts the same fixture, hits the same render window,
+          // and resolves the saved path back to the same node).
           await app.waitForCondition<boolean>(
             `(function(){
-              var el = document.querySelector('[data-card-id=${JSON.stringify(CARD_ID)}] .tugx-md-block');
-              return el !== null && el.textContent !== null && el.textContent.length > ${SELECTION_LENGTH};
+              var first = document.querySelector('[data-card-id=${JSON.stringify(CARD_ID)}] .tugx-md-block');
+              if (first === null || first.getAttribute("data-block-index") !== "0") return false;
+              if (first.textContent === null || first.textContent.length <= ${SELECTION_LENGTH}) return false;
+              var cardRoot = document.querySelector('[data-card-host][data-card-id=${JSON.stringify(CARD_ID)}]');
+              if (cardRoot === null) return false;
+              var count = cardRoot.querySelectorAll('.tugx-md-block').length;
+              var w = window;
+              if (w.__at0010ColdBootBlockCount === count) return true;
+              w.__at0010ColdBootBlockCount = count;
+              return false;
             })()`,
             { timeoutMs: 4000 },
           );
@@ -154,24 +171,31 @@ describe.skipIf(!SHOULD_RUN)("m10: selection cold-boot across full process resta
             `(function(){
               var blockEls = document.querySelectorAll('[data-card-id=${JSON.stringify(CARD_ID)}] .tugx-md-block');
               if (blockEls.length === 0) return null;
-              var firstBlock = blockEls[0];
-              var walker = document.createTreeWalker(firstBlock, NodeFilter.SHOW_TEXT);
-              var first = walker.nextNode();
-              if (!first || first.textContent === null) return null;
-              var len = Math.min(${SELECTION_LENGTH}, first.textContent.length);
-              if (len < 4) return null;
-              var range = document.createRange();
-              range.setStart(first, 0);
-              range.setEnd(first, len);
-              var sel = window.getSelection();
-              if (!sel) return null;
-              sel.removeAllRanges();
-              sel.addRange(range);
-              return {
-                text: range.toString(),
-                startOffset: 0,
-                endOffset: len,
-              };
+              for (var b = 0; b < blockEls.length; b++) {
+                var block = blockEls[b];
+                var walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+                var node = walker.nextNode();
+                while (node !== null) {
+                  var t = node.textContent;
+                  if (t !== null && t.replace(/^\\s+|\\s+$/g, "").length >= 4) {
+                    var len = Math.min(${SELECTION_LENGTH}, t.length);
+                    var range = document.createRange();
+                    range.setStart(node, 0);
+                    range.setEnd(node, len);
+                    var sel = window.getSelection();
+                    if (!sel) return null;
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                    return {
+                      text: range.toString(),
+                      startOffset: 0,
+                      endOffset: len,
+                    };
+                  }
+                  node = walker.nextNode();
+                }
+              }
+              return null;
             })()`,
           );
           if (seededOpt === null) {
@@ -234,10 +258,23 @@ describe.skipIf(!SHOULD_RUN)("m10: selection cold-boot across full process resta
               `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered(${JSON.stringify(CARD_ID)})`,
             );
 
+            // Wait for the bake-in to settle: block 0 must be in the
+            // rendered window AND the block count must be stable.
+            // The fixture's `followBottom: false` keeps the scroll at
+            // the head, so the virtualization window matches Phase
+            // A's — same path indices, same resolved node.
             await app.waitForCondition<boolean>(
               `(function(){
-                var el = document.querySelector('[data-card-id=${JSON.stringify(CARD_ID)}] .tugx-md-block');
-                return el !== null && el.textContent !== null && el.textContent.length > ${SELECTION_LENGTH};
+                var first = document.querySelector('[data-card-id=${JSON.stringify(CARD_ID)}] .tugx-md-block');
+                if (first === null || first.getAttribute("data-block-index") !== "0") return false;
+                if (first.textContent === null || first.textContent.length <= ${SELECTION_LENGTH}) return false;
+                var cardRoot = document.querySelector('[data-card-host][data-card-id=${JSON.stringify(CARD_ID)}]');
+                if (cardRoot === null) return false;
+                var count = cardRoot.querySelectorAll('.tugx-md-block').length;
+                var w = window;
+                if (w.__at0010ColdBootBlockCountB === count) return true;
+                w.__at0010ColdBootBlockCountB = count;
+                return false;
               })()`,
               { timeoutMs: 4000 },
             );

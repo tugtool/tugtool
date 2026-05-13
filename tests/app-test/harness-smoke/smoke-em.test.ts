@@ -10,7 +10,7 @@
  *   1. **engine-ready trace event** — when an EM card mounts, its
  *      factory emits an `engine-ready` deck-trace event with the
  *      card id and engine name. Wired in
- *      `tug-prompt-input.tsx` first (other factories follow as wired).
+ *      `tug-text-editor.tsx` (other factories follow as wired).
  *
  *   2. **`__tug.getEmCardState(cardId)`** — returns
  *      `{ kind: "em", engine, text, engineSelection, streamState,
@@ -44,24 +44,24 @@ import { launchTugApp } from "../_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
-const PROMPT_INPUT_SELECTOR = '[data-tug-prompt-input-root] [contenteditable]';
+const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 
 describe.skipIf(!SHOULD_RUN)("EM-card observation surface", () => {
-  test("engine-ready fires when a TugPromptInput-backed EM card mounts", async () => {
+  test("engine-ready fires when a TugTextEditor-backed EM card mounts", async () => {
     const app = await launchTugApp({ testName: "smoke-em-engine-ready" });
     try {
       await app.enableDeckTrace(true);
 
-      // Seed a single EM card. `gallery-prompt-input` is the
-      // gallery's TugPromptInput showcase; its `useCardStatePreservation`
-      // returns engine state on save, which makes it an EM card
-      // by `bag.content !== undefined`.
+      // Seed a single EM card. `gallery-prompt-entry` is the
+      // gallery's TugPromptEntry showcase (wraps TugTextEditor); its
+      // `useCardStatePreservation` returns engine state on save, which
+      // makes it an EM card by `bag.content !== undefined`.
       await app.seedDeckState({
         state: {
           cards: [
             {
               id: "A",
-              componentId: "gallery-prompt-input",
+              componentId: "gallery-prompt-entry",
               title: "Card A",
               closable: true,
             },
@@ -87,20 +87,22 @@ describe.skipIf(!SHOULD_RUN)("EM-card observation surface", () => {
         `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
       );
 
-      // engine-ready should fire as TugPromptInput's
-      // useLayoutEffect creates the engine and stamps the trace
-      // event. The event is recorded synchronously during the
-      // mount commit, so the await completes well under 2000ms.
+      // engine-ready should fire as TugTextEditor's useLayoutEffect
+      // creates the EditorView and stamps the trace event. The event
+      // is recorded synchronously during the mount commit, so the
+      // await completes well under 2000ms.
       await app.awaitEngineReady("A");
 
       // Probe the trace ring directly to assert the engine-ready
-      // event carries the expected fields.
+      // event carries the expected fields. TugTextEditor stamps
+      // `engine: "tug-text-editor"` regardless of which wrapper
+      // mounts it (TugPromptInput, TugPromptEntry, etc.).
       const events = await app.getDeckTrace();
       const engineReady = events.find(
         (e) => e.kind === "engine-ready" && (e as { cardId?: string }).cardId === "A",
       );
       expect(engineReady).toBeDefined();
-      expect((engineReady as { engine?: string }).engine).toBe("tug-prompt-input");
+      expect((engineReady as { engine?: string }).engine).toBe("tug-text-editor");
 
       // isEngineReady is the synchronous variant of awaitEngineReady;
       // both must agree.
@@ -120,7 +122,7 @@ describe.skipIf(!SHOULD_RUN)("EM-card observation surface", () => {
           cards: [
             {
               id: "A",
-              componentId: "gallery-prompt-input",
+              componentId: "gallery-prompt-entry",
               title: "Card A",
               closable: true,
             },
@@ -148,8 +150,8 @@ describe.skipIf(!SHOULD_RUN)("EM-card observation surface", () => {
       await app.awaitEngineReady("A");
 
       // Click into the prompt input to focus it, then type some
-      // text. The selector matches TugPromptInput's contenteditable
-      // root inside the gallery card.
+      // text. The selector matches TugTextEditor's contenteditable
+      // (`.cm-content`) inside the gallery card.
       await app.nativeClickAtElement(`[data-card-id="A"] ${PROMPT_INPUT_SELECTOR}`);
       await app.waitForCondition<boolean>(
         `document.activeElement !== null && document.activeElement.matches(${JSON.stringify(PROMPT_INPUT_SELECTOR)})`,
@@ -172,7 +174,7 @@ describe.skipIf(!SHOULD_RUN)("EM-card observation surface", () => {
       const state = await app.getEmCardState("A");
       expect(state).not.toBeNull();
       expect(state!.kind).toBe("em");
-      expect(state!.engine).toBe("gallery-prompt-input");
+      expect(state!.engine).toBe("gallery-prompt-entry");
       expect(state!.text).toBe("hello em");
       // Stub fields until streaming is wired; pinned so a regression in
       // their default values surfaces here.

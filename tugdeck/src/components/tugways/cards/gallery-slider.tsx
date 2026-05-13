@@ -16,6 +16,7 @@ import React, { useId, useState } from "react";
 import { Volume1, Volume2 } from "lucide-react";
 import { TugSlider } from "@/components/tugways/tug-slider";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { useSavedComponentState } from "@/components/tugways/use-component-state-preservation";
 import { createNumberFormatter } from "@/lib/tug-format";
 import "./gallery-slider.css";
 import { TugLabel } from "@/components/tugways/tug-label";
@@ -29,9 +30,18 @@ const decimalFormatter = createNumberFormatter({ style: "decimal", decimals: 1 }
 // ---- GallerySlider ----
 
 export function GallerySlider() {
+  // The `md` instance opts into [A9] state preservation under key
+  // `slider-md`; its parent React state must also seed from the saved
+  // value at mount, otherwise the controlled `value={mdValue}` prop
+  // would overwrite the saved value on captureState. See AT0030
+  // fixture contract.
+  const savedSliderMd = useSavedComponentState<{ value?: number }>("slider-md");
+
   // Section 1: Sizes
   const [smValue, setSmValue] = useState(25);
-  const [mdValue, setMdValue] = useState(50);
+  const [mdValue, setMdValue] = useState<number>(
+    () => (typeof savedSliderMd?.value === "number" ? savedSliderMd.value : 50),
+  );
   const [lgValue, setLgValue] = useState(75);
 
   // Section 2: Layouts

@@ -31,6 +31,7 @@ import { TugOptionGroup } from "@/components/tugways/tug-option-group";
 import type { TugOptionGroupRole } from "@/components/tugways/tug-option-group";
 import { TugBox } from "@/components/tugways/tug-box";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { useSavedComponentState } from "@/components/tugways/use-component-state-preservation";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 
@@ -51,7 +52,20 @@ const ROLE_ENTRIES: Array<{ role: TugOptionGroupRole | undefined; label: string 
 
 export function GalleryOptionGroup() {
   // Section 1: Icon Only — B/I/U text formatting
-  const [formatValue, setFormatValue] = useState<string[]>(["bold"]);
+  // The format-toolbar instance opts into [A9] state preservation
+  // under key `option-format`; its parent React state must also seed
+  // from the saved value at mount, otherwise the controlled
+  // `value={formatValue}` prop would overwrite the saved value on
+  // captureState. See AT0030 fixture contract.
+  const savedOptionFormat = useSavedComponentState<{ value?: string[] }>(
+    "option-format",
+  );
+  const [formatValue, setFormatValue] = useState<string[]>(
+    () =>
+      Array.isArray(savedOptionFormat?.value)
+        ? (savedOptionFormat.value as string[])
+        : ["bold"],
+  );
 
   // Section 2: Icon + Label — alignment toolbar
   const [alignValue, setAlignValue] = useState<string[]>(["left"]);

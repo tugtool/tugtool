@@ -188,6 +188,19 @@ export interface TugMarkdownViewProps {
    * (user-visible state must round-trip).
    */
   selectionPublishKey?: string;
+
+  /**
+   * Initial value for SmartScroll's follow-bottom intent. When `true`
+   * (the default), the view pins the scroll to the bottom while content
+   * arrives — appropriate for streaming transcript-style consumers. When
+   * `false`, the view stays at the top while content renders and only
+   * follows user gestures — appropriate for static-content consumers
+   * (e.g. baked-in gallery fixtures) where pinning to the bottom would
+   * leave the head of the document offscreen and confuse a virtualized
+   * `nodeToPath` capture (the saved path indices depend on the rendered
+   * window, which is bottom-anchored under followBottom).
+   */
+  followBottom?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -264,6 +277,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     onTiming,
     className,
     selectionPublishKey,
+    followBottom = true,
   }, ref) {
   // ---- DOM refs ----
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -485,6 +499,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     if (!scrollContainerRef.current || !blockContainerRef.current) return;
     const smartScroll = new SmartScroll({
       scrollContainer: scrollContainerRef.current,
+      followBottom,
       callbacks: {
         onScroll: () => {
           scrollDirtyRef.current = true;

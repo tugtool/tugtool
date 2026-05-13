@@ -29,6 +29,7 @@ import {
   Monitor,
 } from "lucide-react";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
+import { useSavedComponentState } from "@/components/tugways/use-component-state-preservation";
 import type { TugChoiceGroupRole } from "@/components/tugways/tug-choice-group";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
@@ -55,9 +56,17 @@ const ALL_ROLES: TugChoiceGroupRole[] = [
 
 export function GalleryChoiceGroup() {
   // Sizes section
+  // The `md` instance opts into [A9] state preservation under key
+  // `choice-md`; its parent React state must also seed from the saved
+  // value at mount, otherwise the controlled `value={mdValue}` prop
+  // would overwrite the saved value when captureState fires.
+  const savedChoiceMd = useSavedComponentState<{ value?: string }>("choice-md");
+
   const [xsValue, setXsValue] = useState("beta");
   const [smValue, setSmValue] = useState("beta");
-  const [mdValue, setMdValue] = useState("beta");
+  const [mdValue, setMdValue] = useState<string>(
+    () => (typeof savedChoiceMd?.value === "string" ? savedChoiceMd.value : "beta"),
+  );
   const [lgValue, setLgValue] = useState("beta");
 
   // Roles section — one state per role entry (accent + 7 explicit)

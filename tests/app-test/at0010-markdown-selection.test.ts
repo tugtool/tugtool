@@ -125,25 +125,40 @@ describe.skipIf(!SHOULD_RUN)("m10: markdown-view DOM selection round-trips throu
         `(function(){
           var blockEls = document.querySelectorAll('[data-card-id="A"] .tugx-md-block');
           if (blockEls.length === 0) return null;
-          var firstBlock = blockEls[0];
-          var walker = document.createTreeWalker(firstBlock, NodeFilter.SHOW_TEXT);
-          var first = walker.nextNode();
-          if (!first || first.textContent === null) return null;
-          var len = Math.min(${SELECTION_LENGTH}, first.textContent.length);
-          if (len < 4) return null;
-          var range = document.createRange();
-          range.setStart(first, 0);
-          range.setEnd(first, len);
-          var sel = window.getSelection();
-          if (!sel) return null;
-          sel.removeAllRanges();
-          sel.addRange(range);
-          return {
-            text: range.toString(),
-            blockIndex: 0,
-            startOffset: 0,
-            endOffset: len,
-          };
+          // TugMarkdownView sets each block's content via innerHTML
+          // from the parser cache, which preserves whitespace text
+          // nodes between elements (e.g. a "\\n" between sibling
+          // tags). The first text node a TreeWalker hits may be such
+          // a whitespace node — len < 4 then trips the no-usable-
+          // text-node guard. Walk forward across blocks until we
+          // find a text node with enough non-whitespace content for
+          // a stable selection seed.
+          for (var b = 0; b < blockEls.length; b++) {
+            var block = blockEls[b];
+            var walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+            var node = walker.nextNode();
+            while (node !== null) {
+              var t = node.textContent;
+              if (t !== null && t.replace(/^\\s+|\\s+$/g, "").length >= 4) {
+                var len = Math.min(${SELECTION_LENGTH}, t.length);
+                var range = document.createRange();
+                range.setStart(node, 0);
+                range.setEnd(node, len);
+                var sel = window.getSelection();
+                if (!sel) return null;
+                sel.removeAllRanges();
+                sel.addRange(range);
+                return {
+                  text: range.toString(),
+                  blockIndex: b,
+                  startOffset: 0,
+                  endOffset: len,
+                };
+              }
+              node = walker.nextNode();
+            }
+          }
+          return null;
         })()`,
       );
 

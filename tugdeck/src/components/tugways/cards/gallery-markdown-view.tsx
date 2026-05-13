@@ -467,6 +467,16 @@ export function GalleryMarkdownView({ staticContentSize }: GalleryMarkdownViewPr
       </div>
 
       {/* ---- Single always-mounted TugMarkdownView ---- */}
+      {/*
+        Static-content fixtures (`staticContentSize` set) start with
+        `followBottom: false` so the bake-in renders against
+        `scrollTop=0`. The virtualized render window then covers
+        blocks at the head of the document, which keeps the
+        `nodeToPath` capture stable across the relaunch + restore
+        round-trip exercised by AT0010. The streaming-only path
+        (no staticContentSize) keeps the default `followBottom: true`
+        so live transcript streams pin to the tail.
+      */}
       <div ref={scrollContainerRef} style={{ flex: 1, minHeight: 0, position: "relative" }}>
         <TugMarkdownView
           ref={markdownRef}
@@ -476,6 +486,7 @@ export function GalleryMarkdownView({ staticContentSize }: GalleryMarkdownViewPr
           onTiming={handleTiming}
           className="gallery-md-view"
           selectionPublishKey="markdown-view"
+          followBottom={staticContentSize === undefined}
         />
       </div>
     </div>
