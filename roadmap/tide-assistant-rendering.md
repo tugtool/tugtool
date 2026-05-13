@@ -3836,30 +3836,39 @@ Step 3 introduces the dispatcher API surface and the new store methods needed to
 - New: `tests/app-test/at0078-tide-engine-focus-survives.test.ts` — tide-card with engine focus (no find row), cmd-tab cycle, focus returns to contenteditable.
 - New: `tests/app-test/at0079-tide-engine-focus-wins-over-stale-find.test.ts` — when bag.focus.kind === engine but a find row is also open (open-state preserved), engine wins on reload.
 
-**Tasks:**
+**Lessons from Step 4 first cut.** {#e11-step-4-first-cut-lessons}
 
-**Substitution sub-tasks:**
-- [ ] Wire D11 yield rule into `applyBagFocus`'s framework branch: when the resolved element is already `document.activeElement`, return `"applied"` without calling `.focus()`. Emit `focus-call` deck-trace event with `activeBefore === activeAfter` for trace coherence.
-- [ ] Rewrite `transferFocusForActivation` to call `applyBagFocus` (focus-element + dispatch-activated branches collapse into one). Preserve `installFormControlReapplyOnNextMousedown` post-`applied` for framework-axis resolutions; preserve `blurFocusInOutgoingCard` safety net.
-- [ ] Rewrite `transferFocusAfterMove` and `reactivateCurrentFocusDestination` to call `applyBagFocus`. Preserve adjacent follow-ups (`restoreCardDomSelection`).
-- [ ] Migrate CardHost cold-boot RESTORE to call `applyBagFocus`. The D11 yield rule covers the substrate-hook precedence (find session focuses input on mount; CardHost's `applyBagFocus` sees the active element matches the resolved framework target and yields). The deferred-dom branch falls through to the MutationObserver retry.
-- [ ] **Delete `resolveActivationTarget`** in `focus-transfer.ts`. Verify no remaining imports.
-- [ ] **Delete `applyFocusSnapshot` and `traceApplyFocusSnapshot`** in `card-host.tsx`. The `applyFocusSnapshot` site tag survives as a `SelectionRestoreVia` string in `deck-trace.ts` for trace-log continuity.
-- [ ] Retire `useCardStatePreservation.onCardActivated`'s `paintMirrorAsActive` call.
-- [ ] Retire `useCardStatePreservation.onRestore`'s `paintMirrorAsActive` call in the `isActive` branch.
-- [ ] Remove `entryDelegateRef.focus()` from `useCardDelegate.cardDidActivate` in `tide-card.tsx`.
-- [ ] Wrap the three runtime direct `activateCard` call sites through `transferFocusForActivation` per D9b. Leave the boot sites (`_seedDeckState`, initial-focused-card restore) raw.
-- [ ] Move dispatcher invocation to `pointerup` / `click` for sources where Step 1's matrix shows pointerdown sync doesn't survive.
+The Step 4 first cut bundled 13 independent substitutions into one commit (transferFocusForActivation rewrite, transferFocusAfterMove rewrite, reactivateCurrentFocusDestination rewrite, CardHost cold-boot RESTORE migration + MutationObserver retry + engineHooksVersion subscription, 4 autonomous-claim retirements, 3 activateCard runtime wraps, engine-hook registration on TugPromptEntry, resolver fix for content-owning + not-engine-managed, deletion of obsolete code). AT0071 regressed mid-implementation; the cause was opaque because the 13 changes co-mingled. Each rollback / hypothesis cycle took 5–10 minutes of test runs and didn't converge.
 
-**Late-mount settle sub-tasks:**
-- [ ] In CardHost's cold-boot RESTORE effect, integrate `applyBagFocus` and capture its return value. If `"deferred"`, ensure the existing MutationObserver `apply()` loop calls `applyBagFocus` on each fire.
-- [ ] Settle: track whether `applyBagFocus` has returned `"applied"`. Once it has, stop re-applying.
-- [ ] Element-identity settle for `deferred-dom`: keyed on the `data-tug-focus-key` / `data-tug-state-key` value AND the resolved element identity, so a remount with the same key but a fresh element re-applies.
-- [ ] Budgets: 200 mutations OR 5 seconds wall-clock — whichever fires first disconnects with a dev-mode warn (production silent).
-- [ ] Wire `subscribeEngineHooksChange` listener in CardHost (introduced at Step 2). Subscription bumps a local `engineHooksVersion` state; the RESTORE effect deps on it so registration of late-mounting engine hooks re-fires `applyBagFocus` for the `deferred-engine` case.
+The structural fix: **land Step 4 as a sequence of small sub-commits (4a–4l)**, each performing exactly one substitution and gated by the AT0071–74 fixture regression set + the adjacent regression set before continuing. When a sub-commit regresses, the cause is the change in that commit; the next iteration can diagnose from one identified delta rather than a soup of 13.
 
-**Test sub-tasks:**
-- [ ] Write AT0075, AT0076, AT0077, AT0078, AT0079.
+A secondary lesson, recorded for future re-planning: the "five-claimant model + D11 yield rule" framing is the right architectural model, but the runtime has implicit precedence rules I can't enumerate from static reading of the React/store code alone. When a sub-step regresses something, the regression names the next implicit rule — add it to D11 (or a sibling decision) and update the plan before continuing.
+
+**Tasks (sequence 4a–4l).** Each sub-task is its own commit. Gate every commit on: `bunx tsc --noEmit` clean, `bun run audit:tokens lint` zero violations, `bun test` green, AT0071–74 fixture regression green, adjacent regression set (at0020 / at0024 / at0025 / at0031 / at0033 / at0034 / at0035-tide / at0046 / at0067) green. AT0075–79 are introduced at 4l (the final sub-commit). If a sub-step regresses, **stop and diagnose** before continuing.
+
+- [ ] **4a. Migrate `transferFocusAfterMove` to `applyBagFocus`.** Lowest blast radius — cross-pane drag drops and detach paths. Commit: `feat(focus): transferFocusAfterMove → applyBagFocus`.
+
+- [ ] **4b. Migrate `reactivateCurrentFocusDestination` to `applyBagFocus`.** Window-focus reactivation (cmd-tab return). Preserve `preventScroll: true`. Commit: `feat(focus): reactivateCurrentFocusDestination → applyBagFocus`.
+
+- [ ] **4c. Migrate `transferFocusForActivation` to `applyBagFocus`.** The central activation path — all click-driven row 1/2/3 activations. Preserve `installFormControlReapplyOnNextMousedown` post-`applied` and `blurFocusInOutgoingCard` safety net. **Highest blast radius substitution; expect to spend time here.** Commit: `feat(focus): transferFocusForActivation → applyBagFocus`.
+
+- [ ] **4d. Migrate CardHost cold-boot RESTORE to `applyBagFocus`. Add late-mount retry.** D11 yield rule covers substrate-hook precedence. MutationObserver loop retries `applyBagFocus` on `deferred-dom` (200 mutations / 5s budget; dev-mode warn on exhaustion; production silent). `subscribeEngineHooksChange` listener bumps `engineHooksVersion` state; RESTORE effect deps on it for `deferred-engine` retry. Commit: `feat(focus): CardHost cold-boot RESTORE → applyBagFocus + late-mount settle`.
+
+- [ ] **4e. Register engine hooks on `tug-prompt-entry.tsx`.** TugPromptEntry is the engine for tide-card and gallery-prompt-entry. The hook reads `pendingActivationDraftRef` at fire time and calls `editor.paintMirrorAsActive(pending ?? undefined)`. This makes the engine a framework-callable; necessary precondition for 4f. Commit: `feat(focus): register engine hooks on TugPromptEntry`.
+
+- [ ] **4f. Retire `tug-prompt-entry.tsx` autonomous claims.** `onCardActivated`'s `paintMirrorAsActive` call removed (handler kept for `inactiveDraftSnapshotRef.current = null`). `onRestore`'s `paintMirrorAsActive(restored.draft)` in `isActive` branch removed; both active and inactive paths stash `pendingActivationDraftRef`. The framework's `applyBagFocus` now drives TugPromptEntry's focus claim via the engine hook from 4e. Commit: `feat(focus): retire TugPromptEntry autonomous claims`.
+
+- [ ] **4g. Retire `tug-text-editor/state-preservation.ts` autonomous claims.** Same shape as 4f but for the standalone TugTextEditor used by gallery-text-editor. `useCardStatePreservation.onCardActivated` empties (or keeps only `inactiveScrollSnapshotRef.current = null`). `onRestore` `isActive` branch drops `paintMirrorAsActive(state)` call. Engine hooks are already registered at Step 2. Commit: `feat(focus): retire TugTextEditor autonomous claims`.
+
+- [ ] **4h. Retire `tide-card.tsx` cardDidActivate macrotask + tug-text-editor.tsx mount-effect-replay active branch.** The two remaining macrotask / deferred focus claims. `cardDidMove` / `cardDidResize` keep their focus claims (drag/resize re-mount handling — out of activation scope). Commit: `feat(focus): retire macrotask cardDidActivate + mount-effect-replay active branch`.
+
+- [ ] **4i. Wrap 3 runtime `activateCard` sites through `transferFocusForActivation`.** `action-dispatch.ts` (focus-pane), `deck-canvas.tsx` (show-component-gallery: existing + new). Boot sites (`_seedDeckState`, initial-focused-card restore) stay raw. Commit: `feat(focus): wrap runtime activateCard sites via transferFocusForActivation`.
+
+- [ ] **4j. Move dispatcher invocation to `pointerup` / `click` for sources where Step 1's matrix says pointerdown sync doesn't survive.** Currently no source identified by the matrix as requiring this; this sub-step is reserved for if/when the running-app matrix verification reveals one. Commit: `feat(focus): per-source dispatch event mapping` (or skipped if not needed).
+
+- [ ] **4k. Delete `resolveActivationTarget`, `ActivationTarget`, `applyFocusSnapshot`, `traceApplyFocusSnapshot`, `describeTargetSelector` (unused), `isElementHidden` (in card-host; unused after deletions).** Pure deletion of dead code. Grep gates from #e11-step-4 checkpoint enforce. Commit: `chore(focus): delete obsolete activation-target / applyFocusSnapshot helpers`.
+
+- [ ] **4l. Introduce AT0075/76/77/78/79.** Real-tide AT-series test gates (D8). Commit: `test(tide-rendering): AT0075–AT0079 real-tide focus integration tests`.
 
 **Tests:**
 - [ ] `bunx tsc --noEmit` — clean.
