@@ -1,0 +1,158 @@
+/* @tug-pairings:
+   - --tugx-block-strip-bg / --tugx-block-strip-border / --tugx-block-text-color
+     (consumed from styles/tugx-block.css; the row reads as a continuation
+     of the host's chrome strip when both are stacked).
+
+   `TugBlockFindRow` paints the find-row UI for a body-kind block —
+   FileBlock, DiffBlock, TerminalBlock. The hand-rolled per-block
+   versions previously lived in `file-block.css` as `.tugx-file-find-*`;
+   the row is now single-sourced here under `--tugx-block-find-*`. Hosts
+   bind `--tugx-block-find-top` to their own sticky-stack composition.
+*/
+
+/**
+ * tug-block-find-row.css — sticky in-block find row.
+ *
+ * Token slot family: --tugx-block-find-*. Owned by this component
+ * per [L20]. The row consumes shared --tugx-block-* for the strip
+ * background and border so it reads as a continuation of the host's
+ * chrome when both are visually stacked.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] visibility is structural — the host conditionally mounts
+ *    the row based on session.state.open. Appearance (focus paint,
+ *    hover, sticky-top) is CSS only.
+ *  - [L17] --tugx-block-find-* aliases resolve to --tug7-* in one hop.
+ *  - [L19] file pair with .tsx, module docstring on the .tsx,
+ *    data-slot="tug-block-find-row" on the root.
+ *  - [L20] component-token sovereignty — only --tugx-block-find-* is
+ *    written here. The shared --tugx-block-* slots are read but never
+ *    overridden.
+ */
+
+/* ---- Component-tier aliases — find row only [L17] ---- */
+
+body {
+  /* Find UI input field — read as visibly elevated over the strip-bg
+   * around it (rest) and elevated further when focused. The strip is
+   * `--tug7-surface-global-primary-normal-raised-rest` (indigo-violet
+   * on brio); the rest/focus tokens below pick titlebar-grade values
+   * so contrast is unambiguous in both themes. Matches the
+   * pre-extraction `--tugx-file-find-input-*` values that survived
+   * Phase E.4's audit. */
+  --tugx-block-find-input-bg:       var(--tug7-surface-card-primary-normal-titlebar-inactive);
+  --tugx-block-find-input-bg-focus: var(--tug7-surface-card-primary-normal-titlebar-active);
+
+  /* Sticky-top default — `0` lets the host's own
+   * `.tugx-<host>-find-extra-top` override push the row down (e.g.
+   * FileBlock's `--tugx-pin-stack-top + --tugx-toolblock-header-height
+   * + --tugx-file-header-height`). When a host writes its stack into
+   * `--tugx-block-find-top`, this default falls through. */
+  --tugx-block-find-top: 0px;
+}
+
+/* ---- Row container ---- */
+
+/* Sticky row beneath whatever stack the host has composed in
+ * --tugx-block-find-top. Background and border match the host's
+ * chrome strip so the two-row stack (host header + this find row)
+ * reads as one continuous visual stripe. */
+.tugx-block-find {
+  position: sticky;
+  top: var(--tugx-block-find-top, 0px);
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tug-space-xs);
+  padding: var(--tug-space-2xs) var(--tug-space-sm);
+  background: var(--tugx-block-strip-bg);
+  border-bottom: 1px solid var(--tugx-block-strip-border);
+  color: var(--tugx-block-text-color);
+  font-family: var(--tug-font-family-sans);
+  font-size: var(--tug-font-size-2xs);
+}
+
+/* Input wrap — hosts the borderless TugInput and the absolutely-
+ * positioned clear-X button. The wrap owns the input frame
+ * (background, radius) so the inline clear button can sit inside the
+ * field's visible bounds. */
+.tugx-block-find-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 14em;
+  min-width: 8em;
+  max-width: 22em;
+  border-radius: var(--tug-radius-xs);
+  background: var(--tugx-block-find-input-bg);
+  transition: background var(--tug-motion-duration-fast) var(--tug-motion-easing-standard);
+}
+
+.tugx-block-find-input-wrap:focus-within {
+  /* Focused state bumps to the brighter active titlebar token —
+   * unambiguous contrast against rest + against the surrounding strip.
+   * Border on the input stays absent (`borderless` on TugInput) so
+   * focus is signaled purely by the bg shift. */
+  background: var(--tugx-block-find-input-bg-focus);
+}
+
+.tugx-block-find-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* TugInput is `borderless` here — strip its own background so the
+   * wrap's bg shows through. The wrap owns the focus paint. */
+  background: transparent !important;
+  padding-right: var(--tug-space-lg);
+}
+
+.tugx-block-find-clear {
+  position: absolute;
+  inset-inline-end: var(--tug-space-2xs);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--tugx-block-text-color-muted);
+  cursor: pointer;
+  line-height: 0;
+}
+
+.tugx-block-find-clear:hover {
+  background: var(--tug7-surface-highlight-primary-normal-hover-rest);
+  color: var(--tugx-block-text-color);
+}
+
+.tugx-block-find-clear > svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Checkbox group — generous gap between options so the three
+ * semantic toggles read as a related cluster, not as runs of words
+ * adjacent to the navigation buttons. */
+.tugx-block-find-options {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-xl);
+  margin-inline-start: var(--tug-space-md);
+}
+
+.tugx-block-find-count {
+  color: var(--tugx-block-text-color-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* Two flex spacers — one before the count, one after — share the
+ * residual space equally so the count anchors midway between the
+ * checkbox group and the Done button. */
+.tugx-block-find-spacer {
+  flex: 1 1 auto;
+}

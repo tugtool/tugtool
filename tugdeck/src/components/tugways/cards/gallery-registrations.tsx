@@ -80,6 +80,7 @@ import {
   GalleryBashMountInSavedState,
 } from "./gallery-bash-tool-block";
 import { GalleryPinnedHeaders } from "./gallery-pinned-headers";
+import { GalleryFileBlockFindFixture } from "./gallery-file-block-find-fixture";
 import "./gallery.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
@@ -499,6 +500,25 @@ export function registerGalleryCards(): void {
     componentId: "gallery-pinned-headers",
     contentFactory: (_cardId) => <GalleryPinnedHeaders />,
     defaultMeta: { title: "Pinned Headers (diagnostic)", icon: "Pin", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.textInput,
+  });
+
+  // Phase E.10 fixture: single FileBlock with a stable preservation
+  // key so the find row's `data-tug-focus-key` survives app-switch /
+  // card-switch / reload via the framework focus axis. Tests seed
+  // `bag.content` to make the card content-owning at runtime — the
+  // factory ignores the seeded content. Drives AT0071/AT0072/AT0073.
+  registerCard({
+    componentId: "gallery-file-block-find-fixture",
+    contentFactory: (_cardId) => <GalleryFileBlockFindFixture />,
+    defaultMeta: {
+      title: "FileBlock Find (fixture)",
+      icon: "Search",
+      closable: true,
+    },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

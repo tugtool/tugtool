@@ -55,17 +55,6 @@ body {
   --tugx-file-lang-bg:      var(--tug7-surface-highlight-primary-normal-hover-rest);
   --tugx-file-lang-radius:  var(--tug-radius-xs);
   --tugx-file-lang-size:    var(--tug-font-size-3xs);
-
-  /* Find UI input field — must read as visibly elevated over the
-   * strip-bg around it (rest) and elevated further when focused.
-   * The strip is `--tug7-surface-global-primary-normal-raised-rest`
-   * (indigo-violet i:5 t:11 on brio); the rest/focus tokens below
-   * pick titlebar-grade values (t:14 / t:15) so the contrast is
-   * unambiguous in both themes. The bare `field-primary-plain-*`
-   * tokens didn't contrast — `-hover` happens to match the strip's
-   * lightness, and `-active` simply doesn't exist in either theme. */
-  --tugx-file-find-input-bg:       var(--tug7-surface-card-primary-normal-titlebar-inactive);
-  --tugx-file-find-input-bg-focus: var(--tug7-surface-card-primary-normal-titlebar-active);
 }
 
 .tugx-file {
@@ -184,127 +173,30 @@ body {
  * scoping hook for future file-specific overrides (none today) and a
  * stable test selector. */
 
-/* ---------- Find UI row ---------- */
+/* ---------- Find UI row — host-side sticky-stack binding ---------- */
 
-/* Find UI is progressive disclosure — mounted only while `findOpen`
- * is true. The resting affordances live in the chrome / identity
- * header (no dedicated `.tugx-file-actions` sticky strip), so the
- * find row pins directly under the header, not under a
- * "+ actions-height" intermediate band.
- *
- * Sticky stack consumes the upstream pin chain:
- *  - `--tugx-pin-stack-top`: outer entry-header height.
- *  - `--tugx-toolblock-header-height`: wrapper-chrome header height
- *    in embedded composition (zero in standalone).
- *  - `--tugx-file-header-height`: this body kind's identity header
+/* The find UI is now composed from `<TugBlockFindRow>`, which carries
+ * `data-slot="tug-block-find-row"` and `.tugx-block-find` as its root
+ * class. FileBlock passes the `.tugx-file-find` className to bind the
+ * row's `--tugx-block-find-top` to FileBlock's local telescoping-pin
+ * stack:
+ *  - `--tugx-pin-stack-top`: outer entry-header height (transcript /
+ *    pane header chain).
+ *  - `--tugx-toolblock-header-height`: wrapper-chrome header height in
+ *    embedded composition (zero in standalone).
+ *  - `--tugx-file-header-height`: FileBlock's identity-header height
  *    in standalone composition (zero when `embedded={true}` — the
- *    header is suppressed and the chrome header is the only one
- *    above this row).
+ *    header is suppressed and the chrome header is the only one above
+ *    this row).
  *
- * Background: `--tugx-block-strip-bg` matches the chrome / identity
- * strip so the two-row stack (header + find) reads as one visual
- * stripe when find is active.
- */
+ * All other find-row appearance (background, gaps, input wrap, clear
+ * button, count, options) lives in `tug-block-find-row.css` under the
+ * `--tugx-block-find-*` token family. FileBlock contributes only the
+ * binding to its host-specific stack. */
 .tugx-file-find {
-  position: sticky;
-  top: calc(
+  --tugx-block-find-top: calc(
     var(--tugx-pin-stack-top, 0px)
     + var(--tugx-toolblock-header-height, 0px)
     + var(--tugx-file-header-height, 0px)
   );
-  z-index: 1;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--tug-space-xs);
-  padding: var(--tug-space-2xs) var(--tug-space-sm);
-  background: var(--tugx-block-strip-bg);
-  border-bottom: 1px solid var(--tugx-block-strip-border);
-  color: var(--tugx-block-text-color);
-  font-family: var(--tug-font-family-sans);
-  font-size: var(--tug-font-size-2xs);
-}
-
-/* Input wrap — hosts the borderless TugInput and the absolutely-
- * positioned clear-X button. The wrap owns the input frame
- * (background, radius) so the inline clear button can sit inside the
- * field's visible bounds. */
-.tugx-file-find-input-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-  flex: 1 1 14em;
-  min-width: 8em;
-  max-width: 22em;
-  border-radius: var(--tug-radius-xs);
-  background: var(--tugx-file-find-input-bg);
-  transition: background var(--tug-motion-duration-fast) var(--tug-motion-easing-standard);
-}
-
-.tugx-file-find-input-wrap:focus-within {
-  /* Focused state bumps to the brighter active titlebar token —
-   * unambiguous contrast against rest + against the surrounding
-   * strip. Border on the input stays absent (`borderless` on
-   * TugInput) so focus is signaled purely by the bg shift. */
-  background: var(--tugx-file-find-input-bg-focus);
-}
-
-.tugx-file-find-input {
-  flex: 1 1 auto;
-  min-width: 0;
-  /* TugInput is `borderless` here — strip its own background so the
-   * wrap's bg shows through. The wrap owns the focus paint. */
-  background: transparent !important;
-  padding-right: var(--tug-space-lg);
-}
-
-.tugx-file-find-clear {
-  position: absolute;
-  inset-inline-end: var(--tug-space-2xs);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--tugx-block-text-color-muted);
-  cursor: pointer;
-  line-height: 0;
-}
-
-.tugx-file-find-clear:hover {
-  background: var(--tug7-surface-highlight-primary-normal-hover-rest);
-  color: var(--tugx-block-text-color);
-}
-
-.tugx-file-find-clear > svg {
-  width: 12px;
-  height: 12px;
-}
-
-/* Checkbox group — generous gap between options so the three
- * semantic toggles read as a related cluster, not as runs of words
- * adjacent to the navigation buttons. */
-.tugx-file-find-options {
-  display: flex;
-  align-items: center;
-  gap: var(--tug-space-xl);
-  margin-inline-start: var(--tug-space-md);
-}
-
-.tugx-file-find-count {
-  color: var(--tugx-block-text-color-muted);
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-  white-space: nowrap;
-}
-
-/* Two flex spacers — one before the count, one after — share the
- * residual space equally so the count anchors midway between the
- * checkbox group and the Done button. */
-.tugx-file-find-spacer {
-  flex: 1 1 auto;
 }

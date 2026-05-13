@@ -26,11 +26,14 @@
  *    is the persistent toggle handle: embedded-mode hosts hide the
  *    header, so the cue must also portal into the host's actions slot
  *    or the user could expand but not collapse back.
- *  - Find row — `.tugx-file-find`, mounted only while `findOpen` is
- *    true. Sticky beneath the chrome / identity header. Carries the
- *    full Find UI (TugInput + nav buttons + checkboxes + match count
- *    + Done) so the resting chrome is just an icon-sized trigger and
- *    the multi-control UI is progressive disclosure.
+ *  - Find row — `<TugBlockFindRow>` mounted with `.tugx-file-find`
+ *    appended to its root (the FileBlock-side className binds the
+ *    row's `--tugx-block-find-top` to the local sticky-stack
+ *    composition). The row mounts only while `findSession.state.open`
+ *    is true; sticky beneath the chrome / identity header. State,
+ *    focus discipline, reload-survival slot, and the
+ *    `data-tug-focus-key` axis live in `useBlockFindSession`
+ *    (a consumer of the framework focus axis per [D95]).
  *  - Body — `<TugCodeView>` (expanded) or nothing (collapsed). CM6
  *    isn't mounted while collapsed so a huge file doesn't pay the
  *    mount cost until the user reveals it.
@@ -82,12 +85,12 @@
  *    state because it controls *what* is rendered (one of two
  *    branches), not *how* a rendered element looks. The substrate's
  *    own appearance state lives in CM6 per its module docstring.
- *  - [L11] FileBlock owns the find session — `findOpen`, `findQuery`,
- *    the codeViewRef delegate, the open/close lifecycle — and is
- *    therefore the responder for `FIND`, `FIND_NEXT`, and
- *    `FIND_PREVIOUS`. Each Cmd-F / Cmd-G / Shift-Cmd-G keystroke
- *    arrives via the static keybinding map → responder-chain
- *    dispatch; no document-level listeners.
+ *  - [L11] FileBlock owns the find session via `useBlockFindSession`
+ *    and the codeViewRef delegate, and is therefore the responder for
+ *    `FIND`, `FIND_NEXT`, and `FIND_PREVIOUS`. The session's action
+ *    map is spread into FileBlock's responder so each Cmd-F / Cmd-G /
+ *    Shift-Cmd-G keystroke arrives via the static keybinding map →
+ *    responder-chain dispatch; no document-level listeners.
  *  - [L19] file pair (`.tsx` + `.css`), exported props interface,
  *    `data-slot="file-body"` on the root, this docstring.
  *  - [L20] component-token sovereignty — owns the `--tugx-file-*`
@@ -110,19 +113,11 @@ import "./file-block.css";
 
 import React from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, ChevronUp, X } from "lucide-react";
 import type { SelectionRange } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 
-import { TugInput } from "@/components/tugways/tug-input";
-import { TugCheckbox } from "@/components/tugways/tug-checkbox";
-import { TugPushButton } from "@/components/tugways/tug-push-button";
-import { TugIconButton } from "@/components/tugways/tug-icon-button";
-import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { useOptionalResponder } from "@/components/tugways/use-responder";
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
-import { TUG_ACTIONS, type TugAction } from "@/components/tugways/action-vocabulary";
-import type { ActionHandler } from "@/components/tugways/responder-chain";
 import {
   TugCodeView,
   type TugCodeViewDelegate,
@@ -130,6 +125,8 @@ import {
 import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
 import { attachOuterScrollOnModifierWheel } from "@/components/tugways/internal/use-outer-scroll-on-modifier-wheel";
+import { useBlockFindSession } from "@/components/tugways/internal/use-block-find-session";
+import { TugBlockFindRow } from "@/components/tugways/internal/tug-block-find-row";
 import {
   useComponentStatePreservation,
   useSavedComponentState,
@@ -944,52 +941,63 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   }, [data?.content]);
   const getFileText = React.useCallback(() => fileTextRef.current, []);
 
-  // ---- Find UI state ------------------------------------------------------
+  // ---- Find UI session ----------------------------------------------------
   //
-  // FileBlock owns the Find UI chrome (uses `TugInput`, `TugIconButton`,
-  // `TugCheckbox`) so the look matches the rest of the Tug component
-  // vocabulary. State is local — closing the row resets to defaults so
-  // the next open is a clean find session.
-  const [findOpen, setFindOpen] = React.useState<boolean>(false);
-  const [findQuery, setFindQuery] = React.useState<string>("");
-  const [findCaseSensitive, setFindCaseSensitive] = React.useState<boolean>(false);
-  const [findRegexp, setFindRegexp] = React.useState<boolean>(false);
-  const [findWholeWord, setFindWholeWord] = React.useState<boolean>(false);
-  const [findMatchCount, setFindMatchCount] = React.useState<number>(0);
-  const findInputRef = React.useRef<HTMLInputElement | null>(null);
-
-  // Responder form wires each checkbox's `senderId` to a state setter
-  // so toggles land in React state without each control needing its
-  // own `onChange`. TugInput uses native `onChange` (it routes typing
-  // through the standard React change event, not the responder chain),
-  // so the query string isn't a form slot here. `parentId` opts into
-  // a child relationship with fileBlockResponder so chain walks from
-  // inside the form reach FileBlock's FIND_NEXT / FIND_PREVIOUS
-  // handlers.
-  const findCaseId = React.useId();
-  const findRegexpId = React.useId();
-  const findWordId = React.useId();
-  const findForm = useResponderForm({
-    parentId: fileBlockResponderId,
-    toggle: {
-      [findCaseId]: setFindCaseSensitive,
-      [findRegexpId]: setFindRegexp,
-      [findWordId]: setFindWholeWord,
+  // Single source for the find-row state machine, focus discipline,
+  // reload-survival slot, and `data-tug-focus-key` composition. The hook
+  // (consumer of the framework focus axis per [D95]) owns the row's
+  // internal lifecycle; FileBlock contributes the CM6-specific glue:
+  // pre-open work (uncollapse + disengage-follow-bottom + first-responder
+  // promotion) and the substrate query push / navigation calls.
+  const findSession = useBlockFindSession({
+    scope: "file-block-find",
+    componentStatePreservationKey,
+    parentResponderId: fileBlockResponderId,
+    navigation: {
+      findNext: () => codeViewRef.current?.findNext(),
+      findPrevious: () => codeViewRef.current?.findPrevious(),
+      clearSearch: () => codeViewRef.current?.clearSearch(),
+    },
+    onBeforeOpen: () => {
+      if (collapsed) {
+        // Reveal the body so the substrate is mounted and the search
+        // state has somewhere to apply. Disengage the host list's
+        // bottom-pin in the same beat (mirrors `toggleCollapsed`).
+        rootRef.current?.dispatchEvent(
+          new CustomEvent("tug-disengage-follow-bottom", { bubbles: true }),
+        );
+        if (collapsedProp === undefined) {
+          setLocalCollapsed(false);
+        }
+        onToggleCollapsed?.(false);
+      }
+      // Promote FileBlock to first-responder. The Search button (when
+      // invoked by click) carries `data-tug-focus="refuse"`, so the
+      // chain provider's pointerdown skipped chain promotion. Promoting
+      // here guarantees Cmd-F dispatches arriving while the chain is
+      // still settling find their way home. Idempotent if we already
+      // own first-responder.
+      chainManager?.makeFirstResponder(fileBlockResponderId);
     },
   });
 
   // Push query + options to CM6 whenever the user types or toggles an
-  // option, then read back the live match count so the find row's
-  // count display ("N matches") reflects the current query. Empty
-  // query is a valid state — CM6 clears highlights when it sees an
-  // empty search string, and `getMatchCount` returns 0 for invalid
-  // queries.
+  // option, then read back the live match count so the row's count
+  // display reflects the current query. Empty query is a valid state —
+  // CM6 clears highlights when it sees an empty search string, and
+  // `getMatchCount` returns 0 for invalid queries.
   //
-  // `useLayoutEffect` so the match-highlight repaint lands in the
-  // same paint as the input update. With `useEffect` the effect runs
-  // AFTER the browser paints, producing a one-frame lag between the
-  // input character commit and the highlights repainting against the
-  // new query.
+  // `useLayoutEffect` so the match-highlight repaint lands in the same
+  // paint as the input update. With `useEffect` the effect would run
+  // AFTER the browser paints, producing a one-frame lag.
+  const {
+    open: findOpen,
+    query: findQuery,
+    caseSensitive: findCaseSensitive,
+    regexp: findRegexp,
+    wholeWord: findWholeWord,
+  } = findSession.state;
+  const { setMatchCount: setFindMatchCount } = findSession;
   React.useLayoutEffect(() => {
     if (!findOpen) return;
     const delegate = codeViewRef.current;
@@ -1001,187 +1009,28 @@ export const FileBlock: React.FC<FileBlockProps> = ({
       wholeWord: findWholeWord,
     });
     setFindMatchCount(delegate.getMatchCount());
-  }, [findOpen, findQuery, findCaseSensitive, findRegexp, findWholeWord]);
-
-  const openFind = React.useCallback(() => {
-    if (collapsed) {
-      // Reveal the body first so the substrate is mounted and the
-      // search state has somewhere to apply. Disengage the host list's
-      // bottom-pin in the same beat (mirrors `toggleCollapsed`).
-      rootRef.current?.dispatchEvent(
-        new CustomEvent("tug-disengage-follow-bottom", { bubbles: true }),
-      );
-      if (collapsedProp === undefined) {
-        setLocalCollapsed(false);
-      }
-      onToggleCollapsed?.(false);
-    }
-    // Promote FileBlock to first-responder. Same reasoning as
-    // toggleCollapsed: the Find button (when invoked by click) is
-    // a `TugPushButton` with `data-tug-focus="refuse"`, so the
-    // chain provider skipped chain promotion on its pointerdown.
-    // The focus useLayoutEffect below will eventually move
-    // first-responder to the find form via the input's focus event,
-    // but doing this here also guarantees that Cmd-F dispatches
-    // arriving while the chain is still settling find their way
-    // home. Idempotent if we already own first-responder.
-    chainManager?.makeFirstResponder(fileBlockResponderId);
-    setFindOpen(true);
-    // Two focus paths cover both "first open" and "already open":
-    //  - First open: the input doesn't exist yet (find row hasn't
-    //    rendered). The useLayoutEffect below picks it up after the
-    //    `setFindOpen(true)` commit and lands focus + select on the
-    //    fresh input.
-    //  - Already open: `setFindOpen(true)` is a no-op (already true),
-    //    React doesn't re-commit, the effect doesn't re-run. Focus
-    //    + select directly so a repeated Cmd-F snaps the caret back
-    //    into the field and pre-selects the query — same behavior
-    //    Safari / VS Code / Xcode ship.
-    // [L05] both paths are synchronous to the keystroke (no rAF, no
-    // setTimeout); they read live refs at fire time.
-    findInputRef.current?.focus();
-    findInputRef.current?.select();
   }, [
-    chainManager,
-    collapsed,
-    collapsedProp,
-    fileBlockResponderId,
-    onToggleCollapsed,
+    findOpen,
+    findQuery,
+    findCaseSensitive,
+    findRegexp,
+    findWholeWord,
+    setFindMatchCount,
   ]);
-
-  // Focus + select the find input when the find row mounts.
-  // `useLayoutEffect` runs after React commits the new tree but
-  // before the browser paints, so the input ref has been assigned
-  // and the focus call lands on a real element. The early-return
-  // guards the "find row unmounted" pass so we don't try to focus
-  // a stale ref. [L05] alternative to rAF.
-  React.useLayoutEffect(() => {
-    if (!findOpen) return;
-    findInputRef.current?.focus();
-    findInputRef.current?.select();
-  }, [findOpen]);
-
-  const closeFind = React.useCallback(() => {
-    setFindOpen(false);
-    // Reopening should start fresh; clear local state and tell the
-    // substrate to drop the query + close CM6's hidden panel so the
-    // match-highlight overlay is fully torn down.
-    setFindQuery("");
-    setFindCaseSensitive(false);
-    setFindRegexp(false);
-    setFindWholeWord(false);
-    setFindMatchCount(0);
-    codeViewRef.current?.clearSearch();
-  }, []);
-
-  // Inline clear-X handler — wipes the query but keeps the find row
-  // open so the user can type a new query without a round-trip
-  // through the Search button.
-  const clearFindQuery = React.useCallback(() => {
-    setFindQuery("");
-    findInputRef.current?.focus();
-  }, []);
-
-  const handleFindKeyDown = React.useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        // Two-step Escape: first press wipes the query (keeping the
-        // find row open for a fresh search); a second press on the
-        // now-empty input closes the row. Matches common editor
-        // behavior (VS Code, Xcode).
-        if (findQuery.length > 0) {
-          clearFindQuery();
-        } else {
-          closeFind();
-        }
-        return;
-      }
-      if (e.key === "Enter") {
-        e.preventDefault();
-        // Same guard as the navigation buttons — Enter on an empty
-        // input must NOT trigger CM6's openSearchPanel-from-selection
-        // fallback, which would resurrect the previous query.
-        if (findQuery.length === 0) return;
-        if (e.shiftKey) {
-          codeViewRef.current?.findPrevious();
-        } else {
-          codeViewRef.current?.findNext();
-        }
-      }
-    },
-    [closeFind, clearFindQuery, findQuery.length],
-  );
-
-  // Navigation guards — when the input is empty there is no active
-  // query, so a Next/Prev call must be a no-op. CM6's bundled
-  // `cmFindNext` wraps a `searchCommand` fallback that, when given an
-  // invalid query, calls `openSearchPanel(view)` — and that function
-  // re-seeds the query from the current selection. After a clear,
-  // the user's old match is still selected, so the fallback would
-  // resurrect the previous query ("for") and findNext would navigate
-  // to it. Guarding at the host keeps the no-op behavior intuitive.
-  const handleFindNext = React.useCallback(() => {
-    if (findQuery.length === 0) return;
-    codeViewRef.current?.findNext();
-  }, [findQuery.length]);
-  const handleFindPrevious = React.useCallback(() => {
-    if (findQuery.length === 0) return;
-    codeViewRef.current?.findPrevious();
-  }, [findQuery.length]);
 
   // ---- Responder registration ------------------------------------------------
   //
-  // FileBlock owns the find session — `findOpen`, `findQuery`, the
-  // codeViewRef delegate, and the open / close lifecycle. Per [L11]
-  // ("Controls emit actions; responders own state that actions operate
-  // on") it must be the responder for the find-related actions.
-  //
-  // Registered actions:
-  //  - `FIND` — opens the find row. Reachable from anywhere inside
-  //    FileBlock's subtree (CM6 focus, find input focus, button focus,
-  //    cell focus). Dispatched by ⌘F via the static keybinding map.
-  //  - `FIND_NEXT` / `FIND_PREVIOUS` — advance / retreat through
-  //    matches against the active query. Empty / invalid query is a
-  //    silent no-op so the keystroke doesn't accidentally seed a
-  //    query from the current selection (CM6's `searchCommand`
-  //    fallback would otherwise resurrect a prior query).
-  //    Dispatched by ⌘G / ⇧⌘G via the static keybinding map.
-  //
-  // Latest-refs for the handlers — the responder is registered ONCE
-  // at mount with stable handlers ([L07]: handlers must read current
-  // state through refs, never stale closures). The handlers below
-  // read `findQueryRef.current` / `codeViewRef.current` at fire time.
-  const findQueryRef = React.useRef(findQuery);
-  React.useLayoutEffect(() => {
-    findQueryRef.current = findQuery;
-  }, [findQuery]);
-  const openFindRef = React.useRef(openFind);
-  React.useLayoutEffect(() => {
-    openFindRef.current = openFind;
-  }, [openFind]);
-
-  const fileBlockActions = React.useMemo<
-    Partial<Record<TugAction, ActionHandler>>
-  >(
-    () => ({
-      [TUG_ACTIONS.FIND]: () => {
-        openFindRef.current?.();
-      },
-      [TUG_ACTIONS.FIND_NEXT]: () => {
-        if (findQueryRef.current.length === 0) return;
-        codeViewRef.current?.findNext();
-      },
-      [TUG_ACTIONS.FIND_PREVIOUS]: () => {
-        if (findQueryRef.current.length === 0) return;
-        codeViewRef.current?.findPrevious();
-      },
-    }),
-    [],
-  );
+  // FileBlock owns the find session through `findSession` and is the
+  // responder for the find-related actions per [L11]. The action map
+  // comes from the session — Cmd-F / Cmd-G / Shift-Cmd-G dispatched
+  // through the chain reach the session's handlers, which in turn call
+  // `findSession.open` / the substrate-specific navigation supplied
+  // above. Registered ONCE at mount with stable handlers ([L07]: the
+  // session's action map is memoized and the handlers read live state
+  // through refs).
   const fileBlockResponder = useOptionalResponder({
     id: fileBlockResponderId,
-    actions: fileBlockActions,
+    actions: findSession.actions,
   });
 
   // Composed root ref — forwards to both the local `rootRef` (used to
@@ -1242,7 +1091,7 @@ export const FileBlock: React.FC<FileBlockProps> = ({
         data-slot="file-search"
         disabled={collapsed}
         aria-label="Search in file"
-        onClick={openFind}
+        onClick={findSession.open}
       />
       <BlockCopyButton
         className="tugx-file-copy"
@@ -1330,112 +1179,11 @@ export const FileBlock: React.FC<FileBlockProps> = ({
       {portaledAffordances}
 
       {findOpen && !collapsed ? (
-        <findForm.ResponderScope>
-          <div
-            ref={findForm.responderRef}
-            className="tugx-file-find"
-            data-slot="file-find"
-            onKeyDown={(e) => {
-              // Catch Escape at the row level too so any focused
-              // descendant (checkboxes, buttons) can dismiss with Esc.
-              // Same two-step semantics as the input handler:
-              // clear-then-close.
-              if (e.key === "Escape") {
-                e.preventDefault();
-                if (findQuery.length > 0) {
-                  clearFindQuery();
-                } else {
-                  closeFind();
-                }
-              }
-            }}
-          >
-            <div className="tugx-file-find-input-wrap">
-              <TugInput
-                ref={findInputRef}
-                className="tugx-file-find-input"
-                type="text"
-                placeholder="Find"
-                value={findQuery}
-                onChange={(e) => setFindQuery(e.target.value)}
-                aria-label="Find in file"
-                focusStyle="background"
-                borderless
-                size="sm"
-                onKeyDown={handleFindKeyDown}
-              />
-              {findQuery.length > 0 ? (
-                <button
-                  type="button"
-                  className="tugx-file-find-clear"
-                  data-slot="file-find-clear"
-                  aria-label="Clear search"
-                  onClick={clearFindQuery}
-                >
-                  <X aria-hidden="true" />
-                </button>
-              ) : null}
-            </div>
-            <TugIconButton
-              icon={<ChevronUp />}
-              aria-label="Previous match"
-              disabled={findMatchCount === 0}
-              onClick={handleFindPrevious}
-            />
-            <TugIconButton
-              icon={<ChevronDown />}
-              aria-label="Next match"
-              disabled={findMatchCount === 0}
-              onClick={handleFindNext}
-            />
-            <div className="tugx-file-find-options">
-              <TugCheckbox
-                senderId={findCaseId}
-                checked={findCaseSensitive}
-                label="match case"
-                aria-label="Match case"
-                size="sm"
-              />
-              <TugCheckbox
-                senderId={findRegexpId}
-                checked={findRegexp}
-                label="regex"
-                aria-label="Regular expression"
-                size="sm"
-              />
-              <TugCheckbox
-                senderId={findWordId}
-                checked={findWholeWord}
-                label="word"
-                aria-label="Whole word"
-                size="sm"
-              />
-            </div>
-            <span className="tugx-file-find-spacer" />
-            <span
-              className="tugx-file-find-count"
-              data-slot="file-find-count"
-              aria-live="polite"
-            >
-              {findQuery.length === 0
-                ? ""
-                : findMatchCount === 0
-                  ? "no matches"
-                  : findMatchCount === 1
-                    ? "1 match"
-                    : `${findMatchCount.toLocaleString()} matches`}
-            </span>
-            <span className="tugx-file-find-spacer" />
-            <TugPushButton
-              size="sm"
-              emphasis="ghost"
-              onClick={closeFind}
-              aria-label="Close find"
-            >
-              Done
-            </TugPushButton>
-          </div>
-        </findForm.ResponderScope>
+        <TugBlockFindRow
+          findSession={findSession}
+          ariaLabel="Find in file"
+          className="tugx-file-find"
+        />
       ) : null}
 
       {collapsed ? null : (
@@ -1443,7 +1191,7 @@ export const FileBlock: React.FC<FileBlockProps> = ({
           ref={codeViewRef}
           value={data.content}
           language={language}
-          onFindRequested={openFind}
+          onFindRequested={findSession.open}
           onScrollIntoView={handleScrollMatchIntoView}
           // File viewer defaults: wrap on, line numbers on. The CM6
           // substrate handles the per-line scrollbar bug by

@@ -193,8 +193,7 @@ const tugCodeViewTheme: Extension = EditorView.theme({
   // painting match decorations — see `@codemirror/search/dist/index.js`
   // `highlight({query, panel})`). The composing component (e.g.
   // `FileBlock`) owns the user-facing Find chrome via the
-  // `<TugInput>` / `<TugCheckbox>` / `<TugIconButton>` row in its
-  // `.tugx-file-find` block; the bundled panel is never the visible
+  // `<TugBlockFindRow>` row; the bundled panel is never the visible
   // UI in this codebase.
   ".cm-panels": {
     display: "none",

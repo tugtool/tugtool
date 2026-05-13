@@ -344,15 +344,20 @@ Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension t
 - **Status:** ⏸ claimed at Phase E.9, immediately deferred. No production usage of FileBlock today places CM6 in a height-constrained container, so CM6's `scrollDOM` never accumulates non-zero `scrollTop` in current shipping flows. The line-relative restore (`meta.line = { number, offsetPx }`) ships in the FileBlock writer + reader and is unit-test-covered, but an end-to-end app-test would require fabricating a CM6-in-constrained-container scenario the production app doesn't expose. The tag is reserved for the day a real CM6-with-inner-scroll context lands (split-pane file viewer, sidebar preview, etc.); the app-test naturally fits at that point.
 - **Coverage today:** the line-relative writer + reader semantics are pinned in unit tests; the writer's attribute-update path is exercised by AT0061 (same channel; different meta family). No production regression goes unguarded.
 
-#### [AT0071] Content-owning focus survives app-switch — deferred to Phase E.10 commit 2
-- **Status:** 🔮 claimed at Phase E.10, lights up when the first consumer (find-row primitives + FileBlock migration) ships in commit 2. The framework primitive — `bag.focus` axis for content-owning cards — lands in commit 1 (AT0074 below); a real-app test of "focus inside a tide card survives cmd-tab away + back" requires a focusable target with `data-tug-focus-key` inside a tide card, which is the FileBlock find-row fixture commit 2 creates. The test file `at0071-content-owning-focus-survives-app-switch.test.ts` ships with that commit.
-- **Coverage today:** the framework axis is gated by AT0074 (engine fallback regression) plus the existing focus app-tests (at0034, at0035-tide, at0036) which exercise the engine path through the same precondition.
+#### [AT0071] Content-owning focus survives app-switch
+- **Status:** ✅ shipped at Phase E.10 commit 2 — exercises the framework `bag.focus` axis lift (commit 1) through the find-row primitives (commit 2). Fixture: `gallery-file-block-find-fixture` (a single FileBlock with a stable `componentStatePreservationKey`); tests seed `bag.content` so the card is classified content-owning at runtime even though the gallery factory itself is DOM-authority.
+- **Tests:** `at0071-content-owning-focus-survives-app-switch.test.ts`.
+- **Summary:** Open the FileBlock find row, type a query, then `simulateAppResign` + `simulateAppBecomeActive`. Asserts the on-bag `bag.focus = { kind: "dom", focusKey: "file-block-find/<componentStatePreservationKey>" }` (SAVE-site capture for content-owning cards), and that `document.activeElement` is the find input on the post-become-active tick (resolver-side restore through the precondition above the engine-managed branch).
 
-#### [AT0072] Content-owning focus survives card-switch — deferred to Phase E.10 commit 2
-- **Status:** 🔮 claimed at Phase E.10, lights up alongside AT0071 in commit 2. Same fixture, different gesture: click another card and back; assert focus returns to the FileBlock find input. Test file `at0072-content-owning-focus-survives-card-switch.test.ts` ships with the commit.
+#### [AT0072] Content-owning focus survives card-switch
+- **Status:** ✅ shipped at Phase E.10 commit 2 — same fixture as AT0071, different activation vector.
+- **Tests:** `at0072-content-owning-focus-survives-card-switch.test.ts`.
+- **Summary:** Two `gallery-file-block-find-fixture` cards (A + B) in one pane. Open the find row on A, type a query, click B's tab, then click A's tab. Asserts A's saved `bag.focus.kind === "dom"` after deactivation, and that focus is back on the find input (and the typed query is preserved) after reactivation.
 
-#### [AT0073] Content-owning focus survives reload — deferred to Phase E.10 commit 2
-- **Status:** 🔮 claimed at Phase E.10, lights up alongside AT0071 in commit 2. Combines the framework axis (commit 1) with the `useComponentStatePreservation` slot the find-row hook installs (commit 2): the gating boolean re-mounts the input synchronously-before-paint, and the cold-boot focus restore lands the caret. Test file `at0073-content-owning-focus-survives-reload.test.ts` ships with the commit.
+#### [AT0073] Content-owning focus survives Developer > Reload
+- **Status:** ✅ shipped at Phase E.10 commit 2 — combines the framework axis with the `useBlockFindSession` reload-survival slot.
+- **Tests:** `at0073-content-owning-focus-survives-reload.test.ts`.
+- **Summary:** Open the find row, type a query, `appReload`, then re-seed the deck on the new page with the bag the previous session wrote to disk. Asserts: `bag.components[<key>/file-block-find]` carries `{ open: true, query: "lorem" }`; `bag.focus` carries `{ kind: "dom", focusKey: "file-block-find/<key>" }`; mount-in-saved-state seeds the hook's `useState` from the saved slot so the row is open on first paint; the COLD-BOOT RESTORE site lands focus on the input. Pins the demanding case: the keyed target is conditionally mounted, so the open flag must restore synchronously-before-paint before the focus apply runs.
 
 #### [AT0074] Engine focus fallback when `bag.focus` is absent
 - **Status:** ✅ added at Phase E.10 commit 1 — gates the negative case of the new `bag.focus` precondition in `resolveActivationTarget` (focus-transfer.ts).
