@@ -1209,14 +1209,15 @@ export interface TransferFocusAfterMoveOptions {
  * pointercancel). Three-step body — no save here; drag-start
  * already captured the bag.
  *
- *   1. Resolve the activation target via {@link resolveActivationTarget}.
- *   2. Read the registered host root via `store.peekCardHostRoot`
- *      and gate through {@link canProgrammaticallyFocus}.
- *   3. Transfer:
- *      - `focus-element` → `el.focus()` + `restoreCardDomSelection`
- *      - `default-focus` → `traceApplyDefaultFocus` walk
- *      - `dispatch-activated` → `store.invokeActivationCallback`
- *      - `none` → return
+ *   1. Gate through {@link canProgrammaticallyFocus}.
+ *   2. Single-channel dispatch via {@link applyBagFocus}.
+ *   3. Post-dispatch DOM-selection restore.
+ *
+ * Phase E.11 Step 4a — migrated from the four-branch resolver
+ * (`focus-element` / `dispatch-activated` / `default-focus` /
+ * `none`) to the single-channel `applyBagFocus` dispatcher. The
+ * dispatcher's D11 yield rule preserves the substrate-hook
+ * precedence the OLD branch logic relied on implicitly.
  *
  * Called by `deck-manager#_detachCard` / `_moveCardToPane` after
  * their `notify()` (so the moved card's DOM is in its post-commit
@@ -1232,11 +1233,7 @@ export function transferFocusAfterMove(
 ): void {
   const { sourceCardId, store } = options;
 
-  // Step 1 — Resolve.
-  const target = resolveActivationTarget(sourceCardId, store);
-  if (target.kind === "none") return;
-
-  // Step 2 — Gate.
+  // Step 1 — Gate.
   const targetCardHostEl = store.peekCardHostRoot(sourceCardId);
   const allowed = canProgrammaticallyFocus(
     sourceCardId,
@@ -1245,59 +1242,25 @@ export function transferFocusAfterMove(
   );
   if (!allowed) return;
 
-  // Step 3 — Transfer.
-  if (target.kind === "focus-element") {
-    const doc = target.el.ownerDocument;
-    const activeBefore = formatElement(doc.activeElement);
-    measureFocusClaim(
-      "focus-transfer-after-move:focus-element",
-      sourceCardId,
-      doc,
-      () => target.el.focus(),
-    );
-    const activeAfter = formatElement(doc.activeElement);
-    deckTrace.record({
-      kind: "focus-call",
-      site: "focus-transfer-after-move",
-      cardId: sourceCardId,
-      targetSelector: describeTargetSelector(target.el, store, sourceCardId),
-      activeBefore,
-      activeAfter,
-      hidden: isElementHidden(target.el),
-    });
+  // Step 2 — Single-channel dispatch.
+  const result = applyBagFocus(sourceCardId, store, {
+    site: "focus-transfer-after-move",
+  });
 
+  // Step 3 — Post-dispatch DOM-selection restore.
+  if (result === "applied") {
     const bag = store.getCardState(sourceCardId);
-    if (bag?.domSelection !== undefined && bag.domSelection !== null) {
-      const cardRoot =
-        targetCardHostEl ?? store.peekCardHostRoot(sourceCardId);
-      if (cardRoot !== null) {
-        selectionGuard.restoreCardDomSelection(
-          sourceCardId,
-          bag.domSelection,
-          cardRoot,
-        );
-        deckTrace.record({
-          kind: "selection-restore",
-          cardId: sourceCardId,
-          via: "restoreCardDomSelection",
-        });
-      }
-    }
-    return;
-  }
-
-  if (target.kind === "default-focus") {
-    traceApplyDefaultFocus(
-      "focus-transfer-after-move-default",
-      sourceCardId,
-      target.cardRoot,
-    );
-    const bag = store.getCardState(sourceCardId);
-    if (bag?.domSelection !== undefined && bag.domSelection !== null) {
+    const cardRoot =
+      targetCardHostEl ?? store.peekCardHostRoot(sourceCardId);
+    if (
+      bag?.domSelection !== undefined &&
+      bag.domSelection !== null &&
+      cardRoot !== null
+    ) {
       selectionGuard.restoreCardDomSelection(
         sourceCardId,
         bag.domSelection,
-        target.cardRoot,
+        cardRoot,
       );
       deckTrace.record({
         kind: "selection-restore",
@@ -1305,26 +1268,6 @@ export function transferFocusAfterMove(
         via: "restoreCardDomSelection",
       });
     }
-    return;
-  }
-
-  // `dispatch-activated` — content factory's onCardActivated handles
-  // its own targeting.
-  const dispatchDoc =
-    typeof document !== "undefined"
-      ? document
-      : (store.peekCardHostRoot(sourceCardId)?.ownerDocument ?? null);
-  if (dispatchDoc !== null) {
-    measureFocusClaim(
-      "focus-transfer-after-move:dispatch-activated",
-      sourceCardId,
-      dispatchDoc,
-      () => {
-        store.invokeActivationCallback(sourceCardId, "transfer-after-move");
-      },
-    );
-  } else {
-    store.invokeActivationCallback(sourceCardId, "transfer-after-move");
   }
 }
 
