@@ -3061,6 +3061,101 @@ The post-mount restore was a mistake. It is removed, not retained as fallback. K
 
 ---
 
+##### Phase E.9 — Save layout geometry; first-paint accuracy at restore
+
+**Depends on:** Phase E.6 (region-scroll anchor metadata channel — `data-tug-scroll-state` + `meta` on `RegionScrollSnapshot[key]`); Phase E.8 (mount-in-saved-state primitives — `useSavedRegionScroll`, synchronous saved-state context accessors).
+
+**Why this phase exists.** Phase E.8 closed the component-axis and inner-scroller restore down to "first paint reflects saved state" by reading the bag synchronously at render time. The OUTER transcript scroller still hops: even with the anchor-metadata path, `TugListView` mounts with an empty `heightIndex`, so the first commit's apply effect (`tug-list-view.tsx:1252`) sees `restoreAnchorRef.current === null`, no-ops, and the browser paints at `scrollTop=0`. The MutationObserver-driven retry loop then refines across multiple commits as cells are measured — every refinement a visible micro-hop. Inner scrollers can also reflow when fonts load after first paint, producing a flash whose magnitude is bounded by the font-metric drift.
+
+The information loss is structural. At save time the framework had measured every cell's height (in `TugListView`'s `heightIndex`), CM6's content layout (in FileBlock), every virtualized line (in TerminalBlock's deterministic LINE_HEIGHT_PX grid). We threw all of it away and saved only `{x, y, anchor}`. The "settle window" the MutationObserver path patches over is a fiction: there's no real reason the restore should be reconstructing what we already had at save time.
+
+Phase E.9 captures the geometry that drives layout at save time and hydrates it before first paint at restore. With saved geometry, the anchor-resolve math gives the exact saved offset on the FIRST commit. Cells render with their known final heights (via inline `min-height`) so async sub-content fills its destined slot without shifting siblings. The scrollTop write at mount is exact, not estimated. There is no refinement loop in the happy path. The 300ms safety timer the previous proposal contemplated is not in this plan — timers are unreliable for async content delivery, and there is no async to wait for once geometry is hydrated.
+
+**Decisions.**
+
+- **Geometry lives in `meta` on `RegionScrollSnapshot[key]`.** The existing `data-tug-scroll-state` JSON channel is meta-agnostic on the framework side (`captureRegionScrolls` reads the attribute verbatim into `entry.meta`; `applyRegionScrolls` forwards it via `tug-region-scroll-set`'s `meta` field). Per-region writers extend the JSON payload; per-region listeners decode it. Three geometry families ship in E.9:
+  1. **Variable-height virtualized list (`TugListView`).** `meta.cellHeights: number[]` — the live `heightIndex` snapshot at save time, one entry per cell. On restore, `TugListView` hydrates its own `HeightIndex` from this array before first commit, so `offsetForIndex(anchorIndex)` returns the exact saved offset on the first paint.
+  2. **Code editor (`FileBlock` CM6).** `meta.line: { number: number; offsetPx: number }` — content-anchored scroll position (1-based line number + intra-line pixel offset). On restore, the FileBlock dispatches a CM6 effect that scrolls the saved line to the top of the viewport. Robust to font reflow: the right *line* shows up regardless of how the font's metric resolves.
+  3. **Deterministic virtualized scroller (`TerminalBlock`).** Lines are `LINE_HEIGHT_PX`-grained; pixel scrollTop maps deterministically to line index. No geometry capture needed beyond what's already saved. Validation field `meta.scrollHeight` is captured for symmetry but isn't consulted at restore.
+- **Synchronous anchor handoff at `TugListView` mount.** Read `useSavedRegionScroll(scrollKey)` at render time. In a mount `useLayoutEffect`, if `meta.anchor` is present, write directly into `restoreAnchorRef.current` BEFORE CardHost's region-scroll effect fires. The companion apply effect at `tug-list-view.tsx:1252` then sees the anchor on commit 1 — and, with the hydrated `heightIndex`, computes the exact saved scrollTop and writes it before the first paint.
+- **`min-height` lock on virtualized cells.** When `meta.cellHeights[i]` is present and the cell hasn't yet measured its own height, render the cell with inline `min-height: ${savedHeight}px`. This locks the layout to the saved geometry so async sub-content (markdown, image embeds, code highlighting) fills in WITHOUT shifting siblings. Once the cell's `ResizeObserver` reports its real measurement, the `heightIndex` updates; if the new height differs from the saved height, the apply effect refines `scrollTop` to keep the anchor cell fixed. In the happy path the saved and real heights match (same content, same viewport, same font), so refinement is a no-op.
+- **No opacity mask. No timer. No rAF.** The MutationObserver-driven settle-and-refine loop in `card-host.tsx:1076` stays as the fallback for missing/stale geometry (old bags from pre-E.9 sessions, brand-new content with no prior measurement) and for inevitable late-stage refinements; but in the cold-boot happy path with saved geometry, the loop is a no-op from frame 1.
+- **No edge-case branches in E.9.** Transcript mutation between save and restore (anchor index shifts), viewport resize (cell heights change), version skew (unknown cell ids) — all out of scope. Index-based anchors and per-key heightIndex round-trip suffice for the in-session restore case which is the user-facing regression. The settle-refine loop handles whatever divergence appears; the bag from a stale layout is still strictly better than no bag.
+- **The previously contemplated opacity-mask plan is dropped.** It would have hidden the existing drift instead of fixing it. Phase E.9 fixes the drift.
+
+**Tuglaws compliance (Phase E.9).**
+
+- **[L01] One `root.render()`.** ✓ No new render-root behavior.
+- **[L02] External state through `useSyncExternalStore`.** ✓ Saved `meta.cellHeights` flows into the React tree through `useSavedRegionScroll` (already `useSyncExternalStore`-wired in Phase E.8). The per-component writer reads its own live state via refs and writes the `data-tug-scroll-state` attribute — same channel Phase E.6 established.
+- **[L03] `useLayoutEffect` for registrations.** ✓ The new mount-time hydration in `TugListView` (anchor stash + heightIndex hydration) lives in `useLayoutEffect` so the apply effect sees the stashed anchor on commit 1.
+- **[L04] No parent effect triggering child setState then measuring.** ✓ Geometry consumption is render-time and effect-time within the same component. No parent-to-child setState driving downstream measurement.
+- **[L05] No `requestAnimationFrame` for state-dependent operations.** ✓ The previous proposal's rAF + timer is dropped. The settle gate (`MutationObserver` + tolerance check in `card-host.tsx:1073`) stays as the fallback; it observes DOM, not time.
+- **[L06] Appearance via CSS/DOM, never React state.** ✓ `scrollTop` writes are direct DOM. Cell `min-height` locks are inline `style` writes. `heightIndex` is data (the virtualizer's math reads it for cell positioning) — lives in the saved bag, hydrated into a ref-held instance, never crosses React state.
+- **[L07] Live ref reads in handlers.** ✓ Writers read live `heightIndex.snapshot()` at attribute-write time. Apply effects read `restoreAnchorRef.current` live.
+- **[L19] Component authoring guide.** ✓ Update `component-authoring.md`'s "Restoring saved state at mount" section to describe the geometry-capture extension (when a substrate's `scrollTop` alone isn't enough, what shape its `meta` should take, how its listener decodes). Update `state-preservation.md`'s region-scroll axis section to describe the `meta` schema.
+- **[L22] External state driving DOM updates observes the store directly.** ✓ The MutationObserver-driven apply path is unchanged; it observes DOM and reads the store. The new mount-time hydration path is a one-shot at first commit, no observer.
+- **[L23] Preserve user-visible state.** ★ This phase is the L23 strengthening. The previous Phase E.6 / E.8 work guaranteed "first paint reflects saved state" for the simple cases; Phase E.9 closes the variable-height-virtualization gap by saving the geometry that makes "saved state" interpretable at first paint. The contract becomes: user-visible state at first paint after restore = user-visible state at last save, INCLUDING the layout that made it user-visible.
+- **[L24] Three state zones.** ✓ Geometry is data (non-rendering consumers — the virtualizer's math). Lives in the saved bag's `meta` field. Drives appearance writes (`scrollTop`, `min-height`). No state crosses zones.
+
+**Artifacts (Phase E.9):**
+
+- Updated: `tugdeck/src/layout-tree.ts`
+  - Extend the doc comment on `RegionScrollSnapshot` to spec the `meta` schema families. The TypeScript shape stays `meta?: unknown` (per-region writers own the schema); only the prose documents the conventions for `meta.anchor`, `meta.cellHeights`, and `meta.line`.
+- Updated: `tugdeck/src/components/tugways/tug-list-view.tsx`
+  - **Writer.** Extend the `data-tug-scroll-state`-writing `useLayoutEffect` (currently at `tug-list-view.tsx:1196`) to serialize the live `heightIndex` snapshot into `meta.cellHeights` alongside the existing `meta.anchor`. The snapshot is an array of measured heights (one per cell index up to the current measured cap); unmeasured cells get an `undefined` slot OR are omitted (decision: omit, with the index implicit in the array offset — cleaner JSON, smaller bag).
+  - **Reader (mount-time hydration).** Read `useSavedRegionScroll(scrollKey)` at render time. In a new mount `useLayoutEffect`, if `meta.cellHeights` is present, hydrate the live `HeightIndex` (the imperative one held in `heightIndexRef.current`) from the array; if `meta.anchor` is present, write directly into `restoreAnchorRef.current`. Both writes happen BEFORE the companion apply effect at `tug-list-view.tsx:1252` runs in the same commit.
+  - **Cell `min-height` lock.** When rendering a cell whose saved height is known (i.e., `meta.cellHeights[cellIndex]` was hydrated and the cell hasn't been re-measured by `ResizeObserver` since mount), apply inline `style={{ minHeight: \`${savedHeight}px\` }}` to the cell wrapper. The lock holds until the cell's own measurement supersedes it; the `ResizeObserver` path updates the live `heightIndex` and clears the lock.
+- Updated: `tugdeck/src/components/tugways/body-kinds/file-block.tsx`
+  - **Writer.** Extend the existing CM6 stamp `useLayoutEffect` (currently writes `data-tug-scroll-key`) to also write `data-tug-scroll-state` on every commit. The serialized `meta` includes `line: { number, offsetPx }` derived from CM6's `view.posAtCoords` (or `lineBlockAtHeight` for the topmost visible line) plus the intra-line pixel offset.
+  - **Reader.** Read `useSavedRegionScroll(fileScrollKey)` at render time (already wired in Phase E.8 for raw `y`). Extend the mount-time write at `file-block.tsx:715` to consult `meta.line` first: if present, dispatch a CM6 effect that scrolls to `view.lineBlockAt(view.state.doc.line(savedLineNumber).from).top + offsetPx`. If absent, fall back to the existing pixel `scrollDOM.scrollTop` write.
+- Updated: `tugdeck/src/components/tugways/body-kinds/terminal-block.tsx`
+  - **Writer.** Add `data-tug-scroll-state` write in the existing virtualized-scroller setup path (`appendVirtualizedBody`). The serialized `meta` is just `{ scrollHeight: totalContentPx }` — a validation field, not strictly required for restore (TerminalBlock's lines are LINE_HEIGHT_PX-grained), but useful for future cross-version checks and for the `state-preservation.md` documentation to show the canonical writer-side shape.
+- Updated: `tugdeck/src/components/chrome/card-host.tsx`
+  - `captureRegionScrolls` is meta-agnostic and already round-trips arbitrary JSON. No changes here.
+  - `applyRegionScrolls` likewise. No changes here.
+  - The region-scroll settle-tolerance loop (`apply()` at `card-host.tsx:1076`) stays unchanged: it's the fallback when saved geometry is absent OR when the apply effect's first-commit write didn't fully land.
+- Updated: `tugdeck/src/components/tugways/use-component-state-preservation.tsx`
+  - `SavedRegionScroll`'s `meta` type stays `unknown`; the prose docstring is updated to enumerate the three meta schema families.
+- Updated: `tuglaws/state-preservation.md`
+  - New subsection under the region-scroll axis: "Saving geometry for first-paint accuracy." Document `meta.cellHeights` (variable-height lists), `meta.line` (CM6), `meta.scrollHeight` (validation). State the L23 contract: first paint after restore reproduces both scroll position AND the layout that made it user-visible.
+- Updated: `tuglaws/component-authoring.md`
+  - Extend "Restoring saved state at mount" with a "Custom geometry meta" subsection: when raw `{x, y}` is enough, when it isn't, what shape `meta` should take, what the writer + listener need to do.
+- Updated: `tuglaws/app-test-inventory.md` — register AT0069, AT0070.
+- New: `tests/app-test/at0069-outer-transcript-first-paint.test.ts` — pin that the outer transcript scrollport's FIRST observed `scrollTop` after Developer > Reload matches the saved value within sub-cell tolerance (no observed `0`-frame, no observed estimated-then-refined sequence).
+- New: `tests/app-test/at0070-file-block-line-relative-restore.test.ts` — pin that FileBlock CM6 restore is line-relative: scroll a long file to mid-document, save, reload, assert the FIRST observed visible-top-line matches the saved line number. (Implementation: read CM6's `view.viewport.from`/`to` via the test surface after mount.)
+- New: `tugdeck/src/components/tugways/__tests__/tug-list-view.geometry-restore.test.tsx` — unit test for the `meta.cellHeights` hydration: render TugListView with a saved bag carrying cellHeights, assert the `HeightIndex` is populated before first commit, assert the rendered cells carry `min-height` style.
+
+**Tasks (Phase E.9):**
+
+- [ ] **Extend `data-tug-scroll-state` schema doc on `RegionScrollSnapshot`.** Prose-only — TypeScript stays `meta?: unknown`. Document the three meta-shape conventions: `anchor`, `cellHeights`, `line`.
+- [ ] **TugListView writer.** In the existing anchor-state writer (`useLayoutEffect` at `tug-list-view.tsx:1196`), capture `heightIndex.snapshot()` and serialize into `meta.cellHeights` alongside `meta.anchor`. Decide and document the omit-vs-undefined-slot encoding for unmeasured cells.
+- [ ] **TugListView reader (mount hydration).** New mount `useLayoutEffect` reads `useSavedRegionScroll(scrollKey)`. If `meta.cellHeights` is present, hydrate `heightIndexRef.current`. If `meta.anchor` is present, write directly into `restoreAnchorRef.current`. Both must complete BEFORE the apply effect at `tug-list-view.tsx:1252` runs in the same commit (effect-order: this new effect goes first).
+- [ ] **TugListView cell `min-height` lock.** Per-cell render decides whether to apply inline `min-height` from hydrated `cellHeights[index]`. Wear off when ResizeObserver reports the real measurement. Test that fast-loading cells don't get permanently locked to a stale saved height.
+- [ ] **FileBlock CM6 writer.** Stamp `data-tug-scroll-state` with `meta.line = { number, offsetPx }` derived from the live CM6 view on every commit.
+- [ ] **FileBlock CM6 reader.** At mount, prefer `meta.line` over raw `y` if present: dispatch CM6 `EditorView.scrollIntoView`-equivalent to land the saved line at the top of the viewport.
+- [ ] **TerminalBlock writer.** Add `data-tug-scroll-state` with `meta.scrollHeight: totalContentPx`. Reader unchanged (LINE_HEIGHT_PX deterministic; pixel scrollTop is exact).
+- [ ] **Document the geometry schema** in `state-preservation.md` and `component-authoring.md`. The convention is the contract; substrates that need richer meta extend it the same way.
+- [ ] **AT0069 + AT0070** — new app-tests pinning the first-paint accuracy.
+- [ ] **Unit test for `TugListView` heightIndex hydration.**
+
+**Tests (commands, Phase E.9):**
+
+- [ ] `bun test src/components/tugways/__tests__/tug-list-view.geometry-restore.test.tsx` — heightIndex hydration unit test green.
+- [ ] `bunx tsc --noEmit` — clean.
+- [ ] `bun run audit:tokens lint` — zero violations.
+- [ ] `bun test` (full suite) — green.
+- [ ] `just app-test at0067-bash-block-mount-in-saved-state.test.ts at0068-bash-block-inner-scroll-from-creation.test.ts at0061-region-scroll-anchor-apply.test.ts at0069-outer-transcript-first-paint.test.ts at0070-file-block-line-relative-restore.test.ts` — all green. AT0061 regression-checks anchor-only fallback for bags without `meta.cellHeights` (forward-compat with pre-E.9 bags).
+
+**Checkpoint (Phase E.9):**
+
+- [ ] Manual: open a tide-card with a long transcript and scroll to a mid-list position (anchor cell visible halfway down). Developer > Reload. The first paint shows the anchor cell at the same viewport position. No `scrollTop=0` flash. No estimated-then-refined micro-hops. The cells above and below the anchor occupy their saved-height slots with content slotting in as async resolves; no layout shift propagates to the anchor cell's position.
+- [ ] Manual: open a tide-card with a Read tool (FileBlock) scrolled to mid-document. Developer > Reload. The first paint shows the same line at the top of the CM6 viewport. Brief font-load reflow (if any) leaves the same line at the top; pixel position may shift sub-line-height but the user-visible line identity is preserved.
+- [ ] Manual: scroll a Bash tool (TerminalBlock) virtualized scroller to mid-output. Developer > Reload. First-paint position is exact (deterministic line height).
+- [ ] Manual: cmd-tab away from Tug.app, scroll a tide-card mid-transcript, cmd-tab back. No reshuffling. (Cross-session check — exercises the same save/restore primitives without a full reload.)
+- [ ] Manual: open a long tide-card session, click the fold cue on a mid-list Bash block to collapse it. Reload. The block restores collapsed, the cells below adjust accordingly, AND the anchor cell (the user's last viewport reference) stays at the same viewport position.
+
+---
+
 #### Step 11: EditToolBlock wrapper {#step-11}
 
 **Depends on:** #step-1, #step-10
