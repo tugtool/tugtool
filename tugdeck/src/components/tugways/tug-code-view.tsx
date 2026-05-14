@@ -191,10 +191,10 @@ const tugCodeViewTheme: Extension = EditorView.theme({
   // in the DOM. Mounting initializes the search-state `panel` field
   // (which CM6's `searchHighlighter` requires to be non-null before
   // painting match decorations — see `@codemirror/search/dist/index.js`
-  // `highlight({query, panel})`). The composing component (e.g.
-  // `FileBlock`) owns the user-facing Find chrome via the
-  // `<TugBlockFindRow>` row; the bundled panel is never the visible
-  // UI in this codebase.
+  // `highlight({query, panel})`). The `@codemirror/search` plumbing
+  // and the delegate's search methods stay dormant — no UI drives
+  // them today; they remain as latent capability for a future Find
+  // redesign.
   ".cm-panels": {
     display: "none",
   },

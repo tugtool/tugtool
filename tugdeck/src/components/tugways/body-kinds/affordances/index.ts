@@ -14,8 +14,6 @@
  *  - `BlockFoldCue` — chevron + count label, dispatches the
  *    bubbling `tug-disengage-follow-bottom` event before the
  *    toggle so a host `TugListView` releases its auto-pin lock.
- *  - `BlockFindButton` — magnifier + "Find" label, ready to wire
- *    to a block-specific find session.
  *
  * Adding a new affordance: create another component in this
  * directory, follow the same "encapsulate the contract, expose the
@@ -30,6 +28,3 @@ export type { BlockCopyButtonProps } from "./block-copy-button";
 
 export { BlockFoldCue } from "./block-fold-cue";
 export type { BlockFoldCueProps } from "./block-fold-cue";
-
-export { BlockFindButton } from "./block-find-button";
-export type { BlockFindButtonProps } from "./block-find-button";
