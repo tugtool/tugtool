@@ -102,16 +102,19 @@ async function runCrossPaneDrag(app: App, componentId: string): Promise<void> {
     `(typeof window.__tug !== "undefined") && (window.__tug.getActiveCardId() === "A")`,
   );
 
-  // engine-activation-dispatched fires for A with the
-  // "transfer-after-move" tag (drag-drop activation source).
+  // The cross-pane drop routes through `transferFocusAfterMove` →
+  // the single-channel `applyBagFocus` dispatcher (Phase E.11),
+  // which invokes A's registered engine hook — recorded as
+  // `engine-paint-mirror-active` with `caller: "via-engine-hook"`.
+  // (Pre-E.11 the equivalent gate was `engine-activation-dispatched`
+  // with `dispatchedFrom: "transfer-after-move"`; that path is retired.)
   await app.waitForCondition<boolean>(
     `(function(){
       var t = window.__tug.getDeckTrace({since: ${markBeforeDrag}});
       for (var i = 0; i < t.length; i++) {
-        if (t[i].kind === "engine-activation-dispatched"
+        if (t[i].kind === "engine-paint-mirror-active"
             && t[i].cardId === "A"
-            && t[i].engine === ${JSON.stringify(componentId)}
-            && t[i].dispatchedFrom === "transfer-after-move") return true;
+            && t[i].caller === "via-engine-hook") return true;
       }
       return false;
     })()`,

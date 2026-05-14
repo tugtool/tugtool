@@ -120,10 +120,13 @@ async function runSavedStateInactiveMount(app: App, componentId: string): Promis
   );
   await app.awaitEngineReady("B");
 
-  // Activate B. With bag.content present, resolver returns
-  // dispatch-activated → invokeActivationCallback fires →
-  // engine-activation-dispatched event lands → onCardActivated
-  // focuses the engine root.
+  // Activate B. With bag.content present, the single-channel
+  // `applyBagFocus` dispatcher (Phase E.11) resolves B to its
+  // engine and invokes the registered engine hook — recorded as
+  // `engine-paint-mirror-active` with `caller: "via-engine-hook"`
+  // — which focuses the engine root. (Pre-E.11 the equivalent
+  // gate was `engine-activation-dispatched` from
+  // `invokeActivationCallback`; that path is retired.)
   const markBeforeActivate = await app.markDeckTrace();
   await app.nativeClickAtElement(tabSelectorFor("B"));
   await app.waitForCondition<boolean>(
@@ -134,10 +137,9 @@ async function runSavedStateInactiveMount(app: App, componentId: string): Promis
     `(function(){
       var t = window.__tug.getDeckTrace({since: ${markBeforeActivate}});
       for (var i = 0; i < t.length; i++) {
-        if (t[i].kind === "engine-activation-dispatched"
+        if (t[i].kind === "engine-paint-mirror-active"
             && t[i].cardId === "B"
-            && t[i].engine === ${JSON.stringify(componentId)}
-            && t[i].dispatchedFrom === "transfer-for-activation") return true;
+            && t[i].caller === "via-engine-hook") return true;
       }
       return false;
     })()`,

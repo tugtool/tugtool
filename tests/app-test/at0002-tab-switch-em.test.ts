@@ -120,23 +120,26 @@ async function runRoundTrip(app: App, componentId: string): Promise<void> {
     `(typeof window.__tug !== "undefined") && (window.__tug.getActiveCardId() === "A")`,
   );
 
-  // The framework records `engine-activation-dispatched` ahead
-  // of invoking the registered onCardActivated. Wait for it.
+  // The framework's single-channel `applyBagFocus` dispatcher
+  // (Phase E.11) resolves A to its engine and invokes the
+  // registered engine hook, which records `engine-paint-mirror-active`
+  // with `caller: "via-engine-hook"`. Wait for it. (Pre-E.11 the
+  // equivalent gate was `engine-activation-dispatched` from
+  // `invokeActivationCallback`; that path is retired.)
   await app.waitForCondition<boolean>(
     `(function(){
       var t = window.__tug.getDeckTrace({since: ${markBeforeReturn}});
       for (var i = 0; i < t.length; i++) {
-        if (t[i].kind === "engine-activation-dispatched"
+        if (t[i].kind === "engine-paint-mirror-active"
             && t[i].cardId === "A"
-            && t[i].engine === ${JSON.stringify(componentId)}
-            && t[i].dispatchedFrom === "transfer-for-activation") return true;
+            && t[i].caller === "via-engine-hook") return true;
       }
       return false;
     })()`,
     { timeoutMs: 2000 },
   );
 
-  // onCardActivated focuses the engine root.
+  // The engine hook focuses the engine root.
   await app.waitForCondition<boolean>(
     `document.activeElement !== null && document.activeElement.matches(${JSON.stringify(PROMPT_INPUT_SELECTOR)}) && document.activeElement.closest('[data-card-id="A"]') !== null`,
     { timeoutMs: 2000 },

@@ -98,16 +98,19 @@ async function runDetach(app: App, componentId: string): Promise<void> {
   );
   expect(paneCount).toBe(2);
 
-  // engine-activation-dispatched fires for A with the
-  // "transfer-after-move" tag.
+  // The detach routes through `transferFocusAfterMove` → the
+  // single-channel `applyBagFocus` dispatcher (Phase E.11), which
+  // invokes A's registered engine hook — recorded as
+  // `engine-paint-mirror-active` with `caller: "via-engine-hook"`.
+  // (Pre-E.11 the equivalent gate was `engine-activation-dispatched`
+  // with `dispatchedFrom: "transfer-after-move"`; that path is retired.)
   await app.waitForCondition<boolean>(
     `(function(){
       var t = window.__tug.getDeckTrace({since: ${markBeforeDetach}});
       for (var i = 0; i < t.length; i++) {
-        if (t[i].kind === "engine-activation-dispatched"
+        if (t[i].kind === "engine-paint-mirror-active"
             && t[i].cardId === "A"
-            && t[i].engine === ${JSON.stringify(componentId)}
-            && t[i].dispatchedFrom === "transfer-after-move") return true;
+            && t[i].caller === "via-engine-hook") return true;
       }
       return false;
     })()`,

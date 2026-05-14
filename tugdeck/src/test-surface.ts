@@ -120,6 +120,16 @@ export const SURFACE_VERSION = "1.5.0" as const;
 const READY_GEN_STORAGE_KEY = "__tugReadyGen";
 
 /**
+ * `sessionStorage` key for the cross-reload deck-trace enable flag.
+ * `enableDeckTrace` writes it; `attachTugTestSurface` reads it on
+ * every page boot and re-applies `deckTrace.enable(true)` so a
+ * harness `app.appReload()` resumes recording without the test
+ * having to re-enable the trace on the reloaded page. Same
+ * per-tab/origin survival semantics as {@link READY_GEN_STORAGE_KEY}.
+ */
+const DECK_TRACE_ENABLED_STORAGE_KEY = "__tugDeckTraceEnabled";
+
+/**
  * Snapshot of the caret / selection for a single card, as returned by
  * {@link TugTestSurface.getCaretState}. Two variants cover the axes we
  * care about:
@@ -962,6 +972,11 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
 
     enableDeckTrace(flag: boolean): void {
       deckTrace.enable(flag);
+      // Persist so the flag survives an in-process `appReload()`:
+      // `attachTugTestSurface` re-applies it on the reloaded page's
+      // boot. Without this, recording silently stops after a reload
+      // and trace-gated assertions (e.g. `awaitEngineReady`) time out.
+      writeDeckTraceEnabled(flag);
     },
 
     // ---- introspection (SURFACE_VERSION 1.1.0) ----
@@ -1352,6 +1367,26 @@ function bumpReadyGen(): void {
   sessionStorage.setItem(READY_GEN_STORAGE_KEY, String(next));
 }
 
+/**
+ * Read the persisted deck-trace enable flag. Returns `false` when
+ * the slot is missing, unparseable, or `sessionStorage` is
+ * unavailable — a fresh page starts with recording off.
+ */
+function readDeckTraceEnabled(): boolean {
+  if (typeof sessionStorage === "undefined") return false;
+  return sessionStorage.getItem(DECK_TRACE_ENABLED_STORAGE_KEY) === "1";
+}
+
+/**
+ * Persist the deck-trace enable flag so it survives a
+ * `location.reload()` (via `app.appReload()`). Silent no-op when
+ * `sessionStorage` is unavailable.
+ */
+function writeDeckTraceEnabled(flag: boolean): void {
+  if (typeof sessionStorage === "undefined") return;
+  sessionStorage.setItem(DECK_TRACE_ENABLED_STORAGE_KEY, flag ? "1" : "0");
+}
+
 // ---------------------------------------------------------------------------
 // `window.__tug` binding — DEV + __tugTestMode only
 // ---------------------------------------------------------------------------
@@ -1413,5 +1448,13 @@ export function attachTugTestSurface(deck: DeckManager): void {
     // `sessionStorage` (per-tab/origin, not cleared by reload),
     // so the new page increments past the old.
     bumpReadyGen();
+    // Re-apply the deck-trace enable flag across an in-process
+    // `appReload()`. A test enables the trace once; the reload
+    // resets the module-level `enabled` flag, so without this the
+    // reloaded page records nothing and trace-gated waits
+    // (`awaitEngineReady`, `getDeckTrace` assertions) hang.
+    if (readDeckTraceEnabled()) {
+      deckTrace.enable(true);
+    }
   }
 }

@@ -43,6 +43,7 @@ import { TugConnection } from "./connection";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
+import { flushSync } from "react-dom";
 import { DeckCanvas } from "./components/chrome/deck-canvas";
 import { ErrorBoundary } from "./components/chrome/error-boundary";
 import { TugBannerProvider } from "./components/chrome/tug-banner-bridge";
@@ -1954,7 +1955,11 @@ export class DeckManager implements IDeckManagerStore {
     // already FR → same-bit, no events) and transition 6b (cardId
     // was not FR → full flip) are distinguished correctly. Card
     // identity is preserved across the detach, so no construction
-    // event fires.
+    // event fires. The flip is wrapped in `flushSync` so React's
+    // portal reconciliation commits the re-parent synchronously —
+    // `transferFocusAfterMove` below then resolves against the
+    // post-commit DOM (see `_moveCardToPane` for the full rationale).
+    flushSync(() => {
     this._flipFirstResponder(
       cardId,
       () => {
@@ -1974,18 +1979,18 @@ export class DeckManager implements IDeckManagerStore {
       },
       "_detachCard",
     );
+    });
 
-    // Refocus after the move. The
-    // detached card's CardHost has just been re-parented under the
-    // new pane via React's portal reconciliation; its registered
-    // host root now points at the post-commit DOM. The drag-start
-    // save (captureFocusForDragStart) preserved bag.focus + bag
-    // .domSelection while the input was still focused, so the
-    // helper can resolve the saved snapshot and restore focus
-    // inside the moved card. When the pre-move save (line above
-    // the flip) clobbered bag.focus to "none" because activeElement
-    // was on body, resolveActivationTarget falls through to the
-    // default-focus path so the card still receives the caret.
+    // Refocus after the move. The flip above flushed synchronously,
+    // so the detached card's CardHost is now re-parented under the
+    // new pane via React's portal reconciliation and its registered
+    // host root points at the post-commit DOM. The drag-start save
+    // (`captureFocusForDragStart`) preserved `bag.focus` +
+    // `bag.domSelection` while the input was still focused, so the
+    // helper resolves the saved snapshot and restores focus inside
+    // the moved card. When `bag.focus` is absent (or `kind: "none"`),
+    // `resolveBagFocus` falls through to the default-focus path so
+    // the card still receives the caret.
     transferFocusAfterMove({ sourceCardId: cardId, store: this });
 
     return newPaneId;
@@ -2048,9 +2053,17 @@ export class DeckManager implements IDeckManagerStore {
     const newFR: string = cardId;
 
     // Transition 7: flip composite bit. Card identity is preserved
-    // across the move, so no destruction event. Post-flip,
-    // transferFocusAfterMove restores focus into the card's new DOM
-    // location.
+    // across the move, so no destruction event. The flip is wrapped
+    // in `flushSync` so React's portal reconciliation (unmount the
+    // card's CardHost from the source pane, re-mount it under the
+    // target pane) commits synchronously — by the time
+    // `transferFocusAfterMove` runs below, the card's DOM is in its
+    // post-commit location and the resolver finds the live target.
+    // Without the flush, `transferFocusAfterMove` resolves against
+    // the pre-move DOM, claims (or yields to) the about-to-be-
+    // destroyed source-pane element, and the re-mount then drops
+    // focus to body with nothing left to re-claim it.
+    flushSync(() => {
     this._flipFirstResponder(
       newFR,
       () => {
@@ -2106,10 +2119,13 @@ export class DeckManager implements IDeckManagerStore {
       },
       "_moveCardToPane",
     );
+    });
 
-    // Refocus after the move. See the
-    // matching comment in _detachCard for the L23 / drag-start-save
-    // contract.
+    // Refocus after the move — the flip above flushed synchronously,
+    // so the card's CardHost is now re-parented under the target
+    // pane and its registered host root points at the post-commit
+    // DOM. See the matching comment in _detachCard for the L23 /
+    // drag-start-save contract.
     transferFocusAfterMove({ sourceCardId: cardId, store: this });
   }
 

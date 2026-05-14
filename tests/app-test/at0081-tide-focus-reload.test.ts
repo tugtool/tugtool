@@ -33,7 +33,9 @@
  *   2. Click into the contenteditable; type "hello".
  *   3. `appReload` — `prepareForReload` flushes the bag to tugbank.
  *   4. Re-seed the reloaded page with the persisted bag; re-bind
- *      the session; await engine ready.
+ *      the session; await engine ready. (`enableDeckTrace` persists
+ *      across `appReload`, so `engine-ready` is recorded on the
+ *      reloaded page and `awaitEngineReady` resolves normally.)
  *   5. Assert `document.activeElement` is the tide-card's
  *      `tug-prompt-entry` contenteditable.
  *
@@ -139,18 +141,11 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 8000 },
           );
           await app.bindTideSession("A");
-          // Wait for the engine's contenteditable to mount rather
-          // than for the `engine-ready` signal — the post-reload
-          // re-bind path mounts the editor but the harness's
-          // `isEngineReady` flag does not re-arm.
-          await app.waitForCondition<boolean>(
-            `document.querySelector('[data-card-id="A"] ${PROMPT_INPUT_SELECTOR}') !== null`,
-            { timeoutMs: 12_000 },
-          );
+          await app.awaitEngineReady("A");
 
           await app.waitForCondition<boolean>(
             `document.activeElement !== null && document.activeElement.matches(${JSON.stringify(PROMPT_INPUT_SELECTOR)}) && document.activeElement.closest('[data-card-id="A"]') !== null`,
-            { timeoutMs: 8000 },
+            { timeoutMs: 5000 },
           );
         } catch (err) {
           const tail = app.tailLog(200);

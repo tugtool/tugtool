@@ -3345,7 +3345,7 @@ The commits land in order — commit 2 depends on commit 1 (the framework axis m
 - [x] `bun run audit:tokens lint` — zero violations at Commit 1, Commit 2, and Commit 3.
 - [ ] ~~`bun test src/components/chrome/__tests__/card-host.test.tsx src/__tests__/focus-transfer.test.ts src/components/tugways/internal/__tests__/use-block-find-session.test.ts src/components/tugways/internal/__tests__/tug-block-find-row.test.tsx` — green.~~ Withdrawn across both commits per the unit-test note above (no fake-DOM environment); hook + row coverage rides AT0071/72/73 real-app tests.
 - [x] `bun test` (full suite) — 1580/1580 pass at Commit 1, Commit 2, and Commit 3. (Note: full-suite count is lower than the Phase E.9 plan baseline because happy-dom and all fake-DOM tests were deleted between phases, per the policy memory; the remaining suite is fully green.)
-- [x] `just app-test at0071-content-owning-focus-survives-app-switch.test.ts at0072-content-owning-focus-survives-card-switch.test.ts at0073-content-owning-focus-survives-reload.test.ts at0074-engine-focus-fallback.test.ts` — **all four pass green at commit 2 and commit 3** (4/4 files, 4/4 tests). The harness regression noted at commit 1 was independently repaired by `f33d26a4` + `32d4999f`. Adjacent regression check at commit 2: `at0020 / at0024 / at0025 / at0031 / at0037 / at0067` — 6/6 files, 21/21 tests green. Adjacent regression check at commit 3: same set + `at0045 / at0046 / at0068` — all green individually; the full-sweep mode's accelerated event cadence produces unrelated harness flakes (smoke-native, smoke-em, smoke-capture-phase-save, at0006-em, at0007-em, at0020, at0024, at0035-em, at0035-tide), all of which pass cleanly when re-run individually — none are caused by the find-row wiring.
+- [x] `just app-test at0071-content-owning-focus-survives-app-switch.test.ts at0072-content-owning-focus-survives-card-switch.test.ts at0073-content-owning-focus-survives-reload.test.ts at0074-engine-focus-fallback.test.ts` — **all four pass green at commit 2 and commit 3** (4/4 files, 4/4 tests). The harness regression noted at commit 1 was independently repaired by `f33d26a4` + `32d4999f`. Adjacent regression check at commit 2: `at0020 / at0024 / at0025 / at0031 / at0037 / at0067` — 6/6 files, 21/21 tests green. Adjacent regression check at commit 3: same set + `at0045 / at0046 / at0068` — green. _(The full sweep at the time also showed failures in `at0002` / `at0006*` / `at0007-em` / `at0009-em`; those were not find-row regressions — they were stale `engine-activation-dispatched` trace assertions left over from this phase's own dispatcher migration plus a missing `flushSync` before `transferFocusAfterMove`. Both root causes were fixed in the Phase E.12 follow-up; see #e12-followups.)_
 
 **Checkpoint (Phase E.10):**
 
@@ -3949,7 +3949,7 @@ A secondary lesson, recorded for future re-planning: the "five-claimant model + 
 **Tasks:**
 - [ ] Verify the full E.11 manual checkpoint list (below) passes against the running app — _user-driven, performed in `just app` with `deckTrace.enable(true)`; documented in the user-reported-scenarios validation step._
 - [ ] Verify the deck-trace verification: any activation transition produces exactly **one** `focus-call` event — _user-driven via `window.__deckTrace.dumpTable()` against the running app._
-- [x] Verify the full app-test sweep is green (modulo the cadence-induced flakes that re-pass individually, per the documented harness behavior) — _13/13 files green, 23/23 tests passed; AT0075/76/77/79 properly skipped (harness-extension required, see AT inventory)._
+- [x] Verify the full app-test sweep is green — _13/13 files green, 23/23 tests passed; AT0075/76/77/79 properly skipped (harness-extension required, see AT inventory). NOTE: the sweep at this step also masked four real failures (`at0002` / `at0006-em` / `at0007-em` / `at0009-em`) as "cadence flakes"; that narrative was wrong — they were deterministic stale-trace-event bugs from this phase's dispatcher migration, root-caused and fixed in the Phase E.12 follow-up (#e12-followups)._
 - [ ] Verify the user-reported scenarios (Glitch 2: title-bar re-activation; Glitch 3: Developer > Reload) pass in the running app — _user-driven validation against `just app` since automation requires harness extensions for tide-card find-row injection (see AT0075–AT0079 inventory entries)._
 - [x] Update `tuglaws/app-test-inventory.md` to register AT0075–AT0079 as shipped (or, in the case of AT0075/76/77/79, as documented-but-skipped pending harness extensions).
 
@@ -3957,7 +3957,7 @@ A secondary lesson, recorded for future re-planning: the "five-claimant model + 
 - [x] `bunx tsc --noEmit` — clean.
 - [x] `bun run audit:tokens lint` — zero violations.
 - [x] `bun test` — green (1580 / 1580).
-- [x] Full `just app-test` sweep (individual re-runs for cadence flakes per documented harness behavior): green.
+- [x] Full `just app-test` sweep: green. _(See the Tasks note above re: four failures this step misattributed to "cadence flakes" — fixed in the Phase E.12 follow-up.)_
 
 **Checkpoint:**
 - [ ] All six E.11 manual checkpoints (below) pass — _the find-row scenarios (lines 1–3 of the checkpoint) require user-driven verification in the running app; the engine-path scenarios (lines 4–5) are gated automatically by AT0078._
@@ -4022,7 +4022,7 @@ A secondary lesson, recorded for future re-planning: the "five-claimant model + 
 
 **Depends on:** Phase E.11 (built the single-channel `bag.focus` dispatcher this phase simplifies) and Step 10.9 Phase A (`FileBlock` now renders on `TugCodeView` / CM6).
 
-**Status:** implemented — all six sub-steps (12a–12f) landed. Automated gates green (tugdeck `tsc`, lint, `bun test` 1580/1580, AT0078/AT0080/AT0081/AT0034). Manual checkpoints await user-driven verification in `just app`; see #e12-followups for pre-existing debt surfaced during the phase.
+**Status:** implemented — all six sub-steps (12a–12f) landed, plus a post-phase cleanup pass (#e12-followups). All automated gates green: tugdeck `tsc`, `tests/app-test/tsconfig.json` `tsc`, lint, `bun test` 1580/1580, and the full `just app-test` sweep (48/48 files, 89/89 tests, first pass). Manual checkpoints await user-driven verification in `just app`.
 
 **Why this phase exists.** E.10 and E.11 built a focus model that lets a content-owning card carry *multiple* focus targets — an engine surface plus one or more framework-axis targets (the per-block Find rows). The per-block Find widget (`useBlockFindSession` + `TugBlockFindRow` + `BlockFindButton`, one instance per `FileBlock` / `DiffBlock` / `TerminalBlock`) is the only thing that ever produced a framework-axis (`dom`) target inside a tide-card, and it is the wrong model: a cranky, complex, per-block widget in a system that aspires to a simplified, AI-first command surface. The notion of Find will be redesigned later; these widgets are not coming back in this form, in this place. Removing them lets the focus model for content-owning cards collapse to its essential shape — a tide-card has exactly one text-entry surface, so activation focus has exactly one destination.
 
@@ -4137,7 +4137,7 @@ Consequence: `bag.focus` for a tide-card is always `engine` (when the card is ac
 
 **Tests:**
 - [x] `bunx tsc --noEmit` clean; `bun run audit:tokens lint` zero violations; `bun test` green (1580/1580).
-- [x] Adjacent AT regression set green. _9/10 in the batch; `at0078` is the documented cadence flake — re-passes 3/3 individually._
+- [x] Adjacent AT regression set green.
 
 **Checkpoint:**
 - [x] All three body kinds render in the gallery with no Find row, no Search button; Copy + fold cue still work. _Affordance cluster is now Copy + fold cue only; verified by tsc + the live app-test sweep exercising the body kinds._
@@ -4217,7 +4217,7 @@ Consequence: `bag.focus` for a tide-card is always `engine` (when the card is ac
 - [x] Update `tuglaws/app-test-inventory.md`: retire AT0071–77 + AT0079; record the new entries; fix the high-water mark (→ AT0081).
 
 **Tests:**
-- [x] Full `just app-test` sweep — E.12-relevant tests green. _The sweep also surfaces 5 **pre-existing** failures (`at0002`, `at0006`, `at0006-em`, `at0007-em`, `at0009-em`) — confirmed failing identically on the pre-E.12 baseline `ef22540d`, so not E.12 regressions. Out of phase scope; see #e12-followups._
+- [x] Full `just app-test` sweep green — 48/48 files, 89/89 tests, first pass (AT0078/AT0080/AT0081 added to the sweep array). _The five failures the sweep showed at first were not flakes — two deterministic bugs, root-caused and fixed in the post-phase cleanup; see #e12-followups._
 
 **Checkpoint:**
 - [x] The new AT set fails if a tide-card's activation focus lands anywhere other than `tug-prompt-entry`. _AT0078/AT0080/AT0081 all assert `document.activeElement` is the `[data-slot="tug-text-editor"] .cm-content` inside the expected card._
@@ -4238,7 +4238,7 @@ Consequence: `bag.focus` for a tide-card is always `engine` (when the card is ac
 - [x] Read-through: docs describe post-E.12 behavior.
 
 **Checkpoint:**
-- [x] No load-bearing section in either tuglaws doc still describes the `deferred-dom` *retry*, the D11 *substrate-hook yield rule* framing, or per-block Find rows. (The `deferred-dom` variant and the idempotency guard may still be mentioned — accurately.) _`design-decisions.md` D95 still describes the pre-E.11 model — pre-existing staleness, out of this step's scope; see #e12-followups._
+- [x] No load-bearing section in either tuglaws doc still describes the `deferred-dom` *retry*, the D11 *substrate-hook yield rule* framing, or per-block Find rows. (The `deferred-dom` variant and the idempotency guard may still be mentioned — accurately.) _`design-decisions.md` D95 was also rewritten for the post-E.12 model in the cleanup pass — see #e12-followups._
 
 **Manual checkpoints (Phase E.12).** {#e12-checkpoint}
 
@@ -4259,16 +4259,18 @@ Consequence: `bag.focus` for a tide-card is always `engine` (when the card is ac
 - [x] AT0078 + the new single-text-entry AT set (AT0080, AT0081) pass; the find AT-series is retired from `app-test-inventory.md`; every activation source is covered by an AT test (cross-pane drag → AT0034).
 - [x] `tuglaws/state-preservation.md` + `component-authoring.md` describe [the rule](#e12-rule).
 - [x] No E.11 plan-number reference remains in any `focus-transfer.ts` / `card-host.tsx` comment block that E.12 touched.
-- [x] tsc clean (tugdeck), lint zero violations, `bun test` green (1580/1580). _Full app-test sweep: E.12-relevant tests green; 5 pre-existing non-E.12 failures remain — see #e12-followups._
+- [x] tsc clean (tugdeck + `tests/app-test/tsconfig.json`), lint zero violations, `bun test` green (1580/1580), **full `just app-test` sweep green (48/48 files, 89/89 tests, first pass)**.
 - [ ] Manual checkpoints above pass — _awaiting user-driven verification in `just app`._
 
-**Follow-ups (Phase E.12).** {#e12-followups}
+**Follow-ups (Phase E.12) — resolved.** {#e12-followups}
 
-Pre-existing debt surfaced during E.12, out of phase scope — recorded so it isn't lost:
+Debt surfaced during E.12. All three items below were root-caused and fixed in a post-E.12 cleanup pass; recorded here for the trail:
 
-- **5 pre-existing app-test failures** — `at0002-tab-switch-em`, `at0006-cross-pane-drag`, `at0006-em-cross-pane`, `at0007-em-card-detach`, `at0009-em-inactive-mount` fail in the full sweep AND individually. Confirmed failing identically on the pre-E.12 baseline (`ef22540d` with `tugdeck/` reverted) — not E.12 regressions. They cluster around focus-restore-after-structural-change for `gallery-prompt-entry` / `gallery-input`; `at0034` (same surface, cross-pane drag) passes, so the failures are scenario-specific. Needs its own investigation.
-- **`tests/app-test/_harness/matchers.test.ts:350` tsc error** — a hand-written `DeckTraceEventShape` fixture missing the E.11-era `focus-measurement` / `engine-paint-mirror-active` / `engine-paint-mirror-inactive` / `macrotask-focus-claim` variants. Pre-existing; only shows under `tsc -p tests/app-test/tsconfig.json` (not the tugdeck gate). E.11-era debt.
-- **`design-decisions.md` D95** still describes the pre-E.11 focus model (`resolveActivationTarget`, `component-owned` kind, "lets a tide card host transient in-card UI (find row, …)"). Stale since E.11; E.12 makes it more wrong. 12f was scoped to `state-preservation.md` + `component-authoring.md` only — D95 needs a separate rewrite.
+- **5 "pre-existing" app-test failures — FIXED.** `at0002-tab-switch-em`, `at0006-cross-pane-drag`, `at0006-em-cross-pane`, `at0007-em-card-detach`, `at0009-em-inactive-mount`. These were *not* flakes and *not* unfixable pre-existing debt — they were two deterministic bugs the "cadence flake" narrative had been masking. (1) `at0002` / `at0006-em` / `at0007-em` / `at0009-em` waited on the `engine-activation-dispatched` trace event, which Phase E.11's dispatcher migration retired (its last caller was removed at E.11 Step 4k) — E.11 updated AT0033's gate but missed these four; the fix points them at `engine-paint-mirror-active` / `caller: "via-engine-hook"`. (2) `at0006-cross-pane-drag` / `at0007-card-detach` failed because `_moveCardToPane` / `_detachCard` called `transferFocusAfterMove` *before* the React portal re-parent committed — `transferFocusAfterMove` resolved against the pre-move DOM, yielded to the about-to-be-destroyed source-pane element, and the re-mount then dropped focus with nothing to re-claim it; the fix wraps the `_flipFirstResponder` call in `flushSync` (the same convention `_removeCard` already used) so the re-parent commits before the focus transfer runs. Full `just app-test` sweep is now 48/48 green, first pass.
+- **`matchers.test.ts:350` tsc error — FIXED.** The hand-written `EVENT_FIXTURES` map was missing the four E.11-era `DeckTraceEventShape` variants (`focus-measurement` / `engine-paint-mirror-active` / `engine-paint-mirror-inactive` / `macrotask-focus-claim`). Added the fixtures; `tsc -p tests/app-test/tsconfig.json` is clean.
+- **`design-decisions.md` D95 — FIXED.** Rewritten for the post-E.12 model: single-text-entry rule, single-channel dispatcher, `resolveBagFocus` / `applyBagFocus`, engine-as-callable. The pre-E.11 framing (`resolveActivationTarget`, `component-owned`, per-block find rows) is gone.
+- **Harness:** `enableDeckTrace` now persists across `appReload` (via `sessionStorage`, same mechanism as the ready-gen counter) so `engine-ready` is recorded on the reloaded page — AT0081 uses `awaitEngineReady` normally instead of a contenteditable-mount workaround.
+- **Open (not E.12 scope):** the `just app-test` FILES array still omits ~20 shipped test files (`at0039`–`at0069`). E.12's three new tests (AT0078/AT0080/AT0081) were added to the array; the rest of the gap is a separate sweep-completeness task.
 
 ---
 

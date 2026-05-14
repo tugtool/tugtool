@@ -430,6 +430,27 @@ const EVENT_FIXTURES: Record<
     selectionApplied: { start: 3, end: 7 },
     domSelectionAfter: { start: 3, end: 7 },
   },
+  "focus-measurement": {
+    kind: "focus-measurement",
+    phase: "post-sync",
+    site: "focus-transfer:framework",
+    cardId: "c2",
+    activeElement: "input#c2",
+  },
+  "engine-paint-mirror-active": {
+    kind: "engine-paint-mirror-active",
+    cardId: "c2",
+    caller: "via-engine-hook",
+  },
+  "engine-paint-mirror-inactive": {
+    kind: "engine-paint-mirror-inactive",
+    cardId: "c1",
+  },
+  "macrotask-focus-claim": {
+    kind: "macrotask-focus-claim",
+    cardId: "c2",
+    delegate: "cardDidActivate",
+  },
 };
 
 describe("summarizeEvent — exhaustive per-kind coverage", () => {
