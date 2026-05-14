@@ -70,29 +70,20 @@ import {
   useCardId,
   useCardStatePreservation,
 } from "@/components/tugways/use-card-state-preservation";
-import type { EnginePaintMirrorActiveCaller } from "@/deck-trace";
 import { deckTrace } from "@/deck-trace";
 import type { TugTextEditingState } from "@/lib/tug-text-types";
 import { buildEditStateTransaction, captureEditState } from "./keymap";
 
 /**
- * Record an `engine-paint-mirror-active` deck-trace event for the
- * given cardId / caller. Phase E.11 Step 1 instrumentation —
- * surfaces which of the four claimants (`onCardActivated`,
- * `onRestore`, `mount-effect-replay`, `imperative-api`,
- * `via-engine-hook`) drove a `paintMirrorAsActive` call. No-op when
- * `cardId` is null (pre-context registration window) or when
- * recording is disabled.
+ * Record an `engine-paint-mirror-inactive` deck-trace event for the
+ * given cardId. Phase E.11 Step 1 instrumentation; preserved at
+ * Step 4g for the inactive-paint channel which the engine still
+ * drives directly (deactivation paint is not a focus claim and
+ * sits outside the activation-channel collapse). The active
+ * symmetry pair was retired at Step 4g — the engine hook (Step 2
+ * — registered in tug-text-editor.tsx) emits the active event
+ * with `caller: "via-engine-hook"` when invoked by `applyBagFocus`.
  */
-function recordPaintMirrorActive(
-  cardId: string | null,
-  caller: EnginePaintMirrorActiveCaller,
-): void {
-  if (cardId === null) return;
-  deckTrace.record({ kind: "engine-paint-mirror-active", cardId, caller });
-}
-
-/** Symmetry pair for {@link recordPaintMirrorActive}. */
 function recordPaintMirrorInactive(cardId: string | null): void {
   if (cardId === null) return;
   deckTrace.record({ kind: "engine-paint-mirror-inactive", cardId });
@@ -470,19 +461,16 @@ export function useTextEditorStatePreservation(
 
   useCardStatePreservation<TugTextEditingState>({
     onCardActivated: () => {
-      // Activation gesture lands on this card. Claim focus + global
-      // Selection. The deactivation hook for the previously-active
-      // card has already routed its selection into the inactive-paint
-      // channel — so this card's focus claim has nothing else's
-      // global Selection to destroy. [L23]
-      const view = viewRef.current;
-      if (view === null) return;
-      // Discard the deactivation-time scroll snapshot: the card is
-      // now interactive and `view.scrollDOM.scrollTop` is the
-      // authoritative live value again.
+      // Phase E.11 Step 4g — autonomous focus claim retired.
+      // The framework's single-channel `applyBagFocus` dispatcher
+      // invokes the engine via the registered engine hook (Step 2
+      // — registered in tug-text-editor.tsx's useLayoutEffect)
+      // when `bag.focus.kind === "engine"`. This handler keeps
+      // only the deactivation-time scroll-snapshot reset — the
+      // card is now interactive again and the live view's
+      // `scrollDOM.scrollTop` is the authoritative source.
+      // See `tuglaws/state-preservation.md` [Focus dispatch model].
       inactiveScrollSnapshotRef.current = null;
-      recordPaintMirrorActive(cardIdRef.current, "onCardActivated");
-      paintMirrorAsActive(view);
     },
     onCardWillDeactivate: () => {
       // [L23] enforcement: hand the selection over to the
@@ -564,10 +552,18 @@ export function useTextEditorStatePreservation(
       // boot trusts the bag).
       const view = viewRef.current;
       if (view !== null) {
+        // restoreEditState replays document content, atoms,
+        // selection, and scroll into the engine — an engine-
+        // internal state restore that is a different axis from
+        // the focus claim.
         restoreEditState(view, state);
         if (isActive) {
-          recordPaintMirrorActive(cardIdRef.current, "onRestore");
-          paintMirrorAsActive(view, state);
+          // Phase E.11 Step 4g — autonomous paintMirrorAsActive
+          // claim retired. The framework's `applyBagFocus`
+          // dispatcher (CardHost cold-boot RESTORE) invokes the
+          // engine hook (Step 2 — registered in
+          // tug-text-editor.tsx) which calls
+          // `paintMirrorAsActive(view)` for engine kinds.
         } else {
           recordPaintMirrorInactive(cardIdRef.current);
           paintMirrorAsInactive(view, publishToSelectionGuard, state);
