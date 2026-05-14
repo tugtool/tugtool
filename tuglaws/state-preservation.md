@@ -107,7 +107,7 @@ Defined in [`use-card-state-preservation.tsx`](../tugdeck/src/components/tugways
 Defined in [`layout-tree.ts`](../tugdeck/src/layout-tree.ts).
 
 - **`CardStateBag`** — The flat per-card preservation envelope. Optional members compose by axis: `scroll` (outer host-content scroll), `content` (the `useCardStatePreservation` payload), `formControls` (record of `FormControlSnapshot` keyed by `data-tug-state-key`), `regionScroll` (record keyed by `data-tug-scroll-key`), `domSelection` (the card-boundary selection range), `focus` (the `FocusSnapshot`), `components` (the `useComponentStatePreservation` axis, keyed by scoped `componentStatePreservationKey`). Stored in DeckManager's in-memory cache and durably under tugbank's `dev.tugtool.deck.cardstate/{cardId}`. ([D49], [D50])
-- **`FocusSnapshot`** — Discriminated-union shape recording which descendant of the card root held focus at save time. Four kinds: `{ kind: "none" }` (nothing focused inside the card), `{ kind: "form-control", componentStatePreservationKey }` (a native `<input>`/`<textarea>` carrying `data-tug-state-key`), `{ kind: "dom", focusKey }` (a non-form-control focusable element carrying `data-tug-focus-key`), `{ kind: "component-owned" }` (a component that manages its own focus + selection together — e.g. `TugPromptInput`'s contentEditable; the owning component's `bag.content` carries the detail). Captured by `captureFocus` in [`card-host.tsx`](../tugdeck/src/components/chrome/card-host.tsx); applied by `applyFocusSnapshot` on cold-boot restore for the active card of the active pane only ([D10]).
+- **`FocusSnapshot`** — Discriminated-union shape recording which descendant of the card root held focus at save time. Four kinds: `{ kind: "none" }` (nothing focused inside the card), `{ kind: "form-control", componentStatePreservationKey }` (a native `<input>`/`<textarea>` carrying `data-tug-state-key`), `{ kind: "dom", focusKey }` (a non-form-control focusable element carrying `data-tug-focus-key`), `{ kind: "engine" }` (an engine that manages its own focus + selection together — e.g. `TugPromptEntry`'s contentEditable; the engine registers `paintMirrorAsActive` / `paintMirrorAsInactive` hooks via `store.registerEngineHooks` and the framework invokes them through `applyBagFocus`'s engine resolution). Captured by `captureFocus` in [`card-host.tsx`](../tugdeck/src/components/chrome/card-host.tsx); dispatched through `applyBagFocus` in [`focus-transfer.ts`](../tugdeck/src/focus-transfer.ts) at all focus-claim sites (Phase E.11 single-channel model). Pre-E.11 bags carrying `{ kind: "component-owned" }` are coerced to `"engine"` on read at the deserialization boundary.
 
 ### DOM attributes
 
@@ -117,7 +117,7 @@ The protocol's surface area in HTML. Authors add these attributes to opt their e
 - **`data-tug-focus-key`** — On any non-form-control focusable element (button, tab, custom focusable `tabindex=0` widget) that wants its focus restored. Captured into `FocusSnapshot` kind `dom`. Key must be unique within the card subtree.
 - **`data-tug-scroll-key`** — On an inner scrollable region (most notably `tug-markdown-view`'s virtual-list container). Captures `{ x, y }` into `bag.regionScroll[key]`. Applied on mount and re-applied for late-mounting regions via the same `MutationObserver` that restores form controls.
 - **`data-tug-scroll-state`** — Optional companion to `data-tug-scroll-key`. JSON-serialized opaque metadata captured into `bag.regionScroll[key].meta` alongside `{ x, y }` and forwarded on restore through the `tug-region-scroll-set` event's `detail.meta`. The framework treats the payload as opaque storage; the region's listener owns its semantics. Used by variable-height virtualized lists (`TugListView` driving the tide-card transcript) to carry an `{ anchor: { index, offset } }` payload that survives cell-height drift between save and restore — see [`RegionScrollSnapshot` in depth](#cardstatebag-in-depth) below.
-- **`data-tug-prompt-input-root`** — Marker attribute on the outer container of a component that owns its own focus + selection state together (e.g. `TugPromptInput`). Causes `captureFocus` to serialize the focus as `FocusSnapshot` kind `component-owned`. The owning component's `bag.content` carries the actual detail.
+- **`data-tug-prompt-input-root`** — Marker attribute on the outer container of an engine that owns its own focus + selection state together (e.g. `TugPromptEntry`). Causes `captureFocus` to serialize the focus as `FocusSnapshot` kind `engine`. The owning engine's `bag.content` carries the actual detail; the engine also registers `paintMirrorAsActive` / `paintMirrorAsInactive` hooks via `store.registerEngineHooks` so the framework's `applyBagFocus` dispatcher can drive the activation-time focus claim through the engine's own state-preservation order.
 
 ---
 
@@ -252,7 +252,7 @@ A writer may carry any combination of the families; listeners ignore keys they d
 
 ### What's in `bag` at save time vs. restore time
 
-Both ends see the same shape: a `CardStateBag`. At save time, every axis is populated from the live DOM and the live React tree (`captureFocus(cardRoot)`, walking `data-tug-state-key` for `bag.formControls`, walking `data-tug-scroll-key` for `bag.regionScroll`, calling each registered `captureState()` for `bag.components`, calling the card's `onSave()` for `bag.content`). At restore time, the same bag is replayed onto a freshly-mounted DOM: form controls re-set their `.value` (with a `MutationObserver` re-applying for late mounts), regions re-scroll, the focus snapshot is dispatched through `applyFocusSnapshot` on the active card of the active pane, and the components-axis is replayed in parent-first order via the registry.
+Both ends see the same shape: a `CardStateBag`. At save time, every axis is populated from the live DOM and the live React tree (`captureFocus(cardRoot)`, walking `data-tug-state-key` for `bag.formControls`, walking `data-tug-scroll-key` for `bag.regionScroll`, calling each registered `captureState()` for `bag.components`, calling the card's `onSave()` for `bag.content`). At restore time, the same bag is replayed onto a freshly-mounted DOM: form controls re-set their `.value` (with a `MutationObserver` re-applying for late mounts), regions re-scroll, the focus snapshot is dispatched through `applyBagFocus` (Phase E.11 single-channel dispatcher; subject to the D11 yield rule for the framework branch) on the active card of the active pane, and the components-axis is replayed in parent-first order via the registry.
 
 ---
 
@@ -352,7 +352,7 @@ For the per-axis contract these attributes participate in, see [card-state-model
 | `data-tug-focus-key="<key>"` | (not stored in bag axis) | — | Drives `FocusSnapshot` kind `dom`. Resolved on restore by keyed lookup inside the card root. |
 | `data-tug-scroll-key="<key>"` | `bag.regionScroll[key]` | `x`, `y` | Inner scrollable region. Re-applied for late mounts via the same `MutationObserver` as form controls. |
 | `data-tug-scroll-state` | `bag.regionScroll[key].meta` | opaque JSON | Optional companion to `data-tug-scroll-key`. Region-defined payload (e.g. `{anchor: {index, offset}}` for `TugListView`) forwarded through the `tug-region-scroll-set` event's `detail.meta`. Framework treats as opaque storage. |
-| `data-tug-prompt-input-root` | (component-owned) | — | Marker attribute. `captureFocus` serializes focus on any descendant as `FocusSnapshot` kind `component-owned`; the owning component's `bag.content` carries the real detail. |
+| `data-tug-prompt-input-root` | (engine-owned) | — | Marker attribute. `captureFocus` serializes focus on any descendant as `FocusSnapshot` kind `engine`; the owning engine's `bag.content` carries the real detail and the engine registers `paintMirrorAsActive` hooks via `store.registerEngineHooks` for dispatcher invocation. |
 
 Authors add these attributes; the framework owns capture and replay. There is no second mechanism for any of these axes; if a control wants its state preserved across cold boot, it opts in via one of these attributes (or via `useComponentStatePreservation` for non-DOM-authority state).
 
@@ -365,45 +365,89 @@ Authors add these attributes; the framework owns capture and replay. There is no
 - **`{ kind: "none" }`** — `document.activeElement` is `null`, on `document.body`, on a descendant outside the card root, or on an element that matches none of the opt-in markers. The bag stores no focus (or stores `{ kind: "none" }` explicitly); restore is a no-op.
 - **`{ kind: "form-control", componentStatePreservationKey }`** — Focus is on a native form control with `data-tug-state-key`. The same key is the focus key. Restore re-focuses after `bag.formControls[key].value` has been re-applied so the caret lands on the restored content.
 - **`{ kind: "dom", focusKey }`** — Focus is on a non-form-control focusable element with `data-tug-focus-key`. Restore looks up the element by attribute value and calls `.focus()`.
-- **`{ kind: "component-owned" }`** — Focus is on a descendant of an element marked with `data-tug-prompt-input-root` (or another component-owned marker). The owning component manages focus and selection together; the bag's `content` axis carries the real state, and the framework merely notes that focus belonged to this component on save.
+- **`{ kind: "engine" }`** — Focus is on a descendant of an element marked with `data-tug-prompt-input-root` or `data-slot="tug-text-editor"`. The owning engine (TugPromptEntry's compound, TugTextEditor's CodeMirror view) manages selection and scroll axes through its own state-preservation channels; the framework's job at restore time is to invoke the engine's registered `paintMirrorAsActive` hook so it can claim focus + global Selection in the engine's correct order.
+
+**Migration.** Pre-Phase-E.11 bags carry `{ kind: "component-owned" }` for what is now `engine`. The deserialization boundary in `settings-api.ts#readCardStates` coerces `"component-owned"` → `"engine"` on read (`coerceFocusSnapshotOnRead`); the two variants are information-preserving — the rename names the semantic relationship to the engine-hook channel introduced in Phase E.11. Bags written post-E.11 only use `"engine"`.
 
 ### Capture — what each save site writes
 
-`captureFocus(cardRoot)` runs from the CardHost framework-axis assembler (`card-host.tsx`, the `assembleFrameworkBagRef.current` closure) on every save trigger ([A9c]). The classifier reads `document.activeElement`, walks the marker-attribute precedence (`data-tug-state-key` → `data-tug-focus-key` → component-owned selectors → `none`), and returns one of the four variants above.
+`captureFocus(cardRoot)` runs from the CardHost framework-axis assembler (`card-host.tsx`, the `assembleFrameworkBagRef.current` closure) on every save trigger ([A9c]). The classifier reads `document.activeElement`, walks the marker-attribute precedence (`data-tug-state-key` → `data-tug-focus-key` → engine-owned selectors → `none`), and returns one of the four variants above.
 
 Whether the assembler accepts that snapshot depends on the card's content-ownership:
 
 - **Non-content-owning cards** (`bag.content === undefined` — form-control cards, markdown-view cards, etc.) accept every variant. `captureFocus` is the sole focus authority for these cards.
-- **Content-owning cards** (`bag.content !== undefined` — every tide card is one, since the engine registers `engineKind: "em"`) accept only `dom` and `form-control` kinds. The `component-owned` and `none` cases leave `bag.focus` absent so the engine's `onCardActivated` runs as the default. This is the **engine carve-out**: the engine's caret is engine state and is restored by `paintMirrorAsActive` inside its activation hook — a framework `.focus()` would bypass the inactive-paint → global-Selection transfer and leave focus on a view with no caret. See [design-decisions.md](design-decisions.md) for the boundary rule.
+- **Content-owning cards** (`bag.content !== undefined` — every tide card is one, since the engine registers `engineKind: "em"`) currently accept only `dom` and `form-control` kinds. The `engine` and `none` cases leave `bag.focus` absent so the framework's `applyBagFocus` resolver, finding no framework-axis snapshot but an engine-managed card, routes to the engine resolution and invokes the registered engine hook. The capture-side carve-out keeps `bag.focus` semantically clean for transient in-card targets (find input, future inline editors); the resolver covers the engine case from the registry tag rather than from the bag.
 
 When the save fires for an INACTIVE card (focus has moved to a sibling card or off-document — common during `visibilitychange`, `beforeunload`, or a debounced save while the user edits elsewhere), `captureFocus` would return `{ kind: "none" }`. The assembler forwards the previously-saved focus instead, subject to the same kind restriction for content-owning cards. The rule is "an internal save must not destroy a user-visible axis just because focus is momentarily elsewhere" ([L23]).
 
-### Restore — two mechanisms, four activation sites
+---
 
-Focus restore happens through **two distinct mechanisms** that fire at **four activation sites**. The 2024-era "in-app transitions leave focus alone" framing was never quite accurate (the defensive listener has been in place since the install in `deck-manager.ts:115-148`) and is no longer correct at all now that content-owning cards opt into `bag.focus`. Both mechanisms are documented below.
+## Focus dispatch model
 
-**Mechanism A — cold-boot restore** (CardHost mount-time `useLayoutEffect`). Runs once on the active card of the active pane after first mount. Reads `bag.focus`; if the kind is `dom` or `form-control`, calls `traceApplyFocusSnapshot("cold-boot", …)` which resolves the keyed element inside the card root and `.focus()`-es it. `applyFocusSnapshot`'s own pre-check (skip when focus is already inside the card) protects in-flight user interactions. `kind: "component-owned"` and `kind: "none"` are intentionally not restored here:
+Phase E.11 retired the four-claimant focus model (`transferFocusForActivation` focus-element, engine `onCardActivated`, macrotask `cardDidActivate` delegate, CardHost cold-boot `applyFocusSnapshot`) and replaced it with a single-channel dispatcher. All focus-claim paths read `bag.focus` through one resolver and dispatch through one writer.
 
-- `component-owned` would point at the engine's contenteditable, and the engine's `onCardActivated` (invoked separately by the activation pipeline) handles it via its own selection-restore machinery.
-- `none` is a no-op by definition.
+### The dispatcher: `resolveBagFocus` + `applyBagFocus`
 
-**Mechanism B — in-session re-application** through `focus-transfer.ts#resolveActivationTarget`. Runs whenever the framework needs to land focus on an activated card after the user has been somewhere else. The resolver consults `bag.focus` BEFORE its engine-managed / content-owning short-circuits: if `kind` is `dom` or `form-control` AND the keyed element resolves and is `isConnected`, it returns `{ kind: "focus-element", el }` — the caller then `.focus()`-es directly. Otherwise it falls through to `{ kind: "dispatch-activated" }` for engine / content-owning cards, or `{ kind: "default-focus", cardRoot }` for DOM-authority cards with no usable snapshot. The same kind restriction (only `dom` / `form-control` ever resolves to a `focus-element` for content-owning cards) keeps the engine carve-out symmetric across save and restore.
+`resolveBagFocus(cardId, store): BagFocusResolution` is the pure read half. It consults the bag, the registered card-host root, the engine-hook registry, and the live DOM, and returns one of six variants:
 
-The **four activation sites** that drive mechanism B (or, in case (a), feed the cold-boot path):
+- **`framework`** — concrete focusable element resolved from `bag.focus.kind === "dom" | "form-control"`. The dispatcher will call `el.focus()` (subject to the D11 yield rule below).
+- **`engine`** — the card is engine-managed and the engine has registered hooks. The dispatcher will invoke `store.invokeEnginePaintMirrorAsActive(cardId)`.
+- **`default-focus`** — DOM-authority card with no usable saved focus snapshot. The dispatcher walks `DEFAULT_FOCUS_SELECTORS` via `traceApplyDefaultFocus`.
+- **`deferred-dom`** — the bag names a framework-axis target whose element has not yet mounted (find row's `open: true` saved but the input mounts a few commits later). The dispatcher returns `"deferred"`; CardHost's MutationObserver retry re-fires `applyBagFocus` on each subtree mutation until the target appears or the budget exhausts.
+- **`deferred-engine`** — engine-managed card whose engine has not yet registered hooks (tide's editor mounts late after `feedsReady`). The dispatcher returns `"deferred"`; CardHost's `subscribeEngineHooksChange` listener re-fires `applyBagFocus` when the engine registers.
+- **`none`** — nothing to focus. Bag absent, no host root, or `kind: "none"`. The dispatcher returns `"applied"` (idempotent no-op).
 
-(a) **CardHost cold-boot restore** — its own code path in `card-host.tsx`, NOT a call through the resolver. Drives mechanism A above. Fires once per card mount; this is what reload survival rides on.
+`applyBagFocus(cardId, store, options?): "applied" | "deferred"` is the impure writer. It calls `resolveBagFocus`, performs the resolved side effect, and returns the result. Callers that need retry orchestration (CardHost) act on `"deferred"`; one-shot callers (transferFocusForActivation, transferFocusAfterMove, reactivateCurrentFocusDestination) accept whichever result the dispatcher returns and continue.
 
-(b) **`reactivateCurrentFocusDestination`** — installed as a `window.focus` listener in `deck-manager.ts:115-148`. Fires on cmd-tab back / app become-active. Re-runs the resolver against the currently first-responding card so any browser-level focus loss across the OS resign / become-active cycle is repaired without the user clicking. WebKit in particular does not always preserve focus reliably when the JS context is suspended; this listener is the contract that "focus position when you come back = focus position when you left."
+### The D11 yield rule
 
-(c) **`transferFocusForActivation`** — driven from intra-pane tab switches (`tug-pane#performSelectCard`), cross-pane activations (`pane-focus-controller`), and tab-close handoffs (`deck-manager#_removeCard` / `_closePane`). Saves the outgoing bag, commits the activation mutation via `flushSync`, then resolves the incoming target.
+`applyBagFocus`'s `framework` branch yields when the resolved element is already `document.activeElement`. This protects substrate-hook self-focus from being clobbered:
 
-(d) **`transferFocusAfterMove`** — driven from cross-pane drag drops (`deck-manager#_detachCard` / `_moveCardToPane`) after the React-visible re-parent has committed.
+A substrate hook (e.g. `useBlockFindSession`'s `useLayoutEffect([open])`) calls `.focus()` on its own target during its own mount commit. On cold-boot, child useLayoutEffects fire before parent (CardHost's) useLayoutEffects, so the substrate's claim lands first. Without the yield, the framework's subsequent `el.focus()` call interacts with React reconciliation's focus-restoration heuristics and the substrate's `.select()` follow-up in a way that drops focus to body. The yield ensures the substrate's prior claim sticks: same target, no second call.
 
-Sites (b) (c) (d) all converge on `resolveActivationTarget` and so share one decision path; the resolver's bag.focus precondition serves all three uniformly. Site (a) lives separately because cold-boot is a mount-time pass and not a transition between activations.
+Single-channel does not mean "only one path ever writes." It means "one resolver is the source of truth about where focus should go, and writers observe that source." The substrate hook is a writer; the framework verifies whether the writer's work matches the saved-target intent. If yes, yield. If no, write. The mental model is "many writers, one read."
 
-### Engine fallback
+The yield rule does not apply to `engine` resolutions — engine hooks (`paintMirrorAsActive`) are internally idempotent against an already-painted active state.
 
-For engine-managed or content-owning cards that reach a `dispatch-activated` outcome (no `bag.focus` precondition resolved, or kind was `component-owned`), the caller invokes `store.invokeActivationCallback(cardId)`. For tide cards this lands in `tug-text-editor`'s `onCardActivated`, which calls `paintMirrorAsActive(view)` to transfer the inactive-paint selection back to the global Selection — the engine's authoritative path. This is the default whenever the framework axis has nothing to say.
+### Activation dispatch sites
+
+Four production sites drive `applyBagFocus`:
+
+- **`transferFocusForActivation`** in `focus-transfer.ts` — intra-pane tab switches (`tug-pane#performSelectCard`), cross-pane activations (`pane-focus-controller`), tab-close handoffs (`deck-manager#_removeCard` / `_closePane`), runtime chain actions wrapping `activateCard` (action-dispatch.ts `focus-pane`, deck-canvas.tsx `show-component-gallery`). Save outgoing, commit mutation via `flushSync`, gate via `canProgrammaticallyFocus`, dispatch.
+- **`transferFocusAfterMove`** in `focus-transfer.ts` — cross-pane drag drops (`deck-manager#_detachCard` / `_moveCardToPane`) after the React-visible re-parent has committed.
+- **`reactivateCurrentFocusDestination`** in `focus-transfer.ts` — installed as a `window.focus` listener in `deck-manager.ts`. Fires on cmd-tab return / app become-active. Calls `applyBagFocus` with `preventScroll: true` ([L23] — preserve user-visible scroll).
+- **CardHost cold-boot RESTORE** in `card-host.tsx` — `useLayoutEffect` at mount. Calls `applyBagFocus` against the active card of the active pane ([D10] Option B gate). Owns the late-mount retry mechanism for `deferred-dom` (MutationObserver) and `deferred-engine` (`subscribeEngineHooksChange` listener).
+
+Boot sites (`_seedDeckState`, initial-focused-card restore) stay raw — `applyBagFocus` would resolve `none` at boot (no host root yet); CardHost's cold-boot RESTORE is the real claim path. See D9b for the runtime-vs-boot site split.
+
+### Engine hook channel
+
+Engines register `paintMirrorAsActive` / `paintMirrorAsInactive` hooks via `store.registerEngineHooks(cardId, hooks)`. The framework invokes them through `store.invokeEnginePaintMirrorAsActive(cardId)` / `store.invokeEnginePaintMirrorAsInactive(cardId)` — Phase E.11 D1: the engine is a callable, not an autonomous claimant.
+
+Engines that register hooks:
+
+- **TugTextEditor** (used by gallery-text-editor) — registers in its `useLayoutEffect` keyed on `[cardId]`. The hook calls `paintMirrorAsActiveImpl(view)`.
+- **TugPromptEntry** (used by tide-card, gallery-prompt-entry) — registers in its `useLayoutEffect` keyed on `[cardIdForTrace]`. The hook reads `pendingActivationDraftRef.current` (set by `onRestore` during cold-boot for the inactive-mount case so the engine's scroll-axes write lands against the live post-activation viewport) and calls `editor.paintMirrorAsActive(pending ?? undefined)`.
+
+Engines no longer call `paintMirrorAsActive` autonomously from `useCardStatePreservation.onCardActivated` or the `isActive` branch of `onRestore`. Those callbacks are retained for non-focus axes (deactivation-time scroll snapshot, engine-internal state restore via `restoreEditState`).
+
+### Late-mount settle
+
+The `deferred-*` resolutions exist because the user's saved focus target may not be in the DOM at the moment of activation:
+
+- **`deferred-dom`**: framework-axis target hasn't mounted yet. tide's transcript loads messages async after restart; a FileBlock find row's input mounts several commits after the card mount.
+- **`deferred-engine`**: engine hasn't registered hooks yet. tide's editor gates on `feedsReady`; the editor's `useLayoutEffect` runs after CardHost's RESTORE useLayoutEffect on first commit (parent fires after children, but CardHost fires its own effect AFTER children's effects complete — wait, this is the reverse; see below).
+
+CardHost owns the retry orchestration:
+
+- **MutationObserver** scoped to the card root re-fires `applyBagFocus` on every subtree mutation. Element-identity settle: once `applyBagFocus` returns `"applied"`, stop retrying. Budget: 200 mutations OR 5 seconds wall-clock — whichever fires first, observer disconnects with a dev-mode warn (production silent — framework yields cleanly on stale state). [L23] contract: "focus position at first paint *after the target is available* matches focus position at last save."
+- **`subscribeEngineHooksChange`** listener bumps a local `engineHooksVersion` state; the RESTORE effect's dep array includes it so a late-mounting engine's `registerEngineHooks` re-fires the effect, which now resolves `engine` (vs. the prior `deferred-engine`) and invokes the hook.
+
+Both retry paths are event-driven (DOM mutations; store-channel listener), not timer-driven — [L05] compliance. Budgets are guardrails against runaway observers, not the primary dispatch mechanism.
+
+### Cross-references
+
+The four activation sites all converge on `applyBagFocus`; the dispatcher's `bag.focus` precondition serves them uniformly. The cold-boot RESTORE adds the retry mechanism on top of the same dispatcher.
 
 ---
 
@@ -473,7 +517,8 @@ Primary sources — the files that define the protocol's exported identifiers. L
 
 Secondary sources — where the protocol is wired up in practice.
 
-- [`tugdeck/src/components/chrome/card-host.tsx`](../tugdeck/src/components/chrome/card-host.tsx) — `captureFocus`, `applyFocusSnapshot`, the `registerStatePreservationCallbacks` plumbing (including the count-based remount detector), the post-attach effect that orders DOM-authority restore after `onContentReady`, and the `callbacksVersion` dep across the framework-axes / content-axis / components-axis restore effects.
+- [`tugdeck/src/components/chrome/card-host.tsx`](../tugdeck/src/components/chrome/card-host.tsx) — `captureFocus`, the `registerStatePreservationCallbacks` plumbing (including the count-based remount detector), the post-attach effect that orders DOM-authority restore after `onContentReady`, the cold-boot RESTORE call to `applyBagFocus` (Phase E.11), the MutationObserver-driven `deferred-dom` retry, and the `callbacksVersion` + `engineHooksVersion` deps across the framework-axes / content-axis / components-axis / engine-hook-change restore effects.
+- [`tugdeck/src/focus-transfer.ts`](../tugdeck/src/focus-transfer.ts) — Phase E.11 single-channel dispatcher: `resolveBagFocus` (pure) + `applyBagFocus` (impure, with D11 yield rule), `transferFocusForActivation` / `transferFocusAfterMove` / `reactivateCurrentFocusDestination` entry points.
 - [`tugdeck/src/deck-manager.ts`](../tugdeck/src/deck-manager.ts) — Per-card `CardStateBag` cache; activation and deactivation callback channels (`registerActivationCallback`, `invokeActivationCallback`, `registerDeactivationCallback`); `saveState` RPC entry point; the public `captureAllForTeardown(reason)` entry point shared by `beforeunload` and the HMR bridge.
 - [`tugdeck/src/hmr-bridge.ts`](../tugdeck/src/hmr-bridge.ts) — Dev-only `installHmrBridge(deck)`; routes Vite's `vite:beforeUpdate` and `vite:beforeFullReload` events into `deck.captureAllForTeardown(reason)`.
 - [`tugdeck/src/components/tugways/tug-edit.tsx`](../tugdeck/src/components/tugways/tug-edit.tsx) — Per-instance `fastRefreshSnapshotRef` mount-effect snapshot/replay, covering Fast Refresh's same-instance effect re-run case the framework signal can't observe.
@@ -487,7 +532,7 @@ Secondary sources — where the protocol is wired up in practice.
 - [card-state-model.md](card-state-model.md) — The per-axis contract (focus, scroll, form-control value, selection). This doc describes the mechanism; that doc describes what each axis means to authors.
 - [lifecycle-delegates.md](lifecycle-delegates.md) — The deck-level `TugCardDelegate` event pipe (`cardWillActivate` / `cardDidActivate` / etc.). The preservation-layer callbacks (`onCardActivated`, `onSave`, `onRestore`) ride atop this pipe — when a `cardWillDeactivate` lifecycle moment fires for card A and `cardWillActivate` fires for card B, the framework dispatches `onCardWillDeactivate` on A's preservation record and (after restore) `onCardActivated` on B's.
 - [pane-model.md](pane-model.md) — Deck → Pane → Card hierarchy; cards are the unit of preservation, panes own geometry, the deck owns the per-card bag cache.
-- [responder-chain.md](responder-chain.md) — First-responder promotion drives the `isActive` flag in `onRestore`; `applyFocusSnapshot` interacts with the responder chain on cold-boot restore.
+- [responder-chain.md](responder-chain.md) — First-responder promotion drives the `isActive` flag in `onRestore`; `applyBagFocus` (Phase E.11) interacts with the responder chain on cold-boot restore.
 - [app-test-inventory.md](app-test-inventory.md) — Every AT-tag that gates this protocol. The regression catalog.
 - [`roadmap/tugplan-hmr-state-preservation.md`](../roadmap/tugplan-hmr-state-preservation.md) — Step-by-step history of the HMR-as-known-transition extension (capture-side bridge, restore-side count-based remount detection, substrate-local snapshot for Fast Refresh's soft-refresh path, and the design rationale behind each layer).
 - [Vite HMR API](https://vitejs.dev/guide/api-hmr.html) — `import.meta.hot.on` events, including `vite:beforeUpdate` and `vite:beforeFullReload`, which the bridge module subscribes to.

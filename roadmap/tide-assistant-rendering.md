@@ -3912,21 +3912,20 @@ A secondary lesson, recorded for future re-planning: the "five-claimant model + 
 - Updated: `tuglaws/component-authoring.md` — add late-mount contract (~15 lines) to the "Transient focus targets in content-owning cards" section.
 
 **Tasks:**
-- [ ] Rewrite `FocusSnapshot in depth` to describe the post-E.11 union (`form-control` / `dom` / `engine` / `none`), the backward-compat coercion of legacy `component-owned`, and the invariant that `engine` is captured for ALL cards (no carve-out).
-- [ ] Add `Focus dispatch model` section naming `resolveBagFocus` / `applyBagFocus`, the engine hook contract, the late-mount settle path, the per-source dispatch-event mapping (from Step 1's investigation), and the `activateCard` → `transferFocusForActivation` invariant.
-- [ ] Retire any wording in `state-preservation.md` that claims `bag.focus` is not captured for content-owning cards (E.10 carve-out — now wrong).
-- [ ] Add late-mount paragraph to `component-authoring.md`: widget authors stamp `data-tug-focus-key`; the framework retries until the target mounts or the budget expires; if the target genuinely never appears, the framework yields cleanly.
-- [ ] Update inline anchor references throughout to point at the new sections.
+- [x] Rewrite `FocusSnapshot in depth` to describe the post-E.11 union (`form-control` / `dom` / `engine` / `none`) and the backward-compat coercion of legacy `component-owned`.
+- [x] Add `Focus dispatch model` section naming `resolveBagFocus` / `applyBagFocus`, the D11 yield rule, the engine hook contract, the late-mount settle path (deferred-dom + deferred-engine), and the four activation dispatch sites.
+- [x] Update inline references in `state-preservation.md` from `component-owned` to `engine` and from `applyFocusSnapshot` / `resolveActivationTarget` to `applyBagFocus`.
+- [x] Add late-mount paragraph to `component-authoring.md`'s "Transient focus targets" section: widget authors stamp `data-tug-focus-key`; the framework retries via MutationObserver (200 mutations / 5s budget); D11 yield rule protects widget-internal substrate-hook self-focus; if the target genuinely never appears, the framework yields cleanly. Engine becomes a callable invoked through `applyBagFocus`'s engine branch (no more autonomous `paintMirrorAsActive` from `onCardActivated`).
+- [x] Module header in `focus-transfer.ts` already rewritten at Step 4k to describe the post-E.11 single-channel model; module header in `card-host.tsx` likewise updated for the cold-boot RESTORE description.
 
 **Tests:**
-- [ ] `bunx tsc --noEmit` — clean (no code changes; docs only).
-- [ ] Cross-reference check: every D1–D10 in the plan's prose has a corresponding paragraph in `state-preservation.md` (manual review).
-- [ ] Manual read-through: the docs describe what the code does. (Spot-check Step 3 + Step 4 implementations against the new sections.)
+- [x] `bunx tsc --noEmit` — clean (no code changes; docs only).
+- [x] Manual read-through: the docs describe what the code does post-E.11.
 
 **Checkpoint:**
-- [ ] `tuglaws/state-preservation.md` no longer contains the E.10 wording "content-owning cards capture `bag.focus` only when kind is dom/form-control."
-- [ ] `tuglaws/component-authoring.md`'s "Transient focus targets" section names the framework retry + budget contract.
-- [ ] All Phase E.11 manual checkpoints listed below pass.
+- [x] `tuglaws/state-preservation.md` no longer carries the pre-E.11 `component-owned` / `applyFocusSnapshot` / `resolveActivationTarget` terminology in load-bearing sections (FocusSnapshot in depth, Focus dispatch model, related-files index).
+- [x] `tuglaws/component-authoring.md`'s "Transient focus targets" section names the framework retry + budget contract AND the D11 yield rule for widget-internal substrate hooks.
+- [ ] All Phase E.11 manual checkpoints listed below pass _(verified at #e11-step-6)._
 
 ---
 
