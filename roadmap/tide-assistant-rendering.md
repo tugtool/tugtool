@@ -4590,6 +4590,8 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 #### Step 17: AgentTranscriptBlock + TaskToolBlock (recursive) {#step-17}
 
+**Status:** implemented — `AgentTranscriptBlock` (body kind, header/entries/footer) + `TaskToolBlock` (Agent wrapper) + `depth` threading through `dispatchToolCallState` / `ToolWrapperProps` + dispatch registration + two pure-logic test suites landed. tsc clean, `bun test` 1772/1772, `audit:tokens lint` zero violations.
+
 **Depends on:** #step-1, #step-13
 
 **Commit:** `feat(tide-rendering): AgentTranscriptBlock + TaskToolBlock — recursive nested tool rendering`
@@ -4598,23 +4600,33 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 **Conformance:** see [#bk-conformance](#bk-conformance) — `AgentTranscriptBlock` is a body kind with header / scrolling chrome (items 3–7). Nested entries that are themselves body kinds / wrappers each conform recursively. `--tugx-agent-*` composes `--tugx-block-*`.
 
+**Implementation notes.**
+- **Recursion through the same dispatch, `depth` threaded explicitly.** `dispatchToolCallState` gained an optional `depth` argument (default `0`) that flows into `ToolWrapperProps.depth` (a new optional field). `AgentTranscriptBlock` renders each `tool_use` entry by calling `dispatchToolCallState(entry.toolCall, msgId, depth + 1)` — so a nested tool call gets its real per-tool wrapper, and a nested `Agent` recurses `TaskToolBlock → AgentTranscriptBlock` one level deeper. The import graph picks up a `dispatch → task-tool-block → agent-transcript-block → dispatch` cycle; it is safe because `dispatchToolCallState` is a hoisted function declaration only *called* at render time, never at module-eval.
+- **Depth cap bounds auto-expansion, never hides data.** `shouldCollapseAgentDepth(depth, maxDepth = AGENT_MAX_DEPTH)` returns `depth > maxDepth` (cap 3 per [D17]'s audit footnote). It seeds the *default* collapsed state — depth 0–3 render expanded, depth 4+ start folded behind a `BlockFoldCue` showing "+N nested calls" — but the user can still expand a folded block, and the [A9] axis persists their choice. A pathologically deep input can't melt the layout because each level past the cap stays folded until explicitly opened.
+- **`content[]` is text + nested-tool-call blocks, not the `parent_tool_use_id` siblings.** The catalog's only Agent probe (`test-22-subagent-spawn.jsonl`) carries a text-only `structured_result.content[]`; the subagent's own Grep runs as a separate top-level `parent_tool_use_id`-tagged event. Folding those siblings into `content[]` is reducer work ([D01] state-only, out of scope), so `TaskToolBlock` narrows whatever `content[]` blocks the wire supplies — Anthropic `{type:"text"}` and `{type:"tool_use"}` blocks — and `AgentTranscriptBlock` renders them. The nested-tool-call and depth tests therefore use synthetic fixtures, per the plan.
+- **Text entries render as pre-wrapped prose.** A `text` entry renders dependency-free rather than embedding the virtualized `TugMarkdownView` (which owns its own scroll container + imperative ref contract — wrong for short inline entries). When the [#step-3] assistant-text renderer ships, text entries can route through it.
+- **`Agent` is canonical; `Task` is the alias.** Registered `registerToolWrapper("agent", TaskToolBlock)`; the historical `task` name resolves via the existing `task → agent` entry in `TOOL_ALIASES` ([D16]) — no new alias needed.
+
 **Artifacts:**
-- `tugdeck/src/components/tugways/body-kinds/agent-transcript-block.tsx` + `.css`
-- `tugdeck/src/components/tugways/cards/tool-wrappers/task-tool-block.tsx` + `.css`
-- Token slot `--tugx-agent-*` (composes `--tugx-block-*`)
-- Registry entry; alias `Agent → Task` per [D16] if needed
+- `tugdeck/src/components/tugways/body-kinds/agent-transcript-block.tsx` + `.css` — body kind; exported helpers `shouldCollapseAgentDepth` / `countNestedToolCalls` / `composeNestedCallsLabel` / `composeAgentToolCountLabel` / `composeAgentDurationLabel` / `composeAgentTokenLabel` / `composeAgentTranscriptText`; `AGENT_MAX_DEPTH`.
+- `tugdeck/src/components/tugways/cards/tool-wrappers/task-tool-block.tsx` + `.css` — tool wrapper; exported helpers `narrowAgentInput` / `narrowAgentStructured` / `composeAgentTranscriptData`.
+- `tugdeck/src/components/tugways/body-kinds/__tests__/agent-transcript-block.test.ts` + `tugdeck/src/components/tugways/cards/tool-wrappers/__tests__/task-tool-block.test.ts`.
+- Token slot `--tugx-agent-*` (composes `--tugx-block-*`) — declared in `agent-transcript-block.css`'s `body{}`.
+- `depth` threading — optional arg on `dispatchToolCallState`, optional field on `ToolWrapperProps`.
+- Registry entry — `registerToolWrapper("agent", TaskToolBlock)` in `tide-assistant-renderer-dispatch.ts`; `assistant-rendering-fixture-replay.test.ts` updated (`agent`/`task` added to `BESPOKE_WRAPPERS` + `beforeEach`, the now-empty "ships later" test folded into the coverage test).
 
 **Tasks:**
-- [ ] AgentTranscriptBlock: header (agent type + status + duration + tool-call count); body iterates `content[]` rendering each entry through the same dispatch (`depth + 1`); footer (cost summary)
-- [ ] Recursion bounded by max depth (default 3); deeper levels collapse with "+N nested calls" via `BlockFoldCue` (conformance item 5)
-- [ ] TaskToolBlock: composes `embedded` AgentTranscriptBlock; header shows agent type + status
+- [x] AgentTranscriptBlock: header (agent type + status + duration + tool-call count); body iterates `content[]` rendering each `tool_use` entry through the same dispatch (`depth + 1`); footer (token summary)
+- [x] Recursion bounded by max depth (default 3 — `AGENT_MAX_DEPTH`); deeper levels collapse with "+N nested calls" via `BlockFoldCue` (conformance item 5)
+- [x] TaskToolBlock: composes `embedded` AgentTranscriptBlock; header shows agent type + status
 
 **Tests:**
-- [ ] Replay `test-22-subagent-spawn.jsonl` → TaskToolBlock with AgentTranscriptBlock; nested Grep call renders via GrepToolBlock
-- [ ] Synthetic depth-3 fixture → depth-3 renders; depth-4 shows collapse
+- [x] Replay `test-22-subagent-spawn.jsonl` → its `Agent` tool_use routes to `TaskToolBlock`; the sibling Grep tool_use routes to `GrepToolBlock` (both pinned by `assistant-rendering-fixture-replay.test.ts`)
+- [x] Synthetic content fixture → a nested Grep `tool_use` block narrows to a `tool_use` entry that `dispatchToolCallState(…, depth + 1)` routes to `GrepToolBlock`
+- [x] Synthetic depth fixture → a nested Agent entry dispatches to `TaskToolBlock` carrying the incremented `depth`; `shouldCollapseAgentDepth` renders depth-3 expanded, collapses depth-4
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — tsc clean; 1772 pass / 0 fail; `audit:tokens lint` zero violations.
 
 ---
 

@@ -55,6 +55,7 @@ import { ReadToolBlock } from "@/components/tugways/cards/tool-wrappers/read-too
 import { EditToolBlock } from "@/components/tugways/cards/tool-wrappers/edit-tool-block";
 import { GlobToolBlock } from "@/components/tugways/cards/tool-wrappers/glob-tool-block";
 import { GrepToolBlock } from "@/components/tugways/cards/tool-wrappers/grep-tool-block";
+import { TaskToolBlock } from "@/components/tugways/cards/tool-wrappers/task-tool-block";
 import { DefaultToolWrapper } from "@/components/tugways/cards/tool-wrappers/default-tool-wrapper";
 import type { ToolWrapperFactory } from "@/components/tugways/cards/tool-wrappers/types";
 import type { ToolCallState } from "@/lib/code-session-store";
@@ -79,6 +80,8 @@ const BESPOKE_WRAPPERS: Readonly<Record<string, ToolWrapperFactory>> = {
   multiedit: EditToolBlock,
   glob: GlobToolBlock,
   grep: GrepToolBlock,
+  agent: TaskToolBlock,
+  task: TaskToolBlock,
 };
 
 /** The wrapper a given tool name should dispatch to today. */
@@ -117,6 +120,7 @@ beforeEach(() => {
   registerToolWrapper("edit", EditToolBlock);
   registerToolWrapper("glob", GlobToolBlock);
   registerToolWrapper("grep", GrepToolBlock);
+  registerToolWrapper("agent", TaskToolBlock);
 });
 
 // ---------------------------------------------------------------------------
@@ -173,7 +177,7 @@ describe("assistant-rendering fixture replay — dispatch routing", () => {
 // ---------------------------------------------------------------------------
 
 describe("assistant-rendering fixture replay — shipped wrapper coverage", () => {
-  test("Bash / Read / Edit / MultiEdit / Glob / Grep resolve to their bespoke wrappers", () => {
+  test("Bash / Read / Edit / MultiEdit / Glob / Grep / Agent resolve to their bespoke wrappers", () => {
     // Edit has no v2.1.105 catalog fixture, so its routing is pinned
     // here directly (and via `edit-tool-block.test.ts`'s alias test).
     expect(resolveToolWrapper("Bash")).toBe(BashToolBlock);
@@ -185,16 +189,11 @@ describe("assistant-rendering fixture replay — shipped wrapper coverage", () =
     expect(resolveToolWrapper("glob")).toBe(GlobToolBlock);
     expect(resolveToolWrapper("Grep")).toBe(GrepToolBlock);
     expect(resolveToolWrapper("grep")).toBe(GrepToolBlock);
-  });
-
-  test("tools whose bespoke wrappers ship later route to DefaultToolWrapper", () => {
-    // TaskToolBlock (#step-17) is not registered yet — the v2.1.105
-    // catalog's Agent tool_uses fall through to the fallback, which is
-    // the correct day-1 behaviour. (Glob shipped its bespoke wrapper
-    // at #step-15, Grep at #step-16.)
-    for (const name of ["Agent"]) {
-      expect(resolveToolWrapper(name)).toBe(DefaultToolWrapper);
-    }
+    // `Agent` is canonical; the historical `Task` name resolves here
+    // via the `task → agent` alias ([D16]).
+    expect(resolveToolWrapper("Agent")).toBe(TaskToolBlock);
+    expect(resolveToolWrapper("agent")).toBe(TaskToolBlock);
+    expect(resolveToolWrapper("Task")).toBe(TaskToolBlock);
   });
 
   test("a synthetic unknown-tool dispatch raises an unknown_tool caution", () => {

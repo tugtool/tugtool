@@ -132,6 +132,15 @@ export interface ToolWrapperProps<TInput = unknown, TStructured = unknown> {
   status: ToolWrapperStatus;
   /** Drift caution; rendered as an inline chip on the wrapper chrome. */
   caution?: CautionFlag;
+  /**
+   * Recursion depth — `0` for a top-level tool call, incremented by
+   * one each time a wrapper dispatches a *nested* tool call (today
+   * only `TaskToolBlock` → `AgentTranscriptBlock` does this, per
+   * [D17]). Wrappers that never recurse ignore it; `TaskToolBlock`
+   * reads it to drive the `AgentTranscriptBlock` depth-cap collapse.
+   * Threaded by `dispatchToolCallState`'s optional `depth` argument.
+   */
+  depth?: number;
 }
 
 /**

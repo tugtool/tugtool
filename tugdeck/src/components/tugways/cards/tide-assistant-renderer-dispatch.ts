@@ -75,6 +75,7 @@ import { ReadToolBlock } from "./tool-wrappers/read-tool-block";
 import { EditToolBlock } from "./tool-wrappers/edit-tool-block";
 import { GlobToolBlock } from "./tool-wrappers/glob-tool-block";
 import { GrepToolBlock } from "./tool-wrappers/grep-tool-block";
+import { TaskToolBlock } from "./tool-wrappers/task-tool-block";
 import { DefaultToolWrapper } from "./tool-wrappers/default-tool-wrapper";
 import type { CautionFlag, ToolWrapperFactory } from "./tool-wrappers/types";
 
@@ -406,10 +407,16 @@ function extractTextOutput(result: unknown): string | undefined {
  * `TurnEntry.toolCalls` or the parsed `inflight.tools` snapshot) to a
  * `(Component, props)` pair without fabricating a full
  * `DispatchContext` — the tool-call branch never consumed it.
+ *
+ * `depth` (default `0`) is the [D17] recursion depth: `AgentTranscriptBlock`
+ * passes `depth + 1` when it routes a *nested* tool call, so a nested
+ * `Agent` (→ `TaskToolBlock` → `AgentTranscriptBlock`) knows how deep it
+ * is and can collapse past the depth cap. Top-level callers omit it.
  */
 export function dispatchToolCallState(
   toolCall: ToolCallState,
   msgId: string,
+  depth = 0,
 ): DispatchResult {
   const lower = toolCall.toolName.toLowerCase();
   const canonical = TOOL_ALIASES.get(lower) ?? lower;
@@ -435,6 +442,7 @@ export function dispatchToolCallState(
     textOutput: extractTextOutput(toolCall.result),
     isError: toolCall.status === "error",
     status,
+    depth,
   };
 
   if (factory !== undefined) {
@@ -495,3 +503,6 @@ registerToolWrapper("read", ReadToolBlock);
 registerToolWrapper("edit", EditToolBlock);
 registerToolWrapper("glob", GlobToolBlock);
 registerToolWrapper("grep", GrepToolBlock);
+// Canonical `agent`; the historical `task` name resolves here via the
+// `task → agent` alias in `TOOL_ALIASES`. ([D16])
+registerToolWrapper("agent", TaskToolBlock);

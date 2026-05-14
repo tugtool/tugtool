@@ -1,0 +1,232 @@
+/* @tug-pairings:
+   - --tugx-block-bg / --tugx-block-text-color           (shared block frame; from tugx-block.css)
+   - --tugx-block-strip-bg / --tugx-block-strip-color    (shared header / footer strip; from tugx-block.css)
+   `AgentTranscriptBlock` paints a framed chrome around a subagent
+   run — a header, an `entries[]` column, and a footer strip. The
+   shared block-surface scaffold lives in `styles/tugx-block.css` as
+   `--tugx-block-*`; agent-specific slots (entry gap, status colours,
+   the nested-call rail) stay here under `--tugx-agent-*`.
+*/
+
+/**
+ * agent-transcript-block.css — `AgentTranscriptBlock` chrome + entries.
+ *
+ * Layout:
+ *  - `.tugx-agent` — the framed block surface (standalone). Dropped in
+ *    `[data-embedded="true"]` so the body sits flush under a host
+ *    `ToolWrapperChrome`.
+ *  - `.tugx-agent-header` — pinned identity strip (standalone only):
+ *    agent type + status + duration + tool count + actions cluster.
+ *  - `.tugx-agent-entries` — the content column. Each entry is a
+ *    `text` paragraph or a nested tool wrapper, the latter indented
+ *    behind a subtle rail so the nesting reads.
+ *  - `.tugx-agent-footer` — a thin token-summary strip; renders in
+ *    both standalone and embedded modes.
+ *
+ * Token sources:
+ *  - Shared block-surface scaffold (frame, header / footer strip)
+ *    comes from `--tugx-block-*` in `styles/tugx-block.css`.
+ *  - Agent-specific slots live in the `body{}` block below as
+ *    `--tugx-agent-*`.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] no React state for visual state — collapse drives entry
+ *    *existence* (logical), not appearance; status colours are pure
+ *    CSS keyed off the `data-agent-status` attribute.
+ *  - [L16] every colour-only rule names its rendering surface via a
+ *    `@tug-renders-on` annotation.
+ *  - [L17] `--tugx-block-*` and `--tugx-agent-*` each resolve to a
+ *    `--tug7-*` / `--tug-*` base token in one hop.
+ *  - [L19] file pair, module docstring on the `.tsx`,
+ *    `data-slot="agent-transcript-body"` on the root.
+ *  - [L20] component-token sovereignty — only `--tugx-agent-*` here;
+ *    the frame chrome consumes `--tugx-block-*`.
+ */
+
+/* ---- Component-tier aliases — agent-specific only [L17] ---- */
+
+body {
+  --tugx-agent-entry-gap:     var(--tug-space-sm);
+  --tugx-agent-entry-padding: var(--tug-space-sm);
+  --tugx-agent-rail-indent:   var(--tug-space-md);
+  --tugx-agent-text-color:    var(--tug7-element-global-text-normal-default-rest);
+  --tugx-agent-type-color:    var(--tug7-element-global-text-normal-default-rest);
+  --tugx-agent-meta-color:    var(--tug7-element-global-text-normal-muted-rest);
+
+  /* Status colours — keyed off `data-agent-status`. The wire emits
+   * lowercase values ("completed" / "in_progress" / "failed"); the
+   * three buckets ride the semantic success / link / danger text
+   * tokens, one hop per [L17]. */
+  --tugx-agent-status-done-color:    var(--tug7-element-global-text-normal-success-rest);
+  --tugx-agent-status-running-color: var(--tug7-element-global-text-normal-link-rest);
+  --tugx-agent-status-failed-color:  var(--tug7-element-global-text-normal-danger-rest);
+}
+
+/* ---------- Frame ---------- */
+
+.tugx-agent {
+  display: block;
+  margin: var(--tugx-block-margin);
+  background: var(--tugx-block-bg);
+  border: 1px solid var(--tugx-block-border);
+  border-radius: var(--tugx-block-radius);
+  /* `overflow: clip` clips children to the rounded border-radius
+   * without forming a scroll container — `overflow: hidden` would,
+   * and would capture sticky positioning from `.tugx-agent-header`. */
+  overflow: clip;
+  color: var(--tugx-block-text-color);
+  font-family: var(--tugx-block-code-font);
+  font-size: var(--tugx-block-code-font-size);
+}
+
+/* Embedded variant — composed inside a host that already paints a
+ * container and a header. Drop the standalone frame so the transcript
+ * sits flush. Reset values, not theme-tunable knobs. */
+.tugx-agent[data-embedded="true"] {
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.tugx-agent[data-empty="true"] {
+  display: none;
+}
+
+/* ---------- Header ---------- */
+
+/* Pinned identity strip — stays visible while the user scrolls the
+ * outer transcript. Mirrors `.tugx-json-header` / `.tugx-search-header`. */
+.tugx-agent-header {
+  position: sticky;
+  top: var(--tugx-pin-stack-top, 0);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--tugx-block-strip-gap);
+  padding: var(--tugx-block-strip-padding);
+  background: var(--tugx-block-strip-bg);
+  border-bottom: 1px solid var(--tugx-block-strip-border);
+  color: var(--tugx-block-strip-color);
+  font-family: var(--tugx-block-strip-font);
+  font-size: var(--tugx-block-strip-size);
+}
+
+/* @tug-renders-on: --tugx-block-strip-bg */
+.tugx-agent-label {
+  font-weight: 600;
+  color: var(--tugx-block-text-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 30%;
+}
+
+/* @tug-renders-on: --tugx-block-strip-bg */
+.tugx-agent-type {
+  font-weight: 600;
+  color: var(--tugx-agent-type-color);
+  white-space: nowrap;
+}
+
+/* Status — colour-coded by the `data-agent-status` bucket. The
+ * default (any unrecognized status) rides the muted meta colour. */
+/* @tug-renders-on: --tugx-block-strip-bg */
+.tugx-agent-status {
+  white-space: nowrap;
+  color: var(--tugx-agent-meta-color);
+  text-transform: capitalize;
+}
+
+/* @tug-renders-on: --tugx-block-strip-bg */
+.tugx-agent-status[data-agent-status="completed"],
+.tugx-agent-status[data-agent-status="success"] {
+  color: var(--tugx-agent-status-done-color);
+}
+
+/* @tug-renders-on: --tugx-block-strip-bg */
+.tugx-agent-status[data-agent-status="in_progress"],
+.tugx-agent-status[data-agent-status="running"] {
+  color: var(--tugx-agent-status-running-color);
+}
+
+/* @tug-renders-on: --tugx-block-strip-bg */
+.tugx-agent-status[data-agent-status="failed"],
+.tugx-agent-status[data-agent-status="error"] {
+  color: var(--tugx-agent-status-failed-color);
+}
+
+/* @tug-renders-on: --tugx-block-strip-bg */
+.tugx-agent-duration,
+.tugx-agent-tool-count {
+  white-space: nowrap;
+  color: var(--tugx-agent-meta-color);
+  font-variant-numeric: tabular-nums;
+}
+
+.tugx-agent-header-spacer {
+  flex: 1 1 auto;
+}
+
+/* Trailing affordances cluster — fold cue + Copy. Rides
+ * `.tugx-agent-header` (standalone) or portals into
+ * `ToolWrapperChrome`'s actions slot (embedded). Mirrors
+ * `.tugx-json-actions-cluster`. */
+.tugx-agent-actions-cluster {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--tug-space-2xs);
+}
+
+/* ---------- Entries ---------- */
+
+.tugx-agent-entries {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-agent-entry-gap);
+  padding: var(--tugx-agent-entry-padding);
+}
+
+/* A text entry — the subagent's prose answer. Pre-wrapped so source
+ * line breaks survive; wraps rather than overflowing the frame. */
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-agent-text {
+  color: var(--tugx-agent-text-color);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* A nested tool call — indented behind a subtle rail so the nesting
+ * reads at a glance. The wrapper inside owns its own chrome / margin;
+ * this rule only sets the indent + guide. */
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-agent-tool {
+  padding-left: var(--tugx-agent-rail-indent);
+  border-left: 1px solid var(--tugx-block-strip-border);
+}
+
+/* ---------- Footer ---------- */
+
+/* Thin token-summary strip. Renders in both standalone and embedded
+ * modes — the cost figure is body-kind data, not chrome. Mirrors the
+ * shared strip shape (same tint + hairline divider, on top). */
+.tugx-agent-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--tugx-block-strip-gap);
+  padding: var(--tugx-block-strip-padding);
+  background: var(--tugx-block-strip-bg);
+  border-top: 1px solid var(--tugx-block-strip-border);
+  color: var(--tugx-block-strip-color);
+  font-family: var(--tugx-block-strip-font);
+  font-size: var(--tugx-block-strip-size);
+}
+
+/* @tug-renders-on: --tugx-block-strip-bg */
+.tugx-agent-tokens {
+  white-space: nowrap;
+  color: var(--tugx-agent-meta-color);
+  font-variant-numeric: tabular-nums;
+}
