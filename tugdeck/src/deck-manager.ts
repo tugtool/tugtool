@@ -1966,25 +1966,25 @@ export class DeckManager implements IDeckManagerStore {
     // `transferFocusAfterMove` below then resolves against the
     // post-commit DOM (see `_moveCardToPane` for the full rationale).
     flushSync(() => {
-    this._flipFirstResponder(
-      cardId,
-      () => {
-        this.deckState = {
-          ...this.deckState,
-          panes: [
-            ...this.deckState.panes.map((s) =>
-              s.id === paneId ? updatedSourceStack : s,
-            ),
-            newStack,
-          ],
-          activePaneId: newPaneId,
-        };
-        this.notify();
-        this.scheduleSave();
-        this.putFocusedCardIdGuarded(cardId);
-      },
-      "_detachCard",
-    );
+      this._flipFirstResponder(
+        cardId,
+        () => {
+          this.deckState = {
+            ...this.deckState,
+            panes: [
+              ...this.deckState.panes.map((s) =>
+                s.id === paneId ? updatedSourceStack : s,
+              ),
+              newStack,
+            ],
+            activePaneId: newPaneId,
+          };
+          this.notify();
+          this.scheduleSave();
+          this.putFocusedCardIdGuarded(cardId);
+        },
+        "_detachCard",
+      );
     });
 
     // Refocus after the move. The flip above flushed synchronously,
@@ -2070,61 +2070,61 @@ export class DeckManager implements IDeckManagerStore {
     // destroyed source-pane element, and the re-mount then drops
     // focus to body with nothing left to re-claim it.
     flushSync(() => {
-    this._flipFirstResponder(
-      newFR,
-      () => {
-        let intermediateStacks: readonly TugPaneState[] = this.deckState.panes;
-        if (spliced.activeCardId === null) {
-          intermediateStacks = intermediateStacks.filter(
-            (s) => s.id !== sourcePaneId,
+      this._flipFirstResponder(
+        newFR,
+        () => {
+          let intermediateStacks: readonly TugPaneState[] = this.deckState.panes;
+          if (spliced.activeCardId === null) {
+            intermediateStacks = intermediateStacks.filter(
+              (s) => s.id !== sourcePaneId,
+            );
+          } else {
+            const updatedSourceStack: TugPaneState = {
+              ...sourceStack,
+              cardIds: spliced.cardIds,
+              activeCardId: spliced.activeCardId,
+            };
+            intermediateStacks = intermediateStacks.map((s) =>
+              s.id === sourcePaneId ? updatedSourceStack : s,
+            );
+          }
+
+          const clampedIndex = Math.max(
+            0,
+            Math.min(insertAtIndex, targetStack.cardIds.length),
           );
-        } else {
-          const updatedSourceStack: TugPaneState = {
-            ...sourceStack,
-            cardIds: spliced.cardIds,
-            activeCardId: spliced.activeCardId,
+          const newTargetCardIds = [...targetStack.cardIds];
+          newTargetCardIds.splice(clampedIndex, 0, cardId);
+          const updatedTargetStack: TugPaneState = {
+            ...targetStack,
+            cardIds: newTargetCardIds,
+            activeCardId: cardId,
           };
-          intermediateStacks = intermediateStacks.map((s) =>
-            s.id === sourcePaneId ? updatedSourceStack : s,
+
+          // Bump the target pane to the end of the panes array (z-
+          // top). Mirrors `_commitStandardFirstResponderFlip` — the
+          // deck's "focused card" is read as the activeCardId of the
+          // last (top-most) pane, so the target needs to be at the
+          // end for the moved card to be observable as the FR.
+          const withoutTarget = intermediateStacks.filter(
+            (s) => s.id !== targetPaneId,
           );
-        }
+          const finalStacks: readonly TugPaneState[] = [
+            ...withoutTarget,
+            updatedTargetStack,
+          ];
 
-        const clampedIndex = Math.max(
-          0,
-          Math.min(insertAtIndex, targetStack.cardIds.length),
-        );
-        const newTargetCardIds = [...targetStack.cardIds];
-        newTargetCardIds.splice(clampedIndex, 0, cardId);
-        const updatedTargetStack: TugPaneState = {
-          ...targetStack,
-          cardIds: newTargetCardIds,
-          activeCardId: cardId,
-        };
-
-        // Bump the target pane to the end of the panes array (z-
-        // top). Mirrors `_commitStandardFirstResponderFlip` — the
-        // deck's "focused card" is read as the activeCardId of the
-        // last (top-most) pane, so the target needs to be at the
-        // end for the moved card to be observable as the FR.
-        const withoutTarget = intermediateStacks.filter(
-          (s) => s.id !== targetPaneId,
-        );
-        const finalStacks: readonly TugPaneState[] = [
-          ...withoutTarget,
-          updatedTargetStack,
-        ];
-
-        this.deckState = {
-          ...this.deckState,
-          panes: finalStacks,
-          activePaneId: postMoveActivePaneId,
-        };
-        this.notify();
-        this.scheduleSave();
-        this.putFocusedCardIdGuarded(newFR);
-      },
-      "_moveCardToPane",
-    );
+          this.deckState = {
+            ...this.deckState,
+            panes: finalStacks,
+            activePaneId: postMoveActivePaneId,
+          };
+          this.notify();
+          this.scheduleSave();
+          this.putFocusedCardIdGuarded(newFR);
+        },
+        "_moveCardToPane",
+      );
     });
 
     // Refocus after the move — the flip above flushed synchronously,

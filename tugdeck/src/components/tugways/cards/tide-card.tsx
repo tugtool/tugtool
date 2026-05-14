@@ -1796,16 +1796,27 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   //       every overlay show/hide cycle by this contract.
   // [L24] structure-zone (`inert` clearing) drives structure-zone
   //       (focus reclaim) via the per-overlay event pipe.
+  // Tide-card's one focus destination is its `tug-prompt-entry`.
+  // Several lifecycle triggers need to re-claim it; each is gated on
+  // this card being first responder so a background-card event never
+  // steals focus from the card the user is actually in. The
+  // guard-and-claim is consolidated here so it is one named thing,
+  // not a copy per trigger. (`cardDidMove` / `cardDidResize` keep
+  // their own inline form — they additionally emit a
+  // `macrotask-focus-claim` trace event.)
+  const reclaimEntryFocus = useCallback((): void => {
+    if (cardLifecycle?.getFirstResponderCardId() !== cardId) return;
+    entryDelegateRef.current?.focus();
+  }, [cardLifecycle, cardId, entryDelegateRef]);
+
   useSheetDelegate(cardId, {
     sheetDidHide: () => {
-      if (cardLifecycle?.getFirstResponderCardId() !== cardId) return;
-      entryDelegateRef.current?.focus();
+      reclaimEntryFocus();
     },
   });
   useBannerDelegate(cardId, {
     bannerDidHide: () => {
-      if (cardLifecycle?.getFirstResponderCardId() !== cardId) return;
-      entryDelegateRef.current?.focus();
+      reclaimEntryFocus();
     },
   });
 
@@ -1815,12 +1826,11 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   // binding. So the `sheetDidHide` subscription above is registered
   // too late to catch the picker's dismissal — by the time this
   // body exists, the event has already passed. Claim focus once on
-  // mount instead, gated on this card being first responder (the
-  // body can also mount inside an inactive stack on cold-boot /
+  // mount instead, through the same first-responder-gated helper
+  // (the body can also mount inside an inactive stack on cold-boot /
   // restore, where the cold-boot RESTORE path owns focus).
   useLayoutEffect(() => {
-    if (cardLifecycle?.getFirstResponderCardId() !== cardId) return;
-    entryDelegateRef.current?.focus();
+    reclaimEntryFocus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
