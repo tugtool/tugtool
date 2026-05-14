@@ -44,11 +44,17 @@
  *      `[cardId, hostStackId, hostContentEl]`) applies `bag.scroll`
  *      to `hostContentEl`, publishes `bag.domSelection` to
  *      `selectionGuard` (translation via `restoreCardDomSelection`),
- *      applies `bag.focus` via `applyFocusSnapshot` when this card is
+ *      dispatches `bag.focus` via `applyBagFocus` when this card is
  *      the active card of the active pane ([D10]), and replays
  *      `bag.formControls` + `bag.regionScroll` via a single
  *      `MutationObserver` scoped to the card root so late-mounting
- *      elements restore when they appear.
+ *      elements restore when they appear. The `MutationObserver`
+ *      also retries `applyBagFocus` for `deferred-dom` resolutions
+ *      until the target appears or the 200-mutation / 5s budget
+ *      exhausts (Phase E.11 D5 late-mount settle). Late-mounting
+ *      engines drive their retry via the `subscribeEngineHooksChange`
+ *      channel that bumps `engineHooksVersion`, which joins the
+ *      effect's dep array.
  * Cross-pane-move focus restore is no longer a CardHost concern —
  * it lives in `focus-transfer.ts#transferFocusAfterMove`, called
  * from `deck-manager.ts#_detachCard` / `_moveCardToPane` (the
@@ -105,10 +111,7 @@ import * as paneContentRegistry from "./pane-content-registry";
 import * as paneFrameRegistry from "./pane-frame-registry";
 import * as paneRootRegistry from "./pane-root-registry";
 import { CardPortal } from "./card-portal";
-import {
-  deckTrace,
-  formatElement,
-} from "../../deck-trace";
+import { deckTrace } from "../../deck-trace";
 import { applyBagFocus } from "../../focus-transfer";
 import { CardIdContext } from "@/lib/card-id-context";
 
@@ -325,97 +328,15 @@ export function captureFocus(cardRoot: HTMLElement): FocusSnapshot {
   return { kind: "none" };
 }
 
-/**
- * Cold-boot / cross-pane-move counterpart of {@link captureFocus}.
- * Resolves the four `FocusSnapshot` variants back to a concrete DOM
- * element inside `cardRoot` and calls `.focus()` on it.
- *
- * Defensive semantics:
- *   - Pre-check: if focus is already somewhere inside the card, do
- *     nothing. Re-applying would fight a user interaction in progress
- *     (race between mount restore and a click inside the freshly-
- *     mounted subtree). Exception: when the snapshot is a framework-
- *     axis kind (`dom` / `form-control`) AND the current focus sits
- *     inside a `COMPONENT_OWNED_SELECTORS` root, the engine's mount-
- *     time `paintMirrorAsActive` (called from `onRestore` when the
- *     card is active) has auto-focused its own contenteditable; the
- *     framework's `bag.focus` axis is the authoritative override for
- *     transient in-card targets (find input, future inline editors),
- *     so we punch through and apply the snapshot anyway. Without
- *     this carve-out, Developer > Reload silently drops the saved
- *     find-input focus every time on engine-managed cards — the
- *     engine's paint-active runs in CardHost's content-restore
- *     effect (effect A around line 814), the framework's apply
- *     runs in the next effect (effect B around line 956), and the
- *     pre-check bails because effect A already focused the
- *     contenteditable.
- *   - If the keyed element is not in the DOM yet (late-mounting
- *     content), no-op — the caller is responsible for re-trying at a
- *     later readiness point (e.g. `onContentReady`).
- *   - `kind === "none"` never mutates focus.
- *
- * Pure-ish: mutates `document.activeElement` only when the target is
- * resolvable and focus is not already inside the card (or only inside
- * the engine's contenteditable when overriding for the framework axis).
- */
-export function applyFocusSnapshot(
-  cardRoot: HTMLElement,
-  snapshot: FocusSnapshot,
-): void {
-  if (snapshot.kind === "none") return;
-
-  // Respect any focus already inside the card — a click that landed
-  // during the restore window must win over the saved snapshot.
-  // Exception (engine carve-out): when restoring a framework-axis
-  // snapshot (`dom` / `form-control`) and the current focus is on the
-  // engine's contenteditable (e.g. tide-card's TugTextEditor mount-
-  // time `paintMirrorAsActive` claimed focus), the framework's
-  // bag.focus axis wins — see the function docstring for the full
-  // rationale.
-  const currentActive = cardRoot.ownerDocument.activeElement;
-  if (
-    currentActive instanceof HTMLElement &&
-    cardRoot.contains(currentActive)
-  ) {
-    const isFrameworkAxisSnapshot =
-      snapshot.kind === "dom" || snapshot.kind === "form-control";
-    let currentIsEngineClaimed = false;
-    if (isFrameworkAxisSnapshot) {
-      for (const selector of COMPONENT_OWNED_SELECTORS) {
-        if (currentActive.closest(selector)) {
-          currentIsEngineClaimed = true;
-          break;
-        }
-      }
-    }
-    if (!(isFrameworkAxisSnapshot && currentIsEngineClaimed)) {
-      return;
-    }
-    // Fall through: framework-axis snapshot overrides engine-claimed
-    // focus.
-  }
-
-  let target: HTMLElement | null = null;
-  if (snapshot.kind === "form-control") {
-    target = cardRoot.querySelector<HTMLElement>(
-      `[data-tug-state-key="${CSS.escape(snapshot.componentStatePreservationKey)}"]`,
-    );
-  } else if (snapshot.kind === "dom") {
-    target = cardRoot.querySelector<HTMLElement>(
-      `[data-tug-focus-key="${CSS.escape(snapshot.focusKey)}"]`,
-    );
-  } else if (snapshot.kind === "engine") {
-    for (const selector of COMPONENT_OWNED_FOCUS_TARGETS) {
-      const el = cardRoot.querySelector<HTMLElement>(selector);
-      if (el) {
-        target = el;
-        break;
-      }
-    }
-  }
-
-  if (target !== null) target.focus();
-}
+// Phase E.11 Step 4k — `applyFocusSnapshot` retired. The cold-boot
+// RESTORE focus claim routes through `applyBagFocus` (the
+// single-channel dispatcher in `focus-transfer.ts`). The legacy
+// "bail if focus is already inside the card" pre-check is now
+// the D11 yield rule inside `applyBagFocus`'s framework branch.
+// `COMPONENT_OWNED_FOCUS_TARGETS` is no longer referenced; the
+// dispatcher resolves engine kind via `store.invokeEnginePaintMirrorAsActive`
+// (which calls the engine's registered hook from Step 2 /
+// Step 4e), not via DOM querySelector.
 
 /**
  * Find this card's own DOM subtree root inside a pane's content element.
@@ -454,113 +375,18 @@ function isActiveCardOfActivePane(
   return pane.activeCardId === cardId;
 }
 
-/**
- * `true` when the element is visually hidden via `display: none` (either
- * directly or via an ancestor). Used as the `hidden` payload on
- * `focus-call` deck-trace events so a trace reader can distinguish a
- * focus call against a live element from one against a node whose
- * ancestor's `display: none` silently swallows focus (the WebKit
- * behavior behind the AT-series neighbor-not-focusable symptoms).
- */
-function isElementHidden(el: HTMLElement | null): boolean {
-  if (el === null) return false;
-  if (el.offsetParent === null) {
-    // offsetParent === null implies some ancestor is display:none OR
-    // the element itself is display:none (excluding position:fixed
-    // which intentionally has no offsetParent but is still visible).
-    const style =
-      typeof window !== "undefined" && typeof window.getComputedStyle === "function"
-        ? window.getComputedStyle(el)
-        : null;
-    if (style !== null && style.position === "fixed") return false;
-    return true;
-  }
-  return false;
-}
+// Phase E.11 Step 4k — `isElementHidden` retired from this module.
+// The dispatcher in `focus-transfer.ts` carries its own copy for
+// the `focus-call` trace event's `hidden` field.
 
-/**
- * Run `applyFocusSnapshot` while emitting a `focus-call` deck-trace
- * event that captures the site tag, the pre/post active-element, the
- * target selector (computed post-resolve — see
- * `resolveApplyFocusSnapshotTargetSelector` for why we re-query here),
- * and the hidden bit.
- *
- * The helper is a thin wrapper so the existing `applyFocusSnapshot`
- * contract and three call sites remain clean.
- */
-function traceApplyFocusSnapshot(
-  site: string,
-  cardId: string,
-  cardRoot: HTMLElement,
-  snapshot: FocusSnapshot,
-): void {
-  const doc = cardRoot.ownerDocument;
-  const activeBefore = formatElement(doc.activeElement);
-  // Resolve target ONCE here so we can record the selector that
-  // `applyFocusSnapshot` is going to resolve internally. This is an
-  // O(1) additional query; the alternative (adding a ref-out from
-  // applyFocusSnapshot) would change its public contract.
-  let target: HTMLElement | null = null;
-  let targetSelector = "";
-  if (snapshot.kind === "form-control") {
-    targetSelector = `[data-tug-state-key="${snapshot.componentStatePreservationKey}"]`;
-    target = cardRoot.querySelector<HTMLElement>(
-      `[data-tug-state-key="${CSS.escape(snapshot.componentStatePreservationKey)}"]`,
-    );
-  } else if (snapshot.kind === "dom") {
-    targetSelector = `[data-tug-focus-key="${snapshot.focusKey}"]`;
-    target = cardRoot.querySelector<HTMLElement>(
-      `[data-tug-focus-key="${CSS.escape(snapshot.focusKey)}"]`,
-    );
-  } else if (snapshot.kind === "engine") {
-    targetSelector = "engine";
-  }
-
-  // Phase E.11 Step 1 — three-phase `focus-measurement` ring around
-  // the cold-boot RESTORE focus claim. pre-sync runs above this
-  // block, post-sync after `applyFocusSnapshot`, and post-gesture
-  // fires on the next macrotask. Diagnostic only; the body still
-  // runs synchronously.
-  deckTrace.record({
-    kind: "focus-measurement",
-    phase: "pre-sync",
-    site: `card-host:${site}`,
-    cardId,
-    activeElement: activeBefore,
-  });
-
-  applyFocusSnapshot(cardRoot, snapshot);
-
-  const activeAfter = formatElement(doc.activeElement);
-  deckTrace.record({
-    kind: "focus-measurement",
-    phase: "post-sync",
-    site: `card-host:${site}`,
-    cardId,
-    activeElement: activeAfter,
-  });
-  if (typeof setTimeout === "function") {
-    setTimeout(() => {
-      deckTrace.record({
-        kind: "focus-measurement",
-        phase: "post-gesture",
-        site: `card-host:${site}`,
-        cardId,
-        activeElement: formatElement(doc.activeElement),
-      });
-    }, 0);
-  }
-
-  deckTrace.record({
-    kind: "focus-call",
-    site,
-    cardId,
-    targetSelector,
-    activeBefore,
-    activeAfter,
-    hidden: isElementHidden(target),
-  });
-}
+// Phase E.11 Step 4k — `traceApplyFocusSnapshot` retired together
+// with `applyFocusSnapshot`. The cold-boot RESTORE site calls
+// `applyBagFocus` directly; the dispatcher emits its own
+// `focus-call` and `focus-measurement` events through the
+// `measureFocusClaim` helper in `focus-transfer.ts`. The
+// `applyFocusSnapshot` site tag survives as a
+// `SelectionRestoreVia` string in `deck-trace.ts` for trace-log
+// continuity with pre-E.11 entries.
 
 /**
  * Apply a saved `FormControlSnapshot` to an element. Idempotent guard at the

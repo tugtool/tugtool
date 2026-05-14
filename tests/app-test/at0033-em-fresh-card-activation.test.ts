@@ -16,11 +16,19 @@
  * the prompt-input toolbar's first button instead of the engine
  * root.
  *
- * Step 23F adds `engineKind: "em"` to the card registry shape;
- * `gallery-prompt-entry` and `tide` declare it. The resolver now
- * returns `dispatch-activated` for registry-tagged EM cards
- * regardless of `bag.content` presence, so `onCardActivated`
- * fires for both saved and fresh EM cards uniformly.
+ * Step 23F added `engineKind: "em"` to the card registry shape;
+ * `gallery-prompt-entry` and `tide` declare it. The resolver
+ * routes registry-tagged EM cards through the engine resolution
+ * regardless of `bag.content` presence, so the engine's focus
+ * claim fires for both saved and fresh EM cards uniformly.
+ *
+ * Phase E.11 Step 4 — the dispatch path moved from
+ * `invokeActivationCallback` (engine's autonomous claim via
+ * `useCardStatePreservation.onCardActivated`) to the single-channel
+ * `applyBagFocus` dispatcher invoking the registered engine hook
+ * via `store.invokeEnginePaintMirrorAsActive(cardId)`. The trace
+ * gate updates from `engine-activation-dispatched` to
+ * `engine-paint-mirror-active` with `caller: "via-engine-hook"`.
  *
  * ## Coverage
  *
@@ -85,17 +93,21 @@ async function runFreshCardActivation(app: App, componentId: string): Promise<vo
     `(typeof window.__tug !== "undefined") && (window.__tug.getActiveCardId() === "B")`,
   );
 
-  // engine-activation-dispatched fires for B with the
-  // "transfer-for-activation" tag — proves the dispatch-activated
-  // branch ran rather than the default-focus branch.
+  // engine-paint-mirror-active with caller "via-engine-hook" fires
+  // for B — proves the framework's `applyBagFocus` dispatcher
+  // invoked the engine through the registered hook (Phase E.11
+  // Step 4 single-channel path), rather than falling through to
+  // default-focus. Pre-E.11 the equivalent gate was
+  // `engine-activation-dispatched` fired by `invokeActivationCallback`;
+  // post-E.11 that path is retired (the engine becomes a callable,
+  // not an autonomous claimant).
   await app.waitForCondition<boolean>(
     `(function(){
       var t = window.__tug.getDeckTrace({since: ${markBeforeActivate}});
       for (var i = 0; i < t.length; i++) {
-        if (t[i].kind === "engine-activation-dispatched"
+        if (t[i].kind === "engine-paint-mirror-active"
             && t[i].cardId === "B"
-            && t[i].engine === ${JSON.stringify(componentId)}
-            && t[i].dispatchedFrom === "transfer-for-activation") return true;
+            && t[i].caller === "via-engine-hook") return true;
       }
       return false;
     })()`,

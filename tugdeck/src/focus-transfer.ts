@@ -43,82 +43,56 @@
  *
  * ## What ships in this module
  *
- * - Resolver plus store wiring (`resolveActivationTarget`, registrations).
- * - `transferFocusForActivation` and gesture hooks from `pane-focus-controller`,
- *   `tug-pane`, and `deck-manager` (`_removeCard` / `_closePane`); the
- *   legacy `[A3]` `useLayoutEffect` in `CardHost` retires in favor of
- *   this path. `default-focus` covers cards with no saved `bag.focus`.
- * - Drag: `captureFocusForDragStart` / `transferFocusAfterMove` from
- *   pane/tab drag handlers and `deck-manager` after cross-pane moves;
- *   cancel path refocuses the pre-drag target.
- * - App focus: `reactivateCurrentFocusDestination` on window `focus` after
- *   `setHasFocus(true)`; `blur` flushes save before `hasFocus` clears.
+ * - Single-channel dispatcher: pure `resolveBagFocus` + impure
+ *   `applyBagFocus` (Phase E.11 D3). Every focus-claim path
+ *   reads `bag.focus` through these primitives; the engine
+ *   becomes a callable invoked from the dispatcher's `engine`
+ *   branch (D1). D11 yield rule in the `framework` branch
+ *   protects substrate-hook self-focus that already landed on
+ *   the same target.
+ * - `transferFocusForActivation` and gesture hooks from
+ *   `pane-focus-controller`, `tug-pane`, and `deck-manager`
+ *   (`_removeCard` / `_closePane`); the legacy `[A3]`
+ *   `useLayoutEffect` in `CardHost` retires in favor of this
+ *   path. `default-focus` covers cards with no saved `bag.focus`.
+ * - Drag: `captureFocusForDragStart` / `transferFocusAfterMove`
+ *   from pane/tab drag handlers and `deck-manager` after
+ *   cross-pane moves; cancel path refocuses the pre-drag target.
+ * - App focus: `reactivateCurrentFocusDestination` on window
+ *   `focus` after `setHasFocus(true)`; `blur` flushes save
+ *   before `hasFocus` clears.
  *
- * ## The activation target
+ * ## The dispatch model
  *
- * `resolveActivationTarget` returns an `ActivationTarget` discriminated
- * union with three variants:
+ * `resolveBagFocus(cardId, store)` returns a `BagFocusResolution`
+ * six-variant union (`framework` / `engine` / `default-focus` /
+ * `deferred-dom` / `deferred-engine` / `none`). `applyBagFocus`
+ * consumes that resolution and performs the corresponding side
+ * effect:
  *
- *   - `{ kind: "focus-element", el }` — a concrete focusable DOM
- *     element was resolved from the card's saved `bag.focus` (or
- *     `bag.formControls` when the focused element was a persisted
- *     form control). The caller may call `.focus()` on `el` after
- *     passing the focus-theft gate.
+ *   - `framework` → `el.focus()` (subject to D11 yield: when the
+ *     resolved element is already `document.activeElement`,
+ *     return `"applied"` without re-calling).
+ *   - `engine` → `store.invokeEnginePaintMirrorAsActive(cardId)`.
+ *     The engine hook is internally idempotent.
+ *   - `default-focus` → walk the `DEFAULT_FOCUS_SELECTORS` chain.
+ *   - `deferred-dom` / `deferred-engine` → return `"deferred"`.
+ *     `CardHost`'s late-mount retry (MutationObserver for DOM
+ *     targets; `subscribeEngineHooksChange` for engine targets)
+ *     re-fires `applyBagFocus` when the target / engine
+ *     becomes available.
+ *   - `none` → idempotent no-op.
  *
- *   - `{ kind: "dispatch-activated" }` — the card is content-owning
- *     (`bag.content !== undefined`). The caller should invoke
- *     `store.invokeActivationCallback(cardId)` and let the factory's
- *     registered `onCardActivated` handle targeting. Factories know
- *     their own "the card was just brought to front; put the caret
- *     in the right place" logic in a way the framework cannot
- *     generalize (e.g. an editor with multiple nested focusables).
- *
- *   - `{ kind: "default-focus", cardRoot }` — the card is DOM-
- *     authority but has no usable focus snapshot (no bag, or
- *     `bag.focus` is `null` / `kind: "none"`, or the snapshot
- *     pointed at a stale element). The caller passes `cardRoot` to
- *     `traceApplyDefaultFocus` from `default-focus.ts`, which
- *     walks the {@link DEFAULT_FOCUS_SELECTORS} priority chain.
- *
- *   - `{ kind: "none" }` — nothing to focus. Returned when no host
- *     root is registered for the card. Without a host root, the
- *     resolver cannot scope a default-focus walk, so even fresh
- *     cards return `none` until their `CardHost` registration
- *     completes.
- *
- * The union carries the resolved element directly so downstream
- * gating and transfer code never re-queries. Re-querying would invite
- * a TOCTOU gap between "resolve" and "focus" — if the subtree is
- * mutated between those two reads, the gate could pass a card-root
- * contains() check while the element itself has already been removed.
- *
- * ## How the resolver reads state
- *
- * `resolveActivationTarget(cardId, store)` consults two sources:
- *
- *   1. `store.getCardState(cardId)` — the persisted bag. Drives the
- *      FC (form-control / dom) vs EM (`bag.content`) classification.
- *
- *   2. `store.peekCardHostRoot(cardId)` — the registered card-host
- *      DOM root (`[data-card-host][data-card-id="…"]`). Used as the
- *      scope for `querySelector` lookups so the resolver does not
- *      need to walk the deck container or rely on global uniqueness
- *      of the focus-key attributes (card roots are the per-card
- *      scoping anchor).
- *
- * The resolver is side-effect-free: it reads DOM via
- * `querySelector`, reads the store's bag and host-root registry, and
- * returns. It does not mutate focus, selection, or any DOM state.
- *
- * ## Not pure over the store alone
- *
- * The resolver is idempotent — calling it twice with the same inputs
- * and the same DOM yields the same result — but it is NOT pure over
- * the store value alone. Between two calls the DOM may have changed:
- * a content factory may have swapped the element that
- * `data-tug-focus-key="save"` identifies; a previously-hidden subtree
- * may have mounted; the registered host root may have detached. The
- * resolver always reads DOM live rather than caching a stale handle.
+ * `resolveBagFocus` is side-effect-free: it reads DOM via
+ * `querySelector`, reads the store's bag, host-root registry, and
+ * engine-hook registry, and returns. It is idempotent — calling
+ * it twice with the same inputs and the same DOM yields the same
+ * result — but it is NOT pure over the store value alone. Between
+ * two calls the DOM may have changed: a content factory may have
+ * swapped the element that `data-tug-focus-key="save"` identifies;
+ * a previously-hidden subtree may have mounted; the registered
+ * host root may have detached. The resolver always reads DOM live
+ * rather than caching a stale handle.
  *
  * ## Framework-local, no React
  *
@@ -244,61 +218,6 @@ function measureFocusClaim(
     }, 0);
   }
 }
-
-/**
- * The resolved destination of an activation-driven focus transfer.
- *
- * Every call to {@link resolveActivationTarget} returns one of these
- * three variants. Downstream gating and transfer code branches on
- * `kind` and — for `focus-element` — uses the carried `el` directly
- * without re-querying the DOM.
- */
-export type ActivationTarget =
-  | {
-      /**
-       * A concrete DOM element was resolved. The caller passes `el`
-       * into the focus-theft gate and, if allowed, calls
-       * `el.focus()`.
-       */
-      kind: "focus-element";
-      el: HTMLElement;
-    }
-  | {
-      /**
-       * The card is content-owning (`bag.content !== undefined`).
-       * The caller dispatches to
-       * `store.invokeActivationCallback(cardId)`; the factory's
-       * registered `onCardActivated` handles targeting.
-       */
-      kind: "dispatch-activated";
-    }
-  | {
-      /**
-       * The card is DOM-authority but has no usable focus snapshot
-       * (no bag yet, or `bag.focus` is `null` / `kind: "none"`). The
-       * caller passes `cardRoot` to {@link traceApplyDefaultFocus}
-       * which walks the {@link DEFAULT_FOCUS_SELECTORS} priority
-       * chain to land the caret on a sensible default.
-       *
-       * This case covers two production scenarios: a fresh DOM-
-       * authority card whose first activation has no prior save
-       * (creation paths route through this when their host root is
-       * registered before the activation fires), and a neighbor
-       * card promoted to active by a tab-close handoff (the m16
-       * scenario, where `c1` has never been saved).
-       */
-      kind: "default-focus";
-      cardRoot: HTMLElement;
-    }
-  | {
-      /**
-       * Nothing to focus. The card is unknown, no host root is
-       * registered, or the target element resolved by the saved
-       * snapshot is not in the DOM. The caller is expected to do
-       * nothing.
-       */
-      kind: "none";
-    };
 
 /**
  * Narrow subset of `IDeckManagerStore` that this module reads. Kept
@@ -599,151 +518,6 @@ export function applyBagFocus(
 }
 
 /**
- * Resolve the activation target for `cardId`.
- *
- * Consults the card's persisted bag via `store.getCardState(cardId)`
- * and, when the bag describes a DOM-authority card with a saved
- * focus snapshot, queries the registered card-host root via
- * `store.peekCardHostRoot(cardId)` to produce a concrete
- * `HTMLElement`. See the module header for the full contract.
- *
- * Side-effect-free. Callers may invoke this as often as needed; the
- * only side channel it reads is the live DOM.
- */
-export function resolveActivationTarget(
-  cardId: string,
-  store: FocusTransferStore,
-): ActivationTarget {
-  const bag = store.getCardState(cardId);
-
-  const card = store
-    .getSnapshot()
-    .cards.find((c) => c.id === cardId);
-  const isEngineManaged =
-    card !== undefined && isEngineManagedCard(card.componentId);
-  const isContentOwning = bag !== undefined && bag.content !== undefined;
-
-  // Engine carve-out precondition. For engine-managed or content-
-  // owning cards, attempt to honour a framework-axis `bag.focus`
-  // BEFORE falling through to the dispatch-activated path. The
-  // SAVE site only writes `bag.focus` for these cards when the
-  // kind is `dom` or `form-control` (engine focus stays absent),
-  // so this branch never resolves to the engine's contenteditable
-  // — it covers transient in-card targets like a find input or a
-  // future inline editor that should survive activation across
-  // app-switch, card-switch, and reload paths. If the kind is not
-  // a framework-axis kind, or the element no longer resolves,
-  // fall through unchanged so the engine's `onCardActivated`
-  // (or the bag.content factory's callback) handles its default.
-  // See `tuglaws/state-preservation.md` and
-  // `tuglaws/design-decisions.md` (engine-vs-framework focus
-  // boundary).
-  if ((isEngineManaged || isContentOwning) && bag?.focus !== undefined && bag.focus !== null) {
-    const focus = bag.focus;
-    if (focus.kind === "dom" || focus.kind === "form-control") {
-      const hostRoot = store.peekCardHostRoot(cardId);
-      if (hostRoot !== null && hostRoot.isConnected) {
-        const selector =
-          focus.kind === "dom"
-            ? `[data-tug-focus-key="${CSS.escape(focus.focusKey)}"]`
-            : `[data-tug-state-key="${CSS.escape(focus.componentStatePreservationKey)}"]`;
-        const el = hostRoot.querySelector<HTMLElement>(selector);
-        if (el !== null && el.isConnected) {
-          return { kind: "focus-element", el };
-        }
-      }
-    }
-  }
-
-  // Engine-managed cards dispatch through the factory's registered
-  // `onCardActivated` callback regardless of whether `bag.content` is
-  // populated yet. The registry's `engineKind: "em"` tag is the
-  // authoritative discriminator here — a fresh, never-saved EM card
-  // (no bag, no content) still has a content factory that knows where
-  // to put the caret. Falling through to `default-focus` for those
-  // cards would walk DEFAULT_FOCUS_SELECTORS and land focus on the
-  // first focusable descendant, which is typically a toolbar button
-  // sitting above the engine's contenteditable.
-  //
-  // The bag.content fallback below remains for cards whose
-  // registration somehow wasn't tagged but whose persisted bag clearly
-  // identifies them as content-owning — defensive coverage during the
-  // migration window and for any future content-owning factories that
-  // don't use the engine pattern.
-  if (isEngineManaged) {
-    return { kind: "dispatch-activated" };
-  }
-
-  // Content-owning cards dispatch through the factory's registered
-  // callback. We don't try to resolve a DOM element for them — the
-  // factory knows where focus should land in its own subtree.
-  if (isContentOwning) {
-    return { kind: "dispatch-activated" };
-  }
-
-  const hostRoot = store.peekCardHostRoot(cardId);
-  if (hostRoot === null) return { kind: "none" };
-
-  // Defensive: a stale `registerCardHostRoot` entry may point at a
-  // detached subtree (e.g. mid-cross-pane move where the cleanup
-  // ordering left the registry pointing at the previous DOM node).
-  // `querySelector` on a detached root still returns its descendants
-  // — without this guard the resolver would hand back a default-
-  // focus target whose `traceApplyDefaultFocus` walk targets a node
-  // outside the document. Mirror the same `isConnected` check the
-  // focus-element path uses on the resolved target.
-  if (!hostRoot.isConnected) return { kind: "none" };
-
-  // DOM-authority card with a usable saved focus snapshot: resolve
-  // the element via the snapshot's selector and return it for an
-  // exact restore.
-  const focus = bag?.focus;
-  if (focus !== undefined && focus !== null && focus.kind !== "none") {
-    let el: HTMLElement | null = null;
-    if (focus.kind === "form-control") {
-      el = hostRoot.querySelector<HTMLElement>(
-        `[data-tug-state-key="${CSS.escape(focus.componentStatePreservationKey)}"]`,
-      );
-    } else if (focus.kind === "dom") {
-      el = hostRoot.querySelector<HTMLElement>(
-        `[data-tug-focus-key="${CSS.escape(focus.focusKey)}"]`,
-      );
-    } else if (focus.kind === "engine") {
-      // Defensive handling for the rare (effectively impossible)
-      // case of a DOM-authority card carrying an `engine` snapshot.
-      // Real engine-bearing cards return `dispatch-activated` above
-      // via the `isEngineManaged` / `isContentOwning` branches.
-      // Phase E.11 Step 3 routes engine kind through the single
-      // `applyBagFocus` dispatcher; until then this branch resolves
-      // to the canonical engine selector so the path stays
-      // well-formed for any pre-E.11 bag that surfaces here.
-      el = hostRoot.querySelector<HTMLElement>(
-        "[data-tug-prompt-input-root] [contenteditable]",
-      );
-    }
-
-    // Defensive check. The registered host root may have been
-    // detached since registration without a matching unregister
-    // (the callback-ref cleanup in `CardHost` handles the common
-    // case, but nothing forbids a stray). A detached element's
-    // `querySelector` still returns its descendants; we want to
-    // refuse focus on anything that isn't live in the document.
-    if (el !== null && el.isConnected) {
-      return { kind: "focus-element", el };
-    }
-    // The snapshot pointed at an element that no longer exists.
-    // Fall through to the default-focus path so the activated card
-    // still receives the caret rather than silently no-op'ing.
-  }
-
-  // DOM-authority card with no usable snapshot: hand the host root
-  // back so the caller can run the default-focus chain. Covers
-  // never-saved cards (m16's c1) and cards whose snapshot resolved
-  // a stale element.
-  return { kind: "default-focus", cardRoot: hostRoot };
-}
-
-/**
  * Options for {@link transferFocusForActivation}.
  *
  * Stabilized once `transferFocusForActivation` shipped. Summarized so
@@ -885,22 +659,6 @@ export function transferFocusForActivation(
   const result = applyBagFocus(incomingCardId, store, {
     site: "focus-transfer",
   });
-
-  // Phase E.11 Step 4c bridge — call `invokeActivationCallback` as a
-  // sibling to `applyBagFocus` during the migration window. At 4c,
-  // engine cards (tide, gallery-prompt-entry) have NOT yet
-  // registered engine hooks via the new channel (that's 4e), so
-  // `applyBagFocus` resolves `deferred-engine` and returns
-  // `"deferred"` — the engine's autonomous claim doesn't fire and
-  // tide/gallery-prompt-entry cards lose their focus on
-  // activation. This bridge preserves the OLD behavior: the
-  // engine's `useCardStatePreservation.onCardActivated` callback
-  // fires and runs its `paintMirrorAsActive(view)` autonomous
-  // claim. Once 4e registers engine hooks AND 4f retires the
-  // autonomous claim, the callback body becomes empty and this
-  // bridge becomes a no-op. Step 4k deletes the bridge along with
-  // the other obsolete helpers.
-  store.invokeActivationCallback(incomingCardId, "transfer-for-activation");
 
   // Step 5 — Post-dispatch follow-ups (selection / form-control).
   //
@@ -1091,37 +849,6 @@ function installFormControlReapplyOnNextMousedown(
   };
 
   document.addEventListener("mousedown", handler, { capture: true, once: true });
-}
-
-/**
- * Best-effort selector string for the resolved target, used as the
- * `targetSelector` field of the `focus-call` deck-trace event. The
- * selector matches the same form `card-host.tsx`'s
- * `traceApplyFocusSnapshot` records, so trace-based diagnosis can
- * compare helper vs. legacy-effect call sites apples-to-apples.
- */
-function describeTargetSelector(
-  el: HTMLElement,
-  store: FocusTransferStore,
-  cardId: string,
-): string {
-  const bag = store.getCardState(cardId);
-  const focus = bag?.focus;
-  if (focus !== undefined && focus !== null) {
-    if (focus.kind === "form-control") {
-      return `[data-tug-state-key="${focus.componentStatePreservationKey}"]`;
-    }
-    if (focus.kind === "dom") {
-      return `[data-tug-focus-key="${focus.focusKey}"]`;
-    }
-    if (focus.kind === "engine") {
-      return "engine";
-    }
-  }
-  // Fallback — should not occur for a `focus-element` resolution
-  // (the resolver returned `none` if focus was null/none) but
-  // keeps the trace event well-formed regardless.
-  return el.tagName.toLowerCase();
 }
 
 /**
