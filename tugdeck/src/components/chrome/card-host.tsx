@@ -44,17 +44,16 @@
  *      `[cardId, hostStackId, hostContentEl]`) applies `bag.scroll`
  *      to `hostContentEl`, publishes `bag.domSelection` to
  *      `selectionGuard` (translation via `restoreCardDomSelection`),
- *      dispatches `bag.focus` via `applyBagFocus` when this card is
- *      the active card of the active pane ([D10]), and replays
- *      `bag.formControls` + `bag.regionScroll` via a single
- *      `MutationObserver` scoped to the card root so late-mounting
- *      elements restore when they appear. The `MutationObserver`
- *      also retries `applyBagFocus` for `deferred-dom` resolutions
- *      until the target appears or the 200-mutation / 5s budget
- *      exhausts (Phase E.11 D5 late-mount settle). Late-mounting
- *      engines drive their retry via the `subscribeEngineHooksChange`
- *      channel that bumps `engineHooksVersion`, which joins the
- *      effect's dep array.
+ *      dispatches `bag.focus` via `applyBagFocus` (one-shot) when
+ *      this card is the active card of the active pane ([D10]), and
+ *      replays `bag.formControls` + `bag.regionScroll`. The
+ *      `MutationObserver` scoped to the card root retries the
+ *      region-scroll and DOM-selection restores so late-mounting
+ *      elements settle when they appear — it does NOT retry focus.
+ *      The one late-mount FOCUS path is `deferred-engine`: a
+ *      late-mounting engine bumps `engineHooksVersion` via the
+ *      `subscribeEngineHooksChange` channel, which joins the
+ *      effect's dep array and re-runs the one-shot `applyBagFocus`.
  * Cross-pane-move focus restore is no longer a CardHost concern —
  * it lives in `focus-transfer.ts#transferFocusAfterMove`, called
  * from `deck-manager.ts#_detachCard` / `_moveCardToPane` (the
@@ -641,7 +640,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // callbacks finally appear.
   const [callbacksVersion, setCallbacksVersion] = useState(0);
 
-  // Phase E.11 Step 4d — engine-hooks-change axis.
+  // Engine-hooks-change axis.
   //
   // Bumped each time `store.subscribeEngineHooksChange(cardId, …)`
   // fires (registration or unregistration of the engine's
@@ -649,8 +648,9 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // the cold-boot RESTORE effect's dep array so a late-mounting
   // engine (tide's editor after `feedsReady`) re-fires
   // `applyBagFocus`, which now resolves `engine` (vs. the prior
-  // `deferred-engine`) and invokes the hook. This is the
-  // `deferred-engine` half of the late-mount settle (D5 + D11).
+  // `deferred-engine`) and invokes the hook. This is the one
+  // late-mount FOCUS settle path that survives — there is no
+  // `deferred-dom` focus retry.
   const [engineHooksVersion, setEngineHooksVersion] = useState(0);
   useLayoutEffect(() => {
     return store.subscribeEngineHooksChange(cardId, () => {
@@ -938,61 +938,30 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       tryRestoreDomSelection();
     }
 
-    // Focus restore, [D10] Option B gated. The gate accepts only
-    // `dom` and `form-control` kinds at this site — these are
-    // framework-axis targets that the resolver can re-focus directly.
-    // For content-owning cards this is the path that brings transient
-    // in-card focus (find inputs, future inline editors) back on
-    // cold boot; the engine's own caret rides separately through
-    // `onCardActivated` → `paintMirrorAsActive`, which is reached
-    // after `bag.focus` is consumed (or skipped) here. `kind: "none"`
-    // and `kind: "engine"` are intentionally not restored by this
-    // site:
-    //   - `none` is a no-op by definition.
-    //   - `engine` points at the engine's contenteditable. Calling
-    //     `.focus()` on it from the framework would bypass the engine's
-    //     inactive-paint → global-Selection transfer and leave focus
-    //     on a view with no caret. The engine's activation hook is
-    //     authoritative for that case at this step; Phase E.11 Step 3
-    //     replaces this with a single-channel dispatcher that invokes
-    //     the engine via `store.invokeEnginePaintMirrorAsActive(cardId)`
-    //     and retires the autonomous claim.
-    // The active-card-of-active-pane gate prevents focus theft
-    // across panes ([R07]); `applyFocusSnapshot`'s pre-check keeps
-    // focus from being yanked away from a user who has clicked
-    // mid-restore.
-    // Phase E.11 Step 4d — cold-boot RESTORE focus claim routes
-    // through the single-channel `applyBagFocus` dispatcher.
+    // Focus restore — cold-boot RESTORE focus claim routes through
+    // the single-channel `applyBagFocus` dispatcher. The
+    // active-card-of-active-pane gate ([D10] Option B) prevents
+    // focus theft across panes ([R07]).
     //
     // Resolution paths handled by `applyBagFocus`:
-    //   - `framework` (`dom` / `form-control`): D11 yield rule
-    //     protects substrate-hook self-focus that already landed
-    //     on the same target (e.g. find session's
-    //     `useLayoutEffect([open])`). When the resolved element is
-    //     `document.activeElement`, the dispatcher records a yield
-    //     trace event and returns `"applied"` without re-calling
-    //     `.focus()`.
+    //   - `framework` (`dom` / `form-control`): `el.focus()`, unless
+    //     the element is already `document.activeElement` — then the
+    //     dispatcher yields (idempotency guard).
     //   - `engine` (engine hooks registered): invokes
     //     `store.invokeEnginePaintMirrorAsActive(cardId)`.
     //   - `deferred-engine` (engine mounts late, e.g. tide's
     //     editor after `feedsReady`): returns `"deferred"`. The
     //     `engineHooksVersion` axis (subscribed above) re-fires
-    //     this effect when the engine registers; the retry
+    //     this effect when the engine registers; the re-run
     //     re-runs `applyBagFocus`, which now resolves `engine`.
-    //   - `deferred-dom` (saved framework-axis target hasn't
-    //     mounted yet): returns `"deferred"`. The MutationObserver
-    //     loop below re-fires `applyBagFocus` on each subtree
-    //     mutation until the dispatcher returns `"applied"` or
-    //     the budget exhausts.
+    //     This is the one remaining late-mount FOCUS path.
+    //   - `deferred-dom` (saved framework-axis target not mounted):
+    //     returns `"deferred"`. This is a graceful no-focus
+    //     outcome — the cold-boot claim is one-shot, not retried.
     //   - `default-focus` / `none`: idempotent.
-    //
-    // The `[D10]` Option B active-card-of-active-pane gate
-    // prevents focus theft across panes ([R07]).
-    let focusApplied = false;
     if (isActiveCardOfActivePane(store, cardId)) {
       const result = applyBagFocus(cardId, store, { site: "cold-boot" });
       if (result === "applied") {
-        focusApplied = true;
         if (bag.focus?.kind === "form-control") {
           // Form-control apply triggers the browser's native
           // selection-on-focus behavior; record the cold-boot
@@ -1033,27 +1002,24 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     }
 
     const regionSnapshot = bag.regionScroll ?? undefined;
-    // The observer below is installed when ANY of three retries is
-    // pending:
+    // The observer below is installed when EITHER late-mount retry
+    // is pending:
     //   - regionSnapshot (virtualized scroller `scrollHeight`
     //     catch-up).
     //   - unapplied `bag.domSelection` (target nodes mount later;
     //     tug-markdown-view).
-    //   - Phase E.11 Step 4d deferred-dom focus retry (saved
-    //     framework-axis target hasn't mounted yet — find row's
-    //     `bag.components` reads `open:true` but the input mounts
-    //     a few commits later; tide's transcript hosts a FileBlock
-    //     whose find input materializes async).
-    // Skipping the observer when only one is pending would leave
+    // Focus is NOT retried here — the cold-boot focus claim above
+    // is one-shot. The only late-mount FOCUS path is `deferred-engine`,
+    // which settles via the `engineHooksVersion`-keyed effect re-run,
+    // not via this observer.
+    // Skipping the observer when only one retry is pending would leave
     // that one's retry hook un-installed.
     const needsDomSelectionRetry =
       bag.domSelection !== null &&
       bag.domSelection !== undefined &&
       !ownsSelectionAndFocus &&
       !domSelectionApplied;
-    const needsFocusRetry =
-      !focusApplied && isActiveCardOfActivePane(store, cardId);
-    if (!regionSnapshot && !needsDomSelectionRetry && !needsFocusRetry) {
+    if (!regionSnapshot && !needsDomSelectionRetry) {
       return;
     }
 
@@ -1088,71 +1054,16 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     const settledElByKey = new Map<string, HTMLElement>();
     const REGION_SCROLL_TOLERANCE_PX = 8;
 
-    // Phase E.11 Step 4d — deferred-dom retry budget for the
-    // `applyBagFocus`-driven focus claim.
-    //
-    // `apply()` retries `applyBagFocus` until the dispatcher
-    // returns `"applied"` (target appeared) or the budget
-    // exhausts. The budget is two independent guardrails per D5:
-    //   - `FOCUS_RETRY_MAX_MUTATIONS`: 200 mutations. Each
-    //     `apply()` increments `focusRetryMutationCount`; at 200,
-    //     the retry stops with a dev-mode warn.
-    //   - `FOCUS_RETRY_DEADLINE_MS`: 5000ms wall-clock. Computed
-    //     at effect start; the retry stops when `apply()` is
-    //     called past it.
-    // Budgets are guardrail-only: in production, the framework
-    // yields cleanly on stale state rather than thrashing.
-    const FOCUS_RETRY_MAX_MUTATIONS = 200;
-    const FOCUS_RETRY_DEADLINE_MS = 5000;
-    const focusRetryDeadline = Date.now() + FOCUS_RETRY_DEADLINE_MS;
-    let focusRetryMutationCount = 0;
-
     const apply = () => {
       const cardRoot = findCardRoot(hostContentEl, cardId);
       if (!cardRoot) return;
       // Form-controls were applied one-shot above; the observer-
       // driven path here handles region-scrolls (until the virtual-
-      // ized layout's `scrollHeight` catches up), the saved
+      // ized layout's `scrollHeight` catches up) and the saved
       // DOM-selection restore for non-content-owning cards whose
       // target nodes mount later (the markdown view's blocks parse
-      // and render asynchronously after the host mounts), AND the
-      // Phase E.11 deferred-dom focus retry.
+      // and render asynchronously after the host mounts).
       if (!domSelectionApplied) tryRestoreDomSelection();
-      // Phase E.11 Step 4d — deferred-dom focus retry.
-      if (
-        !focusApplied &&
-        isActiveCardOfActivePane(store, cardId) &&
-        focusRetryMutationCount < FOCUS_RETRY_MAX_MUTATIONS &&
-        Date.now() < focusRetryDeadline
-      ) {
-        const retryResult = applyBagFocus(cardId, store, {
-          site: "cold-boot-retry",
-        });
-        if (retryResult === "applied") {
-          focusApplied = true;
-          if (bag.focus?.kind === "form-control") {
-            deckTrace.record({
-              kind: "selection-restore",
-              cardId,
-              via: "applyFocusSnapshot",
-            });
-          }
-        }
-      } else if (
-        !focusApplied &&
-        (focusRetryMutationCount >= FOCUS_RETRY_MAX_MUTATIONS ||
-          Date.now() >= focusRetryDeadline)
-      ) {
-        // Budget exhausted. Mark applied so subsequent mutations
-        // don't re-enter; emit a dev-mode warn for observability.
-        focusApplied = true;
-        if (import.meta.env?.DEV === true) {
-          console.warn(
-            `[card-host] Phase E.11 deferred-dom retry budget exhausted for card "${cardId}" — saved bag.focus target never resolved (${focusRetryMutationCount} mutations / ${FOCUS_RETRY_DEADLINE_MS}ms).`,
-          );
-        }
-      }
-      focusRetryMutationCount += 1;
       if (regionSnapshot) {
         const pending: RegionScrollSnapshot = {};
         let hasPending = false;
