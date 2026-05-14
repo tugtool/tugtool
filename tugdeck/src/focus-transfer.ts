@@ -853,11 +853,7 @@ export function transferFocusForActivation(
     });
   }
 
-  // Step 3 — Resolve target against post-commit DOM.
-  const target = resolveActivationTarget(incomingCardId, store);
-  if (target.kind === "none") return;
-
-  // Step 4 — Gate through focus-theft rules ([A8]).
+  // Step 3 — Gate through focus-theft rules ([A8]).
   //
   // Reads `document.activeElement` directly; we are post-commit so
   // the DOM is consistent with the store snapshot we hand the gate.
@@ -869,43 +865,67 @@ export function transferFocusForActivation(
   );
   if (!allowed) return;
 
-  // Step 5 — Transfer.
-  if (target.kind === "focus-element") {
-    const doc = target.el.ownerDocument;
-    const activeBefore = formatElement(doc.activeElement);
-    measureFocusClaim(
-      "focus-transfer:focus-element",
-      incomingCardId,
-      doc,
-      () => target.el.focus(),
-    );
-    const activeAfter = formatElement(doc.activeElement);
-    deckTrace.record({
-      kind: "focus-call",
-      site: "focus-transfer",
-      cardId: incomingCardId,
-      targetSelector: describeTargetSelector(target.el, store, incomingCardId),
-      activeBefore,
-      activeAfter,
-      hidden: isElementHidden(target.el),
-    });
+  // Step 4 — Single-channel dispatch via `applyBagFocus`.
+  //
+  // Phase E.11 Step 4c — the previous four-branch split
+  // (focus-element → `el.focus()` + selection-restore + form-control
+  // reapply; default-focus → chain walk; dispatch-activated → engine
+  // `onCardActivated`; none → early return) collapses into one call.
+  // `applyBagFocus` reads `bag.focus`, resolves to one of `framework`
+  // / `engine` / `default-focus` / `deferred-*` / `none`, and
+  // performs the resolved side effect. D11 yield rule in the
+  // framework branch protects substrate-hook self-focus from being
+  // clobbered.
+  //
+  // For OLD `dispatch-activated`-equivalent (content-owning cards
+  // with engine hooks registered), `applyBagFocus` routes to
+  // `store.invokeEnginePaintMirrorAsActive(cardId)` — same engine as
+  // `invokeActivationCallback` ultimately called, but invoked
+  // through the framework's single channel.
+  const result = applyBagFocus(incomingCardId, store, {
+    site: "focus-transfer",
+  });
 
+  // Phase E.11 Step 4c bridge — call `invokeActivationCallback` as a
+  // sibling to `applyBagFocus` during the migration window. At 4c,
+  // engine cards (tide, gallery-prompt-entry) have NOT yet
+  // registered engine hooks via the new channel (that's 4e), so
+  // `applyBagFocus` resolves `deferred-engine` and returns
+  // `"deferred"` — the engine's autonomous claim doesn't fire and
+  // tide/gallery-prompt-entry cards lose their focus on
+  // activation. This bridge preserves the OLD behavior: the
+  // engine's `useCardStatePreservation.onCardActivated` callback
+  // fires and runs its `paintMirrorAsActive(view)` autonomous
+  // claim. Once 4e registers engine hooks AND 4f retires the
+  // autonomous claim, the callback body becomes empty and this
+  // bridge becomes a no-op. Step 4k deletes the bridge along with
+  // the other obsolete helpers.
+  store.invokeActivationCallback(incomingCardId, "transfer-for-activation");
+
+  // Step 5 — Post-dispatch follow-ups (selection / form-control).
+  //
+  // `applyBagFocus` owns the focus claim only. Adjacent axes
+  // (`bag.domSelection`, `bag.formControls`) ride separate channels;
+  // restore them post-dispatch.
+  if (result === "applied") {
     const bag = store.getCardState(incomingCardId);
     const cardRoot =
       targetCardHostEl ?? store.peekCardHostRoot(incomingCardId);
-    if (bag?.domSelection !== undefined && bag.domSelection !== null) {
-      if (cardRoot !== null) {
-        selectionGuard.restoreCardDomSelection(
-          incomingCardId,
-          bag.domSelection,
-          cardRoot,
-        );
-        deckTrace.record({
-          kind: "selection-restore",
-          cardId: incomingCardId,
-          via: "restoreCardDomSelection",
-        });
-      }
+    if (
+      bag?.domSelection !== undefined &&
+      bag.domSelection !== null &&
+      cardRoot !== null
+    ) {
+      selectionGuard.restoreCardDomSelection(
+        incomingCardId,
+        bag.domSelection,
+        cardRoot,
+      );
+      deckTrace.record({
+        kind: "selection-restore",
+        cardId: incomingCardId,
+        via: "restoreCardDomSelection",
+      });
     }
     if (
       bag !== undefined &&
@@ -914,69 +934,16 @@ export function transferFocusForActivation(
     ) {
       installFormControlReapplyOnNextMousedown(bag, cardRoot, incomingCardId);
     }
-    return;
   }
 
-  if (target.kind === "default-focus") {
-    // Walk the DEFAULT_FOCUS_SELECTORS chain inside the activated
-    // card's root. The helper records its own `focus-call` event
-    // (site `"focus-transfer-default"`) so traces can distinguish a
-    // snapshot-driven restore from a default-fallback restore.
-    traceApplyDefaultFocus(
-      "focus-transfer-default",
-      incomingCardId,
-      target.cardRoot,
-    );
-
-    // A card may have a saved domSelection even when its focus
-    // snapshot is missing (e.g., a content factory that publishes a
-    // selection without a focus key). Preserve [A3]'s exact
-    // semantics: restore selection regardless of which focus path
-    // we took.
-    const bag = store.getCardState(incomingCardId);
-    if (bag?.domSelection !== undefined && bag.domSelection !== null) {
-      selectionGuard.restoreCardDomSelection(
-        incomingCardId,
-        bag.domSelection,
-        target.cardRoot,
-      );
-      deckTrace.record({
-        kind: "selection-restore",
-        cardId: incomingCardId,
-        via: "restoreCardDomSelection",
-      });
-    }
-    if (bag !== undefined && outgoingCardId !== incomingCardId) {
-      installFormControlReapplyOnNextMousedown(bag, target.cardRoot, incomingCardId);
-    }
-    return;
-  }
-
-  // `dispatch-activated` — the content factory's registered
-  // callback handles its own targeting. For content-owning cards that
-  // register no callback (gallery shells, ad-hoc fixtures), nothing
-  // focuses; the prior `document.activeElement` retains focus. When
-  // that prior focus is inside the OUTGOING card root, the visible
-  // symptom is a blinking caret in the now-inactive card (the user
-  // can keep typing into a card they just deactivated). Blur in that
-  // case so the activation gesture deterministically removes focus
-  // from the outgoing card even when no incoming target was named.
-  const dispatchDoc =
-    typeof document !== "undefined"
-      ? document
-      : (store.peekCardHostRoot(incomingCardId)?.ownerDocument ?? null);
-  if (dispatchDoc !== null) {
-    measureFocusClaim(
-      "focus-transfer:dispatch-activated",
-      incomingCardId,
-      dispatchDoc,
-      () => {
-        store.invokeActivationCallback(incomingCardId, "transfer-for-activation");
-      },
-    );
-  } else {
-    store.invokeActivationCallback(incomingCardId, "transfer-for-activation");
-  }
+  // Step 6 — Outgoing-card blur safety net.
+  //
+  // When the dispatcher resolved to `engine` (no DOM mutation on
+  // OUTGOING) or to an engine whose `paintMirrorAsActive` didn't
+  // claim focus (no engine hooks registered yet), the prior
+  // `document.activeElement` may still be inside the outgoing
+  // card. The blur safety net deterministically removes it so the
+  // user cannot keep typing into a card they just deactivated.
   blurFocusInOutgoingCard(store, outgoingCardId, incomingCardId);
 }
 
