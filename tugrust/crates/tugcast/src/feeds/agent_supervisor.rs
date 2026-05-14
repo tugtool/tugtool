@@ -1516,12 +1516,22 @@ impl AgentSupervisor {
                 })
                 .clone();
             let mut cs = self.client_sessions.lock().await;
+            // Capture whether *any* live client connection already held
+            // this session BEFORE this call's affinity insert. This is
+            // the genuine "session_live_elsewhere" signal: a session
+            // re-materialized by `rebind_from_ledger` is in no client's
+            // set, while one another connected client is using is. Read
+            // it here, pre-insert, so the resume check below isn't
+            // fooled by the row this very call is about to add.
+            let held_by_live_client_before = cs
+                .values()
+                .any(|set| set.contains(&tug_session_id));
             cs.entry(client_id)
                 .or_default()
                 .insert(tug_session_id.clone());
-            (arc, was_inserted)
+            (arc, was_inserted, held_by_live_client_before)
         };
-        let (entry_arc, inserted) = phase1;
+        let (entry_arc, inserted, held_by_live_client_before) = phase1;
 
         // Compute the *effective* session mode — the mode the bridge
         // will actually use when it spawns tugcode. For a fresh insert
@@ -1567,18 +1577,37 @@ impl AgentSupervisor {
                     "spawn_session: reconnect release returned error (ignored)"
                 );
             }
-            // Reject a `resume` against a session already bound to a
-            // *different* card while it is still live. The `card_id`
-            // field is the persistent "last bound" record and is
-            // preserved across close/errored, so liveness is encoded
-            // in `spawn_state ∈ {Idle, Spawning, Live}` (a freshly
-            // rebound or just-bound entry sits at `Idle` until the
-            // dispatcher's first CODE_INPUT promotes it to `Spawning`,
-            // so Idle counts as held). Closed/Errored entries do not
-            // hold the binding from the supervisor's perspective —
-            // a different card may rebind them via `mode=resume`.
-            // Same-card reconnects (WS drop + reconnect) and `new`
-            // payloads are unaffected.
+            // Reject a `resume` only when a live client connection is
+            // genuinely holding this session on a *different* card.
+            //
+            // The `card_id` field is the persistent "last bound"
+            // record, preserved across close/errored — but the ledger
+            // remembering a different card is NOT by itself a
+            // conflict. After a tugcast restart, `rebind_from_ledger`
+            // re-materializes every prior session as `Idle` carrying
+            // its recorded `card_id`, and deliberately does NOT
+            // populate `client_sessions` (there is no WebSocket client
+            // behind a rebind). Likewise a page reload drops the old
+            // WebSocket, and `on_client_disconnect` removes that
+            // client's `client_sessions` row. In both cases the
+            // recorded card is gone; a new card must be free to adopt
+            // the session via `mode=resume`.
+            //
+            // The genuine conflict is "a connected client is holding
+            // this session right now" — captured in
+            // `held_by_live_client_before` (read in Phase 1 *before*
+            // this call's own affinity insert, so it is not fooled by
+            // the row we just added). A resume is rejected only when
+            // all of:
+            //   (a) the entry is in a not-closed `spawn_state`
+            //       (Idle/Spawning/Live),
+            //   (b) the ledger's `card_id` differs from the resuming
+            //       card, AND
+            //   (c) a live client connection already held this session
+            //       before this call.
+            // Same-card reconnects (WS drop + reconnect) clear (b);
+            // rebind-from-ledger / post-reload adoptions clear (c);
+            // `new` payloads never enter this block.
             if session_mode == SessionMode::Resume {
                 let entry = entry_arc.lock().await;
                 let still_held = matches!(
@@ -1591,7 +1620,7 @@ impl AgentSupervisor {
                     None
                 };
                 if let Some(holder) = holder_opt {
-                    if holder != card_id {
+                    if holder != card_id && held_by_live_client_before {
                         let holder_owned = holder.to_owned();
                         drop(entry);
                         // Drop the per-client affinity row we just
@@ -3460,6 +3489,70 @@ mod tests {
         sup.handle_control("spawn_session", &resume_payload("card-A", "sess-1"), 10)
             .await
             .expect_handled_with("same-card reconnect must succeed");
+    }
+
+    /// A `resume` from a different card must SUCCEED when the recorded
+    /// holder card has no live client connection — the
+    /// `rebind_from_ledger` case. After a tugcast restart the entry is
+    /// `Idle` carrying its old `card_id`, but `client_sessions` is
+    /// empty for it; a new card is free to adopt the session.
+    #[tokio::test]
+    async fn test_spawn_session_allows_resume_when_recorded_card_has_no_live_client() {
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
+
+        // Simulate a rebound-from-ledger entry: present in the ledger,
+        // `Idle`, carrying a recorded `card_id`, but with NO
+        // `client_sessions` row (rebind does not populate it).
+        let tug_id = TugSessionId::new("sess-1");
+        let entry_arc = insert_ledger_entry(&sup, &tug_id).await;
+        {
+            let mut e = entry_arc.lock().await;
+            e.spawn_state = SpawnState::Idle;
+            e.card_id = Some("card-old".to_string());
+        }
+
+        // A different card resumes it. No other live client holds the
+        // session, so the resume is allowed and the binding moves.
+        sup.handle_control("spawn_session", &resume_payload("card-new", "sess-1"), 20)
+            .await
+            .expect_handled_with(
+                "resume of an orphaned (rebound-from-ledger) session must succeed",
+            );
+
+        let entry = entry_arc.lock().await;
+        assert_eq!(
+            entry.card_id.as_deref(),
+            Some("card-new"),
+            "the resuming card adopts the session binding",
+        );
+    }
+
+    /// A `resume` from a different card on the SAME live client
+    /// connection is still rejected — the session is genuinely held
+    /// (the client's `client_sessions` row carries it), so a second
+    /// card on that connection cannot steal it.
+    #[tokio::test]
+    async fn test_spawn_session_rejects_resume_same_client_other_card() {
+        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
+
+        // client 10 binds sess-1 to card-A.
+        sup.handle_control("spawn_session", &spawn_payload("card-A", "sess-1"), 10)
+            .await
+            .expect_handled();
+        while state_rx.try_recv().is_ok() {}
+
+        // Same client 10 tries to resume sess-1 on card-B. The session
+        // is still live on this very connection → rejected.
+        let err = sup
+            .handle_control("spawn_session", &resume_payload("card-B", "sess-1"), 10)
+            .await
+            .expect_error();
+        assert_eq!(
+            err,
+            ControlError::CapExceeded {
+                reason: "session_live_elsewhere"
+            }
+        );
     }
 
     #[tokio::test]

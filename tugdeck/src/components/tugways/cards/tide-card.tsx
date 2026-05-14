@@ -599,26 +599,43 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
               console.warn("TideProjectPicker: connection unavailable");
               return;
             }
-            // Start the sheet's exit animation FIRST. Defer
-            // `sendSpawnSession` until after the animation has
-            // played: `spawn_session_ok` arrives in single-digit
-            // milliseconds in-process, and the resulting binding
-            // update flips this card from picker → body, unmounting
-            // the picker (and its sheet host) mid-animation. The
-            // user-visible symptom is the sheet "just disappearing"
-            // on Open while Cancel animates correctly. Deferring the
-            // wire send by the sheet's exit duration lets the sheet
-            // play its exit cleanly before the binding flip cascades
-            // through the card.
+            // Start the sheet's exit animation FIRST. Defer the wire
+            // send until after the animation has played:
+            // `spawn_session_ok` arrives in single-digit milliseconds
+            // in-process, and the resulting binding update flips this
+            // card from picker → body, unmounting the picker (and its
+            // sheet host) mid-animation. The user-visible symptom is
+            // the sheet "just disappearing" on Open while Cancel
+            // animates correctly. Deferring the wire send by the
+            // sheet's exit duration lets the sheet play its exit
+            // cleanly before the binding flip cascades through the
+            // card.
             close("open");
             window.setTimeout(() => {
-              sendSpawnSession(
-                connection,
-                cardId,
-                sessionId,
-                projectDir,
-                sessionMode,
-              );
+              if (sessionMode === "resume") {
+                // A `resume` can be rejected by the server (e.g.
+                // `session_live_elsewhere` when the session's ledger
+                // entry is still bound to another card). Route it
+                // through `fireRestore` so it registers a restore
+                // expectation: the card shows `TideRestoring` while
+                // in flight, and a rejection (the `SESSION_STATE`
+                // errored frame) clears the registry and sets a
+                // picker notice — which re-presents the picker with
+                // the failure reason. Calling `sendSpawnSession`
+                // directly here would leave an empty card when
+                // `spawn_session_ok` never arrives: the sheet has
+                // already dismissed with `result: "open"` and the
+                // picker's `shownRef` guard blocks a re-present.
+                fireRestore(cardId, sessionId, projectDir, connection);
+              } else {
+                sendSpawnSession(
+                  connection,
+                  cardId,
+                  sessionId,
+                  projectDir,
+                  sessionMode,
+                );
+              }
             }, SHEET_EXIT_ANIMATION_MS);
           }}
           onCancel={() => close("cancel")}

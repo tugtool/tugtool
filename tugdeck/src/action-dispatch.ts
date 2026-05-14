@@ -170,6 +170,23 @@ export function _resetForTest(): void {
 export function dispatchAction(payload: Record<string, unknown>): void {
   const action = payload.action;
   if (typeof action !== "string") {
+    // Server error frames are CONTROL frames shaped
+    // `{ type: "error", detail: "..." }` with no `action` field —
+    // they are RPC error responses (e.g. a `spawn_session` rejected
+    // with `session_live_elsewhere` / `session_unknown`), not
+    // dispatchable actions. Surface them as errors carrying the
+    // detail rather than swallowing them as a generic "missing
+    // action field" warning, so a failed session restore is
+    // diagnosable instead of silent.
+    if (payload.type === "error") {
+      const detail =
+        typeof payload.detail === "string" ? payload.detail : "(no detail)";
+      console.error(
+        `dispatchAction: server error frame — ${detail}`,
+        payload,
+      );
+      return;
+    }
     console.warn("dispatchAction: payload missing action field", payload);
     return;
   }
