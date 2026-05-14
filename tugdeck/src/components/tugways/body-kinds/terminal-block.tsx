@@ -44,22 +44,6 @@
  * separate strip. The body kind's own `.tugx-term-header` is
  * suppressed when embedded (the chrome owns identity).
  *
- * Find row:
- *  - `<TugBlockFindRow>` mounted with `.tugx-term-find` between the
- *    identity header and the body container, gated on
- *    `findSession.state.open && !collapsed`. State, focus discipline,
- *    reload-survival slot, and the `data-tug-focus-key` axis live in
- *    `useBlockFindSession` ([D95] framework focus boundary).
- *    TerminalBlock owns the responder (`terminalBlockResponder`) and
- *    spreads the session's action map (`FIND` / `FIND_NEXT` /
- *    `FIND_PREVIOUS`) alongside its own `COPY` handler so Cmd-F /
- *    Cmd-G / Shift-Cmd-G / Cmd-C all route correctly via the chain.
- *  - Substrate-side match-highlighting against the virtualized
- *    character grid is out of scope here — the row's state, focus,
- *    and reload survival work standalone; navigation stubs to no-op
- *    until a terminal search bridge lands. Match-count reads 0 in the
- *    meantime.
- *
  * Render strategy:
  *
  *   - **Flat path** for ≤ `VISIBLE_THRESHOLD` lines (default 40):
@@ -127,8 +111,6 @@ import { BlockHeightIndex } from "@/lib/block-height-index";
 import { RenderedBlockWindow } from "@/lib/rendered-block-window";
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
 import { attachOuterScrollOnModifierWheel } from "@/components/tugways/internal/use-outer-scroll-on-modifier-wheel";
-import { useBlockFindSession } from "@/components/tugways/internal/use-block-find-session";
-import { TugBlockFindRow } from "@/components/tugways/internal/tug-block-find-row";
 import {
   useComponentStatePreservation,
   useSavedComponentState,
@@ -1337,23 +1319,13 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
 
   // ---- Responder identity ----------------------------------------------
   //
-  // TerminalBlock graduates to "responder + responder parent" in Phase
-  // E.4. It owns the `text` data the COPY action operates on, and it
-  // hosts a scope that descendants (the existing Copy button as a
-  // chain control; the find-row input as of Phase E.10/3) can attach
-  // into. The structure matches FileBlock's `fileBlockResponder` shape:
-  // a stable `useId`, a `Partial<Record<TugAction, ActionHandler>>`
-  // registered via `useOptionalResponder`, a `ResponderScope` wrapping
-  // the root.
-  //
-  // The action map merges TerminalBlock's own `COPY` handler with the
-  // find session's `FIND` / `FIND_NEXT` / `FIND_PREVIOUS` handlers
-  // (`useBlockFindSession` returns them in `session.actions`). Cmd-C
-  // while the block is first-responder runs the silent COPY path; the
-  // confirmation flash is a click-affordance concern that lives inside
-  // `BlockCopyButton`. Cmd-F opens the find row via the session's
-  // `onBeforeOpen` (uncollapse + first-responder promote) before
-  // flipping `open` true.
+  // TerminalBlock owns the `text` data the `COPY` action operates on,
+  // so it registers as a responder for `COPY`: a stable `useId`, a
+  // `Partial<Record<TugAction, ActionHandler>>` registered via
+  // `useOptionalResponder`, a `ResponderScope` wrapping the root.
+  // Cmd-C while the block is first-responder runs the silent COPY
+  // path; the confirmation flash is a click-affordance concern that
+  // lives inside `BlockCopyButton`.
   const terminalBlockResponderId = React.useId();
 
   // Chain manager — promotes TerminalBlock to first-responder after a
@@ -1364,100 +1336,14 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // unit tests).
   const chainManager = useResponderChain();
 
-  // Header height writer — measures the React-owned `.tugx-term-header`
-  // so the find row's sticky-top stack
-  // (`--tugx-pin-stack-top + --tugx-toolblock-header-height + --tugx-term-header-height`)
-  // can pin the row directly below the header even as the header's
-  // measured height changes (line wrap on narrow widths, dynamic
-  // `headerLabel`, etc.). Same pattern as DiffBlock's header writer;
-  // the variable is unset when the header is suppressed (embedded
-  // composition) so the calc falls back to 0 for that term.
-  //
-  // [L03] useLayoutEffect — variable set before paint.
-  // [L06] DOM write, never React state.
-  // [L20] TerminalBlock owns `--tugx-term-*` (the variable is in that
-  //       family).
-  const headerRef = React.useRef<HTMLDivElement | null>(null);
-  React.useLayoutEffect(() => {
-    const root = outerRef.current;
-    const header = headerRef.current;
-    if (root === null) return;
-    if (header === null) {
-      root.style.removeProperty("--tugx-term-header-height");
-      return;
-    }
-    const write = (px: number): void => {
-      root.style.setProperty("--tugx-term-header-height", `${px}px`);
-    };
-    write(header.offsetHeight);
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (entry === undefined) return;
-      const boxes = entry.borderBoxSize;
-      const next =
-        boxes !== undefined && boxes.length > 0
-          ? boxes[0].blockSize
-          : entry.contentRect.height;
-      write(next);
-    });
-    observer.observe(header);
-    return () => {
-      observer.disconnect();
-    };
-  }, [embedded]);
-
-  // ---- Find UI session ----------------------------------------------------
-  //
-  // Single source for the find-row state machine, focus discipline,
-  // reload-survival slot, and `data-tug-focus-key` composition. The
-  // hook (consumer of the framework focus axis per [D95]) owns the
-  // row's internal lifecycle; TerminalBlock contributes the pre-open
-  // work (uncollapse + first-responder promotion). Once a terminal
-  // search bridge ships, the substrate-side navigation hooks come in
-  // here; until then `findNext` / `findPrevious` stub to no-op and the
-  // row still opens, accepts input, preserves focus across activation
-  // paths, and survives reload via the [A9] slot.
-  const findSession = useBlockFindSession({
-    scope: "terminal-block-find",
-    componentStatePreservationKey,
-    parentResponderId: terminalBlockResponderId,
-    navigation: {
-      findNext: () => undefined,
-      findPrevious: () => undefined,
-    },
-    onBeforeOpen: () => {
-      if (collapsed) {
-        // Reveal the body so the row pins below the header with the
-        // terminal content visible. Disengage any outer follow-bottom
-        // in the same beat (mirrors the fold-cue toggle).
-        outerRef.current?.dispatchEvent(
-          new CustomEvent("tug-disengage-follow-bottom", { bubbles: true }),
-        );
-        if (collapsedProp === undefined) {
-          setLocalCollapsed(false);
-        }
-        onToggleCollapsed?.(false);
-      }
-      // Promote TerminalBlock to first-responder so Cmd-F dispatches
-      // arriving while the chain is still settling find their way
-      // home. Idempotent if we already own first-responder.
-      chainManager?.makeFirstResponder(terminalBlockResponderId);
-    },
-  });
-
   // ---- Responder registration ([L11]) ---------------------------------
   //
-  // Merge the find session's actions with TerminalBlock's own COPY
-  // handler. Latest-ref pattern for `findSession.actions` so the
-  // registered action map doesn't churn the responder registration
-  // across renders; the action map is memoized inside the hook
-  // already, but composing it through `useMemo([findSession.actions])`
-  // here keeps the dep array honest.
+  // TerminalBlock registers a single `COPY` handler — Cmd-C copies the
+  // current terminal output when the block is first-responder.
   const terminalBlockActions = React.useMemo<
     Partial<Record<TugAction, ActionHandler>>
   >(
     () => ({
-      ...findSession.actions,
       [TUG_ACTIONS.COPY]: () => {
         const writeText = navigator.clipboard?.writeText.bind(
           navigator.clipboard,
@@ -1468,7 +1354,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
         void writeText(text).catch(() => undefined);
       },
     }),
-    [findSession.actions],
+    [],
   );
   const terminalBlockResponder = useOptionalResponder({
     id: terminalBlockResponderId,
@@ -1580,7 +1466,6 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
       >
         {showHeader ? (
           <div
-            ref={headerRef}
             className="tugx-term-header"
             data-slot={DATA_SLOT_HEADER}
           >
@@ -1602,13 +1487,6 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
           </div>
         ) : null}
         {portaledAffordances}
-        {findSession.state.open && !collapsed ? (
-          <TugBlockFindRow
-            findSession={findSession}
-            ariaLabel="Find in terminal output"
-            className="tugx-term-find"
-          />
-        ) : null}
         <div
           ref={bodyRef}
           className="tugx-term-content"

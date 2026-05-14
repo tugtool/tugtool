@@ -172,31 +172,3 @@ body {
  * `.tugx-file-fold-cue` class is forwarded onto the button as a
  * scoping hook for future file-specific overrides (none today) and a
  * stable test selector. */
-
-/* ---------- Find UI row — host-side sticky-stack binding ---------- */
-
-/* The find UI is now composed from `<TugBlockFindRow>`, which carries
- * `data-slot="tug-block-find-row"` and `.tugx-block-find` as its root
- * class. FileBlock passes the `.tugx-file-find` className to bind the
- * row's `--tugx-block-find-top` to FileBlock's local telescoping-pin
- * stack:
- *  - `--tugx-pin-stack-top`: outer entry-header height (transcript /
- *    pane header chain).
- *  - `--tugx-toolblock-header-height`: wrapper-chrome header height in
- *    embedded composition (zero in standalone).
- *  - `--tugx-file-header-height`: FileBlock's identity-header height
- *    in standalone composition (zero when `embedded={true}` — the
- *    header is suppressed and the chrome header is the only one above
- *    this row).
- *
- * All other find-row appearance (background, gaps, input wrap, clear
- * button, count, options) lives in `tug-block-find-row.css` under the
- * `--tugx-block-find-*` token family. FileBlock contributes only the
- * binding to its host-specific stack. */
-.tugx-file-find {
-  --tugx-block-find-top: calc(
-    var(--tugx-pin-stack-top, 0px)
-    + var(--tugx-toolblock-header-height, 0px)
-    + var(--tugx-file-header-height, 0px)
-  );
-}

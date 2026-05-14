@@ -26,14 +26,6 @@
  *    is the persistent toggle handle: embedded-mode hosts hide the
  *    header, so the cue must also portal into the host's actions slot
  *    or the user could expand but not collapse back.
- *  - Find row — `<TugBlockFindRow>` mounted with `.tugx-file-find`
- *    appended to its root (the FileBlock-side className binds the
- *    row's `--tugx-block-find-top` to the local sticky-stack
- *    composition). The row mounts only while `findSession.state.open`
- *    is true; sticky beneath the chrome / identity header. State,
- *    focus discipline, reload-survival slot, and the
- *    `data-tug-focus-key` axis live in `useBlockFindSession`
- *    (a consumer of the framework focus axis per [D95]).
  *  - Body — `<TugCodeView>` (expanded) or nothing (collapsed). CM6
  *    isn't mounted while collapsed so a huge file doesn't pay the
  *    mount cost until the user reveals it.
@@ -60,16 +52,18 @@
  *  - `embedded=true` drops the standalone frame (background, border,
  *    radius, outer margin) and the header strip. The host wrapper
  *    owns identity and affordances. CM6 still renders the body, so
- *    the embedded host gets line wrapping + selection + a find UI
- *    for free.
+ *    the embedded host gets line wrapping + selection for free.
  *
  * What this body kind does NOT do (and never will):
  *  - Render text with a bespoke DOM tree. CM6 is the canonical text
  *    engine for any file-based content (`tuglaws/component-authoring.md`
  *    §Text content); FileBlock composes the substrate, not bytes.
- *  - Implement its own find / Cmd-F bar. The substrate ships
- *    `@codemirror/search`; the header's `Search` button opens that
- *    panel via the viewer delegate.
+ *  - Implement its own find / Cmd-F bar. A card has at most one
+ *    text-entry surface, and for a tide card that is the
+ *    `tug-prompt-entry` — never a per-block find widget. The
+ *    `TugCodeView` substrate still carries the dormant
+ *    `@codemirror/search` plumbing for the future Find redesign,
+ *    but FileBlock drives no find UI.
  *  - Implement click-line-to-copy. CM6's native selection + Cmd-C
  *    handles region copy more naturally and consistently across the
  *    rest of the codebase. (The bespoke per-line click gesture used
@@ -85,12 +79,9 @@
  *    state because it controls *what* is rendered (one of two
  *    branches), not *how* a rendered element looks. The substrate's
  *    own appearance state lives in CM6 per its module docstring.
- *  - [L11] FileBlock owns the find session via `useBlockFindSession`
- *    and the codeViewRef delegate, and is therefore the responder for
- *    `FIND`, `FIND_NEXT`, and `FIND_PREVIOUS`. The session's action
- *    map is spread into FileBlock's responder so each Cmd-F / Cmd-G /
- *    Shift-Cmd-G keystroke arrives via the static keybinding map →
- *    responder-chain dispatch; no document-level listeners.
+ *  - [L11] FileBlock owns no responder. The `TugCodeView` substrate
+ *    registers its own selection-only responder (`copy` /
+ *    `selectAll`); FileBlock just composes it.
  *  - [L19] file pair (`.tsx` + `.css`), exported props interface,
  *    `data-slot="file-body"` on the root, this docstring.
  *  - [L20] component-token sovereignty — owns the `--tugx-file-*`
@@ -116,8 +107,6 @@ import { createPortal } from "react-dom";
 import type { SelectionRange } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 
-import { useOptionalResponder } from "@/components/tugways/use-responder";
-import { useResponderChain } from "@/components/tugways/responder-chain-provider";
 import {
   TugCodeView,
   type TugCodeViewDelegate,
@@ -125,8 +114,6 @@ import {
 import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
 import { attachOuterScrollOnModifierWheel } from "@/components/tugways/internal/use-outer-scroll-on-modifier-wheel";
-import { useBlockFindSession } from "@/components/tugways/internal/use-block-find-session";
-import { TugBlockFindRow } from "@/components/tugways/internal/tug-block-find-row";
 import {
   useComponentStatePreservation,
   useSavedComponentState,
@@ -134,7 +121,6 @@ import {
 } from "@/components/tugways/use-component-state-preservation";
 import {
   BlockCopyButton,
-  BlockFindButton,
   BlockFoldCue,
 } from "./affordances";
 
@@ -486,60 +472,6 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // click target scrolls off-screen — violating "interacting with a
   // control does not move that control out of view."
   const rootRef = React.useRef<HTMLDivElement | null>(null);
-  // Header ref — used by the telescoping-pin ResizeObserver below to
-  // write the visible header's measured height into
-  // `--tugx-file-header-height` on the root so the find row can pin
-  // BELOW the identity header in standalone mode. Null when
-  // `embedded={true}` (no header rendered — affordances portal into
-  // the host's chrome instead).
-  const headerRef = React.useRef<HTMLDivElement | null>(null);
-
-  // Telescoping pin — write the live measured identity-header height
-  // into `--tugx-file-header-height` on the root so the find row can
-  // pin at `top: calc(var(--tugx-pin-stack-top, 0px)
-  //          + var(--tugx-toolblock-header-height, 0px)
-  //          + var(--tugx-file-header-height, 0px))`.
-  // In embedded mode the header isn't rendered, so the ref is null
-  // and the variable stays unset (`0px` via the `calc()` fallback) —
-  // the find row then telescopes under the chrome's
-  // `--tugx-toolblock-header-height` only.
-  //
-  // [L03] `useLayoutEffect` so the variable is set before paint —
-  // first sticky pass uses the correct offset rather than a value
-  // one frame late.
-  // [L06] DOM write, never React state.
-  // [L20] FileBlock owns `--tugx-file-*` (this is in that family);
-  // the chrome's `--tugx-toolblock-header-height` is read but never
-  // written from here.
-  React.useLayoutEffect(() => {
-    const root = rootRef.current;
-    const header = headerRef.current;
-    if (root === null) return;
-    if (header === null) {
-      // Embedded mode (or empty data) — clear any stale value so
-      // the calc() fallback to 0 takes effect.
-      root.style.removeProperty("--tugx-file-header-height");
-      return;
-    }
-    const write = (px: number): void => {
-      root.style.setProperty("--tugx-file-header-height", `${px}px`);
-    };
-    write(header.offsetHeight);
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (entry === undefined) return;
-      const boxes = entry.borderBoxSize;
-      const next =
-        boxes !== undefined && boxes.length > 0
-          ? boxes[0].blockSize
-          : entry.contentRect.height;
-      write(next);
-    });
-    observer.observe(header);
-    return () => {
-      observer.disconnect();
-    };
-  }, [embedded, data === undefined]);
 
   // Chrome actions target — non-null when this FileBlock is composed
   // inside a `ToolWrapperChrome` that has rendered its actions slot.
@@ -557,7 +489,7 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // affordances have a portal target. If `embedded` is set but no
   // chrome is above us, the affordances vanish silently: the
   // identity header is suppressed AND the portal target is `null`,
-  // so the fold cue / Find trigger never appear. The user notices
+  // so the fold cue never appears. The user notices
   // a missing button; the author doesn't notice the misconfiguration.
   // Surface it at mount so it fails loud in dev and stays free in
   // production (the early-return tree-shakes when `NODE_ENV` is
@@ -579,7 +511,7 @@ export const FileBlock: React.FC<FileBlockProps> = ({
       console.warn(
         "FileBlock: `embedded={true}` requires a parent `ToolWrapperChrome`. " +
           "Without one, the body kind's identity header is suppressed AND its " +
-          "affordances (fold cue, Find trigger) have nowhere to portal — the " +
+          "affordances (the fold cue) have nowhere to portal — the " +
           "user loses access to them silently. Either compose under a chrome " +
           "or set `embedded={false}`.",
       );
@@ -589,38 +521,9 @@ export const FileBlock: React.FC<FileBlockProps> = ({
     };
   }, [embedded, chromeActionsTarget]);
 
-  // Stable id for FileBlock's own responder — declared up here so the
-  // find form below can register as its child (see `parentId` below)
-  // and so the `toggleCollapsed` callback can promote FileBlock to
-  // first-responder after the user clicks a focus-refusing
-  // affordance. Sibling hook calls in the same component all read the
-  // same outer `ResponderParentContext` value at hook-call time, so
-  // without the explicit parentId the find form would register as a
-  // SIBLING of fileBlockResponder, not a child. Chain walks from the
-  // find input would then skip past fileBlockResponder entirely and
-  // Cmd-G / Shift-Cmd-G would not reach the FIND_NEXT / FIND_PREVIOUS
-  // handlers.
-  const fileBlockResponderId = React.useId();
-
-  // Chain manager — used to programmatically promote
-  // `fileBlockResponder` to first-responder after the user clicks one
-  // of the in-block focus-refusing affordances (fold cue, Find
-  // button). Those buttons carry `data-tug-focus="refuse"`, so the
-  // chain provider's pointerdown listener skips chain promotion
-  // entirely on their clicks — correct for buttons in outer chrome
-  // (no focus theft from active editors), but leaves first-responder
-  // pointing at wherever it was BEFORE the user touched the block.
-  // Cmd-F afterward then walks from a stale responder and misses
-  // our FIND handler. Promoting `fileBlockResponder` after the toggle
-  // lands keystrokes on the block the user is clearly interacting
-  // with. The manager is `null` outside a `ResponderChainProvider`
-  // (gallery cards, unit tests); the promote calls below short-
-  // circuit via `?.`.
-  const chainManager = useResponderChain();
-
-  // Position-stable click is now encapsulated inside each affordance
-  // (BlockCopyButton, BlockFindButton, BlockFoldCue) — they each
-  // call `useOuterScrollport` + `usePositionStableClick` internally
+  // Position-stable click is encapsulated inside each affordance
+  // (BlockCopyButton, BlockFoldCue) — they each call
+  // `useOuterScrollport` + `usePositionStableClick` internally
   // against their own button refs. The fold cue's combination with
   // the scrollport-level `tailSpacer` (wired by tide-card-transcript)
   // still applies: the spacer raises `maxScrollTop` so a collapse
@@ -631,24 +534,18 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // Fold-cue toggle callback. The `BlockFoldCue` affordance already
   // dispatched the `tug-disengage-follow-bottom` event before
   // invoking this; this callback owns the block-specific concerns:
-  //  - First-responder promotion (the cue carries
-  //    `data-tug-focus="refuse"`, so the chain provider's
-  //    pointerdown skipped chain promotion on its own — promote
-  //    explicitly so Cmd-F afterward walks from FileBlock and
-  //    reaches its FIND handler).
-  //  - State mutation (controlled vs uncontrolled).
-  //  - Host notification (`onToggleCollapsed`).
+  // state mutation (controlled vs uncontrolled) and host notification
+  // (`onToggleCollapsed`).
   const handleFoldToggle = React.useCallback((next: boolean) => {
-    chainManager?.makeFirstResponder(fileBlockResponderId);
     if (collapsedProp === undefined) {
       setLocalCollapsed(next);
     }
     onToggleCollapsed?.(next);
-  }, [chainManager, collapsedProp, fileBlockResponderId, onToggleCollapsed]);
+  }, [collapsedProp, onToggleCollapsed]);
 
-  // Ref to the embedded TugCodeView so the Find UI can drive the
-  // substrate's search state imperatively (set-query / next /
-  // previous / select-all).
+  // Ref to the embedded TugCodeView — used to resolve the live CM6
+  // `EditorView` for Cmd/Ctrl-wheel routing and the region-scroll
+  // restore loop.
   const codeViewRef = React.useRef<TugCodeViewDelegate | null>(null);
 
   // ---- Component-state preservation (fold state only) -----------------
@@ -701,22 +598,20 @@ export const FileBlock: React.FC<FileBlockProps> = ({
     );
   }, [collapsed]);
 
-  // ---- Outer scroll-into-view for find matches -----------------------
+  // ---- Outer scroll-into-view for CM6 scrollIntoView requests --------
   //
   // `TugCodeView` consumes every CM6 `scrollIntoView` request (the
   // viewer is sized to its content, so the inner `.cm-scroller` has
   // nothing to scroll). This callback runs in the consume path and
-  // scrolls the OUTER transcript scrollport so the match lands in the
+  // scrolls the OUTER transcript scrollport so the target lands in the
   // unobstructed viewport BELOW the stacked sticky chrome (transcript
-  // entry header → toolblock chrome → file header → find row).
+  // entry header → toolblock chrome → file header).
   //
   // Sticky chrome height is read from:
   //   - `--tugx-pin-stack-top` (transcript entry header)
   //   - `--tugx-toolblock-header-height` (embedded chrome wrapper)
   //   - `.tugx-file-header` (rendered height; suppressed in embedded
   //     mode where the variable above accounts for it)
-  //   - `.tugx-file-find` (rendered height; present only while the
-  //     find row is open)
   //
   // The scrollport is mutated directly per [L06] — scroll position is
   // DOM authority, not React state. The SmartScroll state machine
@@ -745,9 +640,8 @@ export const FileBlock: React.FC<FileBlockProps> = ({
       const outerRect = scrollport.getBoundingClientRect();
 
       // Stacked sticky chrome above the file body. Variables are
-      // read from the file root because that's where the telescoping-
-      // pin writer (further down this file) and the outer pin context
-      // both stamp their measured heights.
+      // read from the file root because that's where the outer pin
+      // context stamps its measured heights.
       const rootStyle = getComputedStyle(root);
       const parsePx = (name: string): number => {
         const raw = rootStyle.getPropertyValue(name).trim();
@@ -761,10 +655,6 @@ export const FileBlock: React.FC<FileBlockProps> = ({
       const headerEl = root.querySelector<HTMLElement>(".tugx-file-header");
       if (headerEl !== null && headerEl.offsetParent !== null) {
         stickyTop += headerEl.getBoundingClientRect().height;
-      }
-      const findEl = root.querySelector<HTMLElement>(".tugx-file-find");
-      if (findEl !== null) {
-        stickyTop += findEl.getBoundingClientRect().height;
       }
 
       const yMargin = 8;
@@ -941,118 +831,13 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   }, [data?.content]);
   const getFileText = React.useCallback(() => fileTextRef.current, []);
 
-  // ---- Find UI session ----------------------------------------------------
-  //
-  // Single source for the find-row state machine, focus discipline,
-  // reload-survival slot, and `data-tug-focus-key` composition. The hook
-  // (consumer of the framework focus axis per [D95]) owns the row's
-  // internal lifecycle; FileBlock contributes the CM6-specific glue:
-  // pre-open work (uncollapse + disengage-follow-bottom + first-responder
-  // promotion) and the substrate query push / navigation calls.
-  const findSession = useBlockFindSession({
-    scope: "file-block-find",
-    componentStatePreservationKey,
-    parentResponderId: fileBlockResponderId,
-    navigation: {
-      findNext: () => codeViewRef.current?.findNext(),
-      findPrevious: () => codeViewRef.current?.findPrevious(),
-      clearSearch: () => codeViewRef.current?.clearSearch(),
-    },
-    onBeforeOpen: () => {
-      if (collapsed) {
-        // Reveal the body so the substrate is mounted and the search
-        // state has somewhere to apply. Disengage the host list's
-        // bottom-pin in the same beat (mirrors `toggleCollapsed`).
-        rootRef.current?.dispatchEvent(
-          new CustomEvent("tug-disengage-follow-bottom", { bubbles: true }),
-        );
-        if (collapsedProp === undefined) {
-          setLocalCollapsed(false);
-        }
-        onToggleCollapsed?.(false);
-      }
-      // Promote FileBlock to first-responder. The Search button (when
-      // invoked by click) carries `data-tug-focus="refuse"`, so the
-      // chain provider's pointerdown skipped chain promotion. Promoting
-      // here guarantees Cmd-F dispatches arriving while the chain is
-      // still settling find their way home. Idempotent if we already
-      // own first-responder.
-      chainManager?.makeFirstResponder(fileBlockResponderId);
-    },
-  });
-
-  // Push query + options to CM6 whenever the user types or toggles an
-  // option, then read back the live match count so the row's count
-  // display reflects the current query. Empty query is a valid state —
-  // CM6 clears highlights when it sees an empty search string, and
-  // `getMatchCount` returns 0 for invalid queries.
-  //
-  // `useLayoutEffect` so the match-highlight repaint lands in the same
-  // paint as the input update. With `useEffect` the effect would run
-  // AFTER the browser paints, producing a one-frame lag.
-  const {
-    open: findOpen,
-    query: findQuery,
-    caseSensitive: findCaseSensitive,
-    regexp: findRegexp,
-    wholeWord: findWholeWord,
-  } = findSession.state;
-  const { setMatchCount: setFindMatchCount } = findSession;
-  React.useLayoutEffect(() => {
-    if (!findOpen) return;
-    const delegate = codeViewRef.current;
-    if (delegate === null) return;
-    delegate.setSearchQuery({
-      search: findQuery,
-      caseSensitive: findCaseSensitive,
-      regexp: findRegexp,
-      wholeWord: findWholeWord,
-    });
-    setFindMatchCount(delegate.getMatchCount());
-  }, [
-    findOpen,
-    findQuery,
-    findCaseSensitive,
-    findRegexp,
-    findWholeWord,
-    setFindMatchCount,
-  ]);
-
-  // ---- Responder registration ------------------------------------------------
-  //
-  // FileBlock owns the find session through `findSession` and is the
-  // responder for the find-related actions per [L11]. The action map
-  // comes from the session — Cmd-F / Cmd-G / Shift-Cmd-G dispatched
-  // through the chain reach the session's handlers, which in turn call
-  // `findSession.open` / the substrate-specific navigation supplied
-  // above. Registered ONCE at mount with stable handlers ([L07]: the
-  // session's action map is memoized and the handlers read live state
-  // through refs).
-  const fileBlockResponder = useOptionalResponder({
-    id: fileBlockResponderId,
-    actions: findSession.actions,
-  });
-
-  // Composed root ref — forwards to both the local `rootRef` (used to
-  // dispatch the disengage-follow-bottom event) and the responder
-  // chain's ref-callback (writes `data-responder-id` on the same
-  // element). Stable across renders so neither side tears down and
-  // re-attaches on every render.
-  const composedRootRef = React.useCallback(
-    (el: HTMLDivElement | null) => {
-      rootRef.current = el;
-      fileBlockResponder.responderRef(el);
-    },
-    [fileBlockResponder.responderRef],
-  );
-
   // Empty data: render an empty marker for layout consistency. Same
   // contract as before — consumers may depend on the data-empty
   // attribute (e.g. for CSS rules that suppress the frame).
   if (data === undefined || lines.length === 0) {
     return (
       <div
-        ref={composedRootRef}
+        ref={rootRef}
         data-slot={DATA_SLOT_ROOT}
         data-empty="true"
         data-embedded={embedded ? "true" : undefined}
@@ -1078,21 +863,13 @@ export const FileBlock: React.FC<FileBlockProps> = ({
 
   // Compose the affordances node ONCE. It renders either inline at
   // the trailing edge of `.tugx-file-header` (standalone) or via a
-  // portal into the host's chrome actions slot (embedded). Phase
-  // E.3 / E.4 ordering: features (Find → Copy) → fold cue
-  // (rightmost). All three affordances come from the block
+  // portal into the host's chrome actions slot (embedded). Ordering:
+  // Copy → fold cue (rightmost). Both affordances come from the block
   // affordance library (`body-kinds/affordances/`), so the contract
   // (position-stable click, ghost typography, 2xs scale, focus-
   // refuse) is uniform across body kinds.
   const affordances = (
     <>
-      <BlockFindButton
-        className="tugx-file-search"
-        data-slot="file-search"
-        disabled={collapsed}
-        aria-label="Search in file"
-        onClick={findSession.open}
-      />
       <BlockCopyButton
         className="tugx-file-copy"
         data-slot="file-copy"
@@ -1133,9 +910,8 @@ export const FileBlock: React.FC<FileBlockProps> = ({
       : null;
 
   return (
-    <fileBlockResponder.ResponderScope>
     <div
-      ref={composedRootRef}
+      ref={rootRef}
       data-slot={DATA_SLOT_ROOT}
       data-empty="false"
       data-language={language ?? "plain"}
@@ -1146,7 +922,6 @@ export const FileBlock: React.FC<FileBlockProps> = ({
     >
       {embedded ? null : (
         <div
-          ref={headerRef}
           className="tugx-file-header"
           data-slot={DATA_SLOT_HEADER}
         >
@@ -1178,20 +953,11 @@ export const FileBlock: React.FC<FileBlockProps> = ({
       )}
       {portaledAffordances}
 
-      {findOpen && !collapsed ? (
-        <TugBlockFindRow
-          findSession={findSession}
-          ariaLabel="Find in file"
-          className="tugx-file-find"
-        />
-      ) : null}
-
       {collapsed ? null : (
         <TugCodeView
           ref={codeViewRef}
           value={data.content}
           language={language}
-          onFindRequested={findSession.open}
           onScrollIntoView={handleScrollMatchIntoView}
           // File viewer defaults: wrap on, line numbers on. The CM6
           // substrate handles the per-line scrollbar bug by
@@ -1202,6 +968,5 @@ export const FileBlock: React.FC<FileBlockProps> = ({
         />
       )}
     </div>
-    </fileBlockResponder.ResponderScope>
   );
 };

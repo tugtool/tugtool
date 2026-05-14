@@ -225,36 +225,6 @@ body {
   gap: var(--tug-space-2xs);
 }
 
-/* ---------- Find UI row — host-side sticky-stack binding ---------- */
-
-/* The find UI is composed from `<TugBlockFindRow>`, which carries
- * `data-slot="tug-block-find-row"` and `.tugx-block-find` as its root
- * class. TerminalBlock passes `.tugx-term-find` to bind the row's
- * `--tugx-block-find-top` to the terminal's local telescoping-pin
- * stack:
- *  - `--tugx-pin-stack-top`: outer entry-header height (transcript /
- *    pane header chain).
- *  - `--tugx-toolblock-header-height`: wrapper-chrome header height in
- *    embedded composition (zero in standalone).
- *  - `--tugx-term-header-height`: TerminalBlock's identity-header
- *    height in standalone composition (zero when `embedded={true}` —
- *    the header is suppressed and the chrome header is the only one
- *    above this row). Written by the `useLayoutEffect` +
- *    `ResizeObserver` in terminal-block.tsx so the find row tracks
- *    header-height changes (line wrap, dynamic label).
- *
- * All other find-row appearance (background, gaps, input wrap, clear
- * button, count, options) lives in `tug-block-find-row.css` under the
- * `--tugx-block-find-*` token family. TerminalBlock contributes only
- * the binding to its host-specific stack. */
-.tugx-term-find {
-  --tugx-block-find-top: calc(
-    var(--tugx-pin-stack-top, 0px)
-    + var(--tugx-toolblock-header-height, 0px)
-    + var(--tugx-term-header-height, 0px)
-  );
-}
-
 /* ---- Content wrapper ---- */
 
 /* The imperative renderer writes the truncation banner, the flat or
