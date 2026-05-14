@@ -4287,7 +4287,7 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 5. **Affordance library.** Copy / fold use `BlockCopyButton` / `BlockFoldCue` from `body-kinds/affordances/` — do not hand-roll. (`BlockFindButton` was retired with per-block Find.) [Phases D, E.4, E.12]
 6. **Tokens.** Component slots `--tugx-{kind}-*` compose the shared `--tugx-block-*` family ([#step-10-8-5](#step-10-8-5)) and never override `--tugx-toolblock-*` or the pin-stack variables. Seven-slot control convention for any interactive control. [L20]
 7. **State preservation.** Collapse state, inner scroll position, and any user-visible state survive reload / cross-pane / cold-boot via `useComponentStatePreservation` / `useSavedRegionScroll` ([A9]). [L23, Phases E.6–E.9]
-8. **Header truncation (tool wrappers).** Wrapper headers of the form `Tool · {arg}` use the established truncation primitives: end-ellipsis `<code>` for commands, the middle-ellipsis path pattern (`MiddleEllipsisPath` in `read-tool-block.tsx`) for file paths, and `TugTooltip` with `truncated` / `suppressOpen` gating. The args slot truncates, never scrolls or hover-expands. [Step 10.9 follow-on]
+8. **Header truncation (tool wrappers).** Wrapper headers of the form `Tool · {arg}` use the established truncation primitives: end-ellipsis `<code>` for commands, the middle-ellipsis path pattern (`MiddleEllipsisPath` in `tool-wrappers/middle-ellipsis-path.tsx`, shared by `ReadToolBlock` / `EditToolBlock`) for file paths, and `TugTooltip` with `truncated` / `suppressOpen` gating. The args slot truncates, never scrolls or hover-expands. [Step 10.9 follow-on, #step-11]
 9. **List-shaped body kinds.** Body kinds backed by a row list (`PathListBlock`, `SearchResultBlock`, `TodoListBlock`, large `TableBlock`) build on `TugListView`; its opt-in `selectionRequired` mode is available when the list owns a mandatory single selection.
 
 **Scope note.** Items 3–5 apply to body kinds with header / scrolling chrome (file, diff, terminal, json-tree, path-list, search-result, agent-transcript, todo-list, large table). Display-only inline blocks (`KaTeXBlock`, `MermaidBlock`, `ImageBlock`) apply only items 1–2 and 6–7 as relevant — they have no identity header, actions row, or fold affordance.
@@ -4335,6 +4335,8 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 #### Step 12: JsonTreeBlock body kind {#step-12}
 
+**Status:** implemented — body kind + pure-logic test suite landed. tsc clean, `bun test` 1617/1617, `audit:tokens lint` zero violations.
+
 **Depends on:** #step-1
 
 **Commit:** `feat(tide-rendering): JsonTreeBlock — collapsible JSON tree viewer with copy-as-path`
@@ -4345,24 +4347,32 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 **Decision: no in-block search.** The original step listed "search-within-tree" — that is a text-entry surface inside a content block, which [Phase E.12](#phase-e-12)'s [single-text-entry rule](#e12-rule) forbids (the same rule that retired per-block Find). JsonTreeBlock ships **no** search input; text-search over a JSON tree is deferred to the future Find redesign alongside per-block Find. Non-text navigation (expand/collapse, depth control) stays.
 
+**Implementation notes.**
+- **Actions cluster, not a separate actions row.** Conformance item 3's "`.tugx-{kind}-actions` row" is Phase B.2 plan language; the shipped reference body kinds (`file-block`, `diff-block`, `terminal-block`) collapsed the affordances into a `.tugx-{kind}-actions-cluster` *inside* the sticky `.tugx-{kind}-header` (standalone) that portals into `ToolWrapperChrome`'s actions slot when `embedded`. JsonTreeBlock follows that shipped convention: `.tugx-json-actions-cluster` hosts Expand-all / Collapse-all (`TugIconButton`) + Copy (`BlockCopyButton`).
+- **Copy split.** Copy-subtree is the header `BlockCopyButton` over the whole tree (the root subtree) — the conformance-item-5 Copy affordance. Copy-as-path is a per-node hover-revealed `TugIconButton` (the project's focus-refusing in-list-action primitive — not hand-rolled) that copies that node's path. Arbitrary-node subtree copy is deferred: low marginal value over the header copy + expand-and-select, and a second per-row button doubles hover clutter on a dense data view.
+- **Expand model.** `defaultDepth` (3) sets the depth-default; `resolveJsonExpanded` is the single resolver (per-node override → base `expandMode` → depth default). The whole expand state persists through the [A9] protocol ([L23]).
+
 **Artifacts:**
 - `tugdeck/src/components/tugways/body-kinds/json-tree-block.tsx` + `.css`
-- Token slot `--tugx-json-*` (composes `--tugx-block-*`)
+- `tugdeck/src/components/tugways/body-kinds/__tests__/json-tree-block.test.ts` — pure-logic test suite (19 tests). _First `__tests__` file under `body-kinds/` — pure-logic only, per project policy._
+- Token slot `--tugx-json-*` (composes `--tugx-block-*`; type colours reuse the semantic-accent `--tug7` text tokens — see the `.css` docstring for the mapping rationale)
 
 **Tasks:**
-- [ ] Collapsible tree, default depth 3; expand-all / collapse-all in the `.tugx-json-actions` row
-- [ ] Type-aware coloring (string, number, bool, null, array, object)
-- [ ] Copy-as-path (`response.data[0].id`) and copy-subtree — Copy via `BlockCopyButton` (conformance item 5)
-- [ ] Both themes verify
+- [x] Collapsible tree, default depth 3 (`DEFAULT_JSON_DEPTH`); Expand-all / Collapse-all `TugIconButton`s in the `.tugx-json-actions-cluster` (see Implementation notes re: cluster vs. row)
+- [x] Type-aware colouring — `string` / `number` / `boolean` / `null` leaves get `.tugx-json-value--{type}` colour classes; `object` / `array` containers get twist + bracket-summary chrome
+- [x] Copy-as-path (`response.data[0].id`) via the per-node `TugIconButton`; copy-subtree (whole tree) via the header `BlockCopyButton` — see Implementation notes
+- [~] Both themes verify — _by construction:_ every colour rides a `--tug7-*` theme token in one hop ([L17]), no hardcoded colours; visual confirmation in both themes rides [#step-14-5](#step-14-5)'s gallery card (no app consumer renders JsonTreeBlock until DefaultToolWrapper at #step-13)
 
 **Tests:**
-- [ ] Renders nested object correctly
-- [ ] Collapse beyond default depth shows expand affordance
-- [ ] Copy-as-path produces correct path string
-- [ ] No text-entry element in the rendered subtree (single-text-entry rule)
+- [x] Renders nested object correctly — `jsonEntries` walked recursively over a nested object yields the correct per-level entry model (the renderer recurses on exactly this)
+- [x] Collapse beyond default depth shows expand affordance — `resolveJsonExpanded`: depth `< defaultDepth` → expanded, `>= defaultDepth` → collapsed (the row then paints a twist)
+- [x] Copy-as-path produces correct path string — `childJsonPath` composes `response.data[0].id` and bracket-quotes non-identifier keys
+- [x] No text-entry element in the rendered subtree (single-text-entry rule) — by construction: the JSX renders only `div` / `span` / `TugIconButton` / `BlockCopyButton`, never an `input` / `textarea` / contenteditable. Verified by code inspection (the project has no fake-DOM render tests); noted in the test file's module docstring.
+
+**Notes on test strategy.** Same as [#step-11](#step-11): body kinds have no fake-DOM render tests (project policy: pure-logic `bun:test` + real-app tests only). JsonTreeBlock's behaviour *is* its exported pure helpers, pinned exhaustively by the suite. No app-test surface yet — no app consumer renders JsonTreeBlock until DefaultToolWrapper (#step-13); visual composition is vetted at [#step-14-5](#step-14-5)'s gallery card.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — tsc clean; `bun test` 1617 pass / 0 fail.
 
 ---
 

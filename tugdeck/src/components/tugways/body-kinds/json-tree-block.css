@@ -1,0 +1,295 @@
+/* @tug-pairings:
+   - --tugx-block-bg / --tugx-block-text-color           (shared block frame; from tugx-block.css)
+   - --tugx-block-strip-bg / --tugx-block-strip-color    (shared header strip; from tugx-block.css)
+   `JsonTreeBlock` paints a framed chrome around a recursive node
+   tree. The shared block-surface scaffold lives in
+   `styles/tugx-block.css` as `--tugx-block-*`; JSON-specific slots
+   (type colours, key weight, indent) stay here under `--tugx-json-*`.
+*/
+
+/**
+ * json-tree-block.css — `JsonTreeBlock` chrome + tree.
+ *
+ * Two render branches:
+ *  - Empty state (`[data-empty="true"]`) — no visible output beyond
+ *    the slot marker.
+ *  - Populated state — frame + header + tree.
+ *
+ * Token sources:
+ *  - Shared block-surface scaffold (frame, code typography, header
+ *    strip) comes from `--tugx-block-*` in `styles/tugx-block.css`.
+ *  - JSON-specific slots (type colours, key weight, punctuation,
+ *    indent, row hover) live in the `body{}` block below as
+ *    `--tugx-json-*`.
+ *
+ * Type-colour mapping rationale: the theme ships no `--tug7` syntax
+ * palette (Shiki owns code highlighting), so the JSON type colours
+ * reuse the semantic-accent text tokens — the only theme-coherent,
+ * guaranteed-distinct, theme-aware option. The mapping follows the
+ * universal JSON-viewer convention: strings green (`success`),
+ * numbers blue (`link`), booleans amber (`caution`), null grey
+ * (`muted`). `DiffBlock` sets the precedent (add lines ride
+ * `--tugx-block-tone-add-color` = `success`).
+ *
+ * Tuglaw cross-check:
+ *  - [L06] no React state for visual state. Expand state drives
+ *    *what* rows exist (logical), not *how* a row looks; the hover
+ *    reveal of the copy-path button and the type colours are pure
+ *    CSS.
+ *  - [L16] every colour-only rule names its rendering surface via a
+ *    `@tug-renders-on` annotation.
+ *  - [L17] `--tugx-block-*` and `--tugx-json-*` each resolve to
+ *    `--tug7-*` in one hop.
+ *  - [L19] file pair, module docstring on the `.tsx`,
+ *    `data-slot="json-body"` on the root.
+ *  - [L20] component-token sovereignty — only `--tugx-json-*` here;
+ *    the frame chrome consumes `--tugx-block-*`.
+ */
+
+/* ---- Component-tier aliases — JSON-specific only [L17] ---- */
+
+body {
+  --tugx-json-indent:         var(--tug-space-md);
+  --tugx-json-line-padding:   var(--tug-space-2xs) var(--tug-space-xs);
+  --tugx-json-line-radius:    var(--tug-radius-xs);
+  --tugx-json-line-hover-bg:  var(--tug7-surface-global-primary-normal-raised-rest);
+
+  /* Structure */
+  --tugx-json-key-color:    var(--tug7-element-global-text-normal-default-rest);
+  --tugx-json-key-weight:   600;
+  --tugx-json-punct-color:  var(--tug7-element-global-text-normal-subtle-rest);
+  --tugx-json-count-color:  var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-json-count-size:   var(--tug-font-size-2xs);
+  --tugx-json-twist-color:  var(--tug7-element-global-text-normal-muted-rest);
+
+  /* Leaf type colours (see file docstring for the mapping rationale) */
+  --tugx-json-string-color:   var(--tug7-element-global-text-normal-success-rest);
+  --tugx-json-number-color:   var(--tug7-element-global-text-normal-link-rest);
+  --tugx-json-boolean-color:  var(--tug7-element-global-text-normal-caution-rest);
+  --tugx-json-null-color:     var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* ---------- Frame ---------- */
+
+.tugx-json {
+  position: relative;
+  display: block;
+  margin: var(--tugx-block-margin);
+  background: var(--tugx-block-bg);
+  border: 1px solid var(--tugx-block-border);
+  border-radius: var(--tugx-block-radius);
+  /* `overflow: clip` clips children to the rounded border-radius
+   * without forming a scroll container — `overflow: hidden` would,
+   * and would capture sticky positioning from `.tugx-json-header`. */
+  overflow: clip;
+  color: var(--tugx-block-text-color);
+  font-family: var(--tugx-block-code-font);
+  font-size: var(--tugx-block-code-font-size);
+}
+
+/* Embedded variant — composed inside a host that already paints a
+ * container and a header (e.g. `ToolWrapperChrome` in
+ * `DefaultToolWrapper`). Drop the standalone frame so the tree sits
+ * flush. The header is suppressed at the JSX level — the host owns
+ * identity in its own header. Reset values, not theme-tunable knobs. */
+.tugx-json[data-embedded="true"] {
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.tugx-json[data-empty="true"] {
+  display: none;
+}
+
+/* ---------- Header ---------- */
+
+/* Pinned header strip — stays visible while the user scrolls deep
+ * into the tree. `top: var(--tugx-pin-stack-top, 0)` lets an outer
+ * pin context push it down so the two telescope; falls back to
+ * `top: 0`. The opaque `--tugx-block-strip-bg` hides the rows that
+ * scroll under it. Mirrors `.tugx-file-header`. */
+.tugx-json-header {
+  position: sticky;
+  top: var(--tugx-pin-stack-top, 0);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--tugx-block-strip-gap);
+  padding: var(--tugx-block-strip-padding);
+  background: var(--tugx-block-strip-bg);
+  border-bottom: 1px solid var(--tugx-block-strip-border);
+  color: var(--tugx-block-strip-color);
+  font-family: var(--tugx-block-strip-font);
+  font-size: var(--tugx-block-strip-size);
+}
+
+/* @tug-renders-on: --tugx-block-strip-bg */
+.tugx-json-label {
+  font-weight: var(--tugx-json-key-weight);
+  color: var(--tugx-block-text-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60%;
+}
+
+.tugx-json-header-spacer {
+  flex: 1 1 auto;
+}
+
+/* Trailing affordances cluster — Expand-all / Collapse-all / Copy.
+ * Rides `.tugx-json-header` (standalone) or portals into
+ * `ToolWrapperChrome`'s actions slot (embedded). Same markup in both;
+ * only the host differs. Mirrors `.tugx-file-actions-cluster`. */
+.tugx-json-actions-cluster {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--tug-space-2xs);
+}
+
+/* ---------- Tree ---------- */
+
+.tugx-json-tree {
+  padding: var(--tug-space-2xs) var(--tug-space-sm);
+  line-height: 1.6;
+}
+
+/* Children indent one step under their parent. The vertical guide
+ * rule is a subtle structural cue, not a theme knob — it rides the
+ * shared block divider. */
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-json-children {
+  padding-left: var(--tugx-json-indent);
+  border-left: 1px solid var(--tugx-block-strip-border);
+  margin-left: calc(var(--tugx-json-indent) / 2);
+}
+
+/* One node line — flex row of twist + key + value (+ hover copy).
+ * Container lines are click-to-toggle, so they get a pointer cursor
+ * and a hover background; leaf lines are inert. */
+.tugx-json-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tug-space-2xs);
+  padding: var(--tugx-json-line-padding);
+  border-radius: var(--tugx-json-line-radius);
+}
+
+.tugx-json-line[data-container="true"] {
+  cursor: pointer;
+}
+
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-json-line[data-container="true"]:hover {
+  background: var(--tugx-json-line-hover-bg);
+}
+
+/* Twist chevron — muted, fixed-width so keys align across rows
+ * whether or not the row is a container. */
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-json-twist {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  width: 0.9em;
+  color: var(--tugx-json-twist-color);
+}
+
+.tugx-json-twist-spacer {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 0.9em;
+}
+
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-json-key {
+  flex: 0 0 auto;
+  font-weight: var(--tugx-json-key-weight);
+  color: var(--tugx-json-key-color);
+}
+
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-json-colon {
+  flex: 0 0 auto;
+  margin-left: -0.15em;
+  color: var(--tugx-json-punct-color);
+}
+
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-json-bracket {
+  color: var(--tugx-json-punct-color);
+}
+
+.tugx-json-bracket--close {
+  /* The close bracket sits as the last child of `.tugx-json-children`,
+   * so the parent's `padding-left` already indents it under the open
+   * line; pull it back half a step to align with the open bracket. */
+  margin-left: calc(-1 * var(--tugx-json-indent));
+  padding-left: var(--tug-space-2xs);
+}
+
+.tugx-json-summary {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--tug-space-2xs);
+  min-width: 0;
+}
+
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-json-count {
+  color: var(--tugx-json-count-color);
+  font-size: var(--tugx-json-count-size);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Leaf value — wraps long strings rather than overflowing the frame
+ * (the tree has no inner horizontal scroller by design). */
+.tugx-json-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-json-value--string {
+  color: var(--tugx-json-string-color);
+}
+
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-json-value--number {
+  color: var(--tugx-json-number-color);
+  font-variant-numeric: tabular-nums;
+}
+
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-json-value--boolean {
+  color: var(--tugx-json-boolean-color);
+}
+
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-json-value--null {
+  color: var(--tugx-json-null-color);
+  font-style: italic;
+}
+
+/* ---------- Per-node copy-path button ---------- */
+
+/* Hover-revealed trailing `TugIconButton`. Hidden at rest so the tree
+ * reads clean; revealed when its row is hovered or it takes focus
+ * (keyboard reachability). The button itself is a `TugIconButton`
+ * whose appearance tokens live in the TugButton stylesheets; only the
+ * reveal transition and the at-rest hide live here. */
+.tugx-json-copy-path {
+  flex: 0 0 auto;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity var(--tug-motion-duration-fast, 120ms) ease;
+}
+
+.tugx-json-line:hover .tugx-json-copy-path,
+.tugx-json-copy-path:focus-visible,
+.tugx-json-line:focus-within .tugx-json-copy-path {
+  opacity: 1;
+}
