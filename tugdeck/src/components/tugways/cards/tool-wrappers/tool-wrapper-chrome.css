@@ -56,11 +56,20 @@ body {
   --tugx-toolblock-header-size:  var(--tug-font-size-sm);
   --tugx-toolblock-name-weight:  600;
 
+  /* Header args row — the gap between a wrapper's pattern / path
+   * `<code>` and its trailing inline badges (count, line-range,
+   * change-count, truncated), and the badge typography. Consumed by
+   * `read-`, `edit-`, `glob-`, and `grep-tool-block.css`. */
+  --tugx-toolblock-header-gap:   var(--tug-space-sm);
+  --tugx-toolblock-args-font:    var(--tug-font-family-mono);
+
   /* Caution chip — inline in header; bespoke geometry */
   --tugx-toolblock-caution-padding: var(--tug-space-2xs) var(--tug-space-xs);
   --tugx-toolblock-caution-radius:  var(--tug-radius-xs);
   --tugx-toolblock-caution-size:    var(--tug-font-size-2xs);
   --tugx-toolblock-caution-weight:  600;
+  --tugx-toolblock-caution-bg:      var(--tug7-surface-tone-primary-normal-caution-rest);
+  --tugx-toolblock-caution-color:   var(--tug7-element-global-text-normal-caution-rest);
 
   /* Error band — between body and footer; bespoke geometry */
   --tugx-toolblock-error-padding: var(--tug-space-sm) var(--tug-space-md);

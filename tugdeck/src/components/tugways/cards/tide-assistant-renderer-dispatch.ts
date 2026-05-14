@@ -74,6 +74,7 @@ import { BashToolBlock } from "./tool-wrappers/bash-tool-block";
 import { ReadToolBlock } from "./tool-wrappers/read-tool-block";
 import { EditToolBlock } from "./tool-wrappers/edit-tool-block";
 import { GlobToolBlock } from "./tool-wrappers/glob-tool-block";
+import { GrepToolBlock } from "./tool-wrappers/grep-tool-block";
 import { DefaultToolWrapper } from "./tool-wrappers/default-tool-wrapper";
 import type { CautionFlag, ToolWrapperFactory } from "./tool-wrappers/types";
 
@@ -493,3 +494,4 @@ registerToolWrapper("bash", BashToolBlock);
 registerToolWrapper("read", ReadToolBlock);
 registerToolWrapper("edit", EditToolBlock);
 registerToolWrapper("glob", GlobToolBlock);
+registerToolWrapper("grep", GrepToolBlock);

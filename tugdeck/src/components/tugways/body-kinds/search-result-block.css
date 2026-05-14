@@ -1,0 +1,270 @@
+/* @tug-pairings:
+   - --tugx-block-bg / --tugx-block-text-color           (shared block frame; from tugx-block.css)
+   - --tugx-block-strip-bg / --tugx-block-strip-color    (shared header strip; from tugx-block.css)
+   `SearchResultBlock` paints a framed chrome around a `TugListView`
+   of file-header + match rows. The shared block-surface scaffold
+   lives in `styles/tugx-block.css` as `--tugx-block-*`;
+   search-specific slots (row padding, line-number colour, the match
+   highlight) stay here under `--tugx-search-*`.
+*/
+
+/**
+ * search-result-block.css — `SearchResultBlock` chrome + rows.
+ *
+ * Layout:
+ *  - `.tugx-search` — the framed block surface (standalone). Dropped
+ *    in `[data-embedded="true"]` so the body sits flush under a host
+ *    `ToolWrapperChrome`.
+ *  - `.tugx-search-header` — pinned identity strip (standalone only):
+ *    label + counts + truncation indicator + trailing actions cluster.
+ *  - `.tugx-search-list` — the `TugListView` in `inline` mode. Its
+ *    `height` is overridden to `auto` so the list grows to its
+ *    natural content height and the *outer* transcript scrolls; it is
+ *    not boxed into an inner scroller.
+ *  - `.tugx-search-file` — a collapsible file-header row: twist
+ *    chevron + path (`MiddleEllipsisPath`) + match count.
+ *  - `.tugx-search-match` — one match: the matched line plus its
+ *    `before` / `after` context lines.
+ *
+ * Token sources:
+ *  - Shared block-surface scaffold (frame, header strip) comes from
+ *    `--tugx-block-*` in `styles/tugx-block.css`.
+ *  - Search-specific slots live in the `body{}` block below as
+ *    `--tugx-search-*`.
+ *  - `.tugx-search-list` cascade-tunes the host `--tugx-list-view-*`
+ *    tokens to zero so rows stack flush — per [L20], consumers tune a
+ *    primitive's tokens via a wrapping selector, not by reaching into
+ *    its CSS.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] no React state for visual state — collapse drives row
+ *    *existence* (logical), not row appearance; hover and the match
+ *    highlight are pure CSS.
+ *  - [L16] every colour-only rule names its rendering surface via a
+ *    `@tug-renders-on` annotation.
+ *  - [L17] `--tugx-block-*` and `--tugx-search-*` each resolve to a
+ *    `--tug7-*` / `--tug-*` base token in one hop.
+ *  - [L19] file pair, module docstring on the `.tsx`,
+ *    `data-slot="search-result-body"` on the root.
+ *  - [L20] component-token sovereignty — only `--tugx-search-*` here;
+ *    the frame chrome consumes `--tugx-block-*`.
+ */
+
+/* ---- Component-tier aliases — search-specific only [L17] ---- */
+
+body {
+  --tugx-search-file-padding:   var(--tug-space-2xs) var(--tug-space-sm);
+  --tugx-search-line-padding:   var(--tug-space-2xs) var(--tug-space-sm);
+  --tugx-search-row-gap:        var(--tug-space-xs);
+  --tugx-search-twist-color:    var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-search-file-color:     var(--tug7-element-global-text-normal-default-rest);
+  --tugx-search-count-color:    var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-search-lineno-color:   var(--tug7-element-global-text-normal-subtle-rest);
+  --tugx-search-context-color:  var(--tug7-element-global-text-normal-muted-rest);
+
+  /* Match highlight — the universal search-hit treatment rides the
+   * caution tone (amber), the same base tokens `--tugx-block-tone-
+   * caution-*` resolve to; named directly here to keep the alias
+   * one-hop per [L17]. */
+  --tugx-search-hit-bg:    var(--tug7-surface-tone-primary-normal-caution-rest);
+  --tugx-search-hit-color: var(--tug7-element-global-text-normal-caution-rest);
+}
+
+/* ---------- Frame ---------- */
+
+.tugx-search {
+  display: block;
+  margin: var(--tugx-block-margin);
+  background: var(--tugx-block-bg);
+  border: 1px solid var(--tugx-block-border);
+  border-radius: var(--tugx-block-radius);
+  /* `overflow: clip` clips children to the rounded border-radius
+   * without forming a scroll container — `overflow: hidden` would,
+   * and would capture sticky positioning from `.tugx-search-header`. */
+  overflow: clip;
+  color: var(--tugx-block-text-color);
+  font-family: var(--tugx-block-code-font);
+  font-size: var(--tugx-block-code-font-size);
+}
+
+/* Embedded variant — composed inside a host that already paints a
+ * container and a header. Drop the standalone frame so the list sits
+ * flush. Reset values, not theme-tunable knobs. */
+.tugx-search[data-embedded="true"] {
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.tugx-search[data-empty="true"] {
+  display: none;
+}
+
+/* ---------- Header ---------- */
+
+/* Pinned identity strip — stays visible while the user scrolls the
+ * outer transcript. `top: var(--tugx-pin-stack-top, 0)` lets an outer
+ * pin context push it down so the two telescope. Mirrors
+ * `.tugx-paths-header` / `.tugx-json-header`. */
+.tugx-search-header {
+  position: sticky;
+  top: var(--tugx-pin-stack-top, 0);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--tugx-block-strip-gap);
+  padding: var(--tugx-block-strip-padding);
+  background: var(--tugx-block-strip-bg);
+  border-bottom: 1px solid var(--tugx-block-strip-border);
+  color: var(--tugx-block-strip-color);
+  font-family: var(--tugx-block-strip-font);
+  font-size: var(--tugx-block-strip-size);
+}
+
+/* @tug-renders-on: --tugx-block-strip-bg */
+.tugx-search-label {
+  font-weight: 600;
+  color: var(--tugx-block-text-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 40%;
+}
+
+/* @tug-renders-on: --tugx-block-strip-bg */
+.tugx-search-count {
+  white-space: nowrap;
+  color: var(--tugx-block-strip-color);
+}
+
+/* @tug-renders-on: --tugx-block-strip-bg */
+.tugx-search-truncation {
+  white-space: nowrap;
+  color: var(--tugx-block-tone-caution-color);
+}
+
+.tugx-search-header-spacer {
+  flex: 1 1 auto;
+}
+
+/* Trailing affordances cluster — Copy. Rides `.tugx-search-header`
+ * (standalone) or portals into `ToolWrapperChrome`'s actions slot
+ * (embedded). Mirrors `.tugx-paths-actions-cluster`. */
+.tugx-search-actions-cluster {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--tug-space-2xs);
+}
+
+/* ---------- List ---------- */
+
+/* `inline`-mode `TugListView`. The primitive ships `height: 100%`
+ * (it is normally the scroll container, sized by a bounded parent);
+ * here the block grows to its natural content height instead, so
+ * `height` is overridden to `auto` and the host row-gap / padding
+ * tokens are zeroed so rows stack flush. The rows' own padding
+ * provides the inset. [L20]
+ *
+ * Specificity note: `tide-card.css` sets `--tugx-list-view-row-gap`
+ * (and the padding tokens) on `.tide-card-transcript .tug-list-view`
+ * to space transcript *entries* apart. This `SearchResultBlock` is a
+ * tool-block body rendered *inside* the transcript, so its nested
+ * `.tug-list-view` also matches that selector and would inherit the
+ * entry-sized gap — a bare `.tugx-search-list` (0,0,2,0) ties it and
+ * loses on source order. The three-class form below (0,0,3,0) wins
+ * outright, so the row-gap is genuinely zero regardless of bundle
+ * order. (Same guard `PathListBlock` carries — see [#step-15].) */
+.tugx-search .tug-list-view.tugx-search-list {
+  height: auto;
+  --tugx-list-view-row-gap: 0;
+  --tugx-list-view-padding-block: 0;
+  --tugx-list-view-padding-inline: 0;
+  --tugx-list-view-scroll-padding-end: 0;
+}
+
+/* ---------- File-header row ---------- */
+
+/* A collapsible file-header row — twist chevron + path + match count.
+ * Click-to-toggle, so it gets a pointer cursor and a hover
+ * background. Mirrors `.tugx-json-line[data-container="true"]`. */
+.tugx-search-file {
+  display: flex;
+  align-items: center;
+  gap: var(--tugx-search-row-gap);
+  padding: var(--tugx-search-file-padding);
+  cursor: pointer;
+}
+
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-search-file:hover {
+  background: var(--tugx-block-row-hover-bg);
+}
+
+/* Twist chevron — muted, fixed-width so paths align across rows. */
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-search-twist {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  width: 0.9em;
+  color: var(--tugx-search-twist-color);
+}
+
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-search-file-count {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--tugx-search-count-color);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Match row ---------- */
+
+/* One match — the matched line bracketed by its context lines. */
+.tugx-search-match {
+  display: block;
+}
+
+/* One rendered line — a fixed-width line number + the line text. */
+.tugx-search-line {
+  display: flex;
+  gap: var(--tugx-search-row-gap);
+  padding: var(--tugx-search-line-padding);
+  line-height: 1.4;
+}
+
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-search-lineno {
+  flex: 0 0 auto;
+  min-width: 3ch;
+  text-align: right;
+  color: var(--tugx-search-lineno-color);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+/* Line text wraps rather than overflowing the frame (the list has no
+ * inner horizontal scroller by design). `pre-wrap` preserves the
+ * source indentation of the matched line. */
+.tugx-search-linetext {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Context lines read dimmer than the matched line so the match is the
+ * row's focal point. */
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-search-line--context .tugx-search-linetext {
+  color: var(--tugx-search-context-color);
+}
+
+/* The match span highlight — the universal search-hit treatment. */
+/* @tug-renders-on: --tugx-search-hit-bg */
+.tugx-search-hit {
+  background: var(--tugx-search-hit-bg);
+  color: var(--tugx-search-hit-color);
+  border-radius: var(--tug-radius-xs);
+}

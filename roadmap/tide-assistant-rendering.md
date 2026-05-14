@@ -4551,6 +4551,8 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 #### Step 16: SearchResultBlock + GrepToolBlock {#step-16}
 
+**Status:** implemented — `SearchResultBlock` (second list-shaped body kind) + `GrepToolBlock` (content-mode / files-only-mode body selection) + dispatch registration + two pure-logic test suites landed. tsc clean, `bun test` 1743/1743, `audit:tokens lint` zero violations.
+
 **Depends on:** #step-1, #step-15
 
 **Commit:** `feat(tide-rendering): SearchResultBlock + GrepToolBlock with content-mode and files-only-mode`
@@ -4559,22 +4561,30 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 **Conformance:** see [#bk-conformance](#bk-conformance) — `SearchResultBlock` is a list-shaped body kind (item 9). Note item 2: this block *displays* search results, it carries no search *input* — the query comes from the `Grep` tool call, not an in-block field. `--tugx-search-*` composes `--tugx-block-*`.
 
+**Implementation notes.**
+- **`inline`, natural-height list — with the `PathListBlock` specificity guard.** `SearchResultBlock` is built on `TugListView` in `inline` mode (every row in document order, no windowing) with `height: auto` overriding the primitive's `height: 100%` — the same shape `PathListBlock` ([#step-15]) settled on after manual review. It carries the identical CSS specificity guard: `.tugx-search .tug-list-view.tugx-search-list` (0,0,3,0) zeroes the host `--tugx-list-view-*` row-gap / padding tokens so the transcript's entry-sized `--tugx-list-view-row-gap` (set on `.tide-card-transcript .tug-list-view`) does not leak into the nested list view. This is the guard [#step-15]'s notes flagged as required for every future list-shaped body kind nested in the transcript.
+- **Two row kinds, collapse is logical state.** The list flattens grouped files into a row sequence of two `kindForIndex` shapes — a clickable file-header row and a match row. Per-file collapse changes *which* rows exist (not how a row looks), so it is React state ([L06]) persisted through the [A9] component-state axis. `buildSearchRows` is the pure flattener; the file-collapse toggle callback rides the per-render immutable `SearchResultDataSource` instance so the cell renderer reaches it without a context.
+- **Highlight is span-driven, never regex-at-render.** Each match carries explicit char `spans`; `splitMatchSegments` clamps / drops-empty / sorts / merges them into a gap-free plain/hit run list. No regex is compiled or executed at render time, so a complex or invalid `Grep` pattern can never break the render. Context lines (`before` / `after`) render dimmer than the matched line.
+- **GrepToolBlock picks the body kind from the result shape.** `composeGrepMode` routes a `structured_result` carrying per-file `files` to an `embedded` `SearchResultBlock` (content mode) and one carrying only `filenames` to an `embedded` `PathListBlock` (files-only mode) — the exact body kind `GlobToolBlock` reuses. Header is `Grep · {pattern}` (end-ellipsis `<code>`, conformance item 8) + `{N} matches` / `{M} files` badges + a `truncated` badge. Every wire field is optional and defensively narrowed.
+- **No render test.** Per project policy (pure-logic `bun:test` + real-app tests only), behaviour is pinned through the exported helpers; the catalog has no Grep probe so the [#step-16] gates use synthetic content-mode / files-only-mode fixtures. Visual composition is vetted via HMR; a gallery card follows in a later batch.
+
 **Artifacts:**
-- `tugdeck/src/components/tugways/body-kinds/search-result-block.tsx` + `.css`
-- `tugdeck/src/components/tugways/cards/tool-wrappers/grep-tool-block.tsx` + `.css`
-- Token slot `--tugx-search-*` (composes `--tugx-block-*`)
-- Registry entry
+- `tugdeck/src/components/tugways/body-kinds/search-result-block.tsx` + `.css` — list-shaped body kind; exported helpers `splitMatchSegments` / `buildSearchRows` / `totalMatchCount` / `composeFileCountLabel` / `composeMatchCountLabel` / `composeSearchTruncationLabel` / `composeSearchResultText`.
+- `tugdeck/src/components/tugways/cards/tool-wrappers/grep-tool-block.tsx` + `.css` — tool wrapper; exported helpers `narrowGrepInput` / `narrowGrepStructured` / `composeGrepMode` / `composeGrepSearchData` / `composeGrepPathListData` / `composeGrepMatchCountLabel` / `composeGrepFileCountLabel`.
+- `tugdeck/src/components/tugways/body-kinds/__tests__/search-result-block.test.ts` + `tugdeck/src/components/tugways/cards/tool-wrappers/__tests__/grep-tool-block.test.ts` (incl. the synthetic content-mode / files-only-mode fixture gates).
+- Token slot `--tugx-search-*` (composes `--tugx-block-*`) — declared in `search-result-block.css`'s `body{}`.
+- Registry entry — `registerToolWrapper("grep", GrepToolBlock)` in `tide-assistant-renderer-dispatch.ts`; `assistant-rendering-fixture-replay.test.ts` updated (`grep` added to `BESPOKE_WRAPPERS` + `beforeEach`, removed from the "ships later" list).
 
 **Tasks:**
-- [ ] SearchResultBlock: grouped by file with collapsible headers; highlighted match span; surrounding context lines. Result text renders read-only — no in-block find input
-- [ ] GrepToolBlock: header `Grep · {pattern}` + match count + file count; body `embedded` SearchResultBlock (content mode) or PathListBlock (files-only mode)
+- [x] SearchResultBlock: grouped by file with collapsible headers; highlighted match span; surrounding context lines. Result text renders read-only — no in-block find input
+- [x] GrepToolBlock: header `Grep · {pattern}` + match count + file count; body `embedded` SearchResultBlock (content mode) or PathListBlock (files-only mode)
 
 **Tests:**
-- [ ] Synthetic Grep fixture (content mode) → SearchResultBlock with grouped matches
-- [ ] Synthetic Grep fixture (files-only mode) → PathListBlock
+- [x] Synthetic Grep fixture (content mode) → `composeGrepMode` routes to content, `composeGrepSearchData` narrows to a grouped `SearchResultData` (2 files / 3 matches)
+- [x] Synthetic Grep fixture (files-only mode) → `composeGrepMode` routes to files, `composeGrepPathListData` narrows to a `PathListData`
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — tsc clean; 1743 pass / 0 fail; `audit:tokens lint` zero violations.
 
 ---
 
