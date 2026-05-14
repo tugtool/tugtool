@@ -2,11 +2,11 @@
  * read-tool-block.css — `ReadToolBlock`.
  *
  * Structural overlay only. The wrapper composes `ToolWrapperChrome`
- * for its frame (border / header / footer) and `FileBlock` for its
- * body (gutter / content rows). This file holds only the inline
- * line-range badge in the header and the "Showing N of M lines"
- * footer label — both are read-only annotations layered over chrome
- * the parent components own.
+ * for its frame (border / header / footer), `FileBlock` for its body
+ * (gutter / content rows), and `MiddleEllipsisPath` for the header
+ * path. This file holds only the inline line-range badge in the
+ * header and the "Showing N of M lines" footer label — both are
+ * read-only annotations layered over chrome the parent components own.
  *
  * Tuglaw cross-check:
  *  - [L19] file pair, `data-slot="read-tool-block"` (delegated to
@@ -23,31 +23,6 @@
   gap: var(--tugx-toolblock-header-gap);
   flex: 1 1 auto;
   min-width: 0;
-  white-space: nowrap;
-}
-
-/* Middle-ellipsis path — the `<code>` is a flex row of a shrinkable
- * head and a fixed-length tail. The head ellipsizes from its
- * trailing edge; the tail (filename) stays pinned. No scrollbar. */
-.read-tool-block-path {
-  display: flex;
-  align-items: baseline;
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-.read-tool-block-path-head {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.read-tool-block-path-tail {
-  flex: 0 0 auto;
   white-space: nowrap;
 }
 

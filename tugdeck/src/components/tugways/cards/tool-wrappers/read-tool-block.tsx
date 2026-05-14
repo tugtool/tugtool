@@ -74,8 +74,8 @@ import {
   FileBlock,
   type FileData,
 } from "@/components/tugways/body-kinds/file-block";
-import { TugTooltip } from "@/components/tugways/tug-tooltip";
 
+import { MiddleEllipsisPath } from "./middle-ellipsis-path";
 import {
   StreamingPlaceholder,
   ToolWrapperChrome,
@@ -230,52 +230,6 @@ export function composeReadFooterHint(
     return undefined;
   }
   return `Showing ${numLines} of ${totalLines} lines`;
-}
-
-/**
- * Number of trailing characters of the path kept unshrinkable so the
- * filename (and a little of its directory) always stays legible.
- */
-const PATH_TAIL_LENGTH = 20;
-
-/**
- * Tooltip-suppression predicate for the path: suppress (return `true`)
- * unless the head segment is actually clipped. The head shrinks to
- * absorb truncation, so the path is truncated exactly when the head's
- * `scrollWidth` exceeds its `clientWidth`. An absent head (path
- * shorter than the pinned tail — full path visible) is never
- * truncated. Measured fresh on each hover by `TugTooltip`.
- */
-function pathTooltipSuppressed(trigger: Element): boolean {
-  const head = trigger.querySelector(".read-tool-block-path-head");
-  if (head === null) return true;
-  return head.scrollWidth <= head.clientWidth;
-}
-
-/**
- * Render a file path with a *middle* ellipsis: the head shrinks and
- * ellipsizes from its trailing edge while a fixed-length tail stays
- * pinned, so a long path collapses as `/Users/koci…RTY_NOTICES.md`
- * rather than end-truncating away the filename or growing a
- * scrollbar. Pure CSS — two flex children, no measurement.
- *
- * A hover tooltip surfaces the full path, but only when it is
- * actually clipped — `TugTooltip`'s `suppressOpen` gate keeps the
- * tooltip from firing when the whole path already fits.
- */
-function MiddleEllipsisPath({ path }: { path: string }): React.ReactElement {
-  const head =
-    path.length > PATH_TAIL_LENGTH ? path.slice(0, -PATH_TAIL_LENGTH) : "";
-  const tail =
-    path.length > PATH_TAIL_LENGTH ? path.slice(-PATH_TAIL_LENGTH) : path;
-  return (
-    <TugTooltip content={path} side="bottom" suppressOpen={pathTooltipSuppressed}>
-      <code data-slot="read-tool-block-path" className="read-tool-block-path">
-        <span className="read-tool-block-path-head">{head}</span>
-        <span className="read-tool-block-path-tail">{tail}</span>
-      </code>
-    </TugTooltip>
-  );
 }
 
 // ---------------------------------------------------------------------------

@@ -72,6 +72,7 @@ import type {
 
 import { BashToolBlock } from "./tool-wrappers/bash-tool-block";
 import { ReadToolBlock } from "./tool-wrappers/read-tool-block";
+import { EditToolBlock } from "./tool-wrappers/edit-tool-block";
 import { DefaultToolWrapper } from "./tool-wrappers/default-tool-wrapper";
 import type { CautionFlag, ToolWrapperFactory } from "./tool-wrappers/types";
 
@@ -183,9 +184,10 @@ export interface DispatchContext {
  * Module-static registry. Keys are lowercased canonical tool names.
  * Real per-tool wrappers register themselves via `registerToolWrapper`
  * as they ship (BashToolBlock at #step-6, ReadToolBlock at #step-8,
- * etc.). Until they ship, the registry contains only the
- * audit-confirmed routes — every `tool_call` not in the registry
- * lands on `DefaultToolWrapper` with a caution flag.
+ * EditToolBlock at #step-11 — `multiedit` aliases to it — etc.). Until
+ * they ship, the registry contains only the audit-confirmed routes —
+ * every `tool_call` not in the registry lands on `DefaultToolWrapper`
+ * with a caution flag.
  */
 const TOOL_WRAPPER_REGISTRY = new Map<string, ToolWrapperFactory>();
 
@@ -488,3 +490,4 @@ export const assistantRendererDispatch: AssistantRendererDispatch = {
 
 registerToolWrapper("bash", BashToolBlock);
 registerToolWrapper("read", ReadToolBlock);
+registerToolWrapper("edit", EditToolBlock);

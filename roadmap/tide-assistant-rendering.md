@@ -4296,6 +4296,8 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 #### Step 11: EditToolBlock wrapper {#step-11}
 
+**Status:** implemented — wrapper + shared `MiddleEllipsisPath` extraction + dispatch registration + pure-logic test suite landed. tsc clean, `bun test` 1598/1598, `audit:tokens lint` zero violations. The hover-line annotation and the filetree link are deferred (see Tasks).
+
 **Depends on:** #step-1, #step-10
 
 **Commit:** `feat(tide-rendering): EditToolBlock — composes DiffBlock with filePath and change-count chrome`
@@ -4304,24 +4306,30 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 **Conformance:** see [#bk-conformance](#bk-conformance) — tool wrapper composing an `embedded` `DiffBlock`; header truncation per item 8.
 
+**Implementation note — `structuredPatch` is the canonical diff source.** The original step text said "fed from `(old_string, new_string)` or full-file diff if `replace_all`." Reality is cleaner: Claude Code's Edit `structured_result` carries `structuredPatch: StructuredPatchHunk[]` (the `diff` package's hunk shape), which already reflects the whole edit — a single replacement and a `replace_all` that changed N occurrences are both just "every changed hunk across the file." `EditToolBlock` converts `structuredPatch → DiffHunk[]` and renders via `DiffData{source:"hunks"}` — synchronous, first-paint ready, no WASM, no `replace_all` branch. The `(old_string, new_string)` `two-text` shape is the *fallback* for the structured-result-absent (drift) path. The wire shape comes from `tugcode/src/protocol-types.ts` `EditToolResult`; there is no Edit fixture in the v2.1.x catalog, so the wrapper narrows defensively.
+
 **Artifacts:**
-- `tugdeck/src/components/tugways/cards/tool-wrappers/edit-tool-block.tsx` + `.css`
-- Registry entry; alias `MultiEdit → Edit` per [D16]
+- `tugdeck/src/components/tugways/cards/tool-wrappers/edit-tool-block.tsx` + `.css` — the wrapper.
+- `tugdeck/src/components/tugways/cards/tool-wrappers/middle-ellipsis-path.tsx` + `.css` — **new shared extraction.** The middle-ellipsis path renderer (conformance item 8) was previously private to `read-tool-block.tsx`; extracted to a shared module (neutral `.tool-wrapper-path*` classes, `data-slot="tool-wrapper-path"`) so `ReadToolBlock` and `EditToolBlock` share one implementation. `read-tool-block.{tsx,css}` updated to consume it.
+- `tugdeck/src/components/tugways/cards/tool-wrappers/__tests__/edit-tool-block.test.ts` — pure-logic test suite (18 tests).
+- Registry entry: `registerToolWrapper("edit", EditToolBlock)` in `tide-assistant-renderer-dispatch.ts`; the `multiedit → edit` alias ([D16]) already existed and now resolves to the real wrapper.
 
 **Tasks:**
-- [ ] Header: `Edit · {filePath}` (path via the middle-ellipsis pattern, conformance item 8) + change counts (computed from diff)
-- [ ] Body: `DiffBlock` composed `embedded={true}` (the wrapper chrome owns identity; the diff's affordances portal into the chrome actions slot), fed from `(old_string, new_string)` or full-file diff if `replace_all`
-- [ ] Footer: link-to-file in tugdeck filetree (deferred to follow-on if filetree integration isn't ready)
-- [ ] Hover-line annotation: hovering a diff line surfaces a small status pill ("added" / "removed" / "unchanged") for accessibility and at-a-glance scanning; respects `prefers-reduced-motion`. _Note: this is a `DiffBlock` enhancement, not wrapper-local — land it in `diff-block.tsx` or defer to a DiffBlock follow-on._
+- [x] Header: tool name + `{filePath}` (path via the shared `MiddleEllipsisPath`, conformance item 8) + inline `+N −M` change-count badge (from `countDiffStats` over the converted hunks; rides the shared `--tugx-block-tone-*` tones). Header shows the wire `toolName` — a `MultiEdit` call reads as "MultiEdit", honest over relabelled.
+- [x] Body: `DiffBlock` composed `embedded={true}` (the wrapper chrome owns identity; the diff's affordances portal into the chrome actions slot), fed from `structuredPatch` (primary) or a `(old_string, new_string)` `two-text` fallback — see the Implementation note above.
+- [ ] _Deferred:_ Footer link-to-file in tugdeck filetree — filetree integration is not yet available; deferred to a follow-on per the original step's own allowance.
+- [ ] _Deferred:_ Hover-line annotation — a `DiffBlock` enhancement, not wrapper-local. Deferred to a DiffBlock follow-on rather than bolting a hover feature into the just-stabilized body kind for one wrapper.
 
 **Tests:**
-- [ ] Synthetic Edit fixture → DiffBlock with correct hunks
-- [ ] MultiEdit alias dispatches correctly
-- [ ] `replace_all` produces full-file diff
-- [ ] Hover annotation appears on `mouseenter` and clears on `mouseleave`
+- [x] Synthetic Edit fixture → DiffBlock with correct hunks — `structuredPatchToHunks` tests: line-kind classification + 1-based per-side line numbers + the `\ No newline` sentinel skip + multi-hunk.
+- [x] MultiEdit alias dispatches correctly — `resolveToolWrapper("MultiEdit" / "multiedit" / "MULTIEDIT")` resolves to the real `EditToolBlock`.
+- [x] `replace_all` produces full-file diff — a `replace_all` edit's `structuredPatch` carries every changed hunk; `composeEditDiffData` flows all of them through unbranched.
+- [ ] _Deferred:_ Hover annotation `mouseenter` / `mouseleave` — deferred with the hover-line annotation task above.
+
+**Notes on test strategy.** Body kinds / wrappers have no fake-DOM render tests (project policy: pure-logic `bun:test` + real-app tests only). EditToolBlock's behaviour *is* its four exported pure helpers, which the suite pins exhaustively. A rendering-level app-test is blocked by the same tool-result-injection harness gap that forced the find AT-series to `describe.skip` (see [#e12-followups](#e12-followups)); building that harness extension is out of Step 11 scope. The visual composition is vetted at [#step-14-5](#step-14-5)'s gallery card, following the ReadToolBlock precedent (shipped at #step-8 without its own gallery card).
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — tsc clean; `bun test` 1598 pass / 0 fail.
 
 ---
 
