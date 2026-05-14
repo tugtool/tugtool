@@ -631,19 +631,25 @@ export class DeckManager implements IDeckManagerStore {
 
     const paneId = crypto.randomUUID();
     const sizePolicy = getSizePolicy(componentId);
-    // Clamp preferred height to 90% of the live canvas so registrations
-    // with tall preferred sizes (e.g. tide-card) open at a sensible
-    // ceiling on small canvases instead of pushing past the viewport.
-    // Width is left alone — wide cards behave fine off-canvas via the
-    // existing horizontal-position clamps; height is the dimension
-    // users want bounded by the canvas at creation.
+    // Clamp preferred width AND height to 90% of the live canvas so
+    // registrations with large preferred sizes (e.g. tide-card at
+    // 900x1200) open at a sensible ceiling on small canvases instead
+    // of pushing past the viewport. Each dimension is also floored at
+    // the policy `min` so a tiny canvas never produces a sub-minimum
+    // card. With both dimensions capped, the cascade origin (10,10)
+    // plus a 0.9-canvas card always lands inside the canvas.
+    const canvasWidthForCap = this.container.clientWidth || 800;
     const canvasHeightForCap = this.container.clientHeight || 600;
+    const cappedPreferredWidth = Math.min(
+      sizePolicy.preferred.width,
+      Math.max(sizePolicy.min.width, Math.floor(canvasWidthForCap * 0.9)),
+    );
     const cappedPreferredHeight = Math.min(
       sizePolicy.preferred.height,
       Math.max(sizePolicy.min.height, Math.floor(canvasHeightForCap * 0.9)),
     );
     const position = this.nextCascadePosition({
-      width: sizePolicy.preferred.width,
+      width: cappedPreferredWidth,
       height: cappedPreferredHeight,
     });
 
@@ -670,7 +676,7 @@ export class DeckManager implements IDeckManagerStore {
     const win: TugPaneState = {
       id: paneId,
       position,
-      size: { width: sizePolicy.preferred.width, height: cappedPreferredHeight },
+      size: { width: cappedPreferredWidth, height: cappedPreferredHeight },
       cardIds: seededCards.map((c) => c.id),
       activeCardId: firstCardId,
       title: registration.defaultTitle ?? "",

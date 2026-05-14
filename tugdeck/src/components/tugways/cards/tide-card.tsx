@@ -2339,15 +2339,14 @@ export function registerTideCard(): void {
     sizePolicy: {
       min: { width: 320, height: 240 },
       // Default size opens the card tall enough for an extended
-      // transcript to read as a continuous column, not a porthole.
-      // The chosen height intentionally exceeds many laptop canvases;
-      // `addCard` clamps the preferred height to 90% of the live
-      // canvas at creation, so on smaller screens the card opens at
-      // canvas * 0.9 instead of pushing past the viewport. Width
-      // stays compact — the Choose Session sheet caps at 460px, so a
-      // 720px card width gives the sheet room to breathe with the
-      // surrounding card body.
-      preferred: { width: 720, height: 1200 },
+      // transcript to read as a continuous column, not a porthole,
+      // and wide enough to give the Choose Session sheet (caps at
+      // 460px) room to breathe alongside the card body. Both
+      // dimensions intentionally exceed many laptop canvases;
+      // `addCard` clamps width AND height to 90% of the live canvas
+      // at creation, so on a smaller screen the card opens at
+      // canvas * 0.9 instead of pushing past the viewport.
+      preferred: { width: 900, height: 1200 },
     },
     engineKind: "em",
   });
