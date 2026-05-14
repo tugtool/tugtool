@@ -1775,6 +1775,21 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
     },
   });
 
+  // Picker → body handoff focus claim. The picker sheet's `didHide`
+  // fires when its exit animation finishes; the body only mounts a
+  // few milliseconds later, once `spawn_session_ok` flips the
+  // binding. So the `sheetDidHide` subscription above is registered
+  // too late to catch the picker's dismissal — by the time this
+  // body exists, the event has already passed. Claim focus once on
+  // mount instead, gated on this card being first responder (the
+  // body can also mount inside an inactive stack on cold-boot /
+  // restore, where the cold-boot RESTORE path owns focus).
+  useLayoutEffect(() => {
+    if (cardLifecycle?.getFirstResponderCardId() !== cardId) return;
+    entryDelegateRef.current?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── First-mount fade-in ─────────────────────────────────────────────────
   //
   // Coordinate the picker → body handoff: the picker sheet is in the
