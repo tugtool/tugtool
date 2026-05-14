@@ -470,6 +470,15 @@ export interface TugPromptEntryProps {
    * route + draft live in `bag.content` via `useCardStatePreservation`.
    */
   componentStatePreservationKey?: string;
+  /**
+   * Per-route placeholder text for the embedded editor, keyed by the
+   * route value (`❯` Code / `$` Shell / `:` Command — see
+   * `ROUTE_ITEMS`). The entry looks up the active route and forwards
+   * the match to `TugTextEditor`; routes absent from the map — or an
+   * undefined prop entirely — render no placeholder. The tide-card
+   * supplies route-specific copy; the gallery prompt-entry omits it.
+   */
+  placeholderByRoute?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -539,6 +548,7 @@ export const TugPromptEntry = React.forwardRef<
     highlightActiveLineGutter,
     returnAction: returnActionOverride,
     componentStatePreservationKey,
+    placeholderByRoute,
   } = props;
 
   // [L02] external store state enters React through useSyncExternalStore only.
@@ -1244,6 +1254,7 @@ export const TugPromptEntry = React.forwardRef<
             ref={textEditorRef}
             borderless
             maximized
+            placeholder={placeholderByRoute?.[route] ?? ""}
             completionProviders={completionProviders}
             dropHandler={dropHandler}
             historyProvider={currentHistoryProvider}
