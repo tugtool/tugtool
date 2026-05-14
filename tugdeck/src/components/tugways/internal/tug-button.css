@@ -1115,3 +1115,33 @@ body {
   visibility: hidden;
   pointer-events: none;
 }
+
+/*
+ * Width-stabilized `icon-text` cluster. `wrapLabel` stabilizes a lone
+ * label; this stabilizes the *whole* icon + label cluster. Both label
+ * states render as full clusters overlaid in one grid cell: the cell
+ * sizes to the wider cluster, the active one paints and the alternate
+ * stays `visibility: hidden` but holds the width. `justify-items:
+ * center` centers the active cluster in that cell — so the icon stays
+ * tight against its text (no gap) and the slack reserved for the
+ * wider alternate label falls evenly on both sides instead of jamming
+ * the cluster against the leading edge.
+ *
+ * The cluster cells keep the `.tug-button-icon-text` class so the
+ * icon-size rules and the icon↔label gap still apply.
+ */
+.tug-button-stable-cluster {
+  display: inline-grid;
+  grid-template-areas: "cluster";
+  align-items: center;
+  justify-items: center;
+}
+
+.tug-button-stable-cluster > [data-tug-stable-label] {
+  grid-area: cluster;
+}
+
+.tug-button-stable-cluster > [data-tug-stable-label="alternate"] {
+  visibility: hidden;
+  pointer-events: none;
+}

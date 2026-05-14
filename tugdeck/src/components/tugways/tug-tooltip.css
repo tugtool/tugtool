@@ -47,6 +47,12 @@ body {
   align-items: center;
   gap: 0.375rem;
   max-width: 300px;
+  /* Wrap unbreakable content (file paths, shell commands have no
+   * spaces) so it stays within `max-width` instead of overflowing
+   * the bubble background. `anywhere` also shrinks the text's
+   * min-content size, so the inline-flex box actually respects the
+   * cap rather than being forced wider by an unbreakable child. */
+  overflow-wrap: anywhere;
   padding: 0.375rem 0.625rem;
   border-radius: 0.375rem;
   border: 1px solid var(--tugx-tooltip-border);

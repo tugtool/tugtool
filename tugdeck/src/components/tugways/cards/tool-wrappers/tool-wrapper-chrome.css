@@ -151,33 +151,44 @@ body {
   color: var(--tugx-block-text-color);
 }
 
+/* The args slot is the single width-constrained truncation host for
+ * the header. It is a flex container so each block's arg content
+ * (a bare `<code>` command, or a path + line-range row) becomes a
+ * flex item that respects `min-width: 0` and shrinks within the
+ * header. The *child* owns its own ellipsis behavior — end-ellipsis
+ * for a shell command, middle-ellipsis for a file path — so the slot
+ * itself sets no `text-overflow`. It never scrolls: long content
+ * ellipsizes, it does not grow a scrollbar or hover-expand. */
 .tool-wrapper-chrome-args {
+  display: flex;
+  align-items: baseline;
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: var(--tugx-block-text-color-muted);
   font-family: var(--tugx-block-code-font);
 }
 
-/* Hover-expand: reveal the full args text on header hover. The
- * contained scrolling avoids reflowing surrounding elements while
- * still letting the user read a long command. Per L06, this is a
- * pure CSS state — no React rerender. */
-.tool-wrapper-chrome-header:hover .tool-wrapper-chrome-args {
-  white-space: pre-wrap;
-  overflow: auto;
-  max-height: 4lh;
-}
-
 .tool-wrapper-chrome-args code {
-  display: inline;
   font-family: inherit;
   font-size: inherit;
   background: transparent;
   padding: 0;
   color: inherit;
+}
+
+/* A bare `<code>` arg summary (e.g. BashToolBlock's shell command)
+ * is a direct flex item of the slot: it shrinks and end-ellipsizes.
+ * End-ellipsis is correct for a command — the head (program + early
+ * flags) is the part worth keeping. Blocks whose arg summary needs
+ * different truncation (ReadToolBlock's middle-ellipsis path) wrap
+ * their content in their own element and own that behavior. */
+.tool-wrapper-chrome-args > code {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---- Actions slot (trailing edge of the header) ---- */

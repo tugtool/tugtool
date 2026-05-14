@@ -679,6 +679,23 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
     );
   }
 
+  function renderIconTextCluster(
+    iconNode: React.ReactNode,
+    labelNode: React.ReactNode,
+  ): React.ReactNode {
+    return (
+      <>
+        {iconNode}
+        {labelNode}
+        {trailingIcon && (
+          <span className="tug-button-trailing-icon" aria-hidden="true">
+            {trailingIcon}
+          </span>
+        )}
+      </>
+    );
+  }
+
   function renderSubtypeContent(
     iconNode: React.ReactNode,
     labelNode: React.ReactNode,
@@ -689,6 +706,37 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
         return iconNode ?? null;
 
       case "icon-text":
+        // Width-stabilized icon-text: overlay the *whole* icon+label
+        // cluster for both label states in one grid cell so the
+        // button width is invariant across the swap AND the active
+        // cluster stays centered (icon tight against its text, slack
+        // split evenly). `wrapLabel` only stabilizes a lone label,
+        // which would leave the cluster jammed to the leading edge.
+        if (widthStabilize !== undefined) {
+          return (
+            <span
+              className="tug-button-stable-cluster"
+              data-slot="tug-button-stable-label"
+            >
+              <span
+                className="tug-button-icon-text"
+                data-tug-stable-label="active"
+              >
+                {renderIconTextCluster(iconNode, labelNode)}
+              </span>
+              <span
+                className="tug-button-icon-text"
+                data-tug-stable-label="alternate"
+                aria-hidden="true"
+              >
+                {renderIconTextCluster(
+                  iconNode,
+                  widthStabilize.alternateLabel,
+                )}
+              </span>
+            </span>
+          );
+        }
         return (
           <span className="tug-button-icon-text">
             {iconNode}

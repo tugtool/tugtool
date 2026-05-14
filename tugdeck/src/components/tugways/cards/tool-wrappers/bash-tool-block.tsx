@@ -75,6 +75,7 @@ import {
   type TerminalData,
 } from "@/components/tugways/body-kinds/terminal-block";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
+import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import { parseUnifiedDiffText } from "@/lib/diff/parse-unified-diff";
 import type { DiffHunk } from "@/lib/diff/types";
 
@@ -278,7 +279,13 @@ export const BashToolBlock: React.FC<ToolWrapperProps> = ({
   );
 
   const argsSummary = bashInput.command !== undefined ? (
-    <code data-slot="bash-tool-block-command">{bashInput.command}</code>
+    // `truncated` gates the tooltip on actual clipping — the `<code>`
+    // is the ellipsizing element, so `TugTooltip`'s scrollWidth vs
+    // clientWidth check measures it directly. A command that fits
+    // gets no (redundant) tooltip.
+    <TugTooltip content={bashInput.command} side="bottom" truncated>
+      <code data-slot="bash-tool-block-command">{bashInput.command}</code>
+    </TugTooltip>
   ) : undefined;
 
   const errorMessage =
