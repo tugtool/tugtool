@@ -763,14 +763,19 @@ Inbound (UI → Claude Code) — not rendered, but produced by the dialogs above
 
 #### Spec S06: Fixture-replay test contract {#s06-fixture-replay}
 
-A single integration test file (`tugdeck/src/__tests__/assistant-rendering-fixture-replay.test.tsx`) walks every `*.jsonl` file under `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.105/` and `v2.1.112/`, replays each event sequence into a `CodeSessionStore`, mounts a Tide card, and asserts:
+**Revised at [#step-14](#step-14) — split into a pure-logic half and a render half.** This spec was authored when fake-DOM unit tests were possible (mount a card, inspect the rendered DOM). `happy-dom` was since deleted and the testing policy is pure-logic `bun:test` + real-app tests only, so the single `.test.tsx` becomes two layers:
 
-1. No render throws.
-2. No `[object Object]` string literal appears in the rendered DOM.
-3. No raw JSON-line text bleeds through outside `JsonTreeBlock` or `CodeBlock`.
-4. Every `tool_use` event in the fixture produces exactly one `[data-slot$="-tool-block"]` element in the DOM.
-5. For tool names enumerated in [Table T02](#t02-tool-wrappers), the dispatched component is bespoke (not `DefaultToolWrapper`).
-6. Caution badge appears exactly when expected (synthetic-drift fixtures).
+- **Pure-logic dispatch-routing half — shipped at [#step-14](#step-14)** as `tugdeck/src/__tests__/assistant-rendering-fixture-replay.test.ts`. Walks every non-empty `*.jsonl` under the catalog (`v2.1.105` at #step-14; `v2.1.112` added at [#step-30](#step-30)) via `listGoldenProbes` / `loadGoldenProbe`, extracts each `tool_use` event, and dispatches it through `dispatchToolCallState`. Covers items **1** (no throw), **5** (Table-T02 tools route bespoke), **6** (caution exactly when expected).
+- **Render half — [#step-14-5](#step-14-5)'s gallery snapshot tests** (which mount real gallery cards) plus a real-app-test once the harness can inject tool-result events. Covers items **2** (no `[object Object]`), **3** (no raw-JSON bleed), **4** (exactly one `[data-slot$="-tool-block"]` per `tool_use`).
+
+The walk asserts:
+
+1. No dispatch throws (pure-logic half) / no render throws (render half).
+2. No `[object Object]` string literal appears in the rendered DOM. *(render half)*
+3. No raw JSON-line text bleeds through outside `JsonTreeBlock` or a code view. *(render half)*
+4. Every `tool_use` event in the fixture produces exactly one `[data-slot$="-tool-block"]` element in the DOM. *(render half)*
+5. For tool names enumerated in [Table T02](#t02-tool-wrappers), the dispatched component is bespoke (not `DefaultToolWrapper`). *(pure-logic half)*
+6. Caution badge appears exactly when expected. *(pure-logic half)*
 
 Fixture replay is the load-bearing test for the success criteria.
 
@@ -4419,24 +4424,35 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 #### Step 14: Integration checkpoint — day-1 coverage {#step-14}
 
+**Status:** implemented — the fixture-replay dispatch-routing test landed (`assistant-rendering-fixture-replay.test.ts`, 34 tests). tsc clean, `bun test` 1659/1659, `audit:tokens lint` zero violations.
+
 **Depends on:** #step-6, #step-8, #step-11, #step-13
 
-**Commit:** `N/A (verification only)`
+**Commit:** `test(tide-rendering): day-1 integration checkpoint — fixture-replay dispatch routing`
 
 **References:** [D04], [D05], [D11], Spec S06, (#success-criteria)
 
+**Implementation notes.**
+- **`.ts`, not the `.tsx` Spec S06 describes.** [Spec S06](#s06-fixture-replay) was written when fake-DOM unit tests were possible — it describes mounting a Tide card per fixture and asserting against the *rendered DOM*. `happy-dom` was since deleted; the testing policy is pure-logic `bun:test` + real-app tests only. So the fixture-replay test is split: this step ships the **pure-logic dispatch-routing half** (Spec S06 items 1 / 5 / 6 — no throw, Table-T02 tools route bespoke, caution-when-expected) as `assistant-rendering-fixture-replay.test.ts`; the **render-level half** (items 2–4 — no `[object Object]`, no raw-JSON bleed, exactly-one `-tool-block` element) needs a render surface and moves to [#step-14-5](#step-14-5)'s gallery snapshot tests, plus a real-app-test once the harness can inject tool-result events (the [#e12-followups](#e12-followups) gap). Spec S06 updated with this split.
+- **New helper:** `listGoldenProbes(version)` added to `lib/code-session-store/testing/golden-catalog.ts` — enumerates a catalog version's non-empty `.jsonl` probes, keeping the fragile catalog-root path in one place.
+- **Scope: v2.1.105 only**, per the task. `CATALOG_VERSIONS` is a list so [#step-30](#step-30) appends `"v2.1.112"`.
+
+**Artifacts:**
+- `tugdeck/src/__tests__/assistant-rendering-fixture-replay.test.ts` — fixture-replay dispatch-routing test (34 tests: 30 per-probe routing checks + catalog-loadable + 3 shipped-wrapper-coverage).
+- Updated: `tugdeck/src/lib/code-session-store/testing/golden-catalog.ts` — `listGoldenProbes` helper.
+
 **Tasks:**
-- [ ] Verify Bash, Read, Edit wrappers + DefaultToolWrapper all dispatch correctly across the v2.1.105 fixture catalog
-- [ ] Verify caution badge appears for synthetic unknown-tool fixture
-- [ ] Run the `assistant-rendering-fixture-replay.test.tsx` against the four shipped wrappers (other tools still go through DefaultToolWrapper at this point — that's fine, the test asserts what's known to be wired)
+- [x] Verify Bash, Read, Edit wrappers + DefaultToolWrapper all dispatch correctly across the v2.1.105 fixture catalog — per-probe test routes every `tool_use` event (`Read` → `ReadToolBlock`, `Bash` → `BashToolBlock`, `Glob`/`Grep`/`Agent`/empty-name → `DefaultToolWrapper`); `Edit` has no v2.1.105 fixture so its routing (incl. the `MultiEdit` alias) is pinned via `resolveToolWrapper`
+- [x] Verify caution badge appears for synthetic unknown-tool fixture — `dispatchToolCallState` of a synthetic `ZzzSyntheticUnknownTool` raises `{ reason: "unknown_tool" }` and threads it onto the wrapper props
+- [x] Run the `assistant-rendering-fixture-replay.test.ts` against the four shipped wrappers (other tools still go through DefaultToolWrapper — the test asserts exactly what's wired today)
 
 **Tests:**
-- [ ] All v2.1.105 fixtures replay without throw or `[object Object]` content
-- [ ] Read/Bash/Edit fixtures produce bespoke wrappers; other tools use DefaultToolWrapper
+- [x] All v2.1.105 fixtures replay without throw — every non-empty v2.1.105 probe loads and every `tool_use` it carries dispatches without throwing. _The `[object Object]` / raw-JSON-bleed check is render-level — deferred to [#step-14-5](#step-14-5)'s gallery snapshots (it is also structurally precluded: every wrapper / body kind narrows defensively, and `JsonTreeBlock` renders any JSON value rather than stringifying it)._
+- [x] Read/Bash/Edit fixtures produce bespoke wrappers; other tools use DefaultToolWrapper
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test src/__tests__/assistant-rendering-fixture-replay.test.tsx`
-- [ ] `cd tugdeck && bun run audit:tokens lint`
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test src/__tests__/assistant-rendering-fixture-replay.test.ts` — tsc clean; 34 pass / 0 fail.
+- [x] `cd tugdeck && bun run audit:tokens lint` — zero violations.
 
 ---
 

@@ -13,7 +13,7 @@
  * (#s06-golden-loader)
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 
 /**
@@ -429,8 +429,39 @@ function assertLeafHasNoUuid(
 }
 
 // ---------------------------------------------------------------------------
-// Public entry point
+// Public entry points
 // ---------------------------------------------------------------------------
+
+/**
+ * List the *loadable* probe names for a catalog version — every
+ * `.jsonl` file in the version directory with non-zero size, sorted.
+ *
+ * Empty fixtures (skipped manifest entries — e.g. probes blocked on an
+ * upstream bug, or first-run flakes) are excluded: `loadGoldenProbe`
+ * throws on a 0-byte file, so a caller iterating this list can load
+ * every name it returns without a guard. Keeps the catalog-root path
+ * resolution in one place ({@link FIXTURE_ROOT_RELATIVE}) so callers
+ * never recompute the fragile `..`-relative walk.
+ *
+ * Throws a readable `Error` (including the resolved absolute path) if
+ * the version directory is missing.
+ */
+export function listGoldenProbes(version: string): string[] {
+  const dir = path.resolve(import.meta.dir, FIXTURE_ROOT_RELATIVE, version);
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch (err) {
+    throw new Error(
+      `golden-catalog: failed to list catalog version directory at ${dir} — ${(err as Error).message}`,
+    );
+  }
+  return entries
+    .filter((f) => f.endsWith(".jsonl"))
+    .filter((f) => statSync(path.join(dir, f)).size > 0)
+    .map((f) => f.slice(0, -".jsonl".length))
+    .sort();
+}
 
 /**
  * Load a golden probe from the v2.1.105 catalog, apply placeholder
