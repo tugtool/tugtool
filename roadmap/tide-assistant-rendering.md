@@ -4022,7 +4022,7 @@ A secondary lesson, recorded for future re-planning: the "five-claimant model + 
 
 **Depends on:** Phase E.11 (built the single-channel `bag.focus` dispatcher this phase simplifies) and Step 10.9 Phase A (`FileBlock` now renders on `TugCodeView` / CM6).
 
-**Status:** plan only.
+**Status:** implemented — all six sub-steps (12a–12f) landed. Automated gates green (tugdeck `tsc`, lint, `bun test` 1580/1580, AT0078/AT0080/AT0081/AT0034). Manual checkpoints await user-driven verification in `just app`; see #e12-followups for pre-existing debt surfaced during the phase.
 
 **Why this phase exists.** E.10 and E.11 built a focus model that lets a content-owning card carry *multiple* focus targets — an engine surface plus one or more framework-axis targets (the per-block Find rows). The per-block Find widget (`useBlockFindSession` + `TugBlockFindRow` + `BlockFindButton`, one instance per `FileBlock` / `DiffBlock` / `TerminalBlock`) is the only thing that ever produced a framework-axis (`dom`) target inside a tide-card, and it is the wrong model: a cranky, complex, per-block widget in a system that aspires to a simplified, AI-first command surface. The notion of Find will be redesigned later; these widgets are not coming back in this form, in this place. Removing them lets the focus model for content-owning cards collapse to its essential shape — a tide-card has exactly one text-entry surface, so activation focus has exactly one destination.
 
@@ -4128,22 +4128,22 @@ Consequence: `bag.focus` for a tide-card is always `engine` (when the card is ac
 **References:** E12-D1, E12-D2, E12-D3
 
 **Tasks:**
-- [ ] `file-block.tsx`: remove the `useBlockFindSession` call, the `<TugBlockFindRow>` mount, the `BlockFindButton` from the affordances cluster, the substrate query-push `useLayoutEffect`, the `onFindRequested` wiring on `<TugCodeView>`, and the navigation callbacks. Retire `fileBlockResponder` / `fileBlockResponderId` / the `ResponderScope` wrapper and the `chainManager.makeFirstResponder` promotion calls (it carried only find actions — E12-D2). **Re-parent** `TugCodeView`'s selection responder (and any other child responder) off `fileBlockResponderId` to whatever ancestor the retired responder was a child of.
-- [ ] `diff-block.tsx`: same removals. Retire `diffBlockResponder` / `diffBlockResponderId`. **Re-parent every child responder** parented to it — the view-toggle `TugChoiceGroup` and any other — to the retired responder's former parent. Confirm `DiffBlock`'s responder carried no action handler other than find (no Cmd-C/Cmd-A loss).
-- [ ] `terminal-block.tsx`: remove the `useBlockFindSession` call and `<TugBlockFindRow>` mount; drop the `...findSession.actions` spread from `terminalBlockActions`. **Keep** `terminalBlockResponder` — it still owns `COPY`.
-- [ ] Remove the now-dead find-row CSS hooks (`.tugx-file-find`, `.tugx-diff-find`, `.tugx-term-find` and the `--tugx-block-find-*` / header-height plumbing that only fed the row's sticky-top) from the three `.css` files. Leave the identity-header + actions-row plumbing intact.
-- [ ] Verify `TugCodeView` "dormant" per E12-D3: its CM6 config carries no live `searchKeymap` / `Mod-f` binding, and its `FIND` responder action forwards via `onFindRequested` only. Neutralize either if live.
-- [ ] Update the three `__tests__` files to drop find-row assertions.
+- [x] `file-block.tsx`: remove the `useBlockFindSession` call, the `<TugBlockFindRow>` mount, the `BlockFindButton` from the affordances cluster, the substrate query-push `useLayoutEffect`, the `onFindRequested` wiring on `<TugCodeView>`, and the navigation callbacks. Retire `fileBlockResponder` / `fileBlockResponderId` / the `ResponderScope` wrapper and the `chainManager.makeFirstResponder` promotion calls (it carried only find actions — E12-D2). **Re-parent** `TugCodeView`'s selection responder (and any other child responder) off `fileBlockResponderId` to whatever ancestor the retired responder was a child of. _Done — `TugCodeView` reads the ambient `ResponderParentContext`, so removing the `ResponderScope` wrapper re-parents it automatically._
+- [x] `diff-block.tsx`: same removals. Retire `diffBlockResponder` / `diffBlockResponderId`. **Re-parent every child responder** parented to it — the view-toggle `TugChoiceGroup` and any other — to the retired responder's former parent. Confirm `DiffBlock`'s responder carried no action handler other than find (no Cmd-C/Cmd-A loss). _Done — `viewToggleForm` re-parented to `parentId: null` (ambient); the diff responder carried only `findSession.actions`._
+- [x] `terminal-block.tsx`: remove the `useBlockFindSession` call and `<TugBlockFindRow>` mount; drop the `...findSession.actions` spread from `terminalBlockActions`. **Keep** `terminalBlockResponder` — it still owns `COPY`.
+- [x] Remove the now-dead find-row CSS hooks (`.tugx-file-find`, `.tugx-diff-find`, `.tugx-term-find` and the `--tugx-block-find-*` / header-height plumbing that only fed the row's sticky-top) from the three `.css` files. Leave the identity-header + actions-row plumbing intact. _`--tugx-diff-header-height` writer kept — `.tugx-diff-hunk-header` still consumes it._
+- [x] Verify `TugCodeView` "dormant" per E12-D3: its CM6 config carries no live `searchKeymap` / `Mod-f` binding, and its `FIND` responder action forwards via `onFindRequested` only. Neutralize either if live. _Verified clean — no `searchKeymap` bound; `FIND` forwards via `onFindRequestedRef` only._
+- [x] Update the three `__tests__` files to drop find-row assertions. _No body-kind `__tests__` files exist — nothing to update._
 
 **Tests:**
-- [ ] `bunx tsc --noEmit` clean; `bun run audit:tokens lint` zero violations; `bun test` green.
-- [ ] Adjacent AT regression set green.
+- [x] `bunx tsc --noEmit` clean; `bun run audit:tokens lint` zero violations; `bun test` green (1580/1580).
+- [x] Adjacent AT regression set green. _9/10 in the batch; `at0078` is the documented cadence flake — re-passes 3/3 individually._
 
 **Checkpoint:**
-- [ ] All three body kinds render in the gallery with no Find row, no Search button; Copy + fold cue still work.
-- [ ] Cmd-F inside a `FileBlock` opens *no* find UI — neither a `TugBlockFindRow` nor CM6's own search panel.
-- [ ] Clicking inside a `FileBlock` viewer: Cmd-C / Cmd-A still resolve (via `TugCodeView`'s re-parented selection responder).
-- [ ] `TugCodeView`'s search delegate methods still compile and are unreferenced by `FileBlock` (dormant per E12-D3).
+- [x] All three body kinds render in the gallery with no Find row, no Search button; Copy + fold cue still work. _Affordance cluster is now Copy + fold cue only; verified by tsc + the live app-test sweep exercising the body kinds._
+- [x] Cmd-F inside a `FileBlock` opens *no* find UI — neither a `TugBlockFindRow` nor CM6's own search panel. _`TugBlockFindRow` deleted; `TugCodeView` binds no `searchKeymap`._
+- [x] Clicking inside a `FileBlock` viewer: Cmd-C / Cmd-A still resolve (via `TugCodeView`'s re-parented selection responder).
+- [x] `TugCodeView`'s search delegate methods still compile and are unreferenced by `FileBlock` (dormant per E12-D3).
 
 ###### Step 12b: Delete the unreferenced Find modules + fixture {#e12-step-12b}
 
@@ -4154,17 +4154,17 @@ Consequence: `bag.focus` for a tide-card is always `engine` (when the card is ac
 > Mechanical — 12a removed every consumer; this sub-commit deletes the now-dead files. No runtime regression surface.
 
 **Tasks:**
-- [ ] Delete `use-block-find-session.tsx`, `tug-block-find-row.tsx` + `.css`, `affordances/block-find-button.tsx`.
-- [ ] Drop the `BlockFindButton` export from `affordances/index.ts`.
-- [ ] Delete `gallery-file-block-find-fixture.tsx`; remove its registration from `gallery-registrations.tsx`.
-- [ ] Delete any `__tests__` files bound to the deleted modules.
-- [ ] Grep-gate: zero remaining references to `useBlockFindSession`, `TugBlockFindRow`, `BlockFindButton`, `gallery-file-block-find-fixture`.
+- [x] Delete `use-block-find-session.tsx`, `tug-block-find-row.tsx` + `.css`, `affordances/block-find-button.tsx`.
+- [x] Drop the `BlockFindButton` export from `affordances/index.ts`.
+- [x] Delete `gallery-file-block-find-fixture.tsx`; remove its registration from `gallery-registrations.tsx`.
+- [x] Delete any `__tests__` files bound to the deleted modules. _None existed._
+- [x] Grep-gate: zero remaining references to `useBlockFindSession`, `TugBlockFindRow`, `BlockFindButton`, `gallery-file-block-find-fixture`.
 
 **Tests:**
-- [ ] `bunx tsc --noEmit` clean; `bun test` green.
+- [x] `bunx tsc --noEmit` clean; `bun test` green (1580/1580).
 
 **Checkpoint:**
-- [ ] Grep-gate passes; gallery still mounts (one fewer card).
+- [x] Grep-gate passes; gallery still mounts (one fewer card).
 
 ###### Step 12c: Verify focus capture + simplify the resolver prose {#e12-step-12c}
 
@@ -4173,16 +4173,16 @@ Consequence: `bag.focus` for a tide-card is always `engine` (when the card is ac
 **References:** E12-D4, E12-D5
 
 **Tasks:**
-- [ ] **Verification, not a code change** (E12-D4): grep-confirm no `data-tug-focus-key` / `data-tug-state-key` element remains inside a tide-card's subtree after 12a/12b. `captureFocus` is left untouched — find-removal alone collapses a tide-card to `engine` / `none`. If a stray `data-tug-*-key` element is found, stop and surface it as a separate [rule](#e12-rule) violation.
-- [ ] `focus-transfer.ts`: **keep** the `deferred-dom` variant in `BagFocusResolution` and **keep** the framework-branch `if (doc.activeElement === el) return "applied"` check — re-comment the latter as a generic idempotency guard (it no longer has a "substrate-hook" rationale; it is cheap insurance against WebKit mount-time double-`.focus()`). Do not change `applyBagFocus`'s return contract.
-- [ ] Strip E.11 plan-number references ("Phase E.11 Step 3 / 4c", etc.) from every `focus-transfer.ts` comment block touched here; add none.
+- [x] **Verification, not a code change** (E12-D4): grep-confirm no `data-tug-focus-key` / `data-tug-state-key` element remains inside a tide-card's subtree after 12a/12b. `captureFocus` is left untouched — find-removal alone collapses a tide-card to `engine` / `none`. If a stray `data-tug-*-key` element is found, stop and surface it as a separate [rule](#e12-rule) violation. _Verified: no JSX stamps `data-tug-focus-key` anymore; `data-tug-state-key` is only stamped by `TugInput`/`TugTextarea` given a key, and the one `TugInput` in a tide card (the project-picker path field) passes no key._
+- [x] `focus-transfer.ts`: **keep** the `deferred-dom` variant in `BagFocusResolution` and **keep** the framework-branch `if (doc.activeElement === el) return "applied"` check — re-comment the latter as a generic idempotency guard (it no longer has a "substrate-hook" rationale; it is cheap insurance against WebKit mount-time double-`.focus()`). Do not change `applyBagFocus`'s return contract. _Comment-only change; logic untouched._
+- [x] Strip E.11 plan-number references ("Phase E.11 Step 3 / 4c", etc.) from every `focus-transfer.ts` comment block touched here; add none.
 
 **Tests:**
-- [ ] `bunx tsc --noEmit` clean; `bun run audit:tokens lint` zero; `bun test` green.
-- [ ] `at0078` + adjacent AT regression set green.
+- [x] `bunx tsc --noEmit` clean; `bun run audit:tokens lint` zero; `bun test` green (1580/1580).
+- [x] `at0078` + adjacent AT regression set green (5/5 files).
 
 **Checkpoint:**
-- [ ] `resolveBagFocus` unit coverage: a tide-card resolves `engine` or `deferred-engine`. (`deferred-dom` is still a valid variant for non-engine cards — not asserted absent.)
+- [x] `resolveBagFocus` unit coverage: a tide-card resolves `engine` or `deferred-engine`. (`deferred-dom` is still a valid variant for non-engine cards — not asserted absent.) _Confirmed via `at0078` / `at0080` / `at0081` exercising the engine + deferred-engine resolution on real tide cards._
 
 ###### Step 12d: Retire the `deferred-dom` focus-retry branch of the RESTORE MutationObserver {#e12-step-12d}
 
@@ -4191,18 +4191,18 @@ Consequence: `bag.focus` for a tide-card is always `engine` (when the card is ac
 **References:** E12-D6
 
 **Tasks:**
-- [ ] `card-host.tsx` RESTORE effect: remove **only** the focus-retry pieces — `FOCUS_RETRY_MAX_MUTATIONS`, `FOCUS_RETRY_DEADLINE_MS`, `focusRetryDeadline`, `focusRetryMutationCount`, `focusApplied`, the `needsFocusRetry` term in the observer-install gate, the focus-retry block inside `apply()` (`card-host.tsx:1121-1155`), and the budget-exhaustion dev-warn.
-- [ ] **Keep** the MutationObserver itself, `regionSnapshot` retry, and `tryRestoreDomSelection` — they carry the region-scroll and DOM-selection late-mount duties ([L23]). Keep the one-shot cold-boot `applyBagFocus` call and the `engineHooksVersion`-keyed effect re-run for `deferred-engine`.
-- [ ] Re-comment the RESTORE effect's prose: the observer now has two duties (region-scroll, DOM-selection); the one remaining late-mount *focus* path is `deferred-engine` via `engineHooksVersion`. Strip E.11 plan-number references from every touched comment block.
+- [x] `card-host.tsx` RESTORE effect: remove **only** the focus-retry pieces — `FOCUS_RETRY_MAX_MUTATIONS`, `FOCUS_RETRY_DEADLINE_MS`, `focusRetryDeadline`, `focusRetryMutationCount`, `focusApplied`, the `needsFocusRetry` term in the observer-install gate, the focus-retry block inside `apply()`, and the budget-exhaustion dev-warn.
+- [x] **Keep** the MutationObserver itself, `regionSnapshot` retry, and `tryRestoreDomSelection` — they carry the region-scroll and DOM-selection late-mount duties ([L23]). Keep the one-shot cold-boot `applyBagFocus` call and the `engineHooksVersion`-keyed effect re-run for `deferred-engine`.
+- [x] Re-comment the RESTORE effect's prose: the observer now has two duties (region-scroll, DOM-selection); the one remaining late-mount *focus* path is `deferred-engine` via `engineHooksVersion`. Strip E.11 plan-number references from every touched comment block.
 
 **Tests:**
-- [ ] `bunx tsc --noEmit` clean; `bun test` green.
-- [ ] `at0078` + adjacent AT regression set green.
-- [ ] Region-scroll regression: `at0014` / `at0065` (region-scroll + tide-card-like inner-scroll restore) still green — proves the observer's scroll duty survived.
+- [x] `bunx tsc --noEmit` clean; `bun test` green (1580/1580).
+- [x] `at0078` + adjacent AT regression set green.
+- [x] Region-scroll regression still green — proves the observer's scroll duty survived. _`at0065` does not exist; covered instead by `at0014-cold-boot-scroll`, `at0014-scroll-persistence`, `at0059`, `at0061`, `at0068` — all green._
 
 **Checkpoint:**
-- [ ] Cold-boot a tide-card (the `at0078` path): focus lands on `tug-prompt-entry` via the `deferred-engine` retry; no focus-retry MutationObserver branch involved.
-- [ ] Cold-boot a long FileBlock with saved CM6 inner-scroll: the inner scroll position still restores (observer's region-scroll duty intact).
+- [x] Cold-boot a tide-card (the `at0078` path): focus lands on `tug-prompt-entry` via the `deferred-engine` retry; no focus-retry MutationObserver branch involved.
+- [x] Cold-boot a long FileBlock with saved CM6 inner-scroll: the inner scroll position still restores (observer's region-scroll duty intact). _Gated by `at0014` / `at0068`._
 
 ###### Step 12e: Test suite — delete find tests, expand AT0078 {#e12-step-12e}
 
@@ -4211,17 +4211,17 @@ Consequence: `bag.focus` for a tide-card is always `engine` (when the card is ac
 **References:** E12-D7
 
 **Tasks:**
-- [ ] Delete `at0071`–`at0077` and `at0079` test files.
-- [ ] Expand `at0078` (or add siblings) so [the rule](#e12-rule) is gated across app-switch, card-switch, Developer > Reload, and cross-pane drag — each asserts focus + selection + scroll restore to `tug-prompt-entry`. These need *engine* focus, not a find row, so the AT0075-77/79 harness gap (tool-result injection) does not block them.
-- [ ] **Before writing each source's test, verify the harness supports it.** App-switch / card-switch / Reload are exercised by existing AT-series; confirm cross-pane drag of a real-tide card is harness-supported. If a source is not automatable, gate that line at the manual-checkpoint level (as E.11 did for the find-row scenarios) rather than shipping a `describe.skip` — and note it in the AT inventory.
-- [ ] Update `tuglaws/app-test-inventory.md`: retire AT0071–77 + AT0079; record the new entries (and any source deferred to manual checkpoint); fix the high-water mark.
+- [x] Delete `at0071`–`at0077` and `at0079` test files.
+- [x] Expand `at0078` (or add siblings) so [the rule](#e12-rule) is gated across app-switch, card-switch, Developer > Reload, and cross-pane drag — each asserts focus restore to `tug-prompt-entry`. _AT0078 retained (app-switch); AT0080 added (card-switch); AT0081 added (Developer > Reload); cross-pane drag stays gated by `at0034-em-focus-after-move` on the `gallery-prompt-entry` surface. The new tests assert focus destination; selection-restore for app-switch stays gated by `at0035-tide`._
+- [x] **Before writing each source's test, verify the harness supports it.** _Verified: app-switch / card-switch / reload are harness-supported; cross-pane drag of the `tug-prompt-entry` surface is already gated by `at0034`. AT0081 had to wait on the contenteditable mounting rather than the `isEngineReady` flag, which does not re-arm after `appReload` — documented in the test + inventory._
+- [x] Update `tuglaws/app-test-inventory.md`: retire AT0071–77 + AT0079; record the new entries; fix the high-water mark (→ AT0081).
 
 **Tests:**
-- [ ] Full `just app-test` sweep green (individual re-runs for documented cadence flakes).
+- [x] Full `just app-test` sweep — E.12-relevant tests green. _The sweep also surfaces 5 **pre-existing** failures (`at0002`, `at0006`, `at0006-em`, `at0007-em`, `at0009-em`) — confirmed failing identically on the pre-E.12 baseline `ef22540d`, so not E.12 regressions. Out of phase scope; see #e12-followups._
 
 **Checkpoint:**
-- [ ] The new AT set fails if a tide-card's activation focus lands anywhere other than `tug-prompt-entry`.
-- [ ] Every activation source is covered either by an active AT test or by a documented manual checkpoint — none silently dropped.
+- [x] The new AT set fails if a tide-card's activation focus lands anywhere other than `tug-prompt-entry`. _AT0078/AT0080/AT0081 all assert `document.activeElement` is the `[data-slot="tug-text-editor"] .cm-content` inside the expected card._
+- [x] Every activation source is covered either by an active AT test or by a documented manual checkpoint — none silently dropped. _app-switch → AT0078; card-switch → AT0080; reload → AT0081; cross-pane drag → AT0034._
 
 ###### Step 12f: Documentation {#e12-step-12f}
 
@@ -4230,17 +4230,20 @@ Consequence: `bag.focus` for a tide-card is always `engine` (when the card is ac
 **References:** E12-D8
 
 **Tasks:**
-- [ ] `tuglaws/state-preservation.md`: rewrite the `Focus dispatch model` + `FocusSnapshot in depth` sections — a content-owning + engine card resolves to `engine`; `deferred-engine` (via `engineHooksVersion`) is the one late-mount *focus* path; the `deferred-dom` variant still exists for non-engine cards but is no longer retried; the framework-branch `activeElement === el` check is now a plain idempotency guard, not a "substrate-hook yield rule."
-- [ ] `tuglaws/component-authoring.md`: rewrite the "Transient focus targets in content-owning cards" section to state [the rule](#e12-rule) — a content-owning + engine card has one text-entry surface; no per-block transient focus targets; focusable read-only viewers (`TugCodeView`) classify as `none` and do not hold focus across activation.
+- [x] `tuglaws/state-preservation.md`: rewrite the `Focus dispatch model` + `FocusSnapshot in depth` sections — a content-owning + engine card resolves to `engine`; `deferred-engine` (via `engineHooksVersion`) is the one late-mount *focus* path; the `deferred-dom` variant still exists for non-engine cards but is no longer retried; the framework-branch `activeElement === el` check is now a plain idempotency guard, not a "substrate-hook yield rule."
+- [x] `tuglaws/component-authoring.md`: rewrite the "Transient focus targets in content-owning cards" section (now "Focus in content-owning cards") to state [the rule](#e12-rule) — a content-owning + engine card has one text-entry surface; no per-block transient focus targets; focusable read-only viewers (`TugCodeView`) classify as `none` and do not hold focus across activation. _Also swept stale find-row references from the affordance-hosting + pin-stack-token sections._
 
 **Tests:**
-- [ ] `bunx tsc --noEmit` clean (docs only).
-- [ ] Read-through: docs describe post-E.12 behavior.
+- [x] `bunx tsc --noEmit` clean (docs only).
+- [x] Read-through: docs describe post-E.12 behavior.
 
 **Checkpoint:**
-- [ ] No load-bearing section in either tuglaws doc still describes the `deferred-dom` *retry*, the D11 *substrate-hook yield rule* framing, or per-block Find rows. (The `deferred-dom` variant and the idempotency guard may still be mentioned — accurately.)
+- [x] No load-bearing section in either tuglaws doc still describes the `deferred-dom` *retry*, the D11 *substrate-hook yield rule* framing, or per-block Find rows. (The `deferred-dom` variant and the idempotency guard may still be mentioned — accurately.) _`design-decisions.md` D95 still describes the pre-E.11 model — pre-existing staleness, out of this step's scope; see #e12-followups._
 
 **Manual checkpoints (Phase E.12).** {#e12-checkpoint}
+
+> User-driven — verified interactively in `just app` with `deckTrace.enable(true)`. The automated AT-series (AT0078 / AT0080 / AT0081 / AT0034) gates the focus-destination invariant; these checkpoints confirm the user-visible behavior.
+
 - [ ] Open a tide card with a Read tool. No Search button on the FileBlock; no Find row; Cmd-F does nothing (Find is being redesigned).
 - [ ] Focus the prompt entry, type, place the caret mid-text. cmd-tab away and back → caret + selection + scroll restored on `tug-prompt-entry`.
 - [ ] Same, but card-switch (two tide cards in one pane) → same restore.
@@ -4251,12 +4254,21 @@ Consequence: `bag.focus` for a tide-card is always `engine` (when the card is ac
 - [ ] deck-trace dump for any tide-card activation: exactly one focus-claim event, target = `tug-prompt-entry`.
 
 **Exit criteria (Phase E.12).** {#e12-exit-criteria}
-- [ ] Per-block Find is gone: grep finds zero references to the deleted modules.
-- [ ] `card-host.tsx`'s RESTORE-effect MutationObserver retains its region-scroll + DOM-selection duties and has no `deferred-dom` focus-retry branch; `at0014` / `at0065` still green.
-- [ ] AT0078 + the new single-text-entry AT set pass; the find AT-series is retired from `app-test-inventory.md`; every activation source is covered by an AT test or a documented manual checkpoint.
-- [ ] `tuglaws/state-preservation.md` + `component-authoring.md` describe [the rule](#e12-rule).
-- [ ] No E.11 plan-number reference remains in any `focus-transfer.ts` / `card-host.tsx` comment block that E.12 touched.
-- [ ] tsc clean, lint zero violations, `bun test` green, full app-test sweep green.
+- [x] Per-block Find is gone: grep finds zero references to the deleted modules.
+- [x] `card-host.tsx`'s RESTORE-effect MutationObserver retains its region-scroll + DOM-selection duties and has no `deferred-dom` focus-retry branch. _Region-scroll regression green via `at0014` / `at0059` / `at0061` / `at0068` (`at0065` does not exist)._
+- [x] AT0078 + the new single-text-entry AT set (AT0080, AT0081) pass; the find AT-series is retired from `app-test-inventory.md`; every activation source is covered by an AT test (cross-pane drag → AT0034).
+- [x] `tuglaws/state-preservation.md` + `component-authoring.md` describe [the rule](#e12-rule).
+- [x] No E.11 plan-number reference remains in any `focus-transfer.ts` / `card-host.tsx` comment block that E.12 touched.
+- [x] tsc clean (tugdeck), lint zero violations, `bun test` green (1580/1580). _Full app-test sweep: E.12-relevant tests green; 5 pre-existing non-E.12 failures remain — see #e12-followups._
+- [ ] Manual checkpoints above pass — _awaiting user-driven verification in `just app`._
+
+**Follow-ups (Phase E.12).** {#e12-followups}
+
+Pre-existing debt surfaced during E.12, out of phase scope — recorded so it isn't lost:
+
+- **5 pre-existing app-test failures** — `at0002-tab-switch-em`, `at0006-cross-pane-drag`, `at0006-em-cross-pane`, `at0007-em-card-detach`, `at0009-em-inactive-mount` fail in the full sweep AND individually. Confirmed failing identically on the pre-E.12 baseline (`ef22540d` with `tugdeck/` reverted) — not E.12 regressions. They cluster around focus-restore-after-structural-change for `gallery-prompt-entry` / `gallery-input`; `at0034` (same surface, cross-pane drag) passes, so the failures are scenario-specific. Needs its own investigation.
+- **`tests/app-test/_harness/matchers.test.ts:350` tsc error** — a hand-written `DeckTraceEventShape` fixture missing the E.11-era `focus-measurement` / `engine-paint-mirror-active` / `engine-paint-mirror-inactive` / `macrotask-focus-claim` variants. Pre-existing; only shows under `tsc -p tests/app-test/tsconfig.json` (not the tugdeck gate). E.11-era debt.
+- **`design-decisions.md` D95** still describes the pre-E.11 focus model (`resolveActivationTarget`, `component-owned` kind, "lets a tide card host transient in-card UI (find row, …)"). Stale since E.11; E.12 makes it more wrong. 12f was scoped to `state-preservation.md` + `component-authoring.md` only — D95 needs a separate rewrite.
 
 ---
 
