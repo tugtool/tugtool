@@ -221,14 +221,28 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           : undefined;
 
         if (galleryStack) {
-          // Gallery stack already exists — activate its active card.
-          // `activateCard` alone drives z-order, persistence, and lifecycle.
-          store.activateCard(galleryStack.activeCardId);
+          // Phase E.11 Step 4i D9b — runtime activation routed
+          // through `transferFocusForActivation` so the chain action
+          // fires SAVE outgoing → commit → `applyBagFocus` on
+          // incoming. Raw `activateCard` would flip the composite
+          // first responder but skip the focus claim.
+          const incomingCardId = galleryStack.activeCardId;
+          transferFocusForActivation({
+            outgoingCardId: store.getFirstResponderCardId(),
+            incomingCardId,
+            store,
+            commitMutation: () => store.activateCard(incomingCardId),
+          });
         } else {
           // No gallery card anywhere — create one and activate its seed.
           const newCardId = store.addCard("gallery-buttons");
           if (newCardId) {
-            store.activateCard(newCardId);
+            transferFocusForActivation({
+              outgoingCardId: store.getFirstResponderCardId(),
+              incomingCardId: newCardId,
+              store,
+              commitMutation: () => store.activateCard(newCardId),
+            });
           }
         }
       },

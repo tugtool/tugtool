@@ -41,6 +41,7 @@ import type { DeckManager } from "./deck-manager";
 import type { ResponderChainManager } from "./components/tugways/responder-chain";
 import { FeedId } from "./protocol";
 import { BASE_THEME_NAME } from "./theme-constants";
+import { transferFocusForActivation } from "./focus-transfer";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
@@ -335,7 +336,18 @@ export function initActionDispatch(
       console.warn(`focus-pane: no pane with id "${paneId}"`);
       return;
     }
-    deckManager.activateCard(pane.activeCardId);
+    // Phase E.11 Step 4i D9b — runtime activation routed through
+    // `transferFocusForActivation` so the menu activation fires
+    // SAVE outgoing → commit → `applyBagFocus` on incoming. Raw
+    // `activateCard` would flip the composite responder bit but
+    // skip the focus claim.
+    const incomingCardId = pane.activeCardId;
+    transferFocusForActivation({
+      outgoingCardId: deckManager.getFirstResponderCardId(),
+      incomingCardId,
+      store: deckManager,
+      commitMutation: () => deckManager.activateCard(incomingCardId),
+    });
   });
 
   // show-card: Add a card by componentId ()
