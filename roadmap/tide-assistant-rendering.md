@@ -4512,6 +4512,8 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 #### Step 15: PathListBlock + GlobToolBlock {#step-15}
 
+**Status:** implemented — `PathListBlock` (first list-shaped body kind, built on `TugListView`) + `GlobToolBlock` + dispatch registration + two pure-logic test suites landed. tsc clean, `bun test` 1696/1696, `audit:tokens lint` zero violations. Layout revised after manual review (see Implementation notes).
+
 **Depends on:** #step-1
 
 **Commit:** `feat(tide-rendering): PathListBlock + GlobToolBlock`
@@ -4520,22 +4522,30 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 **Conformance:** see [#bk-conformance](#bk-conformance) — `PathListBlock` is a list-shaped body kind (item 9: build on `TugListView`); `GlobToolBlock` is a tool wrapper (item 8: `Glob · {pattern}` header truncation). `--tugx-paths-*` composes `--tugx-block-*`.
 
+**Implementation notes.**
+- **`inline`, natural-height list — not a boxed scroller.** `PathListBlock` renders `TugListView` in `inline` mode (every row in document order, no windowing) with `height: auto` overriding the primitive's `height: 100%`. The block grows to its natural content height and the *outer* transcript scrolls; it is not boxed into a fixed-height inner scroller. The first cut bounded the list to `min(count, 12) * rowHeight` with windowing — manual review flagged that a short result reads as cramped and the windowing introduced row-pitch drift. Glob caps at 100 files, so the list is bounded enough that `inline` is the right call; a fold affordance for very long lists is a clean follow-on if it's ever needed.
+- **Path truncation via the shared `MiddleEllipsisPath`.** Each row composes the same CSS-driven middle-ellipsis `ReadToolBlock` / `EditToolBlock` use ([#bk-conformance] item 8): the full path shows whenever it fits, and only a genuinely too-wide path collapses in the middle (filename pinned). The first cut used a JS `shortenPath` that collapsed deep paths by *segment count* — width-blind, so it truncated even with horizontal room to spare. Replaced wholesale.
+- **`TugListView` token tuning via cascade — with a specificity guard.** `.tugx-paths .tug-list-view.tugx-paths-list` zeroes the host `--tugx-list-view-*` row-gap / padding tokens (and overrides `height: auto`) so rows stack flush and compact — per [L20], a primitive's tokens are tuned via a wrapping selector, not by reaching into its CSS. The three-class form is deliberate: `tide-card.css` sets `--tugx-list-view-row-gap` on `.tide-card-transcript .tug-list-view` to space transcript *entries* apart, and a `PathListBlock` rendered inside the transcript has a nested `.tug-list-view` that also matches that selector — a two-class override ties and loses on source order, so rows inherited the entry-sized gap (the bug manual review caught twice). Any future list-shaped body kind nested in the transcript needs the same guard.
+- **Sort.** Two modes (`found` / `name`); the toggle surfaces only above `SORT_TOGGLE_MIN_COUNT` (20). Sort is logical state (row *order*) → React state, persisted via `useComponentStatePreservation`. (No inner scroll means no region-scroll axis to wire.)
+- **No render test.** Per project policy (pure-logic `bun:test` + real-app tests only), behaviour is pinned through the exported helpers; a rendering-level check is blocked by the same tool-result-injection harness gap as the find AT-series ([#e12-followups](#e12-followups)). Visual composition is vetted via HMR, and a gallery card follows in a later batch.
+
 **Artifacts:**
-- `tugdeck/src/components/tugways/body-kinds/path-list-block.tsx` + `.css`
-- `tugdeck/src/components/tugways/cards/tool-wrappers/glob-tool-block.tsx` + `.css`
-- Token slot `--tugx-paths-*` (composes `--tugx-block-*`)
-- Registry entry
+- `tugdeck/src/components/tugways/body-kinds/path-list-block.tsx` + `.css` — list-shaped body kind; exported helpers `sortPaths` / `iconKindForPath` / `composePathCountLabel` / `composeTruncationLabel`.
+- `tugdeck/src/components/tugways/cards/tool-wrappers/glob-tool-block.tsx` + `.css` — tool wrapper; exported helpers `narrowGlobInput` / `narrowGlobStructured` / `composeGlobPathListData` / `composeGlobCountLabel`.
+- `tugdeck/src/components/tugways/body-kinds/__tests__/path-list-block.test.ts` + `tugdeck/src/components/tugways/cards/tool-wrappers/__tests__/glob-tool-block.test.ts` (incl. the fixture-replay count check).
+- Token slot `--tugx-paths-*` (composes `--tugx-block-*`) — declared in `path-list-block.css`'s `body{}`.
+- Registry entry — `registerToolWrapper("glob", GlobToolBlock)` in `tide-assistant-renderer-dispatch.ts`; `assistant-rendering-fixture-replay.test.ts` updated (`glob` added to `BESPOKE_WRAPPERS`, removed from the "ships later" list).
 
 **Tasks:**
-- [ ] PathListBlock: built on `TugListView`; icons by file type, path-shortening (`…/`), sortable when count > 20, "Truncated at N" indicator
-- [ ] GlobToolBlock: header `Glob · {pattern}` + count + truncated indicator; body `embedded` PathListBlock
+- [x] PathListBlock: built on `TugListView` (`inline` mode); icons by file type (`iconKindForPath`), path truncation via the shared `MiddleEllipsisPath`, sortable when count > 20 (`SORT_TOGGLE_MIN_COUNT`), "Truncated at N" indicator (`composeTruncationLabel`)
+- [x] GlobToolBlock: header `Glob · {pattern}` + `{N} files` count + `truncated` badge; body `embedded` PathListBlock
 
 **Tests:**
-- [ ] Replay `test-21-glob-tool.jsonl` → GlobToolBlock with PathListBlock, correct count
-- [ ] Truncation indicator appears when `truncated: true`
+- [x] Replay `test-21-glob-tool.jsonl` → the catalog's Glob `tool_use_structured` narrows to a 100-file `PathListData`; dispatch routing for the same probe is pinned by `assistant-rendering-fixture-replay.test.ts`
+- [x] Truncation indicator appears when `truncated: true` — `composeGlobPathListData` sets `truncatedAt` (= `numFiles`, fallback array length) and `composeTruncationLabel` composes the indicator string
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — tsc clean; 1696 pass / 0 fail; `audit:tokens lint` zero violations.
 
 ---
 

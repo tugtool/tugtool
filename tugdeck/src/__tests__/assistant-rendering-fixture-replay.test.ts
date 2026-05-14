@@ -53,6 +53,7 @@ import {
 import { BashToolBlock } from "@/components/tugways/cards/tool-wrappers/bash-tool-block";
 import { ReadToolBlock } from "@/components/tugways/cards/tool-wrappers/read-tool-block";
 import { EditToolBlock } from "@/components/tugways/cards/tool-wrappers/edit-tool-block";
+import { GlobToolBlock } from "@/components/tugways/cards/tool-wrappers/glob-tool-block";
 import { DefaultToolWrapper } from "@/components/tugways/cards/tool-wrappers/default-tool-wrapper";
 import type { ToolWrapperFactory } from "@/components/tugways/cards/tool-wrappers/types";
 import type { ToolCallState } from "@/lib/code-session-store";
@@ -75,6 +76,7 @@ const BESPOKE_WRAPPERS: Readonly<Record<string, ToolWrapperFactory>> = {
   read: ReadToolBlock,
   edit: EditToolBlock,
   multiedit: EditToolBlock,
+  glob: GlobToolBlock,
 };
 
 /** The wrapper a given tool name should dispatch to today. */
@@ -111,6 +113,7 @@ beforeEach(() => {
   registerToolWrapper("bash", BashToolBlock);
   registerToolWrapper("read", ReadToolBlock);
   registerToolWrapper("edit", EditToolBlock);
+  registerToolWrapper("glob", GlobToolBlock);
 });
 
 // ---------------------------------------------------------------------------
@@ -167,7 +170,7 @@ describe("assistant-rendering fixture replay — dispatch routing", () => {
 // ---------------------------------------------------------------------------
 
 describe("assistant-rendering fixture replay — shipped wrapper coverage", () => {
-  test("Bash / Read / Edit / MultiEdit resolve to their bespoke wrappers", () => {
+  test("Bash / Read / Edit / MultiEdit / Glob resolve to their bespoke wrappers", () => {
     // Edit has no v2.1.105 catalog fixture, so its routing is pinned
     // here directly (and via `edit-tool-block.test.ts`'s alias test).
     expect(resolveToolWrapper("Bash")).toBe(BashToolBlock);
@@ -175,14 +178,16 @@ describe("assistant-rendering fixture replay — shipped wrapper coverage", () =
     expect(resolveToolWrapper("Read")).toBe(ReadToolBlock);
     expect(resolveToolWrapper("Edit")).toBe(EditToolBlock);
     expect(resolveToolWrapper("MultiEdit")).toBe(EditToolBlock);
+    expect(resolveToolWrapper("Glob")).toBe(GlobToolBlock);
+    expect(resolveToolWrapper("glob")).toBe(GlobToolBlock);
   });
 
   test("tools whose bespoke wrappers ship later route to DefaultToolWrapper", () => {
-    // GlobToolBlock (#step-15), GrepToolBlock (#step-16), and
-    // TaskToolBlock (#step-17) are not registered yet — the v2.1.105
-    // catalog's Glob / Grep / Agent tool_uses fall through to the
-    // fallback, which is the correct day-1 behaviour.
-    for (const name of ["Glob", "Grep", "Agent"]) {
+    // GrepToolBlock (#step-16) and TaskToolBlock (#step-17) are not
+    // registered yet — the v2.1.105 catalog's Grep / Agent tool_uses
+    // fall through to the fallback, which is the correct day-1
+    // behaviour. (Glob shipped its bespoke wrapper at #step-15.)
+    for (const name of ["Grep", "Agent"]) {
       expect(resolveToolWrapper(name)).toBe(DefaultToolWrapper);
     }
   });

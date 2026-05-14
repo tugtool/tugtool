@@ -1,0 +1,195 @@
+/* @tug-pairings:
+   - --tugx-block-bg / --tugx-block-text-color           (shared block frame; from tugx-block.css)
+   - --tugx-block-strip-bg / --tugx-block-strip-color    (shared header strip; from tugx-block.css)
+   `PathListBlock` paints a framed chrome around a `TugListView` of
+   file-path rows. The shared block-surface scaffold lives in
+   `styles/tugx-block.css` as `--tugx-block-*`; path-specific slots
+   (row padding, icon colour) stay here under `--tugx-paths-*`.
+*/
+
+/**
+ * path-list-block.css — `PathListBlock` chrome + rows.
+ *
+ * Layout:
+ *  - `.tugx-paths` — the framed block surface (standalone). Dropped in
+ *    `[data-embedded="true"]` so the body sits flush under a host
+ *    `ToolWrapperChrome`.
+ *  - `.tugx-paths-header` — pinned identity strip (standalone only):
+ *    label + count + truncation indicator + trailing actions cluster.
+ *  - `.tugx-paths-list` — the `TugListView` in `inline` mode. Its
+ *    `height` is overridden to `auto` so the list grows to its natural
+ *    content height and the *outer* transcript scrolls; it is not
+ *    boxed into an inner scroller.
+ *  - `.tugx-paths-row` — one compact single-line `[icon] [path]` cell.
+ *    The path is the shared `MiddleEllipsisPath`, which fills the row
+ *    and middle-ellipsizes only on genuine overflow.
+ *
+ * Token sources:
+ *  - Shared block-surface scaffold (frame, header strip) comes from
+ *    `--tugx-block-*` in `styles/tugx-block.css`.
+ *  - Path-specific slots live in the `body{}` block below as
+ *    `--tugx-paths-*`.
+ *  - `.tugx-paths-list` cascade-tunes the host `--tugx-list-view-*`
+ *    tokens to zero so rows stack flush — per [L20], consumers tune a
+ *    primitive's tokens via a wrapping selector, not by reaching into
+ *    its CSS.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] no React state for visual state — sort mode drives row
+ *    *order* (logical), not row appearance; hover is pure CSS.
+ *  - [L16] every colour-only rule names its rendering surface via a
+ *    `@tug-renders-on` annotation.
+ *  - [L17] `--tugx-block-*` and `--tugx-paths-*` each resolve to a
+ *    `--tug7-*` / `--tug-*` base token in one hop.
+ *  - [L19] file pair, module docstring on the `.tsx`,
+ *    `data-slot="path-list-body"` on the root.
+ *  - [L20] component-token sovereignty — only `--tugx-paths-*` here;
+ *    the frame chrome consumes `--tugx-block-*`.
+ */
+
+/* ---- Component-tier aliases — path-specific only [L17] ---- */
+
+body {
+  --tugx-paths-row-padding: var(--tug-space-2xs) var(--tug-space-sm);
+  --tugx-paths-row-gap:     var(--tug-space-xs);
+  --tugx-paths-icon-color:  var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* ---------- Frame ---------- */
+
+.tugx-paths {
+  display: block;
+  margin: var(--tugx-block-margin);
+  background: var(--tugx-block-bg);
+  border: 1px solid var(--tugx-block-border);
+  border-radius: var(--tugx-block-radius);
+  /* `overflow: clip` clips children to the rounded border-radius
+   * without forming a scroll container — `overflow: hidden` would,
+   * and would capture sticky positioning from `.tugx-paths-header`. */
+  overflow: clip;
+  color: var(--tugx-block-text-color);
+  font-family: var(--tugx-block-code-font);
+  font-size: var(--tugx-block-code-font-size);
+}
+
+/* Embedded variant — composed inside a host that already paints a
+ * container and a header. Drop the standalone frame so the list sits
+ * flush. Reset values, not theme-tunable knobs. */
+.tugx-paths[data-embedded="true"] {
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.tugx-paths[data-empty="true"] {
+  display: none;
+}
+
+/* ---------- Header ---------- */
+
+/* Pinned identity strip — stays visible while the user scrolls the
+ * outer transcript. `top: var(--tugx-pin-stack-top, 0)` lets an outer
+ * pin context push it down so the two telescope. Mirrors
+ * `.tugx-json-header` / `.tugx-file-header`. */
+.tugx-paths-header {
+  position: sticky;
+  top: var(--tugx-pin-stack-top, 0);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--tugx-block-strip-gap);
+  padding: var(--tugx-block-strip-padding);
+  background: var(--tugx-block-strip-bg);
+  border-bottom: 1px solid var(--tugx-block-strip-border);
+  color: var(--tugx-block-strip-color);
+  font-family: var(--tugx-block-strip-font);
+  font-size: var(--tugx-block-strip-size);
+}
+
+/* @tug-renders-on: --tugx-block-strip-bg */
+.tugx-paths-label {
+  font-weight: 600;
+  color: var(--tugx-block-text-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 40%;
+}
+
+/* @tug-renders-on: --tugx-block-strip-bg */
+.tugx-paths-count {
+  white-space: nowrap;
+  color: var(--tugx-block-strip-color);
+}
+
+/* @tug-renders-on: --tugx-block-strip-bg */
+.tugx-paths-truncation {
+  white-space: nowrap;
+  color: var(--tugx-block-tone-caution-color);
+}
+
+.tugx-paths-header-spacer {
+  flex: 1 1 auto;
+}
+
+/* Trailing affordances cluster — Copy + sort toggle. Rides
+ * `.tugx-paths-header` (standalone) or portals into
+ * `ToolWrapperChrome`'s actions slot (embedded). Mirrors
+ * `.tugx-json-actions-cluster`. */
+.tugx-paths-actions-cluster {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--tug-space-2xs);
+}
+
+/* ---------- List ---------- */
+
+/* `inline`-mode `TugListView`. The primitive ships `height: 100%`
+ * (it is normally the scroll container, sized by a bounded parent);
+ * here the block grows to its natural content height instead, so
+ * `height` is overridden to `auto` and the host row-gap / padding
+ * tokens are zeroed so path rows stack flush. The row's own
+ * `--tugx-paths-row-padding` provides the inset. [L20]
+ *
+ * Specificity note: `tide-card.css` sets `--tugx-list-view-row-gap`
+ * (and the padding tokens) on `.tide-card-transcript .tug-list-view`
+ * to space transcript *entries* apart. This `PathListBlock` is a
+ * tool-block body rendered *inside* the transcript, so its nested
+ * `.tug-list-view` also matches that selector and would inherit the
+ * entry-sized gap — a bare `.tugx-paths-list` (0,0,2,0) ties it and
+ * loses on source order. The three-class form below (0,0,3,0) wins
+ * outright, so the row-gap is genuinely zero regardless of bundle
+ * order. Any future list-shaped body kind needs the same guard. */
+.tugx-paths .tug-list-view.tugx-paths-list {
+  height: auto;
+  --tugx-list-view-row-gap: 0;
+  --tugx-list-view-padding-block: 0;
+  --tugx-list-view-padding-inline: 0;
+  --tugx-list-view-scroll-padding-end: 0;
+}
+
+/* ---------- Row ---------- */
+
+/* One path row — `[icon] [path]`, compact and single-line. The
+ * `MiddleEllipsisPath` `<code>` flexes to fill and middle-ellipsizes
+ * only on genuine overflow. */
+.tugx-paths-row {
+  display: flex;
+  align-items: center;
+  gap: var(--tugx-paths-row-gap);
+  padding: var(--tugx-paths-row-padding);
+  line-height: 1.4;
+}
+
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-paths-row:hover {
+  background: var(--tugx-block-row-hover-bg);
+}
+
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-paths-row svg {
+  flex: 0 0 auto;
+  color: var(--tugx-paths-icon-color);
+}
