@@ -85,6 +85,7 @@ import {
 } from "./use-component-state-preservation";
 import { selectionGuard } from "./selection-guard";
 import { deckTrace } from "@/deck-trace";
+import { getDeckStore } from "@/lib/deck-store-registry";
 import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
 import type { HistoryEntry } from "@/lib/prompt-history-store";
 
@@ -917,6 +918,64 @@ export const TugPromptEntry = React.forwardRef<
   // moment is when `.cm-scroller` regains real `clientHeight` and
   // can honour the scroll write). Cleared on activation.
   const pendingActivationDraftRef = useRef<TugTextEditingState | null>(null);
+
+  // Phase E.11 Step 4e — engine-hook registration channel.
+  //
+  // Register `paintMirrorAsActive` / `paintMirrorAsInactive` hooks
+  // with the deck-manager-store so `applyBagFocus` can drive the
+  // engine through the framework's single channel. The closures
+  // read `textEditorRef.current` and `pendingActivationDraftRef`
+  // live at fire time per [L07].
+  //
+  // The active hook consumes `pendingActivationDraftRef` — set by
+  // `onRestore` during cold-boot for the inactive-mount case so
+  // the engine's scroll-axes write lands against the live (post-
+  // activation) viewport. For runtime cmd-tab return (no pending
+  // draft), the hook calls `paintMirrorAsActive(undefined)` which
+  // trusts the engine's live state.
+  //
+  // Registration runs in `useLayoutEffect` keyed on `[cardIdForTrace]`
+  // so it's complete before any framework event that could invoke
+  // the hook fires ([L03]). When no `cardIdForTrace` is present
+  // (standalone use outside a `CardStatePreservationContext`), we
+  // skip — the imperative-API surface (`textEditorRef.paintMirrorAsActive`)
+  // still allows ad-hoc callers.
+  //
+  // At Step 4e, the engine hook is REGISTERED but the autonomous
+  // `paintMirrorAsActive` claim in `useCardStatePreservation`'s
+  // `onCardActivated` / `onRestore` is still in place (retired at
+  // Step 4f). During the migration window both fire; both are
+  // idempotent. Once 4f retires the autonomous claim, the hook is
+  // the only path that calls `paintMirrorAsActive`.
+  useLayoutEffect(() => {
+    if (cardIdForTrace === null) return;
+    const store = getDeckStore();
+    if (store === null) return;
+    const unregister = store.registerEngineHooks(cardIdForTrace, {
+      paintMirrorAsActive: () => {
+        const editor = textEditorRef.current;
+        if (editor === null) return;
+        const pending = pendingActivationDraftRef.current;
+        pendingActivationDraftRef.current = null;
+        deckTrace.record({
+          kind: "engine-paint-mirror-active",
+          cardId: cardIdForTrace,
+          caller: "via-engine-hook",
+        });
+        editor.paintMirrorAsActive(pending ?? undefined);
+      },
+      paintMirrorAsInactive: () => {
+        const editor = textEditorRef.current;
+        if (editor === null) return;
+        deckTrace.record({
+          kind: "engine-paint-mirror-inactive",
+          cardId: cardIdForTrace,
+        });
+        editor.paintMirrorAsInactive(publishToSelectionGuard);
+      },
+    });
+    return unregister;
+  }, [cardIdForTrace, publishToSelectionGuard]);
 
   // TugPane state preservation [L23]. TugPromptEntry is the sole
   // preserver for this compound — the embedded `TugTextEditor` is
