@@ -1665,23 +1665,29 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       // effects, so the `TugTextEditorStatePreservation` child's
       // registration may have dispatched onRestore one tick before
       // the EditorView was constructed. The hook stashed the
-      // payload on `pendingRestoreRef`; we apply it now through the
-      // same paint channel the live `onRestore` call would have
-      // chosen, then clear the ref. [L23].
+      // payload on `pendingRestoreRef`; we apply it now through
+      // the appropriate channel, then clear the ref. [L23].
+      //
+      // Phase E.11 Step 4h — for the `isActive` branch, the replay
+      // is `restoreEditState` ONLY. The framework's `applyBagFocus`
+      // dispatcher (via CardHost's late-mount retry on
+      // `subscribeEngineHooksChange`) owns the focus claim; the
+      // engine no longer auto-paints itself active in replay.
+      // `restoreEditState` is engine-internal state restore
+      // (document content, atoms, selection, scroll) — a different
+      // axis from the focus claim — and stays. For the inactive
+      // branch, `paintMirrorAsInactive` continues to publish the
+      // selection range through `selectionGuard`, which is also a
+      // non-focus axis.
       const pending = pendingRestoreRef.current;
       if (pending !== null) {
         const { state: bufferedState, isActive } = pending;
         restoreEditState(view, bufferedState);
         const replayId = cardIdRef.current;
         if (isActive) {
-          if (replayId !== null) {
-            deckTrace.record({
-              kind: "engine-paint-mirror-active",
-              cardId: replayId,
-              caller: "mount-effect-replay",
-            });
-          }
-          paintMirrorAsActiveImpl(view, bufferedState);
+          // Engine focus claim deferred to the framework's
+          // `applyBagFocus` retry path. No autonomous paint here.
+          void replayId;
         } else {
           if (replayId !== null) {
             deckTrace.record({

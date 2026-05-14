@@ -1662,38 +1662,25 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
 
   useCardDelegate(cardId, {
     cardDidActivate: () => {
-      // Framework-axis yield ([D95] engine-vs-framework focus
-      // boundary). When the framework just placed focus on a
-      // transient in-card target (find input, future inline editors
-      // — anything carrying `data-tug-focus-key` or
-      // `data-tug-state-key`) via `transferFocusForActivation`'s
-      // synchronous focus-element call or the cold-boot RESTORE
-      // `applyFocusSnapshot` path, the engine's default focus claim
-      // here must yield. The delegate macrotask drains AFTER both,
-      // so a naive `entryDelegate.focus()` clobbers the framework
-      // axis every time tide regains active state with a find row
-      // open. Yield by inspecting `document.activeElement`: if it
-      // sits inside this card on a framework-axis marker, the
-      // framework already owns this activation's focus.
-      const active = document.activeElement;
-      if (active instanceof HTMLElement) {
-        const cardRoot = active.closest<HTMLElement>(
-          `[data-card-id="${CSS.escape(cardId)}"]`,
-        );
-        if (cardRoot !== null) {
-          const hasFocusKey =
-            active.getAttribute("data-tug-focus-key") !== null;
-          const hasStateKey =
-            active.getAttribute("data-tug-state-key") !== null;
-          if (hasFocusKey || hasStateKey) return;
-        }
-      }
-      deckTrace.record({
-        kind: "macrotask-focus-claim",
-        cardId,
-        delegate: "cardDidActivate",
-      });
-      entryDelegateRef.current?.focus();
+      // Phase E.11 Step 4h — macrotask focus claim retired.
+      // The single-channel `applyBagFocus` dispatcher (called
+      // synchronously from `transferFocusForActivation`) is now
+      // the only path that writes activation focus, and it
+      // invokes the engine via the registered engine hook (4e)
+      // for engine kinds — no macrotask, no MessageChannel
+      // deferral. The previous `entryDelegateRef.current?.focus()`
+      // here drained AFTER the framework's claim and clobbered
+      // framework-axis targets like the find input ([L05]
+      // timing-derived ordering violation; [L23] single-channel
+      // violation). See `tuglaws/state-preservation.md`
+      // [Focus dispatch model] and
+      // `docs/notes/focus-gesture-lock-investigation.md`.
+      //
+      // `cardDidMove` / `cardDidResize` keep their delegate focus
+      // claims — those handlers fire on gestures that already
+      // moved the card's DOM identity (cross-pane move, resize)
+      // and re-asserting focus on the editor is the only path
+      // that recovers from the inherent re-mount.
     },
     // `cardWillDeactivate` deliberately does NOT call
     // `entryDelegateRef.current?.blur()`. Calling .blur() on the
