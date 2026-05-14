@@ -21,7 +21,7 @@ The selection-plan history (`roadmap/tugplan-selection.md`) captures the elabora
 
 ## Adding a new tag
 
-1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0079** (AT0069 ships at Phase E.9; AT0070 was claimed and immediately released as a deferred-implementation tag; AT0071–AT0074 ship at Phase E.10; AT0075–AT0079 ship at Phase E.11 — see entries below).
+1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0081** (AT0069 ships at Phase E.9; AT0070 was claimed and immediately released as a deferred-implementation tag; AT0071–AT0074 ship at Phase E.10; AT0075–AT0079 ship at Phase E.11; AT0071–AT0077 + AT0079 are retired at Phase E.12 — see entries below; AT0080–AT0081 ship at Phase E.12).
 2. Add an entry below in the appropriate section (or create a section).
 3. State, in one line each: card types, state axes, trigger, status.
 4. Cross-link the elaborated entry in `roadmap/tugplan-selection.md` if applicable.
@@ -345,49 +345,53 @@ Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension t
 - **Coverage today:** the line-relative writer + reader semantics are pinned in unit tests; the writer's attribute-update path is exercised by AT0061 (same channel; different meta family). No production regression goes unguarded.
 
 #### [AT0071] Content-owning focus survives app-switch
-- **Status:** ✅ shipped at Phase E.10 commit 2 — exercises the framework `bag.focus` axis lift (commit 1) through the find-row primitives (commit 2). Fixture: `gallery-file-block-find-fixture` (a single FileBlock with a stable `componentStatePreservationKey`); tests seed `bag.content` so the card is classified content-owning at runtime even though the gallery factory itself is DOM-authority.
-- **Tests:** `at0071-content-owning-focus-survives-app-switch.test.ts`.
-- **Summary:** Open the FileBlock find row, type a query, then `simulateAppResign` + `simulateAppBecomeActive`. Asserts the on-bag `bag.focus = { kind: "dom", focusKey: "file-block-find/<componentStatePreservationKey>" }` (SAVE-site capture for content-owning cards), and that `document.activeElement` is the find input on the post-become-active tick (resolver-side restore through the precondition above the engine-managed branch).
+- **Status:** 🗑 **retired at Phase E.12** — gated find-row / framework-axis focus survival inside a content-owning card; per-block Find is removed in total at Phase E.12 (a card has at most one text-entry surface). The fixture (`gallery-file-block-find-fixture`) and the test file are deleted. The engine-path coverage that survives is AT0078 + AT0080. No successor — the behavior it gated no longer exists.
+- **Tests:** `at0071-content-owning-focus-survives-app-switch.test.ts` (deleted).
 
 #### [AT0072] Content-owning focus survives card-switch
-- **Status:** ✅ shipped at Phase E.10 commit 2 — same fixture as AT0071, different activation vector.
-- **Tests:** `at0072-content-owning-focus-survives-card-switch.test.ts`.
-- **Summary:** Two `gallery-file-block-find-fixture` cards (A + B) in one pane. Open the find row on A, type a query, click B's tab, then click A's tab. Asserts A's saved `bag.focus.kind === "dom"` after deactivation, and that focus is back on the find input (and the typed query is preserved) after reactivation.
+- **Status:** 🗑 **retired at Phase E.12** — same reason as AT0071 (find fixture removed). The card-switch source is now gated for the engine path by AT0080.
+- **Tests:** `at0072-content-owning-focus-survives-card-switch.test.ts` (deleted).
 
 #### [AT0073] Content-owning focus survives Developer > Reload
-- **Status:** ✅ shipped at Phase E.10 commit 2 — combines the framework axis with the `useBlockFindSession` reload-survival slot.
-- **Tests:** `at0073-content-owning-focus-survives-reload.test.ts`.
-- **Summary:** Open the find row, type a query, `appReload`, then re-seed the deck on the new page with the bag the previous session wrote to disk. Asserts: `bag.components[<key>/file-block-find]` carries `{ open: true, query: "lorem" }`; `bag.focus` carries `{ kind: "dom", focusKey: "file-block-find/<key>" }`; mount-in-saved-state seeds the hook's `useState` from the saved slot so the row is open on first paint; the COLD-BOOT RESTORE site lands focus on the input. Pins the demanding case: the keyed target is conditionally mounted, so the open flag must restore synchronously-before-paint before the focus apply runs.
+- **Status:** 🗑 **retired at Phase E.12** — same reason as AT0071 (find fixture removed). The reload source is now gated for the engine path by AT0081.
+- **Tests:** `at0073-content-owning-focus-survives-reload.test.ts` (deleted).
 
 #### [AT0074] Engine focus fallback when `bag.focus` is absent
-- **Status:** ✅ added at Phase E.10 commit 1 — gates the negative case of the new `bag.focus` precondition. Updated at Phase E.11 to reflect the single-channel dispatcher (the test's negative-case shape is unchanged; the resolver name shifted from `resolveActivationTarget` to `resolveBagFocus` and the dispatch site shifted from `invokeActivationCallback` to `store.invokeEnginePaintMirrorAsActive` via the registered engine hook).
-- **Tests:** `at0074-engine-focus-fallback.test.ts`.
-- **Summary:** A content-owning tide card with focus on the engine's contenteditable saves an empty `bag.focus` (the engine carve-out filters `engine` kind out for content-owning cards on save). On cmd-tab away + back, the framework's `applyBagFocus` resolves `bag.focus === undefined` for an engine-managed card to the engine resolution and invokes the registered engine hook (Phase E.11 Step 4e), which calls `paintMirrorAsActive` and lands focus back on the contenteditable. The regression we are gating against: a misclassification (e.g. naively honouring `engine` kind in a framework-axis branch, or failing to filter it on save) would route the framework path through the engine's contenteditable directly and bypass the inactive-paint → global-Selection transfer. The test reads `getCardStateBag("A").focus` post-blur and asserts it is absent, then asserts `document.activeElement` post-become-active is the contenteditable.
+- **Status:** 🗑 **retired at Phase E.12** — bundled with the find-fixture AT-series at Phase E.12. The "absent `bag.focus` → engine resolution" path it gated is still exercised: a fresh tide card has no saved focus and AT0033 gates fresh-card activation; AT0078 / AT0080 / AT0081 gate the engine path across every activation source. No successor needed.
+- **Tests:** `at0074-engine-focus-fallback.test.ts` (deleted).
 
 #### [AT0075] Tide-card find row focus survives app-switch
-- **Status:** ⚪ skipped at Phase E.11 Step 4l — requires harness extension (tool-result injection) to materialize a FileBlock find row inside a real tide-card. The structural path is covered by AT0071 (framework-axis on engineless content-owning fixture) + AT0078 (engine path on real tide-card); the integration gap is verified at the Phase E.11 manual checkpoint level.
-- **Tests:** `at0075-tide-find-app-switch.test.ts` (described, `describe.skip`).
-- **Summary:** Open a tide card with a Read tool result, open the FileBlock find row, type a query, cmd-tab away + back. Asserts focus lands back on the find input (NOT the prompt-entry contenteditable). The user-reported Glitch 2 from the Phase E.11 birth.
+- **Status:** 🗑 **retired at Phase E.12** — was `describe.skip` pending a harness extension; per-block Find is removed in total at Phase E.12, so the behavior is gone. The file is deleted.
+- **Tests:** `at0075-tide-find-app-switch.test.ts` (deleted).
 
 #### [AT0076] Tide-card find row focus survives card-switch
-- **Status:** ⚪ skipped at Phase E.11 Step 4l — same harness gap as AT0075.
-- **Tests:** `at0076-tide-find-card-switch.test.ts` (described, `describe.skip`).
-- **Summary:** Open a tide card's find row, click another card's title bar, click back to the tide card. Asserts focus on the find input (NOT the prompt-entry). The user-reported Glitch 2 cross-card variant.
+- **Status:** 🗑 **retired at Phase E.12** — same reason as AT0075. The file is deleted.
+- **Tests:** `at0076-tide-find-card-switch.test.ts` (deleted).
 
 #### [AT0077] Tide-card find row focus survives Developer > Reload
-- **Status:** ⚪ skipped at Phase E.11 Step 4l — same harness gap as AT0075. The most demanding focus-survival test in the Phase E.11 set (exercises cold-boot + late-mount retry via MutationObserver on real tide-card).
-- **Tests:** `at0077-tide-find-reload.test.ts` (described, `describe.skip`).
-- **Summary:** Open a tide card's find row, type a query, Developer > Reload. Asserts the find row re-mounts open with the query preserved AND focus lands on the find input even when tide's transcript loads messages async after restart (the FileBlock hosting the input mounts late; the framework's deferred-dom retry budget — 200 mutations / 5s — settles when the target appears). The user-reported Glitch 3, the canonical bug at the heart of Phase E.11.
+- **Status:** 🗑 **retired at Phase E.12** — same reason as AT0075. The file is deleted.
+- **Tests:** `at0077-tide-find-reload.test.ts` (deleted).
 
 #### [AT0078] Tide-card engine focus survives app-switch
-- **Status:** ✅ shipped at Phase E.11 Step 4l. The active gate for the real-tide engine path; complements AT0075/76/77 (find-row coverage, currently skipped).
+- **Status:** ✅ shipped at Phase E.11; retained + repurposed at Phase E.12 as the app-switch gate for the single-text-entry rule (#phase-e-12): a tide card's activation focus always lands on the `tug-prompt-entry` contenteditable.
 - **Tests:** `at0078-tide-engine-focus-survives.test.ts`.
-- **Summary:** Seed a tide-card, bind a fake session, await engine ready. Click into the contenteditable, type "hello", `simulateAppResign` (window-blur captures `bag.focus.kind === "engine"`). After a brief blur dwell, `simulateAppBecomeActive` runs `reactivateCurrentFocusDestination` → `applyBagFocus` → engine resolution → engine hook invocation → `paintMirrorAsActive(undefined)` → `view.focus()`. Asserts `document.activeElement` is the tide-card's contenteditable. Regression gate proving the Phase E.11 retirement of the engine's autonomous `onCardActivated` claim AND the macrotask `cardDidActivate` delegate did NOT break engine focus on real tide when the user had engine focus at save time.
+- **Summary:** Seed a tide-card, bind a fake session, await engine ready. Click into the contenteditable, type "hello", `simulateAppResign` (window-blur). After a brief blur dwell, `simulateAppBecomeActive` runs `reactivateCurrentFocusDestination` → `applyBagFocus` → engine resolution → engine hook invocation → `view.focus()`. Asserts `document.activeElement` is the tide-card's contenteditable.
 
 #### [AT0079] Tide-card engine focus wins over stale find-row mount
-- **Status:** ⚪ skipped at Phase E.11 Step 4l — requires the same tool-result injection as AT0075/76/77. The discriminator test: both engine path AND find row must coexist.
-- **Tests:** `at0079-tide-engine-focus-wins-over-stale-find.test.ts` (described, `describe.skip`).
-- **Summary:** Tide card with a find row OPEN but contenteditable focused at save time. Reload. Asserts focus lands on the contenteditable (engine), NOT the find input — the kind discriminator inside `bag.focus` is authoritative; the framework does not prefer dom over engine just because the find input happens to exist in the saved component-state.
+- **Status:** 🗑 **retired at Phase E.12** — was `describe.skip`; per-block Find is removed in total at Phase E.12, so there is no "stale find-row mount" for the engine kind to win over. The file is deleted.
+- **Tests:** `at0079-tide-engine-focus-wins-over-stale-find.test.ts` (deleted).
+
+#### [AT0080] Tide-card focus lands on the prompt entry after card-switch
+- **Status:** ✅ shipped at Phase E.12 — the card-switch gate for the single-text-entry rule (#phase-e-12).
+- **Tests:** `at0080-tide-focus-card-switch.test.ts`.
+- **Summary:** Two tide cards (A + B) in one pane, both bound to fake sessions. Click into A's contenteditable, type "hello", click B's tab (focus lands on B's contenteditable), click A's tab. Asserts `document.activeElement` is A's `tug-prompt-entry` contenteditable — the activation focus has one destination.
+
+#### [AT0081] Tide-card focus lands on the prompt entry after Developer > Reload
+- **Status:** ✅ shipped at Phase E.12 — the cold-boot / reload gate for the single-text-entry rule (#phase-e-12). Exercises the `deferred-engine` settle (the one late-mount focus path that survives Phase E.12's retirement of the `deferred-dom` focus-retry branch).
+- **Tests:** `at0081-tide-focus-reload.test.ts`.
+- **Summary:** Seed a tide card, bind a fake session, type into the contenteditable, `appReload`, re-seed with the persisted bag, re-bind the session. Asserts `document.activeElement` is the tide-card's `tug-prompt-entry` contenteditable after the cold-boot RESTORE → `deferred-engine` → `engineHooksVersion` re-run path. Waits for the contenteditable to mount rather than the `engine-ready` harness signal, which does not re-arm after `appReload`.
+
+> **Cross-pane drag** — the fourth activation source for the single-text-entry rule (#phase-e-12) — is gated by AT0034 (`at0034-em-focus-after-move.test.ts`), which exercises a cross-pane drag and a detach on `gallery-prompt-entry` (the `tug-prompt-entry` surface a tide card uses internally) and asserts focus lands on the contenteditable. No new tag is needed.
 
 ## Maintenance
 
