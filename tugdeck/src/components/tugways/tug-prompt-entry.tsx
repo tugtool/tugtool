@@ -984,26 +984,21 @@ export const TugPromptEntry = React.forwardRef<
   // single draft snapshot.
   useCardStatePreservation<TugPromptEntryState>({
     onCardActivated: () => {
-      // Activation gesture lands on this card. Claim focus + global
-      // Selection via the substrate's active-paint channel. The
-      // deactivation hook for the previously-active card has
-      // already routed its selection into the inactive-paint channel
-      // before this fires. [L23].
+      // Phase E.11 Step 4f — autonomous focus claim retired.
+      // The framework's single-channel `applyBagFocus` dispatcher
+      // invokes the engine via the registered engine hook
+      // (registered in the useLayoutEffect above) when
+      // `bag.focus.kind === "engine"`. The engine hook consumes
+      // `pendingActivationDraftRef` and calls
+      // `paintMirrorAsActive(pending ?? undefined)` — the same
+      // call this handler used to make autonomously. See
+      // `tuglaws/state-preservation.md` [Focus dispatch model].
       //
-      // Discard the deactivation-time draft snapshot: the substrate's
-      // live `view.scrollDOM.scrollTop` is the authoritative value
-      // again now that the card is interactive.
+      // This handler keeps only the deactivation-time draft
+      // snapshot reset: the substrate's live `view.scrollDOM.scrollTop`
+      // is the authoritative value again now that the card is
+      // interactive.
       inactiveDraftSnapshotRef.current = null;
-      // Pending activation draft — set by `onRestore` for the
-      // inactive-mount case. The substrate's scrollAxes write
-      // during restore landed on a `display: none` scroller and
-      // was discarded; replay it now that `.cm-scroller` has a real
-      // viewport. Pass the saved draft through `paintMirrorAsActive`
-      // so its `applyScrollAxes` call uses the persisted
-      // `scrollAnchor` against the live (post-activation) layout.
-      const pending = pendingActivationDraftRef.current;
-      pendingActivationDraftRef.current = null;
-      textEditorRef.current?.paintMirrorAsActive(pending ?? undefined);
     },
     onCardWillDeactivate: () => {
       // [L23] enforcement: hand the substrate's selection over to
@@ -1057,19 +1052,26 @@ export const TugPromptEntry = React.forwardRef<
         if (restored.draft !== null) {
           // restoreState updates the substrate's doc + atoms +
           // selection without touching DOM Selection or focus
-          // (mirror-only restore). The paint method below — chosen
-          // by `isActive` — writes selection to the DOM. [L23].
+          // (mirror-only restore). [L23].
+          //
+          // Phase E.11 Step 4f — for the `isActive` branch, the
+          // autonomous `paintMirrorAsActive(restored.draft)` claim
+          // is retired. The framework's `applyBagFocus` dispatcher
+          // (CardHost cold-boot RESTORE for the active card)
+          // invokes the registered engine hook (4e), which reads
+          // `pendingActivationDraftRef` for the saved draft and
+          // calls `paintMirrorAsActive`. Stash the draft for BOTH
+          // active and inactive paths so the engine hook has a
+          // uniform read source.
           editor.restoreState(restored.draft);
-          if (isActive) {
-            editor.paintMirrorAsActive(restored.draft);
-          } else {
-            // Inactive mount: the substrate's scrollAxes write
-            // during `restoreState` landed against a
-            // `display: none` scroller (the hidden host) and was
-            // wiped. Hold the draft so the next activation re-applies
-            // the user's saved scroll position against the live
-            // (post-activation) viewport.
-            pendingActivationDraftRef.current = restored.draft;
+          pendingActivationDraftRef.current = restored.draft;
+          if (!isActive) {
+            // Inactive mount: also publish the saved selection
+            // through the inactive-paint channel so selectionGuard
+            // can render the dim selection band on the hidden
+            // card. The pendingActivationDraftRef stashed above
+            // covers the active-side re-apply when the card later
+            // becomes active (engine hook reads it).
             editor.paintMirrorAsInactive(
               publishToSelectionGuard,
               restored.draft,
