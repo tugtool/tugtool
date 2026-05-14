@@ -1,44 +1,38 @@
-/* @tug-pairings: none — scaffold placeholder for a registry-fallback wrapper.
-   `DefaultToolWrapper` is the fallback dispatch result for `tool_use`
-   events whose `tool_name` is not in the wrapper registry, plus an
-   audit-confirmed long tail of low-volume tools that route here by
-   design. The full implementation (JsonTreeBlock over input, smart-pick
-   body for output, caution badge) lands later in this phase; this
-   scaffold renders only the tool name and a "(default)" marker so the
-   dispatch wiring can be tested in isolation.
-
-   This stylesheet introduces no `--tugx-*` slot tokens of its own; the
-   final tokens land alongside the body-kind composition in the
-   default-tool-wrapper full step. The scaffold uses font and layout
-   inherited from the host transcript row — no contrast surface owned
-   here.
+/* @tug-pairings: none — `DefaultToolWrapper` is decoration over
+   composition. The frame chrome is `tool-wrapper-chrome.css`; the
+   input / result sections are standalone `JsonTreeBlock`s
+   (`json-tree-block.css`) and a `TugMarkdownBlock`
+   (`tug-markdown-block.css`), each owning its own surface; the
+   caution chip is `TideCautionBadge` (`tide-caution-badge.css`).
+   This file holds only the section-stack layout.
 */
 
 /**
- * default-tool-wrapper.css — scaffold styling for the registry fallback.
+ * default-tool-wrapper.css — `DefaultToolWrapper` section layout.
+ *
+ * Structural overlay only. The wrapper composes `ToolWrapperChrome`
+ * for its frame and stacks two self-contained body-kind sections
+ * (input `JsonTreeBlock`, smart-picked result) inside the chrome
+ * body. Each section owns its own frame + spacing; this file just
+ * places the stack and gives the markdown result the same vertical
+ * rhythm as the framed JSON sections.
  *
  * Tuglaw cross-check:
- *   - [L06] appearance via CSS / DOM, not React state.
- *   - [L19] file pair (`.tsx` + `.css`) with module docstring on each.
- *   - [L20] component-token sovereignty — no tokens introduced here;
- *     full slot vocabulary lands with the body composition step.
+ *  - [L19] file pair, `data-slot="default-tool-wrapper"` (delegated
+ *    to the chrome via `rootSlot`).
+ *  - [L20] introduces no `--tugx-*` slot; the section spacing rides
+ *    the shared `--tugx-block-margin`.
  */
 
-.default-tool-wrapper {
-  box-sizing: border-box;
+.default-tool-wrapper-sections {
   display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  padding: 0.25rem 0;
-  font-family: var(--tug-font-family-mono);
-  font-size: var(--tug-font-size-sm);
+  flex-direction: column;
 }
 
-.default-tool-wrapper-name {
-  font-weight: 600;
-}
-
-.default-tool-wrapper-marker {
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  font-style: italic;
+/* The markdown result rides the same vertical rhythm as the framed
+ * `JsonTreeBlock` sections, which carry `--tugx-block-margin`. The
+ * forwarded class is `TugMarkdownBlock`'s sanctioned cascade-scoped
+ * customization point ([L20]). */
+.default-tool-wrapper-result-md {
+  margin: var(--tugx-block-margin);
 }

@@ -4378,31 +4378,42 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 #### Step 13: DefaultToolWrapper {#step-13}
 
+**Status:** implemented — real `DefaultToolWrapper` body, `TideCautionBadge` extraction, pure-logic + dispatch-wiring test suite landed. tsc clean, `bun test` 1625/1625, `audit:tokens lint` zero violations.
+
 **Depends on:** #step-1, #step-12
 
 **Commit:** `feat(tide-rendering): DefaultToolWrapper — JsonTree-based fallback with caution badge`
 
 **References:** [D04], [D11], Spec S03, (#chrome)
 
-**Conformance:** see [#bk-conformance](#bk-conformance) — tool wrapper over `ToolWrapperChrome`, composing `embedded` body kinds.
+**Conformance:** see [#bk-conformance](#bk-conformance) — tool wrapper over `ToolWrapperChrome`. Composes body kinds *standalone* (not `embedded`) — see the implementation note.
+
+**Implementation notes.**
+- **`TideCautionBadge` is an extraction, not a new build.** `ToolWrapperChrome` already shipped a private inline caution badge. This step lifted it into `chrome/tide-caution-badge.tsx` + `.css` as the shared `TideCautionBadge` component (its own `--tugx-caut-*` geometry slots; rides the shared `--tugx-block-tone-caution-*` surface), and `ToolWrapperChrome` now composes it. Same pattern as Step 11's `MiddleEllipsisPath` extraction. Caution-badge rendering for `DefaultToolWrapper` is automatic — the chrome paints `TideCautionBadge` whenever the dispatch threads a `caution` prop. [#step-21](#step-21)'s card-chrome aggregate chip will reuse the same component. The native `title` tooltip is kept (behaviour-preserving extraction); a richer hover surface is a follow-on.
+- **`TugMarkdownBlock`, not `TugMarkdownView`.** The plan-alignment pass wrote `TugMarkdownView`; the correct primitive for a *bounded* tool-output blob is `TugMarkdownBlock` — the non-virtualizing, `initialText`-static, no-own-scroll-container sibling. `TugMarkdownView` is the whole-document virtualized scroller (wrong shape here).
+- **Standalone body kinds, not `embedded`.** `embedded` mode portals a body kind's actions cluster into the chrome's *single* actions slot; `DefaultToolWrapper` composes *two* body kinds (input tree + result), so two embedded trees would collide there. Each renders standalone — self-contained frame + header — which is also the right shape for "input and output of an unknown tool, clearly delineated." The chrome owns the tool-name identity; the inner sections own theirs (`label="input"` / `label="result"`).
+- **No new `--tugx-toolblock-*` extension.** `DefaultToolWrapper` is pure composition and introduces no tokens of its own; the `--tugx-caut-*` family lives on `tide-caution-badge.css`.
 
 **Artifacts:**
-- `tugdeck/src/components/tugways/cards/tool-wrappers/default-tool-wrapper.tsx` + `.css` _(file already exists as the [#step-1](#step-1) no-op scaffold — this step replaces its body)_
-- `tugdeck/src/components/tugways/chrome/tide-caution-badge.tsx` + `.css`
-- Token slots `--tugx-caut-*` and `--tugx-toolblock-*` (extension)
+- `tugdeck/src/components/tugways/cards/tool-wrappers/default-tool-wrapper.tsx` + `.css` — the [#step-1](#step-1) no-op scaffold's body replaced with the real implementation.
+- `tugdeck/src/components/tugways/chrome/tide-caution-badge.tsx` + `.css` — `TideCautionBadge`, extracted from `ToolWrapperChrome`'s private inline badge; token slot `--tugx-caut-*`.
+- `tugdeck/src/components/tugways/cards/tool-wrappers/__tests__/default-tool-wrapper.test.ts` — pure-logic + dispatch-wiring test suite (8 tests).
+- Updated: `tool-wrapper-chrome.tsx` / `.css` — compose `TideCautionBadge`; the private `CautionBadge` + its `.tool-wrapper-chrome-caution` rule retired (the `--tugx-toolblock-caution-*` geometry tokens stay — `read-tool-block` / `edit-tool-block`'s chips still ride them).
 
 **Tasks:**
-- [ ] DefaultToolWrapper: `JsonTreeBlock` over `tool_use.input` (collapsed by default), separator, then body picked from `tool_result.output` / `tool_use_structured.structured_result`: text → `TugMarkdownView`; object → `JsonTreeBlock`
-- [ ] CautionBadge: small inline chip with hover tooltip showing reason
-- [ ] Replace the [#step-1](#step-1) scaffold's no-op `default-tool-wrapper.tsx` body with this real implementation
+- [x] DefaultToolWrapper: `JsonTreeBlock` over `tool_use.input` (`defaultDepth={1}` → collapsed by default), `TugSeparator`, then result smart-picked from `tool_result.output` / `tool_use_structured.structured_result`: text → `TugMarkdownBlock`; object/array → `JsonTreeBlock` (via the pure `pickOutputBody` helper)
+- [x] CautionBadge: extracted to `TideCautionBadge` (`chrome/tide-caution-badge.tsx`) — small inline chip, native `title` hover tooltip showing the reason; composed by `ToolWrapperChrome`
+- [x] Replace the [#step-1](#step-1) scaffold's no-op `default-tool-wrapper.tsx` body with this real implementation
 
 **Tests:**
-- [ ] Inject synthetic `tool_use { tool_name: "ZzzUnknown" }` → DefaultToolWrapper + caution badge
-- [ ] Object output renders via `JsonTreeBlock`
-- [ ] Text output renders via `TugMarkdownView`
+- [x] Inject synthetic `tool_use { tool_name: "ZzzUnknown" }` → DefaultToolWrapper + caution badge — `dispatchToolCallState` test: returns `{ Component: DefaultToolWrapper, caution: { reason: "unknown_tool", detail: "ZzzUnknown" } }`, and threads `caution` onto the wrapper props
+- [x] Object output renders via `JsonTreeBlock` — `pickOutputBody`: object / array `structured_result` → `{ kind: "json" }`
+- [x] Text output renders via `TugMarkdownBlock` — `pickOutputBody`: plain-text output → `{ kind: "markdown" }` (structured object wins over text; primitive structured falls through to text)
+
+**Notes on test strategy.** Same as [#step-11](#step-11) / [#step-12](#step-12): no fake-DOM render tests (project policy). `DefaultToolWrapper`'s only branching logic is `pickOutputBody`, pinned exhaustively; the dispatch-wiring test pins the unknown / audit-confirmed routing against the real component. A rendering-level app-test is still blocked by the tool-result-injection harness gap (see [#e12-followups](#e12-followups)); visual composition is vetted at [#step-14-5](#step-14-5)'s gallery card.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — tsc clean; `bun test` 1625 pass / 0 fail.
 
 ---
 

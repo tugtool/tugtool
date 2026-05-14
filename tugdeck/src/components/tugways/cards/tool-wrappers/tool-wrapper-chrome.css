@@ -210,20 +210,12 @@ body {
   gap: var(--tugx-toolblock-actions-gap);
 }
 
-/* ---- Caution badge (inline in header) ---- */
-
-.tool-wrapper-chrome-caution {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  padding: var(--tugx-toolblock-caution-padding);
-  border-radius: var(--tugx-toolblock-caution-radius);
-  background: var(--tugx-block-tone-caution-bg);
-  color: var(--tugx-block-tone-caution-color);
-  font-size: var(--tugx-toolblock-caution-size);
-  font-weight: var(--tugx-toolblock-caution-weight);
-  cursor: help;
-}
+/* The inline caution chip is its own component — `TideCautionBadge`
+ * (`chrome/tide-caution-badge.css`). The chrome only places it in the
+ * header flow. The `--tugx-toolblock-caution-*` tokens above are
+ * retained: they are the shared small-chip geometry that
+ * `read-tool-block`'s line-range badge and `edit-tool-block`'s
+ * change-count badge ride for visual consistency. */
 
 /* ---- Body region ---- */
 

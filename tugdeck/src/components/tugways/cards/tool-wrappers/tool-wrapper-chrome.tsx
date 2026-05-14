@@ -29,9 +29,10 @@
  *     an error stripe; consumers may also pass an
  *     `errorMessage` slot for inline detail.
  *
- * `caution` is rendered as an inline badge in the header per
- * [D04] / [Q03]. Three reasons surface here: `unknown_tool`,
- * `unknown_shape`, `version_drift`.
+ * `caution` is rendered as an inline `TideCautionBadge` in the header
+ * per [D04] / [Q03] — three reasons surface: `unknown_tool`,
+ * `unknown_shape`, `version_drift`. The chrome owns only the
+ * placement; the chip is `chrome/tide-caution-badge.tsx`.
  *
  * ## Actions slot — body-kind affordance host
  *
@@ -74,6 +75,7 @@ import "./tool-wrapper-chrome.css";
 import React from "react";
 
 import { cn } from "@/lib/utils";
+import { TideCautionBadge } from "@/components/tugways/chrome/tide-caution-badge";
 
 import type { CautionFlag, ToolWrapperStatus } from "./types";
 
@@ -265,7 +267,7 @@ export const ToolWrapperChrome: React.FC<ToolWrapperChromeProps> = ({
           <span className="tool-wrapper-chrome-args">{argsSummary}</span>
         ) : null}
         {caution !== undefined ? (
-          <CautionBadge caution={caution} />
+          <TideCautionBadge caution={caution} />
         ) : null}
         {/* Actions slot — see module docstring. A composed body kind
          * portals its resting affordances here when `embedded={true}`.
@@ -303,32 +305,5 @@ export const ToolWrapperChrome: React.FC<ToolWrapperChromeProps> = ({
         </div>
       ) : null}
     </div>
-  );
-};
-
-/**
- * Inline caution badge surfaced when the dispatch flagged drift on
- * this tool call. The label is short and the title attribute carries
- * the longer detail so power users can hover to inspect the cause.
- *
- * The full `CautionBadge` design (aggregate counter on the card
- * chrome, click-through to drift telemetry) lands in a later step;
- * this is the inline-flag part of the [D04] / [Q03] strategy.
- */
-const CautionBadge: React.FC<{ caution: CautionFlag }> = ({ caution }) => {
-  const label =
-    caution.reason === "unknown_tool"
-      ? "unknown tool"
-      : caution.reason === "unknown_shape"
-        ? "unknown shape"
-        : "version drift";
-  return (
-    <span
-      data-slot="tool-wrapper-caution"
-      className="tool-wrapper-chrome-caution"
-      title={caution.detail !== undefined ? `${label}: ${caution.detail}` : label}
-    >
-      ⚠ {label}
-    </span>
   );
 };
