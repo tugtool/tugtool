@@ -1284,17 +1284,25 @@ export function transferFocusAfterMove(
  *   1. Resolve `cardId` from `store.getFirstResponderCardId()`. If
  *      `null` (canvas-background deselect, or boot before the first
  *      activation), return — there is no destination to reactivate.
- *   2. Resolve the activation target via {@link resolveActivationTarget}.
- *   3. Read the host root via `store.peekCardHostRoot` and gate
+ *   2. Read the host root via `store.peekCardHostRoot` and gate
  *      through {@link canProgrammaticallyFocus}. The gate's
  *      `state.hasFocus` branch is correctly `true` at this point
  *      because the listener flipped it to `true` immediately before
  *      this call.
- *   4. Transfer:
- *      - `focus-element` → `el.focus()` + `restoreCardDomSelection`
- *      - `default-focus` → `traceApplyDefaultFocus` walk
- *      - `dispatch-activated` → `store.invokeActivationCallback`
- *      - `none` → return
+ *   3. Single-channel dispatch via {@link applyBagFocus} with
+ *      `preventScroll: true` ([L23] — preserve user-visible scroll
+ *      across cmd-tab return; the default `focus()` semantics scroll
+ *      the focused element into view, which in a tide-card
+ *      (transcript above + editor below) drags the transcript
+ *      downward whenever the editor re-claims focus on cmd-tab
+ *      return).
+ *   4. Post-dispatch DOM-selection restore for `applied` results
+ *      that carry a saved `bag.domSelection`.
+ *
+ * Phase E.11 Step 4b — migrated from the four-branch resolver
+ * to the single-channel `applyBagFocus` dispatcher. The
+ * dispatcher's D11 yield rule preserves the substrate-hook
+ * precedence the OLD branch logic relied on implicitly.
  *
  * No `commitMutation`. The window-`focus` event arrives outside any
  * pending React commit; React reconciliation has already drained
@@ -1306,9 +1314,7 @@ export function reactivateCurrentFocusDestination(
   const cardId = store.getFirstResponderCardId();
   if (cardId === null) return;
 
-  const target = resolveActivationTarget(cardId, store);
-  if (target.kind === "none") return;
-
+  // Step 1 — Gate.
   const targetCardHostEl = store.peekCardHostRoot(cardId);
   const allowed = canProgrammaticallyFocus(
     cardId,
@@ -1317,73 +1323,25 @@ export function reactivateCurrentFocusDestination(
   );
   if (!allowed) return;
 
-  if (target.kind === "focus-element") {
-    const doc = target.el.ownerDocument;
-    const activeBefore = formatElement(doc.activeElement);
-    // `preventScroll: true` — window-focus reactivation is "I just
-    // came back to where I was." The user-visible scroll state of
-    // any scrollport above us must not change just because the
-    // focused element regained the caret. The default `focus()`
-    // semantics scroll the focused element into view, which in a
-    // tide-card (transcript above + editor below) drags the
-    // transcript downward whenever the editor re-claims focus on
-    // cmd-tab return. The browser's own window-state focus
-    // restoration on cmd-tab is already pixel-stable; this
-    // synchronous re-claim is just our deterministic guarantee
-    // that the chain agrees on who owns the caret. No scroll-
-    // into-view is needed. [L23] — preserve user-visible scroll.
-    measureFocusClaim(
-      "focus-transfer-reactivate:focus-element",
-      cardId,
-      doc,
-      () => target.el.focus({ preventScroll: true }),
-    );
-    const activeAfter = formatElement(doc.activeElement);
-    deckTrace.record({
-      kind: "focus-call",
-      site: "focus-transfer-reactivate",
-      cardId,
-      targetSelector: describeTargetSelector(target.el, store, cardId),
-      activeBefore,
-      activeAfter,
-      hidden: isElementHidden(target.el),
-    });
+  // Step 2 — Single-channel dispatch via `applyBagFocus`.
+  const result = applyBagFocus(cardId, store, {
+    site: "focus-transfer-reactivate",
+    preventScroll: true,
+  });
 
+  // Step 3 — Post-dispatch DOM-selection restore.
+  if (result === "applied") {
     const bag = store.getCardState(cardId);
-    if (bag?.domSelection !== undefined && bag.domSelection !== null) {
-      const cardRoot = targetCardHostEl ?? store.peekCardHostRoot(cardId);
-      if (cardRoot !== null) {
-        selectionGuard.restoreCardDomSelection(
-          cardId,
-          bag.domSelection,
-          cardRoot,
-        );
-        deckTrace.record({
-          kind: "selection-restore",
-          cardId,
-          via: "restoreCardDomSelection",
-        });
-      }
-    }
-    return;
-  }
-
-  if (target.kind === "default-focus") {
-    // `preventScroll: true` — see the focus-element branch above
-    // for the rationale. Window-focus reactivation must preserve
-    // the user-visible scroll state of every ancestor scrollport.
-    traceApplyDefaultFocus(
-      "focus-transfer-reactivate-default",
-      cardId,
-      target.cardRoot,
-      { preventScroll: true },
-    );
-    const bag = store.getCardState(cardId);
-    if (bag?.domSelection !== undefined && bag.domSelection !== null) {
+    const cardRoot = targetCardHostEl ?? store.peekCardHostRoot(cardId);
+    if (
+      bag?.domSelection !== undefined &&
+      bag.domSelection !== null &&
+      cardRoot !== null
+    ) {
       selectionGuard.restoreCardDomSelection(
         cardId,
         bag.domSelection,
-        target.cardRoot,
+        cardRoot,
       );
       deckTrace.record({
         kind: "selection-restore",
@@ -1391,25 +1349,5 @@ export function reactivateCurrentFocusDestination(
         via: "restoreCardDomSelection",
       });
     }
-    return;
-  }
-
-  // `dispatch-activated` — content factory's onCardActivated handles
-  // its own targeting.
-  const dispatchDoc =
-    typeof document !== "undefined"
-      ? document
-      : (store.peekCardHostRoot(cardId)?.ownerDocument ?? null);
-  if (dispatchDoc !== null) {
-    measureFocusClaim(
-      "focus-transfer-reactivate:dispatch-activated",
-      cardId,
-      dispatchDoc,
-      () => {
-        store.invokeActivationCallback(cardId, "reactivate-current");
-      },
-    );
-  } else {
-    store.invokeActivationCallback(cardId, "reactivate-current");
   }
 }
