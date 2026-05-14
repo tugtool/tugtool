@@ -1073,14 +1073,17 @@ function TideProjectPickerForm({
     submitWith(selection);
   }, [submitWith, selection]);
 
-  // Recents list delegate — onSelect fills the input.
-  const recentsDelegate = useMemo<TugListViewDelegate>(
-    () => ({
-      onSelect: (index) => {
-        const row = recentsDataSource.rowAt(index);
-        if (row.kind === "path-recent") setPath(row.path);
-      },
-    }),
+  // Recents list runs in `TugListView`'s `selectionRequired` mode —
+  // the list view owns the selected recent (always exactly one) and
+  // mirrors it out here. On sheet open the list seeds selection to
+  // the first recent, so this fires immediately and fills the
+  // project-path input without the user clicking anything; a later
+  // click on another recent re-fires it the same way.
+  const handleRecentSelectionChange = useCallback(
+    (index: number): void => {
+      const row = recentsDataSource.rowAt(index);
+      if (row.kind === "path-recent") setPath(row.path);
+    },
     [recentsDataSource],
   );
 
@@ -1228,11 +1231,10 @@ function TideProjectPickerForm({
   // response.
   const cellContextValue = useMemo(
     () => ({
-      currentPath: path,
       selection,
       pendingForgetSessionId,
     }),
-    [path, selection, pendingForgetSessionId],
+    [selection, pendingForgetSessionId],
   );
 
   // Master/detail layout: project-path input → Recents list →
@@ -1297,7 +1299,8 @@ function TideProjectPickerForm({
             {recents.length > 0 ? (
               <TugListView
                 dataSource={recentsDataSource}
-                delegate={recentsDelegate}
+                selectionRequired
+                onSelectionChange={handleRecentSelectionChange}
                 cellRenderers={RECENTS_CELL_RENDERERS}
                 scrollKey="tide-card-picker-recents"
                 className="tide-card-picker-recents-list tide-card-picker-list-view"

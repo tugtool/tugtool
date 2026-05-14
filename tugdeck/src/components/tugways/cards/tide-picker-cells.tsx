@@ -14,11 +14,13 @@
  * `PickerCellContext`.
  *
  * Recents cells:
- *  - `path-recent` — `data-selected="true"` when `currentPath ===
- *    path` (master-pane behavior — clicking a recent fills the input
- *    and that recent stays highlighted). Match ranges from the
- *    matcher (the picker form's data source attaches them) drive
- *    `<mark>` highlights inside the path text.
+ *  - `path-recent` — selection is owned by `TugListView`'s
+ *    `selectionRequired` mode: the list view marks the selected row's
+ *    wrapper `data-selected="true"` and the CSS styles the path text
+ *    from there. The list always has one recent selected; the form's
+ *    `onSelectionChange` fills the project-path input from it. Match
+ *    ranges from the matcher (the picker form's data source attaches
+ *    them) drive `<mark>` highlights inside the path text.
  *
  * Sessions cells:
  *  - `session-new` — single-row "New session". Selected when
@@ -92,17 +94,16 @@ import {
 
 /**
  * The picker's session selection. Owned by the picker form as
- * `useState<PickerSelection | null>`. The Recents list does NOT
- * carry a selection state of its own — its "selected" cell is
- * derived from `currentPath === recent.path` in the cell.
+ * `useState<PickerSelection | null>`. The Recents list does NOT carry
+ * a selection state here — it runs in `TugListView`'s
+ * `selectionRequired` mode, so the list view owns the selected recent
+ * and marks the row wrapper with `data-selected="true"`.
  */
 export type PickerSelection =
   | { readonly kind: "session-new" }
   | { readonly kind: "session-resume"; readonly sessionId: string };
 
 interface PickerCellContextValue {
-  /** Live project-path input value. Drives path-recent selected state. */
-  readonly currentPath: string;
   /** Current session selection. `null` when no session row is selected. */
   readonly selection: PickerSelection | null;
   /**
@@ -116,7 +117,6 @@ interface PickerCellContextValue {
 }
 
 const NULL_CONTEXT: PickerCellContextValue = {
-  currentPath: "",
   selection: null,
   pendingForgetSessionId: null,
 };
@@ -163,26 +163,25 @@ function renderHighlighted(
 // ---------------------------------------------------------------------------
 
 /**
- * Path-recent cell. Renders the path text with `<mark>` highlights
- * at the matcher's match ranges. `data-selected="true"` when the
- * live input value (`currentPath`) equals this recent's path.
+ * Path-recent cell. Renders the path text with `<mark>` highlights at
+ * the matcher's match ranges.
  *
- * The cell wrapper takes the click; the form's delegate calls
- * `setPath(recent)`. Backward-compat keys `data-testid` for the
- * existing test suite.
+ * Selection is owned by `TugListView`'s `selectionRequired` mode: the
+ * list view marks the selected row's wrapper
+ * (`.tug-list-view-cell[data-selected="true"]`) and the CSS styles
+ * the descendant `.tide-card-picker-path-recent` from there. The cell
+ * itself carries no selected state. The form's `onSelectionChange`
+ * mirrors the selected recent into the project-path input.
  */
 export const PathRecentCell: TugListViewCellRenderer<TideRecentsDataSource> = ({
   index,
   dataSource,
 }: TugListViewCellProps<TideRecentsDataSource>) => {
-  const { currentPath } = usePickerCellContext();
   const row = dataSource.rowAt(index);
-  const isSelected = currentPath === row.path;
   return (
     <div
       className="tide-card-picker-path-recent"
       data-testid="tide-card-picker-path-recent"
-      data-selected={isSelected ? "true" : undefined}
       title={row.path}
       aria-label={row.path}
     >

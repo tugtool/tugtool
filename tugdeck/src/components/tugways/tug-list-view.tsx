@@ -29,7 +29,11 @@
  *   vocabulary exists yet for it to register against. Cell renderers
  *   may be controls or responders depending on their content.
  *   `delegate.onSelect` is a control-style action emitted on cell click;
- *   selection state lives with the consumer ([Q06] / [D03]).
+ *   selection state lives with the consumer ([Q06] / [D03]) — except
+ *   in opt-in `selectionRequired` mode, where the list view owns a
+ *   never-null selected index (local-data zone [L24]; React state is
+ *   sanctioned for "selected item in a list") and mirrors it to the
+ *   consumer through the `onSelectionChange` state-mirror callback.
  * - [L19] component authoring guide — file pair, module docstring,
  *   exported props interface, `data-slot="tug-list-view"`.
  * - [L20] component-token sovereignty — `--tugx-list-view-*` only;
@@ -237,9 +241,13 @@ export interface TugListViewDelegate {
   didEndDisplaying?(index: number): void;
 
   /**
-   * Fires when the user activates a cell (click). Selection ownership
-   * lives with the consumer; the list view stores no selected-index
-   * state of its own.
+   * Fires when the user activates a cell (click / Space / Enter).
+   * Selection ownership lives with the consumer by default — the list
+   * view stores no selected-index state. The exception is opt-in
+   * `selectionRequired` mode (see `TugListViewProps`), where the list
+   * view owns a never-null selected index and mirrors it out through
+   * `onSelectionChange`; `onSelect` still fires alongside on every
+   * activation.
    */
   onSelect?(index: number): void;
 }
@@ -450,6 +458,43 @@ export interface TugListViewProps<
    * @default undefined
    */
   tailSpacer?: number | string;
+
+  /**
+   * Opt the list view into UITableView-style mandatory selection:
+   * the list **always** has exactly one selected row. On mount (and
+   * whenever the data source changes) the list seeds selection to the
+   * first selectable row — the first index whose `roleForIndex` is
+   * `"cell"`, headers/footers skipped — and it never lets selection
+   * fall back to "nothing." A click / Space / Enter on a cell moves
+   * the selection; if the currently-selected row leaves the data
+   * source (or its role changes), selection re-seeds to the first
+   * selectable row rather than clearing.
+   *
+   * Selection is then list-view-owned state (local-data zone [L24]),
+   * surfaced to the consumer through `onSelectionChange`. The
+   * selected row's wrapper carries `data-selected="true"` for
+   * cascade-scoped styling.
+   *
+   * Default `false` — the list view owns no selection and behaves
+   * exactly as before: `delegate.onSelect` is a fire-and-forget
+   * control action and the consumer holds whatever selection model
+   * it wants.
+   *
+   * @default false
+   * @selector .tug-list-view-cell[data-selected="true"]
+   */
+  selectionRequired?: boolean;
+
+  /**
+   * State-mirror callback for `selectionRequired` mode — fires with
+   * the owned selected index whenever it changes (the initial seed,
+   * a click, or a re-seed after the prior row left the data source).
+   * Modeled on Radix's `onOpenChange`: it reports list-view-owned
+   * state outward, it is not a user-interaction callback (those route
+   * through the chain / `delegate.onSelect`). No-op when
+   * `selectionRequired` is `false`.
+   */
+  onSelectionChange?: (index: number) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -499,6 +544,31 @@ const SCROLL_CORRECTION_THRESHOLD_PX = 4;
  * paths agree on the fallback identity.
  */
 const DEFAULT_CELL_ROLE: TugListViewCellRole = "cell";
+
+/**
+ * Resolve the effective selected index for `selectionRequired` mode.
+ *
+ * Keeps `current` when it still points at a selectable row (in range
+ * and `roleForIndex === "cell"`); otherwise falls to the first
+ * selectable row. Returns `null` only when the data source has no
+ * selectable rows at all — the transient empty-list state. Pure: no
+ * DOM, no side effects, just a read of the data source.
+ */
+function resolveSelectionIndex(
+  current: number | null,
+  dataSource: TugListViewDataSource,
+): number | null {
+  const count = dataSource.numberOfItems();
+  const isSelectable = (i: number): boolean =>
+    i >= 0 &&
+    i < count &&
+    (dataSource.roleForIndex?.(i) ?? DEFAULT_CELL_ROLE) === "cell";
+  if (current !== null && isSelectable(current)) return current;
+  for (let i = 0; i < count; i += 1) {
+    if (isSelectable(i)) return i;
+  }
+  return null;
+}
 
 /**
  * `TugListView` implementation — windowing + cell reuse + delegate
@@ -565,7 +635,18 @@ const DEFAULT_CELL_ROLE: TugListViewCellRole = "cell";
  */
 const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
   function TugListView(
-    { dataSource, delegate, cellRenderers, scrollKey, className, followBottom, inline, tailSpacer },
+    {
+      dataSource,
+      delegate,
+      cellRenderers,
+      scrollKey,
+      className,
+      followBottom,
+      inline,
+      tailSpacer,
+      selectionRequired = false,
+      onSelectionChange,
+    },
     ref,
   ) {
     const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
@@ -607,6 +688,27 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     const cellElementMapRef = React.useRef<Map<number, HTMLDivElement>>(
       new Map(),
     );
+
+    // `selectionRequired` mode — list-view-owned selected index
+    // (local-data zone [L24]; React state is sanctioned for "selected
+    // item in a list"). `null` only transiently, before the first
+    // selectable row exists; the reconcile effect below drives it to a
+    // concrete index and never lets it fall back to `null` while a
+    // selectable row is present. Dead weight when `selectionRequired`
+    // is `false` — the resolve + effect short-circuit on the flag.
+    const [selectedIndex, setSelectedIndex] = React.useState<number | null>(
+      null,
+    );
+    // Live refs so the per-index cached click / keydown closures read
+    // current values at fire time [L07].
+    const selectionRequiredRef = React.useRef(selectionRequired);
+    selectionRequiredRef.current = selectionRequired;
+    const onSelectionChangeRef = React.useRef(onSelectionChange);
+    onSelectionChangeRef.current = onSelectionChange;
+    // Last index handed to `onSelectionChange` — dedupes the mirror
+    // callback so it fires once per genuine selection change, not on
+    // every re-render that happens to keep the same selection.
+    const lastReportedSelectionRef = React.useRef<number | null>(null);
 
     // Sparse height index — measured cells override the estimate.
     // Held in a ref so the same instance survives every render; the
@@ -833,6 +935,35 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       [dataSource],
     );
     React.useSyncExternalStore(subscribeWrapper, versionWrapper, versionWrapper);
+
+    // `selectionRequired` — resolve the effective selected index from
+    // the owned state + the live data source, then reconcile. The
+    // resolve runs every render (the `useSyncExternalStore` above
+    // re-runs the body on every data-source tick), so a row leaving
+    // the data source or changing role is caught here. `null` when the
+    // feature is off or no selectable row exists.
+    const effectiveSelectedIndex = selectionRequired
+      ? resolveSelectionIndex(selectedIndex, dataSource)
+      : null;
+    // Reconcile owned state to the resolved value and mirror genuine
+    // changes out through `onSelectionChange`. `useLayoutEffect` keeps
+    // the seed in the same paint as mount so the first frame already
+    // shows a selected row. Converges in at most one extra render:
+    // once `selectedIndex === effectiveSelectedIndex`, the `setState`
+    // branch is skipped.
+    React.useLayoutEffect(() => {
+      if (!selectionRequired) return;
+      if (effectiveSelectedIndex !== selectedIndex) {
+        setSelectedIndex(effectiveSelectedIndex);
+      }
+      if (
+        effectiveSelectedIndex !== null &&
+        effectiveSelectedIndex !== lastReportedSelectionRef.current
+      ) {
+        lastReportedSelectionRef.current = effectiveSelectedIndex;
+        onSelectionChangeRef.current?.(effectiveSelectedIndex);
+      }
+    }, [selectionRequired, effectiveSelectedIndex, selectedIndex]);
 
     // Force-rerender tick called from SmartScroll's `onScroll`
     // callback (re-window on user scroll), the `ResizeObserver` rAF
@@ -1664,6 +1795,10 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           dataSourceRef.current.roleForIndex?.(index) ?? DEFAULT_CELL_ROLE;
         if (role !== "cell") return;
         delegateRef.current?.onSelect?.(index);
+        // `selectionRequired` mode — the list view owns the selected
+        // index; a cell activation moves it. `delegate.onSelect` above
+        // still fires, so consumers that want both keep both.
+        if (selectionRequiredRef.current) setSelectedIndex(index);
       };
       // Keyboard activation per [Q06] — cell wrappers are
       // `tabIndex={0}` and `role="listitem"` (see render below), so
@@ -1695,6 +1830,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         e.preventDefault();
         e.stopPropagation();
         delegateRef.current?.onSelect?.(index);
+        if (selectionRequiredRef.current) setSelectedIndex(index);
       };
       const callbacks: CellCallbacks = {
         ref: refCb,
@@ -1741,6 +1877,13 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             //    selectors that don't yet know about roles.
             const wrapperTabIndex = role === "cell" ? 0 : -1;
             const wrapperRoleAttr = role === "cell" ? undefined : role;
+            // `selectionRequired` mode — mark the owned selected row so
+            // consumers can style it via
+            // `.tug-list-view-cell[data-selected="true"]`. Absent
+            // entirely when the feature is off (`effectiveSelectedIndex`
+            // is `null`), keeping the default-cell DOM shape unchanged.
+            const wrapperSelectedAttr =
+              effectiveSelectedIndex === index ? "true" : undefined;
             // `min-height` lock: when the bag carried
             // `meta.cellHeights[index]`, render the cell wrapper
             // at the saved height so async sub-content fills its
@@ -1771,6 +1914,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                   data-tug-list-cell-index={index}
                   data-tug-list-cell-kind={kind}
                   data-list-cell-role={wrapperRoleAttr}
+                  data-selected={wrapperSelectedAttr}
                   role="listitem"
                   tabIndex={wrapperTabIndex}
                   ref={getCellCallbacks(index).ref}
@@ -1787,6 +1931,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                 data-tug-list-cell-index={index}
                 data-tug-list-cell-kind={kind}
                 data-list-cell-role={wrapperRoleAttr}
+                data-selected={wrapperSelectedAttr}
                 role="listitem"
                 tabIndex={wrapperTabIndex}
                 ref={getCellCallbacks(index).ref}

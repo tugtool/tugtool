@@ -521,11 +521,14 @@
   background: var(--tug7-surface-control-primary-ghost-action-hover);
 }
 
-/* Selected recent — the recent whose path matches the live input
-   value. Visually anchors the master/detail relationship: the user
-   sees which recent the Previous Sessions list below is for. */
+/* Selected recent — `TugListView`'s `selectionRequired` mode owns
+   the selection and marks the row wrapper `data-selected="true"`; the
+   list always has exactly one recent selected. Visually anchors the
+   master/detail relationship: the user sees which recent the Sessions
+   list below is for. */
 .tide-card-picker-recents-list
-  .tide-card-picker-path-recent[data-selected="true"] {
+  .tug-list-view-cell[data-selected="true"]
+  .tide-card-picker-path-recent {
   background: var(--tug7-surface-selection-primary-normal-plain-rest);
   color: var(--tug7-element-global-text-normal-default-rest);
 }
