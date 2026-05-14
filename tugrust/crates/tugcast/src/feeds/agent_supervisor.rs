@@ -1523,9 +1523,7 @@ impl AgentSupervisor {
             // set, while one another connected client is using is. Read
             // it here, pre-insert, so the resume check below isn't
             // fooled by the row this very call is about to add.
-            let held_by_live_client_before = cs
-                .values()
-                .any(|set| set.contains(&tug_session_id));
+            let held_by_live_client_before = cs.values().any(|set| set.contains(&tug_session_id));
             cs.entry(client_id)
                 .or_default()
                 .insert(tug_session_id.clone());
