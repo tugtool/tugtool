@@ -772,18 +772,18 @@ When no transcript entry is present (gallery cards, ad-hoc consumers, the `Rende
 
 Deeper-tier bars compose the same way through additional component-owned variables:
 
-- **`--tugx-toolblock-header-height`** — written by `ToolWrapperChrome` on its root from a ResizeObserver on `.tool-wrapper-chrome-header`. Sticky descendants inside the chrome (a body kind's Find row, a diff's hunk header) read it so they pin BELOW the chrome header.
-- **`--tugx-file-header-height`** / **`--tugx-diff-header-height`** — written by the respective body kinds on their root from a ResizeObserver on the standalone-mode identity header (unset when embedded mode suppresses the header). Sticky descendants inside the body kind (the Find row in `FileBlock`, the hunk headers in `DiffBlock`) read all three pin-stack variables in a single calc:
+- **`--tugx-toolblock-header-height`** — written by `ToolWrapperChrome` on its root from a ResizeObserver on `.tool-wrapper-chrome-header`. Sticky descendants inside the chrome (a diff's hunk header) read it so they pin BELOW the chrome header.
+- **`--tugx-diff-header-height`** — written by `DiffBlock` on its root from a ResizeObserver on the standalone-mode identity header (unset when embedded mode suppresses the header). Sticky descendants inside the body kind (`DiffBlock`'s hunk headers) read all three pin-stack variables in a single calc:
 
 ```css
-.tugx-file-find {
+.tugx-diff-hunk-header {
   position: sticky;
   top: calc(
     var(--tugx-pin-stack-top, 0px)
     + var(--tugx-toolblock-header-height, 0px)
-    + var(--tugx-file-header-height, 0px)
+    + var(--tugx-diff-header-height, 0px)
   );
-  z-index: 1;
+  z-index: 0;
 }
 ```
 
@@ -795,7 +795,7 @@ The seven-slot system (`surface`, `element`, etc.) covers **appearance tokens**:
 
 1. **Appearance tokens** (`--tug7-*`, `--tugx-{component}-*`, `--tug-color-*`, etc.). Owned by one component or theme tier. Tuned per theme. Subject to [L20]: only the owner declares + consumes. Cross-slot reads forbidden.
 
-2. **Position-coordination tokens** (`--tugx-pin-stack-top`, `--tugx-toolblock-header-height`, `--tugx-file-header-height`, etc.). The pin-stack is the canonical example. Not appearance — they don't drive color, typography, or contrast pairings. They describe **the geometry of a parent that descendants need to know** so they can compute their own sticky `top` offset. The chrome writes its measured header height; the body kind reads it. Single writer, many readers, no overrides.
+2. **Position-coordination tokens** (`--tugx-pin-stack-top`, `--tugx-toolblock-header-height`, `--tugx-diff-header-height`, etc.). The pin-stack is the canonical example. Not appearance — they don't drive color, typography, or contrast pairings. They describe **the geometry of a parent that descendants need to know** so they can compute their own sticky `top` offset. The chrome writes its measured header height; the body kind reads it. Single writer, many readers, no overrides.
 
 3. **Component-metric tokens** (`--tug-button-{2xs,xs,sm,md,lg}-{height,padding-inline,font-size,icon-size}`, etc.). A component publishes its own per-variant geometry constants so sibling components that need to match — without composing the component themselves — can. The canonical example is `enhanceFencedCode`'s imperative Copy button, which can't mount a React `TugPushButton` but must read as one visually. The metric tokens keep its sizing in lockstep with `TugButton size="2xs"` so a future button-geometry change propagates automatically instead of drifting behind a comment.
 
@@ -809,11 +809,11 @@ Categories 2 and 3 are NOT subject to [L20]'s "A's CSS references only A-scoped 
 
 ### Body-kind affordance hosting
 
-Resting affordances (Find trigger, Copy, fold cue, view-mode toggle) do **not** get their own sticky strip. They live as a `flex: 0 0 auto` cluster (`.tugx-{kind}-actions-cluster` carrying `data-slot="{kind}-actions"`) at the trailing edge of the identity header (`.tugx-{kind}-header`) in standalone composition, or portal into `ToolWrapperChrome`'s actions slot (`.tool-wrapper-chrome-actions[data-slot="tool-wrapper-actions"]`) in embedded composition.
+Resting affordances (Copy, fold cue, view-mode toggle) do **not** get their own sticky strip. They live as a `flex: 0 0 auto` cluster (`.tugx-{kind}-actions-cluster` carrying `data-slot="{kind}-actions"`) at the trailing edge of the identity header (`.tugx-{kind}-header`) in standalone composition, or portal into `ToolWrapperChrome`'s actions slot (`.tool-wrapper-chrome-actions[data-slot="tool-wrapper-actions"]`) in embedded composition.
 
-The portal mechanism is React-side, not DOM-side: `ToolWrapperChrome` renders a `<div ref={setActionsTarget}>` inside its header, publishes the DOM node via `ChromeActionsTargetContext`, and a body kind composed under it reads the context via `useChromeActionsTarget()`. When `embedded={true}` and the context returns a non-null target, the body kind `createPortal`s its affordance cluster into the chrome's slot. This keeps affordance state (find session, fold collapsed-set, view-mode toggle) entirely inside the body kind while placing the rendered affordance node in the chrome subtree where it belongs for layout and sticky-pin coverage.
+The portal mechanism is React-side, not DOM-side: `ToolWrapperChrome` renders a `<div ref={setActionsTarget}>` inside its header, publishes the DOM node via `ChromeActionsTargetContext`, and a body kind composed under it reads the context via `useChromeActionsTarget()`. When `embedded={true}` and the context returns a non-null target, the body kind `createPortal`s its affordance cluster into the chrome's slot. This keeps affordance state (fold collapsed-set, view-mode toggle) entirely inside the body kind while placing the rendered affordance node in the chrome subtree where it belongs for layout and sticky-pin coverage.
 
-The Find UI inside `FileBlock` is **progressive disclosure**: a sticky `.tugx-file-find` row mounts only while `findOpen` is true, pinning under the chrome / identity header. When closed, the row unmounts entirely — no reserved geometry at rest, just an icon-sized trigger in the trailing cluster.
+Content blocks render no text-entry UI of their own — no per-block Find row. A card has at most one text-entry surface (see [Focus in content-owning cards](#focus-in-content-owning-cards)); for a tide card that is the engine's `tug-prompt-entry`.
 
 **Authoring rules:**
 
@@ -824,7 +824,7 @@ The Find UI inside `FileBlock` is **progressive disclosure**: a sticky `.tugx-fi
 5. **Scroll container padding** — `padding-block` on the scroll container shifts the sticky pin reference inward by that amount (CSS Position 3 §6.5.1 — sticky `top: 0` pins to the content-box edge). Restore breathing room with `::before` / `::after` pseudo-element children or with margin on the first/last cell, never with container `padding-block`.
 6. **Affordance components are Tug primitives.** Resting affordances inside an actions cluster MUST be `TugIconButton`, `TugPushButton`, `TugCheckbox`, etc. — never raw `<button>` elements with bespoke CSS. The `tugx-{kind}-{name}` legacy class names may be forwarded onto the Tug components as `className` for scoping and stable test selectors, but appearance flows through the Tug components' own `--tug-button-*` (etc.) slots, not through component-local rules that re-implement button chrome. Imperative-DOM rendering paths (e.g. `enhanceFencedCode`, which can't easily mount React) may use raw `<button>` markup, but the visual treatment must match the Tug primitive equivalent (ghost emphasis at xs/sm size, icon-text shape) so the cluster reads consistently across mount strategies.
 7. **Button shapes are invariant across states.** A button that toggles between `subtype="icon"` and `subtype="icon-text"` between states moves the click target out from under the user's pointer. Always pick one shape and keep it. When state needs to flow into the rendered chrome (chevron direction, label verb), the icon and the label STRING swap but the subtype does not. Use `TugButton`'s `confirmation` prop for post-click flashes (e.g. Copy → Copied) rather than a class-swap that hides one structure and reveals another.
-8. **Affordances stay visible across body-state changes.** When a body kind has a fold state (collapsed / expanded), don't add or remove affordance buttons between states. Render them all in both states; `disabled` the ones whose target isn't present (e.g. Search on a collapsed file — the substrate isn't mounted, so finding is disabled, but the button stays in place so the trailing-cluster geometry doesn't grow or shrink). The cluster width and the header height stay invariant; only individual buttons enable/disable.
+8. **Affordances stay visible across body-state changes.** When a body kind has a fold state (collapsed / expanded), don't add or remove affordance buttons between states. Render them all in both states; `disabled` the ones whose target isn't present (e.g. Copy on a collapsed file — the substrate isn't mounted, so there's nothing to copy, but the button stays in place so the trailing-cluster geometry doesn't grow or shrink). The cluster width and the header height stay invariant; only individual buttons enable/disable.
 
 ---
 
@@ -862,7 +862,7 @@ For UI feedback whose validity depends on an asynchronous outcome — Copy showi
 
 ### Position-preserving interactions (Phase E.3)
 
-For action-row buttons whose click triggers a state change that re-flows the layout around them (a fold cue that collapses or expands a body, a Find toggle that mounts a find row, a view-mode toggle that swaps grid templates). The browser preserves *scrollTop* across the layout change, NOT the *visual* position of the click target. When the target sits inside a sticky-pinned header and the body shrinks far enough to un-pin the header, the click target's screen position drops by hundreds of pixels — the user's cursor is no longer over the button they just pressed.
+For action-row buttons whose click triggers a state change that re-flows the layout around them (a fold cue that collapses or expands a body, a view-mode toggle that swaps grid templates). The browser preserves *scrollTop* across the layout change, NOT the *visual* position of the click target. When the target sits inside a sticky-pinned header and the body shrinks far enough to un-pin the header, the click target's screen position drops by hundreds of pixels — the user's cursor is no longer over the button they just pressed.
 
 **When to use:** Action-row buttons whose click triggers a state mutation that changes the height of content above or around the button. Buttons whose click triggers no layout change (or whose layout change is purely *below* the button and outside any sticky frame) don't need this — adding it would be defensive overhead.
 
@@ -914,8 +914,8 @@ When the target sits inside a sticky ancestor and the ancestor's pin regime flip
 **Reference implementations:**
 - `use-position-stable-click.ts` — the hook.
 - `outer-scrollport-context.tsx` — the context that publishes the scrollport node to descendants. `TugListView` publishes its scroll container automatically.
-- `body-kinds/affordances/` — **the block affordance library**. `BlockCopyButton`, `BlockFoldCue`, and `BlockFindButton` encapsulate the action-row contract (position-stable click via the outer scrollport context, ghost typography, 2xs scale, focus-refuse, width-stabilize for Copy→Copied, disengage-follow-bottom event for fold) so block kinds compose them rather than re-implementing. Block-specific concerns (which clipboard text to compose, when the button is disabled, what aria-label to use) pass as props.
-- `file-block.tsx`, `diff-block.tsx`, `terminal-block.tsx` — composed from the affordance library. Find / Copy / Fold-cue come from `body-kinds/affordances/`; the view-toggle on DiffBlock is a `TugChoiceGroup` (Phase E.4 — both segments visible via the ghost emphasis bracket frame). Adding a new body kind that needs Copy / Find / a fold cue: import from `./affordances`, supply the block-specific bits, done.
+- `body-kinds/affordances/` — **the block affordance library**. `BlockCopyButton` and `BlockFoldCue` encapsulate the action-row contract (position-stable click via the outer scrollport context, ghost typography, 2xs scale, focus-refuse, width-stabilize for Copy→Copied, disengage-follow-bottom event for fold) so block kinds compose them rather than re-implementing. Block-specific concerns (which clipboard text to compose, when the button is disabled, what aria-label to use) pass as props.
+- `file-block.tsx`, `diff-block.tsx`, `terminal-block.tsx` — composed from the affordance library. Copy / Fold-cue come from `body-kinds/affordances/`; the view-toggle on DiffBlock is a `TugChoiceGroup` (both segments visible via the ghost emphasis bracket frame). Adding a new body kind that needs Copy / a fold cue: import from `./affordances`, supply the block-specific bits, done.
 
 ### Document-shrink-clamp — scrollport tail spacer (Phase E.3)
 
@@ -1258,30 +1258,22 @@ Controls that accept focus (text inputs, textareas, contentEditable) do NOT add 
 
 The attribute is button-class-only. Structural markers like `data-slot="tug-canvas-overlay-root"` (which pane-focus-controller reads to skip pane activation on overlay-tier clicks) are deliberately separate — see "Canvas overlay tier" above.
 
-### Transient focus targets in content-owning cards
+### Focus in content-owning cards
 
-Content-owning cards (tide cards, anything whose factory writes `bag.content`) host an engine substrate whose caret position is engine state, not framework state. After Phase E.11 the engine is a **callable**: it registers `paintMirrorAsActive` / `paintMirrorAsInactive` hooks via `store.registerEngineHooks` and the framework's `applyBagFocus` dispatcher invokes them when `bag.focus.kind === "engine"`. The engine no longer claims focus autonomously from `onCardActivated`; the framework drives the activation-time focus claim through one channel.
+**A card has at most one text-entry / input surface.** For a content-owning + engine card (a tide card, anything whose factory writes `bag.content`) that surface is the engine's editor — `tug-prompt-entry` for a tide card. Content blocks inside the card (`FileBlock`, `DiffBlock`, `TerminalBlock`) render no text-entry UI of their own. So a tide card's activation focus has exactly one destination: the engine. There is no "where does focus go when this card is activated" decision — it goes to the prompt entry, on every activation source (cold-boot, app-switch, card-switch, cross-pane drag, reload).
 
-But content-owning cards can also host *other* focusable UI that is NOT engine state: a find-row `<input>` over a `TugCodeView`, a future inline parameter editor on a tool-call block, a future question widget. These targets ARE framework focus, and they survive activation transitions (app-switch, card-switch, reload) through the same `bag.focus` axis any DOM-authority card uses. The framework code does not need a per-widget hook for any of this — two markup contracts are the entire interface.
+The engine is a **callable**: it registers `paintMirrorAsActive` / `paintMirrorAsInactive` hooks via `store.registerEngineHooks`, and the framework's `applyBagFocus` dispatcher invokes them through the `engine` resolution. A tide card carries no `data-tug-focus-key` / `data-tug-state-key` element of its own, so `captureFocus` only ever returns `engine` or `none` for it; either way the assembler leaves `bag.focus` absent and `resolveBagFocus` routes the card to the engine from its registry tag.
 
-**The contract.**
+**Focusable-but-not-entry content classifies as `none`.** A read-only `TugCodeView` (FileBlock's CM6 viewer) is still *focusable* — CM6 read-only views accept focus for selection / copy. But its `.cm-content` lives under `data-slot="tug-code-view"`, which is not an engine-owned selector and carries no `data-tug-*-key`. So when the user clicks into a FileBlock viewer inside a tide card, `captureFocus` returns `none`, and on the next activation `resolveBagFocus` routes the card to its engine — focus lands on the prompt entry, not back in the viewer. This is intended: a viewer is not a text-entry surface, and transient selection-to-copy focus is not preserved across activation.
 
-1. **Stamp the focusable element with `data-tug-focus-key="<scope>/<id>"` (or `data-tug-state-key="<key>"` for native form controls).** `<scope>` discriminates *what kind of UI* this is (`file-block-find`, `diff-block-find`, `tool-param-editor`, …) and `<id>` discriminates *which instance* (typically the host block's `componentStatePreservationKey`). Both attributes drive `FocusSnapshot` capture and restore — `data-tug-state-key` participates in `bag.formControls` as well, and is preferred for `<input>` / `<textarea>` where the form-control axis also carries value, selection range, and scroll. Use `data-tug-focus-key` for non-form-control focusable elements (`<button>`, `<a>`, `tabindex` containers, programmatically focusable host divs).
+**Do not add per-block transient focus targets to a content-owning card.** No per-block find rows, no inline parameter editors stamped with `data-tug-focus-key`, no second text input. The notion of Find is being redesigned and will not return as a per-block widget. If a future feature needs in-card text entry, it belongs in (or replaces) the engine's one text-entry surface — not as a sibling framework-axis target.
 
-2. **Conditionally-mounted elements must re-mount BEFORE the framework yields.** Always-rendered elements (stationary controls in the card body) need nothing more than the attribute. Conditionally-mounted elements (find row, dropdown, modal) require their gating state to be a `useComponentStatePreservation` slot so the element re-mounts as early as possible after reload — Phase E.8 made `useComponentStatePreservation` a synchronous-before-paint restore primitive; opt the gating boolean into that and re-mount lands as soon as the React tree commits.
-
-**Late-mount contract — the framework retries.** Even with `useComponentStatePreservation`, conditionally-mounted elements inside content-owning cards may not be in the DOM at the instant CardHost's cold-boot RESTORE runs (tide's transcript loads messages async after restart; a FileBlock hosting the find input mounts several commits after the card mount). In that case, `applyBagFocus` returns `"deferred"` from a `deferred-dom` resolution. CardHost owns a MutationObserver-driven retry that re-fires `applyBagFocus` on every subtree mutation to the card root, until either:
-
-- the target appears (the dispatcher returns `"applied"` and the retry stops), OR
-- the budget exhausts (200 mutations OR 5 seconds wall-clock — whichever fires first; dev-mode emits a one-line warn naming the cardId, production silent).
-
-The widget author's responsibility is the **eventual mount** — get the element into the DOM with the right `data-tug-focus-key`. The framework's responsibility is the **retry until then**. If your target genuinely never appears after the budget (e.g. the saved scope refers to a tool result that no longer parses cleanly), the framework yields cleanly and the user sees default focus rather than thrashing.
-
-The D11 yield rule ensures the framework's retry doesn't clobber widget-internal substrate hooks: when the resolved framework-axis element is already `document.activeElement` (because the widget's own mount-time `useLayoutEffect` focused it first), `applyBagFocus` returns `"applied"` without re-calling `.focus()`. Widget authors who run their own `.focus()` on mount don't need to coordinate with the framework — they just stamp the data attribute and the framework yields when the widget's claim landed first. See [state-preservation.md § Focus dispatch model](state-preservation.md#focus-dispatch-model) for the full mechanism description.
+The general framework focus axis (`data-tug-focus-key` / `data-tug-state-key`, the `dom` / `form-control` `FocusSnapshot` kinds) is untouched and still serves **non-engine** cards — form-control cards, settings cards, anything whose authoritative focus mechanism is a keyed DOM element. That axis is not this section's concern; this section is specifically about content-owning + engine cards, where the engine is the single focus destination.
 
 **What NOT to stamp.**
 
-- The engine's contenteditable (`.cm-content` inside `[data-slot="tug-text-editor"]`). The engine registers its own hooks via `store.registerEngineHooks`; the framework invokes them through the engine resolution path, not through a framework `.focus()` call. Layering a framework `.focus()` would bypass the inactive-paint → global-Selection transfer and leave focus on a view with no caret. The save-side carve-out in `card-host.tsx`'s assembler enforces this on the capture side.
+- The engine's contenteditable (`.cm-content` inside `[data-slot="tug-text-editor"]`). The engine registers its own hooks via `store.registerEngineHooks`; the framework invokes them through the engine resolution path, not through a framework `.focus()` call. Layering a framework `.focus()` would bypass the inactive-paint → global-Selection transfer and leave focus on a view with no caret.
+- Any content block's focusable element (a `TugCodeView` viewport, a block button). These are not text-entry surfaces; leaving them unstamped means `captureFocus` classifies them `none` and activation focus correctly returns to the engine.
 - An overlay-tier popup's input. Overlays close on activation by design (see [Canvas overlay tier (popup-class)](#canvas-overlay-tier-popup-class)); their focus state is owned by the popup-binding's `captureOnOpen` / `onCloseAutoFocus`, not by `bag.focus`.
 
 ### Context menus

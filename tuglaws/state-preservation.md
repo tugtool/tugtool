@@ -252,7 +252,7 @@ A writer may carry any combination of the families; listeners ignore keys they d
 
 ### What's in `bag` at save time vs. restore time
 
-Both ends see the same shape: a `CardStateBag`. At save time, every axis is populated from the live DOM and the live React tree (`captureFocus(cardRoot)`, walking `data-tug-state-key` for `bag.formControls`, walking `data-tug-scroll-key` for `bag.regionScroll`, calling each registered `captureState()` for `bag.components`, calling the card's `onSave()` for `bag.content`). At restore time, the same bag is replayed onto a freshly-mounted DOM: form controls re-set their `.value` (with a `MutationObserver` re-applying for late mounts), regions re-scroll, the focus snapshot is dispatched through `applyBagFocus` (Phase E.11 single-channel dispatcher; subject to the D11 yield rule for the framework branch) on the active card of the active pane, and the components-axis is replayed in parent-first order via the registry.
+Both ends see the same shape: a `CardStateBag`. At save time, every axis is populated from the live DOM and the live React tree (`captureFocus(cardRoot)`, walking `data-tug-state-key` for `bag.formControls`, walking `data-tug-scroll-key` for `bag.regionScroll`, calling each registered `captureState()` for `bag.components`, calling the card's `onSave()` for `bag.content`). At restore time, the same bag is replayed onto a freshly-mounted DOM: form controls re-set their `.value` (with a `MutationObserver` re-applying for late mounts), regions re-scroll, the focus snapshot is dispatched through `applyBagFocus` (the single-channel dispatcher) on the active card of the active pane, and the components-axis is replayed in parent-first order via the registry.
 
 ---
 
@@ -376,7 +376,7 @@ Authors add these attributes; the framework owns capture and replay. There is no
 Whether the assembler accepts that snapshot depends on the card's content-ownership:
 
 - **Non-content-owning cards** (`bag.content === undefined` — form-control cards, markdown-view cards, etc.) accept every variant. `captureFocus` is the sole focus authority for these cards.
-- **Content-owning cards** (`bag.content !== undefined` — every tide card is one, since the engine registers `engineKind: "em"`) currently accept only `dom` and `form-control` kinds. The `engine` and `none` cases leave `bag.focus` absent so the framework's `applyBagFocus` resolver, finding no framework-axis snapshot but an engine-managed card, routes to the engine resolution and invokes the registered engine hook. The capture-side carve-out keeps `bag.focus` semantically clean for transient in-card targets (find input, future inline editors); the resolver covers the engine case from the registry tag rather than from the bag.
+- **Content-owning + engine cards** (`bag.content !== undefined` — every tide card is one) have **one text-entry surface**: the engine's editor (`tug-prompt-entry` for a tide card). A tide card carries no `data-tug-focus-key` / `data-tug-state-key` element of its own, so `captureFocus` only ever returns `engine` or `none` for it — and the assembler leaves `bag.focus` absent in both cases. On restore, `applyBagFocus`'s resolver finds no framework-axis snapshot but an engine-managed card, and routes to the engine resolution. The resolver covers the engine case from the registry tag rather than from the bag; there are no transient in-card framework-axis targets to preserve.
 
 When the save fires for an INACTIVE card (focus has moved to a sibling card or off-document — common during `visibilitychange`, `beforeunload`, or a debounced save while the user edits elsewhere), `captureFocus` would return `{ kind: "none" }`. The assembler forwards the previously-saved focus instead, subject to the same kind restriction for content-owning cards. The rule is "an internal save must not destroy a user-visible axis just because focus is momentarily elsewhere" ([L23]).
 
@@ -390,24 +390,18 @@ Phase E.11 retired the four-claimant focus model (`transferFocusForActivation` f
 
 `resolveBagFocus(cardId, store): BagFocusResolution` is the pure read half. It consults the bag, the registered card-host root, the engine-hook registry, and the live DOM, and returns one of six variants:
 
-- **`framework`** — concrete focusable element resolved from `bag.focus.kind === "dom" | "form-control"`. The dispatcher will call `el.focus()` (subject to the D11 yield rule below).
+- **`framework`** — concrete focusable element resolved from `bag.focus.kind === "dom" | "form-control"`. The dispatcher calls `el.focus()`, unless the element is already `document.activeElement` — see the idempotency guard below. Reachable only by non-engine framework-axis cards (form-control cards, etc.) — a content-owning + engine card has one text-entry surface and resolves to `engine` / `deferred-engine`, never here.
 - **`engine`** — the card is engine-managed and the engine has registered hooks. The dispatcher will invoke `store.invokeEnginePaintMirrorAsActive(cardId)`.
 - **`default-focus`** — DOM-authority card with no usable saved focus snapshot. The dispatcher walks `DEFAULT_FOCUS_SELECTORS` via `traceApplyDefaultFocus`.
-- **`deferred-dom`** — the bag names a framework-axis target whose element has not yet mounted (find row's `open: true` saved but the input mounts a few commits later). The dispatcher returns `"deferred"`; CardHost's MutationObserver retry re-fires `applyBagFocus` on each subtree mutation until the target appears or the budget exhausts.
-- **`deferred-engine`** — engine-managed card whose engine has not yet registered hooks (tide's editor mounts late after `feedsReady`). The dispatcher returns `"deferred"`; CardHost's `subscribeEngineHooksChange` listener re-fires `applyBagFocus` when the engine registers.
+- **`deferred-dom`** — the bag names a framework-axis target whose element is not in the DOM at dispatch time. The dispatcher returns `"deferred"`. Nothing retries it: the one-shot callers accept `"deferred"` as a graceful no-focus outcome, and CardHost's cold-boot RESTORE does not retry focus. Reachable only by non-engine framework-axis cards.
+- **`deferred-engine`** — engine-managed card whose engine has not yet registered hooks (tide's editor mounts late after `feedsReady`). The dispatcher returns `"deferred"`; CardHost's `subscribeEngineHooksChange` listener re-fires `applyBagFocus` when the engine registers. This is the **one** late-mount focus retry path.
 - **`none`** — nothing to focus. Bag absent, no host root, or `kind: "none"`. The dispatcher returns `"applied"` (idempotent no-op).
 
-`applyBagFocus(cardId, store, options?): "applied" | "deferred"` is the impure writer. It calls `resolveBagFocus`, performs the resolved side effect, and returns the result. Callers that need retry orchestration (CardHost) act on `"deferred"`; one-shot callers (transferFocusForActivation, transferFocusAfterMove, reactivateCurrentFocusDestination) accept whichever result the dispatcher returns and continue.
+`applyBagFocus(cardId, store, options?): "applied" | "deferred"` is the impure writer. It calls `resolveBagFocus`, performs the resolved side effect, and returns the result. Callers that need retry orchestration (CardHost, for the `deferred-engine` path) act on `"deferred"`; one-shot callers (transferFocusForActivation, transferFocusAfterMove, reactivateCurrentFocusDestination) accept whichever result the dispatcher returns and continue.
 
-### The D11 yield rule
+### The idempotency guard
 
-`applyBagFocus`'s `framework` branch yields when the resolved element is already `document.activeElement`. This protects substrate-hook self-focus from being clobbered:
-
-A substrate hook (e.g. `useBlockFindSession`'s `useLayoutEffect([open])`) calls `.focus()` on its own target during its own mount commit. On cold-boot, child useLayoutEffects fire before parent (CardHost's) useLayoutEffects, so the substrate's claim lands first. Without the yield, the framework's subsequent `el.focus()` call interacts with React reconciliation's focus-restoration heuristics and the substrate's `.select()` follow-up in a way that drops focus to body. The yield ensures the substrate's prior claim sticks: same target, no second call.
-
-Single-channel does not mean "only one path ever writes." It means "one resolver is the source of truth about where focus should go, and writers observe that source." The substrate hook is a writer; the framework verifies whether the writer's work matches the saved-target intent. If yes, yield. If no, write. The mental model is "many writers, one read."
-
-The yield rule does not apply to `engine` resolutions — engine hooks (`paintMirrorAsActive`) are internally idempotent against an already-painted active state.
+`applyBagFocus`'s `framework` branch yields when the resolved element is already `document.activeElement` — it records the trace event and returns `"applied"` without re-calling `.focus()`. Re-calling `.focus()` on the already-focused element is not a no-op in WebKit during a mount commit: it can interfere with React reconciliation's focus-restoration heuristics and drop focus to body. The guard is cheap defensive insurance; it has no special "precedence" semantics. The guard does not apply to `engine` resolutions — engine hooks (`paintMirrorAsActive`) are internally idempotent against an already-painted active state.
 
 ### Activation dispatch sites
 
@@ -416,7 +410,7 @@ Four production sites drive `applyBagFocus`:
 - **`transferFocusForActivation`** in `focus-transfer.ts` — intra-pane tab switches (`tug-pane#performSelectCard`), cross-pane activations (`pane-focus-controller`), tab-close handoffs (`deck-manager#_removeCard` / `_closePane`), runtime chain actions wrapping `activateCard` (action-dispatch.ts `focus-pane`, deck-canvas.tsx `show-component-gallery`). Save outgoing, commit mutation via `flushSync`, gate via `canProgrammaticallyFocus`, dispatch.
 - **`transferFocusAfterMove`** in `focus-transfer.ts` — cross-pane drag drops (`deck-manager#_detachCard` / `_moveCardToPane`) after the React-visible re-parent has committed.
 - **`reactivateCurrentFocusDestination`** in `focus-transfer.ts` — installed as a `window.focus` listener in `deck-manager.ts`. Fires on cmd-tab return / app become-active. Calls `applyBagFocus` with `preventScroll: true` ([L23] — preserve user-visible scroll).
-- **CardHost cold-boot RESTORE** in `card-host.tsx` — `useLayoutEffect` at mount. Calls `applyBagFocus` against the active card of the active pane ([D10] Option B gate). Owns the late-mount retry mechanism for `deferred-dom` (MutationObserver) and `deferred-engine` (`subscribeEngineHooksChange` listener).
+- **CardHost cold-boot RESTORE** in `card-host.tsx` — `useLayoutEffect` at mount. Calls `applyBagFocus` (one-shot) against the active card of the active pane ([D10] Option B gate). Owns the late-mount retry for `deferred-engine` via the `subscribeEngineHooksChange` listener — the one late-mount focus path.
 
 Boot sites (`_seedDeckState`, initial-focused-card restore) stay raw — `applyBagFocus` would resolve `none` at boot (no host root yet); CardHost's cold-boot RESTORE is the real claim path. See D9b for the runtime-vs-boot site split.
 
@@ -433,17 +427,12 @@ Engines no longer call `paintMirrorAsActive` autonomously from `useCardStatePres
 
 ### Late-mount settle
 
-The `deferred-*` resolutions exist because the user's saved focus target may not be in the DOM at the moment of activation:
+The user's saved focus target may not be in the DOM at the moment of activation. There is exactly **one** late-mount focus retry path: `deferred-engine`.
 
-- **`deferred-dom`**: framework-axis target hasn't mounted yet. tide's transcript loads messages async after restart; a FileBlock find row's input mounts several commits after the card mount.
-- **`deferred-engine`**: engine hasn't registered hooks yet. tide's editor gates on `feedsReady`; the editor's `useLayoutEffect` runs after CardHost's RESTORE useLayoutEffect on first commit (parent fires after children, but CardHost fires its own effect AFTER children's effects complete — wait, this is the reverse; see below).
+- **`deferred-engine`**: the engine hasn't registered its hooks yet. tide's editor gates on `feedsReady`, and on the very first commit the editor's `useLayoutEffect` runs after CardHost's RESTORE `useLayoutEffect`. CardHost's `subscribeEngineHooksChange` listener bumps a local `engineHooksVersion` state; the RESTORE effect's dep array includes it, so a late-mounting engine's `registerEngineHooks` re-fires the effect — `applyBagFocus` now resolves `engine` (vs. the prior `deferred-engine`) and invokes the hook. Event-driven (store-channel listener), not timer-driven — [L05] compliance.
+- **`deferred-dom`**: a framework-axis target that is not in the DOM at dispatch time. This is **not** retried for focus. The one-shot callers treat `"deferred"` as a graceful no-focus outcome, and CardHost's cold-boot RESTORE makes a single `applyBagFocus` call with no focus retry. (Phase E.12 retired the `deferred-dom` MutationObserver focus-retry branch when per-block Find was removed — a content-owning + engine card has one text-entry surface, so no framework-axis target inside it late-mounts.)
 
-CardHost owns the retry orchestration:
-
-- **MutationObserver** scoped to the card root re-fires `applyBagFocus` on every subtree mutation. Element-identity settle: once `applyBagFocus` returns `"applied"`, stop retrying. Budget: 200 mutations OR 5 seconds wall-clock — whichever fires first, observer disconnects with a dev-mode warn (production silent — framework yields cleanly on stale state). [L23] contract: "focus position at first paint *after the target is available* matches focus position at last save."
-- **`subscribeEngineHooksChange`** listener bumps a local `engineHooksVersion` state; the RESTORE effect's dep array includes it so a late-mounting engine's `registerEngineHooks` re-fires the effect, which now resolves `engine` (vs. the prior `deferred-engine`) and invokes the hook.
-
-Both retry paths are event-driven (DOM mutations; store-channel listener), not timer-driven — [L05] compliance. Budgets are guardrails against runaway observers, not the primary dispatch mechanism.
+CardHost's RESTORE-effect MutationObserver still exists, but its duties are **region-scroll** (`data-tug-scroll-key` regions) and **DOM-selection** late-mount restore — not focus.
 
 ### Cross-references
 
@@ -517,8 +506,8 @@ Primary sources — the files that define the protocol's exported identifiers. L
 
 Secondary sources — where the protocol is wired up in practice.
 
-- [`tugdeck/src/components/chrome/card-host.tsx`](../tugdeck/src/components/chrome/card-host.tsx) — `captureFocus`, the `registerStatePreservationCallbacks` plumbing (including the count-based remount detector), the post-attach effect that orders DOM-authority restore after `onContentReady`, the cold-boot RESTORE call to `applyBagFocus` (Phase E.11), the MutationObserver-driven `deferred-dom` retry, and the `callbacksVersion` + `engineHooksVersion` deps across the framework-axes / content-axis / components-axis / engine-hook-change restore effects.
-- [`tugdeck/src/focus-transfer.ts`](../tugdeck/src/focus-transfer.ts) — Phase E.11 single-channel dispatcher: `resolveBagFocus` (pure) + `applyBagFocus` (impure, with D11 yield rule), `transferFocusForActivation` / `transferFocusAfterMove` / `reactivateCurrentFocusDestination` entry points.
+- [`tugdeck/src/components/chrome/card-host.tsx`](../tugdeck/src/components/chrome/card-host.tsx) — `captureFocus`, the `registerStatePreservationCallbacks` plumbing (including the count-based remount detector), the post-attach effect that orders DOM-authority restore after `onContentReady`, the one-shot cold-boot RESTORE call to `applyBagFocus`, the RESTORE-effect MutationObserver (region-scroll + DOM-selection late-mount restore), and the `callbacksVersion` + `engineHooksVersion` deps across the framework-axes / content-axis / components-axis / engine-hook-change restore effects.
+- [`tugdeck/src/focus-transfer.ts`](../tugdeck/src/focus-transfer.ts) — the single-channel dispatcher: `resolveBagFocus` (pure) + `applyBagFocus` (impure, with the framework-branch idempotency guard), `transferFocusForActivation` / `transferFocusAfterMove` / `reactivateCurrentFocusDestination` entry points.
 - [`tugdeck/src/deck-manager.ts`](../tugdeck/src/deck-manager.ts) — Per-card `CardStateBag` cache; activation and deactivation callback channels (`registerActivationCallback`, `invokeActivationCallback`, `registerDeactivationCallback`); `saveState` RPC entry point; the public `captureAllForTeardown(reason)` entry point shared by `beforeunload` and the HMR bridge.
 - [`tugdeck/src/hmr-bridge.ts`](../tugdeck/src/hmr-bridge.ts) — Dev-only `installHmrBridge(deck)`; routes Vite's `vite:beforeUpdate` and `vite:beforeFullReload` events into `deck.captureAllForTeardown(reason)`.
 - [`tugdeck/src/components/tugways/tug-edit.tsx`](../tugdeck/src/components/tugways/tug-edit.tsx) — Per-instance `fastRefreshSnapshotRef` mount-effect snapshot/replay, covering Fast Refresh's same-instance effect re-run case the framework signal can't observe.
