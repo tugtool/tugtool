@@ -4274,6 +4274,26 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 ---
 
+#### Body-kind & tool-wrapper conformance {#bk-conformance}
+
+*Shared contract for every body kind and tool wrapper authored from Step 11 onward. Step 10.9 (Phases A–E.12) established this architecture against `FileBlock` / `DiffBlock` / `TerminalBlock` and `ToolWrapperChrome`; new components conform to it rather than re-deriving it. The steps below reference this section instead of repeating the contract — each lists only its component-specific deltas.*
+
+**Reference implementations:** `file-block.tsx`, `diff-block.tsx`, `terminal-block.tsx`, `tool-wrapper-chrome.tsx`, `tug-code-view.tsx`. **Authoritative spec:** [`tuglaws/component-authoring.md`](../tuglaws/component-authoring.md), [Tuglaws](../tuglaws/tuglaws.md) [L19] / [L20] / [L23].
+
+1. **Text engine — CM6 only.** Any file-based or multi-line code/text content renders through `TugCodeView` (read-only) or `tug-text-editor` (editable). No bespoke text-row DOM, no per-line scrollers. [Step 10.9 Phase A]
+2. **Single text-entry surface.** A card has at most one text-entry / input surface — for a tide-card that is `tug-prompt-entry`. Body kinds render **no** text-entry UI of their own: no per-block find, no in-block search field, no inline editor. Text-search affordances are deferred to the future Find redesign. [Phase E.12, [#e12-rule](#e12-rule)]
+3. **Pinned identity header + actions row.** A body kind with chrome renders a sticky identity header and a `.tugx-{kind}-actions` row, both pinning via the telescoping `top: calc(var(--tugx-pin-stack-top, 0px) + var(--tugx-toolblock-header-height, 0px) + …)` stack. The actions row is the one body-kind chrome that survives `embedded={true}`. [Phases B.2, C]
+4. **Embedded mode.** `embedded={true}` suppresses the body kind's own identity header (the host `ToolWrapperChrome` owns identity) and portals its affordances into the chrome's actions slot via `useChromeActionsTarget`. Standalone mode keeps the header inline. [Phase B.2]
+5. **Affordance library.** Copy / fold use `BlockCopyButton` / `BlockFoldCue` from `body-kinds/affordances/` — do not hand-roll. (`BlockFindButton` was retired with per-block Find.) [Phases D, E.4, E.12]
+6. **Tokens.** Component slots `--tugx-{kind}-*` compose the shared `--tugx-block-*` family ([#step-10-8-5](#step-10-8-5)) and never override `--tugx-toolblock-*` or the pin-stack variables. Seven-slot control convention for any interactive control. [L20]
+7. **State preservation.** Collapse state, inner scroll position, and any user-visible state survive reload / cross-pane / cold-boot via `useComponentStatePreservation` / `useSavedRegionScroll` ([A9]). [L23, Phases E.6–E.9]
+8. **Header truncation (tool wrappers).** Wrapper headers of the form `Tool · {arg}` use the established truncation primitives: end-ellipsis `<code>` for commands, the middle-ellipsis path pattern (`MiddleEllipsisPath` in `read-tool-block.tsx`) for file paths, and `TugTooltip` with `truncated` / `suppressOpen` gating. The args slot truncates, never scrolls or hover-expands. [Step 10.9 follow-on]
+9. **List-shaped body kinds.** Body kinds backed by a row list (`PathListBlock`, `SearchResultBlock`, `TodoListBlock`, large `TableBlock`) build on `TugListView`; its opt-in `selectionRequired` mode is available when the list owns a mandatory single selection.
+
+**Scope note.** Items 3–5 apply to body kinds with header / scrolling chrome (file, diff, terminal, json-tree, path-list, search-result, agent-transcript, todo-list, large table). Display-only inline blocks (`KaTeXBlock`, `MermaidBlock`, `ImageBlock`) apply only items 1–2 and 6–7 as relevant — they have no identity header, actions row, or fold affordance.
+
+---
+
 #### Step 11: EditToolBlock wrapper {#step-11}
 
 **Depends on:** #step-1, #step-10
@@ -4282,15 +4302,17 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 **References:** [D05], Spec S03
 
+**Conformance:** see [#bk-conformance](#bk-conformance) — tool wrapper composing an `embedded` `DiffBlock`; header truncation per item 8.
+
 **Artifacts:**
 - `tugdeck/src/components/tugways/cards/tool-wrappers/edit-tool-block.tsx` + `.css`
 - Registry entry; alias `MultiEdit → Edit` per [D16]
 
 **Tasks:**
-- [ ] Header: `Edit · {filePath}` + change counts (computed from diff)
-- [ ] Body: DiffBlock fed from `(old_string, new_string)` or full-file diff if `replace_all`
+- [ ] Header: `Edit · {filePath}` (path via the middle-ellipsis pattern, conformance item 8) + change counts (computed from diff)
+- [ ] Body: `DiffBlock` composed `embedded={true}` (the wrapper chrome owns identity; the diff's affordances portal into the chrome actions slot), fed from `(old_string, new_string)` or full-file diff if `replace_all`
 - [ ] Footer: link-to-file in tugdeck filetree (deferred to follow-on if filetree integration isn't ready)
-- [ ] Hover-line annotation: hovering a diff line surfaces a small status pill ("added" / "removed" / "unchanged") for accessibility and at-a-glance scanning; respects `prefers-reduced-motion`
+- [ ] Hover-line annotation: hovering a diff line surfaces a small status pill ("added" / "removed" / "unchanged") for accessibility and at-a-glance scanning; respects `prefers-reduced-motion`. _Note: this is a `DiffBlock` enhancement, not wrapper-local — land it in `diff-block.tsx` or defer to a DiffBlock follow-on._
 
 **Tests:**
 - [ ] Synthetic Edit fixture → DiffBlock with correct hunks
@@ -4311,21 +4333,25 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 **References:** [D04], [D05], [D11], Spec S02
 
+**Conformance:** see [#bk-conformance](#bk-conformance) — new body kind with header / scrolling chrome (items 3–7 apply). `--tugx-json-*` composes `--tugx-block-*`.
+
+**Decision: no in-block search.** The original step listed "search-within-tree" — that is a text-entry surface inside a content block, which [Phase E.12](#phase-e-12)'s [single-text-entry rule](#e12-rule) forbids (the same rule that retired per-block Find). JsonTreeBlock ships **no** search input; text-search over a JSON tree is deferred to the future Find redesign alongside per-block Find. Non-text navigation (expand/collapse, depth control) stays.
+
 **Artifacts:**
 - `tugdeck/src/components/tugways/body-kinds/json-tree-block.tsx` + `.css`
-- Token slot `--tugx-json-*`
+- Token slot `--tugx-json-*` (composes `--tugx-block-*`)
 
 **Tasks:**
-- [ ] Collapsible tree, default depth 3
+- [ ] Collapsible tree, default depth 3; expand-all / collapse-all in the `.tugx-json-actions` row
 - [ ] Type-aware coloring (string, number, bool, null, array, object)
-- [ ] Search-within-tree (basic; full search deferred to polish)
-- [ ] Copy-as-path (`response.data[0].id`) and copy-subtree
+- [ ] Copy-as-path (`response.data[0].id`) and copy-subtree — Copy via `BlockCopyButton` (conformance item 5)
 - [ ] Both themes verify
 
 **Tests:**
 - [ ] Renders nested object correctly
 - [ ] Collapse beyond default depth shows expand affordance
 - [ ] Copy-as-path produces correct path string
+- [ ] No text-entry element in the rendered subtree (single-text-entry rule)
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
@@ -4340,20 +4366,22 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 **References:** [D04], [D11], Spec S03, (#chrome)
 
+**Conformance:** see [#bk-conformance](#bk-conformance) — tool wrapper over `ToolWrapperChrome`, composing `embedded` body kinds.
+
 **Artifacts:**
-- `tugdeck/src/components/tugways/cards/tool-wrappers/default-tool-wrapper.tsx` + `.css`
+- `tugdeck/src/components/tugways/cards/tool-wrappers/default-tool-wrapper.tsx` + `.css` _(file already exists as the [#step-1](#step-1) no-op scaffold — this step replaces its body)_
 - `tugdeck/src/components/tugways/chrome/tide-caution-badge.tsx` + `.css`
 - Token slots `--tugx-caut-*` and `--tugx-toolblock-*` (extension)
 
 **Tasks:**
-- [ ] DefaultToolWrapper: JsonTree over `tool_use.input` (collapsed by default), separator, then body picked from `tool_result.output`/`tool_use_structured.structured_result`: text → MarkdownBlock; object → JsonTreeBlock
+- [ ] DefaultToolWrapper: `JsonTreeBlock` over `tool_use.input` (collapsed by default), separator, then body picked from `tool_result.output` / `tool_use_structured.structured_result`: text → `TugMarkdownView`; object → `JsonTreeBlock`
 - [ ] CautionBadge: small inline chip with hover tooltip showing reason
-- [ ] Update [#step-1](#step-1) scaffold's no-op DefaultToolWrapper to this real implementation
+- [ ] Replace the [#step-1](#step-1) scaffold's no-op `default-tool-wrapper.tsx` body with this real implementation
 
 **Tests:**
 - [ ] Inject synthetic `tool_use { tool_name: "ZzzUnknown" }` → DefaultToolWrapper + caution badge
-- [ ] Object output renders via JsonTreeBlock
-- [ ] Text output renders via MarkdownBlock
+- [ ] Object output renders via `JsonTreeBlock`
+- [ ] Text output renders via `TugMarkdownView`
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
@@ -4387,24 +4415,27 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 **Depends on:** #step-3, #step-4, #step-6, #step-8, #step-11, #step-13
 
-**Commit:** `feat(gallery): cards for ThinkingBlock, TerminalBlock+Bash, FileBlock+Read, DiffBlock+Edit, JsonTree, DefaultToolWrapper`
+**Commit:** `feat(gallery): cards for ThinkingBlock, JsonTree, file/default tool wrappers; extend existing body-kind galleries`
 
 **References:** [D05], [D11], [D14], (#t01-body-kinds), (#t02-tool-wrappers), (#t03-chrome). Pattern: `tugdeck/src/components/tugways/cards/gallery-transcript-entry.tsx` (stacked variants with mock content).
 
-**Artifacts:**
-- `tugdeck/src/components/tugways/cards/gallery-md-content-blocks.tsx` + `.css` — MarkdownBlock extensions (footnotes, smart-punct, tables, task lists, collapse-tall)
-- `tugdeck/src/components/tugways/cards/gallery-tide-thinking.tsx` + `.css` — ThinkingBlock variants (streaming, completed-collapsed, completed-expanded)
-- `tugdeck/src/components/tugways/cards/gallery-terminal-block.tsx` + `.css` — TerminalBlock (clean stdout, ANSI-rich, stdout/stderr split, virtualized 5k-line, interrupted)
-- `tugdeck/src/components/tugways/cards/gallery-file-block.tsx` + `.css` — FileBlock (three languages, with/without line offset, long-file collapsed)
-- `tugdeck/src/components/tugways/cards/gallery-diff-block.tsx` + `.css` — DiffBlock (small inline, large multi-hunk, single-line word-level)
-- `tugdeck/src/components/tugways/cards/gallery-json-tree-block.tsx` + `.css` — JsonTreeBlock standalone (will be promoted to gallery-structured-blocks in [#step-29-5](#step-29-5))
-- `tugdeck/src/components/tugways/cards/gallery-tool-block-shell.tsx` + `.css` — BashToolBlock (success, non-zero exit, interrupted, big-output, ANSI-rich)
-- `tugdeck/src/components/tugways/cards/gallery-tool-block-file-shipped.tsx` + `.css` — Read + Edit wrappers side by side (Write + NotebookEdit added in [#step-29-5](#step-29-5))
+**Reality check.** Step 10.9's phases shipped several gallery cards already; this step does **not** recreate them. The body-kind surface (FileBlock / DiffBlock / TerminalBlock, standalone and chrome-wrapped) is covered by `gallery-pinned-headers.tsx`; BashToolBlock is covered by `gallery-bash-tool-block.tsx`; markdown content by `gallery-markdown-view.tsx`. Batch 1 *verifies and extends* those, and *creates* only the cards for renderers that have no gallery presence yet.
+
+**Artifacts — already exist (verify / extend, do not recreate):**
+- `gallery-pinned-headers.tsx` — FileBlock + DiffBlock + TerminalBlock (standalone + chrome-wrapped). Extend variant coverage only if a design surface is missing (e.g. DiffBlock single-line word-level, FileBlock long-file collapsed).
+- `gallery-bash-tool-block.tsx` — BashToolBlock. Confirm it covers success / non-zero exit / interrupted / big-output / ANSI-rich; add missing variants.
+- `gallery-markdown-view.tsx` — markdown content. Extend to exercise the [#step-3](#step-3) extension surface (footnotes, smart-punct, tables, task lists, collapse-tall) if not already shown.
+
+**Artifacts — new (create):**
+- `tugdeck/src/components/tugways/cards/gallery-tide-thinking.tsx` + `.css` — ThinkingBlock (`chrome/tide-thinking-block.tsx`) variants: streaming, completed-collapsed, completed-expanded
+- `tugdeck/src/components/tugways/cards/gallery-json-tree-block.tsx` + `.css` — JsonTreeBlock standalone (promoted to `gallery-structured-blocks` in [#step-29-5](#step-29-5))
+- `tugdeck/src/components/tugways/cards/gallery-tool-block-file.tsx` + `.css` — Read + Edit wrappers side by side (Write + NotebookEdit added in [#step-29-5](#step-29-5))
 - `tugdeck/src/components/tugways/cards/gallery-tool-block-default.tsx` + `.css` — DefaultToolWrapper with synthetic unknown tool + caution badge variants
 - Registrations added to `gallery-registrations.tsx`
 
 **Tasks:**
-- [ ] Each card stacks 3-5 mock variants showing the component's full design surface
+- [ ] Audit the three existing cards above against [Tables T01-T03](#t01-body-kinds); extend variant coverage where a design surface is unrepresented (no recreation)
+- [ ] Each new card stacks 3-5 mock variants showing the component's full design surface
 - [ ] All mock data is module-scope, no live wiring
 - [ ] Each card's root has `data-testid="gallery-<kind>"` for the snapshot tests
 - [ ] Both themes verified (gallery host already supports theme switching)
@@ -4416,7 +4447,7 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun x tsc --noEmit && bun test src/components/tugways/cards/__tests__/gallery-rendering.test.tsx`
-- [ ] Manual: open each new gallery card; visually verify variants render correctly in both themes
+- [ ] Manual: open each new / extended gallery card; visually verify variants render correctly in both themes
 
 ---
 
@@ -4428,15 +4459,17 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 **References:** [D05], Spec S02, Spec S03
 
+**Conformance:** see [#bk-conformance](#bk-conformance) — `PathListBlock` is a list-shaped body kind (item 9: build on `TugListView`); `GlobToolBlock` is a tool wrapper (item 8: `Glob · {pattern}` header truncation). `--tugx-paths-*` composes `--tugx-block-*`.
+
 **Artifacts:**
 - `tugdeck/src/components/tugways/body-kinds/path-list-block.tsx` + `.css`
 - `tugdeck/src/components/tugways/cards/tool-wrappers/glob-tool-block.tsx` + `.css`
-- Token slot `--tugx-paths-*`
+- Token slot `--tugx-paths-*` (composes `--tugx-block-*`)
 - Registry entry
 
 **Tasks:**
-- [ ] PathListBlock: icons by file type, path-shortening (`…/`), sortable when count > 20, "Truncated at N" indicator
-- [ ] GlobToolBlock: header `Glob · {pattern}` + count + truncated indicator; body PathListBlock
+- [ ] PathListBlock: built on `TugListView`; icons by file type, path-shortening (`…/`), sortable when count > 20, "Truncated at N" indicator
+- [ ] GlobToolBlock: header `Glob · {pattern}` + count + truncated indicator; body `embedded` PathListBlock
 
 **Tests:**
 - [ ] Replay `test-21-glob-tool.jsonl` → GlobToolBlock with PathListBlock, correct count
@@ -4455,15 +4488,17 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 **References:** [D05], Spec S02, Spec S03
 
+**Conformance:** see [#bk-conformance](#bk-conformance) — `SearchResultBlock` is a list-shaped body kind (item 9). Note item 2: this block *displays* search results, it carries no search *input* — the query comes from the `Grep` tool call, not an in-block field. `--tugx-search-*` composes `--tugx-block-*`.
+
 **Artifacts:**
 - `tugdeck/src/components/tugways/body-kinds/search-result-block.tsx` + `.css`
 - `tugdeck/src/components/tugways/cards/tool-wrappers/grep-tool-block.tsx` + `.css`
-- Token slot `--tugx-search-*`
+- Token slot `--tugx-search-*` (composes `--tugx-block-*`)
 - Registry entry
 
 **Tasks:**
-- [ ] SearchResultBlock: grouped by file with collapsible headers; highlighted match span; surrounding context lines
-- [ ] GrepToolBlock: header `Grep · {pattern}` + match count + file count; body SearchResultBlock (content mode) or PathListBlock (files-only mode)
+- [ ] SearchResultBlock: grouped by file with collapsible headers; highlighted match span; surrounding context lines. Result text renders read-only — no in-block find input
+- [ ] GrepToolBlock: header `Grep · {pattern}` + match count + file count; body `embedded` SearchResultBlock (content mode) or PathListBlock (files-only mode)
 
 **Tests:**
 - [ ] Synthetic Grep fixture (content mode) → SearchResultBlock with grouped matches
@@ -4482,16 +4517,18 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 **References:** [D05], [D17], Spec S02, Spec S03
 
+**Conformance:** see [#bk-conformance](#bk-conformance) — `AgentTranscriptBlock` is a body kind with header / scrolling chrome (items 3–7). Nested entries that are themselves body kinds / wrappers each conform recursively. `--tugx-agent-*` composes `--tugx-block-*`.
+
 **Artifacts:**
 - `tugdeck/src/components/tugways/body-kinds/agent-transcript-block.tsx` + `.css`
 - `tugdeck/src/components/tugways/cards/tool-wrappers/task-tool-block.tsx` + `.css`
-- Token slot `--tugx-agent-*`
+- Token slot `--tugx-agent-*` (composes `--tugx-block-*`)
 - Registry entry; alias `Agent → Task` per [D16] if needed
 
 **Tasks:**
 - [ ] AgentTranscriptBlock: header (agent type + status + duration + tool-call count); body iterates `content[]` rendering each entry through the same dispatch (`depth + 1`); footer (cost summary)
-- [ ] Recursion bounded by max depth (default 3); deeper levels collapse with "+N nested calls"
-- [ ] TaskToolBlock: composes AgentTranscriptBlock; header shows agent type + status
+- [ ] Recursion bounded by max depth (default 3); deeper levels collapse with "+N nested calls" via `BlockFoldCue` (conformance item 5)
+- [ ] TaskToolBlock: composes `embedded` AgentTranscriptBlock; header shows agent type + status
 
 **Tests:**
 - [ ] Replay `test-22-subagent-spawn.jsonl` → TaskToolBlock with AgentTranscriptBlock; nested Grep call renders via GrepToolBlock
@@ -4510,6 +4547,8 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 **References:** [D13], Spec S03 (chrome variant), (#chrome)
 
+**Conformance:** see [#bk-conformance](#bk-conformance) — the body picker composes body kinds read-only; `Bash` input renders via `TugCodeView` (item 1: CM6 is the canonical text engine — there is no standalone `CodeBlock`). PermissionDialog itself carries only Allow / Deny / suggestion buttons — no text-entry surface, so item 2 is satisfied by construction.
+
 **Artifacts:**
 - `tugdeck/src/components/tugways/chrome/tide-permission-dialog.tsx` + `.css`
 - Token slot `--tugx-perm-*`
@@ -4518,9 +4557,9 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 **Tasks:**
 - [ ] Header: "Permission requested" + tool icon + tool name
 - [ ] Body picker — render the `tool_use.input` through the *most-fitting* body kind, not just JsonTree:
-  - `Bash` → render `input.command` via inline `CodeBlock` (shell-syntax-highlighted)
+  - `Bash` → render `input.command` via a read-only `TugCodeView` (shell language) — _not_ a bespoke code block
   - `Edit` → render `(input.old_string, input.new_string)` via `DiffBlock` (read-only)
-  - `Read`/`Write` → show `input.file_path` as a styled path with line-range badge if applicable
+  - `Read`/`Write` → show `input.file_path` as a styled path (middle-ellipsis pattern, conformance item 8) with line-range badge if applicable
   - any other tool → fall back to `JsonTreeBlock` over `tool_use.input`
 - [ ] Reason line from `decision_reason`
 - [ ] Suggestions from `permission_suggestions` rendered as buttons
@@ -4546,15 +4585,19 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 **References:** [D13], Spec S03 (chrome variant)
 
+**Conformance:** see [#bk-conformance](#bk-conformance) — question text renders via `TugMarkdownView`.
+
+**⚠ Open item — E.12 single-text-entry tension.** QuestionDialog's "Other" free-text input is a *second* text-entry surface inside the tide-card while the dialog is mounted, which is in tension with [Phase E.12](#phase-e-12)'s [single-text-entry rule](#e12-rule) ("a card has at most one text-entry / input surface"). A transient, response-demanding modal is categorically different from a persistent per-block widget, so the likely resolution is that the dialog takes *transient focus ownership* while mounted (suspending `tug-prompt-entry`'s activation-focus claim) and the rule's "one **persistent** destination" invariant still holds. **This must be confirmed against the E.11/E.12 focus model and written into a design decision before Step 19 is implemented** — do not ship the "Other" input until the focus-ownership story is settled.
+
 **Artifacts:**
 - `tugdeck/src/components/tugways/chrome/tide-question-dialog.tsx` + `.css`
 - Token slot `--tugx-quest-*`
 - Wire-up: dispatch routes `control_request_forward` (is_question:true) here
 
 **Tasks:**
-- [ ] Question text rendered via MarkdownBlock
+- [ ] Question text rendered via `TugMarkdownView`
 - [ ] Options as choice cards; single-select default; `multiSelect:true` flips to checkboxes
-- [ ] "Other" free-text input
+- [ ] "Other" free-text input — _gated on the focus-ownership resolution above_
 - [ ] Submit button sends `question_answer { request_id, answers }`
 - [ ] After response: collapse to one-line summary
 
@@ -4635,6 +4678,8 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 **References:** [D08], [D10], List L02, (#block-transformer-pass)
 
+**Conformance:** see [#bk-conformance](#bk-conformance) — KaTeXBlock is a display-only inline block (scope note): no identity header, actions row, or fold affordance. Only items 1–2 and 6–7 apply; `--tugx-katex-*` composes `--tugx-block-*`.
+
 **Artifacts:**
 - `tugdeck/src/components/tugways/body-kinds/katex-block.tsx` + `.css`
 - `tugdeck/src/lib/lazy/load-katex.ts`
@@ -4670,6 +4715,8 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 **References:** [D10], List L02, (#block-transformer-pass), R04
 
+**Conformance:** see [#bk-conformance](#bk-conformance) — MermaidBlock is a display-only inline block (scope note): no identity header, actions row, or fold affordance. Only items 1–2 and 6–7 apply; `--tugx-mermaid-*` composes `--tugx-block-*`.
+
 **Artifacts:**
 - `tugdeck/src/components/tugways/body-kinds/mermaid-block.tsx` + `.css`
 - `tugdeck/src/lib/lazy/load-mermaid.ts`
@@ -4702,15 +4749,17 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 **References:** [D05], Spec S02, Spec S03
 
+**Conformance:** see [#bk-conformance](#bk-conformance) — `TodoListBlock` is a list-shaped body kind (item 9: build on `TugListView` if the row count warrants windowing); `TodoWriteToolBlock` is a tool wrapper. `--tugx-todo-*` composes `--tugx-block-*`.
+
 **Artifacts:**
 - `tugdeck/src/components/tugways/body-kinds/todo-list-block.tsx` + `.css`
 - `tugdeck/src/components/tugways/cards/tool-wrappers/todo-write-tool-block.tsx` + `.css`
-- Token slot `--tugx-todo-*`
+- Token slot `--tugx-todo-*` (composes `--tugx-block-*`)
 - Registry entry
 
 **Tasks:**
 - [ ] TodoListBlock: checklist with status indicators (pending/in_progress/completed); in_progress highlighted
-- [ ] TodoWriteToolBlock: header with counts + progress bar; body TodoListBlock
+- [ ] TodoWriteToolBlock: header with counts + progress bar; body `embedded` TodoListBlock
 
 **Tests:**
 - [ ] Synthetic TodoWrite fixture → renders checklist correctly
@@ -4729,14 +4778,16 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 **References:** [D05], Spec S03
 
+**Conformance:** see [#bk-conformance](#bk-conformance) — both are tool wrappers (item 8: `WebFetch · {url}` / `WebSearch · {query}` header truncation — the URL via the middle-ellipsis path pattern). `FileBlock` raw-text body is CM6-backed per item 1.
+
 **Artifacts:**
 - `tugdeck/src/components/tugways/cards/tool-wrappers/web-fetch-tool-block.tsx` + `.css`
 - `tugdeck/src/components/tugways/cards/tool-wrappers/web-search-tool-block.tsx` + `.css`
 - Registry entries
 
 **Tasks:**
-- [ ] WebFetchToolBlock: header `WebFetch · {url}` + favicon + cache-hit indicator; body MarkdownBlock (default) or FileBlock (raw text)
-- [ ] WebSearchToolBlock: header `WebSearch · {query}` + result count; body SearchResultBlock adapted for web results (title + URL + snippet)
+- [ ] WebFetchToolBlock: header `WebFetch · {url}` + favicon + cache-hit indicator; body `embedded` `TugMarkdownView` (default) or `embedded` FileBlock (raw text)
+- [ ] WebSearchToolBlock: header `WebSearch · {query}` + result count; body `embedded` SearchResultBlock adapted for web results (title + URL + snippet)
 
 **Tests:**
 - [ ] Synthetic WebFetch/WebSearch fixtures render correctly
@@ -4754,14 +4805,16 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 **References:** [D05], [Q01], Spec S03
 
+**Conformance:** see [#bk-conformance](#bk-conformance) — both are tool wrappers (item 8 header truncation; paths via the middle-ellipsis pattern). `FileBlock` body is CM6-backed per item 1; both body kinds compose `embedded`.
+
 **Artifacts:**
 - `tugdeck/src/components/tugways/cards/tool-wrappers/write-tool-block.tsx` + `.css`
 - `tugdeck/src/components/tugways/cards/tool-wrappers/notebook-edit-tool-block.tsx` + `.css`
 - Registry entries
 
 **Tasks:**
-- [ ] WriteToolBlock: header `Write · {filePath}` + size; body FileBlock; new-vs-overwrite indicator
-- [ ] NotebookEditToolBlock: header `NotebookEdit · {notebookPath} · cell {cellId}` + edit-mode badge; body DiffBlock (generic v1 per [Q01])
+- [ ] WriteToolBlock: header `Write · {filePath}` + size; body `embedded` FileBlock; new-vs-overwrite indicator
+- [ ] NotebookEditToolBlock: header `NotebookEdit · {notebookPath} · cell {cellId}` + edit-mode badge; body `embedded` DiffBlock (generic v1 per [Q01])
 
 **Tests:**
 - [ ] Synthetic Write fixture renders FileBlock
@@ -4780,10 +4833,12 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 **References:** [D05], Spec S02, [atoms-attachments.md](./atoms-attachments.md)
 
+**Conformance:** see [#bk-conformance](#bk-conformance) — ImageBlock is a display-only inline block (scope note): no identity header, actions row, or fold affordance. Only items 1–2 and 6–7 apply; `--tugx-image-*` composes `--tugx-block-*`.
+
 **Artifacts:**
 - `tugdeck/src/components/tugways/body-kinds/image-block.tsx` + `.css`
-- Token slot `--tugx-image-*`
-- Markdown-block delegation: when `MarkdownBlock` encounters an `<img>` element after parse, it can render through ImageBlock
+- Token slot `--tugx-image-*` (composes `--tugx-block-*`)
+- Markdown delegation: when `TugMarkdownView` encounters an `<img>` element after parse, it can render through ImageBlock
 
 **Tasks:**
 - [ ] Lazy-load with low-res placeholder
@@ -4808,15 +4863,17 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 **References:** [D05], [D07], Spec S02
 
+**Conformance:** see [#bk-conformance](#bk-conformance) — TableBlock is a body kind with header / scrolling chrome (items 3–7); a large table builds on `TugListView` (item 9). `--tugx-tabrich-*` composes `--tugx-block-*`. _Note: the table's internal sticky `<thead>` (task below) is distinct from the body-kind identity-header pin — the `<thead>` sticks within the table's own scroll region; the identity header pins via the telescoping stack. Both can coexist; keep them separate._
+
 **Artifacts:**
 - `tugdeck/src/components/tugways/body-kinds/table-block.tsx` + `.css`
-- Token slot `--tugx-tabrich-*`
+- Token slot `--tugx-tabrich-*` (composes `--tugx-block-*`)
 - A new transformer `largeTableTransformer` in block-transformers (promotes to TableBlock when rows > 10 or columns > 5)
 
 **Tasks:**
 - [ ] Sortable columns
-- [ ] Sticky header on scroll
-- [ ] Cell overflow handling (truncate + tooltip)
+- [ ] Sticky `<thead>` within the table's scroll region (distinct from the body-kind identity-header pin — see Conformance note)
+- [ ] Cell overflow handling (truncate + `TugTooltip`)
 - [ ] Optional row striping
 - [ ] Block transformer promotes large GFM tables
 
@@ -4867,19 +4924,24 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 **References:** [D05], [D08], [D10], [D13], [D17], (#t01-body-kinds), (#t02-tool-wrappers), (#t03-chrome)
 
-**Artifacts:**
+**Conformance:** see [#bk-conformance](#bk-conformance) — gallery cards consume shipped components only; no new tokens. Each new body kind / wrapper they showcase was authored to the conformance contract in its own step.
+
+**Reality check.** [#step-14-5](#step-14-5) created `gallery-tool-block-file.tsx` directly (no `-shipped` suffix). Batch 2 *extends* that card with Write + NotebookEdit rather than renaming a `-shipped` variant. `gallery-tide-thinking.tsx` was also created in batch 1 and is not re-touched here.
+
+**Artifacts — new (create):**
 - `tugdeck/src/components/tugways/cards/gallery-stretch-content.tsx` + `.css` — KaTeXBlock (inline + display), MermaidBlock (flowchart + sequence + class diagram), TableBlock-rich (sortable 50-row)
-- `tugdeck/src/components/tugways/cards/gallery-structured-blocks.tsx` + `.css` — promotes from `gallery-json-tree-block` to a unified showcase: JsonTree + PathList + SearchResult + TodoList side by side
 - `tugdeck/src/components/tugways/cards/gallery-agent-transcript-block.tsx` + `.css` — three nesting depths, mixed nested-tool variety, complete + streaming sub-transcripts
 - `tugdeck/src/components/tugways/cards/gallery-image-block.tsx` + `.css` — lazy-load placeholder, EXIF-orientation samples, click-to-zoom
 - `tugdeck/src/components/tugways/cards/gallery-tool-block-search.tsx` + `.css` — Glob + Grep + WebSearch wrappers
 - `tugdeck/src/components/tugways/cards/gallery-tool-block-network.tsx` + `.css` — WebFetch (cache hit, cache miss, fetch error)
 - `tugdeck/src/components/tugways/cards/gallery-tool-block-agent.tsx` + `.css` — Task wrapper with depth 1, 2, 3
 - `tugdeck/src/components/tugways/cards/gallery-tool-block-meta.tsx` + `.css` — TodoWrite + finalized DefaultToolWrapper drift variants
-- `tugdeck/src/components/tugways/cards/gallery-tool-block-file.tsx` + `.css` — promotes from `gallery-tool-block-file-shipped` to full set: Read + Write + Edit + NotebookEdit
 - `tugdeck/src/components/tugways/cards/gallery-tide-dialogs.tsx` + `.css` — PermissionDialog + QuestionDialog (pending, approved, denied; single + multi-select with "Other")
 - `tugdeck/src/components/tugways/cards/gallery-tide-chrome.tsx` + `.css` — CostChrome (badge + expanded + cumulative), SessionInitBanner, ErrorBlock, CautionBadge
-- Promotions update `gallery-json-tree-block.tsx` → re-export path (or removal) and `gallery-tool-block-file-shipped.tsx` → `gallery-tool-block-file.tsx`
+
+**Artifacts — promote / extend (existing batch-1 cards):**
+- `gallery-structured-blocks.tsx` — promote from `gallery-json-tree-block.tsx` to a unified showcase: JsonTree + PathList + SearchResult + TodoList side by side. The old `gallery-json-tree-block.tsx` entry is removed (not duplicated).
+- `gallery-tool-block-file.tsx` — extend the batch-1 card (Read + Edit) with Write + NotebookEdit → full set.
 - Registrations updated in `gallery-registrations.tsx`
 
 **Tasks:**
@@ -4888,7 +4950,7 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 - [ ] Agent-transcript card exercises [D17] depth cap — render at depth 4 to verify the "+N nested calls" affordance
 - [ ] Dialogs card includes the post-response collapsed state per [D13]
 - [ ] Both themes verified
-- [ ] Promote `gallery-json-tree-block` and `gallery-tool-block-file-shipped` cleanly — old gallery entries are removed (not duplicated)
+- [ ] Promote `gallery-json-tree-block` → `gallery-structured-blocks` cleanly (old entry removed, not duplicated); extend `gallery-tool-block-file` in place
 
 **Tests:**
 - [ ] Snapshot tests per card under both themes
@@ -4945,7 +5007,7 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 - [ ] All 32 execution steps committed with green checkpoints (Step 0 + Steps 1-30 + Steps 14.5 and 29.5).
 - [ ] `roadmap/tide-assistant-rendering-session-audit.md` produced and reviewed; threshold calibrations cross-referenced into the relevant later steps.
-- [ ] Every component in [Tables T01-T03](#t01-body-kinds) is reachable from a registered gallery card (`gallery-md-content-blocks`, `gallery-stretch-content`, `gallery-diff-block`, `gallery-file-block`, `gallery-terminal-block`, `gallery-structured-blocks`, `gallery-agent-transcript-block`, `gallery-image-block`, `gallery-tool-block-{file,shell,search,network,agent,meta,default}`, `gallery-tide-{thinking,dialogs,chrome}`).
+- [ ] Every component in [Tables T01-T03](#t01-body-kinds) is reachable from a registered gallery card. Body kinds: `gallery-pinned-headers` (file / diff / terminal), `gallery-markdown-view`, `gallery-stretch-content`, `gallery-structured-blocks`, `gallery-agent-transcript-block`, `gallery-image-block`. Tool wrappers: `gallery-bash-tool-block`, `gallery-tool-block-{file,search,network,agent,meta,default}`. Chrome: `gallery-tide-{thinking,dialogs,chrome}`. (See [#step-14-5](#step-14-5) for which cards already shipped during Step 10.9 vs. which batch 1 creates.)
 - [ ] `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cd tugrust && cargo nextest run` all green.
 - [ ] Replaying the full v2.1.105 + v2.1.112 fixture catalogs produces no render errors, no `[object Object]` text, no raw JSON bleed, and every fixture's `tool_use` events route to the bespoke wrapper enumerated in [Table T02](#t02-tool-wrappers).
 - [ ] Synthetic-drift fixtures produce caution badges in both card chrome and inline at the offending event.
