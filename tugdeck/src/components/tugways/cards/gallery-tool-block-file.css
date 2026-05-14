@@ -1,0 +1,26 @@
+/* ============================================================================
+   gallery-tool-block-file.css — layout-only scaffold for the
+   ReadToolBlock / EditToolBlock gallery card.
+
+   No colour rules: every painted surface comes from the tool wrappers
+   and their embedded body kinds. This file only lays the two wrappers
+   out side by side, collapsing to one column when the card is narrow.
+   ========================================================================= */
+
+.gallery-tool-block-file-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 28px;
+  align-items: start;
+}
+
+.gallery-tool-block-file-column {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  min-width: 0;
+}
+
+.gallery-tool-block-file-variant {
+  min-width: 0;
+}

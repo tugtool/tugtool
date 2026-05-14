@@ -1,0 +1,13 @@
+/* ============================================================================
+   gallery-tool-block-default.css — layout-only scaffold for the
+   DefaultToolWrapper gallery card.
+
+   No colour rules: every painted surface comes from `DefaultToolWrapper`
+   and its embedded body kinds. This file only constrains variant width
+   so each wrapper renders at a realistic Tide-card measure.
+   ========================================================================= */
+
+.gallery-tool-block-default-variant {
+  max-width: 720px;
+  min-width: 0;
+}

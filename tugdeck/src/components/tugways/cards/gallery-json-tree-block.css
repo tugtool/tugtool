@@ -1,0 +1,13 @@
+/* ============================================================================
+   gallery-json-tree-block.css — layout-only scaffold for the
+   JsonTreeBlock gallery card.
+
+   No colour rules: every painted surface comes from `JsonTreeBlock`
+   itself (its `--tugx-json-*` / `--tugx-block-*` tokens). This file
+   only constrains section width so each standalone tree renders at a
+   realistic measure rather than the full gallery width.
+   ========================================================================= */
+
+.gallery-json-tree-section {
+  max-width: 720px;
+}

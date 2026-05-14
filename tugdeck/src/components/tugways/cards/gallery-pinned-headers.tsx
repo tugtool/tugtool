@@ -185,6 +185,12 @@ export function GalleryPinnedHeaders() {
 
       <TugSeparator />
 
+      <PinSection title="FileBlock — long file, folded by default (preview-with-fade; click the fold cue to expand)">
+        <FileBlock data={LONG_FILE} collapsed />
+      </PinSection>
+
+      <TugSeparator />
+
       <PinSection title="DiffBlock — 20 hunks (header: Side-by-side/Inline choice group + fold cue at trailing edge)">
         <DiffBlock data={LONG_DIFF} />
       </PinSection>

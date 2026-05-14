@@ -80,6 +80,10 @@ import {
   GalleryBashMountInSavedState,
 } from "./gallery-bash-tool-block";
 import { GalleryPinnedHeaders } from "./gallery-pinned-headers";
+import { GalleryTideThinking } from "./gallery-tide-thinking";
+import { GalleryJsonTreeBlock } from "./gallery-json-tree-block";
+import { GalleryToolBlockFile } from "./gallery-tool-block-file";
+import { GalleryToolBlockDefault } from "./gallery-tool-block-default";
 import "./gallery.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
@@ -268,6 +272,7 @@ const GALLERY_COMPLEX_SIZE: CardSizePolicy = {
 const CATEGORIES = {
   buttons: { label: "Buttons", icon: "MousePointerClick" },
   textInput: { label: "Text Input & Display", icon: "TextCursorInput" },
+  blockRenderers: { label: "Block Renderers", icon: "Blocks" },
   selection: { label: "Selection", icon: "CheckSquare" },
   overlays: { label: "Overlays", icon: "MessageSquareMore" },
   feedback: { label: "Feedback & Status", icon: "Activity" },
@@ -454,57 +459,6 @@ export function registerGalleryCards(): void {
     category: CATEGORIES.textInput,
   });
 
-  // Visual fixture for the smart-pick routing inside BashToolBlock:
-  // echo (TerminalBlock) vs git show / git diff (DiffBlock) vs git status
-  // (TerminalBlock again, must not false-positive).
-  registerCard({
-    componentId: "gallery-bash-tool-block",
-    contentFactory: (_cardId) => <GalleryBashToolBlock />,
-    defaultMeta: { title: "BashToolBlock", icon: "Terminal", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.textInput,
-  });
-
-  // Mount-in-saved-state fixture: a long-stdout BashToolBlock that
-  // engages both the fold axis (TerminalBlock collapsed/expanded via
-  // `bag.components`) and the inner-scroll axis (virtualized scroller
-  // via `bag.regionScroll`). Drives
-  // `tests/app-test/at0067-bash-block-mount-in-saved-state.test.ts`
-  // and `tests/app-test/at0068-bash-block-inner-scroll-from-creation.test.ts`.
-  // See `tuglaws/state-preservation.md` → "Restoring saved state at
-  // mount".
-  registerCard({
-    componentId: "gallery-bash-mount-in-saved-state",
-    contentFactory: (_cardId) => <GalleryBashMountInSavedState />,
-    defaultMeta: {
-      title: "BashToolBlock — Mount-in-saved-state",
-      icon: "Terminal",
-      closable: true,
-    },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.textInput,
-  });
-
-
-  // Diagnostic fixture for the body-kind pinned-header behavior:
-  // three standalone body kinds (FileBlock / DiffBlock / TerminalBlock)
-  // inside their own fixed-height scroll wrappers, deliberately
-  // detached from the transcript chain so the binding scrollport is
-  // unambiguous.
-  registerCard({
-    componentId: "gallery-pinned-headers",
-    contentFactory: (_cardId) => <GalleryPinnedHeaders />,
-    defaultMeta: { title: "Pinned Headers (diagnostic)", icon: "Pin", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.textInput,
-  });
-
   registerCard({
     componentId: "gallery-list-view",
     contentFactory: (_cardId) => <GalleryListView />,
@@ -572,6 +526,111 @@ export function registerGalleryCards(): void {
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
     category: CATEGORIES.textInput,
+  });
+
+  // ===========================================================================
+  // Block Renderers
+  //
+  // Tide assistant-rendering surfaces: the body kinds, tool wrappers,
+  // and chrome that render a transcript's tool calls and reasoning.
+  // Registered in alphabetical order by display title so the [+]
+  // picker reads predictably.
+  // ===========================================================================
+
+  // Visual fixture for the smart-pick routing inside BashToolBlock:
+  // echo (TerminalBlock) vs git show / git diff (DiffBlock) vs git status
+  // (TerminalBlock again, must not false-positive).
+  registerCard({
+    componentId: "gallery-bash-tool-block",
+    contentFactory: (_cardId) => <GalleryBashToolBlock />,
+    defaultMeta: { title: "BashToolBlock", icon: "Terminal", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+
+  // Mount-in-saved-state fixture: a long-stdout BashToolBlock that
+  // engages both the fold axis (TerminalBlock collapsed/expanded via
+  // `bag.components`) and the inner-scroll axis (virtualized scroller
+  // via `bag.regionScroll`). Drives
+  // `tests/app-test/at0067-bash-block-mount-in-saved-state.test.ts`
+  // and `tests/app-test/at0068-bash-block-inner-scroll-from-creation.test.ts`.
+  // See `tuglaws/state-preservation.md` → "Restoring saved state at
+  // mount".
+  registerCard({
+    componentId: "gallery-bash-mount-in-saved-state",
+    contentFactory: (_cardId) => <GalleryBashMountInSavedState />,
+    defaultMeta: {
+      title: "BashToolBlock — Mount-in-saved-state",
+      icon: "Terminal",
+      closable: true,
+    },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+
+  // DefaultToolWrapper — the [D11] fallback for tool calls with no
+  // bespoke wrapper: unknown tools (with a caution badge) and
+  // audit-confirmed long-tail tools.
+  registerCard({
+    componentId: "gallery-tool-block-default",
+    contentFactory: (_cardId) => <GalleryToolBlockDefault />,
+    defaultMeta: { title: "DefaultToolWrapper", icon: "Wrench", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+
+  // File tool wrappers — ReadToolBlock + EditToolBlock side by side.
+  registerCard({
+    componentId: "gallery-tool-block-file",
+    contentFactory: (_cardId) => <GalleryToolBlockFile />,
+    defaultMeta: { title: "File Tool Wrappers", icon: "Files", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+
+  // JsonTreeBlock — the collapsible JSON body kind, standalone.
+  registerCard({
+    componentId: "gallery-json-tree-block",
+    contentFactory: (_cardId) => <GalleryJsonTreeBlock />,
+    defaultMeta: { title: "JsonTreeBlock", icon: "Braces", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+
+  // Diagnostic fixture for the body-kind pinned-header behavior:
+  // three standalone body kinds (FileBlock / DiffBlock / TerminalBlock)
+  // inside their own fixed-height scroll wrappers, deliberately
+  // detached from the transcript chain so the binding scrollport is
+  // unambiguous.
+  registerCard({
+    componentId: "gallery-pinned-headers",
+    contentFactory: (_cardId) => <GalleryPinnedHeaders />,
+    defaultMeta: { title: "Pinned Headers (diagnostic)", icon: "Pin", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+
+  // TideThinkingBlock — the inline collapsible reasoning chrome.
+  registerCard({
+    componentId: "gallery-tide-thinking",
+    contentFactory: (_cardId) => <GalleryTideThinking />,
+    defaultMeta: { title: "TideThinkingBlock", icon: "Brain", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
   });
 
   // ===========================================================================

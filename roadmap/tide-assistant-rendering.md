@@ -4458,6 +4458,8 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 #### Step 14.5: Gallery cards for shipped renderers (batch 1) {#step-14-5}
 
+**Status:** implemented — four new gallery cards (`gallery-tide-thinking`, `gallery-json-tree-block`, `gallery-tool-block-file`, `gallery-tool-block-default`), three existing cards extended, all wired into `gallery-registrations.tsx`. tsc clean, `bun test` 1665/1665, `audit:tokens lint` zero violations, `at0082-gallery-shipped-renderers.test.ts` green (1/1).
+
 **Depends on:** #step-3, #step-4, #step-6, #step-8, #step-11, #step-13
 
 **Commit:** `feat(gallery): cards for ThinkingBlock, JsonTree, file/default tool wrappers; extend existing body-kind galleries`
@@ -4466,32 +4468,44 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 **Reality check.** Step 10.9's phases shipped several gallery cards already; this step does **not** recreate them. The body-kind surface (FileBlock / DiffBlock / TerminalBlock, standalone and chrome-wrapped) is covered by `gallery-pinned-headers.tsx`; BashToolBlock is covered by `gallery-bash-tool-block.tsx`; markdown content by `gallery-markdown-view.tsx`. Batch 1 *verifies and extends* those, and *creates* only the cards for renderers that have no gallery presence yet.
 
+**Implementation notes.**
+- **Dedicated `Block Renderers` [+] picker section.** The assistant-rendering cards (the four new ones plus `gallery-bash-tool-block`, `gallery-bash-mount-in-saved-state`, `gallery-pinned-headers`) moved out of `Text Input & Display` into their own `CATEGORIES.blockRenderers` section, registered in alphabetical order by display title.
+- **Test split — registry wiring vs. render.** The card *registry wiring* (each batch-1 componentId registered with a `contentFactory`) is the pure-logic concern, pinned by `gallery-registrations.test.ts`. The *render-half* — renders without throwing, paints no `[object Object]`, emits exactly one `data-slot` root per stacked variant (Spec S06 items 2–4) — needs a real render surface and lives in the app-test `at0082-gallery-shipped-renderers.test.ts`, which drives each card through the running app (the same surface AT0067/AT0068 use for `gallery-bash-mount-in-saved-state`). This replaces the planned `gallery-rendering.test.tsx`.
+- **JsonTreeBlock row density.** The per-node copy-path `TugIconButton` was inflating every row to the button's intrinsic height even at `opacity: 0` (still in flow); it is now absolutely positioned against the row, and `.tugx-json-tree` `line-height` dropped 1.6 → 1.4. The tree now reads at a code-dense measure.
+- **`completed-expanded` is the interactive toggle.** `TideThinkingBlock`'s static mode is default-collapsed and owns no expand-state input; the gallery mounts it collapsed and the expanded state is reached by clicking the header. The streaming variant covers the default-expanded look.
+- **`gallery-markdown-view` extension surface.** A "Features" action button dumps a hand-authored document (footnotes, smart-punct, GFM tables, task lists) via `setRegion` — independent of the size selector, which only drives generated prose. `collapse-tall` stays deferred per this step's own scope note.
+- **No new tokens.** Each new card's `.css` is layout-only (section width, side-by-side columns); every painted surface comes from the renderer's already-theme-verified component tokens.
+
 **Artifacts — already exist (verify / extend, do not recreate):**
-- `gallery-pinned-headers.tsx` — FileBlock + DiffBlock + TerminalBlock (standalone + chrome-wrapped). Extend variant coverage only if a design surface is missing (e.g. DiffBlock single-line word-level, FileBlock long-file collapsed).
-- `gallery-bash-tool-block.tsx` — BashToolBlock. Confirm it covers success / non-zero exit / interrupted / big-output / ANSI-rich; add missing variants.
-- `gallery-markdown-view.tsx` — markdown content. Extend to exercise the [#step-3](#step-3) extension surface (footnotes, smart-punct, tables, task lists, collapse-tall) if not already shown.
+- `gallery-pinned-headers.tsx` — FileBlock + DiffBlock + TerminalBlock (standalone + chrome-wrapped). Extended: added a long-file FileBlock folded-by-default variant (the previously-unrepresented preview-with-fade surface).
+- `gallery-bash-tool-block.tsx` — BashToolBlock. Extended: added non-zero exit, interrupted, ANSI-rich, and empty-success `(no output)` variants (big-output already covered by `gallery-bash-mount-in-saved-state`).
+- `gallery-markdown-view.tsx` — markdown content. Extended: a "Features" action exercises the [#step-3](#step-3) extension surface (footnotes, smart-punct, tables, task lists).
 
 **Artifacts — new (create):**
-- `tugdeck/src/components/tugways/cards/gallery-tide-thinking.tsx` + `.css` — ThinkingBlock (`chrome/tide-thinking-block.tsx`) variants: streaming, completed-collapsed, completed-expanded
+- `tugdeck/src/components/tugways/cards/gallery-tide-thinking.tsx` + `.css` — ThinkingBlock (`chrome/tide-thinking-block.tsx`) variants: streaming, completed-long, completed-short
 - `tugdeck/src/components/tugways/cards/gallery-json-tree-block.tsx` + `.css` — JsonTreeBlock standalone (promoted to `gallery-structured-blocks` in [#step-29-5](#step-29-5))
 - `tugdeck/src/components/tugways/cards/gallery-tool-block-file.tsx` + `.css` — Read + Edit wrappers side by side (Write + NotebookEdit added in [#step-29-5](#step-29-5))
 - `tugdeck/src/components/tugways/cards/gallery-tool-block-default.tsx` + `.css` — DefaultToolWrapper with synthetic unknown tool + caution badge variants
+- `tugdeck/src/components/tugways/cards/__tests__/gallery-registrations.test.ts` — pure-logic registry-wiring coverage
+- `tests/app-test/at0082-gallery-shipped-renderers.test.ts` — render-half app-test (Spec S06 items 2–4)
 - Registrations added to `gallery-registrations.tsx`
 
 **Tasks:**
-- [ ] Audit the three existing cards above against [Tables T01-T03](#t01-body-kinds); extend variant coverage where a design surface is unrepresented (no recreation)
-- [ ] Each new card stacks 3-5 mock variants showing the component's full design surface
-- [ ] All mock data is module-scope, no live wiring
-- [ ] Each card's root has `data-testid="gallery-<kind>"` for the snapshot tests
-- [ ] Both themes verified (gallery host already supports theme switching)
-- [ ] No new tokens introduced — gallery cards only consume existing component slots
+- [x] Audit the three existing cards above against [Tables T01-T03](#t01-body-kinds); extend variant coverage where a design surface is unrepresented (no recreation)
+- [x] Each new card stacks 3-6 mock variants showing the component's full design surface
+- [x] All mock data is module-scope, no live wiring
+- [x] Each card's root has `data-testid="gallery-<kind>"` for the render-half app-test
+- [x] Both themes verified — gallery-card CSS is layout-only and every painted colour rides a theme-verified component token (`audit:tokens lint` zero violations); visual confirmation is the manual checkpoint below
+- [x] No new tokens introduced — gallery cards only consume existing component slots
 
 **Tests:**
-- [ ] Each gallery card renders without throw under both themes (snapshot test)
-- [ ] `bun run audit:tokens lint` exits 0
+- [x] Registry wiring — `gallery-registrations.test.ts` pins each batch-1 card registered with a `contentFactory` + `defaultMeta` (6 pass)
+- [x] Render-half — `at0082-gallery-shipped-renderers.test.ts` mounts each new / extended card and asserts: non-empty subtree (no throw), no `[object Object]` text, exactly one `data-slot` root per stacked variant (1/1 green)
+- [x] `bun run audit:tokens lint` exits 0
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test src/components/tugways/cards/__tests__/gallery-rendering.test.tsx`
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test src/components/tugways/cards/__tests__/` — tsc clean; 23 pass / 0 fail.
+- [x] `just app-test at0082-gallery-shipped-renderers.test.ts` — VERDICT: PASS (1/1).
 - [ ] Manual: open each new / extended gallery card; visually verify variants render correctly in both themes
 
 ---

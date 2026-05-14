@@ -154,7 +154,7 @@ body {
 
 .tugx-json-tree {
   padding: var(--tug-space-2xs) var(--tug-space-sm);
-  line-height: 1.6;
+  line-height: 1.4;
 }
 
 /* Children indent one step under their parent. The vertical guide
@@ -169,8 +169,11 @@ body {
 
 /* One node line — flex row of twist + key + value (+ hover copy).
  * Container lines are click-to-toggle, so they get a pointer cursor
- * and a hover background; leaf lines are inert. */
+ * and a hover background; leaf lines are inert. `position: relative`
+ * anchors the absolutely-positioned copy-path button so it does not
+ * inflate the row's height. */
 .tugx-json-line {
+  position: relative;
   display: flex;
   align-items: baseline;
   gap: var(--tug-space-2xs);
@@ -278,12 +281,17 @@ body {
 
 /* Hover-revealed trailing `TugIconButton`. Hidden at rest so the tree
  * reads clean; revealed when its row is hovered or it takes focus
- * (keyboard reachability). The button itself is a `TugIconButton`
+ * (keyboard reachability). Absolutely positioned against the row so
+ * the button's intrinsic height never inflates the row — the tree
+ * stays line-height-dense. The button itself is a `TugIconButton`
  * whose appearance tokens live in the TugButton stylesheets; only the
  * reveal transition and the at-rest hide live here. */
 .tugx-json-copy-path {
+  position: absolute;
+  right: var(--tug-space-2xs);
+  top: 50%;
+  transform: translateY(-50%);
   flex: 0 0 auto;
-  margin-left: auto;
   opacity: 0;
   transition: opacity var(--tug-motion-duration-fast, 120ms) ease;
 }

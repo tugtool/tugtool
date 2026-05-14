@@ -106,6 +106,47 @@ const STATIC_10KB_CONTENT = generateMarkdown(10 * 1024);
 const STATIC_50KB_CONTENT = generateMarkdown(50 * 1024);
 const STATIC_1MB_CONTENT = generateMarkdown(1024 * 1024);
 
+/**
+ * A small, hand-authored document that exercises the [#step-3]
+ * markdown-extension surface — footnotes, smart-punctuation, GFM
+ * tables, and task lists — none of which the size-driven
+ * `generateMarkdown` repeats produce. The "Features" action dumps this
+ * so the extension parsers are visually verifiable in both themes.
+ */
+const STATIC_FEATURES_CONTENT = `# Markdown extension surface
+
+This card's size buttons stream *generated* prose; this document
+instead exercises the parser extensions added in the Tide
+typography pass.
+
+## Smart punctuation
+
+Straight quotes become curly: "rendered" and 'inline'. Dashes fold:
+an en-dash -- and an em-dash --- read distinctly. An ellipsis... too.
+
+## Footnotes
+
+The renderer resolves footnote references[^note] and collects the
+definitions at the foot of the document[^second].
+
+[^note]: A footnote definition — back-linked to its reference.
+[^second]: Footnotes may appear in any order in the source.
+
+## Table
+
+| Renderer        | Layer | Shipped in |
+|-----------------|-------|------------|
+| BashToolBlock   | 2     | #step-10-7 |
+| JsonTreeBlock   | 1     | #step-12   |
+| DefaultToolWrapper | 2  | #step-13   |
+
+## Task list
+
+- [x] FileBlock / DiffBlock / TerminalBlock
+- [x] BashToolBlock, ReadToolBlock, EditToolBlock
+- [ ] GlobToolBlock, GrepToolBlock, TaskToolBlock
+`;
+
 // ---------------------------------------------------------------------------
 // Dynamic chunk generation
 // ---------------------------------------------------------------------------
@@ -354,6 +395,14 @@ export function GalleryMarkdownView({ staticContentSize }: GalleryMarkdownViewPr
     markdownRef.current?.setRegion('static-' + Date.now(), content);
   }, [selectedSize]);
 
+  // ---- Action: Features ----
+  // Dumps the hand-authored extension-surface document (footnotes,
+  // smart-punct, tables, task lists) — independent of the size
+  // selector, which only drives the generated-prose actions.
+  const handleFeatures = useCallback(() => {
+    markdownRef.current?.setRegion("features-" + Date.now(), STATIC_FEATURES_CONTENT);
+  }, []);
+
   // ---- Action: Clear ----
   const handleClear = useCallback(() => {
     stopStreamingOnly();
@@ -446,6 +495,10 @@ export function GalleryMarkdownView({ staticContentSize }: GalleryMarkdownViewPr
 
         <TugPushButton emphasis="outlined" role="action" size="sm" onClick={handleStatic}>
           Static
+        </TugPushButton>
+
+        <TugPushButton emphasis="outlined" role="action" size="sm" onClick={handleFeatures}>
+          Features
         </TugPushButton>
 
         <TugPushButton emphasis="outlined" role="action" size="sm" onClick={handleClear}>

@@ -1,0 +1,13 @@
+/* ============================================================================
+   gallery-tide-thinking.css — layout-only scaffold for the
+   TideThinkingBlock gallery card.
+
+   No colour rules: every painted surface comes from `TideThinkingBlock`
+   itself (its `--tugx-thinking-*` / `--tugx-block-*` tokens). This file
+   only constrains section width so the thinking strips render at a
+   realistic Tide-card measure rather than the full gallery width.
+   ========================================================================= */
+
+.gallery-tide-thinking-section {
+  max-width: 720px;
+}
