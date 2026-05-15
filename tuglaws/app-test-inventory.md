@@ -21,7 +21,7 @@ The selection-plan history (`roadmap/tugplan-selection.md`) captures the elabora
 
 ## Adding a new tag
 
-1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0081** (AT0069 ships at Phase E.9; AT0070 was claimed and immediately released as a deferred-implementation tag; AT0071–AT0074 ship at Phase E.10; AT0075–AT0079 ship at Phase E.11; AT0071–AT0077 + AT0079 are retired at Phase E.12 — see entries below; AT0080–AT0081 ship at Phase E.12).
+1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0082** (AT0069 ships at Phase E.9; AT0070 was claimed and immediately released as a deferred-implementation tag; AT0071–AT0074 ship at Phase E.10; AT0075–AT0079 ship at Phase E.11; AT0071–AT0077 + AT0079 are retired at Phase E.12 — see entries below; AT0080–AT0081 ship at Phase E.12; AT0082 gates gallery-shipped-renderers).
 2. Add an entry below in the appropriate section (or create a section).
 3. State, in one line each: card types, state axes, trigger, status.
 4. Cross-link the elaborated entry in `roadmap/tugplan-selection.md` if applicable.

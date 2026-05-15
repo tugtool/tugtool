@@ -1,14 +1,28 @@
 /**
  * `TideTranscriptDataSource` — adapter that surfaces a `CodeSessionStore`
  * snapshot as a `TugListViewDataSource`. Each committed turn becomes two
- * adjacent rows (`user`, `code-committed`); the in-flight turn — if
- * present — appends another two rows (`user`, `code-streaming`) at the
- * end.
+ * adjacent rows (`user`, `code`); the in-flight turn — if present —
+ * appends another two rows (also `user`, `code`) at the end.
  *
  * Index layout (with `n = transcript.length`, `f = inflightUserMessage`):
  *
- *   indices 0..2n-1   committed turns, alternating user / code-committed.
+ *   indices 0..2n-1   committed turns, alternating user / code.
  *   indices 2n..2n+1  in-flight pair (only when f !== null).
+ *
+ * **Single `"code"` kind, zero remounts per turn.** Earlier revisions
+ * split the assistant row into `"code-streaming"` and `"code-committed"`
+ * with a corresponding two-entry `cellRenderers` map in the consumer.
+ * That split forced React to swap component types at every
+ * `turn_complete`, unmounting the cell wrapper and tearing down its
+ * `TugMarkdownBlock` subtree — manifesting as a user-visible scroll
+ * jump because `scrollHeight` collapsed below `clientHeight` for a
+ * frame and the browser silently clamped `scrollTop` to 0. The
+ * unified kind plus a stable per-turn `turnKey` (generated at
+ * `handleSend`, copied onto `TurnEntry` at `handleTurnComplete`)
+ * gives the React reconciler an identical key + identical component
+ * type on either side of `turn_complete`, so the cell wrapper
+ * survives unchanged. See {@link TideTranscriptCellKind} for the
+ * trap class the unification eliminates.
  *
  * The adapter does *not* hold its own subscription against the
  * `CodeSessionStore`; `subscribe` proxies straight through, and reads
@@ -18,26 +32,29 @@
  * dispatches and changes identity on every reducer tick.
  *
  * Cell renderers downstream call `rowAt(index)` to read the typed row
- * payload without round-tripping through the snapshot themselves; the
- * `TideRowDescriptor` shape mirrors the kind layout so a renderer can
- * narrow on `kind` and reach the right field.
+ * payload without round-tripping through the snapshot themselves. The
+ * row descriptor exposes `turnKey` on every `"code"` row so the
+ * consumer can derive its per-turn streaming PropertyStore paths
+ * (`turn.${turnKey}.assistant` / `.thinking` / `.tools`). After
+ * `turn_complete` those paths retain their final values forever (no
+ * subsequent turn writes to them), so the same streaming subscription
+ * the cell opened during in-flight continues to surface the right
+ * content after commit — without prop changes, without remounts.
  *
  * Laws / decisions:
  *  - [L02] data source enters React via `useSyncExternalStore` only;
  *    the adapter exposes the `subscribe` / `getVersion` shape that
- *    contract requires. The hook in this module wires the adapter
- *    construction to the store reference; the *list view* calls
- *    `useSyncExternalStore` against the adapter's contract.
+ *    contract requires.
+ *  - [L23] preserves user-visible state (scroll position) across
+ *    what was previously a teardown event — the cell wrapper now
+ *    survives every transition within a turn's life.
  *  - [D02] single-section flat list; flat indices, no `IndexPath`.
- *  - [D04] cell-reuse via item-keyed mount/unmount; the id-stability
- *    protocol below produces stable React keys across the in-flight
- *    → committed transition with at most one remount per turn.
- *  - [D06] streaming cells observe the streaming source directly; the
- *    `code-streaming` cell renderer (Step 11) reads
- *    `codeSessionStore.streamingDocument` itself rather than going
- *    through the data source on each delta.
+ *  - [D06] streaming cells observe the streaming source directly;
+ *    the consumer reads `codeSessionStore.streamingDocument`
+ *    against the per-turn paths derived from `row.turnKey`.
  *  - [D10] `inflightUserMessage` lives on the snapshot; the adapter
- *    reads it from there to mint the in-flight pair.
+ *    reads it from there to mint the in-flight pair (and pull out
+ *    the `turnKey` for id minting).
  */
 
 import { useEffect, useMemo } from "react";
@@ -54,33 +71,57 @@ import type { TugListViewDataSource } from "@/components/tugways/tug-list-view";
 // ---------------------------------------------------------------------------
 
 /**
- * The kinds the transcript adapter emits. Matched by the cell renderers
- * the Tide card registers in Step 11.
+ * Kinds the transcript adapter emits, matched against the
+ * `cellRenderers` map the Tide card registers.
+ *
+ * **One kind per row identity.** The assistant row uses a single
+ * `"code"` kind for its entire life — both while streaming and after
+ * commit. Earlier revisions split the row into `"code-streaming"` and
+ * `"code-committed"`, but that forced the `cellRenderers` map to hold
+ * two separate entries for what is structurally one row. With two
+ * entries, a future maintainer writing `"code-streaming": (p) =>
+ * <Renderer {...p}/>` and `"code-committed": (p) => <Renderer
+ * {...p}/>` as two inline lambdas — perfectly idiomatic React —
+ * silently re-introduces a scroll-jump-to-top regression: each kind
+ * resolves to a different function identity, so React unmounts the
+ * cell wrapper at the `turn_complete` boundary even though it should
+ * survive intact. The unified kind eliminates that class of bug at
+ * the source: the map literally cannot hold two entries because the
+ * row only reports one kind. The render component branches on row
+ * payload presence (`row.turn !== undefined` ⇒ committed) for the
+ * small chrome differences that genuinely vary by phase.
  */
-export type TideTranscriptCellKind = "user" | "code-committed" | "code-streaming";
+export type TideTranscriptCellKind = "user" | "code";
 
 /**
- * Typed row descriptor returned by `rowAt(index)`. Cell renderers narrow
- * on `kind` and read the matching payload field — `turn` for committed
- * rows, `inflight` for the in-flight `user` row, neither for the
- * in-flight `code-streaming` row (which observes the streaming document
- * directly per [D06]).
+ * Typed row descriptor returned by `rowAt(index)`. Cell renderers
+ * narrow on `kind` and read the matching payload field — `turn` for
+ * any committed row (`user` or `code`), `inflight` for the in-flight
+ * `user` row, neither for the in-flight `code` row (which observes
+ * the streaming document directly per [D06] via per-turn paths
+ * derived from `turnKey`). The unified `"code"` kind covers both
+ * in-flight and committed assistant rows; the renderer distinguishes
+ * the two by `row.turn !== undefined`.
  */
 export interface TideRowDescriptor {
   kind: TideTranscriptCellKind;
-  /** Set for `user` (committed) and `code-committed` rows. */
+  /** Set for every committed row (`user` and `code`). */
   turn?: TurnEntry;
   /** Set for the in-flight `user` row only. */
   inflight?: CodeSessionSnapshot["inflightUserMessage"];
+  /**
+   * Stable per-turn React-key seed. Present on every `code-*` row
+   * (both inflight and committed). The unified `CodeRowCell`
+   * derives its per-turn streaming paths from this key:
+   * `turn.${turnKey}.{assistant|thinking|tools}`. Crucially, the
+   * value is byte-identical across the inflight → committed
+   * transition (the reducer copies it from `pendingUserMessage` onto
+   * `TurnEntry`), so the cell's `TugMarkdownBlock` etc. observe the
+   * same PropertyStore path forever — no streaming-subscription
+   * re-init, no DOM reset, no `scrollHeight` collapse.
+   */
+  turnKey?: string;
 }
-
-/**
- * Sentinel used as the seed prefix for the in-flight pair before
- * `activeMsgId` is assigned (i.e. between `send` and the first
- * `assistant_text` delta). Exported for tests and for the `tide-card`
- * renderer that wants to assert on the seed-transition contract.
- */
-export const INFLIGHT_ID_SEED = "inflight";
 
 // ---------------------------------------------------------------------------
 // Adapter
@@ -106,53 +147,67 @@ export class TideTranscriptDataSource implements TugListViewDataSource {
   }
 
   /**
-   * Stable id per the id-stability protocol (see module docstring and
-   * [Step 10] of `tugplan-tug-list-view.md`):
+   * Stable React-key seed per the id-stability protocol:
    *
-   *  - Committed pair at offset `2k`/`2k+1`: `${msgId}-user` /
-   *    `${msgId}-code` where `msgId = transcript[k].msgId`.
    *  - In-flight pair (last two indices when `inflightUserMessage !==
-   *    null`): `${seed}-user` / `${seed}-code`, where `seed` is
-   *    `activeMsgId` if set, else the literal `"inflight"`.
+   *    null`): `${turnKey}-user` / `${turnKey}-code`, with `turnKey`
+   *    from `inflightUserMessage.turnKey`.
+   *  - Committed pair at offset `2k`/`2k+1`: `${turnKey}-user` /
+   *    `${turnKey}-code` with `turnKey` from `transcript[k].turnKey`.
    *
-   * The seed transition (from `"inflight"` to the real `activeMsgId`)
-   * happens once per turn at the awaiting-first-token → streaming
-   * boundary; it is the only id change a turn experiences. On
-   * `turn_complete(success)` the in-flight pair disappears and the
-   * matching committed pair appears with the same `${msgId}-...` ids,
-   * so the React reconciler matches the cells (the wrapper key stays
-   * stable; only the cell renderer underneath swaps because the kind
-   * changes from `code-streaming` to `code-committed`).
+   * `turnKey` is generated once at `handleSend` and copied unchanged
+   * onto `TurnEntry` at `handleTurnComplete` — so the in-flight pair's
+   * id is byte-identical to the committed pair's id for the same
+   * turn. React sees the same key + the same component type (the
+   * cellRenderers map holds one entry for the unified `"code"` kind),
+   * so the cell wrapper survives the inflight → committed transition
+   * with no unmount.
+   *
+   * `msgId` is the wire-correlation identifier and is intentionally
+   * NOT used here: it isn't assigned until the first streaming frame
+   * lands, which is mid-turn, so any id derived from it would change
+   * during the turn and trigger a remount.
    */
   idForIndex(index: number): string {
     const snap = this._codeSessionStore.getSnapshot();
     const committedCount = snap.transcript.length;
     const inflight = snap.inflightUserMessage;
 
+    // Use the per-turn React-key seed (`turnKey`) for both the
+    // in-flight and committed pair. `turnKey` is generated at
+    // `handleSend` on the `pendingUserMessage` and preserved through
+    // `handleTurnComplete` onto `TurnEntry.turnKey`, so the key is
+    // byte-identical across the inflight → committed transition.
+    // React reconciliation matches the cell wrapper — same key, same
+    // (unified) component type, same DOM identity, no unmount, no
+    // `scrollHeight` collapse, no silent browser `scrollTop` clamp.
     if (inflight !== null && index >= committedCount * 2) {
-      const seed = snap.activeMsgId ?? INFLIGHT_ID_SEED;
-      return index === committedCount * 2 ? `${seed}-user` : `${seed}-code`;
+      return index === committedCount * 2
+        ? `${inflight.turnKey}-user`
+        : `${inflight.turnKey}-code`;
     }
 
     const turn = snap.transcript[Math.floor(index / 2)];
-    return index % 2 === 0 ? `${turn.msgId}-user` : `${turn.msgId}-code`;
+    return index % 2 === 0 ? `${turn.turnKey}-user` : `${turn.turnKey}-code`;
   }
 
   /**
-   * Cell-renderer kind. Even committed indices are `"user"`, odd
-   * committed indices are `"code-committed"`. The in-flight pair (when
-   * present) is `"user"` then `"code-streaming"`.
+   * Cell-renderer kind. Even indices are `"user"`, odd indices are
+   * `"code"` — regardless of whether the pair is committed or
+   * in-flight. The unified `"code"` kind is what lets the
+   * `cellRenderers` map hold a single entry for the assistant row,
+   * which is what prevents the kind-flip-driven cell-wrapper
+   * unmount that caused the scroll-jump-to-top regression. See
+   * {@link TideTranscriptCellKind}.
    */
   kindForIndex(index: number): TideTranscriptCellKind {
-    const snap = this._codeSessionStore.getSnapshot();
-    const committedCount = snap.transcript.length;
-    const inflight = snap.inflightUserMessage;
-
-    if (inflight !== null && index >= committedCount * 2) {
-      return index === committedCount * 2 ? "user" : "code-streaming";
-    }
-
-    return index % 2 === 0 ? "user" : "code-committed";
+    // Single `"code"` kind for the assistant row, regardless of
+    // streaming/committed state — see {@link TideTranscriptCellKind}
+    // for the rationale (the unified kind eliminates the lambda-
+    // identity trap in `cellRenderers` that would otherwise re-mount
+    // the cell wrapper at `turn_complete`). The render component
+    // distinguishes phases via row payload presence, not via kind.
+    return index % 2 === 0 ? "user" : "code";
   }
 
   /**
@@ -168,15 +223,18 @@ export class TideTranscriptDataSource implements TugListViewDataSource {
 
     if (inflight !== null && index >= committedCount * 2) {
       if (index === committedCount * 2) {
-        return { kind: "user", inflight };
+        return { kind: "user", inflight, turnKey: inflight.turnKey };
       }
-      return { kind: "code-streaming" };
+      // Streaming assistant row — no `turn` payload yet; presence of
+      // `turn` is the cell's signal for committed-vs-streaming.
+      return { kind: "code", turnKey: inflight.turnKey };
     }
 
     const turn = snap.transcript[Math.floor(index / 2)];
     return {
-      kind: index % 2 === 0 ? "user" : "code-committed",
+      kind: index % 2 === 0 ? "user" : "code",
       turn,
+      turnKey: turn?.turnKey,
     };
   }
 

@@ -20,9 +20,9 @@
  *   - "markdown-streaming"— `<TugMarkdownBlock streamingStore={...}
  *                           streamingPath={...} />` driven by the same
  *                           shared `PropertyStore`; demonstrates the
- *                           per-cell streaming binding pattern that
- *                           the eventual transcript code-streaming
- *                           cell uses ([D06], [L22]).
+ *                           per-cell streaming binding pattern the
+ *                           transcript's unified `code` cell uses
+ *                           ([D06], [L22]).
  *
  * A header bar exposes four data-source mutators — insert at top,
  * insert at bottom, remove last, reset — for live mutation review.

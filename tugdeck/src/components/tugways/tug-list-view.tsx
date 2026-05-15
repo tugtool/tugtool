@@ -154,11 +154,20 @@ export interface TugListViewDataSource {
 
   /**
    * Cell-renderer kind for the item at `index`. Drives renderer
-   * dispatch (and, in a future imperative-pool implementation, reuse-
-   * pool routing). The same item may change kind across updates (e.g.
-   * `"code-streaming"` → `"code-committed"` on `turn_complete`); React
-   * reconciler sees this as a prop change if the id is stable, or as a
-   * remount if the id also changes.
+   * dispatch via `cellRenderers[kind]` (and, in a future
+   * imperative-pool implementation, reuse-pool routing).
+   *
+   * **Kind changes are a remount in disguise.** When `kindForIndex`
+   * returns a different value across renders for the same `id`, the
+   * list view picks a different lambda from the `cellRenderers` map.
+   * Even if both lambdas wrap the same inner component, React sees
+   * two distinct component types for the same React key and unmounts
+   * the wrapper subtree — collapsing scroll geometry, tearing down
+   * effects, breaking streaming subscriptions. If a data source has
+   * one logical row whose appearance evolves over time, prefer a
+   * single kind whose renderer branches on the row payload rather
+   * than two kinds with two renderers. (See the assistant row in
+   * `TideTranscriptDataSource` for the canonical example.)
    */
   kindForIndex(index: number): string;
 

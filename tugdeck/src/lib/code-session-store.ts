@@ -221,6 +221,14 @@ export class CodeSessionStore {
         "inflight.thinking": "",
         "inflight.tools": "[]",
       },
+      // Per-turn paths (`turn.${turnKey}.{channel}`) are minted at
+      // `handleSend` and observed by `CodeRowCell` for the rest of
+      // that turn's life — including after `turn_complete`, when
+      // the path retains its final value forever. The set of paths
+      // is unknowable at construction time; `dynamicPaths` lets
+      // them register on first write rather than requiring a
+      // brittle global enumeration.
+      dynamicPaths: true,
     });
 
     this.state = createInitialState(
@@ -658,14 +666,48 @@ export class CodeSessionStore {
   private processEffects(effects: Effect[]): void {
     for (const effect of effects) {
       switch (effect.kind) {
-        case "write-inflight":
+        case "write-inflight": {
+          // Dual write: per-turn path AND legacy in-flight path.
+          //
+          // The per-turn path (`turn.${turnKey}.${channel}`) is the
+          // architectural fix — the committed turn's cell continues
+          // to observe this same path after `turn_complete`, the path
+          // retains its final value forever (no subsequent turn ever
+          // writes to it, since each new turn mints a fresh
+          // `turnKey`), and the cell wrapper survives the
+          // inflight → committed transition without a React unmount.
+          // This is what eliminates the user-visible "scroll jumps
+          // to top" regression.
+          //
+          // The legacy in-flight path (`inflight.${channel}`) is
+          // kept in sync for back-compat: existing consumers that
+          // observe the snapshot's `streamingPaths.assistant` /
+          // `.thinking` / `.tools` string constants still see the
+          // current turn's live value, and the broad coverage in
+          // `code-session-store/__tests__/` that asserts on
+          // `streamingDocument.get("inflight.assistant")` continues
+          // to gate the reducer's accumulation logic. The
+          // `clear-inflight` effect zeroes ONLY the legacy paths at
+          // `turn_complete` (per-turn paths must persist so the
+          // committed cell can keep displaying its final content).
           this.streamingDocument.set(
-            effect.path,
+            `turn.${effect.turnKey}.${effect.channel}`,
+            effect.value,
+            STREAM_SOURCE_TAG,
+          );
+          const legacyPath = `inflight.${effect.channel}` as const;
+          this.streamingDocument.set(
+            legacyPath,
             effect.value,
             STREAM_SOURCE_TAG,
           );
           break;
+        }
         case "clear-inflight":
+          // Legacy `inflight.*` paths — kept zeroed for any
+          // straggler consumer that hasn't migrated to the per-turn
+          // paths. Per-turn paths are NOT cleared here; the committed
+          // cell needs them to retain their final values forever.
           this.streamingDocument.set(
             "inflight.assistant",
             "",

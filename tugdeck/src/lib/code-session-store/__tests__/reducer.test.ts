@@ -29,6 +29,32 @@ function fresh(): CodeSessionState {
   return createInitialState(FIXTURE_IDS.TUG_SESSION_ID, "test", "new");
 }
 
+/**
+ * `fresh()` augmented with a synthetic in-flight `pendingUserMessage`.
+ * Tests that exercise the in-turn handlers (text deltas, tool_use,
+ * tool_result) need the state to look like the reducer has run
+ * `handleSend` first — production code never reaches these handlers
+ * without an in-flight turn, and the streaming-write effects need
+ * `pendingUserMessage.turnKey` to construct the per-turn PropertyStore
+ * path. Provides a deterministic `turnKey` so test assertions on the
+ * path can be exact.
+ */
+function freshInflight(
+  phase: CodeSessionState["phase"] = "submitting",
+  turnKey: string = "test-turn-key",
+): CodeSessionState {
+  return {
+    ...fresh(),
+    phase,
+    pendingUserMessage: {
+      text: "",
+      atoms: [],
+      submitAt: 0,
+      turnKey,
+    },
+  };
+}
+
 function applyAll(
   state: CodeSessionState,
   events: ReadonlyArray<CodeSessionEvent>,
@@ -149,7 +175,7 @@ describe("reduce — session_init", () => {
 
 describe("reduce — assistant_text delta accumulation", () => {
   it("submitting → awaiting_first_token on the first partial, accumulates on subsequent", () => {
-    const s0: CodeSessionState = { ...fresh(), phase: "submitting" };
+    const s0: CodeSessionState = freshInflight("submitting");
 
     const r1 = reduce(s0, {
       type: "assistant_text",
@@ -160,7 +186,7 @@ describe("reduce — assistant_text delta accumulation", () => {
     expect(r1.state.phase).toBe("awaiting_first_token");
     expect(r1.state.activeMsgId).toBe(FIXTURE_IDS.MSG_ID);
     const w1 = effectsOfKind(r1.effects, "write-inflight");
-    expect(w1[0]?.path).toBe("inflight.assistant");
+    expect(w1[0]?.channel).toBe("assistant");
     expect(w1[0]?.value).toBe("alpha");
 
     const r2 = reduce(r1.state, {
@@ -175,7 +201,7 @@ describe("reduce — assistant_text delta accumulation", () => {
   });
 
   it("replaces scratch with authoritative text on is_partial:false", () => {
-    const s0: CodeSessionState = { ...fresh(), phase: "streaming" };
+    const s0: CodeSessionState = freshInflight("streaming");
     const seeded = new Map(s0.scratch);
     seeded.set(FIXTURE_IDS.MSG_ID, { assistant: "junk", thinking: "" });
     const s1: CodeSessionState = {
@@ -211,7 +237,7 @@ describe("reduce — assistant_text delta accumulation", () => {
 
 describe("reduce — thinking_text delta accumulation", () => {
   it("uses the thinking field of scratch and inflight.thinking path", () => {
-    const s0: CodeSessionState = { ...fresh(), phase: "submitting" };
+    const s0: CodeSessionState = freshInflight("submitting");
     const r1 = reduce(s0, {
       type: "thinking_text",
       msg_id: FIXTURE_IDS.MSG_ID,
@@ -227,8 +253,8 @@ describe("reduce — thinking_text delta accumulation", () => {
     expect(r2.state.phase).toBe("streaming");
     expect(r2.state.scratch.get(FIXTURE_IDS.MSG_ID)?.thinking).toBe("hmm ok");
     expect(r2.state.scratch.get(FIXTURE_IDS.MSG_ID)?.assistant).toBe("");
-    expect(effectsOfKind(r2.effects, "write-inflight")[0]?.path).toBe(
-      "inflight.thinking",
+    expect(effectsOfKind(r2.effects, "write-inflight")[0]?.channel).toBe(
+      "thinking",
     );
   });
 });
@@ -239,7 +265,7 @@ describe("reduce — thinking_text delta accumulation", () => {
 
 describe("reduce — tool_use", () => {
   it("submitting → tool_work on first tool_use; skips awaiting_first_token for tool-first turns", () => {
-    const s0: CodeSessionState = { ...fresh(), phase: "submitting" };
+    const s0: CodeSessionState = freshInflight("submitting");
     const { state, effects } = reduce(s0, {
       type: "tool_use",
       msg_id: FIXTURE_IDS.MSG_ID,
@@ -253,7 +279,7 @@ describe("reduce — tool_use", () => {
     );
 
     const inflight = effectsOfKind(effects, "write-inflight");
-    expect(inflight[0]?.path).toBe("inflight.tools");
+    expect(inflight[0]?.channel).toBe("tools");
     const parsed = JSON.parse(inflight[0]?.value ?? "[]");
     expect(parsed.length).toBe(1);
     expect(parsed[0].toolName).toBe("Read");

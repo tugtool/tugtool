@@ -56,6 +56,22 @@ import type {
   TurnEntry,
 } from "./types";
 
+/**
+ * Mint a stable per-turn key. Used as the React-key seed for the
+ * inflight cell pair and preserved unchanged through commit into
+ * `TurnEntry.turnKey`. The key need not be cryptographically
+ * unique — `crypto.randomUUID()` when available, with a
+ * timestamp + random fallback for older runtimes. The reducer
+ * stays pure: this is the only impurity here, scoped to a single
+ * helper that returns a string each call.
+ */
+function mintTurnKey(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `turn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 /** Reducer-internal state. Not exposed to consumers. */
 export interface CodeSessionState {
   phase: CodeSessionPhase;
@@ -91,6 +107,19 @@ export interface CodeSessionState {
     text: string;
     atoms: ReadonlyArray<AtomSegment>;
     submitAt: number;
+    /**
+     * Stable React-key seed for the in-flight cell pair. Generated at
+     * `handleSend` and preserved unchanged through every phase of the
+     * turn. The transcript's `idForIndex` uses it to mint the user +
+     * code cell ids; the same `turnKey` is copied onto `TurnEntry` at
+     * `handleTurnComplete`, so the React key stays identical across
+     * the inflight → committed transition. The single React key for
+     * the lifetime of a turn is the foundation that prevents the
+     * cell wrapper from unmounting mid-turn (which previously caused
+     * `scrollTop` to silently clamp to 0 when streaming content
+     * remounted).
+     */
+    turnKey: string;
   } | null;
   /**
    * One-shot draft restore for CASE A interrupt — `interrupt()` fired
@@ -272,6 +301,7 @@ function handleSend(
         text: event.text,
         atoms: event.atoms,
         submitAt: Date.now(),
+        turnKey: mintTurnKey(),
       },
       // The user is moving on to a new turn. The prompt-entry editor
       // consumes `pendingDraftRestore` synchronously via
@@ -465,7 +495,7 @@ function handleTextDelta(
   state: CodeSessionState,
   event: AssistantTextEvent | ThinkingTextEvent,
   field: "assistant" | "thinking",
-  inflightPath: InflightPath,
+  channel: "assistant" | "thinking",
 ): { state: CodeSessionState; effects: Effect[] } {
   // Incoming text outside of an active turn — drop. Live Claude
   // should not emit this, but defensive handling keeps the reducer
@@ -509,10 +539,16 @@ function handleTextDelta(
   // surface the user reads — replay-committed turns render from
   // `transcript`. Skip the write-inflight effect so a replayed turn's
   // partial text doesn't briefly appear in the in-flight pane.
+  // The per-turn streaming path needs a `turnKey`. Live phases always
+  // have `pendingUserMessage` set (handleSend sets it on entry to
+  // `submitting`; turn_complete clears it). Replay suppresses the
+  // write-inflight effect entirely, so the `null` branch below only
+  // fires for that suppressed path.
+  const turnKey = state.pendingUserMessage?.turnKey;
   const effects: Effect[] =
-    state.phase === "replaying"
+    state.phase === "replaying" || turnKey === undefined
       ? []
-      : [{ kind: "write-inflight", path: inflightPath, value: buffer }];
+      : [{ kind: "write-inflight", turnKey, channel, value: buffer }];
 
   return {
     state: {
@@ -619,11 +655,19 @@ function handleToolUse(
   const effects: Effect[] = isReplaying
     ? []
     : [
-        {
-          kind: "write-inflight",
-          path: "inflight.tools",
-          value: serializeToolCalls(toolCallMap),
-        },
+        // Per-turn path; turnKey lookup guarded above by the
+        // `isReplaying` / `turnKey === undefined` check that prevents
+        // the effect entirely if there's no in-flight turn.
+        ...(state.pendingUserMessage !== null
+          ? [
+              {
+                kind: "write-inflight" as const,
+                turnKey: state.pendingUserMessage.turnKey,
+                channel: "tools" as const,
+                value: serializeToolCalls(toolCallMap),
+              },
+            ]
+          : []),
       ];
 
   return {
@@ -678,11 +722,19 @@ function handleToolResult(
   const effects: Effect[] = isReplaying
     ? []
     : [
-        {
-          kind: "write-inflight",
-          path: "inflight.tools",
-          value: serializeToolCalls(toolCallMap),
-        },
+        // Per-turn path; turnKey lookup guarded above by the
+        // `isReplaying` / `turnKey === undefined` check that prevents
+        // the effect entirely if there's no in-flight turn.
+        ...(state.pendingUserMessage !== null
+          ? [
+              {
+                kind: "write-inflight" as const,
+                turnKey: state.pendingUserMessage.turnKey,
+                channel: "tools" as const,
+                value: serializeToolCalls(toolCallMap),
+              },
+            ]
+          : []),
       ];
 
   return {
@@ -737,11 +789,19 @@ function handleToolUseStructured(
   const effects: Effect[] = isReplaying
     ? []
     : [
-        {
-          kind: "write-inflight",
-          path: "inflight.tools",
-          value: serializeToolCalls(toolCallMap),
-        },
+        // Per-turn path; turnKey lookup guarded above by the
+        // `isReplaying` / `turnKey === undefined` check that prevents
+        // the effect entirely if there's no in-flight turn.
+        ...(state.pendingUserMessage !== null
+          ? [
+              {
+                kind: "write-inflight" as const,
+                turnKey: state.pendingUserMessage.turnKey,
+                channel: "tools" as const,
+                value: serializeToolCalls(toolCallMap),
+              },
+            ]
+          : []),
       ];
 
   return {
@@ -857,6 +917,12 @@ function handleTurnComplete(
   const isSuccess = event.result === "success";
   const entry: TurnEntry = {
     msgId,
+    // Preserve the React-key seed from the in-flight pendingUserMessage
+    // so the committed cell renders with the SAME React key as the
+    // streaming cell did. If no pendingUserMessage exists (replay path
+    // that bypasses handleSend), mint a fresh key — replay-committed
+    // turns never have an in-flight predecessor to align with.
+    turnKey: state.pendingUserMessage?.turnKey ?? mintTurnKey(),
     userMessage: {
       text: state.pendingUserMessage?.text ?? "",
       attachments: state.pendingUserMessage?.atoms ?? [],
@@ -923,6 +989,7 @@ function handleTurnComplete(
           text: next.text,
           atoms: next.atoms,
           submitAt: Date.now(),
+          turnKey: mintTurnKey(),
         },
         queuedSends: rest,
         lastError: null,
@@ -1579,6 +1646,7 @@ function handleUserMessageReplay(
         text: event.text,
         atoms: attachments,
         submitAt: Date.now(),
+        turnKey: mintTurnKey(),
       },
       activeMsgId: event.msg_id,
     },
@@ -1700,9 +1768,9 @@ export function reduce(
     case "session_init":
       return handleSessionInit(state, event);
     case "assistant_text":
-      return handleTextDelta(state, event, "assistant", "inflight.assistant");
+      return handleTextDelta(state, event, "assistant", "assistant");
     case "thinking_text":
-      return handleTextDelta(state, event, "thinking", "inflight.thinking");
+      return handleTextDelta(state, event, "thinking", "thinking");
     case "tool_use":
       return handleToolUse(state, event);
     case "tool_result":

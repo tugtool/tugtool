@@ -14,7 +14,22 @@ import type { InboundMessage } from "@/protocol";
 import type { CodeSessionEvent } from "./events";
 import type { TurnEntry } from "./types";
 
-/** Stable path keys for the in-flight streaming document (). */
+/** Logical channel a streaming write targets. The processor combines
+ *  this with the turn's React-key (`turnKey`) to form the final
+ *  PropertyStore path: `turn.${turnKey}.${channel}`. Per-turn paths
+ *  mean a committed cell can keep observing its own path forever
+ *  without being polluted by the next turn's writes — the foundation
+ *  that lets the unified streaming-cell renderer stay mounted across
+ *  the inflight → committed transition without scroll-jump
+ *  regressions.
+ */
+export type StreamChannel = "assistant" | "thinking" | "tools";
+
+/**
+ * Legacy path union kept for the snapshot's `streamingPaths` field, which
+ * a handful of older consumers still read. Streaming writes themselves
+ * are now per-turn (see {@link StreamChannel}).
+ */
 export type InflightPath =
   | "inflight.assistant"
   | "inflight.thinking"
@@ -22,7 +37,10 @@ export type InflightPath =
 
 export interface WriteInflightEffect {
   kind: "write-inflight";
-  path: InflightPath;
+  /** Turn-stable React-key seed; combines with `channel` into the
+   *  per-turn PropertyStore path. */
+  turnKey: string;
+  channel: StreamChannel;
   value: string;
 }
 

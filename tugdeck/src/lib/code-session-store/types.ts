@@ -83,6 +83,22 @@ export interface ToolCallState {
  * (`turn_complete(error)`) and any preserved-text interrupt path.
  */
 export interface TurnEntry {
+  /**
+   * Stable React-key seed for this turn's cell pair (user + code).
+   * Generated at `handleSend` on the corresponding `pendingUserMessage`
+   * and preserved unchanged across the inflight → committed
+   * transition. The transcript data source uses it to mint
+   * `idForIndex` so the React key for the streaming cell stays
+   * identical when it becomes the committed cell — preventing the
+   * cell wrapper from unmounting at `turn_complete`, which previously
+   * caused `scrollTop` to silently clamp to 0.
+   *
+   * Distinct from `msgId`: `msgId` is the wire-correlation identifier
+   * assigned by the backend (used to match streaming frames to their
+   * turn); `turnKey` is a client-only key, generated at submit time,
+   * meaningful only to React reconciliation.
+   */
+  turnKey: string;
   msgId: string;
   userMessage: {
     text: string;
@@ -263,6 +279,15 @@ export interface CodeSessionSnapshot {
      * without waiting for the matching `TurnEntry` to commit.
      */
     submitAt: number;
+    /**
+     * Stable React-key seed for the in-flight cell pair, preserved
+     * unchanged from `handleSend` through `handleTurnComplete` (the
+     * committed `TurnEntry` carries the same value via
+     * `TurnEntry.turnKey`). The transcript data source uses it to mint
+     * `idForIndex` — same React key inflight + committed → no cell
+     * unmount at turn boundary.
+     */
+    turnKey: string;
   } | null;
 
   /**

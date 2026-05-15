@@ -3,21 +3,35 @@
  * card top pane.
  *
  * Mounts a `TugListView` against a `TideTranscriptDataSource` and
- * registers three cell renderers:
+ * registers two cell renderers, one per row kind:
  *
  *   - `user` — `TugTranscriptEntry participant="user"` whose body is a
  *     plain `<span>` carrying `userMessage.text`. Per [D11], v1 user
  *     bodies are plain text; atom-aware rendering lands once the
  *     prompt-entry's atom flow reaches transcript form.
- *   - `code-committed` — `TugTranscriptEntry participant="code"` whose
- *     body is `<TugMarkdownBlock initialText={turn.assistant} />`. The
- *     block paints synchronously on mount per the [#md-block-api]
- *     mount-render contract — there is no empty intermediate render
- *     between the streaming cell unmount and the committed cell mount.
- *   - `code-streaming` — `TugTranscriptEntry participant="code"` whose
- *     body is `<TugMarkdownBlock streamingStore=... streamingPath=...
- *     />`. The block observes the streaming document directly per
- *     [D06] / [L22]; deltas do NOT round-trip through the data source.
+ *   - `code` — `TugTranscriptEntry participant="code"` rendered by a
+ *     single `CodeRowCell` component for the assistant row's entire
+ *     life (both in-flight and committed). `TugMarkdownBlock` (and
+ *     siblings `TideThinkingBlock` / `TranscriptToolCalls`) stay in
+ *     streaming mode forever, observing per-turn PropertyStore paths
+ *     derived from `row.turnKey`: `turn.${turnKey}.assistant` /
+ *     `.thinking` / `.tools`. After `turn_complete` those paths
+ *     retain their final values (no other turn writes to them), so
+ *     the same streaming subscription keeps surfacing the right
+ *     content without any prop change or remount.
+ *
+ * **One kind per row identity, one renderer per kind.** Earlier
+ * revisions split the assistant row into `code-streaming` /
+ * `code-committed` kinds with two separate `cellRenderers` entries.
+ * At `turn_complete` React swapped component types — the cell
+ * wrapper unmounted, `TugMarkdownBlock` died with it, the
+ * scrollport's `scrollHeight` collapsed below `clientHeight` for a
+ * frame, and the browser silently clamped `scrollTop` to 0. The
+ * user saw this as the transcript jumping to the top right when the
+ * assistant's reply was committed. The single-kind data source
+ * (see {@link TideTranscriptCellKind}) makes the `cellRenderers`
+ * map structurally hold only one entry for the assistant row, so
+ * the trap that produced that bug cannot recur.
  *
  * Identifier resolution: the `code` row's identifier is the active
  * model name from `SessionMetadataStore` (e.g. `"claude-3.7-sonnet"`),
@@ -32,6 +46,14 @@
  * Token sovereignty: `.tide-card-transcript .tug-list-view { ... }`
  * cascade-scoped overrides live in `tide-card.css` per [D12]. The
  * primitive's token surface stays untouched.
+ *
+ * Tuglaws:
+ *  - [L02] `CodeRowCell` reads `pendingApproval` / `controlRequestLog`
+ *    via `useSyncExternalStore`.
+ *  - [L22] `TugMarkdownBlock` observes the `PropertyStore` directly
+ *    and writes the DOM imperatively per delta.
+ *  - [L23] preserves scroll position across what was previously a
+ *    teardown event (the in-flight → committed transition).
  */
  
 import React, {
@@ -67,6 +89,7 @@ import type { ActionHandlerResult } from "@/components/tugways/responder-chain";
 import { useResponder } from "@/components/tugways/use-responder";
 import { useTextSurfaceContextMenu } from "@/components/tugways/use-text-surface-context-menu";
 import type { CodeSessionStore } from "@/lib/code-session-store";
+import type { ControlRequestForward } from "@/lib/code-session-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { ResponseSettingsStore } from "@/lib/response-settings-store";
 import {
@@ -391,66 +414,149 @@ const UserRowCell: React.FC<UserRowCellProps> = ({ index, dataSource }) => {
   );
 };
 
-interface CodeCommittedRowCellProps extends TugListViewCellProps<TideTranscriptDataSource> {
+// ---------------------------------------------------------------------------
+// `CodeRowCell` — single renderer for the assistant row.
+//
+// Handles both the in-flight phase (data flowing from the live
+// `streamingDocument` / `controlRequestLog` / `pendingApproval`) AND
+// the committed phase (data on `row.turn`) inside one component
+// instance. The cell wrapper React keys by `turnKey`, which is
+// byte-identical inflight + committed, so the wrapper survives
+// `turn_complete` without an unmount. Its in-place children stay
+// subscribed to the SAME per-turn PropertyStore paths
+// (`turn.${turnKey}.assistant` etc.), `scrollHeight` does not
+// collapse, and the browser has nothing to clamp.
+//
+// All streaming children (`TideThinkingBlock`,
+// `TranscriptToolCalls`, `TugMarkdownBlock`) render in
+// streaming-mode regardless of phase, pointed at the turn's
+// per-turn paths. After commit, those paths retain their final
+// values forever (no new writes from any source), so the same
+// `TugMarkdownBlock` instance that streamed the response continues
+// to display the final text — no prop change, no remount. The DOM
+// diff React performs across the transition is therefore minimal:
+// only the conditional chrome (timestamp, copy button, interrupted
+// badge for committed; live-dialog vs resolved-record source for
+// the permission slot) changes.
+// ---------------------------------------------------------------------------
+
+interface CodeRowCellProps extends TugListViewCellProps<TideTranscriptDataSource> {
   modelName: string | null;
   codeSessionStore: CodeSessionStore;
+  streamingStore: PropertyStore;
 }
 
-const CodeCommittedRowCell: React.FC<CodeCommittedRowCellProps> = ({
+const CodeRowCell: React.FC<CodeRowCellProps> = ({
   index,
   dataSource,
   modelName,
   codeSessionStore,
+  streamingStore,
 }) => {
   const row = dataSource.rowAt(index);
+  // `turnKey` is set for every code row by `rowAt`. The fallback
+  // string is defensive; it should never fire in practice.
+  const turnKey = row.turnKey ?? "missing-turn-key";
+  const assistantPath = `turn.${turnKey}.assistant`;
+  const thinkingPath = `turn.${turnKey}.thinking`;
+  const toolsPath = `turn.${turnKey}.tools`;
+  // Committed-ness is "a TurnEntry exists for this row" — derived
+  // from data, not from a separate kind enum. Using `row.turn` keeps
+  // the branching tied to the actual payload the cell needs, so
+  // there's no opportunity for kind and payload to disagree.
   const turn = row.turn;
-  // Same defensive guard as `UserRowCell` — out-of-range row reads
-  // should never happen, but if one slips through (e.g. a stale
-  // re-render against a shrunk transcript) we render an empty body
-  // rather than crash on `undefined.assistant`.
+  const isCommitted = turn !== undefined;
   const assistantText = turn?.assistant ?? "";
-  const thinkingText = turn?.thinking ?? "";
   const isInterrupted = turn?.result === "interrupted";
-  const timestamp = turn !== undefined
-    ? formatTranscriptTimestamp(turn.endedAt)
-    : undefined;
+  const timestamp =
+    turn !== undefined ? formatTranscriptTimestamp(turn.endedAt) : undefined;
   const handleCopyButton = useCallback(() => {
     if (assistantText.length === 0) return;
     void navigator.clipboard?.writeText(assistantText);
   }, [assistantText]);
-  // No copy affordance when there's nothing to copy — e.g. CASE A
-  // interrupts where the turn ended before any assistant content
-  // landed leave the body as just the "Interrupted" badge.
-  const hasBody = assistantText.length > 0;
+  const hasCopyBody = isCommitted && assistantText.length > 0;
 
-  // Permission prompts the user answered during this turn — the
-  // permanent transcript artifact per [D13]. Each resolved record is
-  // routed through the assistant renderer dispatch ([D01]) carrying
-  // its `resolvedDecision`, so the dialog mounts straight into its
-  // collapsed static record. Renders ABOVE the tool calls so a
-  // committed turn reads in chronological order: approval → tool
-  // ran → output → assistant summary. The live streaming row mirrors
-  // this placement so the slot is consistent before and after commit.
-  const controlRequests = turn?.controlRequests ?? [];
-  const permissionRecords =
-    controlRequests.length > 0
-      ? controlRequests.map((record, recordIndex) => {
-          const { Component, props } = dispatchRenderInput(
-            {
-              kind: "permission",
-              request: record.request,
-              resolvedDecision: record.decision,
-            },
-            {
-              store: codeSessionStore.streamingDocument,
-              session: codeSessionStore,
-            },
-          );
-          return (
-            <Component key={record.request.request_id || recordIndex} {...props} />
-          );
-        })
-      : null;
+  // Permission slot — built from committed `turn.controlRequests` when
+  // the cell is past `turn_complete`, otherwise from the live
+  // `controlRequestLog` + `pendingApproval` pair the streaming row
+  // observes. Both code paths emit the SAME `<Component key=request_id />`
+  // shape, so React reconciles per-record in place across the
+  // transition: each dialog instance survives the inflight → committed
+  // boundary even as the source of truth swaps.
+  const pendingApproval = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    useCallback(
+      () => codeSessionStore.getSnapshot().pendingApproval,
+      [codeSessionStore],
+    ),
+  );
+  const controlRequestLog = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    useCallback(
+      () => codeSessionStore.getSnapshot().controlRequestLog,
+      [codeSessionStore],
+    ),
+  );
+  const permissionSlot = useMemo<React.ReactNode>(() => {
+    type SlotEntry = {
+      request: ControlRequestForward;
+      resolvedDecision?: "allow" | "deny";
+    };
+    let entries: SlotEntry[];
+    if (isCommitted) {
+      const records = turn?.controlRequests ?? [];
+      entries = records.map((record) => ({
+        request: record.request,
+        resolvedDecision: record.decision,
+      }));
+    } else {
+      entries = controlRequestLog.map((record) => ({
+        request: record.request,
+        resolvedDecision: record.decision ?? undefined,
+      }));
+      if (pendingApproval !== null && !pendingApproval.is_question) {
+        const dup = entries.some(
+          (e) => e.request.request_id === pendingApproval.request_id,
+        );
+        if (!dup) entries.push({ request: pendingApproval });
+      }
+    }
+    if (entries.length === 0) return null;
+    return entries.map((entry, idx) => {
+      const { Component, props } = dispatchRenderInput(
+        {
+          kind: "permission",
+          request: entry.request,
+          resolvedDecision: entry.resolvedDecision,
+        },
+        { store: streamingStore, session: codeSessionStore },
+      );
+      return (
+        <Component
+          key={entry.request.request_id || `permission-${idx}`}
+          {...props}
+        />
+      );
+    });
+  }, [
+    isCommitted,
+    turn,
+    controlRequestLog,
+    pendingApproval,
+    codeSessionStore,
+    streamingStore,
+  ]);
+
+  // In-flight `msg_id` threaded onto streaming tool wrappers. For
+  // committed rows we already have the canonical `turn.msgId`.
+  const inflightMsgId = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    useCallback(
+      () => codeSessionStore.getSnapshot().activeMsgId ?? "",
+      [codeSessionStore],
+    ),
+  );
+  const toolMsgId = isCommitted ? (turn?.msgId ?? "") : inflightMsgId;
 
   const { ResponderScope, cellProps, bodyRef, menu } =
     useTranscriptCellMenu();
@@ -460,38 +566,25 @@ const CodeCommittedRowCell: React.FC<CodeCommittedRowCellProps> = ({
         <TugTranscriptEntry
           participant="code"
           identifier={modelName ?? CODE_DEFAULT_IDENTIFIER}
-          timestamp={timestamp === "" ? undefined : timestamp}
+          timestamp={
+            timestamp === "" || timestamp === undefined ? undefined : timestamp
+          }
           sequenceNumber={index + 1}
           body={
-            // The committed body is the assistant markdown followed (when
-            // the turn was interrupted) by a trailing "Interrupted" badge.
-            // Mirrors the trailing-indicator placement in Claude Code's
-            // terminal output — the indicator sits AFTER any partial
-            // content the assistant produced before being cut off, and is
-            // the only visible body for a CASE A interrupt where no
-            // content ever landed (assistantText === "").
-            //
-            // The thinking strip (when present) renders above the
-            // assistant markdown per Table T03 ("inline at top of code
-            // row") with default-collapsed-on-complete chrome per [D14].
-            //
-            // Tool calls render between thinking and assistant per
-            // [#step-6-5] (the natural conversation order: tool runs,
-            // then the assistant summarizes). `<TranscriptToolCalls>`
-            // self-hides for tool-free turns.
             <div ref={(el) => { bodyRef.current = el; }}>
-              {thinkingText !== "" ? (
-                <TideThinkingBlock initialText={thinkingText} />
-              ) : null}
-              {permissionRecords}
-              {turn !== undefined && turn.toolCalls.length > 0 ? (
-                <TranscriptToolCalls
-                  toolCalls={turn.toolCalls}
-                  msgId={turn.msgId}
-                />
-              ) : null}
+              <TideThinkingBlock
+                streamingStore={streamingStore}
+                streamingPath={thinkingPath}
+              />
+              {permissionSlot}
+              <TranscriptToolCalls
+                streamingStore={streamingStore}
+                streamingPath={toolsPath}
+                msgId={toolMsgId}
+              />
               <TugMarkdownBlock
-                initialText={assistantText}
+                streamingStore={streamingStore}
+                streamingPath={assistantPath}
                 className="tide-card-transcript-code-body"
               />
               {isInterrupted ? (
@@ -512,7 +605,7 @@ const CodeCommittedRowCell: React.FC<CodeCommittedRowCellProps> = ({
             </div>
           }
           controls={
-            hasBody ? (
+            hasCopyBody ? (
               <TugPushButton
                 subtype="icon"
                 emphasis="ghost"
@@ -535,153 +628,6 @@ const CodeCommittedRowCell: React.FC<CodeCommittedRowCellProps> = ({
   );
 };
 
-interface CodeStreamingRowCellProps extends TugListViewCellProps<TideTranscriptDataSource> {
-  modelName: string | null;
-  codeSessionStore: CodeSessionStore;
-  streamingStore: PropertyStore;
-  streamingPath: string;
-  thinkingStreamingPath: string;
-  toolsStreamingPath: string;
-  /**
-   * In-flight `msg_id` for the streaming turn. Threaded onto each
-   * tool wrapper's props via `<TranscriptToolCalls>`. Empty string
-   * is acceptable while `activeMsgId` is null (cold start of a turn
-   * before the first event arrives) — wrapper visual output doesn't
-   * depend on `msgId` identity.
-   */
-  inflightMsgId: string;
-}
-
-const CodeStreamingRowCell: React.FC<CodeStreamingRowCellProps> = ({
-  index,
-  modelName,
-  codeSessionStore,
-  streamingStore,
-  streamingPath,
-  thinkingStreamingPath,
-  toolsStreamingPath,
-  inflightMsgId,
-}) => {
-  const { ResponderScope, cellProps, bodyRef, menu } =
-    useTranscriptCellMenu();
-
-  // The permission slot for the in-flight turn. We render *both* the
-  // resolved records accumulated during this turn (from
-  // `controlRequestLog`) AND the live pending request (if any) in a
-  // single ordered list — keyed by `request_id` so React reuses the
-  // same `PermissionDialog` instance when a request transitions
-  // pending → resolved. That keeps the dialog→record collapse
-  // *in place* (same DOM position, same component instance, same
-  // local state) instead of unmounting the live dialog into a gap
-  // and re-mounting a fresh resolved record on the committed-row swap
-  // at turn-complete — which is what made the post-approval
-  // transition feel haphazard.
-  //
-  // [L02] external state via `useSyncExternalStore`; the snapshot
-  // exposes `controlRequestLog` and `pendingApproval` with stable
-  // references between dispatches that don't touch them.
-  const pendingApproval = useSyncExternalStore(
-    codeSessionStore.subscribe,
-    useCallback(
-      () => codeSessionStore.getSnapshot().pendingApproval,
-      [codeSessionStore],
-    ),
-  );
-  const controlRequestLog = useSyncExternalStore(
-    codeSessionStore.subscribe,
-    useCallback(
-      () => codeSessionStore.getSnapshot().controlRequestLog,
-      [codeSessionStore],
-    ),
-  );
-  const permissionSlot = useMemo<React.ReactNode>(() => {
-    // Each entry carries the request the dialog renders, plus an
-    // optional resolved decision. Resolved records always come first
-    // (chronological order); the live pending request, when present
-    // and not a question, comes last.
-    type SlotEntry = {
-      request: typeof controlRequestLog[number]["request"];
-      resolvedDecision?: "allow" | "deny";
-    };
-    const entries: SlotEntry[] = controlRequestLog.map((record) => ({
-      request: record.request,
-      resolvedDecision: record.decision ?? undefined,
-    }));
-    if (pendingApproval !== null && !pendingApproval.is_question) {
-      // Defensive de-dupe: if a record with the same request_id has
-      // already landed in the log, skip the pending push so React
-      // doesn't see two siblings with the same key. The reducer
-      // doesn't currently produce this state, but guarding here keeps
-      // the slot well-formed under any future reducer change.
-      const dup = entries.some(
-        (e) => e.request.request_id === pendingApproval.request_id,
-      );
-      if (!dup) entries.push({ request: pendingApproval });
-    }
-    if (entries.length === 0) return null;
-    return entries.map((entry, idx) => {
-      const { Component, props } = dispatchRenderInput(
-        {
-          kind: "permission",
-          request: entry.request,
-          resolvedDecision: entry.resolvedDecision,
-        },
-        { store: streamingStore, session: codeSessionStore },
-      );
-      return (
-        <Component
-          key={entry.request.request_id || `permission-${idx}`}
-          {...props}
-        />
-      );
-    });
-  }, [controlRequestLog, pendingApproval, codeSessionStore, streamingStore]);
-
-  return (
-    <ResponderScope>
-      <div {...cellProps}>
-        <TugTranscriptEntry
-          participant="code"
-          identifier={modelName ?? CODE_DEFAULT_IDENTIFIER}
-          sequenceNumber={index + 1}
-          body={
-            // Thinking strip subscribes to `streamingPaths.thinking`
-            // and self-hides until non-empty content arrives — a turn
-            // that produces no thinking shows no chrome. On
-            // `turn_complete`, this streaming row unmounts and the
-            // committed row above mounts a fresh `TideThinkingBlock`
-            // in static mode (default-collapsed per [D14]).
-            //
-            // Tool calls render between thinking and assistant per
-            // [#step-6-5]. `<TranscriptToolCalls>` subscribes to
-            // `inflight.tools` directly via `useSyncExternalStore`
-            // ([L02]); each emission re-routes through the dispatch.
-            // The same wrapper instance reconciles in place across a
-            // `pending → done` transition (keyed by `toolUseId`).
-            <div ref={(el) => { bodyRef.current = el; }}>
-              <TideThinkingBlock
-                streamingStore={streamingStore}
-                streamingPath={thinkingStreamingPath}
-              />
-              {permissionSlot}
-              <TranscriptToolCalls
-                streamingStore={streamingStore}
-                streamingPath={toolsStreamingPath}
-                msgId={inflightMsgId}
-              />
-              <TugMarkdownBlock
-                streamingStore={streamingStore}
-                streamingPath={streamingPath}
-                className="tide-card-transcript-code-body"
-              />
-            </div>
-          }
-        />
-      </div>
-      {menu}
-    </ResponderScope>
-  );
-};
 
 // ---------------------------------------------------------------------------
 // Host
@@ -734,72 +680,41 @@ export const TideTranscriptHost = forwardRef<
   const dataSource = useTideTranscriptDataSource(codeSessionStore);
   const modelName = useSessionModelName(sessionMetadataStore);
   const streamingStore = codeSessionStore.streamingDocument;
-  // The streaming-path tokens are literals on the snapshot's
-  // `streamingPaths.{assistant,thinking,tools}`; read once per store
-  // binding so the values participate in the `cellRenderers` memo
-  // without churning identity on every snapshot tick.
-  const streamingPath = useMemo(
-    () => codeSessionStore.getSnapshot().streamingPaths.assistant,
-    [codeSessionStore],
-  );
-  const thinkingStreamingPath = useMemo(
-    () => codeSessionStore.getSnapshot().streamingPaths.thinking,
-    [codeSessionStore],
-  );
-  const toolsStreamingPath = useMemo(
-    () => codeSessionStore.getSnapshot().streamingPaths.tools,
-    [codeSessionStore],
-  );
 
-  // In-flight `msg_id` for the streaming row's tool-call props
-  // ([#step-6-5]). `activeMsgId` is null until the first event of a
-  // turn lands; the streaming card is allowed to render with an
-  // empty msgId in that window — wrapper visual output doesn't
-  // depend on identity. Subscribed via `useSyncExternalStore` ([L02])
-  // so the streaming row picks up the id the moment the reducer
-  // populates it.
-  const inflightMsgId = useSyncExternalStore(
-    codeSessionStore.subscribe,
-    useCallback(
-      () => codeSessionStore.getSnapshot().activeMsgId ?? "",
-      [codeSessionStore],
+  // One renderer per kind. With the data source unified to a single
+  // `"code"` kind for assistant rows (no separate
+  // `"code-streaming"` / `"code-committed"`), this map structurally
+  // cannot hold two entries for the same row — eliminating the
+  // lambda-identity trap that would otherwise re-mount the cell
+  // wrapper at `turn_complete` and trigger a user-visible scroll
+  // jump. The `CodeRowCell` component branches internally on
+  // `row.turn !== undefined` for the chrome differences that
+  // genuinely vary by phase (timestamp, copy button, interrupted
+  // badge, permission-record vs live-dialog source).
+  const codeRenderer = useCallback<
+    TugListViewCellRenderer<TideTranscriptDataSource>
+  >(
+    (p) => (
+      <CodeRowCell
+        {...p}
+        modelName={modelName}
+        codeSessionStore={codeSessionStore}
+        streamingStore={streamingStore}
+      />
     ),
+    [modelName, codeSessionStore, streamingStore],
   );
-
+  const userRenderer = useCallback<
+    TugListViewCellRenderer<TideTranscriptDataSource>
+  >((p) => <UserRowCell {...p} />, []);
   const cellRenderers = useMemo<
     Record<string, TugListViewCellRenderer<TideTranscriptDataSource>>
   >(
     () => ({
-      "user": (p) => <UserRowCell {...p} />,
-      "code-committed": (p) => (
-        <CodeCommittedRowCell
-          {...p}
-          modelName={modelName}
-          codeSessionStore={codeSessionStore}
-        />
-      ),
-      "code-streaming": (p) => (
-        <CodeStreamingRowCell
-          {...p}
-          modelName={modelName}
-          codeSessionStore={codeSessionStore}
-          streamingStore={streamingStore}
-          streamingPath={streamingPath}
-          thinkingStreamingPath={thinkingStreamingPath}
-          toolsStreamingPath={toolsStreamingPath}
-          inflightMsgId={inflightMsgId}
-        />
-      ),
+      "user": userRenderer,
+      "code": codeRenderer,
     }),
-    [
-      modelName,
-      codeSessionStore,
-      streamingStore,
-      streamingPath,
-      thinkingStreamingPath,
-      toolsStreamingPath,
-      inflightMsgId,
-    ],
+    [userRenderer, codeRenderer],
   );
 
   const delegate = useMemo<TugListViewDelegate>(

@@ -112,6 +112,21 @@ export interface PropertyStoreOptions {
   /** Initial values for each path. Paths missing from this map default to undefined. */
   initialValues: Record<string, unknown>;
   /**
+   * When true, `get` / `set` / `observe` for paths not declared in
+   * the initial schema are accepted: the path is auto-registered on
+   * first touch using a permissive descriptor. Default `false`, which
+   * preserves the strict schema-validation behaviour every existing
+   * card relies on.
+   *
+   * Used by the code-session-store's streaming document, whose paths
+   * are per-turn (`turn.${turnKey}.${channel}`) and therefore not
+   * knowable at construction time. A committed cell continues to
+   * observe its own per-turn path forever (the path retains its
+   * final value because no later turn writes to it), so dynamic
+   * registration is the right primitive for that surface.
+   */
+  dynamicPaths?: boolean;
+  /**
    * Optional override for get(). When provided, get() calls onGet instead of
    * reading from the internal map. Used for bridging to external state (DOM,
    * feed data, tugbank).
@@ -151,6 +166,7 @@ export class PropertyStore {
   private readonly _listeners: Map<string, Set<Function>>;
   private readonly _onGet?: (path: string) => unknown;
   private readonly _onSet?: (path: string, value: unknown, source: string) => void;
+  private readonly _dynamicPaths: boolean;
 
   constructor(options: PropertyStoreOptions) {
     this._schema = { paths: [...options.schema] };
@@ -158,6 +174,7 @@ export class PropertyStore {
     this._listeners = new Map();
     this._onGet = options.onGet;
     this._onSet = options.onSet;
+    this._dynamicPaths = options.dynamicPaths === true;
 
     // Initialize values from initialValues
     for (const descriptor of options.schema) {
@@ -298,13 +315,25 @@ export class PropertyStore {
    */
   private _requireValidPath(path: string): PropertyDescriptor {
     const descriptor = this._schema.paths.find((d) => d.path === path);
-    if (!descriptor) {
-      const valid = this._schema.paths.map((d) => d.path).join(", ");
-      throw new Error(
-        `PropertyStore: unknown path "${path}". Valid paths: [${valid}]`
-      );
+    if (descriptor !== undefined) return descriptor;
+    if (this._dynamicPaths) {
+      // Permissive descriptor — type `"string"` with no constraints.
+      // Tuple-string is the only payload used by the streaming
+      // document today; if a richer payload appears, this default
+      // can be widened or callers can pre-register a typed descriptor
+      // via a future `registerPath` method.
+      const dynamic: PropertyDescriptor = {
+        path,
+        type: "string",
+        label: path,
+      };
+      this._schema.paths.push(dynamic);
+      return dynamic;
     }
-    return descriptor;
+    const valid = this._schema.paths.map((d) => d.path).join(", ");
+    throw new Error(
+      `PropertyStore: unknown path "${path}". Valid paths: [${valid}]`
+    );
   }
 
   /**

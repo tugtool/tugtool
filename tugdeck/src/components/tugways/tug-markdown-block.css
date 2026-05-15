@@ -41,15 +41,6 @@
   width: 100%;
 }
 
-/* DIAGNOSTIC TEST — disable browser scroll anchoring on the
- * transcript scrollport. If this stops the jumps, confirms
- * scroll-anchoring is the mechanism. The list view has its own
- * anchor mechanism (pinToBottom + anchorIndex/anchorOffset) so the
- * browser's is redundant here. */
-.tug-list-view {
-  overflow-anchor: none;
-}
-
 /* ---- Per-block element ----
  *
  * `.tugx-md-block` is the per-block class shared by both

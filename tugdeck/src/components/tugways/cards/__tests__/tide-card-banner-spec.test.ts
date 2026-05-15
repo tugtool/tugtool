@@ -31,6 +31,7 @@ import { STREAMING_PATHS } from "@/lib/code-session-store/types";
  */
 function fakeTurn(msgId: string): TurnEntry {
   return {
+    turnKey: `turnkey-${msgId}`,
     msgId,
     userMessage: { text: "", attachments: [], submitAt: 0 },
     thinking: "",
