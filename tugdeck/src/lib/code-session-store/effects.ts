@@ -25,16 +25,6 @@ import type { TurnEntry } from "./types";
  */
 export type StreamChannel = "assistant" | "thinking" | "tools";
 
-/**
- * Legacy path union kept for the snapshot's `streamingPaths` field, which
- * a handful of older consumers still read. Streaming writes themselves
- * are now per-turn (see {@link StreamChannel}).
- */
-export type InflightPath =
-  | "inflight.assistant"
-  | "inflight.thinking"
-  | "inflight.tools";
-
 export interface WriteInflightEffect {
   kind: "write-inflight";
   /** Turn-stable React-key seed; combines with `channel` into the

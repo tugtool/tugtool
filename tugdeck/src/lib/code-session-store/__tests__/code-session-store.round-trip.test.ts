@@ -19,7 +19,7 @@ import {
   FIXTURE_IDS,
   loadGoldenProbe,
 } from "@/lib/code-session-store/testing/golden-catalog";
-import { FeedId } from "@/protocol";
+import { inflightValue } from "@/lib/code-session-store/testing/inflight-paths";import { FeedId } from "@/protocol";
 
 describe("CodeSessionStore — basic round-trip (Step 3)", () => {
   it("drives the full turn state machine on test-01", () => {
@@ -77,10 +77,14 @@ describe("CodeSessionStore — basic round-trip (Step 3)", () => {
     expect(final.transcript[0].userMessage.text).toBe("hello");
     expect(final.activeMsgId).toBeNull();
 
-    // 5. In-flight streaming document cleared on turn_complete.
-    expect(store.streamingDocument.get("inflight.assistant")).toBe("");
-    expect(store.streamingDocument.get("inflight.thinking")).toBe("");
-    expect(store.streamingDocument.get("inflight.tools")).toBe("[]");
+    // 5. After turn_complete, inflightUserMessage is null so the
+    // helper returns undefined — there's no in-flight turn to read
+    // from. The committed turn's per-turn paths still hold their
+    // final values, but they're addressed by `lastCommittedTurnValue`
+    // when a test cares to assert on them.
+    expect(inflightValue(store, "assistant")).toBeUndefined();
+    expect(inflightValue(store, "thinking")).toBeUndefined();
+    expect(inflightValue(store, "tools")).toBeUndefined();
   });
 
   it("populates inflightUserMessage on send and clears it on turn_complete(success)", () => {
@@ -178,8 +182,10 @@ describe("CodeSessionStore — basic round-trip (Step 3)", () => {
     });
 
     // The other-session frame must not affect this store: still
-    // `submitting`, no scratch text accumulated.
+    // `submitting`, no scratch text accumulated. The per-turn
+    // path was never written to since no text-delta event
+    // landed for this turnKey — `inflightValue` returns undefined.
     expect(store.getSnapshot().phase).toBe("submitting");
-    expect(store.streamingDocument.get("inflight.assistant")).toBe("");
+    expect(inflightValue(store, "assistant")).toBeUndefined();
   });
 });

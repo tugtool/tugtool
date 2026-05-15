@@ -21,7 +21,7 @@
  */
 
 import type { AtomSegment } from "../tug-atom-img";
-import type { Effect, InflightPath } from "./effects";
+import type { Effect } from "./effects";
 import type {
   AssistantTextEvent,
   CodeSessionEvent,

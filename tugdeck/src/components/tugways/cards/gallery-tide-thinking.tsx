@@ -88,7 +88,10 @@ export function GalleryTideThinking(): React.ReactElement {
         <TugLabel className="cg-section-title">
           Streaming — bound to a PropertyStore, default-expanded
         </TugLabel>
-        <TideThinkingBlock streamingStore={STREAMING_STORE} />
+        <TideThinkingBlock
+          streamingStore={STREAMING_STORE}
+          streamingPath="inflight.thinking"
+        />
       </div>
 
       <TugSeparator />

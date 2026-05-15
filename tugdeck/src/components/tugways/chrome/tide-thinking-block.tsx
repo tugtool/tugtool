@@ -62,14 +62,6 @@ import type { PropertyStore } from "@/components/tugways/property-store";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 
 /**
- * Default `streamingPath` matches `CodeSessionSnapshot.streamingPaths.thinking`.
- * Hard-coded as the convenience default; consumers that thread a
- * different path through the snapshot read it from the snapshot
- * directly.
- */
-const DEFAULT_STREAMING_PATH = "inflight.thinking";
-
-/**
  * Maximum length of the collapsed-state preview line before truncation.
  * Picked to fit the typical Tide card width without wrapping at
  * 14-16 px label sizes. Exported for the test that asserts truncation.
@@ -126,10 +118,11 @@ export interface TideThinkingBlockProps {
   streamingStore?: PropertyStore;
 
   /**
-   * `PropertyStore` path key. Default `"inflight.thinking"` to match
-   * `CodeSessionSnapshot.streamingPaths.thinking`.
-   *
-   * @default "inflight.thinking"
+   * `PropertyStore` path the block subscribes to in streaming mode.
+   * Required when `streamingStore` is set — consumers thread the
+   * appropriate path (e.g. the transcript constructs
+   * `turn.${turnKey}.thinking` per the per-turn-paths architecture
+   * documented in `code-session-store.ts`'s write-inflight processor).
    */
   streamingPath?: string;
 
@@ -144,7 +137,7 @@ export interface TideThinkingBlockProps {
 export const TideThinkingBlock: React.FC<TideThinkingBlockProps> = ({
   initialText,
   streamingStore,
-  streamingPath = DEFAULT_STREAMING_PATH,
+  streamingPath,
   className,
 }) => {
   const isStreaming = streamingStore !== undefined;
@@ -174,6 +167,7 @@ export const TideThinkingBlock: React.FC<TideThinkingBlockProps> = ({
     if (root === null || preview === null) return;
     const store = streamingStore;
     if (store === undefined) return;
+    if (streamingPath === undefined) return;
 
     function applyChromeFor(text: string): void {
       const r = rootRef.current;

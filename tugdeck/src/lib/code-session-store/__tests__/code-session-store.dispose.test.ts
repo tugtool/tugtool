@@ -24,7 +24,7 @@ import {
   FIXTURE_IDS,
   loadGoldenProbe,
 } from "@/lib/code-session-store/testing/golden-catalog";
-import { FeedId } from "@/protocol";
+import { inflightValue } from "@/lib/code-session-store/testing/inflight-paths";import { FeedId } from "@/protocol";
 
 function constructStore(
   conn: TestFrameChannel,
@@ -57,7 +57,10 @@ describe("CodeSessionStore — dispose teardown (Step 9)", () => {
     const postTurn = store.getSnapshot();
     expect(postTurn.phase).toBe("idle");
     expect(postTurn.transcript.length).toBe(1);
-    expect(store.streamingDocument.get("inflight.assistant")).toBe("");
+    // After turn_complete inflightUserMessage is null — there's no
+    // in-flight turn for `inflightValue` to read from. The committed
+    // turn's content is now addressed via `transcript[0]`.
+    expect(inflightValue(store, "assistant")).toBeUndefined();
 
     const notifyBeforeDispose = notifyCount;
     store.dispose();
@@ -83,10 +86,11 @@ describe("CodeSessionStore — dispose teardown (Step 9)", () => {
     expect(postDispose.transcript.length).toBe(1);
     expect(postDispose.transcript[0].msgId).toBe(FIXTURE_IDS.MSG_ID);
 
-    // Inflight paths reset to their empty initials.
-    expect(store.streamingDocument.get("inflight.assistant")).toBe("");
-    expect(store.streamingDocument.get("inflight.thinking")).toBe("");
-    expect(store.streamingDocument.get("inflight.tools")).toBe("[]");
+    // Under per-turn paths there's nothing to "reset on dispose": the
+    // streamingDocument dies with the store instance, so any
+    // accumulated per-turn paths are GC'd together. The post-dispose
+    // ghost frame above wasn't routed anywhere (FeedStore disposed),
+    // proving no live observer can fire after dispose.
 
     // [D02]: no close_session frame was ever written.
     const closeFrames = conn.recordedFrames.filter(

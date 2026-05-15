@@ -23,7 +23,7 @@ import {
   TestFrameChannel,
 } from "@/lib/code-session-store/testing/mock-feed-store";
 import { FIXTURE_IDS } from "@/lib/code-session-store/testing/golden-catalog";
-import { FeedId } from "@/protocol";
+import { inflightValue } from "@/lib/code-session-store/testing/inflight-paths";import { FeedId } from "@/protocol";
 
 const TUG_A = FIXTURE_IDS.TUG_SESSION_ID;
 const TUG_B = "tug00000-0000-4000-8000-0000000000bb";
@@ -149,7 +149,9 @@ describe("CodeSessionStore — multi-instance filter isolation (Step 9)", () => 
     });
 
     expect(storeA.getSnapshot().phase).toBe("submitting");
-    expect(storeA.streamingDocument.get("inflight.assistant")).toBe("");
+    // No text-delta event landed for storeA's turn, so the per-turn
+    // path was never written to; `inflightValue` returns undefined.
+    expect(inflightValue(storeA, "assistant")).toBeUndefined();
   });
 
   it("routes SESSION_STATE errored only to the matching store", () => {

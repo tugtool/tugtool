@@ -25,7 +25,7 @@ import {
   FIXTURE_IDS,
   loadGoldenProbe,
 } from "@/lib/code-session-store/testing/golden-catalog";
-import { FeedId } from "@/protocol";
+import { inflightValue } from "@/lib/code-session-store/testing/inflight-paths";import { FeedId } from "@/protocol";
 import type { ToolCallState } from "@/lib/code-session-store/types";
 
 function constructStore(conn: TestFrameChannel): CodeSessionStore {
@@ -38,7 +38,7 @@ function constructStore(conn: TestFrameChannel): CodeSessionStore {
 }
 
 function readInflightTools(store: CodeSessionStore): ToolCallState[] {
-  const raw = store.streamingDocument.get("inflight.tools") as string;
+  const raw = inflightValue(store, "tools") as string;
   return JSON.parse(raw) as ToolCallState[];
 }
 
@@ -98,8 +98,11 @@ describe("CodeSessionStore — tool lifecycle on test-05 (Step 5)", () => {
     expect(turn.toolCalls[0].status).toBe("done");
     expect(turn.toolCalls[0].structuredResult).not.toBeNull();
 
-    // inflight.tools cleared on turn_complete.
-    expect(store.streamingDocument.get("inflight.tools")).toBe("[]");
+    // After turn_complete, inflightUserMessage is null so the
+    // helper returns undefined — there's no in-flight turn. The
+    // committed turn's tools live on `turn.toolCalls`, asserted
+    // above.
+    expect(inflightValue(store, "tools")).toBeUndefined();
 
     // Phase sequence for a tool-first turn skips awaiting_first_token;
     // submitting goes straight to tool_work when the first Claude-side

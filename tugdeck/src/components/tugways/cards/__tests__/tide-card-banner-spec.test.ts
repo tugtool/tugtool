@@ -20,7 +20,6 @@ import type {
   CodeSessionSnapshot,
   TurnEntry,
 } from "@/lib/code-session-store";
-import { STREAMING_PATHS } from "@/lib/code-session-store/types";
 
 /**
  * Minimal `TurnEntry` stub for tests that only care about
@@ -66,7 +65,6 @@ function baseSnap(
     transcript: [],
     inflightUserMessage: null,
     pendingDraftRestore: null,
-    streamingPaths: STREAMING_PATHS,
     lastCost: null,
     lastError: null,
     lastReplayResult: null,

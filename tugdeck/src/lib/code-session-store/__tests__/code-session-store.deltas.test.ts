@@ -19,7 +19,7 @@ import {
   FIXTURE_IDS,
   loadGoldenProbe,
 } from "@/lib/code-session-store/testing/golden-catalog";
-import { FeedId } from "@/protocol";
+import { inflightValue } from "@/lib/code-session-store/testing/inflight-paths";import { FeedId } from "@/protocol";
 
 describe("CodeSessionStore — assistant_text delta accumulation (Step 4)", () => {
   it("grows inflight.assistant monotonically across test-02 and lands on the authoritative text", () => {
@@ -59,7 +59,10 @@ describe("CodeSessionStore — assistant_text delta accumulation (Step 4)", () =
 
     for (let i = 0; i < turnCompleteIdx; i++) {
       conn.dispatchDecoded(FeedId.CODE_OUTPUT, probe.events[i]);
-      const buf = store.streamingDocument.get("inflight.assistant") as string;
+      // Before any assistant_text lands the per-turn path doesn't
+      // exist yet; the helper returns undefined. Use "" as the
+      // observed baseline so the growth check works uniformly.
+      const buf = (inflightValue(store, "assistant") as string | undefined) ?? "";
       if (buf !== prevObserved) {
         observedBuffers.push(buf);
         if (i <= completeEventIdx) {
@@ -79,17 +82,18 @@ describe("CodeSessionStore — assistant_text delta accumulation (Step 4)", () =
     const completeEvent = probe.events[completeEventIdx];
     const authoritative = completeEvent.text as string;
     expect(
-      store.streamingDocument.get("inflight.assistant"),
+      inflightValue(store, "assistant"),
     ).toBe(authoritative);
     expect(authoritative.length).toBe(615);
     expect(/^x+$/.test(authoritative)).toBe(true);
 
-    // Now dispatch turn_complete and verify cleanup.
+    // Now dispatch turn_complete; inflightUserMessage clears so the
+    // helper returns undefined for all channels.
     conn.dispatchDecoded(FeedId.CODE_OUTPUT, probe.events[turnCompleteIdx]);
 
-    expect(store.streamingDocument.get("inflight.assistant")).toBe("");
-    expect(store.streamingDocument.get("inflight.thinking")).toBe("");
-    expect(store.streamingDocument.get("inflight.tools")).toBe("[]");
+    expect(inflightValue(store, "assistant")).toBeUndefined();
+    expect(inflightValue(store, "thinking")).toBeUndefined();
+    expect(inflightValue(store, "tools")).toBeUndefined();
 
     // TurnEntry captures the authoritative assistant text.
     const snap = store.getSnapshot();
@@ -123,7 +127,7 @@ describe("CodeSessionStore — assistant_text delta accumulation (Step 4)", () =
       seq: 0,
       text: "aaa",
     });
-    expect(store.streamingDocument.get("inflight.assistant")).toBe("aaa");
+    expect(inflightValue(store, "assistant")).toBe("aaa");
 
     conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
       type: "assistant_text",
@@ -134,7 +138,7 @@ describe("CodeSessionStore — assistant_text delta accumulation (Step 4)", () =
       seq: 0,
       text: "bbb",
     });
-    expect(store.streamingDocument.get("inflight.assistant")).toBe("aaabbb");
+    expect(inflightValue(store, "assistant")).toBe("aaabbb");
 
     // Authoritative replacement — the full text is NOT "aaabbb".
     // The reducer replaces the buffer with the complete event's text.
@@ -147,7 +151,7 @@ describe("CodeSessionStore — assistant_text delta accumulation (Step 4)", () =
       seq: 1,
       text: "AUTHORITATIVE",
     });
-    expect(store.streamingDocument.get("inflight.assistant")).toBe(
+    expect(inflightValue(store, "assistant")).toBe(
       "AUTHORITATIVE",
     );
 
@@ -190,7 +194,7 @@ describe("CodeSessionStore — thinking_text delta accumulation (Step 4)", () =>
       seq: 0,
       text: "hmm ",
     });
-    expect(store.streamingDocument.get("inflight.thinking")).toBe("hmm ");
+    expect(inflightValue(store, "thinking")).toBe("hmm ");
     expect(store.getSnapshot().phase).toBe("awaiting_first_token");
 
     // Second partial bumps to streaming.
@@ -203,7 +207,7 @@ describe("CodeSessionStore — thinking_text delta accumulation (Step 4)", () =>
       seq: 0,
       text: "let me see",
     });
-    expect(store.streamingDocument.get("inflight.thinking")).toBe(
+    expect(inflightValue(store, "thinking")).toBe(
       "hmm let me see",
     );
     expect(store.getSnapshot().phase).toBe("streaming");
@@ -218,14 +222,17 @@ describe("CodeSessionStore — thinking_text delta accumulation (Step 4)", () =>
       seq: 1,
       text: "FINAL THOUGHT",
     });
-    expect(store.streamingDocument.get("inflight.thinking")).toBe(
+    expect(inflightValue(store, "thinking")).toBe(
       "FINAL THOUGHT",
     );
 
-    // Assistant path was never touched.
-    expect(store.streamingDocument.get("inflight.assistant")).toBe("");
+    // Assistant path was never touched on this turn — per-turn paths
+    // only exist after a write, so this returns undefined.
+    expect(inflightValue(store, "assistant")).toBeUndefined();
 
-    // turn_complete commits thinking to the TurnEntry and clears inflight.
+    // turn_complete commits thinking to the TurnEntry. The per-turn
+    // path retains its final value; inflightUserMessage is cleared
+    // so `inflightValue` returns undefined.
     conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
       type: "turn_complete",
       tug_session_id: tug,
@@ -237,7 +244,7 @@ describe("CodeSessionStore — thinking_text delta accumulation (Step 4)", () =>
     const entry = store.getSnapshot().transcript[0];
     expect(entry.thinking).toBe("FINAL THOUGHT");
     expect(entry.assistant).toBe("");
-    expect(store.streamingDocument.get("inflight.thinking")).toBe("");
+    expect(inflightValue(store, "thinking")).toBeUndefined();
   });
 
   it("interleaves thinking_text and assistant_text on the same msg_id without cross-contamination", () => {
@@ -291,10 +298,10 @@ describe("CodeSessionStore — thinking_text delta accumulation (Step 4)", () =>
       text: " assist-2",
     });
 
-    expect(store.streamingDocument.get("inflight.thinking")).toBe(
+    expect(inflightValue(store, "thinking")).toBe(
       "think-1 think-2",
     );
-    expect(store.streamingDocument.get("inflight.assistant")).toBe(
+    expect(inflightValue(store, "assistant")).toBe(
       "assist-1 assist-2",
     );
   });

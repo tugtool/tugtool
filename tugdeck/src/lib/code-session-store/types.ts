@@ -325,12 +325,6 @@ export interface CodeSessionSnapshot {
     atoms: ReadonlyArray<AtomSegment>;
   } | null;
 
-  streamingPaths: {
-    readonly assistant: "inflight.assistant";
-    readonly thinking: "inflight.thinking";
-    readonly tools: "inflight.tools";
-  };
-
   lastCost: CostSnapshot | null;
   lastError: {
     cause:
@@ -413,12 +407,3 @@ export interface LastReplayResult {
   at: number;
 }
 
-/**
- * Stable constant embedded in every snapshot's `streamingPaths` field.
- * Referenced by consumers that thread the path strings through props.
- */
-export const STREAMING_PATHS = {
-  assistant: "inflight.assistant",
-  thinking: "inflight.thinking",
-  tools: "inflight.tools",
-} as const;

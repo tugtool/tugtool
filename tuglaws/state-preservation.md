@@ -16,6 +16,8 @@ The correct interpretation is **preserve where you can, capture-and-replay only 
 
 This document describes that capture-and-replay machinery: the two layers of opt-in, the deterministic save/restore lifecycle, the DOM attributes that drive it, the type shapes, and the per-axis tests that gate it ([A9]).
 
+> **Aside — preservation can happen below the bag layer too.** [L23] applies to every internal transition, not just the ones the [A9] capture pipeline covers. The tide-card transcript's per-turn-key architecture is an example: turning a streaming row into a committed row used to swap React component types (a `code-streaming` → `code-committed` kind transition), which unmounted the cell wrapper and silently clamped the scrollport's `scrollTop` to 0 mid-paint — a textbook L23 violation. The fix wasn't capture-and-replay; it was eliminating the transition class entirely. A single `turnKey` minted at `handleSend` is preserved through `handleTurnComplete` onto `TurnEntry.turnKey`, so the cell's React key + component type are byte-identical on either side of the boundary, the wrapper survives unchanged, and streaming children continue to observe their per-turn PropertyStore paths (`turn.${turnKey}.assistant` etc.) without prop change or remount. The chain runs reducer → snapshot → `TideTranscriptDataSource.rowAt` → `CodeRowCell`; breaking it at any link reintroduces the regression. When you can preserve mount identity through a transition, do so — capture-and-replay is the last resort, not the first.
+
 ---
 
 ## Two layers of opt-in

@@ -24,7 +24,7 @@ import {
   FIXTURE_IDS,
   loadGoldenProbe,
 } from "@/lib/code-session-store/testing/golden-catalog";
-import { FeedId } from "@/protocol";
+import { inflightValue } from "@/lib/code-session-store/testing/inflight-paths";import { FeedId } from "@/protocol";
 
 function constructStore(
   conn: TestFrameChannel,
@@ -60,9 +60,7 @@ describe("CodeSessionStore — interrupt mid-stream on test-06 (Step 7)", () => 
     }
 
     expect(store.getSnapshot().phase).toBe("streaming");
-    const preservedText = store.streamingDocument.get(
-      "inflight.assistant",
-    ) as string;
+    const preservedText = inflightValue(store, "assistant") as string;
     expect(preservedText.length).toBe(116); // 3 + 113 accumulated
 
     const framesBefore = conn.recordedFrames.length;
@@ -96,8 +94,11 @@ describe("CodeSessionStore — interrupt mid-stream on test-06 (Step 7)", () => 
     expect(snap.transcript[0].assistant.length).toBe(116);
     expect(snap.transcript[0].assistant).toBe(preservedText);
 
-    // In-flight document cleared on turn_complete.
-    expect(store.streamingDocument.get("inflight.assistant")).toBe("");
+    // After turn_complete, inflightUserMessage is null — there's no
+    // in-flight turn for `inflightValue` to read from. The
+    // preserved-text invariant is asserted on the committed
+    // `TurnEntry.assistant` above.
+    expect(inflightValue(store, "assistant")).toBeUndefined();
   });
 });
 

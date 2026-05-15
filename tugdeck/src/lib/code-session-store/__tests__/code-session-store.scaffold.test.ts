@@ -46,24 +46,8 @@ describe("CodeSessionStore — Step 1 scaffold", () => {
     expect(snap.queuedSends).toBe(0);
     expect(snap.transcript.length).toBe(0);
     expect(snap.inflightUserMessage).toBeNull();
-    expect(snap.streamingPaths.assistant).toBe("inflight.assistant");
-    expect(snap.streamingPaths.thinking).toBe("inflight.thinking");
-    expect(snap.streamingPaths.tools).toBe("inflight.tools");
     expect(snap.lastCost).toBeNull();
     expect(snap.lastError).toBeNull();
-  });
-
-  it("seeds the streaming document via initialValues", () => {
-    const store = new CodeSessionStore({
-      conn: makeInertConnection(),
-      lifecycle: makeInertLifecycle(),
-      tugSessionId: TUG_SESSION_ID,
-      sessionMode: "new",
-    });
-
-    expect(store.streamingDocument.get("inflight.assistant")).toBe("");
-    expect(store.streamingDocument.get("inflight.thinking")).toBe("");
-    expect(store.streamingDocument.get("inflight.tools")).toBe("[]");
   });
 
   it("memoizes getSnapshot between dispatches", () => {
@@ -103,9 +87,13 @@ describe("CodeSessionStore — Step 1 scaffold", () => {
 
     store.dispose();
 
-    expect(store.streamingDocument.get("inflight.assistant")).toBe("");
-    expect(store.streamingDocument.get("inflight.thinking")).toBe("");
-    expect(store.streamingDocument.get("inflight.tools")).toBe("[]");
+    // Under the per-turn-paths architecture the streamingDocument's
+    // schema starts empty and only grows as turns mint per-turn
+    // paths. There were no turns here, so the schema is still empty;
+    // there's nothing to assert about "inflight reset". The original
+    // intent — "dispose leaves no stale in-flight state" — is now
+    // satisfied by construction (the streamingDocument is GC'd with
+    // the store instance).
     // [L23] transcript is user-visible — dispose does not touch it.
     expect(store.getSnapshot().transcript.length).toBe(0);
   });

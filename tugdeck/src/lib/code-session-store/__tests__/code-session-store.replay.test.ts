@@ -27,6 +27,7 @@ import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import type { TugConnection } from "@/connection";
 import { TestFrameChannel } from "@/lib/code-session-store/testing/mock-feed-store";
 import { FIXTURE_IDS } from "@/lib/code-session-store/testing/golden-catalog";
+import { inflightValue } from "@/lib/code-session-store/testing/inflight-paths";
 import { FeedId } from "@/protocol";
 
 const TUG = FIXTURE_IDS.TUG_SESSION_ID;
@@ -223,7 +224,7 @@ describe("CodeSessionStore — defensive drops while replaying", () => {
     const { store, conn } = makeStore();
     emit(conn, replayStarted());
 
-    const inflightBefore = store.streamingDocument.get("inflight.assistant");
+    const inflightBefore = inflightValue(store, "assistant");
     conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
       type: "assistant_text",
       tug_session_id: TUG,
@@ -235,7 +236,7 @@ describe("CodeSessionStore — defensive drops while replaying", () => {
       status: "in_progress",
       ipc_version: IPC_VERSION,
     });
-    const inflightAfter = store.streamingDocument.get("inflight.assistant");
+    const inflightAfter = inflightValue(store, "assistant");
 
     expect(store.getSnapshot().phase).toBe("replaying");
     expect(inflightAfter).toBe(inflightBefore);

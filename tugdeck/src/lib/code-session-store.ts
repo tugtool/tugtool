@@ -28,7 +28,6 @@ import type { TugConnection } from "@/connection";
 import type { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import {
   PropertyStore,
-  type PropertyDescriptor,
 } from "@/components/tugways/property-store";
 import { FeedStore } from "@/lib/feed-store";
 import type { AtomSegment } from "./tug-atom-img";
@@ -45,7 +44,6 @@ import type {
   CodeSessionSnapshot,
   TurnEntry,
 } from "./code-session-store/types";
-import { STREAMING_PATHS } from "./code-session-store/types";
 
 export type {
   CardSessionMode,
@@ -213,31 +211,16 @@ export class CodeSessionStore {
     this.sessionMode = options.sessionMode;
     this.timerSource = options.timerSource ?? DEFAULT_TIMER_SOURCE;
 
-    const descriptors: PropertyDescriptor[] = [
-      {
-        path: "inflight.assistant",
-        type: "string",
-        label: "In-flight assistant text",
-      },
-      {
-        path: "inflight.thinking",
-        type: "string",
-        label: "In-flight thinking text",
-      },
-      {
-        path: "inflight.tools",
-        type: "string",
-        label: "In-flight tool calls (JSON string)",
-      },
-    ];
-
+    // The streaming document holds per-turn streaming paths only,
+    // shaped `turn.${turnKey}.${channel}` (assistant / thinking /
+    // tools). Each turn writes to its own path; every committed
+    // turn's cell keeps observing the same path forever (no
+    // overwrites). The previous legacy `inflight.*` paths are gone —
+    // they were a parallel path system from before the turnKey
+    // architecture and were inert in the transcript dispatch.
     this.streamingDocument = new PropertyStore({
-      schema: descriptors,
-      initialValues: {
-        "inflight.assistant": "",
-        "inflight.thinking": "",
-        "inflight.tools": "[]",
-      },
+      schema: [],
+      initialValues: {},
       // Per-turn paths (`turn.${turnKey}.{channel}`) are minted at
       // `handleSend` and observed by `CodeRowCell` for the rest of
       // that turn's life — including after `turn_complete`, when
@@ -360,7 +343,6 @@ export class CodeSessionStore {
       // fires exactly once per CASE A interrupt — not on every
       // snapshot rebuild that touches an unrelated field.
       pendingDraftRestore: this.state.pendingDraftRestore,
-      streamingPaths: STREAMING_PATHS,
       lastCost: this.state.lastCost,
       lastError: this.state.lastError,
       lastReplayResult: this.state.lastReplayResult,
@@ -554,13 +536,10 @@ export class CodeSessionStore {
     this._replayTimers.clear();
     this._listeners = [];
     this.state.queuedSends = [];
-    this.streamingDocument.set(
-      "inflight.assistant",
-      "",
-      STREAM_SOURCE_TAG,
-    );
-    this.streamingDocument.set("inflight.thinking", "", STREAM_SOURCE_TAG);
-    this.streamingDocument.set("inflight.tools", "[]", STREAM_SOURCE_TAG);
+    // No per-turn-path cleanup on dispose: the streamingDocument
+    // dies with the store instance, taking its accumulated paths
+    // with it. Consumers that survived past dispose would already
+    // be in undefined-behaviour territory.
     this._cachedSnapshot = null;
   }
 
@@ -695,63 +674,27 @@ export class CodeSessionStore {
   private processEffects(effects: Effect[]): void {
     for (const effect of effects) {
       switch (effect.kind) {
-        case "write-inflight": {
-          // Dual write: per-turn path AND legacy in-flight path.
-          //
-          // The per-turn path (`turn.${turnKey}.${channel}`) is the
-          // architectural fix — the committed turn's cell continues
-          // to observe this same path after `turn_complete`, the path
-          // retains its final value forever (no subsequent turn ever
-          // writes to it, since each new turn mints a fresh
-          // `turnKey`), and the cell wrapper survives the
+        case "write-inflight":
+          // Per-turn path `turn.${turnKey}.${channel}`. The committed
+          // turn's cell continues to observe this same path after
+          // `turn_complete`; the path retains its final value forever
+          // (no subsequent turn writes to it — each new turn mints a
+          // fresh `turnKey`), and the cell wrapper survives the
           // inflight → committed transition without a React unmount.
-          // This is what eliminates the user-visible "scroll jumps
-          // to top" regression.
-          //
-          // The legacy in-flight path (`inflight.${channel}`) is
-          // kept in sync for back-compat: existing consumers that
-          // observe the snapshot's `streamingPaths.assistant` /
-          // `.thinking` / `.tools` string constants still see the
-          // current turn's live value, and the broad coverage in
-          // `code-session-store/__tests__/` that asserts on
-          // `streamingDocument.get("inflight.assistant")` continues
-          // to gate the reducer's accumulation logic. The
-          // `clear-inflight` effect zeroes ONLY the legacy paths at
-          // `turn_complete` (per-turn paths must persist so the
-          // committed cell can keep displaying its final content).
           this.streamingDocument.set(
             `turn.${effect.turnKey}.${effect.channel}`,
             effect.value,
             STREAM_SOURCE_TAG,
           );
-          const legacyPath = `inflight.${effect.channel}` as const;
-          this.streamingDocument.set(
-            legacyPath,
-            effect.value,
-            STREAM_SOURCE_TAG,
-          );
           break;
-        }
         case "clear-inflight":
-          // Legacy `inflight.*` paths — kept zeroed for any
-          // straggler consumer that hasn't migrated to the per-turn
-          // paths. Per-turn paths are NOT cleared here; the committed
-          // cell needs them to retain their final values forever.
-          this.streamingDocument.set(
-            "inflight.assistant",
-            "",
-            STREAM_SOURCE_TAG,
-          );
-          this.streamingDocument.set(
-            "inflight.thinking",
-            "",
-            STREAM_SOURCE_TAG,
-          );
-          this.streamingDocument.set(
-            "inflight.tools",
-            "[]",
-            STREAM_SOURCE_TAG,
-          );
+          // No-op under the per-turn-paths architecture. Each turn
+          // writes to its own path; nothing needs clearing at
+          // `turn_complete`. Kept as an enum variant so the reducer
+          // (which still emits the effect at turn boundaries — see
+          // `handleTurnComplete`) doesn't need a coordinated change.
+          // If `clear-inflight` outlives its callers, fold the
+          // emission out of the reducer too.
           break;
         case "send-frame":
           this.conn.send(
