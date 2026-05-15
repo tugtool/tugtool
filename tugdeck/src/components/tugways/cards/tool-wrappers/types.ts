@@ -88,6 +88,21 @@ export interface BodyKindProps<TData = unknown> {
   componentStatePreservationKey?: string;
 }
 
+/**
+ * Subagent tool-call nesting map ([#step-17-5]). Keyed by an `Agent`
+ * call's `toolUseId`; the value is that subagent's child tool calls
+ * (the ones whose `ToolCallState.parentToolUseId` points back at the
+ * key), in producer order. The reducer's `toolCallMap` stays flat —
+ * this map is a pure derivation built once by the transcript view and
+ * threaded down through the dispatch so each `AgentTranscriptBlock`
+ * can resolve its own children (and pass the map further down for
+ * arbitrarily deep nesting).
+ */
+export type ChildToolCallsMap = ReadonlyMap<
+  string,
+  ReadonlyArray<ToolCallState>
+>;
+
 // ---------------------------------------------------------------------------
 // Tool-wrapper contract — every Layer-2 per-tool wrapper conforms to this.
 // ---------------------------------------------------------------------------
@@ -141,6 +156,15 @@ export interface ToolWrapperProps<TInput = unknown, TStructured = unknown> {
    * Threaded by `dispatchToolCallState`'s optional `depth` argument.
    */
   depth?: number;
+  /**
+   * Subagent tool-call nesting map ([#step-17-5]). Threaded by
+   * `dispatchToolCallState`'s optional `childToolCallsByParent`
+   * argument. `TaskToolBlock` reads it: it resolves *its own* children
+   * (`childToolCallsByParent.get(toolUseId)`) to merge into the
+   * `AgentTranscriptBlock` entries, and passes the whole map down so
+   * deeper subagents resolve theirs. Non-recursing wrappers ignore it.
+   */
+  childToolCallsByParent?: ChildToolCallsMap;
 }
 
 /**

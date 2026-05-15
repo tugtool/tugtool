@@ -59,6 +59,12 @@ export type TransportState = "online" | "offline" | "restoring";
 /**
  * Per-tool-call state tracked inside the reducer's toolCallMap and committed
  * into `TurnEntry.toolCalls` in insertion order ([Q02]).
+ *
+ * `parentToolUseId` is set when this call was made by a subagent — it
+ * carries the spawning `Agent` call's `toolUseId` (from the wire
+ * `tool_use.parent_tool_use_id`). The `toolCallMap` stays flat — every
+ * call, parent or child, is one entry — and the rendering layer groups
+ * children under their parent at display time ([#step-17-5]).
  */
 export interface ToolCallState {
   toolUseId: string;
@@ -67,6 +73,8 @@ export interface ToolCallState {
   status: "pending" | "done" | "error";
   result: unknown | null;
   structuredResult: unknown | null;
+  /** Spawning `Agent` call's `toolUseId`; `undefined` for a top-level call. */
+  parentToolUseId?: string;
 }
 
 /**

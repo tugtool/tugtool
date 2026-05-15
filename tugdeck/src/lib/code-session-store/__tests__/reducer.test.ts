@@ -328,6 +328,56 @@ describe("reduce — tool_use", () => {
     expect(ordered[0].toolUseId).toBe(FIXTURE_IDS.TOOL_USE_ID_N(1));
     expect(ordered[1].toolUseId).toBe(FIXTURE_IDS.TOOL_USE_ID_N(2));
   });
+
+  it("records parent_tool_use_id on a subagent's tool call ([#step-17-5])", () => {
+    const s0: CodeSessionState = { ...fresh(), phase: "tool_work" };
+    const { state } = reduce(s0, {
+      type: "tool_use",
+      tool_use_id: FIXTURE_IDS.TOOL_USE_ID_N(2),
+      tool_name: "Grep",
+      input: { pattern: "x" },
+      parent_tool_use_id: FIXTURE_IDS.TOOL_USE_ID_N(1),
+    });
+    expect(state.toolCallMap.get(FIXTURE_IDS.TOOL_USE_ID_N(2))?.parentToolUseId).toBe(
+      FIXTURE_IDS.TOOL_USE_ID_N(1),
+    );
+  });
+
+  it("leaves parentToolUseId undefined for a top-level tool call", () => {
+    const s0: CodeSessionState = { ...fresh(), phase: "tool_work" };
+    const { state } = reduce(s0, {
+      type: "tool_use",
+      tool_use_id: FIXTURE_IDS.TOOL_USE_ID,
+      tool_name: "Read",
+      input: {},
+    });
+    expect(
+      state.toolCallMap.get(FIXTURE_IDS.TOOL_USE_ID)?.parentToolUseId,
+    ).toBeUndefined();
+  });
+
+  it("parentToolUseId is sticky — a continuation without it keeps the link", () => {
+    const s0: CodeSessionState = { ...fresh(), phase: "tool_work" };
+    // First event opens the call and carries the parent link.
+    const r1 = reduce(s0, {
+      type: "tool_use",
+      tool_use_id: FIXTURE_IDS.TOOL_USE_ID_N(2),
+      tool_name: "Grep",
+      input: {},
+      parent_tool_use_id: FIXTURE_IDS.TOOL_USE_ID_N(1),
+    });
+    // The filled-in continuation omits parent_tool_use_id — the link
+    // must survive (a call's parent never changes).
+    const r2 = reduce(r1.state, {
+      type: "tool_use",
+      tool_use_id: FIXTURE_IDS.TOOL_USE_ID_N(2),
+      tool_name: "Grep",
+      input: { pattern: "x" },
+    });
+    expect(
+      r2.state.toolCallMap.get(FIXTURE_IDS.TOOL_USE_ID_N(2))?.parentToolUseId,
+    ).toBe(FIXTURE_IDS.TOOL_USE_ID_N(1));
+  });
 });
 
 describe("reduce — tool_result", () => {
@@ -514,6 +564,63 @@ describe("reduce — tool_use_structured", () => {
     expect(
       state.toolCallMap.get(FIXTURE_IDS.TOOL_USE_ID)?.structuredResult,
     ).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Subagent tool-call nesting ([#step-17-5])
+//
+// The catalog's only Agent probe (`test-22-subagent-spawn.jsonl`) carries
+// an *unscrubbed literal* `parent_tool_use_id` while its `Agent`
+// `tool_use_id` is a `{{uuid}}` placeholder — the capture-time scrubber
+// missed the field, so the parent↔child correlation is lost in the
+// fixture and a replay can't assert the link. This synthetic sequence
+// replays the same *shape* through the real reducer with correlated
+// ids: an `Agent` call, the subagent's nested `Grep` (tagged with the
+// Agent's id), and both results.
+// ---------------------------------------------------------------------------
+
+describe("reduce — subagent tool-call nesting ([#step-17-5])", () => {
+  it("links a subagent's nested tool call to the spawning Agent across a full sequence", () => {
+    const agentId = FIXTURE_IDS.TOOL_USE_ID_N(1);
+    const grepId = FIXTURE_IDS.TOOL_USE_ID_N(2);
+    const s0: CodeSessionState = { ...fresh(), phase: "submitting" };
+
+    const { state } = applyAll(s0, [
+      // Agent opens (empty input), then fills in — a top-level call.
+      { type: "tool_use", tool_use_id: agentId, tool_name: "Agent", input: {} },
+      {
+        type: "tool_use",
+        tool_use_id: agentId,
+        tool_name: "Agent",
+        input: { subagent_type: "Explore" },
+      },
+      // The subagent's intermediate Grep — tagged with the Agent's id.
+      {
+        type: "tool_use",
+        tool_use_id: grepId,
+        tool_name: "Grep",
+        input: { pattern: "FeedId" },
+        parent_tool_use_id: agentId,
+      },
+      { type: "tool_result", tool_use_id: grepId, is_error: false, output: "hit" },
+      {
+        type: "tool_use_structured",
+        tool_use_id: agentId,
+        structured_result: { agentType: "Explore", status: "completed" },
+      },
+      { type: "tool_result", tool_use_id: agentId, is_error: false, output: "done" },
+    ]);
+
+    // The map stays flat — both calls are entries — but the Grep now
+    // carries the parent link and the Agent does not.
+    const agent = state.toolCallMap.get(agentId);
+    const grep = state.toolCallMap.get(grepId);
+    expect(agent?.parentToolUseId).toBeUndefined();
+    expect(grep?.parentToolUseId).toBe(agentId);
+    // Both calls reached terminal state, so the turn left tool_work.
+    expect(agent?.status).toBe("done");
+    expect(grep?.status).toBe("done");
   });
 });
 

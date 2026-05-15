@@ -563,6 +563,13 @@ function handleToolUse(
   const toolUseId = event.tool_use_id;
   const toolName = event.tool_name;
   const incomingInput = (event.input ?? {}) as Record<string, unknown>;
+  // A subagent's tool calls carry `parent_tool_use_id`; top-level calls
+  // omit it. Narrowed defensively — the field is new on the wire and an
+  // index-signature reach away from a plain `unknown`.
+  const incomingParentId =
+    typeof event.parent_tool_use_id === "string"
+      ? event.parent_tool_use_id
+      : undefined;
 
   const toolCallMap = new Map(state.toolCallMap);
   const existing = toolCallMap.get(toolUseId);
@@ -572,12 +579,15 @@ function handleToolUse(
     // call (first with `input: {}`, then with the filled-in input).
     // The second event carries the same `tool_name`, so we overwrite
     // freely; only `input` is gated so an empty-object continuation
-    // doesn't clobber a previously-filled payload.
+    // doesn't clobber a previously-filled payload. `parentToolUseId`
+    // is sticky once set — a call's parent never changes — so a
+    // continuation that omits it keeps the established link.
     const nextInput =
       Object.keys(incomingInput).length > 0 ? incomingInput : existing.input;
     toolCallMap.set(toolUseId, {
       ...existing,
       input: nextInput,
+      parentToolUseId: existing.parentToolUseId ?? incomingParentId,
     });
   } else {
     toolCallMap.set(toolUseId, {
@@ -587,6 +597,7 @@ function handleToolUse(
       status: "pending",
       result: null,
       structuredResult: null,
+      parentToolUseId: incomingParentId,
     });
   }
 

@@ -69,6 +69,8 @@ import {
   type AgentTranscriptEntry,
 } from "@/components/tugways/body-kinds/agent-transcript-block";
 
+import type { ToolCallState } from "@/lib/code-session-store";
+
 import {
   StreamingPlaceholder,
   ToolWrapperChrome,
@@ -176,20 +178,35 @@ function narrowContentEntry(value: unknown): AgentTranscriptEntry | undefined {
 
 /**
  * Compose the `AgentTranscriptData` payload `AgentTranscriptBlock`
- * consumes. The `content[]` blocks narrow to transcript entries (junk
- * blocks dropped); `agentType` falls back to the input's
- * `subagent_type` when the structured result hasn't supplied it yet.
- * Returns `undefined` when the structured result carries nothing
- * renderable at all (drift / streaming-incomplete) — an empty
- * `content` array with any metadata still composes.
+ * consumes.
+ *
+ * Entries come from two sources ([#step-17-5]):
+ *  - `childToolCalls` — the subagent's *intermediate* tool calls,
+ *    linked by the reducer via `parentToolUseId` and resolved by the
+ *    transcript view's `groupToolCallsByParent`. These render first,
+ *    in producer order.
+ *  - `structured.content[]` — the subagent's *final* answer (text
+ *    blocks) plus any inline `tool_use` content blocks. Junk blocks
+ *    drop; this follows the intermediate calls.
+ *
+ * `agentType` falls back to the input's `subagent_type` when the
+ * structured result hasn't supplied it yet. Returns `undefined` when
+ * the structured result carries nothing renderable at all (drift /
+ * streaming-incomplete) — an empty `content` array with any metadata
+ * (or any child tool call) still composes.
  */
 export function composeAgentTranscriptData(
   input: AgentToolInput,
   structured: AgentStructuredResult,
+  childToolCalls?: ReadonlyArray<ToolCallState>,
 ): AgentTranscriptData | undefined {
-  const entries = (structured.content ?? [])
+  const childEntries: AgentTranscriptEntry[] = (childToolCalls ?? []).map(
+    (toolCall) => ({ kind: "tool_use", toolCall }),
+  );
+  const wireEntries = (structured.content ?? [])
     .map(narrowContentEntry)
     .filter((e): e is AgentTranscriptEntry => e !== undefined);
+  const entries = [...childEntries, ...wireEntries];
   const agentType = structured.agentType ?? input.subagentType;
   const data: AgentTranscriptData = {
     agentType,
@@ -223,15 +240,24 @@ export const TaskToolBlock: React.FC<ToolWrapperProps> = ({
   status,
   caution,
   depth = 0,
+  childToolCallsByParent,
 }) => {
   const agentInput = React.useMemo(() => narrowAgentInput(input), [input]);
   const structured = React.useMemo(
     () => narrowAgentStructured(structuredResult),
     [structuredResult],
   );
+  // This subagent's own intermediate tool calls — the reducer-linked
+  // children whose `parentToolUseId` is this call's `toolUseId`
+  // ([#step-17-5]). The full map is threaded on to `AgentTranscriptBlock`
+  // so deeper subagents resolve theirs.
+  const childToolCalls = React.useMemo(
+    () => childToolCallsByParent?.get(toolUseId),
+    [childToolCallsByParent, toolUseId],
+  );
   const transcriptData = React.useMemo(
-    () => composeAgentTranscriptData(agentInput, structured),
-    [agentInput, structured],
+    () => composeAgentTranscriptData(agentInput, structured, childToolCalls),
+    [agentInput, structured, childToolCalls],
   );
 
   // Header identity — agent type + status. Read straight from the
@@ -278,6 +304,7 @@ export const TaskToolBlock: React.FC<ToolWrapperProps> = ({
         data={transcriptData}
         depth={depth}
         msgId={msgId}
+        childToolCallsByParent={childToolCallsByParent}
         embedded
         className="task-tool-block-transcript"
         componentStatePreservationKey={`${toolUseId}-body`}

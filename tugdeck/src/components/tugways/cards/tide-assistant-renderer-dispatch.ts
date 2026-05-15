@@ -77,7 +77,11 @@ import { GlobToolBlock } from "./tool-wrappers/glob-tool-block";
 import { GrepToolBlock } from "./tool-wrappers/grep-tool-block";
 import { TaskToolBlock } from "./tool-wrappers/task-tool-block";
 import { DefaultToolWrapper } from "./tool-wrappers/default-tool-wrapper";
-import type { CautionFlag, ToolWrapperFactory } from "./tool-wrappers/types";
+import type {
+  CautionFlag,
+  ChildToolCallsMap,
+  ToolWrapperFactory,
+} from "./tool-wrappers/types";
 
 // ---------------------------------------------------------------------------
 // RenderInput — discriminated union the dispatch routes.
@@ -412,11 +416,17 @@ function extractTextOutput(result: unknown): string | undefined {
  * passes `depth + 1` when it routes a *nested* tool call, so a nested
  * `Agent` (→ `TaskToolBlock` → `AgentTranscriptBlock`) knows how deep it
  * is and can collapse past the depth cap. Top-level callers omit it.
+ *
+ * `childToolCallsByParent` ([#step-17-5]) is the subagent-nesting map —
+ * the transcript view builds it once from the flat tool-call list and
+ * threads it through here so `TaskToolBlock` can resolve a subagent's
+ * child tool calls. Top-level callers that have no subagents omit it.
  */
 export function dispatchToolCallState(
   toolCall: ToolCallState,
   msgId: string,
   depth = 0,
+  childToolCallsByParent?: ChildToolCallsMap,
 ): DispatchResult {
   const lower = toolCall.toolName.toLowerCase();
   const canonical = TOOL_ALIASES.get(lower) ?? lower;
@@ -443,6 +453,7 @@ export function dispatchToolCallState(
     isError: toolCall.status === "error",
     status,
     depth,
+    childToolCallsByParent,
   };
 
   if (factory !== undefined) {

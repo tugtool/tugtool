@@ -72,6 +72,7 @@ import { createPortal } from "react-dom";
 
 import { dispatchToolCallState } from "@/components/tugways/cards/tide-assistant-renderer-dispatch";
 import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
+import type { ChildToolCallsMap } from "@/components/tugways/cards/tool-wrappers/types";
 import {
   useComponentStatePreservation,
   useSavedComponentState,
@@ -134,6 +135,15 @@ export interface AgentTranscriptBlockProps {
    * identifier.
    */
   msgId?: string;
+
+  /**
+   * Subagent-nesting map ([#step-17-5]) — `parentToolUseId → children[]`,
+   * built once by the transcript view. Threaded through so a
+   * `tool_use` entry that is *itself* an `Agent` resolves its own
+   * children when it recurses. `undefined` when this transcript has no
+   * reducer-linked children to wire (gallery / standalone).
+   */
+  childToolCallsByParent?: ChildToolCallsMap;
 
   /**
    * Optional identity label shown at the leading edge of the
@@ -303,17 +313,22 @@ interface AgentEntryViewProps {
   /** Recursion depth of the *parent* block — nested calls dispatch at +1. */
   depth: number;
   msgId: string;
+  /** Subagent-nesting map, threaded on to nested dispatch ([#step-17-5]). */
+  childToolCallsByParent: ChildToolCallsMap | undefined;
 }
 
 /**
  * Render one transcript entry. A `text` entry renders as pre-wrapped
  * prose; a `tool_use` entry routes back through the same dispatch at
- * `depth + 1` so it gets its real per-tool wrapper ([D17]).
+ * `depth + 1` so it gets its real per-tool wrapper ([D17]) — and the
+ * subagent-nesting map rides along so a nested `Agent` resolves its
+ * own children ([#step-17-5]).
  */
 const AgentEntryView: React.FC<AgentEntryViewProps> = ({
   entry,
   depth,
   msgId,
+  childToolCallsByParent,
 }) => {
   if (entry.kind === "text") {
     return (
@@ -330,6 +345,7 @@ const AgentEntryView: React.FC<AgentEntryViewProps> = ({
     entry.toolCall,
     msgId,
     depth + 1,
+    childToolCallsByParent,
   );
   return (
     <div
@@ -351,6 +367,7 @@ export const AgentTranscriptBlock: React.FC<AgentTranscriptBlockProps> = ({
   depth = 0,
   maxDepth = AGENT_MAX_DEPTH,
   msgId = "",
+  childToolCallsByParent,
   label,
   embedded = false,
   className,
@@ -548,6 +565,7 @@ export const AgentTranscriptBlock: React.FC<AgentTranscriptBlockProps> = ({
               entry={entry}
               depth={depth}
               msgId={msgId}
+              childToolCallsByParent={childToolCallsByParent}
             />
           ))}
         </div>

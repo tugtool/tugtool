@@ -40,6 +40,20 @@ import {
   AGENT_MAX_DEPTH,
   shouldCollapseAgentDepth,
 } from "@/components/tugways/body-kinds/agent-transcript-block";
+import type { ToolCallState } from "@/lib/code-session-store";
+
+/** Build a minimal `ToolCallState` for the child-tool-call merge tests. */
+function childCall(toolUseId: string, toolName: string): ToolCallState {
+  return {
+    toolUseId,
+    toolName,
+    input: {},
+    status: "done",
+    result: null,
+    structuredResult: null,
+    parentToolUseId: "agent-1",
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Synthetic fixtures — the catalog's only Agent probe
@@ -223,6 +237,39 @@ describe("composeAgentTranscriptData", () => {
     expect(
       composeAgentTranscriptData({}, narrowAgentStructured(null)),
     ).toBeUndefined();
+  });
+
+  test("merges reducer-linked child tool calls ahead of the wire content", () => {
+    // [#step-17-5]: a subagent's intermediate tool calls (linked by
+    // the reducer via `parentToolUseId`) render first; its final text
+    // answer (the wire `content[]`) follows.
+    const data = composeAgentTranscriptData(
+      {},
+      narrowAgentStructured(TEXT_ONLY_FIXTURE),
+      [childCall("grep-1", "Grep"), childCall("read-1", "Read")],
+    );
+    expect(data?.entries.map((e) => e.kind)).toEqual([
+      "tool_use",
+      "tool_use",
+      "text",
+    ]);
+    const first = data?.entries[0];
+    const second = data?.entries[1];
+    if (first?.kind !== "tool_use" || second?.kind !== "tool_use") {
+      throw new Error("unreachable");
+    }
+    expect(first.toolCall.toolName).toBe("Grep");
+    expect(second.toolCall.toolName).toBe("Read");
+  });
+
+  test("child tool calls alone compose a transcript (no wire content)", () => {
+    const data = composeAgentTranscriptData({ subagentType: "Explore" }, {}, [
+      childCall("grep-1", "Grep"),
+    ]);
+    expect(data).toBeDefined();
+    if (data === undefined) throw new Error("unreachable");
+    expect(data.agentType).toBe("Explore");
+    expect(data.entries.map((e) => e.kind)).toEqual(["tool_use"]);
   });
 });
 

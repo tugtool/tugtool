@@ -29,6 +29,16 @@
  * rendered wrappers by `toolUseId` so a tool whose status transitions
  * `pending → done` reconciles in place rather than remounting.
  *
+ * Subagent nesting ([#step-17-5]): the reducer's `toolCallMap` is
+ * flat — a subagent's intermediate tool calls land alongside the
+ * spawning `Agent` call, each tagged with `parentToolUseId`. This
+ * component is also the single point that rebuilds the nesting for
+ * display: `groupToolCallsByParent` partitions the flat list into
+ * top-level calls (rendered here) and a `parentToolUseId → children[]`
+ * map threaded through the dispatch so each `AgentTranscriptBlock`
+ * resolves its own children. A child never renders as a transcript
+ * sibling.
+ *
  * Render order in the row body is `thinking → tool calls → assistant`
  * (the [#step-6-5] decision). The container itself paints no
  * chrome — wrappers own their margins/borders. We render a flex
@@ -67,12 +77,18 @@
 
 import "./tide-card-transcript-tool-calls.css";
 
-import React, { useCallback, useRef, useSyncExternalStore } from "react";
+import React, {
+  useCallback,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 
 import type { PropertyStore } from "@/components/tugways/property-store";
 import type { ToolCallState } from "@/lib/code-session-store";
 
 import { dispatchToolCallState } from "./tide-assistant-renderer-dispatch";
+import type { ChildToolCallsMap } from "./tool-wrappers/types";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -119,6 +135,58 @@ const DATA_SLOT_ROOT = "tide-transcript-tool-calls";
  * tearing check requires it.
  */
 const EMPTY_TOOL_CALLS: ReadonlyArray<ToolCallState> = Object.freeze([]);
+
+// ---------------------------------------------------------------------------
+// Subagent nesting — pure grouping helper ([#step-17-5])
+// ---------------------------------------------------------------------------
+
+/** A flat tool-call list split into its top-level / nested partition. */
+export interface GroupedToolCalls {
+  /** Calls with no `parentToolUseId` — the ones that render at the top level. */
+  topLevel: ReadonlyArray<ToolCallState>;
+  /**
+   * Subagent children, keyed by their `parentToolUseId`. Threaded into
+   * the dispatch so each `AgentTranscriptBlock` resolves its own.
+   */
+  childrenByParent: ChildToolCallsMap;
+}
+
+/**
+ * Partition a turn's flat `toolCalls` into top-level calls and the
+ * `parentToolUseId → children[]` map.
+ *
+ * The reducer keeps `toolCallMap` flat — a subagent's intermediate
+ * tool calls land alongside the spawning `Agent` call, each tagged
+ * with `parentToolUseId` ([#step-17-5]). This helper is the pure
+ * derivation that rebuilds the nesting for display: a call with a
+ * `parentToolUseId` is a child (it renders *inside* its parent's
+ * `AgentTranscriptBlock`, never as a transcript sibling); everything
+ * else is top-level. Producer order is preserved within each bucket.
+ * Multi-level nesting falls out for free — a depth-2 child's parent is
+ * itself a child, so it sits in `childrenByParent` under that parent's
+ * id and is resolved when the parent's own `AgentTranscriptBlock`
+ * recurses.
+ */
+export function groupToolCallsByParent(
+  toolCalls: ReadonlyArray<ToolCallState>,
+): GroupedToolCalls {
+  const topLevel: ToolCallState[] = [];
+  const childrenByParent = new Map<string, ToolCallState[]>();
+  for (const toolCall of toolCalls) {
+    const parentId = toolCall.parentToolUseId;
+    if (parentId === undefined) {
+      topLevel.push(toolCall);
+      continue;
+    }
+    const siblings = childrenByParent.get(parentId);
+    if (siblings === undefined) {
+      childrenByParent.set(parentId, [toolCall]);
+    } else {
+      siblings.push(toolCall);
+    }
+  }
+  return { topLevel, childrenByParent };
+}
 
 // ---------------------------------------------------------------------------
 // Snapshot hook for streaming mode
@@ -188,7 +256,20 @@ const ToolCallsList: React.FC<ToolCallsListProps> = ({
   msgId,
   className,
 }) => {
-  if (toolCalls.length === 0) return null;
+  // Partition into top-level calls + the subagent-children map once
+  // per `toolCalls` identity ([#step-17-5]). `toolCalls` is reference-
+  // stable between unrelated renders (static: `turn.toolCalls`;
+  // streaming: the cached `useStreamingToolCalls` snapshot), so the
+  // grouped result — and the `childrenByParent` map threaded into the
+  // dispatch — stays stable too.
+  const { topLevel, childrenByParent } = useMemo(
+    () => groupToolCallsByParent(toolCalls),
+    [toolCalls],
+  );
+
+  // Render nothing when there are no *top-level* calls — a tool-free
+  // turn, or (defensively) a list of only orphan children.
+  if (topLevel.length === 0) return null;
 
   const cls =
     className === undefined
@@ -197,8 +278,13 @@ const ToolCallsList: React.FC<ToolCallsListProps> = ({
 
   return (
     <div className={cls} data-slot={DATA_SLOT_ROOT}>
-      {toolCalls.map((toolCall) => {
-        const { Component, props } = dispatchToolCallState(toolCall, msgId);
+      {topLevel.map((toolCall) => {
+        const { Component, props } = dispatchToolCallState(
+          toolCall,
+          msgId,
+          0,
+          childrenByParent,
+        );
         return <Component key={toolCall.toolUseId} {...props} />;
       })}
     </div>

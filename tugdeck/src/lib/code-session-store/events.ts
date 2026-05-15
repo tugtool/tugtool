@@ -56,6 +56,13 @@ export interface ThinkingTextEvent {
  * `tool_use` — Claude opens or updates a tool call. The first event
  * for a logical call arrives with `input: {}`; a second `tool_use` with
  * the same `tool_use_id` carries the filled-in input.
+ *
+ * `parent_tool_use_id` is set when this call was made *by a subagent*
+ * — it points at the spawning `Agent` tool call's `tool_use_id`. The
+ * reducer records it on the `ToolCallState` so the rendering layer can
+ * nest a subagent's intermediate tool calls under its
+ * `AgentTranscriptBlock` instead of rendering them as flat siblings
+ * ([#step-17-5]).
  */
 export interface ToolUseEvent {
   type: "tool_use";
@@ -64,6 +71,7 @@ export interface ToolUseEvent {
   tool_name: string;
   input: unknown;
   seq?: number;
+  parent_tool_use_id?: string;
   tug_session_id?: string;
   [key: string]: unknown;
 }
