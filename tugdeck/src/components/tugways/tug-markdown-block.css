@@ -41,6 +41,15 @@
   width: 100%;
 }
 
+/* DIAGNOSTIC TEST — disable browser scroll anchoring on the
+ * transcript scrollport. If this stops the jumps, confirms
+ * scroll-anchoring is the mechanism. The list view has its own
+ * anchor mechanism (pinToBottom + anchorIndex/anchorOffset) so the
+ * browser's is redundant here. */
+.tug-list-view {
+  overflow-anchor: none;
+}
+
 /* ---- Per-block element ----
  *
  * `.tugx-md-block` is the per-block class shared by both
@@ -54,18 +63,29 @@
  * rule renders sensibly even before any theme declares the token,
  * and consumers can override via a wrapping selector per [L20].
  *
- * **Scroll anchoring** — `overflow-anchor: auto` is the browser
- * default, but we declare it explicitly here as a contract: each
- * `.tugx-md-block` wrapper is an *anchor candidate* for the
- * outer scrollport. The streaming reconciler ([#step-18-8]) is
- * built around this invariant: as long as wrappers for stable
- * blocks keep their identity across renders, the browser's anchor
- * stays bound to the same element near the viewport's top, and the
- * user's scroll position holds across deltas. The reconciler's
- * in-place `innerHTML` rewrite for changed blocks deliberately
- * preserves the wrapper element so this contract holds for them
- * too — only the wrapper's children are replaced, never the
- * wrapper itself.
+ * **Scroll anchoring contract.** The streaming reconciler
+ * ([#step-18-8]) preserves `.tugx-md-block` *wrapper* identity
+ * across renders for both stable and in-place-updated blocks (it
+ * only ever swaps the wrapper's children, never the wrapper
+ * itself). For the browser's scroll-anchor algorithm to hold the
+ * user's scroll position, the wrapper must be the element the
+ * browser picks as the anchor — but `overflow-anchor: auto` is
+ * the default for *every* descendant too, and the browser
+ * typically picks the deepest content-bearing element near the
+ * viewport top (a `<p>`, an `<li>`, a fenced-code `<pre>`).
+ *
+ * When the reconciler rewrites a wrapper's `innerHTML` in-place
+ * (the in-progress trailing block on every streaming delta), those
+ * descendants are destroyed and rebuilt. If the browser was
+ * anchored on one of them, the anchor dies with it and the
+ * browser re-selects → the transcript snaps to a new anchor →
+ * visible scroll jump.
+ *
+ * The fix is to suppress anchoring on every descendant of a
+ * wrapper, forcing the browser to anchor on the wrapper itself —
+ * which the reconciler keeps stable by construction. The wrapper
+ * itself stays `overflow-anchor: auto` (the default, declared
+ * explicitly below for contract clarity).
  */
 .tugx-md-block {
   box-sizing: border-box;
@@ -73,4 +93,8 @@
   padding: 0 var(--tugx-md-block-padding-x, 1rem);
   contain: content;
   overflow-anchor: auto;
+}
+
+.tugx-md-block * {
+  overflow-anchor: none;
 }

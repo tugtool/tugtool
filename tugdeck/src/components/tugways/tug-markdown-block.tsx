@@ -94,6 +94,192 @@ import {
  */
 const STREAMING_RENDER_STATE: WeakMap<HTMLElement, RenderState> = new WeakMap();
 
+// ===========================================================================
+// TEMPORARY DIAGNOSTIC — Step 18.8 scroll-jump investigation.
+//
+// Module-scope so it survives across all TugMarkdownBlock mounts /
+// unmounts and HMR cycles. Installs once-per-scrollport tracking when
+// `installScrollJumpDiagnostic(scrollport)` is first called for that
+// element. Subsequent calls are idempotent; the traps stay live for
+// the lifetime of the element.
+//
+// What it logs:
+//   - [scrollTop=PROG]  every programmatic write via the setter
+//   - [scrollTo]        every scrollTo({...}) call
+//   - [scrollBy]        every scrollBy({...}) call
+//   - [scroll-event]    every browser-fired scroll event with delta
+//   - [scrollHeight]    every change to scrollHeight (rAF poll)
+//   - [scrollTop=DRIFT] every change to scrollTop NOT from PROG/scrollTo/
+//                       scrollBy (browser auto-clamp, scroll anchoring, etc)
+//   - "*** CLAMP WINDOW ***" tagged on scrollHeight drops whose new
+//     value is below the prior scrollTop + clientHeight
+// ===========================================================================
+
+interface DiagnosticState {
+  installed: boolean;
+  lastTop: number;
+  lastHeight: number;
+  lastWriteByDiag: boolean;
+}
+const SCROLL_JUMP_DIAGNOSTIC: WeakMap<HTMLElement, DiagnosticState> = new WeakMap();
+
+function installScrollJumpDiagnostic(sp: HTMLElement): void {
+  if (SCROLL_JUMP_DIAGNOSTIC.get(sp)?.installed === true) return;
+  const state: DiagnosticState = {
+    installed: true,
+    lastTop: sp.scrollTop,
+    lastHeight: sp.scrollHeight,
+    lastWriteByDiag: false,
+  };
+  SCROLL_JUMP_DIAGNOSTIC.set(sp, state);
+
+  // ---- scrollTop setter trap ----
+  let proto: object | null = Object.getPrototypeOf(sp);
+  let realDesc: PropertyDescriptor | undefined;
+  while (proto !== null) {
+    const d = Object.getOwnPropertyDescriptor(proto, "scrollTop");
+    if (d !== undefined) {
+      realDesc = d;
+      break;
+    }
+    proto = Object.getPrototypeOf(proto);
+  }
+  if (realDesc?.get !== undefined && realDesc.set !== undefined) {
+    const realGet = realDesc.get;
+    const realSet = realDesc.set;
+    Object.defineProperty(sp, "scrollTop", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return realGet.call(this);
+      },
+      set(this: HTMLElement, v: number) {
+        const before = realGet.call(this);
+        // eslint-disable-next-line no-console
+        console.log(
+          `[scrollTop=PROG] write ${Number(before).toFixed(1)} -> ${Number(v).toFixed(1)}`,
+          {
+            scrollHeight: (this as HTMLElement).scrollHeight,
+            clientHeight: (this as HTMLElement).clientHeight,
+          },
+        );
+        // eslint-disable-next-line no-console
+        console.trace("[scrollTop=PROG] caller");
+        state.lastWriteByDiag = true;
+        realSet.call(this, v);
+      },
+    });
+  }
+
+  // ---- scrollTo / scrollBy method traps ----
+  const origScrollTo = sp.scrollTo.bind(sp);
+  const origScrollBy = sp.scrollBy.bind(sp);
+  sp.scrollTo = function (this: HTMLElement, ...args: unknown[]): void {
+    const before = this.scrollTop;
+    // eslint-disable-next-line no-console
+    console.log(
+      `[scrollTo] before=${before.toFixed(1)} args=${JSON.stringify(args)}`,
+      { scrollHeight: this.scrollHeight, clientHeight: this.clientHeight },
+    );
+    // eslint-disable-next-line no-console
+    console.trace("[scrollTo] caller");
+    state.lastWriteByDiag = true;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (origScrollTo as any)(...args);
+  } as typeof sp.scrollTo;
+  sp.scrollBy = function (this: HTMLElement, ...args: unknown[]): void {
+    const before = this.scrollTop;
+    // eslint-disable-next-line no-console
+    console.log(
+      `[scrollBy] before=${before.toFixed(1)} args=${JSON.stringify(args)}`,
+      { scrollHeight: this.scrollHeight, clientHeight: this.clientHeight },
+    );
+    // eslint-disable-next-line no-console
+    console.trace("[scrollBy] caller");
+    state.lastWriteByDiag = true;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (origScrollBy as any)(...args);
+  } as typeof sp.scrollBy;
+
+  // ---- scroll event listener (catches EVERY scrollTop change the
+  // browser fires, including auto-clamps and scroll anchoring) ----
+  sp.addEventListener(
+    "scroll",
+    () => {
+      const t = sp.scrollTop;
+      const delta = t - state.lastTop;
+      if (Math.abs(delta) > 0.5) {
+        const tag = state.lastWriteByDiag ? "scroll-event(post-write)" : "scroll-event(BROWSER)";
+        // eslint-disable-next-line no-console
+        console.log(
+          `[${tag}] ${state.lastTop.toFixed(1)} -> ${t.toFixed(1)} ` +
+            `(Δ=${delta.toFixed(1)}, scrollHeight=${sp.scrollHeight}, clientHeight=${sp.clientHeight})`,
+        );
+        state.lastTop = t;
+      }
+      state.lastWriteByDiag = false;
+    },
+    { passive: true },
+  );
+
+  // ---- focusin listener: catches focus shifts that trigger auto-scroll ----
+  // Fires when ANY element inside the scrollport gains focus.
+  // The browser auto-scrolls to make the focused element visible — if
+  // the focused element is at the top of the document, scrollTop
+  // snaps to 0. Captures on document so we catch focus from anywhere.
+  document.addEventListener(
+    "focusin",
+    (e) => {
+      const target = e.target as HTMLElement | null;
+      if (target === null) return;
+      if (!sp.contains(target)) return; // ignore focus outside this scrollport
+      // eslint-disable-next-line no-console
+      console.log(
+        `[focusin] target=`,
+        target,
+        {
+          tagName: target.tagName,
+          tabIndex: target.tabIndex,
+          scrollTop: sp.scrollTop,
+          scrollHeight: sp.scrollHeight,
+        },
+      );
+      // eslint-disable-next-line no-console
+      console.trace("[focusin] caller");
+    },
+    { capture: true, passive: true },
+  );
+
+  // ---- rAF poll: catches scrollHeight changes (no event for those) ----
+  const poll = (): void => {
+    requestAnimationFrame(poll);
+    const h = sp.scrollHeight;
+    const t = sp.scrollTop;
+    const c = sp.clientHeight;
+    if (h !== state.lastHeight) {
+      const dropped = h < state.lastHeight;
+      const clampWindow = h < state.lastTop + c;
+      // eslint-disable-next-line no-console
+      console.log(
+        `[scrollHeight] ${state.lastHeight} -> ${h} ` +
+          `(${dropped ? "DROP" : "grow"}, scrollTop=${t.toFixed(1)}, clientHeight=${c}` +
+          `${clampWindow && dropped ? " *** CLAMP WINDOW ***" : ""})`,
+      );
+      state.lastHeight = h;
+    }
+    // Sync lastTop from the poll too, in case a drift was small enough
+    // to miss the scroll-event threshold.
+    if (Math.abs(t - state.lastTop) > 0.5) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[scrollTop=DRIFT] ${state.lastTop.toFixed(1)} -> ${t.toFixed(1)} ` +
+          `(scrollHeight=${h}, clientHeight=${c})`,
+      );
+      state.lastTop = t;
+    }
+  };
+  requestAnimationFrame(poll);
+}
+
 const DEFAULT_STREAMING_PATH = "text";
 
 /**
@@ -185,10 +371,55 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
     const el = containerRef.current;
     if (el === null) return;
 
+    // TEMPORARY DIAGNOSTIC — Step 18.8 scroll-jump investigation.
+    // Install module-scope traps once per scrollport (idempotent).
+    function findScrollport(node: HTMLElement | null): HTMLElement | null {
+      let cur: HTMLElement | null = node?.parentElement ?? null;
+      while (cur !== null) {
+        const style = getComputedStyle(cur);
+        const oy = style.overflowY;
+        if (oy === "auto" || oy === "scroll") return cur;
+        cur = cur.parentElement;
+      }
+      return null;
+    }
+    const scrollport = findScrollport(el);
+    if (scrollport !== null) {
+      // eslint-disable-next-line no-console
+      console.log("[md-scroll-debug] scrollport =", scrollport, {
+        scrollKey: scrollport.getAttribute("data-tug-scroll-key"),
+        clientHeight: scrollport.clientHeight,
+        scrollHeight: scrollport.scrollHeight,
+        scrollTop: scrollport.scrollTop,
+      });
+      installScrollJumpDiagnostic(scrollport);
+    }
+
     const reconcile = (text: string): void => {
       const prev = STREAMING_RENDER_STATE.get(el) ?? null;
-      const { state } = renderIncremental(el, text, prev);
+      const beforeTop = scrollport?.scrollTop ?? -1;
+      const beforeHeight = scrollport?.scrollHeight ?? -1;
+      const { state, plan } = renderIncremental(el, text, prev);
       STREAMING_RENDER_STATE.set(el, state);
+      const afterTop = scrollport?.scrollTop ?? -1;
+      const afterHeight = scrollport?.scrollHeight ?? -1;
+      const delta = afterTop - beforeTop;
+      const moved = Math.abs(delta) > 0.5;
+      const interesting =
+        moved ||
+        plan.updateCount > 0 ||
+        plan.appendCount > 0 ||
+        plan.removeCount > 0;
+      if (interesting) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[md-scroll-debug] reconcile plan=${JSON.stringify(plan)} ` +
+            `scrollTop ${beforeTop.toFixed(1)} -> ${afterTop.toFixed(1)} ` +
+            `(Δ=${delta.toFixed(1)}) ` +
+            `scrollHeight ${beforeHeight} -> ${afterHeight} ` +
+            `${moved ? "*** SCROLL MOVED ***" : ""}`,
+        );
+      }
     };
 
     // G1 — render the store's current value before paint. Initial
