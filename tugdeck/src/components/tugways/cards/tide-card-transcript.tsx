@@ -427,9 +427,10 @@ const CodeCommittedRowCell: React.FC<CodeCommittedRowCellProps> = ({
   // permanent transcript artifact per [D13]. Each resolved record is
   // routed through the assistant renderer dispatch ([D01]) carrying
   // its `resolvedDecision`, so the dialog mounts straight into its
-  // collapsed static record. Renders in the same slot the live dialog
-  // uses in the streaming row (between tool calls and assistant body)
-  // so a turn reads identically before and after it commits.
+  // collapsed static record. Renders ABOVE the tool calls so a
+  // committed turn reads in chronological order: approval → tool
+  // ran → output → assistant summary. The live streaming row mirrors
+  // this placement so the slot is consistent before and after commit.
   const controlRequests = turn?.controlRequests ?? [];
   const permissionRecords =
     controlRequests.length > 0
@@ -482,13 +483,13 @@ const CodeCommittedRowCell: React.FC<CodeCommittedRowCellProps> = ({
               {thinkingText !== "" ? (
                 <TideThinkingBlock initialText={thinkingText} />
               ) : null}
+              {permissionRecords}
               {turn !== undefined && turn.toolCalls.length > 0 ? (
                 <TranscriptToolCalls
                   toolCalls={turn.toolCalls}
                   msgId={turn.msgId}
                 />
               ) : null}
-              {permissionRecords}
               <TugMarkdownBlock
                 initialText={assistantText}
                 className="tide-card-transcript-code-body"
@@ -615,12 +616,12 @@ const CodeStreamingRowCell: React.FC<CodeStreamingRowCellProps> = ({
                 streamingStore={streamingStore}
                 streamingPath={thinkingStreamingPath}
               />
+              {permissionDialog}
               <TranscriptToolCalls
                 streamingStore={streamingStore}
                 streamingPath={toolsStreamingPath}
                 msgId={inflightMsgId}
               />
-              {permissionDialog}
               <TugMarkdownBlock
                 streamingStore={streamingStore}
                 streamingPath={streamingPath}

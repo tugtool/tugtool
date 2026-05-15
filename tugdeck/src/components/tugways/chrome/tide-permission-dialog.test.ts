@@ -43,6 +43,7 @@ import {
   composePermissionLineRange,
   composePermissionRecordSummary,
   composePermissionSuggestionLabel,
+  isBoilerplateApprovalReason,
   narrowPermissionSuggestion,
   selectPermissionBodyKind,
   type PermissionSuggestionAction,
@@ -299,6 +300,70 @@ describe("composePermissionRecordSummary", () => {
   it("falls back to 'Tool' for an empty tool name", () => {
     expect(composePermissionRecordSummary("", "allow")).toBe("Tool — Allowed");
     expect(composePermissionRecordSummary("   ", "deny")).toBe("Tool — Denied");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isBoilerplateApprovalReason — wire-noise filter for decision_reason
+// ---------------------------------------------------------------------------
+
+describe("isBoilerplateApprovalReason", () => {
+  it("flags the wire's bare 'This command requires approval' as boilerplate", () => {
+    // The exact string that doubled up in the live dialog before the
+    // filter landed — pinned here so a regression on the matcher
+    // surfaces immediately.
+    expect(isBoilerplateApprovalReason("This command requires approval")).toBe(
+      true,
+    );
+  });
+
+  it("flags case + punctuation variants of the same sentence", () => {
+    expect(isBoilerplateApprovalReason("THIS COMMAND REQUIRES APPROVAL")).toBe(
+      true,
+    );
+    expect(isBoilerplateApprovalReason("This command requires approval.")).toBe(
+      true,
+    );
+    expect(isBoilerplateApprovalReason("  this command requires approval  ")).toBe(
+      true,
+    );
+  });
+
+  it("flags the related boilerplate variants", () => {
+    expect(isBoilerplateApprovalReason("This tool requires approval")).toBe(true);
+    expect(isBoilerplateApprovalReason("This action requires approval")).toBe(
+      true,
+    );
+    expect(isBoilerplateApprovalReason("Approval required")).toBe(true);
+    expect(isBoilerplateApprovalReason("Requires approval")).toBe(true);
+    expect(isBoilerplateApprovalReason("Permission requested")).toBe(true);
+    expect(isBoilerplateApprovalReason("Permission required")).toBe(true);
+  });
+
+  it("flags the empty-string case (whitespace-only after trim)", () => {
+    expect(isBoilerplateApprovalReason("")).toBe(true);
+    expect(isBoilerplateApprovalReason("   ")).toBe(true);
+  });
+
+  it("preserves substantive reasons that add real context", () => {
+    // The reasons we WANT to render — each names a constraint the
+    // dialog's synthesized prose cannot have already conveyed.
+    expect(
+      isBoilerplateApprovalReason(
+        "Path is outside allowed working directories",
+      ),
+    ).toBe(false);
+    expect(
+      isBoilerplateApprovalReason("File is outside the workspace root"),
+    ).toBe(false);
+    expect(
+      isBoilerplateApprovalReason("Command matches a blocked pattern"),
+    ).toBe(false);
+    expect(
+      isBoilerplateApprovalReason(
+        "This command requires approval because the path escapes the project root",
+      ),
+    ).toBe(false);
   });
 });
 

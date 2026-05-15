@@ -145,6 +145,19 @@ body {
   padding: var(--tugx-perm-record-detail-pad);
 }
 
+/*
+ * Single-row container for the synthesized description. The parent
+ * uses flex-column with gap, so each direct child becomes a row;
+ * wrapping the description here ensures its inline content (text +
+ * inline icon + <code> + reason span) renders as one flowing row
+ * instead of stacking each inline child on its own line.
+ */
+.tide-permission-dialog-record-description {
+  display: block;
+  font-size: var(--tug-font-size-sm);
+  line-height: 1.5;
+}
+
 /* ---- Pending: small inline fragments inside the primitive ---- */
 
 /* The pending state's suggestion buttons are now rendered by

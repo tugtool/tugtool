@@ -324,6 +324,39 @@ export function composePermissionRecordSummary(
 }
 
 /**
+ * Recognise wire `decision_reason` strings that merely restate what
+ * the dialog already says — "This command requires approval" /
+ * "Approval required" / similar boilerplate — so the
+ * description doesn't end up doubling the same sentence twice.
+ *
+ * The wire occasionally fills `decision_reason` with this kind of
+ * generic copy when the underlying gating logic has nothing more
+ * specific to add (typically Bash). When the reason carries
+ * substantive context — "Path is outside allowed working
+ * directories", "File is outside the workspace root" — it is kept
+ * intact.
+ *
+ * Match is case-insensitive, trims surrounding whitespace, and
+ * tolerates trailing `.` / `!` / `?`. Pure; exported for tests.
+ */
+export function isBoilerplateApprovalReason(reason: string): boolean {
+  const stripped = reason.trim().toLowerCase().replace(/[.!?]+$/, "");
+  switch (stripped) {
+    case "":
+    case "this command requires approval":
+    case "this tool requires approval":
+    case "this action requires approval":
+    case "approval required":
+    case "requires approval":
+    case "permission requested":
+    case "permission required":
+      return true;
+    default:
+      return false;
+  }
+}
+
+/**
  * Compose the optional line-range badge for a `Read` permission
  * request whose input carried `offset` / `limit`. Mirrors
  * `ReadToolBlock`'s `composeLineRangeBadge` semantics. Returns
@@ -578,11 +611,17 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
     () => allowOptions[0]?.value ?? ALLOW_ONCE_OPTION_VALUE,
   );
 
-  const decisionReason =
-    typeof request.decision_reason === "string" &&
-    request.decision_reason.trim() !== ""
-      ? request.decision_reason
-      : undefined;
+  const decisionReason = React.useMemo<string | undefined>(() => {
+    const raw = request.decision_reason;
+    if (typeof raw !== "string") return undefined;
+    if (raw.trim() === "") return undefined;
+    // Drop wire boilerplate that merely restates the dialog's own
+    // synthesized prose ("This command requires approval"). When the
+    // reason carries substantive context ("Path is outside allowed
+    // working directories"), it stays.
+    if (isBoilerplateApprovalReason(raw)) return undefined;
+    return raw;
+  }, [request.decision_reason]);
 
   // ---- Resolved record ----------------------------------------------------
   if (!isPending) {
@@ -624,11 +663,18 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
         </button>
         {recordExpanded ? (
           <div className="tide-permission-dialog-record-detail">
-            <PermissionDescription
-              toolName={toolName}
-              input={request.input}
-              decisionReason={decisionReason}
-            />
+            {/* PermissionDescription returns a Fragment with mixed
+             * inline content (text, inline icon, <code>, reason span).
+             * The wrapper here keeps that content as a single flex
+             * row in the parent's flex-column layout — without it,
+             * each inline child would line-break onto its own row. */}
+            <div className="tide-permission-dialog-record-description">
+              <PermissionDescription
+                toolName={toolName}
+                input={request.input}
+                decisionReason={decisionReason}
+              />
+            </div>
             <PendingBody toolName={toolName} input={request.input} />
           </div>
         ) : null}
