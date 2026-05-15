@@ -50,6 +50,7 @@
  */
 
 import {
+  lex_block_hashes,
   lex_blocks,
   parse_blocks_to_html,
 } from "../../../crates/tugmark-wasm/pkg/tugmark_wasm.js";
@@ -87,6 +88,19 @@ export interface SanitizedMarkdownBlock {
   itemCount: number;
   /** Table row count for `type === "table"`; 0 otherwise. */
   rowCount: number;
+  /**
+   * FNV-1a 64-bit hash of the block's source byte range, computed in
+   * Rust during the lex pass. Identifies block-content equivalence
+   * across renders for the streaming reconciler ([#step-18-8]) — when
+   * two parses produce blocks whose `contentHash` matches at the same
+   * index, the reconciler can leave that block's DOM untouched and
+   * preserve its scroll-anchor identity.
+   *
+   * Carried as a `bigint` so the full 64 bits survive the WASM →
+   * JS boundary (`Uint32Array` low/high pair packed into one
+   * `BigInt`). The reconciler uses `===` equality for comparison.
+   */
+  contentHash: bigint;
 }
 
 // ---------------------------------------------------------------------------
@@ -242,6 +256,11 @@ export function parseMarkdownToSanitizedBlocks(
   // capping the iteration at the shorter of the two and falling back
   // to an empty html for any extra lexer-reported blocks.
   const htmlPerBlock = parse_blocks_to_html(text) as string[];
+  // Per-block FNV-1a 64-bit content hashes, walked the same way as
+  // `lex_blocks` so the index ordering matches; 2 u32 per block (low
+  // half then high half). Reassembled below into one `bigint` per
+  // block for the reconciler ([#step-18-8]).
+  const hashWords = lex_block_hashes(text);
 
   const byteToChar = buildByteToCharMap(text);
   const sanitizer = getDOMPurify();
@@ -253,6 +272,13 @@ export function parseMarkdownToSanitizedBlocks(
     const endChar = byteToChar[block.endByte] ?? block.endByte;
     const rawHtml = htmlPerBlock[i] ?? "";
     const sanitized = sanitizer.sanitize(rawHtml, SANITIZE_CONFIG);
+    // Pack the (low, high) u32 pair from `lex_block_hashes` into one
+    // 64-bit `bigint`. Defensive `?? 0n` guards a hypothetical drift
+    // between the two WASM walks; in practice both produce the same
+    // count by construction.
+    const hashLo = hashWords[i * 2] ?? 0;
+    const hashHi = hashWords[i * 2 + 1] ?? 0;
+    const contentHash = (BigInt(hashHi) << 32n) | BigInt(hashLo);
     result[i] = {
       html: sanitized,
       type: block.type,
@@ -261,6 +287,7 @@ export function parseMarkdownToSanitizedBlocks(
       depth: block.depth,
       itemCount: block.itemCount,
       rowCount: block.rowCount,
+      contentHash,
     };
   }
 

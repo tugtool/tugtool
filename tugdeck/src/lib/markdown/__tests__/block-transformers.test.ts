@@ -247,6 +247,7 @@ describe("applyBlockTransformers", () => {
       depth: 0,
       itemCount: 0,
       rowCount: 0,
+      contentHash: 0n,
     };
   }
 
@@ -281,6 +282,7 @@ describe("stub transformers (#step-3 ship-as-no-op contract)", () => {
       depth: 0,
       itemCount: 0,
       rowCount: 0,
+      contentHash: 0n,
     };
   }
 

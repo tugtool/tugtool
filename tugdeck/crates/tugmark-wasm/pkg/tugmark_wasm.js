@@ -1,6 +1,27 @@
 /* @ts-self-types="./tugmark_wasm.d.ts" */
 
 /**
+ * Compute a per-block FNV-1a 64-bit content hash for every top-level
+ * block in `text`. Returns `Vec<u32>` with 2 words per block (low,
+ * high). Block ordering matches [`lex_blocks`] — the two functions
+ * can be zipped on index without further coordination.
+ *
+ * Consumed by the streaming markdown reconciler ([Step 18.8]) to
+ * detect which blocks changed across renders so DOM mutations stay
+ * minimal and the browser's per-element scroll anchors survive.
+ * @param {string} text
+ * @returns {Uint32Array}
+ */
+export function lex_block_hashes(text) {
+    const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.lex_block_hashes(ptr0, len0);
+    var v2 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+    return v2;
+}
+
+/**
  * Lex markdown into packed binary block metadata.
  * Returns Vec<u32> — 4 words per block. JS receives a Uint32Array.
  * @param {string} text

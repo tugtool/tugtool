@@ -112,4 +112,40 @@ describe("parseMarkdownToSanitizedBlocks", () => {
     expect(text.slice(blocks[0].startChar, blocks[0].endChar)).toContain("para1");
     expect(text.slice(blocks[1].startChar, blocks[1].endChar)).toContain("para2");
   });
+
+  test("contentHash is a non-zero bigint per block, deterministic across calls", () => {
+    const text = "# Heading\n\nFirst paragraph.\n\nSecond paragraph.";
+    const a = parseMarkdownToSanitizedBlocks(text);
+    const b = parseMarkdownToSanitizedBlocks(text);
+    expect(a.length).toBe(3);
+    expect(b.length).toBe(3);
+    for (let i = 0; i < a.length; i += 1) {
+      // Hash must be a bigint (the BigInt(hi)<<32 | BigInt(lo) reassembly
+      // landed correctly) and non-zero (FNV-1a's offset basis is
+      // non-zero, and the input range is non-empty).
+      expect(typeof a[i].contentHash).toBe("bigint");
+      expect(a[i].contentHash).not.toBe(0n);
+      // Determinism: same text → same hash.
+      expect(a[i].contentHash).toBe(b[i].contentHash);
+    }
+  });
+
+  test("contentHash diverges when source text changes", () => {
+    const before = parseMarkdownToSanitizedBlocks("# Heading A");
+    const after = parseMarkdownToSanitizedBlocks("# Heading B");
+    expect(before[0].contentHash).not.toBe(after[0].contentHash);
+  });
+
+  test("appending a new block preserves leading blocks' contentHash (the load-bearing reconciler invariant)", () => {
+    const prior = parseMarkdownToSanitizedBlocks(
+      "# Heading\n\nFirst paragraph.\n",
+    );
+    const later = parseMarkdownToSanitizedBlocks(
+      "# Heading\n\nFirst paragraph.\n\nSecond paragraph.\n",
+    );
+    expect(later.length).toBeGreaterThan(prior.length);
+    for (let i = 0; i < prior.length; i += 1) {
+      expect(later[i].contentHash).toBe(prior[i].contentHash);
+    }
+  });
 });

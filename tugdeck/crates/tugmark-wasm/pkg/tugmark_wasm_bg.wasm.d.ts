@@ -1,6 +1,7 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
+export const lex_block_hashes: (a: number, b: number) => [number, number];
 export const lex_blocks: (a: number, b: number) => [number, number];
 export const parse_blocks_to_html: (a: number, b: number) => [number, number];
 export const parse_to_html: (a: number, b: number) => [number, number];

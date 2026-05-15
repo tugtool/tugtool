@@ -2,6 +2,18 @@
 /* eslint-disable */
 
 /**
+ * Compute a per-block FNV-1a 64-bit content hash for every top-level
+ * block in `text`. Returns `Vec<u32>` with 2 words per block (low,
+ * high). Block ordering matches [`lex_blocks`] — the two functions
+ * can be zipped on index without further coordination.
+ *
+ * Consumed by the streaming markdown reconciler ([Step 18.8]) to
+ * detect which blocks changed across renders so DOM mutations stay
+ * minimal and the browser's per-element scroll anchors survive.
+ */
+export function lex_block_hashes(text: string): Uint32Array;
+
+/**
  * Lex markdown into packed binary block metadata.
  * Returns Vec<u32> — 4 words per block. JS receives a Uint32Array.
  */
@@ -38,6 +50,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly lex_block_hashes: (a: number, b: number) => [number, number];
     readonly lex_blocks: (a: number, b: number) => [number, number];
     readonly parse_blocks_to_html: (a: number, b: number) => [number, number];
     readonly parse_to_html: (a: number, b: number) => [number, number];
