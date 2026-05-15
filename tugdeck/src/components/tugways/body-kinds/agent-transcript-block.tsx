@@ -78,7 +78,11 @@ import {
   useSavedComponentState,
 } from "@/components/tugways/use-component-state-preservation";
 import type { ToolCallState } from "@/lib/code-session-store";
-import { BlockCopyButton, BlockFoldCue } from "./affordances";
+import {
+  BlockActionsCluster,
+  BlockCopyButton,
+  BlockFoldCue,
+} from "./affordances";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -473,7 +477,6 @@ export const AgentTranscriptBlock: React.FC<AgentTranscriptBlockProps> = ({
         className="tugx-agent-fold-cue"
       />
       <BlockCopyButton
-        className="tugx-agent-copy"
         data-slot="agent-transcript-copy"
         aria-label="Copy subagent transcript"
         getText={getTranscriptText}
@@ -484,12 +487,9 @@ export const AgentTranscriptBlock: React.FC<AgentTranscriptBlockProps> = ({
   const portaledActions =
     embedded && chromeActionsTarget !== null
       ? createPortal(
-          <span
-            className="tugx-agent-actions-cluster"
-            data-slot={DATA_SLOT_ACTIONS}
-          >
+          <BlockActionsCluster data-slot={DATA_SLOT_ACTIONS}>
             {actions}
-          </span>,
+          </BlockActionsCluster>,
           chromeActionsTarget,
         )
       : null;
@@ -543,12 +543,9 @@ export const AgentTranscriptBlock: React.FC<AgentTranscriptBlockProps> = ({
             </span>
           ) : null}
           <span className="tugx-agent-header-spacer" />
-          <span
-            className="tugx-agent-actions-cluster"
-            data-slot={DATA_SLOT_ACTIONS}
-          >
+          <BlockActionsCluster data-slot={DATA_SLOT_ACTIONS}>
             {actions}
-          </span>
+          </BlockActionsCluster>
         </div>
       )}
       {portaledActions}

@@ -156,26 +156,6 @@ body {
   flex: 1 1 auto;
 }
 
-/* ---------- Trailing affordances cluster ---------- */
-
-/* Fold cue + view-toggle sit as a `flex: 0 0 auto` cluster at the
- * trailing edge of `.tugx-diff-header` (standalone) or portal into
- * `ToolWrapperChrome`'s actions slot (embedded). Mirrors FileBlock's
- * `.tugx-file-actions-cluster` pattern; same markup, same
- * `data-slot="diff-actions"` hook so consumers and tests can still
- * locate "DiffBlock's affordances" unambiguously regardless of
- * composition mode.
- *
- * No `position: sticky`, no `--tugx-diff-actions-height` writer —
- * the cluster rides whichever header it's inside, so any sticky
- * contract is the host's responsibility, not the cluster's. */
-.tugx-diff-actions-cluster {
-  display: inline-flex;
-  align-items: center;
-  flex: 0 0 auto;
-  gap: var(--tug-space-2xs);
-}
-
 /* Fold cue + view-toggle are `TugPushButton`s per the Tug-component
  * contract. Appearance flows through the `--tug-button-*` slots on
  * those primitives; the legacy bespoke

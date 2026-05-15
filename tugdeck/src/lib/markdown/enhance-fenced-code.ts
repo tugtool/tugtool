@@ -173,8 +173,8 @@ export function enhanceFencedCode(container: HTMLElement): void {
     spacer.className = "tugx-md-fenced-code-header-spacer";
     header.appendChild(spacer);
 
-    // Trailing actions cluster — hosts Copy. Mirrors the React body
-    // kinds' `.tugx-{kind}-actions-cluster` shape; the
+    // Trailing actions cluster — hosts Copy. This is the imperative
+    // DOM counterpart of the React `BlockActionsCluster`; the
     // `data-slot="md-fenced-code-actions"` hook lets tests and
     // consumers locate "this block's affordances" by data-slot.
     const actions = document.createElement("span");

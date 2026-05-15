@@ -93,7 +93,7 @@ import {
   useComponentStatePreservation,
   useSavedComponentState,
 } from "@/components/tugways/use-component-state-preservation";
-import { BlockCopyButton } from "./affordances";
+import { BlockActionsCluster, BlockCopyButton } from "./affordances";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -473,7 +473,6 @@ export const PathListBlock: React.FC<PathListBlockProps> = ({
         />
       ) : null}
       <BlockCopyButton
-        className="tugx-paths-copy"
         data-slot="path-list-copy"
         aria-label="Copy paths"
         getText={getPathsText}
@@ -484,12 +483,9 @@ export const PathListBlock: React.FC<PathListBlockProps> = ({
   const portaledActions =
     embedded && chromeActionsTarget !== null
       ? createPortal(
-          <span
-            className="tugx-paths-actions-cluster"
-            data-slot={DATA_SLOT_ACTIONS}
-          >
+          <BlockActionsCluster data-slot={DATA_SLOT_ACTIONS}>
             {actions}
-          </span>,
+          </BlockActionsCluster>,
           chromeActionsTarget,
         )
       : null;
@@ -522,12 +518,9 @@ export const PathListBlock: React.FC<PathListBlockProps> = ({
             </span>
           ) : null}
           <span className="tugx-paths-header-spacer" />
-          <span
-            className="tugx-paths-actions-cluster"
-            data-slot={DATA_SLOT_ACTIONS}
-          >
+          <BlockActionsCluster data-slot={DATA_SLOT_ACTIONS}>
             {actions}
-          </span>
+          </BlockActionsCluster>
         </div>
       )}
       {portaledActions}

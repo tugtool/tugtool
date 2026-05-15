@@ -206,25 +206,6 @@ body {
   flex: 1 1 auto;
 }
 
-/* ---- Trailing affordances cluster ---- */
-
-/* Copy sits as a `flex: 0 0 auto` cluster at the trailing edge of
- * `.tugx-term-header` (standalone) or portals into
- * `ToolWrapperChrome`'s actions slot (embedded). Mirrors FileBlock /
- * DiffBlock's `.tugx-{kind}-actions-cluster` pattern; same markup,
- * same `data-slot="terminal-actions"` hook so consumers and tests
- * can still locate "TerminalBlock's affordances" unambiguously
- * regardless of composition mode.
- *
- * No `position: sticky`, no `--tugx-term-header-height` writer — the
- * cluster rides whichever header it's inside. */
-.tugx-term-actions-cluster {
-  display: inline-flex;
-  align-items: center;
-  flex: 0 0 auto;
-  gap: var(--tug-space-2xs);
-}
-
 /* ---- Content wrapper ---- */
 
 /* The imperative renderer writes the truncation banner, the flat or

@@ -148,24 +148,6 @@ body {
 
 /* ---------- Trailing affordances cluster ---------- */
 
-/* The fold cue and Search trigger live in a `flex: 0 0 auto` cluster
- * at the trailing edge of `.tugx-file-header` in standalone mode, or
- * portal into `ToolWrapperChrome`'s actions slot in embedded mode.
- * Same DOM markup in both cases; only the host differs. The cluster
- * owns its own internal gap so the buttons read as a related group;
- * outer spacing is provided by the host (`.tugx-file-header` flex
- * `gap`, or the chrome's actions-slot `gap`).
- *
- * No `position: sticky`, no `--tugx-file-actions-height` writer —
- * the cluster rides whichever header it's inside, so any sticky
- * contract is the host's responsibility, not the cluster's. */
-.tugx-file-actions-cluster {
-  display: inline-flex;
-  align-items: center;
-  flex: 0 0 auto;
-  gap: var(--tug-space-2xs);
-}
-
 /* Fold cue is a `TugPushButton` (icon-text when collapsed, icon when
  * expanded) per the Tug-component contract. Appearance tokens live in
  * the TugButton/TugPushButton stylesheets; only the

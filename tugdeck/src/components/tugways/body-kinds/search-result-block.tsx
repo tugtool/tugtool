@@ -87,7 +87,7 @@ import {
   useComponentStatePreservation,
   useSavedComponentState,
 } from "@/components/tugways/use-component-state-preservation";
-import { BlockCopyButton } from "./affordances";
+import { BlockActionsCluster, BlockCopyButton } from "./affordances";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -621,7 +621,6 @@ export const SearchResultBlock: React.FC<SearchResultBlockProps> = ({
   // chrome's actions slot (embedded).
   const actions = (
     <BlockCopyButton
-      className="tugx-search-copy"
       data-slot="search-result-copy"
       aria-label="Copy search results"
       getText={getResultText}
@@ -631,12 +630,9 @@ export const SearchResultBlock: React.FC<SearchResultBlockProps> = ({
   const portaledActions =
     embedded && chromeActionsTarget !== null
       ? createPortal(
-          <span
-            className="tugx-search-actions-cluster"
-            data-slot={DATA_SLOT_ACTIONS}
-          >
+          <BlockActionsCluster data-slot={DATA_SLOT_ACTIONS}>
             {actions}
-          </span>,
+          </BlockActionsCluster>,
           chromeActionsTarget,
         )
       : null;
@@ -671,12 +667,9 @@ export const SearchResultBlock: React.FC<SearchResultBlockProps> = ({
             </span>
           ) : null}
           <span className="tugx-search-header-spacer" />
-          <span
-            className="tugx-search-actions-cluster"
-            data-slot={DATA_SLOT_ACTIONS}
-          >
+          <BlockActionsCluster data-slot={DATA_SLOT_ACTIONS}>
             {actions}
-          </span>
+          </BlockActionsCluster>
         </div>
       )}
       {portaledActions}

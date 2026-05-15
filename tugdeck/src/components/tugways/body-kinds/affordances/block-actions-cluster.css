@@ -1,0 +1,22 @@
+/**
+ * `BlockActionsCluster` — the single declaration for the body-kind
+ * affordance row: the inline-flex row that groups a block's resting
+ * affordances (Copy, fold cue, sort / view toggles).
+ *
+ * `flex: 0 0 auto` so the cluster never shrinks — the args summary
+ * to its left ellipsizes to make room as affordances accumulate.
+ *
+ * Laws:
+ *  - [L19] component-authoring — `.tsx` + `.css` pair; the affordance
+ *    owns its own stylesheet.
+ *  - [L20] component-token sovereignty — the cluster is layout-only
+ *    (flex + gap); it paints nothing and reads no `--tugx-{kind}-*`
+ *    tokens, so it composes inside any body kind's header without
+ *    reaching into that kind's slot family.
+ */
+.tugx-block-actions-cluster {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--tug-space-2xs);
+}

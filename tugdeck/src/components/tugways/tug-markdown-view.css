@@ -388,8 +388,8 @@ body {
 }
 
 /* Trailing affordances cluster — hosts the Copy `<button>` at the
- * right edge of the identity header. Matches the React body kinds'
- * `.tugx-{kind}-actions-cluster` shape: `flex: 0 0 auto`, no sticky
+ * right edge of the identity header. The imperative-DOM counterpart
+ * of the React `BlockActionsCluster`: `flex: 0 0 auto`, no sticky
  * (the cluster rides the header that hosts it). */
 .tugx-md-block .tugx-md-fenced-code-actions-cluster {
   display: inline-flex;

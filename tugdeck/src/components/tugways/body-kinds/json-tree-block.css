@@ -139,17 +139,6 @@ body {
   flex: 1 1 auto;
 }
 
-/* Trailing affordances cluster — Expand-all / Collapse-all / Copy.
- * Rides `.tugx-json-header` (standalone) or portals into
- * `ToolWrapperChrome`'s actions slot (embedded). Same markup in both;
- * only the host differs. Mirrors `.tugx-file-actions-cluster`. */
-.tugx-json-actions-cluster {
-  display: inline-flex;
-  align-items: center;
-  flex: 0 0 auto;
-  gap: var(--tug-space-2xs);
-}
-
 /* ---------- Tree ---------- */
 
 .tugx-json-tree {

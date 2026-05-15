@@ -9,6 +9,9 @@
  * attributes). Block kinds compose them and pass the variable
  * parts:
  *
+ *  - `BlockActionsCluster` — the inline-flex row that groups a
+ *    block's affordances; one shared declaration so the cluster
+ *    can't drift between body kinds.
  *  - `BlockCopyButton` — Copy → Copied controlled-confirmation
  *    flash, width-stabilized so the swap doesn't jostle siblings.
  *  - `BlockFoldCue` — chevron + count label, dispatches the
@@ -22,6 +25,9 @@
  *
  * @module components/tugways/body-kinds/affordances
  */
+
+export { BlockActionsCluster } from "./block-actions-cluster";
+export type { BlockActionsClusterProps } from "./block-actions-cluster";
 
 export { BlockCopyButton, COPIED_FLASH_MS } from "./block-copy-button";
 export type { BlockCopyButtonProps } from "./block-copy-button";

@@ -116,7 +116,11 @@ import {
   useSavedComponentState,
   useSavedRegionScroll,
 } from "@/components/tugways/use-component-state-preservation";
-import { BlockCopyButton, BlockFoldCue } from "./affordances";
+import {
+  BlockActionsCluster,
+  BlockCopyButton,
+  BlockFoldCue,
+} from "./affordances";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -1410,7 +1414,6 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   const affordances = (
     <>
       <BlockCopyButton
-        className="tugx-term-copy-button"
         disabled={copyDisabled}
         aria-label="Copy terminal output"
         getText={getCopyText}
@@ -1432,12 +1435,9 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   const portaledAffordances =
     embedded && chromeActionsTarget !== null
       ? createPortal(
-          <span
-            className="tugx-term-actions-cluster"
-            data-slot="terminal-actions"
-          >
+          <BlockActionsCluster data-slot="terminal-actions">
             {affordances}
-          </span>,
+          </BlockActionsCluster>,
           chromeActionsTarget,
         )
       : null;
@@ -1478,12 +1478,9 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
               </span>
             ) : null}
             <span className="tugx-term-header-spacer" />
-            <span
-              className="tugx-term-actions-cluster"
-              data-slot="terminal-actions"
-            >
+            <BlockActionsCluster data-slot="terminal-actions">
               {affordances}
-            </span>
+            </BlockActionsCluster>
           </div>
         ) : null}
         {portaledAffordances}

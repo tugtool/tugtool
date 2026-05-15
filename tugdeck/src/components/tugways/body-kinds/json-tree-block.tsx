@@ -10,7 +10,7 @@
  *
  * Composition (mirrors `FileBlock` / `DiffBlock` / `TerminalBlock`):
  *  - Header (standalone only) — an optional identity `label` + a
- *    trailing `.tugx-json-actions-cluster` carrying Expand-all /
+ *    trailing `BlockActionsCluster` carrying Expand-all /
  *    Collapse-all (`TugIconButton`) and Copy (`BlockCopyButton`).
  *    Unlike `FileBlock`, the header is rendered even without a label
  *    because it is the only host for the expand controls a tree
@@ -82,7 +82,7 @@ import {
   useComponentStatePreservation,
   useSavedComponentState,
 } from "@/components/tugways/use-component-state-preservation";
-import { BlockCopyButton } from "./affordances";
+import { BlockActionsCluster, BlockCopyButton } from "./affordances";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -605,7 +605,6 @@ export const JsonTreeBlock: React.FC<JsonTreeBlockProps> = ({
         onClick={handleCollapseAll}
       />
       <BlockCopyButton
-        className="tugx-json-copy"
         data-slot="json-copy"
         aria-label="Copy JSON"
         getText={getJsonText}
@@ -616,12 +615,9 @@ export const JsonTreeBlock: React.FC<JsonTreeBlockProps> = ({
   const portaledActions =
     embedded && chromeActionsTarget !== null
       ? createPortal(
-          <span
-            className="tugx-json-actions-cluster"
-            data-slot={DATA_SLOT_ACTIONS}
-          >
+          <BlockActionsCluster data-slot={DATA_SLOT_ACTIONS}>
             {actions}
-          </span>,
+          </BlockActionsCluster>,
           chromeActionsTarget,
         )
       : null;
@@ -641,12 +637,9 @@ export const JsonTreeBlock: React.FC<JsonTreeBlockProps> = ({
             </span>
           ) : null}
           <span className="tugx-json-header-spacer" />
-          <span
-            className="tugx-json-actions-cluster"
-            data-slot={DATA_SLOT_ACTIONS}
-          >
+          <BlockActionsCluster data-slot={DATA_SLOT_ACTIONS}>
             {actions}
-          </span>
+          </BlockActionsCluster>
         </div>
       )}
       {portaledActions}

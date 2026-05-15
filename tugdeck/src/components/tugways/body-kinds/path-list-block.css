@@ -133,17 +133,6 @@ body {
   flex: 1 1 auto;
 }
 
-/* Trailing affordances cluster — Copy + sort toggle. Rides
- * `.tugx-paths-header` (standalone) or portals into
- * `ToolWrapperChrome`'s actions slot (embedded). Mirrors
- * `.tugx-json-actions-cluster`. */
-.tugx-paths-actions-cluster {
-  display: inline-flex;
-  align-items: center;
-  flex: 0 0 auto;
-  gap: var(--tug-space-2xs);
-}
-
 /* ---------- List ---------- */
 
 /* `inline`-mode `TugListView`. The primitive ships `height: 100%`

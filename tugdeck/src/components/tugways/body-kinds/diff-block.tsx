@@ -92,7 +92,11 @@ import {
   useComponentStatePreservation,
   useSavedComponentState,
 } from "@/components/tugways/use-component-state-preservation";
-import { BlockCopyButton, BlockFoldCue } from "./affordances";
+import {
+  BlockActionsCluster,
+  BlockCopyButton,
+  BlockFoldCue,
+} from "./affordances";
 import { detectLanguage } from "./file-block";
 import {
   parseUnifiedDiffText,
@@ -1062,7 +1066,6 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
         aria-label="Diff view mode"
       />
       <BlockCopyButton
-        className="tugx-diff-copy"
         data-slot="diff-copy"
         disabled={copyDisabled}
         aria-label="Copy diff"
@@ -1083,12 +1086,9 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   const portaledAffordances =
     embedded && chromeActionsTarget !== null && affordances !== null
       ? createPortal(
-          <span
-            className="tugx-diff-actions-cluster"
-            data-slot="diff-actions"
-          >
+          <BlockActionsCluster data-slot="diff-actions">
             {affordances}
-          </span>,
+          </BlockActionsCluster>,
           chromeActionsTarget,
         )
       : null;
@@ -1129,12 +1129,9 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
           </span>
           <span className="tugx-diff-header-spacer" />
           {affordances !== null ? (
-            <span
-              className="tugx-diff-actions-cluster"
-              data-slot="diff-actions"
-            >
+            <BlockActionsCluster data-slot="diff-actions">
               {affordances}
-            </span>
+            </BlockActionsCluster>
           ) : null}
         </div>
       )}

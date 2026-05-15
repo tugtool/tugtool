@@ -120,6 +120,7 @@ import {
   useSavedRegionScroll,
 } from "@/components/tugways/use-component-state-preservation";
 import {
+  BlockActionsCluster,
   BlockCopyButton,
   BlockFoldCue,
 } from "./affordances";
@@ -871,7 +872,6 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   const affordances = (
     <>
       <BlockCopyButton
-        className="tugx-file-copy"
         data-slot="file-copy"
         disabled={collapsed}
         aria-label="Copy file contents"
@@ -899,12 +899,9 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   const portaledAffordances =
     embedded && chromeActionsTarget !== null && affordances !== null
       ? createPortal(
-          <span
-            className="tugx-file-actions-cluster"
-            data-slot="file-actions"
-          >
+          <BlockActionsCluster data-slot="file-actions">
             {affordances}
-          </span>,
+          </BlockActionsCluster>,
           chromeActionsTarget,
         )
       : null;
@@ -942,12 +939,9 @@ export const FileBlock: React.FC<FileBlockProps> = ({
           </span>
           <span className="tugx-file-header-spacer" />
           {affordances !== null ? (
-            <span
-              className="tugx-file-actions-cluster"
-              data-slot="file-actions"
-            >
+            <BlockActionsCluster data-slot="file-actions">
               {affordances}
-            </span>
+            </BlockActionsCluster>
           ) : null}
         </div>
       )}
