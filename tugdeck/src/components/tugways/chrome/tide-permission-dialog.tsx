@@ -623,6 +623,33 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
     return raw;
   }, [request.decision_reason]);
 
+  // Allow handler — declared HERE, before any conditional return, so
+  // every render of this component calls the same set of hooks in the
+  // same order ([L02] / [L24] structure zone). The component is a
+  // shape-shifter (live dialog ↔ resolved record), and when the user
+  // clicks Allow `isPending` flips below, switching us from the
+  // pending branch to the resolved branch in-place under the same
+  // `request_id` key in the streaming-row slot. If `useCallback` were
+  // declared inside the pending branch, the post-flip render would
+  // hit the early return before reaching the hook and React would
+  // crash with "Rendered fewer hooks than expected" — exactly the
+  // failure mode the in-place transition exposed.
+  const handleAllow = React.useCallback(() => {
+    // The implicit "Allow once" maps to allow-without-scope; any
+    // other selected option's label is the scope message Claude
+    // reads back to bind the rule.
+    if (selectedOption === ALLOW_ONCE_OPTION_VALUE) {
+      respond("allow");
+      return;
+    }
+    const chosen = allowOptions.find((o) => o.value === selectedOption);
+    respond("allow", chosen?.label);
+  }, [allowOptions, respond, selectedOption]);
+
+  const handleDeny = React.useCallback(() => {
+    respond("deny");
+  }, [respond]);
+
   // ---- Resolved record ----------------------------------------------------
   if (!isPending) {
     return (
@@ -688,20 +715,9 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
   // suggestions (plus the implicit "Allow once" head) go on the
   // primitive's `options` prop — a mandatory single-select radio
   // group of `TugDialogButton`s. Allow commits with the chosen
-  // scope's message; Deny ignores the scope and denies outright.
-  const body = <PendingBody toolName={toolName} input={request.input} />;
-  const handleAllow = React.useCallback(() => {
-    // The implicit "Allow once" maps to allow-without-scope; any
-    // other selected option's label is the scope message Claude reads
-    // back to bind the rule.
-    if (selectedOption === ALLOW_ONCE_OPTION_VALUE) {
-      respond("allow");
-      return;
-    }
-    const chosen = allowOptions.find((o) => o.value === selectedOption);
-    respond("allow", chosen?.label);
-  }, [allowOptions, respond, selectedOption]);
-
+  // scope's message; Deny ignores the scope and denies outright. Both
+  // handlers are stable callbacks declared above the resolved-record
+  // early return — see [L02] / [L24] note alongside `handleAllow`.
   return (
     <TugInlineDialog
       icon={<ShieldAlert />}
@@ -718,14 +734,14 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
       confirmRole="action"
       cancelLabel="Deny"
       onConfirm={handleAllow}
-      onCancel={() => respond("deny")}
+      onCancel={handleDeny}
       options={allowOptions}
       selectedOption={selectedOption}
       onSelectOption={setSelectedOption}
       optionsAriaLabel="Permission scope"
       className={className}
     >
-      {body}
+      <PendingBody toolName={toolName} input={request.input} />
     </TugInlineDialog>
   );
 };

@@ -315,6 +315,11 @@ export class CodeSessionStore {
         this.state.phase === "awaiting_approval",
       pendingApproval: this.state.pendingApproval,
       pendingQuestion: this.state.pendingQuestion,
+      // Reference is preserved across snapshot rebuilds while the
+      // reducer doesn't append a new record — `useSyncExternalStore`
+      // consumers get the `Object.is` stability they need to avoid
+      // spurious re-renders during quiescent ticks.
+      controlRequestLog: this.state.controlRequestLog,
       queuedSends: this.state.queuedSends.length,
       transcript: this._transcript,
       // [D10] Mirror the reducer's `pendingUserMessage` onto the

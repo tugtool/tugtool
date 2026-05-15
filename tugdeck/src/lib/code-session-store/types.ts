@@ -210,6 +210,26 @@ export interface CodeSessionSnapshot {
   canInterrupt: boolean;
   pendingApproval: ControlRequestForward | null;
   pendingQuestion: ControlRequestForward | null;
+  /**
+   * Permission prompts the user has answered during the in-flight turn,
+   * in the order they resolved. The reducer accumulates each
+   * `respondApproval` resolution into `controlRequestLog` and freezes
+   * the array into `TurnEntry.controlRequests` at `turn_complete`,
+   * resetting on every turn boundary.
+   *
+   * Mirrored onto the snapshot so the in-flight transcript row can
+   * render the resolved record(s) in the same slot the live dialog
+   * occupied — the dialog→record transition stays *in place* instead
+   * of leaving the slot empty until the streaming row is replaced by
+   * the committed row at turn-complete.
+   *
+   * The reference is preserved across snapshot rebuilds while the
+   * underlying array doesn't change; the reducer rebuilds it
+   * (`[...prev, record]`) only when a new resolution is recorded, so
+   * `useSyncExternalStore` consumers ([L02]) get `Object.is` stability
+   * during quiescent renders.
+   */
+  controlRequestLog: ReadonlyArray<ControlRequestRecord>;
   queuedSends: number;
 
   transcript: ReadonlyArray<TurnEntry>;

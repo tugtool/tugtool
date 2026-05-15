@@ -60,6 +60,7 @@ function baseSnap(
     canInterrupt: false,
     pendingApproval: null,
     pendingQuestion: null,
+    controlRequestLog: [],
     queuedSends: 0,
     transcript: [],
     inflightUserMessage: null,

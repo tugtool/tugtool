@@ -565,15 +565,21 @@ const CodeStreamingRowCell: React.FC<CodeStreamingRowCellProps> = ({
   const { ResponderScope, cellProps, bodyRef, menu } =
     useTranscriptCellMenu();
 
-  // A `control_request_forward` (is_question:false) lands on the
-  // snapshot's `pendingApproval` and parks the turn in
-  // `awaiting_approval` — the streaming row stays mounted, so this is
-  // where the inline PermissionDialog renders ([D13]). Subscribed via
-  // `useSyncExternalStore` ([L02]); routed through the assistant
-  // renderer dispatch ([D01]) so the chrome kind goes through the same
-  // seam as every other rendered event. QuestionDialog
-  // (`is_question:true`) is #step-19 — not yet wired, so a question
-  // forward renders nothing here for now.
+  // The permission slot for the in-flight turn. We render *both* the
+  // resolved records accumulated during this turn (from
+  // `controlRequestLog`) AND the live pending request (if any) in a
+  // single ordered list — keyed by `request_id` so React reuses the
+  // same `PermissionDialog` instance when a request transitions
+  // pending → resolved. That keeps the dialog→record collapse
+  // *in place* (same DOM position, same component instance, same
+  // local state) instead of unmounting the live dialog into a gap
+  // and re-mounting a fresh resolved record on the committed-row swap
+  // at turn-complete — which is what made the post-approval
+  // transition feel haphazard.
+  //
+  // [L02] external state via `useSyncExternalStore`; the snapshot
+  // exposes `controlRequestLog` and `pendingApproval` with stable
+  // references between dispatches that don't touch them.
   const pendingApproval = useSyncExternalStore(
     codeSessionStore.subscribe,
     useCallback(
@@ -581,14 +587,55 @@ const CodeStreamingRowCell: React.FC<CodeStreamingRowCellProps> = ({
       [codeSessionStore],
     ),
   );
-  let permissionDialog: React.ReactNode = null;
-  if (pendingApproval !== null && !pendingApproval.is_question) {
-    const { Component, props } = dispatchRenderInput(
-      { kind: "permission", request: pendingApproval },
-      { store: streamingStore, session: codeSessionStore },
-    );
-    permissionDialog = <Component {...props} />;
-  }
+  const controlRequestLog = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    useCallback(
+      () => codeSessionStore.getSnapshot().controlRequestLog,
+      [codeSessionStore],
+    ),
+  );
+  const permissionSlot = useMemo<React.ReactNode>(() => {
+    // Each entry carries the request the dialog renders, plus an
+    // optional resolved decision. Resolved records always come first
+    // (chronological order); the live pending request, when present
+    // and not a question, comes last.
+    type SlotEntry = {
+      request: typeof controlRequestLog[number]["request"];
+      resolvedDecision?: "allow" | "deny";
+    };
+    const entries: SlotEntry[] = controlRequestLog.map((record) => ({
+      request: record.request,
+      resolvedDecision: record.decision ?? undefined,
+    }));
+    if (pendingApproval !== null && !pendingApproval.is_question) {
+      // Defensive de-dupe: if a record with the same request_id has
+      // already landed in the log, skip the pending push so React
+      // doesn't see two siblings with the same key. The reducer
+      // doesn't currently produce this state, but guarding here keeps
+      // the slot well-formed under any future reducer change.
+      const dup = entries.some(
+        (e) => e.request.request_id === pendingApproval.request_id,
+      );
+      if (!dup) entries.push({ request: pendingApproval });
+    }
+    if (entries.length === 0) return null;
+    return entries.map((entry, idx) => {
+      const { Component, props } = dispatchRenderInput(
+        {
+          kind: "permission",
+          request: entry.request,
+          resolvedDecision: entry.resolvedDecision,
+        },
+        { store: streamingStore, session: codeSessionStore },
+      );
+      return (
+        <Component
+          key={entry.request.request_id || `permission-${idx}`}
+          {...props}
+        />
+      );
+    });
+  }, [controlRequestLog, pendingApproval, codeSessionStore, streamingStore]);
 
   return (
     <ResponderScope>
@@ -616,7 +663,7 @@ const CodeStreamingRowCell: React.FC<CodeStreamingRowCellProps> = ({
                 streamingStore={streamingStore}
                 streamingPath={thinkingStreamingPath}
               />
-              {permissionDialog}
+              {permissionSlot}
               <TranscriptToolCalls
                 streamingStore={streamingStore}
                 streamingPath={toolsStreamingPath}
