@@ -54,6 +54,7 @@ export type {
   TurnEntry,
   ToolCallState,
   ControlRequestForward,
+  ControlRequestRecord,
   CostSnapshot,
   LastReplayResult,
 } from "./code-session-store/types";

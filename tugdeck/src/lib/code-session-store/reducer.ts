@@ -48,6 +48,7 @@ import type {
   CardSessionMode,
   CodeSessionPhase,
   ControlRequestForward,
+  ControlRequestRecord,
   CostSnapshot,
   LastReplayResult,
   ToolCallState,
@@ -77,6 +78,14 @@ export interface CodeSessionState {
   toolCallMap: Map<string, ToolCallState>;
   pendingApproval: ControlRequestForward | null;
   pendingQuestion: ControlRequestForward | null;
+  /**
+   * Control requests answered during the current turn. Accumulated by
+   * `handleRespondApproval` as the user answers each prompt, committed
+   * into `TurnEntry.controlRequests` by `handleTurnComplete`, and reset
+   * to `[]` at every turn boundary. Not exposed on the public snapshot
+   * — it surfaces only through the committed `TurnEntry`.
+   */
+  controlRequestLog: ControlRequestRecord[];
   prevPhase: CodeSessionPhase | null;
   pendingUserMessage: {
     text: string;
@@ -221,6 +230,7 @@ export function createInitialState(
     toolCallMap: new Map(),
     pendingApproval: null,
     pendingQuestion: null,
+    controlRequestLog: [],
     prevPhase: null,
     pendingUserMessage: null,
     pendingDraftRestore: null,
@@ -365,6 +375,7 @@ function handleInterrupt(
         pendingCaseAEchoes: state.pendingCaseAEchoes + 1,
         pendingApproval: null,
         pendingQuestion: null,
+        controlRequestLog: [],
         prevPhase: null,
         queuedSends: [],
       },
@@ -856,6 +867,9 @@ function handleTurnComplete(
     // Preserve insertion order: Map.values() iterates in the order
     // entries were inserted via handleToolUse.
     toolCalls: Array.from(state.toolCallMap.values()),
+    // Permission prompts the user answered this turn — accumulated by
+    // `handleRespondApproval`, frozen here into the committed entry.
+    controlRequests: state.controlRequestLog,
     result: isSuccess ? "success" : "interrupted",
     endedAt: Date.now(),
   };
@@ -880,6 +894,7 @@ function handleTurnComplete(
         toolCallMap: new Map(),
         pendingApproval: null,
         pendingQuestion: null,
+        controlRequestLog: [],
         prevPhase: null,
         pendingUserMessage: null,
         committedMsgIds,
@@ -902,6 +917,7 @@ function handleTurnComplete(
         toolCallMap: new Map(),
         pendingApproval: null,
         pendingQuestion: null,
+        controlRequestLog: [],
         prevPhase: null,
         pendingUserMessage: {
           text: next.text,
@@ -936,6 +952,7 @@ function handleTurnComplete(
       toolCallMap: new Map(),
       pendingApproval: null,
       pendingQuestion: null,
+      controlRequestLog: [],
       prevPhase: null,
       pendingUserMessage: null,
       // Error-path queue clear: if a turn errored out without a
@@ -1010,11 +1027,21 @@ function handleRespondApproval(
   }
 
   const restored: CodeSessionPhase = state.prevPhase ?? "streaming";
+  // Record the resolved request so it survives into the committed
+  // `TurnEntry` as a permanent transcript artifact per [D13]. The
+  // record carries the original forward (tool, input, reason,
+  // suggestions) plus how the user answered.
+  const record: ControlRequestRecord = {
+    request: state.pendingApproval,
+    decision: event.decision,
+    respondedAt: Date.now(),
+  };
   const next: CodeSessionState = {
     ...state,
     phase: restored,
     prevPhase: null,
     pendingApproval: null,
+    controlRequestLog: [...state.controlRequestLog, record],
   };
   return {
     state: next,
@@ -1398,6 +1425,7 @@ function handleReplayStarted(
       toolCallMap: new Map(),
       pendingApproval: null,
       pendingQuestion: null,
+      controlRequestLog: [],
       prevPhase: null,
       // Clear lastReplayResult — the new window is the new outcome.
       lastReplayResult: null,
@@ -1512,6 +1540,7 @@ function handleReplayComplete(
       toolCallMap: new Map(),
       pendingApproval: null,
       pendingQuestion: null,
+      controlRequestLog: [],
       prevPhase: null,
       pendingUserMessage: null,
       lastReplayResult,

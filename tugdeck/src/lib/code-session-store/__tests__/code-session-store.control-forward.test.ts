@@ -11,7 +11,11 @@
  *    real deny flow, round-tripped through the store with an injected
  *    `respondApproval(..., { decision: "deny" })` at the control forward
  *    arrival point. Verifies the full downstream turn still commits
- *    correctly with the Read tool marked as error.
+ *    correctly with the Read tool marked as error, and that the
+ *    answered request lands in `TurnEntry.controlRequests` ([D13]).
+ *  - `TurnEntry.controlRequests` commit path: a synthetic allow drains
+ *    through `turn_complete` and the committed entry carries the
+ *    resolved record; a turn with no permission prompt commits `[]`.
  *  - Synthetic `AskUserQuestion` dispatch: `test-35-askuserquestion-flow`
  *    is empty/skipped in the v2.1.105 manifest, so a hand-built
  *    `control_request_forward { is_question: true }` drives the
@@ -130,6 +134,59 @@ describe("CodeSessionStore — synthetic permission-allow (Step 6)", () => {
     expect(conn.recordedFrames.length).toBe(framesBefore);
     expect(store.getSnapshot().phase).toBe("submitting");
   });
+
+  it("commits the answered permission into TurnEntry.controlRequests", () => {
+    const conn = new TestFrameChannel();
+    const store = constructStore(conn);
+
+    store.send("ls the cwd", []);
+    drainToStreaming(conn, store, FIXTURE_IDS.MSG_ID);
+
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "control_request_forward",
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      request_id: FIXTURE_IDS.REQUEST_ID,
+      is_question: false,
+      tool_name: "Bash",
+      tool_use_id: FIXTURE_IDS.TOOL_USE_ID,
+      input: { command: "ls" },
+    });
+    store.respondApproval(FIXTURE_IDS.REQUEST_ID, { decision: "allow" });
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "turn_complete",
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      msg_id: FIXTURE_IDS.MSG_ID,
+      result: "success",
+      seq: 0,
+    });
+
+    const snap = store.getSnapshot();
+    expect(snap.transcript.length).toBe(1);
+    const turn = snap.transcript[0];
+    expect(turn.controlRequests.length).toBe(1);
+    expect(turn.controlRequests[0].decision).toBe("allow");
+    expect(turn.controlRequests[0].request.tool_name).toBe("Bash");
+    expect(typeof turn.controlRequests[0].respondedAt).toBe("number");
+  });
+
+  it("commits an empty controlRequests for a turn with no permission prompt", () => {
+    const conn = new TestFrameChannel();
+    const store = constructStore(conn);
+
+    store.send("just chat", []);
+    drainToStreaming(conn, store, FIXTURE_IDS.MSG_ID);
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "turn_complete",
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      msg_id: FIXTURE_IDS.MSG_ID,
+      result: "success",
+      seq: 0,
+    });
+
+    const snap = store.getSnapshot();
+    expect(snap.transcript.length).toBe(1);
+    expect(snap.transcript[0].controlRequests).toEqual([]);
+  });
 });
 
 describe("CodeSessionStore — permission deny on test-11 (Step 6)", () => {
@@ -200,6 +257,21 @@ describe("CodeSessionStore — permission deny on test-11 (Step 6)", () => {
     expect(turn.result).toBe("success");
     // cost_update rode the fixture; the f64 placeholder resolves to 0.
     expect(snap.lastCost?.totalCostUsd).toBe(0);
+
+    // The answered permission is a permanent transcript artifact ([D13]):
+    // `respondApproval` accumulated it into `controlRequestLog` and
+    // `turn_complete` froze it into the committed entry. The record
+    // carries the original forward so the rendering layer can re-show
+    // the tool / input / reason / suggestions exactly as asked.
+    expect(turn.controlRequests.length).toBe(1);
+    const record = turn.controlRequests[0];
+    expect(record.decision).toBe("deny");
+    expect(record.request.request_id).toBe(FIXTURE_IDS.REQUEST_ID);
+    expect(record.request.tool_name).toBe("Read");
+    expect(record.request.decision_reason).toBe(
+      "Path is outside allowed working directories",
+    );
+    expect(typeof record.respondedAt).toBe("number");
   });
 });
 

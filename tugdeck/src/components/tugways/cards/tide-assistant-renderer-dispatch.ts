@@ -77,6 +77,7 @@ import { GlobToolBlock } from "./tool-wrappers/glob-tool-block";
 import { GrepToolBlock } from "./tool-wrappers/grep-tool-block";
 import { TaskToolBlock } from "./tool-wrappers/task-tool-block";
 import { DefaultToolWrapper } from "./tool-wrappers/default-tool-wrapper";
+import { PermissionDialog } from "@/components/tugways/chrome/tide-permission-dialog";
 import type {
   CautionFlag,
   ChildToolCallsMap,
@@ -118,6 +119,13 @@ export type RenderInput =
   | {
       kind: "permission";
       request: ControlRequestForward;
+      /**
+       * Set when this is a *committed* permission record being
+       * re-rendered as a permanent transcript artifact ([D13]) — the
+       * decision the user already made. Omitted for a live pending
+       * request (the dialog reads the live store instead).
+       */
+      resolvedDecision?: "allow" | "deny";
     }
   | {
       kind: "question";
@@ -303,7 +311,7 @@ export function registeredTools(): ReadonlyArray<string> {
 //                    KIND_RENDERERS
 //   user_text      → existing user-row primitive (no separate renderer
 //                    needed; routes here for symmetry)
-//   permission     → PermissionDialog at #step-18
+//   permission     → PermissionDialog (real renderer; #step-18)
 //   question       → QuestionDialog at #step-19
 //   cost           → CostChrome at #step-20
 //   system_metadata→ SessionInitBanner at #step-29
@@ -350,7 +358,7 @@ export const KIND_RENDERERS: {
   assistant_text: makeScaffoldRenderer("assistant_text"),
   thinking: makeScaffoldRenderer("thinking"),
   user_text: makeScaffoldRenderer("user_text"),
-  permission: makeScaffoldRenderer("permission"),
+  permission: PermissionDialog,
   question: makeScaffoldRenderer("question"),
   cost: makeScaffoldRenderer("cost"),
   system_metadata: makeScaffoldRenderer("system_metadata"),

@@ -59,6 +59,7 @@ import {
 } from "@/components/tugways/tug-list-view";
 import { TideThinkingBlock } from "@/components/tugways/chrome/tide-thinking-block";
 import { TranscriptToolCalls } from "@/components/tugways/cards/tide-card-transcript-tool-calls";
+import { dispatch as dispatchRenderInput } from "@/components/tugways/cards/tide-assistant-renderer-dispatch";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
@@ -392,12 +393,14 @@ const UserRowCell: React.FC<UserRowCellProps> = ({ index, dataSource }) => {
 
 interface CodeCommittedRowCellProps extends TugListViewCellProps<TideTranscriptDataSource> {
   modelName: string | null;
+  codeSessionStore: CodeSessionStore;
 }
 
 const CodeCommittedRowCell: React.FC<CodeCommittedRowCellProps> = ({
   index,
   dataSource,
   modelName,
+  codeSessionStore,
 }) => {
   const row = dataSource.rowAt(index);
   const turn = row.turn;
@@ -419,6 +422,35 @@ const CodeCommittedRowCell: React.FC<CodeCommittedRowCellProps> = ({
   // interrupts where the turn ended before any assistant content
   // landed leave the body as just the "Interrupted" badge.
   const hasBody = assistantText.length > 0;
+
+  // Permission prompts the user answered during this turn — the
+  // permanent transcript artifact per [D13]. Each resolved record is
+  // routed through the assistant renderer dispatch ([D01]) carrying
+  // its `resolvedDecision`, so the dialog mounts straight into its
+  // collapsed static record. Renders in the same slot the live dialog
+  // uses in the streaming row (between tool calls and assistant body)
+  // so a turn reads identically before and after it commits.
+  const controlRequests = turn?.controlRequests ?? [];
+  const permissionRecords =
+    controlRequests.length > 0
+      ? controlRequests.map((record, recordIndex) => {
+          const { Component, props } = dispatchRenderInput(
+            {
+              kind: "permission",
+              request: record.request,
+              resolvedDecision: record.decision,
+            },
+            {
+              store: codeSessionStore.streamingDocument,
+              session: codeSessionStore,
+            },
+          );
+          return (
+            <Component key={record.request.request_id || recordIndex} {...props} />
+          );
+        })
+      : null;
+
   const { ResponderScope, cellProps, bodyRef, menu } =
     useTranscriptCellMenu();
   return (
@@ -456,6 +488,7 @@ const CodeCommittedRowCell: React.FC<CodeCommittedRowCellProps> = ({
                   msgId={turn.msgId}
                 />
               ) : null}
+              {permissionRecords}
               <TugMarkdownBlock
                 initialText={assistantText}
                 className="tide-card-transcript-code-body"
@@ -503,6 +536,7 @@ const CodeCommittedRowCell: React.FC<CodeCommittedRowCellProps> = ({
 
 interface CodeStreamingRowCellProps extends TugListViewCellProps<TideTranscriptDataSource> {
   modelName: string | null;
+  codeSessionStore: CodeSessionStore;
   streamingStore: PropertyStore;
   streamingPath: string;
   thinkingStreamingPath: string;
@@ -520,6 +554,7 @@ interface CodeStreamingRowCellProps extends TugListViewCellProps<TideTranscriptD
 const CodeStreamingRowCell: React.FC<CodeStreamingRowCellProps> = ({
   index,
   modelName,
+  codeSessionStore,
   streamingStore,
   streamingPath,
   thinkingStreamingPath,
@@ -528,6 +563,32 @@ const CodeStreamingRowCell: React.FC<CodeStreamingRowCellProps> = ({
 }) => {
   const { ResponderScope, cellProps, bodyRef, menu } =
     useTranscriptCellMenu();
+
+  // A `control_request_forward` (is_question:false) lands on the
+  // snapshot's `pendingApproval` and parks the turn in
+  // `awaiting_approval` — the streaming row stays mounted, so this is
+  // where the inline PermissionDialog renders ([D13]). Subscribed via
+  // `useSyncExternalStore` ([L02]); routed through the assistant
+  // renderer dispatch ([D01]) so the chrome kind goes through the same
+  // seam as every other rendered event. QuestionDialog
+  // (`is_question:true`) is #step-19 — not yet wired, so a question
+  // forward renders nothing here for now.
+  const pendingApproval = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    useCallback(
+      () => codeSessionStore.getSnapshot().pendingApproval,
+      [codeSessionStore],
+    ),
+  );
+  let permissionDialog: React.ReactNode = null;
+  if (pendingApproval !== null && !pendingApproval.is_question) {
+    const { Component, props } = dispatchRenderInput(
+      { kind: "permission", request: pendingApproval },
+      { store: streamingStore, session: codeSessionStore },
+    );
+    permissionDialog = <Component {...props} />;
+  }
+
   return (
     <ResponderScope>
       <div {...cellProps}>
@@ -559,6 +620,7 @@ const CodeStreamingRowCell: React.FC<CodeStreamingRowCellProps> = ({
                 streamingPath={toolsStreamingPath}
                 msgId={inflightMsgId}
               />
+              {permissionDialog}
               <TugMarkdownBlock
                 streamingStore={streamingStore}
                 streamingPath={streamingPath}
@@ -661,11 +723,18 @@ export const TideTranscriptHost = forwardRef<
   >(
     () => ({
       "user": (p) => <UserRowCell {...p} />,
-      "code-committed": (p) => <CodeCommittedRowCell {...p} modelName={modelName} />,
+      "code-committed": (p) => (
+        <CodeCommittedRowCell
+          {...p}
+          modelName={modelName}
+          codeSessionStore={codeSessionStore}
+        />
+      ),
       "code-streaming": (p) => (
         <CodeStreamingRowCell
           {...p}
           modelName={modelName}
+          codeSessionStore={codeSessionStore}
           streamingStore={streamingStore}
           streamingPath={streamingPath}
           thinkingStreamingPath={thinkingStreamingPath}
@@ -676,6 +745,7 @@ export const TideTranscriptHost = forwardRef<
     }),
     [
       modelName,
+      codeSessionStore,
       streamingStore,
       streamingPath,
       thinkingStreamingPath,

@@ -36,6 +36,7 @@ function fakeTurn(msgId: string): TurnEntry {
     thinking: "",
     assistant: "",
     toolCalls: [],
+    controlRequests: [],
     result: "success",
     endedAt: 0,
   };

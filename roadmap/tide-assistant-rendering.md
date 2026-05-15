@@ -4681,38 +4681,49 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 #### Step 18: PermissionDialog (`control_request_forward`, `is_question:false`) {#step-18}
 
+**Status:** implemented — chrome component + body picker + dispatch wiring + transcript wiring (streaming **and** committed rows) + a [D01]-exception reducer change so the answered permission is a permanent transcript artifact + test suites landed. tsc clean, `bun test` 1810/1810, `audit:tokens lint` zero violations.
+
 **Depends on:** #step-1, #step-12
 
 **Commit:** `feat(tide-rendering): PermissionDialog — inline allow/deny dialog with permission_suggestions`
 
-**References:** [D13], Spec S03 (chrome variant), (#chrome)
+**References:** [D13], [D01] (exception — see the reducer note below), Spec S03 (chrome variant), (#chrome)
 
 **Conformance:** see [#bk-conformance](#bk-conformance) — the body picker composes body kinds read-only; `Bash` input renders via `TugCodeView` (item 1: CM6 is the canonical text engine — there is no standalone `CodeBlock`). PermissionDialog itself carries only Allow / Deny / suggestion buttons — no text-entry surface, so item 2 is satisfied by construction.
 
+**Implementation note — body kinds composed *standalone*, not `embedded`.** `embedded={true}` is the contract for a body kind sitting under a `ToolWrapperChrome` (it portals affordances into the chrome's actions slot). `PermissionDialog` is its own chrome variant — there is no `ToolWrapperChrome` above the body picker — so `DiffBlock` / `JsonTreeBlock` render in standalone mode with their own identity headers. Pending vs. resolved state is external (`session.pendingApproval`) and enters React via `useSyncExternalStore` ([L02]); the remembered decision + record-expanded flag are local UI data ([L24]). The `--tugx-perm-*` slot family lives in `tide-permission-dialog.css`'s `body{}` block (component-local per the [#step-10-8-5] bulk migration), not in the theme files.
+
+**Reducer change ([D01] exception, [#step-17-5] precedent).** A UI dialog mounted nowhere is dead code, and a permission answered but not durably recorded is a hole in [D13]'s "permanent transcript artifact" promise. Closing both required crossing the [D01] state-only fence with a *minimal, additive* reducer change — scoped and reviewed here rather than punted: `TurnEntry` gains `controlRequests: ReadonlyArray<ControlRequestRecord>`; `CodeSessionState` gains a `controlRequestLog` accumulator (reset `[]` at every turn boundary); `handleRespondApproval` pushes the resolved `{ request, decision, respondedAt }` record; `handleTurnComplete` freezes the log into the committed entry. No map restructuring, no phase-logic change. `AskUserQuestion` records join the same array at [#step-19](#step-19).
+
 **Artifacts:**
-- `tugdeck/src/components/tugways/chrome/tide-permission-dialog.tsx` + `.css`
-- Token slot `--tugx-perm-*`
-- Wire-up: dispatch routes `control_request_forward` (is_question:false) here
+- `tugdeck/src/components/tugways/chrome/tide-permission-dialog.tsx` + `.css` — the chrome component + four exported pure helpers; `PermissionRenderInput` carries an optional `resolvedDecision` for the committed-record case.
+- `tugdeck/src/components/tugways/chrome/tide-permission-dialog.test.ts` — pure-logic test suite (39 tests across this file + the dispatch test).
+- Token slot `--tugx-perm-*` — declared in `tide-permission-dialog.css` body{}.
+- `code-session-store/types.ts` — new `ControlRequestRecord`; `TurnEntry.controlRequests`. `reducer.ts` — `controlRequestLog` accumulator + commit/reset wiring. `code-session-store.control-forward.test.ts` — extended (deny round-trip asserts the committed record) + 2 new tests (synthetic allow→commit, no-prompt→`[]`).
+- Dispatch: `KIND_RENDERERS.permission` resolves to the real `PermissionDialog` (was a scaffold); the `permission` `RenderInput` variant gains `resolvedDecision`.
+- Transcript wiring (`tide-card-transcript.tsx`): `CodeStreamingRowCell` subscribes to `snapshot.pendingApproval` and renders the **live** dialog (between the streaming row's tool calls and assistant body) when a non-question forward is pending — without this the request parks the turn in `awaiting_approval` forever, since the dialog is the only surface that calls `respondApproval`. `CodeCommittedRowCell` renders each `turn.controlRequests` entry as a **resolved** dialog in the same slot, so a turn reads identically before and after it commits.
 
 **Tasks:**
-- [ ] Header: "Permission requested" + tool icon + tool name
-- [ ] Body picker — render the `tool_use.input` through the *most-fitting* body kind, not just JsonTree:
+- [x] Header: "Permission requested" + tool icon + tool name (per-tool icon map, generic-wrench fallback)
+- [x] Body picker — render the `tool_use.input` through the *most-fitting* body kind, not just JsonTree:
   - `Bash` → render `input.command` via a read-only `TugCodeView` (shell language) — _not_ a bespoke code block
-  - `Edit` → render `(input.old_string, input.new_string)` via `DiffBlock` (read-only)
-  - `Read`/`Write` → show `input.file_path` as a styled path (middle-ellipsis pattern, conformance item 8) with line-range badge if applicable
-  - any other tool → fall back to `JsonTreeBlock` over `tool_use.input`
-- [ ] Reason line from `decision_reason`
-- [ ] Suggestions from `permission_suggestions` rendered as buttons
-- [ ] Allow / Deny buttons; disable while pending
-- [ ] After response: collapse to one-line static record showing decision
+  - `Edit` → render `(input.old_string, input.new_string)` via `DiffBlock` (`two-text` source, read-only)
+  - `Read`/`Write` → show `input.file_path` as a styled path (shared `MiddleEllipsisPath`, conformance item 8) with line-range badge if applicable
+  - any other tool → fall back to `JsonTreeBlock` over `tool_use.input` (also the narrowing-miss fallback for a Bash/Edit/Read request whose expected fields are absent)
+- [x] Reason line from `decision_reason`
+- [x] Suggestions from `permission_suggestions` rendered as buttons — `narrowPermissionSuggestion` narrows the v2.1.x catalog shape, drops non-actionable behaviors (`ask`), composes the label from rules + destination
+- [x] Allow / Deny buttons; disable while pending — the click handler re-checks the live store's `pendingApproval` so a double-fire is dropped; on response `pendingApproval` clears synchronously and the dialog swaps to the resolved record (no async pending window)
+- [x] After response: collapse to one-line static record showing decision — chevron-expand affordance re-shows the request body + reason read-only ([D13])
 
 **Tests:**
-- [ ] Replay `test-11-permission-deny-roundtrip.jsonl` → PermissionDialog renders, deny click sends `tool_approval { decision: "deny" }`
-- [ ] Allow click sends `tool_approval { decision: "allow" }`
-- [ ] Focus management: primary button focused on mount
+- [x] `test-11-permission-deny-roundtrip.jsonl` round-trip → after `respondApproval(deny)` and drain through `turn_complete`, the committed `TurnEntry.controlRequests` carries the resolved record (request + `decision: "deny"` + `respondedAt`); the fixture's `permission_suggestions[0]` is pinned verbatim through `narrowPermissionSuggestion`
+- [x] Synthetic allow → `turn_complete` commits `controlRequests` with `decision: "allow"`; a turn with no permission prompt commits `[]`
+- [x] Dispatch routing — a `permission` `RenderInput` resolves to the real `PermissionDialog` (`=== KIND_RENDERERS.permission`), no caution, input threaded onto the prop bag
+- [x] Body-kind picker, suggestion narrowing, record summary, line-range badge — all four exported pure helpers pinned exhaustively
+- [ ] _Harness gap — HMR / live-smoke vetted:_ the live deny/allow click → `tool_approval` round-trip and the primary-button-focus-on-mount. The app-test harness can't inject `control_request_forward` events (the same gap that gates [#step-15](#step-15)–[#step-17](#step-17)); the round-trip is wired through `CodeSessionStore.respondApproval` (pinned by `code-session-store.control-forward.test.ts`) and the focus lands via `useLayoutEffect` per [D13].
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — tsc clean; `bun test` 1810 pass / 0 fail.
 - [ ] Manual smoke against live tugcode
 
 ---

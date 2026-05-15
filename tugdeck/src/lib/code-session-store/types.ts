@@ -100,6 +100,19 @@ export interface TurnEntry {
   thinking: string;
   assistant: string;
   toolCalls: ReadonlyArray<ToolCallState>;
+  /**
+   * Control requests (`control_request_forward`) the user answered
+   * during this turn — the permanent transcript artifact of a
+   * permission prompt per [D13]. Empty for the common case of a turn
+   * with no permission prompts. A request that was never answered (the
+   * turn was interrupted while `awaiting_approval`) does not land here:
+   * only the resolved decision is durable.
+   *
+   * Step 18 commits permission records (`is_question: false`);
+   * `AskUserQuestion` records (`is_question: true`) join this array at
+   * #step-19.
+   */
+  controlRequests: ReadonlyArray<ControlRequestRecord>;
   result: "success" | "interrupted";
   endedAt: number;
 }
@@ -125,6 +138,24 @@ export interface ControlRequestForward {
   decision_reason?: string;
   permission_suggestions?: ReadonlyArray<unknown>;
   [key: string]: unknown;
+}
+
+/**
+ * A resolved `control_request_forward` — the durable record committed
+ * into `TurnEntry.controlRequests` once the user answers. `request` is
+ * the original forward (so the rendering layer can re-show the tool,
+ * input, reason, and suggestions exactly as they were asked);
+ * `decision` is how the user answered; `respondedAt` is the wall-clock
+ * millisecond timestamp of the answer.
+ *
+ * Step 18 records permission decisions (`allow` / `deny`). When
+ * `AskUserQuestion` history joins this record at #step-19, `decision`
+ * gains the answer-bearing variant.
+ */
+export interface ControlRequestRecord {
+  request: ControlRequestForward;
+  decision: "allow" | "deny";
+  respondedAt: number;
 }
 
 /**
