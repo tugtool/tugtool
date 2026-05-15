@@ -137,7 +137,6 @@ async function captureIpcOutput(fn: () => Promise<void>): Promise<unknown[]> {
 // Reusable default config
 const defaultConfig = {
   pluginDir: "/repo",
-  model: "claude-opus-4-6",
   permissionMode: "acceptEdits",
   sessionId: null,
 };
@@ -230,6 +229,11 @@ describe("buildClaudeArgs", () => {
     expect(args[args.indexOf("--plugin-dir") + 1]).toBe("/my/plugin/dir");
     expect(args[args.indexOf("--model") + 1]).toBe("claude-haiku-3-5");
     expect(args[args.indexOf("--permission-mode") + 1]).toBe("bypassPermissions");
+  });
+
+  test("omits --model when model is not set, letting the CLI use its default", () => {
+    const args = buildClaudeArgs(defaultConfig);
+    expect(args).not.toContain("--model");
   });
 });
 
@@ -1324,7 +1328,7 @@ describe("session management", () => {
   test("session commands compose claude args without --resume for the fresh path", () => {
     // handleSessionFork uses continue: true, forkSession: true.
     const forkArgs = buildClaudeArgs({
-      pluginDir: "/repo", model: "claude-opus-4-6",
+      pluginDir: "/repo",
       permissionMode: "acceptEdits", sessionId: null,
       continue: true, forkSession: true,
     });
@@ -1333,7 +1337,7 @@ describe("session management", () => {
 
     // handleSessionContinue uses continue: true only.
     const continueArgs = buildClaudeArgs({
-      pluginDir: "/repo", model: "claude-opus-4-6",
+      pluginDir: "/repo",
       permissionMode: "acceptEdits", sessionId: null,
       continue: true,
     });
@@ -1342,7 +1346,7 @@ describe("session management", () => {
 
     // handleNewSession uses no session flags.
     const newArgs = buildClaudeArgs({
-      pluginDir: "/repo", model: "claude-opus-4-6",
+      pluginDir: "/repo",
       permissionMode: "acceptEdits", sessionId: null,
     });
     expect(newArgs).not.toContain("--continue");

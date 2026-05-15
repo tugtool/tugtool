@@ -326,7 +326,8 @@ export function buildContentBlocks(
  */
 export interface ClaudeSpawnConfig {
   pluginDir: string;
-  model: string;
+  /** When omitted, the claude CLI uses its own configured default model. */
+  model?: string;
   permissionMode: string;
   sessionId: string | null;
   continue?: boolean;
@@ -361,9 +362,12 @@ export function buildClaudeArgs(config: ClaudeSpawnConfig): string[] {
     "--include-partial-messages",
     "--replay-user-messages",
     "--plugin-dir", config.pluginDir,
-    "--model", config.model,
     "--permission-mode", config.permissionMode,
   ];
+
+  if (config.model) {
+    args.push("--model", config.model);
+  }
 
   if (config.sessionId) {
     args.push("--resume", config.sessionId);
@@ -1318,7 +1322,6 @@ export class SessionManager {
 
     const args = buildClaudeArgs({
       pluginDir: this.getPluginDir(),
-      model: "claude-opus-4-6",
       permissionMode: this.permissionManager.getMode(),
       sessionId: mode === "resume" ? id : null,
       sessionIdOverride: mode === "session-id" && id !== null ? id : undefined,
@@ -2973,7 +2976,6 @@ export class SessionManager {
 
     const args = buildClaudeArgs({
       pluginDir: this.getPluginDir(),
-      model: "claude-opus-4-6",
       permissionMode: this.permissionManager.getMode(),
       sessionId: null,
       continue: true,
@@ -3010,7 +3012,6 @@ export class SessionManager {
 
     const args = buildClaudeArgs({
       pluginDir: this.getPluginDir(),
-      model: "claude-opus-4-6",
       permissionMode: this.permissionManager.getMode(),
       sessionId: null,
       continue: true,
