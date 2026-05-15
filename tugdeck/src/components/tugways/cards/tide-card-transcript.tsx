@@ -89,7 +89,10 @@ import type { ActionHandlerResult } from "@/components/tugways/responder-chain";
 import { useResponder } from "@/components/tugways/use-responder";
 import { useTextSurfaceContextMenu } from "@/components/tugways/use-text-surface-context-menu";
 import type { CodeSessionStore } from "@/lib/code-session-store";
-import type { ControlRequestForward } from "@/lib/code-session-store";
+import type {
+  ControlRequestForward,
+  ControlRequestRecord,
+} from "@/lib/code-session-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { ResponseSettingsStore } from "@/lib/response-settings-store";
 import {
@@ -346,6 +349,15 @@ const CODE_DEFAULT_IDENTIFIER = "Code";
 /** Default identifier shown for `user` rows. */
 const USER_IDENTIFIER = "You";
 
+/**
+ * Stable-reference empty control-request log handed to committed
+ * cells' `useSyncExternalStore` so React's Object.is comparison
+ * skips re-renders on every snapshot tick. Allocated once at module
+ * load; every committed cell shares the same reference. The
+ * `ReadonlyArray` type discourages accidental mutation.
+ */
+const EMPTY_CONTROL_LOG: ReadonlyArray<ControlRequestRecord> = [];
+
 interface UserRowCellProps extends TugListViewCellProps<TideTranscriptDataSource> {}
 
 const UserRowCell: React.FC<UserRowCellProps> = ({ index, dataSource }) => {
@@ -455,8 +467,17 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
 }) => {
   const row = dataSource.rowAt(index);
   // `turnKey` is set for every code row by `rowAt`. The fallback
-  // string is defensive; it should never fire in practice.
-  const turnKey = row.turnKey ?? "missing-turn-key";
+  // throws in dev (data-source contract violation) and falls back to
+  // an index-scoped string in prod so different rows can't
+  // cross-pollinate per-turn paths if the contract is silently
+  // violated downstream.
+  if (row.turnKey === undefined && process.env.NODE_ENV !== "production") {
+    throw new Error(
+      `CodeRowCell: row.turnKey missing at index=${index}. ` +
+        `TideTranscriptDataSource.rowAt must set turnKey on every code row.`,
+    );
+  }
+  const turnKey = row.turnKey ?? `missing-${index}`;
   const assistantPath = `turn.${turnKey}.assistant`;
   const thinkingPath = `turn.${turnKey}.thinking`;
   const toolsPath = `turn.${turnKey}.tools`;
@@ -483,18 +504,32 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
   // shape, so React reconciles per-record in place across the
   // transition: each dialog instance survives the inflight → committed
   // boundary even as the source of truth swaps.
+  //
+  // The two `useSyncExternalStore` subscriptions below GATE on
+  // `isCommitted`: once a cell is committed, its `permissionSlot`
+  // depends on `turn.controlRequests` only, so re-rendering on every
+  // pending/log change in a *later* turn would be wasted work. The
+  // getSnapshot closures return stable values (`null` /
+  // `EMPTY_CONTROL_LOG`) for committed cells, so `useSyncExternalStore`'s
+  // Object.is comparison skips the re-render entirely after commit.
   const pendingApproval = useSyncExternalStore(
     codeSessionStore.subscribe,
     useCallback(
-      () => codeSessionStore.getSnapshot().pendingApproval,
-      [codeSessionStore],
+      () =>
+        isCommitted
+          ? null
+          : codeSessionStore.getSnapshot().pendingApproval,
+      [codeSessionStore, isCommitted],
     ),
   );
   const controlRequestLog = useSyncExternalStore(
     codeSessionStore.subscribe,
     useCallback(
-      () => codeSessionStore.getSnapshot().controlRequestLog,
-      [codeSessionStore],
+      () =>
+        isCommitted
+          ? EMPTY_CONTROL_LOG
+          : codeSessionStore.getSnapshot().controlRequestLog,
+      [codeSessionStore, isCommitted],
     ),
   );
   const permissionSlot = useMemo<React.ReactNode>(() => {

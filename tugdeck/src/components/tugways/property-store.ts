@@ -162,6 +162,17 @@ export interface PropertyStoreOptions {
  */
 export class PropertyStore {
   private readonly _schema: PropertySchema;
+  /**
+   * Path → descriptor lookup, kept in sync with `_schema.paths`. The
+   * `_schema.paths` array is preserved for consumers that iterate
+   * (e.g. via `getSchema()` for introspection); this Map exists so
+   * `_requireValidPath` is O(1) instead of O(n) over the array. With
+   * `dynamicPaths: true` the schema grows unbounded over the life of
+   * a long session (per-turn streaming paths on the code-session
+   * store accumulate ~3 entries per turn), and the per-write find()
+   * cost was the only remaining concern when this option shipped.
+   */
+  private readonly _descriptorByPath: Map<string, PropertyDescriptor>;
   private readonly _values: Map<string, unknown>;
   private readonly _listeners: Map<string, Set<Function>>;
   private readonly _onGet?: (path: string) => unknown;
@@ -170,6 +181,9 @@ export class PropertyStore {
 
   constructor(options: PropertyStoreOptions) {
     this._schema = { paths: [...options.schema] };
+    this._descriptorByPath = new Map(
+      options.schema.map((d) => [d.path, d] as const),
+    );
     this._values = new Map();
     this._listeners = new Map();
     this._onGet = options.onGet;
@@ -314,7 +328,7 @@ export class PropertyStore {
    * Throws with a clear message if the path is not found.
    */
   private _requireValidPath(path: string): PropertyDescriptor {
-    const descriptor = this._schema.paths.find((d) => d.path === path);
+    const descriptor = this._descriptorByPath.get(path);
     if (descriptor !== undefined) return descriptor;
     if (this._dynamicPaths) {
       // Permissive descriptor — type `"string"` with no constraints.
@@ -328,6 +342,7 @@ export class PropertyStore {
         label: path,
       };
       this._schema.paths.push(dynamic);
+      this._descriptorByPath.set(path, dynamic);
       return dynamic;
     }
     const valid = this._schema.paths.map((d) => d.path).join(", ");
