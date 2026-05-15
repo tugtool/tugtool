@@ -7,8 +7,8 @@
  *
  *   1. Bare CTA — title + description + cancel + confirm.
  *   2. Caution shield + permission shape — `iconRole="caution"`,
- *      ShieldAlert, suggestion-style outline button in `children`,
- *      Allow / Deny actions.
+ *      ShieldAlert, a radio-group `options` block (mandatory
+ *      single-select scope picker), Allow / Deny actions.
  *   3. Destructive confirm — `iconRole="danger"`, TriangleAlert,
  *      `confirmRole="danger"`, Discard / Cancel.
  *   4. Rich children — a standalone `JsonTreeBlock` inside the
@@ -37,6 +37,7 @@ import { TugInlineDialog } from "@/components/tugways/tug-inline-dialog";
 import {
   TUG_INLINE_DIALOG_ICON_ROLES,
   type TugInlineDialogIconRole,
+  type TugInlineDialogOption,
 } from "@/components/tugways/tug-inline-dialog";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
@@ -62,59 +63,6 @@ const ICON_ROLE_TILE_ROW: React.CSSProperties = {
   alignItems: "stretch",
 };
 
-// ---------------------------------------------------------------------------
-// Extra-actions row-grid demo data
-// ---------------------------------------------------------------------------
-
-interface ExtraActionsLayoutDemo {
-  label: string;
-  count: number;
-  actions: ReadonlyArray<{ label: string; onClick: () => void }>;
-}
-
-/**
- * Build a list of `n` synthetic suggestion-style actions with stable
- * labels so the demo reads as a deliberate fixture rather than a
- * loop-generated stub.
- */
-function buildDemoActions(
-  n: number,
-): ReadonlyArray<{ label: string; onClick: () => void }> {
-  const labels = [
-    "Allow for this session",
-    "Allow for this project",
-    "Always allow",
-    "Allow once",
-    "Always allow + log",
-    "Allow only this command",
-  ];
-  const out: { label: string; onClick: () => void }[] = [];
-  for (let i = 0; i < n; i += 1) {
-    out.push({
-      label: labels[i] ?? `Option ${i + 1}`,
-      onClick: () => undefined,
-    });
-  }
-  return out;
-}
-
-const EXTRA_ACTIONS_LAYOUT_DEMOS: ReadonlyArray<ExtraActionsLayoutDemo> = [
-  { label: "1 suggestion → [1] (half-width)", count: 1, actions: buildDemoActions(1) },
-  { label: "2 suggestions → [2] (50/50)",       count: 2, actions: buildDemoActions(2) },
-  { label: "3 suggestions → [3] (33/33/33)",    count: 3, actions: buildDemoActions(3) },
-  { label: "4 suggestions → [2, 2] (2 over 2)", count: 4, actions: buildDemoActions(4) },
-];
-
-const extraActionsDemoStyle: React.CSSProperties = {
-  marginTop: "0.5rem",
-};
-
-const extraActionsCaptionStyle: React.CSSProperties = {
-  fontSize: "0.75rem",
-  color: "var(--tug7-element-field-text-normal-label-rest)",
-  marginBottom: "0.25rem",
-};
-
 // Compact tile for the icon-role gallery — narrower than the default
 // max-width so five sit side by side comfortably. CSS custom
 // properties inherit, so setting these on the wrapper feeds the
@@ -123,6 +71,33 @@ const COMPACT_TILE_DIALOG_STYLE = {
   ["--tugx-idialog-max-width" as string]: "12rem",
   ["--tugx-idialog-margin" as string]: "0",
 } as React.CSSProperties;
+
+// ---------------------------------------------------------------------------
+// Permission-shape demo data
+// ---------------------------------------------------------------------------
+
+const PERMISSION_SCOPE_OPTIONS: ReadonlyArray<TugInlineDialogOption> = [
+  {
+    value: "allow-once",
+    label: "Allow once",
+    description: "Allow this single invocation. No rule is added.",
+  },
+  {
+    value: "allow-session",
+    label: "Allow for this session",
+    description: "The rule lives in memory and clears when Tide quits.",
+  },
+  {
+    value: "allow-project",
+    label: "Allow for this project",
+    description: "Persisted to the project's local settings file.",
+  },
+  {
+    value: "allow-always",
+    label: "Always allow",
+    description: "Persisted to your user-level settings; applies everywhere.",
+  },
+];
 
 // ---------------------------------------------------------------------------
 // GalleryTugInlineDialog
@@ -136,6 +111,12 @@ export function GalleryTugInlineDialog(): React.ReactElement {
   const [destructiveResult, setDestructiveResult] = React.useState<string>("—");
   const [richResult, setRichResult] = React.useState<string>("—");
   const [singleResult, setSingleResult] = React.useState<string>("—");
+
+  // Permission-shape selected scope. Mandatory single-select; defaults
+  // to the implicit "Allow once" head.
+  const [permissionScope, setPermissionScope] = React.useState<string>(
+    PERMISSION_SCOPE_OPTIONS[0].value,
+  );
 
   // Sample JSON for the rich-children section. Stable across renders so
   // the JsonTreeBlock's component-state-preservation key doesn't churn.
@@ -195,9 +176,9 @@ export function GalleryTugInlineDialog(): React.ReactElement {
       <div className="cg-section">
         <TugLabel className="cg-section-title">Permission shape</TugLabel>
         <div style={labelStyle}>
-          <code>iconRole="caution"</code> + ShieldAlert; one secondary
-          action via <code>extraActions</code> (auto-laid out at half
-          width); Allow / Deny.
+          <code>iconRole="caution"</code> + ShieldAlert; the{" "}
+          <code>options</code> radio group is the scope picker —
+          mandatory single-select, Deny is the off-ramp.
         </div>
         <TugInlineDialog
           icon={<ShieldAlert />}
@@ -215,55 +196,18 @@ export function GalleryTugInlineDialog(): React.ReactElement {
           confirmLabel="Allow"
           confirmRole="action"
           cancelLabel="Deny"
-          onConfirm={() => setPermissionResult("Allowed")}
+          onConfirm={() =>
+            setPermissionResult(`Allowed — scope: ${permissionScope}`)
+          }
           onCancel={() => setPermissionResult("Denied")}
-          extraActions={[
-            {
-              label: "Allow for this project",
-              onClick: () =>
-                setPermissionResult("Allowed for this project"),
-            },
-          ]}
+          options={PERMISSION_SCOPE_OPTIONS}
+          selectedOption={permissionScope}
+          onSelectOption={setPermissionScope}
+          optionsAriaLabel="Permission scope"
         />
         <div style={resultStyle}>
           Result: <strong>{permissionResult}</strong>
         </div>
-      </div>
-
-      <TugSeparator />
-
-      {/* ---- 2b. Extra-actions row-grid layouts ---- */}
-      <div className="cg-section">
-        <TugLabel className="cg-section-title">
-          Extra-actions row-grid (1 → 2 → 3 → 4)
-        </TugLabel>
-        <div style={labelStyle}>
-          <code>extraActions</code> auto-partitions per{" "}
-          <code>partitionDialogActions</code>: 1 → half-width single
-          button; 2 → 50/50; 3 → 33/33/33; 4 → 2 over 2.
-        </div>
-        {EXTRA_ACTIONS_LAYOUT_DEMOS.map((demo) => (
-          <div key={demo.label} style={extraActionsDemoStyle}>
-            <div style={extraActionsCaptionStyle}>{demo.label}</div>
-            <TugInlineDialog
-              icon={<ShieldAlert />}
-              iconRole="caution"
-              title="Permission requested"
-              description={
-                <>
-                  Sample permission with <code>{demo.count}</code>{" "}
-                  {demo.count === 1 ? "suggestion" : "suggestions"}.
-                </>
-              }
-              confirmLabel="Allow"
-              confirmRole="action"
-              cancelLabel="Deny"
-              onConfirm={() => undefined}
-              onCancel={() => undefined}
-              extraActions={demo.actions}
-            />
-          </div>
-        ))}
       </div>
 
       <TugSeparator />

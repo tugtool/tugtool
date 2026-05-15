@@ -16,10 +16,15 @@
  *      ([#step-18-5]) with `iconRole="caution"` and a per-tool rich
  *      description. The body picker (DiffBlock for Edit, JsonTreeBlock
  *      for the unknown-tool fallback) renders inside the dialog's
- *      `children` slot together with any actionable
- *      `permission_suggestions`. Allow / Deny live on the primitive's
- *      confirm / cancel buttons; the primitive focuses Allow on mount
- *      per [D13].
+ *      `children` slot. When the request carries actionable
+ *      `permission_suggestions`, those (plus an implicit "Allow once"
+ *      first option) are passed to the primitive's `options` prop as
+ *      a mandatory-single-select radio group of `TugDialogButton`s
+ *      ([#step-18-6]); the user picks the *scope*, then commits with
+ *      Allow. Deny is the off-ramp — clicking it ignores the chosen
+ *      scope and denies the request outright. The primitive focuses
+ *      Allow on mount per [D13] so a Return key commits the default
+ *      scope without a second keystroke.
  *   2. **Resolved** — a one-line record (`{tool} — Allowed/Denied`)
  *      with a chevron that expands to re-show the request body +
  *      reason, read-only. This branch is intentionally *not* on the
@@ -82,7 +87,7 @@ import { cn } from "@/lib/utils";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import { JsonTreeBlock } from "@/components/tugways/body-kinds/json-tree-block";
 import { TugInlineDialog } from "@/components/tugways/tug-inline-dialog";
-import type { TugInlineDialogAction } from "@/components/tugways/tug-inline-dialog";
+import type { TugInlineDialogOption } from "@/components/tugways/tug-inline-dialog";
 import type {
   CodeSessionStore,
   ControlRequestForward,
@@ -241,6 +246,65 @@ export function narrowPermissionSuggestion(
     behavior,
     label: composePermissionSuggestionLabel(behavior, destination),
   };
+}
+
+/**
+ * Stable identifier reserved for the implicit "Allow once" option that
+ * heads every options list when at least one allow-scoped suggestion
+ * exists. Exported so the dialog and its tests share the constant
+ * verbatim — never drifting between caller and asserter.
+ */
+export const ALLOW_ONCE_OPTION_VALUE = "allow-once";
+
+/** Visible label for the implicit "Allow once" option. */
+export const ALLOW_ONCE_OPTION_LABEL = "Allow once";
+
+/**
+ * Description for the implicit "Allow once" option. Anchors the
+ * default semantic so the user understands what happens when they
+ * commit Allow without picking a more durable scope.
+ */
+export const ALLOW_ONCE_OPTION_DESCRIPTION =
+  "Allow this single invocation. No rule is added.";
+
+/**
+ * Build the options array fed to `TugInlineDialog`'s `options` prop
+ * from the narrowed allow-scoped suggestions. The implicit "Allow
+ * once" option is prepended whenever at least one allow-scoped
+ * suggestion exists, so the user always has the no-rule default
+ * available alongside the persistent scopes Claude proposed.
+ *
+ * Returns an empty array when no allow-scoped suggestions are
+ * present — the dialog then renders without an options block (Allow
+ * defaults to the one-shot scope).
+ *
+ * Deny-scoped suggestions are intentionally not surfaced as scope
+ * options — Deny in this dialog is always a single button that
+ * skips the entire scope-picking flow. A future enhancement could
+ * model deny-scope as a separate group; today it would conflate
+ * "scope of allow" with "scope of deny" inside one radio group.
+ *
+ * Pure; exported for the test suite.
+ */
+export function buildPermissionOptions(
+  suggestions: ReadonlyArray<PermissionSuggestionAction>,
+): TugInlineDialogOption[] {
+  const allowSuggestions = suggestions.filter((s) => s.behavior === "allow");
+  if (allowSuggestions.length === 0) return [];
+  const out: TugInlineDialogOption[] = [
+    {
+      value: ALLOW_ONCE_OPTION_VALUE,
+      label: ALLOW_ONCE_OPTION_LABEL,
+      description: ALLOW_ONCE_OPTION_DESCRIPTION,
+    },
+  ];
+  for (const suggestion of allowSuggestions) {
+    out.push({
+      value: `allow:${suggestion.label}`,
+      label: suggestion.label,
+    });
+  }
+  return out;
 }
 
 /**
@@ -500,6 +564,20 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
     return out;
   }, [request.permission_suggestions]);
 
+  const allowOptions = React.useMemo(
+    () => buildPermissionOptions(suggestions),
+    [suggestions],
+  );
+
+  // Mandatory single-select: the first option (the implicit "Allow
+  // once" when scopes are offered) is the default. Initialised once
+  // per request from the *initial* options list — switching pending
+  // requests would remount this component anyway, so the seed never
+  // drifts under us.
+  const [selectedOption, setSelectedOption] = React.useState<string>(
+    () => allowOptions[0]?.value ?? ALLOW_ONCE_OPTION_VALUE,
+  );
+
   const decisionReason =
     typeof request.decision_reason === "string" &&
     request.decision_reason.trim() !== ""
@@ -560,20 +638,23 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
 
   // ---- Pending: composed on TugInlineDialog -------------------------------
   // The body picker (DiffBlock for Edit, JsonTreeBlock for the JSON
-  // fallback) goes in the primitive's `children` slot. The narrowed
-  // suggestions go on the structured `extraActions` prop — the
-  // primitive owns the row-grid layout + CSS so a single suggestion
-  // doesn't stretch and N suggestions balance into 2/3-per-row groups.
+  // fallback) goes in the primitive's `children` slot. Allow-scoped
+  // suggestions (plus the implicit "Allow once" head) go on the
+  // primitive's `options` prop — a mandatory single-select radio
+  // group of `TugDialogButton`s. Allow commits with the chosen
+  // scope's message; Deny ignores the scope and denies outright.
   const body = <PendingBody toolName={toolName} input={request.input} />;
-  const childrenContent = body;
-  const extraActions: TugInlineDialogAction[] = React.useMemo(
-    () =>
-      suggestions.map((suggestion) => ({
-        label: suggestion.label,
-        onClick: () => respond(suggestion.behavior, suggestion.label),
-      })),
-    [suggestions, respond],
-  );
+  const handleAllow = React.useCallback(() => {
+    // The implicit "Allow once" maps to allow-without-scope; any
+    // other selected option's label is the scope message Claude reads
+    // back to bind the rule.
+    if (selectedOption === ALLOW_ONCE_OPTION_VALUE) {
+      respond("allow");
+      return;
+    }
+    const chosen = allowOptions.find((o) => o.value === selectedOption);
+    respond("allow", chosen?.label);
+  }, [allowOptions, respond, selectedOption]);
 
   return (
     <TugInlineDialog
@@ -590,12 +671,15 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
       confirmLabel="Allow"
       confirmRole="action"
       cancelLabel="Deny"
-      onConfirm={() => respond("allow")}
+      onConfirm={handleAllow}
       onCancel={() => respond("deny")}
-      extraActions={extraActions}
+      options={allowOptions}
+      selectedOption={selectedOption}
+      onSelectOption={setSelectedOption}
+      optionsAriaLabel="Permission scope"
       className={className}
     >
-      {childrenContent}
+      {body}
     </TugInlineDialog>
   );
 };

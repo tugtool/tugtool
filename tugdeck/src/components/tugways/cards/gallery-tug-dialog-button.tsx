@@ -354,23 +354,16 @@ export function GalleryTugDialogButton(): React.ReactElement {
 
       <TugSeparator />
 
-      {/* ---- 7. Composed inside TugInlineDialog (design preview) ---- */}
+      {/* ---- 7. Composed inside TugInlineDialog ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">
-          Composed inside TugInlineDialog (design preview)
+          Composed inside TugInlineDialog
         </TugLabel>
         <div style={labelStyle}>
-          A vertical stack of <code>TugDialogButton</code>s in the
-          dialog's <code>children</code> slot — preview of how the
-          eventual <code>extraActions</code> refactor will read.{" "}
-          <em>Not</em> wired through <code>extraActions</code> in this
-          step; the existing row-grid rendering is unchanged.
-        </div>
-        <div style={labelStyle}>
-          Radio-style choice with a mandatory default — exactly one
-          option is always selected. Clicking a row picks it; clicking
-          Allow commits that pick. To reject every option, the user
-          clicks Deny — the dialog is the off-ramp.
+          The dialog's <code>options</code> prop renders this primitive
+          as a mandatory single-select radio group. Clicking a row
+          picks it; Allow commits the chosen scope. To reject every
+          option, the user clicks Deny — the dialog is the off-ramp.
         </div>
         <TugInlineDialog
           icon={<ShieldAlert />}
@@ -392,29 +385,15 @@ export function GalleryTugDialogButton(): React.ReactElement {
             setComposedResult(`Allowed — scope: ${composedScope}`)
           }
           onCancel={() => setComposedResult("Denied")}
-        >
-          <div
-            style={stackStyle}
-            role="radiogroup"
-            aria-label="Permission scope"
-          >
-            {RADIO_CHOICES.map((choice) => (
-              <TugDialogButton
-                key={choice.id}
-                label={choice.label}
-                description={choice.description}
-                selected={composedScope === choice.id}
-                selectionStyle="radio"
-                // Mandatory selection: clicking a row picks it. There
-                // is no toggle-off path — the only way to "say none of
-                // these" is the dialog's Deny button. This makes the
-                // radio semantics honest: a radio group can never be
-                // empty, so neither can this stack.
-                onClick={() => setComposedScope(choice.id)}
-              />
-            ))}
-          </div>
-        </TugInlineDialog>
+          options={RADIO_CHOICES.map((choice) => ({
+            value: choice.id,
+            label: choice.label,
+            description: choice.description,
+          }))}
+          selectedOption={composedScope}
+          onSelectOption={setComposedScope}
+          optionsAriaLabel="Permission scope"
+        />
         <div style={resultStyle}>
           Result: <strong>{composedResult}</strong>
         </div>

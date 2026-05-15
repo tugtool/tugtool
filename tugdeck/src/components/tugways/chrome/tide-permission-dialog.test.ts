@@ -1,15 +1,17 @@
 /**
  * Pure-logic tests for `tide-permission-dialog.tsx`.
  *
- * `PermissionDialog`'s behaviour is its four exported pure helpers —
- * the body-kind picker, the suggestion narrowing, the resolved-record
- * summary, and the Read line-range badge — plus the dispatch wiring
- * (`KIND_RENDERERS.permission` now resolves to the real component).
- * Per project policy (pure-logic `bun:test` + real-app tests only,
- * no fake-DOM render tests), the suite pins those exhaustively; the
- * Allow/Deny round-trip and primary-button focus are HMR / live-smoke
- * vetted because the app-test harness can't inject
- * `control_request_forward` events (same gap that gates #step-15–#step-17).
+ * `PermissionDialog`'s behaviour is its exported pure helpers —
+ * the body-kind picker, the suggestion narrowing + label composer,
+ * the options builder for the radio-group scope picker, the
+ * resolved-record summary, and the Read line-range badge — plus the
+ * dispatch wiring (`KIND_RENDERERS.permission` resolves to the real
+ * component). Per project policy (pure-logic `bun:test` + real-app
+ * tests only, no fake-DOM render tests), the suite pins those
+ * exhaustively; the Allow/Deny round-trip, the radio-group radio-mark
+ * paint, and primary-button focus are HMR / live-smoke vetted because
+ * the app-test harness can't inject `control_request_forward` events
+ * (same gap that gates #step-15–#step-17).
  *
  * Coverage:
  *  - `selectPermissionBodyKind` — Bash / Edit / MultiEdit / Read /
@@ -20,6 +22,8 @@
  *  - `narrowPermissionSuggestion` — the v2.1.x catalog shape,
  *    allow/deny behaviors, non-actionable drop, the "rules content is
  *    intentionally dropped" contract.
+ *  - `buildPermissionOptions` — empty list passthrough, allow-only
+ *    filtering, implicit "Allow once" head, deny-suggestion drop.
  *  - `composePermissionRecordSummary` — allow / deny / resolved-null,
  *    empty tool name.
  *  - `composePermissionLineRange` — offset+limit / offset / limit /
@@ -31,12 +35,17 @@
 import { describe, it, expect } from "bun:test";
 
 import {
+  ALLOW_ONCE_OPTION_DESCRIPTION,
+  ALLOW_ONCE_OPTION_LABEL,
+  ALLOW_ONCE_OPTION_VALUE,
   PermissionDialog,
+  buildPermissionOptions,
   composePermissionLineRange,
   composePermissionRecordSummary,
   composePermissionSuggestionLabel,
   narrowPermissionSuggestion,
   selectPermissionBodyKind,
+  type PermissionSuggestionAction,
 } from "./tide-permission-dialog";
 import {
   KIND_RENDERERS,
@@ -191,6 +200,76 @@ describe("narrowPermissionSuggestion", () => {
       behavior: "allow",
       label: "Allow this action",
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildPermissionOptions — radio-group scope picker
+// ---------------------------------------------------------------------------
+
+describe("buildPermissionOptions", () => {
+  it("returns an empty array when there are no suggestions", () => {
+    // No suggestions → no scope picker; the dialog renders without
+    // an options block and Allow defaults to one-shot scope.
+    expect(buildPermissionOptions([])).toEqual([]);
+  });
+
+  it("returns an empty array when every suggestion is deny-scoped", () => {
+    // Deny-scoped suggestions are not surfaced as scope choices —
+    // Deny in this dialog is always the off-ramp button. A list
+    // containing only deny-scoped entries collapses to no options.
+    const denyOnly: ReadonlyArray<PermissionSuggestionAction> = [
+      { behavior: "deny", label: "Always deny" },
+      { behavior: "deny", label: "Deny for this project" },
+    ];
+    expect(buildPermissionOptions(denyOnly)).toEqual([]);
+  });
+
+  it("prepends the implicit 'Allow once' head when allow-scopes exist", () => {
+    const allows: ReadonlyArray<PermissionSuggestionAction> = [
+      { behavior: "allow", label: "Allow for this session" },
+      { behavior: "allow", label: "Allow for this project" },
+      { behavior: "allow", label: "Always allow" },
+    ];
+    expect(buildPermissionOptions(allows)).toEqual([
+      {
+        value: ALLOW_ONCE_OPTION_VALUE,
+        label: ALLOW_ONCE_OPTION_LABEL,
+        description: ALLOW_ONCE_OPTION_DESCRIPTION,
+      },
+      { value: "allow:Allow for this session", label: "Allow for this session" },
+      { value: "allow:Allow for this project", label: "Allow for this project" },
+      { value: "allow:Always allow",            label: "Always allow" },
+    ]);
+  });
+
+  it("filters deny-scoped suggestions out of a mixed list", () => {
+    const mixed: ReadonlyArray<PermissionSuggestionAction> = [
+      { behavior: "allow", label: "Allow for this session" },
+      { behavior: "deny",  label: "Deny for this project" },
+      { behavior: "allow", label: "Always allow" },
+    ];
+    expect(buildPermissionOptions(mixed)).toEqual([
+      {
+        value: ALLOW_ONCE_OPTION_VALUE,
+        label: ALLOW_ONCE_OPTION_LABEL,
+        description: ALLOW_ONCE_OPTION_DESCRIPTION,
+      },
+      { value: "allow:Allow for this session", label: "Allow for this session" },
+      { value: "allow:Always allow",            label: "Always allow" },
+    ]);
+  });
+
+  it("'Allow once' is always the first option when present (radio default)", () => {
+    const allows: ReadonlyArray<PermissionSuggestionAction> = [
+      { behavior: "allow", label: "Always allow" },
+    ];
+    const options = buildPermissionOptions(allows);
+    // Pinning the default ordering protects the radio-group's initial
+    // selection: TugInlineDialog picks options[0] as the default,
+    // and we want "Allow once" (the no-rule scope) to be that
+    // default — never a persistent rule.
+    expect(options[0].value).toBe(ALLOW_ONCE_OPTION_VALUE);
   });
 });
 

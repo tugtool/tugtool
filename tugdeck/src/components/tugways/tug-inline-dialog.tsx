@@ -18,9 +18,15 @@
  *   - `description` — rich ReactNode; can carry inline icons and
  *     `<code>`. The cohesive sentence belongs here; do not fragment
  *     the same idea across multiple slots.
- *   - `children` — free-form region between description and actions
- *     (body picker, secondary buttons). Left-aligned with the
- *     description text column.
+ *   - `children` — free-form region between description and any
+ *     options/actions (body picker, supplementary content). Left-aligned
+ *     with the description text column.
+ *   - `options` + `selectedOption` + `onSelectOption` — optional radio
+ *     group of `TugDialogButton`s rendered between the children slot
+ *     and the actions row. Mandatory single-select: clicking a row
+ *     picks it; the only escape from the choice is the cancel
+ *     button. Consumers read `selectedOption` from their own state to
+ *     decide what `onConfirm` should commit.
  *   - `confirmLabel` + `confirmRole` — the primary action, always
  *     right-most, filled-{role}.
  *   - `cancelLabel` + `onCancel` — the cancel action, immediately to
@@ -33,6 +39,7 @@
  *   | [Icon]  Title                            |
  *   |         Description (ReactNode)          |
  *   |         [children]                       |
+ *   |         [options — radio TugDialogButton]|
  *   |                                          |
  *   |                  [Cancel]  [Confirm]     |
  *   +------------------------------------------+
@@ -54,7 +61,7 @@
  *    slot family ([Table T07]); composes no other component's tokens.
  *  - [L24] state zoning — no React state inside the primitive (it is
  *    a stateless presentation surface; consumers own the open/close
- *    lifecycle).
+ *    lifecycle and the `selectedOption` value when options are used).
  *
  * Decisions:
  *  - [D13] inline (not modal) prompts; primary action focused on
@@ -68,6 +75,7 @@ import "./tug-inline-dialog.css";
 import React from "react";
 
 import { cn } from "@/lib/utils";
+import { TugDialogButton } from "./tug-dialog-button";
 import { TugPushButton } from "./tug-push-button";
 
 // ---------------------------------------------------------------------------
@@ -89,26 +97,37 @@ export type TugInlineDialogIconRole =
 export type TugInlineDialogConfirmRole = "action" | "danger";
 
 /**
- * Descriptor for a secondary action button rendered above the
- * cancel/confirm row. Consumers (e.g. `PermissionDialog` for its
- * `permission_suggestions`, `QuestionDialog` for its `options`) pass
- * an array of these and the primitive lays them out in a balanced
- * row-grid via `partitionDialogActions` — the *primitive* owns the
- * layout, so consumers don't reinvent it.
+ * Descriptor for a single option in the dialog's radio group. Options
+ * are mandatory-single-select per the [#step-18-6] design preview:
+ * one is always chosen, and the only path out of the choice is the
+ * dialog's cancel button (the off-ramp).
+ *
+ * Consumers (e.g. `PermissionDialog`'s `permission_suggestions` flow,
+ * future `QuestionDialog`'s option list) build an array of these and
+ * pair it with a `selectedOption` value + `onSelectOption` callback.
+ * Reading the selected value at confirm time is the consumer's job —
+ * the primitive is presentational only.
  */
-export interface TugInlineDialogAction {
-  /** Visible label (`TugPushButton` will uppercase + letter-space it). */
+export interface TugInlineDialogOption {
+  /** Stable identifier; matched against {@link TugInlineDialogProps.selectedOption}. */
+  value: string;
+  /** Sentence-case label shown on the option's row (NOT uppercased). */
   label: string;
-  /** Click handler. */
-  onClick: () => void;
   /**
-   * Color domain. `action` is the default outline-action; `danger`
-   * paints the destructive outline-danger.
+   * Optional rich description rendered below the label, muted. ReactNode
+   * so consumers can embed inline `<code>`, links, small icons.
+   */
+  description?: React.ReactNode;
+  /**
+   * Color domain for the row. `action` (default) paints the standard
+   * outline; `danger` paints the destructive variant. The selection
+   * affordance picks up the row's role tint per `TugDialogButton`'s
+   * cascade.
    *
    * @default "action"
    */
   role?: "action" | "danger";
-  /** Accessibility label override (icon-only / ambiguous-label cases). */
+  /** Accessibility label override (defaults to {@link label}). */
   ariaLabel?: string;
 }
 
@@ -139,22 +158,43 @@ export interface TugInlineDialogProps {
   description: React.ReactNode;
   /**
    * Free-form region inside the text column between the description
-   * and the dialog's actions block. For an Edit confirm: a
-   * `DiffBlock`. For a question: the option list. For arbitrary
-   * inline content. *Buttons go on `extraActions` instead* — the
-   * primitive owns their grid layout.
+   * and the dialog's options/actions block. For an Edit confirm: a
+   * `DiffBlock`. For a question: supplementary context. *Choices go
+   * on `options` instead* — the primitive owns the radio-group
+   * layout, ARIA semantics, and selection rendering.
    *
    * Left-aligned with the description text column (not the icon).
    */
   children?: React.ReactNode;
   /**
-   * Secondary action buttons. Rendered above the cancel/confirm row,
-   * laid out in a balanced row-grid by {@link partitionDialogActions}
-   * (1 → half-width single button, 2 → 50/50, 3 → 33/33/33,
-   * 4 → 2 over 2, 5 → 3 over 2, 6 → 3 over 3, 7+ → continues the
-   * same partition). Empty / omitted → no extra-actions block.
+   * Optional radio-group of choices. Rendered between the children
+   * slot and the cancel/confirm row, one row per choice
+   * ([#step-18-6] one-per-row pattern). When set, consumers MUST
+   * also provide {@link selectedOption} + {@link onSelectOption}; the
+   * group is mandatory-single-select (no toggle-off — the cancel
+   * button is the off-ramp).
    */
-  extraActions?: ReadonlyArray<TugInlineDialogAction>;
+  options?: ReadonlyArray<TugInlineDialogOption>;
+  /**
+   * The currently selected option's `value`. Required when {@link
+   * options} is set; ignored otherwise. The primitive is fully
+   * controlled — it never tracks the selection internally.
+   */
+  selectedOption?: string;
+  /**
+   * Fired when the user picks a different option. Required when
+   * {@link options} is set. The handler should set the consumer's
+   * state to the new `value`; do not implement a toggle-off path here
+   * — radio semantics mean exactly one option is always chosen.
+   */
+  onSelectOption?: (value: string) => void;
+  /**
+   * Optional ARIA label for the radio-group container. Defaults to
+   * the dialog's title when omitted. Useful when the title alone
+   * isn't a faithful description of what the radio group selects
+   * (e.g. "Permission requested" + a scope picker).
+   */
+  optionsAriaLabel?: string;
   /** Primary action label. */
   confirmLabel: string;
   /**
@@ -213,36 +253,13 @@ export function resolveCancelLabel(
 }
 
 /**
- * Partition `n` extra-action buttons into rows whose widths read as a
- * deliberate CTA grid rather than a chaotic wrap. The pattern caps
- * each row at 3 buttons and balances trailing partial rows so a
- * lonely last button never dangles:
- *
- *   - 1 → [1]   (one button, rendered at half-width)
- *   - 2 → [2]   (one row of two, 50/50)
- *   - 3 → [3]   (one row of three, 33/33/33)
- *   - 4 → [2,2]
- *   - 5 → [3,2]
- *   - 6 → [3,3]
- *   - 7 → [3,2,2]   (avoids a 1-button trailing row)
- *   - 8 → [3,3,2]
- *   - 9 → [3,3,3]
- *   - N → top rows of 3 with a balanced 2-row tail per the same rule.
- *
- * Pure; returns an empty array for `n <= 0`. Exported so the test
- * suite can pin every bucket.
+ * Whether the options block should render. False when the array is
+ * absent or empty. Pure; exported for tests.
  */
-export function partitionDialogActions(n: number): number[] {
-  if (n <= 0) return [];
-  if (n <= 3) return [n];
-  if (n === 4) return [2, 2];
-  const remainder = n % 3;
-  const fullRows = Math.floor(n / 3);
-  if (remainder === 0) return Array(fullRows).fill(3);
-  if (remainder === 2) return [...Array(fullRows).fill(3), 2];
-  // remainder === 1 — replace one 3-row with two 2-rows so the last
-  // row carries 2 buttons instead of dangling 1.
-  return [...Array(fullRows - 1).fill(3), 2, 2];
+export function shouldRenderOptions(
+  options: ReadonlyArray<TugInlineDialogOption> | undefined,
+): boolean {
+  return options !== undefined && options.length > 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -259,7 +276,10 @@ export const TugInlineDialog: React.FC<TugInlineDialogProps> = ({
   title,
   description,
   children,
-  extraActions,
+  options,
+  selectedOption,
+  onSelectOption,
+  optionsAriaLabel,
   confirmLabel,
   confirmRole = "action",
   onConfirm,
@@ -279,24 +299,7 @@ export const TugInlineDialog: React.FC<TugInlineDialogProps> = ({
 
   const resolvedCancelLabel = resolveCancelLabel(cancelLabel);
   const hasChildren = children !== undefined && children !== null && children !== false;
-
-  // Lay extra actions out into rows per `partitionDialogActions`.
-  // Memoized on the array reference + length so the layout is stable
-  // when the consumer's array doesn't change identity.
-  const extraActionRows = React.useMemo<
-    ReadonlyArray<{ count: number; entries: ReadonlyArray<TugInlineDialogAction> }>
-  >(() => {
-    const list = extraActions ?? [];
-    if (list.length === 0) return [];
-    const counts = partitionDialogActions(list.length);
-    const rows: { count: number; entries: ReadonlyArray<TugInlineDialogAction> }[] = [];
-    let cursor = 0;
-    for (const count of counts) {
-      rows.push({ count, entries: list.slice(cursor, cursor + count) });
-      cursor += count;
-    }
-    return rows;
-  }, [extraActions]);
+  const renderOptions = shouldRenderOptions(options);
 
   return (
     <div
@@ -321,29 +324,24 @@ export const TugInlineDialog: React.FC<TugInlineDialogProps> = ({
           ) : null}
         </div>
       </div>
-      {extraActionRows.length > 0 ? (
+      {renderOptions ? (
         <div
-          className="tug-inline-dialog-extra-actions"
-          data-slot="tug-inline-dialog-extra-actions"
+          className="tug-inline-dialog-options"
+          data-slot="tug-inline-dialog-options"
+          role="radiogroup"
+          aria-label={optionsAriaLabel ?? title}
         >
-          {extraActionRows.map((row, rowIdx) => (
-            <div
-              key={rowIdx}
-              className="tug-inline-dialog-extra-actions-row"
-              data-count={row.count}
-            >
-              {row.entries.map((action, idx) => (
-                <TugPushButton
-                  key={idx}
-                  emphasis="outlined"
-                  role={action.role ?? "action"}
-                  onClick={action.onClick}
-                  aria-label={action.ariaLabel}
-                >
-                  {action.label}
-                </TugPushButton>
-              ))}
-            </div>
+          {options!.map((option) => (
+            <TugDialogButton
+              key={option.value}
+              label={option.label}
+              description={option.description}
+              role={option.role}
+              selected={selectedOption === option.value}
+              selectionStyle="radio"
+              ariaLabel={option.ariaLabel}
+              onClick={() => onSelectOption?.(option.value)}
+            />
           ))}
         </div>
       ) : null}

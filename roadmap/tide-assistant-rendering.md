@@ -4984,10 +4984,10 @@ Visual constraints:
 - [x] Register the gallery card in `gallery-registrations.tsx` under `CATEGORIES.overlays`.
 - [x] Pure-logic tests for the helpers (selectionStyle default, role default, mode discriminator, ariaLabel-fallback-to-label).
 
-**Open questions — explicitly deferred to a follow-on step:**
-- Should `TugInlineDialog.extraActions` be refactored onto `TugDialogButton` (removing `partitionDialogActions` and the row-grid CSS)? Likely yes once the gallery iteration converges, but waits for design sign-off.
-- Should `PermissionDialog`'s suggestion shape grow a `description` field (e.g. "Always allow" carries "Adds the rule to your user-level settings; applies to every project")? Likely yes, but the wire shape doesn't carry per-suggestion descriptions today, so the descriptions would be synthesized client-side.
-- Does the `trailing` slot in action mode need a default for any common case (e.g. always render `<ChevronRight/>` for action buttons), or stay opt-in? Gallery iteration will tell.
+**Open questions — closed by [#step-18-7](#step-18-7):**
+- ~~Should `TugInlineDialog.extraActions` be refactored onto `TugDialogButton` (removing `partitionDialogActions` and the row-grid CSS)?~~ **Resolved:** yes — folded into [#step-18-7](#step-18-7) as a new `options` radio-group prop.
+- ~~Should `PermissionDialog`'s suggestion shape grow a `description` field?~~ **Resolved:** the implicit "Allow once" head carries one ("Allow this single invocation. No rule is added.") so the user understands the no-rule default; wire-supplied scopes still render as label-only since the wire shape doesn't carry descriptions.
+- ~~Does the `trailing` slot in action mode need a default for any common case?~~ **Deferred:** stays opt-in for now — no consumer to date wants a defaulted chevron, and a default would force every action-mode caller to either accept or explicitly suppress it.
 
 **Tests:**
 - [x] `tug-dialog-button.test.ts` — pure-logic for the exported helpers (16 tests pin `resolveDialogButtonMode`, `resolveSelectionStyle`, `resolveDialogButtonRole`, `resolveDialogButtonAriaLabel`, `shouldRenderTrailing`).
@@ -4996,13 +4996,86 @@ Visual constraints:
 **Checkpoint:**
 - [x] `cd tugdeck && bun x tsc --noEmit && bun test` — 0 type errors; 1846 tests pass.
 - [x] `bun run audit:tokens lint` exits 0.
-- [ ] Gallery card visually vetted across all seven sections (manual user action)
+- [x] Gallery card visually vetted across all seven sections (manual user action — selected-state colors, `CircleCheckBig` glyph weight, accent-tinted radio with onAccent pip, mandatory radio in section 7).
+
+---
+
+#### Step 18.7: Integrate TugDialogButton into TugInlineDialog + PermissionDialog {#step-18-7}
+
+**Depends on:** #step-18-5, #step-18-6
+
+**Commit:** `feat(tugways): TugInlineDialog options + PermissionDialog scope picker (TugDialogButton integration)`
+
+**References:** [D13], [#step-18-5], [#step-18-6], [#step-19](#step-19), [`tuglaws/component-authoring.md`](../tuglaws/component-authoring.md), [L17] / [L19] / [L20] / [L24]
+
+**Scope note ([#step-18-6] follow-up).** [#step-18-6] shipped `TugDialogButton` to the gallery only, with the live `TugInlineDialog.extraActions` rendering and the live `PermissionDialog` left untouched while design questions converged. After the gallery iteration settled (selected-state colors, `CircleCheckBig` glyph, accent-tinted radio with onAccent pip), this step folds the work back: `extraActions` is replaced by an `options` radio-group prop driving `TugDialogButton`s, and `PermissionDialog` adopts the new shape by surfacing the wire's `permission_suggestions` as a mandatory-single-select scope picker (with an implicit "Allow once" head as the default). Cancel / Confirm stay on `TugPushButton` per the [#step-18-6] split.
+
+**Conformance.** No new tugways primitive — this step is integration only. The `--tugx-idialog-*` and `--tugx-dialog-button-*` slot families are unchanged; `--tugx-idialog-extra-actions-*` slots are removed (the row-grid CSS is gone). Permission-dialog token surface (`--tugx-perm-*`) is also unchanged.
+
+**Design — `TugInlineDialog` API delta:**
+
+```typescript
+// Removed:
+//   extraActions?: ReadonlyArray<TugInlineDialogAction>
+//   partitionDialogActions(n: number): number[]
+//   TugInlineDialogAction
+//
+// Added:
+export interface TugInlineDialogOption {
+  value: string;
+  label: string;
+  description?: React.ReactNode;
+  role?: "action" | "danger";
+  ariaLabel?: string;
+}
+
+interface TugInlineDialogProps {
+  // ...existing fields unchanged...
+  options?: ReadonlyArray<TugInlineDialogOption>;
+  selectedOption?: string;
+  onSelectOption?: (value: string) => void;
+  optionsAriaLabel?: string;
+}
+```
+
+The primitive is fully controlled — it never tracks the selection internally. Consumers seed `selectedOption` with their preferred default, set state in `onSelectOption`, and read the chosen value at confirm time. The radio group lives between `children` and the actions row, wrapped in `role="radiogroup"`.
+
+**Design — `PermissionDialog` rewiring:**
+
+- New exported helper `buildPermissionOptions(suggestions)` filters allow-scoped suggestions, prepends the implicit `"Allow once"` head, and shapes the result for `TugInlineDialog.options`. Deny-scoped suggestions are dropped from the radio list — Deny in this dialog stays as the off-ramp button.
+- The pending-render path holds a local `selectedOption` state (default: first option, which is `"Allow once"` when scopes exist).
+- Allow's `onConfirm` reads the selected option and calls `respond("allow", chosenLabel)` — except for `"Allow once"`, which calls `respond("allow")` with no message so Claude knows no rule was bound.
+- Deny's `onCancel` calls `respond("deny")` exactly as before — the chosen scope is ignored.
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/tug-inline-dialog.tsx` + `.css` — `extraActions` / `partitionDialogActions` removed; `options` radio-group rendering added.
+- `tugdeck/src/components/tugways/tug-inline-dialog.test.ts` — `partitionDialogActions` tests removed; `shouldRenderOptions` tests added.
+- `tugdeck/src/components/tugways/chrome/tide-permission-dialog.tsx` — `buildPermissionOptions` helper added; pending-render path rewired onto `options` + `selectedOption` + `onSelectOption`.
+- `tugdeck/src/components/tugways/chrome/tide-permission-dialog.test.ts` — `buildPermissionOptions` coverage (empty list, deny-only drop, allow-only with implicit head, mixed filtering, default-ordering invariant).
+- `tugdeck/src/components/tugways/cards/gallery-tug-inline-dialog.tsx` — row-grid demo section removed; permission-shape section rebuilt on `options`.
+- `tugdeck/src/components/tugways/cards/gallery-tug-dialog-button.tsx` — Section 7 switched from `children`-slot preview to the real `options` API.
+
+**Tasks:**
+- [x] Replace `extraActions` with `options` + `selectedOption` + `onSelectOption` + `optionsAriaLabel` on `TugInlineDialog`. Drop `TugInlineDialogAction` and `partitionDialogActions`. Strip the row-grid CSS block.
+- [x] Add `buildPermissionOptions(suggestions)` to `tide-permission-dialog.tsx` plus exported constants `ALLOW_ONCE_OPTION_VALUE` / `_LABEL` / `_DESCRIPTION`.
+- [x] Rewire `PermissionDialog`'s pending render path: track `selectedOption` in local state, feed `options`, dispatch `respond("allow", label)` for scoped picks and `respond("allow")` for the implicit "Allow once".
+- [x] Update gallery cards (`gallery-tug-inline-dialog.tsx`, `gallery-tug-dialog-button.tsx` Section 7) to use the new API.
+
+**Tests:**
+- [x] `tug-inline-dialog.test.ts` — `partitionDialogActions` block removed; `shouldRenderOptions` block added (undefined / empty / non-empty).
+- [x] `tide-permission-dialog.test.ts` — `buildPermissionOptions` block added (empty / deny-only / allow-only / mixed / default-ordering invariant). Existing `composePermissionSuggestionLabel`, `narrowPermissionSuggestion`, `selectPermissionBodyKind`, dispatch-routing tests unchanged.
+- [x] `code-session-store.control-forward.test.ts` continues passing.
+
+**Checkpoint:**
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — 0 type errors; 1844 tests pass (net −2 vs. [#step-18-6] from `partitionDialogActions` removal, +5 from `buildPermissionOptions`, +3 from `shouldRenderOptions`).
+- [x] `bun run audit:tokens lint` exits 0.
+- [ ] Live PermissionDialog visually vetted in HMR (manual user action — pending request shows scope picker; Allow commits with chosen label; Deny denies; resolved record collapses correctly).
 
 ---
 
 #### Step 19: QuestionDialog (`control_request_forward`, `is_question:true`) {#step-19}
 
-**Depends on:** #step-1, #step-18, #step-18-5, #step-18-6
+**Depends on:** #step-1, #step-18, #step-18-5, #step-18-6, #step-18-7
 
 **Commit:** `feat(tide-rendering): QuestionDialog — inline single/multi-select with Other input`
 

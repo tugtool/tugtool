@@ -10,7 +10,9 @@
    `TugAlert`. The frame is a raised card sized for fixed centered CTA
    placement; inside, an icon column tints to one of five named roles
    while the text column carries title + description + optional
-   children, and the actions row right-aligns cancel + confirm.
+   children, an optional radio-group `options` block stacks rich-label
+   `TugDialogButton`s one-per-row, and the actions row right-aligns
+   cancel + confirm.
 */
 
 /**
@@ -74,10 +76,8 @@ body {
   /* Children block — own gap separate from text-column tight gap. */
   --tugx-idialog-children-gap: var(--tug-space-md);
 
-  /* Extra-actions block — `extraActions` prop's row-grid layout. */
-  --tugx-idialog-extra-actions-gap:        var(--tug-space-sm);
-  --tugx-idialog-extra-actions-row-gap:    var(--tug-space-sm);
-  --tugx-idialog-extra-actions-single-max: 50%;
+  /* Options block — `options` prop's one-per-row radio stack. */
+  --tugx-idialog-options-gap: var(--tug-space-sm);
 
   /* Actions row — same pattern as Alert. */
   --tugx-idialog-actions-gap:  var(--tugx-idialog-space-a);
@@ -192,48 +192,21 @@ body {
   min-width: 0;
 }
 
-/* ---- Extra-actions block (`extraActions` prop) ---- */
+/* ---- Options block (`options` prop — radio TugDialogButton stack) ---- */
 /*
- * Sits between the body-row and the Cancel/Confirm row. Each row is a
- * flex container with equal-flex children so 1/2/3 buttons split the
- * row width evenly; `data-count="1"` rows additionally cap their own
- * max-width so a single secondary action reads as deliberate (half
- * the dialog width) rather than stretched edge-to-edge.
+ * One row per option, stacked vertically. The row-grid partition is
+ * gone — descriptive labels (which `TugDialogButton` is sized for)
+ * read clearly only when each row owns the dialog's full width.
+ *
+ * `role="radiogroup"` lives on the wrapper for screen-reader
+ * semantics; each child `TugDialogButton` carries `role="radio"` +
+ * `aria-checked` per its choice-mode contract.
  */
 
-.tug-inline-dialog-extra-actions {
+.tug-inline-dialog-options {
   display: flex;
   flex-direction: column;
-  gap: var(--tugx-idialog-extra-actions-row-gap);
-}
-
-.tug-inline-dialog-extra-actions-row {
-  display: flex;
-  gap: var(--tugx-idialog-extra-actions-gap);
-  width: 100%;
-}
-
-/*
- * Single secondary action — render at half-width so it doesn't read as
- * a primary CTA stretched edge-to-edge. Subtract half the gap so a
- * subsequent row of two doesn't visually exceed this row's right edge
- * (visually consistent right edge across single- and pair-rows).
- */
-.tug-inline-dialog-extra-actions-row[data-count="1"] {
-  max-width: calc(
-    var(--tugx-idialog-extra-actions-single-max) -
-      (var(--tugx-idialog-extra-actions-gap) / 2)
-  );
-}
-
-/*
- * Each button in the row gets equal flex so 2-rows split 50/50 and
- * 3-rows split 33/33/33. `min-width: 0` prevents long labels from
- * overflowing the dialog frame.
- */
-.tug-inline-dialog-extra-actions-row > .tug-button {
-  flex: 1 1 0;
-  min-width: 0;
+  gap: var(--tugx-idialog-options-gap);
 }
 
 /* ---- Actions row (Cancel left, Confirm right — Alert pattern) ---- */
