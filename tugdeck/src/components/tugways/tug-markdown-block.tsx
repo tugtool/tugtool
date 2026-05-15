@@ -114,22 +114,35 @@ export interface TugMarkdownBlockProps {
  * Replace the container's children with one `<div class="tugx-md-block">`
  * per parsed markdown block. Empty input clears the container. Direct
  * DOM mutation per [L06]; the React render does not own block content.
+ *
+ * **Atomic swap.** Build every new block element off-DOM via
+ * `createElement` first, then commit them in a single
+ * `container.replaceChildren(...newNodes)` call. The two-phase shape
+ * matters: a naive `replaceChildren()` followed by a loop of
+ * `appendChild` momentarily empties the container, which makes the
+ * outer scrollport's `scrollHeight` shrink below the user's current
+ * `scrollTop`. The browser auto-clamps `scrollTop` to the new
+ * `scrollHeight - clientHeight`, then never restores it — the user
+ * sees the transcript snap upward on every streaming delta. The
+ * varargs `replaceChildren(...nodes)` swaps the entire child list as
+ * one mutation, so the container's height never crosses zero and the
+ * scroll-clamp path never fires.
  */
 function renderBlocks(container: HTMLElement, text: string): void {
-  // Drop existing children before re-rendering. `replaceChildren()`
-  // detaches every child in one DOM operation, more efficient than
-  // a manual loop.
-  container.replaceChildren();
-  if (text === "") return;
+  if (text === "") {
+    container.replaceChildren();
+    return;
+  }
   const blocks = parseMarkdownToSanitizedBlocks(text);
-  for (const block of blocks) {
+  const newNodes: HTMLDivElement[] = blocks.map((block) => {
     const blockEl = document.createElement("div");
     blockEl.className = "tugx-md-block";
     blockEl.dataset.blockType = block.type;
     blockEl.innerHTML = block.html;
     enhanceFencedCode(blockEl);
-    container.appendChild(blockEl);
-  }
+    return blockEl;
+  });
+  container.replaceChildren(...newNodes);
 }
 
 export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
