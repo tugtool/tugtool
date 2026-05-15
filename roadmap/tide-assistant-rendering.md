@@ -4630,6 +4630,45 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 ---
 
+#### Step 17.5: Nest subagent tool calls via `parent_tool_use_id` {#step-17-5}
+
+**Depends on:** #step-1, #step-16, #step-17
+
+**Commit:** `feat(tide-rendering): nest subagent tool calls under AgentTranscriptBlock via parent_tool_use_id`
+
+**References:** [D01], [D17], Spec S03
+
+**Conformance:** see [#bk-conformance](#bk-conformance) — no new component. `AgentTranscriptBlock` (item 9 recursion) gains a second entry source: its `tool_use` entries now come from *both* the wire `content[]` blocks and the reducer-linked child tool calls, dispatched through the same pipeline at `depth + 1`.
+
+**Scope note ([D01] exception).** [D01] fences the `CodeSessionStore` reducer as state-only / unchanged by this phase, and [#step-17](#step-17) honoured that — `TaskToolBlock` renders only the wire `structured_result.content[]`, which for a real subagent run is text-only. But a subagent's *intermediate* tool calls (e.g. the `Grep` in `test-22-subagent-spawn.jsonl`) arrive as separate top-level `tool_use` / `tool_result` events tagged with `parent_tool_use_id`; the reducer currently drops that field, so those calls render as flat siblings of the `Agent` block instead of nested under it. This step is a deliberately *minimal, additive* reducer change — one new optional field, no map restructuring, no phase-logic change — that records the parent link so the rendering layer can build the nesting. It is scoped as its own step (rather than folded into [#step-17](#step-17)) precisely because it crosses the [D01] line and warrants its own review + commit.
+
+**Artifacts:**
+- `tugdeck/src/lib/code-session-store/events.ts` — `parent_tool_use_id?: string` typed explicitly on `ToolUseEvent` (today reachable only via the index signature).
+- `tugdeck/src/lib/code-session-store/types.ts` — `parentToolUseId?: string` added to `ToolCallState`.
+- `tugdeck/src/lib/code-session-store/reducer.ts` — `handleToolUse` records `event.parent_tool_use_id`; `toolCallMap` stays flat, `serializeToolCalls` / `allToolsTerminal` / phase transitions untouched.
+- `tugdeck/src/components/tugways/cards/tide-card-transcript-tool-calls.tsx` — derives a `Map<parentToolUseId, ToolCallState[]>`, renders only top-level calls, threads the map down (static + streaming paths).
+- `tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.ts` + `tool-wrappers/types.ts` — `dispatchToolCallState` + `ToolWrapperProps` carry the child-tool-calls map.
+- `tugdeck/src/components/tugways/cards/tool-wrappers/task-tool-block.tsx` — passes the map to `AgentTranscriptBlock`.
+- `tugdeck/src/components/tugways/body-kinds/agent-transcript-block.tsx` — `composeAgentTranscriptData` (moved or extended) merges reducer-linked child tool calls with the wire `content[]` text entries; recursion looks up its own `toolUseId` in the map so arbitrary depth works.
+
+**Tasks:**
+- [ ] Reducer: type `parent_tool_use_id` on `ToolUseEvent`, add `parentToolUseId` to `ToolCallState`, capture it in `handleToolUse` — flat `toolCallMap` unchanged
+- [ ] Transcript view: group the flat `toolCalls` into `{ topLevel, childrenByParent }`; render only top-level; thread `childrenByParent` through the dispatch
+- [ ] Dispatch + `ToolWrapperProps`: carry the child-tool-calls map alongside `depth`
+- [ ] `TaskToolBlock` → `AgentTranscriptBlock`: merge linked child tool calls with the wire `content[]` entries; recursion resolves each nested `AgentTranscriptBlock`'s children by `toolUseId`
+- [ ] No flat-sibling regression: a tool call with a `parentToolUseId` never renders at the transcript top level
+
+**Tests:**
+- [ ] Reducer unit test — a `tool_use` carrying `parent_tool_use_id` lands in `toolCallMap` with `parentToolUseId` set; a top-level `tool_use` leaves it `undefined`
+- [ ] Replay `test-22-subagent-spawn.jsonl` through the store → the `Grep` `ToolCallState` carries `parentToolUseId` = the `Agent`'s `toolUseId`; the grouping yields one top-level call (`Agent`) with one child (`Grep`)
+- [ ] `composeAgentTranscriptData` merges a linked child tool call into the transcript entries alongside the wire text content
+- [ ] Pure-logic grouping helper — flat list → `{ topLevel, childrenByParent }`, including a multi-level (depth 2) case
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test` — tsc clean; all pass; `audit:tokens lint` zero violations.
+
+---
+
 #### Step 18: PermissionDialog (`control_request_forward`, `is_question:false`) {#step-18}
 
 **Depends on:** #step-1, #step-12
