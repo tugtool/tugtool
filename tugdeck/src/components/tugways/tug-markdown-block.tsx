@@ -249,12 +249,16 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
         pendingRaf = null;
       }
       unsubscribe();
-      // Drop the cached reconciler state for this container so a
-      // future re-mount of the same DOM node (rare, but possible
-      // under React's reconciliation) starts from a clean slate.
-      // The `WeakMap` would also clear it on container GC, but
-      // explicit cleanup makes the intent obvious at the call site.
-      STREAMING_RENDER_STATE.delete(el);
+      // Intentionally NOT deleting `STREAMING_RENDER_STATE[el]` here.
+      // React 18 dev strict mode runs effects as
+      // `mount → cleanup → mount` against the same container element;
+      // cleanup tears down subscriptions and pending rAF but leaves
+      // the DOM children intact. If the cached state were dropped on
+      // cleanup, the second mount would see `prev = null` and treat
+      // the existing children as nonexistent — the reconciler would
+      // *append* a fresh set, doubling every block in the container.
+      // The `WeakMap` GCs the entry on its own when the container
+      // element is destroyed.
     };
   }, [streamingStore, streamingPath]);
 
