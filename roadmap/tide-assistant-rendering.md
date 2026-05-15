@@ -5073,7 +5073,185 @@ The primitive is fully controlled — it never tracks the selection internally. 
 
 ---
 
-#### Step 19: QuestionDialog (`control_request_forward`, `is_question:true`) {#step-19}
+#### Step 18.8: Incremental streaming-markdown render pipeline {#step-18-8}
+
+**Depends on:** #step-1 (TugMarkdownBlock streaming mode is the surface this rebuilds)
+
+**Status:** _In progress — implementation in three commits per the strategy below._
+
+**Implementation strategy — three commits, one per architectural layer.** Each commit is self-contained, builds and tests clean on its own, and is reversible without ripping out the others. The split matches the build order. Commits 1 and 2 are behaviour-neutral (the layer is added but no consumer reads from it yet); commit 3 is the user-visible behaviour change.
+
+1. **Rust + WASM bindings + TS field surfacing.** `tugmark-wasm` computes FNV-1a 64-bit per-block content hashes during the existing block walk; the WASM bindings are regenerated; `SanitizedMarkdownBlock` grows a `contentHash` field. Rust `cargo nextest` tests pin hash determinism, divergence, and stability across representative fixtures. Behaviour-neutral.
+2. **Reconciler module.** A new pure-logic TS module `tugdeck/src/lib/markdown/render-incremental.ts` exports the reconciler. Pure-logic Bun tests cover full-reset, append-only, in-place trailing update, mid-stream code-fence completion, list-item growth, whitespace-only delta, structurally-different reparse, and trailing-removal. Still no consumer.
+3. **`TugMarkdownBlock` streaming-mode adoption.** Streaming `useLayoutEffect` swaps `renderBlocks` for `renderIncremental` with `WeakMap<HTMLElement, RenderState>` per-container state caching. CSS gains explicit `overflow-anchor: auto` on `.tugx-md-block` documenting the wrapper-level anchor contract. Initial-text mode stays on `renderBlocks` per the proposal's recommended-yes-to-Q1. The visible behaviour change.
+
+Bisection-friendly: a future regression lands cleanly on the layer responsible (Rust hashing, reconciler logic, or React adoption) rather than forcing post-hoc detective work on a single mega-commit. Reversible: a flaw in the reconciler shape can be retried without re-touching proven Rust changes. Reviewable: each commit's diff is internally cohesive — Rust + WASM and React adoption have nothing in common except "they're both about markdown" and shouldn't be read as a single review.
+
+**Commit (when implemented):** `feat(tugways+tugmark): incremental streaming markdown — Rust diff + TS reconciler`
+
+**References:** [L02], [L06], [L19], [L20], [L22], [L23], [`tuglaws/tuglaws.md`](../tuglaws/tuglaws.md), `tugmark-wasm` (existing Rust module), `tug-markdown-block.tsx` (current streaming consumer)
+
+---
+
+**Diagnosis — why streaming markdown jumps the scroll.**
+
+Today's pipeline (`renderBlocks` in `tug-markdown-block.tsx`) is rebuild-everything: each delta calls `parseMarkdownToSanitizedBlocks(fullText)` then either (a) `replaceChildren()` + `appendChild` loop (the original shape — empties the container transiently, browser auto-clamps `scrollTop` when `scrollHeight` shrinks below it) or (b) `replaceChildren(...newNodes)` (the [#step-18-7]-followup fix — atomic swap, no transient empty state). Variant (b) closes the *clamp* path but does not stop the scroll-jump.
+
+The real culprit, after (b) is in place, is **element-identity loss**. Browser scroll anchoring (`overflow-anchor: auto`, the default) anchors the viewport to a *specific element* near the top of the visible area. When that element is destroyed — whether by (a)'s two-phase pattern or (b)'s atomic `replaceChildren(...newNodes)` — the anchor breaks. The browser falls back to a fresh anchor selection, which (combined with the row's height changing in the same frame) lands the viewport on a different element, perceived as "scroll jumped to the top of the turn." `TugListView`'s own anchor mechanism (`anchorIndex` / `anchorOffset`) then runs in response to the row's `ResizeObserver` firing, but the browser has already moved by then; the list view's restoration measures from the wrong starting position.
+
+Two layered failures, one root cause: **DOM identity is not preserved across deltas**. No CSS-level patch fixes this. No JS-level patch around `replaceChildren` fixes it. The render pipeline must be **incremental** — for the typical streaming case (text grows by appending), only the trailing block changes; every block before it must be the *same DOM node* across renders so the browser's anchor and the list view's index stay valid.
+
+Per-frame rebuild is also wasteful in its own right (every `<ul>`, `<li>`, `<code>`, `<strong>` re-allocated, every `enhanceFencedCode` listener re-attached, every fenced-code copy-button feedback state torn down) — but the user-visible failure mode is the scroll jump, and that's the design driver.
+
+---
+
+**Architecture — three layers, Rust-first.**
+
+The streaming markdown surface is a major piece of the Tide user experience; the fix lives at the lowest layer that owns the right primitive, and the higher layers compose on top.
+
+**Layer 1 — `tugmark-wasm` (Rust): identity-aware lex output.**
+
+Today: `lex_blocks(text) -> Vec<u32>` (4 u32 per block: type, start, end, item/row counts).
+Today: `parse_blocks_to_html(text) -> Box<[JsValue]>` (per-block sanitized HTML strings).
+
+Add: a per-block content hash carried alongside the existing metadata, so the TS reconciler can identify "this block is byte-identical to the previous render's block N" in O(1). Two reasonable shapes:
+
+- **Option A — extend existing API:** `lex_blocks_with_hashes(text)` returns `Vec<u32>` with a 5th word per block (`content_hash` low 32 bits) plus a sibling `Vec<u64>` for full hashes; or
+- **Option B — dedicated incremental API:** `parse_incremental(prev_state: Option<&[u8]>, text: &str) -> IncrementalParseResult` where `IncrementalParseResult` carries `(blocks_meta, blocks_html, blocks_hash, stable_prefix_count, new_state)` and the Rust side does the diff against `prev_state` (an opaque-to-JS byte blob holding the previous run's hashes).
+
+I recommend **Option A** as the smallest defensible step: TS reconciler does the prefix-compare (it's a length-1-array walk, not a hot path), Rust just provides hashes. Option B is a strictly-stronger evolution if profiling later shows hash arrays are expensive to ferry across the WASM boundary.
+
+The hash function: FNV-1a 64-bit over the post-DOMPurify HTML. Wide enough that collisions are practically impossible at any realistic block count; cheap enough to compute during the existing block walk. Computed in Rust during `parse_blocks_to_html` so DOMPurify input is already available; ferried as `Vec<u64>` (or two `Vec<u32>` for the low/high halves) alongside the existing return.
+
+Cross-block features (footnotes, reference links) keep working because `parse_blocks_to_html` continues to operate on the whole document in one pass; the hashing is pure observation, not new parsing logic.
+
+**Layer 2 — `tug-markdown-block-renderer.ts` (TS): the reconciler.**
+
+A new module — pure logic, no React, no JSX. Public surface:
+
+```typescript
+export interface RenderState {
+  /** Previous parse — block hashes in lex order. */
+  hashes: ReadonlyArray<bigint>;
+  /** Previous parse — block kinds (informational; aids debugging). */
+  kinds: ReadonlyArray<string>;
+}
+
+export interface RenderResult {
+  /** New state to pass back on the next call. */
+  state: RenderState;
+  /** How many leading blocks were stable (DOM untouched). */
+  stableCount: number;
+  /** How many blocks were updated in place (innerHTML rewritten). */
+  updatedCount: number;
+  /** How many blocks were appended (new DOM nodes added). */
+  appendedCount: number;
+  /** How many blocks were removed (trailing DOM trimmed). */
+  removedCount: number;
+}
+
+/**
+ * Apply incremental render to `container`. Mutates DOM minimally:
+ *   - `stableCount` blocks at the head: untouched (same DOM node, no
+ *     style recalc, browser scroll anchor preserved).
+ *   - For the divergent suffix:
+ *       - Existing blocks at matching indices: `innerHTML` rewritten,
+ *         re-run `enhanceFencedCode` on the replaced subtree only.
+ *       - New blocks beyond previous length: created and appended.
+ *       - Old blocks past new length: removed.
+ *
+ * The wrapping `.tugx-md-block` element keeps its identity across
+ * `innerHTML` writes — that's enough for the browser's scroll anchor
+ * (which anchors on the wrapper, not its inner HTML) and for any
+ * outer ResizeObserver to see a single delta-scoped height change.
+ */
+export function renderIncremental(
+  container: HTMLElement,
+  text: string,
+  prev: RenderState | null,
+): RenderResult;
+```
+
+The reconciler walks new vs. previous hashes in lockstep:
+- Common prefix where `new[i].hash === prev[i].hash` → stable count.
+- First divergence index → start of the work region.
+- For `i ∈ [stableCount, min(new.len, prev.len))`: in-place update.
+- For `i ∈ [prev.len, new.len)`: append.
+- For `i ∈ [new.len, prev.len)`: remove (rarely runs in streaming).
+
+State (the previous hash array) is cached on the container element via a `WeakMap` keyed on the container — no module-level mutable state, no React state, no risk of cross-instance bleed.
+
+**Layer 3 — `tug-markdown-block.tsx` (TS, React): adopt the reconciler.**
+
+Streaming mode replaces `renderBlocks` with `renderIncremental`. Initial-text mode can stay unchanged (it's a one-shot render, no incremental concern), or adopt the reconciler for code uniformity. The container's CSS gains an explicit `overflow-anchor` discipline — `auto` on `.tugx-md-block` (default, but documented) so the browser knows to anchor on per-block wrappers rather than internal text nodes.
+
+---
+
+**Tuglaws cross-check.**
+
+- [L02] — store subscriptions stay in `useSyncExternalStore`; the reconciler is invoked from the same `useLayoutEffect` that owns the streaming subscription today. No new external-state pathways.
+- [L06] — markdown content rendering remains a DOM-mutation appearance pathway; React state holds only the container ref. The reconciler is a pure function over (DOM, text, prev-state) → DOM mutations + new state. ✓
+- [L19] — new TS module gets a docstring, exported types, no `data-slot` (it's a pure helper, not a component). The new Rust API gets the standard `tugmark-wasm` module-doc treatment.
+- [L20] — no new tokens introduced. `--tugx-md-*` tokens unchanged. ✓
+- [L21] — no new third-party code. FNV-1a is a public-domain algorithm; we implement it directly in Rust (a few lines). ✓
+- [L22] — streaming subscription continues to observe `PropertyStore` directly and write DOM imperatively, bypassing React's render cycle. The reconciler call is the imperative DOM-write path. ✓
+- [L23] — _this is the law the proposal serves_. The current pipeline destroys browser-native scroll position (a user-visible state) on every delta; the reconciler preserves DOM identity for stable blocks, which preserves the browser's scroll anchor, which preserves the user's scroll position. The text the user is reading stays under their eyes. ✓
+
+---
+
+**Artifacts.**
+
+- `tugdeck/crates/tugmark-wasm/src/lib.rs` — extend `parse_blocks_to_html` (or add a sibling) to return per-block FNV-1a content hashes alongside HTML strings. Cargo workspace: per project policy, warnings remain errors (`-D warnings` via the workspace `.cargo/config.toml`).
+- `tugdeck/crates/tugmark-wasm/src/__tests__/` — Rust unit tests pinning hash stability and collision resistance on representative fixtures (heading/paragraph/list/code; whitespace-only deltas; partial code-fence completions).
+- `tugdeck/src/lib/markdown/parse-markdown-to-sanitized-blocks.ts` — surface the new hash field on `SanitizedMarkdownBlock`.
+- `tugdeck/src/lib/markdown/render-incremental.ts` — _new module_ — the reconciler, pure-logic exports.
+- `tugdeck/src/lib/markdown/__tests__/render-incremental.test.ts` — pure-logic Bun tests for the reconciler over synthetic block sequences (append-only, mid-block update, block-boundary shift, removal, full reset). Real DOM behaviour (scroll anchoring) is HMR-vetted.
+- `tugdeck/src/components/tugways/tug-markdown-block.tsx` — streaming mode adopts the reconciler; static `initialText` mode unchanged for now.
+- `tugdeck/src/components/tugways/tug-markdown-block.css` — explicit `overflow-anchor: auto` on `.tugx-md-block` (documented, currently default).
+
+---
+
+**Tasks (in build order).**
+
+- [ ] **Rust** — add FNV-1a per-block hashing to `parse_blocks_to_html` output. Decide between Option A (additive `Vec<u64>`) and Option B (dedicated `IncrementalParseResult` struct with diff). Land Rust-side tests first.
+- [ ] **TS pipeline** — surface the hash field on `SanitizedMarkdownBlock`. Rebuild WASM, regenerate bindings, run existing block-parser tests for regressions.
+- [ ] **TS reconciler** — write `render-incremental.ts` plus exhaustive pure-logic tests. The reconciler must handle: full reset (no prev state), pure-append (most common), in-place trailing-block update, mid-list block-boundary shift, removal of trailing blocks.
+- [ ] **TugMarkdownBlock streaming mode** — replace `renderBlocks` call with `renderIncremental`; cache `RenderState` per container via `WeakMap`. Drop the existing `renderBlocks` once streaming and initial-text both reach parity.
+- [ ] **CSS discipline** — add explicit `overflow-anchor: auto` to `.tugx-md-block`; document the rationale in the rule's preamble.
+- [ ] **`enhanceFencedCode` re-entry** — confirm the function is idempotent against `innerHTML` rewrites of the same wrapper, and that copy-button feedback state survives an in-place block update (today it does NOT — the button is a fresh DOM node every render). The reconciler's in-place update preserves the wrapper but rewrites its inner HTML, so the button is still re-allocated. If we want feedback persistence, the reconciler needs a "do not write innerHTML when the inner code text is byte-identical" sub-check, which the per-block hash already provides.
+
+---
+
+**Tests.**
+
+- [ ] Rust: hash determinism (same input → same hash); hash divergence (single-character change → different hash); fuzz over a handful of synthetic markdown shapes.
+- [ ] TS pipeline: existing `parse-markdown-to-sanitized-blocks.test.ts` continues to pass with the new hash field; new test pins the hash field's presence and stability.
+- [ ] TS reconciler: pure-logic tests over (prev RenderState, new text) → expected (stableCount, updatedCount, appendedCount, removedCount). At minimum: empty-to-content, append-only growth, mid-stream code-fence completion (shifts trailing block boundaries), Markdown-list growth (one list-item appended per delta), purely-whitespace delta, structurally-different reparse (full reset path).
+- [ ] Existing `tug-markdown-block` tests (if any) continue to pass.
+
+**Checkpoint.**
+
+- [ ] `cd tugrust && cargo nextest run` — Rust tests green (warnings-as-errors enforced).
+- [ ] WASM rebuild produces refreshed `pkg/` artifacts; tugdeck builds cleanly against the new bindings.
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test` — 0 type errors; full suite pass.
+- [ ] `bun run audit:tokens lint` exits 0.
+- [ ] **HMR vet (manual user action)** — issue a tool-call permission, allow it, observe the streaming markdown response. Scroll position holds across deltas; no jump to top; the resolved permission record stays anchored where it was.
+
+---
+
+**Open questions (call out for discussion before implementation):**
+
+1. **Initial-text mode adoption.** Should `TugMarkdownBlock`'s `initialText` mode also route through the reconciler, or stay on the simpler one-shot path? Pro: code uniformity, single render path. Con: zero benefit for the one-shot case (no prior state to diff against). Recommended: leave initial-text mode as-is for now; revisit if a future use case puts the static path under churn.
+
+2. **TugMarkdownView (windowed) adoption.** The big sibling primitive uses similar block parsing for its windowing engine. It is not currently a streaming consumer (it's typically used for whole-document logs), but the same incremental pattern would help if it ever becomes one. Recommended: scope this step to `TugMarkdownBlock` streaming mode only; document the porting path for `TugMarkdownView` in a follow-on if needed.
+
+3. **List-view anchor mechanism interaction.** `TugListView` has its own `anchorIndex` / `anchorOffset` mechanism (see `tug-list-view.tsx` ~L1450). The expectation is that once browser-native scroll anchoring stops moving things mid-frame, the list view's anchor preservation will run correctly. If HMR vetting reveals residual jank, a follow-on may be needed to reconcile the two anchor mechanisms.
+
+4. **Hash carrier shape.** `Vec<u64>` ferried across the WASM boundary deserializes well in modern wasm-bindgen builds; if profiling shows it's hot we can split into two `Vec<u32>` halves or pack into the existing block-meta `Uint32Array`. Default to the simple shape; optimize only on evidence.
+
+5. **State lifetime.** A `WeakMap<HTMLElement, RenderState>` keys state on the container. When the container is GC'd, the state goes with it — no leak path. When the container's React component re-mounts (e.g., row swap from streaming → committed), a *new* container element is created and the WeakMap correctly returns no prior state, so the reconciler does a full reset. This is the behavior we want for that transition.
+
+---
 
 **Depends on:** #step-1, #step-18, #step-18-5, #step-18-6, #step-18-7
 
