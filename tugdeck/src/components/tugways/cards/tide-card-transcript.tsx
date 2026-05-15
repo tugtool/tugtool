@@ -35,8 +35,10 @@
  */
  
 import React, {
+  forwardRef,
   useCallback,
   useId,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -53,6 +55,7 @@ import {
   type TugListViewCellProps,
   type TugListViewCellRenderer,
   type TugListViewDelegate,
+  type TugListViewHandle,
 } from "@/components/tugways/tug-list-view";
 import { TideThinkingBlock } from "@/components/tugways/chrome/tide-thinking-block";
 import { TranscriptToolCalls } from "@/components/tugways/cards/tide-card-transcript-tool-calls";
@@ -595,11 +598,29 @@ export interface TideTranscriptHostProps {
   responseStore: ResponseSettingsStore;
 }
 
-export const TideTranscriptHost: React.FC<TideTranscriptHostProps> = ({
-  codeSessionStore,
-  sessionMetadataStore,
-  responseStore,
-}) => {
+/**
+ * Imperative handle exposed via `forwardRef`. The tide-card holds this
+ * to drive a deliberate "jump to latest" on submit — the transcript is
+ * a split-pane *sibling* of the prompt entry, so a bubbling DOM event
+ * can't reach the inner list view; the parent threads the gesture
+ * through this handle instead.
+ */
+export interface TideTranscriptHandle {
+  /**
+   * Scroll the transcript to the bottom of content and re-engage
+   * follow-bottom. Thin pass-through to the inner `TugListView`'s
+   * `scrollToBottom`.
+   */
+  scrollToBottom(options?: { animated?: boolean }): void;
+}
+
+export const TideTranscriptHost = forwardRef<
+  TideTranscriptHandle,
+  TideTranscriptHostProps
+>(function TideTranscriptHost(
+  { codeSessionStore, sessionMetadataStore, responseStore },
+  ref,
+) {
   const dataSource = useTideTranscriptDataSource(codeSessionStore);
   const modelName = useSessionModelName(sessionMetadataStore);
   const streamingStore = codeSessionStore.streamingDocument;
@@ -684,6 +705,19 @@ export const TideTranscriptHost: React.FC<TideTranscriptHostProps> = ({
     return () => responseStore.unbind();
   }, [responseStore]);
 
+  // Inner `TugListView` handle — the parent reaches `scrollToBottom`
+  // through the `TideTranscriptHandle` exposed below.
+  const listViewRef = useRef<TugListViewHandle | null>(null);
+  useImperativeHandle(
+    ref,
+    () => ({
+      scrollToBottom(options?: { animated?: boolean }): void {
+        listViewRef.current?.scrollToBottom(options);
+      },
+    }),
+    [],
+  );
+
   return (
     <div
       ref={rootRef}
@@ -692,6 +726,7 @@ export const TideTranscriptHost: React.FC<TideTranscriptHostProps> = ({
       data-testid="tide-card-transcript"
     >
       <TugListView
+        ref={listViewRef}
         dataSource={dataSource}
         delegate={delegate}
         cellRenderers={cellRenderers}
@@ -715,4 +750,4 @@ export const TideTranscriptHost: React.FC<TideTranscriptHostProps> = ({
       />
     </div>
   );
-};
+});

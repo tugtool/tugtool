@@ -333,6 +333,18 @@ export interface TugListViewHandle {
    * bring it into view.
    */
   getElementForIndex(index: number): HTMLElement | null;
+
+  /**
+   * Scroll to the bottom of real content and engage follow-bottom, so
+   * subsequent content growth stays pinned. The deliberate inverse of
+   * a user scroll-up (which disengages follow-bottom): consumers call
+   * this for a "jump to latest" gesture — e.g. a tide-card submitting
+   * a new prompt while the transcript is scrolled up. Delegates to
+   * `SmartScroll.scrollToBottom`, which excludes the `inert` tail
+   * spacer so the scroll lands at the bottom of *content*, not the
+   * spacer. No-op before the scroll instance exists.
+   */
+  scrollToBottom(options?: { animated?: boolean }): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -1691,6 +1703,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         },
         getElementForIndex(index: number): HTMLElement | null {
           return cellElementMapRef.current.get(index) ?? null;
+        },
+        scrollToBottom(options?: { animated?: boolean }): void {
+          smartScrollRef.current?.scrollToBottom(options?.animated ?? false);
         },
       }),
       [dataSource, estimatedHeightForKindOnly],

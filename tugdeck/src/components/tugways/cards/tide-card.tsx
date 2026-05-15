@@ -34,7 +34,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 
 import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry";
-import { TideTranscriptHost } from "./tide-card-transcript";
+import { TideTranscriptHost, type TideTranscriptHandle } from "./tide-card-transcript";
 import { TugPaneBanner } from "../tug-pane-banner";
 import { TugSplitPane, TugSplitPanel, type TugSplitPanelHandle } from "../tug-split-pane";
 import { useContentDrivenPanelSize } from "../use-content-driven-panel-size";
@@ -1553,6 +1553,11 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   useTideCardObserver(cardId, codeSessionStore);
 
   const entryPanelRef = useRef<TugSplitPanelHandle | null>(null);
+  // Imperative handle to the transcript pane. `handleAfterSubmit`
+  // reads it to jump the transcript back to the live edge on submit
+  // (the transcript is a split-pane sibling of the prompt entry, so
+  // the gesture can't bubble through the DOM).
+  const transcriptRef = useRef<TideTranscriptHandle | null>(null);
   // Captured by the JSX's composed ref below for the first-mount
   // fade-in animation. Read by a useLayoutEffect with empty deps —
   // the effect runs once when this card first acquires services
@@ -1912,12 +1917,20 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   }, [maximized]);
 
   // Return focus to the editor after a successful submit so the user
-  // can type the next prompt immediately. `onAfterSubmit` fires from
-  // `performSubmit` only on the send/handled path — not on the Stop
-  // (canInterrupt) branch, not on blocked submits — so failures that
-  // surface later via `lastError` are inspectable without the caret
-  // yanking back mid-read.
+  // can type the next prompt immediately, and pull the transcript
+  // back to the live edge. `onAfterSubmit` fires from `performSubmit`
+  // only on the send/handled path — not on the Stop (canInterrupt)
+  // branch, not on blocked submits — so failures that surface later
+  // via `lastError` are inspectable without the caret yanking back
+  // mid-read.
+  //
+  // `scrollToBottom` re-engages follow-bottom: if the user had
+  // scrolled up to read history, their fresh submit jumps the
+  // transcript down so the new turn (and the response streaming into
+  // it) is in view. Once follow-bottom is re-engaged the new turn row
+  // pins automatically via the list's post-commit pin.
   const handleAfterSubmit = useCallback(() => {
+    transcriptRef.current?.scrollToBottom();
     entryDelegateRef.current?.focus();
   }, [entryDelegateRef]);
 
@@ -2092,6 +2105,7 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
         */}
         <TugSplitPanel id="tide-card-top" defaultSize="70%" minSize="10%">
           <TideTranscriptHost
+            ref={transcriptRef}
             codeSessionStore={codeSessionStore}
             sessionMetadataStore={sessionMetadataStore}
             responseStore={responseStore}

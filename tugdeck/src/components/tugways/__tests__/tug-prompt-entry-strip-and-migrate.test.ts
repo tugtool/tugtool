@@ -17,6 +17,7 @@
 import { describe, it, expect } from "bun:test";
 
 import {
+  classifyBlockedSubmit,
   coerceRestorePayload,
   computeSubmitText,
 } from "@/components/tugways/tug-prompt-entry";
@@ -164,5 +165,29 @@ describe("coerceRestorePayload — defaults", () => {
     const result = coerceRestorePayload({});
     expect(result.route).toBe("❯");
     expect(result.draft).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// classifyBlockedSubmit — drop while replaying, defer otherwise
+// ---------------------------------------------------------------------------
+
+describe("classifyBlockedSubmit", () => {
+  it("drops a submit that lands while the card is replaying", () => {
+    // A deferred send that committed after replay finished would
+    // surprise the user — mirrors the reducer's `handleSend` guard.
+    expect(classifyBlockedSubmit("replaying")).toBe("drop");
+  });
+
+  it("defers a submit blocked on an idle card (transport still settling)", () => {
+    // The only other way `performSubmit` reaches the blocked branch:
+    // phase idle/errored with the transport not yet online — the
+    // settling window on a fresh / reconnecting card. The submission
+    // is valid; it should flush the instant `canSubmit` flips true.
+    expect(classifyBlockedSubmit("idle")).toBe("defer");
+  });
+
+  it("defers a submit blocked on an errored card (transport still settling)", () => {
+    expect(classifyBlockedSubmit("errored")).toBe("defer");
   });
 });

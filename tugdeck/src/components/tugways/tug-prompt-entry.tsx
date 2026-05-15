@@ -58,7 +58,7 @@ import type {
   TugTextEditingState,
 } from "@/lib/tug-text-types";
 import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
-import type { CodeSessionStore } from "@/lib/code-session-store";
+import type { CodeSessionPhase, CodeSessionStore } from "@/lib/code-session-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { PromptHistoryStore } from "@/lib/prompt-history-store";
 
@@ -301,6 +301,32 @@ export function computeSubmitText(
   aliasMap: Readonly<Record<string, string>> = ROUTE_PREFIX_ALIAS,
 ): string {
   return stripLeadingRoutePrefix(rawText, activeRoute, aliasMap);
+}
+
+/** Disposition of a submit that arrives while the store can't accept it. */
+export type BlockedSubmitDisposition = "drop" | "defer";
+
+/**
+ * Classify a *blocked* submit — one that reached `performSubmit` with
+ * `canSubmit === false` and `canInterrupt === false`.
+ *
+ * `performSubmit` only reaches this branch in two store states:
+ *  - `replaying` — the JSONL bracket owns the card; a deferred send
+ *    that committed *after* replay finished would surprise the user
+ *    with a dispatch they don't remember initiating. Mirrors the
+ *    reducer's own `handleSend` guard. → `"drop"`.
+ *  - `idle` / `errored` but the transport is not yet `online` — the
+ *    brief settling window on a freshly-created or reconnecting card.
+ *    The submission is valid; it just landed a beat early. → `"defer"`,
+ *    so the entry can re-fire it the instant `canSubmit` flips true
+ *    and Shift+Return (or the button) never silently no-ops.
+ *
+ * Pure: keyed only on the snapshot phase. Exported for the unit tests.
+ */
+export function classifyBlockedSubmit(
+  phase: CodeSessionPhase,
+): BlockedSubmitDisposition {
+  return phase === "replaying" ? "drop" : "defer";
 }
 
 /**
@@ -726,6 +752,12 @@ export const TugPromptEntry = React.forwardRef<
     [],
   );
 
+  // A submit that landed during the transport-settling window is
+  // armed here and flushed by the effect below the moment `canSubmit`
+  // flips true. See `classifyBlockedSubmit` + `performSubmit`'s
+  // blocked-submit branch.
+  const pendingSubmitRef = useRef(false);
+
   // Shared submit logic. Invoked by both the SUBMIT chain-action
   // handler (button click, Cmd+Enter, etc.) and the Return /
   // Shift+Return keyboard path (via the substrate's `onSubmit`).
@@ -747,9 +779,24 @@ export const TugPromptEntry = React.forwardRef<
       codeSessionStore.interrupt();
       return;
     }
-    // [D-T3-08] awaiting_approval / awaiting_question block submit;
-    // `canSubmit` captures both.
-    if (!snap.canSubmit) return;
+    // Blocked submit ([D-T3-08]). `canSubmit` is false either because
+    // the card is `replaying` (drop — a deferred send committing
+    // post-replay would surprise the user) or because the transport
+    // is still settling on a fresh / reconnecting card (defer — the
+    // submission is valid, it just landed a beat early). Deferral
+    // arms `pendingSubmitRef`; the flush effect below re-fires
+    // `performSubmit` the instant `canSubmit` flips true, so the
+    // keyboard path never silently no-ops. An empty editor is never
+    // armed — nothing to flush.
+    if (!snap.canSubmit) {
+      if (
+        classifyBlockedSubmit(snap.phase) === "defer" &&
+        !isEffectivelyEmpty(view)
+      ) {
+        pendingSubmitRef.current = true;
+      }
+      return;
+    }
     // Empty-input guard — reads the live view per [L07].
     if (isEffectivelyEmpty(view)) return;
     const captured = editor.captureState();
@@ -811,6 +858,24 @@ export const TugPromptEntry = React.forwardRef<
     onAfterSubmitRef.current?.();
     // Route is a sticky user preference. Do not reset on submit.
   }, [codeSessionStore, historyStore]);
+
+  // Flush a deferred submit. When a submit landed during the
+  // transport-settling window, `performSubmit`'s blocked-submit branch
+  // armed `pendingSubmitRef`; re-fire it the instant `canSubmit` flips
+  // true so Shift+Return (or the button) submits without the user
+  // having to retry. `performSubmit` re-captures the editor live, so
+  // any edits made while waiting are included — and an editor emptied
+  // in the meantime no-ops cleanly.
+  //
+  // `useLayoutEffect` keyed on `snap.canSubmit` runs after the
+  // `snapRef` mirror above (declared earlier, so it commits first),
+  // so `performSubmit` reads the fresh snapshot. [L03]
+  useLayoutEffect(() => {
+    if (!snap.canSubmit) return;
+    if (!pendingSubmitRef.current) return;
+    pendingSubmitRef.current = false;
+    performSubmit();
+  }, [snap.canSubmit, performSubmit]);
 
   // [L07] Register the responder node. SELECT_VALUE narrows on
   // sender + value shape and updates the route state directly —
