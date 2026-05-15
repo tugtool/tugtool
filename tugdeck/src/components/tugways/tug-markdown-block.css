@@ -53,10 +53,24 @@
  * `--tugx-md-block-padding-x` keeps a soft default (1rem) so the
  * rule renders sensibly even before any theme declares the token,
  * and consumers can override via a wrapping selector per [L20].
+ *
+ * **Scroll anchoring** — `overflow-anchor: auto` is the browser
+ * default, but we declare it explicitly here as a contract: each
+ * `.tugx-md-block` wrapper is an *anchor candidate* for the
+ * outer scrollport. The streaming reconciler ([#step-18-8]) is
+ * built around this invariant: as long as wrappers for stable
+ * blocks keep their identity across renders, the browser's anchor
+ * stays bound to the same element near the viewport's top, and the
+ * user's scroll position holds across deltas. The reconciler's
+ * in-place `innerHTML` rewrite for changed blocks deliberately
+ * preserves the wrapper element so this contract holds for them
+ * too — only the wrapper's children are replaced, never the
+ * wrapper itself.
  */
 .tugx-md-block {
   box-sizing: border-box;
   width: 100%;
   padding: 0 var(--tugx-md-block-padding-x, 1rem);
   contain: content;
+  overflow-anchor: auto;
 }

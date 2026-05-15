@@ -20,9 +20,11 @@
  *   1. **Static `initialText` mode** — `<TugMarkdownBlock initialText="..." />`.
  *      Parses + renders the supplied text in `useLayoutEffect` so
  *      the content is painted before the first browser frame.
- *      Subsequent `initialText` prop changes are ignored.
- *      Consumers update by remounting (typically via a different
- *      React key).
+ *      Subsequent `initialText` prop changes are ignored. Uses the
+ *      one-shot `renderBlocks` path: a single bulk parse + atomic
+ *      `replaceChildren(...newNodes)` swap. There's no prior state
+ *      to diff against, so the incremental reconciler would produce
+ *      identical output at marginally higher cost.
  *
  *   2. **Streaming `streamingStore` mode** —
  *      `<TugMarkdownBlock streamingStore={store} streamingPath="text" />`.
@@ -32,8 +34,15 @@
  *      so a cell that mounts while the store already holds content
  *      would otherwise render empty until the next emission). Then
  *      subscribes via `store.observe(streamingPath, listener)` and
- *      re-renders on each emission, coalescing rapid bursts via
- *      `requestAnimationFrame`.
+ *      reconciles on each emission via `renderIncremental` — the
+ *      reconciler walks per-block content hashes against the
+ *      previous render's hashes and mutates only what changed
+ *      (in-place `innerHTML` rewrites preserve wrapper-element
+ *      identity, which preserves the browser's scroll anchor).
+ *      Per-container `RenderState` is cached in a module-level
+ *      `WeakMap` so each mounted instance keeps its own diff
+ *      history; when the container is GC'd, the entry goes with it.
+ *      Bursts are coalesced via `requestAnimationFrame`.
  *
  * Both modes write sanitized HTML directly to the DOM — there is no
  * React state for the rendered content per [L06]. The only React
@@ -52,6 +61,10 @@
  *  - [L22] streaming-binding observes the `PropertyStore` directly
  *    and writes DOM imperatively, bypassing the React render cycle
  *    for per-delta updates.
+ *  - [L23] streaming mode preserves user scroll position by routing
+ *    every delta through the incremental reconciler ([#step-18-8]),
+ *    which preserves the DOM element identity that browser scroll
+ *    anchoring depends on.
  *
  * Decisions:
  *  - [D09] `TugMarkdownBlock` is a sibling primitive, not a flow
@@ -67,6 +80,19 @@ import React from "react";
 import type { PropertyStore } from "@/components/tugways/property-store";
 import { enhanceFencedCode } from "@/lib/markdown/enhance-fenced-code";
 import { parseMarkdownToSanitizedBlocks } from "@/lib/markdown/parse-markdown-to-sanitized-blocks";
+import {
+  renderIncremental,
+  type RenderState,
+} from "@/lib/markdown/render-incremental";
+
+/**
+ * Per-container `RenderState` cache for the streaming-mode
+ * reconciler. `WeakMap` keys hold no strong references — when the
+ * container element is GC'd (component unmount, React tree
+ * reconciliation), the cached state goes with it. No leak path, no
+ * cross-instance bleed.
+ */
+const STREAMING_RENDER_STATE: WeakMap<HTMLElement, RenderState> = new WeakMap();
 
 const DEFAULT_STREAMING_PATH = "text";
 
@@ -169,20 +195,35 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
   }, []);
 
   // Streaming `streamingStore` mode — reads the current value
-  // synchronously on mount (G1) and subscribes for updates.
+  // synchronously on mount (G1) and subscribes for updates. Each
+  // emission flows through the incremental reconciler
+  // ([#step-18-8]), which mutates only the blocks whose source byte
+  // ranges changed. Wrapper elements for stable blocks keep their
+  // identity across deltas, which keeps the browser's scroll anchor
+  // valid and the user's reading position intact.
+  //
   // `PropertyStore.observe` does NOT fire on subscribe, so the
   // initial pre-paint render here is essential when a streaming cell
-  // mounts while the store already holds content (e.g. scroll-out-
-  // and-back). Updates are rAF-coalesced so a burst of deltas
-  // produces at most one re-render per paint frame.
+  // mounts while the store already holds content (e.g.
+  // scroll-out-and-back). Updates are rAF-coalesced so a burst of
+  // deltas produces at most one render per paint frame.
   React.useLayoutEffect(() => {
     if (streamingStore === undefined) return;
     const el = containerRef.current;
     if (el === null) return;
 
-    // G1 — render the store's current value before paint.
+    const reconcile = (text: string): void => {
+      const prev = STREAMING_RENDER_STATE.get(el) ?? null;
+      const { state } = renderIncremental(el, text, prev);
+      STREAMING_RENDER_STATE.set(el, state);
+    };
+
+    // G1 — render the store's current value before paint. Initial
+    // call passes `null` prev state through `WeakMap.get`'s
+    // unset-key behaviour, so the reconciler treats this as a
+    // full-reset render (every block appended fresh).
     const initial = (streamingStore.get(streamingPath) as string | undefined) ?? "";
-    renderBlocks(el, initial);
+    reconcile(initial);
 
     let pendingRaf: number | null = null;
     const flush = () => {
@@ -190,13 +231,13 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
       const target = containerRef.current;
       if (target === null) return;
       const text = (streamingStore.get(streamingPath) as string | undefined) ?? "";
-      renderBlocks(target, text);
+      reconcile(text);
     };
 
     const unsubscribe = streamingStore.observe(streamingPath, () => {
       // First emission in a burst schedules the flush; subsequent
       // emissions see the queued id and skip the schedule. The rAF
-      // clears the id and re-renders, picking up the cumulative
+      // clears the id and reconciles, picking up the cumulative
       // store value at the time it fires.
       if (pendingRaf !== null) return;
       pendingRaf = requestAnimationFrame(flush);
@@ -208,6 +249,12 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
         pendingRaf = null;
       }
       unsubscribe();
+      // Drop the cached reconciler state for this container so a
+      // future re-mount of the same DOM node (rare, but possible
+      // under React's reconciliation) starts from a clean slate.
+      // The `WeakMap` would also clear it on container GC, but
+      // explicit cleanup makes the intent obvious at the call site.
+      STREAMING_RENDER_STATE.delete(el);
     };
   }, [streamingStore, streamingPath]);
 
