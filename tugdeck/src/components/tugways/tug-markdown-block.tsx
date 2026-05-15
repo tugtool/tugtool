@@ -20,11 +20,13 @@
  *   1. **Static `initialText` mode** — `<TugMarkdownBlock initialText="..." />`.
  *      Parses + renders the supplied text in `useLayoutEffect` so
  *      the content is painted before the first browser frame.
- *      Subsequent `initialText` prop changes are ignored. Uses the
- *      one-shot `renderBlocks` path: a single bulk parse + atomic
- *      `replaceChildren(...newNodes)` swap. There's no prior state
- *      to diff against, so the incremental reconciler would produce
- *      identical output at marginally higher cost.
+ *      Subsequent `initialText` prop changes are ignored. Routes
+ *      through `renderIncremental(el, text, null)` for code-path
+ *      uniformity with streaming mode — the `prev = null` path of
+ *      the reconciler is its full-reset render (every block appended
+ *      fresh), so the output is identical to a one-shot bulk render.
+ *      The returned `RenderState` is discarded since initial-text
+ *      mode is mount-once and never re-renders.
  *
  *   2. **Streaming `streamingStore` mode** —
  *      `<TugMarkdownBlock streamingStore={store} streamingPath="text" />`.
@@ -78,8 +80,6 @@ import "./tug-markdown-block.css";
 import React from "react";
 
 import type { PropertyStore } from "@/components/tugways/property-store";
-import { enhanceFencedCode } from "@/lib/markdown/enhance-fenced-code";
-import { parseMarkdownToSanitizedBlocks } from "@/lib/markdown/parse-markdown-to-sanitized-blocks";
 import {
   renderIncremental,
   type RenderState,
@@ -136,41 +136,6 @@ export interface TugMarkdownBlockProps {
   className?: string;
 }
 
-/**
- * Replace the container's children with one `<div class="tugx-md-block">`
- * per parsed markdown block. Empty input clears the container. Direct
- * DOM mutation per [L06]; the React render does not own block content.
- *
- * **Atomic swap.** Build every new block element off-DOM via
- * `createElement` first, then commit them in a single
- * `container.replaceChildren(...newNodes)` call. The two-phase shape
- * matters: a naive `replaceChildren()` followed by a loop of
- * `appendChild` momentarily empties the container, which makes the
- * outer scrollport's `scrollHeight` shrink below the user's current
- * `scrollTop`. The browser auto-clamps `scrollTop` to the new
- * `scrollHeight - clientHeight`, then never restores it — the user
- * sees the transcript snap upward on every streaming delta. The
- * varargs `replaceChildren(...nodes)` swaps the entire child list as
- * one mutation, so the container's height never crosses zero and the
- * scroll-clamp path never fires.
- */
-function renderBlocks(container: HTMLElement, text: string): void {
-  if (text === "") {
-    container.replaceChildren();
-    return;
-  }
-  const blocks = parseMarkdownToSanitizedBlocks(text);
-  const newNodes: HTMLDivElement[] = blocks.map((block) => {
-    const blockEl = document.createElement("div");
-    blockEl.className = "tugx-md-block";
-    blockEl.dataset.blockType = block.type;
-    blockEl.innerHTML = block.html;
-    enhanceFencedCode(blockEl);
-    return blockEl;
-  });
-  container.replaceChildren(...newNodes);
-}
-
 export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
   initialText,
   streamingStore,
@@ -183,11 +148,19 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
   // Skipped entirely when `streamingStore` is set; the streaming
   // effect below owns the render in that case so this effect's
   // initialText pass would only race with it.
+  //
+  // Reuses the streaming-mode reconciler with `prev = null` so the
+  // block-element construction recipe (.tugx-md-block wrapper +
+  // data-blockType + sanitized innerHTML + enhanceFencedCode) lives
+  // in exactly one place — `renderIncremental` / `buildBlockElement`.
+  // The reconciler's full-reset path produces identical DOM to a
+  // bulk one-shot render, so the visible behaviour is unchanged.
+  // Returned state is discarded: initial-text mode is mount-once.
   React.useLayoutEffect(() => {
     if (streamingStore !== undefined) return;
     const el = containerRef.current;
     if (el === null) return;
-    renderBlocks(el, initialText ?? "");
+    renderIncremental(el, initialText ?? "", null);
     // Empty deps — `initialText` changes after mount are intentionally
     // ignored per the [#md-block-api] mount-once contract. A consumer
     // that wants to swap content remounts via a fresh React key.

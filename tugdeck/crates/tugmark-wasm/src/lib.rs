@@ -9,7 +9,7 @@
 //! - [`parse_blocks_to_html`] — parse a whole document in one pass and emit per-block HTML
 //!   so cross-block features (notably footnote ref ↔ definition linking) work correctly.
 
-use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Event, Options, Parser, Tag};
 use wasm_bindgen::prelude::*;
 
 // ---------------------------------------------------------------------------
@@ -45,17 +45,65 @@ fn parser_options() -> Options {
     opts
 }
 
-/// Lex markdown into packed binary block metadata.
-/// Returns Vec<u32> — 4 words per block. JS receives a Uint32Array.
-#[wasm_bindgen]
-pub fn lex_blocks(text: &str) -> Vec<u32> {
+// ---------------------------------------------------------------------------
+// Canonical top-level block iteration
+//
+// Both `lex_blocks` (block metadata) and `collect_block_hashes` (content
+// hashes) need to walk pulldown-cmark and split events into top-level
+// blocks the same way. `for_each_top_level_block` is the single
+// canonical implementation of that walk — all other block-aware
+// functions in this module consume it via callback, so the
+// boundary-detection state machine lives in exactly one place. If
+// pulldown-cmark ever changes how it emits events, the fix lands here
+// and every consumer updates with it.
+//
+// Block kinds are split from `tag` rather than read at End so the
+// callback receives discriminator + level/counts in one struct,
+// computed once during Start. The match on `tag_end` that the prior
+// inline lex_blocks performed (TagEnd::Heading / TagEnd::List /
+// TagEnd::Table) is equivalent: pulldown-cmark always pairs Start and
+// End tags of the same variant, so reading the discriminator at Start
+// gives the same information at strictly less cost.
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy, Debug)]
+enum TopLevelBlockKind {
+    Heading,
+    Paragraph,
+    Code,
+    BlockQuote,
+    List,
+    Table,
+    Html,
+    Other,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct TopLevelBlock {
+    /// UTF-8 byte offset of the block's first character in the source.
+    start: usize,
+    /// UTF-8 byte offset one past the block's last character.
+    end: usize,
+    /// Outer-tag discriminator. `None` indicates `Event::Rule` (a
+    /// horizontal-rule block has no `Tag` to discriminate on).
+    kind: Option<TopLevelBlockKind>,
+    /// Heading level (1..6) when `kind == Some(Heading)`; 0 otherwise.
+    depth: u8,
+    /// `Tag::Item` count among direct children of the outer container
+    /// when `kind == Some(List)`; 0 otherwise.
+    item_count: u16,
+    /// `Tag::TableRow` count among direct children of the outer
+    /// container when `kind == Some(Table)`; 0 otherwise.
+    row_count: u16,
+}
+
+fn for_each_top_level_block<F: FnMut(&TopLevelBlock)>(text: &str, mut on_block: F) {
     let parser = Parser::new_ext(text, parser_options());
-    let mut buf: Vec<u32> = Vec::with_capacity(256 * 4);
 
     let mut block_start: Option<usize> = None;
-    let mut block_type: u8 = 0;
-    let mut depth: u8 = 0;
     let mut nesting: usize = 0;
+    let mut kind: Option<TopLevelBlockKind> = None;
+    let mut depth: u8 = 0;
     let mut item_count: u16 = 0;
     let mut row_count: u16 = 0;
 
@@ -64,21 +112,22 @@ pub fn lex_blocks(text: &str) -> Vec<u32> {
             Event::Start(ref tag) => {
                 if nesting == 0 {
                     block_start = Some(range.start);
+                    depth = 0;
                     item_count = 0;
                     row_count = 0;
-                    block_type = match tag {
+                    kind = Some(match tag {
                         Tag::Heading { level, .. } => {
                             depth = *level as u8;
-                            BLOCK_HEADING
+                            TopLevelBlockKind::Heading
                         }
-                        Tag::Paragraph => BLOCK_PARAGRAPH,
-                        Tag::CodeBlock(_) => BLOCK_CODE,
-                        Tag::BlockQuote(_) => BLOCK_BLOCKQUOTE,
-                        Tag::List(_) => BLOCK_LIST,
-                        Tag::Table(_) => BLOCK_TABLE,
-                        Tag::HtmlBlock => BLOCK_HTML,
-                        _ => BLOCK_OTHER,
-                    };
+                        Tag::Paragraph => TopLevelBlockKind::Paragraph,
+                        Tag::CodeBlock(_) => TopLevelBlockKind::Code,
+                        Tag::BlockQuote(_) => TopLevelBlockKind::BlockQuote,
+                        Tag::List(_) => TopLevelBlockKind::List,
+                        Tag::Table(_) => TopLevelBlockKind::Table,
+                        Tag::HtmlBlock => TopLevelBlockKind::Html,
+                        _ => TopLevelBlockKind::Other,
+                    });
                 }
                 if nesting == 1 {
                     match tag {
@@ -89,36 +138,85 @@ pub fn lex_blocks(text: &str) -> Vec<u32> {
                 }
                 nesting += 1;
             }
-            Event::End(ref tag_end) => {
+            Event::End(_) => {
                 nesting = nesting.saturating_sub(1);
                 if nesting == 0 {
                     if let Some(start) = block_start.take() {
-                        let d = match tag_end {
-                            TagEnd::Heading(_) => depth,
-                            _ => 0,
+                        let current_kind = kind.take();
+                        // `depth` / `item_count` / `row_count` are
+                        // only meaningful for their respective kinds.
+                        // Gate them so callers see the same zero
+                        // defaults the prior inline walkers emitted
+                        // for non-matching kinds.
+                        let block = TopLevelBlock {
+                            start,
+                            end: range.end,
+                            kind: current_kind,
+                            depth: match current_kind {
+                                Some(TopLevelBlockKind::Heading) => depth,
+                                _ => 0,
+                            },
+                            item_count: match current_kind {
+                                Some(TopLevelBlockKind::List) => item_count,
+                                _ => 0,
+                            },
+                            row_count: match current_kind {
+                                Some(TopLevelBlockKind::Table) => row_count,
+                                _ => 0,
+                            },
                         };
-                        let (ic, rc) = match tag_end {
-                            TagEnd::List(_) => (item_count, 0),
-                            TagEnd::Table => (0, row_count),
-                            _ => (0, 0),
-                        };
-                        buf.push((block_type as u32) | ((d as u32) << 8));
-                        buf.push(start as u32);
-                        buf.push(range.end as u32);
-                        buf.push((ic as u32) | ((rc as u32) << 16));
+                        on_block(&block);
                     }
                 }
             }
             Event::Rule => {
-                buf.push(BLOCK_HR as u32);
-                buf.push(range.start as u32);
-                buf.push(range.end as u32);
-                buf.push(0);
+                let block = TopLevelBlock {
+                    start: range.start,
+                    end: range.end,
+                    kind: None,
+                    depth: 0,
+                    item_count: 0,
+                    row_count: 0,
+                };
+                on_block(&block);
             }
             _ => {}
         }
     }
+}
 
+/// Translate a [`TopLevelBlock`]'s kind into the `u8` block-type tag
+/// the packed `lex_blocks` output uses. Pure mapping; lives here so
+/// both the wasm-bindgen surface and any future Rust consumer share
+/// the canonical encoding.
+fn block_kind_tag(kind: Option<TopLevelBlockKind>) -> u8 {
+    match kind {
+        Some(TopLevelBlockKind::Heading) => BLOCK_HEADING,
+        Some(TopLevelBlockKind::Paragraph) => BLOCK_PARAGRAPH,
+        Some(TopLevelBlockKind::Code) => BLOCK_CODE,
+        Some(TopLevelBlockKind::BlockQuote) => BLOCK_BLOCKQUOTE,
+        Some(TopLevelBlockKind::List) => BLOCK_LIST,
+        Some(TopLevelBlockKind::Table) => BLOCK_TABLE,
+        Some(TopLevelBlockKind::Html) => BLOCK_HTML,
+        Some(TopLevelBlockKind::Other) => BLOCK_OTHER,
+        // `None` corresponds to `Event::Rule` — a stand-alone block
+        // with no Tag.
+        None => BLOCK_HR,
+    }
+}
+
+/// Lex markdown into packed binary block metadata.
+/// Returns Vec<u32> — 4 words per block. JS receives a Uint32Array.
+#[wasm_bindgen]
+pub fn lex_blocks(text: &str) -> Vec<u32> {
+    let mut buf: Vec<u32> = Vec::with_capacity(256 * 4);
+    for_each_top_level_block(text, |block| {
+        let type_tag = block_kind_tag(block.kind);
+        buf.push((type_tag as u32) | ((block.depth as u32) << 8));
+        buf.push(block.start as u32);
+        buf.push(block.end as u32);
+        buf.push((block.item_count as u32) | ((block.row_count as u32) << 16));
+    });
     buf
 }
 
@@ -232,48 +330,22 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
     hash
 }
 
-/// Walk the parser the same way [`lex_blocks`] does and produce one
-/// FNV-1a 64-bit hash per top-level block, computed over the block's
-/// source byte range. Output: `Vec<u32>` with 2 words per block (low
-/// half, then high half).
+/// Produce one FNV-1a 64-bit hash per top-level block, computed over
+/// the block's source byte range. Output: `Vec<u32>` with 2 words
+/// per block (low half, then high half). Shares the canonical block
+/// walker with [`lex_blocks`] via [`for_each_top_level_block`], so
+/// the two functions cannot drift in block-bucketing behaviour.
 ///
 /// Pure helper — no `#[wasm_bindgen]`, normally testable via
 /// `cargo test`. The public WASM surface lives in [`lex_block_hashes`].
 fn collect_block_hashes(text: &str) -> Vec<u32> {
-    let parser = Parser::new_ext(text, parser_options());
     let bytes = text.as_bytes();
     let mut buf: Vec<u32> = Vec::with_capacity(64);
-
-    let mut block_start: Option<usize> = None;
-    let mut nesting: usize = 0;
-
-    for (event, range) in parser.into_offset_iter() {
-        match event {
-            Event::Start(_) => {
-                if nesting == 0 {
-                    block_start = Some(range.start);
-                }
-                nesting += 1;
-            }
-            Event::End(_) => {
-                nesting = nesting.saturating_sub(1);
-                if nesting == 0 {
-                    if let Some(start) = block_start.take() {
-                        let h = fnv1a64(&bytes[start..range.end]);
-                        buf.push(h as u32);
-                        buf.push((h >> 32) as u32);
-                    }
-                }
-            }
-            Event::Rule => {
-                let h = fnv1a64(&bytes[range.start..range.end]);
-                buf.push(h as u32);
-                buf.push((h >> 32) as u32);
-            }
-            _ => {}
-        }
-    }
-
+    for_each_top_level_block(text, |block| {
+        let h = fnv1a64(&bytes[block.start..block.end]);
+        buf.push(h as u32);
+        buf.push((h >> 32) as u32);
+    });
     buf
 }
 
@@ -338,6 +410,42 @@ mod tests {
         let hash_blocks_count = hash_words.len() / 2;
         assert_eq!(lex_blocks_count, hash_blocks_count);
         assert!(lex_blocks_count >= 4);
+    }
+
+    #[test]
+    fn lex_blocks_and_collect_block_hashes_agree_on_per_block_byte_ranges() {
+        // Both functions now consume `for_each_top_level_block`, so
+        // their per-block (start, end) must agree by construction.
+        // This test pins the cross-check: hash each block's source
+        // range independently using `lex_blocks`'s reported offsets,
+        // and confirm it matches `collect_block_hashes`'s output
+        // at the same index. If anyone ever rewrites one walker
+        // without the other, this test catches the divergence.
+        let text =
+            "# Heading\n\nFirst paragraph.\n\n- item 1\n- item 2\n\n---\n\n```rust\nfn main() {}\n```\n";
+        let lex_words = lex_blocks(text);
+        let hash_words = collect_block_hashes(text);
+        let bytes = text.as_bytes();
+        let block_count = lex_words.len() / 4;
+        assert_eq!(block_count, hash_words.len() / 2);
+        assert!(block_count >= 5); // heading, paragraph, list, hr, code
+        for i in 0..block_count {
+            let start = lex_words[i * 4 + 1] as usize;
+            let end = lex_words[i * 4 + 2] as usize;
+            let expected = fnv1a64(&bytes[start..end]);
+            let expected_lo = expected as u32;
+            let expected_hi = (expected >> 32) as u32;
+            assert_eq!(
+                hash_words[i * 2],
+                expected_lo,
+                "block {i}: lo mismatch (start={start}, end={end})"
+            );
+            assert_eq!(
+                hash_words[i * 2 + 1],
+                expected_hi,
+                "block {i}: hi mismatch (start={start}, end={end})"
+            );
+        }
     }
 
     #[test]
