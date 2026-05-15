@@ -88,6 +88,23 @@ const DEFAULT_TIMER_SOURCE: TimerSource = {
 
 const STREAM_SOURCE_TAG = "code-session-store";
 
+/**
+ * Mint a stable per-turn key. Used as the React-key seed for the
+ * inflight cell pair and preserved unchanged through commit into
+ * `TurnEntry.turnKey`. Lives in the store wrapper (not the reducer)
+ * because `crypto.randomUUID()` is impure and the reducer is
+ * contractually pure + time-independent.
+ *
+ * Fallback `turn-${time}-${random}` shape covers runtimes without
+ * `crypto.randomUUID` — uniqueness is per-session, not global.
+ */
+function mintTurnKey(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `turn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 /** CODE_OUTPUT frame `type` values the reducer currently handles. */
 const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   "session_init",
@@ -362,7 +379,10 @@ export class CodeSessionStore {
    */
   send(text: string, atoms: AtomSegment[]): void {
     if (this._disposed) return;
-    this.dispatch({ type: "send", text, atoms });
+    // `turnKey` is generated in the impure wrapper layer (not in the
+    // reducer) so the reducer remains pure and time-independent —
+    // mirrors how timers live outside the reducer.
+    this.dispatch({ type: "send", text, atoms, turnKey: mintTurnKey() });
   }
 
   /**
@@ -617,6 +637,15 @@ export class CodeSessionStore {
             : null,
           reason: typeof ev.reason === "string" ? ev.reason : null,
         });
+      }
+      if (ev.type === "user_message_replay") {
+        // `turnKey` is a client-side React-key seed minted by the
+        // store wrapper for every dispatched replay event. The wire
+        // doesn't (and shouldn't) carry it — replay is a synthesis
+        // of historical user submissions, and the cell wrapper
+        // identity is purely React's concern. Minting here keeps the
+        // reducer pure: it never calls `crypto.randomUUID()`.
+        return { ...ev, turnKey: mintTurnKey() } as unknown as CodeSessionEvent;
       }
       return ev as unknown as CodeSessionEvent;
     }

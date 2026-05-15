@@ -102,6 +102,7 @@ describe("reduce — send", () => {
       type: "send",
       text: "hello",
       atoms: [],
+      turnKey: "test-turn-key",
     });
 
     expect(state.phase).toBe("submitting");
@@ -130,6 +131,7 @@ describe("reduce — send", () => {
       type: "send",
       text: "retry",
       atoms: [],
+      turnKey: "test-turn-key",
     });
 
     expect(state.phase).toBe("submitting");
@@ -143,6 +145,7 @@ describe("reduce — send", () => {
       type: "send",
       text: "mid",
       atoms: [],
+      turnKey: "test-turn-key",
     });
 
     expect(state.phase).toBe("streaming");
@@ -658,7 +661,7 @@ describe("reduce — turn_complete", () => {
   it("commits assistant text and toolCalls into a TurnEntry in insertion order", () => {
     const base = fresh();
     const path = applyAll(base, [
-      { type: "send", text: "hello", atoms: [] },
+      { type: "send", text: "hello", atoms: [], turnKey: "test-turn-key" },
       {
         type: "assistant_text",
         msg_id: FIXTURE_IDS.MSG_ID,
@@ -736,7 +739,7 @@ describe("reduce — turn_complete", () => {
 
   it("marks the entry result as interrupted on turn_complete error", () => {
     const base = fresh();
-    const r1 = reduce(base, { type: "send", text: "hi", atoms: [] });
+    const r1 = reduce(base, { type: "send", text: "hi", atoms: [], turnKey: "test-turn-key" });
     const r2 = reduce(r1.state, {
       type: "assistant_text",
       msg_id: FIXTURE_IDS.MSG_ID,

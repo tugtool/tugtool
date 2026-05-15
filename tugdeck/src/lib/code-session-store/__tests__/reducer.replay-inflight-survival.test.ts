@@ -75,6 +75,7 @@ describe("replay_complete preserves in-flight cycle state for the live tail", ()
         text: "what's the time?",
         attachments: [],
         ipc_version: 2,
+        turnKey: "test-replay-turn-key",
       },
       {
         type: "assistant_text",
@@ -124,6 +125,7 @@ describe("replay_complete preserves in-flight cycle state for the live tail", ()
         text: "what's the time?",
         attachments: [],
         ipc_version: 2,
+        turnKey: "test-replay-turn-key",
       },
       {
         type: "assistant_text",
@@ -168,6 +170,7 @@ describe("replay_complete preserves in-flight cycle state for the live tail", ()
         text: "what's the time?",
         attachments: [],
         ipc_version: 2,
+        turnKey: "test-replay-turn-key",
       },
       {
         type: "assistant_text",
@@ -228,6 +231,7 @@ describe("replay_complete preserves in-flight cycle state for the live tail", ()
         type: "user_message_replay",
         msg_id: "msg_committed",
         text: "hello",
+        turnKey: "test-replay-turn-key",
         attachments: [],
         ipc_version: 2,
       },

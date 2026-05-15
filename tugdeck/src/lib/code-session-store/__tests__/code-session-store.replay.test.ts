@@ -76,6 +76,10 @@ function userMessageReplay(msgId: string, text: string) {
     text,
     attachments: [],
     ipc_version: IPC_VERSION,
+    // The reducer requires turnKey on this event (added when the
+    // contract moved to a pure reducer + impure wrapper layer). Tests
+    // use a deterministic key so assertions stay reproducible.
+    turnKey: `replay-key-${msgId}`,
   };
 }
 function assistantText(msgId: string, text: string) {
