@@ -48,6 +48,12 @@
  *  - [L23] preserves user-visible state (scroll position) across
  *    what was previously a teardown event — the cell wrapper now
  *    survives every transition within a turn's life.
+ *  - [L26] mount identity stable across the in-flight → committed
+ *    transition: the React key (`${turnKey}-code`), the rendered
+ *    component (`CodeRowCell`), and the renderer lambda in
+ *    `cellRenderers` are all byte-identical across the boundary.
+ *    L23 falls out of L26 here — preserved mount identity is
+ *    upstream of preserved state.
  *  - [D02] single-section flat list; flat indices, no `IndexPath`.
  *  - [D06] streaming cells observe the streaming source directly;
  *    the consumer reads `codeSessionStore.streamingDocument`
@@ -74,22 +80,24 @@ import type { TugListViewDataSource } from "@/components/tugways/tug-list-view";
  * Kinds the transcript adapter emits, matched against the
  * `cellRenderers` map the Tide card registers.
  *
- * **One kind per row identity.** The assistant row uses a single
- * `"code"` kind for its entire life — both while streaming and after
- * commit. Earlier revisions split the row into `"code-streaming"` and
- * `"code-committed"`, but that forced the `cellRenderers` map to hold
- * two separate entries for what is structurally one row. With two
- * entries, a future maintainer writing `"code-streaming": (p) =>
- * <Renderer {...p}/>` and `"code-committed": (p) => <Renderer
- * {...p}/>` as two inline lambdas — perfectly idiomatic React —
- * silently re-introduces a scroll-jump-to-top regression: each kind
- * resolves to a different function identity, so React unmounts the
- * cell wrapper at the `turn_complete` boundary even though it should
- * survive intact. The unified kind eliminates that class of bug at
- * the source: the map literally cannot hold two entries because the
- * row only reports one kind. The render component branches on row
- * payload presence (`row.turn !== undefined` ⇒ committed) for the
- * small chrome differences that genuinely vary by phase.
+ * **One kind per row identity** ([L26]). The assistant row uses a
+ * single `"code"` kind for its entire life — both while streaming
+ * and after commit. Earlier revisions split the row into
+ * `"code-streaming"` and `"code-committed"`, but that forced the
+ * `cellRenderers` map to hold two separate entries for what is
+ * structurally one row. With two entries, a future maintainer writing
+ * `"code-streaming": (p) => <Renderer {...p}/>` and `"code-committed":
+ * (p) => <Renderer {...p}/>` as two inline lambdas — perfectly
+ * idiomatic React — silently re-introduces a scroll-jump-to-top
+ * regression: each kind resolves to a different function identity,
+ * which is an L26 violation on the renderer-reference axis, so React
+ * unmounts the cell wrapper at the `turn_complete` boundary even
+ * though it should survive intact. The unified kind eliminates that
+ * class of bug at the source: the map literally cannot hold two
+ * entries because the row only reports one kind. The render component
+ * branches on row payload presence (`row.turn !== undefined` ⇒
+ * committed) for the small chrome differences that genuinely vary
+ * by phase.
  */
 export type TideTranscriptCellKind = "user" | "code";
 

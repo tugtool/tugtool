@@ -20,8 +20,8 @@
  *     the same streaming subscription keeps surfacing the right
  *     content without any prop change or remount.
  *
- * **One kind per row identity, one renderer per kind.** Earlier
- * revisions split the assistant row into `code-streaming` /
+ * **One kind per row identity, one renderer per kind** ([L26]).
+ * Earlier revisions split the assistant row into `code-streaming` /
  * `code-committed` kinds with two separate `cellRenderers` entries.
  * At `turn_complete` React swapped component types — the cell
  * wrapper unmounted, `TugMarkdownBlock` died with it, the
@@ -31,7 +31,7 @@
  * assistant's reply was committed. The single-kind data source
  * (see {@link TideTranscriptCellKind}) makes the `cellRenderers`
  * map structurally hold only one entry for the assistant row, so
- * the trap that produced that bug cannot recur.
+ * the L26 violation that produced that bug cannot recur.
  *
  * Identifier resolution: the `code` row's identifier is the active
  * model name from `SessionMetadataStore` (e.g. `"claude-3.7-sonnet"`),
@@ -54,6 +54,9 @@
  *    and writes the DOM imperatively per delta.
  *  - [L23] preserves scroll position across what was previously a
  *    teardown event (the in-flight → committed transition).
+ *  - [L26] stable React-reconciliation identity (key + component
+ *    type + renderer reference) across that same transition is the
+ *    upstream invariant L23 rides on here.
  */
  
 import React, {
@@ -716,16 +719,22 @@ export const TideTranscriptHost = forwardRef<
   const modelName = useSessionModelName(sessionMetadataStore);
   const streamingStore = codeSessionStore.streamingDocument;
 
-  // One renderer per kind. With the data source unified to a single
-  // `"code"` kind for assistant rows (no separate
+  // One renderer per kind ([L26] — renderer reference is the third
+  // identity input React reconciles against; distinct lambdas count
+  // as distinct component types). With the data source unified to a
+  // single `"code"` kind for assistant rows (no separate
   // `"code-streaming"` / `"code-committed"`), this map structurally
   // cannot hold two entries for the same row — eliminating the
   // lambda-identity trap that would otherwise re-mount the cell
   // wrapper at `turn_complete` and trigger a user-visible scroll
-  // jump. The `CodeRowCell` component branches internally on
-  // `row.turn !== undefined` for the chrome differences that
-  // genuinely vary by phase (timestamp, copy button, interrupted
-  // badge, permission-record vs live-dialog source).
+  // jump. The `useCallback` is what keeps the reference stable
+  // across re-renders of this component; rebuilding it inline in the
+  // `cellRenderers` literal would defeat L26 just as surely as a
+  // second lambda for a second kind would. The `CodeRowCell`
+  // component branches internally on `row.turn !== undefined` for
+  // the chrome differences that genuinely vary by phase (timestamp,
+  // copy button, interrupted badge, permission-record vs
+  // live-dialog source).
   const codeRenderer = useCallback<
     TugListViewCellRenderer<TideTranscriptDataSource>
   >(

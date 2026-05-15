@@ -69,7 +69,23 @@ Selection, focus, scroll position (outer and inner regions), form-control values
 - **In-session: minimal mutation.** `CardHost` portals into the host pane's DOM and is never remounted across cross-pane moves, tab switches, or pane activation changes. Because the DOM stays up, browser-native state (focused element, selection, scroll positions, native input values) is preserved without any save/restore. See [pane-model.md](pane-model.md) and [lifecycle-delegates.md](lifecycle-delegates.md).
 - **Cross-session: the [A9] protocol.** When the DOM does come down — cold boot from disk, tab deactivation (`display: none`), app cmd-tab cycle, card destruction-then-restore — `useComponentStatePreservation` and `useCardStatePreservation` capture user-visible state into a `CardStateBag` at the will-phase save moment and reapply it on restore. See [card-state-model.md](card-state-model.md) for the per-axis contract and [state-preservation.md](state-preservation.md) for the protocol.
 
-"Save and restore" is the right answer when the state genuinely goes away, the wrong answer when it never had to leave. Choosing save/restore where minimal mutation would have worked relies on a captured snapshot that may be stale; choosing minimal mutation where the DOM is being torn down loses user state outright. Pick the mechanism that matches the transition class. [D49, D50]
+"Save and restore" is the right answer when the state genuinely goes away, the wrong answer when it never had to leave. Choosing save/restore where minimal mutation would have worked relies on a captured snapshot that may be stale; choosing minimal mutation where the DOM is being torn down loses user state outright. Pick the mechanism that matches the transition class. Minimal mutation depends on stable React-reconciliation identity through the transition — see [L26]. [D49, D50]
+
+### L26. Mount identity must be stable across logical transitions. {#l26}
+
+When a UI element represents the same logical entity before and after a state transition, all three React-reconciliation identity inputs — **key**, **component type**, and **renderer reference** — must be byte-identical across the transition. Any difference in any of the three triggers an unmount/remount that destroys scroll position, focus, selection, in-flight animations, observable subscriptions, and every other piece of DOM- or instance-resident state the wrapper held. The failure mode is invisible from a code read: nothing *looks* like a teardown, because the source on either side of the transition describes the same visual.
+
+The three identity inputs, in the order they bite:
+
+- **Key.** The `key` prop reconciled in list rendering. Derive it from a stable identifier that is minted *before the transition class is known* and survives unchanged through it (a `turnKey` that lives across both the in-flight phase and the committed phase, for example) — not from a value that encodes the *current* phase (`"streaming-…"` vs `"committed-…"`).
+- **Component type.** The function or class reference React reconciles against. Don't split "before" and "after" into two components and swap which one the parent renders; write one component that branches internally on phase. Two components in the render tree are two component types, even when their inner JSX is identical.
+- **Renderer reference.** When a parent dispatches by key into a renderer map (`cellRenderers[kind]`, `componentsByVariant[v]`, etc.), distinct lambda identities count as distinct component types under reconciliation — exactly as if the source had named two components. A single `useCallback`-stable reference shared by every kind that should reconcile as the same element is the only correct shape. Distinct lambdas defined inline in JSX, or two arrow functions registered against two keys in a `Record<string, ...>`, are the common traps.
+
+Any two of the three may be stabilized in isolation and the third will still trigger a remount. Audit all three together, or not at all.
+
+The test: *does the user perceive this as the same thing across the transition?* If yes — the row is logically continuous, even though its content evolved — none of the three inputs may change. If no — a new entity has appeared and the old one is gone — a remount is correct.
+
+This law is the React-reconciliation complement to [L23]. L23 governs what to do when teardown is unavoidable (capture and replay). L26 says: when the entity is logically continuous, don't tear down in the first place — keep React's identity inputs stable and the browser and React preserve everything attached to that mount for free, without any save/restore code, capture window, or restore-paint ordering to get wrong. Preserved mount identity is upstream of preserved state. [D49]
 
 ---
 
