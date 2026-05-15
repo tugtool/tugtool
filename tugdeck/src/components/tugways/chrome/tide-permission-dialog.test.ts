@@ -14,9 +14,12 @@
  * Coverage:
  *  - `selectPermissionBodyKind` — Bash / Edit / MultiEdit / Read /
  *    Write / fallthrough, case-insensitive.
- *  - `narrowPermissionSuggestion` — the v2.1.x catalog suggestion
- *    shape, allow/deny behaviors, non-actionable drop, label
- *    composition from rules + destination.
+ *  - `composePermissionSuggestionLabel` — every (behavior ×
+ *    destination) cell, including the destination-less fallback and
+ *    the unknown-destination passthrough.
+ *  - `narrowPermissionSuggestion` — the v2.1.x catalog shape,
+ *    allow/deny behaviors, non-actionable drop, the "rules content is
+ *    intentionally dropped" contract.
  *  - `composePermissionRecordSummary` — allow / deny / resolved-null,
  *    empty tool name.
  *  - `composePermissionLineRange` — offset+limit / offset / limit /
@@ -29,10 +32,11 @@ import { describe, it, expect } from "bun:test";
 
 import {
   PermissionDialog,
-  selectPermissionBodyKind,
-  narrowPermissionSuggestion,
-  composePermissionRecordSummary,
   composePermissionLineRange,
+  composePermissionRecordSummary,
+  composePermissionSuggestionLabel,
+  narrowPermissionSuggestion,
+  selectPermissionBodyKind,
 } from "./tide-permission-dialog";
 import {
   KIND_RENDERERS,
@@ -73,9 +77,62 @@ describe("selectPermissionBodyKind", () => {
 // narrowPermissionSuggestion
 // ---------------------------------------------------------------------------
 
+describe("composePermissionSuggestionLabel", () => {
+  it("renders allow + each known destination", () => {
+    expect(composePermissionSuggestionLabel("allow", "session")).toBe(
+      "Allow for this session",
+    );
+    expect(composePermissionSuggestionLabel("allow", "project")).toBe(
+      "Allow for this project",
+    );
+    expect(composePermissionSuggestionLabel("allow", "localSettings")).toBe(
+      "Allow for this project",
+    );
+    expect(composePermissionSuggestionLabel("allow", "projectSettings")).toBe(
+      "Allow for this project",
+    );
+    expect(composePermissionSuggestionLabel("allow", "userSettings")).toBe(
+      "Always allow",
+    );
+  });
+
+  it("renders deny + each known destination", () => {
+    expect(composePermissionSuggestionLabel("deny", "session")).toBe(
+      "Deny for this session",
+    );
+    expect(composePermissionSuggestionLabel("deny", "project")).toBe(
+      "Deny for this project",
+    );
+    expect(composePermissionSuggestionLabel("deny", "userSettings")).toBe(
+      "Always deny",
+    );
+  });
+
+  it("falls back to '{Verb} this action' when destination is omitted", () => {
+    expect(composePermissionSuggestionLabel("allow", undefined)).toBe(
+      "Allow this action",
+    );
+    expect(composePermissionSuggestionLabel("deny", undefined)).toBe(
+      "Deny this action",
+    );
+  });
+
+  it("passes an unknown destination through verbatim (forward-compat scope)", () => {
+    expect(composePermissionSuggestionLabel("allow", "branch")).toBe(
+      "Allow (branch)",
+    );
+    expect(composePermissionSuggestionLabel("deny", "global")).toBe(
+      "Deny (global)",
+    );
+  });
+});
+
 describe("narrowPermissionSuggestion", () => {
-  it("narrows the v2.1.x catalog suggestion shape into an allow action", () => {
-    // Verbatim from test-11-permission-deny-roundtrip.jsonl.
+  it("narrows the v2.1.x catalog allow + session shape", () => {
+    // Verbatim from test-11-permission-deny-roundtrip.jsonl. The
+    // wire's verbose `rules` content is intentionally dropped from
+    // the visible label — the dialog's description already names the
+    // specific tool + command being asked about.
     const suggestion = {
       behavior: "allow",
       destination: "session",
@@ -84,11 +141,11 @@ describe("narrowPermissionSuggestion", () => {
     };
     expect(narrowPermissionSuggestion(suggestion)).toEqual({
       behavior: "allow",
-      label: "Allow Read //nonexistent/** (this session)",
+      label: "Allow for this session",
     });
   });
 
-  it("narrows a deny suggestion", () => {
+  it("narrows a deny + userSettings suggestion", () => {
     const suggestion = {
       behavior: "deny",
       destination: "userSettings",
@@ -96,7 +153,7 @@ describe("narrowPermissionSuggestion", () => {
     };
     expect(narrowPermissionSuggestion(suggestion)).toEqual({
       behavior: "deny",
-      label: "Deny Bash rm -rf * (always)",
+      label: "Always deny",
     });
   });
 
@@ -114,14 +171,17 @@ describe("narrowPermissionSuggestion", () => {
     expect(narrowPermissionSuggestion(undefined)).toBeNull();
   });
 
-  it("composes a fallback label when no rules are present", () => {
+  it("falls back to a destination-less label when destination is omitted", () => {
     expect(narrowPermissionSuggestion({ behavior: "allow" })).toEqual({
       behavior: "allow",
       label: "Allow this action",
     });
   });
 
-  it("tolerates partial rule entries", () => {
+  it("ignores rule content entirely (label keys off behavior + destination)", () => {
+    // The wire `rules` array used to drive the label; it no longer
+    // does. A suggestion with rules but no destination still falls
+    // back to the destination-less label.
     expect(
       narrowPermissionSuggestion({
         behavior: "allow",
@@ -129,7 +189,7 @@ describe("narrowPermissionSuggestion", () => {
       }),
     ).toEqual({
       behavior: "allow",
-      label: "Allow //x/**, Grep",
+      label: "Allow this action",
     });
   });
 });

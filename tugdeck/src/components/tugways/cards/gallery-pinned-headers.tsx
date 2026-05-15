@@ -14,7 +14,7 @@
  *        - FileBlock — Find + Copy + fold cue.
  *        - DiffBlock — Side-by-side/Inline `TugChoiceGroup` + fold cue.
  *        - TerminalBlock — Copy + fold cue. Section #3 is folded by
- *          default (the 200-line output exceeds `FOLD_THRESHOLD_LINES`)
+ *          default (the 400-line output exceeds `FOLD_THRESHOLD_LINES`)
  *          so the preview-with-fade is exercisable at first paint;
  *          section #4 forces `collapsed={false}` so the expanded path
  *          with virtualizer + footer is visible side-by-side.
@@ -113,9 +113,11 @@ const LONG_DIFF: DiffData = {
 };
 
 /**
- * Build a 200-line terminal output. Lines vary in length so the inner
+ * Build a 400-line terminal output. Lines vary in length so the inner
  * scroller exercises both vertical scroll past the wrapper AND
- * horizontal `scrollbar-gutter: stable` reservation.
+ * horizontal `scrollbar-gutter: stable` reservation. Sized over
+ * `FOLD_THRESHOLD_LINES` (300) so the folded-by-default + virtualized
+ * paths are exercised.
  */
 function buildLongTerminalStdout(lineCount: number): string {
   const lines: string[] = [];
@@ -132,7 +134,7 @@ function buildLongTerminalStdout(lineCount: number): string {
 }
 
 const LONG_TERMINAL: TerminalData = {
-  stdout: buildLongTerminalStdout(200),
+  stdout: buildLongTerminalStdout(400),
   stderr: "",
   exitCode: 0,
   durationMs: 4_200,
@@ -197,16 +199,16 @@ export function GalleryPinnedHeaders() {
 
       <TugSeparator />
 
-      <PinSection title="TerminalBlock — 200 lines, folded by default (header: Copy + fold cue at trailing edge)">
-        <TerminalBlock data={LONG_TERMINAL} headerLabel={<code>find . -type f | head -200</code>} />
+      <PinSection title="TerminalBlock — 400 lines, folded by default (header: Copy + fold cue at trailing edge)">
+        <TerminalBlock data={LONG_TERMINAL} headerLabel={<code>find . -type f | head -400</code>} />
       </PinSection>
 
       <TugSeparator />
 
-      <PinSection title="TerminalBlock — 200 lines, expanded (no fade; full output + virtualized scroller)">
+      <PinSection title="TerminalBlock — 400 lines, expanded (no fade; full output + virtualized scroller)">
         <TerminalBlock
           data={LONG_TERMINAL}
-          headerLabel={<code>find . -type f | head -200</code>}
+          headerLabel={<code>find . -type f | head -400</code>}
           collapsed={false}
         />
       </PinSection>
@@ -243,7 +245,7 @@ export function GalleryPinnedHeaders() {
         <ToolWrapperChrome
           toolName="Bash"
           toolIcon={<Terminal size={14} aria-hidden="true" />}
-          argsSummary={<code>find . -type f | head -200</code>}
+          argsSummary={<code>find . -type f | head -400</code>}
           status="ready"
         >
           <TerminalBlock data={LONG_TERMINAL} embedded />

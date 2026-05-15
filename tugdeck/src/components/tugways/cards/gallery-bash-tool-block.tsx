@@ -40,9 +40,9 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
 // ---------------------------------------------------------------------------
 
 /**
- * 100-line stdout — exceeds `FOLD_THRESHOLD_LINES` (40) so the
+ * 400-line stdout — exceeds `FOLD_THRESHOLD_LINES` (300) so the
  * uncontrolled TerminalBlock defaults to collapsed, and exceeds
- * `VISIBLE_THRESHOLD` (40) so the virtualizer's inner scroller is
+ * `VISIBLE_THRESHOLD` (300) so the virtualizer's inner scroller is
  * built. Both surfaces are what AT0067 and AT0068 drive against:
  *
  *   - AT0067 expands the block, saves, reloads, and asserts the
@@ -56,7 +56,7 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
  *     0 to saved.
  */
 const MOUNT_IN_SAVED_STATE_STDOUT = Array.from(
-  { length: 100 },
+  { length: 400 },
   (_, i) =>
     `line ${String(i + 1).padStart(3, "0")}: contents of a synthetic Bash run that exceeds the fold threshold`,
 ).join("\n");

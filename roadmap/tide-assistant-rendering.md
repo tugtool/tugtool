@@ -1002,6 +1002,8 @@ Per L19/L20, every component owns a slot. Slot prefix → component:
 | `--tugx-tabrich-*` | TableBlock (rich) |
 | `--tugx-toolblock-*` | shared tool-wrapper chrome |
 | `--tugx-thinking-*` | ThinkingBlock |
+| `--tugx-idialog-*` | TugInlineDialog ([#step-18-5](#step-18-5)) |
+| `--tugx-dialog-button-*` | TugDialogButton ([#step-18-6](#step-18-6)) |
 | `--tugx-perm-*` | PermissionDialog |
 | `--tugx-quest-*` | QuestionDialog |
 | `--tugx-cost-*` | CostChrome |
@@ -4728,9 +4730,279 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 
 ---
 
+#### Step 18.5: TugInlineDialog primitive + PermissionDialog adoption {#step-18-5}
+
+**Status:** implemented — primitive + pure-logic tests + 6-section gallery card (registered) + PermissionDialog refactored on top + `--tugx-perm-*` shrunk to the resolved-record + small inline-fragment slots. tsc clean, `bun test` 1816/1816, `audit:tokens lint` zero violations.
+
+**Depends on:** #step-18
+
+**Commit:** `feat(tugways): TugInlineDialog — inline confirm/cancel primitive; rebuild PermissionDialog on it`
+
+**References:** [D13], `tug-alert.tsx` (visual proportions), [`tuglaws/component-authoring.md`](../tuglaws/component-authoring.md), [L17] / [L19] / [L20] / [L24], [Table T07](#t07-token-slots)
+
+**Scope note ([D13] follow-up).** [#step-18](#step-18) shipped `PermissionDialog` with bespoke inline-dialog visuals, and design feedback exposed the layout as too underbaked: the shield was undertinted (should be caution-yellow), the title undersized, the actions wrong-handed (Allow on the left), the description fragmented into three loose fragments (the prose, the tool-icon row, and the tool name), and the dialog stretched the full transcript width when a centered fixed-width CTA reads better. The honest fix is not to keep tuning `PermissionDialog` as a one-off — the same shape will be wanted by `QuestionDialog` ([#step-19](#step-19)), an eventual destructive-action confirm (e.g. "Discard unsaved changes?"), and any future inline confirm need. This step extracts the shared visual primitive — `TugInlineDialog` — as a tugways primitive (peer of `TugAlert`) and rebuilds `PermissionDialog` on it as the first consumer. The reducer + dispatch wiring + `TurnEntry.controlRequests` artifact landed in [#step-18](#step-18) are unchanged; only the visual layer is rebuilt.
+
+**Conformance.** `TugInlineDialog` is a tugways primitive (peer of `TugAlert`), not a body kind or tool wrapper — the [#bk-conformance](#bk-conformance) contract does not apply directly; the relevant law set is `tuglaws/component-authoring.md` plus [L17] / [L19] / [L20] / [L24]. The primitive owns the new `--tugx-idialog-*` slot family declared in `tug-inline-dialog.css` body{} (per the [#step-10-8-5] bulk-migration pattern — component-local, not theme files) and composes `--tug7-*` base tokens in one hop.
+
+**Design — public surface.** Sketch (precise prop names finalized in implementation):
+
+```typescript
+export interface TugInlineDialogProps {
+  /**
+   * Icon node — typically a Lucide component. The primitive sizes it
+   * to 48 px and tints its `color` via `iconRole`; the consumer chooses
+   * the shape.
+   */
+  icon: React.ReactNode;
+  /**
+   * Tone for the icon's foreground tint. Maps to the `--tugx-idialog-
+   * icon-{role}-color` token slots, which resolve to `--tug7-*` icon /
+   * text colors in one hop.
+   *
+   * @default "default"
+   */
+  iconRole?: "default" | "caution" | "danger" | "success" | "info";
+  /** Strong call-to-action title. Plain string. */
+  title: string;
+  /**
+   * Rich description — ReactNode so consumers can embed inline icons
+   * and `<code>` (e.g. "This command requires approval · {Shell-icon}
+   * Bash · `tokei`"). The cohesive sentence belongs here; do not
+   * fragment the same idea across multiple slots.
+   */
+  description: React.ReactNode;
+  /**
+   * Free-form region between the description and the actions row. For
+   * a permission with suggestions: the suggestion button(s). For an
+   * Edit confirm: a `DiffBlock`. For a question: the option list.
+   * Left-aligned with the description text column (not the icon).
+   */
+  children?: React.ReactNode;
+  /** Primary action label. */
+  confirmLabel: string;
+  /**
+   * Confirm-button color domain. `action` → filled-action (default),
+   * `danger` → filled-danger (destructive confirms — Discard, Delete).
+   *
+   * @default "action"
+   */
+  confirmRole?: "action" | "danger";
+  onConfirm: () => void;
+  /**
+   * Cancel button label. Defaults to "Cancel". Pass `null` to
+   * suppress the cancel button entirely (single-action dialogs).
+   */
+  cancelLabel?: string | null;
+  onCancel?: () => void;
+  /** Forwarded class name. */
+  className?: string;
+}
+```
+
+Layout (fixed centered card, `max-width` ~520 px via `--tugx-idialog-max-width`):
+
+```
++------------------------------------------+
+| [Icon]  Title                            |
+|         Description (ReactNode)          |
+|                                          |
+| [children — body picker / extra buttons] |
+|                                          |
+|                  [Cancel]  [Confirm]     |
++------------------------------------------+
+```
+
+Constraints:
+- Icon column: 48 px square; `color` driven by `iconRole`. The fixed shape and size match `TugAlert` so the two read as the same family.
+- Title: 1 rem / 600 / line-height 1.4 (matches `--tugx-alert-title-*`).
+- Description: 0.875 rem / 1.5 / opacity 0.8 (matches `--tugx-alert-message-*`).
+- Children: rendered in the text column (left-aligned with the description), not under the icon column — so a body picker / suggestion button hangs off the same vertical baseline as the description.
+- Actions row: right-aligned, `gap` = `--tugx-idialog-space-a`, each button `min-width` = `--tugx-idialog-action-min-w` so short labels ("OK", "Allow") don't read tiny. Cancel sits immediately to the left of Confirm. Confirm always last (right-most). The "third button bottom-left" pattern from the brief is achieved by placing a button in `children` and aligning it left — no separate structured slot.
+- Width: fixed centered (`max-width` + `margin: 0 auto`). Consumers cannot widen it; richer content (a long diff, a tall JSON tree) handles its own internal scroll inside `children`.
+- Responsive shrink: when the parent is narrower than `max-width`, the icon column stays 48 px and the text column flexes — the proportions stay legible down to a comfortable narrow-pane width.
+- Focus management: the confirm button takes focus on mount via `useLayoutEffect` per [D13], so a Return key answers the prompt.
+
+**Token slot — `--tugx-idialog-*`.** Declared in `tug-inline-dialog.css` body{}. Add a row to [Table T07](#t07-token-slots): `| --tugx-idialog-* | TugInlineDialog |`. Slots include `max-width`, `padding`, `space-a` (tight), `space-b` (generous), `icon-size`, `icon-{default,caution,danger,success,info}-color`, `title-{size,weight,leading}`, `description-{size,leading,opacity}`, `children-gap`, `actions-gap`, `action-min-w`, `focus-ring`.
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/tug-inline-dialog.tsx` + `.css` — the primitive.
+- `tugdeck/src/components/tugways/tug-inline-dialog.test.ts` — pure-logic tests (icon-role → token-slot mapping; cancel-label default + suppression).
+- `tugdeck/src/components/tugways/cards/gallery-tug-inline-dialog.{tsx,css?}` — gallery card; registered in the gallery dispatcher.
+- `tugdeck/src/components/tugways/chrome/tide-permission-dialog.tsx` — refactored to compose `<TugInlineDialog>`. The four exported pure helpers (`selectPermissionBodyKind`, `narrowPermissionSuggestion`, `composePermissionRecordSummary`, `composePermissionLineRange`) and the resolved-record branch are unchanged. The `--tugx-perm-*` family shrinks to whatever the resolved record still needs (or disappears entirely if the record fits in the primitive's API; expected outcome: most pending-state slots are deleted, the resolved-record slots stay).
+- Update [Table T07](#t07-token-slots) with the new `--tugx-idialog-*` slot prefix.
+
+**Tasks:**
+- [x] Build `TugInlineDialog` primitive with the prop surface above. Stateless presentation surface; consumer owns the open/close lifecycle.
+- [x] Five `iconRole` values wired to `--tugx-idialog-icon-{role}-color` via `[data-icon-role]` selectors (DOM-driven appearance per [L06], not inline `style`). Each slot resolves to a `--tug7-*` color in one hop ([L17]):
+  - `default` → `--tug7-element-global-icon-normal-muted-rest`
+  - `caution` → `--tug7-element-global-text-normal-caution-rest` (the yellow shield the permission case wants)
+  - `danger` → `--tug7-element-global-text-normal-danger-rest`
+  - `success` → `--tug7-element-global-text-normal-success-rest`
+  - `info` → `--tug7-element-global-text-normal-link-rest`
+- [x] Layout: icon column (left) + text column (title + description + children). Actions row right-aligned at the bottom of the dialog. Children sit inside the text column, left-aligned with the description (not under the icon).
+- [x] Centered fixed `max-width` 32.5 rem (~520 px). The dialog never stretches to fill its container; consumers can override `--tugx-idialog-max-width` (e.g., the gallery's compact-tile section does this) but cannot widen it via prop.
+- [x] Buttons via `TugPushButton`: cancel = `emphasis="outlined" role="action"`; confirm = `emphasis="filled" role={confirmRole}`. Confirm focuses on mount via `useLayoutEffect` per [D13]. `cancelLabel: null` suppresses the cancel button entirely (single-action dialogs); the empty-string passthrough is preserved as a consumer choice rather than a "use default" signal.
+- [x] Build the gallery card with all six sections (Bare CTA / Caution permission shape / Destructive confirm / Rich children w/ JsonTreeBlock / Single-action / Icon-role tile row). Each section reports the user's last click via a `Result: <strong>...</strong>` indicator, mirroring `gallery-alert.tsx`.
+- [x] Register the gallery card in `gallery-registrations.tsx` under `CATEGORIES.overlays` next to `gallery-alert`.
+- [x] Refactor `PermissionDialog` to compose `<TugInlineDialog>`:
+  - `<TugInlineDialog icon={<ShieldAlert/>} iconRole="caution" title="Permission requested" description={…} confirmLabel="Allow" confirmRole="action" cancelLabel="Deny" onConfirm={…} onCancel={…}>{body picker + suggestion button(s)}</TugInlineDialog>`
+  - **Description composition (per-tool):** a single cohesive ReactNode via the new `PermissionDescription` component that switches on `selectPermissionBodyKind`. Bash → `"This command requires approval · "` + `<Shell size={12}/>` + `" Bash · "` + `<code>{command}</code>`; Edit/MultiEdit → `"This will edit {file_path}."`; Read → `"This will read {file_path} ({line range})."` (the line-range badge from `composePermissionLineRange` rolls into the sentence); Write → `"This will write {file_path}."`; default → `"This will run {tool_name}."`. `decision_reason`, when present and non-empty, appends as a `.tide-permission-dialog-reason` muted span.
+  - **Body picker placement:** the body picker now lives inside the dialog's `children` slot via the new `PendingBody` component. For `edit` it renders `DiffBlock` (`two-text` source); for `json` (unknown tool) it renders `JsonTreeBlock`; for `bash` and `path` it returns `null` — the description already carries the relevant input fragment.
+  - **Tool-icon swap:** `bash` now uses `Shell` (lucide) inline in the description rather than `Terminal`. The previous `permissionToolIcon` helper is deleted — only Bash needs an inline icon since the other tools have descriptive verbs ("edit", "read", "write") that don't need an icon to disambiguate.
+  - **Suggestion buttons:** narrowed via the existing `narrowPermissionSuggestion` and rendered as `TugPushButton emphasis="outlined" role="action"` inside the dialog's `children`, wrapped in the small `.tide-permission-dialog-suggestions` flex-wrap row. The deny-suggestion `role="danger"` mapping is dropped — suggestions read more uniformly as `role="action"` outline buttons.
+  - The resolved-record branch is unchanged structurally (DOM, classes, behavior) and continues to own the residual `--tugx-perm-record-*` slot family.
+- [x] Strip the now-redundant `--tugx-perm-*` slots: deleted the pending-state header / title / icon / message / body / actions / path / tool-name slots (~14 slots removed). What stays: the resolved-record slots, the suggestion-row gap, the inline-icon nudge, the reason-line color, and the focus-ring + collapse-motion shared slots.
+
+**Open question — scope.** The resolved-record state (the collapsed one-line `{Tool} — Allowed/Denied` toggle with chevron) is *not* an inline-dialog shape. It stays on `PermissionDialog` as-is. If a future record-toggle primitive is wanted, that is separate work.
+
+**Tests:**
+- [x] `tug-inline-dialog.test.ts` — pure-logic tests pin the exported contract: `iconRoleSlot` returns the expected `--tugx-idialog-icon-{role}-color` slot for every declared role; `TUG_INLINE_DIALOG_ICON_ROLES` enumerates exactly the five roles in stable order; `resolveCancelLabel` covers default / null-suppression / explicit-string / empty-string passthrough.
+- [x] `tide-permission-dialog.test.ts` — the four exported pure helpers and the dispatch routing test still pass (helpers are unchanged; dispatch routing is unchanged).
+- [x] `code-session-store.control-forward.test.ts` — reducer behavior is unchanged; deny round-trip + synthetic allow + no-prompt empty all still pass.
+- [ ] _Manual / HMR-vetted:_ the live tokei round-trip — dialog mounts centered (~520 px wide), caution-yellow shield, "Permission requested" title at proper size, single cohesive description ("This command requires approval · {Shell-icon} Bash · `tokei`"), suggestion button below in the children slot left-aligned, **Deny** on the left and **Allow on the right with filled-action**, primary-button focus on mount, Return submits Allow. After Allow: the resolved record renders, then on `turn_complete` the committed row's resolved record renders, and the bash output renders fully inline at 47 lines (no fold cue, no inner scroll — relies on the [#step-18](#step-18) cap-bump to 300). _The app-test harness can't inject `control_request_forward` events (same gap that gates [#step-15](#step-15)–[#step-17](#step-17)); the round-trip is wired through `CodeSessionStore.respondApproval` (pinned by `code-session-store.control-forward.test.ts`)._
+
+**Checkpoint:**
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — tsc clean; `bun test` 1816 pass / 0 fail (1810 → 1816, +6 from the new `tug-inline-dialog.test.ts`).
+- [x] `bun run audit:tokens lint` exits 0.
+- [ ] Gallery card visually vetted across all six sections (manual user action).
+- [ ] Live tokei smoke against tugcode confirms the centered layout, caution shield, cohesive description, button order, and inline 47-line output (manual user action).
+
+---
+
+#### Step 18.6: TugDialogButton primitive — rich-label dialog button {#step-18-6}
+
+**Depends on:** #step-18-5
+
+**Commit:** `feat(tugways): TugDialogButton — rich-label dialog button (label + description; action + choice modes)`
+
+**References:** [D13], [#step-18-5], [#step-19](#step-19) (forward-looking — QuestionDialog will compose this in choice mode), [`tuglaws/component-authoring.md`](../tuglaws/component-authoring.md), [L17] / [L19] / [L20] / [L24], [Table T07](#t07-token-slots)
+
+**Scope note ([#step-18-5] follow-up).** [#step-18-5]'s row-grid for `TugInlineDialog.extraActions` (1/2/3-per-row partition via `partitionDialogActions`) breaks down on real labels: descriptive text like "Allow for this session" doesn't fit the 33%-width column at the dialog's ~520 px max-width, and `TugPushButton`'s ALL CAPS letterspacing was never sized for prose — the labels truncate, run together, and read as a wall of shouting. Looking ahead to [#step-19](#step-19)'s `QuestionDialog`, the AskUserQuestion option labels will be longer still (full sentences for nuanced choices), and the row-grid keeps falling apart further. The honest fix is two parts: **(1)** introduce a new tugways primitive, `TugDialogButton`, sized for sentence-case label + optional rich description (Apple HIG settings-row pattern) with action mode AND choice mode (forward use in QuestionDialog's radio/checkbox option lists); and **(2)** move secondary actions in inline-dialog contexts to a one-per-row stacked layout — the row-grid is dropped entirely.
+
+**Cancel / Confirm stay on `TugPushButton`.** Simple imperatives ("Allow", "Deny", "Cancel", "Discard", "OK") still read crisp in the ALL CAPS imperative style. Only the *secondary* actions — `extraActions` today, future `QuestionDialog` options — move to `TugDialogButton`. The two button primitives serve different intents.
+
+**Scope of *this* step is gallery-only.** Per the user direction, iteration stays in the gallery; the live `PermissionDialog` in the transcript and `TugInlineDialog.extraActions`'s rendering are *not* touched in this step. Too many open design questions remain (selection-affordance shape, hover/focus tints, danger variant treatment, description rich-content rules) to commit to a primitive integration mid-flight. Step 18.6 ships the primitive + a gallery card that exercises every variant, including a "composed inside `TugInlineDialog`" preview section that shows what the future integration would look like — without actually rewiring the integration. Once the gallery iteration converges, a follow-on step (`#step-18-7` or rolled into [#step-19](#step-19) prep) refactors `TugInlineDialog.extraActions` onto `TugDialogButton` (removing `partitionDialogActions` and the row-grid CSS) and considers whether `PermissionDialog`'s suggestion shape should grow a `description` field.
+
+**Conformance.** `TugDialogButton` is a tugways primitive (peer of `TugPushButton`). The relevant law set is [`tuglaws/component-authoring.md`](../tuglaws/component-authoring.md) plus [L17] / [L19] / [L20] / [L24]. The primitive owns the new `--tugx-dialog-button-*` slot family declared in `tug-dialog-button.css` body{} (component-local per the [#step-10-8-5] bulk-migration pattern) and composes `--tug7-*` base tokens in one hop.
+
+**Design — public surface:**
+
+```typescript
+export interface TugDialogButtonProps {
+  /** Primary action label — sentence-case, semibold. NOT uppercased. */
+  label: string;
+  /**
+   * Optional secondary explanation — ReactNode so consumers can embed
+   * inline `<code>`, links, small icons.
+   */
+  description?: React.ReactNode;
+  /**
+   * Selected state for choice mode. `undefined` → action mode (plain
+   * clickable button, no selection affordance). `boolean` → choice
+   * mode (renders the selection affordance per `selectionStyle`).
+   */
+  selected?: boolean;
+  /**
+   * Selection-affordance style for choice mode. Ignored when
+   * `selected` is `undefined`.
+   *
+   * - `"check"` (default): check-mark visible when selected, blank
+   *   when not. Multi-select / standalone-toggle pattern.
+   * - `"radio"`: filled radio circle when selected, ring when not.
+   *   Single-select group pattern.
+   *
+   * @default "check"
+   */
+  selectionStyle?: "check" | "radio";
+  /**
+   * Optional trailing-edge content for the title row (e.g.
+   * `<ChevronRight/>` if the button leads to another surface, or a
+   * keyboard shortcut hint). Ignored in choice mode (the selection
+   * affordance owns the trailing edge then).
+   */
+  trailing?: React.ReactNode;
+  /**
+   * Color domain. `action` (default) paints the standard outline
+   * action; `danger` paints the destructive variant.
+   *
+   * @default "action"
+   */
+  role?: "action" | "danger";
+  disabled?: boolean;
+  onClick?: () => void;
+  /** Accessibility label override (defaults to {@link label}). */
+  ariaLabel?: string;
+  /** Forwarded class name for cascade-scoped customization. */
+  className?: string;
+}
+```
+
+Layout (Apple HIG settings row):
+
+```
++----------------------------------------+
+|  Allow for this session    [trailing]  |   ← title row: label leading; trailing = chevron / shortcut / selection affordance
+|  Permits this command for the          |
+|  duration of the current Tide session. |   ← description (muted ReactNode, optional)
++----------------------------------------+
+```
+
+Visual constraints:
+- Outline border around the row (visual continuity with `TugPushButton` outlined-action).
+- Padding generous enough to read as a settings row, not a tight CTA — roughly `var(--tug-space-md)` vertical, `var(--tug-space-md)` horizontal.
+- Title row: label `var(--tug-font-size-md)` semibold, normal-case (NOT uppercased). Trailing affordance pinned to the trailing edge with auto-margin.
+- Description below: `var(--tug-font-size-sm)` muted color (matches the inline-dialog description proportions).
+- Full-width by default; consumer wraps in a constrained container if needed.
+- Hover / focus / active states from the same `--tug7-*` cascade `TugPushButton` uses for outlined-action — visual continuity matters.
+- Selected state (`data-selected="true"` on the root): slightly tinted background + border. Selection affordance rendered to the trailing edge.
+- Disabled: same treatment as `TugPushButton` disabled.
+- Keyboard: `Space`/`Enter` trigger; `Tab` moves focus.
+
+**Token slot — `--tugx-dialog-button-*`.** Declared in `tug-dialog-button.css` body{}. Add row to [Table T07](#t07-token-slots): `| --tugx-dialog-button-* | TugDialogButton |`. Slots include `padding-x` / `padding-y`, `gap-row` (label↔trailing within title row), `gap-stack` (title row↔description), `radius`, `border-width`, `label-{size,weight,leading}`, `description-{size,leading,color,opacity}`, `selection-{check,radio}-{size,color}`, plus `role-{action,danger}-{rest,hover,active,selected,disabled}-{bg,border,fg}` (resolves to `--tug7-*` in one hop).
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/tug-dialog-button.tsx` + `.css` — the primitive.
+- `tugdeck/src/components/tugways/tug-dialog-button.test.ts` — pure-logic tests for any exported helpers (mode discriminator, selectionStyle default, role default, accessible-name resolution).
+- `tugdeck/src/components/tugways/cards/gallery-tug-dialog-button.tsx` — *new* gallery card; registered in `gallery-registrations.tsx` next to `gallery-tug-inline-dialog`.
+- Update [Table T07](#t07-token-slots) with `--tugx-dialog-button-*`.
+
+**Tasks:**
+- [ ] Build `TugDialogButton` per the prop surface above. `--tugx-dialog-button-*` slot family declared in `tug-dialog-button.css` body{}, every slot one-hop to `--tug7-*` per [L17].
+- [ ] Mode discriminator: `selected === undefined` → action mode (no selection affordance, optional trailing slot honored); `selected: boolean` → choice mode (selection affordance per `selectionStyle`, trailing slot ignored).
+- [ ] Selection affordances for choice mode:
+  - `"check"` — `<Check/>` (lucide) icon visible when `selected: true`, blank `aria-hidden` placeholder reserving its width when `selected: false` (so the row width doesn't shift between selected/unselected siblings in a list).
+  - `"radio"` — filled disc when `selected: true`, hollow ring when `selected: false`.
+- [ ] Hover / focus-visible / active / disabled / selected states wired through `--tug7-*` tokens. Visual continuity with `TugPushButton` outlined-action.
+- [ ] Build the gallery card with these sections:
+  1. **Bare label** — single `TugDialogButton`, label-only, action mode.
+  2. **Label + description** — same as 1, plus a multi-line description (one paragraph wrap).
+  3. **Stacked list (4 buttons)** — four `TugDialogButton`s stacked vertically in a single column, varying description lengths (one no description; one short; one medium; one wraps multiple lines). Demonstrates the one-per-row pattern.
+  4. **Choice mode (check style)** — three `TugDialogButton`s in choice mode with `selectionStyle="check"`; second pre-selected. Click toggles each independently (multi-select mental model).
+  5. **Choice mode (radio style)** — three `TugDialogButton`s in choice mode with `selectionStyle="radio"`; first pre-selected. Click selects one (single-select group; gallery section drives the state).
+  6. **Danger variant** — `role="danger"` with descriptive label.
+  7. **Composed inside `TugInlineDialog`** — `<TugInlineDialog>` with a vertical stack of `TugDialogButton`s passed as `children` (NOT through `extraActions` — the existing `extraActions` rendering is unchanged in this step). This section is the *design preview* for the future `extraActions` refactor; it shows how the dialog frame absorbs a vertical stack of rich-label buttons without committing to the integration yet.
+- [ ] Register the gallery card in `gallery-registrations.tsx` under `CATEGORIES.overlays`.
+- [ ] Pure-logic tests for the helpers (selectionStyle default, role default, mode discriminator, ariaLabel-fallback-to-label).
+
+**Open questions — explicitly deferred to a follow-on step:**
+- Should `TugInlineDialog.extraActions` be refactored onto `TugDialogButton` (removing `partitionDialogActions` and the row-grid CSS)? Likely yes once the gallery iteration converges, but waits for design sign-off.
+- Should `PermissionDialog`'s suggestion shape grow a `description` field (e.g. "Always allow" carries "Adds the rule to your user-level settings; applies to every project")? Likely yes, but the wire shape doesn't carry per-suggestion descriptions today, so the descriptions would be synthesized client-side.
+- Does the `trailing` slot in action mode need a default for any common case (e.g. always render `<ChevronRight/>` for action buttons), or stay opt-in? Gallery iteration will tell.
+
+**Tests:**
+- [ ] `tug-dialog-button.test.ts` — pure-logic for the exported helpers.
+- [ ] Existing `tug-inline-dialog.test.ts`, `tide-permission-dialog.test.ts`, `code-session-store.control-forward.test.ts` continue passing (this step is additive; no existing component is touched).
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [ ] `bun run audit:tokens lint` exits 0
+- [ ] Gallery card visually vetted across all seven sections (manual user action)
+
+---
+
 #### Step 19: QuestionDialog (`control_request_forward`, `is_question:true`) {#step-19}
 
-**Depends on:** #step-1, #step-18
+**Depends on:** #step-1, #step-18, #step-18-5, #step-18-6
 
 **Commit:** `feat(tide-rendering): QuestionDialog — inline single/multi-select with Other input`
 

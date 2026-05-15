@@ -62,6 +62,7 @@ import { GalleryTooltip } from "./gallery-tooltip";
 import { GalleryBanner } from "./gallery-banner";
 import { GalleryCardBanner } from "./gallery-card-banner";
 import { GalleryAlert } from "./gallery-alert";
+import { GalleryTugInlineDialog } from "./gallery-tug-inline-dialog";
 import { GallerySheet } from "./gallery-sheet";
 import { GalleryBulletin } from "./gallery-bulletin";
 import { GalleryMarkdownView } from "./gallery-markdown-view";
@@ -758,6 +759,20 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.overlays,
+  });
+
+  registerCard({
+    componentId: "gallery-tug-inline-dialog",
+    contentFactory: (_cardId) => <GalleryTugInlineDialog />,
+    defaultMeta: {
+      title: "TugInlineDialog",
+      icon: "ShieldAlert",
+      closable: true,
+    },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
     category: CATEGORIES.overlays,
   });
 

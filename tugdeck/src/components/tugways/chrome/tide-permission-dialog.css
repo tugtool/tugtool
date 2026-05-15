@@ -1,85 +1,65 @@
 /* @tug-pairings:
-   - --tugx-block-chrome-bg / --tugx-block-text-color           (shared chrome frame; from tugx-block.css)
-   - --tugx-block-strip-bg / --tugx-block-strip-color           (shared header strip)
+   - --tugx-block-chrome-bg / --tugx-block-text-color           (resolved-record frame; from tugx-block.css)
    - --tugx-block-row-hover-bg / --tugx-block-text-color        (record-toggle hover overlay)
-   `PermissionDialog` is a chrome variant: a raised card framing a
-   permission request. The pending header strip carries the strong
-   "Permission requested" title; the resolved record is a hoverable
-   toggle row. Foreground roles split between the strong title / tool
-   name and the muted reason text. Shared block-surface scaffold lives
-   in `styles/tugx-block.css`.
+   `PermissionDialog` delegates the pending-state visual to
+   `TugInlineDialog`; this stylesheet owns the *resolved-record* state
+   (the collapsed one-line `{Tool} — Allowed/Denied` toggle plus its
+   expanded detail) and the small inline fragments the pending dialog
+   places inside the primitive's children slot (a suggestion-button
+   row, a tiny inline icon nudge, a reason-line span).
 */
 
 /**
  * tide-permission-dialog.css — `PermissionDialog` chrome.
  *
- * Renders a `control_request_forward` (is_question:false) inline in the
- * transcript per [D13]. Two state surfaces drive every visual:
- *   - `[data-state="pending"|"resolved"]` on the root → swaps the
- *     interactive dialog for the one-line static record.
+ * After the [#step-18-5](roadmap/tide-assistant-rendering.md#step-18-5)
+ * refactor, the pending-state visual lives entirely on the
+ * `TugInlineDialog` primitive (`--tugx-idialog-*` slots, in
+ * `tug-inline-dialog.css`). What stays here:
+ *
+ *   - The resolved-record one-line toggle + its expanded detail.
+ *   - The small `.tide-permission-dialog-suggestions` row that wraps
+ *     the suggestion buttons inside the primitive's `children` slot.
+ *   - The inline icon vertical-alignment nudge for the Shell glyph
+ *     embedded in the rich description.
+ *   - The `.tide-permission-dialog-reason` muted-italic span used to
+ *     append the wire `decision_reason` after the synthesized
+ *     description prose.
+ *
+ * State surfaces (resolved record only):
+ *   - `[data-state="resolved"]` on the root → renders the one-line
+ *     toggle + detail.
  *   - `[data-collapsed="true|false"]` on the resolved root → toggles
  *     the expanded record detail; the chevron rotates to match.
- *   - `[data-decision="allow"|"deny"]` on the resolved root → tints the
- *     record icon (success vs. danger).
- *
- * Token sources:
- *  - Shared block-surface scaffold (frame, header strip, hover overlay)
- *    comes from `--tugx-block-*` in `styles/tugx-block.css`.
- *  - Dialog-specific slots (title scale, shield tint, reason text,
- *    action / suggestion gaps, collapse animation) live in the body{}
- *    block below as `--tugx-perm-*`.
+ *   - `[data-decision="allow"|"deny"]` on the resolved root → tints
+ *     the record icon (success vs. danger).
  *
  * Tuglaw cross-check:
  *  - [L06] appearance via DOM-mutation + CSS, not React state.
- *  - [L17] `--tugx-block-*` and `--tugx-perm-*` each resolve to a
+ *  - [L17] `--tugx-perm-*` and `--tugx-block-*` each resolve to a
  *    `--tug7-*` / `--tug-*` base token in one hop.
  *  - [L19] component-authoring guide — file pair, module docstring,
  *    `data-slot="tide-permission-dialog"`.
- *  - [L20] component-token sovereignty — owns `--tugx-perm-*`; composes
- *    the shared `--tugx-block-*` family, never overrides it.
+ *  - [L20] component-token sovereignty — owns `--tugx-perm-*`;
+ *    composes the shared `--tugx-block-*` family for the record
+ *    frame, never overrides it.
  */
 
 /* ---- Component-tier aliases — permission-dialog-specific only [L17] ---- */
 
 body {
-  /* Frame — wider (lg) margin than the shared block-margin (md): the
-   * dialog is a major attention-demanding chrome element. */
-  --tugx-perm-margin:  var(--tug-space-lg) 0;
-  --tugx-perm-padding: var(--tug-space-md);
-  --tugx-perm-gap:     var(--tug-space-md);
+  /* Resolved-record frame */
+  --tugx-perm-margin: var(--tug-space-lg) 0;
 
-  /* Header strip */
-  --tugx-perm-header-gap:   var(--tug-space-sm);
-  --tugx-perm-title-size:   var(--tug-font-size-sm);
-  --tugx-perm-title-weight: 600;
-  --tugx-perm-shield-color: var(--tug7-element-global-text-normal-caution-rest);
+  /* Resolved-record toggle row */
+  --tugx-perm-record-gap:        var(--tug-space-sm);
+  --tugx-perm-record-size:       var(--tug-font-size-sm);
+  --tugx-perm-record-weight:     500;
+  --tugx-perm-record-icon-color: var(--tug7-element-global-text-normal-success-rest);
+  --tugx-perm-record-detail-pad: 0 var(--tug-space-md) var(--tug-space-md);
 
-  /* Tool identity */
-  --tugx-perm-tool-name-size:   var(--tug-font-size-sm);
-  --tugx-perm-tool-name-weight: 600;
-  --tugx-perm-tool-name-color:  var(--tug7-element-global-text-normal-default-rest);
-  --tugx-perm-tool-icon-color:  var(--tug7-element-global-text-normal-muted-rest);
-
-  /* Reason line */
-  --tugx-perm-reason-size:  var(--tug-font-size-xs);
+  /* Reason span appended to the rich description */
   --tugx-perm-reason-color: var(--tug7-element-global-text-normal-muted-rest);
-
-  /* Action / suggestion rows */
-  --tugx-perm-actions-gap:     var(--tug-space-sm);
-  --tugx-perm-suggestions-gap: var(--tug-space-xs);
-
-  /* Read/Write path body */
-  --tugx-perm-path-gap:         var(--tug-space-sm);
-  --tugx-perm-path-range-size:  var(--tug-font-size-2xs);
-  --tugx-perm-path-range-color: var(--tug7-element-global-text-normal-muted-rest);
-
-  /* Resolved record */
-  --tugx-perm-record-gap:         var(--tug-space-sm);
-  --tugx-perm-record-size:        var(--tug-font-size-sm);
-  --tugx-perm-record-weight:      500;
-  --tugx-perm-record-icon-color:  var(--tug7-element-global-text-normal-success-rest);
-  --tugx-perm-record-detail-gap:  var(--tug-space-md);
-  --tugx-perm-record-detail-pad:  0 var(--tug-space-md) var(--tug-space-md);
 
   /* Shared */
   --tugx-perm-focus-ring:        var(--tug7-element-global-text-normal-link-rest);
@@ -87,9 +67,9 @@ body {
   --tugx-perm-collapse-easing:   var(--tug-motion-easing-standard);
 }
 
-/* ---- Frame ---- */
+/* ---- Resolved-record frame ---- */
 
-.tide-permission-dialog {
+.tide-permission-dialog[data-state="resolved"] {
   display: flex;
   flex-direction: column;
   margin: var(--tugx-perm-margin);
@@ -99,106 +79,7 @@ body {
   overflow: hidden;
 }
 
-/* ---- Pending: header strip ---- */
-
-.tide-permission-dialog-header {
-  display: flex;
-  align-items: center;
-  gap: var(--tugx-perm-header-gap);
-  padding: var(--tugx-block-strip-padding);
-  background: var(--tugx-block-strip-bg);
-  border-bottom: 1px solid var(--tugx-block-strip-border);
-}
-
-.tide-permission-dialog-shield {
-  flex: 0 0 auto;
-  color: var(--tugx-perm-shield-color);
-}
-
-.tide-permission-dialog-title {
-  flex: 0 0 auto;
-  color: var(--tugx-block-text-color);
-  font-size: var(--tugx-perm-title-size);
-  font-weight: var(--tugx-perm-title-weight);
-}
-
-.tide-permission-dialog-tool-icon {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  margin-left: auto;
-  color: var(--tugx-perm-tool-icon-color);
-}
-
-.tide-permission-dialog-tool-name {
-  flex: 0 0 auto;
-  color: var(--tugx-perm-tool-name-color);
-  font-size: var(--tugx-perm-tool-name-size);
-  font-weight: var(--tugx-perm-tool-name-weight);
-}
-
-/* ---- Pending: body + sections ---- */
-
-.tide-permission-dialog-body {
-  display: flex;
-  flex-direction: column;
-  padding: var(--tugx-perm-padding) var(--tugx-perm-padding) 0;
-}
-
-.tide-permission-dialog-reason {
-  margin: 0;
-  padding: 0 var(--tugx-perm-padding);
-  color: var(--tugx-perm-reason-color);
-  font-size: var(--tugx-perm-reason-size);
-  line-height: 1.45;
-}
-
-/* Vertical rhythm: every section after the first gets a top gap. The
- * body's own bottom edge is flush so the gap is owned uniformly here. */
-.tide-permission-dialog-body,
-.tide-permission-dialog-reason,
-.tide-permission-dialog-suggestions,
-.tide-permission-dialog-actions {
-  margin-top: var(--tugx-perm-gap);
-}
-
-.tide-permission-dialog-header + .tide-permission-dialog-body {
-  margin-top: var(--tugx-perm-padding);
-}
-
-/* ---- Read/Write path body ---- */
-
-.tide-permission-dialog-path {
-  display: flex;
-  align-items: baseline;
-  gap: var(--tugx-perm-path-gap);
-  min-width: 0;
-}
-
-.tide-permission-dialog-path-range {
-  flex: 0 0 auto;
-  color: var(--tugx-perm-path-range-color);
-  font-size: var(--tugx-perm-path-range-size);
-}
-
-/* ---- Suggestions row ---- */
-
-.tide-permission-dialog-suggestions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--tugx-perm-suggestions-gap);
-  padding: 0 var(--tugx-perm-padding);
-}
-
-/* ---- Actions row ---- */
-
-.tide-permission-dialog-actions {
-  display: flex;
-  gap: var(--tugx-perm-actions-gap);
-  padding: 0 var(--tugx-perm-padding) var(--tugx-perm-padding);
-}
-
-/* ---- Resolved: one-line record toggle ---- */
+/* ---- Resolved-record toggle row ---- */
 
 .tide-permission-dialog-record {
   display: flex;
@@ -210,7 +91,7 @@ body {
   border: 0;
   color: var(--tugx-block-text-color);
   font-family: inherit;
-  font-size: var(--tugx-perm-record-size);
+  font-size:   var(--tugx-perm-record-size);
   font-weight: var(--tugx-perm-record-weight);
   text-align: left;
   cursor: pointer;
@@ -255,11 +136,32 @@ body {
   white-space: nowrap;
 }
 
+/* ---- Resolved-record expanded detail ---- */
+
 .tide-permission-dialog-record-detail {
   display: flex;
   flex-direction: column;
-  gap: var(--tugx-perm-record-detail-gap);
+  gap: var(--tug-space-md);
   padding: var(--tugx-perm-record-detail-pad);
+}
+
+/* ---- Pending: small inline fragments inside the primitive ---- */
+
+/* The pending state's suggestion buttons are now rendered by
+ * TugInlineDialog's `extraActions` prop (auto-grid layout owned by
+ * `tug-inline-dialog.css`); the bespoke `.tide-permission-dialog-
+ * suggestions` row is gone. What stays here is the small set of
+ * inline-fragment styles the description needs. */
+
+/* Inline Shell glyph in the rich Bash description — vertical-align
+ * nudge so the icon's center sits on the text baseline. */
+.tide-permission-dialog-inline-icon {
+  vertical-align: middle;
+}
+
+/* Reason-line span (appended after the synthesized description prose). */
+.tide-permission-dialog-reason {
+  color: var(--tugx-perm-reason-color);
 }
 
 /* ---- Reduced motion ---- */

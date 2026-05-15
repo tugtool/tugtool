@@ -261,18 +261,25 @@ export interface TerminalBlockProps {
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Lines above this count switch from flat to virtualized rendering. */
-export const VISIBLE_THRESHOLD = 40;
+/**
+ * Lines above this count switch from flat to virtualized rendering.
+ * Sized so a typical command's output (a `tokei` summary, a directory
+ * listing, a build log) renders fully inline without an inner scroller
+ * — the user shouldn't have to scroll inside the row to read a few
+ * dozen lines. Beyond this the virtualized viewport takes over so a
+ * 5,000-line log doesn't crash the page.
+ */
+export const VISIBLE_THRESHOLD = 300;
 
 /**
- * Default-collapse threshold in lines. 40 matches `VISIBLE_THRESHOLD`
- * so the same cutoff that flips rendering to the self-scrolling
+ * Default-collapse threshold in lines. Matches `VISIBLE_THRESHOLD` so
+ * the same cutoff that flips rendering to the self-scrolling
  * virtualized path also flips the body kind into collapsed-by-default.
- * Below the threshold the output reads at a glance; above it a fold
- * cue earns its keep by getting long output out of the reader's way
- * until they ask for it.
+ * Below the threshold the output reads at a glance, no fold cue, no
+ * scroller; above it a fold cue earns its keep by getting genuinely
+ * long output out of the reader's way until they ask for it.
  */
-export const FOLD_THRESHOLD_LINES = 40;
+export const FOLD_THRESHOLD_LINES = 300;
 
 /**
  * Number of lines the collapsed-preview pane shows above the fade
