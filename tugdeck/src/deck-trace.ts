@@ -390,6 +390,22 @@ export type DeckTraceEvent = {
       cardId: string;
       delegate: MacrotaskFocusClaimDelegate;
     }
+  | {
+      // Dev-only invariant probe fired by the CM6 caret layer
+      // (`tug-text-editor/caret-layer.ts`). The caret layer only
+      // paints while `view.hasFocus`, so when it paints the editor
+      // genuinely has DOM focus — and the responder chain's first
+      // responder MUST then be that editor's responder. When it is
+      // not, the caret is a "UI lie": it tells the user "you are
+      // focused here" while chain-routed keyboard actions go
+      // elsewhere. Recorded once per divergence transition (not per
+      // repaint). Catches the intermittent
+      // Shift+Return-does-nothing class of bug — the divergence
+      // lands in the trace ring the instant it happens.
+      kind: "caret-responder-divergence";
+      editorResponderId: string;
+      firstResponderId: string | null;
+    }
 );
 
 /**
@@ -416,7 +432,8 @@ export type DeckTraceEventInput =
   | Omit<Extract<DeckTraceEvent, { kind: "focus-measurement" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "engine-paint-mirror-active" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "engine-paint-mirror-inactive" }>, StampedFields>
-  | Omit<Extract<DeckTraceEvent, { kind: "macrotask-focus-claim" }>, StampedFields>;
+  | Omit<Extract<DeckTraceEvent, { kind: "macrotask-focus-claim" }>, StampedFields>
+  | Omit<Extract<DeckTraceEvent, { kind: "caret-responder-divergence" }>, StampedFields>;
 
 // ---------------------------------------------------------------------------
 // Utilities

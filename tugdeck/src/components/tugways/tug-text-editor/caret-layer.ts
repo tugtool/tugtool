@@ -83,6 +83,9 @@ import { EditorView, layer, RectangleMarker, ViewPlugin } from "@codemirror/view
 import type { LayerMarker } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 
+import { getResponderChainManager } from "@/action-dispatch";
+import { deckTrace } from "@/deck-trace";
+
 /** Caret stroke width in pixels. Matches WebKit's native caret stroke. */
 const CARET_STROKE_WIDTH = 2;
 
@@ -160,6 +163,67 @@ function readRowHeightFromGhost(view: EditorView, head: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : view.defaultLineHeight;
 }
 
+// ---------------------------------------------------------------------------
+// Dev-only focus / first-responder invariant probe
+// ---------------------------------------------------------------------------
+
+/**
+ * Last-reported invariant signature per view. The caret layer's
+ * `markers()` runs on every relevant update (every keystroke produces
+ * a `docChanged`), so the probe dedupes: it records only when the
+ * signature *transitions* — into a divergence, or back to in-sync —
+ * never once-per-repaint. Keyed weakly so a destroyed view's entry is
+ * collected with it.
+ */
+const lastInvariantSignature = new WeakMap<EditorView, string>();
+/** Signature sentinel for "first responder matches the focused editor". */
+const INVARIANT_OK = "ok";
+
+/**
+ * Dev-only invariant probe: when this runs, the editor genuinely has
+ * DOM focus (the caller gated on `view.hasFocus`), so the responder
+ * chain's first responder MUST be this editor's responder. A
+ * divergence is the "UI lie" — a blinking caret says "you are focused
+ * here" while chain-routed keyboard actions route elsewhere.
+ *
+ * The editor's responder id is read off the nearest
+ * `[data-responder-id]` ancestor (written by the substrate's
+ * `responderRef` onto the editor host). No chain (`getResponderChainManager`
+ * is `null`) or no responder ancestor → standalone / gallery / test
+ * use, nothing to assert. Records a `caret-responder-divergence`
+ * deck-trace event + a `console.error` once per divergence transition.
+ */
+function checkCaretResponderInvariant(view: EditorView): void {
+  const manager = getResponderChainManager();
+  if (manager === null) return;
+  const host = view.dom.closest("[data-responder-id]");
+  const editorResponderId = host?.getAttribute("data-responder-id") ?? null;
+  if (editorResponderId === null) return;
+
+  const firstResponderId = manager.getFirstResponder();
+  const inSync = firstResponderId === editorResponderId;
+  const signature = inSync
+    ? INVARIANT_OK
+    : `${editorResponderId}!=${firstResponderId ?? "null"}`;
+  if (lastInvariantSignature.get(view) === signature) return;
+  lastInvariantSignature.set(view, signature);
+  if (inSync) return;
+
+  deckTrace.record({
+    kind: "caret-responder-divergence",
+    editorResponderId,
+    firstResponderId,
+  });
+  console.error(
+    `[caret-layer] focus/first-responder divergence: editor ` +
+      `'${editorResponderId}' has DOM focus (caret painting) but the ` +
+      `responder chain's first responder is ` +
+      `'${firstResponderId ?? "null"}'. Chain-routed keyboard actions ` +
+      `will not reach this editor — the caret is a UI lie. See the ` +
+      `deck-trace ring for the surrounding event sequence.`,
+  );
+}
+
 /**
  * Caret-overlay layer. Paints a single `tug-text-editor-caret` div at the
  * head of the main selection when the editor is focused and the
@@ -179,6 +243,11 @@ export const tugCaretLayer: Extension = layer({
   },
   markers(view: EditorView): readonly LayerMarker[] {
     if (!view.hasFocus) return [];
+    // Dev-only: a painted caret asserts the editor is the first
+    // responder. Probe fires once per divergence transition.
+    if (process.env.NODE_ENV !== "production") {
+      checkCaretResponderInvariant(view);
+    }
     const sel = view.state.selection.main;
     if (!sel.empty) return [];
     const coords = view.coordsAtPos(sel.head, 1);

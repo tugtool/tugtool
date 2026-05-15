@@ -142,6 +142,19 @@ export function registerResponderChainManager(manager: ResponderChainManager): v
   responderChainManagerRef = manager;
 }
 
+/**
+ * Get the registered ResponderChainManager, or `null` if
+ * `ResponderChainProvider` has not mounted (standalone gallery use,
+ * unit tests, the brief pre-mount window).
+ *
+ * Lets non-React modules — e.g. the CM6 caret layer's dev-only
+ * focus/first-responder invariant probe — read first-responder state
+ * without threading the manager through React context.
+ */
+export function getResponderChainManager(): ResponderChainManager | null {
+  return responderChainManagerRef;
+}
+
 /** TextDecoder for UTF-8 payload decoding */
 const textDecoder = new TextDecoder();
 

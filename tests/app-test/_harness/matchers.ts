@@ -177,6 +177,11 @@ export type DeckTraceEventShape = {
       cardId: string;
       delegate: string;
     }
+  | {
+      kind: "caret-responder-divergence";
+      editorResponderId: string;
+      firstResponderId: string | null;
+    }
 );
 
 /**
@@ -205,6 +210,7 @@ export const HARNESS_KNOWN_TRACE_KINDS = [
   "engine-paint-mirror-active",
   "engine-paint-mirror-inactive",
   "macrotask-focus-claim",
+  "caret-responder-divergence",
 ] as const;
 export type HarnessKnownTraceKind = (typeof HARNESS_KNOWN_TRACE_KINDS)[number];
 
@@ -437,6 +443,8 @@ export function summarizeEvent(e: DeckTraceEventShape): string {
       return `engine-paint-mirror-inactive ${fmt(e.cardId)}`;
     case "macrotask-focus-claim":
       return `macrotask-focus-claim ${fmt(e.cardId)} delegate=${fmt(e.delegate)}`;
+    case "caret-responder-divergence":
+      return `caret-responder-divergence editor=${fmt(e.editorResponderId)} firstResponder=${fmt(e.firstResponderId)}`;
     default: {
       // Exhaustiveness pin: if a new kind is added to DeckTraceEventShape,
       // the assignment below fails because `e` is no longer `never`.

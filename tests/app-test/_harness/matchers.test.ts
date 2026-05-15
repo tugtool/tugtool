@@ -451,6 +451,11 @@ const EVENT_FIXTURES: Record<
     cardId: "c2",
     delegate: "cardDidActivate",
   },
+  "caret-responder-divergence": {
+    kind: "caret-responder-divergence",
+    editorResponderId: "card-1-entry-editor",
+    firstResponderId: "card-1-content",
+  },
 };
 
 describe("summarizeEvent — exhaustive per-kind coverage", () => {
