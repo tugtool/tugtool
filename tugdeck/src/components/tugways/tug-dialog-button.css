@@ -1,28 +1,26 @@
 /* @tug-pairings:
-   - --tugx-dialog-button-action-rest-fg          | --tugx-dialog-button-action-rest-bg          (action-mode label, rest)
-   - --tugx-dialog-button-action-rest-border      | --tugx-dialog-button-action-rest-bg          (action-mode border, rest)
-   - --tugx-dialog-button-action-hover-fg         | --tugx-dialog-button-action-hover-bg         (action-mode label, hover)
-   - --tugx-dialog-button-action-active-fg        | --tugx-dialog-button-action-active-bg        (action-mode label, active)
-   - --tugx-dialog-button-action-selected-fg      | --tugx-dialog-button-action-selected-bg      (action-mode label, selected — accent tinted)
-   - --tugx-dialog-button-danger-rest-fg          | --tugx-dialog-button-danger-rest-bg          (danger-mode label, rest)
-   - --tugx-dialog-button-danger-rest-border      | --tugx-dialog-button-danger-rest-bg          (danger-mode border, rest)
-   - --tugx-dialog-button-danger-hover-fg         | --tugx-dialog-button-danger-hover-bg         (danger-mode label, hover)
-   - --tugx-dialog-button-danger-active-fg        | --tugx-dialog-button-danger-active-bg        (danger-mode label, active)
-   - --tugx-dialog-button-danger-selected-fg      | --tugx-dialog-button-danger-selected-bg      (danger-mode label, selected — accent tinted)
-   - --tugx-dialog-button-description-color       | --tugx-dialog-button-action-rest-bg          (description text, rest)
-   - --tugx-dialog-button-selection-check-color   | --tugx-dialog-button-action-selected-bg      (check glyph, selected — role-aware)
-   - --tugx-dialog-button-selection-radio-fill    | --tugx-dialog-button-action-selected-bg      (radio outer fill, selected — accent)
-   - --tugx-dialog-button-selection-radio-dot     | --tugx-dialog-button-selection-radio-fill    (radio inner pip, selected — onAccent)
-   - --tugx-dialog-button-selection-off-color     | --tugx-dialog-button-action-rest-bg          (radio ring, unselected)
+   - --tugx-dialog-button-action-rest-fg     | --tugx-dialog-button-action-rest-bg     (action-mode label, rest)
+   - --tugx-dialog-button-action-rest-border | --tugx-dialog-button-action-rest-bg     (action-mode border, rest)
+   - --tugx-dialog-button-action-hover-fg    | --tugx-dialog-button-action-hover-bg    (action-mode label, hover)
+   - --tugx-dialog-button-action-active-fg   | --tugx-dialog-button-action-active-bg   (action-mode label, active)
+   - --tugx-dialog-button-action-selected-fg | --tugx-dialog-button-action-selected-bg (action-mode label, selected — accent tinted)
+   - --tugx-dialog-button-danger-rest-fg     | --tugx-dialog-button-danger-rest-bg     (danger-mode label, rest)
+   - --tugx-dialog-button-danger-rest-border | --tugx-dialog-button-danger-rest-bg     (danger-mode border, rest)
+   - --tugx-dialog-button-danger-hover-fg    | --tugx-dialog-button-danger-hover-bg    (danger-mode label, hover)
+   - --tugx-dialog-button-danger-active-fg   | --tugx-dialog-button-danger-active-bg   (danger-mode label, active)
+   - --tugx-dialog-button-danger-selected-fg | --tugx-dialog-button-danger-selected-bg (danger-mode label, selected — accent tinted)
+   - --tugx-dialog-button-description-color  | --tugx-dialog-button-action-rest-bg     (description text, rest)
+   - --tugx-dialog-button-selection-fill     | --tugx-dialog-button-action-selected-bg (radio outer fill / check glyph, selected)
+   - --tugx-dialog-button-selection-on-fill  | --tugx-dialog-button-selection-fill     (radio inner pip, selected — onAccent)
+   - --tugx-dialog-button-selection-off-color| --tugx-dialog-button-action-rest-bg     (radio ring, unselected)
    `TugDialogButton` is a tugways primitive — Apple HIG settings-row
    layout (label leading, optional trailing affordance, optional
    description below). Visual continuity with `TugPushButton`'s
-   outlined-action variant for the rest/hover/active cascade. The
+   outlined-action variant for the rest/hover/active cascade; the
    selected-state cascade borrows `TugRadioGroup`'s on-color
-   treatment with a deliberate split: the *check* glyph paints in the
-   row's role color (action → blue, danger → red) while the *radio*
-   outer fill paints the brand accent (orange) regardless of role —
-   the radio is the universal "this one is chosen" mark.
+   treatment — a single role-aware accent fill drives both the check
+   glyph and the radio outer ring (action → blue, danger → red),
+   with a near-white onAccent pip inside the radio.
 */
 
 /**
@@ -65,22 +63,14 @@ body {
 
   /* ---- Selection affordances (choice mode) ----
    *
-   * Three separate color stories — check, radio-outer, radio-inner —
-   * because the two affordances answer different questions:
+   * `selection-fill` is the rich color that paints the selected check
+   * glyph and the selected radio circle's outer fill. Routed
+   * per-role via the `[data-role]` selectors below: action → blue
+   * `active` toggle surface; danger → red `danger` toggle surface.
    *
-   *   - `check-color` is role-aware (action → blue, danger → red),
-   *     because a row's *check* is a single mark in the row's color
-   *     domain — the same hue carries through label, border, and
-   *     glyph. Routed via the `[data-role]` selectors below.
-   *
-   *   - `radio-fill` is the brand `accent` (orange in brio + harmony),
-   *     role-independent. The radio circle is the universal "this
-   *     one is chosen" mark, and a single accent hue across action
-   *     and danger rows keeps the selection idiom recognizable.
-   *
-   *   - `radio-dot` is the original onAccent dot color
-   *     (`--tug7-element-radio-dot-normal-plain-rest`) — a near-white
-   *     pip that contrasts inside the orange ring.
+   * `selection-on-fill` is the inner radio dot — onAccent / near-white
+   * so it reads against the radio circle's role-tinted fill (mirrors
+   * TugRadioGroup's white pip on accent fill).
    *
    * `selection-off-color` is the unselected radio's ring (and the
    * implicit rest color for any unselected check placeholder); muted
@@ -89,19 +79,15 @@ body {
    *
    * Sizes: the check uses 1.125 rem because `CircleCheckBig` carries
    * a wrapping ring inside the bounding box; matching the radio's
-   * 1 rem outer would shrink the visible mark. The radio inner dot
-   * is sized so the colored pip reads cleanly against the orange
-   * outer ring.
+   * 1 rem outer would shrink the visible mark.
    */
   --tugx-dialog-button-selection-check-size:     1.125rem;
   --tugx-dialog-button-selection-radio-size:     1rem;
   --tugx-dialog-button-selection-radio-dot-size: 0.5rem;
-  --tugx-dialog-button-selection-check-color:       var(--tug7-surface-toggle-primary-normal-active-rest);
-  --tugx-dialog-button-selection-check-color-hover: var(--tug7-surface-toggle-primary-normal-active-hover);
-  --tugx-dialog-button-selection-radio-fill:        var(--tug7-surface-toggle-primary-normal-accent-rest);
-  --tugx-dialog-button-selection-radio-fill-hover:  var(--tug7-surface-toggle-primary-normal-accent-hover);
-  --tugx-dialog-button-selection-radio-dot:         var(--tug7-element-radio-dot-normal-plain-rest);
-  --tugx-dialog-button-selection-off-color:         var(--tug7-element-radio-border-normal-off-rest);
+  --tugx-dialog-button-selection-fill:        var(--tug7-surface-toggle-primary-normal-active-rest);
+  --tugx-dialog-button-selection-fill-hover:  var(--tug7-surface-toggle-primary-normal-active-hover);
+  --tugx-dialog-button-selection-on-fill:     var(--tug7-element-radio-dot-normal-plain-rest);
+  --tugx-dialog-button-selection-off-color:   var(--tug7-element-radio-border-normal-off-rest);
 
   /* ---- Role: action ---- */
   --tugx-dialog-button-action-rest-bg:        var(--tug7-surface-control-primary-outlined-action-rest);
@@ -119,12 +105,11 @@ body {
   --tugx-dialog-button-action-selected-bg:     var(--tug7-surface-tone-primary-normal-active-rest);
   --tugx-dialog-button-action-selected-fg:     var(--tug7-element-control-text-outlined-action-rest);
   --tugx-dialog-button-action-selected-border: var(--tug7-element-tone-border-normal-active-rest);
-  /* Per-role check tint — overrides the global selection-check-color
-   * default. Action stays on the toggle-primary-active surface
-   * (vibrant blue); the slot exists for symmetry with the danger
-   * variant below. */
-  --tugx-dialog-button-action-selection-check-color:       var(--tug7-surface-toggle-primary-normal-active-rest);
-  --tugx-dialog-button-action-selection-check-color-hover: var(--tug7-surface-toggle-primary-normal-active-hover);
+  /* Per-role selection fill — overrides the global default. Action
+   * uses the toggle-primary-active surface (vibrant blue), matching
+   * TugRadioGroup with `role="action"`. */
+  --tugx-dialog-button-action-selection-fill:       var(--tug7-surface-toggle-primary-normal-active-rest);
+  --tugx-dialog-button-action-selection-fill-hover: var(--tug7-surface-toggle-primary-normal-active-hover);
 
   /* ---- Role: danger ---- */
   --tugx-dialog-button-danger-rest-bg:        var(--tug7-surface-control-primary-outlined-danger-rest);
@@ -139,8 +124,8 @@ body {
   --tugx-dialog-button-danger-selected-bg:     var(--tug7-surface-tone-primary-normal-danger-rest);
   --tugx-dialog-button-danger-selected-fg:     var(--tug7-element-control-text-outlined-danger-rest);
   --tugx-dialog-button-danger-selected-border: var(--tug7-element-tone-border-normal-danger-rest);
-  --tugx-dialog-button-danger-selection-check-color:       var(--tug7-surface-toggle-primary-normal-danger-rest);
-  --tugx-dialog-button-danger-selection-check-color-hover: var(--tug7-surface-toggle-primary-normal-danger-hover);
+  --tugx-dialog-button-danger-selection-fill:       var(--tug7-surface-toggle-primary-normal-danger-rest);
+  --tugx-dialog-button-danger-selection-fill-hover: var(--tug7-surface-toggle-primary-normal-danger-hover);
 
   /* ---- Disabled (shared across roles) ---- */
   --tugx-dialog-button-disabled-opacity: var(--tugx-control-disabled-opacity);
@@ -223,13 +208,13 @@ body {
   justify-content: center;
 }
 
-/* Check icon — selected: role-tinted glyph; unselected: a same-sized
+/* Check icon — selected: accent-filled glyph; unselected: a same-sized
  * placeholder reserves the column so siblings don't reflow. */
 
 .tug-dialog-button-selection-check {
   width:  var(--tugx-dialog-button-selection-check-size);
   height: var(--tugx-dialog-button-selection-check-size);
-  color:  var(--tugx-dialog-button-selection-check-color);
+  color:  var(--tugx-dialog-button-selection-fill);
 }
 
 .tug-dialog-button-selection-check-placeholder {
@@ -239,16 +224,17 @@ body {
 }
 
 /*
- * Radio — outer ring is always painted; inner dot is the contrast pip
+ * Radio — outer ring is always painted; inner dot is the onAccent pip
  * inside the ring when selected, hidden otherwise. The treatment
  * mirrors `TugRadioGroup` so the two primitives read as one
  * selection family:
  *
  *   - Unselected: ring drawn in the muted off-color (gray), no fill.
- *   - Selected:   ring + background filled with `selection-radio-fill`
- *                 (brand accent — orange across both roles, by design).
- *                 The inner dot paints in `selection-radio-dot`
- *                 (TugRadioGroup's onAccent pip) so the contrast holds.
+ *   - Selected:   ring + background filled with `selection-fill` (the
+ *                 row's role-aware accent — same hue that paints the
+ *                 check glyph). The inner dot paints in
+ *                 `selection-on-fill` (near-white) so it reads
+ *                 against the role-tinted fill.
  */
 .tug-dialog-button-selection-radio {
   display: inline-flex;
@@ -267,13 +253,13 @@ body {
   width:  var(--tugx-dialog-button-selection-radio-dot-size);
   height: var(--tugx-dialog-button-selection-radio-dot-size);
   border-radius: 9999px;
-  background-color: var(--tugx-dialog-button-selection-radio-dot);
+  background-color: var(--tugx-dialog-button-selection-on-fill);
   visibility: hidden;
 }
 
 .tug-dialog-button[data-selected="true"] .tug-dialog-button-selection-radio {
-  background-color: var(--tugx-dialog-button-selection-radio-fill);
-  border-color:     var(--tugx-dialog-button-selection-radio-fill);
+  background-color: var(--tugx-dialog-button-selection-fill);
+  border-color:     var(--tugx-dialog-button-selection-fill);
 }
 
 .tug-dialog-button[data-selected="true"] .tug-dialog-button-selection-radio-dot {
@@ -303,9 +289,9 @@ body {
   background-color: var(--tugx-dialog-button-action-rest-bg);
   color:            var(--tugx-dialog-button-action-rest-fg);
   border-color:     var(--tugx-dialog-button-action-rest-border);
-  /* Per-role check tint — overrides the global default. */
-  --tugx-dialog-button-selection-check-color:       var(--tugx-dialog-button-action-selection-check-color);
-  --tugx-dialog-button-selection-check-color-hover: var(--tugx-dialog-button-action-selection-check-color-hover);
+  /* Per-role selection accent — overrides the global default. */
+  --tugx-dialog-button-selection-fill:       var(--tugx-dialog-button-action-selection-fill);
+  --tugx-dialog-button-selection-fill-hover: var(--tugx-dialog-button-action-selection-fill-hover);
 }
 
 /* @tug-renders-on: --tugx-dialog-button-action-hover-bg */
@@ -330,11 +316,11 @@ body {
 }
 
 /* Hover on a selected row lifts the radio fill slightly so the
- * affordance shows responsiveness. Routed through the
- * radio-independent accent slots — same lift across both roles. */
+ * affordance shows responsiveness. The hover slot is per-role via
+ * the cascade above. */
 .tug-dialog-button[data-selected="true"]:hover:not(:disabled):not([aria-disabled="true"]) .tug-dialog-button-selection-radio {
-  background-color: var(--tugx-dialog-button-selection-radio-fill-hover);
-  border-color:     var(--tugx-dialog-button-selection-radio-fill-hover);
+  background-color: var(--tugx-dialog-button-selection-fill-hover);
+  border-color:     var(--tugx-dialog-button-selection-fill-hover);
 }
 
 /* ============================================================================
@@ -346,9 +332,9 @@ body {
   background-color: var(--tugx-dialog-button-danger-rest-bg);
   color:            var(--tugx-dialog-button-danger-rest-fg);
   border-color:     var(--tugx-dialog-button-danger-rest-border);
-  /* Per-role check tint — overrides the global default. */
-  --tugx-dialog-button-selection-check-color:       var(--tugx-dialog-button-danger-selection-check-color);
-  --tugx-dialog-button-selection-check-color-hover: var(--tugx-dialog-button-danger-selection-check-color-hover);
+  /* Per-role selection accent — overrides the global default. */
+  --tugx-dialog-button-selection-fill:       var(--tugx-dialog-button-danger-selection-fill);
+  --tugx-dialog-button-selection-fill-hover: var(--tugx-dialog-button-danger-selection-fill-hover);
 }
 
 /* @tug-renders-on: --tugx-dialog-button-danger-hover-bg */
