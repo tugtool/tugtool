@@ -4967,13 +4967,13 @@ Visual constraints:
 - Update [Table T07](#t07-token-slots) with `--tugx-dialog-button-*`.
 
 **Tasks:**
-- [ ] Build `TugDialogButton` per the prop surface above. `--tugx-dialog-button-*` slot family declared in `tug-dialog-button.css` body{}, every slot one-hop to `--tug7-*` per [L17].
-- [ ] Mode discriminator: `selected === undefined` → action mode (no selection affordance, optional trailing slot honored); `selected: boolean` → choice mode (selection affordance per `selectionStyle`, trailing slot ignored).
-- [ ] Selection affordances for choice mode:
+- [x] Build `TugDialogButton` per the prop surface above. `--tugx-dialog-button-*` slot family declared in `tug-dialog-button.css` body{}, every slot one-hop to `--tug7-*` per [L17].
+- [x] Mode discriminator: `selected === undefined` → action mode (no selection affordance, optional trailing slot honored); `selected: boolean` → choice mode (selection affordance per `selectionStyle`, trailing slot ignored).
+- [x] Selection affordances for choice mode:
   - `"check"` — `<Check/>` (lucide) icon visible when `selected: true`, blank `aria-hidden` placeholder reserving its width when `selected: false` (so the row width doesn't shift between selected/unselected siblings in a list).
   - `"radio"` — filled disc when `selected: true`, hollow ring when `selected: false`.
-- [ ] Hover / focus-visible / active / disabled / selected states wired through `--tug7-*` tokens. Visual continuity with `TugPushButton` outlined-action.
-- [ ] Build the gallery card with these sections:
+- [x] Hover / focus-visible / active / disabled / selected states wired through `--tug7-*` tokens. Visual continuity with `TugPushButton` outlined-action.
+- [x] Build the gallery card with these sections:
   1. **Bare label** — single `TugDialogButton`, label-only, action mode.
   2. **Label + description** — same as 1, plus a multi-line description (one paragraph wrap).
   3. **Stacked list (4 buttons)** — four `TugDialogButton`s stacked vertically in a single column, varying description lengths (one no description; one short; one medium; one wraps multiple lines). Demonstrates the one-per-row pattern.
@@ -4981,8 +4981,8 @@ Visual constraints:
   5. **Choice mode (radio style)** — three `TugDialogButton`s in choice mode with `selectionStyle="radio"`; first pre-selected. Click selects one (single-select group; gallery section drives the state).
   6. **Danger variant** — `role="danger"` with descriptive label.
   7. **Composed inside `TugInlineDialog`** — `<TugInlineDialog>` with a vertical stack of `TugDialogButton`s passed as `children` (NOT through `extraActions` — the existing `extraActions` rendering is unchanged in this step). This section is the *design preview* for the future `extraActions` refactor; it shows how the dialog frame absorbs a vertical stack of rich-label buttons without committing to the integration yet.
-- [ ] Register the gallery card in `gallery-registrations.tsx` under `CATEGORIES.overlays`.
-- [ ] Pure-logic tests for the helpers (selectionStyle default, role default, mode discriminator, ariaLabel-fallback-to-label).
+- [x] Register the gallery card in `gallery-registrations.tsx` under `CATEGORIES.overlays`.
+- [x] Pure-logic tests for the helpers (selectionStyle default, role default, mode discriminator, ariaLabel-fallback-to-label).
 
 **Open questions — explicitly deferred to a follow-on step:**
 - Should `TugInlineDialog.extraActions` be refactored onto `TugDialogButton` (removing `partitionDialogActions` and the row-grid CSS)? Likely yes once the gallery iteration converges, but waits for design sign-off.
@@ -4990,12 +4990,12 @@ Visual constraints:
 - Does the `trailing` slot in action mode need a default for any common case (e.g. always render `<ChevronRight/>` for action buttons), or stay opt-in? Gallery iteration will tell.
 
 **Tests:**
-- [ ] `tug-dialog-button.test.ts` — pure-logic for the exported helpers.
-- [ ] Existing `tug-inline-dialog.test.ts`, `tide-permission-dialog.test.ts`, `code-session-store.control-forward.test.ts` continue passing (this step is additive; no existing component is touched).
+- [x] `tug-dialog-button.test.ts` — pure-logic for the exported helpers (16 tests pin `resolveDialogButtonMode`, `resolveSelectionStyle`, `resolveDialogButtonRole`, `resolveDialogButtonAriaLabel`, `shouldRenderTrailing`).
+- [x] Existing `tug-inline-dialog.test.ts`, `tide-permission-dialog.test.ts`, `code-session-store.control-forward.test.ts` continue passing (this step is additive; no existing component is touched).
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
-- [ ] `bun run audit:tokens lint` exits 0
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — 0 type errors; 1846 tests pass.
+- [x] `bun run audit:tokens lint` exits 0.
 - [ ] Gallery card visually vetted across all seven sections (manual user action)
 
 ---
