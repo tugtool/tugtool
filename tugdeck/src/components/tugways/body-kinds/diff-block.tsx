@@ -667,28 +667,22 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
     captureState: () => ({ collapsed }),
   });
 
-  // Position-stable click infrastructure. Two complementary mechanisms
-  // keep the click target stable across layout changes:
+  // Position-stable click: after the mutator runs (and the DOM has
+  // settled via `flushSync`), `usePositionStableClick` measures the
+  // click target's new viewport Y and writes the exact `scrollTop`
+  // that puts it back at the snapshot Y. Both buttons (fold cue,
+  // view-toggle) route through the hook.
   //
-  //   1. Scrollport-level tail spacer (`tailSpacer` prop on
-  //      `TugListView`, wired by tide-card-transcript): raises the
-  //      scrollport's `maxScrollTop` so a collapse that shrinks the
-  //      document doesn't immediately force the browser to clamp
-  //      `scrollTop` below the value the position-stable hook would
-  //      need to write.
-  //
-  //   2. `usePositionStableClick`: after the mutator runs (and the
-  //      DOM has settled via `flushSync`), measures the click target's
-  //      new viewport Y and writes the exact `scrollTop` that puts it
-  //      back at the snapshot Y. With the tail spacer raising the
-  //      ceiling, the target scrollTop typically falls inside the
-  //      valid range and the write sticks.
-  //
-  // Both buttons (fold cue, view-toggle) route through the hook. The
-  // fold cue benefits especially from the combination: collapse
-  // shrinks the document a lot, but the tail spacer absorbs the
-  // shrinkage and the hook fine-tunes the final scrollTop to keep
-  // the chrome under the user's cursor.
+  // Caveat: for a fold-cue collapse near the bottom of a long body,
+  // the document shrinks past the user's `scrollTop` and the browser
+  // clamps to the new `maxScrollTop`. No `scrollTop` write can put
+  // the click target back, because the position would be past the
+  // end of the now-shorter document. We accept that natural clamp
+  // (the document genuinely got shorter; the user can re-scroll if
+  // they care) rather than reserve always-visible empty space at
+  // the bottom of every transcript to absorb it. The view-toggle
+  // doesn't shrink the document significantly, so its compensation
+  // is reliable.
   const outerScrollport = useOuterScrollport();
   const outerScrollportRef = React.useRef<HTMLElement | null>(null);
   outerScrollportRef.current = outerScrollport;

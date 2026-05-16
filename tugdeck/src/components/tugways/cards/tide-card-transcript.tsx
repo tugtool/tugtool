@@ -810,20 +810,6 @@ export const TideTranscriptHost = forwardRef<
         scrollKey="tide-card-transcript"
         followBottom
         inline
-        // Tail spacer: 80% of the SCROLLPORT's height, not the
-        // window's. The tide-card's transcript pane is a split-pane
-        // child, so `vh`/`svh` units (window-relative) overshoot —
-        // they'd extend the spacer well beyond the actual transcript
-        // pane and let the user scroll all content off the top. The
-        // `cqh` (container query height) unit resolves against the
-        // nearest `container-type: size` ancestor, which is the
-        // `.tug-list-view` scrollport itself (set in
-        // `tug-list-view.css`). 80cqh therefore means "80% of the
-        // transcript pane's clientHeight" — exactly the user's
-        // intent. SmartScroll's `trailingInertOffset` reads the
-        // spacer's live `offsetHeight` so follow-bottom and
-        // isAtBottom calculations exclude this region.
-        tailSpacer="80cqh"
       />
     </div>
   );

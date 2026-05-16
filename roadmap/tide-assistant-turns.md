@@ -1264,7 +1264,7 @@ The store can also accept appends from the Swift host via the existing `dispatch
 - [x] `bun test` green; existing tests stay green (2025/2025 pass — 42 new tests added).
 - [x] `bun run audit:tokens lint` exits 0 (new `--tugx-devlog-*` slots properly declared in `log-inspector.css` with `@tug-pairings` header).
 - [x] `just app-test at0071-dev-panel-tab-persistence.test.ts` reports `VERDICT: PASS`.
-- [ ] Manual: open dev panel, click `Log` tab. Trigger a duplicate-turn-complete (or any of the three seeded sources) and confirm the entry appears in real time; toggle `warn` off → entry hides; toggle back on → reappears; type "duplicate" in the text filter → only matching entries show; clear → buffer empties (filters retained); close panel via ⌥⌘/; reopen → `Log` tab is still active; the log buffer is empty (transient — correct). Full reload (`appReload` via dev-tools or just Cmd-R) → `Log` tab is STILL active; level filter state from before the reload is restored; text filter is empty (in-memory only — correct).
+- [x] Manual: open dev panel, click `Log` tab. Trigger a duplicate-turn-complete (or any of the three seeded sources) and confirm the entry appears in real time; toggle `warn` off → entry hides; toggle back on → reappears; type "duplicate" in the text filter → only matching entries show; clear → buffer empties (filters retained); close panel via ⌥⌘/; reopen → `Log` tab is still active; the log buffer is empty (transient — correct). Full reload (`appReload` via dev-tools or just Cmd-R) → `Log` tab is STILL active; level filter state from before the reload is restored; text filter is empty (in-memory only — correct).
 
 ---
 
@@ -1272,9 +1272,9 @@ The store can also accept appends from the Swift host via the existing `dispatch
 
 **Depends on:** L26 (preserve mount identity across transitions), the recent stable-id work that backed it.
 
-**Status:** _not started — pre-20.4 mini spike._
+**Status:** _complete 2026-05-16 — retired the spacer + plumbing; accepted the natural browser clamp on collapse-shrink._
 
-**Commit:** `spike(tide-card-transcript): retire (or document) the tailSpacer 80cqh hack`
+**Commit:** `spike(tide-card-transcript): retire tailSpacer / trailingInertOffset`
 
 **References:** [L26], `tide-card-transcript.tsx:813-825`, `tug-list-view.tsx:677-683`, `smart-scroll.ts:76-95`
 
@@ -1305,10 +1305,39 @@ The store can also accept appends from the Swift host via the existing `dispatch
 
 **Tasks.**
 
-- [ ] **Investigation A** — `git log -L` / `git blame` on the introducing commits; classify motivation into bucket (1) / (2) / (3); record finding.
-- [ ] **Investigation B** — remove the prop locally; HMR-exercise the scenarios above; record observations.
-- [ ] **Decision** — follow the matrix; either delete plumbing or rewrite comments.
-- [ ] **Commit** — single commit with message naming the spike's outcome ("retire" if removed, "document" if kept).
+- [x] **Investigation A** — `git log -L` / `git blame` on the introducing commits; classify motivation into bucket (1) / (2) / (3); record finding.
+- [x] **Investigation B** — remove the prop locally; HMR-exercise the scenarios above; record observations.
+- [x] **Decision** — follow the matrix; either delete plumbing or rewrite comments.
+- [x] **Commit** — single commit with message naming the spike's outcome ("retire" if removed, "document" if kept).
+
+**Spike record — Investigation A finding.**
+
+The motivating cause is **a fourth bucket the plan didn't anticipate: document-shrink-clamp protection**. The `tailSpacer` prop and `trailingInertOffset` plumbing were introduced together in a single commit:
+
+- `d8da960a feat(tide-rendering): Phase E.3 — action-bar position invariance` (Tue May 12, 2026)
+
+The commit message names the cause directly: _"tailSpacer prop on TugListView + matching trailingInertOffset on SmartScroll **so collapse-shrink doesn't clamp scrollTop** and follow-bottom excludes the spacer."_ The same commit added a tuglaw section — `tuglaws/component-authoring.md` § "Document-shrink-clamp — scrollport tail spacer (Phase E.3)" — that documents the mechanism in detail:
+
+> when a click *shrinks* the document — typically a fold cue collapsing a long body kind — the scrollport's `scrollHeight` drops. If the user's `scrollTop` was higher than the new `maxScrollTop = scrollHeight − clientHeight`, the browser clamps `scrollTop` down to the new max. No `scrollTop` write can put the click target back at its pre-click viewport Y, because the position we'd need to scroll to is now past the end of the document. `usePositionStableClick` cannot fix this; the only fix is to make sure the document doesn't get short enough to force a clamp.
+
+This is **not** bucket (1) mount/unmount churn — L26 / stable-id work covers React component identity through reconciliation; it does nothing for DOM-level `scrollTop` clamping when `scrollHeight` shrinks in response to a descendant click. It is **not** bucket (2) streaming jitter — the spacer doesn't absorb height changes during stream growth; pin-to-bottom math is corrected separately by `trailingInertOffset`. It is **not** bucket (3) visual comfort — the bottom dead-zone is a side effect, not the deliverable.
+
+**Spike record — Investigation B observations.**
+
+Initial Investigation B was bypassed in favor of an immediate "keep + rewrite comments" delivery (the introducing commit and the tuglaw both named the cause clearly). The user pushed back: the spacer's cost is always-on (~80% of the viewport of always-visible empty space at the bottom of every transcript, on every interaction), the benefit fires only on a specific shape of click (fold-cue collapse on a tall body while scrolled past the new `maxScrollTop`), and the natural browser clamp is honest (the document genuinely got shorter; matches every other web app). Constant cost, rare benefit — the trade was inverted.
+
+**Decision — retire the spacer + plumbing.**
+
+The outcome maps to **(1)-style "retire"** despite the cause not being bucket (1) — the bucket framing assumed L26 / stable-id work was the enabling invariant, but the actual enabling change here is a cost/benefit reassessment, not a new invariant. What shipped:
+
+- Removed `tailSpacer="80cqh"` from `tide-card-transcript.tsx` (call site + the just-rewritten comment).
+- Removed the `tailSpacer` prop, `tailSpacerRef`, `data-tail-spacer` attribute, container-query CSS block, the inert spacer render, and the `trailingInertOffset` wire-up to SmartScroll from `tug-list-view.tsx` + `tug-list-view.css`.
+- Removed the `trailingInertOffset` option + `_trailingInertOffset` field from `smart-scroll.ts`; simplified `isAtBottom`, `scrollToBottom`, and `pinToBottom` to drop the inert subtraction; trimmed the residual comments that referenced the spacer.
+- Updated the position-stable-click documentation in `diff-block.tsx` (the longer note) and `file-block.tsx` (the shorter cross-reference) so they describe the current contract (compensation works for non-shrink layout changes; collapse-shrink near the bottom yields to the natural browser clamp).
+- Narrowed the `usePositionStableClick` docstring: dropped the dead `useCollapseHeightLock` reference, named the natural-clamp outcome as the accepted contract, and pointed at this spike for the rationale.
+- Rewrote the `tuglaws/component-authoring.md` § "Document-shrink-clamp" section as an experiment-and-reversal record so a future reader doesn't re-derive the same path. The retired-mechanism description, the per-cell-min-height earlier draft, and the cost/benefit reasoning all live there.
+
+No tests were touched because none referenced the symbols — the 7 SmartScroll inert tests + 4 tailSpacer tests called out in `d8da960a`'s commit message were swept up by the happy-dom deletion on 2026-05-13. The current Bun pure-logic test suite has no dependency on the retired surface.
 
 **Tests.**
 
@@ -1317,9 +1346,9 @@ The store can also accept appends from the Swift host via the existing `dispatch
 
 **Checkpoint.**
 
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] **HMR vet (manual user action)** — exercise the four scenarios from Investigation B and confirm the transcript behaves correctly: streaming into near-full transcript stays smooth; card-switch mid-stream doesn't pop scroll position; scroll-to-bottom on submit lands cleanly; no visible jitter on streaming entry growth.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
+- [ ] **HMR vet (manual user action)** — needed for the retirement. Exercise the four scenarios from Investigation B and confirm the transcript behaves correctly: streaming into near-full transcript stays smooth; card-switch mid-stream doesn't pop scroll position; scroll-to-bottom on submit lands cleanly; no visible jitter on streaming entry growth. Then exercise the trade-off itself: open a long FileBlock or DiffBlock near the bottom of the transcript, click its fold cue, and confirm the natural browser clamp (viewport lands at the new bottom) is the observed outcome — that's the cost the retirement accepts.
 
 ---
 

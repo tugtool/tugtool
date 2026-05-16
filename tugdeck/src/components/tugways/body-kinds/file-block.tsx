@@ -525,12 +525,12 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // Position-stable click is encapsulated inside each affordance
   // (BlockCopyButton, BlockFoldCue) — they each call
   // `useOuterScrollport` + `usePositionStableClick` internally
-  // against their own button refs. The fold cue's combination with
-  // the scrollport-level `tailSpacer` (wired by tide-card-transcript)
-  // still applies: the spacer raises `maxScrollTop` so a collapse
-  // doesn't hit a hard clamp, and the position-stable hook inside
-  // BlockFoldCue writes the exact `scrollTop` that holds the
-  // cluster under the user's cursor across the height change.
+  // against their own button refs. The hook holds the click target
+  // under the cursor for layout changes that don't shrink the
+  // document; for a fold-cue collapse near the bottom of a long
+  // file, the document shrinks past the user's `scrollTop` and the
+  // browser's natural clamp applies (accepted behavior — see the
+  // longer note on diff-block.tsx for the rationale).
 
   // Fold-cue toggle callback. The `BlockFoldCue` affordance already
   // dispatched the `tug-disengage-follow-bottom` event before

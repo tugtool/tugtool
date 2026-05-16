@@ -15,9 +15,17 @@
  * user has scrolled past where the new `maxScrollTop` would be, the
  * browser clamps `scrollTop` — and no `scrollTop` write can move the
  * target back to its pre-click viewport Y, because the position we'd
- * need is past the end of the now-shorter document. For that case,
- * see `useCollapseHeightLock` which holds the cell's outer height so
- * the document doesn't shrink past the user's scroll position.
+ * need is past the end of the now-shorter document. The accepted
+ * outcome is the natural browser clamp: the document is honestly
+ * shorter, the viewport lands at the new bottom, the user re-scrolls
+ * if they want to read what's still above. An earlier Phase E.3
+ * experiment added a persistent ~80cqh tail spacer to absorb the
+ * shrinkage (raising `maxScrollTop` enough that common-sized
+ * collapses didn't clamp) but the spacer was always-visible empty
+ * space in every transcript — a constant cost paid for a rare
+ * benefit. The spacer was retired (Step 20.3.5 of
+ * `roadmap/tide-assistant-turns.md`) and the natural clamp is the
+ * current contract.
  *
  * The fix is purely imperative and lives entirely on the call-stack
  * of the click handler:
