@@ -1,0 +1,281 @@
+/* @tug-pairings:
+   - --tugx-gauge-fill-default-color  | --tugx-gauge-track-color   (fill on track — default)
+   - --tugx-gauge-fill-info-color     | --tugx-gauge-track-color   (fill on track — info)
+   - --tugx-gauge-fill-success-color  | --tugx-gauge-track-color   (fill on track — success)
+   - --tugx-gauge-fill-caution-color  | --tugx-gauge-track-color   (fill on track — caution band)
+   - --tugx-gauge-fill-danger-color   | --tugx-gauge-track-color   (fill on track — danger band)
+   - --tugx-gauge-track-border-color  | --tugx-gauge-track-color   (track border)
+   - --tugx-gauge-tick-major-color    | --tugx-gauge-surface       (major tick on surrounding surface)
+   - --tugx-gauge-tick-minor-color    | --tugx-gauge-surface       (minor tick on surrounding surface)
+   - --tugx-gauge-value-text-color    | --tugx-gauge-surface       (numeric readout)
+   - --tugx-gauge-percent-text-color  | --tugx-gauge-surface       (percent readout)
+   - --tugx-gauge-label-text-color    | --tugx-gauge-surface       (label / hi-lo text)
+
+   The "surface" slot (`--tugx-gauge-surface`) is informational only —
+   not consumed for any background-color rule on the gauge itself
+   (the gauge inherits its surface from its parent). It exists so
+   the `@tug-renders-on` annotations have a well-defined target the
+   linter can match against; the linter reads the slot's resolved
+   `--tug7-*` value to validate the pairing.
+*/
+
+/**
+ * tug-linear-gauge.css — TugLinearGauge primitive.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] appearance lives in CSS / DOM. `data-density` and
+ *    `data-role` attributes select between rules; the fill width is
+ *    pushed as an inline `style="width: N%"` (the only thing the
+ *    consumer's `value` actually drives).
+ *  - [L16] every color-setting rule below either (a) sets both
+ *    `color` and `background-color` and is self-documenting, or
+ *    (b) sets `color` / `border-color` / `background-color` alone
+ *    and declares its rendering surface via `@tug-renders-on`.
+ *  - [L17] every `--tugx-gauge-*` slot resolves to a `--tug7-*` /
+ *    `--tug-*` base token in one hop (declared in `body{}` below).
+ *  - [L19] file pair, module docstring, `data-slot="tug-linear-gauge"`.
+ *  - [L20] owns `--tugx-gauge-*`; composes no other component's
+ *    tokens. The sibling `TugArcGauge` ([#step-20-2]) shares the
+ *    color sub-family (`fill-{role}-color`, `track-color`) by reading
+ *    the same slot names; arc-specific geometry slots live in
+ *    `tug-arc-gauge.css` body{}.
+ */
+
+/* ---- Component-tier aliases — gauge-specific [L17] ---- */
+
+body {
+  /* Surface — informational; documents what surrounds the gauge. */
+  --tugx-gauge-surface: var(--tug7-surface-global-primary-normal-default-rest);
+
+  /* Track — the empty bar behind the fill. */
+  --tugx-gauge-track-color:        var(--tug7-surface-field-primary-normal-plain-rest);
+  --tugx-gauge-track-border-color: var(--tug7-element-field-border-normal-plain-rest);
+
+  /* Fill — paints the proportional segment. Role-driven; the
+     `[data-role="..."]` selectors flip among these. */
+  --tugx-gauge-fill-default-color: var(--tug7-surface-control-primary-filled-action-rest);
+  --tugx-gauge-fill-info-color:    var(--tug7-surface-control-primary-filled-accent-rest);
+  --tugx-gauge-fill-success-color: var(--tug7-surface-control-primary-filled-success-rest);
+  --tugx-gauge-fill-caution-color: var(--tug7-surface-control-primary-filled-caution-rest);
+  --tugx-gauge-fill-danger-color:  var(--tug7-surface-control-primary-filled-danger-rest);
+
+  /* Ticks — major + minor, detailed density only. */
+  --tugx-gauge-tick-major-color: var(--tug7-element-global-icon-normal-default-rest);
+  --tugx-gauge-tick-minor-color: var(--tug7-element-global-icon-normal-muted-rest);
+
+  /* Text — value, percent, label, hi-lo. */
+  --tugx-gauge-value-text-color:   var(--tug7-element-global-text-normal-default-rest);
+  --tugx-gauge-percent-text-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-gauge-label-text-color:   var(--tug7-element-global-text-normal-muted-rest);
+
+  /* Geometry — compact density (chrome-strip target, ~20 px row). */
+  --tugx-gauge-bar-height-compact:    8px;
+  --tugx-gauge-bar-radius-compact:    2px;
+  --tugx-gauge-value-text-size-compact:  0.6875rem;  /* 11px */
+  --tugx-gauge-label-text-size-compact:  0.6875rem;  /* 11px */
+  --tugx-gauge-gap-compact:           var(--tug-space-sm);
+
+  /* Geometry — detailed density (gallery / dashboard scale). */
+  --tugx-gauge-bar-height-detailed:   14px;
+  --tugx-gauge-bar-radius-detailed:   3px;
+  --tugx-gauge-tick-major-height:     8px;
+  --tugx-gauge-tick-minor-height:     4px;
+  --tugx-gauge-tick-major-width:      1px;
+  --tugx-gauge-tick-minor-width:      1px;
+  --tugx-gauge-tick-rail-height:      10px;
+  --tugx-gauge-value-text-size-detailed:   0.875rem;  /* 14px */
+  --tugx-gauge-percent-text-size-detailed: 0.75rem;   /* 12px */
+  --tugx-gauge-label-text-size-detailed:   0.75rem;   /* 12px */
+  --tugx-gauge-hilo-text-size:        0.6875rem;     /* 11px */
+  --tugx-gauge-gap-detailed:          var(--tug-space-xs);
+}
+
+/* ============================================================================
+   Frame — common to both densities
+   ========================================================================= */
+
+.tug-linear-gauge {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.tug-linear-gauge[data-density="compact"] {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--tugx-gauge-gap-compact);
+}
+
+.tug-linear-gauge[data-density="detailed"] {
+  flex-direction: column;
+  gap: var(--tugx-gauge-gap-detailed);
+}
+
+/* ============================================================================
+   Track + fill
+   ========================================================================= */
+
+/* @tug-renders-on var(--tugx-gauge-surface) */
+.tug-linear-gauge-track {
+  position: relative;
+  width: 100%;
+  background-color: var(--tugx-gauge-track-color);
+  border: 1px solid var(--tugx-gauge-track-border-color);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.tug-linear-gauge[data-density="compact"] .tug-linear-gauge-track {
+  flex: 1 1 auto;
+  height: var(--tugx-gauge-bar-height-compact);
+  border-radius: var(--tugx-gauge-bar-radius-compact);
+}
+
+.tug-linear-gauge[data-density="detailed"] .tug-linear-gauge-track {
+  height: var(--tugx-gauge-bar-height-detailed);
+  border-radius: var(--tugx-gauge-bar-radius-detailed);
+}
+
+/* The fill width is set inline (`style="width: N%"`) by the React
+   component — that's the only piece of geometry the consumer's
+   `value` actually drives. Role color comes from the parent's
+   `[data-role]` attribute below. */
+/* @tug-renders-on var(--tugx-gauge-track-color) */
+.tug-linear-gauge-fill {
+  height: 100%;
+  background-color: var(--tugx-gauge-fill-default-color);
+  transition: width 80ms ease-out, background-color 120ms ease-out;
+}
+
+/* @tug-renders-on var(--tugx-gauge-track-color) */
+.tug-linear-gauge[data-role="info"] .tug-linear-gauge-fill {
+  background-color: var(--tugx-gauge-fill-info-color);
+}
+/* @tug-renders-on var(--tugx-gauge-track-color) */
+.tug-linear-gauge[data-role="success"] .tug-linear-gauge-fill {
+  background-color: var(--tugx-gauge-fill-success-color);
+}
+/* @tug-renders-on var(--tugx-gauge-track-color) */
+.tug-linear-gauge[data-role="caution"] .tug-linear-gauge-fill {
+  background-color: var(--tugx-gauge-fill-caution-color);
+}
+/* @tug-renders-on var(--tugx-gauge-track-color) */
+.tug-linear-gauge[data-role="danger"] .tug-linear-gauge-fill {
+  background-color: var(--tugx-gauge-fill-danger-color);
+}
+
+/* ============================================================================
+   Ticks (detailed only)
+   ========================================================================= */
+
+.tug-linear-gauge-ticks {
+  position: relative;
+  width: 100%;
+  height: var(--tugx-gauge-tick-rail-height);
+  pointer-events: none;
+}
+
+/* @tug-renders-on var(--tugx-gauge-surface) */
+.tug-linear-gauge-tick-major {
+  position: absolute;
+  bottom: 0;
+  width: var(--tugx-gauge-tick-major-width);
+  height: var(--tugx-gauge-tick-major-height);
+  background-color: var(--tugx-gauge-tick-major-color);
+  transform: translateX(-50%);
+}
+
+/* @tug-renders-on var(--tugx-gauge-surface) */
+.tug-linear-gauge-tick-minor {
+  position: absolute;
+  bottom: 0;
+  width: var(--tugx-gauge-tick-minor-width);
+  height: var(--tugx-gauge-tick-minor-height);
+  background-color: var(--tugx-gauge-tick-minor-color);
+  transform: translateX(-50%);
+}
+
+/* ============================================================================
+   Hi / Lo labels (detailed only)
+   ========================================================================= */
+
+.tug-linear-gauge-hilo {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--tug-font-mono, monospace);
+  font-size: var(--tugx-gauge-hilo-text-size);
+  font-variant-numeric: tabular-nums;
+}
+
+/* @tug-renders-on var(--tugx-gauge-surface) */
+.tug-linear-gauge-lo,
+/* @tug-renders-on var(--tugx-gauge-surface) */
+.tug-linear-gauge-hi {
+  color: var(--tugx-gauge-label-text-color);
+}
+
+/* ============================================================================
+   Readout (value + percent + label)
+   ========================================================================= */
+
+.tug-linear-gauge-readout {
+  display: flex;
+  align-items: baseline;
+  font-family: var(--tug-font-mono, monospace);
+  /* Tabular figures keep each digit on a fixed-width metric so the
+     value text inside a `width: Nch` container does not shift when
+     digits change (e.g., 62 → 63 → 60). Combined with the inline
+     `min-width: ${maxCharCount}ch` the primitive computes from the
+     bounds (see `tug-linear-gauge.tsx`), this stabilizes the bar's
+     flex-grown width across value changes. */
+  font-variant-numeric: tabular-nums;
+}
+
+.tug-linear-gauge[data-density="compact"] .tug-linear-gauge-readout {
+  flex: 0 0 auto;
+  gap: var(--tug-space-xs);
+  white-space: nowrap;
+}
+
+.tug-linear-gauge[data-density="detailed"] .tug-linear-gauge-readout {
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+/* @tug-renders-on var(--tugx-gauge-surface) */
+.tug-linear-gauge-value {
+  color: var(--tugx-gauge-value-text-color);
+  font-weight: 600;
+}
+
+.tug-linear-gauge[data-density="compact"] .tug-linear-gauge-value {
+  font-size: var(--tugx-gauge-value-text-size-compact);
+}
+
+.tug-linear-gauge[data-density="detailed"] .tug-linear-gauge-value {
+  font-size: var(--tugx-gauge-value-text-size-detailed);
+}
+
+/* @tug-renders-on var(--tugx-gauge-surface) */
+.tug-linear-gauge-percent {
+  color: var(--tugx-gauge-percent-text-color);
+  font-size: var(--tugx-gauge-percent-text-size-detailed);
+}
+
+/* @tug-renders-on var(--tugx-gauge-surface) */
+.tug-linear-gauge-label {
+  color: var(--tugx-gauge-label-text-color);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tug-linear-gauge[data-density="compact"] .tug-linear-gauge-label {
+  font-size: var(--tugx-gauge-label-text-size-compact);
+}
+
+.tug-linear-gauge[data-density="detailed"] .tug-linear-gauge-label {
+  font-size: var(--tugx-gauge-label-text-size-detailed);
+}

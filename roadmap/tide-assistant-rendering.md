@@ -1004,6 +1004,7 @@ Per L19/L20, every component owns a slot. Slot prefix → component:
 | `--tugx-thinking-*` | ThinkingBlock |
 | `--tugx-idialog-*` | TugInlineDialog ([#step-18-5](#step-18-5)) |
 | `--tugx-dialog-button-*` | TugDialogButton ([#step-18-6](#step-18-6)) |
+| `--tugx-gauge-*` | TugLinearGauge ([#step-20-1](#step-20-1)) / TugArcGauge ([#step-20-2](#step-20-2)) — color slots shared; geometry slots namespaced per gauge |
 | `--tugx-perm-*` | PermissionDialog |
 | `--tugx-quest-*` | QuestionDialog |
 | `--tugx-cost-*` | CostChrome |
@@ -5458,7 +5459,7 @@ The existing tests in `reducer.replay-inflight-survival.test.ts` assert on `stat
 
 **Depends on:** _none_ (general-purpose tugways primitive; no dependency on tide rendering)
 
-**Status:** _not started_
+**Status:** _Implementation complete; awaiting manual HMR vet. Primitive + pure-logic tests (20 cases) + 3-section gallery card (interactive sandbox / 3×3 scale-threshold matrix / use-case preview) landed. All composed `--tug7-*` tokens already existed in both themes — no theme file edits required. tsc clean, full test suite 1889/0, audit:tokens lint clean. Registered in `card-registry.ts` under the "Feedback & Status" category._
 
 **Commit:** `feat(tugways): TugLinearGauge — linear quantity gauge primitive + gallery card`
 
@@ -5540,27 +5541,27 @@ Each scale is rendered for three threshold configurations: (a) no thresholds, (b
 
 **Tasks.**
 
-- [ ] Build `TugLinearGauge` per the prop surface above. Stateless presentation; consumer owns `value`.
-- [ ] Pure-logic Bun tests for the geometry + threshold math.
-- [ ] Declare the `--tugx-gauge-*` slot family in `tug-linear-gauge.css` body{}; bind base tokens via `--tug7-*` in one hop.
-- [ ] Theme tokens added to both `themes/brio.css` and `themes/harmony.css` (per project convention — hand-authored).
-- [ ] Gallery card with the three-scale grid + three-threshold-config rows + interactive value slider.
-- [ ] Register `gallery-tug-linear-gauge` in `card-registry.ts`.
-- [ ] `audit-tokens lint` clean (no alias-to-alias chains; every color-setting rule declares its `@tug-renders-on` surface per [L16]).
+- [x] Build `TugLinearGauge` per the prop surface above. Stateless presentation; consumer owns `value`. Exports three pure helpers (`clampToDomain`, `computeFillRatio`, `effectiveFillRole`) so the geometry + role math is unit-testable without DOM.
+- [x] Pure-logic Bun tests for the geometry + threshold math — 20 cases covering domain clamp (positive/negative, infinities), midpoint mapping, token-window-shape domain, `max ≤ min` throws, all six threshold-derivation cases (no thresholds / below / at caution / at danger / danger-as-strict-superset / edge fractions 0 and 1).
+- [x] Declare the `--tugx-gauge-*` slot family in `tug-linear-gauge.css` body{}; all 17 slots bind to `--tug7-*` base tokens in one hop. Verified by `audit-tokens lint`.
+- [x] Theme tokens — no edits needed. All composed `--tug7-*` tokens already exist in both `brio.css` and `harmony.css` (the gauge composes from the shared `filled-{role}-rest` / `field-primary-normal-plain-rest` / `global-text-normal-{default,muted}-rest` / `global-icon-normal-{default,muted}-rest` token families).
+- [x] Gallery card with the interactive sandbox, three-scale × three-threshold matrix (9 cells), and use-case preview rendering the `32.5k / 200k WINDOW` example from [#step-20-3]'s layout sketch.
+- [x] Register `gallery-tug-linear-gauge` in `card-registry.ts` under the "Feedback & Status" category.
+- [x] `audit-tokens lint` clean — zero violations, all `@tug-renders-on` annotations validated.
 
 **Tests.**
 
-- [ ] Pure-logic: `value=50, min=0, max=100` → fill ratio = 0.5. `value=-10` clamps to 0; `value=150` clamps to 1.
-- [ ] Pure-logic: with `thresholds={caution: 0.75, danger: 0.9}`: `value=70%` → `default` role; `value=80%` → `caution`; `value=95%` → `danger`.
-- [ ] Pure-logic: missing `thresholds` → always `fillRole` (default `default`).
-- [ ] Pure-logic: `max ≤ min` throws (configuration error, not a silent NaN).
-- [ ] Gallery card mounts; renders all 9 cells (3 scales × 3 threshold configs).
+- [x] Pure-logic: `value=50, min=0, max=100` → fill ratio = 0.5. `value=-10` clamps to 0; `value=150` clamps to 1.
+- [x] Pure-logic: with `thresholds={caution: 0.75, danger: 0.9}`: `value=70%` → `default` role; `value=80%` → `caution`; `value=95%` → `danger`.
+- [x] Pure-logic: missing `thresholds` → always `fillRole` (default `default`).
+- [x] Pure-logic: `max ≤ min` throws (configuration error, not a silent NaN).
+- [x] Gallery card mounts; renders all 9 matrix cells (3 scales × 3 threshold configs) plus the interactive sandbox and use-case preview.
 
 **Checkpoint.**
 
-- [ ] `bun x tsc --noEmit` clean from `tugdeck/`.
-- [ ] `bun test` green; new pure-logic test count > 0.
-- [ ] `bun run audit:tokens lint` exits 0.
+- [x] `bun x tsc --noEmit` clean from `tugdeck/`. Exit 0.
+- [x] `bun test` green — 1889 pass, 0 fail, 8283 expect() calls across 106 files (20 new gauge tests).
+- [x] `bun run audit:tokens lint` exits 0. Zero violations.
 - [ ] **HMR vet (manual user action)** — open `gallery-tug-linear-gauge`, move the slider through the domain, verify color transitions at the threshold boundaries match expectation in both themes (Brio / Harmony).
 
 ---
