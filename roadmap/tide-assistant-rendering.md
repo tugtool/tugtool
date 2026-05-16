@@ -5859,6 +5859,61 @@ export function liveTurnActiveMs(state: CodeSessionState, now: number): number;
 
 ---
 
+#### Step 20.3.5: Investigate removing `tailSpacer="80cqh"` from the transcript {#step-20-3-5}
+
+**Depends on:** L26 (preserve mount identity across transitions), the recent stable-id work that backed it.
+
+**Status:** _not started — pre-20.4 mini spike._
+
+**Commit:** `spike(tide-card-transcript): retire (or document) the tailSpacer 80cqh hack`
+
+**References:** [L26], `tide-card-transcript.tsx:813-825`, `tug-list-view.tsx:677-683`, `smart-scroll.ts:76-95`
+
+**Scope note — why this is a spike, not a refactor.** `TugListView` accepts a `tailSpacer` prop currently set to `80cqh` (80% of the scrollport's height) inside `tide-card-transcript.tsx`. The accompanying comments at all three call sites explain *what* the spacer does and *why* the unit is `cqh` (window-relative `vh` would overshoot a split-pane child) — but none of them documents the *original reason* we needed inert trailing space in the first place. That motivation is load-bearing context for any decision to remove the hack. The hypothesis is that mount/unmount churn drove the need, and that L26 + the recent stable-id work obviates it; the spike's job is to verify or refute that hypothesis empirically and via code archaeology before either pulling the prop out or annotating it correctly.
+
+**Scope.** A focused two-part investigation followed by a decision:
+
+1. **Investigation A — recover the original reason.** Git-archaeology on the `tailSpacer` prop's introduction (`tide-card-transcript.tsx`) and the `trailingInertOffset` plumbing (`smart-scroll.ts`, `tug-list-view.tsx`). `git log -L :tailSpacer:...` and `git blame` on the relevant lines; read the introducing commit's message and diff context. Classify the original motivation into one of three plausible buckets:
+   - **(1) Mount/unmount churn** — pre-stable-id transcript entries remounted on transitions; the spacer provided scroll-position slack so pin-to-bottom never landed on a moving target. **L26 + stable-id work obviates this.**
+   - **(2) Streaming jitter** — entries grow as content streams; the spacer absorbs height changes so pin-to-bottom math doesn't "rebound." **L26 / stable-ids do NOT help here.**
+   - **(3) Visual comfort** — keep the most recent entry from being pinned to the viewport's bottom edge; pure UX, not a hack. **L26 / stable-ids irrelevant.**
+2. **Investigation B — empirical removal under current code.** Remove the `tailSpacer="80cqh"` prop locally (no commit). Exercise the transcript: stream a fresh response into a near-full transcript, switch cards mid-stream, scroll-to-bottom on submit, smoke-test for jitter, "scroll past content into empty space," and any other anomaly. With L26 + stable-ids in place, observe whether the issue Investigation A surfaced still reproduces.
+
+**Decision matrix.**
+
+- **A = (1) AND B reproduces no regression** → remove `tailSpacer` from `tide-card-transcript.tsx` and the `tailSpacer` prop + ref from `TugListView` and the `trailingInertOffset` plumbing from `SmartScroll`. Commit message names L26 as the enabling invariant. Tightens the bottom of every transcript everywhere.
+- **A = (2) streaming jitter** → keep the spacer. Replace the existing "how / why-unit" comment at all three sites with a "why-it-exists" comment that names streaming jitter as the cause. Naming the hack honestly is the deliverable.
+- **A = (3) visual comfort** → keep the spacer; rewrite the comments the same way as (2) but naming UX comfort as the cause. Consider whether 80cqh is the right magnitude or whether a smaller value (e.g., 20–30cqh) would suffice for comfort without the heavy bottom dead-zone.
+
+**Conformance.** No 20.4 work in this step. No telemetry work. Pure investigation + targeted removal *or* targeted comment-clarification. If the spike concludes "keep the spacer," this step still ships value via the updated comments.
+
+**Artifacts.**
+
+- `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` — either delete the `tailSpacer="80cqh"` prop OR rewrite its comment.
+- `tugdeck/src/components/tugways/tug-list-view.tsx` — either delete the `tailSpacer` prop + `tailSpacerRef` plumbing OR rewrite its comment.
+- `tugdeck/src/lib/smart-scroll.ts` — either delete the `trailingInertOffset` option + all its consumers OR rewrite its comment.
+- _Add a brief spike record_ — append the Investigation A finding + Investigation B observations to this step's record (which bucket; reproduction notes; final decision).
+
+**Tasks.**
+
+- [ ] **Investigation A** — `git log -L` / `git blame` on the introducing commits; classify motivation into bucket (1) / (2) / (3); record finding.
+- [ ] **Investigation B** — remove the prop locally; HMR-exercise the scenarios above; record observations.
+- [ ] **Decision** — follow the matrix; either delete plumbing or rewrite comments.
+- [ ] **Commit** — single commit with message naming the spike's outcome ("retire" if removed, "document" if kept).
+
+**Tests.**
+
+- If the spacer is removed: existing `smart-scroll` tests stay green (the `trailingInertOffset` path is opt-in via the option; removing the option means tests that don't supply it stay valid; tests that DO supply it get removed).
+- If the spacer is kept: no test changes; the deliverable is comment text only.
+
+**Checkpoint.**
+
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] **HMR vet (manual user action)** — exercise the four scenarios from Investigation B and confirm the transcript behaves correctly: streaming into near-full transcript stays smooth; card-switch mid-stream doesn't pop scroll position; scroll-to-bottom on submit lands cleanly; no visible jitter on streaming entry growth.
+
+---
+
 #### Step 20.4: UI slot architecture — four placement zones for session telemetry {#step-20-4}
 
 **Depends on:** #step-20-3 (clean per-turn + session-cumulative data is the input this step renders), #step-20-1 (TugLinearGauge for any window-utilization gauge surface)
@@ -5876,15 +5931,18 @@ export function liveTurnActiveMs(state: CodeSessionState, now: number): number;
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  TideTranscriptHost                                                         │
+│  └─ TugListView (scrolls; flex 1 1 auto)                                    │
 │                                                                             │
 │  ╔════ user row ═══╗  ╔════ assistant row ═══╗                              │
 │  ║ "count loc..."  ║  ║  [markdown body]      ║                              │
 │  ║                 ║  ║                       ║                              │
-│  ║                 ║  ║  [copy-button] ←【Z4: per-response trailing】       │
+│  ║ 【Z4 user half】║  ║  [copy] 【Z4 asst half】                            │
 │  ╚═════════════════╝  ╚═══════════════════════╝                              │
 │                                                                             │
-│  ─────────────────────────────────────────────  ←【Z3: transcript pinned】   │
+├═════════════════════════════════════════════════  ←【Z3: status bar】       │
+│ (flex 0 0 auto, content-sized, never scrolls — outside TugListView)         │
 └─────────────────────────────────────────────────────────────────────────────┘
+═════════ ↑ split-pane sash (transcript ↔ prompt-entry resize) ═════════════
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  [Project: /path]                            【Z1: prompt-entry top】       │
 │                                                                             │
@@ -5896,8 +5954,8 @@ export function liveTurnActiveMs(state: CodeSessionState, now: number): number;
 
   - **Z1: prompt-entry top (status row).** The existing `statusContent` slot above the prompt-entry input. Currently holds the project-path badge. Has the existing primitive infrastructure ([#step-18-x] work); this step does NOT change the slot itself, only the conventions for what's allowed to live there.
   - **Z2: prompt-entry footer.** _New_ slot — between the route buttons (`Code` / `Shell` / `Command`) and the submit button. Currently empty space. Architectural addition to `TugPromptEntry`.
-  - **Z3: transcript pinned bottom row.** _New_ slot — pinned (`position: sticky; bottom: 0`) at the bottom of the top pane (the transcript region), above the split-pane resize handle. Always visible regardless of scroll. Architectural addition to `TideTranscriptHost` or its scroll container.
-  - **Z4: per-response trailing.** _New_ slot — adjacent to the existing icon-only copy button on the assistant row's chrome. Per-turn (one per assistant row). Architectural addition to `tide-card-transcript.tsx`'s code-row cell.
+  - **Z3: status bar (bottom of top split-panel, outside TugListView).** _New_ slot — a `flex: 0 0 auto`, content-sized row that lives at the bottom of the upper `TugSplitPanel`, **outside** the scrolling `TugListView`. The top split-panel becomes a flex column: `[TugListView (flex 1 1 auto, scrolls)] + [Z3 status bar (flex 0 0 auto, never scrolls)]`. This is a strictly better design than the initial "pinned-inside-scrollport" sketch — TugListView keeps its scroll behavior unchanged (no `position: sticky` inside the virtualized scroller); the transcript↔prompt-entry sash stays exactly as today; no `tug-split-pane` changes; layout shift on telemetry update is contained (Z3 grows into space TugListView ceded, no scroll repositioning). The slot is empty-by-default; when its content is `null` the row collapses to zero height and TugListView reclaims the space.
+  - **Z4: per-turn trailing — unified slot keyed by half.** _New_ slot — adjacent to the existing icon-only copy button on the assistant row's chrome, and at the symmetric trailing position on the user row. Per-turn (one slot per turn-half). Single API keyed by `half: "user" | "assistant"`; the transcript wires it twice per turn (once on the user row, once on the assistant row). The user half is **empty / reserved through 20.4 and 20.5** — the slot mechanism exists and the renderer registry can target it, but our chosen default content is `null`. Reserving the slot now avoids API churn when future content (timestamps, edit affordances, "show raw prompt" toggles) wants to live there. Architectural addition to `tide-card-transcript.tsx`'s row chrome.
 
 **Conformance.** Each of the four slots is a `ReactNode` slot prop on its host component, following the existing `statusContent` convention. No new primitives. Each host owns its slot's CSS layout box; consumers fill the slot with whatever (typed) display content makes sense. The slots are display-only — they don't capture user input or claim responder identity.
 
@@ -5911,30 +5969,35 @@ interface TugPromptEntryProps {
   footerContent?: React.ReactNode;     // Z2 — new
 }
 
-// TideTranscriptHost — new prop:
-interface TideTranscriptHostProps {
+// Z3 — slot lives on TideCard, not TideTranscriptHost. The top
+// split-panel becomes a flex column with TugListView (flex 1) above
+// and the Z3 status-bar row (flex 0 0 auto) below.
+interface TideCardProps {
   // ... existing ...
-  pinnedBottomContent?: React.ReactNode;  // Z3
+  statusBarContent?: React.ReactNode;  // Z3 — when null, the row collapses to zero height
 }
 
-// TideTranscriptDataSource — extend the row API to support Z4:
-//   The per-turn trailing slot is per-row; the data source's row
-//   descriptor grows a `trailingChrome?: React.ReactNode` field that
-//   the cell renderer composes into the copy-button row.
-//   ALTERNATIVE: a single `renderTurnTrailing?: (turn) => ReactNode`
-//   callback prop on the chrome.tsx-level component. Decision: pick
-//   in implementation; the simpler one wins.
+// Z4 — single API keyed by half. Transcript wires it twice per turn.
+// User half ships empty / reserved through 20.4 and 20.5.
+interface TideCardTranscriptProps {
+  // ... existing ...
+  renderTurnTrailing?: (
+    turn: TurnEntry,
+    opts: { half: "user" | "assistant" },
+  ) => React.ReactNode;
+}
 ```
 
-**Telemetry-display catalog — what each slot CAN show (experimentation menu).** This is the experimentation surface for the UI study — the same telemetry data can render in any slot, and the study compares which placement reads best for each datum. The catalog below is the menu, not a prescription:
+**Telemetry-display catalog — what each slot CAN show (experimentation menu).** This is the experimentation surface for the UI study — the same telemetry data can render in any slot, and the study compares which placement reads best for each datum. The catalog below is the menu, not a prescription. Z4 entries always mean the **assistant half** (the user half stays empty/reserved):
 
-| Datum | Source ([#step-20-3]) | Plausible Z1 | Plausible Z2 | Plausible Z3 | Plausible Z4 |
+| Datum | Source ([#step-20-3]) | Plausible Z1 | Plausible Z2 | Plausible Z3 | Plausible Z4 (asst) |
 |---|---|---|---|---|---|
-| Window utilization (token gauge) | `perTurnContextSize(transcript[last])` / context max | ✓ (visible at-rest) | maybe | ✓ (pinned visibility) | — |
+| Window utilization (token gauge) | `perTurnContextSize(transcript[last])` / context max | ✓ (visible at-rest) | maybe | ✓ (status-bar visibility) | — |
 | Cumulative session tokens | `deriveSessionTotals(transcript).total*` | ✓ | maybe | ✓ | — |
 | Cumulative session time (Claude-active) | `deriveSessionTotals(transcript).totalActiveMs` | ✓ | maybe | ✓ | — |
-| Per-turn duration | `perTurnActiveMs(turn)` | — | — | — | ✓ (per row) |
+| Per-turn duration | `turn.activeMs` | — | — | — | ✓ (per row) |
 | Per-turn cost | `turn.cost.totalCostUsd` | — | — | — | maybe |
+| Per-turn TTFT | `turn.ttftMs` | — | — | — | maybe |
 | Phase / "Claude is thinking" indicator | `snapshot.phase` | maybe | ✓ | — | — |
 | `/context`-style on-demand drill-down | aggregate of above | — | — | open via affordance | — |
 
@@ -5946,26 +6009,30 @@ The "✓" / "maybe" / "—" marks are starting positions, not decisions. The stu
 
 **Artifacts.**
 
-- `tugdeck/src/components/tugways/tug-prompt-entry.tsx` + `.css` — add `footerContent?: React.ReactNode` prop and the corresponding DOM slot between the route buttons and the submit button.
-- `tugdeck/src/components/tugways/cards/tide-transcript-host.tsx` (or equivalent) — add `pinnedBottomContent?: React.ReactNode` prop and the corresponding sticky-bottom slot.
-- `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` — extend the code-row chrome with a per-turn trailing slot (alongside the copy button).
-- `tugdeck/src/components/tugways/cards/tide-card.tsx` — wire each of the four slots to telemetry-renderer components (the menu above).
+- `tugdeck/src/components/tugways/tug-prompt-entry.tsx` + `.css` — add `footerContent?: React.ReactNode` prop (Z2) and the corresponding DOM slot between the route buttons and the submit button.
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` + `.css` — restructure the top split-panel as a flex column: `<TideCardTranscript>` (flex 1 1 auto, scrolls) + a new `statusBarContent` row (flex 0 0 auto, never scrolls). Add `statusBarContent?: React.ReactNode` prop (Z3) on `TideCard`. When `statusBarContent === null`, the row collapses to zero height.
+- `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` — add `renderTurnTrailing?: (turn, opts: { half: "user" | "assistant" }) => React.ReactNode` callback prop (Z4 unified). Wire it twice per turn: once on the user row's trailing edge, once next to the existing copy button on the assistant row. User-half default content is `null` in this step and in [#step-20-5].
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` (composition) — wire each of the four slots to telemetry-renderer components (the catalog above). For Z4, supply a `renderTurnTrailing` that returns `null` for `half === "user"` and the assistant-half renderer for `half === "assistant"`.
 - `tugdeck/src/components/tugways/cards/__tests__/tide-card-placement-experiment.tsx` (or similar) — _dev-only_ harness that lets the user A/B placement combinations during the HMR study.
 - _Possibly_ resurrect a clean `TideMeterChrome` (small, focused, NO bespoke wall-clock or token logic — pure consumer of [#step-20-3]'s telemetry helpers) as one of the renderers in the catalog. Naming + scope to be decided during implementation.
 - Token slot work: each of the new slots may need a small `--tugx-tide-*` family for its layout box; declared at component scope per [L20].
 
+**Mount-identity check.** [L26] — `TideCard`'s top split-panel changes from `<TugSplitPanel>{children: <TideCardTranscript/>}</TugSplitPanel>` to `<TugSplitPanel>{children: <FlexCol><TideCardTranscript/><Z3Slot/></FlexCol>}</TugSplitPanel>`. This inserts a wrapper element above `TideCardTranscript`. Verify (a) `TideCardTranscript` does not unmount under the wrapper insertion (React preserves component identity through wrapper insertions at the same position), and (b) `TugPromptEntry`'s position in `TideCard` does NOT change (it's still the second split-panel child) — its textarea focus / responder identity must survive this restructure. Add a dev-only invariant probe (matching the style of the existing tide-card caret/first-responder probe at `c773c7ac`) if useful during implementation.
+
 **Tasks.**
 
-- [ ] **Slot infrastructure** — `TugPromptEntry.footerContent`, `TideTranscriptHost.pinnedBottomContent`, `tide-card-transcript`'s per-turn trailing slot. Three small prop additions; layout boxes in each component's CSS.
+- [ ] **Slot infrastructure** — four prop additions: `TugPromptEntry.footerContent` (Z2), `TideCard.statusBarContent` + flex-column restructure of the top split-panel (Z3), `TideCardTranscript.renderTurnTrailing` keyed by half (Z4). Layout boxes in each component's CSS.
 - [ ] **Renderer components** — small focused React components for each datum in the experimentation catalog, each consuming the [#step-20-3] telemetry helpers via `useSyncExternalStore` per [L02]. One renderer per datum; placement-agnostic.
 - [ ] **Experimentation harness** — dev-mode selector that maps {datum → slot}. Captures the chosen placement into a tugbank entry (or a hash-fragment) so HMR reloads preserve the experiment state. Productized as a tugplug skill if it gets enough use.
+- [ ] **Mount-identity verification** — confirm `TideCardTranscript` survives the top-split-panel wrapper insertion without unmount; confirm `TugPromptEntry`'s focus / responder identity survives the restructure. Use the existing tide-card caret/first-responder probe pattern (`c773c7ac`) if helpful.
 - [ ] **HMR study** — sit with the four-slot layout, A/B placements for each datum, decide which combination wins. The result is captured as the default mapping in [#step-20-5]'s scope.
 
 **Tests.**
 
 - [ ] Pure-logic: each renderer component takes the [#step-20-3] telemetry helpers as input and renders a deterministic string / DOM structure. Tested in bun:test against synthetic snapshots.
-- [ ] Slot-presence tests: each slot renders when `*Content` is non-null; renders nothing when null (matches the existing `statusContent` convention).
-- [ ] HMR-vetted: each slot's layout box behaves correctly (Z1 sits in the existing status row, Z2 between route buttons and submit, Z3 sticky at bottom of top pane, Z4 inline next to copy button per turn).
+- [ ] Slot-presence tests: each slot renders when its content is non-null; renders nothing (and Z3 collapses to zero height) when null. Matches the existing `statusContent` convention.
+- [ ] Z4 half-keying: `renderTurnTrailing` receives `half: "user"` on the user-row wire-up and `half: "assistant"` on the assistant-row wire-up; both invocations occur per turn.
+- [ ] HMR-vetted: each slot's layout box behaves correctly (Z1 in the existing status row, Z2 between route buttons and submit, Z3 as a non-scrolling row at the bottom of the top split-panel, Z4 inline at the trailing edge of each row — empty on the user side, populated on the assistant side).
 
 **Checkpoint.**
 
