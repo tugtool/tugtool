@@ -43,7 +43,25 @@ body {
 
   /* Geometry */
   --tugx-devpanel-width:          420px;
-  --tugx-devpanel-z-index:        100000;
+  /* The panel sits ONE tier BELOW the canvas-overlay-root container
+   * (z = `--tug-z-overlay-base` = 9000). That container is the portal
+   * target for every popup-class child (tooltip / popup / menu /
+   * dialog), and it creates its own stacking context — so a popup at
+   * z=9300 inside the overlay is effectively stacked at 9000 relative
+   * to the document, NOT 9300. Raising the panel above the overlay
+   * (e.g. z=9001 or 100000) buries every popup behind the panel even
+   * though the popup's intra-context z is much higher.
+   *
+   * Sitting at 8999 keeps the panel visually on top of the canvas
+   * (cards / panes are at z < 9000), AND lets popups originating
+   * anywhere — including from within the panel itself — paint above
+   * the panel via the overlay container.
+   *
+   * The overlay container is `pointer-events: none` everywhere
+   * except its active popup regions, so the panel below stays
+   * fully interactive. See `chrome/canvas-overlay-root.tsx` +
+   * `styles/chrome.css` for the overlay-tier model. */
+  --tugx-devpanel-z-index:        calc(var(--tug-z-overlay-base) - 1);
   --tugx-devpanel-padding:        var(--tug-space-md);
   --tugx-devpanel-row-gap:        var(--tug-space-sm);
   --tugx-devpanel-section-gap:    var(--tug-space-lg);

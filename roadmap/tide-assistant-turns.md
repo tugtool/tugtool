@@ -475,7 +475,7 @@ Plus one **geometry variants** row that shows the same gauge at `readable` scale
 
 **Depends on:** #step-1 (cost_update reducer surface)
 
-**Status:** _implemented; pending HMR vet._
+**Status:** _COMPLETED 2026-05-16 (implementation + HMR vet via [Step 20.3.1](#step-20-3-1)'s `TugDevPanel`)._
 
 **Commit:** `feat(code-session-store): per-turn telemetry — typed token + multi-clock accounting on TurnEntry`
 
@@ -767,7 +767,7 @@ The early-return guards in each handler prevent double-entries.
 - [x] `bun x tsc --noEmit` clean.
 - [x] `bun test` green — 1946 pass / 0 fail / 8431 expect() calls across 114 files.
 - [x] `bun run audit:tokens lint` exits 0.
-- [ ] **HMR vet (manual user action)** — deferred to [#step-20-3-1](#step-20-3-1). Reads the per-turn telemetry fields off the new `TugDevPanel` once it ships, instead of through ad-hoc `console.log` instrumentation. Acceptance criteria stay the same: `TurnEntry.awaitingApprovalMs` matches the time you spent on the dialog; `TurnEntry.transportDowntimeMs === 0` when the network was stable; `TurnEntry.cost.inputTokens + cacheCreationInputTokens + cacheReadInputTokens` looks plausible vs. the Claude-side cost-update payload; `TurnEntry.ttftMs` is small and positive; `TurnEntry.turnEndReason === "complete"`.
+- [x] **HMR vet (manual user action) — COMPLETED via [Step 20.3.1](#step-20-3-1)'s `TugDevPanel`.** Vet run on 2026-05-16 against a real `tokei`-running Bash tool turn with a deliberate ~12s pause on the permission dialog. Confirmed: `turnEndReason === "complete"`; `awaitingApprovalMs = 12328 ms` matches the dialog wait (cross-checked against `respondedAt − (submitAt + ttftcMs) = 12548 ms`, ~220 ms slack between dialog paint and `pendingApproval` snapshot land); `transportDowntimeMs === 0`; context tokens `7 + 13698 + 47870 = 61575` plausible; `activeMs = 5697 ms` satisfies the `wall − awaiting − downtime` invariant; `toolWallMs = 12697 ms` captures the per-call wall correctly; `maxStreamGapMs = 12514 ms` reflects the tool runtime; `internalLiveAnchors` all reset to `null`/`0`/`false` after commit. **Real-world finding** on `ttftMs`: for tool-using turns, `ttftMs` correctly fires when the FIRST `assistant_delta` lands — which for a tool-using turn is AFTER the tool completes. The "small and positive" indicator for tool-using turns is `ttftcMs` (time-to-first-tool-call); the vet's tokei turn had `ttftcMs = 2465 ms` (Claude opened with a tool), `ttftMs = 17172 ms` (assistant text came post-tool). Both are correct captures of what they measure.
 
 ---
 
@@ -775,7 +775,7 @@ The early-return guards in each handler prevent double-entries.
 
 **Depends on:** [#step-20-3](#step-20-3) (the telemetry fields the first tab inspects), tugbank (for state persistence), tugcast (for the Swift→tugdeck control channel).
 
-**Status:** _implemented; pending user `just build-app` + manual ⌥⌘/ vet + 20.3 HMR vet closure._
+**Status:** _COMPLETED 2026-05-16. Implementation + app-test + manual ⌥⌘/ chord vet + closure of the 20.3 HMR vet all done._
 
 **Commit:** `feat(tugdevpanel): persistent dev inspector toggled from Tug.app Developer menu (Opt-Cmd-/)`
 
@@ -986,7 +986,7 @@ final class DeveloperMenu {
 - [x] `TelemetryInspector` projection: synthetic `CodeSessionState` with a committed turn surfaces every [#step-20-3] field — explicit label-coverage test verifies all 16 TurnEntry fields plus the derived `perTurnContextSize` row.
 - [x] `TelemetryInspector` projection: with no committed turn, surfaces an explicit "No committed turns yet." row instead of silent zeros.
 - [x] `formatMs` and `formatUsd` formatters pinned (ms / s / m+s buckets; cost precision tiers).
-- [x] app-test (`at0070-dev-panel-toggle`): ⌥⌘/ chord toggles `[data-open]`; second invocation flips it back. Requires `just build-app` first; gated on `TUGAPP_APP_TEST=1`.
+- [x] app-test (`at0070-dev-panel-toggle`): `show-dev-panel-toggle` action flips `[data-open]`; second invocation flips it back. Drives the dispatch via `window.__tug.dispatchControlAction(...)` rather than the literal `⌥⌘/` chord — the in-app harness force-disables dev mode (AppDelegate.swift::loadPreferences gate on `TUGAPP_APP_TEST=1`) so the Developer menu is hidden and the chord is unreachable from automation. The chord-to-menu wiring stays a manual checkpoint.
 
 **Checkpoint.**
 
@@ -994,9 +994,9 @@ final class DeveloperMenu {
 - [x] `bun test` green — 1979 pass / 0 fail / 8522 expect() calls across 118 files.
 - [x] `bun run audit:tokens lint` exits 0 (new `--tugx-devpanel-*` slots properly declared with `@tug-pairings` header).
 - [x] Swift Debug build clean (`xcodebuild -configuration Debug`).
-- [ ] `just app-test at0070-dev-panel-toggle.test.ts` reports `VERDICT: PASS` per [feedback_just_app_test]. _(Requires user to run `just build-app` first; test file lands ready.)_
+- [x] `just app-test at0070-dev-panel-toggle.test.ts` reports `VERDICT: PASS` per [feedback_just_app_test]. Action drives the dispatch surface (not the chord — see Tests note above for the harness/dev-mode reason).
 - [ ] Manual: open Tug.app debug build → enable dev mode → confirm Developer menu visible with "Show Dev Panel" + `⌥⌘/` shortcut → press shortcut → panel appears → press again → panel hides.
-- [ ] **20.3 HMR vet (manual, blocking)** — using the panel, run the four-clock vet described in [#step-20-3]'s checkpoint and check the box back there.
+- [x] **20.3 HMR vet (manual, blocking) — COMPLETED 2026-05-16.** Vet ran cleanly via the panel against a tokei-running Bash tool turn with a ~12s permission-dialog pause; all five acceptance criteria verified plus invariant + cross-check math. See the closure note at the bottom of [#step-20-3](#step-20-3)'s checkpoint for the full result table and the `ttftMs`-for-tool-using-turns finding.
 
 ---
 

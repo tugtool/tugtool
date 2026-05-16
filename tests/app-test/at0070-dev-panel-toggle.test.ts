@@ -1,20 +1,38 @@
 /**
- * at0070-dev-panel-toggle.test.ts — TugDevPanel visibility toggle via
- * the Swift Developer menu's `⌥⌘/` shortcut (Step 20.3.1).
+ * at0070-dev-panel-toggle.test.ts — TugDevPanel toggle round-trip via
+ * the `show-dev-panel-toggle` action (Step 20.3.1).
+ *
+ * Why we don't fire `nativeKey('/', ['cmd', 'alt'])` here:
+ * the in-app harness force-disables dev mode at launch (see
+ * `tugapp/Sources/AppDelegate.swift::loadPreferences` — when
+ * `TUGAPP_APP_TEST=1`, dev mode is pinned to `false` so the harness
+ * loads from the pre-built `dist/` and skips Vite, saving ~700ms per
+ * test). The Developer menu (`developerMenu.isHidden = !devModeEnabled`)
+ * is therefore HIDDEN during app-tests, so `⌥⌘/` cannot reach the
+ * "Show Dev Panel" menu item — the chord is dead before it ever
+ * dispatches.
+ *
+ * The chord-to-menu wiring is a manual checkpoint (see
+ * tide-assistant-turns.md Step 20.3.1's "Manual" checkpoint item).
+ * What we CAN exercise here in automation is the dispatch surface the
+ * menu fires:
+ *
+ *   Swift menu item action → `sendControl("show-dev-panel-toggle")`
+ *      → tugcast CONTROL frame → `dispatchAction({action})` → tugdeck
+ *      → `tugDevPanelStore.toggle()` → snapshot updates → React
+ *      re-renders the panel → `[data-open]` flips
+ *
+ * We invoke the action via `window.__tug.dispatchControlAction(...)`,
+ * which routes through the exact same `dispatchAction` registry as
+ * the live Swift→tugdeck path. This pins steps 4–7 of that chain;
+ * steps 1–3 (the menu item + sendControl wiring) are visually
+ * verifiable and don't change shape across runs.
  *
  * Scenario:
- *   1. Launch with `devModeEnabled = true` so the Developer menu is
- *      visible (it's gated on the runtime dev-mode setting).
- *   2. Probe initial state: `.tug-devpanel` exists and `[data-open="false"]`.
- *   3. `nativeKey('/', ['cmd', 'alt'])` — fires the menu item.
- *   4. Wait for `[data-open="true"]`.
- *   5. Press the chord again — wait for `[data-open="false"]`.
- *
- * The panel mounts unconditionally at app root (see
- * `deck-manager.ts`), so its DOM presence asserts the mount; the
- * `[data-open]` attribute asserts the visibility toggle path
- * triggered by the Swift menu → tugcast control → tugdeck
- * action-dispatch → tugDevPanelStore.toggle().
+ *   1. Launch.
+ *   2. Confirm `.tug-devpanel` mounts hidden (`data-open="false"`).
+ *   3. Fire `show-dev-panel-toggle` → `data-open="true"`.
+ *   4. Fire it again → `data-open="false"`.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -40,15 +58,21 @@ async function readPanelOpen(app: App): Promise<string | null> {
   );
 }
 
+async function fireToggle(app: App): Promise<void> {
+  await app.evalJS<void>(
+    `window.__tug.dispatchControlAction("show-dev-panel-toggle")`,
+  );
+}
+
 describe.skipIf(!SHOULD_RUN)(
-  "at0070 — ⌥⌘/ toggles the TugDevPanel",
+  "at0070 — show-dev-panel-toggle action flips the TugDevPanel visibility",
   () => {
     test(
-      "panel mounts hidden, first chord shows, second chord hides",
+      "panel mounts hidden, first dispatch shows, second dispatch hides",
       async () => {
         const tugbankPath = mkTempTugbank();
         try {
-          seedTugbankForLaunch(tugbankPath, { devModeEnabled: true });
+          seedTugbankForLaunch(tugbankPath);
           const app = await launchTugApp({
             testName: "at0070-dev-panel-toggle",
             env: { TUGBANK_PATH: tugbankPath },
@@ -64,8 +88,8 @@ describe.skipIf(!SHOULD_RUN)(
             // Initial: hidden.
             expect(await readPanelOpen(app)).toBe("false");
 
-            // Chord ⌥⌘/ → show.
-            await app.nativeKey("/", ["cmd", "alt"]);
+            // Dispatch → show.
+            await fireToggle(app);
             await app.waitForCondition<boolean>(
               `(function(){
                 var el = document.querySelector(${JSON.stringify(PANEL_SELECTOR)});
@@ -75,8 +99,8 @@ describe.skipIf(!SHOULD_RUN)(
             );
             expect(await readPanelOpen(app)).toBe("true");
 
-            // Chord ⌥⌘/ again → hide.
-            await app.nativeKey("/", ["cmd", "alt"]);
+            // Dispatch again → hide.
+            await fireToggle(app);
             await app.waitForCondition<boolean>(
               `(function(){
                 var el = document.querySelector(${JSON.stringify(PANEL_SELECTOR)});
