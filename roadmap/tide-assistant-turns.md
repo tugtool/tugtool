@@ -39,8 +39,8 @@ Both problems collapse to a missing **state-coordinated turn surface**. This pla
 - **Data model before UI.** Land multi-clock telemetry (wallClock / awaitingApproval / transportDowntime / active + diagnostics) and per-turn cost-delta accounting as typed `TurnEntry` fields with a pure-logic helper module — **before** any chrome consumes them. The chrome reads typed snapshots; it does not scrape `lastCost.usage`.
 - **Honest measurement.** `awaitingApprovalMs` excludes user-interaction time (TugInlineDialog open intervals — both permission AND question dialogs). `transportDowntimeMs` excludes WebSocket disconnect intervals. `activeMs` is what's left — machine-doing-work time. Silent in-connection API stalls intentionally fall inside `activeMs` (we measure what we can authoritatively measure; stream-idle heuristic deferred until we have `maxStreamGapMs` distributions to inform it).
 - **Zone architecture as contract.** Six zones (Z0 top-of-card → Z5 submit-button) numbered spatially top-to-bottom. The renderer registry targets zones by ID. Placement decisions are deferred to a focused HMR study; the slot mechanism makes A/B trivial.
-- **Lifecycle spec, then implementation.** State machine + state-to-zone coordination matrix land as a documented artifact ([Step 20.5.A](#step-20-5-a)) before any wiring. Implementation ([Step 20.5.C](#step-20-5-c)) encodes the matrix as one switch in `deriveLifecycleSnapshot`; zones consume via `useLifecycleState()`.
-- **Audit before re-implementing.** Polish-plan Steps 13 / 14 / 15 are ~70% done. Audit current state in [Step 20.5.B](#step-20-5-b); close known gaps (e.g., `tide-question-dialog`). Build 20.5.C on working primitives, not on rebuilt ones.
+- **Lifecycle spec, then implementation.** State machine + state-to-zone coordination matrix land as a documented artifact ([Step 20.5.A](#step-20-5-a)) before any wiring. Implementation ([Step 20.5.D](#step-20-5-d)) encodes the matrix as one switch in `deriveLifecycleSnapshot`; zones consume via `useLifecycleState()`.
+- **Audit before re-implementing.** Polish-plan Steps 13 / 14 / 15 are ~70% done. Audit current state in [Step 20.5.B](#step-20-5-b); close known gaps (e.g., `tide-question-dialog`). Build 20.5.D on working primitives, not on rebuilt ones.
 
 #### Success Criteria (Measurable) {#success-criteria}
 
@@ -64,12 +64,12 @@ Both problems collapse to a missing **state-coordinated turn surface**. This pla
 4. **Pure-logic helper module** — new `lib/code-session-store/telemetry.ts` with `perTurnContextSize`, `extractTurnCost`, `deriveSessionTotals`, and the `liveTurn*` family (live-running clocks for in-flight readouts).
 5. **`tailSpacer="80cqh"` investigation** — retire-or-document the transcript scroll hack ([Step 20.3.5](#step-20-3-5)).
 6. **Six-zone placement architecture** — slot props on `TideCard` (Z0 header, Z2 status bar), `TideCardTranscript` (Z1 unified trailing slot keyed by half), `TugPromptEntry` (Z3 retains existing `statusContent`, Z4 new footer). Z5 (submit button) acknowledged in the contract; structurally present already.
-7. **Lifecycle state machine + state-to-zone coordination matrix** — landed as a documented spec in [Step 20.5.A](#step-20-5-a); implemented as `useLifecycleState()` hook in [Step 20.5.C](#step-20-5-c).
+7. **Lifecycle state machine + state-to-zone coordination matrix** — landed as a documented spec in [Step 20.5.A](#step-20-5-a); implemented as `useLifecycleState()` hook in [Step 20.5.D](#step-20-5-d).
 8. **Z5 submit-button state coordination** — single DOM-node button with `data-mode` attribute driven by the lifecycle snapshot.
 9. **Cross-zone lifecycle coordination** — Z1, Z2, Z5 all read the same `useLifecycleState()` snapshot; matrix-coherence enforced by construction.
 10. **Polish-plan 13 / 14 / 15 audit and gap-close** — including `tide-question-dialog` (the confirmed missing inline-dialog variant).
-11. **Ship default telemetry placements** from the [Step 20.4](#step-20-4) HMR study as production zone content ([Step 20.5.C](#step-20-5-c)).
-12. **`/context`-style drill-down sheet** — full telemetry breakdown surface triggered by Z2 📊 affordance ([Step 20.5.D](#step-20-5-d)).
+11. **Ship default telemetry placements** from the [Step 20.4](#step-20-4) HMR study as production zone content ([Step 20.5.D](#step-20-5-d)).
+12. **`/context`-style drill-down sheet** — full telemetry breakdown surface triggered by Z2 📊 affordance ([Step 20.5.E](#step-20-5-e)).
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
@@ -120,8 +120,8 @@ From the stream-json corpus:
 - `cost_update.usage` semantics (cumulative vs. per-turn) determined empirically in [Step 20.3](#step-20-3) (Investigation A). The `extractTurnCost` helper TOLERATES either shape via cost-delta math; the empirical pass documents the actual semantic.
 - Transport-status signal (connect / disconnect) either already surfaced or addable in [Step 20.3](#step-20-3) (Investigation B). Either outcome keeps the work scoped.
 - `awaitingApprovalSince` reducer transitions fire on every dialog enter/exit reliably (both permission and question variants flow through `handleControlRequestForward` for entry and `handleRespondApproval` / `handleRespondQuestion` for exit).
-- Mount-identity invariants from [L26] hold for the wrapper insertions in [Step 20.4](#step-20-4) (`TideCardTranscript` survives the top-split-panel flex-column wrap) and the button mode transitions in [Step 20.5.C](#step-20-5-c) (`<button>` DOM node stable across `data-mode` changes).
-- HMR study in [Step 20.4](#step-20-4) produces a single chosen default mapping (no tie); if it does tie, [Step 20.5.C](#step-20-5-c) picks one and notes the alternative.
+- Mount-identity invariants from [L26] hold for the wrapper insertions in [Step 20.4](#step-20-4) (`TideCardTranscript` survives the top-split-panel flex-column wrap) and the button mode transitions in [Step 20.5.D](#step-20-5-d) (`<button>` DOM node stable across `data-mode` changes).
+- HMR study in [Step 20.4](#step-20-4) produces a single chosen default mapping (no tie); if it does tie, [Step 20.5.D](#step-20-5-d) picks one and notes the alternative.
 
 ---
 
@@ -129,9 +129,9 @@ From the stream-json corpus:
 
 #### [QT01] Drill-down sheet orientation — right-sliding vs. bottom-sliding? (OPEN) {#qt01-drilldown-orientation}
 
-**Question:** The `/context`-style drill-down ([Step 20.5.D](#step-20-5-d)) is a sheet that slides over the transcript while leaving Z2 + Z5 visible at the edges. Should it slide from the right (sidebar style) or from the bottom (drawer style)?
+**Question:** The `/context`-style drill-down ([Step 20.5.E](#step-20-5-e)) is a sheet that slides over the transcript while leaving Z2 + Z5 visible at the edges. Should it slide from the right (sidebar style) or from the bottom (drawer style)?
 
-**Decision target:** During [Step 20.5.D](#step-20-5-d) implementation. Decide based on tide-card aspect ratio in typical use — if cards are tall-and-narrow, bottom-sliding reads better; if wide, right-sliding does.
+**Decision target:** During [Step 20.5.E](#step-20-5-e) implementation. Decide based on tide-card aspect ratio in typical use — if cards are tall-and-narrow, bottom-sliding reads better; if wide, right-sliding does.
 
 **Status:** Deferred to implementation.
 
@@ -191,7 +191,7 @@ Local decisions specific to this plan. Broader rendering-layer decisions (e.g., 
 
 #### [DT04] Drill-down is a sheet, not a modal (DECIDED) {#dt04-drilldown-sheet}
 
-**Decision:** The `/context`-style drill-down ([Step 20.5.D](#step-20-5-d)) is a sheet that slides over the transcript while leaving Z2 (source of the affordance) and Z5 (primary action) visible at the edges. NOT a modal that hides the source of truth.
+**Decision:** The `/context`-style drill-down ([Step 20.5.E](#step-20-5-e)) is a sheet that slides over the transcript while leaving Z2 (source of the affordance) and Z5 (primary action) visible at the edges. NOT a modal that hides the source of truth.
 
 **Reasoning:** The drill-down's purpose is inspection — the user wants to see the detail behind the summary in Z2. A modal that hides Z2 breaks that mental model. A sheet preserves the spatial reference and keeps Z5 reachable if the user wants to take action.
 
@@ -215,6 +215,30 @@ For clarity across the document, key terms with potentially-ambiguous names:
 | `cumulativeSessionTokens` | Tokens consumed across the WHOLE session. SUM across all turns of `input + cache_creation + cache_read + output`. |
 | Z1 (per-turn trailing) | A single API keyed by `half: "user" \| "assistant"` — same slot wired twice per turn. The user half is reserved/empty in 20.4 + 20.5. |
 | Z5 (submit button) | Not a content slot — a state-coordinated interactive zone driven by the lifecycle state machine. |
+
+#### [DT07] Esc semantics — foreground-element-first, two-step cancellation (DECIDED) {#dt07-esc-semantics}
+
+**Decision:** The Esc key dismisses the topmost overlay or dialog if any is foregrounded (drill-down sheet, `TugInlineDialog`); otherwise it interrupts the in-flight turn (equivalent to clicking Stop).
+
+**Concrete behavior by lifecycle state:**
+
+| State | Esc behavior |
+|---|---|
+| IDLE / COMPLETE | nothing (or blur textarea — UX-comfort detail, not load-bearing) |
+| SUBMITTING / STREAMING / TOOL_WORK | trigger interrupt → INTERRUPTING |
+| AWAITING_USER | dismiss the dialog only — equivalent to a normal deny / cancel response, NOT a turn cancellation. Lifecycle resumes through STREAMING / TOOL_WORK. |
+| DRILLDOWN_OPEN (overlay) | close the drill-down sheet (lifecycle continues underneath) |
+| INTERRUPTING | nothing (already interrupting) |
+
+**Consequence — two-step cancellation from AWAITING_USER.** A user who wants to abort the entire turn while a dialog is up must press Esc twice: first Esc dismisses the dialog (auto-denies / cancels the dialog action; the turn resumes), then a second Esc (now no dialog foregrounded) interrupts the turn.
+
+**Reasoning:**
+- Matches the universal UI convention that Esc dismisses the topmost foreground element.
+- Keeps the user's intent explicit at each gesture — "I want to deny this dialog" and "I want to cancel this whole turn" are different requests, and conflating them in one keystroke risks accidental cancellations.
+- The Z5 Stop button is disabled during AWAITING_USER (per the matrix), so the two-step rule is consistent across both gestures (Esc and Stop both require dialog-first dismissal from AWAITING_USER).
+- INTERRUPTING is therefore NOT reachable from AWAITING_USER directly — the state graph in [Step 20.5.A](#step-20-5-a)'s diagram reflects this.
+
+**Alternatives considered:** Single-step cancellation that combines dialog-dismiss + interrupt in one Esc from AWAITING_USER. Rejected because it merges two distinct intents and the "deny + cancel" combo is rare in practice.
 
 ---
 
@@ -690,7 +714,7 @@ export function liveTurnActiveMs(state: CodeSessionState, now: number): number;
 
 **References:** [L02], [L19], [L20], [L26], [#step-20-3] (data model), [#step-20-1] / [#step-20-2] (gauge primitives), [Table T03](./tide-assistant-rendering.md#t03-chrome)
 
-**Scope.** [#step-20-3] makes per-turn + session-cumulative telemetry available cleanly. This step does NOT decide which numbers go where — it builds the **placement zones** the tide card needs and makes each one consumable so the same data can be moved between them during a deliberate UI study. Six zones are formalized in the contract (Z0–Z5); 20.4 implements display-only zones Z0–Z4 as `ReactNode` slot props. **Z5 (submit-button area) is structurally present already in `TugPromptEntry`; its lifecycle-driven state coordination lands in [#step-20-5.C](#step-20-5-c) and is therefore acknowledged here but not implemented.** The HMR study is part of this step's checkpoint; the final placement decision is captured at the close of this step as input to [#step-20-5.C](#step-20-5-c).
+**Scope.** [#step-20-3] makes per-turn + session-cumulative telemetry available cleanly. This step does NOT decide which numbers go where — it builds the **placement zones** the tide card needs and makes each one consumable so the same data can be moved between them during a deliberate UI study. Six zones are formalized in the contract (Z0–Z5); 20.4 implements display-only zones Z0–Z4 as `ReactNode` slot props. **Z5 (submit-button area) is structurally present already in `TugPromptEntry`; its lifecycle-driven state coordination lands in [#step-20-5.D](#step-20-5-d) and is therefore acknowledged here but not implemented.** The HMR study is part of this step's checkpoint; the final placement decision is captured at the close of this step as input to [#step-20-5.D](#step-20-5-d).
 
 **The zones (Z0–Z5).** Spatial top-to-bottom across the tide card:
 
@@ -709,7 +733,7 @@ export function liveTurnActiveMs(state: CodeSessionState, now: number): number;
 │                                                                             │
 ├═════════════════════════════════════════════ ←【Z2: status bar】       [📊]│
 │ (flex 0 0 auto, content-sized, never scrolls — outside TugListView)         │
-│ (📊 affordance at right edge opens /context-style drill-down — see 20.5.D)  │
+│ (📊 affordance at right edge opens /context-style drill-down — see 20.5.E)  │
 └─────────────────────────────────────────────────────────────────────────────┘
 ═════════ ↑ split-pane sash (transcript ↔ prompt-entry resize) ═════════════
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -723,12 +747,12 @@ export function liveTurnActiveMs(state: CodeSessionState, now: number): number;
 
   - **Z0: top of card (reserved).** _New_ slot — a `flex: 0 0 auto`, content-sized row at the very top of the top split-panel, above `TideTranscriptHost`. **Empty / reserved through 20.4 and 20.5.** Reserved for future card-level metadata (session name, model badge, pinned status, etc.). When its content is `null` the row collapses to zero height — the slot exists in the API contract but costs zero visually until something fills it.
   - **Z1: per-turn trailing — unified slot keyed by half.** _New_ slot — adjacent to the existing icon-only copy button on the assistant row's chrome, and at the symmetric trailing position on the user row. Per-turn (one slot per turn-half). Single API keyed by `half: "user" | "assistant"`; the transcript wires it twice per turn (once on the user row, once on the assistant row). The **user half is empty / reserved through 20.4 and 20.5** — the slot mechanism exists and the renderer registry can target it, but our chosen default content is `null`. Reserving the user half now avoids API churn when future content (timestamps, edit affordances, "show raw prompt" toggles) wants to live there. Architectural addition to `tide-card-transcript.tsx`'s row chrome.
-  - **Z2: status bar (bottom of top split-panel, outside TugListView).** _New_ slot — a `flex: 0 0 auto`, content-sized row that lives at the bottom of the upper `TugSplitPanel`, **outside** the scrolling `TugListView`. The top split-panel becomes a flex column: `[Z0 header (flex 0 0 auto)] + [TugListView (flex 1 1 auto, scrolls)] + [Z2 status bar (flex 0 0 auto, never scrolls)]`. TugListView keeps its scroll behavior unchanged (no `position: sticky` inside the virtualized scroller); the transcript↔prompt-entry sash stays exactly as today; no `tug-split-pane` changes; layout shift on telemetry update is contained (Z2 grows into space TugListView ceded, no scroll repositioning). Z2 also hosts the `📊` drill-down affordance at its right edge — that affordance wires in [#step-20-5.D](#step-20-5-d).
+  - **Z2: status bar (bottom of top split-panel, outside TugListView).** _New_ slot — a `flex: 0 0 auto`, content-sized row that lives at the bottom of the upper `TugSplitPanel`, **outside** the scrolling `TugListView`. The top split-panel becomes a flex column: `[Z0 header (flex 0 0 auto)] + [TugListView (flex 1 1 auto, scrolls)] + [Z2 status bar (flex 0 0 auto, never scrolls)]`. TugListView keeps its scroll behavior unchanged (no `position: sticky` inside the virtualized scroller); the transcript↔prompt-entry sash stays exactly as today; no `tug-split-pane` changes; layout shift on telemetry update is contained (Z2 grows into space TugListView ceded, no scroll repositioning). Z2 also hosts the `📊` drill-down affordance at its right edge — that affordance wires in [#step-20-5.E](#step-20-5-e).
   - **Z3: prompt-entry top.** The existing `statusContent` slot above the prompt-entry input — same DOM slot as before, just renamed under the new spatial numbering. Currently holds the project-path badge by default. **No invariant reserves this location for the project path** — Z3 is a generic addressable zone like any other, and the project-path badge is one possible occupant.
   - **Z4: prompt-entry footer.** _New_ slot — between the route buttons (`Code` / `Shell` / `Command`) and the submit button. Currently empty space. Architectural addition to `TugPromptEntry`.
-  - **Z5: submit-button area.** _Not a content slot — a state-coordinated interactive zone._ The submit button is structurally present already in `TugPromptEntry`'s footer. Its label / disabled state / visual treatment is driven by the lifecycle state machine documented in [#step-20-5.A](#step-20-5-a) and wired in [#step-20-5.C](#step-20-5-c). 20.4 does NOT touch the button; it only formalizes Z5 in the naming contract so renderer-registry consumers can reason about all five zones uniformly.
+  - **Z5: submit-button area.** _Not a content slot — a state-coordinated interactive zone._ The submit button is structurally present already in `TugPromptEntry`'s footer. Its label / disabled state / visual treatment is driven by the lifecycle state machine documented in [#step-20-5.A](#step-20-5-a) and wired in [#step-20-5.D](#step-20-5-d). 20.4 does NOT touch the button; it only formalizes Z5 in the naming contract so renderer-registry consumers can reason about all five zones uniformly.
 
-**Conformance.** Each of the four Z0–Z4 slots is a `ReactNode` slot prop on its host component, following the existing `statusContent` convention. No new primitives. Each host owns its slot's CSS layout box; consumers fill the slot with whatever (typed) display content makes sense. The slots are display-only — they don't capture user input or claim responder identity. Z5 is not added in this step (state-coordination is 20.5.C's work).
+**Conformance.** Each of the four Z0–Z4 slots is a `ReactNode` slot prop on its host component, following the existing `statusContent` convention. No new primitives. Each host owns its slot's CSS layout box; consumers fill the slot with whatever (typed) display content makes sense. The slots are display-only — they don't capture user input or claim responder identity. Z5 is not added in this step (state-coordination is 20.5.D's work).
 
 **Design — slot props.** Sketches; precise names finalized in implementation:
 
@@ -774,9 +798,9 @@ interface TugPromptEntryProps {
 
 The "✓" / "maybe" / "—" marks are starting positions, not decisions. The study confirms or rearranges.
 
-**Experimentation tooling.** Implement a small dev-mode display selector — keyboard shortcut or query-string flag — that toggles which datum renders in which slot. The goal is to make A/B comparisons during the HMR vet cheap. Production builds ship with the selector behind a guard (e.g., `import.meta.env.DEV`); the placement decisions captured at the end of this step land as the default content of each slot in [#step-20-5.C](#step-20-5-c).
+**Experimentation tooling.** Implement a small dev-mode display selector — keyboard shortcut or query-string flag — that toggles which datum renders in which slot. The goal is to make A/B comparisons during the HMR vet cheap. Production builds ship with the selector behind a guard (e.g., `import.meta.env.DEV`); the placement decisions captured at the end of this step land as the default content of each slot in [#step-20-5.D](#step-20-5-d).
 
-**`/context`-style on-demand surface.** Deferred to [#step-20-5.D](#step-20-5-d). 20.4's contribution: the `📊` affordance host site (right edge of Z2) is part of Z2's layout from day one, even though the affordance itself wires in 20.5.D. Reserving the host site here means 20.5.D adds the click target without re-laying-out Z2.
+**`/context`-style on-demand surface.** Deferred to [#step-20-5.E](#step-20-5-e). 20.4's contribution: the `📊` affordance host site (right edge of Z2) is part of Z2's layout from day one, even though the affordance itself wires in 20.5.E. Reserving the host site here means 20.5.E adds the click target without re-laying-out Z2.
 
 **Artifacts.**
 
@@ -796,7 +820,7 @@ The "✓" / "maybe" / "—" marks are starting positions, not decisions. The stu
 - [ ] **Renderer components** — small focused React components for each datum in the experimentation catalog, each consuming the [#step-20-3] telemetry helpers via `useSyncExternalStore` per [L02]. One renderer per datum; placement-agnostic.
 - [ ] **Experimentation harness** — dev-mode selector that maps {datum → slot}. Captures the chosen placement into a tugbank entry (or a hash-fragment) so HMR reloads preserve the experiment state. Productized as a tugplug skill if it gets enough use.
 - [ ] **Mount-identity verification** — confirm `TideCardTranscript` survives the top-split-panel wrapper insertion without unmount; confirm `TugPromptEntry`'s focus / responder identity survives the restructure. Use the existing tide-card caret/first-responder probe pattern (`c773c7ac`) if helpful.
-- [ ] **HMR study** — sit with the five-slot layout (Z0–Z4), A/B placements for each datum, decide which combination wins. The result is captured as the default mapping in [#step-20-5.C](#step-20-5-c)'s scope.
+- [ ] **HMR study** — sit with the five-slot layout (Z0–Z4), A/B placements for each datum, decide which combination wins. The result is captured as the default mapping in [#step-20-5.D](#step-20-5-d)'s scope.
 
 **Tests.**
 
@@ -810,7 +834,7 @@ The "✓" / "maybe" / "—" marks are starting positions, not decisions. The stu
 - [ ] `bun x tsc --noEmit` clean.
 - [ ] `bun test` green.
 - [ ] `bun run audit:tokens lint` exits 0.
-- [ ] **HMR study (manual)** — open a tide card, run a multi-turn session, A/B placement combinations using the dev selector, capture the chosen default mapping for [#step-20-5.C](#step-20-5-c).
+- [ ] **HMR study (manual)** — open a tide card, run a multi-turn session, A/B placement combinations using the dev selector, capture the chosen default mapping for [#step-20-5.D](#step-20-5-d).
 
 ---
 
@@ -818,11 +842,11 @@ The "✓" / "maybe" / "—" marks are starting positions, not decisions. The stu
 
 **Depends on:** #step-20-4 (slot infrastructure + placement decisions from the HMR study)
 
-**Status:** _not started — split into 20.5.A → 20.5.B → 20.5.C → 20.5.D, gated sequentially._
+**Status:** _not started — split into 20.5.A → 20.5.B → 20.5.C → 20.5.D → 20.5.E, gated sequentially._
 
-**Scope overview.** [#step-20-4] establishes the placement zones (Z0–Z4) as display-only slots and decides default content via HMR study. Step 20.5 closes the tide-card request/response lifecycle: it documents the state machine that drives everything (20.5.A), audits and closes gaps against polish-plan Steps 13 / 14 / 15 (20.5.B), wires Z5 + cross-zone lifecycle coordination + the chosen telemetry placement defaults (20.5.C), and ships the on-demand `/context`-style drill-down surface (20.5.D).
+**Scope overview.** [#step-20-4] establishes the placement zones (Z0–Z4) as display-only slots and decides default content via HMR study. Step 20.5 closes the tide-card request/response lifecycle: it documents the state machine that drives everything (20.5.A), audits and closes gaps against polish-plan Steps 13 / 14 / 15 (20.5.B), studies and adds the `agent` role to `TugProgress` for Z1's SUBMITTING-state immediate-feedback indicator (20.5.C), wires Z5 + cross-zone lifecycle coordination + the chosen telemetry placement defaults (20.5.D), and ships the on-demand `/context`-style drill-down surface (20.5.E).
 
-The four sub-steps are gated sequentially: 20.5.A is the spec that everything else references; 20.5.B closes pre-existing gaps so 20.5.C builds on working primitives; 20.5.C is the big implementation; 20.5.D layers the drill-down on top.
+The five sub-steps are gated sequentially: 20.5.A is the spec that everything else references; 20.5.B closes pre-existing gaps so downstream work builds on working primitives; 20.5.C does the small primitive prep (TugProgress agent role + variant study); 20.5.D is the big lifecycle implementation; 20.5.E layers the drill-down on top.
 
 **References:** [#step-20-3] (data model), [#step-20-4] (slot infrastructure + study outcome), [polish-plan #step-13](./tugplan-tide-card-polish.md#step-13), [polish-plan #step-14](./tugplan-tide-card-polish.md#step-14), [polish-plan #step-15](./tugplan-tide-card-polish.md#step-15), [L02], [L23], [L26]
 
@@ -838,56 +862,79 @@ The four sub-steps are gated sequentially: 20.5.A is the spec that everything el
 
 **References:** [#step-20-3] (data fields the matrix references), [#step-20-4] (zone catalog)
 
-**Scope.** Document the canonical state machine that governs the tide-card request/response lifecycle, plus the state-to-zone coordination matrix that 20.5.C will implement against. This step lands the spec into the plan itself; no code, no tests. The diagram + matrix below ARE the deliverable.
+**Scope.** Document the canonical state machine that governs the tide-card request/response lifecycle, plus the state-to-zone coordination matrix that 20.5.D will implement against. This step lands the spec into the plan itself; no code, no tests. The diagram + matrix below ARE the deliverable.
 
 **The state diagram.**
 
 ```
-                       ┌─────────────────┐
-                       │      IDLE       │
-                       │ (no active turn)│
-                       └────┬────────────┘
-                            │ user submits prompt
-                            ▼
-                       ┌─────────────────┐
-                       │   SUBMITTING    │ ← send frame in flight
-                       │   (transient)   │
-                       └────┬────────────┘
-                            │ first frame received
-                            ▼
-       ┌───────────────►┌─────────────────┐
-       │                │   STREAMING     │ ← assistant_delta + thinking_delta
-       │                └─┬──────┬───┬────┘
-       │                  │      │   │
-       │       tool_use   │      │   │ control_request_forward
-       │                  ▼      │   ▼
-       │           ┌───────────┐ │ ┌───────────────────┐
-       │           │ TOOL_WORK │ │ │  AWAITING_USER    │
-       │           └────┬──────┘ │ │  (permission OR   │
-       │                │        │ │   question)       │
-       │   tool_result  │        │ └──┬────────────────┘
-       └────────────────┘        │    │ allow / deny / answer
-                                 │    │
-                                 └────┘  (resume STREAMING or TOOL_WORK)
-                            │
-                            │ turn_complete
-                            ▼
-                       ┌─────────────────┐
-                       │    COMPLETE     │ ← TurnEntry frozen
-                       └────┬────────────┘
-                            │ user submits next
-                            └─────► (back to SUBMITTING)
+            ┌──────┐
+            │ IDLE │
+            └──┬───┘
+               │ user submits
+               ▼
+        ┌────────────┐
+   ┌────│ SUBMITTING │──┐
+   │    └─────┬──────┘  │
+   │          │ first   │
+   │          │ frame   │
+   │          ▼         │
+   │   ┌─────────────┐  │
+   │   │  STREAMING  │◄─┼──── tool_result ─────┐
+   │   └─┬──────┬────┘  │                      │
+   │     │      │       │                      │
+   │     │ tool_use     │                      │
+   │     ▼      │       │                ┌───────────┐
+   │ ┌───────────┐      │ ctrl_req_      │ TOOL_WORK │
+   │ │ TOOL_WORK │──────┤ forward        └───────────┘
+   │ └───────────┘      │                      ▲
+   │                    ▼                      │
+   │             ┌────────────────┐            │
+   │             │ AWAITING_USER  │            │
+   │             │ (perm OR qstn) │── allow/deny/answer ─►
+   │             └────────────────┘   (resume STREAMING
+   │                  │                or TOOL_WORK above)
+   │                  │
+   │                  │ in-dialog Esc / cancel button =
+   │                  │ DIALOG DISMISS only (not turn cancel)
+   │                  │ → equivalent to deny/cancel response
+   │                  │ → lifecycle resumes
+   │                  │
+   ├── CANCEL TRIGGER: Esc (no overlay foregrounded)
+   │                   OR Stop button click
+   │                   from { SUBMITTING, STREAMING, TOOL_WORK }
+   │                   (NOT reachable from AWAITING_USER — see [DT07])
+   ▼
+   ┌────────────────┐
+   │  INTERRUPTING  │ ← interrupt frame in flight; brief transient
+   │ (Z5 "Stopping…"│   (interruptInFlight === true)
+   │  disabled)     │
+   └────────┬───────┘
+            │ turn_complete (reason="interrupted")
+            ▼
+   ┌─────────────────────────────────┐
+   │           COMPLETE              │ ← TurnEntry frozen
+   │ turnEndReason determines badge: │
+   │   "complete"                    │ ← normal STREAMING → turn_complete
+   │   "interrupted"                 │ ← from INTERRUPTING above
+   │   "error"                       │ ← protocol error mid-turn
+   │   "transport_lost"              │ ← transport down at turn end
+   └──────────────┬──────────────────┘
+                  │ user submits next
+                  └─────────► (back to SUBMITTING)
 
-  Terminal-state branches off STREAMING / TOOL_WORK / AWAITING_USER:
-    • user clicks Stop → INTERRUPTING → INTERRUPTED → COMPLETE
-    • protocol error  → ERRORED       → COMPLETE
-    • transport lost  → TRANSPORT_LOST → COMPLETE
+  Note: ERRORED and TRANSPORT_LOST are NOT separate states — they are
+  turnEndReason values on the COMPLETE state's frozen TurnEntry. Only
+  INTERRUPTING is a distinct transient state, because Z5 must show
+  "Stopping…" disabled while the interrupt frame is in flight.
 
   Overlay states (orthogonal — can apply during any state above):
     • TRANSPORT_DOWN     ← WebSocket disconnected; reconnect attempts running
+                           (during a turn → accumulates transportDowntimeMs;
+                            at terminal moment → COMPLETE with reason="transport_lost")
     • QUEUED_NEXT_TURN   ← user typed + submitted during STREAMING/TOOL_WORK
                            (queued for auto-flush on idle)
-    • DRILLDOWN_OPEN     ← user opened the /context-style breakdown surface
+    • DRILLDOWN_OPEN     ← user opened the /context-style breakdown sheet
+                           (Esc closes the sheet, not the turn — see [DT07])
 ```
 
 **State definitions.**
@@ -905,7 +952,7 @@ The four sub-steps are gated sequentially: 20.5.A is the spec that everything el
 | QUEUED_NEXT_TURN (overlay) | User typed + submitted during STREAMING/TOOL_WORK; queued turn waits in `pendingUserMessage`. | `pendingUserMessage !== null` |
 | DRILLDOWN_OPEN (overlay) | User opened the `/context`-style breakdown via the Z2 affordance. | UI-local state (not reducer-tracked) |
 
-**The state-to-zone coordination matrix.** What each zone shows / does in each state. This is the contract 20.5.C implements:
+**The state-to-zone coordination matrix.** What each zone shows / does in each state. This is the contract 20.5.D implements:
 
 | State | Z0 (top of card) | Z1 (per-turn trailing — asst half) | Z2 (status bar) | Z3 (prompt-entry top) | Z4 (prompt-entry footer) | Z5 (submit button) |
 |---|---|---|---|---|---|---|
@@ -925,14 +972,14 @@ The four sub-steps are gated sequentially: 20.5.A is the spec that everything el
 1. **The `awaitingApprovalSince` / `awaitingApprovalMs` state from [#step-20-3] drives three coordinated UI surfaces simultaneously** — Z1's "⏳ paused," Z2's "frozen during pause + awaiting badge," and Z5's "Awaiting your input" disabled mode. Same state field, three zones coordinated. This is the direct validator that the 20.3 data model is correctly shaped — if any of these three lag or de-sync, the data plumbing is wrong.
 2. **`turnEndReason` from [#step-20-3] drives the terminal branch into COMPLETE.** `"complete" | "interrupted" | "error" | "transport_lost"` each map to distinct visual affordances on the row (e.g., a small "🛑 interrupted" badge for interrupted turns).
 
-**Why this is a spec-only step.** The diagram + matrix are load-bearing for every implementation sub-step that follows. Landing them as the deliverable here means 20.5.B / 20.5.C / 20.5.D all reference a single canonical artifact rather than re-deriving the lifecycle from scratch. The cost of a misaligned mental model across three implementation sub-steps is enormous; the cost of writing this down once is small.
+**Why this is a spec-only step.** The diagram + matrix are load-bearing for every implementation sub-step that follows. Landing them as the deliverable here means 20.5.B / 20.5.C / 20.5.D / 20.5.E all reference a single canonical artifact rather than re-deriving the lifecycle from scratch. The cost of a misaligned mental model across four implementation sub-steps is enormous; the cost of writing this down once is small.
 
 **Conformance.** No code. The deliverable is the diagram + matrix + state definitions, landed into this plan. The commit is documentation only.
 
 **Tasks.**
 
 - [ ] Land the state diagram (above) into the plan as the canonical reference.
-- [ ] Land the state-to-zone coordination matrix (above) as the contract for 20.5.C.
+- [ ] Land the state-to-zone coordination matrix (above) as the contract for 20.5.D.
 - [ ] Cross-reference [#step-20-3]'s `awaitingApprovalMs` / `turnEndReason` fields from the matrix.
 
 **Checkpoint.** No build/test/lint — this is plan-only.
@@ -949,7 +996,7 @@ The four sub-steps are gated sequentially: 20.5.A is the spec that everything el
 
 **References:** [polish-plan #step-13](./tugplan-tide-card-polish.md#step-13), [polish-plan #step-14](./tugplan-tide-card-polish.md#step-14), [polish-plan #step-15](./tugplan-tide-card-polish.md#step-15), [#step-20-5-a]
 
-**Scope.** Walk the current code against polish-plan Steps 13 (thinking + tool surfaces), 14 (mid-stream behaviors), and 15 (`control_request_forward` UI). Document what's done; identify gaps; close the gaps so 20.5.C builds on working primitives. Known gap from the preliminary audit: `tide-question-dialog` (only the permission variant has a chrome wrapper today).
+**Scope.** Walk the current code against polish-plan Steps 13 (thinking + tool surfaces), 14 (mid-stream behaviors), and 15 (`control_request_forward` UI). Document what's done; identify gaps; close the gaps so 20.5.D builds on working primitives. Known gap from the preliminary audit: `tide-question-dialog` (only the permission variant has a chrome wrapper today).
 
 **Audit checklist** (each item gets a ✓ if implemented, ✗ + remediation task if not):
 
@@ -968,7 +1015,7 @@ The four sub-steps are gated sequentially: 20.5.A is the spec that everything el
 2. **`tide-card.tsx`** wires both dialog variants on the in-flight `control_request_forward` — permission and question both render inline in the in-flight row.
 3. **Coverage tests** for any polish-14 scenario that audits ✗ — fixture tests for Stop / queued sends / tool sub-state, against the reducer + UI together.
 
-**Conformance.** Build only on existing primitives. No new architecture in this step — it's a known-gap-closer, not a redesign. The lifecycle state machine from 20.5.A defines the target behavior; this step ensures the primitives behind that behavior actually exist before 20.5.C wires coordination on top.
+**Conformance.** Build only on existing primitives. No new architecture in this step — it's a known-gap-closer, not a redesign. The lifecycle state machine from 20.5.A defines the target behavior; this step ensures the primitives behind that behavior actually exist before 20.5.D wires coordination on top.
 
 **Artifacts.**
 
@@ -1001,9 +1048,63 @@ The four sub-steps are gated sequentially: 20.5.A is the spec that everything el
 
 ---
 
-#### Step 20.5.C: Z5 + lifecycle-coordinated zone content (ship the matrix) {#step-20-5-c}
+#### Step 20.5.C: `TugProgress` `agent` role + Z1 SUBMITTING-state variant study {#step-20-5-c}
 
-**Depends on:** #step-20-5-a (matrix spec), #step-20-5-b (primitives working), #step-20-4 (slot infrastructure + chosen telemetry placement defaults)
+**Depends on:** #step-20-5-a (matrix this step updates), #step-20-5-b (primitives working)
+
+**Status:** _not started._
+
+**Commit:** `feat(tugways): TugProgress agent role + Z1 SUBMITTING-state variant study`
+
+**References:** [L17], [L19], [L20], [#step-20-5-a] (matrix Z1 SUBMITTING row to be updated), [#step-20-5-d] (downstream wiring consumer)
+
+**Scope note — why this step exists.** Today, when a user submits a prompt, an empty assistant entry is added immediately to the transcript and stays blank until the first `assistant_delta` arrives. That gap reads as "nothing is happening" — the user has no immediate signal that the system received the prompt and is working on it. [Step 20.5.A](#step-20-5-a)'s matrix specifies a "⏳ ticking" placeholder for Z1 asst-half during SUBMITTING and early-STREAMING, but the placeholder needs to be replaced with a concrete visual primitive: `TugProgress` with the `agent` role. The component already ships (gallery card exists with Spinner / Bar / Ring / Pie variants in both indeterminate and determinate modes), but the role set today is accent / action / success / danger — missing `agent`, which is the semantically correct role for "the assistant is working."
+
+This step does three things:
+
+1. **Primitive change — add `agent` role to TugProgress.** Mirror `TugBadge`'s agent role. New `--tugx-progress-fill-agent-color` slot in `tug-progress.css` body{}, one-hop alias to `--tug7-*` per [L17]. The role-driven color machinery already exists for the four current roles; adding a fifth is mechanical.
+2. **Variant study — pick the right TugProgress shape for Z1.** Z1 asst-half is a small inline slot at the trailing edge of the assistant row's chrome (next to the copy button). Two candidates to compare empirically in the gallery: **spinner indeterminate** (most compact, classic "loading" feel) and **ring indeterminate** (compact, slightly more visual presence). **Bar indeterminate** is ruled out for Z1 footprint reasons. Pick the winner via HMR / gallery visual review. Document the choice + rationale in this step's status line.
+3. **Matrix update.** Replace the placeholder "⏳ ticking" / "⏳ frozen" text in [Step 20.5.A](#step-20-5-a)'s state-to-zone matrix Z1-asst-half column with the concrete `TugProgress variant="{chosen}" role="agent"` spec. The actual zone wiring lands in [Step 20.5.D](#step-20-5-d); this step just makes the matrix authoritative so 20.5.D has no more decisions to make.
+
+**Scope note — what this step does NOT do.** No `tide-card-transcript.tsx` changes. No `TideCard` changes. No `useLifecycleState` integration. All Z1 wiring is [Step 20.5.D](#step-20-5-d)'s scope — this step is preparation only. The TugProgress primitive change and the variant choice are the only deliverables.
+
+**Scope note — broader role parity (deferred).** TugProgress currently has accent / action / success / danger. TugBadge has those plus agent / data / caution. This step adds only `agent` (the role we have a concrete consumer for). The remaining role gaps (data, caution) are not added here; they can land in subsequent component-library work when there's a concrete need. Speculative role additions age poorly.
+
+**Conformance.** Tugways primitive role addition — `tuglaws/component-authoring.md` + [L17] (one-hop alias) + [L20] (token sovereignty: `--tugx-progress-fill-agent-color` is part of TugProgress's slot family). Gallery card extension follows the existing ROLES section pattern.
+
+**Artifacts.**
+
+- `tugdeck/src/components/tugways/tug-progress.css` — new `--tugx-progress-fill-agent-color` slot declared in `body{}`; new `[data-role="agent"]` rule that paints the fill with the agent color. One-hop alias to a `--tug7-*` base token (likely the same base token TugBadge's agent role uses, for visual consistency).
+- `tugdeck/src/components/tugways/tug-progress.tsx` — extend the `role` prop's accepted union with `"agent"`. No structural changes.
+- `tugdeck/src/components/tugways/cards/gallery-tug-progress.tsx` — extend the ROLES section to include the agent row (alongside accent / action / success / danger).
+- `roadmap/tide-assistant-turns.md` (this file) — update [Step 20.5.A](#step-20-5-a)'s matrix Z1-asst-half column to specify the chosen TugProgress variant + role="agent". Update [DT06](#dt06-naming-glossary) to add a glossary entry for the new TugProgress role.
+
+**Tasks.**
+
+- [ ] **Add `agent` role to TugProgress** — slot declaration in body{}; `[data-role="agent"]` rule; type union extension.
+- [ ] **Extend gallery card** — add the agent row to the ROLES section so visual review of the new role is possible.
+- [ ] **Variant study (manual, HMR + gallery)** — visually compare `<TugProgress kind="spinner" indeterminate role="agent" />` vs. `<TugProgress kind="ring" indeterminate role="agent" />` at Z1's expected size (~16–20px). Pick one. Record the choice + a one-sentence rationale in this step's status line.
+- [ ] **Matrix update** — replace the Z1 asst-half placeholder text in 20.5.A's matrix for the SUBMITTING and STREAMING rows (and any other row where pre-content indication applies) with the concrete `TugProgress` spec from the study.
+- [ ] **Glossary update** — add a row to [DT06](#dt06-naming-glossary) for the TugProgress agent-role consumer.
+
+**Tests.**
+
+- [ ] `TugProgress` with `role="agent"` renders without warnings and without missing tokens in both `brio` and `harmony` themes.
+- [ ] Gallery card's ROLES section includes the agent row.
+- [ ] (No matrix-wiring tests here — those land in [Step 20.5.D](#step-20-5-d).)
+
+**Checkpoint.**
+
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+- [ ] **HMR study (manual)** — open `gallery-tug-progress`; visually compare the agent-role variants (spinner and ring, both indeterminate) at Z1's expected scale; pick the winner; record the choice in this step's status line and update 20.5.A's matrix.
+
+---
+
+#### Step 20.5.D: Z5 + lifecycle-coordinated zone content (ship the matrix) {#step-20-5-d}
+
+**Depends on:** #step-20-5-a (matrix spec), #step-20-5-b (primitives working), #step-20-5-c (TugProgress agent-role variant chosen for Z1), #step-20-4 (slot infrastructure + chosen telemetry placement defaults)
 
 **Status:** _not started._
 
@@ -1087,15 +1188,15 @@ export function deriveLifecycleSnapshot(
 
 ---
 
-#### Step 20.5.D: `/context`-style on-demand drill-down surface {#step-20-5-d}
+#### Step 20.5.E: `/context`-style on-demand drill-down surface {#step-20-5-e}
 
-**Depends on:** #step-20-5-c (lifecycle hook + Z2 affordance host site)
+**Depends on:** #step-20-5-d (lifecycle hook + Z2 affordance host site)
 
 **Status:** _not started._
 
 **Commit:** `feat(tide-rendering): /context-style telemetry drill-down surface (Z2 📊 affordance)`
 
-**References:** [#step-20-5-a] (DRILLDOWN_OPEN overlay state), [#step-20-5-c] (lifecycle hook), [#step-20-3] (telemetry data exposed by the drill-down), [#step-20-4] (Z2 affordance host site)
+**References:** [#step-20-5-a] (DRILLDOWN_OPEN overlay state), [#step-20-5-d] (lifecycle hook), [#step-20-3] (telemetry data exposed by the drill-down), [#step-20-4] (Z2 affordance host site)
 
 **Scope.** Build the on-demand `/context`-style breakdown surface that surfaces the FULL telemetry detail — every field on every `TurnEntry`, per-model breakdown if multiple models were used, the live `cost_update` payload, the gauge thresholds, the four-clock breakdown (`wallClockMs` / `awaitingApprovalMs` / `transportDowntimeMs` / `activeMs`), per-tool wall via `ToolCall.toolWallMs`, latency markers (`ttftMs` / `ttftcMs`), and reconnect / stream-gap diagnostics. Mirrors the terminal Claude Code's `/context` behavior.
 
