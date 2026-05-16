@@ -64,6 +64,7 @@ Both problems collapse to a missing **state-coordinated turn surface**. This pla
 3. **Transport-status signal** — if not surfaced today, add a minimal `transport_status: "connected" | "disconnected"` signal to the store. (Investigation B in [Step 20.3](#step-20-3).)
 4. **Pure-logic helper module** — new `lib/code-session-store/telemetry.ts` with `perTurnContextSize`, `extractTurnCost`, `deriveSessionTotals`, and the `liveTurn*` family (live-running clocks for in-flight readouts).
 5. **`tailSpacer="80cqh"` investigation** — retire-or-document the transcript scroll hack ([Step 20.3.5](#step-20-3-5)).
+5a. **`TugDevPanel` dev inspector surface** — persistent, native-triggered, framework-shaped (Opt-Cmd-/ from Tug.app's Developer menu); first tab is the [Step 20.3](#step-20-3) telemetry inspector and gates the 20.3 HMR vet ([Step 20.3.1](#step-20-3-1)).
 6. **Six-zone placement architecture** — slot props on `TideCard` (Z0 header, Z2 status bar), `TideCardTranscript` (Z1 unified trailing slot keyed by half), `TugPromptEntry` (Z3 retains existing `statusContent`, Z4 new footer). Z5 (submit button) acknowledged in the contract; structurally present already.
 7. **Lifecycle state machine + state-to-zone coordination matrix** — landed as a documented spec in [Step 20.5.A](#step-20-5-a); implemented as `useLifecycleState()` hook in [Step 20.5.D](#step-20-5-d).
 8. **Z5 submit-button state coordination** — single DOM-node button with `data-mode` attribute driven by the lifecycle snapshot.
@@ -766,7 +767,225 @@ The early-return guards in each handler prevent double-entries.
 - [x] `bun x tsc --noEmit` clean.
 - [x] `bun test` green — 1946 pass / 0 fail / 8431 expect() calls across 114 files.
 - [x] `bun run audit:tokens lint` exits 0.
-- [ ] **HMR vet (manual user action)** — open a tide card, send a turn that triggers a permission dialog, take some time before clicking Allow, watch the turn commit; open the snapshot via dev-tools (or a debug log) and confirm: `TurnEntry.awaitingApprovalMs` matches the time you spent on the dialog; `TurnEntry.transportDowntimeMs === 0` when the network was stable; `TurnEntry.cost.inputTokens + cacheCreationInputTokens + cacheReadInputTokens` looks plausible vs. the Claude-side cost-update payload; `TurnEntry.ttftMs` is small and positive; `TurnEntry.turnEndReason === "complete"`.
+- [ ] **HMR vet (manual user action)** — deferred to [#step-20-3-1](#step-20-3-1). Reads the per-turn telemetry fields off the new `TugDevPanel` once it ships, instead of through ad-hoc `console.log` instrumentation. Acceptance criteria stay the same: `TurnEntry.awaitingApprovalMs` matches the time you spent on the dialog; `TurnEntry.transportDowntimeMs === 0` when the network was stable; `TurnEntry.cost.inputTokens + cacheCreationInputTokens + cacheReadInputTokens` looks plausible vs. the Claude-side cost-update payload; `TurnEntry.ttftMs` is small and positive; `TurnEntry.turnEndReason === "complete"`.
+
+---
+
+#### Step 20.3.1: `TugDevPanel` — persistent native-triggered dev inspector surface {#step-20-3-1}
+
+**Depends on:** [#step-20-3](#step-20-3) (the telemetry fields the first tab inspects), tugbank (for state persistence), tugcast (for the Swift→tugdeck control channel).
+
+**Status:** _not started._
+
+**Commit:** `feat(tugdevpanel): persistent dev inspector toggled from Tug.app Developer menu (Opt-Cmd-/)`
+
+**References:** [L02], [L06], [L13], [L19], [L20], [L23], [L26], [feedback_no_localstorage], [feedback_persistent_text_entry], [#step-20-3] (data the first tab consumes).
+
+**Scope note — why we are building this.** The 20.3 HMR vet's "open the snapshot via dev-tools" instruction is the canary for a recurring failure mode in tugdeck work: every time we need to inspect store state during a manual check, we add a one-shot `console.log` or a `(window as any).__foo = bar` slot, ship it as a "temporary" diagnostic, and then leave it in place because nothing better exists. Over weeks, those crappy little debug holes accumulate. This step replaces that pattern with one proper observation surface — Tug-specific (not browser-specific), persistent across HMR, and **designed to grow** new inspector tabs as future steps need them. The 20.3 telemetry vet is the first consumer; subsequent inspectors (transport timeline, replay clock, events log, PropertyStore tree) drop in as sibling tabs without re-architecting the IPC channel.
+
+**Scope.** Build the panel framework + the first inspector tab (`Telemetry`) covering [#step-20-3]'s per-turn fields. The framework is the load-bearing deliverable; the Telemetry tab is the proof that the framework's contract is right.
+
+**Three deliverables:**
+
+1. **macOS Developer menu + Opt-Cmd-/ shortcut.** New `DeveloperMenu` (NSMenu) appended to Tug.app's menu bar, gated on a debug build flag (`#if DEBUG` or equivalent — never ships in release builds). One menu item: "Show Dev Panel," key equivalent `/`, modifiers `[.option, .command]`. The action sends a tugcast control frame on a new feed `DEV_CONTROL`.
+2. **`TugDevPanelStore` + `<TugDevPanel>` framework.** A proper [L02] store carries `{ open, activeTab, selectedCardId }`; persists via tugbank per [feedback_no_localstorage]; subscribes to `DEV_CONTROL` for the toggle signal. The React panel mounts ONCE at app root and toggles visibility via DOM (per [L06]) — never via React-tree re-mount.
+3. **`<TelemetryInspector>` — first tab.** Reads the selected card's `CodeSessionStore` via `useSyncExternalStore` like any other consumer, surfaces live + committed [#step-20-3] telemetry, and exposes "Copy as JSON" for screenshot-free reporting.
+
+**Architecture.**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Tug.app (Swift) — debug build only                             │
+│  ────────────────                                               │
+│  DeveloperMenu                                                  │
+│   └ "Show Dev Panel"  (Opt-Cmd-/)  ─── sends ─┐                 │
+│                                                │                │
+│                       tugcast feed: DEV_CONTROL│                │
+│                       msg: { type: "dev_panel_toggle" } ─┐      │
+└──────────────────────────────────────────────────────────│──────┘
+                                                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  tugdeck (React) — always mounted                               │
+│  ────────────────                                               │
+│  TugDevPanelStore  (L02)                                        │
+│   ├ subscribes to tugcast DEV_CONTROL                           │
+│   ├ snapshot: { open: bool, activeTab: TabId, selectedCardId }  │
+│   └ persistence via tugbank `/api/defaults/dev-panel/*`         │
+│                                                                 │
+│  <TugDevPanel>  (mounted once at app root, hidden by default)   │
+│   ├ <TabStrip activeTab onSelect/>                              │
+│   ├ <CardPicker selected onSelect/>                             │
+│   │     (enumerates per-card CodeSessionStores via              │
+│   │      cardServicesStore — read-only)                         │
+│   └ <TelemetryInspector card={selected}/>                       │
+│        ├ Live section  — useLifecycleTick + liveTurn* helpers   │
+│        ├ Last committed TurnEntry  — full field table           │
+│        ├ Session totals  — deriveSessionTotals(transcript)      │
+│        └ "Copy as JSON" — clipboard write only                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Telemetry tab — field layout.**
+
+| Section | Source | Refresh strategy |
+|---|---|---|
+| Card identity | `tugSessionId`, `displayLabel`, `sessionMode` | event-driven via [L02] |
+| Phase + transport | `snapshot.phase`, `snapshot.transportState` | event-driven |
+| Live in-flight clocks | `liveTurnWallClockMs`, `liveTurnAwaitingApprovalMs`, `liveTurnTransportDowntimeMs`, `liveTurnActiveMs` | [`useLifecycleTick(phase, 1000)`](./tide-assistant-turns.md#step-20-3) |
+| Live counters | `state.transportReconnectCount`, `state.maxStreamGapMs`, `state.firstAssistantDeltaAt`, `state.firstToolUseAt` | event-driven |
+| Last committed `TurnEntry` | `transcript[transcript.length - 1]` (or message "no committed turns yet") | event-driven |
+| Session totals | `deriveSessionTotals(transcript)` | event-driven |
+| Copy as JSON | reads snapshot at click time | on demand |
+
+Each numeric field renders alongside its **field path** (e.g. `TurnEntry.awaitingApprovalMs`) so a screenshot of the panel is self-documenting and reviewers don't have to ask "which number is that?"
+
+**Conformance.**
+
+- **[L02]** — `TugDevPanelStore` is a proper external store; React reads via `useSyncExternalStore`. The Telemetry tab reads each `CodeSessionStore` the same way — no privileged accessors, no leaks. The panel does not subscribe to any state it doesn't render.
+- **[L06]** — open/closed visual state is `display: none` (or equivalent) toggled via DOM; React keeps the panel mounted. Tab switches re-render the inspector content; the panel chrome stays.
+- **[L13]** — `useLifecycleTick` already handles the live clock; no rAF.
+- **[L19]** — composed of small focused components: `<TabStrip>`, `<CardPicker>`, `<TelemetryInspector>`, `<FieldRow>`, `<FieldSection>`.
+- **[L20]** — panel owns `--tugx-devpanel-*` slots (surface-color, border-color, text-color, font-mono, field-label-color, field-value-color, copy-button-bg-color, etc.) that alias brio/harmony base tokens via the "alias my own family, don't override the child's" rule.
+- **[L23]** — preserves open/closed state, active tab, and selected card across HMR via tugbank persistence.
+- **[L26]** — panel mount identity is stable; tab switches don't unmount the panel root.
+- **[feedback_no_localstorage]** — no `localStorage` / `sessionStorage` / `IndexedDB`. All persistence via tugbank `/api/defaults/dev-panel/{open,activeTab,selectedCardId}`.
+- **[feedback_persistent_text_entry]** — the panel does NOT claim persistent text-entry destination. Any future search/filter inputs are transient per the single-persistent-destination rule.
+- **Read-only.** No mutations of session state. (Future tabs MAY add controlled actions — e.g. "force a soft-budget tick" for replay testing — but 20.3.1 ships zero action affordances.)
+- **Debug build only.** The Swift Developer menu is gated on a debug build flag; the tugdeck-side panel framework ships always (it's inert without the toggle signal) but adds zero runtime cost when `open === false` because [L06]'s display-toggle keeps the inspector tree out of the layout.
+
+**Design — type sketch.**
+
+```typescript
+// lib/tug-dev-panel-store/types.ts
+
+export type TugDevPanelTabId = "telemetry"; // | "lifecycle" | "transport" | ... (future)
+
+export interface TugDevPanelSnapshot {
+  open: boolean;
+  activeTab: TugDevPanelTabId;
+  /** Card whose store the active inspector reads. Null when no card is selected
+   *  (e.g., no cards are open yet); the inspector renders an empty-state. */
+  selectedCardId: string | null;
+}
+
+// lib/tug-dev-panel-store/tug-dev-panel-store.ts
+
+export class TugDevPanelStore {
+  constructor(deps: {
+    conn: TugConnection;
+    cardServicesStore: CardServicesStore;
+    tugbank: TugbankClient;
+  });
+
+  getSnapshot(): TugDevPanelSnapshot;
+  subscribe(listener: () => void): () => void;
+
+  // Mutations (called from panel UI, never from elsewhere).
+  toggle(): void;
+  setOpen(open: boolean): void;
+  selectTab(tab: TugDevPanelTabId): void;
+  selectCard(cardId: string | null): void;
+
+  dispose(): void;
+}
+```
+
+**macOS integration (Swift) — sketch.**
+
+```swift
+// Tug.app/Menus/DeveloperMenu.swift  (compiled only under #if DEBUG)
+
+@MainActor
+final class DeveloperMenu {
+  private let tugcast: TugcastConnection
+
+  init(tugcast: TugcastConnection) {
+    self.tugcast = tugcast
+  }
+
+  func install(in mainMenu: NSMenu) {
+    let devMenuItem = NSMenuItem(title: "Developer", action: nil, keyEquivalent: "")
+    let devMenu = NSMenu(title: "Developer")
+    devMenuItem.submenu = devMenu
+
+    let toggle = NSMenuItem(
+      title: "Show Dev Panel",
+      action: #selector(togglePanel),
+      keyEquivalent: "/"
+    )
+    toggle.keyEquivalentModifierMask = [.option, .command]
+    toggle.target = self
+    devMenu.addItem(toggle)
+
+    mainMenu.addItem(devMenuItem)
+  }
+
+  @objc private func togglePanel() {
+    tugcast.send(feed: .devControl, payload: ["type": "dev_panel_toggle"])
+  }
+}
+```
+
+**Artifacts.**
+
+- `tugdeck/src/lib/tug-dev-panel-store/types.ts` — `TugDevPanelTabId`, `TugDevPanelSnapshot`, store contract.
+- `tugdeck/src/lib/tug-dev-panel-store/tug-dev-panel-store.ts` — class wrapper; subscribes to `DEV_CONTROL` feed; hydrates from tugbank; persists writes.
+- `tugdeck/src/lib/tug-dev-panel-store/reducer.ts` — pure reducer (toggle / selectTab / selectCard / hydrateFromTugbank / receiveControlFrame).
+- `tugdeck/src/components/tug-dev-panel/TugDevPanel.tsx` — root panel; `<TabStrip>` + `<CardPicker>` + active inspector slot.
+- `tugdeck/src/components/tug-dev-panel/TabStrip.tsx`
+- `tugdeck/src/components/tug-dev-panel/CardPicker.tsx`
+- `tugdeck/src/components/tug-dev-panel/FieldRow.tsx` — `(label, value, fieldPath, hint?)` row primitive shared by all inspectors.
+- `tugdeck/src/components/tug-dev-panel/FieldSection.tsx` — collapsible section grouping `FieldRow`s.
+- `tugdeck/src/components/tug-dev-panel/inspectors/TelemetryInspector.tsx` — first tab; consumes `CodeSessionStore` + `liveTurn*` + `deriveSessionTotals`.
+- `tugdeck/src/components/tug-dev-panel/copy-as-json.ts` — small helper; clipboard write.
+- `tugdeck/styles/themes/brio.css` + `harmony.css` — `--tugx-devpanel-*` slot definitions per [L20].
+- `tugdeck/src/components/tug-dev-panel/tug-dev-panel.css` — panel layout; `display: none` toggle hook.
+- `tugdeck/src/protocol/feeds.ts` — register `DEV_CONTROL` feed id.
+- `tugapp/Tug/Menus/DeveloperMenu.swift` — `#if DEBUG`-gated menu (per CLAUDE.md tugapp/ structure).
+- `tugapp/Tug/AppDelegate.swift` (or equivalent menu wiring point) — installs `DeveloperMenu` at launch under `#if DEBUG`.
+- Tests:
+  - `tugdeck/src/lib/tug-dev-panel-store/__tests__/reducer.test.ts` — toggle / tab-select / card-select / DEV_CONTROL frame handling.
+  - `tugdeck/src/lib/tug-dev-panel-store/__tests__/persistence.test.ts` — tugbank round-trip (hydrate → mutate → re-hydrate).
+  - `tugdeck/src/components/tug-dev-panel/__tests__/field-row.test.ts` — pure-render snapshot of `<FieldRow>` for representative (label, value, path) triples.
+  - `tugdeck/src/components/tug-dev-panel/inspectors/__tests__/telemetry-inspector.test.ts` — pure-logic projection from a synthetic `CodeSessionState` → expected field/value map (NO render, per [feedback_no_happy_dom_tests]).
+  - app-test: `tugapp-tests/dev-panel-toggle.test.ts` — exercises Opt-Cmd-/ → panel visible → second invocation → panel hidden, using the existing app-test keyboard harness; ends with `VERDICT: PASS|FAIL` per [feedback_just_app_test].
+
+**Tasks.**
+
+- [ ] **Register `DEV_CONTROL` feed id** in `tugdeck/src/protocol/feeds.ts` (and matching Rust enum in `tugrust/crates/tugcast/`).
+- [ ] **`TugDevPanelStore` reducer + class wrapper** — pure reducer + tugcast subscription + tugbank hydrate/persist.
+- [ ] **Panel framework components** — `TugDevPanel`, `TabStrip`, `CardPicker`, `FieldRow`, `FieldSection`.
+- [ ] **`TelemetryInspector` tab** — wires up [#step-20-3]'s data via existing helpers; "Copy as JSON" button.
+- [ ] **Token sovereignty** — declare `--tugx-devpanel-*` slots in brio + harmony; component CSS reads only its own slots per [L20].
+- [ ] **Mount once at app root** — single `<TugDevPanel>` placement in the root component tree, hidden by default via DOM per [L06].
+- [ ] **Swift `DeveloperMenu`** — debug-build-only NSMenu + Opt-Cmd-/ shortcut sending the `dev_panel_toggle` frame.
+- [ ] **App-launch wiring** — install `DeveloperMenu` under `#if DEBUG` in the AppDelegate menu setup.
+- [ ] **Tests** — reducer / persistence / FieldRow / TelemetryInspector projection / app-test toggle.
+- [ ] **20.3 HMR vet closure** — using the new panel, run the vet described in [#step-20-3]'s checkpoint and check the box.
+
+**Tests.**
+
+- [ ] Reducer: `toggle()` flips `open`; idempotent under repeated `setOpen(true)`.
+- [ ] Reducer: `selectTab(tab)` updates `activeTab`; same-tab no-op returns same state reference.
+- [ ] Reducer: `selectCard(id)` updates `selectedCardId`; clearing to `null` is supported.
+- [ ] Reducer: an inbound `DEV_CONTROL` frame `{ type: "dev_panel_toggle" }` flips `open`.
+- [ ] Reducer: unknown `DEV_CONTROL` frames return same state ref (defensive).
+- [ ] Persistence: hydrate from tugbank → mutate `open` → tugbank persist call fires with the new value; second hydrate returns the persisted shape.
+- [ ] Persistence: missing tugbank defaults degrade to `{ open: false, activeTab: "telemetry", selectedCardId: null }`.
+- [ ] `<FieldRow>` pure-render: a `(label, value, fieldPath)` triple emits the documented markup (label + value + path).
+- [ ] `TelemetryInspector` projection: given a synthetic `CodeSessionState` with a committed turn, the inspector produces the expected (section, field, value) tuples covering every [#step-20-3] field.
+- [ ] `TelemetryInspector` projection: with no committed turn, the inspector reports an explicit empty state (NOT silent zeros that look like real data).
+- [ ] app-test: Opt-Cmd-/ toggles the panel visible; second invocation toggles it hidden; selected card / active tab survive a soft reload.
+
+**Checkpoint.**
+
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green; existing tests stay green.
+- [ ] `bun run audit:tokens lint` exits 0 (new `--tugx-devpanel-*` slots properly declared).
+- [ ] `just app-test dev-panel-toggle` reports `VERDICT: PASS` per [feedback_just_app_test].
+- [ ] Swift build clean under both `DEBUG` (menu present) and release-style (menu absent) configurations.
+- [ ] Manual: open Tug.app debug build → confirm Developer menu visible with "Show Dev Panel" + `⌥⌘/` shortcut → press shortcut → panel appears → press again → panel hides.
+- [ ] **20.3 HMR vet (manual, blocking)** — using the panel, run the four-clock vet described in [#step-20-3]'s checkpoint and check the box back there.
 
 ---
 
