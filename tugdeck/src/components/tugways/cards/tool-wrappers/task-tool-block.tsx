@@ -170,6 +170,7 @@ function narrowContentEntry(value: unknown): AgentTranscriptEntry | undefined {
         status: "done",
         result: null,
         structuredResult: null,
+        toolWallMs: null,
       },
     };
   }

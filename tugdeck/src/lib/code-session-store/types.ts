@@ -65,6 +65,11 @@ export type TransportState = "online" | "offline" | "restoring";
  * `tool_use.parent_tool_use_id`). The `toolCallMap` stays flat — every
  * call, parent or child, is one entry — and the rendering layer groups
  * children under their parent at display time ([#step-17-5]).
+ *
+ * `toolWallMs` records the wall-clock duration between the originating
+ * `tool_use` and its matching `tool_result` — populated when the
+ * `tool_result` lands; `null` if the turn ended (interrupted, errored,
+ * transport-lost) while the call was still pending.
  */
 export interface ToolCallState {
   toolUseId: string;
@@ -75,7 +80,45 @@ export interface ToolCallState {
   structuredResult: unknown | null;
   /** Spawning `Agent` call's `toolUseId`; `undefined` for a top-level call. */
   parentToolUseId?: string;
+  /**
+   * Wall-clock milliseconds between the `tool_use` event and the
+   * matching `tool_result`. `null` while pending, and remains `null` if
+   * the turn ends before the result arrives.
+   */
+  toolWallMs: number | null;
 }
+
+/**
+ * Per-turn token + cost delta, computed at `turn_complete` by subtracting
+ * the `lastCost` snapshot captured at `handleSend` (`costAtSubmit`) from
+ * the `lastCost` snapshot current at completion. Zeros for a turn that
+ * received no `cost_update` event.
+ */
+export interface TurnCost {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+  totalCostUsd: number;
+}
+
+/**
+ * Typed terminal state of a turn — strictly richer than the legacy
+ * `TurnEntry.result` (`"success" | "interrupted"`). Used by lifecycle
+ * coordinators to distinguish a clean completion from each failure
+ * mode without re-reading `lastError`.
+ *
+ * - `complete`       — `turn_complete` with `result: "success"`.
+ * - `interrupted`    — user pressed Stop; `handleInterrupt` ran.
+ * - `error`          — `turn_complete` with `result: "error"` outside the
+ *                       transport-lost path.
+ * - `transport_lost` — turn was in flight when the transport closed.
+ */
+export type TurnEndReason =
+  | "complete"
+  | "interrupted"
+  | "error"
+  | "transport_lost";
 
 /**
  * Immutable transcript entry appended once per completed turn.
@@ -129,8 +172,70 @@ export interface TurnEntry {
    * #step-19.
    */
   controlRequests: ReadonlyArray<ControlRequestRecord>;
+  /**
+   * @deprecated Use {@link turnEndReason}. Derived from `turnEndReason`
+   * so the two never diverge (`"complete"` → `"success"`; everything
+   * else → `"interrupted"`). Kept in place for incremental consumer
+   * migration; remove once all callers have moved.
+   */
   result: "success" | "interrupted";
   endedAt: number;
+
+  /**
+   * Pure wall-clock duration of the turn: `endedAt - userMessage.submitAt`.
+   * Indisputable; covers everything.
+   */
+  wallClockMs: number;
+  /**
+   * Cumulative ms paused on a `TugInlineDialog` waiting for the user's
+   * answer. Covers BOTH permission prompts and `AskUserQuestion`
+   * question dialogs — the time the turn was blocked on user input.
+   */
+  awaitingApprovalMs: number;
+  /**
+   * Cumulative ms with the transport disconnected (`offline` OR
+   * `restoring`) during this turn. The cleanest objective signal —
+   * the transport authoritatively knows when it lost service.
+   */
+  transportDowntimeMs: number;
+  /**
+   * Machine-doing-work duration. Stored directly so consumers don't
+   * recompute: `wallClockMs - awaitingApprovalMs - transportDowntimeMs`,
+   * clamped ≥ 0. The "assistant response time" reported in the UI.
+   */
+  activeMs: number;
+
+  /**
+   * Submit-to-first-`assistant_delta` latency. `null` if the turn
+   * produced no assistant output (e.g. tool-only or interrupted).
+   */
+  ttftMs: number | null;
+  /**
+   * Submit-to-first-`tool_use` latency. `null` if the turn produced no
+   * tool calls.
+   */
+  ttftcMs: number | null;
+  /**
+   * Number of transport reconnects observed during this turn.
+   * Companion to `transportDowntimeMs`.
+   */
+  reconnectCount: number;
+  /**
+   * Longest single inter-event silence across this turn, in ms.
+   * Diagnostic — informs any future stream-idle heuristic.
+   */
+  maxStreamGapMs: number;
+  /**
+   * Typed terminal state. Strictly richer than {@link result}; consumers
+   * SHOULD prefer this field. The reducer derives `result` from this
+   * value.
+   */
+  turnEndReason: TurnEndReason;
+  /**
+   * Per-turn delta of cumulative `cost_update` fields. Zeros for a turn
+   * that received no `cost_update`. See {@link TurnCost}.
+   */
+  cost: TurnCost;
 }
 
 /**

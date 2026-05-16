@@ -52,6 +52,7 @@ function childCall(toolUseId: string, toolName: string): ToolCallState {
     result: null,
     structuredResult: null,
     parentToolUseId: "agent-1",
+    toolWallMs: null,
   };
 }
 

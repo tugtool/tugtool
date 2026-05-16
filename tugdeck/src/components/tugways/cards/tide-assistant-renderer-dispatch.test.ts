@@ -56,6 +56,7 @@ function fakeToolCall(toolName: string, overrides: Partial<ToolCallState> = {}):
     status: "done",
     result: null,
     structuredResult: null,
+    toolWallMs: null,
     ...overrides,
   };
 }

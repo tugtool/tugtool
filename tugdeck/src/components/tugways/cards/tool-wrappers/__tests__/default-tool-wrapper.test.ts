@@ -97,6 +97,7 @@ function fakeToolCall(
     status: "done",
     result: null,
     structuredResult: null,
+    toolWallMs: null,
     ...overrides,
   };
 }

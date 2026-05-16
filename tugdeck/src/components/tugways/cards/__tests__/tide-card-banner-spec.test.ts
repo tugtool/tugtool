@@ -20,6 +20,7 @@ import type {
   CodeSessionSnapshot,
   TurnEntry,
 } from "@/lib/code-session-store";
+import { TURN_ENTRY_TELEMETRY_DEFAULTS } from "@/lib/code-session-store/testing/turn-entry-defaults";
 
 /**
  * Minimal `TurnEntry` stub for tests that only care about
@@ -39,6 +40,7 @@ function fakeTurn(msgId: string): TurnEntry {
     controlRequests: [],
     result: "success",
     endedAt: 0,
+    ...TURN_ENTRY_TELEMETRY_DEFAULTS,
   };
 }
 

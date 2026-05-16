@@ -53,8 +53,10 @@ import type {
   LastReplayResult,
   ToolCallState,
   TransportState,
+  TurnEndReason,
   TurnEntry,
 } from "./types";
+import { extractTurnCost } from "./telemetry";
 
 /** Reducer-internal state. Not exposed to consumers. */
 export interface CodeSessionState {
@@ -209,6 +211,91 @@ export interface CodeSessionState {
   replayPreflightActive: boolean;
   replaySoftBudgetElapsed: boolean;
   replayTimeoutDwellActive: boolean;
+
+  // -------------------------------------------------------------------------
+  // Per-turn telemetry — populated incrementally during a turn, frozen
+  // onto the committed `TurnEntry` at `handleTurnComplete` and reset at
+  // each turn boundary.
+  // -------------------------------------------------------------------------
+
+  /**
+   * `Date.now()` when the in-flight turn entered `awaiting_approval`
+   * (permission OR question dialog). `null` while no dialog is open.
+   * Cleared on every dialog response, on interrupt, on transport-close,
+   * and at turn boundaries — the awaiting-approval clock has at most
+   * one in-progress interval at any moment.
+   */
+  awaitingApprovalSince: number | null;
+  /**
+   * Cumulative ms paused on `TugInlineDialog` so far in the in-flight
+   * turn. Each closed dialog interval folds into this accumulator;
+   * `liveTurnAwaitingApprovalMs` adds the live in-progress interval
+   * (from `awaitingApprovalSince`) on top.
+   */
+  awaitingApprovalAccumulatedMs: number;
+  /**
+   * `Date.now()` when the transport first left `online` during the
+   * in-flight turn (either to `offline` or `restoring`). `null` while
+   * the transport is online. Set by `handleTransportClose`, cleared by
+   * `handleTransportSettled` after accumulating the elapsed downtime.
+   */
+  transportNonOnlineSince: number | null;
+  /**
+   * Cumulative ms the transport was not `"online"` during the
+   * in-flight turn. `liveTurnTransportDowntimeMs` folds in the live
+   * in-progress interval (from `transportNonOnlineSince`) on top.
+   */
+  transportDowntimeAccumulatedMs: number;
+  /**
+   * Number of transport reconnects (`restoring → online` transitions)
+   * observed during the in-flight turn. Used to populate
+   * `TurnEntry.reconnectCount` at completion.
+   */
+  transportReconnectCount: number;
+  /**
+   * `Date.now()` of the most recent stream event observed during the
+   * in-flight turn (assistant_delta / tool_use / tool_result /
+   * tool_use_structured). `null` until the first stream event lands.
+   * Used to compute the inter-event gap that feeds `maxStreamGapMs`.
+   */
+  lastStreamEventAt: number | null;
+  /**
+   * Longest single inter-event silence (ms) observed during the
+   * in-flight turn. `0` until at least two stream events have landed.
+   */
+  maxStreamGapMs: number;
+  /**
+   * `Date.now()` of the first `assistant_delta` of the in-flight turn,
+   * for the TTFT (time-to-first-token) latency. `null` if no assistant
+   * output has landed yet.
+   */
+  firstAssistantDeltaAt: number | null;
+  /**
+   * `Date.now()` of the first `tool_use` of the in-flight turn, for the
+   * TTFTC (time-to-first-tool-call) latency. `null` if no tool call has
+   * landed yet.
+   */
+  firstToolUseAt: number | null;
+  /**
+   * Snapshot of `lastCost` taken at `handleSend` so the per-turn cost
+   * delta can be computed at `handleTurnComplete` against the
+   * `lastCost` snapshot current at completion. `null` for the first
+   * turn of a session (the helper degenerates the delta to `after`).
+   */
+  costAtSubmit: CostSnapshot | null;
+  /**
+   * `true` from the moment `handleInterrupt` fires until the matching
+   * `handleTurnComplete` (any reason) clears it. Drives the
+   * INTERRUPTING lifecycle state in the per-turn coordinator matrix.
+   */
+  interruptInFlight: boolean;
+  /**
+   * Per-tool-call start timestamps captured at `handleToolUse`, used
+   * by `handleToolResult` to compute the matching `ToolCallState.toolWallMs`.
+   * Reducer-internal — never exposed on the snapshot. Cleared on turn
+   * boundaries with the rest of the toolCallMap.
+   */
+  toolUseStartedAt: Map<string, number>;
 }
 
 /**
@@ -264,6 +351,18 @@ export function createInitialState(
     replayPreflightActive: false,
     replaySoftBudgetElapsed: false,
     replayTimeoutDwellActive: false,
+    awaitingApprovalSince: null,
+    awaitingApprovalAccumulatedMs: 0,
+    transportNonOnlineSince: null,
+    transportDowntimeAccumulatedMs: 0,
+    transportReconnectCount: 0,
+    lastStreamEventAt: null,
+    maxStreamGapMs: 0,
+    firstAssistantDeltaAt: null,
+    firstToolUseAt: null,
+    costAtSubmit: null,
+    interruptInFlight: false,
+    toolUseStartedAt: new Map(),
   };
 }
 
@@ -308,6 +407,24 @@ function handleSend(
       // before any frame from this new cycle, so the counter drains
       // naturally as `handleTurnComplete`'s gate fires.
       pendingDraftRestore: null,
+      // Snapshot the cost cursor so the per-turn delta is computed
+      // against this submit point at completion. `null` on the first
+      // turn of a session is fine — `extractTurnCost` degenerates the
+      // delta to `after`.
+      costAtSubmit: state.lastCost,
+      // Reset per-turn accumulators. `transportNonOnlineSince` is
+      // owned by the transport handlers — leave it alone so a
+      // disconnect that started before this submit still folds into
+      // the turn correctly.
+      awaitingApprovalSince: null,
+      awaitingApprovalAccumulatedMs: 0,
+      transportDowntimeAccumulatedMs: 0,
+      transportReconnectCount: 0,
+      lastStreamEventAt: null,
+      maxStreamGapMs: 0,
+      firstAssistantDeltaAt: null,
+      firstToolUseAt: null,
+      interruptInFlight: false,
     };
     return {
       state: next,
@@ -392,6 +509,7 @@ function handleInterrupt(
         activeMsgId: null,
         scratch: new Map(),
         toolCallMap: new Map(),
+        toolUseStartedAt: new Map(),
         pendingUserMessage: null,
         pendingDraftRestore: restore,
         pendingCaseAEchoes: state.pendingCaseAEchoes + 1,
@@ -400,6 +518,29 @@ function handleInterrupt(
         controlRequestLog: [],
         prevPhase: null,
         queuedSends: [],
+        // CASE A is locally terminal — phase goes straight to idle and
+        // no TurnEntry will commit (the wire echo is suppressed).
+        // Reset all per-turn accumulators here so a subsequent send
+        // starts fresh; do NOT set interruptInFlight (the UI never
+        // sees an INTERRUPTING state for CASE A — it's instant).
+        awaitingApprovalSince: null,
+        awaitingApprovalAccumulatedMs: 0,
+        lastStreamEventAt: null,
+        maxStreamGapMs: 0,
+        firstAssistantDeltaAt: null,
+        firstToolUseAt: null,
+        // Transport-downtime accumulator is bounded to the active
+        // turn boundary; reset on CASE A so a transport blip during
+        // an aborted submit doesn't leak into the next turn.
+        transportDowntimeAccumulatedMs: 0,
+        transportReconnectCount: 0,
+        // `transportNonOnlineSince` is owned by the transport
+        // handlers; leave it as-is so an in-progress disconnect that
+        // outlasts the abort still folds into the next turn correctly.
+        // `costAtSubmit` is moot on CASE A (no commit); reset for
+        // cleanliness.
+        costAtSubmit: null,
+        interruptInFlight: false,
       },
       effects: [
         { kind: "send-frame", msg: { type: "interrupt" } },
@@ -430,6 +571,12 @@ function handleInterrupt(
       ? state.prevPhase ?? "streaming"
       : state.phase;
 
+  // CASE B: the wire's eventual `turn_complete(error)` commits an
+  // interrupted entry. Set `interruptInFlight` so the UI can show
+  // an INTERRUPTING state during the round-trip; `handleTurnComplete`
+  // clears it. If we were paused on a dialog, fold the in-progress
+  // awaiting interval into the accumulator so the committed entry
+  // reports the full time the user waited.
   return {
     state: {
       ...state,
@@ -438,6 +585,8 @@ function handleInterrupt(
       pendingQuestion: null,
       prevPhase: null,
       queuedSends: [],
+      interruptInFlight: true,
+      ...closeAwaitingApprovalInterval(state),
     },
     effects: [{ kind: "send-frame", msg: { type: "interrupt" } }],
   };
@@ -483,6 +632,27 @@ function handleSessionInit(
  * `submitting → awaiting_first_token` transition; the next drives
  * `awaiting_first_token → streaming`.
  */
+
+/**
+ * Update the stream-gap accumulator from a live stream event landing at
+ * `now`. Replay events should NOT call this — replay does not
+ * correspond to wall-clock event arrival. Returns the patch to fold
+ * into the next state.
+ */
+function foldStreamEvent(
+  state: CodeSessionState,
+  now: number,
+): { lastStreamEventAt: number; maxStreamGapMs: number } {
+  if (state.lastStreamEventAt === null) {
+    return { lastStreamEventAt: now, maxStreamGapMs: state.maxStreamGapMs };
+  }
+  const gap = Math.max(0, now - state.lastStreamEventAt);
+  return {
+    lastStreamEventAt: now,
+    maxStreamGapMs: gap > state.maxStreamGapMs ? gap : state.maxStreamGapMs,
+  };
+}
+
 function handleTextDelta(
   state: CodeSessionState,
   event: AssistantTextEvent | ThinkingTextEvent,
@@ -542,12 +712,27 @@ function handleTextDelta(
       ? []
       : [{ kind: "write-inflight", turnKey, channel, value: buffer }];
 
+  // Telemetry: only fold for live turns. Replay events are
+  // synthesized from JSONL and do not correspond to wall-clock
+  // arrivals. The first `assistant_text` of a live turn captures
+  // `firstAssistantDeltaAt` for the TTFT readout; thinking deltas do
+  // NOT count for TTFT (TTFT is "time-to-first-assistant-output").
+  const now = Date.now();
+  const isReplay = state.phase === "replaying";
+  const streamFold = isReplay ? {} : foldStreamEvent(state, now);
+  const firstAssistantDeltaAt =
+    !isReplay && channel === "assistant" && state.firstAssistantDeltaAt === null
+      ? now
+      : state.firstAssistantDeltaAt;
+
   return {
     state: {
       ...state,
       phase: nextPhase,
       activeMsgId: msgId,
       scratch,
+      ...streamFold,
+      firstAssistantDeltaAt,
     },
     effects,
   };
@@ -611,6 +796,7 @@ function handleToolUse(
       : undefined;
 
   const toolCallMap = new Map(state.toolCallMap);
+  const toolUseStartedAt = new Map(state.toolUseStartedAt);
   const existing = toolCallMap.get(toolUseId);
 
   if (existing) {
@@ -637,7 +823,17 @@ function handleToolUse(
       result: null,
       structuredResult: null,
       parentToolUseId: incomingParentId,
+      toolWallMs: null,
     });
+    // First (non-continuation) tool_use carries the timing anchor for
+    // this call's `toolWallMs`. Continuations refine the input only.
+    // Replay events use the JSONL timestamp and never produce a
+    // wall-clock duration; the `isReplaying` branch below skips this
+    // capture by way of not entering this `else` for stored entries —
+    // but the very first replayed tool_use still lands here. The
+    // matching `handleToolResult` only computes a wall when NOT
+    // replaying, so a leftover replay entry in the map is harmless.
+    toolUseStartedAt.set(toolUseId, Date.now());
   }
 
   // Phase transition is live-only: `tool_use` flips `streaming` /
@@ -663,12 +859,26 @@ function handleToolUse(
         ]
       : [];
 
+  // Telemetry: skip for replay; capture firstToolUseAt on first live
+  // tool_use of this turn. Continuations of the same tool_use_id
+  // still count for the stream-gap fold (they're wire events) but do
+  // NOT advance `firstToolUseAt` past the first call.
+  const now = Date.now();
+  const streamFold = isReplaying ? {} : foldStreamEvent(state, now);
+  const firstToolUseAt =
+    !isReplaying && state.firstToolUseAt === null
+      ? now
+      : state.firstToolUseAt;
+
   return {
     state: {
       ...state,
       phase: isReplaying ? state.phase : "tool_work",
       activeMsgId: event.msg_id ?? state.activeMsgId,
+      ...streamFold,
+      firstToolUseAt,
       toolCallMap,
+      toolUseStartedAt,
     },
     effects,
   };
@@ -695,12 +905,33 @@ function handleToolResult(
     return { state, effects: [] };
   }
 
+  // Compute per-call wall-clock. Live turns have a `toolUseStartedAt`
+  // entry from the matching `handleToolUse`; replay turns do not (the
+  // JSONL replay does not correspond to real-time arrivals, and the
+  // committed entry's `toolWallMs` stays `null` per the field's contract).
+  const isReplaying = state.phase === "replaying";
+  const now = Date.now();
+  const startedAt = state.toolUseStartedAt.get(toolUseId);
+  const toolWallMs =
+    !isReplaying && typeof startedAt === "number"
+      ? Math.max(0, now - startedAt)
+      : existing.toolWallMs;
+
   const toolCallMap = new Map(state.toolCallMap);
   toolCallMap.set(toolUseId, {
     ...existing,
     status: event.is_error === true ? "error" : "done",
     result: event.output ?? null,
+    toolWallMs,
   });
+
+  // Discard the start timestamp now that the wall-clock is committed
+  // on the entry — keeps the map bounded.
+  let toolUseStartedAt = state.toolUseStartedAt;
+  if (toolUseStartedAt.has(toolUseId)) {
+    toolUseStartedAt = new Map(toolUseStartedAt);
+    toolUseStartedAt.delete(toolUseId);
+  }
 
   // Phase transition is live-only: `tool_result` drives `tool_work
   // → streaming` once every entry is terminal. Replay keeps
@@ -710,7 +941,6 @@ function handleToolResult(
   // replay ([L26] — per-turn paths are the sole render surface for
   // committed cells, so replayed turns must populate them too;
   // cold-boot rehydration depends on this symmetry).
-  const isReplaying = state.phase === "replaying";
   const nextPhase: CodeSessionPhase = isReplaying
     ? state.phase
     : allToolsTerminal(toolCallMap)
@@ -729,11 +959,15 @@ function handleToolResult(
         ]
       : [];
 
+  const streamFold = isReplaying ? {} : foldStreamEvent(state, now);
+
   return {
     state: {
       ...state,
       phase: nextPhase,
       toolCallMap,
+      toolUseStartedAt,
+      ...streamFold,
     },
     effects,
   };
@@ -794,9 +1028,122 @@ function handleToolUseStructured(
         ]
       : [];
 
+  // Telemetry: fold stream-gap on live turns only.
+  const isReplaying = state.phase === "replaying";
+  const streamFold = isReplaying ? {} : foldStreamEvent(state, Date.now());
+
   return {
-    state: { ...state, toolCallMap },
+    state: { ...state, toolCallMap, ...streamFold },
     effects,
+  };
+}
+
+/**
+ * Per-turn reset slice — fields cleared at every turn boundary
+ * (`turn_complete` success/error, `turn_complete` interrupted,
+ * mid-turn transport-lost). The active-turn axis (phase, scratch,
+ * pendingUserMessage, etc.) is reset separately at each call site
+ * because the queue-flush path needs to populate the next turn's slots
+ * synchronously.
+ */
+function resetPerTurnTelemetry(): Pick<
+  CodeSessionState,
+  | "awaitingApprovalSince"
+  | "awaitingApprovalAccumulatedMs"
+  | "transportDowntimeAccumulatedMs"
+  | "transportReconnectCount"
+  | "lastStreamEventAt"
+  | "maxStreamGapMs"
+  | "firstAssistantDeltaAt"
+  | "firstToolUseAt"
+  | "costAtSubmit"
+  | "interruptInFlight"
+> {
+  return {
+    awaitingApprovalSince: null,
+    awaitingApprovalAccumulatedMs: 0,
+    transportDowntimeAccumulatedMs: 0,
+    transportReconnectCount: 0,
+    lastStreamEventAt: null,
+    maxStreamGapMs: 0,
+    firstAssistantDeltaAt: null,
+    firstToolUseAt: null,
+    costAtSubmit: null,
+    interruptInFlight: false,
+  };
+}
+
+/**
+ * Build a committed `TurnEntry` from the current reducer state and
+ * the chosen terminal reason. Folds any in-progress
+ * awaiting-approval / transport-downtime intervals into their
+ * accumulators so the committed entry reports the full intervals even
+ * when the turn ended mid-pause / mid-disconnect (e.g.
+ * `transport_lost`).
+ *
+ * The `result` field is derived from `reason` (`"complete"` →
+ * `"success"`; everything else → `"interrupted"`) so legacy consumers
+ * stay coherent until they migrate to `turnEndReason`.
+ */
+function buildTurnEntry(
+  state: CodeSessionState,
+  msgId: string,
+  reason: TurnEndReason,
+  endedAt: number,
+): TurnEntry {
+  const scratchEntry = state.scratch.get(msgId) ?? {
+    assistant: "",
+    thinking: "",
+  };
+  const submitAt = state.pendingUserMessage?.submitAt ?? endedAt;
+  const wallClockMs = Math.max(0, endedAt - submitAt);
+  const awaitingApprovalMs =
+    state.awaitingApprovalSince === null
+      ? state.awaitingApprovalAccumulatedMs
+      : state.awaitingApprovalAccumulatedMs +
+        Math.max(0, endedAt - state.awaitingApprovalSince);
+  const transportDowntimeMs =
+    state.transportNonOnlineSince === null
+      ? state.transportDowntimeAccumulatedMs
+      : state.transportDowntimeAccumulatedMs +
+        Math.max(0, endedAt - state.transportNonOnlineSince);
+  const activeMs = Math.max(
+    0,
+    wallClockMs - awaitingApprovalMs - transportDowntimeMs,
+  );
+  const ttftMs =
+    state.firstAssistantDeltaAt === null
+      ? null
+      : Math.max(0, state.firstAssistantDeltaAt - submitAt);
+  const ttftcMs =
+    state.firstToolUseAt === null
+      ? null
+      : Math.max(0, state.firstToolUseAt - submitAt);
+  const cost = extractTurnCost(state.costAtSubmit, state.lastCost);
+  return {
+    msgId,
+    turnKey: state.pendingUserMessage?.turnKey ?? `msg-${msgId}`,
+    userMessage: {
+      text: state.pendingUserMessage?.text ?? "",
+      attachments: state.pendingUserMessage?.atoms ?? [],
+      submitAt,
+    },
+    thinking: scratchEntry.thinking,
+    assistant: scratchEntry.assistant,
+    toolCalls: Array.from(state.toolCallMap.values()),
+    controlRequests: state.controlRequestLog,
+    result: reason === "complete" ? "success" : "interrupted",
+    endedAt,
+    wallClockMs,
+    awaitingApprovalMs,
+    transportDowntimeMs,
+    activeMs,
+    ttftMs,
+    ttftcMs,
+    reconnectCount: state.transportReconnectCount,
+    maxStreamGapMs: state.maxStreamGapMs,
+    turnEndReason: reason,
+    cost,
   };
 }
 
@@ -899,38 +1246,23 @@ function handleTurnComplete(
     };
   }
 
-  const scratchEntry = state.scratch.get(msgId) ?? {
-    assistant: "",
-    thinking: "",
-  };
-
   const isSuccess = event.result === "success";
-  const entry: TurnEntry = {
+  // Choose the terminal reason for this completion. A wire-side
+  // `turn_complete(error)` that landed because the user pressed Stop
+  // (CASE B) maps to `"interrupted"` — `interruptInFlight` is the
+  // distinguishing signal set by `handleInterrupt`. Otherwise an
+  // error-result completion is a genuine `"error"`.
+  const turnEndReason: TurnEndReason = isSuccess
+    ? "complete"
+    : state.interruptInFlight
+      ? "interrupted"
+      : "error";
+  const entry: TurnEntry = buildTurnEntry(
+    state,
     msgId,
-    // Preserve the React-key seed from the in-flight pendingUserMessage
-    // so the committed cell renders with the SAME React key as the
-    // streaming cell did. If no pendingUserMessage exists (the stray
-    // path where a `turn_complete` lands without a matching `send` or
-    // `user_message_replay`), derive deterministically from `msgId` so
-    // the reducer stays pure and time-independent — `msgId` is
-    // server-assigned and stable for the life of the turn.
-    turnKey: state.pendingUserMessage?.turnKey ?? `msg-${msgId}`,
-    userMessage: {
-      text: state.pendingUserMessage?.text ?? "",
-      attachments: state.pendingUserMessage?.atoms ?? [],
-      submitAt: state.pendingUserMessage?.submitAt ?? Date.now(),
-    },
-    thinking: scratchEntry.thinking,
-    assistant: scratchEntry.assistant,
-    // Preserve insertion order: Map.values() iterates in the order
-    // entries were inserted via handleToolUse.
-    toolCalls: Array.from(state.toolCallMap.values()),
-    // Permission prompts the user answered this turn — accumulated by
-    // `handleRespondApproval`, frozen here into the committed entry.
-    controlRequests: state.controlRequestLog,
-    result: isSuccess ? "success" : "interrupted",
-    endedAt: Date.now(),
-  };
+    turnEndReason,
+    Date.now(),
+  );
 
   const scratch = new Map(state.scratch);
   scratch.delete(msgId);
@@ -950,12 +1282,14 @@ function handleTurnComplete(
         activeMsgId: null,
         scratch,
         toolCallMap: new Map(),
+        toolUseStartedAt: new Map(),
         pendingApproval: null,
         pendingQuestion: null,
         controlRequestLog: [],
         prevPhase: null,
         pendingUserMessage: null,
         committedMsgIds,
+        ...resetPerTurnTelemetry(),
       },
       effects: [{ kind: "append-transcript", entry }],
     };
@@ -973,6 +1307,7 @@ function handleTurnComplete(
         activeMsgId: null,
         scratch,
         toolCallMap: new Map(),
+        toolUseStartedAt: new Map(),
         pendingApproval: null,
         pendingQuestion: null,
         controlRequestLog: [],
@@ -989,6 +1324,12 @@ function handleTurnComplete(
         queuedSends: rest,
         lastError: null,
         committedMsgIds,
+        // Queue-flush starts the next turn synchronously. Reset
+        // per-turn telemetry as if `handleSend` had just run, then
+        // snapshot the post-completion `lastCost` so the next turn's
+        // delta is measured from this point.
+        ...resetPerTurnTelemetry(),
+        costAtSubmit: state.lastCost,
       },
       effects: [
         { kind: "append-transcript", entry },
@@ -1012,6 +1353,7 @@ function handleTurnComplete(
       activeMsgId: null,
       scratch,
       toolCallMap: new Map(),
+      toolUseStartedAt: new Map(),
       pendingApproval: null,
       pendingQuestion: null,
       controlRequestLog: [],
@@ -1025,6 +1367,7 @@ function handleTurnComplete(
       // earlier errored-phase recovery.
       lastError: isSuccess ? null : state.lastError,
       committedMsgIds,
+      ...resetPerTurnTelemetry(),
     },
     effects: [
       { kind: "append-transcript", entry },
@@ -1074,8 +1417,35 @@ function handleControlRequestForward(
     prevPhase: state.phase,
     pendingApproval: event.is_question ? state.pendingApproval : forward,
     pendingQuestion: event.is_question ? forward : state.pendingQuestion,
+    // Stamp the entry-side timestamp for the awaiting-approval clock.
+    // If a prior dialog's `awaitingApprovalSince` is still set (e.g.
+    // back-to-back forwards without a respond in between — shouldn't
+    // happen on a sane wire, but defensive), preserve it: the user
+    // never left the dialog state, so the interval is still open.
+    awaitingApprovalSince: state.awaitingApprovalSince ?? Date.now(),
   };
   return { state: next, effects: [] };
+}
+
+/**
+ * Close the awaiting-approval interval and fold it into the
+ * accumulator. Used by both `handleRespondApproval` and
+ * `handleRespondQuestion` so the two dialog kinds count identically.
+ */
+function closeAwaitingApprovalInterval(
+  state: CodeSessionState,
+): { awaitingApprovalSince: null; awaitingApprovalAccumulatedMs: number } {
+  if (state.awaitingApprovalSince === null) {
+    return {
+      awaitingApprovalSince: null,
+      awaitingApprovalAccumulatedMs: state.awaitingApprovalAccumulatedMs,
+    };
+  }
+  const elapsed = Math.max(0, Date.now() - state.awaitingApprovalSince);
+  return {
+    awaitingApprovalSince: null,
+    awaitingApprovalAccumulatedMs: state.awaitingApprovalAccumulatedMs + elapsed,
+  };
 }
 
 function handleRespondApproval(
@@ -1104,6 +1474,10 @@ function handleRespondApproval(
     prevPhase: null,
     pendingApproval: null,
     controlRequestLog: [...state.controlRequestLog, record],
+    // Close and fold the awaiting-approval interval into the
+    // accumulator. Same fold for permission and question dialogs;
+    // see `closeAwaitingApprovalInterval`.
+    ...closeAwaitingApprovalInterval(state),
   };
   return {
     state: next,
@@ -1136,6 +1510,7 @@ function handleRespondQuestion(
     phase: restored,
     prevPhase: null,
     pendingQuestion: null,
+    ...closeAwaitingApprovalInterval(state),
   };
   return {
     state: next,
@@ -1300,6 +1675,16 @@ function handleTransportClose(
     ? { pendingCaseAEchoes: 0 }
     : {};
 
+  // Transport-downtime timer: opening the non-online interval. The
+  // entry-side timestamp is set when the transport first leaves
+  // `online` (whether to `offline` or `restoring`). Idempotent — if
+  // it's already set (e.g. `online → restoring → offline` skipping
+  // settled), preserve it: the user never returned to online.
+  const transportClock =
+    state.transportNonOnlineSince === null
+      ? { transportNonOnlineSince: Date.now() }
+      : {};
+
   // Transport close from `idle` no longer drops silently — per [D06]
   // the offline transportState gates submit even for cards that had
   // nothing in flight. Phase stays `idle` (there is nothing to error
@@ -1311,9 +1696,47 @@ function handleTransportClose(
         transportState: "offline",
         ...preflightCleared,
         ...caseAEchoesCleared,
+        ...transportClock,
       },
       effects: cancelPreflightEffect,
     };
+  }
+
+  // Non-idle close with an in-flight turn: the turn is dead — the
+  // wire will not deliver its `turn_complete`. Commit a TurnEntry
+  // with `turnEndReason: "transport_lost"` so the transcript records
+  // what happened (and the chrome can show the failure mode) instead
+  // of leaving an orphaned in-flight cell behind.
+  const endedAt = Date.now();
+  const transportLostCommit: Effect[] = [];
+  let perTurnReset: Partial<CodeSessionState> = {};
+  if (state.pendingUserMessage !== null) {
+    const msgId = state.activeMsgId ?? `transport-lost-${state.pendingUserMessage.turnKey}`;
+    if (!state.committedMsgIds.has(msgId)) {
+      const entry = buildTurnEntry(state, msgId, "transport_lost", endedAt);
+      transportLostCommit.push({ kind: "append-transcript", entry });
+      transportLostCommit.push({ kind: "clear-inflight" });
+      const committedMsgIds = new Set(state.committedMsgIds);
+      committedMsgIds.add(msgId);
+      perTurnReset = {
+        committedMsgIds,
+        activeMsgId: null,
+        scratch: (() => {
+          const s = new Map(state.scratch);
+          s.delete(msgId);
+          return s;
+        })(),
+        toolCallMap: new Map(),
+        toolUseStartedAt: new Map(),
+        pendingApproval: null,
+        pendingQuestion: null,
+        controlRequestLog: [],
+        prevPhase: null,
+        pendingUserMessage: null,
+        queuedSends: [],
+        ...resetPerTurnTelemetry(),
+      };
+    }
   }
 
   // Non-idle: flip phase to errored and stamp lastError exactly as
@@ -1323,17 +1746,19 @@ function handleTransportClose(
   return {
     state: {
       ...state,
+      ...perTurnReset,
       phase: "errored",
       transportState: "offline",
       lastError: {
         cause: "transport_closed",
         message: "transport closed",
-        at: Date.now(),
+        at: endedAt,
       },
       ...preflightCleared,
       ...caseAEchoesCleared,
+      ...transportClock,
     },
-    effects: cancelPreflightEffect,
+    effects: [...cancelPreflightEffect, ...transportLostCommit],
   };
 }
 
@@ -1348,8 +1773,22 @@ function handleTransportOpen(
   if (state.transportState === "online") {
     return { state, effects: [] };
   }
+  // `transportNonOnlineSince` is not closed here — we're still
+  // non-online (just transitioning offline → restoring) and the
+  // interval continues until `handleTransportSettled` returns to
+  // `online`. Defensive: if the timer wasn't set (transport_open
+  // observed without a prior close on this side), open it now so the
+  // restoring window counts toward downtime correctly.
+  const transportClock =
+    state.transportNonOnlineSince === null
+      ? { transportNonOnlineSince: Date.now() }
+      : {};
   return {
-    state: { ...state, transportState: "restoring" },
+    state: {
+      ...state,
+      transportState: "restoring",
+      ...transportClock,
+    },
     effects: [],
   };
 }
@@ -1365,8 +1804,30 @@ function handleTransportSettled(
   if (state.transportState === "online") {
     return { state, effects: [] };
   }
+  // Close the transport-downtime interval and fold the elapsed time
+  // into the accumulator; increment the reconnect counter. If
+  // `transportNonOnlineSince` was somehow null (defensive — both
+  // transport_close and transport_open set it), only the reconnect
+  // count moves.
+  const accumulator =
+    state.transportNonOnlineSince === null
+      ? {
+          transportNonOnlineSince: null as number | null,
+          transportDowntimeAccumulatedMs: state.transportDowntimeAccumulatedMs,
+        }
+      : {
+          transportNonOnlineSince: null as number | null,
+          transportDowntimeAccumulatedMs:
+            state.transportDowntimeAccumulatedMs +
+            Math.max(0, Date.now() - state.transportNonOnlineSince),
+        };
   return {
-    state: { ...state, transportState: "online" },
+    state: {
+      ...state,
+      transportState: "online",
+      ...accumulator,
+      transportReconnectCount: state.transportReconnectCount + 1,
+    },
     effects: [],
   };
 }
@@ -1485,6 +1946,7 @@ function handleReplayStarted(
       activeMsgId: null,
       scratch: new Map(),
       toolCallMap: new Map(),
+      toolUseStartedAt: new Map(),
       pendingApproval: null,
       pendingQuestion: null,
       controlRequestLog: [],
@@ -1600,6 +2062,7 @@ function handleReplayComplete(
       activeMsgId: null,
       scratch: new Map(),
       toolCallMap: new Map(),
+      toolUseStartedAt: new Map(),
       pendingApproval: null,
       pendingQuestion: null,
       controlRequestLog: [],

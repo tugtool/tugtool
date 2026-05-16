@@ -45,6 +45,7 @@ function toolEntry(toolName: string, toolUseId: string) {
     status: "done",
     result: null,
     structuredResult: null,
+    toolWallMs: null,
   };
   return { kind: "tool_use" as const, toolCall };
 }

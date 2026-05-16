@@ -89,6 +89,7 @@ function toolEntry(
     status,
     result: null,
     structuredResult: null,
+    toolWallMs: null,
   };
 }
 

@@ -34,6 +34,7 @@ function call(
     result: null,
     structuredResult: null,
     parentToolUseId,
+    toolWallMs: null,
   };
 }
 

@@ -2,13 +2,13 @@
  * model-context-max.ts — static lookup for the context-window maximum
  * (in tokens) of a known Claude model name.
  *
- * Why a client-side table: as of Step 20.3 the `system_metadata`
- * payload Claude Code emits does NOT carry the model's context-window
- * maximum (only the model name, permission mode, cwd, etc.). The
- * `TideMeterChrome` window-utilization gauge needs a denominator;
- * deriving it from the model name is the minimum-change path that
- * works today. When the protocol eventually surfaces the max
- * server-side, this module is the single place to update.
+ * Why a client-side table: the `system_metadata` payload Claude Code
+ * emits does NOT carry the model's context-window maximum (only the
+ * model name, permission mode, cwd, etc.). Window-utilization gauges
+ * need a denominator; deriving it from the model name is the
+ * minimum-change path that works today. When the protocol eventually
+ * surfaces the max server-side, this module is the single place to
+ * update.
  *
  * **The `[1m]` suffix.** Anthropic emits some models with a
  * `[1m]`-suffixed exact ID (e.g., `claude-opus-4-7[1m]`) to

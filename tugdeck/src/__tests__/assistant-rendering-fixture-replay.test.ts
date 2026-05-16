@@ -103,6 +103,7 @@ function toolCallFromEvent(ev: Record<string, unknown>): ToolCallState {
     status: "done",
     result: null,
     structuredResult: null,
+    toolWallMs: null,
   };
 }
 
@@ -205,6 +206,7 @@ describe("assistant-rendering fixture replay — shipped wrapper coverage", () =
         status: "done",
         result: null,
         structuredResult: null,
+        toolWallMs: null,
       },
       "msg-replay",
     );
