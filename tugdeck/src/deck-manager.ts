@@ -46,6 +46,7 @@ import type { Root } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { DeckCanvas } from "./components/chrome/deck-canvas";
 import { ErrorBoundary } from "./components/chrome/error-boundary";
+import { TugDevPanel } from "./components/tug-dev-panel/tug-dev-panel";
 import { TugBannerProvider } from "./components/chrome/tug-banner-bridge";
 import { ResponderChainProvider } from "./components/tugways/responder-chain-provider";
 import { TugTooltipProvider } from "./components/tugways/tug-tooltip";
@@ -529,6 +530,11 @@ export class DeckManager implements IDeckManagerStore {
             connection: this.connection,
           }),
           React.createElement(DeckCanvas, {}),
+          // Tug Dev Panel — persistent dev inspector. Mounts once at
+          // app root, hidden by default. Visibility toggled via DOM
+          // (per [L06]) by `tugDevPanelStore`. Triggered from the
+          // Swift Developer menu (Opt-Cmd-/).
+          React.createElement(TugDevPanel, {}),
         ),
       ),
     );

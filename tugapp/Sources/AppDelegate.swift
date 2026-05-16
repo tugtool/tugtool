@@ -485,6 +485,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         devMenu.addItem(reloadItem)
         devMenu.addItem(NSMenuItem.separator())
         devMenu.addItem(NSMenuItem(title: "Show JavaScript Console", action: #selector(showJavaScriptConsole(_:)), keyEquivalent: "c", modifierMask: [.command, .option]))
+        devMenu.addItem(NSMenuItem(title: "Show Dev Panel", action: #selector(showDevPanel(_:)), keyEquivalent: "/", modifierMask: [.command, .option]))
         devMenu.addItem(NSMenuItem(title: "Add Card to Active Pane", action: #selector(addCardToActivePane(_:)), keyEquivalent: ""))
         devMenu.addItem(NSMenuItem.separator())
         devMenu.addItem(NSMenuItem(title: "Source Tree...", action: #selector(sourceTree(_:)), keyEquivalent: ""))
@@ -549,6 +550,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showJavaScriptConsole(_ sender: Any) {
         window.openWebInspector()
+    }
+
+    /// Toggle the TugDevPanel — persistent dev inspector surface in
+    /// tugdeck. Routes through the standard `sendControl` channel so
+    /// tugdeck's action-dispatch picks it up the same way other
+    /// menu-driven RPCs do.
+    @objc private func showDevPanel(_ sender: Any) {
+        sendControl("show-dev-panel-toggle")
     }
 
     @objc private func cascadeCards(_ sender: Any?) {

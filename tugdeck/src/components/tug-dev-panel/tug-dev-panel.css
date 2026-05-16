@@ -1,0 +1,230 @@
+/* @tug-pairings:
+   - --tugx-devpanel-fg            | --tugx-devpanel-bg            (panel body text)
+   - --tugx-devpanel-title-fg      | --tugx-devpanel-header-bg     (header title)
+   - --tugx-devpanel-border        | --tugx-devpanel-bg            (separator / border informational)
+*/
+
+/**
+ * tug-dev-panel.css — TugDevPanel chrome.
+ *
+ * Mounts ONCE at app root; visibility toggled via `[data-open]`
+ * attribute on the root (per [L06]). Positioned as a right-side
+ * overlay; high z-index so it sits above every card.
+ *
+ * Visual vocabulary inside the panel is delegated to Tug components
+ * (`TugLabel`, `TugPushButton`, `TugIconButton`, `TugPopupMenu`,
+ * `TugSeparator`) — those own their own `--tugx-*` slot families.
+ * This file declares only the panel-chrome slots used by the panel's
+ * own positioning + container styling.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] appearance via CSS / DOM. `[data-open="false"]` →
+ *    `display: none`; React tree stays mounted.
+ *  - [L16] every color-setting rule below either pairs `color` with
+ *    `background-color` or declares `@tug-renders-on` for the surface.
+ *  - [L17] every `--tugx-devpanel-*` slot resolves to a base token
+ *    (`--tug7-*`) in one hop.
+ *  - [L19] component CSS sibling to component TSX files.
+ *  - [L20] panel owns `--tugx-devpanel-*` exclusively. Child Tug
+ *    components read their own `--tugx-*` families.
+ */
+
+/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
+
+body {
+  /* Surface */
+  --tugx-devpanel-bg:             var(--tug7-surface-global-primary-normal-screen-rest);
+  --tugx-devpanel-header-bg:      var(--tug7-surface-global-primary-normal-default-rest);
+  --tugx-devpanel-border:         var(--tug7-element-global-border-normal-default-rest);
+
+  /* Text (header + body fallback; child Tug components own their own text colors) */
+  --tugx-devpanel-fg:             var(--tug7-element-global-text-normal-default-rest);
+  --tugx-devpanel-title-fg:       var(--tug7-element-global-text-normal-default-rest);
+
+  /* Geometry */
+  --tugx-devpanel-width:          420px;
+  --tugx-devpanel-z-index:        100000;
+  --tugx-devpanel-padding:        var(--tug-space-md);
+  --tugx-devpanel-row-gap:        var(--tug-space-sm);
+  --tugx-devpanel-section-gap:    var(--tug-space-lg);
+}
+
+/* ============================================================================
+   Root — right-side overlay
+   ========================================================================= */
+
+.tug-devpanel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--tugx-devpanel-width);
+  z-index: var(--tugx-devpanel-z-index);
+  /* @tug-renders-on: --tugx-devpanel-bg */
+  background-color: var(--tugx-devpanel-bg);
+  color: var(--tugx-devpanel-fg);
+  border-left: 1px solid var(--tugx-devpanel-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.tug-devpanel[data-open="false"] {
+  display: none;
+}
+
+/* ============================================================================
+   Header
+   ========================================================================= */
+
+.tug-devpanel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tug-space-sm);
+  padding: var(--tugx-devpanel-padding);
+  /* @tug-renders-on: --tugx-devpanel-header-bg */
+  background-color: var(--tugx-devpanel-header-bg);
+  color: var(--tugx-devpanel-title-fg);
+  border-bottom: 1px solid var(--tugx-devpanel-border);
+  flex: 0 0 auto;
+}
+
+.tug-devpanel-title {
+  flex: 1 1 auto;
+}
+
+/* ============================================================================
+   Controls — tab strip + card picker
+   ========================================================================= */
+
+.tug-devpanel-controls {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--tugx-devpanel-border);
+  /* @tug-renders-on: --tugx-devpanel-bg */
+  background-color: var(--tugx-devpanel-bg);
+  color: var(--tugx-devpanel-fg);
+  flex: 0 0 auto;
+  /* No padding here: the tab strip sits flush to the top + left
+   * edges of the controls region (matching how TugTabBar sits at
+   * the top of a deck pane). Each subordinate row inside the
+   * controls block (card picker) owns its own horizontal padding +
+   * top margin for visual separation from the tab strip. */
+}
+
+.tug-devpanel-tabstrip {
+  /* Flush to the top + sides of the controls region. The internal
+   * tab padding comes from TugTabBar's own chrome. */
+  display: flex;
+}
+
+/* The inspector catalog is fixed at compile time. Hide TugTabBar's
+ * built-in [+] type picker — it would otherwise open an empty popup
+ * (we pass `acceptedFamilies: []` so no types match), which is
+ * confusing dev-surface UX. */
+.tug-devpanel-tabstrip .tug-tab-add {
+  display: none;
+}
+
+.tug-devpanel-cardpicker {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  padding: var(--tug-space-md) var(--tugx-devpanel-padding) var(--tugx-devpanel-padding);
+}
+
+.tug-devpanel-cardpicker-label {
+  flex: 0 0 auto;
+}
+
+.tug-devpanel-cardpicker-trigger {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* Let the chevron sit at the right edge; the label inside takes
+   * whatever space remains. The TugButton's own text alignment
+   * already left-aligns. */
+  justify-content: space-between;
+}
+
+/* ============================================================================
+   Body — inspector content area (scrolls)
+   ========================================================================= */
+
+.tug-devpanel-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: var(--tugx-devpanel-padding);
+  /* @tug-renders-on: --tugx-devpanel-bg */
+  background-color: var(--tugx-devpanel-bg);
+  color: var(--tugx-devpanel-fg);
+}
+
+/* ============================================================================
+   Inspector — telemetry tab body
+   ========================================================================= */
+
+.tug-devpanel-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-devpanel-section-gap);
+}
+
+.tug-devpanel-inspector-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ============================================================================
+   Section + field-row layout (no colors here — TugLabel / TugSeparator
+   own the visual vocabulary)
+   ========================================================================= */
+
+.tug-devpanel-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-xs);
+}
+
+.tug-devpanel-section-title {
+  /* The TugSeparator renders its own label colors; this rule only
+   * controls the surrounding spacing within the section. */
+  margin-bottom: var(--tug-space-2xs);
+}
+
+.tug-devpanel-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-devpanel-row-gap);
+}
+
+.tug-devpanel-field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  gap: var(--tug-space-sm);
+  align-items: baseline;
+}
+
+.tug-devpanel-field-row[data-multiline="true"] {
+  grid-template-columns: 1fr;
+}
+
+.tug-devpanel-field-label,
+.tug-devpanel-field-value {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.tug-devpanel-field-value-pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
+  /* @tug-renders-on: --tugx-devpanel-bg */
+  background-color: transparent;
+  color: var(--tugx-devpanel-fg);
+  word-break: break-all;
+}

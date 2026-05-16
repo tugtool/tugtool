@@ -291,6 +291,25 @@ export class CodeSessionStore {
   };
 
   /**
+   * Dev-only read-only accessor over the internal reducer state.
+   * Used by `TugDevPanel`'s telemetry inspector to surface live
+   * counters and live-clock anchors (`awaitingApprovalSince`,
+   * `transportNonOnlineSince`, etc.) that aren't on the public
+   * snapshot because they would surprise non-dev consumers. The
+   * inspector pairs the returned state with the public snapshot for
+   * stable fields (transcript, phase, transport).
+   *
+   * Returns the same reference for consecutive calls when no
+   * dispatch has occurred — uses the same listener notification path
+   * as `getSnapshot`, so consumers can subscribe via `subscribe` and
+   * read this for fresh data.
+   *
+   * @internal — only consumed by the dev panel; not part of the
+   *  public L02 contract.
+   */
+  _getInternalStateForDevPanel = (): CodeSessionState => this.state;
+
+  /**
    * L02 snapshot contract. Returns a stable reference between dispatches
    * that produce no state or transcript change — required for
    * `useSyncExternalStore` to avoid tearing ([D11]).

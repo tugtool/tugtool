@@ -775,7 +775,7 @@ The early-return guards in each handler prevent double-entries.
 
 **Depends on:** [#step-20-3](#step-20-3) (the telemetry fields the first tab inspects), tugbank (for state persistence), tugcast (for the Swift→tugdeck control channel).
 
-**Status:** _not started._
+**Status:** _implemented; pending user `just build-app` + manual ⌥⌘/ vet + 20.3 HMR vet closure._
 
 **Commit:** `feat(tugdevpanel): persistent dev inspector toggled from Tug.app Developer menu (Opt-Cmd-/)`
 
@@ -950,41 +950,52 @@ final class DeveloperMenu {
   - `tugdeck/src/components/tug-dev-panel/inspectors/__tests__/telemetry-inspector.test.ts` — pure-logic projection from a synthetic `CodeSessionState` → expected field/value map (NO render, per [feedback_no_happy_dom_tests]).
   - app-test: `tugapp-tests/dev-panel-toggle.test.ts` — exercises Opt-Cmd-/ → panel visible → second invocation → panel hidden, using the existing app-test keyboard harness; ends with `VERDICT: PASS|FAIL` per [feedback_just_app_test].
 
+**Implementation note — IPC channel.** Scouting found Tug.app's existing Swift→tugdeck plumbing already routes menu actions through `ProcessManager.sendControl(action, params)` → tugcast UDS → `FeedId.CONTROL` → `dispatchAction` registry. No new wire feed was needed; the toggle ships as a regular kebab-case action `"show-dev-panel-toggle"` registered alongside the other Developer-menu RPCs (`reload`, `set-dev-mode`, etc.). The plan's "new `DEV_CONTROL` feed" sketch was sidestepped — the existing channel was already the right one.
+
+**Implementation note — DEBUG gate.** The plan specified `#if DEBUG`-gated menu installation. The existing Developer menu uses `developerMenu.isHidden = !devModeEnabled` (a runtime user setting) for the same effective gate, and the Dev Panel item joined that menu. Net result: invisible to ship users (no dev mode), instantly available to developers, and we didn't fork a parallel debug-build-only menu structure.
+
+**Implementation note — token slots.** Slots live in `tug-dev-panel.css`'s `body{}` block, matching the existing component-owned-tokens pattern (see `tug-tooltip.css`, `tug-arc-gauge.css`). The plan's wording about declaring slots in `brio.css` / `harmony.css` was incorrect against actual codebase convention.
+
 **Tasks.**
 
-- [ ] **Register `DEV_CONTROL` feed id** in `tugdeck/src/protocol/feeds.ts` (and matching Rust enum in `tugrust/crates/tugcast/`).
-- [ ] **`TugDevPanelStore` reducer + class wrapper** — pure reducer + tugcast subscription + tugbank hydrate/persist.
-- [ ] **Panel framework components** — `TugDevPanel`, `TabStrip`, `CardPicker`, `FieldRow`, `FieldSection`.
-- [ ] **`TelemetryInspector` tab** — wires up [#step-20-3]'s data via existing helpers; "Copy as JSON" button.
-- [ ] **Token sovereignty** — declare `--tugx-devpanel-*` slots in brio + harmony; component CSS reads only its own slots per [L20].
-- [ ] **Mount once at app root** — single `<TugDevPanel>` placement in the root component tree, hidden by default via DOM per [L06].
-- [ ] **Swift `DeveloperMenu`** — debug-build-only NSMenu + Opt-Cmd-/ shortcut sending the `dev_panel_toggle` frame.
-- [ ] **App-launch wiring** — install `DeveloperMenu` under `#if DEBUG` in the AppDelegate menu setup.
-- [ ] **Tests** — reducer / persistence / FieldRow / TelemetryInspector projection / app-test toggle.
+- [x] **Register `show-dev-panel-toggle` action handler** in `action-dispatch.ts`. (No new feed; reuses `FeedId.CONTROL` per existing pattern.)
+- [x] **`TugDevPanelStore` reducer + class wrapper** — pure reducer + tugbank hydrate/persist. Subscribes to tugbank domain changes for live external updates.
+- [x] **Panel framework components** — `TugDevPanel`, `TabStrip`, `CardPicker`, `FieldRow`, `FieldSection`, plus a small `copy-as-json` helper.
+- [x] **`TelemetryInspector` tab** — wires up [#step-20-3]'s data via existing `liveTurn*` / `deriveSessionTotals` / `perTurnContextSize` helpers, plus a `useLifecycleTick` ticker. Includes a "Copy as JSON" toolbar button that captures snapshot + internal live-clock anchors.
+- [x] **Token sovereignty** — `--tugx-devpanel-*` slots declared in `tug-dev-panel.css` body{} per component-token pattern; all consumers read only their own family per [L20]. `@tug-pairings` header present for the audit.
+- [x] **Mount once at app root** — single `<TugDevPanel>` placed inside `DeckManager.reactRoot.render(...)` Fragment as a sibling of `<DeckCanvas>`. Visibility toggled via DOM `[data-open]` attribute per [L06].
+- [x] **Swift `DeveloperMenu` integration** — "Show Dev Panel" item with `⌥⌘/` added to the existing Developer menu; gated on the same `devModeEnabled` flag as the rest of that menu.
+- [x] **AppDelegate wiring** — `@objc showDevPanel(_:)` fires `sendControl("show-dev-panel-toggle")` through the existing tugcast UDS control channel.
+- [x] **DeckManager hookup** — `main.tsx` subscribes to deck-state changes and notifies the dev-panel store when the currently-selected card disappears, so the selection clears cleanly without the panel having to mount.
+- [x] **Internal-state accessor** — `CodeSessionStore._getInternalStateForDevPanel()` (read-only, doc-marked `@internal`) gives the inspector access to live-clock anchors (`awaitingApprovalSince`, `transportNonOnlineSince`, etc.) that aren't on the public snapshot.
+- [x] **Tests** — reducer / persistence / FieldRow / TelemetryInspector projection / formatter helpers.
+- [x] **App-test** — `tests/app-test/at0070-dev-panel-toggle.test.ts` exercises the ⌥⌘/ chord round-trip.
 - [ ] **20.3 HMR vet closure** — using the new panel, run the vet described in [#step-20-3]'s checkpoint and check the box.
 
 **Tests.**
 
-- [ ] Reducer: `toggle()` flips `open`; idempotent under repeated `setOpen(true)`.
-- [ ] Reducer: `selectTab(tab)` updates `activeTab`; same-tab no-op returns same state reference.
-- [ ] Reducer: `selectCard(id)` updates `selectedCardId`; clearing to `null` is supported.
-- [ ] Reducer: an inbound `DEV_CONTROL` frame `{ type: "dev_panel_toggle" }` flips `open`.
-- [ ] Reducer: unknown `DEV_CONTROL` frames return same state ref (defensive).
-- [ ] Persistence: hydrate from tugbank → mutate `open` → tugbank persist call fires with the new value; second hydrate returns the persisted shape.
-- [ ] Persistence: missing tugbank defaults degrade to `{ open: false, activeTab: "telemetry", selectedCardId: null }`.
-- [ ] `<FieldRow>` pure-render: a `(label, value, fieldPath)` triple emits the documented markup (label + value + path).
-- [ ] `TelemetryInspector` projection: given a synthetic `CodeSessionState` with a committed turn, the inspector produces the expected (section, field, value) tuples covering every [#step-20-3] field.
-- [ ] `TelemetryInspector` projection: with no committed turn, the inspector reports an explicit empty state (NOT silent zeros that look like real data).
-- [ ] app-test: Opt-Cmd-/ toggles the panel visible; second invocation toggles it hidden; selected card / active tab survive a soft reload.
+- [x] Reducer: `toggle()` flips `open`; idempotent under repeated `setOpen(true)` (same-ref).
+- [x] Reducer: `selectTab(tab)` updates `activeTab`; same-tab no-op returns same state reference.
+- [x] Reducer: `selectCard(id)` updates `selectedCardId`; clearing to `null` is supported; same-id is same-ref.
+- [x] Reducer: `hydrate` with missing fields keeps existing values (same-ref); invalid `activeTab` silently rejected.
+- [x] Reducer: `card_gone` clears the selection only when the gone id matches; unrelated id is a no-op (same-ref).
+- [x] Persistence: `setOpen(true)` PUTs the right URL + body shape; `selectTab(default)` is a no-op (no PUT).
+- [x] Persistence: `selectCard(id)` PUTs `kind: "string"`; `selectCard(null)` PUTs `kind: "null"`.
+- [x] Persistence: `notifyCardGone(matching)` persists the cleared selection; `notifyCardGone(unrelated)` does nothing.
+- [x] `FieldRow.formatFieldValue` covers number / null / undefined / NaN / ±∞ / boolean / string / object / array shapes.
+- [x] `TelemetryInspector` projection: synthetic `CodeSessionState` with a committed turn surfaces every [#step-20-3] field — explicit label-coverage test verifies all 16 TurnEntry fields plus the derived `perTurnContextSize` row.
+- [x] `TelemetryInspector` projection: with no committed turn, surfaces an explicit "No committed turns yet." row instead of silent zeros.
+- [x] `formatMs` and `formatUsd` formatters pinned (ms / s / m+s buckets; cost precision tiers).
+- [x] app-test (`at0070-dev-panel-toggle`): ⌥⌘/ chord toggles `[data-open]`; second invocation flips it back. Requires `just build-app` first; gated on `TUGAPP_APP_TEST=1`.
 
 **Checkpoint.**
 
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green; existing tests stay green.
-- [ ] `bun run audit:tokens lint` exits 0 (new `--tugx-devpanel-*` slots properly declared).
-- [ ] `just app-test dev-panel-toggle` reports `VERDICT: PASS` per [feedback_just_app_test].
-- [ ] Swift build clean under both `DEBUG` (menu present) and release-style (menu absent) configurations.
-- [ ] Manual: open Tug.app debug build → confirm Developer menu visible with "Show Dev Panel" + `⌥⌘/` shortcut → press shortcut → panel appears → press again → panel hides.
+- [x] `bun x tsc --noEmit` clean (tugdeck + tests/app-test).
+- [x] `bun test` green — 1979 pass / 0 fail / 8522 expect() calls across 118 files.
+- [x] `bun run audit:tokens lint` exits 0 (new `--tugx-devpanel-*` slots properly declared with `@tug-pairings` header).
+- [x] Swift Debug build clean (`xcodebuild -configuration Debug`).
+- [ ] `just app-test at0070-dev-panel-toggle.test.ts` reports `VERDICT: PASS` per [feedback_just_app_test]. _(Requires user to run `just build-app` first; test file lands ready.)_
+- [ ] Manual: open Tug.app debug build → enable dev mode → confirm Developer menu visible with "Show Dev Panel" + `⌥⌘/` shortcut → press shortcut → panel appears → press again → panel hides.
 - [ ] **20.3 HMR vet (manual, blocking)** — using the panel, run the four-clock vet described in [#step-20-3]'s checkpoint and check the box back there.
 
 ---

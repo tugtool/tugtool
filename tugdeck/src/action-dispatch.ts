@@ -44,6 +44,7 @@ import { BASE_THEME_NAME } from "./theme-constants";
 import { transferFocusForActivation } from "./focus-transfer";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
+import { tugDevPanelStore } from "./lib/tug-dev-panel-store/tug-dev-panel-store";
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
 import { getAppLifecycle } from "./lib/app-lifecycle";
 import { decodeSessionUpdated } from "./protocol";
@@ -333,6 +334,13 @@ export function initActionDispatch(
     } else {
       console.info("source-tree: WKScriptMessageHandler bridge not available");
     }
+  });
+
+  // show-dev-panel-toggle: Toggle the TugDevPanel's visibility. Fired
+  // by the Swift Developer menu's "Show Dev Panel" item (Opt-Cmd-/).
+  // Read-only inspector surface — no mutations propagate elsewhere.
+  registerAction("show-dev-panel-toggle", () => {
+    tugDevPanelStore.toggle();
   });
 
   // arrange-cards: Rearrange all cards on the canvas.

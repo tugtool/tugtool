@@ -11,6 +11,7 @@ import { setTugbankClient } from "./lib/tugbank-singleton";
 import { DeckManager } from "./deck-manager";
 import { initActionDispatch } from "./action-dispatch";
 import { cardServicesStore } from "./lib/card-services-store";
+import { tugDevPanelStore } from "./lib/tug-dev-panel-store/tug-dev-panel-store";
 import { restoreTideSessions } from "./lib/tide-session-restore";
 import { attachTideSessionLedgerStore } from "./lib/tide-session-ledger-store";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
@@ -244,6 +245,23 @@ if (!container) {
   // user-close gestures flow through deck-manager.removeCard, and the
   // services store reacts on its own.
   cardServicesStore.attachDeckManager(deck);
+
+  // Wire the dev panel to deck-manager so it clears its selectedCardId
+  // when the selected card is closed. Subscribes once at boot; checks
+  // each deck-state notification for removed cards and notifies the
+  // dev panel store. No-op when the panel never opens (it lives lazy).
+  let knownCardIdsForDevPanel = new Set(
+    deck.getSnapshot().cards.map((c) => c.id),
+  );
+  deck.subscribe(() => {
+    const next = new Set(deck.getSnapshot().cards.map((c) => c.id));
+    for (const id of knownCardIdsForDevPanel) {
+      if (!next.has(id)) {
+        tugDevPanelStore.notifyCardGone(id);
+      }
+    }
+    knownCardIdsForDevPanel = next;
+  });
 
   // Wire the tide session-ledger store to the connection. The store
   // dispatches `list_sessions` requests on first observation, subscribes
