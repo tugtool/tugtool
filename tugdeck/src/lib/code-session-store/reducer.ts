@@ -527,18 +527,18 @@ function handleTextDelta(
     nextPhase = state.phase;
   }
 
-  // While replaying, the in-flight streaming document is not the
-  // surface the user reads — replay-committed turns render from
-  // `transcript`. Skip the write-inflight effect so a replayed turn's
-  // partial text doesn't briefly appear in the in-flight pane.
-  // The per-turn streaming path needs a `turnKey`. Live phases always
-  // have `pendingUserMessage` set (handleSend sets it on entry to
-  // `submitting`; turn_complete clears it). Replay suppresses the
-  // write-inflight effect entirely, so the `null` branch below only
-  // fires for that suppressed path.
+  // Per-turn paths are the sole render surface for both in-flight
+  // and committed cells ([L26]). Every accepted text event — live or
+  // replayed — writes the current buffer into
+  // `turn.${turnKey}.${channel}`, so the cell's subscription has
+  // data to render across all transitions, including cold-boot
+  // rehydration. The `turnKey === undefined` short-circuit is the
+  // only suppression that remains and it covers a genuine
+  // "no in-flight turn" case (`pendingUserMessage` is null between
+  // turns, e.g., a stray text event that survived a guard upstream).
   const turnKey = state.pendingUserMessage?.turnKey;
   const effects: Effect[] =
-    state.phase === "replaying" || turnKey === undefined
+    turnKey === undefined
       ? []
       : [{ kind: "write-inflight", turnKey, channel, value: buffer }];
 
@@ -640,27 +640,28 @@ function handleToolUse(
     });
   }
 
-  // Live tool_use flips phase to "tool_work"; replay keeps `replaying`
-  // since the bracket pair owns phase entry/exit. The in-flight tool
-  // pane similarly only reflects live turns.
+  // Phase transition is live-only: `tool_use` flips `streaming` /
+  // `submitting` / `awaiting_first_token` to `tool_work`; replay keeps
+  // `replaying` because the bracket pair owns phase entry/exit.
+  //
+  // The write-inflight effect, by contrast, fires for both live and
+  // replay ([L26] — per-turn paths are the sole render surface for
+  // committed cells, so replayed turns must populate them too;
+  // cold-boot rehydration depends on this symmetry). The
+  // `pendingUserMessage` guard covers the genuine "no in-flight
+  // turn" case (null between turns).
   const isReplaying = state.phase === "replaying";
-  const effects: Effect[] = isReplaying
-    ? []
-    : [
-        // Per-turn path; turnKey lookup guarded above by the
-        // `isReplaying` / `turnKey === undefined` check that prevents
-        // the effect entirely if there's no in-flight turn.
-        ...(state.pendingUserMessage !== null
-          ? [
-              {
-                kind: "write-inflight" as const,
-                turnKey: state.pendingUserMessage.turnKey,
-                channel: "tools" as const,
-                value: serializeToolCalls(toolCallMap),
-              },
-            ]
-          : []),
-      ];
+  const effects: Effect[] =
+    state.pendingUserMessage !== null
+      ? [
+          {
+            kind: "write-inflight" as const,
+            turnKey: state.pendingUserMessage.turnKey,
+            channel: "tools" as const,
+            value: serializeToolCalls(toolCallMap),
+          },
+        ]
+      : [];
 
   return {
     state: {
@@ -701,9 +702,14 @@ function handleToolResult(
     result: event.output ?? null,
   });
 
-  // Live tool_result drives `tool_work → streaming` once every entry
-  // is terminal. Replay keeps `replaying`; the bracket's
-  // replay_complete returns to idle.
+  // Phase transition is live-only: `tool_result` drives `tool_work
+  // → streaming` once every entry is terminal. Replay keeps
+  // `replaying`; the bracket's `replay_complete` returns to idle.
+  //
+  // The write-inflight effect, by contrast, fires for both live and
+  // replay ([L26] — per-turn paths are the sole render surface for
+  // committed cells, so replayed turns must populate them too;
+  // cold-boot rehydration depends on this symmetry).
   const isReplaying = state.phase === "replaying";
   const nextPhase: CodeSessionPhase = isReplaying
     ? state.phase
@@ -711,23 +717,17 @@ function handleToolResult(
       ? "streaming"
       : "tool_work";
 
-  const effects: Effect[] = isReplaying
-    ? []
-    : [
-        // Per-turn path; turnKey lookup guarded above by the
-        // `isReplaying` / `turnKey === undefined` check that prevents
-        // the effect entirely if there's no in-flight turn.
-        ...(state.pendingUserMessage !== null
-          ? [
-              {
-                kind: "write-inflight" as const,
-                turnKey: state.pendingUserMessage.turnKey,
-                channel: "tools" as const,
-                value: serializeToolCalls(toolCallMap),
-              },
-            ]
-          : []),
-      ];
+  const effects: Effect[] =
+    state.pendingUserMessage !== null
+      ? [
+          {
+            kind: "write-inflight" as const,
+            turnKey: state.pendingUserMessage.turnKey,
+            channel: "tools" as const,
+            value: serializeToolCalls(toolCallMap),
+          },
+        ]
+      : [];
 
   return {
     state: {
@@ -773,28 +773,26 @@ function handleToolUseStructured(
     structuredResult: event.structured_result ?? null,
   });
 
-  // While replaying, suppress the `inflight.tools` write — the
-  // bracket pair owns transcript-side delivery via
-  // `append-transcript`, and the in-flight pane only reflects live
-  // turns (mirrors the same skip in `handleToolUse` / `handleToolResult`).
-  const isReplaying = state.phase === "replaying";
-  const effects: Effect[] = isReplaying
-    ? []
-    : [
-        // Per-turn path; turnKey lookup guarded above by the
-        // `isReplaying` / `turnKey === undefined` check that prevents
-        // the effect entirely if there's no in-flight turn.
-        ...(state.pendingUserMessage !== null
-          ? [
-              {
-                kind: "write-inflight" as const,
-                turnKey: state.pendingUserMessage.turnKey,
-                channel: "tools" as const,
-                value: serializeToolCalls(toolCallMap),
-              },
-            ]
-          : []),
-      ];
+  // Write the updated toolCallMap (now carrying `structuredResult`
+  // on the matching entry) to the per-turn `.tools` path for both
+  // live and replay ([L26] — per-turn paths are the sole render
+  // surface for committed cells, and the structured-tool wrappers
+  // read `structuredResult` to render their bodies; gating this
+  // write on `state.phase` strips the structured payload from every
+  // cold-boot-rehydrated tool call). The `pendingUserMessage` guard
+  // covers the genuine "no in-flight turn" case (null between
+  // turns).
+  const effects: Effect[] =
+    state.pendingUserMessage !== null
+      ? [
+          {
+            kind: "write-inflight" as const,
+            turnKey: state.pendingUserMessage.turnKey,
+            channel: "tools" as const,
+            value: serializeToolCalls(toolCallMap),
+          },
+        ]
+      : [];
 
   return {
     state: { ...state, toolCallMap },

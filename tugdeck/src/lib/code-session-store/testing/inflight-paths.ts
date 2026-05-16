@@ -33,16 +33,35 @@ export function inflightValue(
 }
 
 /**
- * Read the value of a channel for the LAST committed turn. Useful
- * for assertions after `turn_complete` when `inflightUserMessage` is
- * null but the per-turn path still holds the final value.
+ * Read the value of a channel for a committed turn. Defaults to the
+ * LAST committed turn for the common case (`turn_complete` just
+ * landed); pass `index` for assertions against earlier turns in a
+ * multi-turn transcript (e.g., a full replay bracket carrying
+ * several turns).
+ *
+ * Resolves the per-turn path via the snapshot turnKey lookup, so it
+ * works uniformly for any committed turn regardless of how the turn
+ * was committed (live, replay, or any future ingestion path that
+ * lands on `state.transcript`).
+ *
+ * Returns `undefined` when the transcript is empty or `index` is
+ * out of bounds.
  */
-export function lastCommittedTurnValue(
+export function committedTurnValue(
   store: CodeSessionStore,
   channel: InflightChannel,
+  index?: number,
 ): unknown {
   const transcript = store.getSnapshot().transcript;
-  const last = transcript[transcript.length - 1];
-  if (last === undefined) return undefined;
-  return store.streamingDocument.get(`turn.${last.turnKey}.${channel}`);
+  const idx = index ?? transcript.length - 1;
+  const turn = transcript[idx];
+  if (turn === undefined) return undefined;
+  return store.streamingDocument.get(`turn.${turn.turnKey}.${channel}`);
 }
+
+/**
+ * @deprecated Use `committedTurnValue(store, channel)`. Retained for
+ * source compatibility with tests written before the index parameter
+ * was introduced.
+ */
+export const lastCommittedTurnValue = committedTurnValue;

@@ -272,3 +272,278 @@ describe("replay_complete preserves in-flight cycle state for the live tail", ()
     expect(committedEntry?.entry.assistant).toBe("hi there");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Step 18.9 — replay emits write-inflight effects equivalent to live's, so
+// committed cells (which read exclusively from per-turn `streamingDocument`
+// paths under [L26]) render their content after cold-boot rehydration.
+// ---------------------------------------------------------------------------
+
+describe("replay emits write-inflight effects for per-turn paths ([L26])", () => {
+  function writeInflightEffects(effects: ReadonlyArray<Effect>): Array<{
+    turnKey: string;
+    channel: "assistant" | "thinking" | "tools";
+    value: string;
+  }> {
+    return effects
+      .filter((e): e is Extract<Effect, { kind: "write-inflight" }> =>
+        e.kind === "write-inflight",
+      )
+      .map(({ turnKey, channel, value }) => ({ turnKey, channel, value }));
+  }
+
+  function committedEntries(effects: ReadonlyArray<Effect>): Array<
+    Extract<Effect, { kind: "append-transcript" }>["entry"]
+  > {
+    return effects
+      .filter((e): e is Extract<Effect, { kind: "append-transcript" }> =>
+        e.kind === "append-transcript",
+      )
+      .map((e) => e.entry);
+  }
+
+  it("replayed assistant_text emits a write-inflight effect for turn.${turnKey}.assistant", () => {
+    const events: CodeSessionEvent[] = [
+      { type: "replay_started", ipc_version: 2 },
+      {
+        type: "user_message_replay",
+        msg_id: "msg_assist",
+        text: "hi",
+        turnKey: "tk-assist",
+        attachments: [],
+        ipc_version: 2,
+      },
+      {
+        type: "assistant_text",
+        msg_id: "msg_assist",
+        seq: 0,
+        rev: 0,
+        text: "AUTHORITATIVE",
+        is_partial: false,
+        status: "complete",
+        ipc_version: 2,
+      },
+      {
+        type: "turn_complete",
+        msg_id: "msg_assist",
+        seq: 1,
+        result: "success",
+        ipc_version: 2,
+      },
+      { type: "replay_complete", count: 1, ipc_version: 2 },
+    ];
+
+    const after = applyAll(fresh(), events);
+    const writes = writeInflightEffects(after.effects);
+    const assistantWrites = writes.filter((w) => w.channel === "assistant");
+
+    expect(assistantWrites.length).toBe(1);
+    expect(assistantWrites[0]).toEqual({
+      turnKey: "tk-assist",
+      channel: "assistant",
+      value: "AUTHORITATIVE",
+    });
+
+    // State invariants stay correct (regression check on the existing
+    // behavior surface). The reducer emits the committed entry via
+    // `append-transcript`; the wrapper aggregates onto `_transcript`,
+    // not reducer state.
+    const [committed] = committedEntries(after.effects);
+    expect(committed?.assistant).toBe("AUTHORITATIVE");
+    expect(committed?.turnKey).toBe("tk-assist");
+  });
+
+  it("replayed thinking_text emits a write-inflight effect for turn.${turnKey}.thinking", () => {
+    const events: CodeSessionEvent[] = [
+      { type: "replay_started", ipc_version: 2 },
+      {
+        type: "user_message_replay",
+        msg_id: "msg_think",
+        text: "why?",
+        turnKey: "tk-think",
+        attachments: [],
+        ipc_version: 2,
+      },
+      {
+        type: "thinking_text",
+        msg_id: "msg_think",
+        seq: 0,
+        rev: 0,
+        text: "FINAL THOUGHT",
+        is_partial: false,
+        ipc_version: 2,
+      },
+      {
+        type: "turn_complete",
+        msg_id: "msg_think",
+        seq: 1,
+        result: "success",
+        ipc_version: 2,
+      },
+      { type: "replay_complete", count: 1, ipc_version: 2 },
+    ];
+
+    const after = applyAll(fresh(), events);
+    const writes = writeInflightEffects(after.effects);
+    const thinkingWrites = writes.filter((w) => w.channel === "thinking");
+
+    expect(thinkingWrites.length).toBe(1);
+    expect(thinkingWrites[0]).toEqual({
+      turnKey: "tk-think",
+      channel: "thinking",
+      value: "FINAL THOUGHT",
+    });
+
+    const [committed] = committedEntries(after.effects);
+    expect(committed?.thinking).toBe("FINAL THOUGHT");
+  });
+
+  it("replayed tool_use → tool_result → tool_use_structured all emit write-inflight effects for turn.${turnKey}.tools with the structured payload landing in the last write", () => {
+    const events: CodeSessionEvent[] = [
+      { type: "replay_started", ipc_version: 2 },
+      {
+        type: "user_message_replay",
+        msg_id: "msg_tool",
+        text: "read it",
+        turnKey: "tk-tool",
+        attachments: [],
+        ipc_version: 2,
+      },
+      {
+        type: "tool_use",
+        tool_use_id: "tool-1",
+        tool_name: "Read",
+        input: { file_path: "/x" },
+        msg_id: "msg_tool",
+        seq: 0,
+        ipc_version: 2,
+      },
+      {
+        type: "tool_result",
+        tool_use_id: "tool-1",
+        output: "raw output",
+        is_error: false,
+        ipc_version: 2,
+      },
+      {
+        type: "tool_use_structured",
+        tool_use_id: "tool-1",
+        structured_result: { type: "FileBody", text: "raw output" },
+        ipc_version: 2,
+      },
+      {
+        type: "turn_complete",
+        msg_id: "msg_tool",
+        seq: 1,
+        result: "success",
+        ipc_version: 2,
+      },
+      { type: "replay_complete", count: 1, ipc_version: 2 },
+    ];
+
+    const after = applyAll(fresh(), events);
+    const writes = writeInflightEffects(after.effects);
+    const toolWrites = writes.filter((w) => w.channel === "tools");
+
+    // tool_use, tool_result, tool_use_structured all emit. Three
+    // writes total; each is the serialized toolCallMap snapshot
+    // valid at that event.
+    expect(toolWrites.length).toBe(3);
+    expect(toolWrites.every((w) => w.turnKey === "tk-tool")).toBe(true);
+
+    // The last write — emitted from handleToolUseStructured — must
+    // carry the `structuredResult` field. This is the previously-
+    // missed fourth site; if it regresses, structured-tool wrappers
+    // render empty bodies after cold-boot rehydration.
+    const finalToolPayload = JSON.parse(
+      toolWrites[toolWrites.length - 1].value,
+    ) as ReadonlyArray<{
+      toolUseId: string;
+      structuredResult: unknown;
+      result: unknown;
+      status: string;
+    }>;
+    expect(finalToolPayload.length).toBe(1);
+    expect(finalToolPayload[0].toolUseId).toBe("tool-1");
+    expect(finalToolPayload[0].status).toBe("done");
+    expect(finalToolPayload[0].result).toBe("raw output");
+    expect(finalToolPayload[0].structuredResult).toEqual({
+      type: "FileBody",
+      text: "raw output",
+    });
+
+    // Committed TurnEntry carries the same payload.
+    const [committed] = committedEntries(after.effects);
+    expect(committed?.toolCalls.length).toBe(1);
+    expect(committed?.toolCalls[0].structuredResult).toEqual({
+      type: "FileBody",
+      text: "raw output",
+    });
+  });
+
+  it("in-flight snapshot in bracket → continued live tail: per-turn path holds the full body after turn_complete", () => {
+    // This is the cross-bracket write-through trace: the replay-side
+    // snapshot writes "head of response" via the new emission; live-
+    // tail appends " and tail" through the same path; turn_complete
+    // commits. The per-turn path must equal TurnEntry.assistant at
+    // every observable moment.
+    const events: CodeSessionEvent[] = [
+      { type: "replay_started", ipc_version: 2 },
+      {
+        type: "user_message_replay",
+        msg_id: "msg_inflight_X",
+        text: "what's the time?",
+        turnKey: "tk-cross",
+        attachments: [],
+        ipc_version: 2,
+      },
+      {
+        type: "assistant_text",
+        msg_id: "msg_inflight_X",
+        seq: 0,
+        rev: 12,
+        text: "head of response",
+        is_partial: false,
+        status: "streaming",
+        ipc_version: 2,
+      },
+      { type: "replay_complete", count: 0, ipc_version: 2 },
+      {
+        type: "assistant_text",
+        msg_id: "msg_inflight_X",
+        seq: 1,
+        rev: 13,
+        text: " and tail",
+        is_partial: true,
+        status: "partial",
+        ipc_version: 2,
+      },
+      {
+        type: "turn_complete",
+        msg_id: "msg_inflight_X",
+        seq: 2,
+        result: "success",
+        ipc_version: 2,
+      },
+    ];
+
+    const after = applyAll(fresh(), events);
+    const writes = writeInflightEffects(after.effects).filter(
+      (w) => w.channel === "assistant",
+    );
+
+    // Two writes: one during the bracket (the replay snapshot's
+    // assistant_text — now emitted thanks to the L26 fix), one
+    // post-bracket (the live tail). Both target the same turnKey.
+    expect(writes.length).toBe(2);
+    expect(writes.map((w) => w.value)).toEqual([
+      "head of response",
+      "head of response and tail",
+    ]);
+    expect(writes.every((w) => w.turnKey === "tk-cross")).toBe(true);
+
+    // The committed TurnEntry matches the final per-turn-path value.
+    const [committed] = committedEntries(after.effects);
+    expect(committed?.assistant).toBe("head of response and tail");
+  });
+});

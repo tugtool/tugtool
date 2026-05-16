@@ -45,9 +45,18 @@
  *  - [L02] data source enters React via `useSyncExternalStore` only;
  *    the adapter exposes the `subscribe` / `getVersion` shape that
  *    contract requires.
- *  - [L23] preserves user-visible state (scroll position) across
- *    what was previously a teardown event — the cell wrapper now
- *    survives every transition within a turn's life.
+ *  - [L23] preserves user-visible state (scroll position AND content)
+ *    across what was previously a teardown event. The cell wrapper
+ *    now survives every transition within a turn's life — the
+ *    in-flight → committed boundary (in-session, [L26]) AND the
+ *    cold-boot rehydration boundary (cross-session). Cold-boot
+ *    works because the reducer writes per-turn paths during replay
+ *    with the same write-inflight effect it emits during live
+ *    turns, so the post-L26 single-subscription render contract
+ *    has data to surface on the first render after restore. The
+ *    write-side symmetry is the live↔replay parity in
+ *    `code-session-store/reducer.ts`'s text and tool handlers; see
+ *    [Step 18.9] in `roadmap/tide-assistant-rendering.md`.
  *  - [L26] mount identity stable across the in-flight → committed
  *    transition: the React key (`${turnKey}-code`), the rendered
  *    component (`CodeRowCell`), and the renderer lambda in

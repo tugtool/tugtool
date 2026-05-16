@@ -27,7 +27,10 @@ import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import type { TugConnection } from "@/connection";
 import { TestFrameChannel } from "@/lib/code-session-store/testing/mock-feed-store";
 import { FIXTURE_IDS } from "@/lib/code-session-store/testing/golden-catalog";
-import { inflightValue } from "@/lib/code-session-store/testing/inflight-paths";
+import {
+  committedTurnValue,
+  inflightValue,
+} from "@/lib/code-session-store/testing/inflight-paths";
 import { FeedId } from "@/protocol";
 
 const TUG = FIXTURE_IDS.TUG_SESSION_ID;
@@ -428,5 +431,149 @@ describe("CodeSessionStore — lastReplayResult lifecycle", () => {
     // dropped; phase stays `submitting`.
     emit(conn, replayStarted());
     expect(store.getSnapshot().phase).toBe("submitting");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 18.9 — per-turn streamingDocument paths populated across the replay
+// bracket. [L26]'s post-unification render contract makes the per-turn paths
+// the sole render surface; replay must populate them or cold-boot-rehydrated
+// transcripts render empty.
+// ---------------------------------------------------------------------------
+
+describe("CodeSessionStore — per-turn paths populated across replay bracket ([L26])", () => {
+  function toolUse(
+    msgId: string,
+    toolUseId: string,
+    toolName: string,
+    input: Record<string, unknown>,
+  ) {
+    return {
+      type: "tool_use",
+      msg_id: msgId,
+      tool_use_id: toolUseId,
+      tool_name: toolName,
+      input,
+      seq: 0,
+      ipc_version: IPC_VERSION,
+    };
+  }
+  function toolResult(toolUseId: string, output: string) {
+    return {
+      type: "tool_result",
+      tool_use_id: toolUseId,
+      output,
+      is_error: false,
+      ipc_version: IPC_VERSION,
+    };
+  }
+  function toolUseStructured(
+    toolUseId: string,
+    structuredResult: Record<string, unknown>,
+  ) {
+    return {
+      type: "tool_use_structured",
+      tool_use_id: toolUseId,
+      structured_result: structuredResult,
+      ipc_version: IPC_VERSION,
+    };
+  }
+  function thinkingText(msgId: string, text: string) {
+    return {
+      type: "thinking_text",
+      msg_id: msgId,
+      seq: 0,
+      rev: 0,
+      text,
+      is_partial: false,
+      ipc_version: IPC_VERSION,
+    };
+  }
+
+  it("multi-turn bracket populates assistant + thinking + tools paths for every committed turn", () => {
+    const { store, conn } = makeStore();
+
+    emit(conn, replayStarted());
+
+    // Turn 1: assistant text only.
+    emit(conn, userMessageReplay("msg-A", "first user"));
+    emit(conn, assistantText("msg-A", "first reply"));
+    emit(conn, turnComplete("msg-A"));
+
+    // Turn 2: assistant text + thinking text.
+    emit(conn, userMessageReplay("msg-B", "second user"));
+    emit(conn, thinkingText("msg-B", "second thought"));
+    emit(conn, assistantText("msg-B", "second reply"));
+    emit(conn, turnComplete("msg-B"));
+
+    // Turn 3: a structured tool call (Read).
+    emit(conn, userMessageReplay("msg-C", "read file"));
+    emit(conn, toolUse("msg-C", "tool-1", "Read", { file_path: "/x" }));
+    emit(conn, toolResult("tool-1", "file body"));
+    emit(
+      conn,
+      toolUseStructured("tool-1", { type: "FileBody", text: "file body" }),
+    );
+    emit(conn, assistantText("msg-C", "here is the file"));
+    emit(conn, turnComplete("msg-C"));
+
+    emit(conn, replayComplete(3));
+
+    const snap = store.getSnapshot();
+    expect(snap.phase).toBe("idle");
+    expect(snap.transcript.length).toBe(3);
+
+    // Turn 1 — assistant path populated; thinking / tools untouched.
+    expect(committedTurnValue(store, "assistant", 0)).toBe("first reply");
+    expect(committedTurnValue(store, "thinking", 0)).toBeUndefined();
+    expect(committedTurnValue(store, "tools", 0)).toBeUndefined();
+
+    // Turn 2 — assistant + thinking populated.
+    expect(committedTurnValue(store, "assistant", 1)).toBe("second reply");
+    expect(committedTurnValue(store, "thinking", 1)).toBe("second thought");
+    expect(committedTurnValue(store, "tools", 1)).toBeUndefined();
+
+    // Turn 3 — assistant + tools populated; structured_result lands in
+    // the final tools write (handleToolUseStructured was the previously-
+    // missed fourth site, so this assertion is the regression gate for
+    // structured-tool rendering after cold boot).
+    expect(committedTurnValue(store, "assistant", 2)).toBe("here is the file");
+    const toolsSerialized = committedTurnValue(store, "tools", 2);
+    expect(typeof toolsSerialized).toBe("string");
+    const toolsPayload = JSON.parse(toolsSerialized as string) as ReadonlyArray<{
+      toolUseId: string;
+      status: string;
+      structuredResult: unknown;
+    }>;
+    expect(toolsPayload.length).toBe(1);
+    expect(toolsPayload[0].toolUseId).toBe("tool-1");
+    expect(toolsPayload[0].status).toBe("done");
+    expect(toolsPayload[0].structuredResult).toEqual({
+      type: "FileBody",
+      text: "file body",
+    });
+
+    // Default-index lookup (no `index` arg) resolves to the LAST turn.
+    expect(committedTurnValue(store, "assistant")).toBe("here is the file");
+  });
+
+  it("each turn's per-turn paths are addressed by a distinct turnKey — no cross-contamination across turns", () => {
+    const { store, conn } = makeStore();
+
+    emit(conn, replayStarted());
+    emit(conn, userMessageReplay("m1", "u1"));
+    emit(conn, assistantText("m1", "A1"));
+    emit(conn, turnComplete("m1"));
+    emit(conn, userMessageReplay("m2", "u2"));
+    emit(conn, assistantText("m2", "A2"));
+    emit(conn, turnComplete("m2"));
+    emit(conn, replayComplete(2));
+
+    const snap = store.getSnapshot();
+    const tk1 = snap.transcript[0].turnKey;
+    const tk2 = snap.transcript[1].turnKey;
+    expect(tk1).not.toBe(tk2);
+    expect(store.streamingDocument.get(`turn.${tk1}.assistant`)).toBe("A1");
+    expect(store.streamingDocument.get(`turn.${tk2}.assistant`)).toBe("A2");
   });
 });
