@@ -236,6 +236,9 @@ body {
   --tug7-surface-card-primary-normal-titlebar-inactive: --tug-color(blue, i: 2, t: 65);
   --tug7-surface-card-primary-normal-titlebar-collapsed: --tug-color(blue, i: 2, t: 90);
 
+  /* Card — Status Bar (Z2 placement zone at bottom of top split-panel) */
+  --tug7-surface-card-primary-normal-status-rest: --tug-color(blue, i: 4, t: 85);
+
   /* Card — Title Bar Element Tokens */
   --tug7-element-card-text-normal-title-active: --tug-color(indigo, i: 4, t: 8);
   --tug7-element-card-text-normal-title-inactive: --tug-color(indigo, i: 4, t: 40);

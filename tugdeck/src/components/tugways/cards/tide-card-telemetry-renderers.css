@@ -1,0 +1,86 @@
+/**
+ * tide-card-telemetry-renderers.css — placement-agnostic styling for
+ * the tide-card telemetry renderers (window utilization, cumulative
+ * tokens, per-turn duration, etc.).
+ *
+ * The renderers compose primitives (TugArcGauge today; potentially
+ * TugLinearGauge or TugBadge in future) and need a small set of
+ * cascade-scoped overrides that adjust the primitive's appearance
+ * for this consumer per [D12]. Crucially, the overrides are keyed
+ * on a renderer-owned class (e.g. `.tide-telemetry-window-utilization`)
+ * NOT on a placement-zone selector — so the renderer reads the
+ * same regardless of which slot (Z1 / Z2 / Z3 / Z4) it lands in
+ * during the placement-experiment study.
+ *
+ * Tuglaw cross-check:
+ *  - [L19] component-authoring file pair (`.tsx` + `.css`); the
+ *    renderers carry `data-slot="tide-telemetry-*"` so the markup is
+ *    self-locating in the DOM tree.
+ *  - [L20] the renderers own only their root-class scope; they
+ *    override no global tokens. The TugArcGauge / TugLinearGauge
+ *    primitives keep their own tokens; this file uses the
+ *    cascade-scoped override pattern (set `--tugx-gauge-*` inside
+ *    the renderer's root class) for adjustments that the consumer's
+ *    surface justifies.
+ *  - [L16] every color-setting rule below sets EITHER both `color` and
+ *    `background-color` OR carries an explicit `@tug-renders-on`.
+ *
+ * @module components/tugways/cards/tide-card-telemetry-renderers
+ */
+
+/* ============================================================================
+   .tide-telemetry-window-utilization — TugArcGauge variant
+   ============================================================================
+   Compact dashboard-style dial with `value / max` and a "tokens"
+   label stacked beneath. Placement-agnostic; the same rules apply
+   in every zone the placement-experiment harness might assign.
+   ========================================================================= */
+
+/* Wrapper is a single-line flex row hosting TWO items: `[value]
+   [arc]`. The primitive's compact JSX renders the SVG first and the
+   readout (containing the value span) second; placing the SVG at
+   `order: 2` flips them so the readout's value sits to the left of
+   the arc on a shared baseline.
+   Bumps `--tugx-gauge-arc-stroke-width-compact` to thicken the
+   visible ring at the small SVG size: the primitive's default 6
+   viewBox-user-unit stroke paints at ~1.7 CSS px on a 28-px SVG;
+   10 puts it around 3 CSS px — readable without crowding the
+   bottom-90° opening. */
+.tide-telemetry-window-utilization.tug-arc-gauge {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  width: auto;
+  --tugx-gauge-arc-stroke-width-compact: 10px;
+}
+
+/* SVG pinned to a compact diameter so the dial reads as
+   supplementary to the text rather than the dominant element.
+   `order: 2` places it AFTER the readout (which keeps default
+   order 0) in visual order. */
+.tide-telemetry-window-utilization .tug-arc-gauge-svg {
+  width: 28px;
+  order: 2;
+}
+
+/* The inactive track stroke uses a higher-contrast color than the
+   gauge's default field-surface, which would otherwise blend into
+   any tinted surface (the Z2 status-bar background, the Z3 / Z4
+   prompt-entry surface, etc.). The element here is the track stroke
+   itself; pairing surface depends on placement, so the annotation
+   names the most-saturated host surface the harness can land on. */
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.tide-telemetry-window-utilization .tug-arc-gauge-track {
+  stroke: var(--tug7-element-global-border-normal-default-rest);
+}
+
+/* Readout adopts the surrounding chrome font (drops the primitive's
+   mono fallback). Children inherit from this rule via the DOM, so
+   the value span reads in the card font with tabular figures
+   (already set by the primitive on this same selector). The
+   column-layout `margin-top` makes no sense in our row wrapper —
+   reset it to zero so the value sits flush against the arc. */
+.tide-telemetry-window-utilization .tug-arc-gauge-readout {
+  font-family: inherit;
+  margin-top: 0;
+}

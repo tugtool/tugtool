@@ -70,13 +70,44 @@
    split-panel, OUTSIDE the scrolling transcript. Content-sized;
    empty by default. Layout shift on telemetry update is contained:
    the row grows into space the transcript ceded, with no scroll
-   repositioning. Layout box only per [L20]. */
+   repositioning. The host owns the layout box + breathing-room
+   padding + status-bar background; composed children declare their
+   own tokens per [L20]. Rule sets only `background-color` (no
+   foreground) — self-documenting per [L16]; descendants render on
+   this surface and declare their own `@tug-renders-on` accordingly. */
 .tide-card-status-bar {
   flex: 0 0 auto;
   display: flex;
   flex-direction: row;
   align-items: center;
+  gap: var(--tug-space-md);
+  padding: var(--tug-space-md);
+  background-color: var(--tug7-surface-card-primary-normal-status-rest);
+  /* Top-only border separates the status bar from the transcript
+     above. The rule sets both `background-color` and `border-top`
+     (an element); self-documenting per [L16] — the border renders on
+     the status surface declared on the same rule. */
+  border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
 }
+
+/* When Z2 has no content, the wrapper renders as an empty `<div>`
+   (JSX `{null}` produces no DOM child). `:empty` matches that case
+   and removes the entire strip — background, border, padding all
+   vanish so the transcript reads as the bottom of the top split-
+   panel until something fills the slot. React mount identity is
+   unaffected: the div node stays mounted, only its CSS box
+   collapses. */
+.tide-card-status-bar:empty {
+  display: none;
+}
+
+/* Renderer-specific styling for the telemetry chips (window
+   utilization, etc.) lives alongside the renderers themselves in
+   `tide-card-telemetry-renderers.css`. Keying overrides on a
+   renderer-owned class (e.g. `.tide-telemetry-window-utilization`)
+   rather than a placement-zone selector means the chip looks the
+   same whether the placement-experiment harness puts it in Z2, Z3,
+   or Z4 — exactly the property the experiment depends on. */
 
 /* Top-pane transcript host. Wraps a `TugListView` that renders
    committed turns + the in-flight pair as alternating (user, code)

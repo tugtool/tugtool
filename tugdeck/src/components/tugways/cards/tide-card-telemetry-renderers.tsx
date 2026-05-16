@@ -27,9 +27,11 @@
  * @module components/tugways/cards/tide-card-telemetry-renderers
  */
 
+import "./tide-card-telemetry-renderers.css";
+
 import React, { useCallback, useSyncExternalStore } from "react";
 
-import { TugLinearGauge } from "@/components/tugways/tug-linear-gauge";
+import { TugArcGauge } from "@/components/tugways/tug-arc-gauge";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { TurnEntry } from "@/lib/code-session-store/types";
 import {
@@ -179,15 +181,26 @@ export const TideTelemetryWindowUtilization: React.FC<TideTelemetryProps> = ({
       : null;
   const contextTokens = lastTurn !== null ? perTurnContextSize(lastTurn) : 0;
   const max = meta !== null ? resolveModelContextMax(meta) : DEFAULT_CONTEXT_MAX_TOKENS;
+  const maxText = formatTokens(max);
+  // Render value as `current / max` so the denominator is visible
+  // beneath the arc's proportional sweep. The "tokens" label rides
+  // the gauge's separate label slot (which TugArcGauge renders in a
+  // flex column below the value at compact density). Cascade-scoped
+  // CSS (see tide-card.css under `.tide-card-status-bar`) drops the
+  // primitive's default ALL-CAPS / mono treatment for this surface.
+  const formatRatio = useCallback(
+    (v: number) => `${formatTokens(v)} / ${maxText}`,
+    [maxText],
+  );
   return (
-    <TugLinearGauge
+    <TugArcGauge
+      className="tide-telemetry-window-utilization"
       data-slot="tide-telemetry-window-utilization"
       value={contextTokens}
       min={0}
       max={max}
       density="compact"
-      label="Window"
-      formatValue={formatTokens}
+      formatValue={formatRatio}
       thresholds={{ caution: 0.75, danger: 0.9 }}
     />
   );
