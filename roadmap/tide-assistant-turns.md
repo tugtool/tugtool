@@ -49,7 +49,8 @@ Both problems collapse to a missing **state-coordinated turn surface**. This pla
 - Reducer-level tests cover awaiting-approval accumulation, transport-downtime accumulation, per-turn cost delta math, terminal-state branches.
 - All six zones (Z0–Z5) formalized in the API contract. Z0 + Z1-user-half ship empty/reserved (slot mechanism present; default content `null`). Z3 (prompt-entry top) retains project-path badge as its default; renderer registry can replace it.
 - Z5 submit button coordinates with the lifecycle state machine: Submit / Stop / "Awaiting your input" / "Stopping…" / "Reconnecting…" / queued-visual. Same DOM node across mode transitions, verified via mount-identity probe.
-- `useLifecycleState()` hook returns a snapshot that drives Z1 (per-turn indicator), Z2 (status bar), and Z5 (button mode) consistently — every distinct row of the state-to-zone matrix has an end-to-end test.
+- `useLifecycleState()` hook returns a snapshot that drives Z1 (per-turn indicator), Z2 (status bar), and Z5 (button mode) consistently — every distinct row of the state-to-zone matrix has an end-to-end test. Reference-stable per [DT09]; merges UI-local state per [DT08].
+- `useLifecycleTick(intervalMs)` provides the 1-second ticker that drives Z2's live-elapsed readouts during in-flight turns; idle when phase is terminal (no leaked timers).
 - `/context`-style drill-down surface available via 📊 affordance at right edge of Z2; renders the full telemetry breakdown (per-turn table, per-tool expansion, reconnect / stream-gap diagnostics, raw `cost_update` payload). Opens without changing persistent text-entry focus destination.
 - `tide-question-dialog` exists (fills polish-plan §Step 15 gap); both permission and question dialogs wire to `awaitingApprovalSince`.
 - `tailSpacer="80cqh"` either removed (if [L26] mount-identity work obviates it) or correctly documented with the real reason (if it serves streaming jitter / visual comfort).
@@ -143,13 +144,21 @@ From the stream-json corpus:
 
 **Status:** Deferred to [Step 20.3](#step-20-3).
 
-#### [QT03] Transport-status signal — already surfaced or new? (OPEN) {#qt03-transport-status-signal}
+#### [QT03] Transport-status signal — already surfaced or new? (RESOLVED) {#qt03-transport-status-signal}
 
 **Question:** Does the tugcast WebSocket transport already surface connect/disconnect events to `CodeSessionStore`? If not, what's the minimum surface to add?
 
-**Decision target:** [Step 20.3](#step-20-3) Investigation B — grep + audit existing wiring. Outcomes: (a) wire new handlers to existing channel, or (b) add minimal `transport_status` signal as part of 20.3.
+**Resolution:** **(a) Already surfaced.** `CodeSessionSnapshot.transportState: TransportState` is on the snapshot today (`types.ts:201`), set by `handleTransportClose` / `handleTransportOpen` / `handleTransportSettled` in `reducer.ts`. **Three values, not two:**
 
-**Status:** Deferred to [Step 20.3](#step-20-3).
+- `"online"` — wire up; submit allowed.
+- `"offline"` — wire down; user cannot submit.
+- `"restoring"` — wire back up but per-card binding not yet re-ack'd by supervisor.
+
+**Implications for [Step 20.3](#step-20-3):**
+- `transportDowntimeMs` must accumulate during BOTH `offline` AND `restoring` (the wire is back but the session isn't usable yet). A "downtime interval" begins when `transportState` first leaves `"online"` and ends when it returns to `"online"`.
+- No new wire/protocol/handler additions needed — the 20.3 transport-timer just consumes existing `transportState` transitions via the reducer's existing `transport_*` handlers.
+
+**Status:** Resolved — Investigation B in 20.3 is a confirmation pass, not an open question.
 
 #### [QT04] `tailSpacer="80cqh"` — retire or document? (OPEN) {#qt04-tailspacer-fate}
 
@@ -239,6 +248,29 @@ For clarity across the document, key terms with potentially-ambiguous names:
 - INTERRUPTING is therefore NOT reachable from AWAITING_USER directly — the state graph in [Step 20.5.A](#step-20-5-a)'s diagram reflects this.
 
 **Alternatives considered:** Single-step cancellation that combines dialog-dismiss + interrupt in one Esc from AWAITING_USER. Rejected because it merges two distinct intents and the "deny + cancel" combo is rare in practice.
+
+#### [DT08] `deriveLifecycleSnapshot` accepts UI-local state as a second argument (DECIDED) {#dt08-lifecycle-snapshot-merges-ui-state}
+
+**Decision:** `deriveLifecycleSnapshot(storeSnapshot, uiState): TideLifecycleSnapshot` takes a second argument carrying UI-local flags that the reducer doesn't and shouldn't track. Initially only `{ drilldownOpen: boolean }`; structured as an object so future UI overlays can extend it without churn.
+
+**Reasoning:**
+- The function stays pure (output is a deterministic function of inputs); testability preserved.
+- The reducer doesn't pollute its state with UI-presentation concerns (drill-down open/close is presentation, not session state).
+- The `useLifecycleState` hook composes the two: subscribes to the store via `useSyncExternalStore`, reads the UI-local flag via `useState` or a UI-only zustand store, and calls `deriveLifecycleSnapshot(storeSnapshot, uiState)` to project both into the same matrix-row signal.
+- Future overlays (e.g., a help sheet, a settings popover) add fields to `uiState` without reshaping the reducer or the matrix.
+
+**Alternative considered:** Two derive functions (`deriveSessionLifecycle(store)` + `deriveOverlayLifecycle(uiState)`) with the consumer merging. Rejected because it splits the "one switch encodes the matrix" promise — the matrix has overlay rows, so all signals belong in one derivation.
+
+#### [DT09] `useLifecycleState` returns a stable snapshot reference when matrix-relevant signals are unchanged (DECIDED) {#dt09-snapshot-reference-stability}
+
+**Decision:** `deriveLifecycleSnapshot` returns a structurally-memoized result — if the matrix-relevant signals (`phase`, `pendingApproval !== null`, `transportState`, `interruptInFlight`, `queuedSends > 0`, `uiState.drilldownOpen`) are unchanged from the previous call, return the previous result's same reference. Implementation: a small wrapper that compares the derived `{ state, overlays, submitButtonMode }` tuple to the previous return and returns the prior object when shallow-equal.
+
+**Reasoning:**
+- `useSyncExternalStore` triggers a re-render whenever the snapshot reference changes. Without reference stability, every `assistant_delta` (which mutates the store snapshot but does not change any matrix-relevant signal) re-renders every consumer of `useLifecycleState` — Z1 (per turn), Z2, Z5. At 50+ deltas/sec during streaming, that's 50+ renders/sec across 5+ subscribers.
+- Reference stability bounds re-renders to the events that actually change lifecycle state. Stream deltas do not (they only change content); they only re-render the renderers that subscribe to content (the per-turn assistant body).
+- The reducer's snapshot itself is reference-stable per field per [D10] — this hook extends that discipline upward into the derived lifecycle layer.
+
+**Test:** `deriveLifecycleSnapshot(snapshotA, uiState) === deriveLifecycleSnapshot(snapshotB, uiState)` (`Object.is`) when the matrix-relevant signals of A and B are equal, even when other snapshot fields differ.
 
 ---
 
@@ -531,6 +563,12 @@ interface TurnEntry {
   /** Per-turn delta of cumulative cost-update fields. Zeros when no
    *  cost_update arrived for this turn. */
   cost: TurnCost;
+
+  // --- Existing `result` field stays, deprecated in favor of turnEndReason ---
+  // result: "success" | "interrupted" stays on TurnEntry; reducer derives it
+  // from turnEndReason ("complete" → "success"; else → "interrupted") so the
+  // two never diverge. JSDoc marks `result` @deprecated. Migration to
+  // turnEndReason happens incrementally per consumer.
 }
 
 interface ToolCall {
@@ -571,20 +609,37 @@ export function liveTurnActiveMs(state: CodeSessionState, now: number): number;
 
 **Reducer changes.** All isolated to `reducer.ts`:
 
-1. **State fields** — `awaitingApprovalSince: number | null`, `awaitingApprovalAccumulatedMs: number`, `transportDisconnectedSince: number | null`, `transportDowntimeAccumulatedMs: number`, `transportReconnectCount: number`, `lastStreamEventAt: number | null`, `maxStreamGapMs: number`, `firstAssistantDeltaAt: number | null`, `firstToolUseAt: number | null`, `costAtSubmit: CostSnapshot | null`.
-2. **Awaiting-approval timer** — `handleControlRequestForward` sets `awaitingApprovalSince = Date.now()` (covers both permission and question control_request types). `handleRespondApproval` / `handleRespondQuestion` accumulate `Date.now() - awaitingApprovalSince` into `awaitingApprovalAccumulatedMs` and reset `awaitingApprovalSince = null`. Interrupt + transport-close + replay-bracket paths also reset (defensive).
-3. **Transport-downtime timer** — new `handleTransportDisconnected` / `handleTransportConnected` handlers wire to the transport-status signal (see Investigation B). Disconnect sets `transportDisconnectedSince`; reconnect accumulates the interval into `transportDowntimeAccumulatedMs` and increments `transportReconnectCount`.
-4. **Stream-gap + latency markers** — every inbound stream event (assistant_delta, thinking_delta, tool_use, tool_result, system events) updates `lastStreamEventAt` and folds the gap into `maxStreamGapMs`. The first `assistant_delta` of the turn captures `firstAssistantDeltaAt`; the first `tool_use` captures `firstToolUseAt`. Each `tool_result` pairs with its `tool_use` and writes `toolWallMs` onto the `ToolCall`.
-5. **Snapshot + commit** — `handleSend` resets all per-turn timers and snapshots `lastCost` into `costAtSubmit`. `handleTurnComplete` (and the interrupt / error / transport-lost terminal handlers) computes the cost delta, freezes all per-turn fields onto the `TurnEntry`, sets `turnEndReason` based on which handler fired, and resets the per-turn accumulators.
+1. **New reducer state fields** — eleven additions to `CodeSessionState` + `createInitialState`:
+   - `awaitingApprovalSince: number | null` — entry-side timestamp; complements the existing `pendingApproval` / `pendingQuestion` snapshot fields (those identify *which* dialog; this records *when* it opened).
+   - `awaitingApprovalAccumulatedMs: number`
+   - `transportNonOnlineSince: number | null` — timestamp captured when `transportState` first leaves `"online"` (either to `offline` or `restoring`).
+   - `transportDowntimeAccumulatedMs: number`
+   - `transportReconnectCount: number`
+   - `lastStreamEventAt: number | null`
+   - `maxStreamGapMs: number`
+   - `firstAssistantDeltaAt: number | null`
+   - `firstToolUseAt: number | null`
+   - `costAtSubmit: CostSnapshot | null`
+   - **`interruptInFlight: boolean`** — set `true` by `handleInterrupt`, cleared by `handleTurnComplete` (any reason). Drives the INTERRUPTING lifecycle state in [20.5.A's matrix](#step-20-5-a). No existing single-source signal carries this; the plan adds it.
+2. **Awaiting-approval timer** — `handleControlRequestForward` sets `awaitingApprovalSince = Date.now()` (covers both permission and question `control_request_forward` variants). `handleRespondApproval` / `handleRespondQuestion` accumulate `Date.now() - awaitingApprovalSince` into `awaitingApprovalAccumulatedMs` and reset `awaitingApprovalSince = null`. Interrupt + transport-close + replay-bracket paths also reset (defensive).
+3. **Transport-downtime timer** — wires to the existing `transportState` axis (per [QT03 resolved](#qt03-transport-status-signal)). When `transportState` first transitions from `"online"` to `"offline"` OR `"restoring"`, set `transportNonOnlineSince = Date.now()`. When `transportState` transitions back to `"online"`, accumulate `Date.now() - transportNonOnlineSince` into `transportDowntimeAccumulatedMs` and increment `transportReconnectCount`. The `restoring` value counts toward downtime — the wire is up but the session is unusable.
+4. **Stream-gap + latency markers** — every inbound stream event (assistant_delta, tool_use, tool_result, system events; `awaiting_first_token` → `streaming` transition counts as the first `assistant_delta`) updates `lastStreamEventAt` and folds the gap into `maxStreamGapMs`. The first `assistant_delta` of the turn captures `firstAssistantDeltaAt`; the first `tool_use` captures `firstToolUseAt`. Each `tool_result` pairs with its `tool_use` and writes `toolWallMs` onto the `ToolCall`.
+5. **Snapshot + commit** — `handleSend` resets all per-turn timers and snapshots `lastCost` into `costAtSubmit`. `handleTurnComplete` (and the interrupt / error / transport-lost terminal handlers) computes the cost delta, freezes all per-turn fields onto the `TurnEntry`, sets `turnEndReason` based on which handler fired, clears `interruptInFlight`, and resets the per-turn accumulators.
+
+**Relationship to existing `TurnEntry.result` field.** The current shape is `result: "success" | "interrupted"` (`types.ts:132`). The new `turnEndReason: "complete" | "interrupted" | "error" | "transport_lost"` is strictly richer. Migration approach: **add `turnEndReason` alongside `result` in this step; mark `result` as `@deprecated` with a JSDoc comment pointing to `turnEndReason`; existing consumers continue to read `result` until they migrate in subsequent work.** The reducer derives `result` from `turnEndReason` so the two stay in sync (`turnEndReason === "complete"` → `result === "success"`; everything else → `result === "interrupted"`). A follow-up step removes `result` once all consumers are off it. This avoids a wide-radius rename mid-step.
+
+**Ticker for live elapsed displays.** The matrix's "live cum + this-turn elapsed (ticking)" entries (Z2 in STREAMING / TOOL_WORK / AWAITING_FIRST_TOKEN) require a time source that emits at human-perceptible intervals while a turn is in flight. The reducer must NOT poll `Date.now()` — that violates the "reducer touches Date.now() only at discrete transitions" constraint. Instead:
+- A small `useLifecycleTick(intervalMs = 1000)` hook (sibling to `useLifecycleState`, lives in `lib/code-session-store/hooks/`) sets up a 1-second `setInterval` ONLY while `phase` is non-terminal (i.e., a turn is in flight). The hook returns a `tickAt: number` value that updates every interval.
+- The Z2 renderer reads `tickAt` to force re-render, then computes `liveTurnActiveMs(snapshot, tickAt)` via the pure-logic helper from this step.
+- `setInterval` is fine here per [L13] — this is not animation, it's a discrete clock tick for textual readout. RAF would be wasteful.
+- When `phase` returns to `idle`, the interval clears — no idle CPU cost.
+
+Spec'd here so consumers know how to fold time into the live `liveTurn*` helpers without each one re-inventing it.
 
 **Investigation — pre-implementation empirical pass.** Two short spikes gate the implementation:
 
 1. **`cost_update.usage` semantics** — capture 2-3 real `cost_update` payloads across a 4-turn HMR session; record whether `usage` is cumulative or per-turn; append findings to this step's record. Gates the `extractTurnCost` semantic. The helper TOLERATES either shape via cost-delta math, but documenting the actual semantic means the next debugger doesn't re-derive it.
-2. **Transport-status signal — does it exist?** — grep the tugcast WebSocket transport + the `CodeSessionStore` wiring for any existing connect/disconnect signal surfacing to the store. Two outcomes:
-   - **(a) Already surfaced** — wire the new `handleTransportDisconnected` / `handleTransportConnected` handlers to whatever the existing event channel is.
-   - **(b) Not surfaced** — add a minimal `transport_status: "connected" | "disconnected"` signal as part of 20.3. The wire format and plumbing path live in this step (since `transportDowntimeMs` is meaningless without it). Keep the surface tight: just a status change + timestamp; no reconnect-strategy changes.
-
-   Document which outcome we hit in the step's record.
+2. **Transport-status signal — confirmation pass.** Per [QT03 resolved](#qt03-transport-status-signal), `CodeSessionSnapshot.transportState: "online" | "offline" | "restoring"` is already on the snapshot, set by the reducer's `transport_*` handlers. This investigation is a 5-minute confirmation that we can subscribe to the transitions via the existing snapshot, not a real spike. **Key constraint:** the `transportDowntimeMs` interval must cover BOTH `offline` AND `restoring` — both are "session unusable" from the user's perspective.
 
 **Artifacts.**
 
@@ -592,6 +647,7 @@ export function liveTurnActiveMs(state: CodeSessionState, now: number): number;
 - `tugdeck/src/lib/code-session-store/reducer.ts` — new state fields + handlers (above).
 - `tugdeck/src/lib/code-session-store/transport-status.ts` *(only if Investigation B outcome is (b))* — minimal type + wire-format for the transport status signal.
 - `tugdeck/src/lib/code-session-store/telemetry.ts` — _new module_ — pure-logic helpers: `perTurnContextSize`, `extractTurnCost`, `deriveSessionTotals`, and the `liveTurn*` family (`liveTurnWallClockMs`, `liveTurnAwaitingApprovalMs`, `liveTurnTransportDowntimeMs`, `liveTurnActiveMs`).
+- `tugdeck/src/lib/code-session-store/hooks/use-lifecycle-tick.ts` — _new hook_ — 1Hz `setInterval` that runs only while a turn is in flight; returns `tickAt: number` that consumers fold into the pure-logic `liveTurn*` helpers to drive ticking displays without polling the reducer.
 - `tugdeck/src/lib/code-session-store/__tests__/telemetry.test.ts` — pure-logic tests for the helper module (committed + live).
 - `tugdeck/src/lib/code-session-store/__tests__/reducer.awaiting-approval-accounting.test.ts` — reducer-level tests: a turn with two permission pauses accumulates correctly; question dialog accumulates the same; interrupt freezes in-progress pause; replay path doesn't accumulate (the bracketed replay reconstructs committed turns from past frames without going through awaiting_approval).
 - `tugdeck/src/lib/code-session-store/__tests__/reducer.transport-downtime.test.ts` — reducer-level tests: disconnect-while-active accumulates; multiple reconnects increment `reconnectCount`; a turn that ends with the transport down sets `turnEndReason === "transport_lost"`.
@@ -604,9 +660,12 @@ export function liveTurnActiveMs(state: CodeSessionState, now: number): number;
 - [ ] **Investigation A — cost_update semantics** — capture real payloads (above); record findings in step record.
 - [ ] **Investigation B — transport-status spike** — grep existing surface; pick path (a) wire-in or (b) add minimal signal; record finding.
 - [ ] **Type extensions** — extend `TurnEntry` + `ToolCall`; add `TurnCost` + `TurnEndReason` types.
-- [ ] **Reducer state fields** — add all ten new state fields to `CodeSessionState` + `createInitialState`.
+- [ ] **Reducer state fields** — add all eleven new state fields to `CodeSessionState` + `createInitialState` (including `interruptInFlight`).
 - [ ] **Awaiting-approval timer wiring** — instrument enter/exit handlers (permission + question); defensive resets on interrupt + transport-close + replay-bracket paths.
-- [ ] **Transport-downtime timer wiring** — new `handleTransportDisconnected` / `handleTransportConnected` handlers; increment `reconnectCount` on each reconnect; accumulate the interval.
+- [ ] **Transport-downtime timer wiring** — extend existing `handleTransportClose` / `handleTransportOpen` / `handleTransportSettled` (per [QT03 resolved](#qt03-transport-status-signal)) to set / accumulate `transportNonOnlineSince` on `online ↔ {offline|restoring}` transitions. Increment `transportReconnectCount` on the return to `online`.
+- [ ] **`interruptInFlight` wiring** — `handleInterrupt` sets `true`; `handleTurnComplete` (any reason) clears `false`.
+- [ ] **`turnEndReason` migration** — add `turnEndReason` to `TurnEntry`; reducer sets it per terminal handler; mark `result` `@deprecated` with JSDoc pointing to `turnEndReason`; derive `result` from `turnEndReason` so the two stay in sync.
+- [ ] **`useLifecycleTick` hook** — 1Hz `setInterval` while phase non-terminal; returns `tickAt: number`. Tests cover start/stop on phase transitions.
 - [ ] **Stream-gap + latency markers** — every stream event folds the gap into `maxStreamGapMs`; first `assistant_delta` / first `tool_use` capture latency timestamps; each `tool_result` writes `toolWallMs` to its `ToolCall`.
 - [ ] **Per-turn cost delta** — `handleSend` snapshots `lastCost` into `costAtSubmit`; `handleTurnComplete` computes the delta + freezes onto `TurnEntry.cost`; helper module exports `extractTurnCost(before, after)`.
 - [ ] **Terminal-state wiring** — `turnEndReason` set by handler (`complete` / `interrupted` / `error` / `transport_lost`).
@@ -637,7 +696,7 @@ export function liveTurnActiveMs(state: CodeSessionState, now: number): number;
 - [ ] Pure-logic: `deriveSessionTotals(transcript)` correctly sums all per-turn fields across a multi-turn fixture.
 - [ ] Pure-logic: `liveTurnWallClockMs(state, now)` = `now - currentTurn.submitAt` while a turn is in flight; `0` when no turn is in flight.
 - [ ] Pure-logic: `liveTurnAwaitingApprovalMs` folds the live in-progress pause into the accumulator when `awaitingApprovalSince !== null`.
-- [ ] Pure-logic: `liveTurnTransportDowntimeMs` folds the live in-progress downtime into the accumulator when `transportDisconnectedSince !== null`.
+- [ ] Pure-logic: `liveTurnTransportDowntimeMs` folds the live in-progress downtime into the accumulator when `transportNonOnlineSince !== null` (covers both `transportState === "offline"` and `"restoring"`).
 - [ ] Pure-logic: `liveTurnActiveMs(state, now)` = live wall − live awaiting − live downtime, clamped ≥ 0.
 
 **Checkpoint.**
@@ -868,104 +927,137 @@ The five sub-steps are gated sequentially: 20.5.A is the spec that everything el
 
 ```
             ┌──────┐
-            │ IDLE │
+            │ IDLE │ ← phase=idle, transcript may have prior turns
             └──┬───┘
                │ user submits
                ▼
         ┌────────────┐
-   ┌────│ SUBMITTING │──┐
-   │    └─────┬──────┘  │
-   │          │ first   │
-   │          │ frame   │
-   │          ▼         │
-   │   ┌─────────────┐  │
-   │   │  STREAMING  │◄─┼──── tool_result ─────┐
-   │   └─┬──────┬────┘  │                      │
-   │     │      │       │                      │
-   │     │ tool_use     │                      │
-   │     ▼      │       │                ┌───────────┐
-   │ ┌───────────┐      │ ctrl_req_      │ TOOL_WORK │
-   │ │ TOOL_WORK │──────┤ forward        └───────────┘
-   │ └───────────┘      │                      ▲
-   │                    ▼                      │
-   │             ┌────────────────┐            │
-   │             │ AWAITING_USER  │            │
-   │             │ (perm OR qstn) │── allow/deny/answer ─►
-   │             └────────────────┘   (resume STREAMING
-   │                  │                or TOOL_WORK above)
-   │                  │
-   │                  │ in-dialog Esc / cancel button =
-   │                  │ DIALOG DISMISS only (not turn cancel)
-   │                  │ → equivalent to deny/cancel response
-   │                  │ → lifecycle resumes
-   │                  │
-   ├── CANCEL TRIGGER: Esc (no overlay foregrounded)
-   │                   OR Stop button click
-   │                   from { SUBMITTING, STREAMING, TOOL_WORK }
-   │                   (NOT reachable from AWAITING_USER — see [DT07])
-   ▼
-   ┌────────────────┐
-   │  INTERRUPTING  │ ← interrupt frame in flight; brief transient
-   │ (Z5 "Stopping…"│   (interruptInFlight === true)
-   │  disabled)     │
-   └────────┬───────┘
-            │ turn_complete (reason="interrupted")
-            ▼
-   ┌─────────────────────────────────┐
-   │           COMPLETE              │ ← TurnEntry frozen
-   │ turnEndReason determines badge: │
-   │   "complete"                    │ ← normal STREAMING → turn_complete
-   │   "interrupted"                 │ ← from INTERRUPTING above
-   │   "error"                       │ ← protocol error mid-turn
-   │   "transport_lost"              │ ← transport down at turn end
-   └──────────────┬──────────────────┘
-                  │ user submits next
-                  └─────────► (back to SUBMITTING)
+   ┌────│ SUBMITTING │── phase=submitting; send frame in flight ──┐
+   │    └─────┬──────┘                                            │
+   │          │ send acknowledged                                 │
+   │          ▼                                                   │
+   │   ┌────────────────────┐                                     │
+   │   │ AWAITING_FIRST_    │ ← phase=awaiting_first_token        │
+   │   │       TOKEN        │   (post-send, pre-first-token —     │
+   │   └─────┬──────────────┘    where Z1 TugProgress shows)      │
+   │         │ first assistant_delta                              │
+   │         ▼                                                    │
+   │   ┌─────────────┐                                            │
+   │   │  STREAMING  │◄────── tool_result ────────────────┐       │
+   │   └─┬──────┬────┘                                    │       │
+   │     │      │                                         │       │
+   │     │ tool_use                                       │       │
+   │     ▼      │                              ┌───────────┐      │
+   │ ┌───────────┐      ctrl_req_              │ TOOL_WORK │      │
+   │ │ TOOL_WORK │──────forward──┐             └───────────┘      │
+   │ └───────────┘               │                                │
+   │                             ▼                                │
+   │             ┌────────────────┐                               │
+   │             │ AWAITING_USER  │                               │
+   │             │ (perm OR qstn) │── allow/deny/answer ──────────┤
+   │             └────────────────┘   (resume STREAMING or        │
+   │                  │                TOOL_WORK above)           │
+   │                  │                                           │
+   │                  │ in-dialog Esc / cancel button =           │
+   │                  │ DIALOG DISMISS only (not turn cancel)     │
+   │                  │ → equivalent to deny/cancel response      │
+   │                  │ → lifecycle resumes                       │
+   │                  │                                           │
+   ├── CANCEL TRIGGER: Esc (no overlay foregrounded)               │
+   │                   OR Stop button click                       │
+   │                   from { SUBMITTING, AWAITING_FIRST_TOKEN,   │
+   │                          STREAMING, TOOL_WORK }              │
+   │                   (NOT reachable from AWAITING_USER — see    │
+   │                   [DT07]; NOT reachable from REPLAYING /     │
+   │                   ERRORED — terminal-with-context states)    │
+   ▼                                                              │
+   ┌────────────────┐                                             │
+   │  INTERRUPTING  │ ← interrupt frame in flight; brief transient│
+   │ (Z5 "Stopping…"│   (interruptInFlight === true)              │
+   │  disabled)     │                                             │
+   └────────┬───────┘                                             │
+            │ turn_complete (reason="interrupted")                │
+            ▼                                                     │
+   ┌─────────────────────────────────┐                            │
+   │           COMPLETE              │ ← phase=idle               │
+   │ TurnEntry frozen, turnEndReason:│   AND transcript appended  │
+   │   "complete"                    │ ← normal STREAMING done    │
+   │   "interrupted"                 │ ← from INTERRUPTING above  │
+   │   "error"                       │ ← protocol error mid-turn  │
+   │   "transport_lost"              │ ← transport gone at end    │
+   └──────────────┬──────────────────┘                            │
+                  │ user submits next                             │
+                  └─────────► (back to SUBMITTING) ───────────────┘
 
-  Note: ERRORED and TRANSPORT_LOST are NOT separate states — they are
-  turnEndReason values on the COMPLETE state's frozen TurnEntry. Only
-  INTERRUPTING is a distinct transient state, because Z5 must show
-  "Stopping…" disabled while the interrupt frame is in flight.
+  Parallel-terminal-with-context states (NOT routed through COMPLETE;
+  the session is in a persistent non-ready state):
+    ┌───────────┐   phase=replaying; reducer reconstructing committed
+    │ REPLAYING │   turns from past frames after transport reconnect.
+    │  (Z5      │   Brief but visible. Cleared automatically when
+    │  disabled)│   replay completes → IDLE / COMPLETE as appropriate.
+    └───────────┘
+    ┌───────────┐   phase=errored; session has a sticky error
+    │  ERRORED  │   (lastError populated). Persists until user clears
+    │  (Z5      │   or resubmits. Distinct from COMPLETE because no
+    │  disabled)│   clean TurnEntry was committed.
+    └───────────┘
 
-  Overlay states (orthogonal — can apply during any state above):
-    • TRANSPORT_DOWN     ← WebSocket disconnected; reconnect attempts running
-                           (during a turn → accumulates transportDowntimeMs;
-                            at terminal moment → COMPLETE with reason="transport_lost")
-    • QUEUED_NEXT_TURN   ← user typed + submitted during STREAMING/TOOL_WORK
-                           (queued for auto-flush on idle)
-    • DRILLDOWN_OPEN     ← user opened the /context-style breakdown sheet
-                           (Esc closes the sheet, not the turn — see [DT07])
+  Note: ERRORED is BOTH a reducer phase (phase=errored, sticky) AND a
+  possible turnEndReason value on COMPLETE (when an error mid-turn
+  still produced a partial TurnEntry committed to transcript). These
+  are distinct: the phase is the session state; the reason is per-turn.
+  TRANSPORT_LOST is only a turnEndReason value — not a separate phase
+  (the reducer uses phase=errored or phase=idle plus transportState
+  for the session state during loss).
+
+  Overlay states (orthogonal — can apply during any non-IDLE state):
+    • TRANSPORT_DOWN     ← transportState ∈ {"offline", "restoring"}
+                           (BOTH count as downtime — wire-up-but-binding-
+                            not-yet-re-ack'd is unusable too)
+    • QUEUED_NEXT_TURN   ← queuedSends > 0
+                           (user typed + submitted during STREAMING/
+                            TOOL_WORK; queued for auto-flush on idle)
+    • DRILLDOWN_OPEN     ← user opened the /context-style breakdown
+                           (Esc closes the sheet, not the turn — DT07)
 ```
 
-**State definitions.**
+**State definitions.** Signals refer to the actual `CodeSessionPhase` enum (`types.ts:32` — `idle | submitting | awaiting_first_token | streaming | tool_work | awaiting_approval | replaying | errored`) and the snapshot's existing fields (`pendingApproval`, `pendingQuestion`, `transportState`, `inflightUserMessage`, `queuedSends`, plus the new `interruptInFlight` from [Step 20.3](#step-20-3)):
 
 | State | Entry condition | Reducer signal |
 |---|---|---|
-| IDLE | No active turn. Initial state and post-COMPLETE state when the user hasn't submitted again. | `phase === "idle"` |
-| SUBMITTING | User pressed Enter; `send` frame in flight, no events received yet. | `phase === "submitting"` |
-| STREAMING | First inbound event arrived for this turn; assistant_delta / thinking_delta accumulating. | `phase === "streaming"` or `phase === "thinking"` |
+| IDLE | No active turn. Initial state and the steady state after each COMPLETE until the user submits again. | `phase === "idle"` AND `interruptInFlight === false` |
+| SUBMITTING | User pressed Enter; `send` frame in flight; no events received yet. | `phase === "submitting"` |
+| AWAITING_FIRST_TOKEN | Send acknowledged by supervisor; awaiting Claude's first response token. **This is where Z1's TugProgress spinner ([Step 20.5.C](#step-20-5-c)) shows.** | `phase === "awaiting_first_token"` |
+| STREAMING | First `assistant_delta` arrived; response body streaming. | `phase === "streaming"` |
 | TOOL_WORK | `tool_use` sent; awaiting `tool_result`. | `phase === "tool_work"` |
-| AWAITING_USER | `control_request_forward` arrived; awaiting Allow/Deny (permission) or answer (question). | `awaitingApprovalSince !== null` (set by `handleControlRequestForward`) |
-| INTERRUPTING | User clicked Stop; `interrupt` frame in flight. Brief transient. | `interruptInFlight === true` |
-| COMPLETE | Terminal state; `TurnEntry` frozen onto transcript. Held until next submit. | `phase === "idle"` AND `transcript.length > 0` |
-| TRANSPORT_DOWN (overlay) | WebSocket disconnected. Can apply during any non-IDLE state above; resolves on reconnect. | `transportDisconnectedSince !== null` |
-| QUEUED_NEXT_TURN (overlay) | User typed + submitted during STREAMING/TOOL_WORK; queued turn waits in `pendingUserMessage`. | `pendingUserMessage !== null` |
-| DRILLDOWN_OPEN (overlay) | User opened the `/context`-style breakdown via the Z2 affordance. | UI-local state (not reducer-tracked) |
+| AWAITING_USER | `control_request_forward` arrived; awaiting Allow/Deny (permission) or answer (question). | `phase === "awaiting_approval"` (canonical) — equivalently `pendingApproval !== null \|\| pendingQuestion !== null` |
+| INTERRUPTING | User clicked Stop or Esc; `interrupt` frame in flight; awaiting `turn_complete`. Brief transient. | `interruptInFlight === true` |
+| REPLAYING | After a transport reconnect, reducer is reconstructing committed turns from past frames. Z5 disabled. | `phase === "replaying"` |
+| ERRORED | Sticky session error (`lastError` populated). Distinct from COMPLETE+turnEndReason="error" — this is a session-level error state, not a per-turn one. Persists until user resubmits. | `phase === "errored"` |
+| COMPLETE | Just-finished turn; `TurnEntry` frozen onto transcript. Same `phase === "idle"` as IDLE but the just-frozen turn drives Z1 final-metrics display. | `phase === "idle"` AND `transcript.length > 0` AND `interruptInFlight === false` |
+| TRANSPORT_DOWN (overlay) | Wire not usable. Can apply during any non-IDLE state; covers BOTH `offline` (no wire) AND `restoring` (wire back, binding not re-ack'd). | `transportState !== "online"` |
+| QUEUED_NEXT_TURN (overlay) | User submitted a second prompt while a turn was in flight; queued for auto-flush on idle. | `queuedSends > 0` |
+| DRILLDOWN_OPEN (overlay) | User opened the `/context`-style breakdown via the Z2 affordance. | UI-local state (not reducer-tracked; merged into the lifecycle snapshot by `deriveLifecycleSnapshot` per [DT08](#dt08-lifecycle-snapshot-merges-ui-state)) |
 
-**The state-to-zone coordination matrix.** What each zone shows / does in each state. This is the contract 20.5.D implements:
+**The state-to-zone coordination matrix.** What each zone shows / does in each state. This is the contract [Step 20.5.D](#step-20-5-d) implements:
 
 | State | Z0 (top of card) | Z1 (per-turn trailing — asst half) | Z2 (status bar) | Z3 (prompt-entry top) | Z4 (prompt-entry footer) | Z5 (submit button) |
 |---|---|---|---|---|---|---|
 | IDLE | reserved | n/a (no current turn) | session cumulative totals (frozen) | project badge | (default content per 20.4 study) | **Submit** (disabled if prompt empty) |
-| SUBMITTING | reserved | ⏳ ticking | live cum + this-turn elapsed (ticking) | project badge | (default) | **Stop** |
-| STREAMING | reserved | ⏳ ticking | live cum + this-turn elapsed + window util (ticking) | project badge | "Claude is thinking" indicator | **Stop** |
-| TOOL_WORK | reserved | ⏳ ticking + tool name | live cum + this-turn elapsed (ticking) | project badge | "Running {tool_name}" | **Stop** |
-| AWAITING_USER | reserved | ⏳ paused (clock frozen) | live cum (frozen during pause) + "awaiting input" badge | project badge | (default) | **"Awaiting your input"** (disabled) |
-| INTERRUPTING | reserved | ⏳ frozen | live cum frozen | project badge | (default) | **"Stopping…"** (disabled, transient) |
+| SUBMITTING | reserved | TugProgress agent (chosen variant per [#step-20-5-c]) | live cum + this-turn elapsed (ticking via [useLifecycleTick](#step-20-3)) | project badge | (default) | **Stop** |
+| AWAITING_FIRST_TOKEN | reserved | TugProgress agent (chosen variant per [#step-20-5-c]) | live cum + this-turn elapsed (ticking) | project badge | "Awaiting first token" indicator | **Stop** |
+| STREAMING | reserved | per-turn live elapsed (ticking) | live cum + this-turn elapsed + window util (ticking) | project badge | "Claude is thinking" indicator | **Stop** |
+| TOOL_WORK | reserved | per-turn live elapsed + tool name (ticking) | live cum + this-turn elapsed (ticking) | project badge | "Running {tool_name}" | **Stop** |
+| AWAITING_USER | reserved | per-turn elapsed paused (clock frozen) | live cum (frozen during pause) + "awaiting input" badge | project badge | (default) | **"Awaiting your input"** (disabled) |
+| INTERRUPTING | reserved | per-turn elapsed frozen | live cum frozen | project badge | (default) | **"Stopping…"** (disabled, transient) |
+| REPLAYING | reserved | (per-turn metrics on already-committed rows, populating as replay reconstructs them) | "Restoring session…" badge replaces live counts | project badge | (default) | **"Restoring…"** (disabled) |
+| ERRORED | reserved | per-turn final metrics (for any partially-committed turn) | "Session error: {lastError.cause}" badge | project badge | (default) | **Submit** (enabled — user may retry; submit clears the error per current reducer semantics) |
 | COMPLETE | reserved | per-turn final metrics | session cum totals (frozen, includes this turn) | project badge | (default) | **Submit** |
-| TRANSPORT_DOWN (overlay) | reserved | (whatever was there, frozen) | "Disconnected — reconnecting" badge replaces live counts | project badge | (default) | **"Reconnecting…"** (disabled) |
+| TRANSPORT_DOWN (overlay) | reserved | (whatever was there, frozen) | "Disconnected — reconnecting" badge replaces live counts | project badge | (default) | **"Reconnecting…"** (disabled). When `transportState === "restoring"`, label is "Reconnecting…" too (the binding ack is part of the reconnect); when `"offline"`, label is "Reconnecting…" (we don't expose the offline/restoring distinction to the user — both are "session unusable"). |
 | QUEUED_NEXT_TURN (overlay) | reserved | (current turn's live indicator) | (current turn's live counts) | project badge | (default) | Submit visually marked "will send on idle" |
 | DRILLDOWN_OPEN (overlay) | reserved | dimmed | dimmed | dimmed | dimmed | dimmed (drill-down surface is the focus) |
+
+**Matrix-edit policy.** [Step 20.5.C](#step-20-5-c) updates this matrix to substitute the chosen concrete TugProgress variant (`kind="spinner"` vs. `kind="ring"`) for the placeholder text "TugProgress agent (chosen variant per [#step-20-5-c])" in the SUBMITTING and AWAITING_FIRST_TOKEN rows. No other matrix changes happen there.
 
 **Two coordination invariants exposed by the matrix.**
 
@@ -1070,7 +1162,9 @@ This step does three things:
 
 **Scope note — broader role parity (deferred).** TugProgress currently has accent / action / success / danger. TugBadge has those plus agent / data / caution. This step adds only `agent` (the role we have a concrete consumer for). The remaining role gaps (data, caution) are not added here; they can land in subsequent component-library work when there's a concrete need. Speculative role additions age poorly.
 
-**Conformance.** Tugways primitive role addition — `tuglaws/component-authoring.md` + [L17] (one-hop alias) + [L20] (token sovereignty: `--tugx-progress-fill-agent-color` is part of TugProgress's slot family). Gallery card extension follows the existing ROLES section pattern.
+**Conformance.** Tugways primitive role addition — `tuglaws/component-authoring.md` + [L17] (one-hop alias) + [L20] (token sovereignty: `--tugx-progress-fill-agent-color` is part of TugProgress's slot family). [L16] applies: the new `[data-role="agent"]` CSS rule sets `background-color` only (no `color` paired in the same rule), so it requires a `@tug-renders-on` annotation naming TugProgress's track surface. [L19] applies to the gallery card extension: maintain the existing `data-slot` / file-pair / docstring discipline. Gallery card extension follows the existing ROLES section pattern.
+
+**[L23] / [L26] note for the downstream consumer.** The chosen TugProgress variant lives inside Z1's per-turn trailing slot during SUBMITTING / AWAITING_FIRST_TOKEN, then is REPLACED by per-turn metrics on COMPLETE. That content-swap-within-slot must happen INSIDE THE SAME slot DOM container, not by remounting the parent row chrome — otherwise the assistant row's focus / scroll position / hover state would be destroyed at every turn boundary. The actual wiring lands in [Step 20.5.D](#step-20-5-d); this note is a forward reminder of the constraint that affects how the slot is built there.
 
 **Artifacts.**
 
@@ -1114,7 +1208,7 @@ This step does three things:
 
 **Scope.** Implement the state-to-zone coordination matrix from 20.5.A. Three layers of work:
 
-1. **Z5 submit-button state machine.** Wire the lifecycle state (`phase`, `awaitingApprovalSince`, `transportDisconnectedSince`, `interruptInFlight`, `pendingUserMessage`) to the submit button's label / disabled state / visual treatment. New modes from the matrix: `"Awaiting your input"`, `"Stopping…"`, `"Reconnecting…"`, plus the "will send on idle" queued-visual on the default Submit. Same state machine drives keyboard activation semantics (e.g., disabled states don't fire on Enter).
+1. **Z5 submit-button state machine.** Wire the lifecycle state (`phase`, `pendingApproval`, `pendingQuestion`, `transportState`, `interruptInFlight`, `queuedSends`) to the submit button's label / disabled state / visual treatment. New modes from the matrix: `"Awaiting your input"`, `"Stopping…"`, `"Reconnecting…"`, `"Restoring…"`, plus the "will send on idle" queued-visual on the default Submit. Same state machine drives keyboard activation semantics (e.g., disabled states don't fire on Enter).
 2. **Cross-zone coordination.** The same lifecycle state drives Z2's status-bar transitions (live → frozen during awaiting → frozen at complete), Z1's per-turn ⏳ indicators (ticking / paused / final), and any phase-driven affordances elsewhere. The coordination is encoded once as a small `useLifecycleState()` hook that returns the current matrix-row's values; each zone's renderer reads from it via `useSyncExternalStore` per [L02].
 3. **Ship the chosen telemetry placement defaults** from 20.4's HMR study. The default mapping of `{datum → zone}` lands as the production content of each zone. The dev-mode experimentation harness stays behind `import.meta.env.DEV` for future iteration.
 
@@ -1124,8 +1218,9 @@ This step does three things:
 // lib/code-session-store/lifecycle-state.ts (new module)
 
 export type TideLifecycleState =
-  | "idle" | "submitting" | "streaming" | "tool_work"
-  | "awaiting_user" | "interrupting" | "complete";
+  | "idle" | "submitting" | "awaiting_first_token"
+  | "streaming" | "tool_work" | "awaiting_user"
+  | "interrupting" | "replaying" | "errored" | "complete";
 
 export type TideLifecycleOverlay = "transport_down" | "queued_next" | "drilldown_open";
 
@@ -1138,17 +1233,31 @@ export interface TideLifecycleSnapshot {
     | { kind: "stop" }
     | { kind: "awaiting_user" }   // disabled
     | { kind: "stopping" }        // disabled
-    | { kind: "reconnecting" };   // disabled
+    | { kind: "reconnecting" }    // disabled
+    | { kind: "restoring" };      // disabled — REPLAYING state
 }
 
+export interface TideLifecycleUiState {
+  drilldownOpen: boolean;
+  // Future UI-local overlays add fields here per [DT08].
+}
+
+// Per [DT08]: takes both store and UI state; pure-of-inputs.
+// Per [DT09]: returns the previous reference when matrix-relevant signals unchanged.
 export function deriveLifecycleSnapshot(
   storeSnapshot: CodeSessionSnapshot,
+  uiState: TideLifecycleUiState,
 ): TideLifecycleSnapshot;
 ```
 
-`useLifecycleState()` is a thin `useSyncExternalStore` wrapper that subscribes to `CodeSessionStore` and projects the snapshot through `deriveLifecycleSnapshot`. The matrix from 20.5.A is encoded literally in `deriveLifecycleSnapshot` — one switch statement, one source of truth, trivially testable in isolation.
+`useLifecycleState()` composes three sources:
+1. `useSyncExternalStore` on `CodeSessionStore` (the session snapshot) — per [L02].
+2. A UI-local `useState` (or small ui-only store) for `drilldownOpen` and future presentation flags.
+3. `deriveLifecycleSnapshot(storeSnapshot, uiState)` to project both into the same matrix-row signal, with the reference-stable return guarantee from [DT09].
 
-**Conformance.** All UI changes go through the lifecycle hook — no zone reads `phase` or `awaitingApprovalSince` directly. [L02] (useSyncExternalStore for external state), [L06] (appearance via DOM/CSS — e.g., Z5's mode flips a `data-mode` attribute, CSS handles the visual), [L23] (preserve user-visible state — Z5 label transitions must not flicker between modes), [L26] (mount identity — Z5 button DOM node identity stable across mode changes; do NOT remount a different `<button>` per mode).
+The matrix from [Step 20.5.A](#step-20-5-a) is encoded literally in `deriveLifecycleSnapshot` — one switch statement, one source of truth, trivially testable in isolation. The switch reads from the actual `CodeSessionPhase` enum (`idle | submitting | awaiting_first_token | streaming | tool_work | awaiting_approval | replaying | errored`) plus the snapshot's `pendingApproval` / `pendingQuestion` / `transportState` / `queuedSends` / `interruptInFlight` fields.
+
+**Conformance.** All UI changes go through the lifecycle hook — no zone reads `phase` or `awaitingApprovalSince` directly. [L02] (useSyncExternalStore for external state), [L06] (appearance via DOM/CSS — e.g., Z5's mode flips a `data-mode` attribute, CSS handles the visual), [L23] (preserve user-visible state — Z5 label transitions must not flicker between modes; Z1's content swap from `TugProgress` (during SUBMITTING / AWAITING_FIRST_TOKEN) to per-turn metrics (in COMPLETE) happens **inside the same slot DOM container** so no parent-row remount occurs, no scroll or focus loss), [L26] (mount identity — Z5 button DOM node identity stable across mode changes; Z1 slot DOM container stable across content-type changes; do NOT remount a different `<button>` per Z5 mode and do NOT remount the slot per Z1 content change).
 
 **Artifacts.**
 
@@ -1172,12 +1281,15 @@ export function deriveLifecycleSnapshot(
 
 **Tests.**
 
-- [ ] `deriveLifecycleSnapshot` returns the correct `state` for each combination of `phase` / `awaitingApprovalSince` / `transportDisconnectedSince` / etc.
+- [ ] `deriveLifecycleSnapshot` returns the correct `state` for each combination of `phase` / `pendingApproval` / `pendingQuestion` / `transportState` / `interruptInFlight` / `queuedSends` — every row of the matrix gets a test, including the new AWAITING_FIRST_TOKEN, REPLAYING, ERRORED rows.
 - [ ] `submitButtonMode` matches the matrix for every state × overlay combination.
-- [ ] Z2's renderer shows live counts in STREAMING, frozen + badge in AWAITING_USER, "Disconnected" in TRANSPORT_DOWN overlay.
-- [ ] Z1's per-turn ⏳ indicator paused during AWAITING_USER, ticking during STREAMING / TOOL_WORK, frozen final in COMPLETE.
-- [ ] Z5 button: same DOM node across mode transitions; aria-label reflects current mode; disabled in AWAITING_USER / INTERRUPTING / TRANSPORT_DOWN.
+- [ ] **[DT09]** `deriveLifecycleSnapshot` returns reference-stable result: two calls with snapshots that differ only in content fields (e.g., growing `assistant` text but same `phase` / `transportState` / etc.) return `Object.is`-equal results. Two calls where any matrix-relevant signal differs return distinct references.
+- [ ] **[DT08]** `deriveLifecycleSnapshot` projects `uiState.drilldownOpen` into the overlays set; same `storeSnapshot` with different `uiState` returns distinct results.
+- [ ] Z2's renderer shows live counts in STREAMING, frozen + badge in AWAITING_USER, "Disconnected" in TRANSPORT_DOWN overlay, "Restoring session…" in REPLAYING.
+- [ ] Z1's per-turn indicator: TugProgress during SUBMITTING / AWAITING_FIRST_TOKEN, live elapsed ticking during STREAMING / TOOL_WORK, paused during AWAITING_USER, frozen final in COMPLETE / ERRORED.
+- [ ] Z5 button: same DOM node across mode transitions; aria-label reflects current mode; disabled in AWAITING_USER / INTERRUPTING / REPLAYING / TRANSPORT_DOWN.
 - [ ] Mount-identity: textarea focus survives Z5 mode changes.
+- [ ] **[L23]** Z1 content swap (TugProgress → per-turn metrics on COMPLETE) does NOT scroll the transcript or steal focus — verify via app-test that an existing focus position survives a turn's completion.
 
 **Checkpoint.**
 
@@ -1218,7 +1330,7 @@ export function deriveLifecycleSnapshot(
 
 - `tugdeck/src/components/tugways/cards/tide-telemetry-drilldown.tsx` + `.css` + `.test.ts` — _new component_. Renders the sheet body. Receives data via the telemetry helpers; receives open/close via prop.
 - `tugdeck/src/components/tugways/cards/tide-card.tsx` — wire the `📊` affordance on Z2's right edge to a local UI state that toggles the drill-down; pass open state into `tide-telemetry-drilldown`. Toggle the `DRILLDOWN_OPEN` overlay in `useLifecycleState` so the dimming behavior from the matrix applies.
-- `tugdeck/src/lib/code-session-store/lifecycle-state.ts` — extend `deriveLifecycleSnapshot` to read a UI-local "drilldown open" flag and project it into the `overlays` set. (UI-local because it's not a reducer concern — it's pure presentation state.)
+- `tugdeck/src/lib/code-session-store/lifecycle-state.ts` — per [DT08](#dt08-lifecycle-snapshot-merges-ui-state), `deriveLifecycleSnapshot` already accepts `uiState: TideLifecycleUiState` as its second argument from [Step 20.5.D](#step-20-5-d). This step adds the `drilldownOpen: boolean` field's PRODUCER side: when 20.5.D landed, `drilldownOpen` defaulted to `false`; this step adds the toggle (UI-local `useState` in the `TideCard` composition; mutated by the `📊` affordance handler and the Esc handler in the drill-down sheet). The matrix's DRILLDOWN_OPEN overlay then derives automatically from the existing snapshot derivation.
 - `tugdeck/src/components/tugways/cards/__tests__/tide-telemetry-drilldown.test.tsx` — fixture renders with a multi-turn transcript; assert every per-turn field shows; assert sort works; assert per-tool expansion works; assert Esc closes.
 
 **Tasks.**
