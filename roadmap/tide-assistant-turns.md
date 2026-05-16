@@ -1268,6 +1268,154 @@ The store can also accept appends from the Swift host via the existing `dispatch
 
 ---
 
+#### Step 20.3.3: Investigate L23-compliant persistence for per-turn telemetry {#step-20-3-3}
+
+**Depends on:** [#step-20-3] (the data model whose fields need to survive), [L23] (state-preservation invariant), [L26] (mount-identity across transitions), [L02] (the store boundary the persistence layer hooks into).
+
+**Status:** _not started — discovered during the [#step-20-4] HMR study._
+
+**Commit:** `spike(tide-telemetry): investigate L23-compliant persistence design`
+
+**References:** [L23], [L26], [L02], [L24] (state-zone framing — telemetry is data, not appearance), [#step-20-3] (`TurnEntry.cost` / `activeMs` / `wallClockMs` / `awaitingApprovalMs` / `transportDowntimeMs` / `ttftMs` / `ttftcMs` / `reconnectCount` / `maxStreamGapMs`), [#step-20-4] (the placement-experiment study that exposed the gap), [#step-20-5-d] (the consumer that will ship the chosen defaults — depends on the data being there).
+
+**Scope note — why this exists.** [#step-20-3] designs a clean per-turn telemetry surface: every `TurnEntry` carries token counts (`cost.{inputTokens, outputTokens, cacheReadInputTokens, cacheCreationInputTokens, totalCostUsd}`) and multi-clock timing (`wallClockMs`, `awaitingApprovalMs`, `transportDowntimeMs`, `activeMs`, `ttftMs`, `ttftcMs`, `reconnectCount`, `maxStreamGapMs`). The reducer composes these from live wire events — most importantly `cost_update` (Anthropic emits this as a live telemetry frame during a turn) and the reducer's own clock anchors (`pendingUserMessage.submitAt`, `awaitingApprovalSince`, `transportNonOnlineSince`). The transcript content (text, tool calls, results) is recoverable from Claude's JSONL transcript file via the replay path; **the telemetry is not**. `cost_update` is a live-only frame, never written to JSONL; the reducer's clock anchors are in-memory only.
+
+The consequence surfaced during [#step-20-4]'s HMR study: after `Developer > Reload`, the tide card rebinds its session and replays the JSONL. The transcript rehydrates with full text content but every restored `TurnEntry.cost` field reads zero and every `*Ms` field reads zero, because the side-channel that wrote them is gone. The window-utilization gauge correctly reports `0 / 200.0k`. This is the data, not the chip.
+
+[L23] is unambiguous about this class of data: _"Selection, focus, scroll position (outer and inner regions), form-control values, and content payloads are user data — the user put them there. A re-lex, re-parse, DOM rebuild, tab switch, pane activation, cross-pane move, app cmd-tab cycle, or cold boot must preserve these invariants."_ Per-turn telemetry is content payload in the [L24] data-zone sense — it is data that non-rendering consumers (the gauge, the drill-down, the sum across turns, a future export feature) depend on, not appearance state — and the user generated it by submitting turns. It MUST survive HMR, full reload, and app relaunch. The current design does not satisfy that. The gap is a [#step-20-3] design omission, recoverable here.
+
+**Scope.** A three-part investigation followed by an architecture decision and a follow-up implementation plan recorded as a sub-step. _No persistence is shipped in 20.3.3 itself_ — this step's deliverable is the design.
+
+1. **Investigation A — recovery inventory.** Catalog every field on `TurnEntry` and classify it as one of:
+   - **REPLAYABLE** — Claude's JSONL replay reconstructs it faithfully (`userMessage.text`, `userMessage.attachments`, `userMessage.submitAt` ← _verify whether JSONL carries this_, `thinking`, `assistant`, `toolCalls`, `controlRequests`, `result`, `endedAt`, `msgId`).
+   - **LIVE-ONLY** — only captured from live wire events not in JSONL (`cost.*` from `cost_update`, all `*Ms` timing fields and `ttft*Ms` derived from reducer clock anchors, `reconnectCount` and `maxStreamGapMs` derived from transport / stream events).
+   - **AMBIGUOUS** — partially reconstructible (`turnKey` is minted client-side at submit, byte-identical across the in-flight → committed transition; on resume the JSONL doesn't carry it, so the replay path must mint a fresh one — verify this works correctly).
+   For each LIVE-ONLY field, record whether the field is _ever_ reconstructible from JSONL post-hoc (e.g. `wallClockMs` could be derived from `userMessage.submitAt` and `endedAt` IF both timestamps are in JSONL — verify), or whether it is fundamentally unrecoverable (cost token counts cannot be derived from any post-hoc data — only Claude knows them).
+
+2. **Investigation B — persistence architecture survey.** Survey four architectures end-to-end (read path, write path, durability domain, complexity cost, cross-machine behavior, scaling envelope). **B1 is the leading candidate** — the rationale below explains why; the others stay in the survey so the decision is principled, not assumed.
+
+   - **B1. Expand `SessionLedger` (sqlite, tugcast-side).** _Leading candidate._ The supervisor already owns a sqlite ledger at `tugrust/crates/tugcast/src/session_ledger.rs` with `sessions` (one row per Claude session — `workspace_key`, `project_dir`, `created_at`, `last_used_at`, `turn_count`, `first_user_prompt`, `state`, `card_id`) and `turns` (a submission journal, deleted on ack). WAL mode, 5s `busy_timeout`, a single `Mutex<Connection>`, a cascade-on-`sessions`-DELETE trigger that protects the "forget cascades" contract. Bootstrap is `CREATE … IF NOT EXISTS`; per the no-migration policy ([DM08] in the mid-turn-replay plan), schema changes ship by deleting `sessions.db` and letting the next open recreate. Adding a `turn_telemetry` table — schema sketch below — fits this design without re-architecture:
+
+     ```sql
+     CREATE TABLE IF NOT EXISTS turn_telemetry (
+       session_id                  TEXT NOT NULL,
+       turn_key                    TEXT NOT NULL,
+       msg_id                      TEXT NOT NULL,
+       -- Cost (TurnCost shape)
+       input_tokens                INTEGER NOT NULL DEFAULT 0,
+       output_tokens               INTEGER NOT NULL DEFAULT 0,
+       cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
+       cache_read_input_tokens     INTEGER NOT NULL DEFAULT 0,
+       total_cost_usd              REAL    NOT NULL DEFAULT 0,
+       -- Timing (multi-clock)
+       wall_clock_ms               INTEGER NOT NULL DEFAULT 0,
+       awaiting_approval_ms        INTEGER NOT NULL DEFAULT 0,
+       transport_downtime_ms       INTEGER NOT NULL DEFAULT 0,
+       active_ms                   INTEGER NOT NULL DEFAULT 0,
+       ttft_ms                     INTEGER,   -- nullable per data model
+       ttftc_ms                    INTEGER,   -- nullable per data model
+       reconnect_count             INTEGER NOT NULL DEFAULT 0,
+       max_stream_gap_ms           INTEGER NOT NULL DEFAULT 0,
+       -- Per-turn commit timestamp (for forensic ordering; redundant with msg_id ordering inside a session but cheap)
+       ended_at                    INTEGER NOT NULL,
+       PRIMARY KEY (session_id, turn_key)
+     );
+     CREATE INDEX IF NOT EXISTS turn_telemetry_session_order
+       ON turn_telemetry(session_id, ended_at);
+     -- Reuse the existing cascade-on-sessions-DELETE pattern:
+     CREATE TRIGGER IF NOT EXISTS turn_telemetry_cascade_delete_on_session
+       AFTER DELETE ON sessions FOR EACH ROW
+       BEGIN DELETE FROM turn_telemetry WHERE session_id = OLD.session_id; END;
+     ```
+
+     **Write path** — supervisor side: tugcode already forwards `cost_update` frames through to tugdeck; the supervisor can also observe them and stage the per-turn delta. At `turn_complete`, write a single `INSERT OR REPLACE` row keyed by `(session_id, turn_key)`. The reducer's `extractTurnCost` already computes the delta from `(costAtSubmit, lastCost)` — that same logic can live supervisor-side, OR the supervisor writes raw accumulators and the read path subtracts.
+     **Read path** — on `spawn_session(mode=resume)` the supervisor reads all `turn_telemetry` rows for the session and emits them on the wire as a new `turn_telemetry_restore` event interleaved with (or following) the JSONL replay. The reducer applies them to the corresponding `TurnEntry` keyed by `turnKey` (which is byte-identical across the in-flight → committed transition per [#step-20-3]).
+     **Survives** — HMR, Reload, app relaunch, AND backend restart (sqlite is on disk). Survives machine swap when `.tug/` is rsync'd. Same durability domain as the rest of the session-ledger data.
+     **Wire-format change** — one new event type (`turn_telemetry_restore`); no change to live `cost_update` (it stays the in-band live frame). Golden fixtures get an updated set covering the resume-with-telemetry path.
+     **Cost** — Rust schema + supervisor write at `turn_complete`; Rust read + event emission at `spawn_session(mode=resume)`; TS reducer handler for the new event; bridge type for the new event. All linear, no architectural shift. Roughly: 1 day rust, 0.5 day TS, 0.5 day fixtures + tests.
+
+   - **B2. Tugdeck-local via tugbank.** Per-session JSON blob keyed by `tugSessionId` (or per-turn rows keyed by `tugSessionId + msgId`). Domain: `dev.tugtool.tide.telemetry/<tugSessionId>`. Written at `turn_complete` from the reducer's effects layer (similar shape to the tug-dev-log `putRaw` pattern). Read at session hydrate, merged into the reducer's transcript before `TurnEntry`s land. Survives HMR + reload on the same machine. Does NOT survive across machines or fresh app installs (tugbank is per-machine). _Weaker than B1 on every axis except "no Rust change required." Worth the survey for the comparison; not the destination._
+
+   - **B3. Tugcode-side JSONL sidecar.** A new ledger file written by tugcode alongside the JSONL transcript — `<session>.telemetry.jsonl` or similar. Same write/read shape as B1 conceptually, but file-based instead of sqlite-backed. Loses sqlite's indexed-query + cascade-trigger affordances; gains nothing tugcast doesn't already do better via the ledger. Mentioned for completeness; subsumed by B1.
+
+   - **B4. Backend persistence service.** A dedicated tug-backend feed for "session telemetry." Persists durably across machines via the backend (Sync, Spaces, etc., as those mature). Long-term durability story; currently out of scope for tugtool's single-machine dogfooding model. Worth noting as a future migration path B1 wouldn't preclude.
+
+   For each option, document:
+   - **What survives** — HMR, Reload, app relaunch, machine swap, fresh install.
+   - **Wire-format change** — none / new event type / new feed.
+   - **Merge semantics** — how the persisted telemetry composes with replayed content into a single `TurnEntry`. Where does the merge happen — in the reducer (synthesized event), in the store-construction layer (post-construction reconciliation), or somewhere else? Which approach respects [L02] and [L26] cleanest?
+   - **Keying** — which client-side identifier is the durable join key (`msgId`? `turnKey`? composite?). Verify it's stable across the persistence transition and across replays. _For B1, the (session_id, turn_key) composite is the obvious choice — `turnKey` is byte-identical in-flight→committed, and `session_id` is the natural FK to the parent `sessions` row that already exists._
+   - **In-flight handling** — what happens to a turn that was MID-FLIGHT when the reload happened? (Replay either drops it entirely or reconstructs it partial; the telemetry for partial turns is meaningful only for the wall-clock half.)
+   - **TTL / cleanup** — when sessions are closed, does the telemetry persist forever, get garbage-collected with the session, or follow some explicit policy? _For B1, the cascade trigger gives this for free: when a `sessions` row is evicted (cap-per-workspace or age-expiry), its `turn_telemetry` rows go with it._
+   - **Storage envelope** — bytes per turn, expected turns per long-running session, total per machine for typical use. _For B1: ~13 integer/real columns + 2 text PK columns ≈ ~120 bytes/row uncompressed; 1000 turns ≈ 120KB; 20 sessions × 1000 turns ≈ 2.4MB. Negligible against the existing ledger envelope._
+   - **Test surface** — exactly what a `bun test` or `just app-test` would assert to prove the architecture works.
+
+3. **Investigation C — keying + merge proof of concept.** For the chosen architecture (or top two candidates), write the minimal code that proves the merge works:
+   - Construct a synthetic `TurnEntry` from a fake replay event with zero telemetry.
+   - Read a persisted telemetry record from a synthetic persistence layer.
+   - Merge them into a single `TurnEntry` and assert every field is correct.
+   - The proof lives in a single bun:test file; it doesn't have to wire into the real store yet. The deliverable is the merge function + the assertion that joins are stable.
+
+**Decision matrix.** Apply after Investigations A, B, and C; defer to a sub-step ([#step-20-3-4], reserved) for implementation:
+
+- **A says "everything LIVE-ONLY is fundamentally unrecoverable from JSONL"** → some persistence is mandatory; the question becomes _which_.
+- **B1 (SessionLedger expansion) is feasible and the merge proof in C passes** → ship B1. It's the obvious destination: same durability domain as the existing ledger, cascade-on-DELETE already exists, sqlite indexes give us the query shape we want, and `turnKey` is the natural join key. Open `#step-20-3-4` with the implementation scope.
+- **B1 surfaces an unforeseen complication in C** (e.g., the supervisor can't observe `cost_update` cleanly enough to derive the per-turn delta supervisor-side; the `turnKey` join doesn't work across replay; the merge would require restructuring `CodeSessionStore` construction in a way that fights [L02]) → fall back to B2 (tugbank-local) as a fast bridge, AND open a follow-on Rust spike to remove the blocker so B1 can land later. Document both decisions clearly so the bridge code has a planned exit.
+- **All B options carry hidden complications surfaced in C** → narrow the chosen scope to "persist cost only, defer timing" or "persist cumulative session totals only, defer per-turn breakdown." Document the trade clearly and call out what [#step-20-5-d] / [#step-20-5-e] lose by the narrowing.
+
+**Conformance — what L23 requires.**
+
+- The telemetry on every `TurnEntry` for every committed turn in the user's transcript MUST appear correctly after HMR, after `Developer > Reload`, and after app relaunch — regardless of which architecture is chosen.
+- The persistence + merge MUST NOT change [L26] mount identity — the merged `TurnEntry`'s `turnKey` stays byte-identical to the in-flight turnKey it was minted with; React reconciliation must not see a remount triggered by the persistence layer's arrival timing.
+- [L02] is preserved — telemetry persistence reads / writes are NOT routed through React state. The persistence layer is an external store (or a sibling of `CodeSessionStore`) that the reducer observes; React reads via `useSyncExternalStore` only.
+- For HMR specifically: tugbank cache survives module re-evaluation (it's owned at the singleton layer), but the reducer's in-memory `state` is rebuilt. The merge has to apply at store construction, NOT on every render.
+
+**Conformance — what L26 requires.** The persistence layer's write timing must not interleave with React reconciliation. If telemetry arrives via a synthetic event AFTER the reducer has already produced the `TurnEntry`, the merge must happen as a state update (which React's snapshot caching handles correctly) — never as a prop mutation, never as a child setState chain. Identity stays anchored on `turnKey` throughout.
+
+**Artifacts.**
+
+- `roadmap/tide-assistant-turns.md` — the spike record gets appended to this step (Investigations A, B, C; chosen architecture; merge contract; deferred-implementation pointer to a follow-up sub-step).
+- _Optional_ — a small `bun:test` file that proves the merge contract (Investigation C deliverable). Lives alongside `code-session-store/__tests__/` if it gets written; not required if the architecture decision falls out from A/B alone.
+- _A follow-up sub-step record_ — open `#step-20-3-4` (reserved) and draft its scope: implementation of the chosen architecture (B1 / B2 / B4). 20.3.4's `Status: not started` should land in this same commit so the dependency from [#step-20-5-d] has a target to point at.
+
+**Tasks.**
+
+- [ ] **Investigation A — recovery inventory.** Read `tugcode/src/replay.ts` to confirm what survives JSONL replay; read Anthropic's JSONL frame format (or `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/` golden fixtures) to verify which timestamps are durable. Produce a table classifying every `TurnEntry` field as REPLAYABLE / LIVE-ONLY / AMBIGUOUS. Record in the spike record below.
+- [ ] **Investigation B — architecture survey.** Document B1 / B2 / B3 / B4 with the dimensions listed above. Score each on `L23 compliance × scope cost × cross-machine durability × test surface clarity`.
+- [ ] **Investigation C — merge proof.** For the top candidate, write the merge function and a single pinning bun:test. Confirm `turnKey` is the stable join key (or document why a different key wins).
+- [ ] **Decision.** Apply the matrix; write up the chosen architecture, the rationale, and the named follow-up sub-step.
+- [ ] **Open `#step-20-3-4`.** Reserve the anchor + a `Status: not started` placeholder so [#step-20-5-d] has something concrete to depend on.
+- [ ] **Commit.** Single commit; message matches the `Commit:` line above. NO implementation in this commit — design + a stub sub-step only.
+
+**Tests.**
+
+- [ ] If Investigation C produces a merge function: pinning bun:test that asserts the merged `TurnEntry` equals the expected shape across at least three cases: (a) live turn with full telemetry → persistence record matches reducer-committed value; (b) replayed turn with zero telemetry + persisted record → merge produces accurate `TurnEntry`; (c) replayed turn with NO persisted record (e.g. data is gone) → merge produces zero-telemetry `TurnEntry` (not crash; not a fabricated value).
+- [ ] No HMR / app-test / app-relaunch tests in this step — those land in `#step-20-3-4`'s test surface, defined by the chosen architecture.
+
+**Checkpoint.**
+
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green (the test bar doesn't change if Investigation C doesn't produce a test; the existing 2070 must still pass).
+- [ ] The spike record below is filled in with: the recovery table, the architecture survey, the decision and its rationale, the merge proof outcome (if Investigation C ran), and a link to the opened `#step-20-3-4`.
+
+**Spike record — Investigation A finding.**
+
+_To be filled in during execution._
+
+**Spike record — Investigation B survey.**
+
+_To be filled in during execution._
+
+**Spike record — Investigation C merge proof outcome.**
+
+_To be filled in during execution (or marked "skipped — decision fell out from A/B")._
+
+**Spike record — Decision.**
+
+_To be filled in during execution._
+
+---
+
 #### Step 20.3.5: Investigate removing `tailSpacer="80cqh"` from the transcript {#step-20-3-5}
 
 **Depends on:** L26 (preserve mount identity across transitions), the recent stable-id work that backed it.
@@ -1796,7 +1944,7 @@ This step does three things:
 
 #### Step 20.5.D: Z5 + lifecycle-coordinated zone content (ship the matrix) {#step-20-5-d}
 
-**Depends on:** #step-20-5-a (matrix spec), #step-20-5-b (primitives working), #step-20-5-c (TugProgress agent-role variant chosen for Z1), #step-20-4 (slot infrastructure + chosen telemetry placement defaults)
+**Depends on:** #step-20-5-a (matrix spec), #step-20-5-b (primitives working), #step-20-5-c (TugProgress agent-role variant chosen for Z1), #step-20-4 (slot infrastructure + chosen telemetry placement defaults), [#step-20-3-3] (telemetry persistence — without this the shipped placements would read zero across HMR / Reload / app relaunch, violating [L23])
 
 **Status:** _not started._
 
