@@ -74,6 +74,7 @@ describe("TugDevPanelStore reducer — hydrate", () => {
       open: true,
       activeTab: "telemetry",
       selectedCardId: "card-a",
+      widthPx: 500,
     };
     const next = reduce(seeded, { type: "hydrate" });
     expect(next).toBe(seeded);
@@ -121,10 +122,31 @@ describe("TugDevPanelStore reducer — toSnapshot", () => {
       open: true,
       activeTab: "telemetry",
       selectedCardId: "card-a",
+      widthPx: 500,
     };
     const snap = toSnapshot(s);
     expect(snap.open).toBe(true);
     expect(snap.activeTab).toBe("telemetry");
     expect(snap.selectedCardId).toBe("card-a");
+    expect(snap.widthPx).toBe(500);
+  });
+});
+
+describe("TugDevPanelStore reducer — set_width", () => {
+  it("clamps below the floor up to MIN_DEV_PANEL_WIDTH_PX", () => {
+    const next = reduce(createInitialState(), { type: "set_width", widthPx: 100 });
+    expect(next.widthPx).toBe(320);
+  });
+  it("accepts widths above the floor", () => {
+    const next = reduce(createInitialState(), { type: "set_width", widthPx: 700 });
+    expect(next.widthPx).toBe(700);
+  });
+  it("same width is a no-op (same-ref)", () => {
+    const s = createInitialState();
+    expect(reduce(s, { type: "set_width", widthPx: s.widthPx })).toBe(s);
+  });
+  it("rejects non-finite values (falls back to default)", () => {
+    const next = reduce(createInitialState(), { type: "set_width", widthPx: Number.NaN });
+    expect(next.widthPx).toBe(420);
   });
 });

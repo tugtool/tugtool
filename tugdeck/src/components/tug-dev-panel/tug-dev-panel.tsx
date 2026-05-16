@@ -26,7 +26,7 @@
 
 import "./tug-dev-panel.css";
 
-import React, { useCallback, useSyncExternalStore } from "react";
+import React, { useCallback, useRef, useSyncExternalStore } from "react";
 import { X } from "lucide-react";
 
 import { tugDevPanelStore } from "@/lib/tug-dev-panel-store/tug-dev-panel-store";
@@ -36,6 +36,7 @@ import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import { TugLabel } from "@/components/tugways/tug-label";
 
 import { CardPicker } from "./card-picker";
+import { ResizeHandle } from "./resize-handle";
 import { TabStrip, type TabDescriptor } from "./tab-strip";
 import { TelemetryInspector } from "./inspectors/telemetry-inspector";
 
@@ -61,14 +62,25 @@ export const TugDevPanel: React.FC = () => {
     tugDevPanelStore.setOpen(false);
   }, []);
 
+  const panelRef = useRef<HTMLDivElement | null>(null);
+
   return (
     <div
+      ref={panelRef}
       className="tug-devpanel"
       data-open={snapshot.open ? "true" : "false"}
       aria-hidden={!snapshot.open}
       role="dialog"
       aria-label="Tug Dev Panel"
+      style={
+        // Live width comes from the snapshot. The drag handle
+        // overrides this transiently via inline `style.setProperty`
+        // during a drag (per [L06]) and clears the override on
+        // pointerup, so the store-derived value takes back over.
+        { ["--tugx-devpanel-width" as string]: `${snapshot.widthPx}px` } as React.CSSProperties
+      }
     >
+      <ResizeHandle panelRef={panelRef} />
       <header className="tug-devpanel-header">
         <TugLabel size="sm" className="tug-devpanel-title">
           Tug Dev Panel

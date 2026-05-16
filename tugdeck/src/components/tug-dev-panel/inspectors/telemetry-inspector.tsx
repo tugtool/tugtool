@@ -18,7 +18,8 @@
  * @module components/tug-dev-panel/inspectors/telemetry-inspector
  */
 
-import React, { useCallback, useState, useSyncExternalStore } from "react";
+import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Check, Copy } from "lucide-react";
 
 import { cardServicesStore } from "@/lib/card-services-store";
 import { useLifecycleTick } from "@/lib/code-session-store/hooks/use-lifecycle-tick";
@@ -78,7 +79,23 @@ export const TelemetryInspector: React.FC<TelemetryInspectorProps> = ({
     displayLabel: snapshot?.displayLabel ?? null,
   });
 
-  const [copyStatus, setCopyStatus] = useState<"idle" | "ok" | "fail">("idle");
+  // Controlled `isConfirming` lifecycle. We drive it ourselves so the
+  // "Copied" state only fires on a successful clipboard write (not on
+  // the click alone) — `TugPushButton`'s confirmation prop handles the
+  // visual swap + a11y bits, we just gate the flag. Width-stabilized
+  // grid keeps the button width invariant across the rest ↔ confirmed
+  // swap so neighbors don't jostle.
+  const [copied, setCopied] = useState(false);
+  const copiedTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current !== null) {
+        window.clearTimeout(copiedTimerRef.current);
+        copiedTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const handleCopy = useCallback(async () => {
     const payload = {
       tugSessionId: snapshot?.tugSessionId ?? null,
@@ -105,8 +122,15 @@ export const TelemetryInspector: React.FC<TelemetryInspectorProps> = ({
       tickAt,
     };
     const ok = await copyAsJson(payload);
-    setCopyStatus(ok ? "ok" : "fail");
-    setTimeout(() => setCopyStatus("idle"), 1500);
+    if (!ok) return;
+    setCopied(true);
+    if (copiedTimerRef.current !== null) {
+      window.clearTimeout(copiedTimerRef.current);
+    }
+    copiedTimerRef.current = window.setTimeout(() => {
+      setCopied(false);
+      copiedTimerRef.current = null;
+    }, 1500);
   }, [snapshot, internalState, tickAt]);
 
   return (
@@ -116,14 +140,23 @@ export const TelemetryInspector: React.FC<TelemetryInspectorProps> = ({
           size="xs"
           emphasis="outlined"
           role="action"
+          subtype="icon-text"
+          icon={<Copy size={12} />}
           onClick={handleCopy}
           disabled={selectedCardId === null}
+          confirmation={{ icon: <Check size={12} />, label: "Copied" }}
+          isConfirming={copied}
+          // `alternateLabel` is the WIDER of the two labels — the
+          // grid cell sizes to the max-content of (visible label,
+          // alternateLabel). Here the rest label "Copy as JSON" is
+          // wider than the confirm label "Copied", so passing the
+          // rest label as the alternate reserves the wider width in
+          // both states; the button stays a fixed size across the
+          // swap. The block-copy-button precedent works the other
+          // way ("Copied" wider than "Copy") for the same reason.
+          widthStabilize={{ alternateLabel: "Copy as JSON" }}
         >
-          {copyStatus === "ok"
-            ? "Copied!"
-            : copyStatus === "fail"
-              ? "Copy failed"
-              : "Copy as JSON"}
+          Copy as JSON
         </TugPushButton>
       </div>
       {sections.map((section) => (

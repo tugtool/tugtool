@@ -12,6 +12,8 @@
 
 import {
   DEFAULT_DEV_PANEL_TAB,
+  DEFAULT_DEV_PANEL_WIDTH_PX,
+  MIN_DEV_PANEL_WIDTH_PX,
   VALID_DEV_PANEL_TABS,
   type TugDevPanelSnapshot,
   type TugDevPanelTabId,
@@ -26,6 +28,7 @@ export interface TugDevPanelState {
   open: boolean;
   activeTab: TugDevPanelTabId;
   selectedCardId: string | null;
+  widthPx: number;
 }
 
 export type TugDevPanelEvent =
@@ -33,6 +36,7 @@ export type TugDevPanelEvent =
   | { type: "set_open"; open: boolean }
   | { type: "select_tab"; tab: TugDevPanelTabId }
   | { type: "select_card"; cardId: string | null }
+  | { type: "set_width"; widthPx: number }
   | {
       /**
        * Apply hydrated values from tugbank. Each field is optional —
@@ -44,6 +48,7 @@ export type TugDevPanelEvent =
       open?: boolean;
       activeTab?: string;
       selectedCardId?: string | null;
+      widthPx?: number;
     }
   | {
       /**
@@ -60,7 +65,18 @@ export function createInitialState(): TugDevPanelState {
     open: false,
     activeTab: DEFAULT_DEV_PANEL_TAB,
     selectedCardId: null,
+    widthPx: DEFAULT_DEV_PANEL_WIDTH_PX,
   };
+}
+
+/**
+ * Clamp a candidate width to the floor; the ceiling depends on
+ * `window.innerWidth` and is enforced at the consumer (component)
+ * layer, not here — the reducer stays pure and viewport-agnostic.
+ */
+function clampWidthFloor(widthPx: number): number {
+  if (!Number.isFinite(widthPx)) return DEFAULT_DEV_PANEL_WIDTH_PX;
+  return widthPx < MIN_DEV_PANEL_WIDTH_PX ? MIN_DEV_PANEL_WIDTH_PX : widthPx;
 }
 
 /**
@@ -93,6 +109,12 @@ export function reduce(
       }
       return { ...state, selectedCardId: event.cardId };
 
+    case "set_width": {
+      const clamped = clampWidthFloor(event.widthPx);
+      if (clamped === state.widthPx) return state;
+      return { ...state, widthPx: clamped };
+    }
+
     case "hydrate": {
       let next = state;
       if (event.open !== undefined && event.open !== state.open) {
@@ -113,6 +135,13 @@ export function reduce(
       ) {
         next = next === state ? { ...state } : next;
         next.selectedCardId = event.selectedCardId;
+      }
+      if (event.widthPx !== undefined) {
+        const clamped = clampWidthFloor(event.widthPx);
+        if (clamped !== state.widthPx) {
+          next = next === state ? { ...state } : next;
+          next.widthPx = clamped;
+        }
       }
       return next;
     }
@@ -138,6 +167,10 @@ export function toSnapshot(state: TugDevPanelState): TugDevPanelSnapshot {
   // don't bleed through.
   return state;
 }
+
+// Re-export so the helper can be used at the consumer for the
+// viewport-aware ceiling clamp.
+export { clampWidthFloor };
 
 function isValidTab(value: string): value is TugDevPanelTabId {
   return VALID_DEV_PANEL_TABS.has(value as TugDevPanelTabId);

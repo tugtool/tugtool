@@ -44,6 +44,7 @@ export const DEV_PANEL_KEYS = {
   OPEN: "open",
   ACTIVE_TAB: "activeTab",
   SELECTED_CARD_ID: "selectedCardId",
+  WIDTH_PX: "widthPx",
 } as const;
 
 class TugDevPanelStore {
@@ -85,12 +86,16 @@ class TugDevPanelStore {
     const selectedCardId = readNullableString(
       client.get(DEV_PANEL_DOMAIN, DEV_PANEL_KEYS.SELECTED_CARD_ID),
     );
+    const widthPx = readNumber(
+      client.get(DEV_PANEL_DOMAIN, DEV_PANEL_KEYS.WIDTH_PX),
+    );
     this._dispatch(
       {
         type: "hydrate",
         ...(open !== undefined ? { open } : {}),
         ...(activeTab !== undefined ? { activeTab } : {}),
         ...(selectedCardId !== undefined ? { selectedCardId } : {}),
+        ...(widthPx !== undefined ? { widthPx } : {}),
       },
       { persist: false },
     );
@@ -127,6 +132,9 @@ class TugDevPanelStore {
     }
     if (prev.selectedCardId !== next.selectedCardId) {
       putNullableString(DEV_PANEL_KEYS.SELECTED_CARD_ID, next.selectedCardId);
+    }
+    if (prev.widthPx !== next.widthPx) {
+      putNumber(DEV_PANEL_KEYS.WIDTH_PX, next.widthPx);
     }
   }
 
@@ -167,6 +175,17 @@ class TugDevPanelStore {
   selectCard = (cardId: string | null): void => {
     this._ensureInitialized();
     this._dispatch({ type: "select_card", cardId });
+  };
+
+  /**
+   * Set the panel width in pixels. Driven by the left-edge drag
+   * handle. Clamped to the floor in the reducer; the component-side
+   * viewport ceiling is enforced before this is called. Persists to
+   * tugbank so reopens restore the preferred size.
+   */
+  setWidth = (widthPx: number): void => {
+    this._ensureInitialized();
+    this._dispatch({ type: "set_width", widthPx });
   };
 
   /**
@@ -213,6 +232,21 @@ function readString(entry: TaggedValue | undefined): string | undefined {
   return typeof entry.value === "string" ? entry.value : undefined;
 }
 
+function readNumber(entry: TaggedValue | undefined): number | undefined {
+  if (!entry) return undefined;
+  // tugbank exposes numeric values as `kind: "i64"` (integers) or
+  // `kind: "f64"` (floats). Tolerate either; widthPx is integer in
+  // practice but the kind isn't load-bearing for our reads.
+  if (
+    (entry.kind === "i64" || entry.kind === "f64") &&
+    typeof entry.value === "number" &&
+    Number.isFinite(entry.value)
+  ) {
+    return entry.value;
+  }
+  return undefined;
+}
+
 function readNullableString(
   entry: TaggedValue | undefined,
 ): string | null | undefined {
@@ -232,6 +266,10 @@ function putBool(key: string, value: boolean): void {
 
 function putString(key: string, value: string): void {
   putRaw(key, { kind: "string", value });
+}
+
+function putNumber(key: string, value: number): void {
+  putRaw(key, { kind: "i64", value: Math.round(value) });
 }
 
 function putNullableString(key: string, value: string | null): void {

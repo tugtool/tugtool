@@ -64,7 +64,7 @@ Both problems collapse to a missing **state-coordinated turn surface**. This pla
 3. **Transport-status signal** — if not surfaced today, add a minimal `transport_status: "connected" | "disconnected"` signal to the store. (Investigation B in [Step 20.3](#step-20-3).)
 4. **Pure-logic helper module** — new `lib/code-session-store/telemetry.ts` with `perTurnContextSize`, `extractTurnCost`, `deriveSessionTotals`, and the `liveTurn*` family (live-running clocks for in-flight readouts).
 5. **`tailSpacer="80cqh"` investigation** — retire-or-document the transcript scroll hack ([Step 20.3.5](#step-20-3-5)).
-5a. **`TugDevPanel` dev inspector surface** — persistent, native-triggered, framework-shaped (Opt-Cmd-/ from Tug.app's Developer menu); first tab is the [Step 20.3](#step-20-3) telemetry inspector and gates the 20.3 HMR vet ([Step 20.3.1](#step-20-3-1)).
+5a. **`TugDevPanel` dev inspector surface** — persistent, native-triggered, framework-shaped (Opt-Cmd-/ from Tug.app's Developer menu); first tab is the [Step 20.3](#step-20-3) telemetry inspector and gates the 20.3 HMR vet ([Step 20.3.1](#step-20-3-1)). Second tab is the in-app logging surface ([Step 20.3.2](#step-20-3-2)).
 6. **Six-zone placement architecture** — slot props on `TideCard` (Z0 header, Z2 status bar), `TideCardTranscript` (Z1 unified trailing slot keyed by half), `TugPromptEntry` (Z3 retains existing `statusContent`, Z4 new footer). Z5 (submit button) acknowledged in the contract; structurally present already.
 7. **Lifecycle state machine + state-to-zone coordination matrix** — landed as a documented spec in [Step 20.5.A](#step-20-5-a); implemented as `useLifecycleState()` hook in [Step 20.5.D](#step-20-5-d).
 8. **Z5 submit-button state coordination** — single DOM-node button with `data-mode` attribute driven by the lifecycle snapshot.
@@ -995,8 +995,180 @@ final class DeveloperMenu {
 - [x] `bun run audit:tokens lint` exits 0 (new `--tugx-devpanel-*` slots properly declared with `@tug-pairings` header).
 - [x] Swift Debug build clean (`xcodebuild -configuration Debug`).
 - [x] `just app-test at0070-dev-panel-toggle.test.ts` reports `VERDICT: PASS` per [feedback_just_app_test]. Action drives the dispatch surface (not the chord — see Tests note above for the harness/dev-mode reason).
-- [ ] Manual: open Tug.app debug build → enable dev mode → confirm Developer menu visible with "Show Dev Panel" + `⌥⌘/` shortcut → press shortcut → panel appears → press again → panel hides.
+- [x] Manual: open Tug.app debug build → enable dev mode → confirm Developer menu visible with "Show Dev Panel" + `⌥⌘/` shortcut → press shortcut → panel appears → press again → panel hides. **CONFIRMED 2026-05-16.**
 - [x] **20.3 HMR vet (manual, blocking) — COMPLETED 2026-05-16.** Vet ran cleanly via the panel against a tokei-running Bash tool turn with a ~12s permission-dialog pause; all five acceptance criteria verified plus invariant + cross-check math. See the closure note at the bottom of [#step-20-3](#step-20-3)'s checkpoint for the full result table and the `ttftMs`-for-tool-using-turns finding.
+
+---
+
+#### Step 20.3.2: `TugDevPanel` — `Log` tab + general logging facility {#step-20-3-2}
+
+**Depends on:** [#step-20-3-1](#step-20-3-1) (the panel framework — tab strip + tugbank-persisted active tab + token slots), tugbank (for cap / filter persistence, if any).
+
+**Status:** _not started._
+
+**Commit:** `feat(tugdevlog): in-app logging surface + Log inspector tab on the dev panel`
+
+**References:** [L02], [L06], [L13], [L19], [L20], [L23], [feedback_no_localstorage], [#step-20-3-1].
+
+**Scope note — why we are building this.** The dev panel proved out the "persistent observation surface" pattern with the Telemetry tab. The next obvious use is in-app logging — a tab that captures anything app code wants to record, with filter / clear / copy affordances, so developers stop sprinkling `console.log` everywhere and then leaving the calls behind. The store-and-render half is a clean reuse of the panel framework; the *append-from-anywhere* API is what makes it generally useful.
+
+**Three deliverables:**
+
+1. **`tugDevLog` append API** — a module-scope singleton with a tiny interface that any tugdeck code can call: `tugDevLog.log({ level, source, message, data? })`. Backed by a bounded ring buffer so memory stays bounded under high-rate logging. Pure-logic + an [L02] store underneath.
+2. **`LogInspector` tab** — second inspector tab on the panel. Virtualised list rendering, level + source + free-text filters, clear button, "Copy filtered log as JSON" / "Copy filtered log as text" affordances.
+3. **Tab persistence verification** — confirm the existing `selectedTab` round-trip survives a second tab landing (the store already PUTs `activeTab` via `_persistDiff` and hydrates on launch; the unit test already covers the round-trip, but the behavior becomes visibly useful only once there's a second tab to switch to).
+
+**Architecture sketch.**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  tugdeck — anywhere in app code                             │
+│  ────────────────────────────────                           │
+│  tugDevLog.log({                                            │
+│    level: "warn",                                           │
+│    source: "code-session-store",                            │
+│    message: "duplicate turn_complete dropped",              │
+│    data: { msgId },                                         │
+│  });                                                        │
+└─────────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│  TugDevLogStore (L02)                                       │
+│  ────────────────                                           │
+│  - Ring buffer (default cap 1000 entries) of                │
+│    { id, timestamp, level, source, message, data }          │
+│  - subscribe / getSnapshot returning the buffer + version   │
+│  - mutator: append(entry), clear()                          │
+│  - cap configurable via DEV_LOG_KEYS.MAX_ENTRIES (tugbank)  │
+└─────────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│  <LogInspector>  (mounts when activeTab === "log")          │
+│  ────────────────                                           │
+│  - Filter row: level checkboxes + source select + text box  │
+│  - Toolbar:    Clear · Copy as JSON · Copy as text          │
+│  - Virtualised list (newest at top, jumps to top on append  │
+│    unless user has scrolled away from the head)             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Entry shape.**
+
+```typescript
+export type TugDevLogLevel = "debug" | "info" | "warn" | "error";
+
+export interface TugDevLogEntry {
+  /** Monotonically increasing id minted by the store. */
+  id: number;
+  /** `Date.now()` at append time. */
+  timestamp: number;
+  level: TugDevLogLevel;
+  /** Short subsystem tag, e.g. "code-session-store", "tugdevpanel". */
+  source: string;
+  /** Human-readable one-line message. */
+  message: string;
+  /** Optional structured payload; serialised to JSON in copy paths. */
+  data?: unknown;
+}
+```
+
+**Filter model.**
+
+| Filter | Mechanism | Persistence |
+|---|---|---|
+| Level | Multi-select checkboxes (any subset of `debug/info/warn/error`). Default: all on. | `dev.tugtool.dev-panel/logFilterLevels` (JSON array) |
+| Source | `TugPopupMenu` populated from the set of distinct `source` values currently in the buffer. "All" + specific source. | `dev.tugtool.dev-panel/logFilterSource` (nullable string) |
+| Free text | Plain text input matched case-insensitively against `message` (and optionally `JSON.stringify(data)`). | NOT persisted — transient per session |
+
+Filters are **derived** views on the buffer (pure-logic helper `filterEntries(buffer, filters)`), not state mutations. Clearing a filter never destroys entries.
+
+**Tug components — what's used vs. invented.**
+
+- Level filter: `TugChoiceGroup` (multi-mode if available; else a row of `TugCheckbox`).
+- Source filter: `TugPopupMenu` triggered by a `TugButton`.
+- Free-text filter: `TugInput`.
+- Clear button: `TugPushButton` with `confirmation={{ label: "Cleared" }}`.
+- Copy buttons: same `TugPushButton + Copy/Check icon + widthStabilize` pattern that [#step-20-3-1]'s Telemetry "Copy as JSON" landed.
+- List rendering: `TugListView` if it fits; otherwise hand-rolled virtualised div — TBD during implementation.
+
+**Cap + back-pressure.**
+
+- Default cap: `1000` entries. When the buffer is full, oldest entries roll off.
+- Cap configurable via the inspector toolbar (a `TugPopupMenu` with `[500, 1000, 2500, 10000]`) and persisted via tugbank.
+- The cap is enforced in the store's `append`, NOT in render — so a runaway logger doesn't blow up memory between paints.
+
+**Conformance.**
+
+- **[L02]** `TugDevLogStore` is a proper external store; `LogInspector` reads via `useSyncExternalStore`. The `tugDevLog.log(...)` API is a thin wrapper over `store.append(...)`.
+- **[L06]** Filter panel show/hide is DOM-only (a collapse affordance, not React mount); list-scroll position is appearance-zone.
+- **[L13]** New-entry "jump to top" is `requestAnimationFrame`-batched (multiple appends in one frame produce one scroll write). No throttle on append itself (that would drop logs).
+- **[L19]** Composed of small focused components.
+- **[L20]** New `--tugx-devlog-*` slot family in `tug-dev-panel.css` (the panel owns log-row coloring); child Tug components own their own families.
+- **[L23]** Filter selections + cap survive HMR via tugbank.
+- **[feedback_no_localstorage]** — never used. Every persistent bit goes through tugbank.
+- **Read-only over app state.** The log is append-only from the app's perspective; only the inspector's own UI affordances mutate filters / cap / clear.
+
+**Tab persistence — what the panel framework already does.**
+
+The `TugDevPanelStore.activeTab` field already round-trips through tugbank via `_persistDiff` + `_hydrateFromTugbank` (see [#step-20-3-1]). When this step lands the second tab (`"log"`), no additional persistence wiring is needed — the existing store already PUTs the new value the moment the user clicks the tab, and reads it back on next launch. This step's deliverable is just to **verify** (one app-test) that switching to `log`, closing the panel via `⌥⌘/`, reopening, lands back on `log`.
+
+**Append-from-Swift (future, NOT in this step).**
+
+The store can also accept appends from the Swift host via the existing `dispatchAction` channel — register a `dev-log-append` action that calls `tugDevLog.log({...})`. Defer until a Swift-side caller actually wants this; the API is forward-compatible without it.
+
+**Artifacts.**
+
+- `tugdeck/src/lib/tug-dev-log-store/types.ts` — `TugDevLogLevel`, `TugDevLogEntry`, `TugDevLogSnapshot`, `TugDevLogFilters`.
+- `tugdeck/src/lib/tug-dev-log-store/reducer.ts` — pure reducer (`append`, `clear`, `set_filters`, `set_max_entries`, `hydrate`).
+- `tugdeck/src/lib/tug-dev-log-store/tug-dev-log-store.ts` — class wrapper + the `tugDevLog` singleton. Tugbank persistence for filters + cap (the buffer itself is NOT persisted — too noisy + lifetime is session-bound).
+- `tugdeck/src/lib/tug-dev-log-store/filter.ts` — pure-logic `filterEntries(buffer, filters)` + `extractSources(buffer)`.
+- `tugdeck/src/components/tug-dev-panel/inspectors/log-inspector.tsx` — second tab; consumes `tugDevLogStore` + filter helpers.
+- `tugdeck/src/components/tug-dev-panel/inspectors/log-row.tsx` — one row primitive (timestamp + level chip + source + message + optional data toggle).
+- `tugdeck/src/lib/tug-dev-panel-store/types.ts` — extend `TugDevPanelTabId` from `"telemetry"` to `"telemetry" | "log"`; extend `VALID_DEV_PANEL_TABS`.
+- `tugdeck/src/components/tug-dev-panel/tug-dev-panel.tsx` — add `{ id: "log", label: "Log" }` to the `TABS` array; render `<LogInspector />` for `activeTab === "log"`.
+- `tugdeck/src/components/tug-dev-panel/tug-dev-panel.css` — `--tugx-devlog-*` slot family (level-row colors, source-tag color, timestamp color).
+- Tests:
+  - `tugdeck/src/lib/tug-dev-log-store/__tests__/reducer.test.ts` — append / clear / cap enforcement / filter mutations / hydrate.
+  - `tugdeck/src/lib/tug-dev-log-store/__tests__/filter.test.ts` — `filterEntries` correctness across level / source / free-text combinations; `extractSources` returns distinct values in stable order.
+  - `tugdeck/src/lib/tug-dev-log-store/__tests__/persistence.test.ts` — filter + cap round-trip via tugbank.
+  - app-test: `tests/app-test/at0071-dev-panel-tab-persistence.test.ts` — switch to `log`, close + reopen via `dispatchControlAction`, assert active tab is still `log`.
+
+**Tasks.**
+
+- [ ] **Type extensions** — `TugDevLogLevel`, `TugDevLogEntry`, `TugDevLogSnapshot`, `TugDevLogFilters`. Extend `TugDevPanelTabId` to include `"log"`.
+- [ ] **`TugDevLogStore` reducer + class** — pure reducer + ring buffer + tugbank-persisted filters/cap.
+- [ ] **`tugDevLog` singleton** — wrap the store in a tiny `{ log(entry), clear(), debug/info/warn/error(source, message, data?) }` convenience API.
+- [ ] **`filterEntries` + `extractSources` pure helpers**.
+- [ ] **`LogInspector` component** — filter row + toolbar + virtualised list. Reuse Telemetry's Copy button pattern.
+- [ ] **Token sovereignty** — declare `--tugx-devlog-*` slots in `tug-dev-panel.css`; chip + row + timestamp colors.
+- [ ] **Wire into panel** — add `"log"` to TABS; render `<LogInspector />` from the body switch.
+- [ ] **Source migrations (small, deliberate)** — convert 3–5 in-tree `console.warn` calls in subsystems we monitor (e.g. `code-session-store`, `tugcast`) to `tugDevLog.warn(...)` to seed the catalog. Do NOT do a global sweep — let usage drive adoption.
+- [ ] **Tests** — reducer / filter / persistence / app-test tab persistence.
+
+**Tests.**
+
+- [ ] Reducer: `append` adds an entry; reaching `maxEntries` drops the oldest.
+- [ ] Reducer: `clear` empties the buffer but preserves filters + cap.
+- [ ] Reducer: `set_filters` partial-merge (level-only update doesn't drop source filter).
+- [ ] Reducer: `hydrate` accepts filters + cap from tugbank; missing keys default cleanly.
+- [ ] Filter: level filter — entries whose level is not in the set are excluded; empty set excludes everything; full set is a passthrough.
+- [ ] Filter: source filter — `null` source means "all"; specific source returns only matching.
+- [ ] Filter: free-text — case-insensitive match against `message` and `JSON.stringify(data)`.
+- [ ] Filter: combined — level AND source AND text all apply (intersection).
+- [ ] Filter: `extractSources` returns distinct values, stable order (first-seen).
+- [ ] Persistence: filter changes PUT to the right keys; reload re-hydrates them.
+- [ ] Persistence: cap changes PUT and re-hydrate.
+- [ ] app-test (`at0071-dev-panel-tab-persistence`): switch to `log`, close panel, reopen, active tab is still `log`. Asserts the existing `selectedTab` round-trip works with multiple tabs.
+
+**Checkpoint.**
+
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green; existing tests stay green.
+- [ ] `bun run audit:tokens lint` exits 0 (new `--tugx-devlog-*` slots properly declared with `@tug-pairings` header).
+- [ ] `just app-test at0071-dev-panel-tab-persistence.test.ts` reports `VERDICT: PASS`.
+- [ ] Manual: open dev panel, click `Log` tab, exercise an emitter (e.g. dispatch a `set-theme` action to fire a `tugDevLog.info(...)` from action-dispatch), confirm the entry appears; filter by level → only matching entries show; clear → buffer empties; close panel; reopen → `Log` tab is still active; the log buffer is empty (transient — correct).
 
 ---
 

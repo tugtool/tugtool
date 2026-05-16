@@ -36,6 +36,25 @@ export const VALID_DEV_PANEL_TABS: ReadonlySet<TugDevPanelTabId> = new Set([
 ]);
 
 /**
+ * Default panel width in pixels. Matches the historical
+ * `--tugx-devpanel-width` value before width became user-tunable.
+ */
+export const DEFAULT_DEV_PANEL_WIDTH_PX = 420;
+
+/**
+ * Minimum panel width — narrow enough to not feel oppressive on a
+ * small display, wide enough to keep field rows legible.
+ */
+export const MIN_DEV_PANEL_WIDTH_PX = 320;
+
+/**
+ * Margin reserved on the LEFT side of the viewport so the panel
+ * can't be dragged to cover the entire screen. The effective max
+ * width is `window.innerWidth - this margin`.
+ */
+export const MIN_LEFT_GUTTER_PX = 80;
+
+/**
  * Public snapshot returned by `TugDevPanelStore.getSnapshot()`. Stable
  * reference between dispatches that produce no change.
  */
@@ -51,4 +70,11 @@ export interface TugDevPanelSnapshot {
    * an empty state.
    */
   selectedCardId: string | null;
+  /**
+   * Panel width in pixels. User-tunable via the left-edge drag handle
+   * (see `ResizeHandle`); persisted to tugbank so reopens restore the
+   * preferred size. Clamped to [{@link MIN_DEV_PANEL_WIDTH_PX},
+   * `window.innerWidth - {@link MIN_LEFT_GUTTER_PX}`].
+   */
+  widthPx: number;
 }

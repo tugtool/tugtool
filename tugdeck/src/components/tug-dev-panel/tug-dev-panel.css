@@ -42,6 +42,11 @@ body {
   --tugx-devpanel-title-fg:       var(--tug7-element-global-text-normal-default-rest);
 
   /* Geometry */
+  /* Static fallback for the panel width. The runtime value comes
+   * from the React component, which writes the store's `widthPx`
+   * snapshot value to an inline style on the panel root. This body
+   * declaration is the fallback when no inline value is present
+   * (initial render before the store hydrates). */
   --tugx-devpanel-width:          420px;
   /* The panel sits ONE tier BELOW the canvas-overlay-root container
    * (z = `--tug-z-overlay-base` = 9000). That container is the portal
@@ -76,6 +81,10 @@ body {
   top: 0;
   right: 0;
   bottom: 0;
+  /* Width comes from the inline `--tugx-devpanel-width` property the
+   * React component writes from the store snapshot. The body-level
+   * default (in the alias block above) is the static fallback when
+   * no inline value is present. */
   width: var(--tugx-devpanel-width);
   z-index: var(--tugx-devpanel-z-index);
   /* @tug-renders-on: --tugx-devpanel-bg */
@@ -86,6 +95,32 @@ body {
   flex-direction: column;
   overflow: hidden;
   box-sizing: border-box;
+}
+
+/* ---- Resize handle — left edge drag affordance ---- */
+
+.tug-devpanel-resize-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 6px;
+  /* Sit above the panel content but below any portaled overlay. */
+  z-index: 1;
+  cursor: ew-resize;
+  /* The handle is transparent; visual feedback is the cursor + a
+   * faint accent on hover. Stays out of the way otherwise. */
+  background-color: transparent;
+  /* Pull the handle slightly outside the panel's left border so the
+   * cursor target straddles the divider line for a generous hit
+   * region. */
+  transform: translateX(-3px);
+}
+
+.tug-devpanel-resize-handle:hover,
+.tug-devpanel-resize-handle:active {
+  /* @tug-renders-on: --tugx-devpanel-bg */
+  background-color: var(--tugx-devpanel-border);
 }
 
 .tug-devpanel[data-open="false"] {
