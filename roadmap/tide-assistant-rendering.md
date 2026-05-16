@@ -5454,38 +5454,300 @@ The existing tests in `reducer.replay-inflight-survival.test.ts` assert on `stat
 
 ---
 
-#### Step 20: CostChrome — per-turn footer + expanded breakdown + cumulative {#step-20}
+#### Step 20.1: `TugLinearGauge` primitive + gallery card {#step-20-1}
 
-**Depends on:** #step-1
+**Depends on:** _none_ (general-purpose tugways primitive; no dependency on tide rendering)
 
-**Commit:** `feat(tide-rendering): CostChrome — per-turn cost badge, expanded modelUsage breakdown, card-level cumulative`
+**Status:** _not started_
 
-**References:** [D03], (#chrome), (#t03-chrome)
+**Commit:** `feat(tugways): TugLinearGauge — linear quantity gauge primitive + gallery card`
 
-**Artifacts:**
-- `tugdeck/src/components/tugways/chrome/tide-cost-chrome.tsx` + `.css`
-- Token slot `--tugx-cost-*`
-- Replace placeholder `"Project path /gallery/demo"` in `tide-card.tsx` status row
+**References:** [L17], [L19], [L20], [L24], [Table T07](#t07-token-slots), `roadmap/archive/retronow/mockups/retronow-unified-review.html` § "Linear Gauge (0-100% Mapping)" (design source)
 
-**Tasks:**
-- [ ] CostBadge sub-component: `$0.04 · 1.2k tok · 3.4s` per `code` row footer
-- [ ] Click expands to per-model breakdown (input/output/cache tokens stacked bar; cost contribution per model)
-- [ ] CostChrome cumulative: card-level status row showing session total (turn count + tokens + USD)
-- [ ] Hook: card binding's `projectDir` (or shortened form) replaces gallery placeholder
+**Scope.** General-purpose horizontal-fill gauge primitive — a labeled bar that maps `value` from `[min, max]` into a proportional fill, with optional threshold-based color zones. Built first because [#step-20-3] (the card-level status strip) consumes it for the window-utilization display. The retronow mockup had ~15 tunable knobs for design exploration; the shipped primitive collapses those into ~7 props for ergonomic consumer use, with the warning-zone semantics preserved (the load-bearing feature that the mockup proved out).
 
-**Tests:**
-- [ ] Replay any fixture → CostBadge shows correct values
-- [ ] Multi-turn fixture → cumulative chrome aggregates correctly
-- [ ] Both themes verify
+**Conformance.** Tugways primitive (peer of `TugInlineDialog`, `TugBadge`, etc.) — not a body kind, not a tool wrapper. The [#bk-conformance](#bk-conformance) contract does not apply directly; the relevant law set is `tuglaws/component-authoring.md` plus [L17] / [L19] / [L20] / [L24]. The primitive owns a new `--tugx-gauge-*` slot family declared in `tug-linear-gauge.css` body{}, composing `--tug7-*` base tokens in one hop.
 
-**Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+**Design — public surface.** Sketch (precise prop names finalized in implementation):
+
+```typescript
+export interface TugLinearGaugeProps {
+  /** Current value, in domain units. */
+  value: number;
+  /** Domain minimum. */
+  min: number;
+  /** Domain maximum. Must satisfy `max > min`. */
+  max: number;
+  /**
+   * Optional warning-zone fractions (0–1, relative to the [min, max]
+   * domain). When `value` exceeds a threshold, the fill color shifts
+   * to the corresponding role token. `caution` lights up the caution
+   * accent; `danger` lights up the danger accent (a strict superset
+   * of caution — exceeding `danger` implies caution too, but only
+   * the danger color renders). When omitted, the fill stays on its
+   * default role for the entire domain.
+   */
+  thresholds?: { caution?: number; danger?: number };
+  /**
+   * Optional human-readable label rendered alongside the bar. Layout
+   * depends on `density` — compact puts it inline beside the value;
+   * detailed puts it below, with hi/lo labels framing the bar ends.
+   */
+  label?: string;
+  /**
+   * Optional formatter for the displayed numeric value. Defaults to
+   * `String(value)`. Consumers passing a fraction like
+   * `32_500 / 200_000` would write `formatValue={(v) => formatTokens(v)}`
+   * to render `"32.5k"`.
+   */
+  formatValue?: (value: number) => string;
+  /**
+   * `compact` (default) renders a slim bar with just the fill, the
+   * value numeral, and an optional label inline — designed for chrome
+   * surfaces like [#step-20-3]'s status strip (~20–24px tall).
+   * `detailed` renders the full mockup-style face with major/minor
+   * ticks, hi/lo labels, and percentage readout — for dashboard /
+   * gallery use.
+   */
+  density?: "compact" | "detailed";
+  /**
+   * Accent role for the fill when no threshold is exceeded. Maps to
+   * `--tugx-gauge-fill-{role}-color`. Defaults to `default`.
+   */
+  fillRole?: "default" | "info" | "success";
+}
+```
+
+**Token sovereignty per [L20].** TugLinearGauge owns `--tugx-gauge-*` slots: `track-color`, `track-border-color`, `fill-default-color`, `fill-info-color`, `fill-success-color`, `fill-caution-color`, `fill-danger-color`, `value-text-color`, `label-text-color`, `tick-major-color`, `tick-minor-color`, plus the geometry slots (`bar-height-compact`, `bar-height-detailed`, `value-text-size-compact`, `value-text-size-detailed`, etc.). The consuming card ([#step-20-3]) does not override these — it owns its own `--tugx-tide-meter-*` slots that point at the gauge's surface tokens via [L20]'s "alias my own family, don't override the child's" rule.
+
+**Gallery card.** A new gallery card `gallery-tug-linear-gauge` shows the primitive at three scales side-by-side:
+
+| Scale | Height | Density | Purpose |
+|---|---|---|---|
+| **Strip-scale** | ~24px tall | `compact` | Exact size the [#step-20-3] integration uses; gates that the compact density reads well at chrome scale |
+| **Readable** | ~60px tall | `compact` | Mid-size dashboard placement; bar + value + label clearly legible |
+| **Showcase** | ~140px tall | `detailed` | Full mockup-style face with ticks + percentage + hi/lo labels; gates that the primitive scales up without losing fidelity |
+
+Each scale is rendered for three threshold configurations: (a) no thresholds, (b) `caution: 0.75`, `danger: 0.9` with `value` below caution, (c) same thresholds with `value` above danger. Card includes a `value` slider and `min/max` numeric inputs so design review can interactively tune the values.
+
+**Artifacts.**
+
+- `tugdeck/src/components/tugways/tug-linear-gauge.tsx` + `.css` — _new component_.
+- `tugdeck/src/components/tugways/__tests__/tug-linear-gauge.test.ts` — pure-logic tests: domain-mapping math (value → fill width), threshold selection (which role is active given thresholds + value), `formatValue` round-trip, edge cases (value < min clamps; value > max clamps; max ≤ min throws). No DOM rendering required (the geometry math is pure).
+- `tugdeck/src/components/tugways/cards/gallery-tug-linear-gauge.tsx` + `.css` — _new card_.
+- Registration in `card-registry.ts` and the gallery component list.
+- New row in [Table T07](#t07-token-slots): `| --tugx-gauge-* | TugLinearGauge / TugArcGauge |` (shared slot family — both gauges read the same color slots; geometry slots may diverge).
+
+**Tasks.**
+
+- [ ] Build `TugLinearGauge` per the prop surface above. Stateless presentation; consumer owns `value`.
+- [ ] Pure-logic Bun tests for the geometry + threshold math.
+- [ ] Declare the `--tugx-gauge-*` slot family in `tug-linear-gauge.css` body{}; bind base tokens via `--tug7-*` in one hop.
+- [ ] Theme tokens added to both `themes/brio.css` and `themes/harmony.css` (per project convention — hand-authored).
+- [ ] Gallery card with the three-scale grid + three-threshold-config rows + interactive value slider.
+- [ ] Register `gallery-tug-linear-gauge` in `card-registry.ts`.
+- [ ] `audit-tokens lint` clean (no alias-to-alias chains; every color-setting rule declares its `@tug-renders-on` surface per [L16]).
+
+**Tests.**
+
+- [ ] Pure-logic: `value=50, min=0, max=100` → fill ratio = 0.5. `value=-10` clamps to 0; `value=150` clamps to 1.
+- [ ] Pure-logic: with `thresholds={caution: 0.75, danger: 0.9}`: `value=70%` → `default` role; `value=80%` → `caution`; `value=95%` → `danger`.
+- [ ] Pure-logic: missing `thresholds` → always `fillRole` (default `default`).
+- [ ] Pure-logic: `max ≤ min` throws (configuration error, not a silent NaN).
+- [ ] Gallery card mounts; renders all 9 cells (3 scales × 3 threshold configs).
+
+**Checkpoint.**
+
+- [ ] `bun x tsc --noEmit` clean from `tugdeck/`.
+- [ ] `bun test` green; new pure-logic test count > 0.
+- [ ] `bun run audit:tokens lint` exits 0.
+- [ ] **HMR vet (manual user action)** — open `gallery-tug-linear-gauge`, move the slider through the domain, verify color transitions at the threshold boundaries match expectation in both themes (Brio / Harmony).
+
+---
+
+#### Step 20.2: `TugArcGauge` primitive + gallery card {#step-20-2}
+
+**Depends on:** #step-20-1 (the `--tugx-gauge-*` color slot family lands with TugLinearGauge; TugArcGauge reads the same color tokens to keep the visual language consistent across both primitives)
+
+**Status:** _not started_
+
+**Commit:** `feat(tugways): TugArcGauge — arc quantity gauge primitive + gallery card`
+
+**References:** [L17], [L19], [L20], [L24], [#step-20-1] (color-token sibling), [Table T07](#t07-token-slots), `roadmap/archive/retronow/mockups/retronow-unified-review.html` § "Arc Gauge (Unified)" (design source)
+
+**Scope.** General-purpose arc (partial-circle) gauge primitive — the radial counterpart to [#step-20-1]'s linear bar. Same domain mapping, same threshold semantics, same color tokens (`--tugx-gauge-fill-{role}-color` is shared). Sequenced after the linear gauge so the color-slot family is settled before the arc geometry is built on top; this avoids re-tuning shared tokens after the second consumer lands. Gates that the primitive scales the same way the linear gauge does — strip-scale for chrome, readable for dashboard, showcase for full-detail.
+
+**Conformance.** Same as [#step-20-1] — tugways primitive, `tuglaws/component-authoring.md` + [L17] / [L19] / [L20] / [L24]. Shares the `--tugx-gauge-*` slot family with TugLinearGauge; adds arc-specific geometry slots (`arc-stroke-width-compact`, `arc-stroke-width-detailed`, `arc-radius-compact`, `arc-radius-detailed`, `arc-start-angle`, `arc-sweep-angle`).
+
+**Design — public surface.** Identical prop shape to TugLinearGauge with one addition: the arc's start/sweep angles default to a "C" sweep (`start = 135°`, `sweep = 270°` — leaving the bottom 90° open) but can be overridden via `geometry?: { startAngleDeg: number; sweepAngleDeg: number }` for consumers that want a different arc shape (full circle, half circle, quarter, etc.).
+
+```typescript
+export interface TugArcGaugeProps {
+  value: number;
+  min: number;
+  max: number;
+  thresholds?: { caution?: number; danger?: number };
+  label?: string;
+  formatValue?: (value: number) => string;
+  density?: "compact" | "detailed";
+  fillRole?: "default" | "info" | "success";
+  /**
+   * Override the default "C" sweep. Useful for full-circle gauges
+   * (`sweepAngleDeg: 360`), half-circles (`startAngleDeg: 180,
+   * sweepAngleDeg: 180`), or custom dial shapes. Defaults to a 270°
+   * sweep starting at 135° (bottom-left quadrant open).
+   */
+  geometry?: { startAngleDeg: number; sweepAngleDeg: number };
+}
+```
+
+**Token sovereignty.** Color slots are shared with TugLinearGauge (single source of truth; both gauges read `--tugx-gauge-fill-{role}-color`). Arc-specific geometry slots are owned exclusively by TugArcGauge and namespaced with `arc-` prefix to avoid collision with the linear gauge's geometry slots. Both gauges' geometry slots live in their respective component CSS body{}; neither overrides the other.
+
+**Gallery card.** `gallery-tug-arc-gauge` mirrors [#step-20-1]'s structure — three scales × three threshold configs:
+
+| Scale | Diameter | Density | Purpose |
+|---|---|---|---|
+| **Strip-scale** | ~32px | `compact` | Exact size for chrome surface use; tests that the arc reads at this size without crowding |
+| **Readable** | ~80px | `compact` | Mid-size dashboard placement |
+| **Showcase** | ~180px | `detailed` | Full mockup-style face with ticks + value + label all visible |
+
+Plus one **geometry variants** row that shows the same gauge at `readable` scale with five different arc shapes (default C-sweep, half-circle, full circle, quarter-arc top-right, quarter-arc top-left) to gate that the geometry override prop produces sensible output at non-default angles.
+
+**Artifacts.**
+
+- `tugdeck/src/components/tugways/tug-arc-gauge.tsx` + `.css` — _new component_.
+- `tugdeck/src/components/tugways/__tests__/tug-arc-gauge.test.ts` — pure-logic tests: SVG path generation for the arc (start point, sweep flag, end point given `startAngleDeg` / `sweepAngleDeg` / `value` fraction), threshold selection (same shape as TugLinearGauge), geometry edge cases (sweep = 360° produces a full circle; sweep = 0° produces an empty arc; negative sweep throws).
+- `tugdeck/src/components/tugways/cards/gallery-tug-arc-gauge.tsx` + `.css` — _new card_.
+- Registration in `card-registry.ts`.
+- Extend the [Table T07](#t07-token-slots) row landed in [#step-20-1] to reflect the shared use.
+
+**Tasks.**
+
+- [ ] Build `TugArcGauge` per the prop surface above.
+- [ ] Pure-logic Bun tests for arc-path geometry + threshold + geometry-override math.
+- [ ] Declare arc-specific `--tugx-gauge-arc-*` slots in `tug-arc-gauge.css` body{}; reuse the shared color slots from [#step-20-1].
+- [ ] Theme tokens for arc-specific geometry added to both themes.
+- [ ] Gallery card with the three-scale grid + three-threshold rows + geometry-variants row + interactive value slider.
+- [ ] Register `gallery-tug-arc-gauge` in `card-registry.ts`.
+- [ ] `audit-tokens lint` clean.
+
+**Tests.**
+
+- [ ] Pure-logic: SVG arc path for `value=50%`, `min=0`, `max=100`, default geometry → end point at the angle corresponding to 50% of the sweep, with the correct `largeArcFlag` (1 when fill > 180°, else 0).
+- [ ] Pure-logic: same threshold tests as TugLinearGauge.
+- [ ] Pure-logic: `geometry.sweepAngleDeg = 360` → full-circle path; `geometry.sweepAngleDeg = 0` → empty path; negative sweep throws.
+- [ ] Gallery card mounts; renders all 9 size cells + 5 geometry cells = 14 cells.
+
+**Checkpoint.**
+
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+- [ ] **HMR vet** — open `gallery-tug-arc-gauge`, sweep the slider, verify the arc redraws smoothly with no visual artifacts (no flash, no path-discontinuity at the 180° boundary where `largeArcFlag` flips), and verify the geometry variants render correctly at the five different arc shapes.
+
+---
+
+#### Step 20.3: `TideMeterChrome` — card-level status strip {#step-20-3}
+
+**Depends on:** #step-1, #step-20-1 (the linear gauge primitive)
+
+**Status:** _not started_
+
+**Commit:** `feat(tide-rendering): TideMeterChrome — card-level status strip with window meter and session totals`
+
+**References:** [D03], [L02], [L20], [#chrome](#chrome), [#t03-chrome](#t03-chrome), [#step-20-1] (TugLinearGauge consumer), [Table T07](#t07-token-slots)
+
+**Scope.** Replaces the deleted `CostChrome` design with `TideMeterChrome`: a slim card-level status strip that surfaces **four numbers** for the current session — no per-turn footer, no monetary denominations. The four numbers are:
+
+1. **Window utilization** — `<used> / <max>` token fraction for the current context window (the slice between session start and the most recent `/clear` or `/compact`). Rendered via [#step-20-1]'s `TugLinearGauge` with the fraction as both `value`/`max` and as the formatted display string. Thresholds shift the fill color as the user approaches the context limit.
+2. **Last-turn time** — duration of the most recent `turn_complete`, in seconds. During an active turn (between `submitting` and `turn_complete`), ticks live; on `turn_complete`, locks to the final value until the next turn starts.
+3. **Cumulative session tokens** — raw count of total tokens consumed across all turns this session, formatted with k/M suffix.
+4. **Cumulative session time** — sum of turn durations (active Claude time only, not wall-clock since session start — consistent with #2's semantic). Formatted as `H:MM:SS` or `MM:SS` depending on magnitude.
+
+Layout — slim row above the prompt entry, two clusters separated by a vertical divider:
+
+```
+[●●●●●●●●●●○○○○○○○○○○○○○○○○]  32.5k / 200k  ·  last 1.4s   │   89.2k total  ·  1:12:04
+└────── window gauge ──────┘ └── window ──┘   └── recent ─┘    └────── session totals ──────┘
+```
+
+Left cluster = current state (load-bearing for "do I need to /clear soon?"). Right cluster = session totals.
+
+**Conformance.** Card chrome surface ([#chrome](#chrome)) — listed in [Table T03](#t03-chrome) under "card status row." [#bk-conformance](#bk-conformance) does not apply (chrome surfaces are not body kinds). Owns the `--tugx-tide-meter-*` slot family per [L20] (the consuming card aliases the gauge's color tokens via its own slot family — does not override `--tugx-gauge-*`).
+
+**Open investigation — `/clear` boundary semantics.** The window utilization number requires knowing the boundary between "before the last /clear" and "after." Today, the `CodeSessionStore` reducer does NOT model `/clear` explicitly: it treats every event as additive on the current session. Before implementation, a short investigation needs to answer:
+
+- Does `/clear` emit a distinct protocol frame the reducer can observe?
+- Or is `/clear` implicit (e.g., the next user_message after /clear has a flag, or a fresh `session_init` arrives)?
+- Or do we need a tugcode-side change to surface the boundary?
+
+**Output of the investigation gates the implementation strategy.** If the boundary is observable, the reducer adds a `windowStart: { sessionTokenOffset, sessionDurationOffset }` field that resets on the boundary frame; the meter subtracts the offset from the cumulative totals to derive window numbers. If the boundary is not observable, this step ships with window = session (no /clear awareness) and files a follow-up for the protocol work. **Do not invent a fake /clear boundary in the renderer — it must be a real protocol signal or be explicitly absent.**
+
+The investigation also needs to determine: how do we know the **model context max** (the `200k` denominator)? Best candidate: `system_metadata.modelContextMaxTokens` or equivalent — needs verification. If absent, the gauge ships with `max = sessionTokensTotal * 2` (a rough placeholder) plus a follow-up for the protocol surface.
+
+**Design — public surface.**
+
+```typescript
+export interface TideMeterChromeProps {
+  /**
+   * Snapshot consumer. Reads `transcript[]` to derive cumulative
+   * totals, the most-recent `TurnEntry` for last-turn time, and the
+   * window-utilization numbers from the reducer's window-offset
+   * fields (if /clear is observable; otherwise window = session).
+   */
+  codeSessionStore: CodeSessionStore;
+  /**
+   * Model context maximum, in tokens. Sourced from `system_metadata`
+   * when available; falls back to a sentinel that disables the
+   * threshold-color shift (the gauge renders with `default` role
+   * for all values).
+   */
+  modelContextMax?: number;
+}
+```
+
+The component subscribes via `useSyncExternalStore` ([L02]) and computes the four numbers as pure derivations from the snapshot — no internal state. During an active turn, the live-ticking last-turn-time is implemented via a single `useLayoutEffect` that subscribes to the snapshot for phase changes and to a `setInterval` (or `requestAnimationFrame` loop) for the tick — but only while `canInterrupt === true`; idle phases hold the value still.
+
+**Artifacts.**
+
+- `tugdeck/src/components/tugways/chrome/tide-meter-chrome.tsx` + `.css` — _new chrome component_.
+- `tugdeck/src/components/tugways/chrome/__tests__/tide-meter-chrome.test.ts` — pure-logic tests for the four-number derivations from a synthetic snapshot.
+- `tugdeck/src/lib/code-session-store/reducer.ts` — _possibly_ a new `windowStart` field on state (gated on the /clear-investigation outcome).
+- `tugdeck/src/lib/code-session-store/types.ts` — _possibly_ a new snapshot field exposing the window offset.
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` — mount `TideMeterChrome` in the status row slot (replaces the placeholder `"Project path /gallery/demo"` text, if still present).
+- Token slot `--tugx-tide-meter-*` registered in [Table T07](#t07-token-slots).
+- Documentation update in [#chrome](#chrome) and [#t03-chrome](#t03-chrome): replace the "CostChrome" entries with `TideMeterChrome`; explain the four-number contract; cross-reference [#step-20-1] for the consumed gauge primitive.
+
+**Tasks.**
+
+- [ ] **Investigation** — answer the `/clear` boundary and model-context-max questions above. Result is a one-page note appended to the step or to a sibling file; gates the reducer-side work below.
+- [ ] **Reducer changes** (conditional on investigation) — add `windowStart` field + reset-on-/clear handler if the protocol supports it. Otherwise no reducer change; meter ships with window = session.
+- [ ] **TideMeterChrome component** — build per the prop surface above. Subscribes via `useSyncExternalStore`. Live-tick for the last-turn-time during active turns (gated on `canInterrupt`).
+- [ ] **Pure-logic tests** — feed synthetic snapshots into the derivation functions; assert the four numbers match expectation across edge cases (no turns yet → all zeros; mid-turn → last-time tick > 0; multi-turn → cumulative sums match).
+- [ ] **Integration in `tide-card.tsx`** — mount the chrome in the status row slot; delete the placeholder text if present.
+- [ ] **Theme tokens** added to both themes.
+- [ ] **Documentation pass** — [#chrome](#chrome), [#t03-chrome](#t03-chrome), [Table T07](#t07-token-slots), and any other reference to "CostChrome" / "CostBadge" in this roadmap file (notably [#step-21](#step-21) needs its `tide-cost-chrome.tsx` reference updated to `tide-meter-chrome.tsx`).
+
+**Tests.**
+
+- [ ] Pure-logic: empty `transcript[]` → window utilization 0/max, last-turn 0, session 0, session-time 0.
+- [ ] Pure-logic: 3 committed turns with known token counts → cumulative tokens = sum; cumulative time = sum of durations; last-turn = third turn's duration.
+- [ ] Pure-logic: turn in progress (phase ≠ idle) → last-turn-time uses `Date.now() - submitAt`; cumulative-time = sum of completed durations (does NOT include the in-flight turn until it commits).
+- [ ] Pure-logic: window = session when /clear-boundary is absent (investigation outcome).
+- [ ] HMR-vetted: open a tide card, send a turn, observe the live tick during streaming and the lock at turn_complete.
+
+**Checkpoint.**
+
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green; the new pure-logic test count > 0.
+- [ ] `bun run audit:tokens lint` exits 0.
+- [ ] **HMR vet (manual user action)** — open a tide card, run a multi-turn session. Verify: the window gauge fills as tokens accumulate; the last-turn-time ticks during streaming and locks at turn_complete; the cumulative numbers monotonically increase; both themes render correctly.
 
 ---
 
 #### Step 21: Drift detection + caution badge surfacing {#step-21}
 
-**Depends on:** #step-13, #step-20
+**Depends on:** #step-13, #step-20-3 (the chrome surface where the aggregate caution chip lives)
 
 **Commit:** `feat(tide-rendering): drift detection — caution badge in card chrome and inline at offending events`
 
@@ -5493,7 +5755,7 @@ The existing tests in `reducer.replay-inflight-survival.test.ts` assert on `stat
 
 **Artifacts:**
 - `tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.ts` (drift detector logic)
-- Extension to `tide-cost-chrome.tsx` for aggregate caution chip in card chrome
+- Extension to `tide-meter-chrome.tsx` (formerly `tide-cost-chrome.tsx` — renamed in [#step-20-3](#step-20-3)) for aggregate caution chip in card chrome
 - Inline caution at the offending event already lands via the [#step-13](#step-13) DefaultToolWrapper integration
 - Pinned-catalog version constant alongside the dispatch (read from a build-time constant)
 
