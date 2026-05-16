@@ -5654,27 +5654,52 @@ Plus one **geometry variants** row that shows the same gauge at `readable` scale
 
 **Status:** _not started — re-imagined from the prior 20.3 attempt._
 
-**Commit:** `feat(code-session-store): per-turn telemetry — typed token + time accounting on TurnEntry`
+**Commit:** `feat(code-session-store): per-turn telemetry — typed token + multi-clock accounting on TurnEntry`
 
 **References:** [L02], [L23], [D03], [#step-20-1] / [#step-20-2] (gauge primitives that will consume this data downstream), [#step-20-4] (UI placement step that ships on top of this data)
 
 **Scope note — why we are re-imagining 20.3.** The first 20.3 attempt jumped straight to a chrome component that scraped numbers off `lastCost.usage` and added wall-clock timing on top. The result hit two real walls: (1) `lastCost.usage.input_tokens` alone systematically *under*-reports the context window (it omits the `cache_read_input_tokens` + `cache_creation_input_tokens` portions that carry the bulk of a long conversation's context); (2) wall-clock `(endedAt - submitAt)` over-reports the Claude-active duration whenever a turn pauses on a `TugInlineDialog` waiting for the user's allow / deny / question answer. Both problems are *data-model* problems, not chrome problems — patching them inside the chrome would have entrenched the same hacks the next consumer would have to re-discover. This re-imagined step builds the data model cleanly; [#step-20-4] then experiments with placements on top of it.
 
-**Scope.** Capture **per-turn telemetry** as a first-class field on each `TurnEntry`, and define the corresponding session-level derivation that sums those per-turn fields. Two artifacts on `TurnEntry`:
+**Scope.** Capture **per-turn telemetry** as first-class fields on each `TurnEntry`, and define the corresponding session-level derivations. The data set has three groups:
 
-1. **`cost: TurnCost`** — a typed-and-extracted slice of the underlying `cost_update.usage` shape for this turn. The reducer snapshots `lastCost` at submit (`costAtSubmit`) and again at commit (`costAtCommit`); per-turn cost = delta. Fields: `inputTokens`, `outputTokens`, `cacheCreationInputTokens`, `cacheReadInputTokens`, `totalCostUsd`. The delta math is encapsulated in a pure helper so it works whether `cost_update.usage` is cumulative (the leading hypothesis) or per-turn (a wire-shape we tolerate) — if per-turn, `costAtSubmit` is null / zeros and the delta degenerates to "what we just saw."
-2. **`activeMs: number`** — Claude-active duration. Equals `endedAt - userMessage.submitAt - awaitingApprovalMs`. The new `awaitingApprovalMs` field accumulates the cumulative wall-clock time the turn spent paused in `awaiting_approval` (each enter/exit pair contributes a window). A turn that pauses on three permission dialogs accumulates all three pauses into `awaitingApprovalMs`. The reducer maintains `awaitingApprovalSince: number | null` (entry timestamp) and `awaitingApprovalAccumulatedMs: number` (running per-turn counter), both reset to defaults at `send` and frozen onto the committed `TurnEntry` at `turn_complete`.
+1. **Cost** — typed token + dollars accounting via per-turn delta against `lastCost`.
+2. **Time accounting** — a small family of clocks that separate "how long did this take," "how long did the user pause it," "how long was the system down," and "how long was the machine actually working." See the table below.
+3. **Diagnostics** — latency markers (`ttftMs`, `ttftcMs`), throughput markers (`reconnectCount`, `maxStreamGapMs`), per-tool wall (`ToolCall.toolWallMs`), and a typed terminal state (`turnEndReason`). Cheap to capture once we're already touching the per-turn timing infrastructure; expensive to retrofit later.
+
+**The time-accounting family.** Four clocks, all stored directly on `TurnEntry` so consumers don't have to re-derive:
+
+| Field | Meaning | Computed as |
+|---|---|---|
+| `wallClockMs` | Total elapsed | `endedAt - userMessage.submitAt`. Indisputable; covers everything. |
+| `awaitingApprovalMs` | User-interaction pause | Sum of TugInlineDialog open intervals — covers *both* permission and question dialogs. (Name kept for source-compat with the original 20.3 design; semantics broadened to include question dialogs.) |
+| `transportDowntimeMs` | System / API downtime | Sum of WebSocket disconnect → reconnect intervals overlapping this turn. The cleanest objective signal — the transport authoritatively knows when it lost service. |
+| `activeMs` | Machine-doing-work | `wallClockMs − awaitingApprovalMs − transportDowntimeMs`, clamped ≥ 0. The "assistant response time." Stored directly so consumers don't recompute. |
+
+Silent in-connection API stalls (e.g., a 30-second gap with no events while the WebSocket stays open) currently fall inside `activeMs`. We accept this as a known limit of authoritative measurement; if real distributions later show `activeMs` looks too high, [#step-20-5] revisits with a stream-idle heuristic over `maxStreamGapMs` distributions.
+
+**Bonus accounting captured at the same time.** Cheap to wire while we're already in the per-turn timing handlers; expensive to retrofit later once the type shape is in use:
+
+| Field | Meaning |
+|---|---|
+| `ttftMs: number \| null` | Time from `submitAt` to first `assistant_delta`. `null` if turn ended with no assistant output. |
+| `ttftcMs: number \| null` | Time from `submitAt` to first `tool_use`. `null` if no tool calls. |
+| `reconnectCount: number` | Number of transport reconnects observed during this turn. Companion to `transportDowntimeMs`. |
+| `maxStreamGapMs: number` | Longest single inter-event silence across this turn. Diagnostic; gives us a distribution to inform any future stream-idle heuristic. |
+| `turnEndReason: TurnEndReason` | Typed terminal state — `"complete" \| "interrupted" \| "error" \| "transport_lost"`. |
+| `ToolCall.toolWallMs: number \| null` | Per-call wall-clock between `tool_use` and matching `tool_result`. `null` if still pending at turn end. |
 
 **Session totals** are derived from `transcript[]` by summing the per-turn fields. The chrome / UI components in [#step-20-4] consume these via a small pure-logic adapter module — no `lastCost` inside the chrome, no wall-clock inside the chrome. The data model is the API; the UI is the consumer.
 
 **The "context window" derivation, specifically.** For the window-utilization gauge in [#step-20-4], the answer is `inputTokens + cacheCreationInputTokens + cacheReadInputTokens` for the *most recent* committed turn (the model's view of context at the latest turn boundary). The session-cumulative "tokens consumed" number is the SUM across all turns of `inputTokens + cacheCreationInputTokens + cacheReadInputTokens + outputTokens`. These two numbers are different — window is "right now," cumulative is "ever." The data model exposes both; placement decisions live in [#step-20-4].
 
-**Conformance.** Pure reducer + types work. No chrome surface. No React component changes in 20.3 (those land in 20.4). The pure-logic helpers `deriveSessionTotals`, `perTurnActiveMs`, `perTurnContextSize` are exported as the API surface for 20.4 consumers.
+**Live-turn semantics.** The frozen `TurnEntry` fields are committed at `turn_complete`. For an in-flight turn, consumers (e.g., a ticking "elapsed" readout) need running values. The `telemetry.ts` module exports pure `(state, now)` derivations: `liveTurnWallClockMs`, `liveTurnAwaitingApprovalMs`, `liveTurnTransportDowntimeMs`, `liveTurnActiveMs`. These fold `Date.now()` against the live reducer state. The reducer itself only touches `Date.now()` at discrete transition points (enter/exit dialog, connect/disconnect, first delta, etc.) — the live-running clocks live in the pure-logic helpers, which keeps the reducer deterministic and trivially testable.
+
+**Conformance.** Pure reducer + types work. No chrome surface. No React component changes in 20.3 (those land in 20.4). The pure-logic helpers `perTurnContextSize`, `deriveSessionTotals`, `extractTurnCost`, and the `liveTurn*` family are exported as the API surface for 20.4 consumers.
 
 **Design — type sketch.**
 
 ```typescript
-// New typed fields on TurnEntry (add to lib/code-session-store/types.ts):
+// New types (add to lib/code-session-store/types.ts):
 
 interface TurnCost {
   inputTokens: number;
@@ -5684,25 +5709,60 @@ interface TurnCost {
   totalCostUsd: number;
 }
 
+type TurnEndReason = "complete" | "interrupted" | "error" | "transport_lost";
+
 interface TurnEntry {
   // ... existing fields ...
-  /** Cumulative wall-clock ms this turn spent paused in awaiting_approval. */
+
+  // --- Time accounting ---
+  /** Pure wall-clock duration of the turn. */
+  wallClockMs: number;
+  /** Cumulative ms paused on TugInlineDialog (permission + question). */
   awaitingApprovalMs: number;
-  /**
-   * Per-turn delta of the cumulative cost-update fields. Captured by
-   * subtracting `costAtSubmit` from `costAtCommit` in the reducer.
-   * All fields default to 0 when no cost_update arrived for this turn.
-   */
+  /** Cumulative ms with the transport disconnected during this turn. */
+  transportDowntimeMs: number;
+  /** Machine-doing-work duration. Stored directly so consumers don't recompute.
+   *  = wallClockMs - awaitingApprovalMs - transportDowntimeMs, clamped ≥ 0. */
+  activeMs: number;
+
+  // --- Diagnostics ---
+  /** Submit-to-first-assistant-delta latency. null if turn produced no assistant output. */
+  ttftMs: number | null;
+  /** Submit-to-first-tool-use latency. null if turn produced no tool calls. */
+  ttftcMs: number | null;
+  /** Transport reconnects observed during this turn. */
+  reconnectCount: number;
+  /** Longest single inter-event silence across the turn. */
+  maxStreamGapMs: number;
+  /** Typed terminal state. */
+  turnEndReason: TurnEndReason;
+
+  // --- Cost ---
+  /** Per-turn delta of cumulative cost-update fields. Zeros when no
+   *  cost_update arrived for this turn. */
   cost: TurnCost;
 }
 
-// Pure derivations (export from a new module, e.g., `lib/code-session-store/telemetry.ts`):
+interface ToolCall {
+  // ... existing fields ...
+  /** Wall-clock ms between tool_use and matching tool_result.
+   *  null if still pending at turn end. */
+  toolWallMs: number | null;
+}
 
-export function perTurnActiveMs(turn: TurnEntry): number;
+// Pure derivations (export from a new module, lib/code-session-store/telemetry.ts):
+
 export function perTurnContextSize(turn: TurnEntry): number; // input + cache_read + cache_creation
+export function extractTurnCost(
+  before: CostSnapshot | null,
+  after: CostSnapshot | null,
+): TurnCost; // handles cumulative-or-per-turn cost_update.usage shapes
 export function deriveSessionTotals(
   transcript: ReadonlyArray<TurnEntry>,
 ): {
+  totalWallClockMs: number;
+  totalAwaitingApprovalMs: number;
+  totalTransportDowntimeMs: number;
   totalActiveMs: number;
   totalInputTokens: number;
   totalOutputTokens: number;
@@ -5711,34 +5771,56 @@ export function deriveSessionTotals(
   totalCostUsd: number;
   turnCount: number;
 };
+
+// Live-turn derivations (pure functions of (state, now)):
+export function liveTurnWallClockMs(state: CodeSessionState, now: number): number;
+export function liveTurnAwaitingApprovalMs(state: CodeSessionState, now: number): number;
+export function liveTurnTransportDowntimeMs(state: CodeSessionState, now: number): number;
+export function liveTurnActiveMs(state: CodeSessionState, now: number): number;
 ```
 
-**Reducer changes.** Three additions, all isolated to `reducer.ts`:
+**Reducer changes.** All isolated to `reducer.ts`:
 
-1. **State fields** — `awaitingApprovalSince: number | null`, `awaitingApprovalAccumulatedMs: number`, `costAtSubmit: CostSnapshot | null`.
-2. **Phase wiring** — `handleControlRequestForward` sets `awaitingApprovalSince = Date.now()`; `handleRespondApproval` / `handleRespondQuestion` / any other path that EXITS `awaiting_approval` accumulates `Date.now() - awaitingApprovalSince` into `awaitingApprovalAccumulatedMs` and resets `awaitingApprovalSince = null`. Interrupt + transport-close + replay-bracket paths also reset (defensive).
-3. **Snapshot + commit** — `handleSend` snapshots the current `lastCost` into `costAtSubmit`; `handleTurnComplete` computes the per-turn cost delta, freezes both `awaitingApprovalAccumulatedMs` and the cost delta onto the `TurnEntry`, and resets the per-turn accumulators.
+1. **State fields** — `awaitingApprovalSince: number | null`, `awaitingApprovalAccumulatedMs: number`, `transportDisconnectedSince: number | null`, `transportDowntimeAccumulatedMs: number`, `transportReconnectCount: number`, `lastStreamEventAt: number | null`, `maxStreamGapMs: number`, `firstAssistantDeltaAt: number | null`, `firstToolUseAt: number | null`, `costAtSubmit: CostSnapshot | null`.
+2. **Awaiting-approval timer** — `handleControlRequestForward` sets `awaitingApprovalSince = Date.now()` (covers both permission and question control_request types). `handleRespondApproval` / `handleRespondQuestion` accumulate `Date.now() - awaitingApprovalSince` into `awaitingApprovalAccumulatedMs` and reset `awaitingApprovalSince = null`. Interrupt + transport-close + replay-bracket paths also reset (defensive).
+3. **Transport-downtime timer** — new `handleTransportDisconnected` / `handleTransportConnected` handlers wire to the transport-status signal (see Investigation B). Disconnect sets `transportDisconnectedSince`; reconnect accumulates the interval into `transportDowntimeAccumulatedMs` and increments `transportReconnectCount`.
+4. **Stream-gap + latency markers** — every inbound stream event (assistant_delta, thinking_delta, tool_use, tool_result, system events) updates `lastStreamEventAt` and folds the gap into `maxStreamGapMs`. The first `assistant_delta` of the turn captures `firstAssistantDeltaAt`; the first `tool_use` captures `firstToolUseAt`. Each `tool_result` pairs with its `tool_use` and writes `toolWallMs` onto the `ToolCall`.
+5. **Snapshot + commit** — `handleSend` resets all per-turn timers and snapshots `lastCost` into `costAtSubmit`. `handleTurnComplete` (and the interrupt / error / transport-lost terminal handlers) computes the cost delta, freezes all per-turn fields onto the `TurnEntry`, sets `turnEndReason` based on which handler fired, and resets the per-turn accumulators.
 
-**Investigation — pre-implementation empirical pass.** Before committing to the cumulative-cost-update hypothesis, the implementer runs a short HMR vet with the actual Claude API to capture two or three real `cost_update` payloads across a multi-turn session. The captured numbers go into a short note appended to this step. The cost-delta helper is written to TOLERATE either semantic, but documenting the actual semantic in this step's record means the next debugger doesn't have to re-derive it.
+**Investigation — pre-implementation empirical pass.** Two short spikes gate the implementation:
+
+1. **`cost_update.usage` semantics** — capture 2-3 real `cost_update` payloads across a 4-turn HMR session; record whether `usage` is cumulative or per-turn; append findings to this step's record. Gates the `extractTurnCost` semantic. The helper TOLERATES either shape via cost-delta math, but documenting the actual semantic means the next debugger doesn't re-derive it.
+2. **Transport-status signal — does it exist?** — grep the tugcast WebSocket transport + the `CodeSessionStore` wiring for any existing connect/disconnect signal surfacing to the store. Two outcomes:
+   - **(a) Already surfaced** — wire the new `handleTransportDisconnected` / `handleTransportConnected` handlers to whatever the existing event channel is.
+   - **(b) Not surfaced** — add a minimal `transport_status: "connected" | "disconnected"` signal as part of 20.3. The wire format and plumbing path live in this step (since `transportDowntimeMs` is meaningless without it). Keep the surface tight: just a status change + timestamp; no reconnect-strategy changes.
+
+   Document which outcome we hit in the step's record.
 
 **Artifacts.**
 
-- `tugdeck/src/lib/code-session-store/types.ts` — extend `TurnEntry` with `awaitingApprovalMs` + `cost: TurnCost`. New `TurnCost` interface.
-- `tugdeck/src/lib/code-session-store/reducer.ts` — three state fields (above), wiring in `handleControlRequestForward` + `handleRespondApproval` + `handleRespondQuestion` + `handleInterrupt` + `handleTurnComplete` + any reset paths.
-- `tugdeck/src/lib/code-session-store/telemetry.ts` — _new module_ — pure-logic helpers `perTurnActiveMs`, `perTurnContextSize`, `deriveSessionTotals`, `extractTurnCost` (the `cost_update.usage` → `TurnCost` extractor used by the reducer).
-- `tugdeck/src/lib/code-session-store/__tests__/telemetry.test.ts` — pure-logic tests for the four helpers.
-- `tugdeck/src/lib/code-session-store/__tests__/reducer.awaiting-approval-accounting.test.ts` — reducer-level tests: a turn with two dialog pauses accumulates correctly; interrupt resets cleanly; replay path doesn't accumulate (the bracketed replay reconstructs committed turns from past frames without going through awaiting_approval).
+- `tugdeck/src/lib/code-session-store/types.ts` — extend `TurnEntry` with the time-accounting + diagnostic fields + `cost`. Add `TurnCost` and `TurnEndReason` types. Extend `ToolCall` with `toolWallMs`.
+- `tugdeck/src/lib/code-session-store/reducer.ts` — new state fields + handlers (above).
+- `tugdeck/src/lib/code-session-store/transport-status.ts` *(only if Investigation B outcome is (b))* — minimal type + wire-format for the transport status signal.
+- `tugdeck/src/lib/code-session-store/telemetry.ts` — _new module_ — pure-logic helpers: `perTurnContextSize`, `extractTurnCost`, `deriveSessionTotals`, and the `liveTurn*` family (`liveTurnWallClockMs`, `liveTurnAwaitingApprovalMs`, `liveTurnTransportDowntimeMs`, `liveTurnActiveMs`).
+- `tugdeck/src/lib/code-session-store/__tests__/telemetry.test.ts` — pure-logic tests for the helper module (committed + live).
+- `tugdeck/src/lib/code-session-store/__tests__/reducer.awaiting-approval-accounting.test.ts` — reducer-level tests: a turn with two permission pauses accumulates correctly; question dialog accumulates the same; interrupt freezes in-progress pause; replay path doesn't accumulate (the bracketed replay reconstructs committed turns from past frames without going through awaiting_approval).
+- `tugdeck/src/lib/code-session-store/__tests__/reducer.transport-downtime.test.ts` — reducer-level tests: disconnect-while-active accumulates; multiple reconnects increment `reconnectCount`; a turn that ends with the transport down sets `turnEndReason === "transport_lost"`.
 - `tugdeck/src/lib/code-session-store/__tests__/reducer.per-turn-cost.test.ts` — per-turn cost delta math: handles both cumulative and per-turn `cost_update.usage` shapes; defaults to zeros when `cost_update` never fired for a turn; the `costAtSubmit` snapshot is taken at the right moment.
+- `tugdeck/src/lib/code-session-store/__tests__/reducer.diagnostics.test.ts` — `ttftMs`, `ttftcMs`, `maxStreamGapMs`, `turnEndReason`, `ToolCall.toolWallMs` all populate correctly.
 - _No UI changes in this step._ The chrome / placement decisions are [#step-20-4]'s scope.
 
 **Tasks.**
 
-- [ ] **Empirical investigation** — capture 2-3 real `cost_update` payloads across a 4-turn HMR session; record whether `usage` is cumulative or per-turn; append findings to this step's record. Gates the `extractTurnCost` semantic.
-- [ ] **Type extensions** — add `awaitingApprovalMs` + `cost: TurnCost` to `TurnEntry`. Add `TurnCost` interface.
-- [ ] **Reducer state fields** — add `awaitingApprovalSince`, `awaitingApprovalAccumulatedMs`, `costAtSubmit` to `CodeSessionState` + `createInitialState`.
-- [ ] **Awaiting-approval timer wiring** — instrument the four entry/exit handlers; defensive resets on interrupt + transport-close + replay-bracket paths.
+- [ ] **Investigation A — cost_update semantics** — capture real payloads (above); record findings in step record.
+- [ ] **Investigation B — transport-status spike** — grep existing surface; pick path (a) wire-in or (b) add minimal signal; record finding.
+- [ ] **Type extensions** — extend `TurnEntry` + `ToolCall`; add `TurnCost` + `TurnEndReason` types.
+- [ ] **Reducer state fields** — add all ten new state fields to `CodeSessionState` + `createInitialState`.
+- [ ] **Awaiting-approval timer wiring** — instrument enter/exit handlers (permission + question); defensive resets on interrupt + transport-close + replay-bracket paths.
+- [ ] **Transport-downtime timer wiring** — new `handleTransportDisconnected` / `handleTransportConnected` handlers; increment `reconnectCount` on each reconnect; accumulate the interval.
+- [ ] **Stream-gap + latency markers** — every stream event folds the gap into `maxStreamGapMs`; first `assistant_delta` / first `tool_use` capture latency timestamps; each `tool_result` writes `toolWallMs` to its `ToolCall`.
 - [ ] **Per-turn cost delta** — `handleSend` snapshots `lastCost` into `costAtSubmit`; `handleTurnComplete` computes the delta + freezes onto `TurnEntry.cost`; helper module exports `extractTurnCost(before, after)`.
-- [ ] **Telemetry helper module** — `perTurnActiveMs`, `perTurnContextSize`, `deriveSessionTotals`. Pure-logic; no DOM, no React.
+- [ ] **Terminal-state wiring** — `turnEndReason` set by handler (`complete` / `interrupted` / `error` / `transport_lost`).
+- [ ] **Telemetry helper module** — `perTurnContextSize`, `extractTurnCost`, `deriveSessionTotals`, `liveTurn*` family. Pure-logic; no DOM, no React.
 - [ ] **Tests** — see Artifacts; reducer-level + pure-logic.
 - [ ] **Wipe the prior 20.3 attempt** — delete `tide-meter-chrome.{tsx,css}`, its tests, and the `tide-card.tsx` wire-up. The `model-context-max.ts` helper stays (still useful for 20.4); the gallery primitives from 20.1 / 20.2 stay (already committed and good). Document the rollback in the step's status line.
 
@@ -5746,21 +5828,34 @@ export function deriveSessionTotals(
 
 - [ ] Reducer: a turn with one permission dialog accumulates `awaitingApprovalMs = (responded_at - forwarded_at)`.
 - [ ] Reducer: a turn with two sequential dialogs accumulates the sum of both pauses.
-- [ ] Reducer: an interrupted turn (Stop pressed while awaiting_approval) freezes the in-progress pause into `awaitingApprovalMs` and resets the accumulators.
+- [ ] Reducer: a turn with a question dialog accumulates `awaitingApprovalMs` (same semantics as permission).
+- [ ] Reducer: an interrupted turn (Stop pressed while awaiting_approval) freezes the in-progress pause and resets the accumulators.
 - [ ] Reducer: a turn with no dialogs commits with `awaitingApprovalMs === 0`.
+- [ ] Reducer: a turn with one transport disconnect/reconnect accumulates `transportDowntimeMs = (reconnect_at - disconnect_at)` and `reconnectCount === 1`.
+- [ ] Reducer: a turn with two disconnect/reconnect cycles accumulates the sum and `reconnectCount === 2`.
+- [ ] Reducer: a turn that ends while the transport is down sets `turnEndReason === "transport_lost"`.
+- [ ] Reducer: an interrupted turn sets `turnEndReason === "interrupted"`.
+- [ ] Reducer: a clean completion sets `turnEndReason === "complete"`.
+- [ ] Reducer: `ttftMs` populated from `submitAt` to first `assistant_delta`; `null` when no assistant output.
+- [ ] Reducer: `ttftcMs` populated from `submitAt` to first `tool_use`; `null` when no tool calls.
+- [ ] Reducer: `maxStreamGapMs` captures the largest gap across the turn.
+- [ ] Reducer: each `ToolCall` gets `toolWallMs` populated when its `tool_result` arrives.
 - [ ] Reducer: per-turn cost delta with cumulative `cost_update.usage` math.
 - [ ] Reducer: per-turn cost delta with per-turn `cost_update.usage` math (the alternate-hypothesis path).
-- [ ] Reducer: a turn with NO `cost_update` commits with `cost: { everything: 0 }`.
-- [ ] Pure-logic: `perTurnActiveMs(turn)` = `endedAt - submitAt - awaitingApprovalMs`, clamped to 0.
+- [ ] Reducer: a turn with NO `cost_update` commits with `cost` = all zeros.
 - [ ] Pure-logic: `perTurnContextSize(turn)` = `input + cache_read + cache_creation`.
 - [ ] Pure-logic: `deriveSessionTotals(transcript)` correctly sums all per-turn fields across a multi-turn fixture.
+- [ ] Pure-logic: `liveTurnWallClockMs(state, now)` = `now - currentTurn.submitAt` while a turn is in flight; `0` when no turn is in flight.
+- [ ] Pure-logic: `liveTurnAwaitingApprovalMs` folds the live in-progress pause into the accumulator when `awaitingApprovalSince !== null`.
+- [ ] Pure-logic: `liveTurnTransportDowntimeMs` folds the live in-progress downtime into the accumulator when `transportDisconnectedSince !== null`.
+- [ ] Pure-logic: `liveTurnActiveMs(state, now)` = live wall − live awaiting − live downtime, clamped ≥ 0.
 
 **Checkpoint.**
 
 - [ ] `bun x tsc --noEmit` clean.
 - [ ] `bun test` green; new test count > 0; existing reducer / store tests stay green after the type extensions.
 - [ ] `bun run audit:tokens lint` exits 0.
-- [ ] **HMR vet (manual user action)** — open a tide card, send a turn that triggers a permission dialog, take some time before clicking Allow, watch the turn commit; then open the snapshot via dev-tools (or a debug log) and confirm `TurnEntry.awaitingApprovalMs` matches the time you spent on the dialog and `TurnEntry.cost.inputTokens + cacheCreationInputTokens + cacheReadInputTokens` looks plausible vs. the Claude-side cost-update payload.
+- [ ] **HMR vet (manual user action)** — open a tide card, send a turn that triggers a permission dialog, take some time before clicking Allow, watch the turn commit; open the snapshot via dev-tools (or a debug log) and confirm: `TurnEntry.awaitingApprovalMs` matches the time you spent on the dialog; `TurnEntry.transportDowntimeMs === 0` when the network was stable; `TurnEntry.cost.inputTokens + cacheCreationInputTokens + cacheReadInputTokens` looks plausible vs. the Claude-side cost-update payload; `TurnEntry.ttftMs` is small and positive; `TurnEntry.turnEndReason === "complete"`.
 
 ---
 
