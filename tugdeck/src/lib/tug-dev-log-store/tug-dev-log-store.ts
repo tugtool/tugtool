@@ -62,6 +62,7 @@ export const DEV_LOG_KEYS = {
   FILTER_LEVELS: "logFilterLevels",
   FILTER_SOURCE: "logFilterSource",
   MAX_ENTRIES: "logMaxEntries",
+  NEWEST_FIRST: "logNewestFirst",
 } as const;
 
 /** Re-export so consumers don't need to import the domain via the
@@ -124,12 +125,16 @@ class TugDevLogStore {
     const maxEntries = readNumber(
       client.get(DEV_PANEL_DOMAIN, DEV_LOG_KEYS.MAX_ENTRIES),
     );
+    const newestFirst = readBool(
+      client.get(DEV_PANEL_DOMAIN, DEV_LOG_KEYS.NEWEST_FIRST),
+    );
     this._dispatch(
       {
         type: "hydrate",
         ...(levels !== undefined ? { levels } : {}),
         ...(source !== undefined ? { source } : {}),
         ...(maxEntries !== undefined ? { maxEntries } : {}),
+        ...(newestFirst !== undefined ? { newestFirst } : {}),
       },
       { persist: false },
     );
@@ -173,6 +178,9 @@ class TugDevLogStore {
     }
     if (prev.maxEntries !== next.maxEntries) {
       putNumber(DEV_LOG_KEYS.MAX_ENTRIES, next.maxEntries);
+    }
+    if (prev.newestFirst !== next.newestFirst) {
+      putBool(DEV_LOG_KEYS.NEWEST_FIRST, next.newestFirst);
     }
     // filters.text is in-memory only — never persisted.
   }
@@ -283,6 +291,14 @@ class TugDevLogStore {
     this._dispatch({ type: "set_max_entries", maxEntries: n });
   };
 
+  /** Toggle the inspector's render direction. Persists.
+   * `true` = newest-at-top (devtools convention),
+   * `false` = oldest-at-top (`tail -f` convention; default). */
+  setNewestFirst = (newestFirst: boolean): void => {
+    this._ensureInitialized();
+    this._dispatch({ type: "set_newest_first", newestFirst });
+  };
+
   /**
    * Test seam — drop pending queue, listeners, and reset the
    * reducer state. Production never tears the store down.
@@ -346,6 +362,11 @@ function readNullableString(
   return undefined;
 }
 
+function readBool(entry: TaggedValue | undefined): boolean | undefined {
+  if (!entry || entry.kind !== "bool") return undefined;
+  return typeof entry.value === "boolean" ? entry.value : undefined;
+}
+
 function readNumber(entry: TaggedValue | undefined): number | undefined {
   if (!entry) return undefined;
   if (
@@ -362,6 +383,10 @@ function isLogLevel(v: string): v is TugDevLogLevel {
   return (
     v === "debug" || v === "info" || v === "warn" || v === "error"
   );
+}
+
+function putBool(key: string, value: boolean): void {
+  putRaw(key, { kind: "bool", value });
 }
 
 function putJson(key: string, value: unknown): void {

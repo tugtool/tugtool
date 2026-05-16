@@ -55,6 +55,16 @@ const TABS: ReadonlyArray<TabDescriptor> = [
   },
 ];
 
+/**
+ * Whether the active inspector reads per-card data. The Card picker
+ * is hidden for inspectors that do not — global inspectors (e.g. the
+ * Log tab) should not imply a card-bound relationship that doesn't
+ * exist.
+ */
+function tabUsesCardPicker(tab: TugDevPanelTabId): boolean {
+  return tab === "telemetry";
+}
+
 export const TugDevPanel: React.FC = () => {
   const snapshot = useSyncExternalStore(
     tugDevPanelStore.subscribe,
@@ -110,10 +120,12 @@ export const TugDevPanel: React.FC = () => {
           activeTab={snapshot.activeTab}
           onSelect={handleSelectTab}
         />
-        <CardPicker
-          selectedCardId={snapshot.selectedCardId}
-          onSelect={handleSelectCard}
-        />
+        {tabUsesCardPicker(snapshot.activeTab) ? (
+          <CardPicker
+            selectedCardId={snapshot.selectedCardId}
+            onSelect={handleSelectCard}
+          />
+        ) : null}
       </div>
 
       <div

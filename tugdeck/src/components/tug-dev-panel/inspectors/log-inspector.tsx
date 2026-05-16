@@ -37,7 +37,14 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { Check, ChevronDown, Copy, Eraser } from "lucide-react";
+import {
+  ArrowDownNarrowWide,
+  ArrowUpNarrowWide,
+  Check,
+  ChevronDown,
+  Copy,
+  Eraser,
+} from "lucide-react";
 
 import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import {
@@ -50,6 +57,7 @@ import {
   stringifyDataForSearch,
 } from "@/lib/tug-dev-log-store/filter";
 import { TugButton } from "@/components/tugways/internal/tug-button";
+import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugOptionGroup } from "@/components/tugways/tug-option-group";
@@ -66,8 +74,9 @@ import { LogRow } from "./log-row";
 const ALL_SOURCES_ID = "__tugdevlog_all_sources__";
 
 /** Threshold (in px) below which we consider the user "at the head"
- * and auto-scroll new appends. Above the threshold, scroll is left
- * alone so the user can read history. */
+ * (or "at the tail", in oldest-first mode) and auto-scroll new
+ * appends. Above the threshold, scroll is left alone so the user
+ * can read history. */
 const AT_HEAD_THRESHOLD_PX = 8;
 
 function isLogLevel(v: string): v is TugDevLogLevel {
@@ -108,26 +117,60 @@ export const LogInspector: React.FC = () => {
   );
 
   // ── Auto-scroll-to-head ───────────────────────────────────────────────
-  // The container is column-reverse: index 0 (newest) renders at the
-  // top, so "at head" means scrollTop near 0. We snapshot the
-  // pre-paint scrollTop in a layout effect and, if it was at-head,
-  // write 0 back inside a rAF after the paint to keep the head pinned.
+  // "Head" is wherever the newest entry lives — top of the scroll
+  // container in newest-first mode, bottom in oldest-first mode. We
+  // snapshot the pre-paint at-head-ness in a scroll listener (cheap,
+  // passive) and, if the user is still at-head when new entries
+  // arrive, write the appropriate scrollTop back inside a rAF after
+  // the paint to keep the head pinned.
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const wasAtHeadRef = useRef(true);
   const rafIdRef = useRef<number | null>(null);
+  // Track the active direction in a ref so the scroll listener (which
+  // is created once) can read the latest value without re-binding.
+  const newestFirstRef = useRef(snapshot.newestFirst);
+  newestFirstRef.current = snapshot.newestFirst;
+
+  function isAtHead(el: HTMLElement): boolean {
+    if (newestFirstRef.current) {
+      return el.scrollTop <= AT_HEAD_THRESHOLD_PX;
+    }
+    // Oldest-first: head is the bottom. `scrollHeight - clientHeight -
+    // scrollTop` is the gap between the viewport bottom and the
+    // content bottom; near zero ⇒ pinned.
+    const distanceFromBottom =
+      el.scrollHeight - el.clientHeight - el.scrollTop;
+    return distanceFromBottom <= AT_HEAD_THRESHOLD_PX;
+  }
+
+  function scrollToHead(el: HTMLElement): void {
+    if (newestFirstRef.current) {
+      el.scrollTop = 0;
+    } else {
+      el.scrollTop = el.scrollHeight - el.clientHeight;
+    }
+  }
 
   // Update wasAtHeadRef on scroll. DOM-only — no React state.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return undefined;
     const onScroll = () => {
-      wasAtHeadRef.current = el.scrollTop <= AT_HEAD_THRESHOLD_PX;
+      wasAtHeadRef.current = isAtHead(el);
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       el.removeEventListener("scroll", onScroll);
     };
   }, []);
+
+  // Flipping direction is a structural change: the previous at-head
+  // position no longer corresponds to the same end of the list. Treat
+  // a direction flip as "snap back to head" so the user sees the
+  // newest entry immediately after toggling.
+  useLayoutEffect(() => {
+    wasAtHeadRef.current = true;
+  }, [snapshot.newestFirst]);
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
@@ -139,7 +182,7 @@ export const LogInspector: React.FC = () => {
     rafIdRef.current = requestAnimationFrame(() => {
       rafIdRef.current = null;
       if (scrollRef.current) {
-        scrollRef.current.scrollTop = 0;
+        scrollToHead(scrollRef.current);
       }
     });
     return () => {
@@ -151,8 +194,9 @@ export const LogInspector: React.FC = () => {
     // version increments on every reducer mutation; we depend on it
     // rather than `entries` so even a same-length replacement (e.g.
     // when the buffer is at cap and one rolls off) still triggers
-    // the head-pin pass.
-  }, [snapshot.version]);
+    // the head-pin pass. Direction flips also need a pin pass so the
+    // new "head" is in view.
+  }, [snapshot.version, snapshot.newestFirst]);
 
   // ── Level filter via TugOptionGroup ────────────────────────────────────
   // One multi-select option group with four items (one per level).
@@ -203,8 +247,17 @@ export const LogInspector: React.FC = () => {
     return items;
   }, [sources]);
 
+  // Trigger label communicates *why* the popup is enabled or disabled.
+  // The disabled state (`sources.length === 0`) is otherwise opaque —
+  // a clipped "All sources" label gives no clue that "log something
+  // first" is the unblock. Explicit "No log entries yet" inverts the
+  // signal: the disabled control is now self-explanatory.
   const sourceTriggerLabel =
-    snapshot.filters.source === null ? "All sources" : snapshot.filters.source;
+    sources.length === 0
+      ? "No log entries yet"
+      : snapshot.filters.source === null
+        ? "All sources"
+        : snapshot.filters.source;
 
   // ── Free-text filter ───────────────────────────────────────────────────
   const handleTextChange = useCallback(
@@ -292,16 +345,18 @@ export const LogInspector: React.FC = () => {
     }, 1500);
   }, [visible]);
 
-  // Render newest-at-top: iterate the buffer in reverse so the most
-  // recent append is the first child. (Column-reverse would invert
-  // the visual order, but column-reverse + auto-scroll-to-bottom
-  // combine awkwardly across browsers — reversing the array and
-  // pinning scrollTop to 0 is simpler.)
-  const visibleNewestFirst = useMemo(() => {
+  // Render in the user-selected direction. The buffer is always
+  // oldest-first internally — passthrough when oldest-first display
+  // is selected; reverse-iterate for newest-first. Column-reverse
+  // would invert the visual order, but combines awkwardly with
+  // auto-scroll-to-bottom across browsers, so we reverse the array
+  // and let the scroll pin do the rest.
+  const visibleOrdered = useMemo(() => {
+    if (!snapshot.newestFirst) return visible;
     const out = [...visible];
     out.reverse();
     return out;
-  }, [visible]);
+  }, [visible, snapshot.newestFirst]);
 
   return (
     <ResponderScope>
@@ -347,16 +402,37 @@ export const LogInspector: React.FC = () => {
         </div>
 
         <div className="tug-devlog-toolbar">
-          <TugOptionGroup
-            size="xs"
-            emphasis="default"
-            role="action"
-            items={levelItems}
-            value={activeLevelValues}
-            senderId={levelGroupSenderId}
-            aria-label="Filter by level"
-            className="tug-devlog-levels"
-          />
+          <div className="tug-devlog-toolbar-left">
+            <TugIconButton
+              icon={
+                snapshot.newestFirst ? (
+                  <ArrowUpNarrowWide size={14} />
+                ) : (
+                  <ArrowDownNarrowWide size={14} />
+                )
+              }
+              aria-label={
+                snapshot.newestFirst
+                  ? "Switch to oldest-first order"
+                  : "Switch to newest-first order"
+              }
+              onClick={() =>
+                tugDevLogStore.setNewestFirst(!snapshot.newestFirst)
+              }
+              size="sm"
+              className="tug-devlog-order-toggle"
+            />
+            <TugOptionGroup
+              size="xs"
+              emphasis="default"
+              role="action"
+              items={levelItems}
+              value={activeLevelValues}
+              senderId={levelGroupSenderId}
+              aria-label="Filter by level"
+              className="tug-devlog-levels"
+            />
+          </div>
           <div className="tug-devlog-toolbar-actions">
             <TugPushButton
               size="xs"
@@ -382,9 +458,9 @@ export const LogInspector: React.FC = () => {
               disabled={visible.length === 0}
               confirmation={{ icon: <Check size={12} />, label: "Copied" }}
               isConfirming={copiedJson}
-              widthStabilize={{ alternateLabel: "Copy as JSON" }}
+              widthStabilize={{ alternateLabel: "Copy JSON" }}
             >
-              Copy as JSON
+              Copy JSON
             </TugPushButton>
             <TugPushButton
               size="xs"
@@ -396,9 +472,9 @@ export const LogInspector: React.FC = () => {
               disabled={visible.length === 0}
               confirmation={{ icon: <Check size={12} />, label: "Copied" }}
               isConfirming={copiedText}
-              widthStabilize={{ alternateLabel: "Copy as text" }}
+              widthStabilize={{ alternateLabel: "Copy text" }}
             >
-              Copy as text
+              Copy text
             </TugPushButton>
           </div>
         </div>
@@ -406,9 +482,9 @@ export const LogInspector: React.FC = () => {
         <div
           ref={scrollRef}
           className="tug-devlog-list"
-          data-empty={visibleNewestFirst.length === 0 ? "true" : "false"}
+          data-empty={visibleOrdered.length === 0 ? "true" : "false"}
         >
-          {visibleNewestFirst.length === 0 ? (
+          {visibleOrdered.length === 0 ? (
             <TugLabel
               size="xs"
               color="muted"
@@ -419,7 +495,7 @@ export const LogInspector: React.FC = () => {
                 : "No entries match the current filters."}
             </TugLabel>
           ) : (
-            visibleNewestFirst.map((entry) => (
+            visibleOrdered.map((entry) => (
               <LogRow key={entry.id} entry={entry} />
             ))
           )}

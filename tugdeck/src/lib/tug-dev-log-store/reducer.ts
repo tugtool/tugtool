@@ -13,6 +13,7 @@
 import {
   ALL_TUG_DEV_LOG_LEVELS,
   DEFAULT_DEV_LOG_MAX_ENTRIES,
+  DEFAULT_DEV_LOG_NEWEST_FIRST,
   MIN_DEV_LOG_MAX_ENTRIES,
   createDefaultFilters,
   type TugDevLogEntry,
@@ -30,6 +31,7 @@ export interface TugDevLogState {
   entries: readonly TugDevLogEntry[];
   filters: TugDevLogFilters;
   maxEntries: number;
+  newestFirst: boolean;
   version: number;
 }
 
@@ -48,6 +50,7 @@ export type TugDevLogEvent =
       text?: string;
     }
   | { type: "set_max_entries"; maxEntries: number }
+  | { type: "set_newest_first"; newestFirst: boolean }
   | {
       /**
        * Apply hydrated values from tugbank. Each field is optional —
@@ -60,6 +63,7 @@ export type TugDevLogEvent =
       levels?: ReadonlySet<TugDevLogLevel>;
       source?: string | null;
       maxEntries?: number;
+      newestFirst?: boolean;
     };
 
 export function createInitialState(): TugDevLogState {
@@ -67,6 +71,7 @@ export function createInitialState(): TugDevLogState {
     entries: [],
     filters: createDefaultFilters(),
     maxEntries: DEFAULT_DEV_LOG_MAX_ENTRIES,
+    newestFirst: DEFAULT_DEV_LOG_NEWEST_FIRST,
     version: 0,
   };
 }
@@ -167,6 +172,15 @@ export function reduce(
       };
     }
 
+    case "set_newest_first": {
+      if (state.newestFirst === event.newestFirst) return state;
+      return {
+        ...state,
+        newestFirst: event.newestFirst,
+        version: state.version + 1,
+      };
+    }
+
     case "hydrate": {
       let next = state;
       if (
@@ -190,6 +204,13 @@ export function reduce(
           next.maxEntries = clamped;
           next.entries = applyCap(next.entries, clamped);
         }
+      }
+      if (
+        event.newestFirst !== undefined &&
+        event.newestFirst !== state.newestFirst
+      ) {
+        next = next === state ? { ...state } : next;
+        next.newestFirst = event.newestFirst;
       }
       if (next === state) return state;
       return { ...next, version: state.version + 1 };

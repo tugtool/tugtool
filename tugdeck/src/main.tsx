@@ -32,6 +32,7 @@ import { registerGitCard } from "./components/tugways/cards/git-card";
 import { registerTideCard } from "./components/tugways/cards/tide-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-registrations";
 import { registerDevPanelInspectorTabs } from "./components/tug-dev-panel/inspector-tab-registrations";
+import { tugDevLogStore } from "./lib/tug-dev-log-store/tug-dev-log-store";
 import { initMotionObserver } from "./components/tugways/scale-timing";
 import { initThemeTokens } from "./theme-tokens";
 import { deserialize } from "./serialization";
@@ -179,6 +180,17 @@ if (!container) {
   registerTideCard();
   registerGalleryCards();
   registerDevPanelInspectorTabs();
+
+  // Dev-build convenience: expose the log store on `window.tugDevLog`
+  // so the WebKit Web Inspector console can drive the Log tab without
+  // a test-mode harness. Production bundles strip this branch — see
+  // Vite's `import.meta.env.DEV` constant folding. The exposed object
+  // is the store itself, so `tugDevLog.warn("manual", "msg", {x:1})`
+  // and the rest work directly.
+  if (import.meta.env.DEV) {
+    (window as unknown as { tugDevLog?: typeof tugDevLogStore }).tugDevLog =
+      tugDevLogStore;
+  }
 
   // Extract card IDs from the loaded layout and read per-card state bags
   // from the tugbank cache (`dev.tugtool.deck.cardstate`).

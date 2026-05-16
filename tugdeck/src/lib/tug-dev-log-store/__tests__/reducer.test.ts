@@ -162,6 +162,26 @@ describe("TugDevLogStore reducer — set_max_entries", () => {
   });
 });
 
+describe("TugDevLogStore reducer — set_newest_first", () => {
+  it("defaults to false (oldest-first / tail -f convention)", () => {
+    expect(createInitialState().newestFirst).toBe(false);
+  });
+
+  it("flips the flag", () => {
+    const next = reduce(createInitialState(), {
+      type: "set_newest_first",
+      newestFirst: true,
+    });
+    expect(next.newestFirst).toBe(true);
+    expect(next.version).toBe(createInitialState().version + 1);
+  });
+
+  it("same value is a no-op (same-ref)", () => {
+    const s = createInitialState();
+    expect(reduce(s, { type: "set_newest_first", newestFirst: false })).toBe(s);
+  });
+});
+
 describe("TugDevLogStore reducer — hydrate", () => {
   it("missing fields keep existing values (same-ref)", () => {
     const s = fresh();
@@ -198,5 +218,10 @@ describe("TugDevLogStore reducer — hydrate", () => {
     });
     s = reduce(s, { type: "hydrate", maxEntries: 1 });
     expect(s.entries.map((e) => e.id)).toEqual([3]);
+  });
+
+  it("hydrates newestFirst when present", () => {
+    const next = reduce(fresh(), { type: "hydrate", newestFirst: true });
+    expect(next.newestFirst).toBe(true);
   });
 });

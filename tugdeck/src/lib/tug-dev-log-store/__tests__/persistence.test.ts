@@ -97,6 +97,14 @@ describe("TugDevLogStore — persistence", () => {
     expect(put!.body).toEqual({ kind: "i64", value: 250 });
   });
 
+  it("setNewestFirst(true) PUTs logNewestFirst as kind:bool", async () => {
+    tugDevLogStore.setNewestFirst(true);
+    await Promise.resolve();
+    const put = pickPut(DEV_LOG_KEYS.NEWEST_FIRST);
+    expect(put).toBeDefined();
+    expect(put!.body).toEqual({ kind: "bool", value: true });
+  });
+
   it("setText NEVER PUTs anything", async () => {
     tugDevLogStore.setText("hello");
     await Promise.resolve();

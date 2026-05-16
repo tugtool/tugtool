@@ -104,6 +104,19 @@ export interface TugDevLogSnapshot {
   /** Current ring-buffer cap. */
   maxEntries: number;
   /**
+   * Display direction for the inspector list.
+   *
+   *   - `false` (default): oldest at top, newest appended below
+   *     (`tail -f` convention — auto-scroll-to-bottom pins on append).
+   *   - `true`: newest at top, oldest pushed below
+   *     (browser-devtools convention — auto-scroll-to-top pins on append).
+   *
+   * The buffer itself is always stored oldest-first; this flag only
+   * controls the inspector's render order and auto-scroll pivot.
+   * Persisted via tugbank as `kind: "bool"` under `logNewestFirst`.
+   */
+  newestFirst: boolean;
+  /**
    * Monotonic version counter that increments on every state change.
    * Useful for memoization keys in consumers that don't want to deep
    * compare entries on every render.
@@ -116,6 +129,14 @@ export interface TugDevLogSnapshot {
  * ~10-20ms without virtualisation.
  */
 export const DEFAULT_DEV_LOG_MAX_ENTRIES = 1000;
+
+/**
+ * Default for `TugDevLogSnapshot.newestFirst`. `false` matches the
+ * `tail -f` convention developers expect from a log viewer; the
+ * inspector exposes a toggle for users who prefer the browser-devtools
+ * newest-at-top layout.
+ */
+export const DEFAULT_DEV_LOG_NEWEST_FIRST = false;
 
 /**
  * Hard floor for the cap. A buffer of 0 would render an unconditionally

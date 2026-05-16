@@ -148,15 +148,15 @@ export const TelemetryInspector: React.FC<TelemetryInspectorProps> = ({
           isConfirming={copied}
           // `alternateLabel` is the WIDER of the two labels — the
           // grid cell sizes to the max-content of (visible label,
-          // alternateLabel). Here the rest label "Copy as JSON" is
+          // alternateLabel). Here the rest label "Copy JSON" is
           // wider than the confirm label "Copied", so passing the
           // rest label as the alternate reserves the wider width in
           // both states; the button stays a fixed size across the
           // swap. The block-copy-button precedent works the other
           // way ("Copied" wider than "Copy") for the same reason.
-          widthStabilize={{ alternateLabel: "Copy as JSON" }}
+          widthStabilize={{ alternateLabel: "Copy JSON" }}
         >
-          Copy as JSON
+          Copy JSON
         </TugPushButton>
       </div>
       {sections.map((section) => (

@@ -130,6 +130,13 @@ body {
   flex: 0 0 auto;
 }
 
+.tug-devlog-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  flex-wrap: wrap;
+}
+
 .tug-devlog-toolbar-actions {
   display: flex;
   align-items: center;
