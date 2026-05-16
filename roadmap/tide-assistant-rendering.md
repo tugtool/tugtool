@@ -71,7 +71,7 @@ The assistant-side rendering bar for Tug is *not* "comparable to a terminal." Th
 
 1. Layer-1 body kinds: MarkdownBlock extensions, TerminalBlock, DiffBlock, FileBlock, PathListBlock, SearchResultBlock, JsonTreeBlock, TodoListBlock, AgentTranscriptBlock, ImageBlock, MermaidBlock, KaTeXBlock, TableBlock (rich), PlainTextBlock.
 2. Layer-2 tool wrappers: ReadToolBlock, WriteToolBlock, EditToolBlock, BashToolBlock, GlobToolBlock, GrepToolBlock, TaskToolBlock, WebFetchToolBlock, WebSearchToolBlock, TodoWriteToolBlock, NotebookEditToolBlock, DefaultToolWrapper.
-3. Stream-event chrome: ThinkingBlock, PermissionDialog (`is_question:false`), QuestionDialog (`is_question:true`), CostChrome (per-turn footer + expanded breakdown + card-level cumulative), SessionInitBanner, ErrorBlock.
+3. Stream-event chrome: ThinkingBlock, PermissionDialog (`is_question:false`), QuestionDialog (`is_question:true`), TideMeterChrome (card-level status strip — window-utilization gauge + last-turn time + cumulative session tokens + cumulative session time), SessionInitBanner, ErrorBlock.
 4. Renderer dispatch infrastructure (`assistant-renderer-dispatch.ts`) and the block-transformer pass over markdown blocks.
 5. New `tugdeck/crates/tugdiff-wasm/` Rust crate with `imara-diff` bindings.
 6. Library integrations: `ansi_up`, KaTeX (lazy), Mermaid (lazy), `diff-match-patch` (word-level intra-line diff inside DiffBlock).
@@ -282,7 +282,7 @@ The assistant-side rendering bar for Tug is *not* "comparable to a terminal." Th
 
 #### [D03] `system_metadata` renders per-turn only when something changed (DECIDED) {#d03-system-metadata-on-change}
 
-**Decision:** `SessionInitBanner` and `CostChrome` both read `system_metadata`; either re-renders only when one of `model`, `permissionMode`, `version`, or the tool/skill enumeration differs from the previous `system_metadata` event in this session. Identical-shape `system_metadata` events are dropped without re-rendering.
+**Decision:** `SessionInitBanner` reads `system_metadata`; it re-renders only when one of `model`, `permissionMode`, `version`, or the tool/skill enumeration differs from the previous `system_metadata` event in this session. Identical-shape `system_metadata` events are dropped without re-rendering. `TideMeterChrome` reads `system_metadata.model` only to look up the context-window max via the static `model-context-max.ts` table — no monetary denominations rendered.
 
 **Rationale:**
 - Per-turn render is noisy; session-init-only loses mid-session model and permission-mode changes.
@@ -540,7 +540,7 @@ A `toolRendererRegistry` keyed on `tool_name` makes lever 1 trivial; lever 2 is 
 │  thinking           → ThinkingBlock                                      │
 │  tool_use[name]     → toolWrapperRegistry[name] | DefaultToolWrapper     │
 │  control_request    → PermissionDialog | QuestionDialog                  │
-│  cost_update        → CostBadge / CostChrome                             │
+│  cost_update        → TideMeterChrome (read by snapshot subscription)    │
 │  system_metadata    → SessionInitBanner (on change) [D03]                │
 │  error              → ErrorBlock                                         │
 └────────┬─────────────────────────────────────────────────────────────────┘
@@ -749,7 +749,7 @@ The full set of stream-json event types this phase renders. Authoritative shape 
 | `tool_use_structured` | server → client | tool wrapper's body | typed structured shape per tool |
 | `control_request_forward` (`is_question:false`) | server → client | `PermissionDialog` | answer with `tool_approval` |
 | `control_request_forward` (`is_question:true`) | server → client | `QuestionDialog` | answer with `question_answer` |
-| `cost_update` | server → client | `CostBadge` (per-turn) + `CostChrome` (cumulative) | per-model token + USD breakdown |
+| `cost_update` | server → client | `TideMeterChrome` (snapshot-derived card status strip) | drives window-utilization gauge + cumulative session-tokens readouts ([#step-20-3](#step-20-3)) |
 | `turn_complete` | server → client | finalize current turn | `result: "success" \| "error"` |
 | `error` | server → client | `ErrorBlock` | `recoverable` flag drives variant |
 
@@ -823,7 +823,7 @@ tugdeck/
           tide-thinking-block.tsx + .css
           tide-permission-dialog.tsx + .css
           tide-question-dialog.tsx + .css
-          tide-cost-chrome.tsx + .css
+          tide-meter-chrome.tsx + .css   [#step-20-3]
           tide-session-init-banner.tsx + .css
           tide-error-block.tsx + .css
           tide-caution-badge.tsx + .css     [D04]
@@ -926,8 +926,7 @@ Each new file follows L19 (component-authoring) and L20 (token sovereignty).
 | Tool wrapper (per Table T02) | tool_use family | code row body, in turn order |
 | PermissionDialog | control_request_forward (is_question:false) | inline, transcript flow |
 | QuestionDialog | control_request_forward (is_question:true) | inline, transcript flow |
-| CostBadge | cost_update (per turn) | code row footer |
-| CostChrome (cumulative) | aggregate cost_update | card status row |
+| TideMeterChrome | snapshot derivations: `lastCost.usage` + `transcript[]` + `inflightUserMessage` | card status row (four numbers: window utilization gauge, last-turn time, cumulative session tokens, cumulative session time — see [#step-20-3](#step-20-3)) |
 | SessionInitBanner | session_init / system_metadata change [D03] | top of card |
 | ErrorBlock | error | inline, transcript flow |
 | CautionBadge | drift detection [D04] | both card chrome + inline at offending event |
@@ -1007,7 +1006,7 @@ Per L19/L20, every component owns a slot. Slot prefix → component:
 | `--tugx-gauge-*` | TugLinearGauge ([#step-20-1](#step-20-1)) / TugArcGauge ([#step-20-2](#step-20-2)) — color slots shared; geometry slots namespaced per gauge |
 | `--tugx-perm-*` | PermissionDialog |
 | `--tugx-quest-*` | QuestionDialog |
-| `--tugx-cost-*` | CostChrome |
+| `--tugx-tide-meter-*` | TideMeterChrome ([#step-20-3](#step-20-3)) |
 | `--tugx-banner-*` | SessionInitBanner |
 | `--tugx-err-*` | ErrorBlock |
 | `--tugx-caut-*` | CautionBadge |
@@ -1037,7 +1036,7 @@ ReadToolBlock, WriteToolBlock, EditToolBlock, BashToolBlock, GlobToolBlock, Grep
 
 **List L05: Stream-event chrome renderers (one-line names)** {#l05-chrome}
 
-ThinkingBlock, PermissionDialog, QuestionDialog, CostChrome (with CostBadge sub-component), SessionInitBanner, ErrorBlock, CautionBadge.
+ThinkingBlock, PermissionDialog, QuestionDialog, TideMeterChrome ([#step-20-3](#step-20-3) — card status strip), SessionInitBanner, ErrorBlock, CautionBadge.
 
 ---
 
@@ -1061,7 +1060,7 @@ ThinkingBlock, PermissionDialog, QuestionDialog, CostChrome (with CostBadge sub-
 | `tugdeck/src/components/tugways/chrome/tide-thinking-block.{tsx,css}` | [D14] |
 | `tugdeck/src/components/tugways/chrome/tide-permission-dialog.{tsx,css}` | [D13] |
 | `tugdeck/src/components/tugways/chrome/tide-question-dialog.{tsx,css}` | [D13] |
-| `tugdeck/src/components/tugways/chrome/tide-cost-chrome.{tsx,css}` | per-turn + cumulative |
+| `tugdeck/src/components/tugways/chrome/tide-meter-chrome.{tsx,css}` | card status strip — four numbers ([#step-20-3](#step-20-3)) |
 | `tugdeck/src/components/tugways/chrome/tide-session-init-banner.{tsx,css}` | [D03] |
 | `tugdeck/src/components/tugways/chrome/tide-error-block.{tsx,css}` | error rendering |
 | `tugdeck/src/components/tugways/chrome/tide-caution-badge.{tsx,css}` | [D04] |
@@ -5649,101 +5648,255 @@ Plus one **geometry variants** row that shows the same gauge at `readable` scale
 
 ---
 
-#### Step 20.3: `TideMeterChrome` — card-level status strip {#step-20-3}
+#### Step 20.3: Per-turn telemetry — token + time data collection {#step-20-3}
 
-**Depends on:** #step-1, #step-20-1 (the linear gauge primitive)
+**Depends on:** #step-1 (cost_update reducer surface)
 
-**Status:** _not started_
+**Status:** _not started — re-imagined from the prior 20.3 attempt._
 
-**Commit:** `feat(tide-rendering): TideMeterChrome — card-level status strip with window meter and session totals`
+**Commit:** `feat(code-session-store): per-turn telemetry — typed token + time accounting on TurnEntry`
 
-**References:** [D03], [L02], [L20], [#chrome](#chrome), [#t03-chrome](#t03-chrome), [#step-20-1] (TugLinearGauge consumer), [Table T07](#t07-token-slots)
+**References:** [L02], [L23], [D03], [#step-20-1] / [#step-20-2] (gauge primitives that will consume this data downstream), [#step-20-4] (UI placement step that ships on top of this data)
 
-**Scope.** Replaces the deleted `CostChrome` design with `TideMeterChrome`: a slim card-level status strip that surfaces **four numbers** for the current session — no per-turn footer, no monetary denominations. The four numbers are:
+**Scope note — why we are re-imagining 20.3.** The first 20.3 attempt jumped straight to a chrome component that scraped numbers off `lastCost.usage` and added wall-clock timing on top. The result hit two real walls: (1) `lastCost.usage.input_tokens` alone systematically *under*-reports the context window (it omits the `cache_read_input_tokens` + `cache_creation_input_tokens` portions that carry the bulk of a long conversation's context); (2) wall-clock `(endedAt - submitAt)` over-reports the Claude-active duration whenever a turn pauses on a `TugInlineDialog` waiting for the user's allow / deny / question answer. Both problems are *data-model* problems, not chrome problems — patching them inside the chrome would have entrenched the same hacks the next consumer would have to re-discover. This re-imagined step builds the data model cleanly; [#step-20-4] then experiments with placements on top of it.
 
-1. **Window utilization** — `<used> / <max>` token fraction for the current context window (the slice between session start and the most recent `/clear` or `/compact`). Rendered via [#step-20-1]'s `TugLinearGauge` with the fraction as both `value`/`max` and as the formatted display string. Thresholds shift the fill color as the user approaches the context limit.
-2. **Last-turn time** — duration of the most recent `turn_complete`, in seconds. During an active turn (between `submitting` and `turn_complete`), ticks live; on `turn_complete`, locks to the final value until the next turn starts.
-3. **Cumulative session tokens** — raw count of total tokens consumed across all turns this session, formatted with k/M suffix.
-4. **Cumulative session time** — sum of turn durations (active Claude time only, not wall-clock since session start — consistent with #2's semantic). Formatted as `H:MM:SS` or `MM:SS` depending on magnitude.
+**Scope.** Capture **per-turn telemetry** as a first-class field on each `TurnEntry`, and define the corresponding session-level derivation that sums those per-turn fields. Two artifacts on `TurnEntry`:
 
-Layout — slim row above the prompt entry, two clusters separated by a vertical divider:
+1. **`cost: TurnCost`** — a typed-and-extracted slice of the underlying `cost_update.usage` shape for this turn. The reducer snapshots `lastCost` at submit (`costAtSubmit`) and again at commit (`costAtCommit`); per-turn cost = delta. Fields: `inputTokens`, `outputTokens`, `cacheCreationInputTokens`, `cacheReadInputTokens`, `totalCostUsd`. The delta math is encapsulated in a pure helper so it works whether `cost_update.usage` is cumulative (the leading hypothesis) or per-turn (a wire-shape we tolerate) — if per-turn, `costAtSubmit` is null / zeros and the delta degenerates to "what we just saw."
+2. **`activeMs: number`** — Claude-active duration. Equals `endedAt - userMessage.submitAt - awaitingApprovalMs`. The new `awaitingApprovalMs` field accumulates the cumulative wall-clock time the turn spent paused in `awaiting_approval` (each enter/exit pair contributes a window). A turn that pauses on three permission dialogs accumulates all three pauses into `awaitingApprovalMs`. The reducer maintains `awaitingApprovalSince: number | null` (entry timestamp) and `awaitingApprovalAccumulatedMs: number` (running per-turn counter), both reset to defaults at `send` and frozen onto the committed `TurnEntry` at `turn_complete`.
 
-```
-[●●●●●●●●●●○○○○○○○○○○○○○○○○]  32.5k / 200k  ·  last 1.4s   │   89.2k total  ·  1:12:04
-└────── window gauge ──────┘ └── window ──┘   └── recent ─┘    └────── session totals ──────┘
-```
+**Session totals** are derived from `transcript[]` by summing the per-turn fields. The chrome / UI components in [#step-20-4] consume these via a small pure-logic adapter module — no `lastCost` inside the chrome, no wall-clock inside the chrome. The data model is the API; the UI is the consumer.
 
-Left cluster = current state (load-bearing for "do I need to /clear soon?"). Right cluster = session totals.
+**The "context window" derivation, specifically.** For the window-utilization gauge in [#step-20-4], the answer is `inputTokens + cacheCreationInputTokens + cacheReadInputTokens` for the *most recent* committed turn (the model's view of context at the latest turn boundary). The session-cumulative "tokens consumed" number is the SUM across all turns of `inputTokens + cacheCreationInputTokens + cacheReadInputTokens + outputTokens`. These two numbers are different — window is "right now," cumulative is "ever." The data model exposes both; placement decisions live in [#step-20-4].
 
-**Conformance.** Card chrome surface ([#chrome](#chrome)) — listed in [Table T03](#t03-chrome) under "card status row." [#bk-conformance](#bk-conformance) does not apply (chrome surfaces are not body kinds). Owns the `--tugx-tide-meter-*` slot family per [L20] (the consuming card aliases the gauge's color tokens via its own slot family — does not override `--tugx-gauge-*`).
+**Conformance.** Pure reducer + types work. No chrome surface. No React component changes in 20.3 (those land in 20.4). The pure-logic helpers `deriveSessionTotals`, `perTurnActiveMs`, `perTurnContextSize` are exported as the API surface for 20.4 consumers.
 
-**Open investigation — `/clear` boundary semantics.** The window utilization number requires knowing the boundary between "before the last /clear" and "after." Today, the `CodeSessionStore` reducer does NOT model `/clear` explicitly: it treats every event as additive on the current session. Before implementation, a short investigation needs to answer:
-
-- Does `/clear` emit a distinct protocol frame the reducer can observe?
-- Or is `/clear` implicit (e.g., the next user_message after /clear has a flag, or a fresh `session_init` arrives)?
-- Or do we need a tugcode-side change to surface the boundary?
-
-**Output of the investigation gates the implementation strategy.** If the boundary is observable, the reducer adds a `windowStart: { sessionTokenOffset, sessionDurationOffset }` field that resets on the boundary frame; the meter subtracts the offset from the cumulative totals to derive window numbers. If the boundary is not observable, this step ships with window = session (no /clear awareness) and files a follow-up for the protocol work. **Do not invent a fake /clear boundary in the renderer — it must be a real protocol signal or be explicitly absent.**
-
-The investigation also needs to determine: how do we know the **model context max** (the `200k` denominator)? Best candidate: `system_metadata.modelContextMaxTokens` or equivalent — needs verification. If absent, the gauge ships with `max = sessionTokensTotal * 2` (a rough placeholder) plus a follow-up for the protocol surface.
-
-**Design — public surface.**
+**Design — type sketch.**
 
 ```typescript
-export interface TideMeterChromeProps {
-  /**
-   * Snapshot consumer. Reads `transcript[]` to derive cumulative
-   * totals, the most-recent `TurnEntry` for last-turn time, and the
-   * window-utilization numbers from the reducer's window-offset
-   * fields (if /clear is observable; otherwise window = session).
-   */
-  codeSessionStore: CodeSessionStore;
-  /**
-   * Model context maximum, in tokens. Sourced from `system_metadata`
-   * when available; falls back to a sentinel that disables the
-   * threshold-color shift (the gauge renders with `default` role
-   * for all values).
-   */
-  modelContextMax?: number;
+// New typed fields on TurnEntry (add to lib/code-session-store/types.ts):
+
+interface TurnCost {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+  totalCostUsd: number;
 }
+
+interface TurnEntry {
+  // ... existing fields ...
+  /** Cumulative wall-clock ms this turn spent paused in awaiting_approval. */
+  awaitingApprovalMs: number;
+  /**
+   * Per-turn delta of the cumulative cost-update fields. Captured by
+   * subtracting `costAtSubmit` from `costAtCommit` in the reducer.
+   * All fields default to 0 when no cost_update arrived for this turn.
+   */
+  cost: TurnCost;
+}
+
+// Pure derivations (export from a new module, e.g., `lib/code-session-store/telemetry.ts`):
+
+export function perTurnActiveMs(turn: TurnEntry): number;
+export function perTurnContextSize(turn: TurnEntry): number; // input + cache_read + cache_creation
+export function deriveSessionTotals(
+  transcript: ReadonlyArray<TurnEntry>,
+): {
+  totalActiveMs: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheReadTokens: number;
+  totalCacheCreationTokens: number;
+  totalCostUsd: number;
+  turnCount: number;
+};
 ```
 
-The component subscribes via `useSyncExternalStore` ([L02]) and computes the four numbers as pure derivations from the snapshot — no internal state. During an active turn, the live-ticking last-turn-time is implemented via a single `useLayoutEffect` that subscribes to the snapshot for phase changes and to a `setInterval` (or `requestAnimationFrame` loop) for the tick — but only while `canInterrupt === true`; idle phases hold the value still.
+**Reducer changes.** Three additions, all isolated to `reducer.ts`:
+
+1. **State fields** — `awaitingApprovalSince: number | null`, `awaitingApprovalAccumulatedMs: number`, `costAtSubmit: CostSnapshot | null`.
+2. **Phase wiring** — `handleControlRequestForward` sets `awaitingApprovalSince = Date.now()`; `handleRespondApproval` / `handleRespondQuestion` / any other path that EXITS `awaiting_approval` accumulates `Date.now() - awaitingApprovalSince` into `awaitingApprovalAccumulatedMs` and resets `awaitingApprovalSince = null`. Interrupt + transport-close + replay-bracket paths also reset (defensive).
+3. **Snapshot + commit** — `handleSend` snapshots the current `lastCost` into `costAtSubmit`; `handleTurnComplete` computes the per-turn cost delta, freezes both `awaitingApprovalAccumulatedMs` and the cost delta onto the `TurnEntry`, and resets the per-turn accumulators.
+
+**Investigation — pre-implementation empirical pass.** Before committing to the cumulative-cost-update hypothesis, the implementer runs a short HMR vet with the actual Claude API to capture two or three real `cost_update` payloads across a multi-turn session. The captured numbers go into a short note appended to this step. The cost-delta helper is written to TOLERATE either semantic, but documenting the actual semantic in this step's record means the next debugger doesn't have to re-derive it.
 
 **Artifacts.**
 
-- `tugdeck/src/components/tugways/chrome/tide-meter-chrome.tsx` + `.css` — _new chrome component_.
-- `tugdeck/src/components/tugways/chrome/__tests__/tide-meter-chrome.test.ts` — pure-logic tests for the four-number derivations from a synthetic snapshot.
-- `tugdeck/src/lib/code-session-store/reducer.ts` — _possibly_ a new `windowStart` field on state (gated on the /clear-investigation outcome).
-- `tugdeck/src/lib/code-session-store/types.ts` — _possibly_ a new snapshot field exposing the window offset.
-- `tugdeck/src/components/tugways/cards/tide-card.tsx` — mount `TideMeterChrome` in the status row slot (replaces the placeholder `"Project path /gallery/demo"` text, if still present).
-- Token slot `--tugx-tide-meter-*` registered in [Table T07](#t07-token-slots).
-- Documentation update in [#chrome](#chrome) and [#t03-chrome](#t03-chrome): replace the "CostChrome" entries with `TideMeterChrome`; explain the four-number contract; cross-reference [#step-20-1] for the consumed gauge primitive.
+- `tugdeck/src/lib/code-session-store/types.ts` — extend `TurnEntry` with `awaitingApprovalMs` + `cost: TurnCost`. New `TurnCost` interface.
+- `tugdeck/src/lib/code-session-store/reducer.ts` — three state fields (above), wiring in `handleControlRequestForward` + `handleRespondApproval` + `handleRespondQuestion` + `handleInterrupt` + `handleTurnComplete` + any reset paths.
+- `tugdeck/src/lib/code-session-store/telemetry.ts` — _new module_ — pure-logic helpers `perTurnActiveMs`, `perTurnContextSize`, `deriveSessionTotals`, `extractTurnCost` (the `cost_update.usage` → `TurnCost` extractor used by the reducer).
+- `tugdeck/src/lib/code-session-store/__tests__/telemetry.test.ts` — pure-logic tests for the four helpers.
+- `tugdeck/src/lib/code-session-store/__tests__/reducer.awaiting-approval-accounting.test.ts` — reducer-level tests: a turn with two dialog pauses accumulates correctly; interrupt resets cleanly; replay path doesn't accumulate (the bracketed replay reconstructs committed turns from past frames without going through awaiting_approval).
+- `tugdeck/src/lib/code-session-store/__tests__/reducer.per-turn-cost.test.ts` — per-turn cost delta math: handles both cumulative and per-turn `cost_update.usage` shapes; defaults to zeros when `cost_update` never fired for a turn; the `costAtSubmit` snapshot is taken at the right moment.
+- _No UI changes in this step._ The chrome / placement decisions are [#step-20-4]'s scope.
 
 **Tasks.**
 
-- [ ] **Investigation** — answer the `/clear` boundary and model-context-max questions above. Result is a one-page note appended to the step or to a sibling file; gates the reducer-side work below.
-- [ ] **Reducer changes** (conditional on investigation) — add `windowStart` field + reset-on-/clear handler if the protocol supports it. Otherwise no reducer change; meter ships with window = session.
-- [ ] **TideMeterChrome component** — build per the prop surface above. Subscribes via `useSyncExternalStore`. Live-tick for the last-turn-time during active turns (gated on `canInterrupt`).
-- [ ] **Pure-logic tests** — feed synthetic snapshots into the derivation functions; assert the four numbers match expectation across edge cases (no turns yet → all zeros; mid-turn → last-time tick > 0; multi-turn → cumulative sums match).
-- [ ] **Integration in `tide-card.tsx`** — mount the chrome in the status row slot; delete the placeholder text if present.
-- [ ] **Theme tokens** added to both themes.
-- [ ] **Documentation pass** — [#chrome](#chrome), [#t03-chrome](#t03-chrome), [Table T07](#t07-token-slots), and any other reference to "CostChrome" / "CostBadge" in this roadmap file (notably [#step-21](#step-21) needs its `tide-cost-chrome.tsx` reference updated to `tide-meter-chrome.tsx`).
+- [ ] **Empirical investigation** — capture 2-3 real `cost_update` payloads across a 4-turn HMR session; record whether `usage` is cumulative or per-turn; append findings to this step's record. Gates the `extractTurnCost` semantic.
+- [ ] **Type extensions** — add `awaitingApprovalMs` + `cost: TurnCost` to `TurnEntry`. Add `TurnCost` interface.
+- [ ] **Reducer state fields** — add `awaitingApprovalSince`, `awaitingApprovalAccumulatedMs`, `costAtSubmit` to `CodeSessionState` + `createInitialState`.
+- [ ] **Awaiting-approval timer wiring** — instrument the four entry/exit handlers; defensive resets on interrupt + transport-close + replay-bracket paths.
+- [ ] **Per-turn cost delta** — `handleSend` snapshots `lastCost` into `costAtSubmit`; `handleTurnComplete` computes the delta + freezes onto `TurnEntry.cost`; helper module exports `extractTurnCost(before, after)`.
+- [ ] **Telemetry helper module** — `perTurnActiveMs`, `perTurnContextSize`, `deriveSessionTotals`. Pure-logic; no DOM, no React.
+- [ ] **Tests** — see Artifacts; reducer-level + pure-logic.
+- [ ] **Wipe the prior 20.3 attempt** — delete `tide-meter-chrome.{tsx,css}`, its tests, and the `tide-card.tsx` wire-up. The `model-context-max.ts` helper stays (still useful for 20.4); the gallery primitives from 20.1 / 20.2 stay (already committed and good). Document the rollback in the step's status line.
 
 **Tests.**
 
-- [ ] Pure-logic: empty `transcript[]` → window utilization 0/max, last-turn 0, session 0, session-time 0.
-- [ ] Pure-logic: 3 committed turns with known token counts → cumulative tokens = sum; cumulative time = sum of durations; last-turn = third turn's duration.
-- [ ] Pure-logic: turn in progress (phase ≠ idle) → last-turn-time uses `Date.now() - submitAt`; cumulative-time = sum of completed durations (does NOT include the in-flight turn until it commits).
-- [ ] Pure-logic: window = session when /clear-boundary is absent (investigation outcome).
-- [ ] HMR-vetted: open a tide card, send a turn, observe the live tick during streaming and the lock at turn_complete.
+- [ ] Reducer: a turn with one permission dialog accumulates `awaitingApprovalMs = (responded_at - forwarded_at)`.
+- [ ] Reducer: a turn with two sequential dialogs accumulates the sum of both pauses.
+- [ ] Reducer: an interrupted turn (Stop pressed while awaiting_approval) freezes the in-progress pause into `awaitingApprovalMs` and resets the accumulators.
+- [ ] Reducer: a turn with no dialogs commits with `awaitingApprovalMs === 0`.
+- [ ] Reducer: per-turn cost delta with cumulative `cost_update.usage` math.
+- [ ] Reducer: per-turn cost delta with per-turn `cost_update.usage` math (the alternate-hypothesis path).
+- [ ] Reducer: a turn with NO `cost_update` commits with `cost: { everything: 0 }`.
+- [ ] Pure-logic: `perTurnActiveMs(turn)` = `endedAt - submitAt - awaitingApprovalMs`, clamped to 0.
+- [ ] Pure-logic: `perTurnContextSize(turn)` = `input + cache_read + cache_creation`.
+- [ ] Pure-logic: `deriveSessionTotals(transcript)` correctly sums all per-turn fields across a multi-turn fixture.
 
 **Checkpoint.**
 
 - [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green; the new pure-logic test count > 0.
+- [ ] `bun test` green; new test count > 0; existing reducer / store tests stay green after the type extensions.
 - [ ] `bun run audit:tokens lint` exits 0.
-- [ ] **HMR vet (manual user action)** — open a tide card, run a multi-turn session. Verify: the window gauge fills as tokens accumulate; the last-turn-time ticks during streaming and locks at turn_complete; the cumulative numbers monotonically increase; both themes render correctly.
+- [ ] **HMR vet (manual user action)** — open a tide card, send a turn that triggers a permission dialog, take some time before clicking Allow, watch the turn commit; then open the snapshot via dev-tools (or a debug log) and confirm `TurnEntry.awaitingApprovalMs` matches the time you spent on the dialog and `TurnEntry.cost.inputTokens + cacheCreationInputTokens + cacheReadInputTokens` looks plausible vs. the Claude-side cost-update payload.
+
+---
+
+#### Step 20.4: UI slot architecture — four placement zones for session telemetry {#step-20-4}
+
+**Depends on:** #step-20-3 (clean per-turn + session-cumulative data is the input this step renders), #step-20-1 (TugLinearGauge for any window-utilization gauge surface)
+
+**Status:** _not started._
+
+**Commit:** `feat(tide-rendering): four placement slots for tide-card session telemetry`
+
+**References:** [L02], [L19], [L20], [#step-20-3] (data model), [#step-20-1] / [#step-20-2] (gauge primitives), [Table T03](#t03-chrome)
+
+**Scope.** [#step-20-3] makes per-turn + session-cumulative telemetry available cleanly. This step does NOT decide which numbers go where — it builds the **four placement zones** the tide card needs and makes each one consumable so the same data can be moved between them during a deliberate UI study. The study itself is part of this step's checkpoint (HMR vet, design review); the final placement decision is captured at the close of this step as input to [#step-20-5].
+
+**The four zones.** Sketched against the tide card's existing layout:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  TideTranscriptHost                                                         │
+│                                                                             │
+│  ╔════ user row ═══╗  ╔════ assistant row ═══╗                              │
+│  ║ "count loc..."  ║  ║  [markdown body]      ║                              │
+│  ║                 ║  ║                       ║                              │
+│  ║                 ║  ║  [copy-button] ←【Z4: per-response trailing】       │
+│  ╚═════════════════╝  ╚═══════════════════════╝                              │
+│                                                                             │
+│  ─────────────────────────────────────────────  ←【Z3: transcript pinned】   │
+└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  [Project: /path]                            【Z1: prompt-entry top】       │
+│                                                                             │
+│   Ask Claude to build, fix, or explain                                      │
+│                                                                             │
+│   [Code] [Shell] [Command]    ←【Z2: prompt-entry footer】        [submit▴] │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+  - **Z1: prompt-entry top (status row).** The existing `statusContent` slot above the prompt-entry input. Currently holds the project-path badge. Has the existing primitive infrastructure ([#step-18-x] work); this step does NOT change the slot itself, only the conventions for what's allowed to live there.
+  - **Z2: prompt-entry footer.** _New_ slot — between the route buttons (`Code` / `Shell` / `Command`) and the submit button. Currently empty space. Architectural addition to `TugPromptEntry`.
+  - **Z3: transcript pinned bottom row.** _New_ slot — pinned (`position: sticky; bottom: 0`) at the bottom of the top pane (the transcript region), above the split-pane resize handle. Always visible regardless of scroll. Architectural addition to `TideTranscriptHost` or its scroll container.
+  - **Z4: per-response trailing.** _New_ slot — adjacent to the existing icon-only copy button on the assistant row's chrome. Per-turn (one per assistant row). Architectural addition to `tide-card-transcript.tsx`'s code-row cell.
+
+**Conformance.** Each of the four slots is a `ReactNode` slot prop on its host component, following the existing `statusContent` convention. No new primitives. Each host owns its slot's CSS layout box; consumers fill the slot with whatever (typed) display content makes sense. The slots are display-only — they don't capture user input or claim responder identity.
+
+**Design — slot props.** Sketches; precise names finalized in implementation:
+
+```typescript
+// TugPromptEntry — extends existing props:
+interface TugPromptEntryProps {
+  // ... existing ...
+  statusContent?: React.ReactNode;     // Z1 — unchanged
+  footerContent?: React.ReactNode;     // Z2 — new
+}
+
+// TideTranscriptHost — new prop:
+interface TideTranscriptHostProps {
+  // ... existing ...
+  pinnedBottomContent?: React.ReactNode;  // Z3
+}
+
+// TideTranscriptDataSource — extend the row API to support Z4:
+//   The per-turn trailing slot is per-row; the data source's row
+//   descriptor grows a `trailingChrome?: React.ReactNode` field that
+//   the cell renderer composes into the copy-button row.
+//   ALTERNATIVE: a single `renderTurnTrailing?: (turn) => ReactNode`
+//   callback prop on the chrome.tsx-level component. Decision: pick
+//   in implementation; the simpler one wins.
+```
+
+**Telemetry-display catalog — what each slot CAN show (experimentation menu).** This is the experimentation surface for the UI study — the same telemetry data can render in any slot, and the study compares which placement reads best for each datum. The catalog below is the menu, not a prescription:
+
+| Datum | Source ([#step-20-3]) | Plausible Z1 | Plausible Z2 | Plausible Z3 | Plausible Z4 |
+|---|---|---|---|---|---|
+| Window utilization (token gauge) | `perTurnContextSize(transcript[last])` / context max | ✓ (visible at-rest) | maybe | ✓ (pinned visibility) | — |
+| Cumulative session tokens | `deriveSessionTotals(transcript).total*` | ✓ | maybe | ✓ | — |
+| Cumulative session time (Claude-active) | `deriveSessionTotals(transcript).totalActiveMs` | ✓ | maybe | ✓ | — |
+| Per-turn duration | `perTurnActiveMs(turn)` | — | — | — | ✓ (per row) |
+| Per-turn cost | `turn.cost.totalCostUsd` | — | — | — | maybe |
+| Phase / "Claude is thinking" indicator | `snapshot.phase` | maybe | ✓ | — | — |
+| `/context`-style on-demand drill-down | aggregate of above | — | — | open via affordance | — |
+
+The "✓" / "maybe" / "—" marks are starting positions, not decisions. The study confirms or rearranges.
+
+**Experimentation tooling.** Implement a small dev-mode display selector — keyboard shortcut or query-string flag — that toggles which datum renders in which slot. The goal is to make A/B comparisons during the HMR vet cheap. Production builds ship with the selector behind a guard (e.g., `import.meta.env.DEV`); the placement decisions captured at the end of this step land as the default content of each slot for [#step-20-5].
+
+**`/context`-style on-demand surface.** The terminal Claude Code's `/context` command shows a full token / time breakdown on demand. This step explicitly defers the on-demand expansion to a future step (probably the next one) — what it DOES guarantee is that the data is available cleanly so the on-demand surface can read from the same telemetry helpers as the always-visible slots.
+
+**Artifacts.**
+
+- `tugdeck/src/components/tugways/tug-prompt-entry.tsx` + `.css` — add `footerContent?: React.ReactNode` prop and the corresponding DOM slot between the route buttons and the submit button.
+- `tugdeck/src/components/tugways/cards/tide-transcript-host.tsx` (or equivalent) — add `pinnedBottomContent?: React.ReactNode` prop and the corresponding sticky-bottom slot.
+- `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` — extend the code-row chrome with a per-turn trailing slot (alongside the copy button).
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` — wire each of the four slots to telemetry-renderer components (the menu above).
+- `tugdeck/src/components/tugways/cards/__tests__/tide-card-placement-experiment.tsx` (or similar) — _dev-only_ harness that lets the user A/B placement combinations during the HMR study.
+- _Possibly_ resurrect a clean `TideMeterChrome` (small, focused, NO bespoke wall-clock or token logic — pure consumer of [#step-20-3]'s telemetry helpers) as one of the renderers in the catalog. Naming + scope to be decided during implementation.
+- Token slot work: each of the new slots may need a small `--tugx-tide-*` family for its layout box; declared at component scope per [L20].
+
+**Tasks.**
+
+- [ ] **Slot infrastructure** — `TugPromptEntry.footerContent`, `TideTranscriptHost.pinnedBottomContent`, `tide-card-transcript`'s per-turn trailing slot. Three small prop additions; layout boxes in each component's CSS.
+- [ ] **Renderer components** — small focused React components for each datum in the experimentation catalog, each consuming the [#step-20-3] telemetry helpers via `useSyncExternalStore` per [L02]. One renderer per datum; placement-agnostic.
+- [ ] **Experimentation harness** — dev-mode selector that maps {datum → slot}. Captures the chosen placement into a tugbank entry (or a hash-fragment) so HMR reloads preserve the experiment state. Productized as a tugplug skill if it gets enough use.
+- [ ] **HMR study** — sit with the four-slot layout, A/B placements for each datum, decide which combination wins. The result is captured as the default mapping in [#step-20-5]'s scope.
+
+**Tests.**
+
+- [ ] Pure-logic: each renderer component takes the [#step-20-3] telemetry helpers as input and renders a deterministic string / DOM structure. Tested in bun:test against synthetic snapshots.
+- [ ] Slot-presence tests: each slot renders when `*Content` is non-null; renders nothing when null (matches the existing `statusContent` convention).
+- [ ] HMR-vetted: each slot's layout box behaves correctly (Z1 sits in the existing status row, Z2 between route buttons and submit, Z3 sticky at bottom of top pane, Z4 inline next to copy button per turn).
+
+**Checkpoint.**
+
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+- [ ] **HMR study (manual)** — open a tide card, run a multi-turn session, A/B placement combinations using the dev selector, capture the chosen default mapping for [#step-20-5].
+
+---
+
+#### Step 20.5: Ship the chosen telemetry placements + `/context`-style on-demand drill-down {#step-20-5}
+
+**Depends on:** #step-20-4 (placement decisions from the HMR study)
+
+**Status:** _not started — scope finalized at the close of [#step-20-4]._
+
+**Commit:** `feat(tide-rendering): ship default telemetry placements + /context on-demand drill-down`
+
+**References:** [#step-20-3] (data model), [#step-20-4] (slot infrastructure + study outcome)
+
+**Scope.** Two pieces:
+
+1. **Default placements.** Each of [#step-20-4]'s four slots gets its chosen default content (the winners from the HMR study). The dev-mode experimentation harness stays behind the `import.meta.env.DEV` guard for future iteration.
+2. **`/context`-style on-demand surface.** A drill-down view (likely a TugInlineDialog or a sheet) that surfaces the FULL telemetry breakdown — every field on every `TurnEntry`, per-model breakdown, the live cost_update payload, the gauge thresholds. Triggered by a keyboard shortcut or a small button on Z1 (or wherever the study placed the affordance). Mirrors the terminal Claude Code's `/context` behavior.
+
+The shape and detail of this step finalize at the close of [#step-20-4]; the placeholder above describes the intent.
 
 ---
 
@@ -6044,7 +6197,7 @@ The component subscribes via `useSyncExternalStore` ([L02]) and computes the fou
 - `tugdeck/src/components/tugways/cards/gallery-tool-block-agent.tsx` + `.css` — Task wrapper with depth 1, 2, 3
 - `tugdeck/src/components/tugways/cards/gallery-tool-block-meta.tsx` + `.css` — TodoWrite + finalized DefaultToolWrapper drift variants
 - `tugdeck/src/components/tugways/cards/gallery-tide-dialogs.tsx` + `.css` — PermissionDialog + QuestionDialog (pending, approved, denied; single + multi-select with "Other")
-- `tugdeck/src/components/tugways/cards/gallery-tide-chrome.tsx` + `.css` — CostChrome (badge + expanded + cumulative), SessionInitBanner, ErrorBlock, CautionBadge
+- `tugdeck/src/components/tugways/cards/gallery-tide-chrome.tsx` + `.css` — TideMeterChrome (card status strip), SessionInitBanner, ErrorBlock, CautionBadge
 
 **Artifacts — promote / extend (existing batch-1 cards):**
 - `gallery-structured-blocks.tsx` — promote from `gallery-json-tree-block.tsx` to a unified showcase: JsonTree + PathList + SearchResult + TodoList side by side. The old `gallery-json-tree-block.tsx` entry is removed (not duplicated).
@@ -6163,7 +6316,7 @@ The component subscribes via `useSyncExternalStore` ([L02]) and computes the fou
 | AgentTranscriptBlock + TaskToolBlock | Replay `test-22-subagent-spawn.jsonl`; nested call renders correctly |
 | PermissionDialog | Replay `test-11-permission-deny-roundtrip.jsonl` |
 | QuestionDialog | Synthetic AskUserQuestion fixture |
-| CostChrome | Replay any fixture; verify badge + breakdown + cumulative |
+| TideMeterChrome | Send a turn; verify the window gauge fills, last-turn-time live-ticks during streaming and locks on `turn_complete`, cumulative numbers grow monotonically ([#step-20-3](#step-20-3)) |
 | Drift detection | Synthetic version-mismatch + unknown-shape fixtures |
 | KaTeXBlock | Inline + display math fixtures; lazy-load verified |
 | MermaidBlock | Diagram fixture; lazy-load verified |
