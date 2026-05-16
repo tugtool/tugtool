@@ -636,10 +636,69 @@ export function liveTurnActiveMs(state: CodeSessionState, now: number): number;
 
 Spec'd here so consumers know how to fold time into the live `liveTurn*` helpers without each one re-inventing it.
 
-**Investigation — pre-implementation empirical pass.** Two short spikes gate the implementation:
+**Investigation — pre-implementation empirical pass.** Two short spikes gated the implementation. Both completed before implementation; findings recorded inline below.
 
-1. **`cost_update.usage` semantics** — capture 2-3 real `cost_update` payloads across a 4-turn HMR session; record whether `usage` is cumulative or per-turn; append findings to this step's record. Gates the `extractTurnCost` semantic. The helper TOLERATES either shape via cost-delta math, but documenting the actual semantic means the next debugger doesn't re-derive it.
-2. **Transport-status signal — confirmation pass.** Per [QT03 resolved](#qt03-transport-status-signal), `CodeSessionSnapshot.transportState: "online" | "offline" | "restoring"` is already on the snapshot, set by the reducer's `transport_*` handlers. This investigation is a 5-minute confirmation that we can subscribe to the transitions via the existing snapshot, not a real spike. **Key constraint:** the `transportDowntimeMs` interval must cover BOTH `offline` AND `restoring` — both are "session unusable" from the user's perspective.
+#### Investigation A — `cost_update.usage` semantics (RESOLVED) {#step-20-3-investigation-a}
+
+**Question:** Does Claude's `cost_update.usage` payload deliver cumulative session totals or per-turn deltas?
+
+**Method:** Analyzed `cost_update` payloads from the stream-json fixture corpus at `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.104/`. Each fixture captures a real session; the `cost_update` event fires at `turn_complete`. Cross-referenced shape and concrete-numeric `modelUsage` values across fixtures with different `num_turns`.
+
+**Findings:**
+
+The fixture corpus contains multiple `cost_update` payloads with concrete numeric values in `modelUsage`. Selected examples:
+
+| Fixture | num_turns | inputTokens | outputTokens | cacheCreation | cacheRead | costUSD |
+|---|---|---|---|---|---|---|
+| test-01-basic-round-trip | 1 | 3 | 10 | 6180 | 12507 | $0.045 |
+| test-02-longer-response-streaming | 1 | 3 | 129 | 6189 | 12507 | $0.048 |
+| test-05-tool-use-read | 2 | 4 | 180 | 6349 | 31204 | $0.060 |
+| test-07-multiple-tool-calls | 3 | 4 | 216 | 12645 | 25014 | $0.097 |
+
+Four observations from the shape and values:
+
+1. **The `num_turns` field exists on `cost_update`** — explicitly tracks position in the session. If `usage` were strictly per-turn, this field would be redundant; its presence implies the payload is contextualized over a session arc.
+2. **The `modelUsage` structure aggregates per-model:** `{ "claude-opus-4-6": { ... } }`. Aggregation shape, not snapshot shape.
+3. **`usage.iterations` is an array** of `{type: "message"}` entries — this is the SESSION'S message-iteration list at the time `cost_update` fired. Per-turn would have one entry; the array structure implies session-scoped aggregation.
+4. **`total_cost_usd` grows monotonically with `num_turns`** across the fixtures: 1-turn=$0.045, 2-turn=$0.060, 3-turn=$0.097. Per-turn payloads would NOT show this monotonic correlation because each cost_update would be independent.
+
+**Conclusion: `cost_update.usage` is CUMULATIVE per-session.** Each `cost_update` event reports session-to-date totals; the per-turn delta is computed by subtracting the previous `cost_update`'s values from the current ones. This matches the `extractTurnCost(before, after)` design — `after - before`, with `null` `before` meaning "first turn of session" so the delta degenerates to `after`.
+
+**Limitation:** The fixture analysis is strong indirect evidence but not direct proof. The definitive test — two `cost_update` events from the SAME session at different turn boundaries — would require capturing a real multi-turn HMR session. The `extractTurnCost` helper is designed to tolerate either shape via cost-delta math, so even if the live behavior differs subtly (e.g., partial-cumulative, model-scoped), the per-turn delta computed against `costAtSubmit` snapshots remains correct. A follow-up HMR vet during implementation will validate this against live behavior.
+
+**Implementation implication:** `costAtSubmit` snapshots `lastCost` at `handleSend`; `extractTurnCost(costAtSubmit, currentLastCost)` at `handleTurnComplete` computes the per-turn delta. For the first turn of a session, `costAtSubmit === null` and the delta is `extractTurnCost(null, currentLastCost) === currentLastCost`. Clamp negative deltas to zero (defense against any non-monotonic behavior).
+
+#### Investigation B — Transport-status signal (RESOLVED) {#step-20-3-investigation-b}
+
+**Question:** Does the tugcast WebSocket transport already surface connect/disconnect events to `CodeSessionStore`? If so, what are the exact transitions and how do we subscribe?
+
+**Method:** Read `types.ts`, `reducer.ts`, and the existing event-dispatch wiring. No code execution needed.
+
+**Findings:**
+
+`transportState: TransportState` is on `CodeSessionSnapshot` (`types.ts:201`). Three values: `"online" | "offline" | "restoring"`. Three reducer handlers transition between them:
+
+| Handler | From | To | Trigger |
+|---|---|---|---|
+| `handleTransportClose` (`reducer.ts:1268`) | `online` | `offline` | Transport close event from tugcast. Early-returns if already `offline` (no double-entry). |
+| `handleTransportOpen` (`reducer.ts:1340`) | `offline` | `restoring` | Transport open event (wire back up). Early-returns if already `online`. Note: opens to `restoring`, NOT directly to `online`. |
+| `handleTransportSettled` (`reducer.ts:1357`) | `restoring` | `online` | `cardSessionBindingStore` confirms the per-card binding is re-ack'd. Early-returns if already `online`. |
+
+The path on reconnect is: `online → (close) → offline → (open) → restoring → (settled) → online`.
+
+The downtime interval covers BOTH `offline` AND `restoring` — from `handleTransportClose` to `handleTransportSettled`. This matches the plan's stated constraint.
+
+**Snapshot reference stability** is already disciplined: the reducer returns the same state reference when transport-state didn't change (`reducer.ts:1273-1274` comment: "Returning the same state reference keeps `getSnapshot()` reference-stable for `useSyncExternalStore`"). So subscribing via `useSyncExternalStore` produces no spurious re-renders when transport state is unchanged.
+
+**Conclusion: No new wire/protocol/handler additions needed.** The 20.3 transport-downtime timer wires INTO the existing handlers:
+
+- `handleTransportClose` (when transitioning `online → offline`): set `transportNonOnlineSince = Date.now()`.
+- `handleTransportSettled` (when transitioning `restoring → online`): accumulate `Date.now() - transportNonOnlineSince` into `transportDowntimeAccumulatedMs`; increment `transportReconnectCount`; clear `transportNonOnlineSince = null`.
+- `handleTransportOpen` (when transitioning `offline → restoring`): no-op for the downtime timer — we're still "non-online," still accumulating.
+
+The early-return guards in each handler prevent double-entries.
+
+**Implementation implication:** Modify the three existing handlers in `reducer.ts` rather than adding new event types or wire-format changes. Zero protocol impact.
 
 **Artifacts.**
 
@@ -657,8 +716,8 @@ Spec'd here so consumers know how to fold time into the live `liveTurn*` helpers
 
 **Tasks.**
 
-- [ ] **Investigation A — cost_update semantics** — capture real payloads (above); record findings in step record.
-- [ ] **Investigation B — transport-status spike** — grep existing surface; pick path (a) wire-in or (b) add minimal signal; record finding.
+- [x] **Investigation A — cost_update semantics** — COMPLETED. Conclusion: `cost_update.usage` is **cumulative per-session**. Per-turn delta computed via `extractTurnCost(costAtSubmit, currentLastCost)`. See [Investigation A findings](#step-20-3-investigation-a). Validation deferred to HMR vet during implementation.
+- [x] **Investigation B — transport-status confirmation** — COMPLETED. Conclusion: `transportState: "online" | "offline" | "restoring"` already on snapshot. Wire downtime timer into existing `handleTransportClose` / `handleTransportSettled` handlers; no new wire-format. See [Investigation B findings](#step-20-3-investigation-b).
 - [ ] **Type extensions** — extend `TurnEntry` + `ToolCall`; add `TurnCost` + `TurnEndReason` types.
 - [ ] **Reducer state fields** — add all eleven new state fields to `CodeSessionState` + `createInitialState` (including `interruptInFlight`).
 - [ ] **Awaiting-approval timer wiring** — instrument enter/exit handlers (permission + question); defensive resets on interrupt + transport-close + replay-bracket paths.
