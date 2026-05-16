@@ -56,6 +56,7 @@ import type {
   TurnEndReason,
   TurnEntry,
 } from "./types";
+import { tugDevLogStore } from "../tug-dev-log-store/tug-dev-log-store";
 import { extractTurnCost } from "./telemetry";
 
 /** Reducer-internal state. Not exposed to consumers. */
@@ -1228,11 +1229,11 @@ function handleTurnComplete(
   // Clear the stale pending state so duplicate turn_complete events
   // are inert beyond the no-op transcript commit.
   if (state.committedMsgIds.has(msgId)) {
-    if (typeof console !== "undefined") {
-      console.debug(
-        `[code-session-store] dropping duplicate turn_complete for msg_id=${msgId}`,
-      );
-    }
+    tugDevLogStore.warn(
+      "code-session-store",
+      "dropping duplicate turn_complete",
+      { msgId },
+    );
     const scratch = new Map(state.scratch);
     scratch.delete(msgId);
     return {

@@ -34,10 +34,18 @@ import {
   type TugDevPanelEvent,
   type TugDevPanelState,
 } from "./reducer";
-import { VALID_DEV_PANEL_TABS, type TugDevPanelSnapshot, type TugDevPanelTabId } from "./types";
+import {
+  DEV_PANEL_DOMAIN,
+  VALID_DEV_PANEL_TABS,
+  type TugDevPanelSnapshot,
+  type TugDevPanelTabId,
+} from "./types";
+import { tugDevLogStore } from "../tug-dev-log-store/tug-dev-log-store";
 
-/** Tugbank domain owning the panel's persisted state. */
-export const DEV_PANEL_DOMAIN = "dev.tugtool.dev-panel";
+/** Re-export so callers that already imported the domain from the
+ * store module keep working — the canonical export now lives in
+ * `./types` (see file there for the circular-import rationale). */
+export { DEV_PANEL_DOMAIN };
 
 /** Individual key names within the domain. */
 export const DEV_PANEL_KEYS = {
@@ -300,7 +308,11 @@ function putRaw(key: string, body: RawTaggedBody): void {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   }).catch((err) => {
-    console.warn(`[TugDevPanelStore] PUT ${key} failed:`, err);
+    tugDevLogStore.warn(
+      "tugdevpanel",
+      `_persistDiff PUT ${key} failed`,
+      { error: String(err) },
+    );
   });
 }
 

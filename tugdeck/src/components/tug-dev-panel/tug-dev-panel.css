@@ -181,6 +181,19 @@ body {
   display: none;
 }
 
+/* Inspector tabs read at equal width regardless of label length:
+ * the visual rhythm of two same-width tabs ("Telemetry" vs. "Log")
+ * is what reads as "a fixed catalog of inspectors," whereas a
+ * variable-width strip implies "an open-ended set the user can grow."
+ * The min-width is sized to fit the longest label ("Telemetry" + the
+ * RadioTower icon) at the tab bar's default font-size + padding
+ * scale; widths shorter than the longest label collapse to ellipsis,
+ * never wrap. */
+.tug-devpanel-tabstrip .tug-tab {
+  min-width: 80px;
+  justify-content: center;
+}
+
 .tug-devpanel-cardpicker {
   display: flex;
   align-items: center;
@@ -212,6 +225,27 @@ body {
   /* @tug-renders-on: --tugx-devpanel-bg */
   background-color: var(--tugx-devpanel-bg);
   color: var(--tugx-devpanel-fg);
+}
+
+/* Inspectors that manage their own internal scroll (notably the Log
+ * inspector with its auto-scroll-to-head list) need the body to NOT
+ * scroll — otherwise we end up with nested scrollers and the head-pin
+ * pass writes scrollTop on the wrong container. The Log inspector
+ * lays itself out as a flex column with `height: 100%` and an
+ * overflow-y child; this rule yields the body's scroll context to it.
+ *
+ * Telemetry and any future "stack of sections" inspector use the
+ * body's default `overflow-y: auto` because their content can grow
+ * freely. */
+.tug-devpanel-body[data-active-tab="log"] {
+  overflow: hidden;
+  /* Reclaim the padding the body normally adds — the log inspector
+   * owns its own internal padding so filter rows / list / toolbar
+   * can edge-align with the panel border. */
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 /* ============================================================================

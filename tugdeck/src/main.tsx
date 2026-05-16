@@ -31,6 +31,7 @@ import { registerHelloWorldCard } from "./components/tugways/cards/hello-world-c
 import { registerGitCard } from "./components/tugways/cards/git-card";
 import { registerTideCard } from "./components/tugways/cards/tide-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-registrations";
+import { registerDevPanelInspectorTabs } from "./components/tug-dev-panel/inspector-tab-registrations";
 import { initMotionObserver } from "./components/tugways/scale-timing";
 import { initThemeTokens } from "./theme-tokens";
 import { deserialize } from "./serialization";
@@ -177,6 +178,7 @@ if (!container) {
   registerGitCard();
   registerTideCard();
   registerGalleryCards();
+  registerDevPanelInspectorTabs();
 
   // Extract card IDs from the loaded layout and read per-card state bags
   // from the tugbank cache (`dev.tugtool.deck.cardstate`).

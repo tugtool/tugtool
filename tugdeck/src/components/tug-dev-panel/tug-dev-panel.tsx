@@ -36,12 +36,23 @@ import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import { TugLabel } from "@/components/tugways/tug-label";
 
 import { CardPicker } from "./card-picker";
+import { DEV_PANEL_INSPECTOR_COMPONENT_IDS } from "./inspector-tab-registrations";
 import { ResizeHandle } from "./resize-handle";
 import { TabStrip, type TabDescriptor } from "./tab-strip";
+import { LogInspector } from "./inspectors/log-inspector";
 import { TelemetryInspector } from "./inspectors/telemetry-inspector";
 
 const TABS: ReadonlyArray<TabDescriptor> = [
-  { id: "telemetry", label: "Telemetry" },
+  {
+    id: "telemetry",
+    label: "Telemetry",
+    componentId: DEV_PANEL_INSPECTOR_COMPONENT_IDS.telemetry,
+  },
+  {
+    id: "log",
+    label: "Log",
+    componentId: DEV_PANEL_INSPECTOR_COMPONENT_IDS.log,
+  },
 ];
 
 export const TugDevPanel: React.FC = () => {
@@ -105,9 +116,14 @@ export const TugDevPanel: React.FC = () => {
         />
       </div>
 
-      <div className="tug-devpanel-body">
+      <div
+        className="tug-devpanel-body"
+        data-active-tab={snapshot.activeTab}
+      >
         {snapshot.activeTab === "telemetry" ? (
           <TelemetryInspector selectedCardId={snapshot.selectedCardId} />
+        ) : snapshot.activeTab === "log" ? (
+          <LogInspector />
         ) : null}
       </div>
     </div>

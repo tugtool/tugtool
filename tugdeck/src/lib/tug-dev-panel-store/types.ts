@@ -16,11 +16,19 @@
  */
 
 /**
- * Inspector tab identifiers. Currently only `telemetry`; future tabs
- * (lifecycle, transport, replay, events log, propertystore tree)
- * extend this union without re-architecting the framework.
+ * Tugbank domain owning the dev-panel's persisted state — exported
+ * from `types.ts` (not the store module) so sibling stores (e.g.
+ * `tug-dev-log-store`) can reference the same domain string without
+ * creating a circular import.
  */
-export type TugDevPanelTabId = "telemetry";
+export const DEV_PANEL_DOMAIN = "dev.tugtool.dev-panel";
+
+/**
+ * Inspector tab identifiers. Future tabs (lifecycle, transport,
+ * replay, propertystore tree) extend this union without re-architecting
+ * the framework.
+ */
+export type TugDevPanelTabId = "telemetry" | "log";
 
 /**
  * Default tab landed on when no persisted value is present.
@@ -31,8 +39,9 @@ export const DEFAULT_DEV_PANEL_TAB: TugDevPanelTabId = "telemetry";
  * Set of valid tab ids — used by the reducer to reject unrecognized
  * persisted values from a future-shape tugbank entry.
  */
-export const VALID_DEV_PANEL_TABS: ReadonlySet<TugDevPanelTabId> = new Set([
+export const VALID_DEV_PANEL_TABS: ReadonlySet<TugDevPanelTabId> = new Set<TugDevPanelTabId>([
   "telemetry",
+  "log",
 ]);
 
 /**

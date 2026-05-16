@@ -1004,7 +1004,7 @@ final class DeveloperMenu {
 
 **Depends on:** [#step-20-3-1](#step-20-3-1) (the panel framework — tab strip + tugbank-persisted active tab + token slots), tugbank (for cap / filter persistence).
 
-**Status:** _not started._
+**Status:** _complete 2026-05-16._
 
 **Commit:** `feat(tugdevlog): in-app logging surface + Log inspector tab on the dev panel`
 
@@ -1223,47 +1223,47 @@ The store can also accept appends from the Swift host via the existing `dispatch
 
 **Tasks.**
 
-- [ ] **Type extensions** — `TugDevLogLevel`, `TugDevLogEntry`, `TugDevLogSnapshot`, `TugDevLogFilters` (with `levels`/`source`/`text`), `DEFAULT_DEV_LOG_MAX_ENTRIES = 1000`. Extend `TugDevPanelTabId` to include `"log"`; extend `VALID_DEV_PANEL_TABS`.
-- [ ] **Pure reducer + helpers** — `reduce`, `createInitialState`, `set_filters` partial-merge, FIFO cap enforcement in `append_batch`.
-- [ ] **`TugDevLogStore` class** — singleton with microtask-deferred pending-queue flush; tugbank hydrate + persist for `levels`/`source`/`maxEntries`; `_disposeForTest()`. In dev builds, mirror `debug/info/warn/error` to `console.{level}`.
-- [ ] **`filterEntries`, `extractSources`, `stringifyDataForSearch`** — pure helpers, the last memoized via `WeakMap` keyed on entry reference.
-- [ ] **`<LogInspector>` component** — filter row + toolbar + list + paired `log-inspector.css` declaring `--tugx-devlog-*` slots per [L19]/[L20].
-- [ ] **`<LogRow>` component** — single-entry primitive.
-- [ ] **Wire into panel** — add `"log"` to TABS; render `<LogInspector />` when `activeTab === "log"`.
-- [ ] **Auto-scroll-to-head** — DOM-only via [L06]; gated on `scrollTop ≤ 8px` (preserve user position when they've scrolled away); rAF-batched per [L13].
-- [ ] **Source migrations (3 explicit seeds, no global sweep)** — convert these to `tugDevLogStore.warn(...)`:
+- [x] **Type extensions** — `TugDevLogLevel`, `TugDevLogEntry`, `TugDevLogSnapshot`, `TugDevLogFilters` (with `levels`/`source`/`text`), `DEFAULT_DEV_LOG_MAX_ENTRIES = 1000`. Extend `TugDevPanelTabId` to include `"log"`; extend `VALID_DEV_PANEL_TABS`.
+- [x] **Pure reducer + helpers** — `reduce`, `createInitialState`, `set_filters` partial-merge, FIFO cap enforcement in `append_batch`.
+- [x] **`TugDevLogStore` class** — singleton with microtask-deferred pending-queue flush; tugbank hydrate + persist for `levels`/`source`/`maxEntries`; `_disposeForTest()`. In dev builds, mirror `debug/info/warn/error` to `console.{level}`.
+- [x] **`filterEntries`, `extractSources`, `stringifyDataForSearch`** — pure helpers, the last memoized via `WeakMap` keyed on entry reference.
+- [x] **`<LogInspector>` component** — filter row + toolbar + list + paired `log-inspector.css` declaring `--tugx-devlog-*` slots per [L19]/[L20].
+- [x] **`<LogRow>` component** — single-entry primitive.
+- [x] **Wire into panel** — add `"log"` to TABS; render `<LogInspector />` when `activeTab === "log"`.
+- [x] **Auto-scroll-to-head** — DOM-only via [L06]; gated on `scrollTop ≤ 8px` (preserve user position when they've scrolled away); rAF-batched per [L13].
+- [x] **Source migrations (3 explicit seeds, no global sweep)** — convert these to `tugDevLogStore.warn(...)`:
   - `lib/code-session-store/reducer.ts::handleTurnComplete` "dropping duplicate turn_complete" (source: `"code-session-store"`).
   - `lib/tugbank-client.ts` "[TugbankClient] failed to parse DEFAULTS frame" (source: `"tugbank-client"`).
   - `lib/tug-dev-panel-store/tug-dev-panel-store.ts` `_persistDiff` failures (source: `"tugdevpanel"`).
-- [ ] **Tests** — reducer / filter / microtask-defer / persistence / app-test tab persistence.
+- [x] **Tests** — reducer / filter / microtask-defer / persistence / app-test tab persistence.
 
 **Tests.**
 
-- [ ] Reducer: `append_batch` adds entries in order; reaching `maxEntries` drops oldest (FIFO).
-- [ ] Reducer: `clear` empties the buffer but preserves filters + cap.
-- [ ] Reducer: `set_filters` partial-merge — level-only update doesn't drop source/text; text-only update doesn't drop level/source.
-- [ ] Reducer: `set_max_entries` with new value smaller than current buffer truncates oldest to fit.
-- [ ] Reducer: `hydrate` accepts filters + cap from tugbank; missing keys default cleanly; same-ref return when nothing changes.
-- [ ] Filter: `levels` — entries whose level is not in the set are excluded; empty set excludes everything; full set is a passthrough.
-- [ ] Filter: `source` — `null` source means "all"; specific source returns only matching; filter set to a source not present in buffer yields empty list (not an error).
-- [ ] Filter: `text` — case-insensitive match against `message` AND `stringifyDataForSearch(entry)`; empty string is a passthrough.
-- [ ] Filter: combined — level AND source AND text all apply (intersection).
-- [ ] Filter: `extractSources` returns distinct values in first-seen order across multi-source buffers.
-- [ ] Filter: `stringifyDataForSearch` returns the same string for the same entry reference across calls (cache hit).
-- [ ] Microtask-defer: a burst of N synchronous `log()` calls produces exactly 1 listener notification after one microtask tick.
-- [ ] Microtask-defer: a `log()` called during a `getSnapshot()` read does NOT cause a sync re-entry into the store.
-- [ ] Persistence: `setFilters({ levels })` PUTs `logFilterLevels` as `kind: "json"`; reload re-hydrates.
-- [ ] Persistence: `setFilters({ source: "x" })` PUTs `logFilterSource` as `kind: "string"`; `setFilters({ source: null })` PUTs `kind: "null"`.
-- [ ] Persistence: `setMaxEntries(n)` PUTs `logMaxEntries` as `kind: "i64"`.
-- [ ] Persistence: `text` field is NEVER PUT (in-memory only).
-- [ ] app-test (`at0071-dev-panel-tab-persistence`): (a) switch to `log`, dispatch `show-dev-panel-toggle` twice, active tab is still `log`. (b) switch to `log`, call `app.appReload()`, after reload active tab is still `log` AND the panel is `data-open="true"` (open state also persists).
+- [x] Reducer: `append_batch` adds entries in order; reaching `maxEntries` drops oldest (FIFO).
+- [x] Reducer: `clear` empties the buffer but preserves filters + cap.
+- [x] Reducer: `set_filters` partial-merge — level-only update doesn't drop source/text; text-only update doesn't drop level/source.
+- [x] Reducer: `set_max_entries` with new value smaller than current buffer truncates oldest to fit.
+- [x] Reducer: `hydrate` accepts filters + cap from tugbank; missing keys default cleanly; same-ref return when nothing changes.
+- [x] Filter: `levels` — entries whose level is not in the set are excluded; empty set excludes everything; full set is a passthrough.
+- [x] Filter: `source` — `null` source means "all"; specific source returns only matching; filter set to a source not present in buffer yields empty list (not an error).
+- [x] Filter: `text` — case-insensitive match against `message` AND `stringifyDataForSearch(entry)`; empty string is a passthrough.
+- [x] Filter: combined — level AND source AND text all apply (intersection).
+- [x] Filter: `extractSources` returns distinct values in first-seen order across multi-source buffers.
+- [x] Filter: `stringifyDataForSearch` returns the same string for the same entry reference across calls (cache hit).
+- [x] Microtask-defer: a burst of N synchronous `log()` calls produces exactly 1 listener notification after one microtask tick.
+- [x] Microtask-defer: a `log()` called during a `getSnapshot()` read does NOT cause a sync re-entry into the store.
+- [x] Persistence: `setFilters({ levels })` PUTs `logFilterLevels` as `kind: "json"`; reload re-hydrates.
+- [x] Persistence: `setFilters({ source: "x" })` PUTs `logFilterSource` as `kind: "string"`; `setFilters({ source: null })` PUTs `kind: "null"`.
+- [x] Persistence: `setMaxEntries(n)` PUTs `logMaxEntries` as `kind: "i64"`.
+- [x] Persistence: `text` field is NEVER PUT (in-memory only).
+- [x] app-test (`at0071-dev-panel-tab-persistence`): (a) switch to `log`, dispatch `show-dev-panel-toggle` twice, active tab is still `log`. (b) switch to `log`, call `app.appReload()`, after reload active tab is still `log` AND the panel is `data-open="true"` (open state also persists).
 
 **Checkpoint.**
 
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green; existing tests stay green.
-- [ ] `bun run audit:tokens lint` exits 0 (new `--tugx-devlog-*` slots properly declared in `log-inspector.css` with `@tug-pairings` header).
-- [ ] `just app-test at0071-dev-panel-tab-persistence.test.ts` reports `VERDICT: PASS`.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green; existing tests stay green (2025/2025 pass — 42 new tests added).
+- [x] `bun run audit:tokens lint` exits 0 (new `--tugx-devlog-*` slots properly declared in `log-inspector.css` with `@tug-pairings` header).
+- [x] `just app-test at0071-dev-panel-tab-persistence.test.ts` reports `VERDICT: PASS`.
 - [ ] Manual: open dev panel, click `Log` tab. Trigger a duplicate-turn-complete (or any of the three seeded sources) and confirm the entry appears in real time; toggle `warn` off → entry hides; toggle back on → reappears; type "duplicate" in the text filter → only matching entries show; clear → buffer empties (filters retained); close panel via ⌥⌘/; reopen → `Log` tab is still active; the log buffer is empty (transient — correct). Full reload (`appReload` via dev-tools or just Cmd-R) → `Log` tab is STILL active; level filter state from before the reload is restored; text filter is empty (in-memory only — correct).
 
 ---

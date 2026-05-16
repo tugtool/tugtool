@@ -343,6 +343,18 @@ export function initActionDispatch(
     tugDevPanelStore.toggle();
   });
 
+  // dev-panel-select-telemetry-tab / dev-panel-select-log-tab:
+  // Programmatically switch the active inspector tab. Used by the
+  // app-test harness to drive tab persistence verification without
+  // synthesizing mouse events on the tab strip. Future tab-switch
+  // menu items could route through the same action surface.
+  registerAction("dev-panel-select-telemetry-tab", () => {
+    tugDevPanelStore.selectTab("telemetry");
+  });
+  registerAction("dev-panel-select-log-tab", () => {
+    tugDevPanelStore.selectTab("log");
+  });
+
   // arrange-cards: Rearrange all cards on the canvas.
   // Swift sends arrange-cards with mode: "cascade" | "tile".
   registerAction("arrange-cards", (payload) => {

@@ -1,0 +1,295 @@
+/* @tug-pairings:
+   - --tugx-devlog-fg                 | --tugx-devlog-row-bg          (row body text)
+   - --tugx-devlog-source-fg          | --tugx-devlog-row-bg          (source tag)
+   - --tugx-devlog-time-fg            | --tugx-devlog-row-bg          (timestamp)
+   - --tugx-devlog-level-debug-fg     | --tugx-devlog-level-chip-bg   (debug chip)
+   - --tugx-devlog-level-info-fg      | --tugx-devlog-level-chip-bg   (info chip)
+   - --tugx-devlog-level-warn-fg      | --tugx-devlog-level-chip-bg   (warn chip)
+   - --tugx-devlog-level-error-fg     | --tugx-devlog-level-chip-bg   (error chip)
+   - --tugx-devlog-data-fg            | --tugx-devlog-data-bg         (expanded data block)
+*/
+
+/**
+ * log-inspector.css — Log tab on TugDevPanel.
+ *
+ * Owns the `--tugx-devlog-*` slot family ([L20]). Reads only the
+ * dev-panel chrome surface for row backgrounds when no surface of
+ * its own applies — keeps the visual continuity with the rest of
+ * the panel.
+ *
+ * Tuglaw cross-check:
+ *  - [L17] every `--tugx-devlog-*` slot resolves to a base
+ *    `--tug7-*` token in one hop.
+ *  - [L19] paired with `log-inspector.tsx` per the component-CSS
+ *    co-location rule.
+ *  - [L20] component owns its `--tugx-devlog-*` slot family
+ *    exclusively. Child Tug components own their own families.
+ *  - [L13] auto-scroll DOM writes are rAF-batched (in the TSX,
+ *    documented here for the cross-reference).
+ */
+
+body {
+  /* Row chrome */
+  --tugx-devlog-row-bg:           transparent;
+  --tugx-devlog-row-hover-bg:     var(--tug7-surface-global-primary-normal-raised-rest);
+  --tugx-devlog-fg:               var(--tug7-element-global-text-normal-default-rest);
+
+  /* Subordinate text */
+  --tugx-devlog-source-fg:        var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-devlog-time-fg:          var(--tug7-element-global-text-normal-muted-rest);
+
+  /* Level chip — shared background, level-specific foreground */
+  --tugx-devlog-level-chip-bg:    var(--tug7-surface-global-primary-normal-raised-rest);
+  --tugx-devlog-level-debug-fg:   var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-devlog-level-info-fg:    var(--tug7-element-global-text-normal-default-rest);
+  --tugx-devlog-level-warn-fg:    var(--tug7-element-global-text-normal-caution-rest);
+  --tugx-devlog-level-error-fg:   var(--tug7-element-global-text-normal-danger-rest);
+
+  /* Expanded data block (JSON pre) */
+  --tugx-devlog-data-bg:          var(--tug7-surface-global-primary-normal-inset-rest);
+  --tugx-devlog-data-fg:          var(--tug7-element-global-text-normal-default-rest);
+
+  /* Geometry */
+  --tugx-devlog-row-gap:          var(--tug-space-2xs);
+  --tugx-devlog-row-padding-x:    var(--tug-space-xs);
+  --tugx-devlog-row-padding-y:    var(--tug-space-2xs);
+  --tugx-devlog-section-gap:      var(--tug-space-sm);
+}
+
+/* ============================================================================
+   Inspector root
+   ========================================================================= */
+
+.tug-devlog-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-devlog-section-gap);
+  height: 100%;
+  min-height: 0;
+}
+
+/* ============================================================================
+   Filters row
+   ========================================================================= */
+
+.tug-devlog-filters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-xs);
+  padding: var(--tug-space-md) var(--tug-space-md) 0;
+  flex: 0 0 auto;
+}
+
+/* Level filter — `TugOptionGroup` lives inside the toolbar, where it
+ * sits at the left of the action buttons. We equalize per-item widths
+ * so the four labels ("debug" / "info" / "warn" / "error") read at
+ * a steady rhythm regardless of their character counts. The min-width
+ * is sized to fit "debug" (the widest label) with the group's xs
+ * padding scale. Items wider than min still grow to fit. */
+.tug-devlog-levels .tug-option-group-item {
+  min-width: 56px;
+  justify-content: center;
+}
+
+.tug-devlog-source {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+}
+
+.tug-devlog-source-label {
+  flex: 0 0 auto;
+}
+
+.tug-devlog-source-trigger {
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: space-between;
+}
+
+.tug-devlog-text {
+  width: 100%;
+}
+
+/* ============================================================================
+   Toolbar
+   ========================================================================= */
+
+.tug-devlog-toolbar {
+  display: flex;
+  align-items: center;
+  /* `space-between` puts the level option-group at the left and the
+   * action buttons at the right with the available gap absorbing the
+   * difference. If the inspector ever narrows below the combined
+   * width of both zones, `flex-wrap: wrap` lets the actions drop to
+   * a second line rather than overlap the levels. */
+  justify-content: space-between;
+  gap: var(--tug-space-sm);
+  flex-wrap: wrap;
+  padding: 0 var(--tug-space-md);
+  flex: 0 0 auto;
+}
+
+.tug-devlog-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* ============================================================================
+   List
+   ========================================================================= */
+
+.tug-devlog-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-height: 120px;
+}
+
+.tug-devlog-list[data-empty="true"] {
+  align-items: center;
+  justify-content: center;
+}
+
+.tug-devlog-empty {
+  padding: var(--tug-space-lg);
+  text-align: center;
+}
+
+/* ============================================================================
+   Row
+   ========================================================================= */
+
+.tug-devlog-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-devlog-row-gap);
+  padding: var(--tugx-devlog-row-padding-y) var(--tugx-devlog-row-padding-x);
+  border-bottom: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  /* @tug-renders-on: --tugx-devpanel-bg */
+  background-color: var(--tugx-devlog-row-bg);
+  color: var(--tugx-devlog-fg);
+}
+
+.tug-devlog-row:hover {
+  /* @tug-renders-on: --tugx-devlog-row-hover-bg */
+  background-color: var(--tugx-devlog-row-hover-bg);
+  color: var(--tugx-devlog-fg);
+}
+
+.tug-devlog-row-line {
+  display: grid;
+  grid-template-columns:
+    auto    /* time */
+    auto    /* level chip */
+    auto    /* source */
+    1fr     /* message */
+    auto;   /* toggle */
+  gap: var(--tug-space-sm);
+  align-items: baseline;
+  min-width: 0;
+}
+
+.tug-devlog-row-time {
+  flex: 0 0 auto;
+}
+
+.tug-devlog-row-source {
+  flex: 0 0 auto;
+}
+
+.tug-devlog-row-message {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---- Level chip ---- */
+
+.tug-devlog-row-level {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--tug-space-xs);
+  border-radius: var(--tug-radius-xs);
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-3xs, 10px);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  min-width: 44px;
+  /* @tug-renders-on: --tugx-devlog-level-chip-bg */
+  background-color: var(--tugx-devlog-level-chip-bg);
+  color: var(--tugx-devlog-level-info-fg);
+}
+
+.tug-devlog-row-level[data-level="debug"] {
+  /* @tug-renders-on: --tugx-devlog-level-chip-bg */
+  background-color: var(--tugx-devlog-level-chip-bg);
+  color: var(--tugx-devlog-level-debug-fg);
+}
+
+.tug-devlog-row-level[data-level="info"] {
+  /* @tug-renders-on: --tugx-devlog-level-chip-bg */
+  background-color: var(--tugx-devlog-level-chip-bg);
+  color: var(--tugx-devlog-level-info-fg);
+}
+
+.tug-devlog-row-level[data-level="warn"] {
+  /* @tug-renders-on: --tugx-devlog-level-chip-bg */
+  background-color: var(--tugx-devlog-level-chip-bg);
+  color: var(--tugx-devlog-level-warn-fg);
+}
+
+.tug-devlog-row-level[data-level="error"] {
+  /* @tug-renders-on: --tugx-devlog-level-chip-bg */
+  background-color: var(--tugx-devlog-level-chip-bg);
+  color: var(--tugx-devlog-level-error-fg);
+}
+
+/* ---- Expand toggle ---- */
+
+.tug-devlog-row-toggle {
+  flex: 0 0 auto;
+  appearance: none;
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  /* @tug-renders-on: --tugx-devpanel-bg */
+  background-color: transparent;
+  color: var(--tugx-devlog-fg);
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-3xs, 10px);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--tug-radius-xs);
+}
+
+.tug-devlog-row-toggle:hover {
+  /* @tug-renders-on: --tugx-devlog-row-hover-bg */
+  background-color: var(--tugx-devlog-row-hover-bg);
+  color: var(--tugx-devlog-fg);
+}
+
+/* ---- Expanded data block ---- */
+
+.tug-devlog-row-data {
+  margin: 0;
+  padding: var(--tug-space-xs) var(--tug-space-sm);
+  border-radius: var(--tug-radius-xs);
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
+  /* @tug-renders-on: --tugx-devlog-data-bg */
+  background-color: var(--tugx-devlog-data-bg);
+  color: var(--tugx-devlog-data-fg);
+}

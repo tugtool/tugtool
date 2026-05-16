@@ -26,6 +26,7 @@
 
 import { FeedId } from "../protocol";
 import type { TugConnection } from "../connection";
+import { tugDevLogStore } from "./tug-dev-log-store/tug-dev-log-store";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -156,7 +157,11 @@ export class TugbankClient {
       const text = new TextDecoder().decode(payload);
       parsed = JSON.parse(text);
     } catch (err) {
-      console.warn("[TugbankClient] failed to parse DEFAULTS frame:", err);
+      tugDevLogStore.warn(
+        "tugbank-client",
+        "failed to parse DEFAULTS frame",
+        { error: String(err) },
+      );
       return;
     }
 

@@ -29,6 +29,18 @@ import {
 export interface TabDescriptor {
   id: TugDevPanelTabId;
   label: string;
+  /**
+   * Optional override for the `componentId` placed on the synthesised
+   * `CardState` passed into `TugTabBar`. The tab bar resolves the
+   * tab's icon by looking up this id in the global card registry —
+   * see `inspector-tab-registrations.tsx` for how the dev panel
+   * registers icon-only "card types" for its inspector tabs.
+   *
+   * When omitted, falls back to `id` (the same value used as the tab
+   * key) — useful for tabs that intentionally render with the default
+   * `Diamond` placeholder icon.
+   */
+  componentId?: string;
 }
 
 export interface TabStripProps {
@@ -40,16 +52,16 @@ export interface TabStripProps {
 
 /**
  * Map inspector-tab descriptors onto `CardState` (TugTabBar's input
- * shape). `componentId` is set to the tab id — TugTabBar ignores it
- * for non-add paths, and using a stable value keeps the React key
- * deterministic across renders.
+ * shape). `componentId` is taken from the descriptor when present
+ * (so the tab bar's registry-driven icon lookup hits the inspector
+ * registration) and otherwise falls back to the tab id.
  */
 function tabsToCardStates(
   tabs: ReadonlyArray<TabDescriptor>,
 ): readonly CardState[] {
   return tabs.map((t) => ({
     id: t.id,
-    componentId: t.id,
+    componentId: t.componentId ?? t.id,
     title: t.label,
     closable: false,
   }));
