@@ -32,6 +32,7 @@ import { registerGitCard } from "./components/tugways/cards/git-card";
 import { registerTideCard } from "./components/tugways/cards/tide-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-registrations";
 import { registerDevPanelInspectorTabs } from "./components/tug-dev-panel/inspector-tab-registrations";
+import { installTidePlacementGlobal } from "./components/tugways/cards/tide-card-placement-experiment";
 import { tugDevLogStore } from "./lib/tug-dev-log-store/tug-dev-log-store";
 import { initMotionObserver } from "./components/tugways/scale-timing";
 import { initThemeTokens } from "./theme-tokens";
@@ -190,6 +191,7 @@ if (!container) {
   if (import.meta.env.DEV) {
     (window as unknown as { tugDevLog?: typeof tugDevLogStore }).tugDevLog =
       tugDevLogStore;
+    installTidePlacementGlobal();
   }
 
   // Extract card IDs from the loaded layout and read per-card state bags

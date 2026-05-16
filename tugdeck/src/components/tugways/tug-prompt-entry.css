@@ -145,9 +145,27 @@ body {
 
 /* Submit button anchors to the trailing edge; the route indicator +
    optional queue badge float on the leading side. `margin-inline-start:
-   auto` works in both LTR and RTL. */
+   auto` works in both LTR and RTL. The footer-content slot fills the
+   middle when present, so the auto-margin on the trailing child still
+   positions submit at the right edge without stranding the slot in
+   the middle. */
 .tug-prompt-entry-toolbar > :last-child {
   margin-inline-start: auto;
+}
+
+/* Footer-content slot — placement zone for prompt-entry footer
+   content (per-card telemetry, phase indicator, etc.). The host owns
+   only the layout box per [L20] — composed children declare their own
+   tokens. Sized to grow into the available middle space so the submit
+   button stays pinned to the trailing edge via the auto-margin rule
+   above. */
+.tug-prompt-entry-footer-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--tug-space-sm);
 }
 
 /* ----------------------------------------------------------------------------

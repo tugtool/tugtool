@@ -35,6 +35,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 
 import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry";
 import { TideTranscriptHost, type TideTranscriptHandle } from "./tide-card-transcript";
+import { useTidePlacementSlots } from "./tide-card-placement-experiment";
 import { TugPaneBanner } from "../tug-pane-banner";
 import { TugSplitPane, TugSplitPanel, type TugSplitPanelHandle } from "../tug-split-pane";
 import { useContentDrivenPanelSize } from "../use-content-driven-panel-size";
@@ -230,6 +231,61 @@ export interface TideCardContentProps {
    * `TugPromptEntry`.
    */
   cardId: string;
+  /**
+   * Z0 — top-of-card content slot. A content-sized row at the very top
+   * of the top split-panel, above the transcript. When `undefined`
+   * (the default) the row collapses to zero height — the slot exists
+   * in the contract but costs nothing visually until content arrives.
+   * Reserved for future card-level metadata (session name, model
+   * badge, pinned status, etc.).
+   */
+  headerContent?: React.ReactNode;
+  /**
+   * Z2 — status-bar content slot. A content-sized row at the BOTTOM of
+   * the top split-panel, OUTSIDE the scrolling transcript list view.
+   * Collapses to zero height when `undefined`. Layout shift on
+   * telemetry update is contained (the row grows into space the
+   * transcript ceded; no scroll repositioning).
+   */
+  statusBarContent?: React.ReactNode;
+  /**
+   * Z1 — per-turn trailing slot. Invoked once per row half, keyed by
+   * `half`. The user half wires next to the user-row trailing copy
+   * button (currently empty by default); the assistant half wires
+   * next to the assistant-row's copy button.
+   */
+  renderTurnTrailing?: TideTurnTrailingRenderer;
+  /**
+   * Z4 — prompt-entry footer slot. Renders inside the prompt-entry
+   * toolbar between the route choice group and the submit button.
+   * When `undefined` the toolbar collapses to its pre-Z4 layout.
+   */
+  footerContent?: React.ReactNode;
+}
+
+/**
+ * Signature of the Z1 per-turn trailing slot renderer. Receives a
+ * minimal projection (turn key, half, optional `TurnEntry` for
+ * committed rows) so renderers can subscribe to the right per-turn
+ * data without leaking the transcript's data-source contract.
+ */
+export type TideTurnTrailingRenderer = (
+  context: TideTurnTrailingContext,
+) => React.ReactNode;
+
+/**
+ * Context passed to the Z1 per-turn trailing slot renderer. The same
+ * renderer is invoked for both halves of each turn; consumers branch
+ * on `half` to vary content. `turn` is `undefined` for in-flight rows
+ * (no `TurnEntry` exists yet) and for the live user row.
+ */
+export interface TideTurnTrailingContext {
+  /** Stable per-turn key — matches `row.turnKey` in the data source. */
+  turnKey: string;
+  /** Which half of the turn is asking for trailing content. */
+  half: "user" | "assistant";
+  /** Committed turn entry, when present (assistant half post-commit). */
+  turn?: import("@/lib/code-session-store").TurnEntry;
 }
 
 // ---------------------------------------------------------------------------
@@ -344,7 +400,13 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
 // TideCardContent
 // ---------------------------------------------------------------------------
 
-export function TideCardContent({ cardId }: TideCardContentProps) {
+export function TideCardContent({
+  cardId,
+  headerContent,
+  statusBarContent,
+  renderTurnTrailing,
+  footerContent,
+}: TideCardContentProps) {
   const services = useTideCardServices(cardId);
   // Subscribe to the restore registry so `TideRestoring` mounts as
   // soon as `restoreTideSessions` fires a `spawn_session(resume)` for
@@ -356,7 +418,16 @@ export function TideCardContent({ cardId }: TideCardContentProps) {
     tideRestoreRegistry.getSnapshot,
   );
   if (services !== null) {
-    return <TideCardServicesGate cardId={cardId} services={services} />;
+    return (
+      <TideCardServicesGate
+        cardId={cardId}
+        services={services}
+        headerContent={headerContent}
+        statusBarContent={statusBarContent}
+        renderTurnTrailing={renderTurnTrailing}
+        footerContent={footerContent}
+      />
+    );
   }
   const expectation = restoreMap.get(cardId);
   if (expectation !== undefined) {
@@ -399,6 +470,10 @@ export function TideCardContent({ cardId }: TideCardContentProps) {
 function TideCardServicesGate({
   cardId,
   services,
+  headerContent,
+  statusBarContent,
+  renderTurnTrailing,
+  footerContent,
 }: TideCardBodyProps) {
   const transportState = useSyncExternalStore(
     services.codeSessionStore.subscribe,
@@ -427,7 +502,16 @@ function TideCardServicesGate({
     );
   }
 
-  return <TideCardBody cardId={cardId} services={services} />;
+  return (
+    <TideCardBody
+      cardId={cardId}
+      services={services}
+      headerContent={headerContent}
+      statusBarContent={statusBarContent}
+      renderTurnTrailing={renderTurnTrailing}
+      footerContent={footerContent}
+    />
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1414,6 +1498,14 @@ function TideProjectPickerForm({
 interface TideCardBodyProps {
   cardId: string;
   services: TideCardServices;
+  /** Z0 — top-of-card content; null collapses the row. */
+  headerContent?: React.ReactNode;
+  /** Z2 — status-bar content; null collapses the row. */
+  statusBarContent?: React.ReactNode;
+  /** Z1 — per-turn trailing renderer; invoked once per row half. */
+  renderTurnTrailing?: TideTurnTrailingRenderer;
+  /** Z4 — prompt-entry footer content; null collapses the slot. */
+  footerContent?: React.ReactNode;
 }
 
 /**
@@ -1547,7 +1639,14 @@ function renderTideCardBanner(
   return <TugPaneBanner visible={false} message="" />;
 }
 
-export function TideCardBody({ cardId, services }: TideCardBodyProps) {
+export function TideCardBody({
+  cardId,
+  services,
+  headerContent,
+  statusBarContent,
+  renderTurnTrailing,
+  footerContent,
+}: TideCardBodyProps) {
   const { codeSessionStore, sessionMetadataStore, historyStore, completionProviders, editorStore, responseStore, entryDelegateRef } = services;
 
   useTideCardObserver(cardId, codeSessionStore);
@@ -2058,11 +2157,34 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
       [cardId],
     ),
   );
-  const statusContent = projectDir !== null ? (
+  const projectStatusContent = projectDir !== null ? (
     <TugBadge size="sm" emphasis="tinted" role="data">
       Project: {projectDir}
     </TugBadge>
   ) : null;
+
+  // Dev-only placement-experiment slots. In production this returns
+  // an object with every slot undefined (the harness is gated behind
+  // the empty-default tugbank mapping); in dev, the slots resolve
+  // whichever datum the current `window.tugTidePlacement` mapping
+  // selects. Explicit props on `TideCardBody` win over experiment
+  // content — the harness only fills slots the caller left unset.
+  const experimentSlots = useTidePlacementSlots({
+    codeSessionStore,
+    sessionMetadataStore,
+  });
+  const effectiveHeaderContent = headerContent ?? experimentSlots.headerContent;
+  const effectiveStatusBarContent =
+    statusBarContent ?? experimentSlots.statusBarContent;
+  const effectiveRenderTurnTrailing =
+    renderTurnTrailing ?? experimentSlots.renderTurnTrailing;
+  const effectiveFooterContent =
+    footerContent ?? experimentSlots.promptFooterContent;
+  // Z3 — prompt-entry status row. The project-path badge is the
+  // current default occupant; the experiment harness overrides it
+  // when the mapping assigns a datum to Z3.
+  const effectivePromptStatusContent =
+    experimentSlots.promptStatusContent ?? projectStatusContent;
 
   return (
     <CardContentResponderScope>
@@ -2104,12 +2226,37 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
           "sticky last turn" emergent side-effect goes with it.
         */}
         <TugSplitPanel id="tide-card-top" defaultSize="70%" minSize="10%">
-          <TideTranscriptHost
-            ref={transcriptRef}
-            codeSessionStore={codeSessionStore}
-            sessionMetadataStore={sessionMetadataStore}
-            responseStore={responseStore}
-          />
+          {/*
+            Top-pane flex column — three rows (Z0 / transcript / Z2).
+            Always rendered so `TideTranscriptHost`'s mount identity
+            stays stable across slot-content changes ([L26]); empty
+            Z0 / Z2 wrappers collapse to zero height via `flex: 0 0
+            auto` + no intrinsic content.
+          */}
+          <div
+            className="tide-card-top-column"
+            data-slot="tide-card-top-column"
+          >
+            <div
+              className="tide-card-header-content"
+              data-slot="tide-card-header-content"
+            >
+              {effectiveHeaderContent}
+            </div>
+            <TideTranscriptHost
+              ref={transcriptRef}
+              codeSessionStore={codeSessionStore}
+              sessionMetadataStore={sessionMetadataStore}
+              responseStore={responseStore}
+              renderTurnTrailing={effectiveRenderTurnTrailing}
+            />
+            <div
+              className="tide-card-status-bar"
+              data-slot="tide-card-status-bar"
+            >
+              {effectiveStatusBarContent}
+            </div>
+          </div>
         </TugSplitPanel>
         <TugSplitPanel
           ref={entryPanelRef}
@@ -2139,7 +2286,8 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
                 completionProviders={completionProviders}
                 onBeforeSubmit={handleBeforeSubmit}
                 onAfterSubmit={handleAfterSubmit}
-                statusContent={statusContent}
+                statusContent={effectivePromptStatusContent}
+                footerContent={effectiveFooterContent}
                 lineWrap={editorSettings.lineWrap}
                 lineNumbers={editorSettings.lineNumbers}
                 highlightActiveLineGutter={editorSettings.highlightActiveLineGutter}

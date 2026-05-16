@@ -34,16 +34,63 @@
   min-width: 0;
 }
 
+/* Top-pane flex column — three rows:
+     [Z0 .tide-card-header-content] (flex 0 0 auto, content-sized)
+     [.tide-card-transcript]         (flex 1 1 auto, scrolls)
+     [Z2 .tide-card-status-bar]      (flex 0 0 auto, content-sized)
+   Always rendered so the transcript's mount identity is stable
+   across slot-content changes ([L26]). Empty Z0 / Z2 wrappers
+   collapse to zero height naturally — no intrinsic content, no
+   padding, flex basis of `auto`. The transcript flexes into all
+   remaining vertical space; `min-height: 0` on every ancestor
+   (.tide-card, .tide-card-top-column, .tide-card-transcript) keeps
+   the inner list view's scroll behavior intact when the row above
+   or below changes height. */
+.tide-card-top-column {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Z0 — top-of-card content slot. Content-sized; empty by default.
+   No padding or background so the empty state takes zero visual
+   space. Consumers fill it with whatever (typed) display content
+   makes sense; the host owns only the layout box per [L20]. */
+.tide-card-header-content {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+/* Z2 — status-bar content slot. Lives at the BOTTOM of the top
+   split-panel, OUTSIDE the scrolling transcript. Content-sized;
+   empty by default. Layout shift on telemetry update is contained:
+   the row grows into space the transcript ceded, with no scroll
+   repositioning. Layout box only per [L20]. */
+.tide-card-status-bar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
 /* Top-pane transcript host. Wraps a `TugListView` that renders
    committed turns + the in-flight pair as alternating (user, code)
-   rows. The wrapper takes the full top-pane height; the inner list
-   view handles its own scroll geometry. Cascade-scoped overrides
-   adjust the list view's layout tokens for this consumer per [D12] —
-   the primitive's tokens are read, never redefined globally ([L20]).
-   No new tokens are introduced here; the overrides reuse existing
-   `--tug-space-*` and `--tugx-list-view-*` tokens. */
+   rows. Lives inside `.tide-card-top-column` as the flex-grow row
+   between Z0 (header) and Z2 (status bar). `flex: 1 1 auto` +
+   `min-height: 0` lets the inner list view's scroller behave
+   correctly when the row above or below changes height. Cascade-
+   scoped overrides adjust the list view's layout tokens for this
+   consumer per [D12] — the primitive's tokens are read, never
+   redefined globally ([L20]). No new tokens are introduced here;
+   the overrides reuse existing `--tug-space-*` and
+   `--tugx-list-view-*` tokens. */
 .tide-card-transcript {
-  height: 100%;
+  flex: 1 1 auto;
   width: 100%;
   min-height: 0;
   min-width: 0;

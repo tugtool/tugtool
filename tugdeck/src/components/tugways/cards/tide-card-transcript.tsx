@@ -361,9 +361,15 @@ const USER_IDENTIFIER = "You";
  */
 const EMPTY_CONTROL_LOG: ReadonlyArray<ControlRequestRecord> = [];
 
-interface UserRowCellProps extends TugListViewCellProps<TideTranscriptDataSource> {}
+interface UserRowCellProps extends TugListViewCellProps<TideTranscriptDataSource> {
+  renderTurnTrailing?: TurnTrailingRenderer;
+}
 
-const UserRowCell: React.FC<UserRowCellProps> = ({ index, dataSource }) => {
+const UserRowCell: React.FC<UserRowCellProps> = ({
+  index,
+  dataSource,
+  renderTurnTrailing,
+}) => {
   const row = dataSource.rowAt(index);
   // Either committed turn (`turn.userMessage.text`) or in-flight user
   // message (`inflight.text`). The wrapper renders nothing when both
@@ -388,6 +394,20 @@ const UserRowCell: React.FC<UserRowCellProps> = ({ index, dataSource }) => {
   const hasBody = text.length > 0;
   const { ResponderScope, cellProps, bodyRef, menu } =
     useTranscriptCellMenu();
+  // Z1 — invoke the per-turn trailing renderer for this row half.
+  // `row.turnKey` is set by the data source on every row (committed
+  // and in-flight); the user row carries no `turn` payload while
+  // in-flight, so `turn` is undefined there.
+  const trailing =
+    renderTurnTrailing !== undefined && row.turnKey !== undefined
+      ? renderTurnTrailing({
+          turnKey: row.turnKey,
+          half: "user",
+          turn: row.turn,
+        })
+      : null;
+  const hasTrailing = trailing !== null && trailing !== undefined;
+  const showControls = hasBody || hasTrailing;
   return (
     <ResponderScope>
       <div {...cellProps}>
@@ -406,20 +426,25 @@ const UserRowCell: React.FC<UserRowCellProps> = ({ index, dataSource }) => {
             </span>
           }
           controls={
-            hasBody ? (
-              <TugPushButton
-                subtype="icon"
-                emphasis="ghost"
-                role="action"
-                size="sm"
-                icon={<Copy size={12} />}
-                confirmation={{
-                  icon: <Check size={12} />,
-                  ariaLabel: "Copied",
-                }}
-                aria-label="Copy"
-                onClick={handleCopyButton}
-              />
+            showControls ? (
+              <>
+                {hasBody ? (
+                  <TugPushButton
+                    subtype="icon"
+                    emphasis="ghost"
+                    role="action"
+                    size="sm"
+                    icon={<Copy size={12} />}
+                    confirmation={{
+                      icon: <Check size={12} />,
+                      ariaLabel: "Copied",
+                    }}
+                    aria-label="Copy"
+                    onClick={handleCopyButton}
+                  />
+                ) : null}
+                {hasTrailing ? trailing : null}
+              </>
             ) : null
           }
         />
@@ -459,6 +484,7 @@ interface CodeRowCellProps extends TugListViewCellProps<TideTranscriptDataSource
   modelName: string | null;
   codeSessionStore: CodeSessionStore;
   streamingStore: PropertyStore;
+  renderTurnTrailing?: TurnTrailingRenderer;
 }
 
 const CodeRowCell: React.FC<CodeRowCellProps> = ({
@@ -467,6 +493,7 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
   modelName,
   codeSessionStore,
   streamingStore,
+  renderTurnTrailing,
 }) => {
   const row = dataSource.rowAt(index);
   // `turnKey` is set for every code row by `rowAt`. The fallback
@@ -643,21 +670,42 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
             </div>
           }
           controls={
-            hasCopyBody ? (
-              <TugPushButton
-                subtype="icon"
-                emphasis="ghost"
-                role="action"
-                size="sm"
-                icon={<Copy size={12} />}
-                confirmation={{
-                  icon: <Check size={12} />,
-                  ariaLabel: "Copied",
-                }}
-                aria-label="Copy"
-                onClick={handleCopyButton}
-              />
-            ) : null
+            (() => {
+              // Z1 — invoke the per-turn trailing renderer for the
+              // assistant half. `row.turnKey` is set on every code
+              // row; `row.turn` is undefined for in-flight rows and
+              // populated post-commit.
+              const trailing =
+                renderTurnTrailing !== undefined && row.turnKey !== undefined
+                  ? renderTurnTrailing({
+                      turnKey: row.turnKey,
+                      half: "assistant",
+                      turn: row.turn,
+                    })
+                  : null;
+              const hasTrailing = trailing !== null && trailing !== undefined;
+              const showControls = hasCopyBody || hasTrailing;
+              return showControls ? (
+                <>
+                  {hasCopyBody ? (
+                    <TugPushButton
+                      subtype="icon"
+                      emphasis="ghost"
+                      role="action"
+                      size="sm"
+                      icon={<Copy size={12} />}
+                      confirmation={{
+                        icon: <Check size={12} />,
+                        ariaLabel: "Copied",
+                      }}
+                      aria-label="Copy"
+                      onClick={handleCopyButton}
+                    />
+                  ) : null}
+                  {hasTrailing ? trailing : null}
+                </>
+              ) : null;
+            })()
           }
         />
       </div>
@@ -690,6 +738,40 @@ export interface TideTranscriptHostProps {
    * body without round-tripping through React state ([L06] / [L22]).
    */
   responseStore: ResponseSettingsStore;
+  /**
+   * Z1 — per-turn trailing slot renderer. Invoked once per row half:
+   *   - on the user row at the trailing edge (next to the copy button)
+   *   - on the assistant row at the trailing edge (next to the copy button)
+   * The renderer is placement-agnostic; the host wires the same
+   * callback twice per turn, keyed by `half`. Returning `null` from
+   * either invocation leaves the corresponding row's trailing edge
+   * unchanged.
+   */
+  renderTurnTrailing?: TurnTrailingRenderer;
+}
+
+/**
+ * Signature of the Z1 per-turn trailing slot renderer. The same
+ * callback is invoked once per row half per turn; consumers branch
+ * on `half` to vary content between user / assistant rows.
+ */
+export type TurnTrailingRenderer = (
+  context: TurnTrailingContext,
+) => React.ReactNode;
+
+/**
+ * Context handed to the Z1 per-turn trailing slot renderer. `turn` is
+ * `undefined` for in-flight rows and for the live user row submitted
+ * but not yet committed; consumers that need committed-only data
+ * branch on `turn !== undefined`.
+ */
+export interface TurnTrailingContext {
+  /** Stable per-turn key — matches `row.turnKey` in the data source. */
+  turnKey: string;
+  /** Which half of the turn is asking for trailing content. */
+  half: "user" | "assistant";
+  /** Committed turn entry, when present. */
+  turn?: import("@/lib/code-session-store").TurnEntry;
 }
 
 /**
@@ -712,7 +794,12 @@ export const TideTranscriptHost = forwardRef<
   TideTranscriptHandle,
   TideTranscriptHostProps
 >(function TideTranscriptHost(
-  { codeSessionStore, sessionMetadataStore, responseStore },
+  {
+    codeSessionStore,
+    sessionMetadataStore,
+    responseStore,
+    renderTurnTrailing,
+  },
   ref,
 ) {
   const dataSource = useTideTranscriptDataSource(codeSessionStore);
@@ -744,13 +831,17 @@ export const TideTranscriptHost = forwardRef<
         modelName={modelName}
         codeSessionStore={codeSessionStore}
         streamingStore={streamingStore}
+        renderTurnTrailing={renderTurnTrailing}
       />
     ),
-    [modelName, codeSessionStore, streamingStore],
+    [modelName, codeSessionStore, streamingStore, renderTurnTrailing],
   );
   const userRenderer = useCallback<
     TugListViewCellRenderer<TideTranscriptDataSource>
-  >((p) => <UserRowCell {...p} />, []);
+  >(
+    (p) => <UserRowCell {...p} renderTurnTrailing={renderTurnTrailing} />,
+    [renderTurnTrailing],
+  );
   const cellRenderers = useMemo<
     Record<string, TugListViewCellRenderer<TideTranscriptDataSource>>
   >(

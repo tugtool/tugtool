@@ -1356,7 +1356,7 @@ No tests were touched because none referenced the symbols — the 7 SmartScroll 
 
 **Depends on:** #step-20-3 (clean per-turn + session-cumulative data is the input this step renders), #step-20-1 (TugLinearGauge for any window-utilization gauge surface)
 
-**Status:** _not started._
+**Status:** _slot infrastructure + renderers + dev harness landed; HMR study pending._
 
 **Commit:** `feat(tide-rendering): placement slots Z0–Z4 for tide-card session telemetry`
 
@@ -1464,25 +1464,34 @@ The "✓" / "maybe" / "—" marks are starting positions, not decisions. The stu
 
 **Tasks.**
 
-- [ ] **Slot infrastructure** — five prop additions across three components: `TideCard.headerContent` (Z0) + `TideCard.statusBarContent` (Z2) + flex-column restructure of the top split-panel; `TideCardTranscript.renderTurnTrailing` keyed by half (Z1); `TugPromptEntry.footerContent` (Z4). Layout boxes in each component's CSS. Z3 (`statusContent`) already exists — no code change, only naming-contract documentation.
-- [ ] **Renderer components** — small focused React components for each datum in the experimentation catalog, each consuming the [#step-20-3] telemetry helpers via `useSyncExternalStore` per [L02]. One renderer per datum; placement-agnostic.
-- [ ] **Experimentation harness** — dev-mode selector that maps {datum → slot}. Captures the chosen placement into a tugbank entry (or a hash-fragment) so HMR reloads preserve the experiment state. Productized as a tugplug skill if it gets enough use.
-- [ ] **Mount-identity verification** — confirm `TideCardTranscript` survives the top-split-panel wrapper insertion without unmount; confirm `TugPromptEntry`'s focus / responder identity survives the restructure. Use the existing tide-card caret/first-responder probe pattern (`c773c7ac`) if helpful.
+- [x] **Slot infrastructure** — five prop additions across three components: `TideCard.headerContent` (Z0) + `TideCard.statusBarContent` (Z2) + flex-column restructure of the top split-panel; `TideCardTranscript.renderTurnTrailing` keyed by half (Z1); `TugPromptEntry.footerContent` (Z4). Layout boxes in each component's CSS. Z3 (`statusContent`) already exists — no code change, only naming-contract documentation.
+- [x] **Renderer components** — small focused React components for each datum in the experimentation catalog, each consuming the [#step-20-3] telemetry helpers via `useSyncExternalStore` per [L02]. One renderer per datum; placement-agnostic.
+- [x] **Experimentation harness** — dev-mode selector that maps {datum → slot}. Captures the chosen placement into a tugbank entry (or a hash-fragment) so HMR reloads preserve the experiment state. Productized as a tugplug skill if it gets enough use.
+- [x] **Mount-identity verification** — confirm `TideCardTranscript` survives the top-split-panel wrapper insertion without unmount; confirm `TugPromptEntry`'s focus / responder identity survives the restructure. Use the existing tide-card caret/first-responder probe pattern (`c773c7ac`) if helpful.
 - [ ] **HMR study** — sit with the five-slot layout (Z0–Z4), A/B placements for each datum, decide which combination wins. The result is captured as the default mapping in [#step-20-5.D](#step-20-5-d)'s scope.
 
 **Tests.**
 
-- [ ] Pure-logic: each renderer component takes the [#step-20-3] telemetry helpers as input and renders a deterministic string / DOM structure. Tested in bun:test against synthetic snapshots.
-- [ ] Slot-presence tests: each slot renders when its content is non-null; Z0 and Z2 collapse to zero height when their content is null. Matches the existing `statusContent` convention.
-- [ ] Z1 half-keying: `renderTurnTrailing` receives `half: "user"` on the user-row wire-up and `half: "assistant"` on the assistant-row wire-up; both invocations occur per turn.
+- [x] Pure-logic: each renderer component takes the [#step-20-3] telemetry helpers as input and renders a deterministic string / DOM structure. Tested in bun:test against synthetic snapshots.
+- [x] Slot-presence tests: each slot renders when its content is non-null; Z0 and Z2 collapse to zero height when their content is null. Matches the existing `statusContent` convention.
+- [x] Z1 half-keying: `renderTurnTrailing` receives `half: "user"` on the user-row wire-up and `half: "assistant"` on the assistant-row wire-up; both invocations occur per turn.
 - [ ] HMR-vetted: each slot's layout box behaves correctly — Z0 collapsed (no content), Z1 inline at the trailing edge of each row (empty on user side, populated on assistant side), Z2 a non-scrolling row at the bottom of the top split-panel, Z3 in the existing prompt-entry status row, Z4 between route buttons and submit.
 
 **Checkpoint.**
 
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
+- [x] `bun run audit:tokens lint` exits 0.
 - [ ] **HMR study (manual)** — open a tide card, run a multi-turn session, A/B placement combinations using the dev selector, capture the chosen default mapping for [#step-20-5.D](#step-20-5-d).
+
+**Implementation notes (post-landing).**
+
+- _Mount-identity wrap insertion is steady-state._ The `<div className="tide-card-top-column">` wrapper that hosts `[Z0]` + `<TideTranscriptHost/>` + `[Z2]` is always present from first mount; React reconciliation has no opportunity to swap it in or out during a card's life, so `TideTranscriptHost` mounts inside the wrapper once and stays. Z0 / Z2 inner content can change freely — the wrapper rows always render and collapse to zero height when their content is `null` (no padding, `flex: 0 0 auto`, no intrinsic children). The runtime invariant probe (`c773c7ac`) is therefore not load-bearing here and was not added.
+- _Slot resolution layering._ `TideCardBody` calls `useTidePlacementSlots({ codeSessionStore, sessionMetadataStore })` and ORs the result with the explicit props passed through `TideCardContent`. Explicit props win; the dev harness only fills slots the caller left undefined. In production the tugbank-backed mapping is empty by default, so all slots render `null`.
+- _Z1 user-half stays empty._ The renderer is invoked with `half: "user"` for the user row's trailing position, but the harness's `renderTurnTrailing` returns `null` on the user half — reserving the slot without painting content. Datum surfaces for the user half land in [#step-20-5.D](#step-20-5-d) (or later) when there's a concrete piece of content for it.
+- _Live-clock segments deferred._ `TideTelemetryCumulativeActiveMs` surfaces the committed-turns sum only; computing the live in-flight active segment requires the internal reducer accumulators (not on the public `CodeSessionSnapshot`) and lands in [#step-20-5.D](#step-20-5-d)'s lifecycle work.
+- _Dev control surface._ `window.tugTidePlacement` (dev only) exposes `get` / `set(patch)` / `clear` / `datums` / `zones`. The mapping persists via the tugbank `dev.tugtool.tide.placement-experiment/mapping` key (`kind: "json"`) so HMR reloads preserve the experiment state.
+- _Test coverage shape._ Pure-logic tests pin the value formatters (`formatTokens` / `formatDurationMs` / `formatUsd`) and the placement-entry parser (rejects garbage, refuses cross-zone datums). Renderer-component rendering and slot-presence DOM assertions are real-app territory, not bun:test, per the no-fake-DOM policy; the HMR study covers them empirically.
 
 ---
 

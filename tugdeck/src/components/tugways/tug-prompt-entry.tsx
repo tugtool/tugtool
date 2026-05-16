@@ -447,6 +447,15 @@ export interface TugPromptEntryProps {
    */
   statusContent?: React.ReactNode;
   /**
+   * Optional content rendered in the toolbar between the route choice
+   * group and the submit button. Sits on its own flex line, content-
+   * sized, and stretches to fill the available middle space; the
+   * submit button stays pinned to the trailing edge. When `undefined`
+   * the slot is not rendered (the toolbar collapses back to the
+   * route-group + submit layout it had before this slot existed).
+   */
+  footerContent?: React.ReactNode;
+  /**
    * Optional content rendered inside a `TugPopover` anchored to a
    * toggle button on the trailing edge of the status row.
    */
@@ -565,6 +574,7 @@ export const TugPromptEntry = React.forwardRef<
     onBeforeSubmit,
     onAfterSubmit,
     statusContent,
+    footerContent,
     toolsContent,
     maximized,
     onMaximizeChange,
@@ -1345,6 +1355,14 @@ export const TugPromptEntry = React.forwardRef<
             size="xs"
             aria-label="Command route"
           />
+          {footerContent !== undefined && (
+            <div
+              className="tug-prompt-entry-footer-content"
+              data-slot="tug-prompt-entry-footer-content"
+            >
+              {footerContent}
+            </div>
+          )}
           {snap.queuedSends > 0 && (
             <span
               className="tug-prompt-entry-queue-badge"
