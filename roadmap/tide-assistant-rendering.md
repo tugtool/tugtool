@@ -5275,23 +5275,26 @@ The L26 work (`15a34f91`, `131a244c`, `da22b8e7`) collapsed the two-renderer ass
 
 This is correct within a single live session — the per-turn paths are written during the live turn, retained through `turn_complete`, and the same subscription continues to surface the final content on the committed cell with no prop change and no remount. That was the goal, and L26 documents it.
 
-What L26 did NOT account for is that the reducer **deliberately suppresses the write-inflight effect during replay** at three sites:
+What L26 did NOT account for is that the reducer **deliberately suppresses the write-inflight effect during replay** at four sites:
 
-| Reducer site | Lines | Suppression |
-|---|---|---|
-| `handleTextDelta` (assistant + thinking) | `reducer.ts:540-543` | `state.phase === "replaying" \|\| turnKey === undefined ? [] : [{kind:"write-inflight", …}]` |
-| `handleToolUse` | `reducer.ts:646-663` | `isReplaying ? [] : [...write-inflight...]` |
-| `handleToolResult` | `reducer.ts:707-730` | `isReplaying ? [] : [...write-inflight...]` |
+| Reducer site | Lines | Suppression | Channel |
+|---|---|---|---|
+| `handleTextDelta` (assistant + thinking) | `reducer.ts:540-543` | `state.phase === "replaying" \|\| turnKey === undefined ? [] : [{kind:"write-inflight", …}]` | `assistant` / `thinking` |
+| `handleToolUse` | `reducer.ts:646-663` | `isReplaying ? [] : [...write-inflight...]` | `tools` |
+| `handleToolResult` | `reducer.ts:707-730` | `isReplaying ? [] : [...write-inflight...]` | `tools` |
+| `handleToolUseStructured` | `reducer.ts:780-797` | `isReplaying ? [] : [...write-inflight...]` | `tools` |
 
 The suppression was correct under the **pre-L26 architecture**: committed cells rendered from `transcript[k].assistant` directly, so writing per-turn paths during replay was wasted work and (per the existing inline comment) would have caused replayed partials to briefly appear in the in-flight pane that the committed pane was a separate thing from. The L26 unification removed the in-flight pane as a separate concept — there is now exactly one pane per turn, observing exactly one path — but did not update the replay write path to match.
+
+The fourth site (`handleToolUseStructured`) is the most consequential. The reducer already accepts `tool_use_structured` events during replay — the existing comment at `reducer.ts:746-752` explicitly notes that excluding `replaying` "would silently drop those events, leaving resumed Read tool calls with `structuredResult: null` and the wrapper rendering an empty body." The same logic applies to the write-inflight effect: dropping it on replay leaves the per-turn `.tools` path holding the older serialization (from `handleToolResult` — also suppressed) OR `undefined` (when there was no `tool_result`), and the structured-tool wrapper (Read, Write, Edit, etc.) renders an empty body. The narrower failure mode is the more user-visible one in practice, because Read/Write/Edit are the most common tool calls and their wrappers are the most chrome-heavy.
 
 Concrete failure on cold boot:
 
 1. tugbank restores the session binding; `cardServicesStore` constructs a fresh `CodeSessionStore` (transcript empty, `streamingDocument` empty).
-2. The replay bracket fires: `replay_started` → `user_message_replay` (sets `pendingUserMessage.turnKey` per turn) → `assistant_text` / `thinking_text` / `tool_use` / `tool_result` → `turn_complete` → `replay_complete`.
-3. `turn_complete` commits a populated `TurnEntry` (with `turnKey`, `assistant`, `thinking`, `toolCalls`) into `transcript` via the `append-transcript` effect (`reducer.ts:962`).
-4. None of the events in step 2 emitted any `write-inflight` effect — all three sites short-circuited on `state.phase === "replaying"`.
-5. `CodeRowCell` mounts for each committed turn, subscribes to `turn.${turnKey}.assistant`, gets `undefined`, renders empty. Same for `.thinking` and `.tools`.
+2. The replay bracket fires: `replay_started` → `user_message_replay` (sets `pendingUserMessage.turnKey` per turn) → `assistant_text` / `thinking_text` / `tool_use` / `tool_result` / `tool_use_structured` → `turn_complete` → `replay_complete`.
+3. `turn_complete` commits a populated `TurnEntry` (with `turnKey`, `assistant`, `thinking`, `toolCalls` including `structuredResult` on tools that have it) into `transcript` via the `append-transcript` effect (`reducer.ts:962`).
+4. None of the events in step 2 emitted any `write-inflight` effect — all four sites short-circuited on `state.phase === "replaying"`.
+5. `CodeRowCell` mounts for each committed turn, subscribes to `turn.${turnKey}.assistant`, gets `undefined`, renders empty. Same for `.thinking` and `.tools`. Structured-tool wrappers (Read/Write/Edit/etc.) render empty bodies because the per-turn `.tools` path is undefined; `JSON.parse(undefined)` is treated as an empty array.
 
 The transcript is intact on the snapshot; the wire from snapshot to render is severed for every cold-boot turn.
 
@@ -5301,7 +5304,7 @@ The transcript is intact on the snapshot; the wire from snapshot to render is se
 
 Three shapes are coherent. Sketched up-front to make the choice explicit, then one is selected.
 
-**Option A — replay emits the same write-inflight effects as live.** Remove the `isReplaying` short-circuit at the three reducer sites. Replay events flow through the same effect-emission path as live events; each event writes the current accumulated value into `turn.${turnKey}.${channel}`. The reducer stays pure; the wrapper's `processEffects` write-inflight branch is unchanged. No new code; net deletion. The (now-stale) comment block at `reducer.ts:530-538` is rewritten to describe the post-L26 contract.
+**Option A — replay emits the same write-inflight effects as live.** Remove the `isReplaying` short-circuit at all four reducer sites. Replay events flow through the same effect-emission path as live events; each event writes the current accumulated value into `turn.${turnKey}.${channel}`. The reducer stays pure; the wrapper's `processEffects` write-inflight branch is unchanged. No new code; net deletion. The four stale comment blocks are rewritten to describe the post-L26 contract.
 
 **Option B — store wrapper hydrates per-turn paths after replay.** Leave the reducer alone. After `replay_complete`, walk `state.transcript` in the wrapper and synthesize `streamingDocument.set("turn.${turnKey}.${channel}", …)` for each committed turn. Requires re-serializing `toolCalls: ReadonlyArray<ToolCallState>` back into the JSON shape the path stores (the reducer's `serializeToolCalls` already does this — would need to be exported from the reducer module or duplicated in the wrapper).
 
@@ -5310,9 +5313,9 @@ Three shapes are coherent. Sketched up-front to make the choice explicit, then o
 **Selected: Option A.**
 
 - Architecturally symmetric: replay and live take the same write path. There is no second mechanism to maintain, no special-case wrapper code, no fallback in the cell. The post-L26 contract is "the cell reads from per-turn paths; the reducer writes them during every accepted event" — full stop.
-- Net code deletion. The three `isReplaying ? [] : [...]` ternaries collapse to their second arm; the stale comment at `reducer.ts:530-538` is rewritten (shorter). No new helper, no new export, no new wrapper code.
+- Net code deletion. The four `isReplaying ? [] : [...]` ternaries collapse to their second arm; the four stale comment blocks are rewritten (shorter). No new helper, no new export, no new wrapper code.
 - Reducer purity preserved. No `crypto.randomUUID()`, no time-dependent values introduced; the change is purely "don't drop an effect we already know how to emit."
-- The data emitted matches what `TurnEntry` would carry: each `assistant_text` / `thinking_text` event writes the same buffer that `handleTurnComplete` would commit to `scratchEntry.{assistant,thinking}`; each `tool_use` / `tool_result` writes `serializeToolCalls(toolCallMap)` which is the JSON shape `TranscriptToolCalls`' streaming mode parses. Byte-equivalent to a live turn's final values.
+- The data emitted matches what `TurnEntry` would carry: each `assistant_text` / `thinking_text` event writes the same buffer that `handleTurnComplete` would commit to `scratchEntry.{assistant,thinking}`; each `tool_use` / `tool_result` / `tool_use_structured` writes `serializeToolCalls(toolCallMap)` which is the JSON shape `TranscriptToolCalls`' streaming mode parses. Byte-equivalent to a live turn's final values.
 
 Options B and C are mentioned only to make the rejection visible. Option B is the right choice if a future code path lands committed turns on `transcript` *without* going through the reducer (e.g., an out-of-band ingestion or a debug-tool import); none exists today. Option C is the right choice if the per-turn path semantics ever need to diverge between live and committed (e.g., a "compact" mode that strips intermediate tool output from the committed payload but the live stream shows everything); also no consumer today.
 
@@ -5330,9 +5333,21 @@ Options B and C are mentioned only to make the rejection visible. Option B is th
 3. **`tugdeck/src/lib/code-session-store/reducer.ts` — `handleToolResult`** (`~L676-740`).
    - Remove the `isReplaying ? [] :` outer guard on the effect array (L714-716). Keep the `isReplaying` local binding — it gates the phase transition at L708-712.
    - Update inline comments at L704-706 to reflect the post-L26 contract.
-4. **No changes** to `handleTurnComplete`, `processEffects`, `frameToEvent`, or any wrapper-layer code. The fix is reducer-local.
+4. **`tugdeck/src/lib/code-session-store/reducer.ts` — `handleToolUseStructured`** (`~L742-803`).
+   - Remove the `isReplaying ? [] :` outer guard on the effect array (L781-782). There is no phase-transition logic to preserve in this handler (structured events don't change phase), so the entire `isReplaying` local binding can be deleted.
+   - Rewrite the comment block at L776-779 ("the bracket pair owns transcript-side delivery via `append-transcript`, and the in-flight pane only reflects live turns") — both clauses are obsolete post-L26.
+5. **No changes** to `handleTurnComplete`, `processEffects`, `frameToEvent`, or any wrapper-layer code. The fix is reducer-local.
 
-After the change, the effect emission predicate for all three sites reduces to `state.pendingUserMessage !== null` (handleToolUse / handleToolResult) or `turnKey !== undefined` (handleTextDelta — the field-of access on pendingUserMessage). Both express the same invariant: an in-flight turn exists, so we know which per-turn path to write.
+After the change, the effect emission predicate for all four sites reduces to `state.pendingUserMessage !== null` (the three tool handlers) or `turnKey !== undefined` (handleTextDelta — the optional-chain access on pendingUserMessage). Both express the same invariant: an in-flight turn exists, so we know which per-turn path to write.
+
+**Cross-check — the "in-flight snapshot in bracket" path.** `reducer.replay-inflight-survival.test.ts` exercises a subtle case: after an HMR-mid-stream, the cold-boot replay carries `user_message_replay` + `assistant_text {is_partial:false, text:"head of response"}` for the *still-in-flight* turn, then `replay_complete` PRESERVES `pendingUserMessage` and transitions to `streaming` (not `idle`), then the live tail's `assistant_text {is_partial:true, text:" and tail"}` appends in `scratch`, then `turn_complete` commits. Under the fix:
+- During replay: write-inflight fires for the snapshot's `assistant_text` (was suppressed before; now emits). `turn.${turnKey}.assistant` = `"head of response"`.
+- replay_complete preserves pendingUserMessage → phase = `streaming`.
+- Live tail: write-inflight fires (always did; live path was never suppressed). `turn.${turnKey}.assistant` = `"head of response and tail"`.
+- turn_complete: `TurnEntry.assistant` = `"head of response and tail"` from scratch.
+- Per-turn path matches `TurnEntry`.
+
+The existing tests in `reducer.replay-inflight-survival.test.ts` assert on `state.scratch.get(msgId).assistant` (state, not effects) and `effects.filter(e => e.kind === "append-transcript")` (filters out write-inflight). Both remain green incidentally — they neither assert per-turn-path emptiness during replay nor count effects. No test rewrite needed beyond the additive assertions called out in the test plan below.
 
 ---
 
@@ -5349,32 +5364,36 @@ After the change, the effect emission predicate for all three sites reduces to `
 
 **Artifacts.**
 
-- `tugdeck/src/lib/code-session-store/reducer.ts` — three sites edited (handleTextDelta, handleToolUse, handleToolResult); two comment blocks rewritten.
+- `tugdeck/src/lib/code-session-store/reducer.ts` — four sites edited (handleTextDelta, handleToolUse, handleToolResult, handleToolUseStructured); four comment blocks rewritten.
+- `tugdeck/src/lib/code-session-store/testing/inflight-paths.ts` — extend `lastCommittedTurnValue(store, channel)` to take an optional `index?: number` parameter (defaulting to the last entry). Add module docstring note that the helper resolves the per-turn path via the snapshot turnKey lookup, so it works uniformly for any committed turn regardless of how the turn was committed (live or replay).
 - `tugdeck/src/lib/code-session-store/__tests__/reducer.replay-inflight-survival.test.ts` — extend to assert per-turn paths are populated after a replayed turn (assistant, thinking, tools). Today this file does not check the streaming document at all.
-- `tugdeck/src/lib/code-session-store/__tests__/code-session-store.replay.test.ts` — extend with a full-bracket integration: send → replay translator round-trip → assert each committed `TurnEntry`'s per-turn paths via `lastCommittedTurnValue(store, channel)` (helper already exists in `testing/inflight-paths.ts`).
+- `tugdeck/src/lib/code-session-store/__tests__/code-session-store.replay.test.ts` — extend with a full-bracket integration: send → replay translator round-trip → assert each committed `TurnEntry`'s per-turn paths via `committedTurnValue(store, channel, index)` for every turn in the transcript.
 - `tugdeck/src/lib/tide-transcript-data-source.ts` — module docstring's "Laws / decisions" list updated: the [L23] bullet now explicitly cites cold-boot rehydration as a covered transition, with the per-turn-path symmetry between live and replay as the mechanism.
 - `tuglaws/state-preservation.md` — the L23/L26 aside extended to note that L26's "single subscription survives the transition" promise depends on the write side (`code-session-store`) maintaining symmetry between live and replay. A renderer that observes per-turn paths exclusively requires every accepted event — live or replayed — to populate those paths; gating writes on `state.phase` silently breaks the contract across cold boot.
+- `tuglaws/design-decisions.md` — new entry codifying the write-side contract: any code path that lands a `TurnEntry` on `state.transcript` (today only `handleTurnComplete`'s `append-transcript` effect; tomorrow possibly out-of-band ingestion, debug-tool imports, or server-pushed snapshots) must also seed the per-turn `streamingDocument` paths (`turn.${turnKey}.{assistant,thinking,tools}`) from the entry's payload. The reducer-emitted write-inflight pattern is one such code path; any future analogue must replicate the seeding. Cites [L23] and [L26] as the laws this preserves.
 
 ---
 
 **Tasks (in build order).**
 
-- [ ] **Reducer change** — delete the `isReplaying` short-circuit at the three effect-emission sites; rewrite the three stale comment blocks. Verify no other reducer handler emits `write-inflight` (grep confirms today there are exactly three).
-- [ ] **Reducer-level tests** — extend `reducer.replay-inflight-survival.test.ts` with assertions that after a replayed `assistant_text` + `turn_complete` sequence, `state.scratch` is cleared (existing behavior) AND the test setup asserts via `lastCommittedTurnValue` that `turn.${turnKey}.assistant` holds the committed text. Add equivalents for `thinking` and `tools`.
-- [ ] **Store-level integration tests** — in `code-session-store.replay.test.ts`, add a test that drives the full replay bracket (`replay_started` → user_message_replay → assistant_text → tool_use → tool_result → turn_complete → replay_complete) and asserts every committed `TurnEntry` has populated per-turn paths. Use the existing `lastCommittedTurnValue` helper; no new test infrastructure needed.
-- [ ] **App-test cold-boot vet** — add an `app-test` that (a) sends a turn with assistant text + tool output, (b) waits for `turn_complete`, (c) triggers cold-boot rehydration (reload), (d) asserts the committed cell's markdown body and tool-call cluster render non-empty content. The harness has reload-mode primitives (`tide-session-restore` is already test-covered by `__tests__/tide-session-restore-transport-settled.test.ts`); the new test uses those plus a render-side assertion on `[data-slot="tide-card-transcript"]` body content.
-- [ ] **Docstring updates** — `tide-transcript-data-source.ts` Laws/decisions block. `state-preservation.md` L23/L26 aside extension.
+- [ ] **Reducer change** — delete the `isReplaying` short-circuit at all four effect-emission sites (handleTextDelta, handleToolUse, handleToolResult, handleToolUseStructured); rewrite the four stale comment blocks. Verify with `grep -n "write-inflight\|isReplaying" tugdeck/src/lib/code-session-store/reducer.ts` that no fifth site exists (the current count is exactly four).
+- [ ] **Test helper extension** — parameterize `lastCommittedTurnValue(store, channel)` to `committedTurnValue(store, channel, index?: number)` in `testing/inflight-paths.ts`. Default `index` to `transcript.length - 1` so existing call sites stay correct without rename churn; alias `lastCommittedTurnValue` to the new helper for source-compat (or rename and update the handful of existing call sites — grep first). Adds a clean read API for multi-turn assertions in the new store-level test.
+- [ ] **Reducer-level tests** — extend `reducer.replay-inflight-survival.test.ts` with assertions that after a replayed `assistant_text` + `turn_complete` sequence, `state.scratch` is cleared (existing behavior) AND the test setup asserts via `committedTurnValue` that `turn.${turnKey}.assistant` holds the committed text. Add equivalents for `thinking` and `tools`. Add a specific assertion for `tool_use_structured` during replay: after the bracket, the per-turn `.tools` JSON parses to a `ToolCallState[]` whose entry has the expected `structuredResult` set.
+- [ ] **Store-level integration tests** — in `code-session-store.replay.test.ts`, add a test that drives the full replay bracket (`replay_started` → user_message_replay → assistant_text → tool_use → tool_result → tool_use_structured → turn_complete → replay_complete) for a multi-turn fixture (`test-07-multiple-tool-calls`). Walk `transcript[]` and assert `committedTurnValue(store, channel, i)` is populated for every i.
+- [ ] **App-test cold-boot vet** — add an `app-test` that (a) sends a turn with assistant text + tool output that has a `structured_result` (Read or Bash), (b) waits for `turn_complete`, (c) triggers cold-boot rehydration (reload), (d) asserts the committed cell's markdown body and the structured-tool wrapper both render non-empty content. The harness has reload-mode primitives (`tide-session-restore` is already test-covered by `__tests__/tide-session-restore-transport-settled.test.ts`); the new test uses those plus render-side assertions on `[data-slot="tide-card-transcript"]` body content AND on the tool-call cluster's content slot.
+- [ ] **Docstring updates** — `tide-transcript-data-source.ts` Laws/decisions block. `state-preservation.md` L23/L26 aside extension. `tuglaws/design-decisions.md` new entry (cited in Artifacts).
 
 ---
 
 **Tests (assertion shapes).**
 
 - [ ] Reducer: replay sequence of `assistant_text` → `turn_complete`. After: `state.scratch.has(msgId)` is false, `state.transcript[0].assistant === "AUTHORITATIVE"`, AND `streamingDocument.get("turn.${turnKey}.assistant") === "AUTHORITATIVE"`. (The third assertion is the new gate; the first two pass today.)
-- [ ] Reducer: replay sequence of `tool_use` (Read, input full) → `tool_result` → `turn_complete`. After: `state.transcript[0].toolCalls[0].status === "done"` AND the parsed `JSON.parse(streamingDocument.get("turn.${turnKey}.tools"))[0]` matches.
+- [ ] Reducer: replay sequence of `tool_use` (Read, input full) → `tool_result` → `tool_use_structured` → `turn_complete`. After: `state.transcript[0].toolCalls[0].status === "done"` AND `state.transcript[0].toolCalls[0].structuredResult` matches AND the parsed `JSON.parse(streamingDocument.get("turn.${turnKey}.tools"))[0].structuredResult` matches the same shape. (The `tool_use_structured` write is the previously-missed fourth site.)
 - [ ] Reducer: replay sequence of `thinking_text` → `turn_complete`. After: `streamingDocument.get("turn.${turnKey}.thinking") === <expected>`.
-- [ ] Store-level: full replay bracket over `test-01-basic-round-trip` and `test-05-tool-use-read` golden probes through the replay translator. After `replay_complete`, walk `transcript[]` and assert `lastCommittedTurnValue(store, "assistant")` / `.thinking` / `.tools` populated for the last turn; assert via `streamingDocument.get` directly for each earlier turn (helper only covers last).
-- [ ] App-test: cold-boot rehydration end-to-end. Single turn with markdown body + Bash tool output. After reload, the rendered cell body contains the markdown (non-empty DOM under `.tide-card-transcript-code-body`) AND the tool-call cluster renders (non-empty DOM under the `TranscriptToolCalls` slot).
-- [ ] Existing tests stay green — the only behavior change is the emission of additional `write-inflight` effects during replay, which no existing test asserts against (the existing replay tests check phase transitions, transcript commits, and `scratch` clearing). `lastCommittedTurnValue` was added for exactly this kind of assertion.
+- [ ] Reducer: in-flight-snapshot-in-bracket trace (using the existing `reducer.replay-inflight-survival.test.ts` fixtures). Drive `replay_started` → `user_message_replay` → `assistant_text {is_partial:false, text:"head"}` → `replay_complete` → live `assistant_text {is_partial:true, text:" tail"}` → `turn_complete`. After: `streamingDocument.get("turn.${turnKey}.assistant") === "head tail"`. Confirms the cross-bracket write-through works.
+- [ ] Store-level: full replay bracket over `test-01-basic-round-trip`, `test-05-tool-use-read`, and `test-07-multiple-tool-calls` golden probes through the replay translator. After `replay_complete`, walk `transcript[]` and assert `committedTurnValue(store, "assistant", i)` / `.thinking` / `.tools` populated for every committed turn. Multi-turn coverage gates that per-turn paths don't collide or overwrite each other across the bracket.
+- [ ] App-test: cold-boot rehydration end-to-end. Turn with assistant markdown + structured tool output (Read on a small file). After reload: assistant body's DOM under `.tide-card-transcript-code-body` is non-empty AND the Read wrapper renders the file contents (non-empty DOM in the structured-tool body slot). Two assertions because the bug affects both surfaces and they're served by distinct per-turn channels (`.assistant` vs `.tools`).
+- [ ] Existing tests stay green — the only behavior change is the emission of additional `write-inflight` effects during replay, which no existing test asserts negatively against (the existing replay tests check phase transitions, transcript commits, and `scratch` clearing). The `committedTurnValue` helper is the assertion vehicle for the new gating; the rename + parameterization should not touch any existing call site if `lastCommittedTurnValue` is aliased for source-compat.
 
 ---
 
@@ -5387,9 +5406,17 @@ After the change, the effect emission predicate for all three sites reduces to `
 
 ---
 
+**Out of scope — explicitly deferred.**
+
+1. **Defensive per-turn-path write at `handleTurnComplete`.** A redundant write at commit time (`streamingDocument.set("turn.${turnKey}.${channel}", scratchEntry.assistant)` etc.) would belt-and-suspender against any mid-turn write that got dropped — e.g., a pathological event ordering where `pendingUserMessage` is null when an `assistant_text` arrives, leaving the per-turn path empty even though `scratch` accumulated correctly. In the happy path this is a duplicate no-op write (the last mid-turn write already left the path equal to `scratchEntry.assistant`). The plan deliberately does NOT include this hardening: it violates the minimum-change discipline and obscures the architectural symmetry the fix is trying to establish. File as a follow-up if a real edge-case ever surfaces; not before.
+2. **`scratch` removal.** Once per-turn paths are written on every accepted event, `state.scratch` and the per-turn path hold the same data at every observable moment. `scratch` could in principle be removed and the reducer could read accumulation buffers from the per-turn path on the next event. This is a real refactor (read paths inside the reducer, cleaner reducer state), explicitly out of scope for 18.9 — the regression fix and the refactor are separate concerns and should land separately. File as a follow-up; the architectural simplification is the prize, but the fix must not wait on it.
+3. **Out-of-band transcript ingestion.** The design-decisions entry in this step's Artifacts list flags that any future code path that lands `TurnEntry` on `state.transcript` outside the reducer must also seed per-turn paths. There is no such consumer today. If one appears (debug-tool import, server-pushed snapshot, restore-from-external-store), it must implement the seeding — the entry documents the contract.
+
+---
+
 **Commit:** `fix(code-session-store): replay writes per-turn streaming paths`
 
-**References:** [L02], [L22], [L23], [L26], [#step-18-8] (incremental rendering surface), commit `15a34f91` (L26 unification), commit `da22b8e7` (legacy `inflight.*` removal), `reducer.ts` handleTextDelta / handleToolUse / handleToolResult, `code-session-store.ts` `processEffects`, `testing/inflight-paths.ts` `lastCommittedTurnValue`.
+**References:** [L02], [L22], [L23], [L26], [#step-18-8] (incremental rendering surface), commit `15a34f91` (L26 unification), commit `da22b8e7` (legacy `inflight.*` removal), commit `cf67dda9` (L26 docs that surfaced the regression), `reducer.ts` handleTextDelta / handleToolUse / handleToolResult / handleToolUseStructured, `code-session-store.ts` `processEffects`, `testing/inflight-paths.ts` `lastCommittedTurnValue` → `committedTurnValue`.
 
 ---
 
