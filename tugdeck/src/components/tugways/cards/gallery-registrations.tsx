@@ -87,6 +87,7 @@ import { GalleryJsonTreeBlock } from "./gallery-json-tree-block";
 import { GalleryToolBlockFile } from "./gallery-tool-block-file";
 import { GalleryToolBlockDefault } from "./gallery-tool-block-default";
 import { GalleryTugLinearGauge } from "./gallery-tug-linear-gauge";
+import { GalleryTugArcGauge } from "./gallery-tug-arc-gauge";
 import "./gallery.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
@@ -870,6 +871,16 @@ export function registerGalleryCards(): void {
     componentId: "gallery-tug-linear-gauge",
     contentFactory: (_cardId) => <GalleryTugLinearGauge />,
     defaultMeta: { title: "TugLinearGauge", icon: "Gauge", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.feedback,
+  });
+
+  registerCard({
+    componentId: "gallery-tug-arc-gauge",
+    contentFactory: (_cardId) => <GalleryTugArcGauge />,
+    defaultMeta: { title: "TugArcGauge", icon: "Gauge", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

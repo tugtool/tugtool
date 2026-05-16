@@ -5570,7 +5570,7 @@ Each scale is rendered for three threshold configurations: (a) no thresholds, (b
 
 **Depends on:** #step-20-1 (the `--tugx-gauge-*` color slot family lands with TugLinearGauge; TugArcGauge reads the same color tokens to keep the visual language consistent across both primitives)
 
-**Status:** _not started_
+**Status:** _Implementation complete; awaiting manual HMR vet. Primitive + pure-logic tests (15 cases covering arc-path geometry, large-arc-flag boundary, full-circle two-semicircle branch, default `C` geometry, negative-sweep validation) + 3-section gallery card (interactive sandbox with start/sweep controls / 3×3 scale-threshold matrix / 5 geometry variants row). Shared math extracted to `gauge-math.ts`; both gauges import from there. tsc clean, full test suite 1904/0, audit:tokens lint clean. Registered under "Feedback & Status"._
 
 **Commit:** `feat(tugways): TugArcGauge — arc quantity gauge primitive + gallery card`
 
@@ -5624,26 +5624,27 @@ Plus one **geometry variants** row that shows the same gauge at `readable` scale
 
 **Tasks.**
 
-- [ ] Build `TugArcGauge` per the prop surface above.
-- [ ] Pure-logic Bun tests for arc-path geometry + threshold + geometry-override math.
-- [ ] Declare arc-specific `--tugx-gauge-arc-*` slots in `tug-arc-gauge.css` body{}; reuse the shared color slots from [#step-20-1].
-- [ ] Theme tokens for arc-specific geometry added to both themes.
-- [ ] Gallery card with the three-scale grid + three-threshold rows + geometry-variants row + interactive value slider.
-- [ ] Register `gallery-tug-arc-gauge` in `card-registry.ts`.
-- [ ] `audit-tokens lint` clean.
+- [x] Build `TugArcGauge` per the prop surface above. SVG-based: a 100×100 viewBox with stroked track + fill paths; compact density renders the readout as HTML below the SVG, detailed density renders value + percent as `<text>` centered inside the SVG and the label below.
+- [x] Pure-logic Bun tests for arc-path geometry + threshold + geometry-override math — 15 cases covering empty-path branches, full-circle two-semicircle branch, large-arc-flag boundary (180° strict), start / end coordinate placement for default `C` geometry, negative-sweep throws, default `DEFAULT_ARC_GEOMETRY` constant matches the "C" shape.
+- [x] Declare arc-specific `--tugx-gauge-arc-*` slots in `tug-arc-gauge.css` body{} (stroke widths × compact/detailed, SVG-text font sizes, tick stroke widths, gaps). Reuses the shared color slots from [#step-20-1] without redeclaring them.
+- [x] Theme tokens — no edits needed. The arc gauge composes the same `--tug7-*` tokens through the shared color slot family; geometry slots resolve to literal pixel values (no theme involvement). Shared `gauge-math.ts` extracted so the three pure helpers live in one place; `tug-linear-gauge.tsx` re-exports them for source compat with existing tests.
+- [x] Gallery card — interactive sandbox (incl. start/sweep angle controls + fixed-precision formatter for slider-stability) + 3×3 scale-threshold matrix (9 cells) + 5 geometry variants row (default C / full circle / top half / top-left quarter / top-right quarter).
+- [x] Register `gallery-tug-arc-gauge` in `card-registry.ts` under "Feedback & Status".
+- [x] `audit-tokens lint` clean — zero violations.
 
 **Tests.**
 
-- [ ] Pure-logic: SVG arc path for `value=50%`, `min=0`, `max=100`, default geometry → end point at the angle corresponding to 50% of the sweep, with the correct `largeArcFlag` (1 when fill > 180°, else 0).
-- [ ] Pure-logic: same threshold tests as TugLinearGauge.
-- [ ] Pure-logic: `geometry.sweepAngleDeg = 360` → full-circle path; `geometry.sweepAngleDeg = 0` → empty path; negative sweep throws.
-- [ ] Gallery card mounts; renders all 9 size cells + 5 geometry cells = 14 cells.
+- [x] Pure-logic: arc path for default geometry — start at bottom-left (135° angle position), end at correct angle for `fillRatio * sweep`, large-arc-flag 0 when effective sweep ≤ 180°.
+- [x] Pure-logic: same threshold tests as TugLinearGauge — covered transitively by `gauge-math.ts` extraction (single source of truth; linear-gauge tests gate the math for both gauges).
+- [x] Pure-logic: `geometry.sweepAngleDeg = 360` → two-semicircle full-circle path; `geometry.sweepAngleDeg = 0` → empty string; negative sweep throws.
+- [x] Pure-logic: large-arc-flag flips exactly at the 180° boundary (predicate is strict `> 180`, so effective sweep == 180 stays small-arc).
+- [x] Gallery card mounts; renders all 9 matrix cells + 5 geometry cells + interactive sandbox.
 
 **Checkpoint.**
 
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
+- [x] `bun x tsc --noEmit` clean from `tugdeck/`. Exit 0.
+- [x] `bun test` green — 1904 pass, 0 fail, 8310 expect() calls across 107 files (15 new arc tests; linear tests unchanged at 20/20 after the math extraction).
+- [x] `bun run audit:tokens lint` exits 0. Zero violations.
 - [ ] **HMR vet** — open `gallery-tug-arc-gauge`, sweep the slider, verify the arc redraws smoothly with no visual artifacts (no flash, no path-discontinuity at the 180° boundary where `largeArcFlag` flips), and verify the geometry variants render correctly at the five different arc shapes.
 
 ---

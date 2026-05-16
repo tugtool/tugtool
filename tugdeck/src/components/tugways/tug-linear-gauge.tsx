@@ -55,38 +55,38 @@ import "./tug-linear-gauge.css";
 
 import React from "react";
 import { cn } from "@/lib/utils";
+import {
+  clampToDomain,
+  computeFillRatio,
+  effectiveFillRole,
+  type GaugeFillRole,
+  type GaugeThresholds,
+} from "./gauge-math";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 /**
- * Fill role drives which `--tugx-gauge-fill-{role}-color` token paints
- * the bar. `caution` and `danger` are reserved for threshold-derived
- * states; consumers do not set them directly via `fillRole`. The
- * derivation lives in `effectiveFillRole`.
+ * Fill role — re-export of the shared {@link GaugeFillRole} so existing
+ * call sites that imported `TugLinearGaugeFillRole` continue to work
+ * without churn after the math helpers moved to `gauge-math.ts`.
  */
-export type TugLinearGaugeFillRole =
-  | "default"
-  | "info"
-  | "success"
-  | "caution"
-  | "danger";
+export type TugLinearGaugeFillRole = GaugeFillRole;
 
 /** Density mode — `compact` for chrome strips, `detailed` for full faces. */
 export type TugLinearGaugeDensity = "compact" | "detailed";
 
 /**
- * Threshold fractions (0..1, relative to the [min, max] domain). When
- * `value`'s fractional position crosses a threshold, the fill role is
- * promoted to `caution` (then `danger`) regardless of `fillRole`.
+ * Threshold fractions — re-export of the shared {@link GaugeThresholds}
+ * for the same source-compat reason as {@link TugLinearGaugeFillRole}.
  */
-export interface TugLinearGaugeThresholds {
-  /** Fraction (0..1) above which the fill switches to `caution`. */
-  caution?: number;
-  /** Fraction (0..1) above which the fill switches to `danger`. */
-  danger?: number;
-}
+export type TugLinearGaugeThresholds = GaugeThresholds;
+
+// Re-export the pure helpers so existing tests / consumers that
+// import them from `tug-linear-gauge` keep working. The canonical
+// implementations live in `gauge-math.ts`.
+export { clampToDomain, computeFillRatio, effectiveFillRole };
 
 export interface TugLinearGaugeProps
   extends Omit<
@@ -126,66 +126,6 @@ export interface TugLinearGaugeProps
    * thresholds — pass them via `thresholds`, not here.
    */
   fillRole?: "default" | "info" | "success";
-}
-
-// ---------------------------------------------------------------------------
-// Pure helpers (exported for testing — no DOM, no React)
-// ---------------------------------------------------------------------------
-
-/**
- * Validate the domain configuration. `max` must be strictly greater
- * than `min` — equal-or-inverted bounds produce a degenerate gauge
- * (division by zero in the fill ratio) and surface as a silent NaN
- * width unless caught here.
- */
-function assertValidDomain(min: number, max: number): void {
-  if (!(max > min)) {
-    throw new Error(
-      `TugLinearGauge: max (${max}) must be strictly greater than min (${min})`,
-    );
-  }
-}
-
-/**
- * Clamp `value` into `[min, max]`. Values outside the domain produce a
- * saturated fill at the corresponding edge rather than a fill that
- * over- or underflows the track visually.
- */
-export function clampToDomain(value: number, min: number, max: number): number {
-  if (value < min) return min;
-  if (value > max) return max;
-  return value;
-}
-
-/**
- * Compute the fractional fill (0..1) for `value` in `[min, max]`.
- * Out-of-range values clamp. Throws on `max <= min` (configuration
- * error — see {@link assertValidDomain}).
- */
-export function computeFillRatio(value: number, min: number, max: number): number {
-  assertValidDomain(min, max);
-  return (clampToDomain(value, min, max) - min) / (max - min);
-}
-
-/**
- * Derive the effective fill role from a fractional position and the
- * caller-supplied base role + thresholds. `danger` strictly supersedes
- * `caution` (both checks evaluate, the higher one wins). Thresholds
- * not in `(0, 1]` are honored as-is — callers can pass `0.001` to mean
- * "always danger" or `1.0` to mean "only at saturation."
- */
-export function effectiveFillRole(
-  ratio: number,
-  baseRole: "default" | "info" | "success",
-  thresholds?: TugLinearGaugeThresholds,
-): TugLinearGaugeFillRole {
-  if (thresholds?.danger !== undefined && ratio >= thresholds.danger) {
-    return "danger";
-  }
-  if (thresholds?.caution !== undefined && ratio >= thresholds.caution) {
-    return "caution";
-  }
-  return baseRole;
 }
 
 // ---------------------------------------------------------------------------

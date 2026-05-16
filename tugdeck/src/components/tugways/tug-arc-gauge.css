@@ -1,0 +1,217 @@
+/* @tug-pairings:
+   - --tugx-gauge-fill-default-color  | --tugx-gauge-surface       (fill stroke — default)
+   - --tugx-gauge-fill-info-color     | --tugx-gauge-surface       (fill stroke — info)
+   - --tugx-gauge-fill-success-color  | --tugx-gauge-surface       (fill stroke — success)
+   - --tugx-gauge-fill-caution-color  | --tugx-gauge-surface       (fill stroke — caution band)
+   - --tugx-gauge-fill-danger-color   | --tugx-gauge-surface       (fill stroke — danger band)
+   - --tugx-gauge-track-color         | --tugx-gauge-surface       (track stroke)
+   - --tugx-gauge-tick-major-color    | --tugx-gauge-surface       (major tick lines)
+   - --tugx-gauge-tick-minor-color    | --tugx-gauge-surface       (minor tick lines)
+   - --tugx-gauge-value-text-color    | --tugx-gauge-surface       (centered value text)
+   - --tugx-gauge-percent-text-color  | --tugx-gauge-surface       (centered percent text)
+   - --tugx-gauge-label-text-color    | --tugx-gauge-surface       (label below readout)
+
+   All color slots above are SHARED with `TugLinearGauge` and live in
+   `tug-linear-gauge.css` body{} — see [#step-20-1]. This file
+   declares ONLY arc-specific geometry slots in body{} to avoid
+   duplicating the color declarations and risk drift.
+*/
+
+/**
+ * tug-arc-gauge.css — TugArcGauge primitive.
+ *
+ * Renders an SVG arc (track + fill) sized to a 100×100 viewBox; the
+ * arc's actual on-screen diameter is governed by the consumer's
+ * width / height on the wrapper element. The arc strokes pick up
+ * the shared `--tugx-gauge-fill-{role}-color` slot via the
+ * `[data-role="..."]` attribute on the wrapper — same mechanism
+ * `TugLinearGauge` uses, same slot family.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] appearance lives in CSS / DOM. `data-density` and
+ *    `data-role` select between rules; arc path geometry is pushed
+ *    as an inline `d` attribute on the `<path>` element (the only
+ *    thing the consumer's `value` and `geometry` actually drive).
+ *  - [L16] every color-setting rule below either (a) sets both
+ *    `color` and `background-color` (none here — this primitive has
+ *    no background fill of its own) or (b) declares its rendering
+ *    surface via `@tug-renders-on`.
+ *  - [L17] every `--tugx-gauge-arc-*` slot resolves to a base token
+ *    in one hop. Shared color slots are validated in
+ *    `tug-linear-gauge.css`.
+ *  - [L19] file pair, module docstring, `data-slot="tug-arc-gauge"`.
+ *  - [L20] owns `--tugx-gauge-arc-*` exclusively. Reads (does not
+ *    override) the shared color sub-family from
+ *    `tug-linear-gauge.css`'s body{}.
+ */
+
+/* ---- Arc-specific geometry slots [L17, L20] ---- */
+
+body {
+  /* Stroke widths — compact for chrome scale, detailed for showcase. */
+  --tugx-gauge-arc-stroke-width-compact:  6px;
+  --tugx-gauge-arc-stroke-width-detailed: 5px;
+
+  /* SVG-text font sizes for the detailed density's centered readout. */
+  --tugx-gauge-arc-value-text-size-detailed:   13px;
+  --tugx-gauge-arc-percent-text-size-detailed: 9px;
+
+  /* Tick stroke widths. */
+  --tugx-gauge-arc-tick-major-width: 1.5px;
+  --tugx-gauge-arc-tick-minor-width: 1px;
+
+  /* Gap between the SVG and the compact-density readout below it. */
+  --tugx-gauge-arc-readout-gap:      var(--tug-space-xs);
+  /* Gap between the SVG and the detailed-density label below it. */
+  --tugx-gauge-arc-label-gap:        var(--tug-space-xs);
+}
+
+/* ============================================================================
+   Frame
+   ========================================================================= */
+
+.tug-arc-gauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+/* ============================================================================
+   SVG — the arc itself
+   ========================================================================= */
+
+.tug-arc-gauge-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* Allow the SVG to scale to whatever the wrapper sizes it to. The
+     gallery card sets explicit pixel widths on each row's wrapper;
+     the chrome consumer will size via its own card-meter slot. */
+}
+
+/* ---- Track stroke ---- */
+
+/* @tug-renders-on var(--tugx-gauge-surface) */
+.tug-arc-gauge-track {
+  fill: none;
+  stroke: var(--tugx-gauge-track-color);
+  stroke-linecap: round;
+}
+
+.tug-arc-gauge[data-density="compact"] .tug-arc-gauge-track {
+  stroke-width: var(--tugx-gauge-arc-stroke-width-compact);
+}
+
+.tug-arc-gauge[data-density="detailed"] .tug-arc-gauge-track {
+  stroke-width: var(--tugx-gauge-arc-stroke-width-detailed);
+}
+
+/* ---- Fill stroke (role-driven) ---- */
+
+/* @tug-renders-on var(--tugx-gauge-surface) */
+.tug-arc-gauge-fill {
+  fill: none;
+  stroke: var(--tugx-gauge-fill-default-color);
+  stroke-linecap: round;
+  transition: stroke 120ms ease-out, d 80ms ease-out;
+}
+
+.tug-arc-gauge[data-density="compact"] .tug-arc-gauge-fill {
+  stroke-width: var(--tugx-gauge-arc-stroke-width-compact);
+}
+
+.tug-arc-gauge[data-density="detailed"] .tug-arc-gauge-fill {
+  stroke-width: var(--tugx-gauge-arc-stroke-width-detailed);
+}
+
+/* @tug-renders-on var(--tugx-gauge-surface) */
+.tug-arc-gauge[data-role="info"] .tug-arc-gauge-fill {
+  stroke: var(--tugx-gauge-fill-info-color);
+}
+/* @tug-renders-on var(--tugx-gauge-surface) */
+.tug-arc-gauge[data-role="success"] .tug-arc-gauge-fill {
+  stroke: var(--tugx-gauge-fill-success-color);
+}
+/* @tug-renders-on var(--tugx-gauge-surface) */
+.tug-arc-gauge[data-role="caution"] .tug-arc-gauge-fill {
+  stroke: var(--tugx-gauge-fill-caution-color);
+}
+/* @tug-renders-on var(--tugx-gauge-surface) */
+.tug-arc-gauge[data-role="danger"] .tug-arc-gauge-fill {
+  stroke: var(--tugx-gauge-fill-danger-color);
+}
+
+/* ============================================================================
+   Tick rail (detailed only — rendered as <line> inside the SVG)
+   ========================================================================= */
+
+/* @tug-renders-on var(--tugx-gauge-surface) */
+.tug-arc-gauge-tick-major {
+  stroke: var(--tugx-gauge-tick-major-color);
+  stroke-width: var(--tugx-gauge-arc-tick-major-width);
+  stroke-linecap: butt;
+}
+
+/* @tug-renders-on var(--tugx-gauge-surface) */
+.tug-arc-gauge-tick-minor {
+  stroke: var(--tugx-gauge-tick-minor-color);
+  stroke-width: var(--tugx-gauge-arc-tick-minor-width);
+  stroke-linecap: butt;
+}
+
+/* ============================================================================
+   SVG-rendered value / percent text (detailed only)
+   ========================================================================= */
+
+/* @tug-renders-on var(--tugx-gauge-surface) */
+.tug-arc-gauge-value-svg {
+  fill: var(--tugx-gauge-value-text-color);
+  font-family: var(--tug-font-mono, monospace);
+  font-size: var(--tugx-gauge-arc-value-text-size-detailed);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* @tug-renders-on var(--tugx-gauge-surface) */
+.tug-arc-gauge-percent-svg {
+  fill: var(--tugx-gauge-percent-text-color);
+  font-family: var(--tug-font-mono, monospace);
+  font-size: var(--tugx-gauge-arc-percent-text-size-detailed);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================================
+   HTML-rendered readout (compact density — sits below the SVG)
+   ========================================================================= */
+
+.tug-arc-gauge-readout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: var(--tugx-gauge-arc-readout-gap);
+  font-family: var(--tug-font-mono, monospace);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+/* @tug-renders-on var(--tugx-gauge-surface) */
+.tug-arc-gauge-value {
+  color: var(--tugx-gauge-value-text-color);
+  font-size: var(--tugx-gauge-value-text-size-compact);
+  font-weight: 600;
+}
+
+/* @tug-renders-on var(--tugx-gauge-surface) */
+.tug-arc-gauge-label {
+  color: var(--tugx-gauge-label-text-color);
+  font-family: var(--tug-font-mono, monospace);
+  font-size: var(--tugx-gauge-label-text-size-compact);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tug-arc-gauge-label-detailed {
+  margin-top: var(--tugx-gauge-arc-label-gap);
+}
