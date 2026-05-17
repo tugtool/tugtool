@@ -2,23 +2,34 @@
  * gallery-tide-status-row.tsx — design-spike gallery card for the
  * tide-card Z2 status row.
  *
- * Surfaces the same five session-status datums (per-turn time,
- * per-turn tokens, total time, total tokens, context with arc) in
- * **six** alternative layouts so the user can compare them side-by-
- * side under value-change scenarios and pick the strongest.
+ * **Round 2.** V1 (fixed-width values, right-aligned digits) won the
+ * first cut. Every variant below uses the V1 stability foundation
+ * (fixed-width slots, right-aligned digits, mono + tabular figures)
+ * and explores ONE other axis on top of it:
  *
- * **Layout stability is the design goal.** The current production
- * row (Variant 0 below — the baseline) reads correctly but jitters
- * as content changes width. The remaining five variants explore
- * different stabilization strategies; the user can pick one and we'll
- * promote it into the real renderer (`tide-card-telemetry-renderers`).
+ *   - **§1 Font experiments** — same layout, different typefaces.
+ *     B612 Mono is the Airbus cockpit instrument font we just bundled
+ *     for this study; JetBrains Mono is the other contender. Compare
+ *     against the existing Hack mono and against label/value font
+ *     splits.
+ *   - **§2 Dividers / chrome** — same font, different visual
+ *     separators between sections (bullets, hairlines, brackets,
+ *     framed cells, recessed grooves, alternating tints, ticks,
+ *     ribs). The right-aligned values make the bullet feel too soft;
+ *     this section explores stronger separators.
+ *   - **§3 Horizontal layout** — using more of Z2's width. Centered
+ *     vs distributed vs fixed-column vs split-justified.
+ *   - **§4 Chrome flourishes** — small graphical accents: leading-
+ *     zero placeholders, bracket framing, tick marks, marker rules,
+ *     thin section caps.
  *
  * Controls at the top:
- *   - **Scenario picker** — swap between hand-crafted value scenarios
- *     (fresh session → long turn → near-cap → marathon) so each
- *     variant's jitter / stability is empirically visible.
- *   - **Auto-tick** — flip the scenario every 1.5s so jitter is
- *     unmistakable.
+ *   - **scenario** — walk through realistic value ranges.
+ *   - **next →** step manually.
+ *   - **auto-tick** — flip the scenario every 1.5s.
+ *
+ * After the round-2 review, the winning combination is promoted into
+ * `tide-card-telemetry-renderers`.
  *
  * @module components/tugways/cards/gallery-tide-status-row
  */
@@ -26,7 +37,6 @@
 import React, { useEffect, useState } from "react";
 
 import { TugArcGauge } from "@/components/tugways/tug-arc-gauge";
-import { TugLinearGauge } from "@/components/tugways/tug-linear-gauge";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 import {
@@ -35,7 +45,7 @@ import {
 } from "./tide-card-telemetry-renderers";
 
 // ---------------------------------------------------------------------------
-// Scenarios — hand-crafted value sets across the realistic value range
+// Scenarios + values
 // ---------------------------------------------------------------------------
 
 interface StatusValues {
@@ -84,9 +94,9 @@ const SCENARIOS: ReadonlyArray<Scenario> = [
     id: "longTurn",
     label: "Long turn",
     values: {
-      perTurnActiveMs: 83_400, // 1m 23s
+      perTurnActiveMs: 83_400,
       perTurnTokens: 87_500,
-      totalActiveMs: 124_200, // 2m 04s
+      totalActiveMs: 124_200,
       totalTokens: 92_000,
       contextTokens: 87_500,
       contextMax: ONE_MILLION,
@@ -98,7 +108,7 @@ const SCENARIOS: ReadonlyArray<Scenario> = [
     values: {
       perTurnActiveMs: 12_300,
       perTurnTokens: 30_000,
-      totalActiveMs: 3_840_000, // 1h 04m
+      totalActiveMs: 3_840_000,
       totalTokens: 5_050_000,
       contextTokens: 195_000,
       contextMax: ONE_MILLION,
@@ -110,7 +120,7 @@ const SCENARIOS: ReadonlyArray<Scenario> = [
     values: {
       perTurnActiveMs: 4_200,
       perTurnTokens: 18_000,
-      totalActiveMs: 1_394_000, // 23m 14s
+      totalActiveMs: 1_394_000,
       totalTokens: 9_800_000,
       contextTokens: 905_000,
       contextMax: ONE_MILLION,
@@ -122,7 +132,7 @@ const SCENARIOS: ReadonlyArray<Scenario> = [
     values: {
       perTurnActiveMs: 8_100,
       perTurnTokens: 22_000,
-      totalActiveMs: 16_200_000, // 4h 30m
+      totalActiveMs: 16_200_000,
       totalTokens: 47_200_000,
       contextTokens: 950_000,
       contextMax: ONE_MILLION,
@@ -131,56 +141,61 @@ const SCENARIOS: ReadonlyArray<Scenario> = [
 ];
 
 // ---------------------------------------------------------------------------
-// Reserved widths — the largest representation each metric can produce.
+// Reserved widths — max-realistic representation per metric in ch
 // ---------------------------------------------------------------------------
-//
-// Used by the fixed-width variants to pin each value cell to its
-// worst-case width, eliminating jitter as values change.
-//
-// The widths are in `ch` units (one `ch` ≈ one tabular digit at the
-// row's mono font); all six variants share the row's mono font, so
-// `ch` is the natural unit.
-//
-//   - time      → `99h 59m`         = 7 chars
-//   - tokens    → `999.99M`         = 7 chars  (extreme upper bound)
-//   - ctx ratio → `999.99k / 1.00M` = 15 chars  (numerator + ` / ` + denom)
-
-const VALUE_WIDTH_TIME_CH = 7;
-const VALUE_WIDTH_TOKENS_CH = 7;
-const VALUE_WIDTH_CONTEXT_CH = 15;
+const VALUE_WIDTH_TIME_CH = 7;     // `99h 59m`
+const VALUE_WIDTH_TOKENS_CH = 7;   // `999.99M`
+const VALUE_WIDTH_CONTEXT_CH = 15; // `999.99k / 1.00M`
 
 // ---------------------------------------------------------------------------
-// Shared inline styles
+// Shared style atoms — every variant inherits these
 // ---------------------------------------------------------------------------
 
-const monoFamily = "var(--tug-font-mono, monospace)";
+const MONO_DEFAULT = "var(--tug-font-mono, monospace)";
+const MONO_B612 = '"B612 Mono", var(--tug-font-mono, monospace)';
+const MONO_JETBRAINS = '"JetBrains Mono", var(--tug-font-mono, monospace)';
+const SANS = "var(--tug-font-family-sans, system-ui, sans-serif)";
 
-const cardSurface: React.CSSProperties = {
+const cardSurface = (
+  font: string = MONO_DEFAULT,
+  fontSize: string = "0.6875rem",
+): React.CSSProperties => ({
   backgroundColor: "var(--tug7-surface-card-primary-normal-status-rest)",
-  borderTop:
-    "1px solid var(--tug7-element-global-border-normal-default-rest)",
-  borderBottom:
-    "1px solid var(--tug7-element-global-border-normal-default-rest)",
+  borderTop: "1px solid var(--tug7-element-global-border-normal-default-rest)",
+  borderBottom: "1px solid var(--tug7-element-global-border-normal-default-rest)",
   padding: "var(--tug-space-md)",
-  fontFamily: monoFamily,
+  fontFamily: font,
   fontVariantNumeric: "tabular-nums",
-  fontSize: "0.6875rem", // 11px — matches the gauge's compact readout
+  fontSize,
   lineHeight: 1.2,
-};
+});
 
-const labelMuted: React.CSSProperties = {
+const labelMuted = (font: string = MONO_DEFAULT): React.CSSProperties => ({
+  fontFamily: font,
   color: "var(--tug7-element-global-text-normal-muted-rest)",
   textTransform: "uppercase",
   letterSpacing: "0.06em",
   fontWeight: 500,
-};
+});
 
-const valueStrong: React.CSSProperties = {
+const valueStrong = (font: string = MONO_DEFAULT): React.CSSProperties => ({
+  fontFamily: font,
   color: "var(--tug7-element-global-text-normal-strong-rest)",
   fontWeight: 600,
-};
+  fontVariantNumeric: "tabular-nums",
+});
 
-const sepStyle: React.CSSProperties = {
+const valuePinned = (
+  font: string = MONO_DEFAULT,
+  widthCh: number = VALUE_WIDTH_TIME_CH,
+): React.CSSProperties => ({
+  ...valueStrong(font),
+  display: "inline-block",
+  minWidth: `${widthCh}ch`,
+  textAlign: "right",
+});
+
+const sepBullet: React.CSSProperties = {
   color: "var(--tug7-element-global-text-normal-muted-rest)",
   opacity: 0.6,
   userSelect: "none",
@@ -193,690 +208,53 @@ const sectionTitleStyle: React.CSSProperties = {
   marginBottom: "var(--tug-space-sm)",
 };
 
-const variantNoteStyle: React.CSSProperties = {
-  fontFamily: monoFamily,
+const variantStackStyle: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "var(--tug-space-md)",
+};
+
+const variantTitleStyle: React.CSSProperties = {
+  fontFamily: MONO_DEFAULT,
   fontSize: "0.6875rem",
   color: "var(--tug7-element-global-text-normal-muted-rest)",
+  textTransform: "uppercase",
+  letterSpacing: "0.04em",
+};
+
+const variantNoteStyle: React.CSSProperties = {
+  fontFamily: MONO_DEFAULT,
+  fontSize: "0.625rem",
+  color: "var(--tug7-element-global-text-normal-muted-rest)",
+  opacity: 0.85,
 };
 
 // ---------------------------------------------------------------------------
-// Variant 0 — Baseline (production today, intentionally fluid)
+// Reusable item building blocks
 // ---------------------------------------------------------------------------
 
-function Variant0Baseline({ v }: { v: StatusValues }): React.ReactElement {
-  const contextRatio = `${formatTokens(v.contextTokens)} / ${formatTokens(v.contextMax)}`;
-  return (
-    <div
-      style={{
-        ...cardSurface,
-        display: "flex",
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: "var(--tug-space-sm)",
-      }}
-    >
-      <BaselineItem label="time:" value={formatDurationMs(v.perTurnActiveMs)} />
-      <Sep />
-      <BaselineItem label="tokens:" value={formatTokens(v.perTurnTokens)} />
-      <Sep />
-      <BaselineItem label="total time:" value={formatDurationMs(v.totalActiveMs)} />
-      <Sep />
-      <BaselineItem label="total tokens:" value={formatTokens(v.totalTokens)} />
-      <Sep />
-      <span
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: "var(--tug-space-xs)",
-          whiteSpace: "nowrap",
-        }}
-      >
-        <span style={labelMuted}>context:</span>
-        <ContextArc v={v} formatted={contextRatio} />
-      </span>
-    </div>
-  );
-}
-
-function BaselineItem({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}): React.ReactElement {
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "baseline",
-        gap: "var(--tug-space-2xs)",
-        whiteSpace: "nowrap",
-      }}
-    >
-      <span style={labelMuted}>{label}</span>
-      <span style={valueStrong}>{value}</span>
-    </span>
-  );
-}
-
-function Sep(): React.ReactElement {
-  return <span style={sepStyle}>•</span>;
-}
-
-// ---------------------------------------------------------------------------
-// Variant 1 — Fixed-width values, right-aligned
-// ---------------------------------------------------------------------------
-
-function Variant1FixedWidthRight({
-  v,
-}: {
-  v: StatusValues;
-}): React.ReactElement {
-  return (
-    <div
-      style={{
-        ...cardSurface,
-        display: "flex",
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: "var(--tug-space-sm)",
-      }}
-    >
-      <FixedItem
-        label="time:"
-        value={formatDurationMs(v.perTurnActiveMs)}
-        widthCh={VALUE_WIDTH_TIME_CH}
-      />
-      <Sep />
-      <FixedItem
-        label="tokens:"
-        value={formatTokens(v.perTurnTokens)}
-        widthCh={VALUE_WIDTH_TOKENS_CH}
-      />
-      <Sep />
-      <FixedItem
-        label="total time:"
-        value={formatDurationMs(v.totalActiveMs)}
-        widthCh={VALUE_WIDTH_TIME_CH}
-      />
-      <Sep />
-      <FixedItem
-        label="total tokens:"
-        value={formatTokens(v.totalTokens)}
-        widthCh={VALUE_WIDTH_TOKENS_CH}
-      />
-      <Sep />
-      <ContextItem v={v} valueWidthCh={VALUE_WIDTH_CONTEXT_CH} />
-    </div>
-  );
-}
-
-function FixedItem({
-  label,
-  value,
-  widthCh,
-}: {
+interface ItemSpec {
   label: string;
   value: string;
   widthCh: number;
-}): React.ReactElement {
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "baseline",
-        gap: "var(--tug-space-2xs)",
-        whiteSpace: "nowrap",
-      }}
-    >
-      <span style={labelMuted}>{label}</span>
-      <span
-        style={{
-          ...valueStrong,
-          display: "inline-block",
-          minWidth: `${widthCh}ch`,
-          textAlign: "right",
-        }}
-      >
-        {value}
-      </span>
-    </span>
-  );
 }
 
-function ContextItem({
-  v,
-  valueWidthCh,
-}: {
-  v: StatusValues;
-  valueWidthCh: number;
-}): React.ReactElement {
-  const ratio = `${formatTokens(v.contextTokens)} / ${formatTokens(v.contextMax)}`;
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: "var(--tug-space-xs)",
-        whiteSpace: "nowrap",
-      }}
-    >
-      <span style={labelMuted}>context:</span>
-      <span
-        style={{
-          ...valueStrong,
-          display: "inline-block",
-          minWidth: `${valueWidthCh}ch`,
-          textAlign: "right",
-        }}
-      >
-        {ratio}
-      </span>
-      <BareArc v={v} />
-    </span>
-  );
+function buildItems(v: StatusValues): ItemSpec[] {
+  return [
+    { label: "time:", value: formatDurationMs(v.perTurnActiveMs), widthCh: VALUE_WIDTH_TIME_CH },
+    { label: "tokens:", value: formatTokens(v.perTurnTokens), widthCh: VALUE_WIDTH_TOKENS_CH },
+    { label: "total time:", value: formatDurationMs(v.totalActiveMs), widthCh: VALUE_WIDTH_TIME_CH },
+    { label: "total tokens:", value: formatTokens(v.totalTokens), widthCh: VALUE_WIDTH_TOKENS_CH },
+  ];
 }
 
-// ---------------------------------------------------------------------------
-// Variant 2 — Two-line stacked badges (LABEL above / VALUE below)
-// ---------------------------------------------------------------------------
-
-function Variant2StackedBadges({
-  v,
-}: {
-  v: StatusValues;
-}): React.ReactElement {
-  return (
-    <div
-      style={{
-        ...cardSurface,
-        display: "flex",
-        flexDirection: "row",
-        alignItems: "stretch",
-        justifyContent: "center",
-        gap: "var(--tug-space-md)",
-      }}
-    >
-      <StackedCell
-        label="TIME"
-        value={formatDurationMs(v.perTurnActiveMs)}
-        widthCh={VALUE_WIDTH_TIME_CH}
-      />
-      <BadgeDivider />
-      <StackedCell
-        label="TOKENS"
-        value={formatTokens(v.perTurnTokens)}
-        widthCh={VALUE_WIDTH_TOKENS_CH}
-      />
-      <BadgeDivider />
-      <StackedCell
-        label="TOTAL TIME"
-        value={formatDurationMs(v.totalActiveMs)}
-        widthCh={VALUE_WIDTH_TIME_CH}
-      />
-      <BadgeDivider />
-      <StackedCell
-        label="TOTAL TOKENS"
-        value={formatTokens(v.totalTokens)}
-        widthCh={VALUE_WIDTH_TOKENS_CH}
-      />
-      <BadgeDivider />
-      <StackedContextCell v={v} />
-    </div>
-  );
+function contextRatio(v: StatusValues): string {
+  return `${formatTokens(v.contextTokens)} / ${formatTokens(v.contextMax)}`;
 }
 
-function StackedCell({
-  label,
-  value,
-  widthCh,
-}: {
-  label: string;
-  value: string;
-  widthCh: number;
-}): React.ReactElement {
+function BareArc({ v, size = 28 }: { v: StatusValues; size?: number }): React.ReactElement {
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: "2px",
-        minWidth: `${widthCh + 1}ch`,
-      }}
-    >
-      <span style={{ ...labelMuted, fontSize: "0.625rem" }}>{label}</span>
-      <span style={{ ...valueStrong, fontSize: "0.8125rem" }}>{value}</span>
-    </div>
-  );
-}
-
-function StackedContextCell({ v }: { v: StatusValues }): React.ReactElement {
-  const ratio = `${formatTokens(v.contextTokens)} / ${formatTokens(v.contextMax)}`;
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: "2px",
-        minWidth: `${VALUE_WIDTH_CONTEXT_CH + 3}ch`,
-      }}
-    >
-      <span style={{ ...labelMuted, fontSize: "0.625rem" }}>CONTEXT</span>
-      <span
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: "var(--tug-space-xs)",
-        }}
-      >
-        <span style={{ ...valueStrong, fontSize: "0.8125rem" }}>{ratio}</span>
-        <BareArc v={v} />
-      </span>
-    </div>
-  );
-}
-
-function BadgeDivider(): React.ReactElement {
-  return (
-    <span
-      style={{
-        width: 1,
-        background: "var(--tug7-element-global-border-normal-default-rest)",
-        opacity: 0.5,
-      }}
-    />
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Variant 3 — All-gauges instrument cluster (linear gauges + arc)
-// ---------------------------------------------------------------------------
-//
-// Treats every metric as a meter. The per-turn metrics use a session-
-// typical normalization (e.g., a 60s "typical turn"), the cumulative
-// metrics use a "session-typical" normalization (1 hour, 10M tokens).
-// Reads like an aviation panel — every metric has a graphical position
-// AND a numeric readout. Maximum complex-machine feel.
-
-const TYPICAL_TURN_MS = 60_000;
-const TYPICAL_TURN_TOKENS = 100_000;
-const TYPICAL_SESSION_MS = 60 * 60 * 1000; // 1h
-const TYPICAL_SESSION_TOKENS = 10_000_000; // 10M
-
-function Variant3AllGauges({ v }: { v: StatusValues }): React.ReactElement {
-  return (
-    <div
-      style={{
-        ...cardSurface,
-        display: "flex",
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: "var(--tug-space-md)",
-      }}
-    >
-      <GaugeCell
-        label="TIME"
-        valueText={formatDurationMs(v.perTurnActiveMs)}
-        value={v.perTurnActiveMs}
-        max={TYPICAL_TURN_MS}
-        widthCh={VALUE_WIDTH_TIME_CH}
-      />
-      <BadgeDivider />
-      <GaugeCell
-        label="TOKENS"
-        valueText={formatTokens(v.perTurnTokens)}
-        value={v.perTurnTokens}
-        max={TYPICAL_TURN_TOKENS}
-        widthCh={VALUE_WIDTH_TOKENS_CH}
-      />
-      <BadgeDivider />
-      <GaugeCell
-        label="TOTAL TIME"
-        valueText={formatDurationMs(v.totalActiveMs)}
-        value={v.totalActiveMs}
-        max={TYPICAL_SESSION_MS}
-        widthCh={VALUE_WIDTH_TIME_CH}
-      />
-      <BadgeDivider />
-      <GaugeCell
-        label="TOTAL TOKENS"
-        valueText={formatTokens(v.totalTokens)}
-        value={v.totalTokens}
-        max={TYPICAL_SESSION_TOKENS}
-        widthCh={VALUE_WIDTH_TOKENS_CH}
-      />
-      <BadgeDivider />
-      <StackedContextCell v={v} />
-    </div>
-  );
-}
-
-function GaugeCell({
-  label,
-  valueText,
-  value,
-  max,
-  widthCh,
-}: {
-  label: string;
-  valueText: string;
-  value: number;
-  max: number;
-  widthCh: number;
-}): React.ReactElement {
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: "3px",
-        minWidth: `${widthCh + 2}ch`,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "row",
-          alignItems: "baseline",
-          gap: "var(--tug-space-2xs)",
-          width: "100%",
-          justifyContent: "center",
-        }}
-      >
-        <span style={{ ...labelMuted, fontSize: "0.625rem" }}>{label}</span>
-        <span
-          style={{
-            ...valueStrong,
-            fontSize: "0.75rem",
-            display: "inline-block",
-            minWidth: `${widthCh}ch`,
-            textAlign: "right",
-          }}
-        >
-          {valueText}
-        </span>
-      </div>
-      <div style={{ width: "100%", minWidth: `${widthCh + 1}ch` }}>
-        <TugLinearGauge
-          value={Math.min(value, max)}
-          min={0}
-          max={max}
-          density="compact"
-          thresholds={{ caution: 0.75, danger: 0.95 }}
-        />
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Variant 4 — Pinned grid (CSS Grid with fixed column tracks)
-// ---------------------------------------------------------------------------
-//
-// The row IS a grid with reserved-width columns per item. Each item
-// owns its track; separators sit in their own micro-columns. The
-// whole row's intrinsic width is fully determined by the track sum,
-// so the row's centered-in-Z2 position is invariant under content
-// change.
-
-function Variant4PinnedGrid({ v }: { v: StatusValues }): React.ReactElement {
-  // Compute label widths (in ch) — accounts for the longest label
-  // we want to surface at each priority.
-  const labelTime = "time:".length;
-  const labelTokens = "tokens:".length;
-  const labelTotalTime = "total time:".length;
-  const labelTotalTokens = "total tokens:".length;
-  const labelContext = "context:".length;
-  const sepCh = 1; // bullet
-
-  // 5 items × (label + value) + 4 separators.
-  // Each item is two grid columns: [label][value]; separators are
-  // single columns.
-  const cols = [
-    `${labelTime}ch`,
-    `${VALUE_WIDTH_TIME_CH}ch`,
-    `${sepCh}ch`,
-    `${labelTokens}ch`,
-    `${VALUE_WIDTH_TOKENS_CH}ch`,
-    `${sepCh}ch`,
-    `${labelTotalTime}ch`,
-    `${VALUE_WIDTH_TIME_CH}ch`,
-    `${sepCh}ch`,
-    `${labelTotalTokens}ch`,
-    `${VALUE_WIDTH_TOKENS_CH}ch`,
-    `${sepCh}ch`,
-    `${labelContext}ch`,
-    `${VALUE_WIDTH_CONTEXT_CH}ch`,
-    "auto", // arc gauge
-  ].join(" ");
-
-  const ratio = `${formatTokens(v.contextTokens)} / ${formatTokens(v.contextMax)}`;
-  return (
-    <div style={cardSurface}>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: cols,
-          alignItems: "center",
-          justifyContent: "center",
-          columnGap: "var(--tug-space-2xs)",
-          width: "max-content",
-          margin: "0 auto",
-        }}
-      >
-        <span style={labelMuted}>time:</span>
-        <span style={{ ...valueStrong, textAlign: "right" }}>
-          {formatDurationMs(v.perTurnActiveMs)}
-        </span>
-        <span style={{ ...sepStyle, textAlign: "center" }}>•</span>
-
-        <span style={labelMuted}>tokens:</span>
-        <span style={{ ...valueStrong, textAlign: "right" }}>
-          {formatTokens(v.perTurnTokens)}
-        </span>
-        <span style={{ ...sepStyle, textAlign: "center" }}>•</span>
-
-        <span style={labelMuted}>total time:</span>
-        <span style={{ ...valueStrong, textAlign: "right" }}>
-          {formatDurationMs(v.totalActiveMs)}
-        </span>
-        <span style={{ ...sepStyle, textAlign: "center" }}>•</span>
-
-        <span style={labelMuted}>total tokens:</span>
-        <span style={{ ...valueStrong, textAlign: "right" }}>
-          {formatTokens(v.totalTokens)}
-        </span>
-        <span style={{ ...sepStyle, textAlign: "center" }}>•</span>
-
-        <span style={labelMuted}>context:</span>
-        <span style={{ ...valueStrong, textAlign: "right" }}>{ratio}</span>
-        <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            marginLeft: "var(--tug-space-xs)",
-          }}
-        >
-          <BareArc v={v} />
-        </span>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Variant 5 — Sparkline tail (compact numeric + magnitude bar)
-// ---------------------------------------------------------------------------
-//
-// Per metric: label + fixed-width numeric + a thin magnitude bar
-// (color follows threshold). Dense and graphical without two-lining.
-
-function Variant5SparklineTail({
-  v,
-}: {
-  v: StatusValues;
-}): React.ReactElement {
-  return (
-    <div
-      style={{
-        ...cardSurface,
-        display: "flex",
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: "var(--tug-space-md)",
-      }}
-    >
-      <SparkItem
-        label="time:"
-        valueText={formatDurationMs(v.perTurnActiveMs)}
-        value={v.perTurnActiveMs}
-        max={TYPICAL_TURN_MS}
-        widthCh={VALUE_WIDTH_TIME_CH}
-      />
-      <Sep />
-      <SparkItem
-        label="tokens:"
-        valueText={formatTokens(v.perTurnTokens)}
-        value={v.perTurnTokens}
-        max={TYPICAL_TURN_TOKENS}
-        widthCh={VALUE_WIDTH_TOKENS_CH}
-      />
-      <Sep />
-      <SparkItem
-        label="total time:"
-        valueText={formatDurationMs(v.totalActiveMs)}
-        value={v.totalActiveMs}
-        max={TYPICAL_SESSION_MS}
-        widthCh={VALUE_WIDTH_TIME_CH}
-      />
-      <Sep />
-      <SparkItem
-        label="total tokens:"
-        valueText={formatTokens(v.totalTokens)}
-        value={v.totalTokens}
-        max={TYPICAL_SESSION_TOKENS}
-        widthCh={VALUE_WIDTH_TOKENS_CH}
-      />
-      <Sep />
-      <span
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: "var(--tug-space-xs)",
-          whiteSpace: "nowrap",
-        }}
-      >
-        <span style={labelMuted}>context:</span>
-        <span
-          style={{
-            ...valueStrong,
-            display: "inline-block",
-            minWidth: `${VALUE_WIDTH_CONTEXT_CH}ch`,
-            textAlign: "right",
-          }}
-        >
-          {`${formatTokens(v.contextTokens)} / ${formatTokens(v.contextMax)}`}
-        </span>
-        <BareArc v={v} />
-      </span>
-    </div>
-  );
-}
-
-function SparkItem({
-  label,
-  valueText,
-  value,
-  max,
-  widthCh,
-}: {
-  label: string;
-  valueText: string;
-  value: number;
-  max: number;
-  widthCh: number;
-}): React.ReactElement {
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: "var(--tug-space-2xs)",
-        whiteSpace: "nowrap",
-      }}
-    >
-      <span style={labelMuted}>{label}</span>
-      <span
-        style={{
-          ...valueStrong,
-          display: "inline-block",
-          minWidth: `${widthCh}ch`,
-          textAlign: "right",
-        }}
-      >
-        {valueText}
-      </span>
-      <span style={{ width: 32, marginLeft: "2px" }}>
-        <TugLinearGauge
-          value={Math.min(value, max)}
-          min={0}
-          max={max}
-          density="compact"
-          thresholds={{ caution: 0.75, danger: 0.95 }}
-        />
-      </span>
-    </span>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Helpers — context arc gauge variants
-// ---------------------------------------------------------------------------
-
-// Renders the existing arc gauge with the in-element ratio readout.
-// Matches the production renderer's shape so the baseline variant is
-// truly the production design.
-function ContextArc({
-  v,
-  formatted,
-}: {
-  v: StatusValues;
-  formatted: string;
-}): React.ReactElement {
-  return (
-    <TugArcGauge
-      className="tide-telemetry-window-utilization"
-      value={v.contextTokens}
-      min={0}
-      max={v.contextMax}
-      density="compact"
-      formatValue={() => formatted}
-      thresholds={{ caution: 0.75, danger: 0.9 }}
-    />
-  );
-}
-
-// Bare arc — value is shown externally (in the variant's own readout
-// span); the gauge is just the graphic. Suppresses the readout via
-// an empty formatter and a CSS reach into the readout slot via
-// className.
-function BareArc({ v }: { v: StatusValues }): React.ReactElement {
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        width: 28,
-      }}
-    >
+    <span style={{ display: "inline-flex", alignItems: "center", width: size }}>
       <TugArcGauge
         value={v.contextTokens}
         min={0}
@@ -889,64 +267,1143 @@ function BareArc({ v }: { v: StatusValues }): React.ReactElement {
   );
 }
 
+// Reusable text-only item with pinned width.
+function PinnedItem({
+  label,
+  value,
+  widthCh,
+  font = MONO_DEFAULT,
+}: {
+  label: string;
+  value: string;
+  widthCh: number;
+  font?: string;
+}): React.ReactElement {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "baseline",
+        gap: "var(--tug-space-2xs)",
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span style={labelMuted(font)}>{label}</span>
+      <span style={valuePinned(font, widthCh)}>{value}</span>
+    </span>
+  );
+}
+
+function PinnedContext({
+  v,
+  font = MONO_DEFAULT,
+  arcSize = 28,
+}: {
+  v: StatusValues;
+  font?: string;
+  arcSize?: number;
+}): React.ReactElement {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "var(--tug-space-xs)",
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span style={labelMuted(font)}>context:</span>
+      <span style={valuePinned(font, VALUE_WIDTH_CONTEXT_CH)}>{contextRatio(v)}</span>
+      <BareArc v={v} size={arcSize} />
+    </span>
+  );
+}
+
+// =============================================================================
+// §1 — FONT EXPERIMENTS
+// =============================================================================
+// All use V1's fixed-width pinned-value foundation. The variable is the
+// typeface (and where it lives — whole row vs values-only vs split).
+
+function rowFlex(
+  font: string,
+  fontSize: string = "0.6875rem",
+): React.CSSProperties {
+  return {
+    ...cardSurface(font, fontSize),
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "var(--tug-space-sm)",
+  };
+}
+
+function FontVariant({
+  v,
+  font,
+  fontSize,
+}: {
+  v: StatusValues;
+  font: string;
+  fontSize?: string;
+}): React.ReactElement {
+  const items = buildItems(v);
+  return (
+    <div style={rowFlex(font, fontSize)}>
+      {items.map((it, i) => (
+        <React.Fragment key={it.label}>
+          <PinnedItem label={it.label} value={it.value} widthCh={it.widthCh} font={font} />
+          <span style={sepBullet}>•</span>
+          {i === items.length - 1 ? null : null}
+        </React.Fragment>
+      ))}
+      <PinnedContext v={v} font={font} />
+    </div>
+  );
+}
+
+function F1Hack({ v }: { v: StatusValues }): React.ReactElement {
+  return <FontVariant v={v} font={MONO_DEFAULT} />;
+}
+
+function F2B612Mono({ v }: { v: StatusValues }): React.ReactElement {
+  return <FontVariant v={v} font={MONO_B612} />;
+}
+
+function F3JetBrainsMono({ v }: { v: StatusValues }): React.ReactElement {
+  return <FontVariant v={v} font={MONO_JETBRAINS} />;
+}
+
+function F4B612Larger({ v }: { v: StatusValues }): React.ReactElement {
+  return <FontVariant v={v} font={MONO_B612} fontSize="0.75rem" />;
+}
+
+function F5SansLabelB612Value({ v }: { v: StatusValues }): React.ReactElement {
+  // Labels in sans (chrome), values in B612 mono (data) — splits the
+  // visual register so digits read as instrumentation against
+  // softer label text. Reduces "wall of mono" feel.
+  const items = buildItems(v);
+  return (
+    <div style={rowFlex(SANS)}>
+      {items.map((it) => (
+        <React.Fragment key={it.label}>
+          <span style={{ display: "inline-flex", alignItems: "baseline", gap: "var(--tug-space-2xs)", whiteSpace: "nowrap" }}>
+            <span style={labelMuted(SANS)}>{it.label}</span>
+            <span style={valuePinned(MONO_B612, it.widthCh)}>{it.value}</span>
+          </span>
+          <span style={sepBullet}>•</span>
+        </React.Fragment>
+      ))}
+      <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--tug-space-xs)", whiteSpace: "nowrap" }}>
+        <span style={labelMuted(SANS)}>context:</span>
+        <span style={valuePinned(MONO_B612, VALUE_WIDTH_CONTEXT_CH)}>{contextRatio(v)}</span>
+        <BareArc v={v} />
+      </span>
+    </div>
+  );
+}
+
+function F6B612BoldValues({ v }: { v: StatusValues }): React.ReactElement {
+  // B612 Mono throughout, but values render at weight 700 to push the
+  // numeric data forward more strongly. Labels stay at the medium
+  // weight 500 of the standard label treatment.
+  const items = buildItems(v);
+  const valueBold: React.CSSProperties = {
+    ...valuePinned(MONO_B612),
+    fontWeight: 700,
+  };
+  return (
+    <div style={rowFlex(MONO_B612)}>
+      {items.map((it) => (
+        <React.Fragment key={it.label}>
+          <span style={{ display: "inline-flex", alignItems: "baseline", gap: "var(--tug-space-2xs)", whiteSpace: "nowrap" }}>
+            <span style={labelMuted(MONO_B612)}>{it.label}</span>
+            <span style={{ ...valueBold, minWidth: `${it.widthCh}ch` }}>{it.value}</span>
+          </span>
+          <span style={sepBullet}>•</span>
+        </React.Fragment>
+      ))}
+      <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--tug-space-xs)", whiteSpace: "nowrap" }}>
+        <span style={labelMuted(MONO_B612)}>context:</span>
+        <span style={{ ...valueBold, minWidth: `${VALUE_WIDTH_CONTEXT_CH}ch` }}>{contextRatio(v)}</span>
+        <BareArc v={v} />
+      </span>
+    </div>
+  );
+}
+
+// =============================================================================
+// §2 — DIVIDERS / CHROME
+// =============================================================================
+// V1 layout, B612 Mono. The variable is what separates sections.
+
+const RAIL_COLOR = "var(--tug7-element-global-border-normal-default-rest)";
+
+function DividerRow({
+  v,
+  divider,
+  itemSpacing = "var(--tug-space-md)",
+  font = MONO_B612,
+}: {
+  v: StatusValues;
+  divider: React.ReactNode | "none";
+  itemSpacing?: string;
+  font?: string;
+}): React.ReactElement {
+  const items = buildItems(v);
+  return (
+    <div
+      style={{
+        ...cardSurface(font),
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: itemSpacing,
+      }}
+    >
+      {items.map((it) => (
+        <React.Fragment key={it.label}>
+          <PinnedItem label={it.label} value={it.value} widthCh={it.widthCh} font={font} />
+          {divider === "none" ? null : divider}
+        </React.Fragment>
+      ))}
+      <PinnedContext v={v} font={font} />
+    </div>
+  );
+}
+
+function D1Bullet({ v }: { v: StatusValues }): React.ReactElement {
+  return <DividerRow v={v} divider={<span style={sepBullet}>•</span>} />;
+}
+
+function D2Hairline({ v }: { v: StatusValues }): React.ReactElement {
+  const rail: React.CSSProperties = {
+    display: "inline-block",
+    width: 1,
+    alignSelf: "stretch",
+    backgroundColor: RAIL_COLOR,
+    opacity: 0.5,
+  };
+  return <DividerRow v={v} divider={<span style={rail} />} itemSpacing="var(--tug-space-lg)" />;
+}
+
+function D3HairlineStrong({ v }: { v: StatusValues }): React.ReactElement {
+  // Slightly stronger hairline — full opacity rather than the muted
+  // 0.5 of D2. Reads as a real divider against the dark status surface.
+  const rail: React.CSSProperties = {
+    display: "inline-block",
+    width: 1,
+    alignSelf: "stretch",
+    backgroundColor: RAIL_COLOR,
+  };
+  return <DividerRow v={v} divider={<span style={rail} />} itemSpacing="var(--tug-space-lg)" />;
+}
+
+function D4ShortHairlineTicks({ v }: { v: StatusValues }): React.ReactElement {
+  // Short 60%-height vertical line centered between items, leaving
+  // breathing room top and bottom — reads as an instrument tick mark
+  // rather than a full divider.
+  const tick: React.CSSProperties = {
+    display: "inline-block",
+    width: 1,
+    height: "60%",
+    backgroundColor: RAIL_COLOR,
+  };
+  return (
+    <DividerRow
+      v={v}
+      divider={
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            alignSelf: "stretch",
+          }}
+        >
+          <span style={tick} />
+        </span>
+      }
+      itemSpacing="var(--tug-space-lg)"
+    />
+  );
+}
+
+function D5DoubleRule({ v }: { v: StatusValues }): React.ReactElement {
+  // Pair of thin rules with a 2px gap — reads as a real instrument
+  // bezel/seam between data groups.
+  const doubleRail: React.CSSProperties = {
+    display: "inline-flex",
+    alignSelf: "stretch",
+    gap: 2,
+  };
+  const rail: React.CSSProperties = {
+    width: 1,
+    backgroundColor: RAIL_COLOR,
+    opacity: 0.7,
+  };
+  return (
+    <DividerRow
+      v={v}
+      divider={
+        <span style={doubleRail}>
+          <span style={rail} />
+          <span style={rail} />
+        </span>
+      }
+      itemSpacing="var(--tug-space-lg)"
+    />
+  );
+}
+
+function D6Pipe({ v }: { v: StatusValues }): React.ReactElement {
+  return (
+    <DividerRow
+      v={v}
+      divider={
+        <span style={{ ...sepBullet, fontFamily: MONO_B612 }}>│</span>
+      }
+      itemSpacing="var(--tug-space-md)"
+    />
+  );
+}
+
+function D7FramedCells({ v }: { v: StatusValues }): React.ReactElement {
+  // Each section sits in a bordered cell — full chrome around each
+  // metric. Most distinct visual grouping.
+  const items = buildItems(v);
+  const cellStyle: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "baseline",
+    gap: "var(--tug-space-2xs)",
+    padding: "var(--tug-space-2xs) var(--tug-space-sm)",
+    border: `1px solid ${RAIL_COLOR}`,
+    borderRadius: 3,
+  };
+  return (
+    <div
+      style={{
+        ...cardSurface(MONO_B612),
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "var(--tug-space-xs)",
+      }}
+    >
+      {items.map((it) => (
+        <span key={it.label} style={cellStyle}>
+          <span style={labelMuted(MONO_B612)}>{it.label}</span>
+          <span style={valuePinned(MONO_B612, it.widthCh)}>{it.value}</span>
+        </span>
+      ))}
+      <span style={cellStyle}>
+        <span style={labelMuted(MONO_B612)}>context:</span>
+        <span style={valuePinned(MONO_B612, VALUE_WIDTH_CONTEXT_CH)}>{contextRatio(v)}</span>
+        <BareArc v={v} />
+      </span>
+    </div>
+  );
+}
+
+function D8RecessedGroove({ v }: { v: StatusValues }): React.ReactElement {
+  // Each section sits in a recessed "well" (inset shadow) — the
+  // chrome reads as a milled instrument face rather than borders.
+  const items = buildItems(v);
+  const wellStyle: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "baseline",
+    gap: "var(--tug-space-2xs)",
+    padding: "3px var(--tug-space-sm)",
+    borderRadius: 2,
+    boxShadow:
+      "inset 0 1px 0 0 rgb(0 0 0 / 0.25), inset 0 -1px 0 0 rgb(255 255 255 / 0.04)",
+  };
+  return (
+    <div
+      style={{
+        ...cardSurface(MONO_B612),
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "var(--tug-space-xs)",
+      }}
+    >
+      {items.map((it) => (
+        <span key={it.label} style={wellStyle}>
+          <span style={labelMuted(MONO_B612)}>{it.label}</span>
+          <span style={valuePinned(MONO_B612, it.widthCh)}>{it.value}</span>
+        </span>
+      ))}
+      <span style={wellStyle}>
+        <span style={labelMuted(MONO_B612)}>context:</span>
+        <span style={valuePinned(MONO_B612, VALUE_WIDTH_CONTEXT_CH)}>{contextRatio(v)}</span>
+        <BareArc v={v} />
+      </span>
+    </div>
+  );
+}
+
+function D9TopTickHeader({ v }: { v: StatusValues }): React.ReactElement {
+  // Each section gets a thin tick rule ABOVE it (like instrument
+  // scale markings). Reads as labeled measurement zones on a
+  // continuous strip rather than discrete blocks.
+  const items = buildItems(v);
+  const ticked: React.CSSProperties = {
+    display: "inline-flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 2,
+    paddingTop: 2,
+  };
+  const tickBar: React.CSSProperties = {
+    width: "100%",
+    height: 1,
+    backgroundColor: RAIL_COLOR,
+  };
+  return (
+    <div
+      style={{
+        ...cardSurface(MONO_B612),
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "var(--tug-space-lg)",
+      }}
+    >
+      {items.map((it) => (
+        <span key={it.label} style={ticked}>
+          <span style={tickBar} />
+          <span style={{ display: "inline-flex", alignItems: "baseline", gap: "var(--tug-space-2xs)" }}>
+            <span style={labelMuted(MONO_B612)}>{it.label}</span>
+            <span style={valuePinned(MONO_B612, it.widthCh)}>{it.value}</span>
+          </span>
+        </span>
+      ))}
+      <span style={ticked}>
+        <span style={tickBar} />
+        <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--tug-space-xs)" }}>
+          <span style={labelMuted(MONO_B612)}>context:</span>
+          <span style={valuePinned(MONO_B612, VALUE_WIDTH_CONTEXT_CH)}>{contextRatio(v)}</span>
+          <BareArc v={v} />
+        </span>
+      </span>
+    </div>
+  );
+}
+
+function D10AltTint({ v }: { v: StatusValues }): React.ReactElement {
+  // Alternating background tint per cell — subtle banding so the eye
+  // can tell adjacent sections apart without explicit dividers.
+  const items = buildItems(v);
+  return (
+    <div
+      style={{
+        ...cardSurface(MONO_B612),
+        padding: 0,
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "stretch",
+        justifyContent: "center",
+      }}
+    >
+      {items.map((it, i) => (
+        <span
+          key={it.label}
+          style={{
+            display: "inline-flex",
+            alignItems: "baseline",
+            gap: "var(--tug-space-2xs)",
+            padding: "var(--tug-space-md) var(--tug-space-md)",
+            backgroundColor:
+              i % 2 === 0
+                ? "transparent"
+                : "var(--tug7-surface-global-data-tinted-default-rest)",
+          }}
+        >
+          <span style={labelMuted(MONO_B612)}>{it.label}</span>
+          <span style={valuePinned(MONO_B612, it.widthCh)}>{it.value}</span>
+        </span>
+      ))}
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "var(--tug-space-xs)",
+          padding: "var(--tug-space-md) var(--tug-space-md)",
+          backgroundColor:
+            items.length % 2 === 0
+              ? "transparent"
+              : "var(--tug7-surface-global-data-tinted-default-rest)",
+        }}
+      >
+        <span style={labelMuted(MONO_B612)}>context:</span>
+        <span style={valuePinned(MONO_B612, VALUE_WIDTH_CONTEXT_CH)}>{contextRatio(v)}</span>
+        <BareArc v={v} />
+      </span>
+    </div>
+  );
+}
+
+function D11BracketsAroundLabels({ v }: { v: StatusValues }): React.ReactElement {
+  // [TIME] 1.8s • [TOKENS] 30.3k — instrument-readout convention:
+  // bracketed label, then value. The brackets create visual chunking
+  // without explicit dividers between sections.
+  const items = buildItems(v);
+  return (
+    <div style={rowFlex(MONO_B612)}>
+      {items.map((it) => (
+        <span
+          key={it.label}
+          style={{
+            display: "inline-flex",
+            alignItems: "baseline",
+            gap: "var(--tug-space-2xs)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <span style={labelMuted(MONO_B612)}>[{it.label.replace(":", "")}]</span>
+          <span style={valuePinned(MONO_B612, it.widthCh)}>{it.value}</span>
+        </span>
+      ))}
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "var(--tug-space-xs)",
+          whiteSpace: "nowrap",
+        }}
+      >
+        <span style={labelMuted(MONO_B612)}>[CONTEXT]</span>
+        <span style={valuePinned(MONO_B612, VALUE_WIDTH_CONTEXT_CH)}>{contextRatio(v)}</span>
+        <BareArc v={v} />
+      </span>
+    </div>
+  );
+}
+
+// =============================================================================
+// §3 — HORIZONTAL LAYOUT (using more of Z2's width)
+// =============================================================================
+
+function L1Centered({ v }: { v: StatusValues }): React.ReactElement {
+  return <D2Hairline v={v} />;
+}
+
+function L2SpaceBetween({ v }: { v: StatusValues }): React.ReactElement {
+  // Distribute across the full Z2 width — items hug the edges, the
+  // arc gauge anchors the right edge. Maximum air between sections,
+  // anchored layout (always fills the row).
+  const items = buildItems(v);
+  return (
+    <div
+      style={{
+        ...cardSurface(MONO_B612),
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+      }}
+    >
+      {items.map((it) => (
+        <PinnedItem key={it.label} label={it.label} value={it.value} widthCh={it.widthCh} font={MONO_B612} />
+      ))}
+      <PinnedContext v={v} font={MONO_B612} />
+    </div>
+  );
+}
+
+function L3SpaceBetweenWithRails({ v }: { v: StatusValues }): React.ReactElement {
+  // Distributed + hairline rails. Items still anchor edge-to-edge
+  // BUT the rails make the visual chunking explicit.
+  const items = buildItems(v);
+  const rail: React.CSSProperties = {
+    display: "inline-block",
+    width: 1,
+    alignSelf: "stretch",
+    backgroundColor: RAIL_COLOR,
+  };
+  return (
+    <div
+      style={{
+        ...cardSurface(MONO_B612),
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+      }}
+    >
+      {items.map((it, i) => (
+        <React.Fragment key={it.label}>
+          <PinnedItem label={it.label} value={it.value} widthCh={it.widthCh} font={MONO_B612} />
+          {i < items.length && <span style={rail} />}
+        </React.Fragment>
+      ))}
+      <PinnedContext v={v} font={MONO_B612} />
+    </div>
+  );
+}
+
+function L4EqualColumns({ v }: { v: StatusValues }): React.ReactElement {
+  // CSS Grid with equal-fr columns. Each metric sits centered in its
+  // column track; the row uses the full Z2 width AND every section
+  // gets the same horizontal real estate. Hairlines between.
+  const items = buildItems(v);
+  const cells = items.length + 1; // include context
+  return (
+    <div style={cardSurface(MONO_B612)}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: `repeat(${cells}, 1fr)`,
+          alignItems: "center",
+        }}
+      >
+        {items.map((it, i) => (
+          <span
+            key={it.label}
+            style={{
+              display: "inline-flex",
+              alignItems: "baseline",
+              justifyContent: "center",
+              gap: "var(--tug-space-2xs)",
+              borderRight:
+                i < cells - 1 ? `1px solid ${RAIL_COLOR}` : undefined,
+              padding: "0 var(--tug-space-sm)",
+            }}
+          >
+            <span style={labelMuted(MONO_B612)}>{it.label}</span>
+            <span style={valuePinned(MONO_B612, it.widthCh)}>{it.value}</span>
+          </span>
+        ))}
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "var(--tug-space-xs)",
+            padding: "0 var(--tug-space-sm)",
+          }}
+        >
+          <span style={labelMuted(MONO_B612)}>context:</span>
+          <span style={valuePinned(MONO_B612, VALUE_WIDTH_CONTEXT_CH)}>{contextRatio(v)}</span>
+          <BareArc v={v} />
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function L5GroupedPerTurnVsTotal({ v }: { v: StatusValues }): React.ReactElement {
+  // Group per-turn metrics on the left, total metrics in the middle,
+  // context on the right — three GROUPS separated by strong rails,
+  // with thin separators within each group. Communicates the semantic
+  // structure visually.
+  const railStyle: React.CSSProperties = {
+    display: "inline-block",
+    width: 1,
+    alignSelf: "stretch",
+    backgroundColor: RAIL_COLOR,
+  };
+  const subSep: React.CSSProperties = { ...sepBullet };
+  return (
+    <div
+      style={{
+        ...cardSurface(MONO_B612),
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "var(--tug-space-md)",
+      }}
+    >
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "baseline",
+          gap: "var(--tug-space-sm)",
+        }}
+      >
+        <PinnedItem
+          label="time:"
+          value={formatDurationMs(v.perTurnActiveMs)}
+          widthCh={VALUE_WIDTH_TIME_CH}
+          font={MONO_B612}
+        />
+        <span style={subSep}>•</span>
+        <PinnedItem
+          label="tokens:"
+          value={formatTokens(v.perTurnTokens)}
+          widthCh={VALUE_WIDTH_TOKENS_CH}
+          font={MONO_B612}
+        />
+      </span>
+      <span style={railStyle} />
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "baseline",
+          gap: "var(--tug-space-sm)",
+        }}
+      >
+        <PinnedItem
+          label="total time:"
+          value={formatDurationMs(v.totalActiveMs)}
+          widthCh={VALUE_WIDTH_TIME_CH}
+          font={MONO_B612}
+        />
+        <span style={subSep}>•</span>
+        <PinnedItem
+          label="total tokens:"
+          value={formatTokens(v.totalTokens)}
+          widthCh={VALUE_WIDTH_TOKENS_CH}
+          font={MONO_B612}
+        />
+      </span>
+      <span style={railStyle} />
+      <PinnedContext v={v} font={MONO_B612} />
+    </div>
+  );
+}
+
+function L6PaddedDistributed({ v }: { v: StatusValues }): React.ReactElement {
+  // Like L2 but with explicit horizontal padding on the row that
+  // creates a visual margin against the card edges. Reads as a
+  // chrome strip rather than edge-to-edge data.
+  const items = buildItems(v);
+  return (
+    <div
+      style={{
+        ...cardSurface(MONO_B612),
+        paddingInline: "var(--tug-space-2xl)",
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+      }}
+    >
+      {items.map((it) => (
+        <PinnedItem key={it.label} label={it.label} value={it.value} widthCh={it.widthCh} font={MONO_B612} />
+      ))}
+      <PinnedContext v={v} font={MONO_B612} />
+    </div>
+  );
+}
+
+// =============================================================================
+// §4 — CHROME FLOURISHES
+// =============================================================================
+
+function H1ZeroPlaceholders({ v }: { v: StatusValues }): React.ReactElement {
+  // Pad values with placeholder digits (faint) so the active value
+  // sits at the right edge of a visually constant column.
+  // "1.8s" rendered as ".....1.8s" with the dots in low-opacity.
+  // Reads as a deliberate instrument-fill aesthetic.
+  function padded(value: string, widthCh: number): React.ReactElement {
+    const pad = Math.max(0, widthCh - value.length);
+    return (
+      <span style={valuePinned(MONO_B612, widthCh)}>
+        <span style={{ opacity: 0.18 }}>{"·".repeat(pad)}</span>
+        {value}
+      </span>
+    );
+  }
+  const items = buildItems(v);
+  return (
+    <div style={rowFlex(MONO_B612)}>
+      {items.map((it) => (
+        <React.Fragment key={it.label}>
+          <span style={{ display: "inline-flex", alignItems: "baseline", gap: "var(--tug-space-2xs)" }}>
+            <span style={labelMuted(MONO_B612)}>{it.label}</span>
+            {padded(it.value, it.widthCh)}
+          </span>
+          <span style={sepBullet}>•</span>
+        </React.Fragment>
+      ))}
+      <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--tug-space-xs)" }}>
+        <span style={labelMuted(MONO_B612)}>context:</span>
+        {padded(contextRatio(v), VALUE_WIDTH_CONTEXT_CH)}
+        <BareArc v={v} />
+      </span>
+    </div>
+  );
+}
+
+function H2TickedDividers({ v }: { v: StatusValues }): React.ReactElement {
+  // Vertical hairline + small cap ticks at top and bottom of each
+  // divider — like the gradation marks on instrument scales.
+  const tickedDivider = (
+    <span
+      style={{
+        display: "inline-flex",
+        flexDirection: "column",
+        alignItems: "center",
+        alignSelf: "stretch",
+        justifyContent: "center",
+        gap: 1,
+        height: "100%",
+      }}
+    >
+      <span style={{ width: 5, height: 1, backgroundColor: RAIL_COLOR }} />
+      <span style={{ width: 1, flex: 1, backgroundColor: RAIL_COLOR }} />
+      <span style={{ width: 5, height: 1, backgroundColor: RAIL_COLOR }} />
+    </span>
+  );
+  return <DividerRow v={v} divider={tickedDivider} itemSpacing="var(--tug-space-lg)" />;
+}
+
+function H3UnderlinedValues({ v }: { v: StatusValues }): React.ReactElement {
+  // Each value gets a subtle underline rule beneath — reads as a
+  // measurement scale beneath the digits. Bullets between sections.
+  const items = buildItems(v);
+  return (
+    <div style={rowFlex(MONO_B612)}>
+      {items.map((it) => (
+        <React.Fragment key={it.label}>
+          <span style={{ display: "inline-flex", alignItems: "baseline", gap: "var(--tug-space-2xs)" }}>
+            <span style={labelMuted(MONO_B612)}>{it.label}</span>
+            <span
+              style={{
+                ...valuePinned(MONO_B612, it.widthCh),
+                borderBottom: `1px solid ${RAIL_COLOR}`,
+                paddingBottom: 1,
+              }}
+            >
+              {it.value}
+            </span>
+          </span>
+          <span style={sepBullet}>•</span>
+        </React.Fragment>
+      ))}
+      <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--tug-space-xs)" }}>
+        <span style={labelMuted(MONO_B612)}>context:</span>
+        <span
+          style={{
+            ...valuePinned(MONO_B612, VALUE_WIDTH_CONTEXT_CH),
+            borderBottom: `1px solid ${RAIL_COLOR}`,
+            paddingBottom: 1,
+          }}
+        >
+          {contextRatio(v)}
+        </span>
+        <BareArc v={v} />
+      </span>
+    </div>
+  );
+}
+
+function H4LabelsAboveValues({ v }: { v: StatusValues }): React.ReactElement {
+  // Two-line layout: tiny labels above each value. Pinned widths
+  // keep the columns stable. Uses more vertical real estate but
+  // reads like a true control cluster.
+  const items = buildItems(v);
+  const cellStyle: React.CSSProperties = {
+    display: "inline-flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 1,
+  };
+  return (
+    <div
+      style={{
+        ...cardSurface(MONO_B612),
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        paddingInline: "var(--tug-space-xl)",
+      }}
+    >
+      {items.map((it) => (
+        <span key={it.label} style={cellStyle}>
+          <span style={{ ...labelMuted(MONO_B612), fontSize: "0.5625rem" }}>
+            {it.label.replace(":", "")}
+          </span>
+          <span style={valuePinned(MONO_B612, it.widthCh)}>{it.value}</span>
+        </span>
+      ))}
+      <span style={cellStyle}>
+        <span style={{ ...labelMuted(MONO_B612), fontSize: "0.5625rem" }}>
+          context
+        </span>
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "var(--tug-space-xs)",
+          }}
+        >
+          <span style={valuePinned(MONO_B612, VALUE_WIDTH_CONTEXT_CH)}>
+            {contextRatio(v)}
+          </span>
+          <BareArc v={v} />
+        </span>
+      </span>
+    </div>
+  );
+}
+
+function H5DotLeader({ v }: { v: StatusValues }): React.ReactElement {
+  // Classic typographic dot-leader between label and value (like a
+  // table of contents). The value pins right, the label pins left,
+  // and a dotted rule fills the middle of each item's fixed-width
+  // slot.
+  const items = buildItems(v);
+  const itemWidthCh = 14; // label + leader + value
+  function cell(label: string, value: string): React.ReactElement {
+    return (
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "baseline",
+          width: `${itemWidthCh}ch`,
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+        }}
+      >
+        <span style={labelMuted(MONO_B612)}>{label}</span>
+        <span
+          aria-hidden="true"
+          style={{
+            flex: 1,
+            margin: "0 4px",
+            borderBottom: `1px dotted ${RAIL_COLOR}`,
+            transform: "translateY(-2px)",
+          }}
+        />
+        <span style={valueStrong(MONO_B612)}>{value}</span>
+      </span>
+    );
+  }
+  return (
+    <div
+      style={{
+        ...cardSurface(MONO_B612),
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        paddingInline: "var(--tug-space-lg)",
+      }}
+    >
+      {items.map((it) => (
+        <React.Fragment key={it.label}>{cell(it.label, it.value)}</React.Fragment>
+      ))}
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "var(--tug-space-xs)",
+          whiteSpace: "nowrap",
+        }}
+      >
+        <span style={labelMuted(MONO_B612)}>context:</span>
+        <span style={valueStrong(MONO_B612)}>{contextRatio(v)}</span>
+        <BareArc v={v} />
+      </span>
+    </div>
+  );
+}
+
+function H6ChevronGroups({ v }: { v: StatusValues }): React.ReactElement {
+  // Chevron-style group enclosures: `‹ TIME 1.8s ›` — bracketed
+  // sections with angle-bracket framing. Reads as terminal-prompt-
+  // style data chunks.
+  const items = buildItems(v);
+  const cellStyle: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "baseline",
+    gap: "var(--tug-space-2xs)",
+    whiteSpace: "nowrap",
+  };
+  const chevron: React.CSSProperties = {
+    ...sepBullet,
+    fontFamily: MONO_B612,
+  };
+  return (
+    <div
+      style={{
+        ...cardSurface(MONO_B612),
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "var(--tug-space-md)",
+      }}
+    >
+      {items.map((it) => (
+        <span key={it.label} style={cellStyle}>
+          <span style={chevron}>‹</span>
+          <span style={labelMuted(MONO_B612)}>{it.label.replace(":", "")}</span>
+          <span style={valuePinned(MONO_B612, it.widthCh)}>{it.value}</span>
+          <span style={chevron}>›</span>
+        </span>
+      ))}
+      <span style={cellStyle}>
+        <span style={chevron}>‹</span>
+        <span style={labelMuted(MONO_B612)}>CONTEXT</span>
+        <span style={valuePinned(MONO_B612, VALUE_WIDTH_CONTEXT_CH)}>{contextRatio(v)}</span>
+        <BareArc v={v} />
+        <span style={chevron}>›</span>
+      </span>
+    </div>
+  );
+}
+
+function H7SegmentedRail({ v }: { v: StatusValues }): React.ReactElement {
+  // A single continuous bottom rail under the row, broken by visible
+  // gaps between sections — reads as a segmented base rail like an
+  // instrument scale.
+  const items = buildItems(v);
+  const cellStyle: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "baseline",
+    gap: "var(--tug-space-2xs)",
+    paddingBottom: 4,
+    borderBottom: `1px solid ${RAIL_COLOR}`,
+  };
+  return (
+    <div
+      style={{
+        ...cardSurface(MONO_B612),
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "var(--tug-space-md)",
+        paddingInline: "var(--tug-space-xl)",
+      }}
+    >
+      {items.map((it) => (
+        <span key={it.label} style={cellStyle}>
+          <span style={labelMuted(MONO_B612)}>{it.label}</span>
+          <span style={valuePinned(MONO_B612, it.widthCh)}>{it.value}</span>
+        </span>
+      ))}
+      <span style={{ ...cellStyle, alignItems: "center" }}>
+        <span style={labelMuted(MONO_B612)}>context:</span>
+        <span style={valuePinned(MONO_B612, VALUE_WIDTH_CONTEXT_CH)}>{contextRatio(v)}</span>
+        <BareArc v={v} />
+      </span>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
-// Section wrapper
+// Section wrapper + variant catalog
 // ---------------------------------------------------------------------------
+
+interface VariantEntry {
+  id: string;
+  title: string;
+  note: string;
+  render: (v: StatusValues) => React.ReactElement;
+}
+
+const SECTION_FONTS: VariantEntry[] = [
+  { id: "f1", title: "F1 — Hack (current default mono)", note: "Today's font. Reads cleanly but isn't built for instruments.", render: (v) => <F1Hack v={v} /> },
+  { id: "f2", title: "F2 — B612 Mono (Airbus cockpit)", note: "Designed for aircraft instrument displays. Maximum legibility under stress.", render: (v) => <F2B612Mono v={v} /> },
+  { id: "f3", title: "F3 — JetBrains Mono", note: "Modern code-editor mono with tabular figures by default. Crisp at small sizes.", render: (v) => <F3JetBrainsMono v={v} /> },
+  { id: "f4", title: "F4 — B612 Mono @ 12px", note: "B612 bumped one notch larger. Trades chrome real estate for digit legibility.", render: (v) => <F4B612Larger v={v} /> },
+  { id: "f5", title: "F5 — Sans labels, B612 mono values", note: "Splits the register: soft sans labels, hard mono digits. Reduces 'wall of mono' feel.", render: (v) => <F5SansLabelB612Value v={v} /> },
+  { id: "f6", title: "F6 — B612 Mono Bold values", note: "Values render at weight 700. Numeric data feels heavier; labels recede further.", render: (v) => <F6B612BoldValues v={v} /> },
+];
+
+const SECTION_DIVIDERS: VariantEntry[] = [
+  { id: "d1", title: "D1 — Bullet (current production)", note: "Baseline. Reads as soft punctuation against right-aligned values.", render: (v) => <D1Bullet v={v} /> },
+  { id: "d2", title: "D2 — Hairline rail (muted)", note: "1px vertical rail at 50% opacity. Subtle but unambiguous chunking.", render: (v) => <D2Hairline v={v} /> },
+  { id: "d3", title: "D3 — Hairline rail (full)", note: "Same rail at full opacity — pushes harder as a real divider.", render: (v) => <D3HairlineStrong v={v} /> },
+  { id: "d4", title: "D4 — Short tick mark", note: "60%-height vertical line. Reads as an instrument scale tick rather than a divider.", render: (v) => <D4ShortHairlineTicks v={v} /> },
+  { id: "d5", title: "D5 — Double rule (bezel seam)", note: "Pair of thin rails with a 2px gap. Bezel/seam feel between data groups.", render: (v) => <D5DoubleRule v={v} /> },
+  { id: "d6", title: "D6 — Pipe character │", note: "Box-drawing pipe. Lighter weight than an actual rule but communicates a column edge.", render: (v) => <D6Pipe v={v} /> },
+  { id: "d7", title: "D7 — Framed cells", note: "Each section in a 1px bordered cell. Maximum visual chunking.", render: (v) => <D7FramedCells v={v} /> },
+  { id: "d8", title: "D8 — Recessed groove", note: "Inset shadow on each section — reads as a milled instrument face.", render: (v) => <D8RecessedGroove v={v} /> },
+  { id: "d9", title: "D9 — Top tick header", note: "Thin rule ABOVE each section. Instrument scale-marking convention.", render: (v) => <D9TopTickHeader v={v} /> },
+  { id: "d10", title: "D10 — Alternating tint", note: "Subtle background banding between adjacent cells. No explicit dividers needed.", render: (v) => <D10AltTint v={v} /> },
+  { id: "d11", title: "D11 — Bracketed labels [LABEL]", note: "Instrument-readout convention: [LABEL] value, no separators needed.", render: (v) => <D11BracketsAroundLabels v={v} /> },
+];
+
+const SECTION_LAYOUT: VariantEntry[] = [
+  { id: "l1", title: "L1 — Centered, hairlines (== D2)", note: "Center-justified group. Wastes side margins; chunks via hairlines.", render: (v) => <L1Centered v={v} /> },
+  { id: "l2", title: "L2 — Space-between (full width)", note: "Items distribute edge-to-edge. Uses every pixel of Z2's width.", render: (v) => <L2SpaceBetween v={v} /> },
+  { id: "l3", title: "L3 — Space-between + rails", note: "Distributed AND chunked. Most distinct organization.", render: (v) => <L3SpaceBetweenWithRails v={v} /> },
+  { id: "l4", title: "L4 — Equal columns (CSS Grid)", note: "Every section gets the same horizontal space. Rigid but predictable.", render: (v) => <L4EqualColumns v={v} /> },
+  { id: "l5", title: "L5 — Grouped per-turn vs total", note: "Three semantic groups: [turn] · [session totals] · [context]. Strong rails between groups, soft bullets within.", render: (v) => <L5GroupedPerTurnVsTotal v={v} /> },
+  { id: "l6", title: "L6 — Padded distributed", note: "Space-between with extra side padding. Reads as a chrome strip.", render: (v) => <L6PaddedDistributed v={v} /> },
+];
+
+const SECTION_FLOURISHES: VariantEntry[] = [
+  { id: "h1", title: "H1 — Leading dot placeholders", note: "···1.8s — pad with faint dots so digits sit at a constant right edge.", render: (v) => <H1ZeroPlaceholders v={v} /> },
+  { id: "h2", title: "H2 — Capped tick dividers", note: "Hairline + small cap-ticks at top and bottom — instrument-scale gradation feel.", render: (v) => <H2TickedDividers v={v} /> },
+  { id: "h3", title: "H3 — Underlined values", note: "Each value sits over a subtle rule. Measurement-scale-beneath-digit aesthetic.", render: (v) => <H3UnderlinedValues v={v} /> },
+  { id: "h4", title: "H4 — Tiny labels above values", note: "Two-line cells. Bigger footprint but reads as a real control cluster.", render: (v) => <H4LabelsAboveValues v={v} /> },
+  { id: "h5", title: "H5 — Dot-leader between label and value", note: "Classic typographic dot-leader: label ··· value. Pins both ends per cell.", render: (v) => <H5DotLeader v={v} /> },
+  { id: "h6", title: "H6 — Chevron-framed groups ‹...›", note: "Terminal-prompt-style angle-bracket framing per section.", render: (v) => <H6ChevronGroups v={v} /> },
+  { id: "h7", title: "H7 — Segmented base rail", note: "Each section's value sits on its own short underline — reads as a segmented instrument scale.", render: (v) => <H7SegmentedRail v={v} /> },
+];
+
+function VariantBlock({
+  entry,
+  values,
+}: {
+  entry: VariantEntry;
+  values: StatusValues;
+}): React.ReactElement {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-2xs)" }}>
+      <div style={variantTitleStyle}>{entry.title}</div>
+      <div style={variantNoteStyle}>{entry.note}</div>
+      {entry.render(values)}
+    </div>
+  );
+}
 
 function VariantSection({
   title,
-  note,
-  children,
+  entries,
+  values,
 }: {
   title: string;
-  note: string;
-  children: React.ReactNode;
+  entries: VariantEntry[];
+  values: StatusValues;
 }): React.ReactElement {
   return (
-    <section style={{ display: "flex", flexDirection: "column" }}>
+    <section style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-md)" }}>
       <div style={sectionTitleStyle}>
         <TugLabel size="xs">{title}</TugLabel>
-        <span style={variantNoteStyle}>{note}</span>
       </div>
-      {children}
+      <div style={variantStackStyle}>
+        {entries.map((e) => (
+          <VariantBlock key={e.id} entry={e} values={values} />
+        ))}
+      </div>
     </section>
   );
 }
 
 // ---------------------------------------------------------------------------
-// GalleryTideStatusRow — top-level card
+// Controls
 // ---------------------------------------------------------------------------
 
-const VARIANTS = [
-  { id: "v0", title: "V0 — Baseline (production today; fluid widths)" },
-  { id: "v1", title: "V1 — Fixed-width values, right-aligned" },
-  { id: "v2", title: "V2 — Stacked label/value cells with dividers" },
-  { id: "v3", title: "V3 — All-gauges instrument cluster" },
-  { id: "v4", title: "V4 — CSS-Grid pinned tracks" },
-  { id: "v5", title: "V5 — Inline sparkline tail" },
-] as const;
-
-const VARIANT_NOTES: Record<string, string> = {
-  v0: "Current production. Items grow / shrink with content; whole row recenters and jitters.",
-  v1: "Each value reserves max-realistic width; digits right-align inside. Row width invariant.",
-  v2: "Two-line cells with vertical dividers. Reads like a control cluster; uses more vertical space.",
-  v3: "Every metric is a small linear gauge with numeric readout. Maximum dashboard feel; needs typical-value normalizations.",
-  v4: "CSS Grid with fixed column tracks. Every cell pinned; row width invariant + perfectly aligned.",
-  v5: "Compact numeric + 32px magnitude bar per metric. Graphical without two-lining.",
-};
-
 const controlSelectStyle: React.CSSProperties = {
-  fontFamily: monoFamily,
+  fontFamily: MONO_DEFAULT,
   fontSize: "0.75rem",
   padding: "2px 6px",
 };
 
 const controlButtonStyle: React.CSSProperties = {
-  fontFamily: monoFamily,
+  fontFamily: MONO_DEFAULT,
   fontSize: "0.75rem",
   padding: "2px 8px",
   cursor: "pointer",
 };
+
+// ---------------------------------------------------------------------------
+// GalleryTideStatusRow
+// ---------------------------------------------------------------------------
 
 export function GalleryTideStatusRow(): React.ReactElement {
   const [scenarioIdx, setScenarioIdx] = useState(0);
@@ -970,12 +1427,11 @@ export function GalleryTideStatusRow(): React.ReactElement {
       style={{
         display: "flex",
         flexDirection: "column",
-        gap: "var(--tug-space-lg)",
+        gap: "var(--tug-space-xl)",
         padding: "var(--tug-space-md)",
       }}
     >
-      {/* Controls — native HTML for scaffolding-only dev surface,
-          matching the convention in gallery-tug-linear-gauge.tsx. */}
+      {/* Controls */}
       <div
         style={{
           display: "flex",
@@ -983,10 +1439,16 @@ export function GalleryTideStatusRow(): React.ReactElement {
           alignItems: "center",
           gap: "var(--tug-space-md)",
           flexWrap: "wrap",
+          position: "sticky",
+          top: 0,
+          zIndex: 1,
+          padding: "var(--tug-space-sm)",
+          backgroundColor: "var(--tug7-surface-card-primary-normal-default-rest)",
+          borderBottom: `1px solid ${RAIL_COLOR}`,
         }}
       >
         <label style={{ display: "inline-flex", alignItems: "center", gap: "var(--tug-space-2xs)" }}>
-          <span style={{ ...labelMuted, fontSize: "0.6875rem" }}>scenario</span>
+          <span style={{ ...labelMuted(MONO_DEFAULT), fontSize: "0.6875rem" }}>scenario</span>
           <select
             style={controlSelectStyle}
             value={String(scenarioIdx)}
@@ -1012,11 +1474,11 @@ export function GalleryTideStatusRow(): React.ReactElement {
             checked={autoTick}
             onChange={(e) => setAutoTick(e.currentTarget.checked)}
           />
-          <span style={{ ...labelMuted, fontSize: "0.6875rem" }}>auto-tick (1.5s)</span>
+          <span style={{ ...labelMuted(MONO_DEFAULT), fontSize: "0.6875rem" }}>auto-tick (1.5s)</span>
         </label>
         <span
           style={{
-            fontFamily: monoFamily,
+            fontFamily: MONO_DEFAULT,
             fontSize: "0.6875rem",
             color: "var(--tug7-element-global-text-normal-muted-rest)",
             marginLeft: "auto",
@@ -1026,32 +1488,29 @@ export function GalleryTideStatusRow(): React.ReactElement {
         </span>
       </div>
 
+      <VariantSection
+        title="§1 — Font experiments"
+        entries={SECTION_FONTS}
+        values={values}
+      />
       <TugSeparator />
-
-      {/* Variants */}
-      <VariantSection title={VARIANTS[0].title} note={VARIANT_NOTES.v0}>
-        <Variant0Baseline v={values} />
-      </VariantSection>
-
-      <VariantSection title={VARIANTS[1].title} note={VARIANT_NOTES.v1}>
-        <Variant1FixedWidthRight v={values} />
-      </VariantSection>
-
-      <VariantSection title={VARIANTS[2].title} note={VARIANT_NOTES.v2}>
-        <Variant2StackedBadges v={values} />
-      </VariantSection>
-
-      <VariantSection title={VARIANTS[3].title} note={VARIANT_NOTES.v3}>
-        <Variant3AllGauges v={values} />
-      </VariantSection>
-
-      <VariantSection title={VARIANTS[4].title} note={VARIANT_NOTES.v4}>
-        <Variant4PinnedGrid v={values} />
-      </VariantSection>
-
-      <VariantSection title={VARIANTS[5].title} note={VARIANT_NOTES.v5}>
-        <Variant5SparklineTail v={values} />
-      </VariantSection>
+      <VariantSection
+        title="§2 — Dividers / chrome"
+        entries={SECTION_DIVIDERS}
+        values={values}
+      />
+      <TugSeparator />
+      <VariantSection
+        title="§3 — Horizontal layout"
+        entries={SECTION_LAYOUT}
+        values={values}
+      />
+      <TugSeparator />
+      <VariantSection
+        title="§4 — Chrome flourishes"
+        entries={SECTION_FLOURISHES}
+        values={values}
+      />
     </div>
   );
 }

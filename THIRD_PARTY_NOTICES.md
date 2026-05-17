@@ -261,3 +261,45 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+---
+
+## B612 Mono
+
+**Source:** https://github.com/polarsys/b612
+**What was adopted:** Font files (`B612Mono-Regular.ttf`, `B612Mono-Bold.ttf`) bundled in `tugdeck/styles/fonts/` and `tugdeck/public/fonts/` for the tide-card Z2 status-row design spike. B612 Mono was designed by Airbus, ENAC, and Université de Toulouse III for maximum legibility on aircraft cockpit instrument screens.
+**Used in:** `tugdeck/styles/tug.css` `@font-face` declarations; `tugdeck/src/components/tugways/cards/gallery-tide-status-row.tsx` font variants.
+
+```
+SIL Open Font License Version 1.1
+
+Copyright (c) 2012, Polarsys (polarsys.org),
+with Reserved Font Name B612.
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+https://openfontlicense.org
+
+(Full license text in tugdeck/styles/fonts/B612-OFL.txt)
+```
+
+---
+
+## JetBrains Mono
+
+**Source:** https://github.com/JetBrains/JetBrainsMono
+**What was adopted:** Font files (`JetBrainsMono-Regular.woff2`, `JetBrainsMono-Bold.woff2`) bundled in `tugdeck/styles/fonts/` and `tugdeck/public/fonts/` for the tide-card Z2 status-row design spike. JetBrains Mono is the typeface JetBrains commissioned for code editors; ships tabular figures by default.
+**Used in:** `tugdeck/styles/tug.css` `@font-face` declarations; `tugdeck/src/components/tugways/cards/gallery-tide-status-row.tsx` font variants.
+
+```
+SIL Open Font License Version 1.1
+
+Copyright 2020 The JetBrains Mono Project Authors
+(https://github.com/JetBrains/JetBrainsMono)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+https://openfontlicense.org
+
+(Full license text in tugdeck/styles/fonts/JetBrainsMono-OFL.txt)
+```

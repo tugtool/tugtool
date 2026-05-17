@@ -67,6 +67,46 @@
   font-display: swap;
 }
 
+/* B612 Mono — Airbus cockpit display font (SIL OFL 1.1).
+   Designed for maximum legibility on aircraft instrument screens;
+   particularly distinctive tabular figures. Bundled for the Z2
+   status-row design spike — every digit-bearing slot can adopt it
+   as the instrument-readout typeface. */
+@font-face {
+  font-family: "B612 Mono";
+  src: url("/fonts/B612Mono-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "B612 Mono";
+  src: url("/fonts/B612Mono-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* JetBrains Mono — designed for code editors, ships tabular figures
+   by default. Reads cleaner / more modern than Hack at small sizes.
+   SIL OFL 1.1. Comparison companion to B612 Mono in the Z2 spike. */
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/JetBrainsMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/JetBrainsMono-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 @font-face {
   font-family: "Inter";
   src: url("/fonts/Inter-VariableFont_opsz,wght.ttf") format("truetype");
