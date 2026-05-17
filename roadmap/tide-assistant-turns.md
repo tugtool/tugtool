@@ -1649,6 +1649,164 @@ No tests were touched because none referenced the symbols — the 7 SmartScroll 
 
 ---
 
+#### Step 20.3.6: Persist session-scoped live-only metadata via SessionLedger {#step-20-3-6}
+
+**Depends on:** [#step-20-3-4] (the SessionLedger persistence pattern this step generalizes), the existing `SessionLedger` bootstrap.
+
+**Status:** _not started — discovered after `#step-20-3-4` landed and the model `[1m]` suffix was found to survive Developer > Reload (via an in-memory merge fix in `SessionMetadataStore`) but NOT survive app relaunch._
+
+**Commit:** `feat(tide-metadata): persist session-scoped live-only metadata via SessionLedger`
+
+**References:** [L02], [L23], [L24], [L26], [#step-20-3-4] (the persistence pattern this generalizes), `tugrust/crates/tugcast/src/session_ledger.rs`, `tugrust/crates/tugcast/src/feeds/agent_bridge.rs`, `tugcode/src/session.ts` (the live `system_metadata` emitter, lines 489–529), `tugcode/src/replay.ts` (the synthesized-metadata source whose loss this fixes, lines 983–1008), `tugdeck/src/lib/session-metadata-store.ts` (the merge fix to retire).
+
+**Scope note — why this exists.** [#step-20-3-4] established the pattern for L23-compliant persistence of LIVE-ONLY data: capture-on-live, inject-on-replay, sqlite-backed survival across HMR / Reload / app relaunch / tugcast restart. We applied it to per-turn telemetry. While vetting `#step-20-3-4` we discovered an unrelated regression: after Developer > Reload, the window-utilization gauge dropped from 1M → 200k because the model name lost its `[1m]` suffix. A targeted in-memory merge in `SessionMetadataStore` patched that case — but only for in-process re-orderings. App relaunch still drops the suffix because `SessionMetadataStore` starts from empty after browser death and the only `system_metadata` event it ever sees on the resume path is the bare-name replay-synthesized one. This step retires that in-memory merge and replaces it with the same ledger-backed pattern `#step-20-3-4` shipped — which generalizes naturally because the underlying class of bug is the same.
+
+The class: **live-only session-scoped metadata that JSONL doesn't preserve.** Anthropic's stream-json transcript carries the bare model name on every `assistant.message.model` field but does not carry the `[1m]` suffix. It also doesn't carry `cwd`, `permissionMode`, `tools`, `slash_commands`, `plugins`, `agents`, `skills`, `mcp_servers`, `version`, `output_style`, `fast_mode_state`, or `apiKeySource` per-message — those exist ONLY on the live `system_init` event Claude emits at session startup. `tugcode/src/replay.ts:984` synthesizes a `system_metadata` event from `assistant.message.model` with every other field hardcoded to empty string / empty array. The result on every resume: a `system_metadata` arrives carrying only `model` (bare) — losing the suffix AND wiping every other live-captured field that was previously populated.
+
+The model `[1m]` suffix is the user-visible canary. The other fields are equally lost; today none of them have downstream consumers that visibly regress, but they will once the chrome grows: `/` slash-command completion, the `permissionMode` indicator on Z2 / Z3, the `cwd` badge in Z3 (which currently re-derives from `cardSessionBindingStore`, not `SessionMetadataStore` — but the duplication is its own smell), the `mcp_servers` / `plugins` / `agents` capability listings. Every one of them is "currently null after app reload."
+
+**Scope.** Apply the `#step-20-3-4` pattern to session-scoped metadata. Implementation runs end-to-end:
+
+- **Rust (tugcast SessionLedger):** new `session_metadata` table (additive via `CREATE TABLE IF NOT EXISTS` — no schema-migration cost; existing `sessions.db` files pick up the new table on next open). Methods: `record_session_metadata(session_id, payload)` and `get_session_metadata(session_id) -> Option<SessionMetadataRow>`. Cascade-on-`sessions`-DELETE trigger mirroring the existing pattern.
+- **Rust (tugcast agent_bridge):** intercept every outbound `system_metadata` JSON line in `relay_session_io`. Read the existing ledger row (if any), parse the incoming payload, apply the merge rule, write the merged payload back to the ledger, AND rewrite the wire line to carry the merged payload before forwarding. Symmetric for live and replay-window events.
+  - **Intercept-key sourcing.** The ledger PK is the claude `session_id`. The bridge must NOT trust the line's own `session_id` field (it can be empty on the live path per `session.ts:513`, where the fallback is `sid || ""`). Instead, key on `ledger_entry.claude_session_id` — the authoritative value captured by the `session_init` interceptor at `agent_bridge.rs:760-808`. **Ordering invariant:** the live path emits `session_init` before `system_metadata` (both from `session.ts`'s `subtype === "init"` branch at line 489, in declaration order: session_init first via the `sessionId` capture, then `system_metadata` via `messages.push(sysMsg)` at line 529). On the replay path, `system_metadata` is synthesized after the first `assistant` entry (`replay.ts:983-1008`), which can only emerge after the `session_init` synthesis the replay also performs first. In both paths, `claude_session_id` is guaranteed populated before the bridge sees the `system_metadata` line. If for any reason it isn't (defensive coding), the bridge skips the merge-and-persist and forwards the line unchanged — same fallback shape as `inject_replay_telemetry`.
+- **Merge rule (server-side):** prefer the more-specific `model` (per the `[1m]`-vs-bare-base heuristic from the in-memory fix); prefer non-empty for every other field. The merge runs at the bridge before the line leaves tugcast, so the client always observes the most-informationally-rich version. Same rule shape as the in-memory merge being retired — just running at the durable layer.
+- **TypeScript (tugdeck SessionMetadataStore):** _retire_ the in-memory merge fix added in the chase of the `[1m]` suffix bug. Specifically: drop `mergeMetadataSnapshot`, `preferMoreSpecificModel`, `asPresent`, and the `_onFeedUpdate` change that called them. Revert `_onFeedUpdate` to its wholesale-replace shape — the bridge now guarantees every `system_metadata` event delivered to the client carries the full merged payload, so a client-side merge becomes dead weight that masks the underlying contract.
+- **Tests (retire):** drop the 4 merge-on-replay tests from `src/__tests__/session-metadata-store.test.ts` (they pinned the in-memory behavior we're removing).
+- **Tests (add):** Rust ledger unit tests (record / get / cascade-delete); Rust bridge tests pinning that the merged line on the wire carries the persisted `[1m]` suffix when the incoming line is bare; supervisor handler / integration round-trip.
+
+**Conformance — what L23 requires.**
+
+- Every field in `system_metadata` that the user has ever seen for this session MUST survive HMR, Developer > Reload, app relaunch, AND tugcast restart. The model `[1m]` suffix is the canary; the rest of the payload comes along for the ride because the same merge applies.
+- The persistence layer is the single source of truth. The client trusts the wire; the wire carries the supervisor-merged values; the supervisor reads from sqlite. Three layers, one source.
+
+**Conformance — what L26 requires.** The merge happens at the bridge before frames leave tugcast, so the wire delivers ONE `system_metadata` event per inbound (no duplicate, no second-event reconciliation timing for React). `SessionMetadataStore`'s reference-comparison invalidation doesn't see spurious flips. React mount identity for any UI that subscribes to `SessionMetadataStore` is unaffected (the snapshot's shape doesn't change; only the values do, and they change less often once the merge stabilizes).
+
+**Conformance — what L02 requires.** The persistence is a server-side store; the client reads via the existing `SystemMetadata` feed; `useSyncExternalStore` consumers see one snapshot type with stable contracts. No React-state mirror, no client-side reconciliation, no React-render-cycle-coupled writes.
+
+**Conformance — what L24 requires.** Session metadata is unambiguously *structure* zone — external state observed through `useSyncExternalStore`, with no DOM-mutation or React-state-mirror code path. The merge runs at the bridge (off-thread from React entirely); the client only ever reads the snapshot. No zone-crossing in the change.
+
+**Schema sketch — `session_metadata` table:**
+
+```sql
+CREATE TABLE IF NOT EXISTS session_metadata (
+  session_id      TEXT PRIMARY KEY,
+  -- Full system_metadata payload, JSON-serialized. The merge rule
+  -- operates on parsed fields, so we deserialize on every write —
+  -- one record per session, one observation per session_init / per
+  -- replay synthesis, so the parse cost is negligible against the
+  -- savings of NOT enumerating every Anthropic-defined field as a
+  -- separate column (future fields land here without schema change).
+  payload         BLOB NOT NULL,
+  captured_at     INTEGER NOT NULL
+);
+
+CREATE TRIGGER IF NOT EXISTS session_metadata_cascade_delete_on_session
+  AFTER DELETE ON sessions FOR EACH ROW
+  BEGIN DELETE FROM session_metadata WHERE session_id = OLD.session_id; END;
+```
+
+No `turn_key` or `msg_id` involvement — `system_metadata` is per-session, not per-turn. The PK is the claude `session_id` (the same join key the rest of the ledger uses).
+
+**Schema-shape trade-off — BLOB vs per-column.** The payload lives in one JSON BLOB rather than as a column per field. This makes the schema absorb future Anthropic fields without migrations (new field arrives → bridge passes it through verbatim → BLOB grows by a few bytes). The cost: no indexed queries on individual fields — "find all sessions using model X" requires reading every row and deserializing. Accepted trade-off because the only access pattern is "look up THIS session by PK," which is fast either way. Future schemas that need indexed-field queries (e.g., listing sessions by model in a picker) would project the indexed columns alongside the BLOB.
+
+**Schema-change runbook.** Per [DM08]: additive. `CREATE TABLE IF NOT EXISTS` + `CREATE TRIGGER IF NOT EXISTS` populate the new table on existing `sessions.db` files. The table starts empty; on first observation of `system_metadata` after the bridge upgrade, the row gets written. **No manual `sessions.db` deletion required.** Sessions that existed before this step's deploy will read empty metadata on their first post-deploy resume — same "no retroactive backfill" caveat as `#step-20-3-4`. The bridge captures on the FIRST live `system_metadata` after deploy, so even pre-deploy sessions converge to the correct persisted state once they receive any new live event.
+
+**Wire-format key reality.** The `system_metadata` JSON payload uses a **mixed** casing convention — confirmed against `tugcode/src/session.ts:498,508` and `replay.ts:995,1004`:
+
+- **camelCase keys:** `permissionMode`, `apiKeySource`.
+- **snake_case keys:** `session_id`, `cwd`, `tools`, `model`, `slash_commands`, `plugins`, `agents`, `skills`, `mcp_servers`, `version`, `output_style`, `fast_mode_state`, `ipc_version`.
+
+The Rust merge implementation MUST key on the actual on-wire names — using the wrong case silently no-ops the merge on those fields (the canonical bug 20.3.6 is fixing). The pseudocode below uses the on-wire keys verbatim.
+
+**Pre-existing parse bug (out of scope but flagged).** `session-metadata-store.ts:207` currently reads `p.permission_mode` (snake_case) and assigns the result to `snapshot.permissionMode`. The wire emits `permissionMode` (camelCase), so the parse has always silently returned `null` for this field. The retired tests at `session-metadata-store.test.ts:484-517` use snake_case fixtures and thus don't catch this. Fix this parse-key bug in the same commit that drops the four merge-on-replay tests — it's a one-line change (`p.permission_mode` → `p.permissionMode`) in the file already being touched, and leaving it for a follow-up would mean the wholesale-replace cleanup ships against a parser that still can't see `permissionMode`. Add a new test that asserts the live wire's camelCase key is captured.
+
+**Merge rule (canonical, on-wire keys):**
+
+```
+merge_session_metadata(current: Option<Payload>, incoming: Payload) -> Payload:
+  - if current is None: return incoming
+  - merged.model = prefer_more_specific_model(current.model, incoming.model)
+  - merged.cwd, merged.permissionMode, merged.output_style,
+    merged.fast_mode_state, merged.apiKeySource, merged.version:
+      as_present(incoming.X) ?? current.X    // empty-string-treated-as-absent
+  - merged.tools, merged.slash_commands, merged.plugins, merged.agents,
+    merged.skills, merged.mcp_servers:
+      if incoming.X.len() > 0: incoming.X else: current.X
+  - merged.session_id: incoming.session_id   // PK; never merged
+  - merged.ipc_version: incoming.ipc_version // wire housekeeping
+  - return merged
+
+prefer_more_specific_model(current, incoming):
+  - if either side empty/null: take the non-empty one
+  - if exact match: take incoming (no-op)
+  - if current == incoming + "[1m]": keep current  // no downgrade
+  - if incoming == current + "[1m]": take incoming // upgrade
+  - otherwise: take incoming                       // genuine model change
+```
+
+The rule is shape-identical to what was shipped in `SessionMetadataStore` last commit; we're moving the implementation from TS-client to Rust-supervisor, giving it a durable backing store, AND correcting the key-casing along the way (since the Rust side is being authored fresh).
+
+**Suffix-rule brittleness — runbook note.** The `[1m]` suffix is a Claude Code CLI convention, not an Anthropic API contract. If Anthropic ever ships a different format (`[ctx-1m]`, `(1M)`, a separate `context_window` field, etc.), the literal-string check at `current == incoming + "[1m]"` silently fails over to "take incoming" and the bare-model overwrite returns. Mitigation: when bumping the Claude Code SDK or noticing a model-name format change in CI fixtures, re-vet this rule. The rule lives in one place (the Rust supervisor's `prefer_more_specific_model`) so the update is one edit.
+
+**Wire-format change.** None. The `system_metadata` event shape is unchanged; the bridge just rewrites the JSON line in place before forwarding (same shape, more-authoritative values). No new event types, no client-side decoder change.
+
+**Artifacts.**
+
+- `tugrust/crates/tugcast/src/session_ledger.rs` — new `session_metadata` table + cascade trigger; `SessionMetadataRow` struct; `record_session_metadata` / `get_session_metadata` methods.
+- `tugrust/crates/tugcast/src/feeds/agent_bridge.rs` — extend `relay_session_io` to intercept `system_metadata` lines; implement `merge_and_persist_session_metadata` helper (reads ledger, applies rule, writes back, rewrites line). Reuse the `Option<&SessionLedger>` parameter already threaded for the telemetry inject path.
+- `tugrust/crates/tugcast/src/feeds/agent_bridge.rs` (tests) — pin the merge rule across the same cases as the retired TS tests (no-downgrade on bare-after-suffixed; preserve cwd/permissionMode/slashCommands when incoming has empty values; genuine model change replaces; upgrade adopts suffix).
+- `tugdeck/src/lib/session-metadata-store.ts` — _retire_ `mergeMetadataSnapshot`, `preferMoreSpecificModel`, `asPresent`; revert `_onFeedUpdate` to wholesale-replace.
+- `tugdeck/src/__tests__/session-metadata-store.test.ts` — drop the `describe("SessionMetadataStore merge-on-replay")` block (4 tests).
+- _Update_ `tide-card.tsx` `projectStatusContent` callsite IF auditing reveals it should read `cwd` from `SessionMetadataStore` (the persisted source) rather than `cardSessionBindingStore` — flag for review during implementation, defer the actual change to a follow-up if it surfaces other concerns.
+
+**Implementation ordering (gated).** Land in this sequence to avoid a regression window where the TS merge is gone but the bridge isn't yet merging:
+
+1. **Bridge work first** — Tasks 1–3 below, with all Rust tests green. The TS in-memory merge stays in place during this phase; it harmlessly merges {merged-from-wire, merged-from-wire} = merged. Commit boundary: `cargo test -p tugcast` green, manual L23 vet passes on this commit alone (the bridge is doing the work; the TS merge is dead weight but not harmful).
+2. **TS retirement second** — Task 4 in a separate commit. Drop the merge helpers + the four merge-on-replay tests; also fix the `permission_mode` → `permissionMode` parse-key bug while in the file. Commit boundary: `bun test` green, `bun x tsc --noEmit` clean, manual L23 vet still passes.
+3. **End-to-end + final vet** — Tasks 5–6.
+
+Reversing this order leaves a window where the client wholesale-replaces against a sparse bridge-untouched replay payload and the bug returns. Strictly bridge-first.
+
+**Tasks.**
+
+- [ ] **(1) Rust schema + ledger methods + unit tests** — `session_metadata` table + cascade trigger via `bootstrap_schema`; `record_session_metadata` / `get_session_metadata`; unit tests for round-trip, cascade-delete, JSON-payload corruption tolerance (a bad blob returns `None` from `get`, doesn't crash).
+- [ ] **(2) Rust merge function + unit tests** — `merge_session_metadata` + `prefer_more_specific_model` pure helpers, keyed on on-wire JSON names (camelCase `permissionMode` / `apiKeySource`; snake_case for the rest). Pin the four cases from the retired TS tests (no-downgrade, preserve non-empty, genuine change, upgrade) plus the first-observation case (no current → take incoming verbatim).
+- [ ] **(3) Tugcast bridge intercept** — extend `relay_session_io` to apply the merge-and-persist on every `system_metadata` line before forwarding. Same opt-in shape as the telemetry inject (`session_ledger: Option<&SessionLedger>`); tests without a ledger pass through unchanged. Key the ledger lookup on `ledger_entry.claude_session_id` (NOT the line's own `session_id` field). If the ledger write fails, log a warn and forward the merged line anyway — the wire delivery must not depend on persistence success.
+- [ ] **(4) Retire TS-side merge + fix parse-key bug** — revert `_onFeedUpdate` to wholesale replace; drop `mergeMetadataSnapshot`, `preferMoreSpecificModel`, `asPresent`; drop the four `merge-on-replay` tests. Same commit: fix the `p.permission_mode` → `p.permissionMode` parse key at `session-metadata-store.ts:207` and add one test asserting the camelCase wire key is captured. The bridge is the sole owner of the merge contract going forward.
+- [ ] **(5) End-to-end test** — Rust integration test that drives `relay_session_io` with a sequence of `system_metadata` lines (one suffixed, then one bare) and asserts both outbound lines carry the suffixed model. Validates the full capture + merge + inject path at the bridge layer.
+- [ ] **(6) Manual L23 vet** — open a tide card, observe `claude-opus-4-7[1m]` + 1M; Developer > Reload → still `[1m]` + 1M; close + reopen app → still `[1m]` + 1M; force-quit + restart tugcast → still `[1m]` + 1M.
+
+**Tests.**
+
+- [ ] Rust: `SessionLedger::record_session_metadata` round-trip; `get_session_metadata` returns `None` for unknown session; cascade-on-DELETE; tolerates a malformed payload blob (returns `None`, no panic).
+- [ ] Rust: `merge_session_metadata` pinning across 5+ cases — first-observation, no-downgrade on bare-after-suffixed, preserve non-empty fields when incoming is empty, genuine model change replaces, bare→suffix upgrade. Each case uses the on-wire JSON key names (camelCase `permissionMode` / `apiKeySource`, snake_case for the rest) so the test fixtures double as a wire-shape contract.
+- [ ] Rust: bridge intercept pinning — a stream of `[live-suffixed, replay-bare]` produces `[suffixed-on-wire, suffixed-on-wire]`; ledger holds the suffixed value at end.
+- [ ] Rust: bridge intercept resilience — when the ledger write fails (inject a poisoned ledger handle or a closed connection), the wire forward still happens with the merged payload AND a warn-log is emitted. Persistence failure must NOT block live delivery.
+- [ ] Rust: bridge intercept skips the merge cleanly when `claude_session_id` is absent on the ledger entry (defensive path) — line passes through unchanged.
+- [ ] TS: existing `SessionMetadataStore` tests (excluding the four merge-on-replay tests) stay green — the wholesale-replace behavior is correct again because the bridge guarantees a complete payload.
+- [ ] TS: new test pinning the camelCase parse-key fix — emit a payload with `permissionMode: "default"` and assert `snapshot.permissionMode === "default"` (would fail today against the snake_case parser even though the wire has always emitted camelCase).
+
+**Checkpoint.**
+
+- [ ] `cargo test -p tugcast` green (new ledger + merge + bridge tests pass; existing 552 stay green; expect roughly +12–15 new Rust tests across the three layers).
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green (post-retirement count: 2068 − 4 retired + 1 added = 2065; the new test surface is on the Rust side).
+- [ ] `bun run audit:tokens lint` exits 0.
+- [ ] **Manual L23 vet:** model + window persist across HMR, Developer > Reload, app relaunch, and tugcast restart. Spot-check `cwd`, `permissionMode`, and `slashCommands` survive the same transitions (the model is the canary, but the same code path persists all of them).
+
+**Defense-in-depth notes.**
+
+- The bridge intercept is the same shape as `inject_replay_telemetry` and can borrow its testing patterns. The two are independent (different lines, different ledger tables) but share the "supervisor-owns-the-merge" pattern.
+- The merge rule is targeted at the `[1m]` suffix because that's the observed Anthropic convention. If Anthropic introduces a different suffix or a per-model variant ID, the rule needs an update — keep it in one place (the bridge) so the update is one edit, not two.
+- The cascade-on-DELETE trigger means a "forget" gesture wipes session_metadata along with sessions + turn_telemetry. No orphan rows.
+
+**Why this resolves the broader concern, not just one bug.**
+
+Beyond the `[1m]` regression: this step closes off the entire class of "live-only session-scoped metadata vanishes on resume." That includes `cwd`, `permissionMode`, `slashCommands`, `tools`, `plugins`, `agents`, `skills`, `mcp_servers`, `version`, `output_style`, `fast_mode_state`, `apiKeySource` — every field the replay path synthesizes as empty. Future UI surfaces that read from `SessionMetadataStore` (or any consumer that uses the same metadata feed) get correctness for free, without having to discover the same bug per-field. The TypeScript merge fix only patched the model; this step patches everything once.
+
+---
+
 #### Step 20.4: UI slot architecture — placement zones for session telemetry {#step-20-4}
 
 **Depends on:** #step-20-3 (clean per-turn + session-cumulative data is the input this step renders), #step-20-1 (TugLinearGauge for any window-utilization gauge surface)
