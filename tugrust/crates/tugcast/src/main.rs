@@ -11,6 +11,7 @@ mod resources;
 mod router;
 mod server;
 mod session_ledger;
+mod session_metadata_merge;
 
 #[cfg(test)]
 mod integration_tests;

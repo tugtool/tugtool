@@ -59,7 +59,8 @@ function makeMetadataPayload(overrides: Record<string, unknown> = {}): Record<st
     type: "system_metadata",
     session_id: "sess-abc-123",
     model: "claude-3-opus",
-    permission_mode: "default",
+    // Wire emits camelCase per `tugcode/src/session.ts:498,517`.
+    permissionMode: "default",
     cwd: "/home/user/project",
     slash_commands: [
       { name: "help", description: "Show help", category: "local" },
@@ -433,118 +434,30 @@ describe("SessionMetadataStore getCommandCompletionProvider", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Tests: merge-on-replay behavior (no-downgrade contract)
+// Tests: wire-format key contract
 // ---------------------------------------------------------------------------
 //
-// On `Developer > Reload` (or any resume), the supervisor delivers TWO
-// `system_metadata` events in sequence:
-//
-//   1. Live from Claude's own session_init (full payload — suffixed
-//      `model`, populated `cwd`, `permissionMode`, `tools`,
-//      `slash_commands`, etc.).
-//   2. Replay-synthesized from `tugcode/src/replay.ts` (only `model`
-//      populated, with the BARE name from `assistant.message.model` in
-//      JSONL — Claude's JSONL doesn't preserve the `[1m]` suffix; all
-//      other fields are empty).
-//
-// The old wholesale-replace behavior wiped every field the live
-// payload had set. The merge contract: prefer non-empty incoming, and
-// for `model` specifically, keep the suffixed value when the incoming
-// is just the bare base.
+// The merge that defends against replay-synthesized clobbering now
+// lives in the Rust supervisor's bridge intercept — every outbound
+// `system_metadata` line is merged against the persisted ledger row
+// before reaching the client. Tugdeck wholesale-replaces from the
+// wire because the wire is authoritative. The contract this end of
+// the pipe has to honor is "the parser reads the keys Claude actually
+// emits"; the no-downgrade behavior is pinned in Rust.
 
-describe("SessionMetadataStore merge-on-replay", () => {
-  test("replay payload with bare model does not downgrade live [1m] suffix", () => {
+describe("SessionMetadataStore wire-key parsing", () => {
+  test("captures permissionMode from the camelCase wire key", () => {
+    // The wire emits `permissionMode` (camelCase) per
+    // `tugcode/src/session.ts:498,517`. The parser previously read
+    // `permission_mode` (snake_case) and silently returned null for
+    // every live payload; that bug stayed latent for as long as no
+    // consumer rendered the field. Pin the correct wire key.
     const feedStore = new MockFeedStore();
     const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
 
-    // Live arrives first — Claude session_init carries the suffix.
-    feedStore.emit(
-      FEED_ID,
-      makeMetadataPayload({ model: "claude-opus-4-7[1m]" }),
-    );
-    expect(store.getSnapshot().model).toBe("claude-opus-4-7[1m]");
+    feedStore.emit(FEED_ID, makeMetadataPayload({ permissionMode: "plan" }));
 
-    // Replay's synthesized payload arrives second with the bare name.
-    feedStore.emit(
-      FEED_ID,
-      makeMetadataPayload({
-        model: "claude-opus-4-7",
-        cwd: "",
-        permission_mode: "",
-        slash_commands: [],
-      }),
-    );
-
-    // Suffix must survive — otherwise the gauge regresses from 1M → 200k.
-    expect(store.getSnapshot().model).toBe("claude-opus-4-7[1m]");
-
-    store.dispose();
-  });
-
-  test("replay payload with empty cwd / permissionMode / slashCommands does not wipe live values", () => {
-    const feedStore = new MockFeedStore();
-    const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
-
-    feedStore.emit(
-      FEED_ID,
-      makeMetadataPayload({
-        cwd: "/home/user/project",
-        permission_mode: "default",
-      }),
-    );
-    const before = store.getSnapshot();
-    expect(before.cwd).toBe("/home/user/project");
-    expect(before.permissionMode).toBe("default");
-    expect(before.slashCommands.length).toBeGreaterThan(0);
-
-    // Replay-shaped payload: model only; everything else empty.
-    feedStore.emit(
-      FEED_ID,
-      makeMetadataPayload({
-        cwd: "",
-        permission_mode: "",
-        slash_commands: [],
-        skills: [],
-      }),
-    );
-
-    const after = store.getSnapshot();
-    expect(after.cwd).toBe("/home/user/project");
-    expect(after.permissionMode).toBe("default");
-    expect(after.slashCommands.length).toBeGreaterThan(0);
-
-    store.dispose();
-  });
-
-  test("genuine model change replaces the current model (not a suffix-strip)", () => {
-    const feedStore = new MockFeedStore();
-    const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
-
-    feedStore.emit(
-      FEED_ID,
-      makeMetadataPayload({ model: "claude-opus-4-7[1m]" }),
-    );
-    feedStore.emit(
-      FEED_ID,
-      makeMetadataPayload({ model: "claude-sonnet-4-6" }),
-    );
-    expect(store.getSnapshot().model).toBe("claude-sonnet-4-6");
-
-    store.dispose();
-  });
-
-  test("suffix upgrade takes effect when [1m] arrives after a bare-name event", () => {
-    // Symmetric edge case: bare arrives first, then suffixed. The
-    // merge should adopt the more-specific suffixed value.
-    const feedStore = new MockFeedStore();
-    const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
-
-    feedStore.emit(FEED_ID, makeMetadataPayload({ model: "claude-opus-4-7" }));
-    feedStore.emit(
-      FEED_ID,
-      makeMetadataPayload({ model: "claude-opus-4-7[1m]" }),
-    );
-    expect(store.getSnapshot().model).toBe("claude-opus-4-7[1m]");
+    expect(store.getSnapshot().permissionMode).toBe("plan");
 
     store.dispose();
   });

@@ -211,6 +211,25 @@ pub struct TurnTelemetryRow {
     pub ended_at: i64,
 }
 
+/// One row of the `session_metadata` table — the LIVE-ONLY
+/// `system_metadata` payload Claude Code emits on `session_init` and
+/// that JSONL never preserves. Written by the bridge intercept on
+/// every outbound `system_metadata` line (merged against the existing
+/// row, then persisted); read on subsequent intercepts so the merge
+/// has a current baseline.
+///
+/// `payload` is the raw JSON BLOB — the merge rule operates on the
+/// parsed `serde_json::Value` rather than on per-column scalars, so
+/// fields Anthropic adds in the future land here without a schema
+/// change. `captured_at` is the wall-clock millisecond timestamp when
+/// the row was last written (for debugging / staleness audits).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionMetadataRow {
+    pub session_id: String,
+    pub payload: Vec<u8>,
+    pub captured_at: i64,
+}
+
 /// Result of a successful `forget` call.
 ///
 /// `jsonl_moved_to` is `None` until step 8 wires the trash move. Until then
@@ -380,6 +399,37 @@ impl SessionLedger {
             FOR EACH ROW
             BEGIN
                 DELETE FROM turn_telemetry WHERE session_id = OLD.session_id;
+            END;
+
+            -- Per-session LIVE-ONLY metadata — the full `system_metadata`
+            -- payload Claude Code emits on `session_init` (model with
+            -- the `[1m]` suffix, cwd, permissionMode, tools,
+            -- slash_commands, plugins, agents, skills, mcp_servers,
+            -- version, output_style, fast_mode_state, apiKeySource).
+            -- JSONL does not preserve any of these per-message — the
+            -- replay path in `tugcode/src/replay.ts` synthesizes a
+            -- bare-name `system_metadata` with every other field empty,
+            -- which without persistence would clobber the live values
+            -- the user already saw. The bridge captures the live
+            -- payload, merges it with the persisted one on every
+            -- forward, and rewrites the wire line so the client always
+            -- receives the most-informationally-rich version.
+            --
+            -- Payload is stored as a JSON BLOB rather than per-column
+            -- so future Anthropic fields land here without a schema
+            -- migration. Trade-off: no indexed queries on individual
+            -- fields, but the only access pattern is PK lookup.
+            CREATE TABLE IF NOT EXISTS session_metadata (
+                session_id  TEXT PRIMARY KEY,
+                payload     BLOB NOT NULL,
+                captured_at INTEGER NOT NULL
+            );
+
+            CREATE TRIGGER IF NOT EXISTS session_metadata_cascade_delete_on_session
+            AFTER DELETE ON sessions
+            FOR EACH ROW
+            BEGIN
+                DELETE FROM session_metadata WHERE session_id = OLD.session_id;
             END;
             ",
         )?;
@@ -1009,6 +1059,57 @@ impl SessionLedger {
             .query_map(params![session_id], turn_telemetry_row_from_query)?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
+    }
+
+    /// Upsert one `session_metadata` row. Idempotent on `session_id`
+    /// via `INSERT OR REPLACE` — the bridge intercept runs the merge
+    /// on every outbound `system_metadata` line, so a steady-state
+    /// session writes the same merged payload on every subsequent
+    /// hit, which should be a no-op overwrite, not a duplicate-key
+    /// error.
+    ///
+    /// `payload` is the merged JSON serialized as bytes. The merge
+    /// itself happens in `merge_session_metadata` (this method is the
+    /// pure persistence write).
+    pub fn record_session_metadata(
+        &self,
+        session_id: &str,
+        payload: &[u8],
+        captured_at: i64,
+    ) -> Result<(), LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        conn.execute(
+            "INSERT OR REPLACE INTO session_metadata (session_id, payload, captured_at)
+             VALUES (?1, ?2, ?3)",
+            params![session_id, payload, captured_at],
+        )?;
+        Ok(())
+    }
+
+    /// Fetch the persisted `session_metadata` row for `session_id`, or
+    /// `None` if no row exists (first-observation case; the merge
+    /// degenerates to "take incoming verbatim").
+    pub fn get_session_metadata(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<SessionMetadataRow>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let row = conn
+            .query_row(
+                "SELECT session_id, payload, captured_at
+                 FROM session_metadata
+                 WHERE session_id = ?1",
+                params![session_id],
+                |row| {
+                    Ok(SessionMetadataRow {
+                        session_id: row.get(0)?,
+                        payload: row.get(1)?,
+                        captured_at: row.get(2)?,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(row)
     }
 }
 
@@ -2284,6 +2385,100 @@ mod tests {
             l.list_turn_telemetry("s1").unwrap().len(),
             0,
             "cascade trigger must purge turn_telemetry rows when the parent session row is deleted",
+        );
+    }
+
+    // ---- session_metadata table ----------------------------------------
+
+    fn sample_metadata_payload(model: &str) -> Vec<u8> {
+        serde_json::json!({
+            "type": "system_metadata",
+            "session_id": "s1",
+            "cwd": "/home/user/project",
+            "tools": ["Read", "Bash"],
+            "model": model,
+            "permissionMode": "default",
+            "slash_commands": ["help"],
+            "plugins": [],
+            "agents": [],
+            "skills": ["tugplug:plan"],
+            "mcp_servers": [],
+            "version": "2.1.105",
+            "output_style": "",
+            "fast_mode_state": "",
+            "apiKeySource": "anthropic",
+            "ipc_version": 2,
+        })
+        .to_string()
+        .into_bytes()
+    }
+
+    #[test]
+    fn record_session_metadata_round_trip() {
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        let payload = sample_metadata_payload("claude-opus-4-7[1m]");
+        l.record_session_metadata("s1", &payload, 5_000).unwrap();
+        let read = l.get_session_metadata("s1").unwrap().unwrap();
+        assert_eq!(read.session_id, "s1");
+        assert_eq!(read.payload, payload);
+        assert_eq!(read.captured_at, 5_000);
+    }
+
+    #[test]
+    fn get_session_metadata_returns_none_for_unknown_session() {
+        let l = fresh();
+        assert!(l.get_session_metadata("never-existed").unwrap().is_none());
+    }
+
+    #[test]
+    fn record_session_metadata_idempotent_on_session_pk() {
+        // Steady-state operation: the bridge intercept runs the merge
+        // on every outbound `system_metadata` line. Writes for the same
+        // session must overwrite, not duplicate-key.
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        let v1 = sample_metadata_payload("claude-opus-4-7");
+        let v2 = sample_metadata_payload("claude-opus-4-7[1m]");
+        l.record_session_metadata("s1", &v1, 1_000).unwrap();
+        l.record_session_metadata("s1", &v2, 2_000).unwrap();
+        let read = l.get_session_metadata("s1").unwrap().unwrap();
+        assert_eq!(read.payload, v2);
+        assert_eq!(read.captured_at, 2_000);
+    }
+
+    #[test]
+    fn record_session_metadata_accepts_malformed_blob() {
+        // The schema column type is BLOB with no JSON validation, so
+        // the ledger persists whatever bytes the caller hands it.
+        // Round-trip succeeds; downstream JSON deserialization is the
+        // bridge's responsibility (and the bridge falls back to
+        // pass-through on a parse error — see Task 3).
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        let garbage = b"this-is-not-json".to_vec();
+        l.record_session_metadata("s1", &garbage, 1_000).unwrap();
+        let read = l.get_session_metadata("s1").unwrap().unwrap();
+        assert_eq!(read.payload, garbage);
+    }
+
+    #[test]
+    fn cascade_delete_removes_session_metadata_when_session_deleted() {
+        // Pin the `session_metadata_cascade_delete_on_session` trigger:
+        // forgetting a session also removes its metadata row. Mirrors
+        // the `turn_telemetry` cascade contract.
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        l.mark_closed("s1").unwrap();
+        l.record_session_metadata("s1", &sample_metadata_payload("claude-opus-4-7"), 1_000)
+            .unwrap();
+        assert!(l.get_session_metadata("s1").unwrap().is_some());
+
+        l.forget("s1").unwrap();
+
+        assert!(
+            l.get_session_metadata("s1").unwrap().is_none(),
+            "cascade trigger must purge session_metadata when parent session row is deleted",
         );
     }
 }

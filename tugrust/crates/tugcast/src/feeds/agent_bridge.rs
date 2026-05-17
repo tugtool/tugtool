@@ -941,6 +941,44 @@ pub async fn relay_session_io(
                                 }
                                 line.as_bytes().to_vec()
                             }
+                        } else if line.contains("\"type\":\"system_metadata\"") {
+                            // Bridge intercept for LIVE-ONLY session
+                            // metadata. The live path delivers a rich
+                            // payload (model with `[1m]` suffix, cwd,
+                            // permissionMode, tools, …); the replay
+                            // path (`tugcode/src/replay.ts:984`)
+                            // synthesizes a bare-model payload with
+                            // every other field empty. Without this
+                            // merge the replay would clobber the live
+                            // values on every resume.
+                            //
+                            // Key the ledger by `claude_session_id`
+                            // (captured by the session_init interceptor
+                            // above), NOT by the line's own
+                            // `session_id` field — the live path's
+                            // payload can have an empty session_id
+                            // when the SDK omits it. See plan
+                            // `#step-20-3-6` "Intercept-key sourcing".
+                            //
+                            // If the merge cannot proceed (ledger
+                            // absent, claude_session_id absent, parse
+                            // error, ledger write error), the line
+                            // passes through unchanged. The wire
+                            // delivery must not depend on persistence
+                            // success.
+                            let claude_id = {
+                                let entry = ledger_entry.lock().await;
+                                entry.claude_session_id.clone()
+                            };
+                            match (session_ledger, claude_id) {
+                                (Some(ledger), Some(id)) => merge_and_persist_system_metadata(
+                                    line.as_bytes(),
+                                    ledger,
+                                    &id,
+                                    tug_session_id,
+                                ),
+                                _ => line.as_bytes().to_vec(),
+                            }
                         } else {
                             line.as_bytes().to_vec()
                         };
@@ -1132,6 +1170,69 @@ fn inject_replay_telemetry(
         obj.insert("telemetry".to_string(), telemetry);
     }
     serde_json::to_vec(&value).unwrap_or_else(|_| line.to_vec())
+}
+
+/// Merge a `system_metadata` line against the persisted
+/// `session_metadata` row, write the merged payload back, and return
+/// the merged line for forwarding. Pure pass-through fallback on any
+/// failure mode so the wire delivery never depends on persistence
+/// success.
+///
+/// Wall-clock millisecond `captured_at` uses
+/// `SystemTime::now()` — purely diagnostic / staleness audits; the
+/// merge rule itself does not consult timestamps.
+fn merge_and_persist_system_metadata(
+    line: &[u8],
+    ledger: &crate::session_ledger::SessionLedger,
+    claude_session_id: &str,
+    tug_session_id: &TugSessionId,
+) -> Vec<u8> {
+    let Ok(incoming) = serde_json::from_slice::<serde_json::Value>(line) else {
+        return line.to_vec();
+    };
+
+    let current_payload_bytes = match ledger.get_session_metadata(claude_session_id) {
+        Ok(Some(row)) => Some(row.payload),
+        Ok(None) => None,
+        Err(e) => {
+            warn!(
+                session = %tug_session_id,
+                error = %e,
+                "get_session_metadata failed; forwarding system_metadata unmerged",
+            );
+            return line.to_vec();
+        }
+    };
+    let current_value: Option<serde_json::Value> = current_payload_bytes
+        .as_deref()
+        .and_then(|bytes| serde_json::from_slice(bytes).ok());
+
+    let merged_map =
+        crate::session_metadata_merge::merge_session_metadata(current_value.as_ref(), &incoming);
+    if merged_map.is_empty() {
+        // The merge refused (malformed incoming non-object). Pass
+        // through and let downstream consumers handle the malformed
+        // payload — we don't have a better answer.
+        return line.to_vec();
+    }
+    let merged_value = serde_json::Value::Object(merged_map);
+    let Ok(merged_bytes) = serde_json::to_vec(&merged_value) else {
+        return line.to_vec();
+    };
+
+    let captured_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    if let Err(e) = ledger.record_session_metadata(claude_session_id, &merged_bytes, captured_at) {
+        warn!(
+            session = %tug_session_id,
+            error = %e,
+            "record_session_metadata failed; forwarding merged payload without persistence",
+        );
+    }
+
+    merged_bytes
 }
 
 /// Extract the user's text from a CODE_INPUT frame's JSON payload, when
@@ -1563,5 +1664,192 @@ mod tests {
             std::collections::HashMap::new();
         let out = inject_replay_telemetry(line, &map);
         assert_eq!(out, line.to_vec());
+    }
+
+    // ---- merge_and_persist_system_metadata ----------------------------
+
+    fn live_system_metadata_line(model: &str) -> Vec<u8> {
+        // Mirror what `tugcode/src/session.ts:511-528` emits — rich
+        // payload, suffixed model.
+        serde_json::json!({
+            "type": "system_metadata",
+            "session_id": "sess-1",
+            "cwd": "/home/user/project",
+            "tools": ["Read", "Bash"],
+            "model": model,
+            "permissionMode": "default",
+            "slash_commands": ["help"],
+            "plugins": [],
+            "agents": [],
+            "skills": ["tugplug:plan"],
+            "mcp_servers": [],
+            "version": "2.1.105",
+            "output_style": "",
+            "fast_mode_state": "",
+            "apiKeySource": "anthropic",
+            "ipc_version": 2,
+        })
+        .to_string()
+        .into_bytes()
+    }
+
+    fn replay_system_metadata_line(model: &str) -> Vec<u8> {
+        // Mirror what `tugcode/src/replay.ts:989-1006` synthesizes —
+        // bare model, every other field empty / empty-array.
+        serde_json::json!({
+            "type": "system_metadata",
+            "session_id": "sess-1",
+            "cwd": "",
+            "tools": [],
+            "model": model,
+            "permissionMode": "",
+            "slash_commands": [],
+            "plugins": [],
+            "agents": [],
+            "skills": [],
+            "mcp_servers": [],
+            "version": "",
+            "output_style": "",
+            "fast_mode_state": "",
+            "apiKeySource": "",
+            "ipc_version": 2,
+        })
+        .to_string()
+        .into_bytes()
+    }
+
+    fn test_tug_session_id() -> TugSessionId {
+        TugSessionId::new("test-tug-session")
+    }
+
+    #[test]
+    fn merge_and_persist_writes_first_observation_verbatim() {
+        let ledger = crate::session_ledger::SessionLedger::open_in_memory().unwrap();
+        let tug_id = test_tug_session_id();
+        let line = live_system_metadata_line("claude-opus-4-7[1m]");
+        let out = merge_and_persist_system_metadata(&line, &ledger, "sess-1", &tug_id);
+        // Output line carries the full payload.
+        let parsed: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(parsed["model"], "claude-opus-4-7[1m]");
+        assert_eq!(parsed["cwd"], "/home/user/project");
+        // Ledger holds the same payload.
+        let row = ledger.get_session_metadata("sess-1").unwrap().unwrap();
+        let persisted: serde_json::Value = serde_json::from_slice(&row.payload).unwrap();
+        assert_eq!(persisted["model"], "claude-opus-4-7[1m]");
+    }
+
+    #[test]
+    fn merge_and_persist_preserves_suffix_on_replay_after_live() {
+        // The canary case. Live arrives first, then a bare-model
+        // replay-synthesized payload. Without the merge, the wire
+        // delivered to the client would carry the bare name and the
+        // window-utilization gauge would regress 1M → 200k.
+        let ledger = crate::session_ledger::SessionLedger::open_in_memory().unwrap();
+        let tug_id = test_tug_session_id();
+
+        let live = live_system_metadata_line("claude-opus-4-7[1m]");
+        let _ = merge_and_persist_system_metadata(&live, &ledger, "sess-1", &tug_id);
+
+        let replay = replay_system_metadata_line("claude-opus-4-7");
+        let out = merge_and_persist_system_metadata(&replay, &ledger, "sess-1", &tug_id);
+
+        let parsed: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(
+            parsed["model"], "claude-opus-4-7[1m]",
+            "bridge intercept must preserve the [1m] suffix across resume",
+        );
+        // And the persisted payload retains the suffix.
+        let row = ledger.get_session_metadata("sess-1").unwrap().unwrap();
+        let persisted: serde_json::Value = serde_json::from_slice(&row.payload).unwrap();
+        assert_eq!(persisted["model"], "claude-opus-4-7[1m]");
+    }
+
+    #[test]
+    fn merge_and_persist_preserves_non_empty_fields_on_replay() {
+        let ledger = crate::session_ledger::SessionLedger::open_in_memory().unwrap();
+        let tug_id = test_tug_session_id();
+
+        let _ = merge_and_persist_system_metadata(
+            &live_system_metadata_line("claude-opus-4-7[1m]"),
+            &ledger,
+            "sess-1",
+            &tug_id,
+        );
+
+        let replay = replay_system_metadata_line("claude-opus-4-7");
+        let out = merge_and_persist_system_metadata(&replay, &ledger, "sess-1", &tug_id);
+
+        let parsed: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(parsed["cwd"], "/home/user/project");
+        assert_eq!(parsed["permissionMode"], "default");
+        assert_eq!(parsed["version"], "2.1.105");
+        assert_eq!(parsed["apiKeySource"], "anthropic");
+        // Array fields too.
+        assert_eq!(parsed["tools"].as_array().unwrap().len(), 2);
+        assert_eq!(parsed["slash_commands"].as_array().unwrap().len(), 1);
+        assert_eq!(parsed["skills"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn merge_and_persist_passes_through_on_malformed_incoming() {
+        let ledger = crate::session_ledger::SessionLedger::open_in_memory().unwrap();
+        let tug_id = test_tug_session_id();
+        let line = b"not valid json";
+        let out = merge_and_persist_system_metadata(line, &ledger, "sess-1", &tug_id);
+        assert_eq!(out, line.to_vec(), "malformed incoming returns the line unchanged");
+        // And nothing was written to the ledger.
+        assert!(ledger.get_session_metadata("sess-1").unwrap().is_none());
+    }
+
+    #[test]
+    fn merge_and_persist_passes_through_when_incoming_is_not_an_object() {
+        // The merge returns an empty map for a non-object incoming;
+        // the helper detects that and forwards unchanged rather than
+        // emitting `{}` on the wire.
+        let ledger = crate::session_ledger::SessionLedger::open_in_memory().unwrap();
+        let tug_id = test_tug_session_id();
+        let line = br#""just a string""#;
+        let out = merge_and_persist_system_metadata(line, &ledger, "sess-1", &tug_id);
+        assert_eq!(out, line.to_vec());
+        assert!(ledger.get_session_metadata("sess-1").unwrap().is_none());
+    }
+
+    #[test]
+    fn merge_and_persist_idempotent_on_repeat_writes() {
+        // Steady-state operation: the same payload is forwarded
+        // multiple times (e.g., reconnect → live session_init → live
+        // session_init again). The merged output is byte-stable and
+        // the ledger row is overwritten with the same bytes.
+        let ledger = crate::session_ledger::SessionLedger::open_in_memory().unwrap();
+        let tug_id = test_tug_session_id();
+        let line = live_system_metadata_line("claude-opus-4-7[1m]");
+        let out1 = merge_and_persist_system_metadata(&line, &ledger, "sess-1", &tug_id);
+        let out2 = merge_and_persist_system_metadata(&line, &ledger, "sess-1", &tug_id);
+        let parsed1: serde_json::Value = serde_json::from_slice(&out1).unwrap();
+        let parsed2: serde_json::Value = serde_json::from_slice(&out2).unwrap();
+        assert_eq!(parsed1, parsed2);
+    }
+
+    #[test]
+    fn merge_and_persist_upgrades_when_suffix_arrives_second() {
+        // Symmetric edge: bare arrives first, suffix arrives second.
+        // The wire must surface the upgrade so the client window-
+        // utilization gauge picks up 1M.
+        let ledger = crate::session_ledger::SessionLedger::open_in_memory().unwrap();
+        let tug_id = test_tug_session_id();
+        let _ = merge_and_persist_system_metadata(
+            &replay_system_metadata_line("claude-opus-4-7"),
+            &ledger,
+            "sess-1",
+            &tug_id,
+        );
+        let out = merge_and_persist_system_metadata(
+            &live_system_metadata_line("claude-opus-4-7[1m]"),
+            &ledger,
+            "sess-1",
+            &tug_id,
+        );
+        let parsed: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(parsed["model"], "claude-opus-4-7[1m]");
     }
 }

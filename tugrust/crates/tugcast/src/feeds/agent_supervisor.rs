@@ -5106,6 +5106,223 @@ mod tests {
         assert_eq!(parsed["tug_session_id"], "sess-resume-fail");
     }
 
+    /// End-to-end pin for plan `#step-20-3-6`: the bridge intercept
+    /// on `system_metadata` lines merges the incoming payload against
+    /// the persisted ledger row and rewrites the wire to carry the
+    /// most-informationally-rich version before forwarding. Validates
+    /// the full capture + merge + inject path:
+    ///
+    ///   1. Live `system_metadata` arrives with the `[1m]`-suffixed
+    ///      model. The bridge has no persisted row yet; the merge
+    ///      returns incoming verbatim and persists it.
+    ///   2. Replay-synthesized `system_metadata` arrives with the
+    ///      bare model name (the JSONL transcript doesn't preserve
+    ///      the suffix) and empty `cwd` / `permissionMode` /
+    ///      `tools` / `slash_commands` / etc. The bridge merges
+    ///      against the persisted live payload and forwards the rich
+    ///      merged value.
+    ///
+    /// Both outbound `system_metadata` frames must carry the suffix;
+    /// the ledger row at end-of-stream must hold the suffix.
+    #[tokio::test]
+    async fn test_system_metadata_bridge_merge_preserves_suffix_e2e() {
+        let ((sup, _state_rx, _meta_rx, _control_rx), _register_rx) =
+            make_supervisor_with_spawner(stall_spawner_factory());
+
+        let tug_id = TugSessionId::new("sess-meta-e2e");
+        let entry_arc = insert_ledger_entry(&sup, &tug_id).await;
+        {
+            let mut entry = entry_arc.lock().await;
+            entry.spawn_state = SpawnState::Spawning;
+        }
+
+        // Wire up an in-memory ledger so the bridge can read/write
+        // `session_metadata` rows.
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+
+        let (bridge_stdin, mut child_stdin_read) = tokio::io::duplex(8192);
+        let (mut child_stdout_write, bridge_stdout) = tokio::io::duplex(8192);
+
+        let claude_session_id = "claude-meta-e2e";
+
+        // Fake child writes: ack, session_init, live system_metadata,
+        // replay_started, bare-model replay system_metadata,
+        // replay_complete, EOF.
+        let claude_id_for_child = claude_session_id.to_string();
+        let child_task = tokio::spawn(async move {
+            let mut reader = BufReader::new(&mut child_stdin_read);
+            let mut line = String::new();
+            reader.read_line(&mut line).await.unwrap();
+            assert!(line.contains("protocol_init"));
+
+            child_stdout_write
+                .write_all(b"{\"type\":\"protocol_ack\",\"version\":1}\n")
+                .await
+                .unwrap();
+
+            child_stdout_write
+                .write_all(
+                    format!(
+                        "{{\"type\":\"session_init\",\"session_id\":\"{claude_id_for_child}\"}}\n"
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+
+            // Live `system_metadata` — matches what `tugcode/src/session.ts`
+            // emits on the `subtype === "init"` branch.
+            let live_payload = serde_json::json!({
+                "type": "system_metadata",
+                "session_id": claude_id_for_child,
+                "cwd": "/home/user/project",
+                "tools": ["Read", "Bash"],
+                "model": "claude-opus-4-7[1m]",
+                "permissionMode": "default",
+                "slash_commands": ["help"],
+                "plugins": [],
+                "agents": [],
+                "skills": ["tugplug:plan"],
+                "mcp_servers": [],
+                "version": "2.1.105",
+                "output_style": "",
+                "fast_mode_state": "",
+                "apiKeySource": "anthropic",
+                "ipc_version": 2,
+            });
+            let mut live_line = serde_json::to_vec(&live_payload).unwrap();
+            live_line.push(b'\n');
+            child_stdout_write.write_all(&live_line).await.unwrap();
+
+            child_stdout_write
+                .write_all(b"{\"type\":\"replay_started\"}\n")
+                .await
+                .unwrap();
+
+            // Replay-synthesized `system_metadata` — matches what
+            // `tugcode/src/replay.ts` synthesizes. Bare model, every
+            // other field empty / empty-array.
+            let replay_payload = serde_json::json!({
+                "type": "system_metadata",
+                "session_id": claude_id_for_child,
+                "cwd": "",
+                "tools": [],
+                "model": "claude-opus-4-7",
+                "permissionMode": "",
+                "slash_commands": [],
+                "plugins": [],
+                "agents": [],
+                "skills": [],
+                "mcp_servers": [],
+                "version": "",
+                "output_style": "",
+                "fast_mode_state": "",
+                "apiKeySource": "",
+                "ipc_version": 2,
+            });
+            let mut replay_line = serde_json::to_vec(&replay_payload).unwrap();
+            replay_line.push(b'\n');
+            child_stdout_write.write_all(&replay_line).await.unwrap();
+
+            child_stdout_write
+                .write_all(b"{\"type\":\"replay_complete\"}\n")
+                .await
+                .unwrap();
+            drop(child_stdout_write);
+        });
+
+        let (_input_tx_bridge, mut input_rx_bridge) = mpsc::channel::<Frame>(4);
+        let (merger_tx, mut merger_rx) = mpsc::channel::<Frame>(16);
+        let state_tx = sup.session_state_tx.clone();
+        let cancel = CancellationToken::new();
+
+        let stdin_box: Box<dyn tokio::io::AsyncWrite + Send + Unpin> = Box::new(bridge_stdin);
+        let stdout_box: Box<dyn tokio::io::AsyncRead + Send + Unpin> = Box::new(bridge_stdout);
+        let lines = BufReader::new(stdout_box).lines();
+
+        let recorder = NoopSessionsRecorder;
+        let outcome = relay_session_io(
+            &tug_id,
+            &entry_arc,
+            &mut input_rx_bridge,
+            &merger_tx,
+            &state_tx,
+            stdin_box,
+            lines,
+            "/tmp/test-meta-e2e",
+            &recorder,
+            Some(ledger.as_ref()),
+            &cancel,
+        )
+        .await;
+        child_task.await.unwrap();
+        assert_eq!(outcome, RelayOutcome::Crashed); // EOF after the stream
+
+        // Drain every CODE_OUTPUT frame the merger received and collect
+        // the two `system_metadata` ones in order.
+        let mut metadata_frames: Vec<serde_json::Value> = Vec::new();
+        while let Ok(frame) = merger_rx.try_recv() {
+            if frame.feed_id != FeedId::CODE_OUTPUT {
+                continue;
+            }
+            let Ok(parsed) = serde_json::from_slice::<serde_json::Value>(&frame.payload) else {
+                continue;
+            };
+            if parsed.get("type").and_then(|v| v.as_str()) == Some("system_metadata") {
+                metadata_frames.push(parsed);
+            }
+        }
+        assert_eq!(
+            metadata_frames.len(),
+            2,
+            "both live and replay system_metadata frames must be forwarded",
+        );
+
+        // Both wire payloads carry the suffixed model.
+        assert_eq!(
+            metadata_frames[0]["model"], "claude-opus-4-7[1m]",
+            "live system_metadata forwards verbatim with suffix",
+        );
+        assert_eq!(
+            metadata_frames[1]["model"], "claude-opus-4-7[1m]",
+            "replay-synthesized system_metadata is merged against the persisted live payload — \
+             suffix preserved on the wire",
+        );
+
+        // Both wire payloads also carry the rich live values for cwd /
+        // permissionMode / etc. (the replay-synthesized payload's empty
+        // values were overridden by the persisted live ones).
+        assert_eq!(metadata_frames[1]["cwd"], "/home/user/project");
+        assert_eq!(metadata_frames[1]["permissionMode"], "default");
+        assert_eq!(metadata_frames[1]["version"], "2.1.105");
+        assert_eq!(metadata_frames[1]["apiKeySource"], "anthropic");
+        assert_eq!(
+            metadata_frames[1]["tools"].as_array().unwrap().len(),
+            2,
+            "live tools array survives the replay-synthesized empty array",
+        );
+        assert_eq!(
+            metadata_frames[1]["slash_commands"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1,
+        );
+        assert_eq!(
+            metadata_frames[1]["skills"].as_array().unwrap().len(),
+            1,
+        );
+
+        // The ledger row holds the suffixed model at end-of-stream.
+        let row = ledger
+            .get_session_metadata(claude_session_id)
+            .unwrap()
+            .expect("ledger has the merged session_metadata row");
+        let persisted: serde_json::Value = serde_json::from_slice(&row.payload).unwrap();
+        assert_eq!(persisted["model"], "claude-opus-4-7[1m]");
+        assert_eq!(persisted["cwd"], "/home/user/project");
+    }
+
     // ---- SessionKeyRecord schema + dual-read migration ----
 
     // ================================================================

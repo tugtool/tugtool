@@ -44,77 +44,6 @@ const EMPTY_SNAPSHOT: SessionMetadataSnapshot = {
   slashCommands: [],
 };
 
-/**
- * Treat `null` and empty strings as "field absent" — the replay path
- * in `tugcode/src/replay.ts` synthesizes `system_metadata` with empty
- * `cwd` / `tools` / `permissionMode` / `slash_commands` (only `model`
- * is populated from `assistant.message.model` in JSONL), and a
- * wholesale snapshot replace would wipe the live values those fields
- * had been set to on the original session_init.
- */
-function asPresent(s: string | null): string | null {
-  return s !== null && s !== "" ? s : null;
-}
-
-/**
- * Pick the more-specific model name between the current and incoming
- * values. Defends against the resume-replay regression where Claude
- * emits the suffixed model (e.g. `claude-opus-4-7[1m]`) on live
- * `system_init` but records the bare name (`claude-opus-4-7`) on
- * every `assistant.message.model` field in JSONL — the replay path
- * synthesizes `system_metadata` from the JSONL bare name, which would
- * otherwise overwrite the live suffixed value and downgrade the
- * window-utilization gauge from 1M → 200k.
- *
- * Rules:
- *  - either side null → take the non-null one
- *  - exact match → take incoming (no-op)
- *  - one side is the other + `[1m]` → keep the suffixed one
- *  - otherwise (genuine model change) → take incoming
- *
- * Mid-session model changes (sonnet ↔ opus, etc.) fall through to
- * "take incoming" — the suffix-pair check is targeted at the same
- * base model, not at unrelated swaps.
- */
-function preferMoreSpecificModel(
-  current: string | null,
-  incoming: string | null,
-): string | null {
-  if (current === null || current === "") return incoming;
-  if (incoming === null || incoming === "") return current;
-  if (current === incoming) return incoming;
-  if (current === `${incoming}[1m]`) return current;
-  if (incoming === `${current}[1m]`) return incoming;
-  return incoming;
-}
-
-/**
- * Merge an incoming `SessionMetadataSnapshot` over a current one,
- * preferring non-empty incoming values (so a replay-synthesized
- * payload with empty `cwd` / `permissionMode` / etc. doesn't wipe the
- * live values) and preserving the more-specific model name across
- * resume (see `preferMoreSpecificModel`).
- *
- * `slashCommands` follows the same "prefer non-empty" rule — a
- * payload with an empty array keeps the current commands rather than
- * wiping them.
- */
-function mergeMetadataSnapshot(
-  current: SessionMetadataSnapshot,
-  incoming: SessionMetadataSnapshot,
-): SessionMetadataSnapshot {
-  return {
-    sessionId: asPresent(incoming.sessionId) ?? current.sessionId,
-    model: preferMoreSpecificModel(current.model, incoming.model),
-    permissionMode: asPresent(incoming.permissionMode) ?? current.permissionMode,
-    cwd: asPresent(incoming.cwd) ?? current.cwd,
-    slashCommands:
-      incoming.slashCommands.length > 0
-        ? incoming.slashCommands
-        : current.slashCommands,
-  };
-}
-
 /** Validate and normalize a category string. */
 function toCategory(raw: unknown): "local" | "agent" | "skill" {
   if (raw === "agent" || raw === "skill") return raw;
@@ -204,7 +133,10 @@ function parseMetadataPayload(payload: unknown): SessionMetadataSnapshot | null 
   return {
     sessionId: typeof p.session_id === "string" ? p.session_id : null,
     model: typeof p.model === "string" ? p.model : null,
-    permissionMode: typeof p.permission_mode === "string" ? p.permission_mode : null,
+    // Wire emits `permissionMode` (camelCase) per
+    // `tugcode/src/session.ts:498,517`. The earlier snake_case parse
+    // key silently returned null for every live payload.
+    permissionMode: typeof p.permissionMode === "string" ? p.permissionMode : null,
     cwd: typeof p.cwd === "string" ? p.cwd : null,
     slashCommands,
   };
@@ -246,13 +178,12 @@ export class SessionMetadataStore {
     const parsed = parseMetadataPayload(payload);
     if (!parsed) return;
 
-    // Merge instead of replace. The wholesale-replace pattern wiped
-    // live values when the replay path's synthesized payload arrived
-    // (replay-synthesized `system_metadata` carries empty cwd / tools
-    // / permissionMode / slash_commands and a bare-name `model` that
-    // dropped the `[1m]` suffix the live session_init had set). See
-    // `mergeMetadataSnapshot` for the per-field rules.
-    this._snapshot = mergeMetadataSnapshot(this._snapshot, parsed);
+    // Wholesale replace. The tugcast supervisor's bridge intercept
+    // merges every `system_metadata` line against the persisted
+    // ledger row before forwarding, so the wire always delivers the
+    // most-informationally-rich payload. Client-side merge is no
+    // longer needed.
+    this._snapshot = parsed;
     for (const listener of this._listeners) {
       listener();
     }
